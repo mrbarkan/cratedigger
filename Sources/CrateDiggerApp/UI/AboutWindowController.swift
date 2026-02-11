@@ -30,8 +30,7 @@ private final class AboutViewController: NSViewController {
 
     override func loadView() {
         view = NSView()
-        view.wantsLayer = true
-        view.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        ClassicTheme.applyPinstripe(to: view)
 
         titleLabel.font = NSFont.systemFont(ofSize: 28, weight: .semibold)
         designedByLabel.font = NSFont.systemFont(ofSize: 14, weight: .regular)
@@ -39,7 +38,7 @@ private final class AboutViewController: NSViewController {
 
         supportButton.target = self
         supportButton.action = #selector(openPatreon)
-        supportButton.bezelStyle = .rounded
+        ClassicTheme.applyAquaAccent(to: supportButton)
 
         let stack = NSStackView(views: [titleLabel, designedByLabel, developedByLabel, supportButton])
         stack.orientation = .vertical
@@ -53,6 +52,11 @@ private final class AboutViewController: NSViewController {
             stack.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             stack.centerYAnchor.constraint(equalTo: view.centerYAnchor)
         ])
+    }
+
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        ClassicTheme.updateButtonGradient(supportButton)
     }
 
     @objc private func openPatreon() {

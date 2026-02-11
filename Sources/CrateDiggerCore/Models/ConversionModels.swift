@@ -29,7 +29,7 @@ public enum OutputFormat: String, Codable, CaseIterable, Sendable {
 
     public var fileExtension: String {
         switch self {
-        case .aac:
+        case .aac, .alac:
             return "m4a"
         default:
             return rawValue

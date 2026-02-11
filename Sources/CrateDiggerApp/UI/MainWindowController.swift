@@ -15,6 +15,8 @@ final class MainWindowController: NSWindowController {
         window.minSize = NSSize(width: 980, height: 620)
         window.contentViewController = mainViewController
         window.center()
+        window.backgroundColor = ClassicTheme.pinstripeBackground
+        window.isMovableByWindowBackground = true
 
         super.init(window: window)
     }

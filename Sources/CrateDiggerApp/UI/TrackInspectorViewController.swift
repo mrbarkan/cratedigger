@@ -17,12 +17,13 @@ final class TrackInspectorViewController: NSViewController {
 
     override func loadView() {
         view = NSView()
-        view.wantsLayer = true
-        view.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        ClassicTheme.applyPinstripe(to: view)
 
         configureTextFields()
         configureArtworkView()
 
+        zoomControl.segmentStyle = .smallSquare
+        zoomControl.controlSize = .small
         zoomControl.selectedSegment = 0
         zoomControl.target = self
         zoomControl.action = #selector(zoomChanged)
@@ -104,6 +105,8 @@ final class TrackInspectorViewController: NSViewController {
         albumField.font = NSFont.systemFont(ofSize: 14, weight: .regular)
         detailsField.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular)
         artworkInfoField.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+        titleField.textColor = ClassicTheme.accentShadow
+        detailsField.textColor = ClassicTheme.accentShadow
 
         [titleField, artistField, albumField, detailsField, artworkInfoField].forEach {
             $0.lineBreakMode = .byTruncatingTail
@@ -117,6 +120,10 @@ final class TrackInspectorViewController: NSViewController {
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = true
         scrollView.autohidesScrollers = true
+        scrollView.drawsBackground = false
+        scrollView.scrollerStyle = .legacy
+        scrollView.wantsLayer = true
+        scrollView.layer?.backgroundColor = ClassicTheme.pinstripeBackground.cgColor
 
         imageView.imageScaling = .scaleNone
 
@@ -125,7 +132,7 @@ final class TrackInspectorViewController: NSViewController {
 
         imageView.translatesAutoresizingMaskIntoConstraints = false
         placeholderField.translatesAutoresizingMaskIntoConstraints = false
-        placeholderField.textColor = .secondaryLabelColor
+        placeholderField.textColor = ClassicTheme.accentShadow
 
         artworkContainer.addSubview(imageView)
         artworkContainer.addSubview(placeholderField)
