@@ -1,0 +1,47 @@
+{
+  "": {
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/master.swiftdeps"
+  },
+  "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/AppDelegate.swift": {
+    "dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/AppDelegate.d",
+    "object": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/AppDelegate.swift.o",
+    "swiftmodule": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/AppDelegate~partial.swiftmodule",
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/AppDelegate.swiftdeps",
+    "diagnostics": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/AppDelegate.dia"
+  },
+  "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/AboutWindowController.swift": {
+    "dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/AboutWindowController.d",
+    "object": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/AboutWindowController.swift.o",
+    "swiftmodule": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/AboutWindowController~partial.swiftmodule",
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/AboutWindowController.swiftdeps",
+    "diagnostics": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/AboutWindowController.dia"
+  },
+  "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/MainViewController.swift": {
+    "dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/MainViewController.d",
+    "object": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/MainViewController.swift.o",
+    "swiftmodule": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/MainViewController~partial.swiftmodule",
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/MainViewController.swiftdeps",
+    "diagnostics": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/MainViewController.dia"
+  },
+  "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/MainWindowController.swift": {
+    "dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/MainWindowController.d",
+    "object": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/MainWindowController.swift.o",
+    "swiftmodule": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/MainWindowController~partial.swiftmodule",
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/MainWindowController.swiftdeps",
+    "diagnostics": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/MainWindowController.dia"
+  },
+  "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/TrackInspectorViewController.swift": {
+    "dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/TrackInspectorViewController.d",
+    "object": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/TrackInspectorViewController.swift.o",
+    "swiftmodule": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/TrackInspectorViewController~partial.swiftmodule",
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/TrackInspectorViewController.swiftdeps",
+    "diagnostics": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/TrackInspectorViewController.dia"
+  },
+  "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/main.swift": {
+    "dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/main.d",
+    "object": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/main.swift.o",
+    "swiftmodule": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/main~partial.swiftmodule",
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/main.swiftdeps",
+    "diagnostics": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/main.dia"
+  }
+}

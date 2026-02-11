@@ -1,0 +1,3 @@
+module CrateDiggerCore {
+    header "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/include/CrateDiggerCore-Swift.h"
+}

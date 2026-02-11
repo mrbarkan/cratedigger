@@ -1,0 +1,19 @@
+{
+  "": {
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/master.swiftdeps"
+  },
+  "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/ArtworkServiceTests.swift": {
+    "dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/ArtworkServiceTests.d",
+    "object": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/ArtworkServiceTests.swift.o",
+    "swiftmodule": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/ArtworkServiceTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/ArtworkServiceTests.swiftdeps",
+    "diagnostics": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/ArtworkServiceTests.dia"
+  },
+  "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/ConversionServiceTests.swift": {
+    "dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/ConversionServiceTests.d",
+    "object": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/ConversionServiceTests.swift.o",
+    "swiftmodule": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/ConversionServiceTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/ConversionServiceTests.swiftdeps",
+    "diagnostics": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/ConversionServiceTests.dia"
+  }
+}

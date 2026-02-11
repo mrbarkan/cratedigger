@@ -1,0 +1,47 @@
+{
+  "": {
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/master.swiftdeps"
+  },
+  "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerCore/Models/ArtworkAsset.swift": {
+    "dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/ArtworkAsset.d",
+    "object": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/ArtworkAsset.swift.o",
+    "swiftmodule": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/ArtworkAsset~partial.swiftmodule",
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/ArtworkAsset.swiftdeps",
+    "diagnostics": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/ArtworkAsset.dia"
+  },
+  "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerCore/Models/AudioTrack.swift": {
+    "dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/AudioTrack.d",
+    "object": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/AudioTrack.swift.o",
+    "swiftmodule": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/AudioTrack~partial.swiftmodule",
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/AudioTrack.swiftdeps",
+    "diagnostics": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/AudioTrack.dia"
+  },
+  "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerCore/Models/ConversionModels.swift": {
+    "dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/ConversionModels.d",
+    "object": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/ConversionModels.swift.o",
+    "swiftmodule": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/ConversionModels~partial.swiftmodule",
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/ConversionModels.swiftdeps",
+    "diagnostics": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/ConversionModels.dia"
+  },
+  "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerCore/Services/ArtworkService.swift": {
+    "dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/ArtworkService.d",
+    "object": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/ArtworkService.swift.o",
+    "swiftmodule": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/ArtworkService~partial.swiftmodule",
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/ArtworkService.swiftdeps",
+    "diagnostics": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/ArtworkService.dia"
+  },
+  "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerCore/Services/ConversionService.swift": {
+    "dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/ConversionService.d",
+    "object": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/ConversionService.swift.o",
+    "swiftmodule": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/ConversionService~partial.swiftmodule",
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/ConversionService.swiftdeps",
+    "diagnostics": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/ConversionService.dia"
+  },
+  "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerCore/Services/LibraryScanService.swift": {
+    "dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/LibraryScanService.d",
+    "object": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/LibraryScanService.swift.o",
+    "swiftmodule": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/LibraryScanService~partial.swiftmodule",
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/LibraryScanService.swiftdeps",
+    "diagnostics": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/LibraryScanService.dia"
+  }
+}

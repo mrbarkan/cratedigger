@@ -1,0 +1,12 @@
+{
+  "": {
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerPackageTests.build/master.swiftdeps"
+  },
+  "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerPackageTests.derived/runner.swift": {
+    "dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerPackageTests.build/runner.d",
+    "object": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerPackageTests.build/runner.swift.o",
+    "swiftmodule": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerPackageTests.build/runner~partial.swiftmodule",
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerPackageTests.build/runner.swiftdeps",
+    "diagnostics": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerPackageTests.build/runner.dia"
+  }
+}
