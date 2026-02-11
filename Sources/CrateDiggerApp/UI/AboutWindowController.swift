@@ -56,7 +56,7 @@ private final class AboutViewController: NSViewController {
 
     override func viewDidLayout() {
         super.viewDidLayout()
-        ClassicTheme.updateButtonGradient(supportButton)
+        ClassicTheme.updateButtonLayers(supportButton)
     }
 
     @objc private func openPatreon() {

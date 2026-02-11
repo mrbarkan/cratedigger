@@ -22,10 +22,10 @@ enum ClassicTheme {
         NSRect(origin: .zero, size: size).fill()
 
         NSColor(calibratedWhite: 0.88, alpha: 1).setStroke()
-        for offset in stride(from: -12, through: 24, by: 4) {
+        for y in stride(from: 0, through: Int(size.height), by: 4) {
             let path = NSBezierPath()
-            path.move(to: NSPoint(x: CGFloat(offset), y: 0))
-            path.line(to: NSPoint(x: CGFloat(offset) + size.height, y: size.height))
+            path.move(to: NSPoint(x: 0, y: CGFloat(y)))
+            path.line(to: NSPoint(x: size.width, y: CGFloat(y)))
             path.lineWidth = 1
             path.stroke()
         }
@@ -48,35 +48,85 @@ enum ClassicTheme {
         button.setButtonType(.momentaryPushIn)
         button.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
         button.contentTintColor = NSColor(calibratedWhite: 0.15, alpha: 0.95)
+        button.layer?.masksToBounds = false
+        button.layer?.cornerRadius = 7
 
-        let gradient = CAGradientLayer()
-        gradient.colors = [
+        removeExistingAquaLayers(from: button)
+        let bounds = button.bounds
+
+        let base = CAGradientLayer()
+        base.name = "ClassicAquaBase"
+        base.colors = [
             accentHighlight.cgColor,
             accentYellow.cgColor,
-            accentShadow.withAlphaComponent(0.92).cgColor
+            accentShadow.withAlphaComponent(0.98).cgColor
         ]
-        gradient.locations = [0, 0.55, 1]
-        gradient.cornerRadius = 7
-        gradient.borderColor = chromeStroke.withAlphaComponent(0.85).cgColor
-        gradient.borderWidth = 1
-        gradient.shadowColor = NSColor.black.withAlphaComponent(0.15).cgColor
-        gradient.shadowOffset = CGSize(width: 0, height: -1)
-        gradient.shadowRadius = 1.5
-        gradient.name = "ClassicAquaGradient"
-        gradient.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
+        base.locations = [0, 0.45, 1]
+        base.cornerRadius = 7
+        base.borderColor = chromeStroke.blended(withFraction: 0.25, of: .black)?.cgColor ?? chromeStroke.cgColor
+        base.borderWidth = 1
+        base.shadowColor = NSColor.black.withAlphaComponent(0.18).cgColor
+        base.shadowOffset = CGSize(width: 0, height: -1.2)
+        base.shadowRadius = 1.6
+        base.frame = bounds
 
-        button.layer?.cornerRadius = 7
-        button.layer?.masksToBounds = false
+        let gloss = CAGradientLayer()
+        gloss.name = "ClassicAquaGloss"
+        gloss.colors = [
+            NSColor.white.withAlphaComponent(0.7).cgColor,
+            NSColor.white.withAlphaComponent(0.0).cgColor
+        ]
+        gloss.locations = [0, 1]
+        gloss.frame = CGRect(x: bounds.minX, y: bounds.minY, width: bounds.width, height: bounds.height * 0.45)
+        gloss.cornerRadius = 7
 
-        button.layer?.sublayers?.removeAll(where: { $0.name == "ClassicAquaGradient" })
-        gradient.frame = button.bounds
-        button.layer?.insertSublayer(gradient, at: 0)
+        let innerStroke = CALayer()
+        innerStroke.name = "ClassicAquaInnerStroke"
+        innerStroke.borderWidth = 1
+        innerStroke.borderColor = NSColor.white.withAlphaComponent(0.55).cgColor
+        innerStroke.cornerRadius = 6.5
+        innerStroke.frame = bounds.insetBy(dx: 0.5, dy: 0.5)
+
+        let outerStroke = CALayer()
+        outerStroke.name = "ClassicAquaBorder"
+        outerStroke.borderWidth = 1
+        outerStroke.borderColor = chromeStroke.blended(withFraction: 0.35, of: .black)?.cgColor ?? chromeStroke.cgColor
+        outerStroke.cornerRadius = 7
+        outerStroke.frame = bounds
+
+        button.layer?.insertSublayer(base, at: 0)
+        button.layer?.insertSublayer(gloss, above: base)
+        button.layer?.insertSublayer(innerStroke, above: gloss)
+        button.layer?.insertSublayer(outerStroke, above: innerStroke)
     }
 
-    static func updateButtonGradient(_ button: NSButton) {
-        guard let gradient = button.layer?.sublayers?.first(where: { $0.name == "ClassicAquaGradient" }) else {
-            return
+    static func updateButtonLayers(_ button: NSButton) {
+        guard let layers = button.layer?.sublayers else { return }
+        let bounds = button.bounds
+        for layer in layers {
+            switch layer.name {
+            case "ClassicAquaBase":
+                layer.frame = bounds
+            case "ClassicAquaGloss":
+                layer.frame = CGRect(x: bounds.minX, y: bounds.minY, width: bounds.width, height: bounds.height * 0.45)
+            case "ClassicAquaInnerStroke":
+                layer.frame = bounds.insetBy(dx: 0.5, dy: 0.5)
+            case "ClassicAquaBorder":
+                layer.frame = bounds
+            default:
+                continue
+            }
         }
-        gradient.frame = button.bounds
+    }
+
+    private static func removeExistingAquaLayers(from button: NSButton) {
+        let names = Set(["ClassicAquaBase", "ClassicAquaGloss", "ClassicAquaInnerStroke", "ClassicAquaBorder", "ClassicAquaGradient"])
+        button.layer?.sublayers?.removeAll(where: { layer in
+            if let name = layer.name, names.contains(name) {
+                layer.removeFromSuperlayer()
+                return true
+            }
+            return false
+        })
     }
 }

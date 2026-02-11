@@ -182,8 +182,8 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
 
     override func viewDidLayout() {
         super.viewDidLayout()
-        ClassicTheme.updateButtonGradient(openFolderButton)
-        ClassicTheme.updateButtonGradient(convertButton)
+        ClassicTheme.updateButtonLayers(openFolderButton)
+        ClassicTheme.updateButtonLayers(convertButton)
     }
 
     func openFolder() {
