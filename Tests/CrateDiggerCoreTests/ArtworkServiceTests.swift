@@ -18,7 +18,7 @@ final class ArtworkServiceTests: XCTestCase {
         }
     }
 
-    func testFolderArtworkFallbackResolvesCoverJPG() throws {
+    func testFolderArtworkFallbackResolvesCoverJPG() async throws {
         let trackURL = temporaryDirectory.appendingPathComponent("track.mp3")
         FileManager.default.createFile(atPath: trackURL.path, contents: Data("test".utf8))
 
@@ -27,7 +27,7 @@ final class ArtworkServiceTests: XCTestCase {
         try coverData.write(to: coverURL, options: .atomic)
 
         let service = ArtworkService()
-        let artwork = service.resolveArtwork(trackURL: trackURL)
+        let artwork = await service.resolveArtwork(trackURL: trackURL)
 
         XCTAssertNotNil(artwork)
         XCTAssertEqual(artwork?.source, .folderImage)
@@ -36,7 +36,7 @@ final class ArtworkServiceTests: XCTestCase {
         XCTAssertFalse(artwork?.hash.isEmpty ?? true)
     }
 
-    func testGenerateThumbnailAfterResolve() throws {
+    func testGenerateThumbnailAfterResolve() async throws {
         let trackURL = temporaryDirectory.appendingPathComponent("track.flac")
         FileManager.default.createFile(atPath: trackURL.path, contents: Data("test".utf8))
 
@@ -45,7 +45,7 @@ final class ArtworkServiceTests: XCTestCase {
         try coverData.write(to: coverURL, options: .atomic)
 
         let service = ArtworkService()
-        let artwork = service.resolveArtwork(trackURL: trackURL)
+        let artwork = await service.resolveArtwork(trackURL: trackURL)
         XCTAssertNotNil(artwork)
 
         let thumbnail = service.generateThumbnail(artworkHash: artwork!.hash, size: CGSize(width: 48, height: 48))

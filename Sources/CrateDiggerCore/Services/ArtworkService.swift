@@ -23,8 +23,8 @@ public final class ArtworkService: ArtworkPreparing {
         thumbnailCache.countLimit = 512
     }
 
-    public func resolveArtwork(trackURL: URL) -> ArtworkAsset? {
-        if let embedded = embeddedArtwork(for: trackURL) {
+    public func resolveArtwork(trackURL: URL) async -> ArtworkAsset? {
+        if let embedded = await embeddedArtwork(for: trackURL) {
             storeData(embedded.data, for: embedded.hash)
             return embedded
         }
@@ -99,17 +99,22 @@ public final class ArtworkService: ArtworkPreparing {
         return compatible
     }
 
-    private func embeddedArtwork(for trackURL: URL) -> ArtworkAsset? {
+    private func embeddedArtwork(for trackURL: URL) async -> ArtworkAsset? {
         let asset = AVURLAsset(url: trackURL)
 
-        if let data = Self.firstArtworkData(in: asset.commonMetadata),
+        if let commonMetadata = try? await asset.load(.commonMetadata),
+           let data = await Self.firstArtworkData(in: commonMetadata),
            let artwork = artworkAsset(from: data, source: .embedded) {
             return artwork
         }
 
-        for format in asset.availableMetadataFormats {
-            let metadata = asset.metadata(forFormat: format)
-            if let data = Self.firstArtworkData(in: metadata),
+        let metadataFormats = (try? await asset.load(.availableMetadataFormats)) ?? []
+        for format in metadataFormats {
+            guard let metadata = try? await asset.loadMetadata(for: format) else {
+                continue
+            }
+
+            if let data = await Self.firstArtworkData(in: metadata),
                let artwork = artworkAsset(from: data, source: .embedded) {
                 return artwork
             }
@@ -170,25 +175,29 @@ public final class ArtworkService: ArtworkPreparing {
         )
     }
 
-    private static func firstArtworkData(in metadataItems: [AVMetadataItem]) -> Data? {
+    private static func firstArtworkData(in metadataItems: [AVMetadataItem]) async -> Data? {
         for item in metadataItems {
             if item.commonKey?.rawValue == "artwork" {
-                if let data = item.dataValue {
+                if let data = try? await item.load(.dataValue) {
                     return data
                 }
 
-                if let data = item.value as? Data {
-                    return data
-                }
-
-                if let data = item.value as? NSData {
-                    return data as Data
+                do {
+                    let loadedValue = try await item.load(.value)
+                    if let data = loadedValue as? Data {
+                        return data
+                    }
+                    if let data = loadedValue as? NSData {
+                        return data as Data
+                    }
+                } catch {
+                    // Ignore failed metadata values and continue scanning.
                 }
             }
 
             if let identifier = item.identifier?.rawValue.lowercased(),
                identifier.contains("covr") || identifier.contains("apic") {
-                if let data = item.dataValue {
+                if let data = try? await item.load(.dataValue) {
                     return data
                 }
             }

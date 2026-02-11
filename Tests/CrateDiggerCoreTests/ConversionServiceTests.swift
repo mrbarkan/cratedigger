@@ -44,6 +44,95 @@ final class ConversionServiceTests: XCTestCase {
         XCTAssertTrue(argumentPairs(command.arguments).contains(ArgPair(flag: "-movflags", value: "use_metadata_tags")))
     }
 
+    func testCompatReembedPlacesMapMetadataAfterAllInputs() throws {
+        let service = try makeService(artworkPreparer: PassThroughArtworkPreparer())
+        let sourceURL = temporaryDirectory.appendingPathComponent("source.flac")
+        let outputURL = temporaryDirectory.appendingPathComponent("out.m4a")
+
+        let artworkData = try makeImageData()
+        let artwork = ArtworkAsset(
+            source: .embedded,
+            hash: "embedded-artwork",
+            dimensions: ArtworkDimensions(width: 500, height: 500),
+            data: artworkData
+        )
+
+        let metadata = ConversionMetadata(title: "Track", artwork: artwork)
+        let queued = try service.enqueue(
+            [ConversionJob(sourceURL: sourceURL, destinationURL: outputURL, metadata: metadata)],
+            presetID: "ipod_aac_192"
+        ).first!
+
+        let command = try service.preparedCommand(for: queued)
+
+        XCTAssertEqual(countOccurrences(of: "-i", in: command.arguments), 2)
+        XCTAssertTrue(argumentPairs(command.arguments).contains(ArgPair(flag: "-map", value: "1:v:0")))
+        XCTAssertTrue(command.arguments.contains("attached_pic"))
+
+        let mapMetadataIndex = try XCTUnwrap(command.arguments.firstIndex(of: "-map_metadata"))
+        let lastInputPathIndex = try XCTUnwrap(lastInputPathIndex(in: command.arguments))
+        XCTAssertGreaterThan(mapMetadataIndex, lastInputPathIndex)
+        XCTAssertEqual(command.arguments.last, outputURL.path)
+    }
+
+    func testMetadataOnlyPlacesMapMetadataInOutputOptionsSection() throws {
+        let service = try makeService(artworkPreparer: PassThroughArtworkPreparer())
+        let sourceURL = temporaryDirectory.appendingPathComponent("source.wav")
+        let outputURL = temporaryDirectory.appendingPathComponent("out.m4a")
+
+        let metadata = ConversionMetadata(title: "Track Without Artwork")
+        let queued = try service.enqueue(
+            [ConversionJob(sourceURL: sourceURL, destinationURL: outputURL, metadata: metadata)],
+            presetID: "ipod_aac_192"
+        ).first!
+
+        let command = try service.preparedCommand(for: queued)
+
+        XCTAssertEqual(countOccurrences(of: "-i", in: command.arguments), 1)
+        XCTAssertTrue(argumentPairs(command.arguments).contains(ArgPair(flag: "-map_metadata", value: "0")))
+
+        let sourceInputIndex = try XCTUnwrap(indexOfPair(flag: "-i", value: sourceURL.path, in: command.arguments))
+        let mapMetadataIndex = try XCTUnwrap(command.arguments.firstIndex(of: "-map_metadata"))
+        XCTAssertGreaterThan(mapMetadataIndex, sourceInputIndex + 1)
+        XCTAssertLessThan(mapMetadataIndex, command.arguments.count - 1)
+    }
+
+    func testPreserveModeUsesSourceVideoMapWithoutExtraInput() throws {
+        let preservePreset = ConversionPreset(
+            id: "test_preserve_artwork",
+            name: "Preserve Artwork",
+            outputFormat: .aac,
+            bitrateKbps: 192,
+            sampleRateHz: 44_100,
+            channels: 2,
+            constantBitrate: false,
+            deviceProfile: .generic,
+            tagMode: .auto,
+            artworkMode: .preserve
+        )
+
+        let service = try makeService(
+            artworkPreparer: PassThroughArtworkPreparer(),
+            presets: ConversionPreset.defaultPresets + [preservePreset]
+        )
+        let sourceURL = temporaryDirectory.appendingPathComponent("source.flac")
+        let outputURL = temporaryDirectory.appendingPathComponent("out-preserve.m4a")
+
+        let queued = try service.enqueue(
+            [ConversionJob(sourceURL: sourceURL, destinationURL: outputURL)],
+            presetID: "test_preserve_artwork"
+        ).first!
+        let command = try service.preparedCommand(for: queued)
+
+        XCTAssertEqual(countOccurrences(of: "-i", in: command.arguments), 1)
+        XCTAssertTrue(argumentPairs(command.arguments).contains(ArgPair(flag: "-map", value: "0:v?")))
+        XCTAssertFalse(command.arguments.contains("-vn"))
+
+        let mapMetadataIndex = try XCTUnwrap(command.arguments.firstIndex(of: "-map_metadata"))
+        let sourceInputIndex = try XCTUnwrap(indexOfPair(flag: "-i", value: sourceURL.path, in: command.arguments))
+        XCTAssertGreaterThan(mapMetadataIndex, sourceInputIndex + 1)
+    }
+
     func testIPodMP3PresetForcesID3v23AndCBRFlags() throws {
         let service = try makeService(artworkPreparer: PassThroughArtworkPreparer())
         let sourceURL = temporaryDirectory.appendingPathComponent("source.flac")
@@ -99,10 +188,13 @@ final class ConversionServiceTests: XCTestCase {
         XCTAssertEqual(queued.first?.preset.deviceProfile, .generic)
     }
 
-    private func makeService(artworkPreparer: ArtworkPreparing) throws -> ConversionService {
+    private func makeService(
+        artworkPreparer: ArtworkPreparing,
+        presets: [ConversionPreset] = ConversionPreset.defaultPresets
+    ) throws -> ConversionService {
         try ConversionService(
             ffmpegExecutableURL: fakeFFmpegURL,
-            presets: ConversionPreset.defaultPresets,
+            presets: presets,
             artworkPreparer: artworkPreparer,
             commandRunner: StubCommandRunner(),
             fileManager: FileManager.default
@@ -123,6 +215,37 @@ final class ConversionServiceTests: XCTestCase {
         }
 
         return pairs
+    }
+
+    private func countOccurrences(of token: String, in args: [String]) -> Int {
+        args.filter { $0 == token }.count
+    }
+
+    private func indexOfPair(flag: String, value: String, in args: [String]) -> Int? {
+        guard args.count > 1 else {
+            return nil
+        }
+
+        for index in 0..<(args.count - 1) {
+            if args[index] == flag && args[index + 1] == value {
+                return index
+            }
+        }
+
+        return nil
+    }
+
+    private func lastInputPathIndex(in args: [String]) -> Int? {
+        guard args.count > 1 else {
+            return nil
+        }
+
+        var lastPathIndex: Int?
+        for index in 0..<(args.count - 1) where args[index] == "-i" {
+            lastPathIndex = index + 1
+        }
+
+        return lastPathIndex
     }
 
     private func makeImageData() throws -> Data {

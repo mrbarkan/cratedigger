@@ -64,6 +64,14 @@ public struct PreparedConversionCommand: Sendable {
     }
 }
 
+private struct CommandInputSection: Sendable {
+    let arguments: [String]
+    let outputMappingArguments: [String]
+    let hasVideoMapping: Bool
+    let warning: String?
+    let temporaryFiles: [URL]
+}
+
 public final class ConversionService {
     public private(set) var queue: [QueuedConversion] = []
 
@@ -97,12 +105,18 @@ public final class ConversionService {
     }
 
     public func enqueue(_ jobs: [ConversionJob], presetID: String, deviceProfile: DeviceProfile? = nil) throws -> [QueuedConversion] {
-        guard let preset = Self.resolvedPreset(id: presetID, from: presetsByID, overrideDeviceProfile: deviceProfile) else {
+        guard let preset = presetsByID[presetID] else {
             throw ConversionServiceError.presetNotFound(presetID)
         }
 
+        return enqueue(jobs, preset: preset, deviceProfile: deviceProfile)
+    }
+
+    public func enqueue(_ jobs: [ConversionJob], preset: ConversionPreset, deviceProfile: DeviceProfile? = nil) -> [QueuedConversion] {
+        let resolvedPreset = Self.withDeviceProfileOverride(preset, overrideDeviceProfile: deviceProfile)
+
         let queuedItems = jobs.map { job in
-            QueuedConversion(job: job, preset: preset)
+            QueuedConversion(job: job, preset: resolvedPreset)
         }
 
         queue.append(contentsOf: queuedItems)
@@ -154,66 +168,88 @@ public final class ConversionService {
     }
 
     public func preparedCommand(for queued: QueuedConversion) throws -> PreparedConversionCommand {
-        var arguments: [String] = [
+        let globalArguments: [String] = [
             "-hide_banner",
             "-nostdin",
-            "-y",
-            "-i", queued.job.sourceURL.path
+            "-y"
         ]
 
+        let inputSection = try buildInputSection(for: queued)
+        let outputArguments = buildOutputSection(for: queued, inputSection: inputSection)
+
+        var arguments = globalArguments
+        arguments.append(contentsOf: inputSection.arguments)
+        arguments.append(contentsOf: outputArguments)
+        arguments.append(queued.job.destinationURL.path)
+
+        return PreparedConversionCommand(
+            executableURL: ffmpegExecutableURL,
+            arguments: arguments,
+            warning: inputSection.warning,
+            temporaryFiles: inputSection.temporaryFiles
+        )
+    }
+
+    private func buildInputSection(for queued: QueuedConversion) throws -> CommandInputSection {
+        var inputArguments: [String] = ["-i", queued.job.sourceURL.path]
+        var outputMappingArguments: [String] = []
         var warning: String?
         var temporaryFiles: [URL] = []
+        var hasVideoMapping = false
 
-        arguments.append(contentsOf: ["-map_metadata", "0"])
-
-        var mapsAudioOnly = true
         if let artwork = queued.job.metadata?.artwork {
             switch queued.preset.artworkMode {
             case .none:
-                arguments.append(contentsOf: ["-map", "0:a:0"])
+                outputMappingArguments.append(contentsOf: ["-map", "0:a:0"])
             case .preserve:
-                arguments.append(contentsOf: ["-map", "0:a:0", "-map", "0:v?"])
-                mapsAudioOnly = false
+                outputMappingArguments.append(contentsOf: ["-map", "0:a:0", "-map", "0:v?"])
+                hasVideoMapping = true
             case .compatReembed:
                 do {
                     let compatibleArtwork = try artworkPreparer.prepareCompatibleArtwork(asset: artwork, profile: queued.preset.deviceProfile)
                     let artworkTempURL = try writeTemporaryArtwork(compatibleArtwork.data)
                     temporaryFiles.append(artworkTempURL)
 
-                    arguments.append(contentsOf: ["-i", artworkTempURL.path])
-                    arguments.append(contentsOf: ["-map", "0:a:0", "-map", "1:v:0", "-c:v", "mjpeg", "-disposition:v", "attached_pic"])
-                    mapsAudioOnly = false
+                    inputArguments.append(contentsOf: ["-i", artworkTempURL.path])
+                    outputMappingArguments.append(contentsOf: ["-map", "0:a:0", "-map", "1:v:0", "-c:v", "mjpeg", "-disposition:v", "attached_pic"])
+                    hasVideoMapping = true
                 } catch {
                     warning = "Artwork conversion failed. Continuing without embedded artwork: \(error.localizedDescription)"
-                    arguments.append(contentsOf: ["-map", "0:a:0"])
+                    outputMappingArguments.append(contentsOf: ["-map", "0:a:0"])
                 }
             }
         } else {
             switch queued.preset.artworkMode {
             case .preserve:
-                arguments.append(contentsOf: ["-map", "0:a:0", "-map", "0:v?"])
-                mapsAudioOnly = false
+                outputMappingArguments.append(contentsOf: ["-map", "0:a:0", "-map", "0:v?"])
+                hasVideoMapping = true
             case .compatReembed, .none:
-                arguments.append(contentsOf: ["-map", "0:a:0"])
+                outputMappingArguments.append(contentsOf: ["-map", "0:a:0"])
             }
         }
 
-        applyCodecArguments(to: &arguments, preset: queued.preset)
-        applyTagArguments(to: &arguments, preset: queued.preset)
-        applyMetadataArguments(to: &arguments, metadata: queued.job.metadata)
-
-        if mapsAudioOnly {
-            arguments.append(contentsOf: ["-vn"])
-        }
-
-        arguments.append(queued.job.destinationURL.path)
-
-        return PreparedConversionCommand(
-            executableURL: ffmpegExecutableURL,
-            arguments: arguments,
+        return CommandInputSection(
+            arguments: inputArguments,
+            outputMappingArguments: outputMappingArguments,
+            hasVideoMapping: hasVideoMapping,
             warning: warning,
             temporaryFiles: temporaryFiles
         )
+    }
+
+    private func buildOutputSection(for queued: QueuedConversion, inputSection: CommandInputSection) -> [String] {
+        var outputArguments: [String] = ["-map_metadata", "0"]
+        outputArguments.append(contentsOf: inputSection.outputMappingArguments)
+
+        applyCodecArguments(to: &outputArguments, preset: queued.preset)
+        applyTagArguments(to: &outputArguments, preset: queued.preset)
+        applyMetadataArguments(to: &outputArguments, metadata: queued.job.metadata)
+
+        if !inputSection.hasVideoMapping {
+            outputArguments.append(contentsOf: ["-vn"])
+        }
+
+        return outputArguments
     }
 
     private func runSingleConversion(_ queued: QueuedConversion) -> ConversionExecutionResult {
@@ -352,17 +388,13 @@ public final class ConversionService {
         return tempURL
     }
 
-    private static func resolvedPreset(
-        id: String,
-        from presetMap: [String: ConversionPreset],
+    private static func withDeviceProfileOverride(
+        _ preset: ConversionPreset,
         overrideDeviceProfile: DeviceProfile?
-    ) -> ConversionPreset? {
-        guard var preset = presetMap[id] else {
-            return nil
-        }
-
+    ) -> ConversionPreset {
+        var resolvedPreset = preset
         if let overrideDeviceProfile {
-            preset = ConversionPreset(
+            resolvedPreset = ConversionPreset(
                 id: preset.id,
                 name: preset.name,
                 outputFormat: preset.outputFormat,
@@ -376,7 +408,7 @@ public final class ConversionService {
             )
         }
 
-        return preset
+        return resolvedPreset
     }
 
     private static func defaultFFmpegExecutableURL(fileManager: FileManager) -> URL {

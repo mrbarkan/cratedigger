@@ -7,18 +7,29 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
 
     private var conversionService: ConversionService?
     private var conversionServiceInitializationError: Error?
+    private var scanTask: Task<Void, Never>?
 
     private var loadedTracks: [LoadedTrack] = []
     private var currentLibraryRoot: URL?
 
     private let tableView = NSTableView()
     private let scrollView = NSScrollView()
-    private let presetPopUp = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let batchScopePopUp = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let formatPopUp = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let bitratePopUp = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let sampleRatePopUp = NSPopUpButton(frame: .zero, pullsDown: false)
     private let preserveStructureCheckbox = NSButton(checkboxWithTitle: "Preserve folder structure", target: nil, action: nil)
     private let statusField = NSTextField(labelWithString: "Load a folder to begin")
     private let convertButton = NSButton(title: "Convert Selected", target: nil, action: nil)
 
     private let inspectorViewController = TrackInspectorViewController()
+    private let outputFormats: [OutputFormat] = [.mp3, .aac, .alac, .flac, .wav, .aiff, .ogg, .opus]
+    private let bitrateOptions = [-1, 96, 128, 160, 192, 256, 320]
+    private let sampleRateOptions = [-1, 32000, 44100, 48000, 96000]
+
+    deinit {
+        scanTask?.cancel()
+    }
 
     override func loadView() {
         view = NSView()
@@ -52,7 +63,7 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
             leftContainer.widthAnchor.constraint(greaterThanOrEqualToConstant: 560)
         ])
 
-        configureConversionPresets()
+        configureConversionOptions()
         configureServices()
     }
 
@@ -101,29 +112,48 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
     func tableViewSelectionDidChange(_ notification: Notification) {
         guard tableView.selectedRow >= 0, loadedTracks.indices.contains(tableView.selectedRow) else {
             inspectorViewController.update(with: nil)
-            convertButton.isEnabled = false
+            updateConvertButtonState()
             return
         }
 
         inspectorViewController.update(with: loadedTracks[tableView.selectedRow])
-        convertButton.isEnabled = !tableView.selectedRowIndexes.isEmpty
+        updateConvertButtonState()
     }
 
     private func configureLeftPane(in container: NSView) {
         let openButton = NSButton(title: "Open Folder", target: self, action: #selector(openFolderAction))
-
-        let presetLabel = NSTextField(labelWithString: "Convert preset:")
+        let batchScopeLabel = NSTextField(labelWithString: "Batch:")
+        let formatLabel = NSTextField(labelWithString: "Format:")
+        let bitrateLabel = NSTextField(labelWithString: "Bitrate:")
+        let sampleRateLabel = NSTextField(labelWithString: "Sample Rate:")
 
         preserveStructureCheckbox.state = .on
 
         convertButton.target = self
         convertButton.action = #selector(convertSelectedTracks)
         convertButton.isEnabled = false
+        convertButton.title = "Convert"
 
-        let controlsStack = NSStackView(views: [openButton, presetLabel, presetPopUp, preserveStructureCheckbox, convertButton])
-        controlsStack.orientation = .horizontal
-        controlsStack.alignment = .centerY
-        controlsStack.spacing = 10
+        batchScopePopUp.target = self
+        batchScopePopUp.action = #selector(batchScopeChanged)
+
+        formatPopUp.target = self
+        formatPopUp.action = #selector(formatChanged)
+
+        let topControls = NSStackView(views: [openButton, batchScopeLabel, batchScopePopUp, convertButton])
+        topControls.orientation = .horizontal
+        topControls.alignment = .centerY
+        topControls.spacing = 10
+
+        let conversionControls = NSStackView(views: [formatLabel, formatPopUp, bitrateLabel, bitratePopUp, sampleRateLabel, sampleRatePopUp, preserveStructureCheckbox])
+        conversionControls.orientation = .horizontal
+        conversionControls.alignment = .centerY
+        conversionControls.spacing = 10
+
+        let controlsStack = NSStackView(views: [topControls, conversionControls])
+        controlsStack.orientation = .vertical
+        controlsStack.alignment = .leading
+        controlsStack.spacing = 8
 
         let trackColumn = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("TrackColumn"))
         trackColumn.title = "Tracks"
@@ -133,6 +163,8 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         tableView.dataSource = self
         tableView.usesAlternatingRowBackgroundColors = true
         tableView.selectionHighlightStyle = .regular
+        tableView.allowsMultipleSelection = true
+        tableView.allowsEmptySelection = true
 
         scrollView.documentView = tableView
         scrollView.hasVerticalScroller = true
@@ -158,17 +190,47 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         ])
     }
 
-    private func configureConversionPresets() {
-        presetPopUp.removeAllItems()
+    private func configureConversionOptions() {
+        batchScopePopUp.removeAllItems()
+        batchScopePopUp.addItems(withTitles: ["Selected Tracks", "All Loaded Tracks"])
+        batchScopePopUp.selectItem(at: 0)
 
-        for preset in ConversionPreset.defaultPresets {
-            presetPopUp.addItem(withTitle: preset.name)
-            presetPopUp.lastItem?.representedObject = preset.id
+        formatPopUp.removeAllItems()
+        for format in outputFormats {
+            formatPopUp.addItem(withTitle: displayName(for: format))
+            formatPopUp.lastItem?.representedObject = format.rawValue
+        }
+        if let defaultIndex = outputFormats.firstIndex(of: .aac) {
+            formatPopUp.selectItem(at: defaultIndex)
         }
 
-        if let firstIPodPresetIndex = ConversionPreset.defaultPresets.firstIndex(where: { $0.deviceProfile == .ipodLegacySafe }) {
-            presetPopUp.selectItem(at: firstIPodPresetIndex)
+        bitratePopUp.removeAllItems()
+        for option in bitrateOptions {
+            if option < 0 {
+                bitratePopUp.addItem(withTitle: "Auto")
+            } else {
+                bitratePopUp.addItem(withTitle: "\(option) kbps")
+            }
+            bitratePopUp.lastItem?.tag = option
         }
+        if let defaultBitrateIndex = bitrateOptions.firstIndex(of: 192) {
+            bitratePopUp.selectItem(at: defaultBitrateIndex)
+        }
+
+        sampleRatePopUp.removeAllItems()
+        for option in sampleRateOptions {
+            if option < 0 {
+                sampleRatePopUp.addItem(withTitle: "Source")
+            } else {
+                sampleRatePopUp.addItem(withTitle: "\(option) Hz")
+            }
+            sampleRatePopUp.lastItem?.tag = option
+        }
+        if let defaultRateIndex = sampleRateOptions.firstIndex(of: 44_100) {
+            sampleRatePopUp.selectItem(at: defaultRateIndex)
+        }
+
+        updateFormatDependentControls()
     }
 
     private func configureServices() {
@@ -183,12 +245,16 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
     private func loadTracks(from folderURL: URL) {
         currentLibraryRoot = folderURL
         statusField.stringValue = "Scanning \(folderURL.lastPathComponent)..."
-        convertButton.isEnabled = false
+        updateConvertButtonState()
 
-        DispatchQueue.global(qos: .userInitiated).async {
-            let tracks = self.libraryScanService.scanFolder(folderURL)
+        scanTask?.cancel()
+        scanTask = Task(priority: .userInitiated) { [weak self] in
+            guard let self else { return }
 
-            DispatchQueue.main.async {
+            let tracks = await self.libraryScanService.scanFolder(folderURL)
+            guard !Task.isCancelled else { return }
+
+            await MainActor.run {
                 self.loadedTracks = tracks
                 self.tableView.reloadData()
 
@@ -198,8 +264,8 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
                 } else {
                     self.tableView.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
                     self.statusField.stringValue = "Loaded \(tracks.count) tracks"
-                    self.convertButton.isEnabled = true
                 }
+                self.updateConvertButtonState()
             }
         }
     }
@@ -217,21 +283,21 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
             return
         }
 
-        let selectedTracks = tableView.selectedRowIndexes.compactMap { index in
-            loadedTracks.indices.contains(index) ? loadedTracks[index] : nil
+        let tracksToConvert: [LoadedTrack]
+        if batchScopePopUp.indexOfSelectedItem == 1 {
+            tracksToConvert = loadedTracks
+        } else {
+            tracksToConvert = tableView.selectedRowIndexes.compactMap { index in
+                loadedTracks.indices.contains(index) ? loadedTracks[index] : nil
+            }
         }
 
-        guard !selectedTracks.isEmpty else {
-            showAlert(title: "No Selection", message: "Select one or more tracks first.")
+        guard !tracksToConvert.isEmpty else {
+            showAlert(title: "No Tracks", message: "Select tracks or choose 'All Loaded Tracks' before converting.")
             return
         }
 
-        guard let presetID = presetPopUp.selectedItem?.representedObject as? String,
-              let preset = ConversionPreset.preset(withID: presetID)
-        else {
-            showAlert(title: "Missing Preset", message: "Choose a conversion preset.")
-            return
-        }
+        let preset = buildPresetFromControls()
 
         let destinationPanel = NSOpenPanel()
         destinationPanel.canChooseFiles = false
@@ -244,21 +310,16 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         }
 
         var jobs: [ConversionJob] = []
-        jobs.reserveCapacity(selectedTracks.count)
+        jobs.reserveCapacity(tracksToConvert.count)
 
-        for loaded in selectedTracks {
+        for loaded in tracksToConvert {
             let outputURL = destinationURL(for: loaded.track, preset: preset, destinationRoot: destinationFolder)
             let job = ConversionJob(sourceURL: loaded.track.fileURL, destinationURL: outputURL, metadata: loaded.metadata)
             jobs.append(job)
         }
 
-        do {
-            conversionService.clearQueue()
-            _ = try conversionService.enqueue(jobs, presetID: preset.id, deviceProfile: preset.deviceProfile)
-        } catch {
-            showAlert(title: "Queue Failed", message: error.localizedDescription)
-            return
-        }
+        conversionService.clearQueue()
+        _ = conversionService.enqueue(jobs, preset: preset)
 
         statusField.stringValue = "Converting \(jobs.count) file(s) with \(preset.name)..."
         convertButton.isEnabled = false
@@ -272,7 +333,7 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
                 let warnings = results.compactMap { $0.warning }
 
                 self.statusField.stringValue = "Conversion complete. Success: \(completed), Failed: \(failed), Warnings: \(warnings.count)."
-                self.convertButton.isEnabled = true
+                self.updateConvertButtonState()
 
                 var message = "Completed: \(completed)\nFailed: \(failed)"
                 if !warnings.isEmpty {
@@ -293,6 +354,152 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
 
                 self.showAlert(title: "Conversion Finished", message: message)
             }
+        }
+    }
+
+    @objc private func batchScopeChanged() {
+        updateConvertButtonState()
+    }
+
+    @objc private func formatChanged() {
+        updateFormatDependentControls()
+    }
+
+    private func updateFormatDependentControls() {
+        let format = selectedOutputFormat()
+        let lossless = isLosslessFormat(format)
+
+        bitratePopUp.isEnabled = !lossless
+        if lossless {
+            bitratePopUp.selectItem(withTag: -1)
+        }
+    }
+
+    private func updateConvertButtonState() {
+        guard !loadedTracks.isEmpty else {
+            convertButton.isEnabled = false
+            convertButton.title = "Convert"
+            return
+        }
+
+        if batchScopePopUp.indexOfSelectedItem == 1 {
+            convertButton.isEnabled = true
+            convertButton.title = "Convert All"
+        } else {
+            convertButton.isEnabled = !tableView.selectedRowIndexes.isEmpty
+            convertButton.title = "Convert Selected"
+        }
+    }
+
+    private func buildPresetFromControls() -> ConversionPreset {
+        let format = selectedOutputFormat()
+        let userBitrate = selectedBitrate()
+        let userSampleRate = selectedSampleRate()
+
+        let bitrate: Int?
+        if isLosslessFormat(format) {
+            bitrate = nil
+        } else if let userBitrate {
+            bitrate = userBitrate
+        } else {
+            bitrate = defaultBitrate(for: format)
+        }
+
+        let deviceProfile: DeviceProfile = (format == .mp3 || format == .aac) ? .ipodLegacySafe : .generic
+        let tagMode: TagMode
+        switch format {
+        case .mp3:
+            tagMode = .id3v23
+        case .aac, .alac:
+            tagMode = .mp4Atoms
+        default:
+            tagMode = .auto
+        }
+
+        let sampleRate: Int?
+        if let userSampleRate {
+            sampleRate = userSampleRate
+        } else if deviceProfile == .ipodLegacySafe {
+            sampleRate = 44_100
+        } else {
+            sampleRate = nil
+        }
+
+        let channels: Int? = deviceProfile == .ipodLegacySafe ? 2 : nil
+        let constantBitrate = format == .mp3 && bitrate != nil
+        let bitrateName = bitrate.map { "\($0) kbps" } ?? "Auto"
+        let sampleRateName = sampleRate.map { "\($0) Hz" } ?? "Source"
+
+        return ConversionPreset(
+            id: "custom_\(format.rawValue)_\(bitrate ?? 0)_\(sampleRate ?? 0)_\(deviceProfile.rawValue)",
+            name: "\(displayName(for: format)) • \(bitrateName) • \(sampleRateName)",
+            outputFormat: format,
+            bitrateKbps: bitrate,
+            sampleRateHz: sampleRate,
+            channels: channels,
+            constantBitrate: constantBitrate,
+            deviceProfile: deviceProfile,
+            tagMode: tagMode,
+            artworkMode: .compatReembed
+        )
+    }
+
+    private func selectedOutputFormat() -> OutputFormat {
+        if let rawValue = formatPopUp.selectedItem?.representedObject as? String,
+           let format = OutputFormat(rawValue: rawValue) {
+            return format
+        }
+        return .aac
+    }
+
+    private func selectedBitrate() -> Int? {
+        let tag = bitratePopUp.selectedTag()
+        return tag > 0 ? tag : nil
+    }
+
+    private func selectedSampleRate() -> Int? {
+        let tag = sampleRatePopUp.selectedTag()
+        return tag > 0 ? tag : nil
+    }
+
+    private func defaultBitrate(for format: OutputFormat) -> Int? {
+        switch format {
+        case .mp3, .aac, .ogg:
+            return 192
+        case .opus:
+            return 160
+        case .alac, .flac, .wav, .aiff:
+            return nil
+        }
+    }
+
+    private func isLosslessFormat(_ format: OutputFormat) -> Bool {
+        switch format {
+        case .alac, .flac, .wav, .aiff:
+            return true
+        case .mp3, .aac, .ogg, .opus:
+            return false
+        }
+    }
+
+    private func displayName(for format: OutputFormat) -> String {
+        switch format {
+        case .mp3:
+            return "MP3"
+        case .aac:
+            return "AAC (M4A)"
+        case .alac:
+            return "ALAC (M4A)"
+        case .flac:
+            return "FLAC"
+        case .wav:
+            return "WAV"
+        case .aiff:
+            return "AIFF"
+        case .ogg:
+            return "Ogg Vorbis"
+        case .opus:
+            return "Opus"
         }
     }
 
