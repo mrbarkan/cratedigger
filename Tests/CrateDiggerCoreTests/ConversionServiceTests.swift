@@ -174,6 +174,31 @@ final class ConversionServiceTests: XCTestCase {
         XCTAssertFalse(command.arguments.contains("attached_pic"))
     }
 
+    func testMetadataIncludesAlbumArtistAndCompilation() throws {
+        let service = try makeService(artworkPreparer: PassThroughArtworkPreparer())
+        let sourceURL = temporaryDirectory.appendingPathComponent("source.flac")
+        let outputURL = temporaryDirectory.appendingPathComponent("out.m4a")
+
+        let metadata = ConversionMetadata(
+            title: "Track",
+            artist: "Track Artist",
+            albumArtist: "Album Artist",
+            album: "Album",
+            compilation: true
+        )
+
+        let queued = try service.enqueue(
+            [ConversionJob(sourceURL: sourceURL, destinationURL: outputURL, metadata: metadata)],
+            presetID: "ipod_aac_192"
+        ).first!
+        let command = try service.preparedCommand(for: queued)
+        let pairs = argumentPairs(command.arguments)
+
+        XCTAssertTrue(pairs.contains(ArgPair(flag: "-metadata", value: "album_artist=Album Artist")))
+        XCTAssertTrue(pairs.contains(ArgPair(flag: "-metadata", value: "albumartist=Album Artist")))
+        XCTAssertTrue(pairs.contains(ArgPair(flag: "-metadata", value: "compilation=1")))
+    }
+
     func testEnqueueAllowsDeviceProfileOverride() throws {
         let service = try makeService(artworkPreparer: PassThroughArtworkPreparer())
         let sourceURL = temporaryDirectory.appendingPathComponent("source.wav")

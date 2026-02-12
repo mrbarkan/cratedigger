@@ -21,7 +21,9 @@ private enum FolderStructureMode: String, CaseIterable {
 private enum FolderToken: String, CaseIterable {
     case year
     case artist
+    case albumArtist = "album_artist"
     case album
+    case compilation
 
     var title: String {
         switch self {
@@ -29,8 +31,12 @@ private enum FolderToken: String, CaseIterable {
             return "Year"
         case .artist:
             return "Artist"
+        case .albumArtist:
+            return "Album Artist"
         case .album:
             return "Album"
+        case .compilation:
+            return "Compilation"
         }
     }
 }
@@ -58,11 +64,11 @@ private enum TemplatePreset: String, CaseIterable {
     var title: String {
         switch self {
         case .artistYearAlbum:
-            return "Artist / Year - Album"
+            return "Artist / Year / Album"
         case .yearArtistAlbum:
             return "Year / Artist / Album"
         case .artistAlbumYear:
-            return "Artist / Album (Year)"
+            return "Artist / Album / Year"
         case .custom:
             return "Custom Order"
         }
@@ -77,13 +83,13 @@ private enum TemplatePreset: String, CaseIterable {
         case .artistAlbumYear:
             return [.artist, .album, .year]
         case .custom:
-            return [.artist, .year, .album]
+            return [.year, .artist, .album, .albumArtist, .compilation]
         }
     }
 }
 
 private struct AlbumGroupKey: Hashable {
-    let artist: String
+    let artistBucket: String
     let album: String
     let year: String
 }
@@ -91,7 +97,6 @@ private struct AlbumGroupKey: Hashable {
 private struct TemplateConfig {
     let preset: TemplatePreset
     let tokenOrder: [FolderToken]
-    let separator: String
 }
 
 final class MainViewController: NSViewController, NSTableViewDataSource, NSTableViewDelegate {
@@ -117,7 +122,8 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
     private let tokenOrderPopUp1 = NSPopUpButton(frame: .zero, pullsDown: false)
     private let tokenOrderPopUp2 = NSPopUpButton(frame: .zero, pullsDown: false)
     private let tokenOrderPopUp3 = NSPopUpButton(frame: .zero, pullsDown: false)
-    private let templateSeparatorPopUp = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let tokenOrderPopUp4 = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let tokenOrderPopUp5 = NSPopUpButton(frame: .zero, pullsDown: false)
     private let applyModePopUp = NSPopUpButton(frame: .zero, pullsDown: false)
     private let templateOptionsStack = NSStackView()
     private let customOrderStack = NSStackView()
@@ -128,7 +134,6 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
     private let outputFormats: [OutputFormat] = [.mp3, .aac, .alac, .flac, .wav, .aiff, .ogg, .opus]
     private let bitrateOptions = [-1, 96, 128, 160, 192, 256, 320]
     private let sampleRateOptions = [-1, 32000, 44100, 48000, 96000]
-    private let templateSeparatorOptions = [" - ", " ", "_"]
     private let unknownArtist = "Unknown Artist"
     private let unknownAlbum = "Unknown Album"
     private let unknownYear = "Unknown Year"
@@ -138,7 +143,6 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
     private let defaultsTemplatePresetKey = "CrateDigger.templatePreset"
     private let defaultsTemplateApplyModeKey = "CrateDigger.templateApplyMode"
     private let defaultsTokenOrderKey = "CrateDigger.templateTokenOrder"
-    private let defaultsTemplateSeparatorKey = "CrateDigger.templateSeparator"
 
     deinit {
         scanTask?.cancel()
@@ -254,7 +258,6 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         let applyModeLabel = NSTextField(labelWithString: "Apply Mode:")
         let templatePresetLabel = NSTextField(labelWithString: "Template:")
         let tokenOrderLabel = NSTextField(labelWithString: "Token Order:")
-        let separatorLabel = NSTextField(labelWithString: "Joiner:")
 
         openFolderButton.target = self
         openFolderButton.action = #selector(openFolderAction)
@@ -287,9 +290,10 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         tokenOrderPopUp2.action = #selector(customTokenOrderChanged)
         tokenOrderPopUp3.target = self
         tokenOrderPopUp3.action = #selector(customTokenOrderChanged)
-
-        templateSeparatorPopUp.target = self
-        templateSeparatorPopUp.action = #selector(templateSeparatorChanged)
+        tokenOrderPopUp4.target = self
+        tokenOrderPopUp4.action = #selector(customTokenOrderChanged)
+        tokenOrderPopUp5.target = self
+        tokenOrderPopUp5.action = #selector(customTokenOrderChanged)
 
         [
             batchScopePopUp,
@@ -302,7 +306,8 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
             tokenOrderPopUp1,
             tokenOrderPopUp2,
             tokenOrderPopUp3,
-            templateSeparatorPopUp
+            tokenOrderPopUp4,
+            tokenOrderPopUp5
         ].forEach(stylePopUp)
 
         let topControls = NSStackView(views: [openFolderButton, batchScopeLabel, batchScopePopUp, convertButton])
@@ -320,7 +325,7 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         folderControls.alignment = .centerY
         folderControls.spacing = 10
 
-        let templatePresetControls = NSStackView(views: [templatePresetLabel, templatePresetPopUp, separatorLabel, templateSeparatorPopUp])
+        let templatePresetControls = NSStackView(views: [templatePresetLabel, templatePresetPopUp])
         templatePresetControls.orientation = .horizontal
         templatePresetControls.alignment = .centerY
         templatePresetControls.spacing = 10
@@ -332,6 +337,8 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         customOrderStack.addArrangedSubview(tokenOrderPopUp1)
         customOrderStack.addArrangedSubview(tokenOrderPopUp2)
         customOrderStack.addArrangedSubview(tokenOrderPopUp3)
+        customOrderStack.addArrangedSubview(tokenOrderPopUp4)
+        customOrderStack.addArrangedSubview(tokenOrderPopUp5)
 
         templateOptionsStack.orientation = .vertical
         templateOptionsStack.alignment = .leading
@@ -446,12 +453,6 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         }
 
         configureTokenOrderPopups()
-
-        templateSeparatorPopUp.removeAllItems()
-        for separator in templateSeparatorOptions {
-            templateSeparatorPopUp.addItem(withTitle: separator.replacingOccurrences(of: " ", with: "·"))
-            templateSeparatorPopUp.lastItem?.representedObject = separator
-        }
 
         restoreFolderStructurePreferences()
         updateFormatDependentControls()
@@ -634,12 +635,8 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         saveFolderStructurePreferences()
     }
 
-    @objc private func templateSeparatorChanged() {
-        saveFolderStructurePreferences()
-    }
-
     private func configureTokenOrderPopups() {
-        let popups = [tokenOrderPopUp1, tokenOrderPopUp2, tokenOrderPopUp3]
+        let popups = [tokenOrderPopUp1, tokenOrderPopUp2, tokenOrderPopUp3, tokenOrderPopUp4, tokenOrderPopUp5]
         for popup in popups {
             popup.removeAllItems()
             for token in FolderToken.allCases {
@@ -656,11 +653,8 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         let applyMode = TemplateApplyMode(rawValue: defaults.string(forKey: defaultsTemplateApplyModeKey) ?? "") ?? .applyAll
         select(applyModePopUp, rawValue: applyMode.rawValue)
 
-        let preset = TemplatePreset(rawValue: defaults.string(forKey: defaultsTemplatePresetKey) ?? "") ?? .artistYearAlbum
+        let preset = TemplatePreset(rawValue: defaults.string(forKey: defaultsTemplatePresetKey) ?? "") ?? .yearArtistAlbum
         select(templatePresetPopUp, rawValue: preset.rawValue)
-
-        let separator = defaults.string(forKey: defaultsTemplateSeparatorKey) ?? " - "
-        select(templateSeparatorPopUp, rawValue: separator)
 
         let storedOrder = defaults.stringArray(forKey: defaultsTokenOrderKey) ?? preset.defaultTokenOrder.map(\.rawValue)
         let parsed = storedOrder.compactMap(FolderToken.init(rawValue:))
@@ -675,7 +669,6 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         defaults.set(selectedTemplatePreset().rawValue, forKey: defaultsTemplatePresetKey)
         defaults.set(selectedTemplateApplyMode().rawValue, forKey: defaultsTemplateApplyModeKey)
         defaults.set(selectedCustomTokenOrder().map(\.rawValue), forKey: defaultsTokenOrderKey)
-        defaults.set(selectedTemplateSeparator(), forKey: defaultsTemplateSeparatorKey)
     }
 
     private func updateTemplateOptionsVisibility() {
@@ -696,14 +689,14 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
 
     private func applyTokenOrder(_ order: [FolderToken]) {
         let normalized = normalizeTokenOrder(order)
-        let popups = [tokenOrderPopUp1, tokenOrderPopUp2, tokenOrderPopUp3]
+        let popups = [tokenOrderPopUp1, tokenOrderPopUp2, tokenOrderPopUp3, tokenOrderPopUp4, tokenOrderPopUp5]
         for (index, token) in normalized.enumerated() where index < popups.count {
             select(popups[index], rawValue: token.rawValue)
         }
     }
 
     private func selectedCustomTokenOrder() -> [FolderToken] {
-        let rawValues = [tokenOrderPopUp1, tokenOrderPopUp2, tokenOrderPopUp3].compactMap {
+        let rawValues = [tokenOrderPopUp1, tokenOrderPopUp2, tokenOrderPopUp3, tokenOrderPopUp4, tokenOrderPopUp5].compactMap {
             $0.selectedItem?.representedObject as? String
         }
         return rawValues.compactMap(FolderToken.init(rawValue:))
@@ -887,7 +880,7 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
            let preset = TemplatePreset(rawValue: raw) {
             return preset
         }
-        return .artistYearAlbum
+        return .yearArtistAlbum
     }
 
     private func selectedTemplateApplyMode() -> TemplateApplyMode {
@@ -898,26 +891,21 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         return .applyAll
     }
 
-    private func selectedTemplateSeparator() -> String {
-        (templateSeparatorPopUp.selectedItem?.representedObject as? String) ?? " - "
-    }
-
     private func selectedTemplateConfig() -> TemplateConfig {
         let preset = selectedTemplatePreset()
         let tokenOrder = preset == .custom ? normalizeTokenOrder(selectedCustomTokenOrder()) : preset.defaultTokenOrder
         return TemplateConfig(
             preset: preset,
-            tokenOrder: tokenOrder,
-            separator: selectedTemplateSeparator()
+            tokenOrder: tokenOrder
         )
     }
 
     private func albumGroupKey(for loadedTrack: LoadedTrack) -> AlbumGroupKey {
-        let artist = sanitizePathComponent(loadedTrack.metadata.artist ?? loadedTrack.track.artist, fallback: unknownArtist)
-        let album = sanitizePathComponent(loadedTrack.metadata.album ?? loadedTrack.track.album, fallback: unknownAlbum)
-        let yearValue = loadedTrack.metadata.year.map(String.init) ?? ""
-        let year = sanitizePathComponent(yearValue, fallback: unknownYear)
-        return AlbumGroupKey(artist: artist, album: album, year: year)
+        AlbumGroupKey(
+            artistBucket: resolvedArtistComponent(for: loadedTrack),
+            album: resolvedAlbumComponent(for: loadedTrack),
+            year: resolvedYearComponent(for: loadedTrack)
+        )
     }
 
     private func reviewAlbumFoldersPreflight(
@@ -933,9 +921,10 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         }
 
         let sortedKeys = grouped.keys.sorted {
-            if $0.artist != $1.artist { return $0.artist < $1.artist }
+            if $0.year != $1.year { return $0.year < $1.year }
+            if $0.artistBucket != $1.artistBucket { return $0.artistBucket < $1.artistBucket }
             if $0.album != $1.album { return $0.album < $1.album }
-            return $0.year < $1.year
+            return false
         }
 
         var reviewed: [AlbumGroupKey: String] = [:]
@@ -945,7 +934,7 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
 
             let alert = NSAlert()
             alert.messageText = "Album Folder \(index + 1) of \(sortedKeys.count)"
-            alert.informativeText = "\(key.artist) • \(key.album) • \(key.year)\nEdit destination subfolder:"
+            alert.informativeText = "\(key.year) • \(key.artistBucket) • \(key.album)\nEdit destination subfolder:"
             alert.addButton(withTitle: "Continue")
             alert.addButton(withTitle: "Cancel")
 
@@ -969,46 +958,87 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         loadedTrack: LoadedTrack,
         templateConfig: TemplateConfig
     ) -> String {
-        let values: [FolderToken: String] = [
-            .year: sanitizePathComponent(loadedTrack.metadata.year.map(String.init) ?? "", fallback: unknownYear),
-            .artist: sanitizePathComponent(loadedTrack.metadata.artist ?? loadedTrack.track.artist, fallback: unknownArtist),
-            .album: sanitizePathComponent(loadedTrack.metadata.album ?? loadedTrack.track.album, fallback: unknownAlbum)
-        ]
-
+        let tokenOrder: [FolderToken]
         switch templateConfig.preset {
         case .artistYearAlbum:
-            return sanitizeRelativeSubpath(
-                "\(values[.artist] ?? unknownArtist)/\(values[.year] ?? unknownYear)\(templateConfig.separator)\(values[.album] ?? unknownAlbum)",
-                fallback: "\(unknownArtist)/\(unknownYear)\(templateConfig.separator)\(unknownAlbum)"
-            )
+            tokenOrder = [.artist, .year, .album]
         case .yearArtistAlbum:
-            return sanitizeRelativeSubpath(
-                "\(values[.year] ?? unknownYear)/\(values[.artist] ?? unknownArtist)/\(values[.album] ?? unknownAlbum)",
-                fallback: "\(unknownYear)/\(unknownArtist)/\(unknownAlbum)"
-            )
+            tokenOrder = [.year, .artist, .album]
         case .artistAlbumYear:
-            return sanitizeRelativeSubpath(
-                "\(values[.artist] ?? unknownArtist)/\(values[.album] ?? unknownAlbum) (\(values[.year] ?? unknownYear))",
-                fallback: "\(unknownArtist)/\(unknownAlbum) (\(unknownYear))"
-            )
+            tokenOrder = [.artist, .album, .year]
         case .custom:
-            let components = templateConfig.tokenOrder.map { token in
-                values[token] ?? fallbackValue(for: token)
-            }
-            let rawPath = components.joined(separator: "/")
-            return sanitizeRelativeSubpath(rawPath, fallback: "\(unknownArtist)/\(unknownAlbum)/\(unknownYear)")
+            tokenOrder = templateConfig.tokenOrder
+        }
+
+        let components = tokenOrder.compactMap { tokenValue(for: $0, loadedTrack: loadedTrack) }
+        let fallbackPath = [
+            resolvedYearComponent(for: loadedTrack),
+            resolvedArtistComponent(for: loadedTrack),
+            resolvedAlbumComponent(for: loadedTrack)
+        ].joined(separator: "/")
+        let rawPath = components.joined(separator: "/")
+
+        return sanitizeRelativeSubpath(rawPath, fallback: fallbackPath)
+    }
+
+    private func tokenValue(for token: FolderToken, loadedTrack: LoadedTrack) -> String? {
+        switch token {
+        case .year:
+            return resolvedYearComponent(for: loadedTrack)
+        case .artist:
+            return resolvedArtistComponent(for: loadedTrack)
+        case .albumArtist:
+            return resolvedAlbumArtistComponent(for: loadedTrack)
+        case .album:
+            return resolvedAlbumComponent(for: loadedTrack)
+        case .compilation:
+            return isCompilationTrack(loadedTrack) ? "Compilation" : nil
         }
     }
 
-    private func fallbackValue(for token: FolderToken) -> String {
-        switch token {
-        case .year:
-            return unknownYear
-        case .artist:
-            return unknownArtist
-        case .album:
-            return unknownAlbum
+    private func resolvedYearComponent(for loadedTrack: LoadedTrack) -> String {
+        let value = loadedTrack.metadata.year.map(String.init) ?? ""
+        return sanitizePathComponent(value, fallback: unknownYear)
+    }
+
+    private func resolvedArtistComponent(for loadedTrack: LoadedTrack) -> String {
+        let artist = normalizedMetadataValue(loadedTrack.metadata.artist) ?? normalizedMetadataValue(loadedTrack.track.artist)
+        let albumArtist = normalizedMetadataValue(loadedTrack.metadata.albumArtist)
+
+        if isCompilationTrack(loadedTrack), let albumArtist {
+            return sanitizePathComponent(albumArtist, fallback: unknownArtist)
         }
+
+        let resolved = artist ?? albumArtist ?? unknownArtist
+        return sanitizePathComponent(resolved, fallback: unknownArtist)
+    }
+
+    private func resolvedAlbumArtistComponent(for loadedTrack: LoadedTrack) -> String {
+        let value = normalizedMetadataValue(loadedTrack.metadata.albumArtist)
+            ?? normalizedMetadataValue(loadedTrack.metadata.artist)
+            ?? normalizedMetadataValue(loadedTrack.track.artist)
+            ?? unknownArtist
+        return sanitizePathComponent(value, fallback: unknownArtist)
+    }
+
+    private func resolvedAlbumComponent(for loadedTrack: LoadedTrack) -> String {
+        let value = normalizedMetadataValue(loadedTrack.metadata.album)
+            ?? normalizedMetadataValue(loadedTrack.track.album)
+            ?? unknownAlbum
+        return sanitizePathComponent(value, fallback: unknownAlbum)
+    }
+
+    private func isCompilationTrack(_ loadedTrack: LoadedTrack) -> Bool {
+        loadedTrack.metadata.compilation == true
+    }
+
+    private func normalizedMetadataValue(_ value: String?) -> String? {
+        guard let value else {
+            return nil
+        }
+
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     private func sanitizePathComponent(_ rawValue: String, fallback: String) -> String {

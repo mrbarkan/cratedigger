@@ -348,6 +348,8 @@ public final class ConversionService {
 
         add("title", metadata.title)
         add("artist", metadata.artist)
+        add("album_artist", metadata.albumArtist)
+        add("albumartist", metadata.albumArtist)
         add("album", metadata.album)
 
         if let trackNumber = metadata.trackNumber {
@@ -364,6 +366,10 @@ public final class ConversionService {
 
         add("genre", metadata.genre)
         add("comment", metadata.comment)
+
+        if metadata.compilation == true {
+            add("compilation", "1")
+        }
     }
 
     private func ensureOutputDirectoryExists(for outputURL: URL) throws {

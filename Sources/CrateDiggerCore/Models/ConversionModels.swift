@@ -167,7 +167,9 @@ public struct ConversionPreset: Identifiable, Hashable, Sendable {
 public struct ConversionMetadata: Hashable, Sendable {
     public var title: String?
     public var artist: String?
+    public var albumArtist: String?
     public var album: String?
+    public var compilation: Bool?
     public var trackNumber: Int?
     public var discNumber: Int?
     public var year: Int?
@@ -178,7 +180,9 @@ public struct ConversionMetadata: Hashable, Sendable {
     public init(
         title: String? = nil,
         artist: String? = nil,
+        albumArtist: String? = nil,
         album: String? = nil,
+        compilation: Bool? = nil,
         trackNumber: Int? = nil,
         discNumber: Int? = nil,
         year: Int? = nil,
@@ -188,7 +192,9 @@ public struct ConversionMetadata: Hashable, Sendable {
     ) {
         self.title = title
         self.artist = artist
+        self.albumArtist = albumArtist
         self.album = album
+        self.compilation = compilation
         self.trackNumber = trackNumber
         self.discNumber = discNumber
         self.year = year

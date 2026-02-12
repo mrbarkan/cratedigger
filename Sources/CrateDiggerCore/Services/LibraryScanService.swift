@@ -56,30 +56,65 @@ public final class LibraryScanService {
     private func loadTrack(at fileURL: URL) async -> LoadedTrack? {
         let asset = AVURLAsset(url: fileURL)
         let commonMetadata = (try? await asset.load(.commonMetadata)) ?? []
+        let extendedMetadata = await loadExtendedMetadata(from: asset)
+        let allMetadata = commonMetadata + extendedMetadata
 
-        let title = await stringValue(forCommonKey: "title", in: commonMetadata) ?? fileURL.deletingPathExtension().lastPathComponent
-        let artist = await stringValue(forCommonKey: "artist", in: commonMetadata) ?? ""
-        let album = await stringValue(forCommonKey: "albumName", in: commonMetadata) ?? ""
-        let genreFromIdentifier = await stringValue(forIdentifierContains: "genre", from: asset)
-        let genreFromCommon = await stringValue(forCommonKey: "type", in: commonMetadata)
-        let genre = genreFromIdentifier ?? genreFromCommon
+        let title = coalesce(
+            await stringValue(forCommonKeys: ["title"], in: commonMetadata),
+            await stringValue(forIdentifierContains: ["title", "tit2"], in: allMetadata)
+        ) ?? fileURL.deletingPathExtension().lastPathComponent
+        let artist = coalesce(
+            await stringValue(forCommonKeys: ["artist"], in: commonMetadata),
+            await stringValue(
+                forIdentifierContains: ["artist", "tpe1"],
+                excluding: ["albumartist", "album_artist", "album artist", "tpe2", "aart"],
+                in: allMetadata
+            )
+        ) ?? ""
+        let album = coalesce(
+            await stringValue(forCommonKeys: ["albumName"], in: commonMetadata),
+            await stringValue(
+                forIdentifierContains: ["album", "talb"],
+                excluding: ["albumartist", "album_artist", "album artist", "tpe2", "aart"],
+                in: allMetadata
+            )
+        ) ?? ""
+        let albumArtist = coalesce(
+            await stringValue(forIdentifierContains: ["album_artist", "albumartist", "aart", "tpe2"], in: allMetadata),
+            await stringValue(forIdentifierContains: ["album artist"], in: allMetadata)
+        )
+        let genre = coalesce(
+            await stringValue(forCommonKeys: ["genre", "type"], in: commonMetadata),
+            await stringValue(forIdentifierContains: ["genre", "tcon"], in: allMetadata)
+        )
+        let year = coalesce(
+            await yearValue(forIdentifierContains: ["year", "date", "tdrc", "day"], in: allMetadata),
+            await yearValue(forCommonKeys: ["creationDate"], in: commonMetadata)
+        )
+        let trackNumber = await intValue(forIdentifierContains: ["tracknumber", "track_number", "trkn"], in: allMetadata)
+        let discNumber = await intValue(forIdentifierContains: ["discnumber", "disc_number", "disk", "disc"], in: allMetadata)
+        let comment = coalesce(
+            await stringValue(forIdentifierContains: ["comment", "comm"], in: allMetadata),
+            await stringValue(forCommonKeys: ["description"], in: commonMetadata)
+        )
+        let compilation = await boolValue(forIdentifierContains: ["compilation", "cpil", "tcmp"], in: allMetadata)
 
         let durationSeconds = await duration(from: asset)
         let artwork = await artworkService.resolveArtwork(trackURL: fileURL)
 
-        var metadata = ConversionMetadata(
+        let metadata = ConversionMetadata(
             title: title,
             artist: artist,
+            albumArtist: albumArtist,
             album: album,
-            year: await intValue(forIdentifierContains: "year", from: asset),
+            compilation: compilation,
+            trackNumber: trackNumber,
+            discNumber: discNumber,
+            year: year,
             genre: genre,
-            comment: await stringValue(forIdentifierContains: "comment", from: asset),
+            comment: comment,
             artwork: artwork
         )
-
-        if metadata.trackNumber == nil {
-            metadata.trackNumber = await intValue(forIdentifierContains: "trackNumber", from: asset)
-        }
 
         let track = AudioTrack(
             fileURL: fileURL,
@@ -95,43 +130,181 @@ public final class LibraryScanService {
         return LoadedTrack(track: track, metadata: metadata)
     }
 
-    private func stringValue(forCommonKey key: String, in metadataItems: [AVMetadataItem]) async -> String? {
-        for item in metadataItems where item.commonKey?.rawValue == key {
-            if let value = try? await item.load(.stringValue),
-               !value.isEmpty {
+    private func loadExtendedMetadata(from asset: AVAsset) async -> [AVMetadataItem] {
+        var metadataItems: [AVMetadataItem] = []
+        let metadataFormats = (try? await asset.load(.availableMetadataFormats)) ?? []
+
+        for format in metadataFormats {
+            guard let loadedMetadata = try? await asset.loadMetadata(for: format) else {
+                continue
+            }
+            metadataItems.append(contentsOf: loadedMetadata)
+        }
+
+        return metadataItems
+    }
+
+    private func stringValue(forCommonKeys keys: [String], in metadataItems: [AVMetadataItem]) async -> String? {
+        let normalizedKeys = Set(keys.map { $0.lowercased() })
+        for item in metadataItems {
+            guard let commonKey = item.commonKey?.rawValue.lowercased(),
+                  normalizedKeys.contains(commonKey),
+                  let value = await metadataStringValue(for: item),
+                  !value.isEmpty
+            else {
+                continue
+            }
+            return value
+        }
+
+        return nil
+    }
+
+    private func stringValue(
+        forIdentifierContains keys: [String],
+        excluding excludedKeys: [String] = [],
+        in metadataItems: [AVMetadataItem]
+    ) async -> String? {
+        let normalizedKeys = keys.map { $0.lowercased() }
+        let normalizedExcludedKeys = excludedKeys.map { $0.lowercased() }
+        for item in metadataItems {
+            guard let identifier = item.identifier?.rawValue.lowercased(),
+                  normalizedKeys.contains(where: { identifier.contains($0) }),
+                  !normalizedExcludedKeys.contains(where: { identifier.contains($0) }),
+                  let value = await metadataStringValue(for: item),
+                  !value.isEmpty
+            else {
+                continue
+            }
+            return value
+        }
+
+        return nil
+    }
+
+    private func metadataStringValue(for item: AVMetadataItem) async -> String? {
+        if let value = try? await item.load(.stringValue) {
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                return trimmed
+            }
+        }
+
+        do {
+            let loadedValue = try await item.load(.value)
+            switch loadedValue {
+            case let string as String:
+                let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmed.isEmpty ? nil : trimmed
+            case let number as NSNumber:
+                return number.stringValue
+            case let data as Data:
+                if let decoded = String(data: data, encoding: .utf8)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines),
+                   !decoded.isEmpty {
+                    return decoded
+                }
+            default:
+                return nil
+            }
+
+            return nil
+        } catch {
+            return nil
+        }
+    }
+
+    private func intValue(forIdentifierContains keys: [String], in metadataItems: [AVMetadataItem]) async -> Int? {
+        guard let value = await stringValue(forIdentifierContains: keys, in: metadataItems) else {
+            return nil
+        }
+
+        return intValue(from: value)
+    }
+
+    private func intValue(forCommonKeys keys: [String], in metadataItems: [AVMetadataItem]) async -> Int? {
+        guard let value = await stringValue(forCommonKeys: keys, in: metadataItems) else {
+            return nil
+        }
+
+        return intValue(from: value)
+    }
+
+    private func yearValue(forIdentifierContains keys: [String], in metadataItems: [AVMetadataItem]) async -> Int? {
+        guard let value = await stringValue(forIdentifierContains: keys, in: metadataItems) else {
+            return nil
+        }
+
+        return yearValue(from: value)
+    }
+
+    private func yearValue(forCommonKeys keys: [String], in metadataItems: [AVMetadataItem]) async -> Int? {
+        guard let value = await stringValue(forCommonKeys: keys, in: metadataItems) else {
+            return nil
+        }
+
+        return yearValue(from: value)
+    }
+
+    private func intValue(from rawValue: String) -> Int? {
+        let firstNumericRun = rawValue.split(whereSeparator: { !$0.isNumber }).first
+        return firstNumericRun.flatMap { Int($0) }
+    }
+
+    private func yearValue(from rawValue: String) -> Int? {
+        for numericRun in rawValue.split(whereSeparator: { !$0.isNumber }) {
+            guard numericRun.count == 4, let year = Int(numericRun), (1000...2999).contains(year) else {
+                continue
+            }
+            return year
+        }
+
+        if let numeric = intValue(from: rawValue), (1000...2999).contains(numeric) {
+            return numeric
+        }
+        return nil
+    }
+
+    private func boolValue(forIdentifierContains keys: [String], in metadataItems: [AVMetadataItem]) async -> Bool? {
+        guard let value = await stringValue(forIdentifierContains: keys, in: metadataItems)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased(),
+              !value.isEmpty
+        else {
+            return nil
+        }
+
+        switch value {
+        case "1", "true", "yes", "y":
+            return true
+        case "0", "false", "no", "n":
+            return false
+        default:
+            if let numeric = Int(value) {
+                return numeric != 0
+            }
+            return nil
+        }
+    }
+
+    private func coalesce(_ values: String?...) -> String? {
+        for value in values {
+            guard let value else { continue }
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                return trimmed
+            }
+        }
+        return nil
+    }
+
+    private func coalesce(_ values: Int?...) -> Int? {
+        for value in values {
+            if let value {
                 return value
             }
         }
         return nil
-    }
-
-    private func stringValue(forIdentifierContains key: String, from asset: AVAsset) async -> String? {
-        let lowercaseKey = key.lowercased()
-        let metadataFormats = (try? await asset.load(.availableMetadataFormats)) ?? []
-        for format in metadataFormats {
-            guard let metadataItems = try? await asset.loadMetadata(for: format) else {
-                continue
-            }
-
-            for item in metadataItems {
-                if let identifier = item.identifier?.rawValue.lowercased(),
-                   identifier.contains(lowercaseKey),
-                   let value = try? await item.load(.stringValue),
-                   !value.isEmpty {
-                    return value
-                }
-            }
-        }
-        return nil
-    }
-
-    private func intValue(forIdentifierContains key: String, from asset: AVAsset) async -> Int? {
-        guard let value = await stringValue(forIdentifierContains: key, from: asset) else {
-            return nil
-        }
-
-        let filtered = value.filter { $0.isNumber }
-        return Int(filtered)
     }
 
     private func duration(from asset: AVAsset) async -> Double {

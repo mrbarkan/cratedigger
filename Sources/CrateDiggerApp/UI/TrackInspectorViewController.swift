@@ -10,10 +10,15 @@ final class TrackInspectorViewController: NSViewController {
 
     private let zoomControl = NSSegmentedControl(labels: ["Fit", "1x", "2x"], trackingMode: .selectOne, target: nil, action: nil)
     private let scrollView = NSScrollView()
+    private let artworkContainer = NSView()
     private let imageView = NSImageView()
     private let placeholderField = NSTextField(labelWithString: "No Artwork")
 
     private var currentImage: NSImage?
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
 
     override func loadView() {
         view = NSView()
@@ -57,8 +62,10 @@ final class TrackInspectorViewController: NSViewController {
 
     override func viewDidLayout() {
         super.viewDidLayout()
-        if zoomControl.selectedSegment == 0 {
+        if currentImage != nil {
             applyZoom()
+        } else {
+            updateEmptyArtworkLayout()
         }
     }
 
@@ -95,7 +102,7 @@ final class TrackInspectorViewController: NSViewController {
             imageView.image = nil
             placeholderField.isHidden = false
             zoomControl.isEnabled = false
-            imageView.frame = NSRect(origin: .zero, size: scrollView.contentView.bounds.size)
+            updateEmptyArtworkLayout()
         }
     }
 
@@ -124,10 +131,15 @@ final class TrackInspectorViewController: NSViewController {
         scrollView.scrollerStyle = .legacy
         scrollView.wantsLayer = true
         scrollView.layer?.backgroundColor = ClassicTheme.pinstripeBackground.cgColor
+        scrollView.contentView.postsBoundsChangedNotifications = true
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(contentBoundsChanged),
+            name: NSView.boundsDidChangeNotification,
+            object: scrollView.contentView
+        )
 
-        imageView.imageScaling = .scaleNone
-
-        let artworkContainer = NSView()
+        imageView.imageScaling = .scaleProportionallyUpOrDown
         artworkContainer.translatesAutoresizingMaskIntoConstraints = false
 
         imageView.translatesAutoresizingMaskIntoConstraints = false
@@ -158,6 +170,15 @@ final class TrackInspectorViewController: NSViewController {
         imageView.image = nil
         placeholderField.isHidden = false
         zoomControl.isEnabled = false
+        updateEmptyArtworkLayout()
+    }
+
+    @objc private func contentBoundsChanged() {
+        if currentImage != nil {
+            applyZoom()
+        } else {
+            updateEmptyArtworkLayout()
+        }
     }
 
     @objc private func zoomChanged() {
@@ -199,6 +220,16 @@ final class TrackInspectorViewController: NSViewController {
         let x = max((container.frame.width - drawnSize.width) / 2, 0)
         let y = max((container.frame.height - drawnSize.height) / 2, 0)
         imageView.frame.origin = NSPoint(x: x, y: y)
+    }
+
+    private func updateEmptyArtworkLayout() {
+        let viewport = scrollView.contentView.bounds.size
+        let containerSize = CGSize(
+            width: max(viewport.width, 360),
+            height: max(viewport.height, 360)
+        )
+        artworkContainer.frame = NSRect(origin: .zero, size: containerSize)
+        imageView.frame = NSRect(origin: .zero, size: .zero)
     }
 
     private func formatDuration(_ seconds: Double) -> String {
