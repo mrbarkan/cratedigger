@@ -128,14 +128,40 @@ public final class ConversionService {
     }
 
     public func runQueuedJobs(maxConcurrentWorkers: Int? = nil) -> [ConversionExecutionResult] {
+        runQueuedJobs(maxConcurrentWorkers: maxConcurrentWorkers, onJobFinished: nil)
+    }
+
+    public func runQueuedJobs(
+        maxConcurrentWorkers: Int? = nil,
+        onJobFinished: ((ConversionExecutionResult, Int, Int) -> Void)?
+    ) -> [ConversionExecutionResult] {
         let workers = max(1, min(maxConcurrentWorkers ?? maxParallelWorkers, maxParallelWorkers))
         guard !queue.isEmpty else {
             return []
         }
 
         let items = queue
+        let totalCount = items.count
         if workers == 1 || items.count == 1 {
-            return items.map { runSingleConversion($0) }
+            var results: [ConversionExecutionResult] = []
+            results.reserveCapacity(items.count)
+
+            for (index, queued) in items.enumerated() {
+                let result = runSingleConversion(queued)
+                results.append(result)
+                onJobFinished?(result, index + 1, totalCount)
+            }
+
+            let statuses = Dictionary(uniqueKeysWithValues: results.map { ($0.queuedID, $0.status) })
+            queue = queue.map { item in
+                var updated = item
+                if let status = statuses[item.id] {
+                    updated.status = status
+                }
+                return updated
+            }
+
+            return results
         }
 
         let operationQueue = OperationQueue()
@@ -143,13 +169,20 @@ public final class ConversionService {
 
         let lock = NSLock()
         var results: [ConversionExecutionResult] = []
+        var processedCount = 0
 
         for queued in items {
             operationQueue.addOperation {
                 let result = self.runSingleConversion(queued)
+
+                var callbackCount = 0
                 lock.lock()
                 results.append(result)
+                processedCount += 1
+                callbackCount = processedCount
                 lock.unlock()
+
+                onJobFinished?(result, callbackCount, totalCount)
             }
         }
 

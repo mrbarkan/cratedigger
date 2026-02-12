@@ -131,6 +131,10 @@ final class TrackInspectorViewController: NSViewController {
         scrollView.scrollerStyle = .legacy
         scrollView.wantsLayer = true
         scrollView.layer?.backgroundColor = ClassicTheme.pinstripeBackground.cgColor
+        scrollView.layer?.shadowColor = NSColor.black.withAlphaComponent(0.12).cgColor
+        scrollView.layer?.shadowOpacity = 0.12
+        scrollView.layer?.shadowRadius = 4
+        scrollView.layer?.shadowOffset = CGSize(width: 0, height: -1)
         scrollView.contentView.postsBoundsChangedNotifications = true
         NotificationCenter.default.addObserver(
             self,

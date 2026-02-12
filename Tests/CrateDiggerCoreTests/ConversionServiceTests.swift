@@ -213,6 +213,41 @@ final class ConversionServiceTests: XCTestCase {
         XCTAssertEqual(queued.first?.preset.deviceProfile, .generic)
     }
 
+    func testRunQueuedJobsProgressCallbackReportsCountsSerial() throws {
+        let service = try makeService(artworkPreparer: PassThroughArtworkPreparer())
+        let jobs = makeJobs(count: 3)
+        _ = service.enqueue(jobs, preset: .ipodAAC(bitrate: 192))
+
+        var callbacks: [(processed: Int, total: Int)] = []
+        let results = service.runQueuedJobs(maxConcurrentWorkers: 1) { _, processedCount, totalCount in
+            callbacks.append((processedCount, totalCount))
+        }
+
+        XCTAssertEqual(results.count, 3)
+        XCTAssertEqual(callbacks.count, 3)
+        XCTAssertEqual(callbacks.map(\.processed), [1, 2, 3])
+        XCTAssertEqual(Set(callbacks.map(\.total)), [3])
+    }
+
+    func testRunQueuedJobsProgressCallbackReportsCountsParallel() throws {
+        let service = try makeService(artworkPreparer: PassThroughArtworkPreparer())
+        let jobs = makeJobs(count: 5)
+        _ = service.enqueue(jobs, preset: .ipodAAC(bitrate: 192))
+
+        let callbackLock = NSLock()
+        var callbacks: [(processed: Int, total: Int)] = []
+        let results = service.runQueuedJobs(maxConcurrentWorkers: 3) { _, processedCount, totalCount in
+            callbackLock.lock()
+            callbacks.append((processedCount, totalCount))
+            callbackLock.unlock()
+        }
+
+        XCTAssertEqual(results.count, 5)
+        XCTAssertEqual(callbacks.count, 5)
+        XCTAssertEqual(Set(callbacks.map(\.processed)), Set(1...5))
+        XCTAssertEqual(Set(callbacks.map(\.total)), [5])
+    }
+
     private func makeService(
         artworkPreparer: ArtworkPreparing,
         presets: [ConversionPreset] = ConversionPreset.defaultPresets
@@ -288,6 +323,14 @@ final class ConversionServiceTests: XCTestCase {
         }
 
         return jpeg
+    }
+
+    private func makeJobs(count: Int) -> [ConversionJob] {
+        (0..<count).map { index in
+            let sourceURL = temporaryDirectory.appendingPathComponent("source-\(index).wav")
+            let outputURL = temporaryDirectory.appendingPathComponent("out-\(index).m4a")
+            return ConversionJob(sourceURL: sourceURL, destinationURL: outputURL)
+        }
     }
 }
 

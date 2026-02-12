@@ -16,6 +16,13 @@
     "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/AboutWindowController.swiftdeps",
     "diagnostics": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/AboutWindowController.dia"
   },
+  "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/AquaLCDView.swift": {
+    "dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/AquaLCDView.d",
+    "object": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/AquaLCDView.swift.o",
+    "swiftmodule": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/AquaLCDView~partial.swiftmodule",
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/AquaLCDView.swiftdeps",
+    "diagnostics": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/AquaLCDView.dia"
+  },
   "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/ClassicTheme.swift": {
     "dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/ClassicTheme.d",
     "object": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/ClassicTheme.swift.o",
@@ -36,6 +43,13 @@
     "swiftmodule": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/MainWindowController~partial.swiftmodule",
     "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/MainWindowController.swiftdeps",
     "diagnostics": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/MainWindowController.dia"
+  },
+  "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/RetroConversionStatusView.swift": {
+    "dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/RetroConversionStatusView.d",
+    "object": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/RetroConversionStatusView.swift.o",
+    "swiftmodule": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/RetroConversionStatusView~partial.swiftmodule",
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/RetroConversionStatusView.swiftdeps",
+    "diagnostics": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/RetroConversionStatusView.dia"
   },
   "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/TrackInspectorViewController.swift": {
     "dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/TrackInspectorViewController.d",

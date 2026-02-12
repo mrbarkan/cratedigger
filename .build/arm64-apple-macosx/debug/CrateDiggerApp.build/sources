@@ -1,7 +1,9 @@
 /Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/AppDelegate.swift
 /Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/AboutWindowController.swift
+/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/AquaLCDView.swift
 /Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/ClassicTheme.swift
 /Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/MainViewController.swift
 /Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/MainWindowController.swift
+/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/RetroConversionStatusView.swift
 /Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/TrackInspectorViewController.swift
 /Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/main.swift
