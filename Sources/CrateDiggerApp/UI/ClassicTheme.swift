@@ -12,6 +12,11 @@ enum ClassicTheme {
     static let lcdTop = NSColor(calibratedRed: 1.0, green: 0.98, blue: 0.86, alpha: 1)
     static let lcdMid = NSColor(calibratedRed: 0.98, green: 0.95, blue: 0.78, alpha: 1)
     static let lcdBottom = NSColor(calibratedRed: 0.94, green: 0.9, blue: 0.7, alpha: 1)
+    static let playlistBackgroundOdd = NSColor(calibratedWhite: 0.99, alpha: 1)
+    static let playlistBackgroundEven = NSColor(calibratedWhite: 0.975, alpha: 1)
+    static let playlistGridColor = NSColor(calibratedWhite: 0.82, alpha: 1)
+    static let playlistPrimaryText = NSColor(calibratedWhite: 0.12, alpha: 1)
+    static let playlistSecondaryText = NSColor(calibratedWhite: 0.35, alpha: 1)
 
     private static var cachedPinstripe: NSColor?
     private static var cachedMetal: NSColor?
@@ -150,6 +155,15 @@ enum ClassicTheme {
         button.layer?.insertSublayer(gloss, above: base)
         button.layer?.insertSublayer(innerStroke, above: gloss)
         button.layer?.insertSublayer(outerStroke, above: innerStroke)
+    }
+
+    static func applyPrimaryToolbarButtonStyle(to button: NSButton, title: String, minWidth: CGFloat) {
+        button.title = title
+        applyAquaAccent(to: button)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.font = NSFont.systemFont(ofSize: 13, weight: .bold)
+        button.heightAnchor.constraint(equalToConstant: 28).isActive = true
+        button.widthAnchor.constraint(greaterThanOrEqualToConstant: minWidth).isActive = true
     }
 
     static func updateButtonLayers(_ button: NSButton) {

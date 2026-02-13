@@ -171,10 +171,13 @@ public struct ConversionMetadata: Hashable, Sendable {
     public var album: String?
     public var compilation: Bool?
     public var trackNumber: Int?
+    public var trackTotal: Int?
     public var discNumber: Int?
+    public var discTotal: Int?
     public var year: Int?
     public var genre: String?
     public var comment: String?
+    public var customTagPairs: [MetadataTagPair]
     public var artwork: ArtworkAsset?
 
     public init(
@@ -184,10 +187,13 @@ public struct ConversionMetadata: Hashable, Sendable {
         album: String? = nil,
         compilation: Bool? = nil,
         trackNumber: Int? = nil,
+        trackTotal: Int? = nil,
         discNumber: Int? = nil,
+        discTotal: Int? = nil,
         year: Int? = nil,
         genre: String? = nil,
         comment: String? = nil,
+        customTagPairs: [MetadataTagPair] = [],
         artwork: ArtworkAsset? = nil
     ) {
         self.title = title
@@ -196,11 +202,24 @@ public struct ConversionMetadata: Hashable, Sendable {
         self.album = album
         self.compilation = compilation
         self.trackNumber = trackNumber
+        self.trackTotal = trackTotal
         self.discNumber = discNumber
+        self.discTotal = discTotal
         self.year = year
         self.genre = genre
         self.comment = comment
+        self.customTagPairs = customTagPairs
         self.artwork = artwork
+    }
+}
+
+public struct MetadataTagPair: Hashable, Codable, Sendable {
+    public let key: String
+    public let value: String
+
+    public init(key: String, value: String) {
+        self.key = key
+        self.value = value
     }
 }
 

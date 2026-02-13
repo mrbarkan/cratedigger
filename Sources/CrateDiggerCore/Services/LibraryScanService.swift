@@ -14,15 +14,19 @@ public struct LoadedTrack: Sendable {
 public final class LibraryScanService {
     private let fileManager: FileManager
     private let artworkService: ArtworkService
+    private let metadataProbe: MetadataProbing?
     private let supportedExtensions: Set<String>
 
     public init(
         fileManager: FileManager = .default,
         artworkService: ArtworkService = ArtworkService(),
+        metadataProbe: MetadataProbing? = nil,
         supportedExtensions: Set<String> = ["mp3", "aac", "m4a", "flac", "wav", "aiff", "ogg", "opus", "caf"]
     ) {
+        let resolvedProbe = metadataProbe ?? (try? MetadataProbeService(fileManager: fileManager))
         self.fileManager = fileManager
         self.artworkService = artworkService
+        self.metadataProbe = resolvedProbe
         self.supportedExtensions = supportedExtensions
     }
 
@@ -58,12 +62,13 @@ public final class LibraryScanService {
         let commonMetadata = (try? await asset.load(.commonMetadata)) ?? []
         let extendedMetadata = await loadExtendedMetadata(from: asset)
         let allMetadata = commonMetadata + extendedMetadata
+        let probedMetadata = probeMetadata(for: fileURL)
 
-        let title = coalesce(
+        let avTitle = coalesce(
             await stringValue(forCommonKeys: ["title"], in: commonMetadata),
             await stringValue(forIdentifierContains: ["title", "tit2"], in: allMetadata)
         ) ?? fileURL.deletingPathExtension().lastPathComponent
-        let artist = coalesce(
+        let avArtist = coalesce(
             await stringValue(forCommonKeys: ["artist"], in: commonMetadata),
             await stringValue(
                 forIdentifierContains: ["artist", "tpe1"],
@@ -71,7 +76,7 @@ public final class LibraryScanService {
                 in: allMetadata
             )
         ) ?? ""
-        let album = coalesce(
+        let avAlbum = coalesce(
             await stringValue(forCommonKeys: ["albumName"], in: commonMetadata),
             await stringValue(
                 forIdentifierContains: ["album", "talb"],
@@ -79,48 +84,84 @@ public final class LibraryScanService {
                 in: allMetadata
             )
         ) ?? ""
-        let albumArtist = coalesce(
+        let avAlbumArtist = coalesce(
             await stringValue(forIdentifierContains: ["album_artist", "albumartist", "aart", "tpe2"], in: allMetadata),
             await stringValue(forIdentifierContains: ["album artist"], in: allMetadata)
         )
-        let genre = coalesce(
+        let avGenre = coalesce(
             await stringValue(forCommonKeys: ["genre", "type"], in: commonMetadata),
             await stringValue(forIdentifierContains: ["genre", "tcon"], in: allMetadata)
         )
-        let year = coalesce(
+        let avYear = coalesce(
             await yearValue(forIdentifierContains: ["year", "date", "tdrc", "day"], in: allMetadata),
             await yearValue(forCommonKeys: ["creationDate"], in: commonMetadata)
         )
-        let trackNumber = await intValue(forIdentifierContains: ["tracknumber", "track_number", "trkn"], in: allMetadata)
-        let discNumber = await intValue(forIdentifierContains: ["discnumber", "disc_number", "disk", "disc"], in: allMetadata)
-        let comment = coalesce(
+
+        let parsedTrack = parseIndexAndTotal(from: await stringValue(forIdentifierContains: ["tracknumber", "track_number", "track", "trkn"], in: allMetadata))
+        let avTrackNumber = parsedTrack.number
+        let avTrackTotal = coalesce(
+            parsedTrack.total,
+            await intValue(forIdentifierContains: ["tracktotal", "totaltracks"], in: allMetadata)
+        )
+
+        let parsedDisc = parseIndexAndTotal(from: await stringValue(forIdentifierContains: ["discnumber", "disc_number", "disk", "disc", "tpos"], in: allMetadata))
+        let avDiscNumber = parsedDisc.number
+        let avDiscTotal = coalesce(
+            parsedDisc.total,
+            await intValue(forIdentifierContains: ["disctotal", "totaldiscs"], in: allMetadata)
+        )
+
+        let avComment = coalesce(
             await stringValue(forIdentifierContains: ["comment", "comm"], in: allMetadata),
             await stringValue(forCommonKeys: ["description"], in: commonMetadata)
         )
-        let compilation = await boolValue(forIdentifierContains: ["compilation", "cpil", "tcmp"], in: allMetadata)
+        let avCompilation = await boolValue(forIdentifierContains: ["compilation", "cpil", "tcmp"], in: allMetadata)
 
         let durationSeconds = await duration(from: asset)
         let artwork = await artworkService.resolveArtwork(trackURL: fileURL)
 
-        let metadata = ConversionMetadata(
-            title: title,
-            artist: artist,
-            albumArtist: albumArtist,
-            album: album,
-            compilation: compilation,
-            trackNumber: trackNumber,
-            discNumber: discNumber,
-            year: year,
-            genre: genre,
-            comment: comment,
+        let avMetadata = ConversionMetadata(
+            title: avTitle,
+            artist: avArtist,
+            albumArtist: avAlbumArtist,
+            album: avAlbum,
+            compilation: avCompilation,
+            trackNumber: avTrackNumber,
+            trackTotal: avTrackTotal,
+            discNumber: avDiscNumber,
+            discTotal: avDiscTotal,
+            year: avYear,
+            genre: avGenre,
+            comment: avComment,
             artwork: artwork
         )
 
+        let metadata: ConversionMetadata
+        if fileURL.pathExtension.lowercased() == "flac", let probedMetadata {
+            metadata = MetadataNormalization.normalize(
+                formatTags: probedMetadata.formatTags,
+                fallback: avMetadata,
+                artwork: artwork
+            )
+        } else if let probedMetadata, shouldBackfillCriticalMetadata(avMetadata) {
+            metadata = MetadataNormalization.normalize(
+                formatTags: probedMetadata.formatTags,
+                fallback: avMetadata,
+                artwork: artwork
+            )
+        } else {
+            metadata = avMetadata
+        }
+
+        let trackTitle = normalizedString(metadata.title) ?? fileURL.deletingPathExtension().lastPathComponent
+        let trackArtist = normalizedString(metadata.artist) ?? ""
+        let trackAlbum = normalizedString(metadata.album) ?? ""
+
         let track = AudioTrack(
             fileURL: fileURL,
-            title: title,
-            artist: artist,
-            album: album,
+            title: trackTitle,
+            artist: trackArtist,
+            album: trackAlbum,
             durationSeconds: durationSeconds,
             artworkSource: artwork?.source ?? .none,
             artworkHash: artwork?.hash,
@@ -128,6 +169,13 @@ public final class LibraryScanService {
         )
 
         return LoadedTrack(track: track, metadata: metadata)
+    }
+
+    private func probeMetadata(for fileURL: URL) -> ProbedMetadata? {
+        guard let metadataProbe else {
+            return nil
+        }
+        return try? metadataProbe.probe(url: fileURL)
     }
 
     private func loadExtendedMetadata(from asset: AVAsset) async -> [AVMetadataItem] {
@@ -305,6 +353,40 @@ public final class LibraryScanService {
             }
         }
         return nil
+    }
+
+    private func parseIndexAndTotal(from rawValue: String?) -> (number: Int?, total: Int?) {
+        guard let rawValue else {
+            return (nil, nil)
+        }
+
+        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return (nil, nil)
+        }
+
+        if trimmed.contains("/") {
+            let components = trimmed.split(separator: "/", maxSplits: 1, omittingEmptySubsequences: false)
+            let number = components.first.flatMap { intValue(from: String($0)) }
+            let total = components.count > 1 ? intValue(from: String(components[1])) : nil
+            return (number, total)
+        }
+
+        return (intValue(from: trimmed), nil)
+    }
+
+    private func shouldBackfillCriticalMetadata(_ metadata: ConversionMetadata) -> Bool {
+        normalizedString(metadata.artist) == nil ||
+            normalizedString(metadata.album) == nil ||
+            metadata.year == nil
+    }
+
+    private func normalizedString(_ value: String?) -> String? {
+        guard let value else {
+            return nil
+        }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     private func duration(from asset: AVAsset) async -> Double {

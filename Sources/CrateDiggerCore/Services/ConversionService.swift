@@ -83,13 +83,40 @@ public final class ConversionService {
 
     public let maxParallelWorkers: Int
 
+    private static let canonicalMetadataKeySet: Set<String> = [
+        "title",
+        "artist",
+        "albumartist",
+        "album",
+        "compilation",
+        "tracknumber",
+        "track",
+        "trck",
+        "tracktotal",
+        "totaltracks",
+        "discnumber",
+        "disc",
+        "disk",
+        "tpos",
+        "disctotal",
+        "totaldiscs",
+        "date",
+        "year",
+        "originalyear",
+        "genre",
+        "comment",
+        "description"
+    ]
+
     public init(
         ffmpegExecutableURL: URL? = nil,
         presets: [ConversionPreset] = ConversionPreset.defaultPresets,
         artworkPreparer: ArtworkPreparing = ArtworkService(),
+        metadataProbe: MetadataProbing? = nil,
         commandRunner: CommandRunning = ProcessCommandRunner(),
         fileManager: FileManager = .default
     ) throws {
+        _ = metadataProbe
         self.fileManager = fileManager
         self.artworkPreparer = artworkPreparer
         self.commandRunner = commandRunner
@@ -403,14 +430,13 @@ public final class ConversionService {
     private func applyTagArguments(to arguments: inout [String], preset: ConversionPreset) {
         switch preset.tagMode {
         case .auto:
-            // AAC/ALAC outputs use MP4 containers. Keep freeform metadata keys instead of dropping unknown tags.
-            if preset.outputFormat == .aac || preset.outputFormat == .alac {
-                arguments.append(contentsOf: ["-movflags", "use_metadata_tags"])
-            }
+            // Compatibility-first: leave MP4/M4A muxer defaults so metadata is written using player-friendly atoms.
+            break
         case .id3v23:
             arguments.append(contentsOf: ["-id3v2_version", "3", "-write_id3v1", "1"])
         case .mp4Atoms:
-            arguments.append(contentsOf: ["-movflags", "use_metadata_tags"])
+            // Compatibility-first: do not force mdta tag writing.
+            break
         }
     }
 
@@ -419,21 +445,67 @@ public final class ConversionService {
             return
         }
 
+        var writtenNormalizedKeys: Set<String> = []
+
         func add(_ key: String, _ value: String?) {
             guard let value, !value.isEmpty else {
                 return
             }
             arguments.append(contentsOf: ["-metadata", "\(key)=\(value)"])
+            writtenNormalizedKeys.insert(normalizedMetadataKey(key))
         }
 
-        // Core tags are copied from source via -map_metadata. Only add compatibility-focused fields here
-        // to avoid overwriting richer source tags (for example track totals or custom fields) with partial values.
+        if let trackNumber = metadata.trackNumber {
+            let trackValue: String
+            if let trackTotal = metadata.trackTotal, trackTotal > 0 {
+                trackValue = "\(trackNumber)/\(trackTotal)"
+            } else {
+                trackValue = "\(trackNumber)"
+            }
+            add("track", trackValue)
+        }
+
+        if let discNumber = metadata.discNumber {
+            let discValue: String
+            if let discTotal = metadata.discTotal, discTotal > 0 {
+                discValue = "\(discNumber)/\(discTotal)"
+            } else {
+                discValue = "\(discNumber)"
+            }
+            add("disc", discValue)
+        }
+
         add("album_artist", metadata.albumArtist)
         add("albumartist", metadata.albumArtist)
 
         if metadata.compilation == true {
             add("compilation", "1")
         }
+
+        for pair in metadata.customTagPairs {
+            let trimmedKey = pair.key.trimmingCharacters(in: .whitespacesAndNewlines)
+            let trimmedValue = pair.value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmedKey.isEmpty, !trimmedValue.isEmpty else {
+                continue
+            }
+
+            let normalizedKey = normalizedMetadataKey(trimmedKey)
+            if Self.canonicalMetadataKeySet.contains(normalizedKey) || writtenNormalizedKeys.contains(normalizedKey) {
+                continue
+            }
+
+            add(trimmedKey, trimmedValue)
+        }
+    }
+
+    private func normalizedMetadataKey(_ key: String) -> String {
+        Self.normalizedMetadataKey(key)
+    }
+
+    private static func normalizedMetadataKey(_ key: String) -> String {
+        key
+            .lowercased()
+            .replacingOccurrences(of: "[^a-z0-9]", with: "", options: .regularExpression)
     }
 
     private func ensureOutputDirectoryExists(for outputURL: URL) throws {

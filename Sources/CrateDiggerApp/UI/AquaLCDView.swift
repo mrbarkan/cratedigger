@@ -5,6 +5,9 @@ import CrateDiggerCore
 final class AquaLCDView: NSView {
     private let titleLabel = NSTextField(labelWithString: "")
     private let detailLabel = NSTextField(labelWithString: "")
+    private var currentTrack: LoadedTrack?
+    private var primaryStatusOverride: String?
+    private var secondaryStatusOverride: String?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -20,20 +23,21 @@ final class AquaLCDView: NSView {
         NSSize(width: 420, height: 44)
     }
 
-    func update(with loadedTrack: LoadedTrack?, status: String?) {
-        if let track = loadedTrack?.track {
-            titleLabel.stringValue = track.title
-            let artist = track.artist.isEmpty ? "Unknown Artist" : track.artist
-            let album = track.album.isEmpty ? "Unknown Album" : track.album
-            let duration = formatDuration(track.durationSeconds)
-            detailLabel.stringValue = "\(artist) • \(album) • \(duration)"
-        } else if let status, !status.isEmpty {
-            titleLabel.stringValue = status
-            detailLabel.stringValue = ""
-        } else {
-            titleLabel.stringValue = "No track selected"
-            detailLabel.stringValue = ""
-        }
+    func updateTrack(_ loadedTrack: LoadedTrack?) {
+        currentTrack = loadedTrack
+        render()
+    }
+
+    func setPrimaryStatus(_ text: String?) {
+        let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines)
+        primaryStatusOverride = (trimmed?.isEmpty == false) ? trimmed : nil
+        render()
+    }
+
+    func setSecondaryStatus(_ text: String?) {
+        let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines)
+        secondaryStatusOverride = (trimmed?.isEmpty == false) ? trimmed : nil
+        render()
     }
 
     override func layout() {
@@ -70,6 +74,8 @@ final class AquaLCDView: NSView {
             stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
             stack.centerYAnchor.constraint(equalTo: centerYAnchor)
         ])
+
+        render()
     }
 
     private func buildLayers() {
@@ -112,5 +118,29 @@ final class AquaLCDView: NSView {
         guard seconds > 0 else { return "0:00" }
         let total = Int(seconds.rounded())
         return String(format: "%d:%02d", total / 60, total % 60)
+    }
+
+    private func render() {
+        if let primaryStatusOverride {
+            titleLabel.stringValue = primaryStatusOverride
+        } else if let track = currentTrack?.track {
+            titleLabel.stringValue = track.title
+        } else {
+            titleLabel.stringValue = "No track selected"
+        }
+
+        if let secondaryStatusOverride {
+            detailLabel.stringValue = secondaryStatusOverride
+            return
+        }
+
+        if let track = currentTrack?.track {
+            let artist = track.artist.isEmpty ? "Unknown Artist" : track.artist
+            let album = track.album.isEmpty ? "Unknown Album" : track.album
+            let duration = formatDuration(track.durationSeconds)
+            detailLabel.stringValue = "\(artist) • \(album) • \(duration)"
+        } else {
+            detailLabel.stringValue = ""
+        }
     }
 }

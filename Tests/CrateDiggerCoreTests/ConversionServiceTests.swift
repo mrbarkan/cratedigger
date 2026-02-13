@@ -41,7 +41,7 @@ final class ConversionServiceTests: XCTestCase {
         XCTAssertTrue(argumentPairs(command.arguments).contains(ArgPair(flag: "-ar", value: "44100")))
         XCTAssertTrue(argumentPairs(command.arguments).contains(ArgPair(flag: "-ac", value: "2")))
         XCTAssertTrue(argumentPairs(command.arguments).contains(ArgPair(flag: "-b:a", value: "192k")))
-        XCTAssertTrue(argumentPairs(command.arguments).contains(ArgPair(flag: "-movflags", value: "use_metadata_tags")))
+        XCTAssertFalse(argumentPairs(command.arguments).contains(ArgPair(flag: "-movflags", value: "use_metadata_tags")))
     }
 
     func testCompatReembedPlacesMapMetadataAfterAllInputs() throws {
@@ -226,6 +226,38 @@ final class ConversionServiceTests: XCTestCase {
         XCTAssertTrue(pairs.contains(ArgPair(flag: "-metadata", value: "compilation=1")))
     }
 
+    func testMetadataWritesTrackDiscTotalsAndCustomTags() throws {
+        let service = try makeService(artworkPreparer: PassThroughArtworkPreparer())
+        let sourceURL = temporaryDirectory.appendingPathComponent("source.flac")
+        let outputURL = temporaryDirectory.appendingPathComponent("out.m4a")
+
+        let metadata = ConversionMetadata(
+            albumArtist: "Album Artist",
+            trackNumber: 1,
+            trackTotal: 9,
+            discNumber: 1,
+            discTotal: 2,
+            customTagPairs: [
+                MetadataTagPair(key: "BARCODE", value: "4943674082957"),
+                MetadataTagPair(key: "CATALOG", value: "XLCD335J"),
+                MetadataTagPair(key: "ARTIST", value: "ShouldNotOverrideCanonical")
+            ]
+        )
+
+        let queued = try service.enqueue(
+            [ConversionJob(sourceURL: sourceURL, destinationURL: outputURL, metadata: metadata)],
+            presetID: "ipod_aac_192"
+        ).first!
+        let command = try service.preparedCommand(for: queued)
+        let pairs = argumentPairs(command.arguments)
+
+        XCTAssertTrue(pairs.contains(ArgPair(flag: "-metadata", value: "track=1/9")))
+        XCTAssertTrue(pairs.contains(ArgPair(flag: "-metadata", value: "disc=1/2")))
+        XCTAssertTrue(pairs.contains(ArgPair(flag: "-metadata", value: "BARCODE=4943674082957")))
+        XCTAssertTrue(pairs.contains(ArgPair(flag: "-metadata", value: "CATALOG=XLCD335J")))
+        XCTAssertFalse(pairs.contains(ArgPair(flag: "-metadata", value: "ARTIST=ShouldNotOverrideCanonical")))
+    }
+
     func testMetadataPreservationDoesNotOverrideCoreTagsWithPartialValues() throws {
         let service = try makeService(artworkPreparer: PassThroughArtworkPreparer())
         let sourceURL = temporaryDirectory.appendingPathComponent("source.flac")
@@ -261,7 +293,7 @@ final class ConversionServiceTests: XCTestCase {
         XCTAssertFalse(pairs.contains(ArgPair(flag: "-metadata", value: "comment=Test Comment")))
     }
 
-    func testGenericAACAutoTagModeUsesMP4MetadataTags() throws {
+    func testGenericAACAutoTagModeDoesNotUseMDTAFlag() throws {
         let service = try makeService(artworkPreparer: PassThroughArtworkPreparer())
         let sourceURL = temporaryDirectory.appendingPathComponent("source.wav")
         let outputURL = temporaryDirectory.appendingPathComponent("out.m4a")
@@ -272,7 +304,7 @@ final class ConversionServiceTests: XCTestCase {
         ).first!
         let command = try service.preparedCommand(for: queued)
 
-        XCTAssertTrue(argumentPairs(command.arguments).contains(ArgPair(flag: "-movflags", value: "use_metadata_tags")))
+        XCTAssertFalse(argumentPairs(command.arguments).contains(ArgPair(flag: "-movflags", value: "use_metadata_tags")))
     }
 
     func testEnqueueAllowsDeviceProfileOverride() throws {

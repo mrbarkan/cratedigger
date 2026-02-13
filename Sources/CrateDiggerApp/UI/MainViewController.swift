@@ -1,7 +1,7 @@
 import AppKit
 import CrateDiggerCore
 
-private enum FolderStructureMode: String, CaseIterable {
+enum FolderStructureMode: String, CaseIterable {
     case sourceRelative = "source_relative"
     case flat
     case metadataTemplate = "metadata_template"
@@ -18,7 +18,7 @@ private enum FolderStructureMode: String, CaseIterable {
     }
 }
 
-private enum FolderToken: String, CaseIterable {
+enum FolderToken: String, CaseIterable {
     case disabled
     case year
     case albumArtist = "album_artist"
@@ -45,7 +45,7 @@ private enum FolderToken: String, CaseIterable {
     }
 }
 
-private enum TemplateApplyMode: String, CaseIterable {
+enum TemplateApplyMode: String, CaseIterable {
     case applyAll = "apply_all"
     case reviewPerAlbumPreflight = "review_per_album_preflight"
 
@@ -59,7 +59,7 @@ private enum TemplateApplyMode: String, CaseIterable {
     }
 }
 
-private enum TemplatePreset: String, CaseIterable {
+enum TemplatePreset: String, CaseIterable {
     case artistYearAlbum
     case yearArtistAlbum
     case artistAlbumYear
@@ -136,12 +136,15 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
     private let applyModePopUp = NSPopUpButton(frame: .zero, pullsDown: false)
     private let templateOptionsStack = NSStackView()
     private let customOrderStack = NSStackView()
-    private let conversionStatusView = RetroConversionStatusView()
     private let statusField = NSTextField(labelWithString: "Load a folder to begin")
-    private let convertButton = NSButton(title: "Convert Selected", target: nil, action: nil)
+    private let convertButton = NSButton(title: "CONVERT", target: nil, action: nil)
     private let lcdView = AquaLCDView()
     private let topBar = NSView()
     private let bottomBar = NSView()
+    private var conversionOptionsSheetWindow: NSWindow?
+    private var lcdSecondaryStatusOverride: String?
+    private var lcdSecondaryResetWorkItem: DispatchWorkItem?
+    private var isConversionRunning = false
 
     private let inspectorViewController = TrackInspectorViewController()
     private let outputFormats: [OutputFormat] = [.mp3, .aac, .alac, .flac, .wav, .aiff, .ogg, .opus]
@@ -161,6 +164,7 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
 
     deinit {
         scanTask?.cancel()
+        lcdSecondaryResetWorkItem?.cancel()
     }
 
     override func loadView() {
@@ -296,6 +300,14 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         let templatePresetLabel = NSTextField(labelWithString: "Folder Order:")
         let tokenOrderLabel = NSTextField(labelWithString: "Token Order:")
 
+        batchScopePopUp.target = self
+        batchScopePopUp.action = #selector(batchScopeChanged)
+        formatPopUp.target = self
+        formatPopUp.action = #selector(formatChanged)
+        folderStructurePopUp.target = self
+        folderStructurePopUp.action = #selector(folderStructureChanged)
+        applyModePopUp.target = self
+        applyModePopUp.action = #selector(applyModeChanged)
         templatePresetPopUp.target = self
         templatePresetPopUp.action = #selector(templatePresetChanged)
 
@@ -311,6 +323,12 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         tokenOrderPopUp5.action = #selector(customTokenOrderChanged)
 
         [
+            batchScopePopUp,
+            formatPopUp,
+            bitratePopUp,
+            sampleRatePopUp,
+            folderStructurePopUp,
+            applyModePopUp,
             templatePresetPopUp,
             tokenOrderPopUp1,
             tokenOrderPopUp2,
@@ -349,25 +367,21 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         tableView.selectionHighlightStyle = .regular
         tableView.allowsMultipleSelection = true
         tableView.allowsEmptySelection = true
-        tableView.backgroundColor = .clear
+        tableView.backgroundColor = ClassicTheme.playlistBackgroundEven
         tableView.gridStyleMask = [.solidHorizontalGridLineMask]
-        tableView.gridColor = ClassicTheme.chromeStroke.withAlphaComponent(0.45)
+        tableView.gridColor = ClassicTheme.playlistGridColor
 
         scrollView.documentView = tableView
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = true
         scrollView.borderType = .bezelBorder
         scrollView.scrollerStyle = .legacy
-        scrollView.drawsBackground = false
+        scrollView.drawsBackground = true
+        scrollView.backgroundColor = ClassicTheme.playlistBackgroundEven
         scrollView.wantsLayer = true
-        scrollView.layer?.backgroundColor = ClassicTheme.pinstripeBackground.cgColor
+        scrollView.layer?.backgroundColor = ClassicTheme.playlistBackgroundEven.cgColor
 
-        statusField.textColor = ClassicTheme.accentShadow
-        statusField.font = NSFont.systemFont(ofSize: 12)
-        conversionStatusView.translatesAutoresizingMaskIntoConstraints = false
-        conversionStatusView.setIdle(message: "Ready")
-
-        let contentStack = NSStackView(views: [templateOptionsStack, scrollView, conversionStatusView])
+        let contentStack = NSStackView(views: [scrollView])
         contentStack.orientation = .vertical
         contentStack.spacing = 10
         contentStack.translatesAutoresizingMaskIntoConstraints = false
@@ -379,8 +393,7 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
             contentStack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
             contentStack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12),
             contentStack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -12),
-            scrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 360),
-            conversionStatusView.heightAnchor.constraint(equalToConstant: 56)
+            scrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 360)
         ])
     }
 
@@ -394,60 +407,19 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         topBar.translatesAutoresizingMaskIntoConstraints = false
         ClassicTheme.applyMetal(to: topBar)
 
-        let batchScopeLabel = NSTextField(labelWithString: "Batch:")
-        let formatLabel = NSTextField(labelWithString: "Format:")
-        let bitrateLabel = NSTextField(labelWithString: "Bitrate:")
-        let sampleRateLabel = NSTextField(labelWithString: "Sample Rate:")
-        let folderStructureLabel = NSTextField(labelWithString: "Folder Structure:")
-        let applyModeLabel = NSTextField(labelWithString: "Apply Mode:")
-
         openFolderButton.target = self
         openFolderButton.action = #selector(openFolderAction)
-        ClassicTheme.applyAquaAccent(to: openFolderButton)
+        ClassicTheme.applyPrimaryToolbarButtonStyle(to: openFolderButton, title: "LOAD", minWidth: 92)
 
         convertButton.target = self
         convertButton.action = #selector(convertSelectedTracks)
         convertButton.isEnabled = false
-        convertButton.title = "Convert"
-        ClassicTheme.applyAquaAccent(to: convertButton)
+        ClassicTheme.applyPrimaryToolbarButtonStyle(to: convertButton, title: "CONVERT", minWidth: 104)
 
-        batchScopePopUp.target = self
-        batchScopePopUp.action = #selector(batchScopeChanged)
-        formatPopUp.target = self
-        formatPopUp.action = #selector(formatChanged)
-        folderStructurePopUp.target = self
-        folderStructurePopUp.action = #selector(folderStructureChanged)
-        applyModePopUp.target = self
-        applyModePopUp.action = #selector(applyModeChanged)
-
-        [
-            batchScopePopUp,
-            formatPopUp,
-            bitratePopUp,
-            sampleRatePopUp,
-            folderStructurePopUp,
-            applyModePopUp
-        ].forEach(stylePopUp)
-
-        let topControls = NSStackView(views: [openFolderButton, batchScopeLabel, batchScopePopUp, convertButton])
-        topControls.orientation = .horizontal
-        topControls.alignment = .centerY
-        topControls.spacing = 10
-
-        let conversionControls = NSStackView(views: [formatLabel, formatPopUp, bitrateLabel, bitratePopUp, sampleRateLabel, sampleRatePopUp])
-        conversionControls.orientation = .horizontal
-        conversionControls.alignment = .centerY
-        conversionControls.spacing = 10
-
-        let folderControls = NSStackView(views: [folderStructureLabel, folderStructurePopUp, applyModeLabel, applyModePopUp])
-        folderControls.orientation = .horizontal
-        folderControls.alignment = .centerY
-        folderControls.spacing = 10
-
-        let leftStack = NSStackView(views: [topControls, conversionControls, folderControls])
-        leftStack.orientation = .vertical
-        leftStack.alignment = .leading
-        leftStack.spacing = 6
+        let leftStack = NSStackView(views: [openFolderButton, convertButton])
+        leftStack.orientation = .horizontal
+        leftStack.alignment = .centerY
+        leftStack.spacing = 14
         leftStack.translatesAutoresizingMaskIntoConstraints = false
 
         lcdView.translatesAutoresizingMaskIntoConstraints = false
@@ -456,15 +428,15 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         topBar.addSubview(lcdView)
 
         NSLayoutConstraint.activate([
-            leftStack.leadingAnchor.constraint(equalTo: topBar.leadingAnchor, constant: 12),
+            leftStack.leadingAnchor.constraint(equalTo: topBar.leadingAnchor, constant: 16),
             leftStack.centerYAnchor.constraint(equalTo: topBar.centerYAnchor),
 
             lcdView.centerXAnchor.constraint(equalTo: topBar.centerXAnchor),
             lcdView.centerYAnchor.constraint(equalTo: topBar.centerYAnchor),
-            lcdView.widthAnchor.constraint(greaterThanOrEqualToConstant: 360),
+            lcdView.widthAnchor.constraint(greaterThanOrEqualToConstant: 420),
             lcdView.heightAnchor.constraint(equalToConstant: 44),
 
-            leftStack.trailingAnchor.constraint(lessThanOrEqualTo: lcdView.leadingAnchor, constant: -24)
+            leftStack.trailingAnchor.constraint(lessThanOrEqualTo: lcdView.leadingAnchor, constant: -34)
         ])
     }
 
@@ -567,7 +539,6 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         } catch {
             conversionServiceInitializationError = error
             setStatus("ffmpeg was not found. Loading and artwork preview work; conversion is unavailable.")
-            conversionStatusView.setIdle(message: "Conversion unavailable")
         }
     }
 
@@ -581,7 +552,6 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
             ? uniqueRoots[0].lastPathComponent
             : "\(uniqueRoots.count) folders"
         setStatus("Scanning \(folderSummary)...")
-        conversionStatusView.setIdle(message: "Scanning source folders...")
         updateConvertButtonState()
 
         scanTask?.cancel()
@@ -599,11 +569,9 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
                 if result.tracks.isEmpty {
                     self.setStatus("No supported audio files found")
                     self.inspectorViewController.update(with: nil)
-                    self.conversionStatusView.setIdle(message: "Ready")
                 } else {
                     self.tableView.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
                     self.setStatus("Loaded \(result.tracks.count) tracks")
-                    self.conversionStatusView.setIdle(message: "Ready to convert")
                 }
                 self.updateConvertButtonState()
                 self.updateLCD()
@@ -690,17 +658,30 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
             return
         }
 
-        let tracksToConvert: [LoadedTrack]
-        if batchScopePopUp.indexOfSelectedItem == 1 {
-            tracksToConvert = loadedTracks
-        } else {
-            tracksToConvert = tableView.selectedRowIndexes.compactMap { index in
-                loadedTracks.indices.contains(index) ? loadedTracks[index] : nil
-            }
+        guard !loadedTracks.isEmpty else {
+            showAlert(title: "No Tracks", message: "Load tracks before converting.")
+            return
         }
 
+        presentConversionOptionsSheet { [weak self] selection in
+            guard let self else { return }
+
+            guard let selection else {
+                self.setStatus("Conversion cancelled.")
+                self.setLCDConversionStatus("Conversion cancelled")
+                self.scheduleClearLCDConversionStatus(after: 1.8)
+                return
+            }
+
+            self.applyConversionOptionsSelection(selection)
+            self.runConversion(with: selection, conversionService: conversionService)
+        }
+    }
+
+    private func runConversion(with selection: ConversionOptionsSelection, conversionService: ConversionService) {
+        let tracksToConvert = tracksToConvert(for: selection.batchScope)
         guard !tracksToConvert.isEmpty else {
-            showAlert(title: "No Tracks", message: "Select tracks or choose 'All Loaded Tracks' before converting.")
+            showAlert(title: "No Tracks", message: "Select tracks or choose 'All Loaded Tracks' in options before converting.")
             return
         }
 
@@ -714,6 +695,9 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         destinationPanel.directoryURL = preferredConvertDirectoryURL()
 
         guard destinationPanel.runModal() == .OK, let destinationFolder = destinationPanel.url else {
+            setStatus("Conversion cancelled.")
+            setLCDConversionStatus("Conversion cancelled")
+            scheduleClearLCDConversionStatus(after: 1.8)
             return
         }
         saveLastConvertDirectory(destinationFolder)
@@ -725,7 +709,8 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
            selectedTemplateApplyMode() == .reviewPerAlbumPreflight {
             guard let reviewed = reviewAlbumFoldersPreflight(for: tracksToConvert, templateConfig: templateConfig) else {
                 setStatus("Conversion cancelled in preflight review.")
-                conversionStatusView.setIdle(message: "Conversion cancelled")
+                setLCDConversionStatus("Conversion cancelled in preflight")
+                scheduleClearLCDConversionStatus(after: 2.2)
                 return
             }
             reviewedAlbumFolders = reviewed
@@ -750,9 +735,10 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         conversionService.clearQueue()
         _ = conversionService.enqueue(jobs, preset: preset)
 
+        isConversionRunning = true
         setStatus("Converting \(jobs.count) file(s) with \(preset.name)...")
+        setLCDConversionStatus("Converting 0/\(jobs.count) • Failed: 0 • Warnings: 0")
         convertButton.isEnabled = false
-        conversionStatusView.start(totalJobs: jobs.count, presetName: preset.name)
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
@@ -774,12 +760,7 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
                 progressLock.unlock()
 
                 DispatchQueue.main.async { [weak self] in
-                    self?.conversionStatusView.update(
-                        processed: processed,
-                        totalJobs: total,
-                        failed: failedSnapshot,
-                        warnings: warningsSnapshot
-                    )
+                    self?.setLCDConversionStatus("Converting \(processed)/\(total) • Failed: \(failedSnapshot) • Warnings: \(warningsSnapshot)")
                 }
             })
 
@@ -787,20 +768,27 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
                 guard let self else { return }
                 let completed = results.filter { $0.status == .completed }.count
                 let failed = results.filter { $0.status == .failed }.count
-                let warnings = results.compactMap { $0.warning }
+                let warningSummary = summarizeWarnings(from: results)
+                let warningCount = warningSummary.totalCount
 
-                self.setStatus("Conversion complete. Success: \(completed), Failed: \(failed), Warnings: \(warnings.count).")
-                self.conversionStatusView.finish(
-                    totalJobs: jobs.count,
-                    success: completed,
-                    failed: failed,
-                    warnings: warnings.count
-                )
+                self.isConversionRunning = false
+                self.setStatus("Conversion complete. Success: \(completed), Failed: \(failed), Warnings: \(warningCount).")
+                self.setLCDConversionStatus("Finished • Success: \(completed) • Failed: \(failed) • Warnings: \(warningCount)")
+                self.scheduleClearLCDConversionStatus(after: 3.8)
                 self.updateConvertButtonState()
 
                 var message = "Completed: \(completed)\nFailed: \(failed)"
-                if !warnings.isEmpty {
-                    message += "\nWarnings:\n- " + warnings.prefix(5).joined(separator: "\n- ")
+                if !warningSummary.items.isEmpty {
+                    let preview = warningSummary.items.prefix(5).map { item in
+                        if item.count > 1 {
+                            return "\(item.message) (\(item.count)x)"
+                        }
+                        return item.message
+                    }
+                    message += "\nWarnings:\n- " + preview.joined(separator: "\n- ")
+                    if warningSummary.items.count > 5 {
+                        message += "\n- \(warningSummary.items.count - 5) more warning type(s)"
+                    }
                 }
 
                 if failed > 0 {
@@ -818,6 +806,123 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
                 self.showAlert(title: "Conversion Finished", message: message)
             }
         }
+    }
+
+    private func tracksToConvert(for batchScope: ConversionBatchScope) -> [LoadedTrack] {
+        if batchScope == .allLoadedTracks {
+            return loadedTracks
+        }
+
+        return tableView.selectedRowIndexes.compactMap { index in
+            loadedTracks.indices.contains(index) ? loadedTracks[index] : nil
+        }
+    }
+
+    private func presentConversionOptionsSheet(completion: @escaping (ConversionOptionsSelection?) -> Void) {
+        guard let hostWindow = view.window else {
+            completion(nil)
+            return
+        }
+
+        let controller = ConversionOptionsSheetController(
+            initialSelection: currentConversionOptionsSelection(),
+            outputFormats: outputFormats,
+            bitrateOptions: bitrateOptions,
+            sampleRateOptions: sampleRateOptions
+        )
+
+        let sheetWindow = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 760, height: 300),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        sheetWindow.title = "Conversion Options"
+        sheetWindow.isReleasedWhenClosed = false
+        sheetWindow.contentViewController = controller
+        sheetWindow.standardWindowButton(.closeButton)?.isHidden = true
+        conversionOptionsSheetWindow = sheetWindow
+
+        controller.onDecision = { [weak self, weak hostWindow, weak sheetWindow] selection in
+            guard let self, let hostWindow, let sheetWindow else { return }
+            hostWindow.endSheet(sheetWindow)
+            self.conversionOptionsSheetWindow = nil
+            completion(selection)
+        }
+
+        hostWindow.beginSheet(sheetWindow, completionHandler: nil)
+    }
+
+    private func currentConversionOptionsSelection() -> ConversionOptionsSelection {
+        ConversionOptionsSelection(
+            batchScope: batchScopePopUp.indexOfSelectedItem == 1 ? .allLoadedTracks : .selectedTracks,
+            outputFormat: selectedOutputFormat(),
+            bitrate: selectedBitrate(),
+            sampleRate: selectedSampleRate(),
+            folderStructureMode: selectedFolderStructureMode(),
+            applyMode: selectedTemplateApplyMode(),
+            templatePreset: selectedTemplatePreset(),
+            tokenOrder: normalizeCustomTokenOrder(selectedCustomTokenOrder())
+        )
+    }
+
+    private func applyConversionOptionsSelection(_ selection: ConversionOptionsSelection) {
+        batchScopePopUp.selectItem(at: selection.batchScope.rawValue)
+        select(formatPopUp, rawValue: selection.outputFormat.rawValue)
+        bitratePopUp.selectItem(withTag: selection.bitrate ?? -1)
+        sampleRatePopUp.selectItem(withTag: selection.sampleRate ?? -1)
+        select(folderStructurePopUp, rawValue: selection.folderStructureMode.rawValue)
+        select(applyModePopUp, rawValue: selection.applyMode.rawValue)
+        select(templatePresetPopUp, rawValue: selection.templatePreset.rawValue)
+        applyTokenOrder(normalizeCustomTokenOrder(selection.tokenOrder))
+        updateFormatDependentControls()
+        updateTemplateOptionsVisibility()
+        saveFolderStructurePreferences()
+    }
+
+    private struct WarningSummaryItem {
+        let message: String
+        let count: Int
+    }
+
+    private struct WarningSummary {
+        let items: [WarningSummaryItem]
+        let totalCount: Int
+    }
+
+    private func summarizeWarnings(from results: [ConversionExecutionResult]) -> WarningSummary {
+        var orderedMessages: [String] = []
+        var counts: [String: Int] = [:]
+        var totalCount = 0
+
+        for result in results {
+            guard let warning = result.warning else {
+                continue
+            }
+
+            let lines = warning
+                .split(separator: "\n")
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+
+            for line in lines {
+                if counts[line] == nil {
+                    orderedMessages.append(line)
+                    counts[line] = 0
+                }
+                counts[line, default: 0] += 1
+                totalCount += 1
+            }
+        }
+
+        let items = orderedMessages.compactMap { message -> WarningSummaryItem? in
+            guard let count = counts[message] else {
+                return nil
+            }
+            return WarningSummaryItem(message: message, count: count)
+        }
+
+        return WarningSummary(items: items, totalCount: totalCount)
     }
 
     @objc private func batchScopeChanged() {
@@ -964,19 +1069,20 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
     }
 
     private func updateConvertButtonState() {
-        guard !loadedTracks.isEmpty else {
+        if isConversionRunning {
             convertButton.isEnabled = false
-            convertButton.title = "Convert"
+            convertButton.title = "CONVERT"
             return
         }
 
-        if batchScopePopUp.indexOfSelectedItem == 1 {
-            convertButton.isEnabled = true
-            convertButton.title = "Convert All"
-        } else {
-            convertButton.isEnabled = !tableView.selectedRowIndexes.isEmpty
-            convertButton.title = "Convert Selected"
+        guard !loadedTracks.isEmpty else {
+            convertButton.isEnabled = false
+            convertButton.title = "CONVERT"
+            return
         }
+
+        convertButton.isEnabled = true
+        convertButton.title = "CONVERT"
     }
 
     private func buildPresetFromControls() -> ConversionPreset {
@@ -1378,9 +1484,32 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         updateLCD()
     }
 
+    private func setLCDConversionStatus(_ text: String?) {
+        lcdSecondaryResetWorkItem?.cancel()
+        let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines)
+        lcdSecondaryStatusOverride = (trimmed?.isEmpty == false) ? trimmed : nil
+        updateLCD()
+    }
+
+    private func scheduleClearLCDConversionStatus(after delay: TimeInterval) {
+        lcdSecondaryResetWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.lcdSecondaryStatusOverride = nil
+            self?.updateLCD()
+        }
+        lcdSecondaryResetWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
     private func updateLCD() {
         let selected = (tableView.selectedRow >= 0 && loadedTracks.indices.contains(tableView.selectedRow)) ? loadedTracks[tableView.selectedRow] : nil
-        lcdView.update(with: selected, status: statusField.stringValue)
+        lcdView.updateTrack(selected)
+        if selected == nil {
+            lcdView.setPrimaryStatus(statusField.stringValue)
+        } else {
+            lcdView.setPrimaryStatus(nil)
+        }
+        lcdView.setSecondaryStatus(lcdSecondaryStatusOverride)
     }
 }
 
@@ -1388,10 +1517,9 @@ private final class ClassicRowView: NSTableRowView {
     var rowIndex: Int = 0
 
     override func drawBackground(in dirtyRect: NSRect) {
-        if rowIndex % 2 == 0 {
-            NSColor(calibratedWhite: 1, alpha: 0.08).setFill()
-            dirtyRect.fill()
-        }
+        let fill = (rowIndex % 2 == 0) ? ClassicTheme.playlistBackgroundEven : ClassicTheme.playlistBackgroundOdd
+        fill.setFill()
+        dirtyRect.fill()
     }
 
     override func drawSelection(in dirtyRect: NSRect) {
@@ -1429,6 +1557,12 @@ private final class TrackCellView: NSTableCellView {
     private let titleLabel = NSTextField(labelWithString: "")
     private let detailLabel = NSTextField(labelWithString: "")
 
+    override var backgroundStyle: NSView.BackgroundStyle {
+        didSet {
+            updateTextColors()
+        }
+    }
+
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         configure()
@@ -1457,7 +1591,7 @@ private final class TrackCellView: NSTableCellView {
 
         titleLabel.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
         detailLabel.font = NSFont.systemFont(ofSize: 11, weight: .regular)
-        detailLabel.textColor = .secondaryLabelColor
+        updateTextColors()
 
         let textStack = NSStackView(views: [titleLabel, detailLabel])
         textStack.orientation = .vertical
@@ -1477,6 +1611,11 @@ private final class TrackCellView: NSTableCellView {
             textStack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
             textStack.centerYAnchor.constraint(equalTo: centerYAnchor)
         ])
+    }
+
+    private func updateTextColors() {
+        titleLabel.textColor = ClassicTheme.playlistPrimaryText
+        detailLabel.textColor = ClassicTheme.playlistSecondaryText
     }
 
     private func formatDuration(_ seconds: Double) -> String {
