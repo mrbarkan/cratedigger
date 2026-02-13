@@ -36,5 +36,12 @@
     "swiftmodule": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/MetadataProbeServiceTests~partial.swiftmodule",
     "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/MetadataProbeServiceTests.swiftdeps",
     "diagnostics": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/MetadataProbeServiceTests.dia"
+  },
+  "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/PlaybackServiceTests.swift": {
+    "dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/PlaybackServiceTests.d",
+    "object": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/PlaybackServiceTests.swift.o",
+    "swiftmodule": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/PlaybackServiceTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/PlaybackServiceTests.swiftdeps",
+    "diagnostics": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/PlaybackServiceTests.dia"
   }
 }

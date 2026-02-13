@@ -258,6 +258,47 @@ final class ConversionServiceTests: XCTestCase {
         XCTAssertFalse(pairs.contains(ArgPair(flag: "-metadata", value: "ARTIST=ShouldNotOverrideCanonical")))
     }
 
+    func testCompatArtworkResizeOptionPassesMaxDimensionToArtworkPreparer() throws {
+        let artworkData = try makeImageData()
+        let artwork = ArtworkAsset(
+            source: .embedded,
+            hash: "artwork-resize",
+            dimensions: ArtworkDimensions(width: 1000, height: 1000),
+            data: artworkData
+        )
+        let metadata = ConversionMetadata(title: "Track", artwork: artwork)
+
+        let resizePreset = ConversionPreset(
+            id: "test_resize_artwork",
+            name: "Resize Artwork",
+            outputFormat: .aac,
+            bitrateKbps: 192,
+            sampleRateHz: 44_100,
+            channels: 2,
+            constantBitrate: false,
+            deviceProfile: .generic,
+            tagMode: .auto,
+            artworkMode: .compatReembed,
+            artworkMaxDimension: 300
+        )
+
+        let recorder = RecordingArtworkPreparer()
+        let service = try makeService(
+            artworkPreparer: recorder,
+            presets: ConversionPreset.defaultPresets + [resizePreset]
+        )
+        let sourceURL = temporaryDirectory.appendingPathComponent("source.flac")
+        let outputURL = temporaryDirectory.appendingPathComponent("out.m4a")
+
+        let queued = try service.enqueue(
+            [ConversionJob(sourceURL: sourceURL, destinationURL: outputURL, metadata: metadata)],
+            presetID: "test_resize_artwork"
+        ).first!
+        _ = try service.preparedCommand(for: queued)
+
+        XCTAssertEqual(recorder.recordedMaxDimension, 300)
+    }
+
     func testMetadataPreservationDoesNotOverrideCoreTagsWithPartialValues() throws {
         let service = try makeService(artworkPreparer: PassThroughArtworkPreparer())
         let sourceURL = temporaryDirectory.appendingPathComponent("source.flac")
@@ -462,6 +503,19 @@ private struct PassThroughArtworkPreparer: ArtworkPreparing {
 private struct ThrowingArtworkPreparer: ArtworkPreparing {
     func prepareCompatibleArtwork(asset: ArtworkAsset, profile: DeviceProfile) throws -> ArtworkAsset {
         throw NSError(domain: "ConversionServiceTests", code: 3)
+    }
+}
+
+private final class RecordingArtworkPreparer: ArtworkPreparing {
+    var recordedMaxDimension: Int?
+
+    func prepareCompatibleArtwork(asset: ArtworkAsset, profile: DeviceProfile) throws -> ArtworkAsset {
+        asset
+    }
+
+    func prepareCompatibleArtwork(asset: ArtworkAsset, profile: DeviceProfile, maxDimension: Int?) throws -> ArtworkAsset {
+        recordedMaxDimension = maxDimension
+        return asset
     }
 }
 #endif

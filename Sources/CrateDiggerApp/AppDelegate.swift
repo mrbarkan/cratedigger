@@ -48,6 +48,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         fileMenu.addItem(NSMenuItem(title: "Open Folder...", action: #selector(openFolder(_:)), keyEquivalent: "o"))
         fileMenuItem.submenu = fileMenu
 
+        let editMenuItem = NSMenuItem()
+        mainMenu.addItem(editMenuItem)
+
+        let editMenu = NSMenu(title: "Edit")
+        editMenu.addItem(NSMenuItem(title: "Select All", action: #selector(NSResponder.selectAll(_:)), keyEquivalent: "a"))
+        editMenuItem.submenu = editMenu
+
         NSApp.mainMenu = mainMenu
     }
 }

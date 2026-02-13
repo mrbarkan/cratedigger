@@ -48,6 +48,7 @@ public struct ConversionPreset: Identifiable, Hashable, Sendable {
     public let deviceProfile: DeviceProfile
     public let tagMode: TagMode
     public let artworkMode: ArtworkMode
+    public let artworkMaxDimension: Int?
 
     public init(
         id: String,
@@ -59,7 +60,8 @@ public struct ConversionPreset: Identifiable, Hashable, Sendable {
         constantBitrate: Bool = false,
         deviceProfile: DeviceProfile = .generic,
         tagMode: TagMode = .auto,
-        artworkMode: ArtworkMode = .compatReembed
+        artworkMode: ArtworkMode = .compatReembed,
+        artworkMaxDimension: Int? = nil
     ) {
         self.id = id
         self.name = name
@@ -71,6 +73,7 @@ public struct ConversionPreset: Identifiable, Hashable, Sendable {
         self.deviceProfile = deviceProfile
         self.tagMode = tagMode
         self.artworkMode = artworkMode
+        self.artworkMaxDimension = artworkMaxDimension
     }
 
     public var outputExtension: String {
@@ -156,7 +159,8 @@ public struct ConversionPreset: Identifiable, Hashable, Sendable {
                 constantBitrate: preset.constantBitrate,
                 deviceProfile: overrideDeviceProfile,
                 tagMode: preset.tagMode,
-                artworkMode: preset.artworkMode
+                artworkMode: preset.artworkMode,
+                artworkMaxDimension: preset.artworkMaxDimension
             )
         }
 

@@ -5,6 +5,13 @@ import Foundation
 
 public protocol ArtworkPreparing {
     func prepareCompatibleArtwork(asset: ArtworkAsset, profile: DeviceProfile) throws -> ArtworkAsset
+    func prepareCompatibleArtwork(asset: ArtworkAsset, profile: DeviceProfile, maxDimension: Int?) throws -> ArtworkAsset
+}
+
+public extension ArtworkPreparing {
+    func prepareCompatibleArtwork(asset: ArtworkAsset, profile: DeviceProfile, maxDimension: Int?) throws -> ArtworkAsset {
+        try prepareCompatibleArtwork(asset: asset, profile: profile)
+    }
 }
 
 public enum ArtworkServiceError: Error {
@@ -55,7 +62,12 @@ public final class ArtworkService: ArtworkPreparing {
     }
 
     public func prepareCompatibleArtwork(asset: ArtworkAsset, profile: DeviceProfile) throws -> ArtworkAsset {
-        guard profile == .ipodLegacySafe else {
+        try prepareCompatibleArtwork(asset: asset, profile: profile, maxDimension: nil)
+    }
+
+    public func prepareCompatibleArtwork(asset: ArtworkAsset, profile: DeviceProfile, maxDimension: Int?) throws -> ArtworkAsset {
+        let resizedDimension = maxDimension.map { max(120, $0) }
+        guard profile == .ipodLegacySafe || resizedDimension != nil else {
             return asset
         }
 
@@ -63,20 +75,26 @@ public final class ArtworkService: ArtworkPreparing {
             throw ArtworkServiceError.couldNotDecodeImage
         }
 
-        let resized = resize(image: image, maxDimension: 600)
+        let targetDimension = CGFloat(resizedDimension ?? 600)
+        let resized = resize(image: image, maxDimension: targetDimension)
 
-        var compression: CGFloat = 0.90
-        var chosenData: Data?
-        while compression >= 0.35 {
-            if let data = jpegData(from: resized, compression: compression), data.count <= 300_000 {
-                chosenData = data
-                break
+        let chosenData: Data?
+        if profile == .ipodLegacySafe {
+            var compression: CGFloat = 0.90
+            var candidate: Data?
+            while compression >= 0.35 {
+                if let data = jpegData(from: resized, compression: compression), data.count <= 300_000 {
+                    candidate = data
+                    break
+                }
+                compression -= 0.08
             }
-            compression -= 0.08
-        }
-
-        if chosenData == nil {
-            chosenData = jpegData(from: resized, compression: 0.30)
+            if candidate == nil {
+                candidate = jpegData(from: resized, compression: 0.30)
+            }
+            chosenData = candidate
+        } else {
+            chosenData = jpegData(from: resized, compression: 0.92)
         }
 
         guard let compatibleData = chosenData,

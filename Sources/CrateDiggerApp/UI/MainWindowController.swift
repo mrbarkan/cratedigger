@@ -12,7 +12,7 @@ final class MainWindowController: NSWindowController {
         )
 
         window.title = "CrateDigger"
-        window.minSize = NSSize(width: 980, height: 620)
+        window.minSize = NSSize(width: 1160, height: 680)
         window.contentViewController = mainViewController
         window.center()
         window.backgroundColor = ModernRetroTheme.surfaceBase

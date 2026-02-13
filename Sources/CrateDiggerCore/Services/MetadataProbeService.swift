@@ -13,22 +13,45 @@ public enum MetadataProbeError: Error {
 public struct ProbedStreamMetadata: Codable, Hashable, Sendable {
     public let index: Int
     public let codecType: String?
+    public let codecName: String?
+    public let sampleRateHz: Int?
+    public let bitRateBps: Int?
     public let tags: [String: String]
     public let dispositions: [String: Int]
 
-    public init(index: Int, codecType: String?, tags: [String: String], dispositions: [String: Int]) {
+    public init(
+        index: Int,
+        codecType: String?,
+        codecName: String? = nil,
+        sampleRateHz: Int? = nil,
+        bitRateBps: Int? = nil,
+        tags: [String: String],
+        dispositions: [String: Int]
+    ) {
         self.index = index
         self.codecType = codecType
+        self.codecName = codecName
+        self.sampleRateHz = sampleRateHz
+        self.bitRateBps = bitRateBps
         self.tags = tags
         self.dispositions = dispositions
     }
 }
 
 public struct ProbedMetadata: Codable, Hashable, Sendable {
+    public let formatName: String?
+    public let formatBitRateBps: Int?
     public let formatTags: [String: String]
     public let streams: [ProbedStreamMetadata]
 
-    public init(formatTags: [String: String], streams: [ProbedStreamMetadata]) {
+    public init(
+        formatName: String? = nil,
+        formatBitRateBps: Int? = nil,
+        formatTags: [String: String],
+        streams: [ProbedStreamMetadata]
+    ) {
+        self.formatName = formatName
+        self.formatBitRateBps = formatBitRateBps
         self.formatTags = formatTags
         self.streams = streams
     }
@@ -56,6 +79,10 @@ public struct ProbedMetadata: Codable, Hashable, Sendable {
 
     public var allStreamDispositions: [[String: Int]] {
         streams.map(\.dispositions)
+    }
+
+    public var primaryAudioStream: ProbedStreamMetadata? {
+        streams.first { $0.codecType == "audio" }
     }
 }
 
@@ -98,11 +125,16 @@ public final class MetadataProbeService: MetadataProbing {
         do {
             let decoded = try JSONDecoder().decode(FFprobePayload.self, from: data)
             return ProbedMetadata(
+                formatName: decoded.format?.formatName,
+                formatBitRateBps: decoded.format?.bitRate.flatMap(Self.parseInt),
                 formatTags: decoded.format?.tags ?? [:],
                 streams: decoded.streams.map {
                     ProbedStreamMetadata(
                         index: $0.index ?? 0,
                         codecType: $0.codecType,
+                        codecName: $0.codecName,
+                        sampleRateHz: $0.sampleRate.flatMap(Self.parseInt),
+                        bitRateBps: $0.bitRate.flatMap(Self.parseInt),
                         tags: $0.tags ?? [:],
                         dispositions: $0.disposition ?? [:]
                     )
@@ -127,6 +159,14 @@ public final class MetadataProbeService: MetadataProbing {
 
         return URL(fileURLWithPath: candidatePaths[0])
     }
+
+    private static func parseInt(_ value: String) -> Int? {
+        let digits = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !digits.isEmpty else {
+            return nil
+        }
+        return Int(digits)
+    }
 }
 
 private struct FFprobePayload: Decodable {
@@ -135,18 +175,32 @@ private struct FFprobePayload: Decodable {
 }
 
 private struct FFprobeFormat: Decodable {
+    let formatName: String?
+    let bitRate: String?
     let tags: [String: String]?
+
+    private enum CodingKeys: String, CodingKey {
+        case formatName = "format_name"
+        case bitRate = "bit_rate"
+        case tags
+    }
 }
 
 private struct FFprobeStream: Decodable {
     let index: Int?
     let codecType: String?
+    let codecName: String?
+    let sampleRate: String?
+    let bitRate: String?
     let tags: [String: String]?
     let disposition: [String: Int]?
 
     private enum CodingKeys: String, CodingKey {
         case index
         case codecType = "codec_type"
+        case codecName = "codec_name"
+        case sampleRate = "sample_rate"
+        case bitRate = "bit_rate"
         case tags
         case disposition
     }

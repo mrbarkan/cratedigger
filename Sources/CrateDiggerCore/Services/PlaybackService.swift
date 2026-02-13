@@ -1,0 +1,393 @@
+import AVFoundation
+import Foundation
+
+public struct PlaybackQueueItem: Hashable, Sendable {
+    public let url: URL
+    public let title: String
+    public let artist: String
+    public let album: String
+    public let durationSeconds: Double
+
+    public init(url: URL, title: String, artist: String, album: String, durationSeconds: Double) {
+        self.url = url
+        self.title = title
+        self.artist = artist
+        self.album = album
+        self.durationSeconds = durationSeconds
+    }
+}
+
+public enum PlaybackState: Equatable, Sendable {
+    case idle
+    case loading
+    case playing
+    case paused
+    case failed(message: String)
+    case ended
+}
+
+public protocol PlaybackServiceProtocol: AnyObject {
+    var state: PlaybackState { get }
+    var currentIndex: Int? { get }
+    var currentTimeSeconds: Double { get }
+    var durationSeconds: Double { get }
+    var errorMessage: String? { get }
+    var queue: [PlaybackQueueItem] { get }
+
+    var onStateChange: ((PlaybackState) -> Void)? { get set }
+    var onCurrentIndexChange: ((Int?) -> Void)? { get set }
+    var onTimeChange: ((Double, Double) -> Void)? { get set }
+    var onError: ((String) -> Void)? { get set }
+
+    func load(queue: [PlaybackQueueItem], startIndex: Int, autoPlay: Bool)
+    func play()
+    func pause()
+    func togglePlayPause()
+    func seek(toSeconds: Double)
+    func next()
+    func previous()
+    func setVolume(_ volume: Double)
+}
+
+protocol PlaybackEngineProtocol: AnyObject {
+    var onItemReady: (() -> Void)? { get set }
+    var onItemFailed: ((String) -> Void)? { get set }
+    var onItemEnded: (() -> Void)? { get set }
+    var onPeriodicTime: ((Double, Double) -> Void)? { get set }
+
+    var currentTimeSeconds: Double { get }
+    var durationSeconds: Double { get }
+
+    func replaceCurrentItem(url: URL)
+    func play()
+    func pause()
+    func seek(toSeconds: Double)
+    func setVolume(_ volume: Double)
+}
+
+final class AVPlayerEngine: PlaybackEngineProtocol {
+    var onItemReady: (() -> Void)?
+    var onItemFailed: ((String) -> Void)?
+    var onItemEnded: (() -> Void)?
+    var onPeriodicTime: ((Double, Double) -> Void)?
+
+    var currentTimeSeconds: Double {
+        seconds(for: player.currentTime())
+    }
+
+    var durationSeconds: Double {
+        guard let item = player.currentItem else {
+            return 0
+        }
+        return seconds(for: item.duration)
+    }
+
+    private let player = AVPlayer()
+    private var timeObserverToken: Any?
+    private var statusObservation: NSKeyValueObservation?
+    private var itemEndObserver: NSObjectProtocol?
+
+    init() {
+        player.automaticallyWaitsToMinimizeStalling = true
+        addPeriodicTimeObserver()
+    }
+
+    deinit {
+        if let timeObserverToken {
+            player.removeTimeObserver(timeObserverToken)
+        }
+        statusObservation = nil
+        if let itemEndObserver {
+            NotificationCenter.default.removeObserver(itemEndObserver)
+        }
+    }
+
+    func replaceCurrentItem(url: URL) {
+        statusObservation = nil
+        if let itemEndObserver {
+            NotificationCenter.default.removeObserver(itemEndObserver)
+            self.itemEndObserver = nil
+        }
+
+        let item = AVPlayerItem(url: url)
+        player.replaceCurrentItem(with: item)
+
+        statusObservation = item.observe(\.status, options: [.new, .initial]) { [weak self] item, _ in
+            guard let self else { return }
+            switch item.status {
+            case .readyToPlay:
+                self.onItemReady?()
+            case .failed:
+                self.onItemFailed?(item.error?.localizedDescription ?? "Unable to play this file.")
+            case .unknown:
+                break
+            @unknown default:
+                break
+            }
+        }
+
+        itemEndObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: item,
+            queue: .main
+        ) { [weak self] _ in
+            self?.onItemEnded?()
+        }
+    }
+
+    func play() {
+        player.play()
+    }
+
+    func pause() {
+        player.pause()
+    }
+
+    func seek(toSeconds seconds: Double) {
+        let safe = max(0, seconds)
+        let target = CMTime(seconds: safe, preferredTimescale: 600)
+        player.seek(to: target, toleranceBefore: .zero, toleranceAfter: .zero)
+    }
+
+    func setVolume(_ volume: Double) {
+        player.volume = Float(max(0, min(volume, 1)))
+    }
+
+    private func addPeriodicTimeObserver() {
+        let interval = CMTime(seconds: 0.2, preferredTimescale: 600)
+        timeObserverToken = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] _ in
+            guard let self else { return }
+            self.onPeriodicTime?(self.currentTimeSeconds, self.durationSeconds)
+        }
+    }
+
+    private func seconds(for time: CMTime) -> Double {
+        guard time.isNumeric, !time.isIndefinite else {
+            return 0
+        }
+        let value = CMTimeGetSeconds(time)
+        guard value.isFinite, value >= 0 else {
+            return 0
+        }
+        return value
+    }
+}
+
+public final class PlaybackService: PlaybackServiceProtocol {
+    public private(set) var state: PlaybackState = .idle {
+        didSet {
+            notify {
+                self.onStateChange?(self.state)
+            }
+        }
+    }
+    public private(set) var currentIndex: Int? {
+        didSet {
+            notify {
+                self.onCurrentIndexChange?(self.currentIndex)
+            }
+        }
+    }
+    public private(set) var currentTimeSeconds: Double = 0 {
+        didSet {
+            notifyTimeChange()
+        }
+    }
+    public private(set) var durationSeconds: Double = 0 {
+        didSet {
+            notifyTimeChange()
+        }
+    }
+    public private(set) var errorMessage: String?
+    public private(set) var queue: [PlaybackQueueItem] = []
+
+    public var onStateChange: ((PlaybackState) -> Void)?
+    public var onCurrentIndexChange: ((Int?) -> Void)?
+    public var onTimeChange: ((Double, Double) -> Void)?
+    public var onError: ((String) -> Void)?
+
+    private let engine: PlaybackEngineProtocol
+    private var pendingAutoPlay = false
+
+    public convenience init() {
+        self.init(engine: AVPlayerEngine())
+    }
+
+    init(engine: PlaybackEngineProtocol) {
+        self.engine = engine
+        bindEngineCallbacks()
+    }
+
+    public func load(queue: [PlaybackQueueItem], startIndex: Int, autoPlay: Bool) {
+        self.queue = queue
+        pendingAutoPlay = autoPlay
+        errorMessage = nil
+
+        guard !queue.isEmpty else {
+            engine.pause()
+            currentIndex = nil
+            currentTimeSeconds = 0
+            durationSeconds = 0
+            state = .idle
+            return
+        }
+
+        let clampedIndex = max(0, min(startIndex, queue.count - 1))
+        currentIndex = clampedIndex
+        currentTimeSeconds = 0
+        durationSeconds = 0
+        state = .loading
+        engine.replaceCurrentItem(url: queue[clampedIndex].url)
+    }
+
+    public func play() {
+        guard !queue.isEmpty else { return }
+
+        if state == .ended, let currentIndex {
+            load(queue: queue, startIndex: currentIndex, autoPlay: true)
+            return
+        }
+
+        if currentIndex == nil {
+            load(queue: queue, startIndex: 0, autoPlay: true)
+            return
+        }
+
+        pendingAutoPlay = true
+        engine.play()
+        state = .playing
+    }
+
+    public func pause() {
+        engine.pause()
+        if case .failed = state {
+            return
+        }
+        if state != .idle {
+            state = .paused
+        }
+    }
+
+    public func togglePlayPause() {
+        switch state {
+        case .playing:
+            pause()
+        default:
+            play()
+        }
+    }
+
+    public func seek(toSeconds: Double) {
+        let upperBound = durationSeconds > 0 ? durationSeconds : toSeconds
+        let clamped = max(0, min(toSeconds, upperBound))
+        engine.seek(toSeconds: clamped)
+        currentTimeSeconds = clamped
+    }
+
+    public func next() {
+        guard !queue.isEmpty else { return }
+        guard let currentIndex else {
+            load(queue: queue, startIndex: 0, autoPlay: true)
+            return
+        }
+
+        let shouldPlay = state == .playing || state == .loading
+        let nextIndex = currentIndex + 1
+        guard queue.indices.contains(nextIndex) else {
+            engine.pause()
+            currentTimeSeconds = durationSeconds
+            state = .ended
+            return
+        }
+
+        load(queue: queue, startIndex: nextIndex, autoPlay: shouldPlay)
+    }
+
+    public func previous() {
+        guard !queue.isEmpty else { return }
+        guard let currentIndex else {
+            load(queue: queue, startIndex: 0, autoPlay: true)
+            return
+        }
+
+        if currentTimeSeconds > 3 {
+            seek(toSeconds: 0)
+            return
+        }
+
+        let shouldPlay = state == .playing || state == .loading
+        let previousIndex = currentIndex - 1
+        if queue.indices.contains(previousIndex) {
+            load(queue: queue, startIndex: previousIndex, autoPlay: shouldPlay)
+        } else {
+            seek(toSeconds: 0)
+        }
+    }
+
+    public func setVolume(_ volume: Double) {
+        engine.setVolume(volume)
+    }
+
+    private func bindEngineCallbacks() {
+        engine.onItemReady = { [weak self] in
+            guard let self else { return }
+            self.durationSeconds = self.engine.durationSeconds
+            self.currentTimeSeconds = self.engine.currentTimeSeconds
+
+            if self.pendingAutoPlay {
+                self.engine.play()
+                self.state = .playing
+            } else {
+                self.state = .paused
+            }
+        }
+
+        engine.onItemFailed = { [weak self] message in
+            guard let self else { return }
+            self.errorMessage = message
+            self.notify {
+                self.onError?(message)
+            }
+
+            if let currentIndex, self.queue.indices.contains(currentIndex + 1) {
+                self.load(queue: self.queue, startIndex: currentIndex + 1, autoPlay: true)
+                return
+            }
+
+            self.state = .failed(message: message)
+        }
+
+        engine.onItemEnded = { [weak self] in
+            guard let self else { return }
+            if let currentIndex, self.queue.indices.contains(currentIndex + 1) {
+                self.load(queue: self.queue, startIndex: currentIndex + 1, autoPlay: true)
+                return
+            }
+
+            self.currentTimeSeconds = self.durationSeconds
+            self.state = .ended
+        }
+
+        engine.onPeriodicTime = { [weak self] current, duration in
+            guard let self else { return }
+            self.currentTimeSeconds = max(0, current)
+            if duration > 0 {
+                self.durationSeconds = duration
+            }
+        }
+    }
+
+    private func notify(_ block: @escaping () -> Void) {
+        if Thread.isMainThread {
+            block()
+        } else {
+            DispatchQueue.main.async(execute: block)
+        }
+    }
+
+    private func notifyTimeChange() {
+        notify {
+            self.onTimeChange?(self.currentTimeSeconds, self.durationSeconds)
+        }
+    }
+}

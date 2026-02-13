@@ -239,6 +239,10 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerCore/Services/PlaybackService.swift"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/swift-version--1AB21518FC5DEDBE.txt"
         },
         {
@@ -257,7 +261,8 @@
         "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/ConversionService.swift.o",
         "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/LibraryScanService.swift.o",
         "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/MetadataNormalization.swift.o",
-        "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/MetadataProbeService.swift.o"
+        "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/MetadataProbeService.swift.o",
+        "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/PlaybackService.swift.o"
       ],
       "otherArguments" : [
         "-target",
@@ -338,6 +343,10 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/PlaybackService.swift.o"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/Modules/CrateDiggerCore.swiftmodule"
         }
       ],
@@ -350,7 +359,8 @@
         "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerCore/Services/ConversionService.swift",
         "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerCore/Services/LibraryScanService.swift",
         "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerCore/Services/MetadataNormalization.swift",
-        "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerCore/Services/MetadataProbeService.swift"
+        "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerCore/Services/MetadataProbeService.swift",
+        "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerCore/Services/PlaybackService.swift"
       ],
       "tempsPath" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build",
       "wholeModuleOptimization" : false
@@ -382,6 +392,10 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/PlaybackServiceTests.swift"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/swift-version--1AB21518FC5DEDBE.txt"
         },
         {
@@ -401,7 +415,8 @@
         "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/ConversionModelsTests.swift.o",
         "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/ConversionServiceTests.swift.o",
         "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/MetadataNormalizationTests.swift.o",
-        "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/MetadataProbeServiceTests.swift.o"
+        "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/MetadataProbeServiceTests.swift.o",
+        "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/PlaybackServiceTests.swift.o"
       ],
       "otherArguments" : [
         "-target",
@@ -469,6 +484,10 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/PlaybackServiceTests.swift.o"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/Modules/CrateDiggerCoreTests.swiftmodule"
         }
       ],
@@ -478,7 +497,8 @@
         "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/ConversionModelsTests.swift",
         "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/ConversionServiceTests.swift",
         "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/MetadataNormalizationTests.swift",
-        "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/MetadataProbeServiceTests.swift"
+        "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/MetadataProbeServiceTests.swift",
+        "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/PlaybackServiceTests.swift"
       ],
       "tempsPath" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build",
       "wholeModuleOptimization" : false
@@ -655,6 +675,7 @@
       "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerCore/Services/LibraryScanService.swift",
       "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerCore/Services/MetadataNormalization.swift",
       "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerCore/Services/MetadataProbeService.swift",
+      "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerCore/Services/PlaybackService.swift",
       "-I",
       "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/Modules",
       "-target",
@@ -713,6 +734,7 @@
       "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/ConversionServiceTests.swift",
       "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/MetadataNormalizationTests.swift",
       "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/MetadataProbeServiceTests.swift",
+      "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/PlaybackServiceTests.swift",
       "-I",
       "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/Modules",
       "-target",
@@ -992,6 +1014,10 @@
         {
           "kind" : "file",
           "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/MetadataProbeService.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/PlaybackService.swift.o"
         }
       ],
       "outputFilePath" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.product/Objects.LinkFileList"
@@ -1034,6 +1060,10 @@
         {
           "kind" : "file",
           "name" : "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerCore/Services/MetadataProbeService.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerCore/Services/PlaybackService.swift"
         }
       ],
       "outputFilePath" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/sources"
@@ -1064,6 +1094,10 @@
         {
           "kind" : "file",
           "name" : "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/MetadataProbeServiceTests.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/PlaybackServiceTests.swift"
         }
       ],
       "outputFilePath" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/sources"
@@ -1123,6 +1157,10 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/PlaybackService.swift.o"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/ArtworkServiceTests.swift.o"
         },
         {
@@ -1140,6 +1178,10 @@
         {
           "kind" : "file",
           "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/MetadataProbeServiceTests.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/PlaybackServiceTests.swift.o"
         },
         {
           "kind" : "file",

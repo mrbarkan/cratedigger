@@ -30,6 +30,8 @@ final class AquaLCDView: NSView {
 
     private var barMode: LCDBarMode = .hidden
     private var animateNextBarTransition = false
+    private var animateAccent = false
+    var onTimelineScrub: ((Double) -> Void)?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -67,9 +69,10 @@ final class AquaLCDView: NSView {
         render()
     }
 
-    func setBarMode(_ mode: LCDBarMode, animated: Bool) {
+    func setBarMode(_ mode: LCDBarMode, animated: Bool, accentAnimated: Bool) {
         barMode = mode
         animateNextBarTransition = animated
+        animateAccent = accentAnimated
         render()
     }
 
@@ -102,6 +105,10 @@ final class AquaLCDView: NSView {
         barContainer.wantsLayer = true
         barContainer.layer?.cornerRadius = 5
         barContainer.layer?.masksToBounds = true
+        let timelineClick = NSClickGestureRecognizer(target: self, action: #selector(handleTimelineClick(_:)))
+        barContainer.addGestureRecognizer(timelineClick)
+        let timelinePan = NSPanGestureRecognizer(target: self, action: #selector(handleTimelinePan(_:)))
+        barContainer.addGestureRecognizer(timelinePan)
 
         barTextLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .semibold)
         barTextLabel.alignment = .center
@@ -135,6 +142,31 @@ final class AquaLCDView: NSView {
         ])
 
         render()
+    }
+
+    @objc private func handleTimelineClick(_ recognizer: NSClickGestureRecognizer) {
+        scrubTimeline(at: recognizer.location(in: barContainer))
+    }
+
+    @objc private func handleTimelinePan(_ recognizer: NSPanGestureRecognizer) {
+        scrubTimeline(at: recognizer.location(in: barContainer))
+    }
+
+    private func scrubTimeline(at location: NSPoint) {
+        guard case .timeline(_, _, let tone) = barMode else {
+            return
+        }
+        guard barContainer.bounds.width > 1 else {
+            return
+        }
+
+        let progress = max(0, min(location.x / barContainer.bounds.width, 1))
+        onTimelineScrub?(Double(progress))
+
+        if case .timeline(_, let text, _) = barMode {
+            barMode = .timeline(progress: Double(progress), text: text, tone: tone)
+            updateBarLayers(animated: false)
+        }
     }
 
     private func buildOuterLayers() {
@@ -182,6 +214,7 @@ final class AquaLCDView: NSView {
         track.name = LayerName.laneTrack
         track.backgroundColor = ModernRetroTheme.separator.withAlphaComponent(0.28).cgColor
         track.cornerRadius = 5
+        track.masksToBounds = true
         track.borderWidth = 1
         track.borderColor = ModernRetroTheme.separator.withAlphaComponent(0.35).cgColor
         laneLayer.addSublayer(track)
@@ -190,6 +223,7 @@ final class AquaLCDView: NSView {
         fill.name = LayerName.laneFill
         fill.backgroundColor = ModernRetroTheme.accentInfo.withAlphaComponent(0.9).cgColor
         fill.cornerRadius = 5
+        fill.masksToBounds = true
         track.addSublayer(fill)
 
         let shimmer = CAGradientLayer()
@@ -252,7 +286,7 @@ final class AquaLCDView: NSView {
         shimmer.frame = fill.bounds
         CATransaction.commit()
 
-        if fill.bounds.width > 2 {
+        if animateAccent && fill.bounds.width > 2 {
             startShimmerAnimation(shimmer)
         } else {
             stopShimmerAnimation(shimmer)

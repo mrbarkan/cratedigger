@@ -23,6 +23,14 @@ public struct AudioTrack: Identifiable, Hashable, Sendable {
     public var artist: String
     public var album: String
     public var durationSeconds: Double
+    public var formatName: String?
+    public var bitrateKbps: Int?
+    public var sampleRateHz: Int?
+    public var year: Int?
+    public var trackNumber: Int?
+    public var trackTotal: Int?
+    public var discNumber: Int?
+    public var discTotal: Int?
     public var artworkSource: ArtworkSource
     public var artworkHash: String?
     public var artworkDimensions: ArtworkDimensions?
@@ -34,6 +42,14 @@ public struct AudioTrack: Identifiable, Hashable, Sendable {
         artist: String = "",
         album: String = "",
         durationSeconds: Double = 0,
+        formatName: String? = nil,
+        bitrateKbps: Int? = nil,
+        sampleRateHz: Int? = nil,
+        year: Int? = nil,
+        trackNumber: Int? = nil,
+        trackTotal: Int? = nil,
+        discNumber: Int? = nil,
+        discTotal: Int? = nil,
         artworkSource: ArtworkSource = .none,
         artworkHash: String? = nil,
         artworkDimensions: ArtworkDimensions? = nil
@@ -44,6 +60,14 @@ public struct AudioTrack: Identifiable, Hashable, Sendable {
         self.artist = artist
         self.album = album
         self.durationSeconds = durationSeconds
+        self.formatName = formatName
+        self.bitrateKbps = bitrateKbps
+        self.sampleRateHz = sampleRateHz
+        self.year = year
+        self.trackNumber = trackNumber
+        self.trackTotal = trackTotal
+        self.discNumber = discNumber
+        self.discTotal = discTotal
         self.artworkSource = artworkSource
         self.artworkHash = artworkHash
         self.artworkDimensions = artworkDimensions

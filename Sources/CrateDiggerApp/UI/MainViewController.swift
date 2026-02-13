@@ -92,6 +92,47 @@ enum TemplatePreset: String, CaseIterable {
     }
 }
 
+private enum PlaylistSortMode: String, CaseIterable {
+    case manual
+    case trackDiscAscending
+    case trackDiscDescending
+    case titleAscending
+    case titleDescending
+    case artistAscending
+    case artistDescending
+    case albumAscending
+    case albumDescending
+    case durationAscending
+    case durationDescending
+
+    var title: String {
+        switch self {
+        case .manual:
+            return "Manual Order"
+        case .trackDiscAscending:
+            return "Track/Disc ↑"
+        case .trackDiscDescending:
+            return "Track/Disc ↓"
+        case .titleAscending:
+            return "Title ↑"
+        case .titleDescending:
+            return "Title ↓"
+        case .artistAscending:
+            return "Artist ↑"
+        case .artistDescending:
+            return "Artist ↓"
+        case .albumAscending:
+            return "Album ↑"
+        case .albumDescending:
+            return "Album ↓"
+        case .durationAscending:
+            return "Duration ↑"
+        case .durationDescending:
+            return "Duration ↓"
+        }
+    }
+}
+
 private struct AlbumGroupKey: Hashable {
     let artistBucket: String
     let album: String
@@ -133,10 +174,22 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
 
     private var loadedTracks: [LoadedTrack] = []
     private var sourceRootByTrackPath: [String: URL] = [:]
+    private lazy var playbackService: PlaybackServiceProtocol = PlaybackService()
+    private var playbackState: PlaybackState = .idle
+    private var playbackCurrentIndex: Int?
+    private var playbackCurrentTime: Double = 0
+    private var playbackDuration: Double = 0
+    private var playbackErrorMessage: String?
+    private var playbackVolume: Double = 0.8
+    private var suppressSelectionDrivenPlayback = false
+    private var keyEventMonitor: Any?
+    private var playlistSortMode: PlaylistSortMode = .trackDiscAscending
+    private var hasAppliedStartupLayout = false
 
     private let tableView = NSTableView()
     private let scrollView = NSScrollView()
     private let openFolderButton = NSButton(title: "Open Folder", target: nil, action: nil)
+    private let playlistSortPopUp = NSPopUpButton(frame: .zero, pullsDown: false)
     private let batchScopePopUp = NSPopUpButton(frame: .zero, pullsDown: false)
     private let formatPopUp = NSPopUpButton(frame: .zero, pullsDown: false)
     private let bitratePopUp = NSPopUpButton(frame: .zero, pullsDown: false)
@@ -153,6 +206,10 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
     private let customOrderStack = NSStackView()
     private let statusField = NSTextField(labelWithString: "Load a folder to begin")
     private let convertButton = NSButton(title: "CONVERT", target: nil, action: nil)
+    private let previousButton = NSButton(title: "◀◀", target: nil, action: nil)
+    private let playPauseButton = NSButton(title: "PLAY", target: nil, action: nil)
+    private let nextButton = NSButton(title: "▶▶", target: nil, action: nil)
+    private let volumeSlider = NSSlider(value: 0.8, minValue: 0, maxValue: 1, target: nil, action: nil)
     private let lcdView = AquaLCDView()
     private let topBar = NSVisualEffectView()
     private let bottomBar = NSVisualEffectView()
@@ -166,6 +223,7 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
     private var isConversionRunning = false
     private var toolbarActivityState: ToolbarActivityState = .idle
     private var toolbarCompletionState: ToolbarCompletionState = .idle
+    private var completionSound: NSSound?
 
     private let inspectorViewController = TrackInspectorViewController()
     private let outputFormats: [OutputFormat] = [.mp3, .aac, .alac, .flac, .wav, .aiff, .ogg, .opus]
@@ -174,6 +232,7 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
     private let unknownArtist = "Unknown Artist"
     private let unknownAlbum = "Unknown Album"
     private let unknownYear = "Unknown Year"
+    private var selectedArtworkMaxDimension: Int?
 
     private let defaults = UserDefaults.standard
     private let defaultsFolderStructureModeKey = "CrateDigger.folderStructureMode"
@@ -182,10 +241,15 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
     private let defaultsTokenOrderKey = "CrateDigger.templateTokenOrder"
     private let defaultsLastLoadFolderPathKey = "CrateDigger.lastLoadFolderPath"
     private let defaultsLastConvertFolderPathKey = "CrateDigger.lastConvertFolderPath"
+    private let defaultsArtworkMaxDimensionKey = "CrateDigger.artworkMaxDimension"
+    private let tableDragType = NSPasteboard.PasteboardType("com.cratedigger.table-track-row")
 
     deinit {
         scanTask?.cancel()
         lcdSecondaryResetWorkItem?.cancel()
+        if let keyEventMonitor {
+            NSEvent.removeMonitor(keyEventMonitor)
+        }
     }
 
     override func loadView() {
@@ -208,7 +272,10 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         splitView.addArrangedSubview(inspectorViewController.view)
 
         inspectorViewController.view.translatesAutoresizingMaskIntoConstraints = false
-        inspectorViewController.view.widthAnchor.constraint(equalToConstant: 420).isActive = true
+        let inspectorPreferredWidth = inspectorViewController.view.widthAnchor.constraint(equalToConstant: 380)
+        inspectorPreferredWidth.priority = .defaultHigh
+        inspectorPreferredWidth.isActive = true
+        inspectorViewController.view.widthAnchor.constraint(greaterThanOrEqualToConstant: 340).isActive = true
 
         configureTopBar()
         configureBottomBar()
@@ -243,9 +310,59 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         super.viewDidLayout()
         ModernRetroTheme.updateButtonLayers(openFolderButton)
         ModernRetroTheme.updateButtonLayers(convertButton)
+        ModernRetroTheme.updateButtonLayers(previousButton)
+        ModernRetroTheme.updateButtonLayers(playPauseButton)
+        ModernRetroTheme.updateButtonLayers(nextButton)
         updateToolbarIndicators(activity: toolbarActivityState, completion: toolbarCompletionState)
         lcdView.layoutSubtreeIfNeeded()
         updateLCD()
+    }
+
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        installKeyboardMonitorIfNeeded()
+        fitWindowStartupLayoutIfNeeded()
+    }
+
+    override func viewWillDisappear() {
+        super.viewWillDisappear()
+        if let keyEventMonitor {
+            NSEvent.removeMonitor(keyEventMonitor)
+            self.keyEventMonitor = nil
+        }
+    }
+
+    private func fitWindowStartupLayoutIfNeeded() {
+        guard !hasAppliedStartupLayout else { return }
+        guard let window = view.window else { return }
+
+        var frame = window.frame
+        let minSize = window.minSize
+        let adjustedWidth = max(frame.width, minSize.width)
+        let adjustedHeight = max(frame.height, minSize.height)
+        if adjustedWidth != frame.width || adjustedHeight != frame.height {
+            frame.size = NSSize(width: adjustedWidth, height: adjustedHeight)
+            window.setFrame(frame, display: true, animate: false)
+        }
+
+        view.layoutSubtreeIfNeeded()
+        topBar.layoutSubtreeIfNeeded()
+        ModernRetroTheme.updateButtonLayers(openFolderButton)
+        ModernRetroTheme.updateButtonLayers(convertButton)
+        ModernRetroTheme.updateButtonLayers(previousButton)
+        ModernRetroTheme.updateButtonLayers(playPauseButton)
+        ModernRetroTheme.updateButtonLayers(nextButton)
+        hasAppliedStartupLayout = true
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.view.layoutSubtreeIfNeeded()
+            ModernRetroTheme.updateButtonLayers(self.openFolderButton)
+            ModernRetroTheme.updateButtonLayers(self.convertButton)
+            ModernRetroTheme.updateButtonLayers(self.previousButton)
+            ModernRetroTheme.updateButtonLayers(self.playPauseButton)
+            ModernRetroTheme.updateButtonLayers(self.nextButton)
+        }
     }
 
     func openFolder() {
@@ -286,8 +403,23 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
     }
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-        let identifier = NSUserInterfaceItemIdentifier("TrackCellView")
+        guard let tableColumn else { return nil }
+        let loadedTrack = loadedTracks[row]
 
+        if tableColumn.identifier.rawValue == "TrackNumberColumn" {
+            let identifier = NSUserInterfaceItemIdentifier("TrackNumberCellView")
+            let cell: TrackNumberCellView
+            if let reusable = tableView.makeView(withIdentifier: identifier, owner: self) as? TrackNumberCellView {
+                cell = reusable
+            } else {
+                cell = TrackNumberCellView(frame: .zero)
+                cell.identifier = identifier
+            }
+            cell.configure(positionText: trackPositionText(for: loadedTrack))
+            return cell
+        }
+
+        let identifier = NSUserInterfaceItemIdentifier("TrackCellView")
         let cell: TrackCellView
         if let reusable = tableView.makeView(withIdentifier: identifier, owner: self) as? TrackCellView {
             cell = reusable
@@ -296,7 +428,6 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
             cell.identifier = identifier
         }
 
-        let loadedTrack = loadedTracks[row]
         let thumbnail = loadedTrack.track.artworkHash.flatMap {
             artworkService.generateThumbnail(artworkHash: $0, size: CGSize(width: 36, height: 36))
         }
@@ -305,16 +436,91 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         return cell
     }
 
+    func tableView(_ tableView: NSTableView, pasteboardWriterForRow row: Int) -> (any NSPasteboardWriting)? {
+        let item = NSPasteboardItem()
+        item.setString(String(row), forType: tableDragType)
+        return item
+    }
+
+    func tableView(
+        _ tableView: NSTableView,
+        validateDrop info: any NSDraggingInfo,
+        proposedRow row: Int,
+        proposedDropOperation dropOperation: NSTableView.DropOperation
+    ) -> NSDragOperation {
+        guard info.draggingSource as? NSTableView === tableView else {
+            return []
+        }
+        tableView.setDropRow(row, dropOperation: .above)
+        return .move
+    }
+
+    func tableView(
+        _ tableView: NSTableView,
+        acceptDrop info: any NSDraggingInfo,
+        row: Int,
+        dropOperation: NSTableView.DropOperation
+    ) -> Bool {
+        guard info.draggingSource as? NSTableView === tableView else {
+            return false
+        }
+
+        if playlistSortMode != .manual {
+            playlistSortMode = .manual
+            select(playlistSortPopUp, rawValue: PlaylistSortMode.manual.rawValue)
+        }
+
+        let movingRows = tableView.selectedRowIndexes
+        guard !movingRows.isEmpty else {
+            return false
+        }
+
+        let movedTracks = movingRows.compactMap { loadedTracks.indices.contains($0) ? loadedTracks[$0] : nil }
+        guard !movedTracks.isEmpty else {
+            return false
+        }
+
+        let playbackTrackPath = currentPlaybackTrackPath()
+        let wasPlaying = playbackState == .playing || playbackState == .loading
+        let preservedTime = playbackCurrentTime
+
+        var insertionIndex = row
+        for index in movingRows.reversed() where loadedTracks.indices.contains(index) {
+            loadedTracks.remove(at: index)
+            if index < insertionIndex {
+                insertionIndex -= 1
+            }
+        }
+
+        insertionIndex = max(0, min(insertionIndex, loadedTracks.count))
+        loadedTracks.insert(contentsOf: movedTracks, at: insertionIndex)
+
+        tableView.reloadData()
+        let movedIndexes = IndexSet(integersIn: insertionIndex..<(insertionIndex + movedTracks.count))
+        tableView.selectRowIndexes(movedIndexes, byExtendingSelection: false)
+
+        rebuildPlaybackQueueForCurrentOrder(
+            preferredTrackPath: playbackTrackPath,
+            autoPlay: wasPlaying,
+            preserveTime: preservedTime
+        )
+        return true
+    }
+
     func tableViewSelectionDidChange(_ notification: Notification) {
         guard tableView.selectedRow >= 0, loadedTracks.indices.contains(tableView.selectedRow) else {
             inspectorViewController.update(with: nil)
             updateConvertButtonState()
+            updatePlaybackControls()
             updateLCD()
             return
         }
 
         inspectorViewController.update(with: loadedTracks[tableView.selectedRow])
         updateConvertButtonState()
+        if !suppressSelectionDrivenPlayback {
+            updatePlaybackControls()
+        }
         updateLCD()
     }
 
@@ -379,8 +585,17 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         templateOptionsStack.addArrangedSubview(templatePresetControls)
         templateOptionsStack.addArrangedSubview(customOrderStack)
 
+        let numberColumn = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("TrackNumberColumn"))
+        numberColumn.title = "#"
+        numberColumn.width = 88
+        numberColumn.minWidth = 74
+        numberColumn.maxWidth = 108
+        numberColumn.resizingMask = .autoresizingMask
+
         let trackColumn = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("TrackColumn"))
         trackColumn.title = "Tracks"
+        trackColumn.resizingMask = .autoresizingMask
+        tableView.addTableColumn(numberColumn)
         tableView.addTableColumn(trackColumn)
         tableView.headerView = nil
         tableView.delegate = self
@@ -388,9 +603,14 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         tableView.usesAlternatingRowBackgroundColors = false
         tableView.selectionHighlightStyle = .regular
         tableView.allowsMultipleSelection = true
+        tableView.allowsColumnReordering = true
         tableView.allowsEmptySelection = true
         tableView.focusRingType = .none
+        tableView.target = self
+        tableView.doubleAction = #selector(playSelectedTrackFromDoubleClick)
         tableView.gridStyleMask = [.solidHorizontalGridLineMask]
+        tableView.registerForDraggedTypes([tableDragType])
+        tableView.setDraggingSourceOperationMask(.move, forLocal: true)
 
         scrollView.documentView = tableView
         scrollView.hasVerticalScroller = true
@@ -419,6 +639,15 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         ModernRetroTheme.stylePopUp(popUp)
     }
 
+    private func configurePlaylistSortPopUp() {
+        playlistSortPopUp.removeAllItems()
+        for mode in PlaylistSortMode.allCases {
+            playlistSortPopUp.addItem(withTitle: mode.title)
+            playlistSortPopUp.lastItem?.representedObject = mode.rawValue
+        }
+        select(playlistSortPopUp, rawValue: playlistSortMode.rawValue)
+    }
+
     private func configureTopBar() {
         topBar.translatesAutoresizingMaskIntoConstraints = false
         ModernRetroTheme.applyChromeMaterial(to: topBar)
@@ -432,11 +661,74 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         convertButton.isEnabled = false
         ModernRetroTheme.stylePrimaryActionButton(convertButton, title: "CONVERT", minWidth: ModernRetroTheme.toolbarPrimaryButtonWidth)
 
-        let leftStack = NSStackView(views: [openFolderButton, convertButton])
+        let sortLabel = NSTextField(labelWithString: "ORDER")
+        sortLabel.font = NSFont.systemFont(ofSize: 10, weight: .semibold)
+        sortLabel.textColor = ModernRetroTheme.textSecondary
+
+        playlistSortPopUp.target = self
+        playlistSortPopUp.action = #selector(playlistSortChanged)
+        stylePopUp(playlistSortPopUp)
+        configurePlaylistSortPopUp()
+        playlistSortPopUp.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+        playlistSortPopUp.widthAnchor.constraint(equalToConstant: 158).isActive = true
+
+        let sortStack = NSStackView(views: [sortLabel, playlistSortPopUp])
+        sortStack.orientation = .horizontal
+        sortStack.alignment = .centerY
+        sortStack.spacing = 6
+
+        let leftStack = NSStackView(views: [openFolderButton, convertButton, sortStack])
         leftStack.orientation = .horizontal
         leftStack.alignment = .centerY
-        leftStack.spacing = ModernRetroTheme.toolbarClusterSpacing
+        leftStack.spacing = 12
         leftStack.translatesAutoresizingMaskIntoConstraints = false
+
+        previousButton.target = self
+        previousButton.action = #selector(previousTrackAction)
+        ModernRetroTheme.styleSecondaryButton(previousButton)
+        styleTransportButton(previousButton, symbol: "backward.fill", accessibilityLabel: "Previous")
+        previousButton.toolTip = "Previous (Command+Up)"
+
+        playPauseButton.target = self
+        playPauseButton.action = #selector(playPauseAction)
+        ModernRetroTheme.styleSecondaryButton(playPauseButton)
+        styleTransportButton(playPauseButton, symbol: "play.fill", accessibilityLabel: "Play")
+        playPauseButton.toolTip = "Play/Pause (Space)"
+
+        nextButton.target = self
+        nextButton.action = #selector(nextTrackAction)
+        ModernRetroTheme.styleSecondaryButton(nextButton)
+        styleTransportButton(nextButton, symbol: "forward.fill", accessibilityLabel: "Next")
+        nextButton.toolTip = "Next (Command+Down)"
+        [previousButton, playPauseButton, nextButton].forEach {
+            $0.widthAnchor.constraint(equalToConstant: 34).isActive = true
+            $0.heightAnchor.constraint(equalToConstant: 30).isActive = true
+        }
+
+        volumeSlider.target = self
+        volumeSlider.action = #selector(volumeSliderChanged)
+        volumeSlider.isContinuous = true
+        volumeSlider.controlSize = .small
+        volumeSlider.doubleValue = playbackVolume
+
+        let transportButtons = NSStackView(views: [previousButton, playPauseButton, nextButton])
+        transportButtons.orientation = .horizontal
+        transportButtons.alignment = .centerY
+        transportButtons.spacing = 8
+        transportButtons.translatesAutoresizingMaskIntoConstraints = false
+        transportButtons.setContentCompressionResistancePriority(.required, for: .horizontal)
+
+        let volumeIcon = NSTextField(labelWithString: "VOL")
+        volumeIcon.font = NSFont.systemFont(ofSize: 10, weight: .semibold)
+        volumeIcon.textColor = ModernRetroTheme.textSecondary
+
+        let volumeStack = NSStackView(views: [volumeIcon, volumeSlider])
+        volumeStack.orientation = .horizontal
+        volumeStack.alignment = .centerY
+        volumeStack.spacing = 6
+        volumeStack.translatesAutoresizingMaskIntoConstraints = false
+        volumeStack.setContentCompressionResistancePriority(.required, for: .horizontal)
+        volumeSlider.widthAnchor.constraint(equalToConstant: 90).isActive = true
 
         configureIndicator(activityIndicatorView)
         configureIndicator(completionIndicatorView)
@@ -447,28 +739,66 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         indicatorStack.translatesAutoresizingMaskIntoConstraints = false
 
         lcdView.translatesAutoresizingMaskIntoConstraints = false
+        lcdView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        lcdView.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
         topBar.addSubview(leftStack)
+        topBar.addSubview(transportButtons)
         topBar.addSubview(lcdView)
+        topBar.addSubview(volumeStack)
         topBar.addSubview(indicatorStack)
 
         NSLayoutConstraint.activate([
             leftStack.leadingAnchor.constraint(equalTo: topBar.leadingAnchor, constant: ModernRetroTheme.toolbarClusterLeadingInset),
             leftStack.centerYAnchor.constraint(equalTo: topBar.centerYAnchor),
 
+            transportButtons.leadingAnchor.constraint(equalTo: leftStack.trailingAnchor, constant: 16),
+            transportButtons.centerYAnchor.constraint(equalTo: topBar.centerYAnchor),
+
             lcdView.centerXAnchor.constraint(equalTo: topBar.centerXAnchor),
             lcdView.centerYAnchor.constraint(equalTo: topBar.centerYAnchor),
-            lcdView.widthAnchor.constraint(greaterThanOrEqualToConstant: 420),
+            lcdView.widthAnchor.constraint(greaterThanOrEqualToConstant: 320),
             lcdView.widthAnchor.constraint(lessThanOrEqualToConstant: 620),
             lcdView.heightAnchor.constraint(equalToConstant: 56),
 
-            leftStack.trailingAnchor.constraint(lessThanOrEqualTo: lcdView.leadingAnchor, constant: -42),
-            indicatorStack.leadingAnchor.constraint(greaterThanOrEqualTo: lcdView.trailingAnchor, constant: 26),
+            transportButtons.trailingAnchor.constraint(lessThanOrEqualTo: lcdView.leadingAnchor, constant: -24),
+            volumeStack.leadingAnchor.constraint(greaterThanOrEqualTo: lcdView.trailingAnchor, constant: 12),
+            volumeStack.centerYAnchor.constraint(equalTo: topBar.centerYAnchor),
+            indicatorStack.leadingAnchor.constraint(greaterThanOrEqualTo: volumeStack.trailingAnchor, constant: 16),
             indicatorStack.centerYAnchor.constraint(equalTo: topBar.centerYAnchor),
             indicatorStack.trailingAnchor.constraint(equalTo: topBar.trailingAnchor, constant: -(ModernRetroTheme.contentInsets.right + 4))
         ])
+        let preferredLCDWidth = lcdView.widthAnchor.constraint(equalToConstant: 460)
+        preferredLCDWidth.priority = .defaultHigh
+        preferredLCDWidth.isActive = true
+
+        lcdView.onTimelineScrub = { [weak self] progress in
+            guard let self, self.playbackDuration > 0 else { return }
+            let target = progress * self.playbackDuration
+            self.playbackService.seek(toSeconds: target)
+        }
 
         updateToolbarIndicators(activity: .idle, completion: .idle)
+        updatePlaybackControls()
+    }
+
+    private func styleTransportButton(_ button: NSButton, symbol: String, accessibilityLabel: String) {
+        let pointSize: CGFloat = 13
+        let configuration = NSImage.SymbolConfiguration(pointSize: pointSize, weight: .semibold)
+        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: accessibilityLabel)?
+            .withSymbolConfiguration(configuration)
+        button.imagePosition = .imageOnly
+        button.title = ""
+        button.bezelStyle = .regularSquare
+        button.contentTintColor = ModernRetroTheme.textPrimary
+    }
+
+    private func updateTransportButtonSymbol(_ button: NSButton, symbol: String, accessibilityLabel: String) {
+        let pointSize: CGFloat = 13
+        let configuration = NSImage.SymbolConfiguration(pointSize: pointSize, weight: .semibold)
+        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: accessibilityLabel)?
+            .withSymbolConfiguration(configuration)
+        button.toolTip = accessibilityLabel
     }
 
     private func configureBottomBar() {
@@ -644,6 +974,7 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         configureTokenOrderPopups()
 
         restoreFolderStructurePreferences()
+        restoreArtworkResizePreference()
         updateFormatDependentControls()
         updateTemplateOptionsVisibility()
         updateConvertButtonState()
@@ -658,6 +989,41 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
             setStatus("ffmpeg was not found. Loading and artwork preview work; conversion is unavailable.")
             updateToolbarIndicators(activity: .disabled, completion: .error)
         }
+
+        configurePlaybackBindings()
+        playbackService.setVolume(playbackVolume)
+    }
+
+    private func configurePlaybackBindings() {
+        playbackService.onCurrentIndexChange = { [weak self] index in
+            guard let self else { return }
+            self.playbackCurrentIndex = index
+            self.syncSelectionToPlaybackIndex(index)
+            self.updatePlaybackControls()
+            self.updateLCD()
+        }
+
+        playbackService.onStateChange = { [weak self] state in
+            guard let self else { return }
+            self.playbackState = state
+            self.updatePlaybackControls()
+            self.updateLCD()
+        }
+
+        playbackService.onTimeChange = { [weak self] current, duration in
+            guard let self else { return }
+            self.playbackCurrentTime = current
+            self.playbackDuration = duration
+            self.updatePlaybackControls()
+            self.updateLCD()
+        }
+
+        playbackService.onError = { [weak self] message in
+            guard let self else { return }
+            self.playbackErrorMessage = message
+            self.setStatus("Playback warning: \(message)")
+            self.updateLCD()
+        }
     }
 
     private func loadTracks(from folderURLs: [URL]) {
@@ -665,6 +1031,13 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         guard !uniqueRoots.isEmpty else {
             return
         }
+
+        playbackService.load(queue: [], startIndex: 0, autoPlay: false)
+        playbackState = .idle
+        playbackCurrentIndex = nil
+        playbackCurrentTime = 0
+        playbackDuration = 0
+        updatePlaybackControls()
 
         let folderSummary = uniqueRoots.count == 1
             ? uniqueRoots[0].lastPathComponent
@@ -682,16 +1055,19 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
             await MainActor.run {
                 self.loadedTracks = result.tracks
                 self.sourceRootByTrackPath = result.sourceRootByTrackPath
+                self.applyPlaylistSort(mode: self.playlistSortMode, preservePlaybackOrder: false)
                 self.tableView.reloadData()
 
-                if result.tracks.isEmpty {
+                if self.loadedTracks.isEmpty {
                     self.setStatus("No supported audio files found")
                     self.inspectorViewController.update(with: nil)
                 } else {
                     self.tableView.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
-                    self.setStatus("Loaded \(result.tracks.count) tracks")
+                    self.setStatus("Loaded \(self.loadedTracks.count) tracks")
                 }
                 self.updateConvertButtonState()
+                self.updatePlaybackControls()
+                self.playbackErrorMessage = nil
                 self.updateLCD()
             }
         }
@@ -729,13 +1105,8 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
             }
         }
 
-        let sortedTracks = mergedTracks.sorted { lhs, rhs in
-            let lhsTitle = lhs.track.title
-            let rhsTitle = rhs.track.title
-            if lhsTitle != rhsTitle {
-                return lhsTitle.localizedCaseInsensitiveCompare(rhsTitle) == .orderedAscending
-            }
-            return lhs.track.fileURL.path.localizedCaseInsensitiveCompare(rhs.track.fileURL.path) == .orderedAscending
+        let sortedTracks = mergedTracks.sorted {
+            $0.track.fileURL.path.localizedCaseInsensitiveCompare($1.track.fileURL.path) == .orderedAscending
         }
 
         return MultiRootScanResult(
@@ -757,6 +1128,407 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         }
 
         return unique
+    }
+
+    private func syncSelectionToPlaybackIndex(_ index: Int?) {
+        guard let index, loadedTracks.indices.contains(index) else { return }
+        guard tableView.selectedRow != index else { return }
+
+        suppressSelectionDrivenPlayback = true
+        tableView.selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false)
+        suppressSelectionDrivenPlayback = false
+        inspectorViewController.update(with: loadedTracks[index])
+    }
+
+    @objc private func playSelectedTrackFromDoubleClick() {
+        guard tableView.clickedRow >= 0 else { return }
+        if tableView.selectedRow != tableView.clickedRow {
+            tableView.selectRowIndexes(IndexSet(integer: tableView.clickedRow), byExtendingSelection: false)
+        }
+        startPlaybackFromSelection(autoPlay: true)
+    }
+
+    @objc private func playPauseAction() {
+        if playbackCurrentIndex == nil || playbackState == .idle || playbackState == .ended || isFailureState(playbackState) {
+            startPlaybackFromSelection(autoPlay: true)
+            return
+        }
+
+        if let selectedIndex = selectedTrackIndex(),
+           selectedIndex != playbackCurrentIndex {
+            startPlaybackFromSelection(autoPlay: true)
+            return
+        }
+
+        playbackService.togglePlayPause()
+    }
+
+    @objc private func previousTrackAction() {
+        playbackService.previous()
+    }
+
+    @objc private func nextTrackAction() {
+        playbackService.next()
+    }
+
+    @objc private func volumeSliderChanged() {
+        playbackVolume = volumeSlider.doubleValue
+        playbackService.setVolume(playbackVolume)
+    }
+
+    private func startPlaybackFromSelection(autoPlay: Bool) {
+        guard !loadedTracks.isEmpty else {
+            setStatus("Load tracks before playback.")
+            return
+        }
+
+        let index = selectedTrackIndex() ?? 0
+        let queueItems = queueItemsFromLoadedTracks()
+        playbackService.load(queue: queueItems, startIndex: index, autoPlay: autoPlay)
+    }
+
+    private func selectedTrackIndex() -> Int? {
+        let selected = tableView.selectedRow
+        guard selected >= 0, loadedTracks.indices.contains(selected) else {
+            return nil
+        }
+        return selected
+    }
+
+    @objc private func playlistSortChanged() {
+        let selectedMode = selectedPlaylistSortMode()
+        playlistSortMode = selectedMode
+        applyPlaylistSort(mode: selectedMode)
+    }
+
+    private func selectedPlaylistSortMode() -> PlaylistSortMode {
+        if let rawValue = playlistSortPopUp.selectedItem?.representedObject as? String,
+           let mode = PlaylistSortMode(rawValue: rawValue) {
+            return mode
+        }
+        return .trackDiscAscending
+    }
+
+    private func applyPlaylistSort(mode: PlaylistSortMode, preservePlaybackOrder: Bool = true) {
+        guard !loadedTracks.isEmpty else { return }
+
+        let selectedTrackPaths = Set(
+            tableView.selectedRowIndexes.compactMap { row in
+                loadedTracks.indices.contains(row) ? trackPathKey(for: loadedTracks[row].track.fileURL) : nil
+            }
+        )
+
+        let playbackTrackPath = currentPlaybackTrackPath()
+        let wasPlaying = playbackState == .playing || playbackState == .loading
+        let preservedTime = playbackCurrentTime
+
+        switch mode {
+        case .manual:
+            break
+        case .trackDiscAscending:
+            loadedTracks.sort(by: { compareTrackDisc($0, $1, ascending: true) })
+        case .trackDiscDescending:
+            loadedTracks.sort(by: { compareTrackDisc($0, $1, ascending: false) })
+        case .titleAscending:
+            loadedTracks.sort(by: { compareString($0.track.title, $1.track.title, ascending: true, lhsFallback: $0, rhsFallback: $1) })
+        case .titleDescending:
+            loadedTracks.sort(by: { compareString($0.track.title, $1.track.title, ascending: false, lhsFallback: $0, rhsFallback: $1) })
+        case .artistAscending:
+            loadedTracks.sort(by: { compareString($0.track.artist, $1.track.artist, ascending: true, lhsFallback: $0, rhsFallback: $1) })
+        case .artistDescending:
+            loadedTracks.sort(by: { compareString($0.track.artist, $1.track.artist, ascending: false, lhsFallback: $0, rhsFallback: $1) })
+        case .albumAscending:
+            loadedTracks.sort(by: { compareString($0.track.album, $1.track.album, ascending: true, lhsFallback: $0, rhsFallback: $1) })
+        case .albumDescending:
+            loadedTracks.sort(by: { compareString($0.track.album, $1.track.album, ascending: false, lhsFallback: $0, rhsFallback: $1) })
+        case .durationAscending:
+            loadedTracks.sort(by: { compareDuration($0, $1, ascending: true) })
+        case .durationDescending:
+            loadedTracks.sort(by: { compareDuration($0, $1, ascending: false) })
+        }
+
+        tableView.reloadData()
+        restoreSelection(forTrackPaths: selectedTrackPaths)
+
+        if preservePlaybackOrder {
+            rebuildPlaybackQueueForCurrentOrder(
+                preferredTrackPath: playbackTrackPath,
+                autoPlay: wasPlaying,
+                preserveTime: preservedTime
+            )
+        }
+    }
+
+    private func compareTrackDisc(_ lhs: LoadedTrack, _ rhs: LoadedTrack, ascending: Bool) -> Bool {
+        let lhsDisc = lhs.metadata.discNumber ?? Int.max
+        let rhsDisc = rhs.metadata.discNumber ?? Int.max
+        if lhsDisc != rhsDisc {
+            return ascending ? (lhsDisc < rhsDisc) : (lhsDisc > rhsDisc)
+        }
+
+        let lhsTrack = lhs.metadata.trackNumber ?? Int.max
+        let rhsTrack = rhs.metadata.trackNumber ?? Int.max
+        if lhsTrack != rhsTrack {
+            return ascending ? (lhsTrack < rhsTrack) : (lhsTrack > rhsTrack)
+        }
+
+        return compareString(lhs.track.title, rhs.track.title, ascending: ascending, lhsFallback: lhs, rhsFallback: rhs)
+    }
+
+    private func compareString(
+        _ lhs: String,
+        _ rhs: String,
+        ascending: Bool,
+        lhsFallback: LoadedTrack,
+        rhsFallback: LoadedTrack
+    ) -> Bool {
+        let result = lhs.localizedCaseInsensitiveCompare(rhs)
+        if result != .orderedSame {
+            return ascending ? (result == .orderedAscending) : (result == .orderedDescending)
+        }
+
+        let lhsPath = lhsFallback.track.fileURL.path
+        let rhsPath = rhsFallback.track.fileURL.path
+        let fallbackResult = lhsPath.localizedCaseInsensitiveCompare(rhsPath)
+        return ascending ? (fallbackResult == .orderedAscending) : (fallbackResult == .orderedDescending)
+    }
+
+    private func compareDuration(_ lhs: LoadedTrack, _ rhs: LoadedTrack, ascending: Bool) -> Bool {
+        let lhsDuration = lhs.track.durationSeconds
+        let rhsDuration = rhs.track.durationSeconds
+        if lhsDuration != rhsDuration {
+            return ascending ? (lhsDuration < rhsDuration) : (lhsDuration > rhsDuration)
+        }
+        return compareString(lhs.track.title, rhs.track.title, ascending: ascending, lhsFallback: lhs, rhsFallback: rhs)
+    }
+
+    private func restoreSelection(forTrackPaths selectedTrackPaths: Set<String>) {
+        guard !selectedTrackPaths.isEmpty else {
+            if loadedTracks.indices.contains(tableView.selectedRow) {
+                tableView.selectRowIndexes(IndexSet(integer: tableView.selectedRow), byExtendingSelection: false)
+            }
+            return
+        }
+
+        let indexes = IndexSet(loadedTracks.enumerated().compactMap { index, loaded in
+            selectedTrackPaths.contains(trackPathKey(for: loaded.track.fileURL)) ? index : nil
+        })
+
+        if indexes.isEmpty {
+            if !loadedTracks.isEmpty {
+                tableView.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
+            }
+        } else {
+            tableView.selectRowIndexes(indexes, byExtendingSelection: false)
+        }
+    }
+
+    private func queueItemsFromLoadedTracks() -> [PlaybackQueueItem] {
+        loadedTracks.map { loaded in
+            PlaybackQueueItem(
+                url: loaded.track.fileURL,
+                title: loaded.track.title,
+                artist: loaded.track.artist,
+                album: loaded.track.album,
+                durationSeconds: loaded.track.durationSeconds
+            )
+        }
+    }
+
+    private func currentPlaybackTrackPath() -> String? {
+        guard let index = playbackCurrentIndex else {
+            return nil
+        }
+
+        if playbackService.queue.indices.contains(index) {
+            return trackPathKey(for: playbackService.queue[index].url)
+        }
+
+        if loadedTracks.indices.contains(index) {
+            return trackPathKey(for: loadedTracks[index].track.fileURL)
+        }
+
+        return nil
+    }
+
+    private func rebuildPlaybackQueueForCurrentOrder(
+        preferredTrackPath: String?,
+        autoPlay: Bool,
+        preserveTime: Double
+    ) {
+        guard let preferredTrackPath else {
+            return
+        }
+        guard !loadedTracks.isEmpty else {
+            return
+        }
+
+        let queueItems = queueItemsFromLoadedTracks()
+        guard let newIndex = loadedTracks.firstIndex(where: { trackPathKey(for: $0.track.fileURL) == preferredTrackPath }) else {
+            return
+        }
+
+        playbackService.load(queue: queueItems, startIndex: newIndex, autoPlay: autoPlay)
+        guard preserveTime > 0.25 else {
+            return
+        }
+
+        let seekTime = preserveTime
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
+            self?.playbackService.seek(toSeconds: seekTime)
+        }
+    }
+
+    private func trackPositionText(for loadedTrack: LoadedTrack) -> String {
+        let trackNumber = loadedTrack.metadata.trackNumber
+        let trackTotal = loadedTrack.metadata.trackTotal
+        let discNumber = loadedTrack.metadata.discNumber
+        let discTotal = loadedTrack.metadata.discTotal
+
+        let trackText: String
+        if let trackNumber {
+            if let trackTotal, trackTotal > 0 {
+                trackText = "\(trackNumber)/\(trackTotal)"
+            } else {
+                trackText = "\(trackNumber)"
+            }
+        } else {
+            trackText = "—"
+        }
+
+        if let discNumber, discNumber > 0, (discNumber > 1 || (discTotal ?? 0) > 1) {
+            if let discTotal, discTotal > 0 {
+                return "D\(discNumber)/\(discTotal) • \(trackText)"
+            }
+            return "D\(discNumber) • \(trackText)"
+        }
+
+        return trackText
+    }
+
+    private func updatePlaybackControls() {
+        let hasTracks = !loadedTracks.isEmpty
+
+        previousButton.isEnabled = hasTracks && (playbackCurrentIndex ?? 0) > 0
+        nextButton.isEnabled = hasTracks && ((playbackCurrentIndex ?? -1) < (loadedTracks.count - 1))
+
+        let symbol: String
+        let label: String
+        switch playbackState {
+        case .playing:
+            symbol = "pause.fill"
+            label = "Pause"
+        case .loading:
+            symbol = "hourglass"
+            label = "Loading"
+        default:
+            symbol = "play.fill"
+            label = "Play"
+        }
+        updateTransportButtonSymbol(playPauseButton, symbol: symbol, accessibilityLabel: label)
+        playPauseButton.isEnabled = hasTracks
+
+        volumeSlider.isEnabled = hasTracks
+        if volumeSlider.cell?.isHighlighted != true {
+            volumeSlider.doubleValue = playbackVolume
+        }
+
+        ModernRetroTheme.updateButtonLayers(previousButton)
+        ModernRetroTheme.updateButtonLayers(playPauseButton)
+        ModernRetroTheme.updateButtonLayers(nextButton)
+    }
+
+    private func formatPlaybackTime(_ seconds: Double) -> String {
+        guard seconds.isFinite, seconds > 0 else {
+            return "0:00"
+        }
+        let total = Int(seconds.rounded())
+        return String(format: "%d:%02d", total / 60, total % 60)
+    }
+
+    private func isFailureState(_ state: PlaybackState) -> Bool {
+        if case .failed = state {
+            return true
+        }
+        return false
+    }
+
+    private func installKeyboardMonitorIfNeeded() {
+        guard keyEventMonitor == nil else { return }
+
+        keyEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+            return self.handleKeyboardShortcut(event) ? nil : event
+        }
+    }
+
+    private func handleKeyboardShortcut(_ event: NSEvent) -> Bool {
+        guard view.window?.attachedSheet == nil else { return false }
+        guard !(view.window?.firstResponder is NSTextView) else { return false }
+
+        let modifiers = event.modifierFlags.intersection([.command, .option, .shift, .control])
+        if modifiers == [.command],
+           event.charactersIgnoringModifiers?.lowercased() == "a",
+           isPlaylistFocused() {
+            tableView.selectAll(nil)
+            return true
+        }
+
+        switch event.keyCode {
+        case 49:
+            if modifiers.isEmpty {
+                playPauseAction()
+                return true
+            }
+        case 36, 76:
+            if modifiers.isEmpty {
+                startPlaybackFromSelection(autoPlay: true)
+                return true
+            }
+        case 126:
+            if modifiers.contains(.command) {
+                previousTrackAction()
+                return true
+            }
+        case 125:
+            if modifiers.contains(.command) {
+                nextTrackAction()
+                return true
+            }
+        case 123:
+            if modifiers.contains(.option) {
+                playbackService.seek(toSeconds: max(playbackCurrentTime - 5, 0))
+                return true
+            }
+        case 124:
+            if modifiers.contains(.option) {
+                let target = playbackDuration > 0
+                    ? min(playbackCurrentTime + 5, playbackDuration)
+                    : playbackCurrentTime + 5
+                playbackService.seek(toSeconds: target)
+                return true
+            }
+        default:
+            break
+        }
+
+        return false
+    }
+
+    private func isPlaylistFocused() -> Bool {
+        guard let firstResponder = view.window?.firstResponder else {
+            return false
+        }
+
+        if firstResponder === tableView || firstResponder === scrollView || firstResponder === scrollView.contentView {
+            return true
+        }
+
+        if let responderView = firstResponder as? NSView {
+            return responderView.isDescendant(of: tableView) || responderView.isDescendant(of: scrollView)
+        }
+
+        return false
     }
 
     private func trackPathKey(for url: URL) -> String {
@@ -916,6 +1688,7 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
                     tone: completionTone,
                     progress: 1.0
                 )
+                self.playConversionCompletionSound()
                 self.scheduleClearLCDConversionStatus(after: 3.8)
                 self.updateConvertButtonState()
 
@@ -974,7 +1747,7 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         )
 
         let sheetWindow = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 760, height: 380),
+            contentRect: NSRect(x: 0, y: 0, width: 920, height: 560),
             styleMask: [.titled],
             backing: .buffered,
             defer: false
@@ -1002,6 +1775,7 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
             outputFormat: selectedOutputFormat(),
             bitrate: selectedBitrate(),
             sampleRate: selectedSampleRate(),
+            artworkMaxDimension: selectedArtworkMaxDimension,
             folderStructureMode: selectedFolderStructureMode(),
             applyMode: selectedTemplateApplyMode(),
             templatePreset: selectedTemplatePreset(),
@@ -1011,6 +1785,7 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
 
     private func applyConversionOptionsSelection(_ selection: ConversionOptionsSelection) {
         batchScopePopUp.selectItem(at: selection.batchScope.rawValue)
+        selectedArtworkMaxDimension = selection.artworkMaxDimension
         select(formatPopUp, rawValue: selection.outputFormat.rawValue)
         bitratePopUp.selectItem(withTag: selection.bitrate ?? -1)
         sampleRatePopUp.selectItem(withTag: selection.sampleRate ?? -1)
@@ -1021,6 +1796,7 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         updateFormatDependentControls()
         updateTemplateOptionsVisibility()
         saveFolderStructurePreferences()
+        saveArtworkResizePreference()
     }
 
     private struct WarningSummaryItem {
@@ -1190,6 +1966,19 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         return Array(normalized.prefix(customTokenPopups.count))
     }
 
+    private func restoreArtworkResizePreference() {
+        let stored = defaults.object(forKey: defaultsArtworkMaxDimensionKey) as? Int
+        selectedArtworkMaxDimension = stored
+    }
+
+    private func saveArtworkResizePreference() {
+        if let selectedArtworkMaxDimension {
+            defaults.set(selectedArtworkMaxDimension, forKey: defaultsArtworkMaxDimensionKey)
+        } else {
+            defaults.removeObject(forKey: defaultsArtworkMaxDimensionKey)
+        }
+    }
+
     private var customTokenPopups: [NSPopUpButton] {
         [tokenOrderPopUp1, tokenOrderPopUp2, tokenOrderPopUp3, tokenOrderPopUp4, tokenOrderPopUp5]
     }
@@ -1291,7 +2080,8 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
             constantBitrate: constantBitrate,
             deviceProfile: deviceProfile,
             tagMode: tagMode,
-            artworkMode: .compatReembed
+            artworkMode: .compatReembed,
+            artworkMaxDimension: selectedArtworkMaxDimension
         )
     }
 
@@ -1628,6 +2418,20 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         return directoryURL
     }
 
+    private func playConversionCompletionSound() {
+        if let namedSound = NSSound(named: NSSound.Name("Funk")) {
+            completionSound = namedSound
+            completionSound?.play()
+            return
+        }
+
+        let fallbackURL = URL(fileURLWithPath: "/System/Library/Sounds/Funk.aiff")
+        if let fallbackSound = NSSound(contentsOf: fallbackURL, byReference: true) {
+            completionSound = fallbackSound
+            completionSound?.play()
+        }
+    }
+
     private func showAlert(title: String, message: String) {
         let alert = NSAlert()
         alert.messageText = title
@@ -1672,22 +2476,68 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
     }
 
     private func updateLCD() {
-        let selected = (tableView.selectedRow >= 0 && loadedTracks.indices.contains(tableView.selectedRow)) ? loadedTracks[tableView.selectedRow] : nil
-        lcdView.updateTrack(selected)
-        if selected == nil {
-            lcdView.setPrimaryStatus(statusField.stringValue)
-        } else {
-            lcdView.setPrimaryStatus(nil)
-        }
-        lcdView.setSecondaryStatus(lcdSecondaryStatusOverride, tone: lcdSecondaryToneOverride)
+        let playbackTrack = playbackCurrentIndex.flatMap { loadedTracks.indices.contains($0) ? loadedTracks[$0] : nil }
+        let selectedTrack = (tableView.selectedRow >= 0 && loadedTracks.indices.contains(tableView.selectedRow))
+            ? loadedTracks[tableView.selectedRow]
+            : nil
+        let activeTrack = playbackTrack ?? selectedTrack
+        lcdView.updateTrack(activeTrack)
 
         if let status = lcdSecondaryStatusOverride {
+            lcdView.setPrimaryStatus(nil)
+            lcdView.setSecondaryStatus(status, tone: lcdSecondaryToneOverride)
             lcdView.setBarMode(
                 .conversion(progress: lcdBarProgressOverride, text: status, tone: lcdSecondaryToneOverride),
-                animated: true
+                animated: isConversionRunning,
+                accentAnimated: isConversionRunning
+            )
+            return
+        }
+
+        let playbackTone: ModernRetroTheme.StatusTone
+        let playbackSecondary: String?
+        let playbackPrimary: String?
+        switch playbackState {
+        case .idle:
+            playbackTone = .neutral
+            playbackSecondary = nil
+            playbackPrimary = activeTrack == nil ? statusField.stringValue : nil
+        case .loading:
+            playbackTone = .info
+            playbackSecondary = "Loading playback..."
+            playbackPrimary = nil
+        case .playing:
+            playbackTone = .info
+            playbackSecondary = "Playing • \(formatPlaybackTime(playbackCurrentTime)) / \(formatPlaybackTime(playbackDuration))"
+            playbackPrimary = nil
+        case .paused:
+            playbackTone = .warning
+            playbackSecondary = "Paused • \(formatPlaybackTime(playbackCurrentTime)) / \(formatPlaybackTime(playbackDuration))"
+            playbackPrimary = nil
+        case .ended:
+            playbackTone = .success
+            playbackSecondary = "End of queue • \(formatPlaybackTime(playbackDuration))"
+            playbackPrimary = "End of Queue"
+        case .failed(let message):
+            playbackTone = .error
+            playbackSecondary = playbackErrorMessage ?? message
+            playbackPrimary = "Playback Error"
+        }
+
+        lcdView.setPrimaryStatus(playbackPrimary)
+        lcdView.setSecondaryStatus(playbackSecondary, tone: playbackTone)
+
+        if playbackDuration > 0 && playbackState != .idle && !isFailureState(playbackState) {
+            let progress = max(0.0, min(playbackCurrentTime / playbackDuration, 1.0))
+            let timelineText = "\(formatPlaybackTime(playbackCurrentTime)) / \(formatPlaybackTime(playbackDuration))"
+            let playbackAnimated = playbackState == .playing
+            lcdView.setBarMode(
+                .timeline(progress: progress, text: timelineText, tone: playbackTone),
+                animated: playbackAnimated,
+                accentAnimated: playbackAnimated
             )
         } else {
-            lcdView.setBarMode(.hidden, animated: true)
+            lcdView.setBarMode(.hidden, animated: false, accentAnimated: false)
         }
     }
 }
@@ -1702,6 +2552,47 @@ private final class ModernRowView: NSTableRowView {
     override func drawSelection(in dirtyRect: NSRect) {
         guard selectionHighlightStyle != .none else { return }
         ModernRetroTheme.drawListRowSelection(in: dirtyRect)
+    }
+}
+
+private final class TrackNumberCellView: NSTableCellView {
+    private let label = NSTextField(labelWithString: "")
+
+    override var backgroundStyle: NSView.BackgroundStyle {
+        didSet {
+            updateTextColor()
+        }
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.alignment = .center
+        label.font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+        addSubview(label)
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
+            label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),
+            label.centerYAnchor.constraint(equalTo: centerYAnchor)
+        ])
+        updateTextColor()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func configure(positionText: String) {
+        label.stringValue = positionText
+    }
+
+    private func updateTextColor() {
+        if backgroundStyle == .emphasized {
+            label.textColor = NSColor.white.withAlphaComponent(0.9)
+        } else {
+            label.textColor = ModernRetroTheme.textSecondary
+        }
     }
 }
 

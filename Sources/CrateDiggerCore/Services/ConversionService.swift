@@ -273,7 +273,11 @@ public final class ConversionService {
                 hasVideoMapping = true
             case .compatReembed:
                 do {
-                    let compatibleArtwork = try artworkPreparer.prepareCompatibleArtwork(asset: artwork, profile: queued.preset.deviceProfile)
+                    let compatibleArtwork = try artworkPreparer.prepareCompatibleArtwork(
+                        asset: artwork,
+                        profile: queued.preset.deviceProfile,
+                        maxDimension: queued.preset.artworkMaxDimension
+                    )
                     let artworkTempURL = try writeTemporaryArtwork(compatibleArtwork.data)
                     temporaryFiles.append(artworkTempURL)
 
@@ -565,7 +569,8 @@ public final class ConversionService {
                 constantBitrate: preset.constantBitrate,
                 deviceProfile: overrideDeviceProfile,
                 tagMode: preset.tagMode,
-                artworkMode: preset.artworkMode
+                artworkMode: preset.artworkMode,
+                artworkMaxDimension: preset.artworkMaxDimension
             )
         }
 

@@ -20,6 +20,7 @@ struct ConversionOptionsSelection {
     let outputFormat: OutputFormat
     let bitrate: Int?
     let sampleRate: Int?
+    let artworkMaxDimension: Int?
     let folderStructureMode: FolderStructureMode
     let applyMode: TemplateApplyMode
     let templatePreset: TemplatePreset
@@ -38,6 +39,7 @@ final class ConversionOptionsSheetController: NSViewController {
     private let formatPopUp = NSPopUpButton(frame: .zero, pullsDown: false)
     private let bitratePopUp = NSPopUpButton(frame: .zero, pullsDown: false)
     private let sampleRatePopUp = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let artworkSizePopUp = NSPopUpButton(frame: .zero, pullsDown: false)
     private let folderStructurePopUp = NSPopUpButton(frame: .zero, pullsDown: false)
     private let applyModePopUp = NSPopUpButton(frame: .zero, pullsDown: false)
     private let templatePresetPopUp = NSPopUpButton(frame: .zero, pullsDown: false)
@@ -99,14 +101,15 @@ final class ConversionOptionsSheetController: NSViewController {
         title.textColor = ModernRetroTheme.textPrimary
 
         let subtitle = NSTextField(labelWithString: "Configure conversion scope, format, and folder strategy.")
-        subtitle.font = NSFont.systemFont(ofSize: 12, weight: .regular)
+        subtitle.font = NSFont.systemFont(ofSize: 13, weight: .regular)
         subtitle.textColor = ModernRetroTheme.textSecondary
 
         let scopeAndFormat = makeSectionCard(
             title: "Scope + Format",
             content: makeEqualWidthGrid(rows: [
                 [makeLabeledRow("Batch Scope", batchScopePopUp), makeLabeledRow("Format", formatPopUp)],
-                [makeLabeledRow("Bitrate", bitratePopUp), makeLabeledRow("Sample Rate", sampleRatePopUp)]
+                [makeLabeledRow("Bitrate", bitratePopUp), makeLabeledRow("Sample Rate", sampleRatePopUp)],
+                [makeLabeledRow("Artwork Resize", artworkSizePopUp), makeSpacer()]
             ])
         )
 
@@ -119,12 +122,12 @@ final class ConversionOptionsSheetController: NSViewController {
 
         customTokenSection.orientation = .vertical
         customTokenSection.alignment = .leading
-        customTokenSection.spacing = 6
+        customTokenSection.spacing = 7
         customTokenSection.addArrangedSubview(makeLabeledRow("Token Order", makeTokenRow()))
 
         templateSection.orientation = .vertical
         templateSection.alignment = .leading
-        templateSection.spacing = 8
+        templateSection.spacing = 10
         templateSection.addArrangedSubview(makeLabeledRow("Folder Order", templatePresetPopUp))
         templateSection.addArrangedSubview(customTokenSection)
 
@@ -134,33 +137,59 @@ final class ConversionOptionsSheetController: NSViewController {
         cancelButton.action = #selector(cancelAction)
         ModernRetroTheme.styleSecondaryButton(cancelButton)
         cancelButton.font = NSFont.systemFont(ofSize: 12, weight: .medium)
-        cancelButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 94).isActive = true
+        cancelButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 108).isActive = true
         cancelButton.heightAnchor.constraint(equalToConstant: ModernRetroTheme.buttonHeight).isActive = true
 
         continueButton.target = self
         continueButton.action = #selector(continueAction)
-        ModernRetroTheme.stylePrimaryActionButton(continueButton, title: "Continue", minWidth: 112)
+        ModernRetroTheme.stylePrimaryActionButton(continueButton, title: "Continue", minWidth: 128)
 
-        let buttons = NSStackView(views: [cancelButton, continueButton])
-        buttons.orientation = .horizontal
-        buttons.alignment = .centerY
-        buttons.spacing = 10
-        buttons.translatesAutoresizingMaskIntoConstraints = false
+        let buttonRow = NSStackView(views: [cancelButton, continueButton])
+        buttonRow.orientation = .horizontal
+        buttonRow.alignment = .centerY
+        buttonRow.spacing = 12
+        buttonRow.translatesAutoresizingMaskIntoConstraints = false
 
-        let content = NSStackView(views: [title, subtitle, scopeAndFormat, outputStructure, folderStrategy, buttons])
-        content.orientation = .vertical
-        content.alignment = .leading
-        content.spacing = 12
-        content.translatesAutoresizingMaskIntoConstraints = false
+        let formStack = NSStackView(views: [title, subtitle, scopeAndFormat, outputStructure, folderStrategy])
+        formStack.orientation = .vertical
+        formStack.alignment = .leading
+        formStack.spacing = 14
+        formStack.translatesAutoresizingMaskIntoConstraints = false
 
-        view.addSubview(content)
+        scopeAndFormat.translatesAutoresizingMaskIntoConstraints = false
+        outputStructure.translatesAutoresizingMaskIntoConstraints = false
+        folderStrategy.translatesAutoresizingMaskIntoConstraints = false
+
+        let documentView = NSView()
+        documentView.addSubview(formStack)
 
         NSLayoutConstraint.activate([
-            content.topAnchor.constraint(equalTo: view.topAnchor, constant: 18),
-            content.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 18),
-            content.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -18),
-            content.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -18),
-            buttons.trailingAnchor.constraint(equalTo: content.trailingAnchor)
+            formStack.topAnchor.constraint(equalTo: documentView.topAnchor, constant: 18),
+            formStack.leadingAnchor.constraint(equalTo: documentView.leadingAnchor, constant: 20),
+            formStack.trailingAnchor.constraint(equalTo: documentView.trailingAnchor, constant: -20),
+            formStack.bottomAnchor.constraint(equalTo: documentView.bottomAnchor, constant: -18),
+            formStack.widthAnchor.constraint(equalTo: documentView.widthAnchor, constant: -40)
+        ])
+
+        let scrollView = NSScrollView()
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+        scrollView.documentView = documentView
+
+        view.addSubview(scrollView)
+        view.addSubview(buttonRow)
+
+        NSLayoutConstraint.activate([
+            scrollView.topAnchor.constraint(equalTo: view.topAnchor, constant: 0),
+            scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: buttonRow.topAnchor, constant: -12),
+
+            buttonRow.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -18),
+            buttonRow.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -16)
         ])
     }
 
@@ -169,7 +198,7 @@ final class ConversionOptionsSheetController: NSViewController {
         card.translatesAutoresizingMaskIntoConstraints = false
         card.wantsLayer = true
         card.layer?.backgroundColor = ModernRetroTheme.surfaceElevated.cgColor
-        card.layer?.cornerRadius = 10
+        card.layer?.cornerRadius = 11
         card.layer?.borderWidth = 1
         card.layer?.borderColor = ModernRetroTheme.separator.withAlphaComponent(0.35).cgColor
 
@@ -180,16 +209,15 @@ final class ConversionOptionsSheetController: NSViewController {
         let stack = NSStackView(views: [header, content])
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 7
+        stack.spacing = 8
         stack.translatesAutoresizingMaskIntoConstraints = false
 
         card.addSubview(stack)
-
         NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: card.topAnchor, constant: 10),
-            stack.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 12),
-            stack.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -12),
-            stack.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -10)
+            stack.topAnchor.constraint(equalTo: card.topAnchor, constant: 11),
+            stack.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 13),
+            stack.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -13),
+            stack.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -11)
         ])
 
         return card
@@ -198,19 +226,26 @@ final class ConversionOptionsSheetController: NSViewController {
     private func makeEqualWidthGrid(rows: [[NSView]]) -> NSView {
         let vertical = NSStackView()
         vertical.orientation = .vertical
-        vertical.spacing = 8
+        vertical.spacing = 9
         vertical.alignment = .leading
 
         for row in rows {
             let rowStack = NSStackView(views: row)
             rowStack.orientation = .horizontal
             rowStack.alignment = .top
-            rowStack.spacing = 10
+            rowStack.spacing = 12
             rowStack.distribution = .fillEqually
             vertical.addArrangedSubview(rowStack)
         }
 
         return vertical
+    }
+
+    private func makeSpacer() -> NSView {
+        let spacer = NSView()
+        spacer.translatesAutoresizingMaskIntoConstraints = false
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        return spacer
     }
 
     private func makeTokenRow() -> NSView {
@@ -240,6 +275,7 @@ final class ConversionOptionsSheetController: NSViewController {
             formatPopUp,
             bitratePopUp,
             sampleRatePopUp,
+            artworkSizePopUp,
             folderStructurePopUp,
             applyModePopUp,
             templatePresetPopUp
@@ -271,6 +307,14 @@ final class ConversionOptionsSheetController: NSViewController {
         for option in sampleRateOptions {
             sampleRatePopUp.addItem(withTitle: option < 0 ? "Source" : "\(option) Hz")
             sampleRatePopUp.lastItem?.tag = option
+        }
+
+        artworkSizePopUp.removeAllItems()
+        artworkSizePopUp.addItem(withTitle: "Original")
+        artworkSizePopUp.lastItem?.representedObject = "original"
+        for option in [300, 600, 1000, 1400] {
+            artworkSizePopUp.addItem(withTitle: "\(option) px")
+            artworkSizePopUp.lastItem?.representedObject = "\(option)"
         }
 
         folderStructurePopUp.removeAllItems()
@@ -316,6 +360,7 @@ final class ConversionOptionsSheetController: NSViewController {
         select(formatPopUp, rawValue: initialSelection.outputFormat.rawValue)
         bitratePopUp.selectItem(withTag: initialSelection.bitrate ?? -1)
         sampleRatePopUp.selectItem(withTag: initialSelection.sampleRate ?? -1)
+        selectArtworkSize(initialSelection.artworkMaxDimension)
         select(folderStructurePopUp, rawValue: initialSelection.folderStructureMode.rawValue)
         select(applyModePopUp, rawValue: initialSelection.applyMode.rawValue)
         select(templatePresetPopUp, rawValue: initialSelection.templatePreset.rawValue)
@@ -356,6 +401,7 @@ final class ConversionOptionsSheetController: NSViewController {
             outputFormat: selectedOutputFormat(),
             bitrate: selectedBitrate(),
             sampleRate: selectedSampleRate(),
+            artworkMaxDimension: selectedArtworkMaxDimension(),
             folderStructureMode: selectedFolderStructureMode(),
             applyMode: selectedApplyMode(),
             templatePreset: selectedTemplatePreset(),
@@ -400,6 +446,13 @@ final class ConversionOptionsSheetController: NSViewController {
         return tag > 0 ? tag : nil
     }
 
+    private func selectedArtworkMaxDimension() -> Int? {
+        guard let raw = artworkSizePopUp.selectedItem?.representedObject as? String else {
+            return nil
+        }
+        return Int(raw)
+    }
+
     private func selectedFolderStructureMode() -> FolderStructureMode {
         let raw = folderStructurePopUp.selectedItem?.representedObject as? String ?? FolderStructureMode.sourceRelative.rawValue
         return FolderStructureMode(rawValue: raw) ?? .sourceRelative
@@ -411,8 +464,8 @@ final class ConversionOptionsSheetController: NSViewController {
     }
 
     private func selectedTemplatePreset() -> TemplatePreset {
-        let raw = templatePresetPopUp.selectedItem?.representedObject as? String ?? TemplatePreset.artistYearAlbum.rawValue
-        return TemplatePreset(rawValue: raw) ?? .artistYearAlbum
+        let raw = templatePresetPopUp.selectedItem?.representedObject as? String ?? TemplatePreset.yearArtistAlbum.rawValue
+        return TemplatePreset(rawValue: raw) ?? .yearArtistAlbum
     }
 
     private func selectedCustomTokenOrder() -> [FolderToken] {
@@ -461,6 +514,11 @@ final class ConversionOptionsSheetController: NSViewController {
             popUp.select(item)
             return
         }
+    }
+
+    private func selectArtworkSize(_ maxDimension: Int?) {
+        let rawValue = maxDimension.map(String.init) ?? "original"
+        select(artworkSizePopUp, rawValue: rawValue)
     }
 
     private func select(_ popUp: NSPopUpButton, rawValue: Int) {

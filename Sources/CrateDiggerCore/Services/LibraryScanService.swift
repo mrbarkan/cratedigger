@@ -156,6 +156,15 @@ public final class LibraryScanService {
         let trackTitle = normalizedString(metadata.title) ?? fileURL.deletingPathExtension().lastPathComponent
         let trackArtist = normalizedString(metadata.artist) ?? ""
         let trackAlbum = normalizedString(metadata.album) ?? ""
+        let inferredFormatName = normalizedString(probedMetadata?.primaryAudioStream?.codecName)?.uppercased()
+            ?? normalizedString(probedMetadata?.formatName)?
+                .split(separator: ",")
+                .first
+                .map(String.init)?
+                .uppercased()
+            ?? fileURL.pathExtension.uppercased()
+        let inferredBitRateKbps = preferredBitRateKbps(from: probedMetadata)
+        let inferredSampleRateHz = preferredSampleRate(from: probedMetadata)
 
         let track = AudioTrack(
             fileURL: fileURL,
@@ -163,6 +172,14 @@ public final class LibraryScanService {
             artist: trackArtist,
             album: trackAlbum,
             durationSeconds: durationSeconds,
+            formatName: inferredFormatName,
+            bitrateKbps: inferredBitRateKbps,
+            sampleRateHz: inferredSampleRateHz,
+            year: metadata.year,
+            trackNumber: metadata.trackNumber,
+            trackTotal: metadata.trackTotal,
+            discNumber: metadata.discNumber,
+            discTotal: metadata.discTotal,
             artworkSource: artwork?.source ?? .none,
             artworkHash: artwork?.hash,
             artworkDimensions: artwork?.dimensions
@@ -379,6 +396,25 @@ public final class LibraryScanService {
         normalizedString(metadata.artist) == nil ||
             normalizedString(metadata.album) == nil ||
             metadata.year == nil
+    }
+
+    private func preferredBitRateKbps(from metadata: ProbedMetadata?) -> Int? {
+        guard let metadata else {
+            return nil
+        }
+
+        let sourceBitRate = metadata.primaryAudioStream?.bitRateBps ?? metadata.formatBitRateBps
+        guard let bitRateBps = sourceBitRate, bitRateBps > 0 else {
+            return nil
+        }
+        return max(1, Int((Double(bitRateBps) / 1000).rounded()))
+    }
+
+    private func preferredSampleRate(from metadata: ProbedMetadata?) -> Int? {
+        guard let sample = metadata?.primaryAudioStream?.sampleRateHz, sample > 0 else {
+            return nil
+        }
+        return sample
     }
 
     private func normalizedString(_ value: String?) -> String? {
