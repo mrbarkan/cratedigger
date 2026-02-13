@@ -171,6 +171,12 @@ final class ConversionOptionsSheetController: NSViewController {
             formStack.widthAnchor.constraint(equalTo: documentView.widthAnchor, constant: -40)
         ])
 
+        NSLayoutConstraint.activate([
+            scopeAndFormat.widthAnchor.constraint(equalTo: formStack.widthAnchor),
+            outputStructure.widthAnchor.constraint(equalTo: formStack.widthAnchor),
+            folderStrategy.widthAnchor.constraint(equalTo: formStack.widthAnchor)
+        ])
+
         let scrollView = NSScrollView()
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.hasVerticalScroller = true
@@ -213,11 +219,21 @@ final class ConversionOptionsSheetController: NSViewController {
         stack.translatesAutoresizingMaskIntoConstraints = false
 
         card.addSubview(stack)
+        let top = stack.topAnchor.constraint(equalTo: card.topAnchor, constant: 11)
+        let leading = stack.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 13)
+        let trailing = stack.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -13)
+        let bottom = stack.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -11)
+        trailing.priority = .defaultHigh
+        bottom.priority = .defaultHigh
+        let contentWidth = content.widthAnchor.constraint(equalTo: stack.widthAnchor)
+        contentWidth.priority = .defaultHigh
+
         NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: card.topAnchor, constant: 11),
-            stack.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 13),
-            stack.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -13),
-            stack.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -11)
+            top,
+            leading,
+            trailing,
+            bottom,
+            contentWidth
         ])
 
         return card
@@ -227,7 +243,7 @@ final class ConversionOptionsSheetController: NSViewController {
         let vertical = NSStackView()
         vertical.orientation = .vertical
         vertical.spacing = 9
-        vertical.alignment = .leading
+        vertical.alignment = .width
 
         for row in rows {
             let rowStack = NSStackView(views: row)
