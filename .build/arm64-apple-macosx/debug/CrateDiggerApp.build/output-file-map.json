@@ -37,6 +37,13 @@
     "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/ConversionOptionsSheetController.swiftdeps",
     "diagnostics": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/ConversionOptionsSheetController.dia"
   },
+  "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/ConversionOptionsSheetView.swift": {
+    "dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/ConversionOptionsSheetView.d",
+    "object": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/ConversionOptionsSheetView.swift.o",
+    "swiftmodule": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/ConversionOptionsSheetView~partial.swiftmodule",
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/ConversionOptionsSheetView.swiftdeps",
+    "diagnostics": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/ConversionOptionsSheetView.dia"
+  },
   "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/MainViewController.swift": {
     "dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/MainViewController.d",
     "object": "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/MainViewController.swift.o",
