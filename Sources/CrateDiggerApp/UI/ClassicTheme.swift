@@ -1,6 +1,7 @@
 import AppKit
 import QuartzCore
 
+@available(*, deprecated, message: "Legacy theme. Use ModernRetroTheme.")
 enum ClassicTheme {
     static let accentYellow = NSColor(calibratedRed: 0.99, green: 0.78, blue: 0.17, alpha: 1)
     static let accentHighlight = NSColor(calibratedRed: 1.0, green: 0.88, blue: 0.32, alpha: 1)

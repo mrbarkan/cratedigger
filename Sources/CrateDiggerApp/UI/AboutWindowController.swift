@@ -30,15 +30,19 @@ private final class AboutViewController: NSViewController {
 
     override func loadView() {
         view = NSView()
-        ClassicTheme.applyPinstripe(to: view)
+        view.wantsLayer = true
+        view.layer?.backgroundColor = ModernRetroTheme.surfaceBase.cgColor
 
         titleLabel.font = NSFont.systemFont(ofSize: 28, weight: .semibold)
         designedByLabel.font = NSFont.systemFont(ofSize: 14, weight: .regular)
         developedByLabel.font = NSFont.systemFont(ofSize: 14, weight: .regular)
+        titleLabel.textColor = ModernRetroTheme.textPrimary
+        designedByLabel.textColor = ModernRetroTheme.textSecondary
+        developedByLabel.textColor = ModernRetroTheme.textSecondary
 
         supportButton.target = self
         supportButton.action = #selector(openPatreon)
-        ClassicTheme.applyAquaAccent(to: supportButton)
+        ModernRetroTheme.styleSecondaryButton(supportButton)
 
         let stack = NSStackView(views: [titleLabel, designedByLabel, developedByLabel, supportButton])
         stack.orientation = .vertical
@@ -56,7 +60,7 @@ private final class AboutViewController: NSViewController {
 
     override func viewDidLayout() {
         super.viewDidLayout()
-        ClassicTheme.updateButtonLayers(supportButton)
+        ModernRetroTheme.updateButtonLayers(supportButton)
     }
 
     @objc private func openPatreon() {

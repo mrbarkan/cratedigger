@@ -108,6 +108,21 @@ private struct MultiRootScanResult {
     let sourceRootByTrackPath: [String: URL]
 }
 
+private enum ToolbarActivityState {
+    case idle
+    case running
+    case paused
+    case disabled
+}
+
+private enum ToolbarCompletionState {
+    case idle
+    case info
+    case success
+    case warning
+    case error
+}
+
 final class MainViewController: NSViewController, NSTableViewDataSource, NSTableViewDelegate {
     private let artworkService = ArtworkService()
     private lazy var libraryScanService = LibraryScanService(artworkService: artworkService)
@@ -139,12 +154,18 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
     private let statusField = NSTextField(labelWithString: "Load a folder to begin")
     private let convertButton = NSButton(title: "CONVERT", target: nil, action: nil)
     private let lcdView = AquaLCDView()
-    private let topBar = NSView()
-    private let bottomBar = NSView()
+    private let topBar = NSVisualEffectView()
+    private let bottomBar = NSVisualEffectView()
+    private let activityIndicatorView = NSView()
+    private let completionIndicatorView = NSView()
     private var conversionOptionsSheetWindow: NSWindow?
     private var lcdSecondaryStatusOverride: String?
+    private var lcdSecondaryToneOverride: ModernRetroTheme.StatusTone = .neutral
+    private var lcdBarProgressOverride: Double = 0
     private var lcdSecondaryResetWorkItem: DispatchWorkItem?
     private var isConversionRunning = false
+    private var toolbarActivityState: ToolbarActivityState = .idle
+    private var toolbarCompletionState: ToolbarCompletionState = .idle
 
     private let inspectorViewController = TrackInspectorViewController()
     private let outputFormats: [OutputFormat] = [.mp3, .aac, .alac, .flac, .wav, .aiff, .ogg, .opus]
@@ -169,7 +190,8 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
 
     override func loadView() {
         view = NSView()
-        ClassicTheme.applyPinstripe(to: view)
+        view.wantsLayer = true
+        view.layer?.backgroundColor = ModernRetroTheme.surfaceBase.cgColor
 
         addChild(inspectorViewController)
 
@@ -185,7 +207,6 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         splitView.addArrangedSubview(leftContainer)
         splitView.addArrangedSubview(inspectorViewController.view)
 
-        ClassicTheme.applyPinstripe(to: inspectorViewController.view)
         inspectorViewController.view.translatesAutoresizingMaskIntoConstraints = false
         inspectorViewController.view.widthAnchor.constraint(equalToConstant: 420).isActive = true
 
@@ -200,7 +221,7 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
             topBar.topAnchor.constraint(equalTo: view.topAnchor),
             topBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             topBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            topBar.heightAnchor.constraint(equalToConstant: 86),
+            topBar.heightAnchor.constraint(equalToConstant: ModernRetroTheme.toolbarHeight),
 
             splitView.topAnchor.constraint(equalTo: topBar.bottomAnchor),
             splitView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -211,7 +232,7 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
             bottomBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             bottomBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             bottomBar.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            bottomBar.heightAnchor.constraint(equalToConstant: 26)
+            bottomBar.heightAnchor.constraint(equalToConstant: 28)
         ])
 
         configureConversionOptions()
@@ -220,8 +241,9 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
 
     override func viewDidLayout() {
         super.viewDidLayout()
-        ClassicTheme.updateButtonLayers(openFolderButton)
-        ClassicTheme.updateButtonLayers(convertButton)
+        ModernRetroTheme.updateButtonLayers(openFolderButton)
+        ModernRetroTheme.updateButtonLayers(convertButton)
+        updateToolbarIndicators(activity: toolbarActivityState, completion: toolbarCompletionState)
         lcdView.layoutSubtreeIfNeeded()
         updateLCD()
     }
@@ -258,7 +280,7 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
     }
 
     func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
-        let rowView = ClassicRowView()
+        let rowView = ModernRowView()
         rowView.rowIndex = row
         return rowView
     }
@@ -363,23 +385,19 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         tableView.headerView = nil
         tableView.delegate = self
         tableView.dataSource = self
-        tableView.usesAlternatingRowBackgroundColors = true
+        tableView.usesAlternatingRowBackgroundColors = false
         tableView.selectionHighlightStyle = .regular
         tableView.allowsMultipleSelection = true
         tableView.allowsEmptySelection = true
-        tableView.backgroundColor = ClassicTheme.playlistBackgroundEven
+        tableView.focusRingType = .none
         tableView.gridStyleMask = [.solidHorizontalGridLineMask]
-        tableView.gridColor = ClassicTheme.playlistGridColor
 
         scrollView.documentView = tableView
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = true
         scrollView.borderType = .bezelBorder
         scrollView.scrollerStyle = .legacy
-        scrollView.drawsBackground = true
-        scrollView.backgroundColor = ClassicTheme.playlistBackgroundEven
-        scrollView.wantsLayer = true
-        scrollView.layer?.backgroundColor = ClassicTheme.playlistBackgroundEven.cgColor
+        ModernRetroTheme.styleListContainer(scrollView: scrollView, tableView: tableView)
 
         let contentStack = NSStackView(views: [scrollView])
         contentStack.orientation = .vertical
@@ -389,63 +407,76 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         container.addSubview(contentStack)
 
         NSLayoutConstraint.activate([
-            contentStack.topAnchor.constraint(equalTo: container.topAnchor, constant: 12),
-            contentStack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
-            contentStack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12),
-            contentStack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -12),
+            contentStack.topAnchor.constraint(equalTo: container.topAnchor, constant: ModernRetroTheme.contentInsets.top),
+            contentStack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: ModernRetroTheme.contentInsets.left),
+            contentStack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -ModernRetroTheme.contentInsets.right),
+            contentStack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -ModernRetroTheme.contentInsets.bottom),
             scrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 360)
         ])
     }
 
     private func stylePopUp(_ popUp: NSPopUpButton) {
-        popUp.bezelStyle = .texturedRounded
-        popUp.controlSize = .small
-        popUp.font = NSFont.systemFont(ofSize: 12, weight: .medium)
+        ModernRetroTheme.stylePopUp(popUp)
     }
 
     private func configureTopBar() {
         topBar.translatesAutoresizingMaskIntoConstraints = false
-        ClassicTheme.applyMetal(to: topBar)
+        ModernRetroTheme.applyChromeMaterial(to: topBar)
 
         openFolderButton.target = self
         openFolderButton.action = #selector(openFolderAction)
-        ClassicTheme.applyPrimaryToolbarButtonStyle(to: openFolderButton, title: "LOAD", minWidth: 92)
+        ModernRetroTheme.stylePrimaryActionButton(openFolderButton, title: "LOAD", minWidth: ModernRetroTheme.toolbarPrimaryButtonWidth)
 
         convertButton.target = self
         convertButton.action = #selector(convertSelectedTracks)
         convertButton.isEnabled = false
-        ClassicTheme.applyPrimaryToolbarButtonStyle(to: convertButton, title: "CONVERT", minWidth: 104)
+        ModernRetroTheme.stylePrimaryActionButton(convertButton, title: "CONVERT", minWidth: ModernRetroTheme.toolbarPrimaryButtonWidth)
 
         let leftStack = NSStackView(views: [openFolderButton, convertButton])
         leftStack.orientation = .horizontal
         leftStack.alignment = .centerY
-        leftStack.spacing = 14
+        leftStack.spacing = ModernRetroTheme.toolbarClusterSpacing
         leftStack.translatesAutoresizingMaskIntoConstraints = false
+
+        configureIndicator(activityIndicatorView)
+        configureIndicator(completionIndicatorView)
+        let indicatorStack = NSStackView(views: [activityIndicatorView, completionIndicatorView])
+        indicatorStack.orientation = .horizontal
+        indicatorStack.alignment = .centerY
+        indicatorStack.spacing = 8
+        indicatorStack.translatesAutoresizingMaskIntoConstraints = false
 
         lcdView.translatesAutoresizingMaskIntoConstraints = false
 
         topBar.addSubview(leftStack)
         topBar.addSubview(lcdView)
+        topBar.addSubview(indicatorStack)
 
         NSLayoutConstraint.activate([
-            leftStack.leadingAnchor.constraint(equalTo: topBar.leadingAnchor, constant: 16),
+            leftStack.leadingAnchor.constraint(equalTo: topBar.leadingAnchor, constant: ModernRetroTheme.toolbarClusterLeadingInset),
             leftStack.centerYAnchor.constraint(equalTo: topBar.centerYAnchor),
 
             lcdView.centerXAnchor.constraint(equalTo: topBar.centerXAnchor),
             lcdView.centerYAnchor.constraint(equalTo: topBar.centerYAnchor),
             lcdView.widthAnchor.constraint(greaterThanOrEqualToConstant: 420),
-            lcdView.heightAnchor.constraint(equalToConstant: 44),
+            lcdView.widthAnchor.constraint(lessThanOrEqualToConstant: 620),
+            lcdView.heightAnchor.constraint(equalToConstant: 56),
 
-            leftStack.trailingAnchor.constraint(lessThanOrEqualTo: lcdView.leadingAnchor, constant: -34)
+            leftStack.trailingAnchor.constraint(lessThanOrEqualTo: lcdView.leadingAnchor, constant: -42),
+            indicatorStack.leadingAnchor.constraint(greaterThanOrEqualTo: lcdView.trailingAnchor, constant: 26),
+            indicatorStack.centerYAnchor.constraint(equalTo: topBar.centerYAnchor),
+            indicatorStack.trailingAnchor.constraint(equalTo: topBar.trailingAnchor, constant: -(ModernRetroTheme.contentInsets.right + 4))
         ])
+
+        updateToolbarIndicators(activity: .idle, completion: .idle)
     }
 
     private func configureBottomBar() {
         bottomBar.translatesAutoresizingMaskIntoConstraints = false
-        ClassicTheme.applyMetal(to: bottomBar)
+        ModernRetroTheme.applyChromeMaterial(to: bottomBar)
 
-        statusField.textColor = NSColor(calibratedWhite: 0.2, alpha: 0.9)
-        statusField.font = NSFont.systemFont(ofSize: 11, weight: .regular)
+        statusField.textColor = ModernRetroTheme.textSecondary
+        statusField.font = NSFont.systemFont(ofSize: 11, weight: .medium)
         statusField.translatesAutoresizingMaskIntoConstraints = false
 
         bottomBar.addSubview(statusField)
@@ -453,7 +484,7 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         let topLine = NSView()
         topLine.translatesAutoresizingMaskIntoConstraints = false
         topLine.wantsLayer = true
-        topLine.layer?.backgroundColor = ClassicTheme.metalEdge.withAlphaComponent(0.5).cgColor
+        topLine.layer?.backgroundColor = ModernRetroTheme.separator.withAlphaComponent(0.45).cgColor
         bottomBar.addSubview(topLine)
 
         NSLayoutConstraint.activate([
@@ -462,9 +493,94 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
             topLine.trailingAnchor.constraint(equalTo: bottomBar.trailingAnchor),
             topLine.heightAnchor.constraint(equalToConstant: 1),
 
-            statusField.leadingAnchor.constraint(equalTo: bottomBar.leadingAnchor, constant: 12),
+            statusField.leadingAnchor.constraint(equalTo: bottomBar.leadingAnchor, constant: ModernRetroTheme.contentInsets.left),
             statusField.centerYAnchor.constraint(equalTo: bottomBar.centerYAnchor)
         ])
+    }
+
+    private func configureIndicator(_ indicatorView: NSView) {
+        indicatorView.translatesAutoresizingMaskIntoConstraints = false
+        indicatorView.wantsLayer = true
+        indicatorView.layer?.cornerRadius = 4.5
+        indicatorView.layer?.borderWidth = 1
+        indicatorView.layer?.borderColor = ModernRetroTheme.separator.withAlphaComponent(0.45).cgColor
+        indicatorView.layer?.backgroundColor = ModernRetroTheme.indicatorIdle.withAlphaComponent(0.45).cgColor
+        NSLayoutConstraint.activate([
+            indicatorView.widthAnchor.constraint(equalToConstant: 9),
+            indicatorView.heightAnchor.constraint(equalToConstant: 9)
+        ])
+    }
+
+    private func updateToolbarIndicators(activity: ToolbarActivityState, completion: ToolbarCompletionState) {
+        toolbarActivityState = activity
+        toolbarCompletionState = completion
+
+        let activityColor: NSColor
+        switch activity {
+        case .idle:
+            activityColor = ModernRetroTheme.indicatorIdle
+        case .running:
+            activityColor = ModernRetroTheme.indicatorInfo
+        case .paused:
+            activityColor = ModernRetroTheme.indicatorWarning
+        case .disabled:
+            activityColor = ModernRetroTheme.indicatorIdle.withAlphaComponent(0.55)
+        }
+
+        let completionColor: NSColor
+        switch completion {
+        case .idle:
+            completionColor = ModernRetroTheme.indicatorIdle
+        case .info:
+            completionColor = ModernRetroTheme.indicatorInfo
+        case .success:
+            completionColor = ModernRetroTheme.indicatorSuccess
+        case .warning:
+            completionColor = ModernRetroTheme.indicatorWarning
+        case .error:
+            completionColor = ModernRetroTheme.indicatorError
+        }
+
+        applyIndicatorAppearance(activityIndicatorView, color: activityColor, dimmed: activity == .disabled)
+        applyIndicatorAppearance(completionIndicatorView, color: completionColor, dimmed: false)
+        setActivityPulse(enabled: activity == .running)
+    }
+
+    private func applyIndicatorAppearance(_ indicatorView: NSView, color: NSColor, dimmed: Bool) {
+        indicatorView.layer?.backgroundColor = color.withAlphaComponent(dimmed ? 0.18 : 0.85).cgColor
+        indicatorView.layer?.borderColor = color.withAlphaComponent(dimmed ? 0.25 : 0.62).cgColor
+    }
+
+    private func setActivityPulse(enabled: Bool) {
+        let animationKey = "ModernRetro.ActivityPulse"
+        if enabled {
+            guard activityIndicatorView.layer?.animation(forKey: animationKey) == nil else { return }
+            let pulse = CABasicAnimation(keyPath: "opacity")
+            pulse.fromValue = 0.35
+            pulse.toValue = 1.0
+            pulse.duration = ModernRetroTheme.activityPulseDuration
+            pulse.autoreverses = true
+            pulse.repeatCount = .infinity
+            activityIndicatorView.layer?.add(pulse, forKey: animationKey)
+        } else {
+            activityIndicatorView.layer?.removeAnimation(forKey: animationKey)
+            activityIndicatorView.layer?.opacity = 1.0
+        }
+    }
+
+    private func toolbarCompletionState(for tone: ModernRetroTheme.StatusTone) -> ToolbarCompletionState {
+        switch tone {
+        case .neutral:
+            return .idle
+        case .info:
+            return .info
+        case .success:
+            return .success
+        case .warning:
+            return .warning
+        case .error:
+            return .error
+        }
     }
 
     private func configureConversionOptions() {
@@ -536,9 +652,11 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
     private func configureServices() {
         do {
             conversionService = try ConversionService(artworkPreparer: artworkService)
+            updateToolbarIndicators(activity: .idle, completion: .idle)
         } catch {
             conversionServiceInitializationError = error
             setStatus("ffmpeg was not found. Loading and artwork preview work; conversion is unavailable.")
+            updateToolbarIndicators(activity: .disabled, completion: .error)
         }
     }
 
@@ -668,8 +786,9 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
 
             guard let selection else {
                 self.setStatus("Conversion cancelled.")
-                self.setLCDConversionStatus("Conversion cancelled")
-                self.scheduleClearLCDConversionStatus(after: 1.8)
+                self.updateToolbarIndicators(activity: .idle, completion: .warning)
+                self.setLCDConversionStatus("Conversion cancelled", tone: .warning, progress: 0)
+                self.scheduleClearLCDConversionStatus(after: 1.8, resetCompletionIndicator: true)
                 return
             }
 
@@ -696,8 +815,9 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
 
         guard destinationPanel.runModal() == .OK, let destinationFolder = destinationPanel.url else {
             setStatus("Conversion cancelled.")
-            setLCDConversionStatus("Conversion cancelled")
-            scheduleClearLCDConversionStatus(after: 1.8)
+            updateToolbarIndicators(activity: .idle, completion: .warning)
+            setLCDConversionStatus("Conversion cancelled", tone: .warning, progress: 0)
+            scheduleClearLCDConversionStatus(after: 1.8, resetCompletionIndicator: true)
             return
         }
         saveLastConvertDirectory(destinationFolder)
@@ -709,8 +829,9 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
            selectedTemplateApplyMode() == .reviewPerAlbumPreflight {
             guard let reviewed = reviewAlbumFoldersPreflight(for: tracksToConvert, templateConfig: templateConfig) else {
                 setStatus("Conversion cancelled in preflight review.")
-                setLCDConversionStatus("Conversion cancelled in preflight")
-                scheduleClearLCDConversionStatus(after: 2.2)
+                updateToolbarIndicators(activity: .idle, completion: .warning)
+                setLCDConversionStatus("Conversion cancelled in preflight", tone: .warning, progress: 0)
+                scheduleClearLCDConversionStatus(after: 2.2, resetCompletionIndicator: true)
                 return
             }
             reviewedAlbumFolders = reviewed
@@ -737,8 +858,10 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
 
         isConversionRunning = true
         setStatus("Converting \(jobs.count) file(s) with \(preset.name)...")
-        setLCDConversionStatus("Converting 0/\(jobs.count) • Failed: 0 • Warnings: 0")
+        updateToolbarIndicators(activity: .running, completion: .info)
+        setLCDConversionStatus("Converting 0/\(jobs.count) • Failed: 0 • Warnings: 0", tone: .info, progress: 0)
         convertButton.isEnabled = false
+        ModernRetroTheme.updateButtonLayers(convertButton)
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
@@ -760,7 +883,13 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
                 progressLock.unlock()
 
                 DispatchQueue.main.async { [weak self] in
-                    self?.setLCDConversionStatus("Converting \(processed)/\(total) • Failed: \(failedSnapshot) • Warnings: \(warningsSnapshot)")
+                    guard let self else { return }
+                    let progress = total > 0 ? Double(processed) / Double(total) : 0
+                    self.setLCDConversionStatus(
+                        "Converting \(processed)/\(total) • Failed: \(failedSnapshot) • Warnings: \(warningsSnapshot)",
+                        tone: .info,
+                        progress: progress
+                    )
                 }
             })
 
@@ -773,7 +902,20 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
 
                 self.isConversionRunning = false
                 self.setStatus("Conversion complete. Success: \(completed), Failed: \(failed), Warnings: \(warningCount).")
-                self.setLCDConversionStatus("Finished • Success: \(completed) • Failed: \(failed) • Warnings: \(warningCount)")
+                let completionTone: ModernRetroTheme.StatusTone
+                if failed > 0 {
+                    completionTone = .error
+                } else if warningCount > 0 {
+                    completionTone = .warning
+                } else {
+                    completionTone = .success
+                }
+                self.updateToolbarIndicators(activity: .idle, completion: self.toolbarCompletionState(for: completionTone))
+                self.setLCDConversionStatus(
+                    "Finished • Success: \(completed) • Failed: \(failed) • Warnings: \(warningCount)",
+                    tone: completionTone,
+                    progress: 1.0
+                )
                 self.scheduleClearLCDConversionStatus(after: 3.8)
                 self.updateConvertButtonState()
 
@@ -832,12 +974,13 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         )
 
         let sheetWindow = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 760, height: 300),
+            contentRect: NSRect(x: 0, y: 0, width: 760, height: 380),
             styleMask: [.titled],
             backing: .buffered,
             defer: false
         )
         sheetWindow.title = "Conversion Options"
+        sheetWindow.backgroundColor = ModernRetroTheme.surfaceBase
         sheetWindow.isReleasedWhenClosed = false
         sheetWindow.contentViewController = controller
         sheetWindow.standardWindowButton(.closeButton)?.isHidden = true
@@ -1069,20 +1212,34 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
     }
 
     private func updateConvertButtonState() {
+        if conversionService == nil {
+            convertButton.isEnabled = false
+            convertButton.title = "CONVERT"
+            ModernRetroTheme.updateButtonLayers(convertButton)
+            updateToolbarIndicators(activity: .disabled, completion: .error)
+            return
+        }
+
         if isConversionRunning {
             convertButton.isEnabled = false
             convertButton.title = "CONVERT"
+            ModernRetroTheme.updateButtonLayers(convertButton)
+            updateToolbarIndicators(activity: .running, completion: .info)
             return
         }
 
         guard !loadedTracks.isEmpty else {
             convertButton.isEnabled = false
             convertButton.title = "CONVERT"
+            ModernRetroTheme.updateButtonLayers(convertButton)
+            updateToolbarIndicators(activity: .idle, completion: toolbarCompletionState)
             return
         }
 
         convertButton.isEnabled = true
         convertButton.title = "CONVERT"
+        ModernRetroTheme.updateButtonLayers(convertButton)
+        updateToolbarIndicators(activity: .idle, completion: toolbarCompletionState)
     }
 
     private func buildPresetFromControls() -> ConversionPreset {
@@ -1484,17 +1641,30 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         updateLCD()
     }
 
-    private func setLCDConversionStatus(_ text: String?) {
+    private func setLCDConversionStatus(
+        _ text: String?,
+        tone: ModernRetroTheme.StatusTone = .neutral,
+        progress: Double? = nil
+    ) {
         lcdSecondaryResetWorkItem?.cancel()
         let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines)
         lcdSecondaryStatusOverride = (trimmed?.isEmpty == false) ? trimmed : nil
+        lcdSecondaryToneOverride = tone
+        if let progress {
+            lcdBarProgressOverride = max(0.0, min(progress, 1.0))
+        }
         updateLCD()
     }
 
-    private func scheduleClearLCDConversionStatus(after delay: TimeInterval) {
+    private func scheduleClearLCDConversionStatus(after delay: TimeInterval, resetCompletionIndicator: Bool = false) {
         lcdSecondaryResetWorkItem?.cancel()
         let work = DispatchWorkItem { [weak self] in
             self?.lcdSecondaryStatusOverride = nil
+            self?.lcdSecondaryToneOverride = .neutral
+            self?.lcdBarProgressOverride = 0
+            if resetCompletionIndicator {
+                self?.updateToolbarIndicators(activity: .idle, completion: .idle)
+            }
             self?.updateLCD()
         }
         lcdSecondaryResetWorkItem = work
@@ -1509,46 +1679,29 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         } else {
             lcdView.setPrimaryStatus(nil)
         }
-        lcdView.setSecondaryStatus(lcdSecondaryStatusOverride)
+        lcdView.setSecondaryStatus(lcdSecondaryStatusOverride, tone: lcdSecondaryToneOverride)
+
+        if let status = lcdSecondaryStatusOverride {
+            lcdView.setBarMode(
+                .conversion(progress: lcdBarProgressOverride, text: status, tone: lcdSecondaryToneOverride),
+                animated: true
+            )
+        } else {
+            lcdView.setBarMode(.hidden, animated: true)
+        }
     }
 }
 
-private final class ClassicRowView: NSTableRowView {
+private final class ModernRowView: NSTableRowView {
     var rowIndex: Int = 0
 
     override func drawBackground(in dirtyRect: NSRect) {
-        let fill = (rowIndex % 2 == 0) ? ClassicTheme.playlistBackgroundEven : ClassicTheme.playlistBackgroundOdd
-        fill.setFill()
-        dirtyRect.fill()
+        ModernRetroTheme.drawListRowBackground(rowIndex, in: dirtyRect)
     }
 
     override func drawSelection(in dirtyRect: NSRect) {
         guard selectionHighlightStyle != .none else { return }
-        let inset = dirtyRect.insetBy(dx: 2, dy: 1)
-        let path = NSBezierPath(roundedRect: inset, xRadius: 6, yRadius: 6)
-
-        if let gradient = NSGradient(colors: [
-            ClassicTheme.accentHighlight,
-            ClassicTheme.accentYellow,
-            ClassicTheme.accentShadow
-        ]) {
-            gradient.draw(in: path, angle: -90)
-        } else {
-            ClassicTheme.accentYellow.setFill()
-            path.fill()
-        }
-
-        ClassicTheme.chromeStroke.withAlphaComponent(0.8).setStroke()
-        path.lineWidth = 1
-        path.stroke()
-
-        // Top hairline
-        NSColor.white.withAlphaComponent(0.6).setStroke()
-        let hairline = NSBezierPath()
-        hairline.move(to: NSPoint(x: inset.minX + 1, y: inset.maxY - 1))
-        hairline.line(to: NSPoint(x: inset.maxX - 1, y: inset.maxY - 1))
-        hairline.lineWidth = 1
-        hairline.stroke()
+        ModernRetroTheme.drawListRowSelection(in: dirtyRect)
     }
 }
 
@@ -1590,7 +1743,7 @@ private final class TrackCellView: NSTableCellView {
         artworkView.layer?.masksToBounds = true
 
         titleLabel.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
-        detailLabel.font = NSFont.systemFont(ofSize: 11, weight: .regular)
+        detailLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
         updateTextColors()
 
         let textStack = NSStackView(views: [titleLabel, detailLabel])
@@ -1614,8 +1767,13 @@ private final class TrackCellView: NSTableCellView {
     }
 
     private func updateTextColors() {
-        titleLabel.textColor = ClassicTheme.playlistPrimaryText
-        detailLabel.textColor = ClassicTheme.playlistSecondaryText
+        if backgroundStyle == .emphasized {
+            titleLabel.textColor = NSColor.white.withAlphaComponent(0.98)
+            detailLabel.textColor = NSColor.white.withAlphaComponent(0.88)
+        } else {
+            titleLabel.textColor = ModernRetroTheme.textPrimary
+            detailLabel.textColor = ModernRetroTheme.textSecondary
+        }
     }
 
     private func formatDuration(_ seconds: Double) -> String {

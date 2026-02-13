@@ -22,7 +22,8 @@ final class TrackInspectorViewController: NSViewController {
 
     override func loadView() {
         view = NSView()
-        ClassicTheme.applyPinstripe(to: view)
+        view.wantsLayer = true
+        view.layer?.backgroundColor = ModernRetroTheme.surfaceBase.cgColor
 
         configureTextFields()
         configureArtworkView()
@@ -112,8 +113,11 @@ final class TrackInspectorViewController: NSViewController {
         albumField.font = NSFont.systemFont(ofSize: 14, weight: .regular)
         detailsField.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular)
         artworkInfoField.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
-        titleField.textColor = ClassicTheme.accentShadow
-        detailsField.textColor = ClassicTheme.accentShadow
+        titleField.textColor = ModernRetroTheme.textPrimary
+        detailsField.textColor = ModernRetroTheme.textSecondary
+        artistField.textColor = ModernRetroTheme.textPrimary
+        albumField.textColor = ModernRetroTheme.textPrimary
+        artworkInfoField.textColor = ModernRetroTheme.textSecondary
 
         [titleField, artistField, albumField, detailsField, artworkInfoField].forEach {
             $0.lineBreakMode = .byTruncatingTail
@@ -130,7 +134,7 @@ final class TrackInspectorViewController: NSViewController {
         scrollView.drawsBackground = false
         scrollView.scrollerStyle = .legacy
         scrollView.wantsLayer = true
-        scrollView.layer?.backgroundColor = ClassicTheme.pinstripeBackground.cgColor
+        scrollView.layer?.backgroundColor = ModernRetroTheme.surfaceElevated.cgColor
         scrollView.layer?.shadowColor = NSColor.black.withAlphaComponent(0.12).cgColor
         scrollView.layer?.shadowOpacity = 0.12
         scrollView.layer?.shadowRadius = 4
@@ -148,7 +152,7 @@ final class TrackInspectorViewController: NSViewController {
 
         imageView.translatesAutoresizingMaskIntoConstraints = false
         placeholderField.translatesAutoresizingMaskIntoConstraints = false
-        placeholderField.textColor = ClassicTheme.accentShadow
+        placeholderField.textColor = ModernRetroTheme.textSecondary
 
         artworkContainer.addSubview(imageView)
         artworkContainer.addSubview(placeholderField)

@@ -50,6 +50,9 @@ final class ConversionOptionsSheetController: NSViewController {
     private let templateSection = NSStackView()
     private let customTokenSection = NSStackView()
 
+    private let cancelButton = NSButton(title: "Cancel", target: nil, action: nil)
+    private let continueButton = NSButton(title: "Continue", target: nil, action: nil)
+
     init(
         initialSelection: ConversionOptionsSelection,
         outputFormats: [OutputFormat],
@@ -70,7 +73,8 @@ final class ConversionOptionsSheetController: NSViewController {
 
     override func loadView() {
         view = NSView()
-        ClassicTheme.applyMetal(to: view)
+        view.wantsLayer = true
+        view.layer?.backgroundColor = ModernRetroTheme.surfaceBase.cgColor
         view.translatesAutoresizingMaskIntoConstraints = false
         buildUI()
         configurePopups()
@@ -79,99 +83,154 @@ final class ConversionOptionsSheetController: NSViewController {
         updateTemplateVisibility()
     }
 
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        ModernRetroTheme.updateButtonLayers(cancelButton)
+        ModernRetroTheme.updateButtonLayers(continueButton)
+    }
+
     private var tokenPopups: [NSPopUpButton] {
         [tokenPopUp1, tokenPopUp2, tokenPopUp3, tokenPopUp4, tokenPopUp5]
     }
 
     private func buildUI() {
         let title = NSTextField(labelWithString: "Conversion Options")
-        title.font = NSFont.systemFont(ofSize: 16, weight: .semibold)
-        title.textColor = NSColor(calibratedWhite: 0.15, alpha: 0.95)
+        title.font = NSFont.systemFont(ofSize: 18, weight: .semibold)
+        title.textColor = ModernRetroTheme.textPrimary
 
-        let topRow = NSStackView(views: [
-            makeLabeledRow("Batch", batchScopePopUp),
-            makeLabeledRow("Format", formatPopUp),
-            makeLabeledRow("Bitrate", bitratePopUp),
-            makeLabeledRow("Sample Rate", sampleRatePopUp)
-        ])
-        topRow.orientation = .horizontal
-        topRow.alignment = .top
-        topRow.spacing = 12
-        topRow.distribution = .fillEqually
+        let subtitle = NSTextField(labelWithString: "Configure conversion scope, format, and folder strategy.")
+        subtitle.font = NSFont.systemFont(ofSize: 12, weight: .regular)
+        subtitle.textColor = ModernRetroTheme.textSecondary
 
-        let folderRow = NSStackView(views: [
-            makeLabeledRow("Folder Structure", folderStructurePopUp),
-            makeLabeledRow("Apply Mode", applyModePopUp)
-        ])
-        folderRow.orientation = .horizontal
-        folderRow.alignment = .top
-        folderRow.spacing = 12
-        folderRow.distribution = .fillEqually
+        let scopeAndFormat = makeSectionCard(
+            title: "Scope + Format",
+            content: makeEqualWidthGrid(rows: [
+                [makeLabeledRow("Batch Scope", batchScopePopUp), makeLabeledRow("Format", formatPopUp)],
+                [makeLabeledRow("Bitrate", bitratePopUp), makeLabeledRow("Sample Rate", sampleRatePopUp)]
+            ])
+        )
 
-        let templatePresetRow = makeLabeledRow("Folder Order", templatePresetPopUp)
+        let outputStructure = makeSectionCard(
+            title: "File Naming + Structure",
+            content: makeEqualWidthGrid(rows: [
+                [makeLabeledRow("Folder Structure", folderStructurePopUp), makeLabeledRow("Apply Mode", applyModePopUp)]
+            ])
+        )
 
         customTokenSection.orientation = .vertical
         customTokenSection.alignment = .leading
-        customTokenSection.spacing = 5
-        let tokensLabel = NSTextField(labelWithString: "Token Order")
-        tokensLabel.font = NSFont.systemFont(ofSize: 11, weight: .semibold)
-        tokensLabel.textColor = NSColor(calibratedWhite: 0.25, alpha: 0.9)
-
-        let tokenRow = NSStackView(views: tokenPopups)
-        tokenRow.orientation = .horizontal
-        tokenRow.spacing = 8
-        tokenRow.alignment = .centerY
-        customTokenSection.addArrangedSubview(tokensLabel)
-        customTokenSection.addArrangedSubview(tokenRow)
+        customTokenSection.spacing = 6
+        customTokenSection.addArrangedSubview(makeLabeledRow("Token Order", makeTokenRow()))
 
         templateSection.orientation = .vertical
         templateSection.alignment = .leading
         templateSection.spacing = 8
-        templateSection.addArrangedSubview(templatePresetRow)
+        templateSection.addArrangedSubview(makeLabeledRow("Folder Order", templatePresetPopUp))
         templateSection.addArrangedSubview(customTokenSection)
 
-        let cancelButton = NSButton(title: "Cancel", target: self, action: #selector(cancelAction))
-        cancelButton.bezelStyle = .rounded
+        let folderStrategy = makeSectionCard(title: "Folder Strategy", content: templateSection)
 
-        let continueButton = NSButton(title: "Continue", target: self, action: #selector(continueAction))
-        ClassicTheme.applyAquaAccent(to: continueButton)
-        continueButton.translatesAutoresizingMaskIntoConstraints = false
-        continueButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 94).isActive = true
-        continueButton.heightAnchor.constraint(equalToConstant: 28).isActive = true
+        cancelButton.target = self
+        cancelButton.action = #selector(cancelAction)
+        ModernRetroTheme.styleSecondaryButton(cancelButton)
+        cancelButton.font = NSFont.systemFont(ofSize: 12, weight: .medium)
+        cancelButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 94).isActive = true
+        cancelButton.heightAnchor.constraint(equalToConstant: ModernRetroTheme.buttonHeight).isActive = true
 
-        let buttonRow = NSStackView(views: [cancelButton, continueButton])
-        buttonRow.orientation = .horizontal
-        buttonRow.spacing = 10
-        buttonRow.alignment = .centerY
-        buttonRow.edgeInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
+        continueButton.target = self
+        continueButton.action = #selector(continueAction)
+        ModernRetroTheme.stylePrimaryActionButton(continueButton, title: "Continue", minWidth: 112)
 
-        let mainStack = NSStackView(views: [title, topRow, folderRow, templateSection, buttonRow])
-        mainStack.orientation = .vertical
-        mainStack.spacing = 12
-        mainStack.alignment = .leading
-        mainStack.translatesAutoresizingMaskIntoConstraints = false
+        let buttons = NSStackView(views: [cancelButton, continueButton])
+        buttons.orientation = .horizontal
+        buttons.alignment = .centerY
+        buttons.spacing = 10
+        buttons.translatesAutoresizingMaskIntoConstraints = false
 
-        view.addSubview(mainStack)
+        let content = NSStackView(views: [title, subtitle, scopeAndFormat, outputStructure, folderStrategy, buttons])
+        content.orientation = .vertical
+        content.alignment = .leading
+        content.spacing = 12
+        content.translatesAutoresizingMaskIntoConstraints = false
+
+        view.addSubview(content)
 
         NSLayoutConstraint.activate([
-            mainStack.topAnchor.constraint(equalTo: view.topAnchor, constant: 16),
-            mainStack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
-            mainStack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
-            mainStack.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -16),
-            continueButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 100),
-            buttonRow.trailingAnchor.constraint(equalTo: mainStack.trailingAnchor)
+            content.topAnchor.constraint(equalTo: view.topAnchor, constant: 18),
+            content.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 18),
+            content.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -18),
+            content.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -18),
+            buttons.trailingAnchor.constraint(equalTo: content.trailingAnchor)
         ])
     }
 
-    private func makeLabeledRow(_ title: String, _ control: NSControl) -> NSStackView {
+    private func makeSectionCard(title: String, content: NSView) -> NSView {
+        let card = NSView()
+        card.translatesAutoresizingMaskIntoConstraints = false
+        card.wantsLayer = true
+        card.layer?.backgroundColor = ModernRetroTheme.surfaceElevated.cgColor
+        card.layer?.cornerRadius = 10
+        card.layer?.borderWidth = 1
+        card.layer?.borderColor = ModernRetroTheme.separator.withAlphaComponent(0.35).cgColor
+
+        let header = NSTextField(labelWithString: title)
+        header.font = NSFont.systemFont(ofSize: 11, weight: .semibold)
+        header.textColor = ModernRetroTheme.textSecondary
+
+        let stack = NSStackView(views: [header, content])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 7
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        card.addSubview(stack)
+
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: card.topAnchor, constant: 10),
+            stack.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 12),
+            stack.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -12),
+            stack.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -10)
+        ])
+
+        return card
+    }
+
+    private func makeEqualWidthGrid(rows: [[NSView]]) -> NSView {
+        let vertical = NSStackView()
+        vertical.orientation = .vertical
+        vertical.spacing = 8
+        vertical.alignment = .leading
+
+        for row in rows {
+            let rowStack = NSStackView(views: row)
+            rowStack.orientation = .horizontal
+            rowStack.alignment = .top
+            rowStack.spacing = 10
+            rowStack.distribution = .fillEqually
+            vertical.addArrangedSubview(rowStack)
+        }
+
+        return vertical
+    }
+
+    private func makeTokenRow() -> NSView {
+        let row = NSStackView(views: tokenPopups)
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.spacing = 8
+        row.distribution = .fillEqually
+        return row
+    }
+
+    private func makeLabeledRow(_ title: String, _ control: NSView) -> NSView {
         let label = NSTextField(labelWithString: title)
-        label.font = NSFont.systemFont(ofSize: 11, weight: .semibold)
-        label.textColor = NSColor(calibratedWhite: 0.25, alpha: 0.9)
+        label.font = NSFont.systemFont(ofSize: 11, weight: .medium)
+        label.textColor = ModernRetroTheme.textSecondary
 
         let stack = NSStackView(views: [label, control])
         stack.orientation = .vertical
-        stack.spacing = 5
         stack.alignment = .leading
+        stack.spacing = 5
         return stack
     }
 
@@ -187,9 +246,7 @@ final class ConversionOptionsSheetController: NSViewController {
         ] + tokenPopups
 
         for popUp in popups {
-            popUp.bezelStyle = .texturedRounded
-            popUp.controlSize = .small
-            popUp.font = NSFont.systemFont(ofSize: 12, weight: .medium)
+            ModernRetroTheme.stylePopUp(popUp)
         }
 
         batchScopePopUp.removeAllItems()

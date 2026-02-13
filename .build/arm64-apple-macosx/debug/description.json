@@ -56,6 +56,10 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/ModernRetroTheme.swift"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/TrackInspectorViewController.swift"
         },
         {
@@ -86,6 +90,7 @@
         "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/ConversionOptionsSheetController.swift.o",
         "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/MainViewController.swift.o",
         "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/MainWindowController.swift.o",
+        "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/ModernRetroTheme.swift.o",
         "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/TrackInspectorViewController.swift.o",
         "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/main.swift.o"
       ],
@@ -164,6 +169,10 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/ModernRetroTheme.swift.o"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/TrackInspectorViewController.swift.o"
         },
         {
@@ -184,6 +193,7 @@
         "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/ConversionOptionsSheetController.swift",
         "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/MainViewController.swift",
         "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/MainWindowController.swift",
+        "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/ModernRetroTheme.swift",
         "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/TrackInspectorViewController.swift",
         "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/main.swift"
       ],
@@ -581,6 +591,7 @@
       "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/ConversionOptionsSheetController.swift",
       "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/MainViewController.swift",
       "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/MainWindowController.swift",
+      "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/ModernRetroTheme.swift",
       "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/TrackInspectorViewController.swift",
       "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/main.swift",
       "-I",
@@ -890,6 +901,10 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/ModernRetroTheme.swift"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/TrackInspectorViewController.swift"
         },
         {
@@ -933,6 +948,10 @@
         {
           "kind" : "file",
           "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/MainWindowController.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/ModernRetroTheme.swift.o"
         },
         {
           "kind" : "file",
