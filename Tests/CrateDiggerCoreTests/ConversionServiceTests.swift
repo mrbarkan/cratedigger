@@ -68,6 +68,9 @@ final class ConversionServiceTests: XCTestCase {
         XCTAssertEqual(countOccurrences(of: "-i", in: command.arguments), 2)
         XCTAssertTrue(argumentPairs(command.arguments).contains(ArgPair(flag: "-map", value: "1:v:0")))
         XCTAssertTrue(command.arguments.contains("attached_pic"))
+        XCTAssertTrue(argumentPairs(command.arguments).contains(ArgPair(flag: "-disposition:v:0", value: "attached_pic")))
+        XCTAssertTrue(argumentPairs(command.arguments).contains(ArgPair(flag: "-metadata:s:v:0", value: "title=Album cover")))
+        XCTAssertTrue(argumentPairs(command.arguments).contains(ArgPair(flag: "-metadata:s:v:0", value: "comment=Cover (front)")))
 
         let mapMetadataIndex = try XCTUnwrap(command.arguments.firstIndex(of: "-map_metadata"))
         let lastInputPathIndex = try XCTUnwrap(lastInputPathIndex(in: command.arguments))
@@ -90,6 +93,8 @@ final class ConversionServiceTests: XCTestCase {
 
         XCTAssertEqual(countOccurrences(of: "-i", in: command.arguments), 1)
         XCTAssertTrue(argumentPairs(command.arguments).contains(ArgPair(flag: "-map_metadata", value: "0")))
+        XCTAssertTrue(argumentPairs(command.arguments).contains(ArgPair(flag: "-map_metadata:s:a:0", value: "0:s:a:0")))
+        XCTAssertTrue(argumentPairs(command.arguments).contains(ArgPair(flag: "-map_chapters", value: "0")))
 
         let sourceInputIndex = try XCTUnwrap(indexOfPair(flag: "-i", value: sourceURL.path, in: command.arguments))
         let mapMetadataIndex = try XCTUnwrap(command.arguments.firstIndex(of: "-map_metadata"))
@@ -147,7 +152,7 @@ final class ConversionServiceTests: XCTestCase {
         XCTAssertTrue(argumentPairs(command.arguments).contains(ArgPair(flag: "-write_xing", value: "0")))
     }
 
-    func testCompatArtworkFailureFallsBackToAudioOnlyWithWarning() throws {
+    func testCompatArtworkFailureFallsBackToSourceArtworkStreamWithWarning() throws {
         let service = try makeService(artworkPreparer: ThrowingArtworkPreparer())
 
         let artworkData = try makeImageData()
@@ -171,7 +176,29 @@ final class ConversionServiceTests: XCTestCase {
 
         XCTAssertNotNil(command.warning)
         XCTAssertTrue(argumentPairs(command.arguments).contains(ArgPair(flag: "-map", value: "0:a:0")))
-        XCTAssertFalse(command.arguments.contains("attached_pic"))
+        XCTAssertTrue(argumentPairs(command.arguments).contains(ArgPair(flag: "-map", value: "0:v?")))
+        XCTAssertTrue(argumentPairs(command.arguments).contains(ArgPair(flag: "-c:v", value: "copy")))
+        XCTAssertTrue(argumentPairs(command.arguments).contains(ArgPair(flag: "-disposition:v:0", value: "attached_pic")))
+    }
+
+    func testCompatReembedWithoutResolvedArtworkFallsBackToSourceArtworkStream() throws {
+        let service = try makeService(artworkPreparer: PassThroughArtworkPreparer())
+        let sourceURL = temporaryDirectory.appendingPathComponent("source.flac")
+        let outputURL = temporaryDirectory.appendingPathComponent("out-no-artwork.m4a")
+
+        let queued = try service.enqueue(
+            [ConversionJob(sourceURL: sourceURL, destinationURL: outputURL, metadata: nil)],
+            presetID: "ipod_aac_192"
+        ).first!
+
+        let command = try service.preparedCommand(for: queued)
+
+        XCTAssertEqual(countOccurrences(of: "-i", in: command.arguments), 1)
+        XCTAssertTrue(argumentPairs(command.arguments).contains(ArgPair(flag: "-map", value: "0:a:0")))
+        XCTAssertTrue(argumentPairs(command.arguments).contains(ArgPair(flag: "-map", value: "0:v?")))
+        XCTAssertTrue(argumentPairs(command.arguments).contains(ArgPair(flag: "-c:v", value: "copy")))
+        XCTAssertTrue(argumentPairs(command.arguments).contains(ArgPair(flag: "-disposition:v:0", value: "attached_pic")))
+        XCTAssertFalse(command.arguments.contains("-vn"))
     }
 
     func testMetadataIncludesAlbumArtistAndCompilation() throws {
@@ -197,6 +224,55 @@ final class ConversionServiceTests: XCTestCase {
         XCTAssertTrue(pairs.contains(ArgPair(flag: "-metadata", value: "album_artist=Album Artist")))
         XCTAssertTrue(pairs.contains(ArgPair(flag: "-metadata", value: "albumartist=Album Artist")))
         XCTAssertTrue(pairs.contains(ArgPair(flag: "-metadata", value: "compilation=1")))
+    }
+
+    func testMetadataPreservationDoesNotOverrideCoreTagsWithPartialValues() throws {
+        let service = try makeService(artworkPreparer: PassThroughArtworkPreparer())
+        let sourceURL = temporaryDirectory.appendingPathComponent("source.flac")
+        let outputURL = temporaryDirectory.appendingPathComponent("out.m4a")
+
+        let metadata = ConversionMetadata(
+            title: "Track",
+            artist: "Track Artist",
+            albumArtist: "Album Artist",
+            album: "Album",
+            trackNumber: 1,
+            discNumber: 1,
+            year: 2008,
+            genre: "Electronic",
+            comment: "Test Comment",
+            compilation: false
+        )
+
+        let queued = try service.enqueue(
+            [ConversionJob(sourceURL: sourceURL, destinationURL: outputURL, metadata: metadata)],
+            presetID: "ipod_aac_192"
+        ).first!
+        let command = try service.preparedCommand(for: queued)
+        let pairs = argumentPairs(command.arguments)
+
+        XCTAssertFalse(pairs.contains(ArgPair(flag: "-metadata", value: "title=Track")))
+        XCTAssertFalse(pairs.contains(ArgPair(flag: "-metadata", value: "artist=Track Artist")))
+        XCTAssertFalse(pairs.contains(ArgPair(flag: "-metadata", value: "album=Album")))
+        XCTAssertFalse(pairs.contains(ArgPair(flag: "-metadata", value: "track=1")))
+        XCTAssertFalse(pairs.contains(ArgPair(flag: "-metadata", value: "disc=1")))
+        XCTAssertFalse(pairs.contains(ArgPair(flag: "-metadata", value: "date=2008")))
+        XCTAssertFalse(pairs.contains(ArgPair(flag: "-metadata", value: "genre=Electronic")))
+        XCTAssertFalse(pairs.contains(ArgPair(flag: "-metadata", value: "comment=Test Comment")))
+    }
+
+    func testGenericAACAutoTagModeUsesMP4MetadataTags() throws {
+        let service = try makeService(artworkPreparer: PassThroughArtworkPreparer())
+        let sourceURL = temporaryDirectory.appendingPathComponent("source.wav")
+        let outputURL = temporaryDirectory.appendingPathComponent("out.m4a")
+
+        let queued = try service.enqueue(
+            [ConversionJob(sourceURL: sourceURL, destinationURL: outputURL)],
+            preset: .genericAAC
+        ).first!
+        let command = try service.preparedCommand(for: queued)
+
+        XCTAssertTrue(argumentPairs(command.arguments).contains(ArgPair(flag: "-movflags", value: "use_metadata_tags")))
     }
 
     func testEnqueueAllowsDeviceProfileOverride() throws {

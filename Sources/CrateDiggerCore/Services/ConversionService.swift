@@ -235,7 +235,14 @@ public final class ConversionService {
             case .none:
                 outputMappingArguments.append(contentsOf: ["-map", "0:a:0"])
             case .preserve:
-                outputMappingArguments.append(contentsOf: ["-map", "0:a:0", "-map", "0:v?"])
+                outputMappingArguments.append(contentsOf: [
+                    "-map", "0:a:0",
+                    "-map", "0:v?",
+                    "-c:v", "copy",
+                    "-disposition:v:0", "attached_pic",
+                    "-metadata:s:v:0", "title=Album cover",
+                    "-metadata:s:v:0", "comment=Cover (front)"
+                ])
                 hasVideoMapping = true
             case .compatReembed:
                 do {
@@ -244,19 +251,51 @@ public final class ConversionService {
                     temporaryFiles.append(artworkTempURL)
 
                     inputArguments.append(contentsOf: ["-i", artworkTempURL.path])
-                    outputMappingArguments.append(contentsOf: ["-map", "0:a:0", "-map", "1:v:0", "-c:v", "mjpeg", "-disposition:v", "attached_pic"])
+                    outputMappingArguments.append(contentsOf: [
+                        "-map", "0:a:0",
+                        "-map", "1:v:0",
+                        "-c:v", "mjpeg",
+                        "-disposition:v:0", "attached_pic",
+                        "-metadata:s:v:0", "title=Album cover",
+                        "-metadata:s:v:0", "comment=Cover (front)"
+                    ])
                     hasVideoMapping = true
                 } catch {
-                    warning = "Artwork conversion failed. Continuing without embedded artwork: \(error.localizedDescription)"
-                    outputMappingArguments.append(contentsOf: ["-map", "0:a:0"])
+                    warning = "Artwork conversion failed. Falling back to source artwork stream when available: \(error.localizedDescription)"
+                    outputMappingArguments.append(contentsOf: [
+                        "-map", "0:a:0",
+                        "-map", "0:v?",
+                        "-c:v", "copy",
+                        "-disposition:v:0", "attached_pic",
+                        "-metadata:s:v:0", "title=Album cover",
+                        "-metadata:s:v:0", "comment=Cover (front)"
+                    ])
+                    hasVideoMapping = true
                 }
             }
         } else {
             switch queued.preset.artworkMode {
             case .preserve:
-                outputMappingArguments.append(contentsOf: ["-map", "0:a:0", "-map", "0:v?"])
+                outputMappingArguments.append(contentsOf: [
+                    "-map", "0:a:0",
+                    "-map", "0:v?",
+                    "-c:v", "copy",
+                    "-disposition:v:0", "attached_pic",
+                    "-metadata:s:v:0", "title=Album cover",
+                    "-metadata:s:v:0", "comment=Cover (front)"
+                ])
                 hasVideoMapping = true
-            case .compatReembed, .none:
+            case .compatReembed:
+                outputMappingArguments.append(contentsOf: [
+                    "-map", "0:a:0",
+                    "-map", "0:v?",
+                    "-c:v", "copy",
+                    "-disposition:v:0", "attached_pic",
+                    "-metadata:s:v:0", "title=Album cover",
+                    "-metadata:s:v:0", "comment=Cover (front)"
+                ])
+                hasVideoMapping = true
+            case .none:
                 outputMappingArguments.append(contentsOf: ["-map", "0:a:0"])
             }
         }
@@ -271,7 +310,12 @@ public final class ConversionService {
     }
 
     private func buildOutputSection(for queued: QueuedConversion, inputSection: CommandInputSection) -> [String] {
-        var outputArguments: [String] = ["-map_metadata", "0"]
+        // Keep metadata copy lossless-first: copy global, stream, and chapter metadata from source input 0.
+        var outputArguments: [String] = [
+            "-map_metadata", "0",
+            "-map_metadata:s:a:0", "0:s:a:0",
+            "-map_chapters", "0"
+        ]
         outputArguments.append(contentsOf: inputSection.outputMappingArguments)
 
         applyCodecArguments(to: &outputArguments, preset: queued.preset)
@@ -359,7 +403,10 @@ public final class ConversionService {
     private func applyTagArguments(to arguments: inout [String], preset: ConversionPreset) {
         switch preset.tagMode {
         case .auto:
-            break
+            // AAC/ALAC outputs use MP4 containers. Keep freeform metadata keys instead of dropping unknown tags.
+            if preset.outputFormat == .aac || preset.outputFormat == .alac {
+                arguments.append(contentsOf: ["-movflags", "use_metadata_tags"])
+            }
         case .id3v23:
             arguments.append(contentsOf: ["-id3v2_version", "3", "-write_id3v1", "1"])
         case .mp4Atoms:
@@ -379,26 +426,10 @@ public final class ConversionService {
             arguments.append(contentsOf: ["-metadata", "\(key)=\(value)"])
         }
 
-        add("title", metadata.title)
-        add("artist", metadata.artist)
+        // Core tags are copied from source via -map_metadata. Only add compatibility-focused fields here
+        // to avoid overwriting richer source tags (for example track totals or custom fields) with partial values.
         add("album_artist", metadata.albumArtist)
         add("albumartist", metadata.albumArtist)
-        add("album", metadata.album)
-
-        if let trackNumber = metadata.trackNumber {
-            add("track", "\(trackNumber)")
-        }
-
-        if let discNumber = metadata.discNumber {
-            add("disc", "\(discNumber)")
-        }
-
-        if let year = metadata.year {
-            add("date", "\(year)")
-        }
-
-        add("genre", metadata.genre)
-        add("comment", metadata.comment)
 
         if metadata.compilation == true {
             add("compilation", "1")
@@ -419,12 +450,31 @@ public final class ConversionService {
     }
 
     private func writeTemporaryArtwork(_ data: Data) throws -> URL {
+        let preferredExtension = Self.imageFileExtension(for: data)
         let tempURL = fileManager.temporaryDirectory
             .appendingPathComponent("cratedigger-artwork-\(UUID().uuidString)")
-            .appendingPathExtension("jpg")
+            .appendingPathExtension(preferredExtension)
 
         try data.write(to: tempURL, options: .atomic)
         return tempURL
+    }
+
+    private static func imageFileExtension(for data: Data) -> String {
+        if data.count >= 3 && data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF {
+            return "jpg"
+        }
+        if data.count >= 8 &&
+            data[0] == 0x89 && data[1] == 0x50 && data[2] == 0x4E && data[3] == 0x47 &&
+            data[4] == 0x0D && data[5] == 0x0A && data[6] == 0x1A && data[7] == 0x0A {
+            return "png"
+        }
+        if data.count >= 6 {
+            let header = String(data: data.prefix(6), encoding: .ascii)?.lowercased() ?? ""
+            if header.hasPrefix("gif87a") || header.hasPrefix("gif89a") {
+                return "gif"
+            }
+        }
+        return "jpg"
     }
 
     private static func withDeviceProfileOverride(
