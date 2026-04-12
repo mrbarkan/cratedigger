@@ -49,7 +49,7 @@ struct ConversionOptionsSheetView: View {
                 .font(.system(size: 30, weight: .semibold))
                 .foregroundColor(Color(nsColor: ModernRetroTheme.textPrimary))
 
-            Text("Configure conversion scope, format, and folder strategy.")
+            Text("Configure one conversion plan for this run. These settings are the source of truth for the files about to be converted.")
                 .font(.system(size: 13, weight: .regular))
                 .foregroundColor(Color(nsColor: ModernRetroTheme.textSecondary))
 
@@ -83,7 +83,7 @@ struct ConversionOptionsSheetView: View {
             .padding(.top, 2)
         }
         .padding(18)
-        .frame(minWidth: 920, minHeight: 560)
+        .frame(minWidth: 760, minHeight: 520)
         .background(Color(nsColor: ModernRetroTheme.surfaceBase))
         .onAppear {
             tokenOrder = Self.normalizeTokenOrder(tokenOrder)
@@ -182,6 +182,10 @@ struct ConversionOptionsSheetView: View {
                     .disabled(!isMetadataTemplateMode)
                 }
             }
+
+            Text("Use 'Review album folders' when you want to confirm each album destination before conversion starts.")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(Color(nsColor: ModernRetroTheme.textSecondary))
         }
     }
 

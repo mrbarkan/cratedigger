@@ -4,7 +4,7 @@ import XCTest
 @testable import CrateDiggerCore
 
 final class PlaybackServiceTests: XCTestCase {
-    func testLoadAutoPlayTransitionsLoadingToPlaying() {
+    func testLoadAutoPlayTransitionsLoadingToPlaying() async {
         let engine = MockPlaybackEngine()
         let service = PlaybackService(engine: engine)
 
@@ -17,14 +17,14 @@ final class PlaybackServiceTests: XCTestCase {
 
         engine.durationSeconds = 120
         engine.simulateReady()
-        pumpMainRunLoop()
+        await pumpMainQueue()
 
         XCTAssertEqual(service.state, .playing)
         XCTAssertEqual(service.durationSeconds, 120)
         XCTAssertEqual(engine.playCalls, 1)
     }
 
-    func testPauseAndResumeFromPlaying() {
+    func testPauseAndResumeFromPlaying() async {
         let engine = MockPlaybackEngine()
         let service = PlaybackService(engine: engine)
         let queue = [PlaybackQueueItem(url: URL(fileURLWithPath: "/tmp/a.flac"), title: "A", artist: "", album: "", durationSeconds: 100)]
@@ -32,7 +32,7 @@ final class PlaybackServiceTests: XCTestCase {
         service.load(queue: queue, startIndex: 0, autoPlay: true)
         engine.durationSeconds = 100
         engine.simulateReady()
-        pumpMainRunLoop()
+        await pumpMainQueue()
         XCTAssertEqual(service.state, .playing)
 
         service.pause()
@@ -44,7 +44,7 @@ final class PlaybackServiceTests: XCTestCase {
         XCTAssertEqual(engine.playCalls, 2)
     }
 
-    func testQueueNavigationAndEndedState() {
+    func testQueueNavigationAndEndedState() async {
         let engine = MockPlaybackEngine()
         let service = PlaybackService(engine: engine)
         let queue = [
@@ -54,7 +54,7 @@ final class PlaybackServiceTests: XCTestCase {
 
         service.load(queue: queue, startIndex: 0, autoPlay: true)
         engine.simulateReady()
-        pumpMainRunLoop()
+        await pumpMainQueue()
         XCTAssertEqual(service.currentIndex, 0)
 
         service.next()
@@ -63,7 +63,7 @@ final class PlaybackServiceTests: XCTestCase {
         XCTAssertEqual(engine.replacedURLs.last, queue[1].url)
 
         engine.simulateReady()
-        pumpMainRunLoop()
+        await pumpMainQueue()
         XCTAssertEqual(service.state, .playing)
 
         service.next()
@@ -71,7 +71,7 @@ final class PlaybackServiceTests: XCTestCase {
         XCTAssertEqual(service.currentIndex, 1)
     }
 
-    func testSeekClampsToDuration() {
+    func testSeekClampsToDuration() async {
         let engine = MockPlaybackEngine()
         let service = PlaybackService(engine: engine)
         let queue = [PlaybackQueueItem(url: URL(fileURLWithPath: "/tmp/a.flac"), title: "A", artist: "", album: "", durationSeconds: 100)]
@@ -79,14 +79,14 @@ final class PlaybackServiceTests: XCTestCase {
         service.load(queue: queue, startIndex: 0, autoPlay: false)
         engine.durationSeconds = 100
         engine.simulateReady()
-        pumpMainRunLoop()
+        await pumpMainQueue()
 
         service.seek(toSeconds: 999)
         XCTAssertEqual(engine.lastSeek, 100, accuracy: 0.001)
         XCTAssertEqual(service.currentTimeSeconds, 100, accuracy: 0.001)
     }
 
-    func testFailureSkipsToNextTrackWhenAvailable() {
+    func testFailureSkipsToNextTrackWhenAvailable() async {
         let engine = MockPlaybackEngine()
         let service = PlaybackService(engine: engine)
         let queue = [
@@ -99,7 +99,7 @@ final class PlaybackServiceTests: XCTestCase {
 
         service.load(queue: queue, startIndex: 0, autoPlay: true)
         engine.simulateFailure("Corrupt file")
-        pumpMainRunLoop()
+        await pumpMainQueue()
 
         XCTAssertEqual(errorMessage, "Corrupt file")
         XCTAssertEqual(service.currentIndex, 1)
@@ -107,14 +107,8 @@ final class PlaybackServiceTests: XCTestCase {
         XCTAssertEqual(engine.replacedURLs.last, queue[1].url)
 
         engine.simulateReady()
-        pumpMainRunLoop()
+        await pumpMainQueue()
         XCTAssertEqual(service.state, .playing)
-    }
-
-    private func pumpMainRunLoop() {
-        let expectation = expectation(description: "main queue")
-        DispatchQueue.main.async { expectation.fulfill() }
-        wait(for: [expectation], timeout: 1.0)
     }
 }
 

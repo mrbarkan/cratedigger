@@ -29,11 +29,35 @@ public struct ProcessCommandRunner: CommandRunning {
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
 
+        let stdoutHandle = stdoutPipe.fileHandleForReading
+        let stderrHandle = stderrPipe.fileHandleForReading
+
+        let group = DispatchGroup()
+        let dataLock = NSLock()
+        var stdoutData = Data()
+        var stderrData = Data()
+
+        group.enter()
+        DispatchQueue.global(qos: .userInitiated).async {
+            let data = stdoutHandle.readDataToEndOfFile()
+            dataLock.lock()
+            stdoutData = data
+            dataLock.unlock()
+            group.leave()
+        }
+
+        group.enter()
+        DispatchQueue.global(qos: .userInitiated).async {
+            let data = stderrHandle.readDataToEndOfFile()
+            dataLock.lock()
+            stderrData = data
+            dataLock.unlock()
+            group.leave()
+        }
+
         try process.run()
         process.waitUntilExit()
-
-        let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-        let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+        group.wait()
 
         return CommandOutput(
             terminationStatus: process.terminationStatus,
@@ -48,6 +72,21 @@ public enum ConversionServiceError: Error {
     case ffmpegExecutableMissing(URL)
     case buildFailure(String)
     case executionFailure(String)
+}
+
+extension ConversionServiceError: LocalizedError {
+    public var errorDescription: String? {
+        switch self {
+        case .presetNotFound(let id):
+            return "The conversion preset '\(id)' could not be found."
+        case .ffmpegExecutableMissing(let url):
+            return "ffmpeg was not found at \(url.path)."
+        case .buildFailure(let message):
+            return "The conversion command could not be built: \(message)"
+        case .executionFailure(let message):
+            return "The conversion command failed: \(message)"
+        }
+    }
 }
 
 public struct PreparedConversionCommand: Sendable {
@@ -80,6 +119,7 @@ public final class ConversionService {
     private let artworkPreparer: ArtworkPreparing
     private let commandRunner: CommandRunning
     private let fileManager: FileManager
+    public let resolvedTool: ResolvedExternalTool
 
     public let maxParallelWorkers: Int
 
@@ -122,11 +162,15 @@ public final class ConversionService {
         self.commandRunner = commandRunner
         self.maxParallelWorkers = max(1, ProcessInfo.processInfo.activeProcessorCount - 1)
 
-        let executable = ffmpegExecutableURL ?? Self.defaultFFmpegExecutableURL(fileManager: fileManager)
-        guard fileManager.fileExists(atPath: executable.path) else {
-            throw ConversionServiceError.ffmpegExecutableMissing(executable)
+        let locator = ExternalToolLocator(fileManager: fileManager)
+        let resolvedTool: ResolvedExternalTool
+        do {
+            resolvedTool = try locator.resolveRequired(.ffmpeg, explicitOverride: ffmpegExecutableURL)
+        } catch {
+            throw ConversionServiceError.ffmpegExecutableMissing(ffmpegExecutableURL ?? URL(fileURLWithPath: "ffmpeg"))
         }
-        self.ffmpegExecutableURL = executable
+        self.resolvedTool = resolvedTool
+        self.ffmpegExecutableURL = resolvedTool.url
 
         self.presetsByID = Dictionary(uniqueKeysWithValues: presets.map { ($0.id, $0) })
     }
@@ -363,11 +407,12 @@ public final class ConversionService {
     private func runSingleConversion(_ queued: QueuedConversion) -> ConversionExecutionResult {
         do {
             let command = try preparedCommand(for: queued)
+            defer {
+                cleanupTemporaryFiles(command.temporaryFiles)
+            }
             try ensureOutputDirectoryExists(for: queued.job.destinationURL)
 
             let output = try commandRunner.run(executableURL: command.executableURL, arguments: command.arguments)
-            cleanupTemporaryFiles(command.temporaryFiles)
-
             if output.terminationStatus == 0 {
                 return ConversionExecutionResult(
                     queuedID: queued.id,
@@ -577,18 +622,4 @@ public final class ConversionService {
         return resolvedPreset
     }
 
-    private static func defaultFFmpegExecutableURL(fileManager: FileManager) -> URL {
-        let candidatePaths = [
-            Bundle.main.bundleURL.appendingPathComponent("Contents/Resources/ffmpeg").path,
-            "/opt/homebrew/bin/ffmpeg",
-            "/usr/local/bin/ffmpeg",
-            "/usr/bin/ffmpeg"
-        ]
-
-        for path in candidatePaths where fileManager.fileExists(atPath: path) {
-            return URL(fileURLWithPath: path)
-        }
-
-        return URL(fileURLWithPath: candidatePaths[0])
-    }
 }

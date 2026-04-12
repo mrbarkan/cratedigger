@@ -4,29 +4,6 @@ import XCTest
 @testable import CrateDiggerCore
 
 final class MetadataProbeServiceTests: XCTestCase {
-    private var temporaryDirectory: URL!
-    private var fakeFFprobeURL: URL!
-
-    override func setUpWithError() throws {
-        temporaryDirectory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("CrateDiggerMetadataProbeTests-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
-
-        fakeFFprobeURL = temporaryDirectory.appendingPathComponent("ffprobe")
-        let stub = "#!/bin/sh\necho ffprobe stub\n"
-        guard let stubData = stub.data(using: .utf8) else {
-            throw NSError(domain: "MetadataProbeServiceTests", code: 11)
-        }
-        try stubData.write(to: fakeFFprobeURL)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fakeFFprobeURL.path)
-    }
-
-    override func tearDownWithError() throws {
-        if FileManager.default.fileExists(atPath: temporaryDirectory.path) {
-            try FileManager.default.removeItem(at: temporaryDirectory)
-        }
-    }
-
     func testProbeParsesTagsAndArtworkDisposition() throws {
         let json = """
         {
@@ -53,34 +30,50 @@ final class MetadataProbeServiceTests: XCTestCase {
         }
         """
 
-        let service = try MetadataProbeService(
-            ffprobeExecutableURL: fakeFFprobeURL,
-            commandRunner: FixedOutputCommandRunner(
-                output: CommandOutput(terminationStatus: 0, standardOutput: json, standardError: "")
-            ),
-            fileManager: FileManager.default
-        )
+        try withTemporaryDirectory(prefix: "CrateDiggerMetadataProbeTests") { temporaryDirectory in
+            let fakeFFprobeURL = try writeExecutableStub(
+                named: "ffprobe",
+                contents: "#!/bin/sh\necho ffprobe stub\n",
+                in: temporaryDirectory
+            )
 
-        let metadata = try service.probe(url: temporaryDirectory.appendingPathComponent("sample.flac"))
+            let service = try MetadataProbeService(
+                ffprobeExecutableURL: fakeFFprobeURL,
+                commandRunner: FixedOutputCommandRunner(
+                    output: CommandOutput(terminationStatus: 0, standardOutput: json, standardError: "")
+                ),
+                fileManager: FileManager.default
+            )
 
-        XCTAssertEqual(metadata.formatTags["ARTIST"], "Thom Yorke")
-        XCTAssertEqual(metadata.formatTags["ALBUM"], "The Eraser RMXS [Japan]")
-        XCTAssertEqual(metadata.streams.count, 2)
-        XCTAssertTrue(metadata.hasAttachedArtworkStream)
+            let metadata = try service.probe(url: temporaryDirectory.appendingPathComponent("sample.flac"))
+
+            XCTAssertEqual(metadata.formatTags["ARTIST"], "Thom Yorke")
+            XCTAssertEqual(metadata.formatTags["ALBUM"], "The Eraser RMXS [Japan]")
+            XCTAssertEqual(metadata.streams.count, 2)
+            XCTAssertTrue(metadata.hasAttachedArtworkStream)
+        }
     }
 
     func testProbeThrowsOnCommandFailure() throws {
-        let service = try MetadataProbeService(
-            ffprobeExecutableURL: fakeFFprobeURL,
-            commandRunner: FixedOutputCommandRunner(
-                output: CommandOutput(terminationStatus: 1, standardOutput: "", standardError: "ffprobe failed")
-            ),
-            fileManager: FileManager.default
-        )
+        try withTemporaryDirectory(prefix: "CrateDiggerMetadataProbeTests") { temporaryDirectory in
+            let fakeFFprobeURL = try writeExecutableStub(
+                named: "ffprobe",
+                contents: "#!/bin/sh\necho ffprobe stub\n",
+                in: temporaryDirectory
+            )
 
-        XCTAssertThrowsError(
-            try service.probe(url: temporaryDirectory.appendingPathComponent("sample.flac"))
-        )
+            let service = try MetadataProbeService(
+                ffprobeExecutableURL: fakeFFprobeURL,
+                commandRunner: FixedOutputCommandRunner(
+                    output: CommandOutput(terminationStatus: 1, standardOutput: "", standardError: "ffprobe failed")
+                ),
+                fileManager: FileManager.default
+            )
+
+            XCTAssertThrowsError(
+                try service.probe(url: temporaryDirectory.appendingPathComponent("sample.flac"))
+            )
+        }
     }
 }
 

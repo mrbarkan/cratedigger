@@ -1,0 +1,48 @@
+# CrateDigger
+
+CrateDigger is a macOS music utility built with Swift, AppKit, and FFmpeg tooling. It scans folders of audio files, previews tracks and artwork, inspects metadata, and converts files into cleaner library layouts.
+
+## Development
+
+Build the app executable:
+
+```bash
+swift build
+```
+
+Run the test suite:
+
+```bash
+scripts/test.sh
+```
+
+`scripts/test.sh` forces the XCTest runner path, prefers a full Xcode developer directory when one is installed, and prints clear guidance if Xcode still needs its license accepted.
+
+## Packaging
+
+Assemble a shareable `.app` bundle with bundled `ffmpeg` and `ffprobe`:
+
+```bash
+scripts/package-app.sh
+```
+
+You can also point the script at specific binaries:
+
+```bash
+scripts/package-app.sh --ffmpeg /opt/homebrew/bin/ffmpeg --ffprobe /opt/homebrew/bin/ffprobe --output ./dist
+```
+
+The packaged app is written to `dist/CrateDigger.app`.
+The packaging script also prefers a full Xcode developer directory when one is installed and uses a repo-local module cache so the build is less sensitive to machine-wide Swift cache state.
+
+## Manual Smoke Checklist
+
+- Launch the packaged app on a Mac without Homebrew-installed FFmpeg tools.
+- Load a mixed-format music folder.
+- Confirm the empty state, loading state, and loaded-track state all make sense.
+- Inspect artwork and metadata for several tracks.
+- Play tracks, pause, seek on the LCD timeline, and use previous/next controls.
+- Convert files using `Source Relative`, `Flat`, and `Metadata Template` folder structures.
+- Use `Review album folders` and confirm the review sheet edits destinations correctly.
+- Convert files with duplicate basenames and verify CrateDigger renames outputs instead of overwriting them.
+- Verify the bottom status area and readiness text clearly explain whether playback, metadata probing, and conversion are available.

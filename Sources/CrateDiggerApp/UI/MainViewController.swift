@@ -1,97 +1,6 @@
 import AppKit
 import CrateDiggerCore
 
-enum FolderStructureMode: String, CaseIterable {
-    case sourceRelative = "source_relative"
-    case flat
-    case metadataTemplate = "metadata_template"
-
-    var title: String {
-        switch self {
-        case .sourceRelative:
-            return "Source Relative"
-        case .flat:
-            return "Flat"
-        case .metadataTemplate:
-            return "Metadata Template"
-        }
-    }
-}
-
-enum FolderToken: String, CaseIterable {
-    case disabled
-    case year
-    case albumArtist = "album_artist"
-    case album
-    case compilation
-
-    var title: String {
-        switch self {
-        case .disabled:
-            return "Disabled"
-        case .year:
-            return "Year"
-        case .albumArtist:
-            return "Album Artist"
-        case .album:
-            return "Album"
-        case .compilation:
-            return "Compilation"
-        }
-    }
-
-    var isDisabled: Bool {
-        self == .disabled
-    }
-}
-
-enum TemplateApplyMode: String, CaseIterable {
-    case applyAll = "apply_all"
-    case reviewPerAlbumPreflight = "review_per_album_preflight"
-
-    var title: String {
-        switch self {
-        case .applyAll:
-            return "Apply to all"
-        case .reviewPerAlbumPreflight:
-            return "Ask for each album"
-        }
-    }
-}
-
-enum TemplatePreset: String, CaseIterable {
-    case artistYearAlbum
-    case yearArtistAlbum
-    case artistAlbumYear
-    case custom
-
-    var title: String {
-        switch self {
-        case .artistYearAlbum:
-            return "Album Artist / Year / Album"
-        case .yearArtistAlbum:
-            return "Year / Album Artist / Album"
-        case .artistAlbumYear:
-            return "Album Artist / Album / Year"
-        case .custom:
-            return "Custom Order"
-        }
-    }
-
-    var defaultTokenOrder: [FolderToken] {
-        switch self {
-        case .artistYearAlbum:
-            return [.albumArtist, .year, .album]
-        case .yearArtistAlbum:
-            return [.year, .albumArtist, .album]
-        case .artistAlbumYear:
-            return [.albumArtist, .album, .year]
-        case .custom:
-            return [.year, .albumArtist, .album, .compilation, .disabled]
-        }
-    }
-}
-
 private enum PlaylistSortMode: String, CaseIterable {
     case manual
     case trackDiscAscending
@@ -133,17 +42,6 @@ private enum PlaylistSortMode: String, CaseIterable {
     }
 }
 
-private struct AlbumGroupKey: Hashable {
-    let artistBucket: String
-    let album: String
-    let year: String
-}
-
-private struct TemplateConfig {
-    let preset: TemplatePreset
-    let tokenOrder: [FolderToken]
-}
-
 private struct MultiRootScanResult {
     let tracks: [LoadedTrack]
     let sourceRootByTrackPath: [String: URL]
@@ -166,11 +64,19 @@ private enum ToolbarCompletionState {
 
 final class MainViewController: NSViewController, NSTableViewDataSource, NSTableViewDelegate {
     private let artworkService = ArtworkService()
-    private lazy var libraryScanService = LibraryScanService(artworkService: artworkService)
+    private let toolLocator = ExternalToolLocator()
+    private let outputPathPlanner = OutputPathPlanner()
+    private var libraryScanService: LibraryScanService!
 
     private var conversionService: ConversionService?
     private var conversionServiceInitializationError: Error?
+    private var appReadiness = AppReadiness(
+        playback: .ready("Ready"),
+        metadataProbe: .limited("Detecting"),
+        conversion: .limited("Detecting")
+    )
     private var scanTask: Task<Void, Never>?
+    private var lastConversionReport: ConversionReport?
 
     private var loadedTracks: [LoadedTrack] = []
     private var sourceRootByTrackPath: [String: URL] = [:]
@@ -185,26 +91,30 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
     private var keyEventMonitor: Any?
     private var playlistSortMode: PlaylistSortMode = .trackDiscAscending
     private var hasAppliedStartupLayout = false
+    private var conversionSelection = ConversionOptionsSelection(
+        batchScope: .selectedTracks,
+        outputFormat: .aac,
+        bitrate: 192,
+        sampleRate: 44_100,
+        artworkMaxDimension: nil,
+        folderStructureMode: .sourceRelative,
+        applyMode: .applyAll,
+        templatePreset: .yearArtistAlbum,
+        tokenOrder: TemplatePreset.yearArtistAlbum.defaultTokenOrder
+    )
 
     private let tableView = NSTableView()
     private let scrollView = NSScrollView()
+    private let playlistContainerView = NSView()
+    private let emptyStateView = NSView()
+    private let emptyStateTitleField = NSTextField(labelWithString: "Load a folder to begin")
+    private let emptyStateMessageField = NSTextField(labelWithString: "Choose one or more music folders to scan, preview, and convert.")
+    private let emptyStateSpinner = NSProgressIndicator()
     private let openFolderButton = NSButton(title: "Open Folder", target: nil, action: nil)
     private let playlistSortPopUp = NSPopUpButton(frame: .zero, pullsDown: false)
-    private let batchScopePopUp = NSPopUpButton(frame: .zero, pullsDown: false)
-    private let formatPopUp = NSPopUpButton(frame: .zero, pullsDown: false)
-    private let bitratePopUp = NSPopUpButton(frame: .zero, pullsDown: false)
-    private let sampleRatePopUp = NSPopUpButton(frame: .zero, pullsDown: false)
-    private let folderStructurePopUp = NSPopUpButton(frame: .zero, pullsDown: false)
-    private let templatePresetPopUp = NSPopUpButton(frame: .zero, pullsDown: false)
-    private let tokenOrderPopUp1 = NSPopUpButton(frame: .zero, pullsDown: false)
-    private let tokenOrderPopUp2 = NSPopUpButton(frame: .zero, pullsDown: false)
-    private let tokenOrderPopUp3 = NSPopUpButton(frame: .zero, pullsDown: false)
-    private let tokenOrderPopUp4 = NSPopUpButton(frame: .zero, pullsDown: false)
-    private let tokenOrderPopUp5 = NSPopUpButton(frame: .zero, pullsDown: false)
-    private let applyModePopUp = NSPopUpButton(frame: .zero, pullsDown: false)
-    private let templateOptionsStack = NSStackView()
-    private let customOrderStack = NSStackView()
     private let statusField = NSTextField(labelWithString: "Load a folder to begin")
+    private let readinessField = NSTextField(labelWithString: "")
+    private let detailsButton = NSButton(title: "Details", target: nil, action: nil)
     private let convertButton = NSButton(title: "CONVERT", target: nil, action: nil)
     private let previousButton = NSButton(title: "◀◀", target: nil, action: nil)
     private let playPauseButton = NSButton(title: "PLAY", target: nil, action: nil)
@@ -229,10 +139,6 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
     private let outputFormats: [OutputFormat] = [.mp3, .aac, .alac, .flac, .wav, .aiff, .ogg, .opus]
     private let bitrateOptions = [-1, 96, 128, 160, 192, 256, 320]
     private let sampleRateOptions = [-1, 32000, 44100, 48000, 96000]
-    private let unknownArtist = "Unknown Artist"
-    private let unknownAlbum = "Unknown Album"
-    private let unknownYear = "Unknown Year"
-    private var selectedArtworkMaxDimension: Int?
 
     private let defaults = UserDefaults.standard
     private let defaultsFolderStructureModeKey = "CrateDigger.folderStructureMode"
@@ -272,10 +178,12 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         splitView.addArrangedSubview(inspectorViewController.view)
 
         inspectorViewController.view.translatesAutoresizingMaskIntoConstraints = false
-        let inspectorPreferredWidth = inspectorViewController.view.widthAnchor.constraint(equalToConstant: 380)
+        let inspectorPreferredWidth = inspectorViewController.view.widthAnchor.constraint(equalToConstant: 340)
         inspectorPreferredWidth.priority = .defaultHigh
         inspectorPreferredWidth.isActive = true
-        inspectorViewController.view.widthAnchor.constraint(greaterThanOrEqualToConstant: 340).isActive = true
+        inspectorViewController.view.widthAnchor.constraint(greaterThanOrEqualToConstant: 300).isActive = true
+        splitView.setHoldingPriority(.defaultLow, forSubviewAt: 0)
+        splitView.setHoldingPriority(.defaultHigh, forSubviewAt: 1)
 
         configureTopBar()
         configureBottomBar()
@@ -294,12 +202,12 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
             splitView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             splitView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             splitView.bottomAnchor.constraint(equalTo: bottomBar.topAnchor),
-            leftContainer.widthAnchor.constraint(greaterThanOrEqualToConstant: 560),
+            leftContainer.widthAnchor.constraint(greaterThanOrEqualToConstant: 440),
 
             bottomBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             bottomBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             bottomBar.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            bottomBar.heightAnchor.constraint(equalToConstant: 28)
+            bottomBar.heightAnchor.constraint(equalToConstant: 38)
         ])
 
         configureConversionOptions()
@@ -338,8 +246,11 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
 
         var frame = window.frame
         let minSize = window.minSize
-        let adjustedWidth = max(frame.width, minSize.width)
-        let adjustedHeight = max(frame.height, minSize.height)
+        let visibleFrame = window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? frame
+        let maxWidth = max(minSize.width, visibleFrame.width - 24)
+        let maxHeight = max(minSize.height, visibleFrame.height - 24)
+        let adjustedWidth = min(max(frame.width, minSize.width), maxWidth)
+        let adjustedHeight = min(max(frame.height, minSize.height), maxHeight)
         if adjustedWidth != frame.width || adjustedHeight != frame.height {
             frame.size = NSSize(width: adjustedWidth, height: adjustedHeight)
             window.setFrame(frame, display: true, animate: false)
@@ -525,66 +436,6 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
     }
 
     private func configureLeftPane(in container: NSView) {
-        let templatePresetLabel = NSTextField(labelWithString: "Folder Order:")
-        let tokenOrderLabel = NSTextField(labelWithString: "Token Order:")
-
-        batchScopePopUp.target = self
-        batchScopePopUp.action = #selector(batchScopeChanged)
-        formatPopUp.target = self
-        formatPopUp.action = #selector(formatChanged)
-        folderStructurePopUp.target = self
-        folderStructurePopUp.action = #selector(folderStructureChanged)
-        applyModePopUp.target = self
-        applyModePopUp.action = #selector(applyModeChanged)
-        templatePresetPopUp.target = self
-        templatePresetPopUp.action = #selector(templatePresetChanged)
-
-        tokenOrderPopUp1.target = self
-        tokenOrderPopUp1.action = #selector(customTokenOrderChanged)
-        tokenOrderPopUp2.target = self
-        tokenOrderPopUp2.action = #selector(customTokenOrderChanged)
-        tokenOrderPopUp3.target = self
-        tokenOrderPopUp3.action = #selector(customTokenOrderChanged)
-        tokenOrderPopUp4.target = self
-        tokenOrderPopUp4.action = #selector(customTokenOrderChanged)
-        tokenOrderPopUp5.target = self
-        tokenOrderPopUp5.action = #selector(customTokenOrderChanged)
-
-        [
-            batchScopePopUp,
-            formatPopUp,
-            bitratePopUp,
-            sampleRatePopUp,
-            folderStructurePopUp,
-            applyModePopUp,
-            templatePresetPopUp,
-            tokenOrderPopUp1,
-            tokenOrderPopUp2,
-            tokenOrderPopUp3,
-            tokenOrderPopUp4,
-            tokenOrderPopUp5
-        ].forEach(stylePopUp)
-
-        customOrderStack.orientation = .horizontal
-        customOrderStack.alignment = .centerY
-        customOrderStack.spacing = 10
-        customOrderStack.addArrangedSubview(tokenOrderLabel)
-        customOrderStack.addArrangedSubview(tokenOrderPopUp1)
-        customOrderStack.addArrangedSubview(tokenOrderPopUp2)
-        customOrderStack.addArrangedSubview(tokenOrderPopUp3)
-        customOrderStack.addArrangedSubview(tokenOrderPopUp4)
-        customOrderStack.addArrangedSubview(tokenOrderPopUp5)
-
-        templateOptionsStack.orientation = .vertical
-        templateOptionsStack.alignment = .leading
-        templateOptionsStack.spacing = 6
-        let templatePresetControls = NSStackView(views: [templatePresetLabel, templatePresetPopUp])
-        templatePresetControls.orientation = .horizontal
-        templatePresetControls.alignment = .centerY
-        templatePresetControls.spacing = 10
-        templateOptionsStack.addArrangedSubview(templatePresetControls)
-        templateOptionsStack.addArrangedSubview(customOrderStack)
-
         let numberColumn = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("TrackNumberColumn"))
         numberColumn.title = "#"
         numberColumn.width = 88
@@ -611,6 +462,7 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         tableView.gridStyleMask = [.solidHorizontalGridLineMask]
         tableView.registerForDraggedTypes([tableDragType])
         tableView.setDraggingSourceOperationMask(.move, forLocal: true)
+        tableView.setAccessibilityLabel("Track list")
 
         scrollView.documentView = tableView
         scrollView.hasVerticalScroller = true
@@ -619,10 +471,31 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         scrollView.scrollerStyle = .legacy
         ModernRetroTheme.styleListContainer(scrollView: scrollView, tableView: tableView)
 
-        let contentStack = NSStackView(views: [scrollView])
+        configureEmptyStateView()
+
+        playlistContainerView.translatesAutoresizingMaskIntoConstraints = false
+        playlistContainerView.addSubview(scrollView)
+        playlistContainerView.addSubview(emptyStateView)
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        emptyStateView.translatesAutoresizingMaskIntoConstraints = false
+
+        NSLayoutConstraint.activate([
+            scrollView.topAnchor.constraint(equalTo: playlistContainerView.topAnchor),
+            scrollView.leadingAnchor.constraint(equalTo: playlistContainerView.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: playlistContainerView.trailingAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: playlistContainerView.bottomAnchor),
+
+            emptyStateView.centerXAnchor.constraint(equalTo: playlistContainerView.centerXAnchor),
+            emptyStateView.centerYAnchor.constraint(equalTo: playlistContainerView.centerYAnchor),
+            emptyStateView.leadingAnchor.constraint(greaterThanOrEqualTo: playlistContainerView.leadingAnchor, constant: 24),
+            emptyStateView.trailingAnchor.constraint(lessThanOrEqualTo: playlistContainerView.trailingAnchor, constant: -24)
+        ])
+
+        let contentStack = NSStackView(views: [playlistContainerView])
         contentStack.orientation = .vertical
         contentStack.spacing = 10
         contentStack.translatesAutoresizingMaskIntoConstraints = false
+        contentStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         container.addSubview(contentStack)
 
@@ -631,8 +504,14 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
             contentStack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: ModernRetroTheme.contentInsets.left),
             contentStack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -ModernRetroTheme.contentInsets.right),
             contentStack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -ModernRetroTheme.contentInsets.bottom),
-            scrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 360)
+            playlistContainerView.heightAnchor.constraint(greaterThanOrEqualToConstant: 280)
         ])
+
+        updateEmptyState(
+            title: "Load a folder to begin",
+            message: "Choose one or more music folders to scan, preview, and convert.",
+            showsSpinner: false
+        )
     }
 
     private func stylePopUp(_ popUp: NSPopUpButton) {
@@ -646,6 +525,13 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
             playlistSortPopUp.lastItem?.representedObject = mode.rawValue
         }
         select(playlistSortPopUp, rawValue: playlistSortMode.rawValue)
+    }
+
+    private func select(_ popUp: NSPopUpButton, rawValue: String) {
+        for item in popUp.itemArray where (item.representedObject as? String) == rawValue {
+            popUp.select(item)
+            return
+        }
     }
 
     private func configureTopBar() {
@@ -669,19 +555,21 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         playlistSortPopUp.action = #selector(playlistSortChanged)
         stylePopUp(playlistSortPopUp)
         configurePlaylistSortPopUp()
-        playlistSortPopUp.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
-        playlistSortPopUp.widthAnchor.constraint(equalToConstant: 158).isActive = true
+        playlistSortPopUp.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        playlistSortPopUp.widthAnchor.constraint(greaterThanOrEqualToConstant: 112).isActive = true
 
         let sortStack = NSStackView(views: [sortLabel, playlistSortPopUp])
         sortStack.orientation = .horizontal
         sortStack.alignment = .centerY
         sortStack.spacing = 6
+        sortStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         let leftStack = NSStackView(views: [openFolderButton, convertButton, sortStack])
         leftStack.orientation = .horizontal
         leftStack.alignment = .centerY
         leftStack.spacing = 12
         leftStack.translatesAutoresizingMaskIntoConstraints = false
+        leftStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         previousButton.target = self
         previousButton.action = #selector(previousTrackAction)
@@ -728,7 +616,7 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         volumeStack.spacing = 6
         volumeStack.translatesAutoresizingMaskIntoConstraints = false
         volumeStack.setContentCompressionResistancePriority(.required, for: .horizontal)
-        volumeSlider.widthAnchor.constraint(equalToConstant: 90).isActive = true
+        volumeSlider.widthAnchor.constraint(equalToConstant: 60).isActive = true
 
         configureIndicator(activityIndicatorView)
         configureIndicator(completionIndicatorView)
@@ -757,20 +645,30 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
 
             lcdView.centerXAnchor.constraint(equalTo: topBar.centerXAnchor),
             lcdView.centerYAnchor.constraint(equalTo: topBar.centerYAnchor),
-            lcdView.widthAnchor.constraint(greaterThanOrEqualToConstant: 320),
-            lcdView.widthAnchor.constraint(lessThanOrEqualToConstant: 620),
+            lcdView.widthAnchor.constraint(greaterThanOrEqualToConstant: 220),
+            lcdView.widthAnchor.constraint(lessThanOrEqualToConstant: 560),
             lcdView.heightAnchor.constraint(equalToConstant: 56),
 
-            transportButtons.trailingAnchor.constraint(lessThanOrEqualTo: lcdView.leadingAnchor, constant: -24),
-            volumeStack.leadingAnchor.constraint(greaterThanOrEqualTo: lcdView.trailingAnchor, constant: 12),
+            transportButtons.trailingAnchor.constraint(lessThanOrEqualTo: lcdView.leadingAnchor, constant: -16),
+            volumeStack.leadingAnchor.constraint(greaterThanOrEqualTo: lcdView.trailingAnchor, constant: 10),
             volumeStack.centerYAnchor.constraint(equalTo: topBar.centerYAnchor),
-            indicatorStack.leadingAnchor.constraint(greaterThanOrEqualTo: volumeStack.trailingAnchor, constant: 16),
+            indicatorStack.leadingAnchor.constraint(greaterThanOrEqualTo: volumeStack.trailingAnchor, constant: 12),
             indicatorStack.centerYAnchor.constraint(equalTo: topBar.centerYAnchor),
             indicatorStack.trailingAnchor.constraint(equalTo: topBar.trailingAnchor, constant: -(ModernRetroTheme.contentInsets.right + 4))
         ])
-        let preferredLCDWidth = lcdView.widthAnchor.constraint(equalToConstant: 460)
+        let preferredLCDWidth = lcdView.widthAnchor.constraint(equalToConstant: 320)
         preferredLCDWidth.priority = .defaultHigh
         preferredLCDWidth.isActive = true
+
+        openFolderButton.setAccessibilityLabel("Load folder")
+        openFolderButton.setAccessibilityHelp("Choose one or more folders to scan for audio tracks.")
+        convertButton.setAccessibilityLabel("Convert tracks")
+        convertButton.setAccessibilityHelp("Open conversion settings for the selected or loaded tracks.")
+        playlistSortPopUp.setAccessibilityLabel("Track order")
+        volumeSlider.setAccessibilityLabel("Playback volume")
+        previousButton.setAccessibilityHelp("Move to the previous track.")
+        playPauseButton.setAccessibilityHelp("Play or pause the current track.")
+        nextButton.setAccessibilityHelp("Move to the next track.")
 
         lcdView.onTimelineScrub = { [weak self] progress in
             guard let self, self.playbackDuration > 0 else { return }
@@ -808,8 +706,28 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         statusField.textColor = ModernRetroTheme.textSecondary
         statusField.font = NSFont.systemFont(ofSize: 11, weight: .medium)
         statusField.translatesAutoresizingMaskIntoConstraints = false
+        statusField.lineBreakMode = .byTruncatingTail
+        statusField.setAccessibilityLabel("Current status")
+
+        readinessField.textColor = ModernRetroTheme.textSecondary
+        readinessField.font = NSFont.monospacedSystemFont(ofSize: 10, weight: .medium)
+        readinessField.translatesAutoresizingMaskIntoConstraints = false
+        readinessField.lineBreakMode = .byTruncatingHead
+        readinessField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        readinessField.setAccessibilityLabel("App readiness")
+
+        detailsButton.target = self
+        detailsButton.action = #selector(showLastConversionDetails)
+        detailsButton.isHidden = true
+        detailsButton.isBordered = false
+        detailsButton.font = NSFont.systemFont(ofSize: 11, weight: .semibold)
+        detailsButton.contentTintColor = ModernRetroTheme.accentInfo
+        detailsButton.translatesAutoresizingMaskIntoConstraints = false
+        detailsButton.setAccessibilityLabel("Show conversion details")
 
         bottomBar.addSubview(statusField)
+        bottomBar.addSubview(readinessField)
+        bottomBar.addSubview(detailsButton)
 
         let topLine = NSView()
         topLine.translatesAutoresizingMaskIntoConstraints = false
@@ -824,8 +742,80 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
             topLine.heightAnchor.constraint(equalToConstant: 1),
 
             statusField.leadingAnchor.constraint(equalTo: bottomBar.leadingAnchor, constant: ModernRetroTheme.contentInsets.left),
-            statusField.centerYAnchor.constraint(equalTo: bottomBar.centerYAnchor)
+            statusField.centerYAnchor.constraint(equalTo: bottomBar.centerYAnchor),
+            statusField.trailingAnchor.constraint(lessThanOrEqualTo: detailsButton.leadingAnchor, constant: -8),
+
+            detailsButton.centerYAnchor.constraint(equalTo: bottomBar.centerYAnchor),
+            detailsButton.trailingAnchor.constraint(equalTo: readinessField.leadingAnchor, constant: -12),
+
+            readinessField.trailingAnchor.constraint(equalTo: bottomBar.trailingAnchor, constant: -(ModernRetroTheme.contentInsets.right + 2)),
+            readinessField.centerYAnchor.constraint(equalTo: bottomBar.centerYAnchor),
+            readinessField.widthAnchor.constraint(greaterThanOrEqualToConstant: 180)
         ])
+
+        updateReadinessField()
+    }
+
+    private func configureEmptyStateView() {
+        emptyStateView.wantsLayer = true
+        emptyStateView.layer?.backgroundColor = ModernRetroTheme.surfaceElevated.withAlphaComponent(0.92).cgColor
+        emptyStateView.layer?.cornerRadius = 16
+        emptyStateView.layer?.borderWidth = 1
+        emptyStateView.layer?.borderColor = ModernRetroTheme.separator.withAlphaComponent(0.25).cgColor
+
+        emptyStateTitleField.font = NSFont.systemFont(ofSize: 22, weight: .semibold)
+        emptyStateTitleField.textColor = ModernRetroTheme.textPrimary
+        emptyStateTitleField.alignment = .center
+
+        emptyStateMessageField.font = NSFont.systemFont(ofSize: 13, weight: .medium)
+        emptyStateMessageField.textColor = ModernRetroTheme.textSecondary
+        emptyStateMessageField.alignment = .center
+        emptyStateMessageField.maximumNumberOfLines = 2
+        emptyStateMessageField.lineBreakMode = .byWordWrapping
+
+        emptyStateSpinner.style = .spinning
+        emptyStateSpinner.controlSize = .regular
+        emptyStateSpinner.isDisplayedWhenStopped = false
+        emptyStateSpinner.translatesAutoresizingMaskIntoConstraints = false
+
+        let stack = NSStackView(views: [emptyStateSpinner, emptyStateTitleField, emptyStateMessageField])
+        stack.orientation = .vertical
+        stack.alignment = .centerX
+        stack.spacing = 10
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        emptyStateView.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: emptyStateView.topAnchor, constant: 24),
+            stack.leadingAnchor.constraint(equalTo: emptyStateView.leadingAnchor, constant: 24),
+            stack.trailingAnchor.constraint(equalTo: emptyStateView.trailingAnchor, constant: -24),
+            stack.bottomAnchor.constraint(equalTo: emptyStateView.bottomAnchor, constant: -24),
+            emptyStateView.widthAnchor.constraint(lessThanOrEqualToConstant: 420)
+        ])
+    }
+
+    private func updateEmptyState(title: String, message: String, showsSpinner: Bool) {
+        emptyStateTitleField.stringValue = title
+        emptyStateMessageField.stringValue = message
+        emptyStateView.isHidden = !loadedTracks.isEmpty && !showsSpinner
+
+        if showsSpinner {
+            emptyStateSpinner.startAnimation(nil)
+        } else {
+            emptyStateSpinner.stopAnimation(nil)
+        }
+    }
+
+    private func updateReadinessField() {
+        readinessField.stringValue = appReadiness.summaryText
+        let tones = [appReadiness.playback.tone, appReadiness.metadataProbe.tone, appReadiness.conversion.tone]
+        if tones.contains(.error) {
+            readinessField.textColor = ModernRetroTheme.accentError
+        } else if tones.contains(.warning) {
+            readinessField.textColor = ModernRetroTheme.accentWarning
+        } else {
+            readinessField.textColor = ModernRetroTheme.textSecondary
+        }
     }
 
     private func configureIndicator(_ indicatorView: NSView) {
@@ -914,82 +904,52 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
     }
 
     private func configureConversionOptions() {
-        batchScopePopUp.removeAllItems()
-        batchScopePopUp.addItems(withTitles: ["Selected Tracks", "All Loaded Tracks"])
-        batchScopePopUp.selectItem(at: 0)
-
-        formatPopUp.removeAllItems()
-        for format in outputFormats {
-            formatPopUp.addItem(withTitle: displayName(for: format))
-            formatPopUp.lastItem?.representedObject = format.rawValue
-        }
-        if let defaultIndex = outputFormats.firstIndex(of: .aac) {
-            formatPopUp.selectItem(at: defaultIndex)
-        }
-
-        bitratePopUp.removeAllItems()
-        for option in bitrateOptions {
-            if option < 0 {
-                bitratePopUp.addItem(withTitle: "Auto")
-            } else {
-                bitratePopUp.addItem(withTitle: "\(option) kbps")
-            }
-            bitratePopUp.lastItem?.tag = option
-        }
-        if let defaultBitrateIndex = bitrateOptions.firstIndex(of: 192) {
-            bitratePopUp.selectItem(at: defaultBitrateIndex)
-        }
-
-        sampleRatePopUp.removeAllItems()
-        for option in sampleRateOptions {
-            if option < 0 {
-                sampleRatePopUp.addItem(withTitle: "Source")
-            } else {
-                sampleRatePopUp.addItem(withTitle: "\(option) Hz")
-            }
-            sampleRatePopUp.lastItem?.tag = option
-        }
-        if let defaultRateIndex = sampleRateOptions.firstIndex(of: 44_100) {
-            sampleRatePopUp.selectItem(at: defaultRateIndex)
-        }
-
-        folderStructurePopUp.removeAllItems()
-        for mode in FolderStructureMode.allCases {
-            folderStructurePopUp.addItem(withTitle: mode.title)
-            folderStructurePopUp.lastItem?.representedObject = mode.rawValue
-        }
-
-        applyModePopUp.removeAllItems()
-        for mode in TemplateApplyMode.allCases {
-            applyModePopUp.addItem(withTitle: mode.title)
-            applyModePopUp.lastItem?.representedObject = mode.rawValue
-        }
-
-        templatePresetPopUp.removeAllItems()
-        for preset in TemplatePreset.allCases {
-            templatePresetPopUp.addItem(withTitle: preset.title)
-            templatePresetPopUp.lastItem?.representedObject = preset.rawValue
-        }
-
-        configureTokenOrderPopups()
-
         restoreFolderStructurePreferences()
         restoreArtworkResizePreference()
         updateFormatDependentControls()
-        updateTemplateOptionsVisibility()
         updateConvertButtonState()
     }
 
     private func configureServices() {
+        if let resolvedMetadataTool = toolLocator.resolveOptional(.ffprobe),
+           let metadataProbe = try? MetadataProbeService(ffprobeExecutableURL: resolvedMetadataTool.url) {
+            libraryScanService = LibraryScanService(artworkService: artworkService, metadataProbe: metadataProbe)
+            appReadiness = AppReadiness(
+                playback: .ready("Ready"),
+                metadataProbe: .ready(readinessText(for: resolvedMetadataTool)),
+                conversion: appReadiness.conversion
+            )
+        } else {
+            libraryScanService = LibraryScanService(artworkService: artworkService, metadataProbe: nil)
+            appReadiness = AppReadiness(
+                playback: .ready("Ready"),
+                metadataProbe: .limited("AVAsset fallback"),
+                conversion: appReadiness.conversion
+            )
+        }
+
         do {
-            conversionService = try ConversionService(artworkPreparer: artworkService)
+            let service = try ConversionService(artworkPreparer: artworkService)
+            conversionService = service
+            conversionServiceInitializationError = nil
+            appReadiness = AppReadiness(
+                playback: appReadiness.playback,
+                metadataProbe: appReadiness.metadataProbe,
+                conversion: .ready(readinessText(for: service.resolvedTool))
+            )
             updateToolbarIndicators(activity: .idle, completion: .idle)
         } catch {
             conversionServiceInitializationError = error
-            setStatus("ffmpeg was not found. Loading and artwork preview work; conversion is unavailable.")
+            setStatus("Conversion is unavailable until ffmpeg is bundled with the app or installed on this Mac.")
+            appReadiness = AppReadiness(
+                playback: appReadiness.playback,
+                metadataProbe: appReadiness.metadataProbe,
+                conversion: .unavailable("ffmpeg missing")
+            )
             updateToolbarIndicators(activity: .disabled, completion: .error)
         }
 
+        updateReadinessField()
         configurePlaybackBindings()
         playbackService.setVolume(playbackVolume)
     }
@@ -1042,6 +1002,15 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         let folderSummary = uniqueRoots.count == 1
             ? uniqueRoots[0].lastPathComponent
             : "\(uniqueRoots.count) folders"
+        loadedTracks = []
+        sourceRootByTrackPath = [:]
+        tableView.reloadData()
+        inspectorViewController.update(with: nil)
+        updateEmptyState(
+            title: "Scanning \(folderSummary)",
+            message: "CrateDigger is indexing the selected folders and reading artwork and metadata.",
+            showsSpinner: true
+        )
         setStatus("Scanning \(folderSummary)...")
         updateConvertButtonState()
 
@@ -1059,11 +1028,17 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
                 self.tableView.reloadData()
 
                 if self.loadedTracks.isEmpty {
-                    self.setStatus("No supported audio files found")
+                    self.setStatus("No supported audio files were found in the selected folders.")
+                    self.updateEmptyState(
+                        title: "No supported audio files found",
+                        message: "Try another folder or confirm the files are in a supported format such as MP3, AAC, FLAC, WAV, AIFF, OGG, OPUS, or CAF.",
+                        showsSpinner: false
+                    )
                     self.inspectorViewController.update(with: nil)
                 } else {
                     self.tableView.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
                     self.setStatus("Loaded \(self.loadedTracks.count) tracks")
+                    self.updateEmptyState(title: "", message: "", showsSpinner: false)
                 }
                 self.updateConvertButtonState()
                 self.updatePlaybackControls()
@@ -1074,6 +1049,10 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
     }
 
     private func scanFolders(_ roots: [URL]) async -> MultiRootScanResult {
+        guard let libraryScanService else {
+            return MultiRootScanResult(tracks: [], sourceRootByTrackPath: [:])
+        }
+
         let scannedGroups = await withTaskGroup(of: (Int, URL, [LoadedTrack]).self) { group in
             for (index, root) in roots.enumerated() {
                 group.addTask { [libraryScanService] in
@@ -1541,15 +1520,14 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
 
     @objc private func convertSelectedTracks() {
         guard let conversionService else {
-            showAlert(
-                title: "Conversion Unavailable",
-                message: conversionServiceInitializationError?.localizedDescription ?? "ffmpeg is not configured."
-            )
+            setStatus(conversionServiceInitializationError?.localizedDescription ?? "Conversion is currently unavailable.")
+            setLCDConversionStatus("Conversion unavailable", tone: .error, progress: 0)
+            scheduleClearLCDConversionStatus(after: 2.0)
             return
         }
 
         guard !loadedTracks.isEmpty else {
-            showAlert(title: "No Tracks", message: "Load tracks before converting.")
+            setStatus("Load a folder before converting.")
             return
         }
 
@@ -1572,7 +1550,7 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
     private func runConversion(with selection: ConversionOptionsSelection, conversionService: ConversionService) {
         let tracksToConvert = tracksToConvert(for: selection.batchScope)
         guard !tracksToConvert.isEmpty else {
-            showAlert(title: "No Tracks", message: "Select tracks or choose 'All Loaded Tracks' in options before converting.")
+            setStatus("Select tracks or choose 'All Loaded Tracks' before converting.")
             return
         }
 
@@ -1596,7 +1574,7 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
 
         let folderMode = selectedFolderStructureMode()
         let templateConfig = selectedTemplateConfig()
-        var reviewedAlbumFolders: [AlbumGroupKey: String] = [:]
+        var reviewedAlbumFolders: [AlbumFolderKey: String] = [:]
         if folderMode == .metadataTemplate,
            selectedTemplateApplyMode() == .reviewPerAlbumPreflight {
             guard let reviewed = reviewAlbumFoldersPreflight(for: tracksToConvert, templateConfig: templateConfig) else {
@@ -1611,22 +1589,36 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
 
         var jobs: [ConversionJob] = []
         jobs.reserveCapacity(tracksToConvert.count)
+        var reservedDestinationPaths: Set<String> = []
+        var collisionAdjustedOutputs = 0
 
         for loaded in tracksToConvert {
-            let outputURL = destinationURL(
+            let plannedOutput = outputPathPlanner.planDestination(
                 for: loaded,
                 preset: preset,
                 destinationRoot: destinationFolder,
+                sourceRoot: sourceRoot(for: loaded.track.fileURL),
                 folderMode: folderMode,
                 templateConfig: templateConfig,
-                reviewedAlbumFolders: reviewedAlbumFolders
+                reviewedAlbumFolders: reviewedAlbumFolders,
+                reservedDestinationPaths: reservedDestinationPaths
             )
-            let job = ConversionJob(sourceURL: loaded.track.fileURL, destinationURL: outputURL, metadata: loaded.metadata)
+            reservedDestinationPaths.insert(trackPathKey(for: plannedOutput.destinationURL))
+            if plannedOutput.collisionCount > 1 {
+                collisionAdjustedOutputs += 1
+            }
+            let job = ConversionJob(
+                sourceURL: loaded.track.fileURL,
+                destinationURL: plannedOutput.destinationURL,
+                metadata: loaded.metadata
+            )
             jobs.append(job)
         }
 
         conversionService.clearQueue()
         _ = conversionService.enqueue(jobs, preset: preset)
+        lastConversionReport = nil
+        detailsButton.isHidden = true
 
         isConversionRunning = true
         setStatus("Converting \(jobs.count) file(s) with \(preset.name)...")
@@ -1673,7 +1665,7 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
                 let warningCount = warningSummary.totalCount
 
                 self.isConversionRunning = false
-                self.setStatus("Conversion complete. Success: \(completed), Failed: \(failed), Warnings: \(warningCount).")
+                self.setStatus("Conversion complete. Success: \(completed), Failed: \(failed), Warnings: \(warningCount), Renamed: \(collisionAdjustedOutputs).")
                 let completionTone: ModernRetroTheme.StatusTone
                 if failed > 0 {
                     completionTone = .error
@@ -1684,7 +1676,7 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
                 }
                 self.updateToolbarIndicators(activity: .idle, completion: self.toolbarCompletionState(for: completionTone))
                 self.setLCDConversionStatus(
-                    "Finished • Success: \(completed) • Failed: \(failed) • Warnings: \(warningCount)",
+                    "Finished • Success: \(completed) • Failed: \(failed) • Warnings: \(warningCount) • Renamed: \(collisionAdjustedOutputs)",
                     tone: completionTone,
                     progress: 1.0
                 )
@@ -1692,7 +1684,7 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
                 self.scheduleClearLCDConversionStatus(after: 3.8)
                 self.updateConvertButtonState()
 
-                var message = "Completed: \(completed)\nFailed: \(failed)"
+                var message = "Completed: \(completed)\nFailed: \(failed)\nRenamed to avoid collisions: \(collisionAdjustedOutputs)"
                 if !warningSummary.items.isEmpty {
                     let preview = warningSummary.items.prefix(5).map { item in
                         if item.count > 1 {
@@ -1717,8 +1709,15 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
                         message += "\n\nFailure details:\n\(failureLogs)"
                     }
                 }
-
-                self.showAlert(title: "Conversion Finished", message: message)
+                let showsDetails = failed > 0 || warningCount > 0 || collisionAdjustedOutputs > 0
+                self.lastConversionReport = ConversionReport(
+                    title: "Conversion Finished",
+                    statusLine: "Success: \(completed) • Failed: \(failed) • Warnings: \(warningCount) • Renamed: \(collisionAdjustedOutputs)",
+                    details: message,
+                    tone: completionTone,
+                    showsDetailsButton: showsDetails
+                )
+                self.detailsButton.isHidden = !showsDetails
             }
         }
     }
@@ -1747,7 +1746,7 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         )
 
         let sheetWindow = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 920, height: 560),
+            contentRect: NSRect(x: 0, y: 0, width: 760, height: 520),
             styleMask: [.titled],
             backing: .buffered,
             defer: false
@@ -1770,31 +1769,22 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
     }
 
     private func currentConversionOptionsSelection() -> ConversionOptionsSelection {
-        ConversionOptionsSelection(
-            batchScope: batchScopePopUp.indexOfSelectedItem == 1 ? .allLoadedTracks : .selectedTracks,
-            outputFormat: selectedOutputFormat(),
-            bitrate: selectedBitrate(),
-            sampleRate: selectedSampleRate(),
-            artworkMaxDimension: selectedArtworkMaxDimension,
-            folderStructureMode: selectedFolderStructureMode(),
-            applyMode: selectedTemplateApplyMode(),
-            templatePreset: selectedTemplatePreset(),
-            tokenOrder: normalizeCustomTokenOrder(selectedCustomTokenOrder())
-        )
+        conversionSelection
     }
 
     private func applyConversionOptionsSelection(_ selection: ConversionOptionsSelection) {
-        batchScopePopUp.selectItem(at: selection.batchScope.rawValue)
-        selectedArtworkMaxDimension = selection.artworkMaxDimension
-        select(formatPopUp, rawValue: selection.outputFormat.rawValue)
-        bitratePopUp.selectItem(withTag: selection.bitrate ?? -1)
-        sampleRatePopUp.selectItem(withTag: selection.sampleRate ?? -1)
-        select(folderStructurePopUp, rawValue: selection.folderStructureMode.rawValue)
-        select(applyModePopUp, rawValue: selection.applyMode.rawValue)
-        select(templatePresetPopUp, rawValue: selection.templatePreset.rawValue)
-        applyTokenOrder(normalizeCustomTokenOrder(selection.tokenOrder))
+        conversionSelection = ConversionOptionsSelection(
+            batchScope: selection.batchScope,
+            outputFormat: selection.outputFormat,
+            bitrate: selection.bitrate,
+            sampleRate: selection.sampleRate,
+            artworkMaxDimension: selection.artworkMaxDimension,
+            folderStructureMode: selection.folderStructureMode,
+            applyMode: selection.applyMode,
+            templatePreset: selection.templatePreset,
+            tokenOrder: normalizeCustomTokenOrder(selection.tokenOrder)
+        )
         updateFormatDependentControls()
-        updateTemplateOptionsVisibility()
         saveFolderStructurePreferences()
         saveArtworkResizePreference()
     }
@@ -1844,110 +1834,39 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         return WarningSummary(items: items, totalCount: totalCount)
     }
 
-    @objc private func batchScopeChanged() {
-        updateConvertButtonState()
-    }
-
-    @objc private func formatChanged() {
-        updateFormatDependentControls()
-    }
-
-    @objc private func folderStructureChanged() {
-        updateTemplateOptionsVisibility()
-        saveFolderStructurePreferences()
-    }
-
-    @objc private func applyModeChanged() {
-        saveFolderStructurePreferences()
-    }
-
-    @objc private func templatePresetChanged() {
-        let preset = selectedTemplatePreset()
-        if preset != .custom {
-            applyTokenOrder(preset.defaultTokenOrder)
-        }
-        updateTemplateOptionsVisibility()
-        saveFolderStructurePreferences()
-    }
-
-    @objc private func customTokenOrderChanged() {
-        let normalized = normalizeCustomTokenOrder(selectedCustomTokenOrder())
-        applyTokenOrder(normalized)
-        saveFolderStructurePreferences()
-    }
-
-    private func configureTokenOrderPopups() {
-        for popup in customTokenPopups {
-            popup.removeAllItems()
-            for token in FolderToken.allCases {
-                popup.addItem(withTitle: token.title)
-                popup.lastItem?.representedObject = token.rawValue
-            }
-        }
-    }
-
     private func restoreFolderStructurePreferences() {
         let mode = FolderStructureMode(rawValue: defaults.string(forKey: defaultsFolderStructureModeKey) ?? "") ?? .sourceRelative
-        select(folderStructurePopUp, rawValue: mode.rawValue)
-
         let applyMode = TemplateApplyMode(rawValue: defaults.string(forKey: defaultsTemplateApplyModeKey) ?? "") ?? .applyAll
-        select(applyModePopUp, rawValue: applyMode.rawValue)
-
         let preset = TemplatePreset(rawValue: defaults.string(forKey: defaultsTemplatePresetKey) ?? "") ?? .yearArtistAlbum
-        select(templatePresetPopUp, rawValue: preset.rawValue)
 
         let storedOrder = defaults.stringArray(forKey: defaultsTokenOrderKey) ?? []
         let parsed = storedOrder.compactMap(folderToken(fromStoredRawValue:))
         let initialOrder = parsed.isEmpty ? preset.defaultTokenOrder : parsed
-        let normalizedOrder = normalizeCustomTokenOrder(initialOrder)
-        applyTokenOrder(normalizedOrder)
-
-        updateTemplateOptionsVisibility()
+        conversionSelection = ConversionOptionsSelection(
+            batchScope: conversionSelection.batchScope,
+            outputFormat: conversionSelection.outputFormat,
+            bitrate: conversionSelection.bitrate,
+            sampleRate: conversionSelection.sampleRate,
+            artworkMaxDimension: conversionSelection.artworkMaxDimension,
+            folderStructureMode: mode,
+            applyMode: applyMode,
+            templatePreset: preset,
+            tokenOrder: normalizeCustomTokenOrder(initialOrder)
+        )
     }
 
     private func saveFolderStructurePreferences() {
-        defaults.set(selectedFolderStructureMode().rawValue, forKey: defaultsFolderStructureModeKey)
-        defaults.set(selectedTemplatePreset().rawValue, forKey: defaultsTemplatePresetKey)
-        defaults.set(selectedTemplateApplyMode().rawValue, forKey: defaultsTemplateApplyModeKey)
-        defaults.set(normalizeCustomTokenOrder(selectedCustomTokenOrder()).map(\.rawValue), forKey: defaultsTokenOrderKey)
-    }
-
-    private func updateTemplateOptionsVisibility() {
-        let metadataModeSelected = selectedFolderStructureMode() == .metadataTemplate
-        templateOptionsStack.isHidden = !metadataModeSelected
-        applyModePopUp.isEnabled = metadataModeSelected
-
-        let customSelected = selectedTemplatePreset() == .custom
-        customOrderStack.isHidden = !metadataModeSelected || !customSelected
-    }
-
-    private func select(_ popUp: NSPopUpButton, rawValue: String) {
-        for item in popUp.itemArray where (item.representedObject as? String) == rawValue {
-            popUp.select(item)
-            return
-        }
-    }
-
-    private func applyTokenOrder(_ order: [FolderToken]) {
-        let normalized = normalizeCustomTokenOrder(order)
-        let popups = customTokenPopups
-        for (index, token) in normalized.enumerated() where index < popups.count {
-            select(popups[index], rawValue: token.rawValue)
-        }
-    }
-
-    private func selectedCustomTokenOrder() -> [FolderToken] {
-        let rawValues = customTokenPopups.compactMap {
-            $0.selectedItem?.representedObject as? String
-        }
-        return rawValues.compactMap(folderToken(fromStoredRawValue:))
+        defaults.set(conversionSelection.folderStructureMode.rawValue, forKey: defaultsFolderStructureModeKey)
+        defaults.set(conversionSelection.templatePreset.rawValue, forKey: defaultsTemplatePresetKey)
+        defaults.set(conversionSelection.applyMode.rawValue, forKey: defaultsTemplateApplyModeKey)
+        defaults.set(normalizeCustomTokenOrder(conversionSelection.tokenOrder).map(\.rawValue), forKey: defaultsTokenOrderKey)
     }
 
     private func normalizeCustomTokenOrder(_ order: [FolderToken]) -> [FolderToken] {
         var normalized: [FolderToken] = []
         var used: Set<FolderToken> = []
 
-        for token in order.prefix(customTokenPopups.count) {
+        for token in order.prefix(5) {
             if token.isDisabled {
                 normalized.append(.disabled)
                 continue
@@ -1959,28 +1878,34 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
             }
         }
 
-        while normalized.count < customTokenPopups.count {
+        while normalized.count < 5 {
             normalized.append(.disabled)
         }
 
-        return Array(normalized.prefix(customTokenPopups.count))
+        return Array(normalized.prefix(5))
     }
 
     private func restoreArtworkResizePreference() {
         let stored = defaults.object(forKey: defaultsArtworkMaxDimensionKey) as? Int
-        selectedArtworkMaxDimension = stored
+        conversionSelection = ConversionOptionsSelection(
+            batchScope: conversionSelection.batchScope,
+            outputFormat: conversionSelection.outputFormat,
+            bitrate: conversionSelection.bitrate,
+            sampleRate: conversionSelection.sampleRate,
+            artworkMaxDimension: stored,
+            folderStructureMode: conversionSelection.folderStructureMode,
+            applyMode: conversionSelection.applyMode,
+            templatePreset: conversionSelection.templatePreset,
+            tokenOrder: conversionSelection.tokenOrder
+        )
     }
 
     private func saveArtworkResizePreference() {
-        if let selectedArtworkMaxDimension {
-            defaults.set(selectedArtworkMaxDimension, forKey: defaultsArtworkMaxDimensionKey)
+        if let artworkMaxDimension = conversionSelection.artworkMaxDimension {
+            defaults.set(artworkMaxDimension, forKey: defaultsArtworkMaxDimensionKey)
         } else {
             defaults.removeObject(forKey: defaultsArtworkMaxDimensionKey)
         }
-    }
-
-    private var customTokenPopups: [NSPopUpButton] {
-        [tokenOrderPopUp1, tokenOrderPopUp2, tokenOrderPopUp3, tokenOrderPopUp4, tokenOrderPopUp5]
     }
 
     private func folderToken(fromStoredRawValue rawValue: String) -> FolderToken? {
@@ -1992,11 +1917,18 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
 
     private func updateFormatDependentControls() {
         let format = selectedOutputFormat()
-        let lossless = isLosslessFormat(format)
-
-        bitratePopUp.isEnabled = !lossless
-        if lossless {
-            bitratePopUp.selectItem(withTag: -1)
+        if isLosslessFormat(format), conversionSelection.bitrate != nil {
+            conversionSelection = ConversionOptionsSelection(
+                batchScope: conversionSelection.batchScope,
+                outputFormat: conversionSelection.outputFormat,
+                bitrate: nil,
+                sampleRate: conversionSelection.sampleRate,
+                artworkMaxDimension: conversionSelection.artworkMaxDimension,
+                folderStructureMode: conversionSelection.folderStructureMode,
+                applyMode: conversionSelection.applyMode,
+                templatePreset: conversionSelection.templatePreset,
+                tokenOrder: conversionSelection.tokenOrder
+            )
         }
     }
 
@@ -2081,26 +2013,20 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
             deviceProfile: deviceProfile,
             tagMode: tagMode,
             artworkMode: .compatReembed,
-            artworkMaxDimension: selectedArtworkMaxDimension
+            artworkMaxDimension: conversionSelection.artworkMaxDimension
         )
     }
 
     private func selectedOutputFormat() -> OutputFormat {
-        if let rawValue = formatPopUp.selectedItem?.representedObject as? String,
-           let format = OutputFormat(rawValue: rawValue) {
-            return format
-        }
-        return .aac
+        conversionSelection.outputFormat
     }
 
     private func selectedBitrate() -> Int? {
-        let tag = bitratePopUp.selectedTag()
-        return tag > 0 ? tag : nil
+        conversionSelection.bitrate
     }
 
     private func selectedSampleRate() -> Int? {
-        let tag = sampleRatePopUp.selectedTag()
-        return tag > 0 ? tag : nil
+        conversionSelection.sampleRate
     }
 
     private func defaultBitrate(for format: OutputFormat) -> Int? {
@@ -2145,59 +2071,43 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
     }
 
     private func selectedFolderStructureMode() -> FolderStructureMode {
-        if let raw = folderStructurePopUp.selectedItem?.representedObject as? String,
-           let mode = FolderStructureMode(rawValue: raw) {
-            return mode
-        }
-        return .sourceRelative
+        conversionSelection.folderStructureMode
     }
 
     private func selectedTemplatePreset() -> TemplatePreset {
-        if let raw = templatePresetPopUp.selectedItem?.representedObject as? String,
-           let preset = TemplatePreset(rawValue: raw) {
-            return preset
-        }
-        return .yearArtistAlbum
+        conversionSelection.templatePreset
     }
 
     private func selectedTemplateApplyMode() -> TemplateApplyMode {
-        if let raw = applyModePopUp.selectedItem?.representedObject as? String,
-           let mode = TemplateApplyMode(rawValue: raw) {
-            return mode
-        }
-        return .applyAll
+        conversionSelection.applyMode
     }
 
-    private func selectedTemplateConfig() -> TemplateConfig {
+    private func selectedTemplateConfig() -> FolderTemplateConfig {
         let preset = selectedTemplatePreset()
         let tokenOrder: [FolderToken]
         if preset == .custom {
-            let normalizedCustomOrder = normalizeCustomTokenOrder(selectedCustomTokenOrder())
+            let normalizedCustomOrder = normalizeCustomTokenOrder(conversionSelection.tokenOrder)
             let enabledTokens = normalizedCustomOrder.filter { !$0.isDisabled }
             tokenOrder = enabledTokens.isEmpty ? TemplatePreset.yearArtistAlbum.defaultTokenOrder : enabledTokens
         } else {
             tokenOrder = preset.defaultTokenOrder
         }
 
-        return TemplateConfig(
+        return FolderTemplateConfig(
             preset: preset,
             tokenOrder: tokenOrder
         )
     }
 
-    private func albumGroupKey(for loadedTrack: LoadedTrack) -> AlbumGroupKey {
-        AlbumGroupKey(
-            artistBucket: resolvedAlbumArtistComponent(for: loadedTrack),
-            album: resolvedAlbumComponent(for: loadedTrack),
-            year: resolvedYearComponent(for: loadedTrack)
-        )
+    private func albumGroupKey(for loadedTrack: LoadedTrack) -> AlbumFolderKey {
+        outputPathPlanner.albumFolderKey(for: loadedTrack)
     }
 
     private func reviewAlbumFoldersPreflight(
         for tracks: [LoadedTrack],
-        templateConfig: TemplateConfig
-    ) -> [AlbumGroupKey: String]? {
-        var grouped: [AlbumGroupKey: LoadedTrack] = [:]
+        templateConfig: FolderTemplateConfig
+    ) -> [AlbumFolderKey: String]? {
+        var grouped: [AlbumFolderKey: LoadedTrack] = [:]
         for track in tracks {
             let key = albumGroupKey(for: track)
             if grouped[key] == nil {
@@ -2212,175 +2122,108 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
             return false
         }
 
-        var reviewed: [AlbumGroupKey: String] = [:]
-        for (index, key) in sortedKeys.enumerated() {
-            guard let representative = grouped[key] else { continue }
-            let proposed = buildOutputSubpath(loadedTrack: representative, templateConfig: templateConfig)
-
-            let alert = NSAlert()
-            alert.messageText = "Album Folder \(index + 1) of \(sortedKeys.count)"
-            alert.informativeText = "\(key.year) • \(key.artistBucket) • \(key.album)\nEdit destination subfolder:"
-            alert.addButton(withTitle: "Continue")
-            alert.addButton(withTitle: "Cancel")
-
-            let inputField = NSTextField(frame: NSRect(x: 0, y: 0, width: 420, height: 24))
-            inputField.stringValue = proposed
-            alert.accessoryView = inputField
-
-            let response = alert.runModal()
-            guard response == .alertFirstButtonReturn else {
+        let rows = sortedKeys.compactMap { key -> AlbumFolderReviewRow? in
+            guard let representative = grouped[key] else {
                 return nil
             }
 
-            let customValue = sanitizeRelativeSubpath(inputField.stringValue, fallback: proposed)
-            reviewed[key] = customValue
+            return AlbumFolderReviewRow(
+                key: key,
+                albumLabel: "\(key.year) • \(key.artistBucket) • \(key.album)",
+                proposedSubpath: buildOutputSubpath(loadedTrack: representative, templateConfig: templateConfig)
+            )
         }
 
-        return reviewed
+        return presentAlbumFolderReviewSheet(rows: rows)
     }
 
     private func buildOutputSubpath(
         loadedTrack: LoadedTrack,
-        templateConfig: TemplateConfig
+        templateConfig: FolderTemplateConfig
     ) -> String {
-        let tokenOrder: [FolderToken]
-        switch templateConfig.preset {
-        case .artistYearAlbum:
-            tokenOrder = [.albumArtist, .year, .album]
-        case .yearArtistAlbum:
-            tokenOrder = [.year, .albumArtist, .album]
-        case .artistAlbumYear:
-            tokenOrder = [.albumArtist, .album, .year]
-        case .custom:
-            tokenOrder = templateConfig.tokenOrder
-        }
-
-        let components = tokenOrder.compactMap { tokenValue(for: $0, loadedTrack: loadedTrack) }
-        let fallbackPath = [
-            resolvedYearComponent(for: loadedTrack),
-            resolvedAlbumArtistComponent(for: loadedTrack),
-            resolvedAlbumComponent(for: loadedTrack)
-        ].joined(separator: "/")
-        let rawPath = components.joined(separator: "/")
-
-        return sanitizeRelativeSubpath(rawPath, fallback: fallbackPath)
-    }
-
-    private func tokenValue(for token: FolderToken, loadedTrack: LoadedTrack) -> String? {
-        switch token {
-        case .disabled:
-            return nil
-        case .year:
-            return resolvedYearComponent(for: loadedTrack)
-        case .albumArtist:
-            return resolvedAlbumArtistComponent(for: loadedTrack)
-        case .album:
-            return resolvedAlbumComponent(for: loadedTrack)
-        case .compilation:
-            return isCompilationTrack(loadedTrack) ? "Compilation" : nil
-        }
-    }
-
-    private func resolvedYearComponent(for loadedTrack: LoadedTrack) -> String {
-        let value = loadedTrack.metadata.year.map(String.init) ?? ""
-        return sanitizePathComponent(value, fallback: unknownYear)
-    }
-
-    private func resolvedAlbumArtistComponent(for loadedTrack: LoadedTrack) -> String {
-        let value = normalizedMetadataValue(loadedTrack.metadata.albumArtist)
-            ?? normalizedMetadataValue(loadedTrack.metadata.artist)
-            ?? normalizedMetadataValue(loadedTrack.track.artist)
-            ?? unknownArtist
-        return sanitizePathComponent(value, fallback: unknownArtist)
-    }
-
-    private func resolvedAlbumComponent(for loadedTrack: LoadedTrack) -> String {
-        let value = normalizedMetadataValue(loadedTrack.metadata.album)
-            ?? normalizedMetadataValue(loadedTrack.track.album)
-            ?? unknownAlbum
-        return sanitizePathComponent(value, fallback: unknownAlbum)
-    }
-
-    private func isCompilationTrack(_ loadedTrack: LoadedTrack) -> Bool {
-        loadedTrack.metadata.compilation == true
-    }
-
-    private func normalizedMetadataValue(_ value: String?) -> String? {
-        guard let value else {
-            return nil
-        }
-
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
-    }
-
-    private func sanitizePathComponent(_ rawValue: String, fallback: String) -> String {
-        var value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        if value.isEmpty { return fallback }
-
-        value = value.replacingOccurrences(of: "/", with: "-")
-        value = value.replacingOccurrences(of: ":", with: "-")
-        value = value.replacingOccurrences(of: "\\", with: "-")
-
-        let collapsed = value.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-        let trimmed = collapsed.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? fallback : trimmed
-    }
-
-    private func sanitizeRelativeSubpath(_ rawPath: String, fallback: String) -> String {
-        let components = rawPath
-            .split(separator: "/")
-            .map { sanitizePathComponent(String($0), fallback: "") }
-            .filter { !$0.isEmpty }
-
-        if components.isEmpty {
-            return fallback
-        }
-        return components.joined(separator: "/")
-    }
-
-    private func destinationURL(
-        for loadedTrack: LoadedTrack,
-        preset: ConversionPreset,
-        destinationRoot: URL,
-        folderMode: FolderStructureMode,
-        templateConfig: TemplateConfig,
-        reviewedAlbumFolders: [AlbumGroupKey: String]
-    ) -> URL {
-        let track = loadedTrack.track
-        let sourceDirectory = track.fileURL.deletingLastPathComponent()
-        var outputDirectory = destinationRoot
-
-        switch folderMode {
-        case .sourceRelative:
-            if let root = sourceRoot(for: track.fileURL) {
-                let rootComponents = root.standardizedFileURL.pathComponents
-                let sourceComponents = sourceDirectory.standardizedFileURL.pathComponents
-
-                if sourceComponents.starts(with: rootComponents) {
-                    for component in sourceComponents.dropFirst(rootComponents.count) {
-                        outputDirectory.appendPathComponent(component, isDirectory: true)
-                    }
-                }
-            }
-        case .flat:
-            break
-        case .metadataTemplate:
-            let key = albumGroupKey(for: loadedTrack)
-            let subpath = reviewedAlbumFolders[key] ?? buildOutputSubpath(loadedTrack: loadedTrack, templateConfig: templateConfig)
-            for component in subpath.split(separator: "/").map(String.init) where !component.isEmpty {
-                outputDirectory.appendPathComponent(component, isDirectory: true)
-            }
-        }
-
-        let baseName = sanitizePathComponent(track.fileURL.deletingPathExtension().lastPathComponent, fallback: "Track")
-        return outputDirectory
-            .appendingPathComponent(baseName)
-            .appendingPathExtension(preset.outputExtension)
+        outputPathPlanner.buildOutputSubpath(for: loadedTrack, templateConfig: templateConfig)
     }
 
     private func sourceRoot(for trackURL: URL) -> URL? {
         sourceRootByTrackPath[trackPathKey(for: trackURL)]
+    }
+
+    @objc private func showLastConversionDetails() {
+        guard let report = lastConversionReport else {
+            return
+        }
+
+        presentConversionSummarySheet(report: report)
+    }
+
+    private func presentAlbumFolderReviewSheet(rows: [AlbumFolderReviewRow]) -> [AlbumFolderKey: String]? {
+        guard let hostWindow = view.window else {
+            return nil
+        }
+
+        let controller = AlbumFolderReviewSheetController(rows: rows)
+        let sheetWindow = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 760, height: 460),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        sheetWindow.title = "Review Album Folders"
+        sheetWindow.backgroundColor = ModernRetroTheme.surfaceBase
+        sheetWindow.isReleasedWhenClosed = false
+        sheetWindow.contentViewController = controller
+        sheetWindow.standardWindowButton(.closeButton)?.isHidden = true
+
+        var reviewedFolders: [AlbumFolderKey: String]?
+        controller.onDecision = { [weak hostWindow, weak sheetWindow] reviewed in
+            reviewedFolders = reviewed
+            guard let hostWindow, let sheetWindow else { return }
+            hostWindow.endSheet(sheetWindow)
+            NSApp.stopModal()
+        }
+
+        hostWindow.beginSheet(sheetWindow, completionHandler: nil)
+        NSApp.runModal(for: sheetWindow)
+        return reviewedFolders
+    }
+
+    private func presentConversionSummarySheet(report: ConversionReport) {
+        guard let hostWindow = view.window else {
+            return
+        }
+
+        let controller = ConversionSummarySheetController(report: report)
+        let sheetWindow = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 720, height: 420),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        sheetWindow.title = report.title
+        sheetWindow.backgroundColor = ModernRetroTheme.surfaceBase
+        sheetWindow.isReleasedWhenClosed = false
+        sheetWindow.contentViewController = controller
+        sheetWindow.standardWindowButton(.closeButton)?.isHidden = true
+
+        controller.onClose = { [weak hostWindow, weak sheetWindow] in
+            guard let hostWindow, let sheetWindow else { return }
+            hostWindow.endSheet(sheetWindow)
+        }
+
+        hostWindow.beginSheet(sheetWindow, completionHandler: nil)
+    }
+
+    private func readinessText(for tool: ResolvedExternalTool) -> String {
+        switch tool.source {
+        case .bundled:
+            return "Bundled"
+        case .explicitOverride:
+            return "Override"
+        case .environmentOverride:
+            return "Environment"
+        case .system:
+            return "System"
+        }
     }
 
     private func preferredLoadDirectoryURL() -> URL? {
@@ -2430,14 +2273,6 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
             completionSound = fallbackSound
             completionSound?.play()
         }
-    }
-
-    private func showAlert(title: String, message: String) {
-        let alert = NSAlert()
-        alert.messageText = title
-        alert.informativeText = message
-        alert.alertStyle = .informational
-        alert.runModal()
     }
 
     private func setStatus(_ text: String) {

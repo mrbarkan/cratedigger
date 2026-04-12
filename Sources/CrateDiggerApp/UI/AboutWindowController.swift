@@ -24,9 +24,9 @@ final class AboutWindowController: NSWindowController {
 
 private final class AboutViewController: NSViewController {
     private let titleLabel = NSTextField(labelWithString: "CrateDigger")
-    private let designedByLabel = NSTextField(labelWithString: "Designed by Mr.Barkan")
-    private let developedByLabel = NSTextField(labelWithString: "Developed By Codex")
-    private let supportButton = NSButton(title: "Buy Me a Coffee", target: nil, action: nil)
+    private let taglineLabel = NSTextField(labelWithString: "Scan, inspect, preview, and convert music libraries.")
+    private let creditsLabel = NSTextField(labelWithString: "Built with Swift, AppKit, and FFmpeg tooling.")
+    private let versionLabel = NSTextField(labelWithString: "")
 
     override func loadView() {
         view = NSView()
@@ -34,17 +34,16 @@ private final class AboutViewController: NSViewController {
         view.layer?.backgroundColor = ModernRetroTheme.surfaceBase.cgColor
 
         titleLabel.font = NSFont.systemFont(ofSize: 28, weight: .semibold)
-        designedByLabel.font = NSFont.systemFont(ofSize: 14, weight: .regular)
-        developedByLabel.font = NSFont.systemFont(ofSize: 14, weight: .regular)
+        taglineLabel.font = NSFont.systemFont(ofSize: 14, weight: .medium)
+        creditsLabel.font = NSFont.systemFont(ofSize: 13, weight: .regular)
+        versionLabel.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .medium)
         titleLabel.textColor = ModernRetroTheme.textPrimary
-        designedByLabel.textColor = ModernRetroTheme.textSecondary
-        developedByLabel.textColor = ModernRetroTheme.textSecondary
+        taglineLabel.textColor = ModernRetroTheme.textPrimary
+        creditsLabel.textColor = ModernRetroTheme.textSecondary
+        versionLabel.textColor = ModernRetroTheme.textSecondary
+        versionLabel.stringValue = versionString()
 
-        supportButton.target = self
-        supportButton.action = #selector(openPatreon)
-        ModernRetroTheme.styleSecondaryButton(supportButton)
-
-        let stack = NSStackView(views: [titleLabel, designedByLabel, developedByLabel, supportButton])
+        let stack = NSStackView(views: [titleLabel, taglineLabel, creditsLabel, versionLabel])
         stack.orientation = .vertical
         stack.alignment = .centerX
         stack.spacing = 12
@@ -60,13 +59,12 @@ private final class AboutViewController: NSViewController {
 
     override func viewDidLayout() {
         super.viewDidLayout()
-        ModernRetroTheme.updateButtonLayers(supportButton)
     }
 
-    @objc private func openPatreon() {
-        guard let url = URL(string: "https://patreon.com/imnot_here") else {
-            return
-        }
-        NSWorkspace.shared.open(url)
+    private func versionString() -> String {
+        let bundle = Bundle.main
+        let version = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.0"
+        let build = bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1"
+        return "Version \(version) (\(build))"
     }
 }

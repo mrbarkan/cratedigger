@@ -10,6 +10,19 @@ public enum MetadataProbeError: Error {
     case decodingFailed(String)
 }
 
+extension MetadataProbeError: LocalizedError {
+    public var errorDescription: String? {
+        switch self {
+        case .executableMissing(let url):
+            return "ffprobe was not found at \(url.path)."
+        case .commandFailed(let message):
+            return "ffprobe failed: \(message)"
+        case .decodingFailed(let message):
+            return "ffprobe output could not be decoded: \(message)"
+        }
+    }
+}
+
 public struct ProbedStreamMetadata: Codable, Hashable, Sendable {
     public let index: Int
     public let codecType: String?
@@ -89,7 +102,7 @@ public struct ProbedMetadata: Codable, Hashable, Sendable {
 public final class MetadataProbeService: MetadataProbing {
     private let ffprobeExecutableURL: URL
     private let commandRunner: CommandRunning
-    private let fileManager: FileManager
+    public let resolvedTool: ResolvedExternalTool
 
     public init(
         ffprobeExecutableURL: URL? = nil,
@@ -97,13 +110,15 @@ public final class MetadataProbeService: MetadataProbing {
         fileManager: FileManager = .default
     ) throws {
         self.commandRunner = commandRunner
-        self.fileManager = fileManager
-
-        let executable = ffprobeExecutableURL ?? Self.defaultFFprobeExecutableURL(fileManager: fileManager)
-        guard fileManager.fileExists(atPath: executable.path) else {
-            throw MetadataProbeError.executableMissing(executable)
+        let locator = ExternalToolLocator(fileManager: fileManager)
+        let resolvedTool: ResolvedExternalTool
+        do {
+            resolvedTool = try locator.resolveRequired(.ffprobe, explicitOverride: ffprobeExecutableURL)
+        } catch {
+            throw MetadataProbeError.executableMissing(ffprobeExecutableURL ?? URL(fileURLWithPath: "ffprobe"))
         }
-        self.ffprobeExecutableURL = executable
+        self.resolvedTool = resolvedTool
+        self.ffprobeExecutableURL = resolvedTool.url
     }
 
     public func probe(url: URL) throws -> ProbedMetadata {
@@ -143,21 +158,6 @@ public final class MetadataProbeService: MetadataProbing {
         } catch {
             throw MetadataProbeError.decodingFailed(error.localizedDescription)
         }
-    }
-
-    private static func defaultFFprobeExecutableURL(fileManager: FileManager) -> URL {
-        let candidatePaths = [
-            Bundle.main.bundleURL.appendingPathComponent("Contents/Resources/ffprobe").path,
-            "/opt/homebrew/bin/ffprobe",
-            "/usr/local/bin/ffprobe",
-            "/usr/bin/ffprobe"
-        ]
-
-        for path in candidatePaths where fileManager.fileExists(atPath: path) {
-            return URL(fileURLWithPath: path)
-        }
-
-        return URL(fileURLWithPath: candidatePaths[0])
     }
 
     private static func parseInt(_ value: String) -> Int? {

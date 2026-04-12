@@ -397,16 +397,75 @@ final class ConversionServiceTests: XCTestCase {
         XCTAssertEqual(Set(callbacks.map(\.total)), [5])
     }
 
+    func testProcessCommandRunnerCapturesLargeStdoutAndStderrWithoutDeadlock() throws {
+        let script = try writeExecutableStub(
+            named: "emit-large-output.sh",
+            contents: """
+            #!/bin/sh
+            i=1
+            while [ "$i" -le 2500 ]; do
+              printf 'stdout-line-%s\\n' "$i"
+              printf 'stderr-line-%s\\n' "$i" >&2
+              i=$((i + 1))
+            done
+            """,
+            in: temporaryDirectory
+        )
+
+        let output = try ProcessCommandRunner().run(executableURL: script, arguments: [])
+
+        XCTAssertEqual(output.terminationStatus, 0)
+        XCTAssertTrue(output.standardOutput.contains("stdout-line-2500"))
+        XCTAssertTrue(output.standardError.contains("stderr-line-2500"))
+    }
+
+    func testTemporaryArtworkFilesAreCleanedUpWhenExecutionFails() throws {
+        let tempRoot = temporaryDirectory.appendingPathComponent("conversion-temp", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        let trackingFileManager = TrackingFileManager(temporaryDirectory: tempRoot)
+
+        let artwork = ArtworkAsset(
+            source: .embedded,
+            hash: "cleanup-artwork",
+            dimensions: ArtworkDimensions(width: 500, height: 500),
+            data: try makeImageData()
+        )
+        let metadata = ConversionMetadata(title: "Cleanup Track", artwork: artwork)
+
+        let service = try makeService(
+            artworkPreparer: PassThroughArtworkPreparer(),
+            commandRunner: ThrowingCommandRunner(),
+            fileManager: trackingFileManager
+        )
+
+        let queued = service.enqueue(
+            [ConversionJob(
+                sourceURL: temporaryDirectory.appendingPathComponent("source.flac"),
+                destinationURL: temporaryDirectory.appendingPathComponent("out.m4a"),
+                metadata: metadata
+            )],
+            preset: .genericAAC
+        )
+
+        let results = service.runQueuedJobs(maxConcurrentWorkers: 1)
+        XCTAssertEqual(queued.count, 1)
+        XCTAssertEqual(results.count, 1)
+        XCTAssertEqual(results.first?.status, .failed)
+        XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: tempRoot.path).isEmpty)
+    }
+
     private func makeService(
         artworkPreparer: ArtworkPreparing,
-        presets: [ConversionPreset] = ConversionPreset.defaultPresets
+        presets: [ConversionPreset] = ConversionPreset.defaultPresets,
+        commandRunner: CommandRunning = StubCommandRunner(),
+        fileManager: FileManager = .default
     ) throws -> ConversionService {
         try ConversionService(
             ffmpegExecutableURL: fakeFFmpegURL,
             presets: presets,
             artworkPreparer: artworkPreparer,
-            commandRunner: StubCommandRunner(),
-            fileManager: FileManager.default
+            commandRunner: commandRunner,
+            fileManager: fileManager
         )
     }
 
@@ -494,6 +553,12 @@ private struct StubCommandRunner: CommandRunning {
     }
 }
 
+private struct ThrowingCommandRunner: CommandRunning {
+    func run(executableURL: URL, arguments: [String]) throws -> CommandOutput {
+        throw NSError(domain: "ConversionServiceTests", code: 77)
+    }
+}
+
 private struct PassThroughArtworkPreparer: ArtworkPreparing {
     func prepareCompatibleArtwork(asset: ArtworkAsset, profile: DeviceProfile) throws -> ArtworkAsset {
         asset
@@ -516,6 +581,19 @@ private final class RecordingArtworkPreparer: ArtworkPreparing {
     func prepareCompatibleArtwork(asset: ArtworkAsset, profile: DeviceProfile, maxDimension: Int?) throws -> ArtworkAsset {
         recordedMaxDimension = maxDimension
         return asset
+    }
+}
+
+private final class TrackingFileManager: FileManager {
+    private let customTemporaryDirectory: URL
+
+    init(temporaryDirectory: URL) {
+        self.customTemporaryDirectory = temporaryDirectory
+        super.init()
+    }
+
+    override var temporaryDirectory: URL {
+        customTemporaryDirectory
     }
 }
 #endif
