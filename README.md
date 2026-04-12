@@ -35,6 +35,8 @@ scripts/package-app.sh --ffmpeg /opt/homebrew/bin/ffmpeg --ffprobe /opt/homebrew
 The packaged app is written to `dist/CrateDigger.app`.
 The packaging script also prefers a full Xcode developer directory when one is installed and uses a repo-local module cache so the build is less sensitive to machine-wide Swift cache state.
 
+For the full beta release gate, see [docs/BETA_RELEASE_CHECKLIST.md](/Users/mrbarkan/Development/CrateDigger/docs/BETA_RELEASE_CHECKLIST.md).
+
 ## Manual Smoke Checklist
 
 - Launch the packaged app on a Mac without Homebrew-installed FFmpeg tools.
