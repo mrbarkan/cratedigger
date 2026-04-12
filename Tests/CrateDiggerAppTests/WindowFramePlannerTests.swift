@@ -1,0 +1,95 @@
+#if canImport(XCTest)
+import CoreGraphics
+import XCTest
+@testable import CrateDiggerApp
+
+final class WindowFramePlannerTests: XCTestCase {
+    func testCompactLaunchUsesCompactTargetOnLargeScreen() {
+        let visibleFrame = CGRect(x: 0, y: 0, width: 1512, height: 944)
+
+        let plan = WindowFramePlanner.plan(
+            visibleFrame: visibleFrame,
+            currentFrame: nil,
+            mode: .emptyCompact,
+            context: .initialLaunch
+        )
+
+        XCTAssertEqual(plan.frame.size.width, 960, accuracy: 0.001)
+        XCTAssertEqual(plan.frame.size.height, 620, accuracy: 0.001)
+        XCTAssertEqual(plan.minimumSize.width, 760, accuracy: 0.001)
+        XCTAssertEqual(plan.minimumSize.height, 540, accuracy: 0.001)
+        XCTAssertGreaterThanOrEqual(plan.frame.minX, visibleFrame.minX)
+        XCTAssertGreaterThanOrEqual(plan.frame.minY, visibleFrame.minY)
+        XCTAssertLessThanOrEqual(plan.frame.maxX, visibleFrame.maxX)
+        XCTAssertLessThanOrEqual(plan.frame.maxY, visibleFrame.maxY)
+    }
+
+    func testCompactLaunchClampsToSmallScreen() {
+        let visibleFrame = CGRect(x: 0, y: 0, width: 900, height: 620)
+
+        let plan = WindowFramePlanner.plan(
+            visibleFrame: visibleFrame,
+            currentFrame: CGRect(x: 50, y: 40, width: 1400, height: 900),
+            mode: .emptyCompact,
+            context: .initialLaunch
+        )
+
+        XCTAssertLessThanOrEqual(plan.frame.width, visibleFrame.width - (WindowFramePlanner.outerMargin * 2))
+        XCTAssertLessThanOrEqual(plan.frame.height, visibleFrame.height - (WindowFramePlanner.outerMargin * 2))
+        XCTAssertLessThanOrEqual(plan.minimumSize.width, plan.frame.width)
+        XCTAssertLessThanOrEqual(plan.minimumSize.height, plan.frame.height)
+    }
+
+    func testWorkspacePromotionUsesWorkspaceTarget() {
+        let visibleFrame = CGRect(x: 0, y: 0, width: 1512, height: 944)
+
+        let plan = WindowFramePlanner.plan(
+            visibleFrame: visibleFrame,
+            currentFrame: CGRect(x: 100, y: 100, width: 960, height: 620),
+            mode: .workspace,
+            context: .layoutTransition
+        )
+
+        XCTAssertEqual(plan.frame.size.width, 1180, accuracy: 0.001)
+        XCTAssertEqual(plan.frame.size.height, 760, accuracy: 0.001)
+        XCTAssertEqual(plan.minimumSize.width, 940, accuracy: 0.001)
+        XCTAssertEqual(plan.minimumSize.height, 620, accuracy: 0.001)
+    }
+
+    func testClampToVisibleFrameShrinksOversizedRestoredFrame() {
+        let visibleFrame = CGRect(x: 0, y: 0, width: 1024, height: 720)
+        let currentFrame = CGRect(x: -200, y: -100, width: 1600, height: 1000)
+
+        let plan = WindowFramePlanner.plan(
+            visibleFrame: visibleFrame,
+            currentFrame: currentFrame,
+            mode: .workspace,
+            context: .clampToVisibleFrame
+        )
+
+        XCTAssertLessThanOrEqual(plan.frame.maxX, visibleFrame.maxX)
+        XCTAssertLessThanOrEqual(plan.frame.maxY, visibleFrame.maxY)
+        XCTAssertGreaterThanOrEqual(plan.frame.minX, visibleFrame.minX)
+        XCTAssertGreaterThanOrEqual(plan.frame.minY, visibleFrame.minY)
+        XCTAssertLessThanOrEqual(plan.frame.width, visibleFrame.width - (WindowFramePlanner.outerMargin * 2))
+        XCTAssertLessThanOrEqual(plan.frame.height, visibleFrame.height - (WindowFramePlanner.outerMargin * 2))
+    }
+
+    func testClampToVisibleFrameKeepsCurrentSizeWhenAlreadyValid() {
+        let visibleFrame = CGRect(x: 0, y: 0, width: 1512, height: 944)
+        let currentFrame = CGRect(x: 80, y: 70, width: 1000, height: 700)
+
+        let plan = WindowFramePlanner.plan(
+            visibleFrame: visibleFrame,
+            currentFrame: currentFrame,
+            mode: .workspace,
+            context: .clampToVisibleFrame
+        )
+
+        XCTAssertEqual(plan.frame.size.width, currentFrame.width, accuracy: 0.001)
+        XCTAssertEqual(plan.frame.size.height, currentFrame.height, accuracy: 0.001)
+        XCTAssertEqual(plan.frame.origin.x, currentFrame.origin.x, accuracy: 0.001)
+        XCTAssertEqual(plan.frame.origin.y, currentFrame.origin.y, accuracy: 0.001)
+    }
+}
+#endif

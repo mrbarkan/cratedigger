@@ -24,6 +24,11 @@ let package = Package(
             name: "CrateDiggerCoreTests",
             dependencies: ["CrateDiggerCore"],
             path: "Tests/CrateDiggerCoreTests"
+        ),
+        .testTarget(
+            name: "CrateDiggerAppTests",
+            dependencies: ["CrateDiggerApp"],
+            path: "Tests/CrateDiggerAppTests"
         )
     ]
 )

@@ -63,6 +63,8 @@ private enum ToolbarCompletionState {
 }
 
 final class MainViewController: NSViewController, NSTableViewDataSource, NSTableViewDelegate {
+    var onFirstLoadedLibrary: (() -> Void)?
+
     private let artworkService = ArtworkService()
     private let toolLocator = ExternalToolLocator()
     private let outputPathPlanner = OutputPathPlanner()
@@ -91,6 +93,7 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
     private var keyEventMonitor: Any?
     private var playlistSortMode: PlaylistSortMode = .trackDiscAscending
     private var hasAppliedStartupLayout = false
+    private var hasReportedFirstLoadedLibrary = false
     private var conversionSelection = ConversionOptionsSelection(
         batchScope: .selectedTracks,
         outputFormat: .aac,
@@ -106,6 +109,9 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
     private let tableView = NSTableView()
     private let scrollView = NSScrollView()
     private let playlistContainerView = NSView()
+    private let splitView = NSSplitView()
+    private let leftContainerView = NSView()
+    private let inspectorContainerView = NSView()
     private let emptyStateView = NSView()
     private let emptyStateTitleField = NSTextField(labelWithString: "Load a folder to begin")
     private let emptyStateMessageField = NSTextField(labelWithString: "Choose one or more music folders to scan, preview, and convert.")
@@ -136,6 +142,11 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
     private var completionSound: NSSound?
 
     private let inspectorViewController = TrackInspectorViewController()
+    private var currentWindowLayoutMode: WindowLayoutMode = .emptyCompact
+    private var appliedWindowLayoutMode: WindowLayoutMode?
+    private var inspectorPreferredWidthConstraint: NSLayoutConstraint!
+    private var inspectorMinimumWidthConstraint: NSLayoutConstraint!
+    private var inspectorCollapsedWidthConstraint: NSLayoutConstraint!
     private let outputFormats: [OutputFormat] = [.mp3, .aac, .alac, .flac, .wav, .aiff, .ogg, .opus]
     private let bitrateOptions = [-1, 96, 128, 160, 192, 256, 320]
     private let sampleRateOptions = [-1, 32000, 44100, 48000, 96000]
@@ -165,23 +176,30 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
 
         addChild(inspectorViewController)
 
-        let splitView = NSSplitView()
         splitView.isVertical = true
         splitView.dividerStyle = .thin
         splitView.translatesAutoresizingMaskIntoConstraints = false
 
-        let leftContainer = NSView()
-        leftContainer.translatesAutoresizingMaskIntoConstraints = false
-        configureLeftPane(in: leftContainer)
+        leftContainerView.translatesAutoresizingMaskIntoConstraints = false
+        configureLeftPane(in: leftContainerView)
 
-        splitView.addArrangedSubview(leftContainer)
-        splitView.addArrangedSubview(inspectorViewController.view)
-
+        inspectorContainerView.translatesAutoresizingMaskIntoConstraints = false
         inspectorViewController.view.translatesAutoresizingMaskIntoConstraints = false
-        let inspectorPreferredWidth = inspectorViewController.view.widthAnchor.constraint(equalToConstant: 340)
-        inspectorPreferredWidth.priority = .defaultHigh
-        inspectorPreferredWidth.isActive = true
-        inspectorViewController.view.widthAnchor.constraint(greaterThanOrEqualToConstant: 300).isActive = true
+        inspectorContainerView.addSubview(inspectorViewController.view)
+        NSLayoutConstraint.activate([
+            inspectorViewController.view.topAnchor.constraint(equalTo: inspectorContainerView.topAnchor),
+            inspectorViewController.view.leadingAnchor.constraint(equalTo: inspectorContainerView.leadingAnchor),
+            inspectorViewController.view.trailingAnchor.constraint(equalTo: inspectorContainerView.trailingAnchor),
+            inspectorViewController.view.bottomAnchor.constraint(equalTo: inspectorContainerView.bottomAnchor)
+        ])
+
+        splitView.addArrangedSubview(leftContainerView)
+        splitView.addArrangedSubview(inspectorContainerView)
+
+        inspectorPreferredWidthConstraint = inspectorContainerView.widthAnchor.constraint(equalToConstant: 340)
+        inspectorPreferredWidthConstraint.priority = .defaultHigh
+        inspectorMinimumWidthConstraint = inspectorContainerView.widthAnchor.constraint(greaterThanOrEqualToConstant: 300)
+        inspectorCollapsedWidthConstraint = inspectorContainerView.widthAnchor.constraint(equalToConstant: 0)
         splitView.setHoldingPriority(.defaultLow, forSubviewAt: 0)
         splitView.setHoldingPriority(.defaultHigh, forSubviewAt: 1)
 
@@ -202,7 +220,7 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
             splitView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             splitView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             splitView.bottomAnchor.constraint(equalTo: bottomBar.topAnchor),
-            leftContainer.widthAnchor.constraint(greaterThanOrEqualToConstant: 440),
+            leftContainerView.widthAnchor.constraint(greaterThanOrEqualToConstant: 440),
 
             bottomBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             bottomBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -212,6 +230,7 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
 
         configureConversionOptions()
         configureServices()
+        applyWindowLayoutMode(.emptyCompact)
     }
 
     override func viewDidLayout() {
@@ -223,6 +242,7 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         ModernRetroTheme.updateButtonLayers(nextButton)
         updateToolbarIndicators(activity: toolbarActivityState, completion: toolbarCompletionState)
         lcdView.layoutSubtreeIfNeeded()
+        applyPendingWindowLayoutModeIfNeeded(animated: false)
         updateLCD()
     }
 
@@ -274,6 +294,46 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
             ModernRetroTheme.updateButtonLayers(self.playPauseButton)
             ModernRetroTheme.updateButtonLayers(self.nextButton)
         }
+    }
+
+    func applyWindowLayoutMode(_ mode: WindowLayoutMode) {
+        currentWindowLayoutMode = mode
+        applyPendingWindowLayoutModeIfNeeded(animated: mode == .workspace)
+    }
+
+    private func applyPendingWindowLayoutModeIfNeeded(animated: Bool) {
+        guard isViewLoaded else { return }
+        guard appliedWindowLayoutMode != currentWindowLayoutMode else { return }
+
+        let collapsesInspector = currentWindowLayoutMode.collapsesInspector
+        inspectorPreferredWidthConstraint.isActive = !collapsesInspector
+        inspectorMinimumWidthConstraint.isActive = !collapsesInspector
+        inspectorCollapsedWidthConstraint.isActive = collapsesInspector
+        inspectorContainerView.isHidden = collapsesInspector
+
+        splitView.layoutSubtreeIfNeeded()
+        splitView.adjustSubviews()
+
+        guard splitView.subviews.count > 1 else {
+            appliedWindowLayoutMode = currentWindowLayoutMode
+            return
+        }
+
+        if collapsesInspector {
+            splitView.setPosition(splitView.bounds.width, ofDividerAt: 0)
+        } else {
+            let desiredLeftWidth = max(440, splitView.bounds.width - 340)
+            splitView.setPosition(min(desiredLeftWidth, splitView.bounds.width - 300), ofDividerAt: 0)
+        }
+
+        if animated {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.16
+                self.splitView.animator().layoutSubtreeIfNeeded()
+            }
+        }
+
+        appliedWindowLayoutMode = currentWindowLayoutMode
     }
 
     func openFolder() {
@@ -1036,6 +1096,7 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
                     )
                     self.inspectorViewController.update(with: nil)
                 } else {
+                    self.reportFirstLoadedLibraryIfNeeded()
                     self.tableView.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
                     self.setStatus("Loaded \(self.loadedTracks.count) tracks")
                     self.updateEmptyState(title: "", message: "", showsSpinner: false)
@@ -1046,6 +1107,14 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
                 self.updateLCD()
             }
         }
+    }
+
+    private func reportFirstLoadedLibraryIfNeeded() {
+        guard !hasReportedFirstLoadedLibrary else { return }
+        guard !loadedTracks.isEmpty else { return }
+
+        hasReportedFirstLoadedLibrary = true
+        onFirstLoadedLibrary?()
     }
 
     private func scanFolders(_ roots: [URL]) async -> MultiRootScanResult {
