@@ -8,6 +8,7 @@ OUTPUT_DIR="${ROOT_DIR}/dist"
 APP_NAME="CrateDigger.app"
 APP_BUNDLE="${OUTPUT_DIR}/${APP_NAME}"
 INFO_PLIST_SOURCE="${ROOT_DIR}/Packaging/CrateDiggerApp/Info.plist"
+ICON_SOURCE="${ROOT_DIR}/Packaging/CrateDiggerApp/Resources/CrateDigger.icns"
 DEFAULT_XCODE_DEVELOPER_DIR="/Applications/Xcode.app/Contents/Developer"
 
 FFMPEG_PATH="${CRATEDIGGER_FFMPEG_PATH:-}"
@@ -124,6 +125,12 @@ if [[ ! -f "${INFO_PLIST_SOURCE}" ]]; then
   exit 1
 fi
 
+if [[ ! -f "${ICON_SOURCE}" ]]; then
+  echo "error: missing app icon at ${ICON_SOURCE}" >&2
+  echo "Run 'swift scripts/generate-brand-assets.swift' to generate the design package assets." >&2
+  exit 1
+fi
+
 FFMPEG_PATH="$(resolve_tool "${FFMPEG_PATH}" "ffmpeg")"
 FFPROBE_PATH="$(resolve_tool "${FFPROBE_PATH}" "ffprobe")"
 prepare_swift_environment
@@ -153,6 +160,7 @@ fi
 
 cp "${BINARY_PATH}" "${APP_BUNDLE}/Contents/MacOS/CrateDiggerApp"
 cp "${INFO_PLIST_SOURCE}" "${APP_BUNDLE}/Contents/Info.plist"
+cp "${ICON_SOURCE}" "${APP_BUNDLE}/Contents/Resources/CrateDigger.icns"
 cp "${FFMPEG_PATH}" "${APP_BUNDLE}/Contents/Resources/ffmpeg"
 cp "${FFPROBE_PATH}" "${APP_BUNDLE}/Contents/Resources/ffprobe"
 

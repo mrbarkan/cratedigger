@@ -1,0 +1,61 @@
+{
+  "": {
+    "dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerCoreTests.build/CrateDiggerCoreTests.d",
+    "object": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerCoreTests.build/CrateDiggerCoreTests.o",
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerCoreTests.build/master.swiftdeps"
+  },
+  "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/ArtworkServiceTests.swift": {
+    "object": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerCoreTests.build/ArtworkServiceTests.swift.o",
+    "swiftmodule": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerCoreTests.build/ArtworkServiceTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerCoreTests.build/ArtworkServiceTests.swiftdeps",
+    "diagnostics": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerCoreTests.build/ArtworkServiceTests.dia"
+  },
+  "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/ConversionModelsTests.swift": {
+    "object": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerCoreTests.build/ConversionModelsTests.swift.o",
+    "swiftmodule": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerCoreTests.build/ConversionModelsTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerCoreTests.build/ConversionModelsTests.swiftdeps",
+    "diagnostics": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerCoreTests.build/ConversionModelsTests.dia"
+  },
+  "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/ConversionServiceTests.swift": {
+    "object": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerCoreTests.build/ConversionServiceTests.swift.o",
+    "swiftmodule": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerCoreTests.build/ConversionServiceTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerCoreTests.build/ConversionServiceTests.swiftdeps",
+    "diagnostics": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerCoreTests.build/ConversionServiceTests.dia"
+  },
+  "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/ExternalToolLocatorTests.swift": {
+    "object": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerCoreTests.build/ExternalToolLocatorTests.swift.o",
+    "swiftmodule": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerCoreTests.build/ExternalToolLocatorTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerCoreTests.build/ExternalToolLocatorTests.swiftdeps",
+    "diagnostics": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerCoreTests.build/ExternalToolLocatorTests.dia"
+  },
+  "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/MetadataNormalizationTests.swift": {
+    "object": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerCoreTests.build/MetadataNormalizationTests.swift.o",
+    "swiftmodule": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerCoreTests.build/MetadataNormalizationTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerCoreTests.build/MetadataNormalizationTests.swiftdeps",
+    "diagnostics": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerCoreTests.build/MetadataNormalizationTests.dia"
+  },
+  "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/MetadataProbeServiceTests.swift": {
+    "object": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerCoreTests.build/MetadataProbeServiceTests.swift.o",
+    "swiftmodule": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerCoreTests.build/MetadataProbeServiceTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerCoreTests.build/MetadataProbeServiceTests.swiftdeps",
+    "diagnostics": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerCoreTests.build/MetadataProbeServiceTests.dia"
+  },
+  "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/OutputPathPlannerTests.swift": {
+    "object": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerCoreTests.build/OutputPathPlannerTests.swift.o",
+    "swiftmodule": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerCoreTests.build/OutputPathPlannerTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerCoreTests.build/OutputPathPlannerTests.swiftdeps",
+    "diagnostics": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerCoreTests.build/OutputPathPlannerTests.dia"
+  },
+  "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/PlaybackServiceTests.swift": {
+    "object": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerCoreTests.build/PlaybackServiceTests.swift.o",
+    "swiftmodule": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerCoreTests.build/PlaybackServiceTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerCoreTests.build/PlaybackServiceTests.swiftdeps",
+    "diagnostics": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerCoreTests.build/PlaybackServiceTests.dia"
+  },
+  "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/TestSupport.swift": {
+    "object": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerCoreTests.build/TestSupport.swift.o",
+    "swiftmodule": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerCoreTests.build/TestSupport~partial.swiftmodule",
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerCoreTests.build/TestSupport.swiftdeps",
+    "diagnostics": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerCoreTests.build/TestSupport.dia"
+  }
+}

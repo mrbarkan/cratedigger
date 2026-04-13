@@ -22,7 +22,7 @@
   ],
   "swiftCommands" : {
     "C.CrateDiggerApp-arm64-apple-macosx15.0-debug.module" : {
-      "executable" : "/Library/Developer/CommandLineTools/usr/bin/swiftc",
+      "executable" : "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
       "fileList" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/sources",
       "importPath" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/Modules",
       "inputs" : [
@@ -36,11 +36,27 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/AlbumFolderReviewSheetController.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/AlbumFolderReviewSheetView.swift"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/AquaLCDView.swift"
         },
         {
           "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/BrandArtworkView.swift"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/ClassicTheme.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/ConversionFlowModels.swift"
         },
         {
           "kind" : "file",
@@ -49,6 +65,14 @@
         {
           "kind" : "file",
           "name" : "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/ConversionOptionsSheetView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/ConversionSummarySheetController.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/ConversionSummarySheetView.swift"
         },
         {
           "kind" : "file",
@@ -68,11 +92,15 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/WindowFramePlanner.swift"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/main.swift"
         },
         {
           "kind" : "file",
-          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/swift-version--1AB21518FC5DEDBE.txt"
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"
         },
         {
           "kind" : "file",
@@ -89,14 +117,21 @@
       "objects" : [
         "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/AppDelegate.swift.o",
         "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/AboutWindowController.swift.o",
+        "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/AlbumFolderReviewSheetController.swift.o",
+        "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/AlbumFolderReviewSheetView.swift.o",
         "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/AquaLCDView.swift.o",
+        "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/BrandArtworkView.swift.o",
         "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/ClassicTheme.swift.o",
+        "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/ConversionFlowModels.swift.o",
         "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/ConversionOptionsSheetController.swift.o",
         "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/ConversionOptionsSheetView.swift.o",
+        "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/ConversionSummarySheetController.swift.o",
+        "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/ConversionSummarySheetView.swift.o",
         "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/MainViewController.swift.o",
         "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/MainWindowController.swift.o",
         "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/ModernRetroTheme.swift.o",
         "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/TrackInspectorViewController.swift.o",
+        "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/WindowFramePlanner.swift.o",
         "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/main.swift.o"
       ],
       "otherArguments" : [
@@ -122,19 +157,31 @@
         "CrateDiggerApp_main",
         "-swift-version",
         "5",
-        "-I",
-        "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
-        "-L",
-        "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
         "-plugin-path",
-        "/Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
         "-sdk",
-        "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+        "-F",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-F",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+        "-I",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-L",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
         "-g",
         "-Xcc",
         "-isysroot",
         "-Xcc",
-        "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
         "-Xcc",
         "-fPIC",
         "-Xcc",
@@ -154,11 +201,27 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/AlbumFolderReviewSheetController.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/AlbumFolderReviewSheetView.swift.o"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/AquaLCDView.swift.o"
         },
         {
           "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/BrandArtworkView.swift.o"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/ClassicTheme.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/ConversionFlowModels.swift.o"
         },
         {
           "kind" : "file",
@@ -167,6 +230,14 @@
         {
           "kind" : "file",
           "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/ConversionOptionsSheetView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/ConversionSummarySheetController.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/ConversionSummarySheetView.swift.o"
         },
         {
           "kind" : "file",
@@ -186,6 +257,10 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/WindowFramePlanner.swift.o"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/main.swift.o"
         },
         {
@@ -197,21 +272,128 @@
       "sources" : [
         "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/AppDelegate.swift",
         "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/AboutWindowController.swift",
+        "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/AlbumFolderReviewSheetController.swift",
+        "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/AlbumFolderReviewSheetView.swift",
         "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/AquaLCDView.swift",
+        "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/BrandArtworkView.swift",
         "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/ClassicTheme.swift",
+        "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/ConversionFlowModels.swift",
         "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/ConversionOptionsSheetController.swift",
         "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/ConversionOptionsSheetView.swift",
+        "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/ConversionSummarySheetController.swift",
+        "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/ConversionSummarySheetView.swift",
         "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/MainViewController.swift",
         "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/MainWindowController.swift",
         "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/ModernRetroTheme.swift",
         "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/TrackInspectorViewController.swift",
+        "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/WindowFramePlanner.swift",
         "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/main.swift"
       ],
       "tempsPath" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build",
       "wholeModuleOptimization" : false
     },
+    "C.CrateDiggerAppTests-arm64-apple-macosx15.0-debug.module" : {
+      "executable" : "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "fileList" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerAppTests.build/sources",
+      "importPath" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/Modules",
+      "inputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerAppTests/WindowFramePlannerTests.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerAppTests.build/sources"
+        }
+      ],
+      "isLibrary" : true,
+      "moduleName" : "CrateDiggerAppTests",
+      "moduleOutputPath" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/Modules/CrateDiggerAppTests.swiftmodule",
+      "objects" : [
+        "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerAppTests.build/WindowFramePlannerTests.swift.o"
+      ],
+      "otherArguments" : [
+        "-target",
+        "arm64-apple-macosx14.0",
+        "-incremental",
+        "-enable-batch-mode",
+        "-serialize-diagnostics",
+        "-index-store-path",
+        "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/index/store",
+        "-Onone",
+        "-enable-testing",
+        "-Xfrontend",
+        "-enable-cross-import-overlays",
+        "-j12",
+        "-DSWIFT_PACKAGE",
+        "-DDEBUG",
+        "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+        "-module-cache-path",
+        "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/ModuleCache",
+        "-parseable-output",
+        "-parse-as-library",
+        "-swift-version",
+        "5",
+        "-plugin-path",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+        "-sdk",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+        "-F",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-F",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+        "-I",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-L",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-g",
+        "-Xcc",
+        "-isysroot",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+        "-Xcc",
+        "-fPIC",
+        "-Xcc",
+        "-g",
+        "-package-name",
+        "cratedigger"
+      ],
+      "outputFileMapPath" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerAppTests.build/output-file-map.json",
+      "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerAppTests.build/WindowFramePlannerTests.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/Modules/CrateDiggerAppTests.swiftmodule"
+        }
+      ],
+      "prepareForIndexing" : false,
+      "sources" : [
+        "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerAppTests/WindowFramePlannerTests.swift"
+      ],
+      "tempsPath" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerAppTests.build",
+      "wholeModuleOptimization" : false
+    },
     "C.CrateDiggerCore-arm64-apple-macosx15.0-debug.module" : {
-      "executable" : "/Library/Developer/CommandLineTools/usr/bin/swiftc",
+      "executable" : "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
       "fileList" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/sources",
       "importPath" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/Modules",
       "inputs" : [
@@ -237,6 +419,10 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerCore/Services/ExternalToolLocator.swift"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerCore/Services/LibraryScanService.swift"
         },
         {
@@ -249,11 +435,15 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerCore/Services/OutputPathPlanner.swift"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerCore/Services/PlaybackService.swift"
         },
         {
           "kind" : "file",
-          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/swift-version--1AB21518FC5DEDBE.txt"
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"
         },
         {
           "kind" : "file",
@@ -269,9 +459,11 @@
         "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/ConversionModels.swift.o",
         "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/ArtworkService.swift.o",
         "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/ConversionService.swift.o",
+        "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/ExternalToolLocator.swift.o",
         "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/LibraryScanService.swift.o",
         "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/MetadataNormalization.swift.o",
         "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/MetadataProbeService.swift.o",
+        "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/OutputPathPlanner.swift.o",
         "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/PlaybackService.swift.o"
       ],
       "otherArguments" : [
@@ -297,19 +489,31 @@
         "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/include/CrateDiggerCore-Swift.h",
         "-swift-version",
         "5",
-        "-I",
-        "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
-        "-L",
-        "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
         "-plugin-path",
-        "/Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
         "-sdk",
-        "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+        "-F",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-F",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+        "-I",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-L",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
         "-g",
         "-Xcc",
         "-isysroot",
         "-Xcc",
-        "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
         "-Xcc",
         "-fPIC",
         "-Xcc",
@@ -341,6 +545,10 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/ExternalToolLocator.swift.o"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/LibraryScanService.swift.o"
         },
         {
@@ -350,6 +558,10 @@
         {
           "kind" : "file",
           "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/MetadataProbeService.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/OutputPathPlanner.swift.o"
         },
         {
           "kind" : "file",
@@ -367,16 +579,18 @@
         "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerCore/Models/ConversionModels.swift",
         "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerCore/Services/ArtworkService.swift",
         "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerCore/Services/ConversionService.swift",
+        "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerCore/Services/ExternalToolLocator.swift",
         "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerCore/Services/LibraryScanService.swift",
         "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerCore/Services/MetadataNormalization.swift",
         "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerCore/Services/MetadataProbeService.swift",
+        "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerCore/Services/OutputPathPlanner.swift",
         "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerCore/Services/PlaybackService.swift"
       ],
       "tempsPath" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build",
       "wholeModuleOptimization" : false
     },
     "C.CrateDiggerCoreTests-arm64-apple-macosx15.0-debug.module" : {
-      "executable" : "/Library/Developer/CommandLineTools/usr/bin/swiftc",
+      "executable" : "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
       "fileList" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/sources",
       "importPath" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/Modules",
       "inputs" : [
@@ -394,6 +608,10 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/ExternalToolLocatorTests.swift"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/MetadataNormalizationTests.swift"
         },
         {
@@ -402,11 +620,19 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/OutputPathPlannerTests.swift"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/PlaybackServiceTests.swift"
         },
         {
           "kind" : "file",
-          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/swift-version--1AB21518FC5DEDBE.txt"
+          "name" : "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/TestSupport.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"
         },
         {
           "kind" : "file",
@@ -424,13 +650,16 @@
         "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/ArtworkServiceTests.swift.o",
         "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/ConversionModelsTests.swift.o",
         "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/ConversionServiceTests.swift.o",
+        "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/ExternalToolLocatorTests.swift.o",
         "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/MetadataNormalizationTests.swift.o",
         "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/MetadataProbeServiceTests.swift.o",
-        "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/PlaybackServiceTests.swift.o"
+        "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/OutputPathPlannerTests.swift.o",
+        "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/PlaybackServiceTests.swift.o",
+        "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/TestSupport.swift.o"
       ],
       "otherArguments" : [
         "-target",
-        "arm64-apple-macosx13.0",
+        "arm64-apple-macosx14.0",
         "-incremental",
         "-enable-batch-mode",
         "-serialize-diagnostics",
@@ -450,19 +679,31 @@
         "-parse-as-library",
         "-swift-version",
         "5",
-        "-I",
-        "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
-        "-L",
-        "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
         "-plugin-path",
-        "/Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
         "-sdk",
-        "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+        "-F",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-F",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+        "-I",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-L",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
         "-g",
         "-Xcc",
         "-isysroot",
         "-Xcc",
-        "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
         "-Xcc",
         "-fPIC",
         "-Xcc",
@@ -486,6 +727,10 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/ExternalToolLocatorTests.swift.o"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/MetadataNormalizationTests.swift.o"
         },
         {
@@ -494,7 +739,15 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/OutputPathPlannerTests.swift.o"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/PlaybackServiceTests.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/TestSupport.swift.o"
         },
         {
           "kind" : "file",
@@ -506,15 +759,18 @@
         "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/ArtworkServiceTests.swift",
         "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/ConversionModelsTests.swift",
         "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/ConversionServiceTests.swift",
+        "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/ExternalToolLocatorTests.swift",
         "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/MetadataNormalizationTests.swift",
         "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/MetadataProbeServiceTests.swift",
-        "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/PlaybackServiceTests.swift"
+        "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/OutputPathPlannerTests.swift",
+        "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/PlaybackServiceTests.swift",
+        "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/TestSupport.swift"
       ],
       "tempsPath" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build",
       "wholeModuleOptimization" : false
     },
     "C.CrateDiggerPackageTests-arm64-apple-macosx15.0-debug.module" : {
-      "executable" : "/Library/Developer/CommandLineTools/usr/bin/swiftc",
+      "executable" : "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
       "fileList" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerPackageTests.build/sources",
       "importPath" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/Modules",
       "inputs" : [
@@ -524,11 +780,15 @@
         },
         {
           "kind" : "file",
-          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/swift-version--1AB21518FC5DEDBE.txt"
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"
         },
         {
           "kind" : "file",
           "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/Modules/CrateDiggerCoreTests.swiftmodule"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/Modules/CrateDiggerAppTests.swiftmodule"
         },
         {
           "kind" : "file",
@@ -564,19 +824,31 @@
         "-emit-objc-header",
         "-emit-objc-header-path",
         "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerPackageTests.build/include/CrateDiggerPackageTests-Swift.h",
-        "-I",
-        "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
-        "-L",
-        "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
         "-plugin-path",
-        "/Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
         "-sdk",
-        "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+        "-F",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-F",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+        "-I",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-L",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
         "-g",
         "-Xcc",
         "-isysroot",
         "-Xcc",
-        "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
         "-Xcc",
         "-fPIC",
         "-Xcc",
@@ -608,7 +880,7 @@
   },
   "swiftTargetScanArgs" : {
     "CrateDiggerApp" : [
-      "/Library/Developer/CommandLineTools/usr/bin/swiftc",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
       "-module-name",
       "CrateDiggerApp",
       "-package-name",
@@ -616,14 +888,21 @@
       "-c",
       "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/AppDelegate.swift",
       "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/AboutWindowController.swift",
+      "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/AlbumFolderReviewSheetController.swift",
+      "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/AlbumFolderReviewSheetView.swift",
       "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/AquaLCDView.swift",
+      "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/BrandArtworkView.swift",
       "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/ClassicTheme.swift",
+      "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/ConversionFlowModels.swift",
       "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/ConversionOptionsSheetController.swift",
       "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/ConversionOptionsSheetView.swift",
+      "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/ConversionSummarySheetController.swift",
+      "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/ConversionSummarySheetView.swift",
       "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/MainViewController.swift",
       "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/MainWindowController.swift",
       "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/ModernRetroTheme.swift",
       "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/TrackInspectorViewController.swift",
+      "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/WindowFramePlanner.swift",
       "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/main.swift",
       "-I",
       "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/Modules",
@@ -649,19 +928,31 @@
       "CrateDiggerApp_main",
       "-swift-version",
       "5",
-      "-I",
-      "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
-      "-L",
-      "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
       "-plugin-path",
-      "/Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
       "-sdk",
-      "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+      "-F",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-F",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+      "-I",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-L",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
       "-g",
       "-Xcc",
       "-isysroot",
       "-Xcc",
-      "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
       "-Xcc",
       "-fPIC",
       "-Xcc",
@@ -669,10 +960,75 @@
       "-package-name",
       "cratedigger",
       "-driver-use-frontend-path",
-      "/Library/Developer/CommandLineTools/usr/bin/swiftc"
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+    ],
+    "CrateDiggerAppTests" : [
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "-module-name",
+      "CrateDiggerAppTests",
+      "-package-name",
+      "cratedigger",
+      "-c",
+      "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerAppTests/WindowFramePlannerTests.swift",
+      "-I",
+      "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/Modules",
+      "-target",
+      "arm64-apple-macosx14.0",
+      "-incremental",
+      "-enable-batch-mode",
+      "-serialize-diagnostics",
+      "-index-store-path",
+      "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/index/store",
+      "-Onone",
+      "-enable-testing",
+      "-Xfrontend",
+      "-enable-cross-import-overlays",
+      "-j12",
+      "-DSWIFT_PACKAGE",
+      "-DDEBUG",
+      "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+      "-module-cache-path",
+      "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/ModuleCache",
+      "-parseable-output",
+      "-parse-as-library",
+      "-swift-version",
+      "5",
+      "-plugin-path",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+      "-sdk",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+      "-F",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-F",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+      "-I",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-L",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-g",
+      "-Xcc",
+      "-isysroot",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+      "-Xcc",
+      "-fPIC",
+      "-Xcc",
+      "-g",
+      "-package-name",
+      "cratedigger",
+      "-driver-use-frontend-path",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
     ],
     "CrateDiggerCore" : [
-      "/Library/Developer/CommandLineTools/usr/bin/swiftc",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
       "-module-name",
       "CrateDiggerCore",
       "-package-name",
@@ -683,9 +1039,11 @@
       "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerCore/Models/ConversionModels.swift",
       "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerCore/Services/ArtworkService.swift",
       "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerCore/Services/ConversionService.swift",
+      "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerCore/Services/ExternalToolLocator.swift",
       "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerCore/Services/LibraryScanService.swift",
       "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerCore/Services/MetadataNormalization.swift",
       "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerCore/Services/MetadataProbeService.swift",
+      "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerCore/Services/OutputPathPlanner.swift",
       "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerCore/Services/PlaybackService.swift",
       "-I",
       "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/Modules",
@@ -711,19 +1069,31 @@
       "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/include/CrateDiggerCore-Swift.h",
       "-swift-version",
       "5",
-      "-I",
-      "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
-      "-L",
-      "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
       "-plugin-path",
-      "/Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
       "-sdk",
-      "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+      "-F",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-F",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+      "-I",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-L",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
       "-g",
       "-Xcc",
       "-isysroot",
       "-Xcc",
-      "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
       "-Xcc",
       "-fPIC",
       "-Xcc",
@@ -731,10 +1101,10 @@
       "-package-name",
       "cratedigger",
       "-driver-use-frontend-path",
-      "/Library/Developer/CommandLineTools/usr/bin/swiftc"
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
     ],
     "CrateDiggerCoreTests" : [
-      "/Library/Developer/CommandLineTools/usr/bin/swiftc",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
       "-module-name",
       "CrateDiggerCoreTests",
       "-package-name",
@@ -743,13 +1113,16 @@
       "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/ArtworkServiceTests.swift",
       "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/ConversionModelsTests.swift",
       "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/ConversionServiceTests.swift",
+      "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/ExternalToolLocatorTests.swift",
       "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/MetadataNormalizationTests.swift",
       "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/MetadataProbeServiceTests.swift",
+      "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/OutputPathPlannerTests.swift",
       "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/PlaybackServiceTests.swift",
+      "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/TestSupport.swift",
       "-I",
       "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/Modules",
       "-target",
-      "arm64-apple-macosx13.0",
+      "arm64-apple-macosx14.0",
       "-incremental",
       "-enable-batch-mode",
       "-serialize-diagnostics",
@@ -769,19 +1142,31 @@
       "-parse-as-library",
       "-swift-version",
       "5",
-      "-I",
-      "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
-      "-L",
-      "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
       "-plugin-path",
-      "/Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
       "-sdk",
-      "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+      "-F",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-F",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+      "-I",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-L",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
       "-g",
       "-Xcc",
       "-isysroot",
       "-Xcc",
-      "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
       "-Xcc",
       "-fPIC",
       "-Xcc",
@@ -789,10 +1174,10 @@
       "-package-name",
       "cratedigger",
       "-driver-use-frontend-path",
-      "/Library/Developer/CommandLineTools/usr/bin/swiftc"
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
     ],
     "CrateDiggerPackageTests" : [
-      "/Library/Developer/CommandLineTools/usr/bin/swiftc",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
       "-module-name",
       "CrateDiggerPackageTests",
       "-package-name",
@@ -823,19 +1208,31 @@
       "-emit-objc-header",
       "-emit-objc-header-path",
       "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerPackageTests.build/include/CrateDiggerPackageTests-Swift.h",
-      "-I",
-      "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
-      "-L",
-      "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
       "-plugin-path",
-      "/Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
       "-sdk",
-      "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+      "-F",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-F",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+      "-I",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-L",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
       "-g",
       "-Xcc",
       "-isysroot",
       "-Xcc",
-      "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
       "-Xcc",
       "-fPIC",
       "-Xcc",
@@ -843,11 +1240,15 @@
       "-package-name",
       "cratedigger",
       "-driver-use-frontend-path",
-      "/Library/Developer/CommandLineTools/usr/bin/swiftc"
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
     ]
   },
   "targetDependencyMap" : {
     "CrateDiggerApp" : [
+      "CrateDiggerCore"
+    ],
+    "CrateDiggerAppTests" : [
+      "CrateDiggerApp",
       "CrateDiggerCore"
     ],
     "CrateDiggerCore" : [
@@ -857,6 +1258,8 @@
       "CrateDiggerCore"
     ],
     "CrateDiggerPackageTests" : [
+      "CrateDiggerAppTests",
+      "CrateDiggerApp",
       "CrateDiggerCoreTests",
       "CrateDiggerCore"
     ]
@@ -914,11 +1317,27 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/AlbumFolderReviewSheetController.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/AlbumFolderReviewSheetView.swift"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/AquaLCDView.swift"
         },
         {
           "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/BrandArtworkView.swift"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/ClassicTheme.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/ConversionFlowModels.swift"
         },
         {
           "kind" : "file",
@@ -927,6 +1346,14 @@
         {
           "kind" : "file",
           "name" : "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/ConversionOptionsSheetView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/ConversionSummarySheetController.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/ConversionSummarySheetView.swift"
         },
         {
           "kind" : "file",
@@ -943,6 +1370,10 @@
         {
           "kind" : "file",
           "name" : "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/TrackInspectorViewController.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/WindowFramePlanner.swift"
         },
         {
           "kind" : "file",
@@ -964,6 +1395,14 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/AlbumFolderReviewSheetController.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/AlbumFolderReviewSheetView.swift.o"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/AppDelegate.swift.o"
         },
         {
@@ -972,7 +1411,15 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/BrandArtworkView.swift.o"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/ClassicTheme.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/ConversionFlowModels.swift.o"
         },
         {
           "kind" : "file",
@@ -981,6 +1428,14 @@
         {
           "kind" : "file",
           "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/ConversionOptionsSheetView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/ConversionSummarySheetController.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/ConversionSummarySheetView.swift.o"
         },
         {
           "kind" : "file",
@@ -997,6 +1452,10 @@
         {
           "kind" : "file",
           "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/TrackInspectorViewController.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/WindowFramePlanner.swift.o"
         },
         {
           "kind" : "file",
@@ -1024,6 +1483,10 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/ExternalToolLocator.swift.o"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/LibraryScanService.swift.o"
         },
         {
@@ -1036,10 +1499,28 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/OutputPathPlanner.swift.o"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/PlaybackService.swift.o"
         }
       ],
       "outputFilePath" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.product/Objects.LinkFileList"
+    },
+    "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerAppTests.build/sources" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<sources-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerAppTests/WindowFramePlannerTests.swift"
+        }
+      ],
+      "outputFilePath" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerAppTests.build/sources"
     },
     "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/sources" : {
       "alwaysOutOfDate" : false,
@@ -1070,6 +1551,10 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerCore/Services/ExternalToolLocator.swift"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerCore/Services/LibraryScanService.swift"
         },
         {
@@ -1079,6 +1564,10 @@
         {
           "kind" : "file",
           "name" : "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerCore/Services/MetadataProbeService.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerCore/Services/OutputPathPlanner.swift"
         },
         {
           "kind" : "file",
@@ -1108,6 +1597,10 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/ExternalToolLocatorTests.swift"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/MetadataNormalizationTests.swift"
         },
         {
@@ -1116,7 +1609,15 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/OutputPathPlannerTests.swift"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/PlaybackServiceTests.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/Tests/CrateDiggerCoreTests/TestSupport.swift"
         }
       ],
       "outputFilePath" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/sources"
@@ -1144,6 +1645,82 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/AboutWindowController.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/AlbumFolderReviewSheetController.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/AlbumFolderReviewSheetView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/AppDelegate.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/AquaLCDView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/BrandArtworkView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/ClassicTheme.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/ConversionFlowModels.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/ConversionOptionsSheetController.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/ConversionOptionsSheetView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/ConversionSummarySheetController.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/ConversionSummarySheetView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/MainViewController.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/MainWindowController.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/ModernRetroTheme.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/TrackInspectorViewController.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/WindowFramePlanner.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerApp.build/main.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerAppTests.build/WindowFramePlannerTests.swift.o"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/ArtworkAsset.swift.o"
         },
         {
@@ -1164,6 +1741,10 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/ExternalToolLocator.swift.o"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/LibraryScanService.swift.o"
         },
         {
@@ -1173,6 +1754,10 @@
         {
           "kind" : "file",
           "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/MetadataProbeService.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCore.build/OutputPathPlanner.swift.o"
         },
         {
           "kind" : "file",
@@ -1192,6 +1777,10 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/ExternalToolLocatorTests.swift.o"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/MetadataNormalizationTests.swift.o"
         },
         {
@@ -1200,7 +1789,15 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/OutputPathPlannerTests.swift.o"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/PlaybackServiceTests.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerCoreTests.build/TestSupport.swift.o"
         },
         {
           "kind" : "file",
@@ -1209,7 +1806,7 @@
       ],
       "outputFilePath" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/CrateDiggerPackageTests.product/Objects.LinkFileList"
     },
-    "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/swift-version--1AB21518FC5DEDBE.txt" : {
+    "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt" : {
       "alwaysOutOfDate" : true,
       "inputs" : [
         {
@@ -1218,10 +1815,10 @@
         },
         {
           "kind" : "file",
-          "name" : "/Library/Developer/CommandLineTools/usr/bin/swiftc"
+          "name" : "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
         }
       ],
-      "outputFilePath" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/swift-version--1AB21518FC5DEDBE.txt"
+      "outputFilePath" : "/Users/mrbarkan/Development/CrateDigger/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"
     }
   }
 }

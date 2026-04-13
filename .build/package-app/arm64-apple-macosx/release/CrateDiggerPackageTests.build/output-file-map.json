@@ -1,0 +1,13 @@
+{
+  "": {
+    "dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerPackageTests.build/CrateDiggerPackageTests.d",
+    "object": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerPackageTests.build/CrateDiggerPackageTests.o",
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerPackageTests.build/master.swiftdeps"
+  },
+  "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerPackageTests.derived/runner.swift": {
+    "object": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerPackageTests.build/runner.swift.o",
+    "swiftmodule": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerPackageTests.build/runner~partial.swiftmodule",
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerPackageTests.build/runner.swiftdeps",
+    "diagnostics": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerPackageTests.build/runner.dia"
+  }
+}

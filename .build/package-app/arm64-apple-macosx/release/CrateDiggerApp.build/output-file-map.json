@@ -1,0 +1,115 @@
+{
+  "": {
+    "dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/CrateDiggerApp.d",
+    "object": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/CrateDiggerApp.o",
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/master.swiftdeps"
+  },
+  "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/AppDelegate.swift": {
+    "object": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/AppDelegate.swift.o",
+    "swiftmodule": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/AppDelegate~partial.swiftmodule",
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/AppDelegate.swiftdeps",
+    "diagnostics": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/AppDelegate.dia"
+  },
+  "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/AboutWindowController.swift": {
+    "object": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/AboutWindowController.swift.o",
+    "swiftmodule": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/AboutWindowController~partial.swiftmodule",
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/AboutWindowController.swiftdeps",
+    "diagnostics": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/AboutWindowController.dia"
+  },
+  "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/AlbumFolderReviewSheetController.swift": {
+    "object": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/AlbumFolderReviewSheetController.swift.o",
+    "swiftmodule": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/AlbumFolderReviewSheetController~partial.swiftmodule",
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/AlbumFolderReviewSheetController.swiftdeps",
+    "diagnostics": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/AlbumFolderReviewSheetController.dia"
+  },
+  "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/AlbumFolderReviewSheetView.swift": {
+    "object": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/AlbumFolderReviewSheetView.swift.o",
+    "swiftmodule": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/AlbumFolderReviewSheetView~partial.swiftmodule",
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/AlbumFolderReviewSheetView.swiftdeps",
+    "diagnostics": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/AlbumFolderReviewSheetView.dia"
+  },
+  "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/AquaLCDView.swift": {
+    "object": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/AquaLCDView.swift.o",
+    "swiftmodule": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/AquaLCDView~partial.swiftmodule",
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/AquaLCDView.swiftdeps",
+    "diagnostics": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/AquaLCDView.dia"
+  },
+  "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/BrandArtworkView.swift": {
+    "object": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/BrandArtworkView.swift.o",
+    "swiftmodule": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/BrandArtworkView~partial.swiftmodule",
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/BrandArtworkView.swiftdeps",
+    "diagnostics": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/BrandArtworkView.dia"
+  },
+  "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/ClassicTheme.swift": {
+    "object": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/ClassicTheme.swift.o",
+    "swiftmodule": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/ClassicTheme~partial.swiftmodule",
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/ClassicTheme.swiftdeps",
+    "diagnostics": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/ClassicTheme.dia"
+  },
+  "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/ConversionFlowModels.swift": {
+    "object": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/ConversionFlowModels.swift.o",
+    "swiftmodule": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/ConversionFlowModels~partial.swiftmodule",
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/ConversionFlowModels.swiftdeps",
+    "diagnostics": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/ConversionFlowModels.dia"
+  },
+  "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/ConversionOptionsSheetController.swift": {
+    "object": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/ConversionOptionsSheetController.swift.o",
+    "swiftmodule": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/ConversionOptionsSheetController~partial.swiftmodule",
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/ConversionOptionsSheetController.swiftdeps",
+    "diagnostics": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/ConversionOptionsSheetController.dia"
+  },
+  "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/ConversionOptionsSheetView.swift": {
+    "object": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/ConversionOptionsSheetView.swift.o",
+    "swiftmodule": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/ConversionOptionsSheetView~partial.swiftmodule",
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/ConversionOptionsSheetView.swiftdeps",
+    "diagnostics": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/ConversionOptionsSheetView.dia"
+  },
+  "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/ConversionSummarySheetController.swift": {
+    "object": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/ConversionSummarySheetController.swift.o",
+    "swiftmodule": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/ConversionSummarySheetController~partial.swiftmodule",
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/ConversionSummarySheetController.swiftdeps",
+    "diagnostics": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/ConversionSummarySheetController.dia"
+  },
+  "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/ConversionSummarySheetView.swift": {
+    "object": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/ConversionSummarySheetView.swift.o",
+    "swiftmodule": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/ConversionSummarySheetView~partial.swiftmodule",
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/ConversionSummarySheetView.swiftdeps",
+    "diagnostics": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/ConversionSummarySheetView.dia"
+  },
+  "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/MainViewController.swift": {
+    "object": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/MainViewController.swift.o",
+    "swiftmodule": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/MainViewController~partial.swiftmodule",
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/MainViewController.swiftdeps",
+    "diagnostics": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/MainViewController.dia"
+  },
+  "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/MainWindowController.swift": {
+    "object": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/MainWindowController.swift.o",
+    "swiftmodule": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/MainWindowController~partial.swiftmodule",
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/MainWindowController.swiftdeps",
+    "diagnostics": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/MainWindowController.dia"
+  },
+  "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/ModernRetroTheme.swift": {
+    "object": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/ModernRetroTheme.swift.o",
+    "swiftmodule": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/ModernRetroTheme~partial.swiftmodule",
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/ModernRetroTheme.swiftdeps",
+    "diagnostics": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/ModernRetroTheme.dia"
+  },
+  "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/TrackInspectorViewController.swift": {
+    "object": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/TrackInspectorViewController.swift.o",
+    "swiftmodule": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/TrackInspectorViewController~partial.swiftmodule",
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/TrackInspectorViewController.swiftdeps",
+    "diagnostics": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/TrackInspectorViewController.dia"
+  },
+  "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/UI/WindowFramePlanner.swift": {
+    "object": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/WindowFramePlanner.swift.o",
+    "swiftmodule": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/WindowFramePlanner~partial.swiftmodule",
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/WindowFramePlanner.swiftdeps",
+    "diagnostics": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/WindowFramePlanner.dia"
+  },
+  "/Users/mrbarkan/Development/CrateDigger/Sources/CrateDiggerApp/main.swift": {
+    "object": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/main.swift.o",
+    "swiftmodule": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/main~partial.swiftmodule",
+    "swift-dependencies": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/main.swiftdeps",
+    "diagnostics": "/Users/mrbarkan/Development/CrateDigger/.build/package-app/arm64-apple-macosx/release/CrateDiggerApp.build/main.dia"
+  }
+}
