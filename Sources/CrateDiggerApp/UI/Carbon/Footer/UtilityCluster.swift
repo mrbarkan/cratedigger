@@ -71,9 +71,12 @@ struct UtilityCluster: View {
             bitrateOptions: [128, 160, 192, 256, 320],
             sampleRateOptions: [44_100, 48_000, 88_200, 96_000]
         )
-        controller.onDecision = { [weak controller] _ in
-            // TODO: enqueue via ConversionService once the service is injected into LibraryViewModel.
+        controller.onDecision = { [weak controller, weak model = model] selection in
             controller?.dismiss(nil)
+            guard let selection, let model else { return }
+            // Re-resolve the host after dismissal so the sheet stack is settled.
+            guard let host = NSApp.keyWindow?.contentViewController else { return }
+            model.runConversion(selection: selection, presentingFrom: host)
         }
         host.presentAsSheet(controller)
     }

@@ -88,6 +88,7 @@ final class LibraryViewModel: ObservableObject {
 
     private var playbackQueue: [LoadedTrack] = []
     private var scanTask: Task<Void, Never>?
+    var conversionTask: Task<Void, Never>?
 
     // MARK: - Init
 
@@ -308,7 +309,11 @@ final class LibraryViewModel: ObservableObject {
     // MARK: - Conversion entry
 
     func makeInitialConversionSelection() -> ConversionOptionsSelection {
-        ConversionOptionsSelection(
+        if let persisted = prefs.savedLastConversionSelection(as: PersistedConversionSelection.self),
+           let selection = persisted.materialize() {
+            return selection
+        }
+        return ConversionOptionsSelection(
             batchScope: .selectedTracks,
             outputFormat: .aac,
             bitrate: 192,
