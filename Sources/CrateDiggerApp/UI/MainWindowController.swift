@@ -51,8 +51,92 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         hostingController.model.openFolderViaPanel()
     }
 
+    func loadFolders(_ urls: [URL]) {
+        hostingController.model.loadFolders(urls)
+    }
+
     func restoreLastSession() {
         hostingController.model.restoreLastFoldersIfPossible()
+    }
+
+    // MARK: - Selection-aware menu actions
+
+    func currentSelectionURL() -> URL? {
+        hostingController.model.selectedTrack?.track.fileURL
+    }
+
+    var hasLoadedTracks: Bool {
+        !hostingController.model.index.allTracks.isEmpty
+    }
+
+    var isConversionRunning: Bool {
+        hostingController.model.conversionProgress.isRunning
+    }
+
+    func presentConversionSheet() {
+        // Reuse the same path the Cnvrt key uses so we get one entry point
+        // rather than two slightly-divergent ones.
+        guard contentViewController != nil else { return }
+        let model = hostingController.model
+        let controller = ConversionOptionsSheetController(
+            initialSelection: model.makeInitialConversionSelection(),
+            outputFormats: OutputFormat.allCases,
+            bitrateOptions: [128, 160, 192, 256, 320],
+            sampleRateOptions: [44_100, 48_000, 88_200, 96_000]
+        )
+        controller.onDecision = { [weak controller, weak model] selection in
+            controller?.dismiss(nil)
+            guard let selection, let model else { return }
+            guard let host = NSApp.keyWindow?.contentViewController else { return }
+            model.runConversion(selection: selection, presentingFrom: host)
+        }
+        hostingController.presentAsSheet(controller)
+    }
+
+    func cancelConversion() {
+        hostingController.model.cancelConversion()
+    }
+
+    // MARK: - View / Playback delegations
+
+    func setOLEDView(_ view: OLEDView) {
+        hostingController.model.oledView = view
+    }
+
+    func currentOLEDView() -> OLEDView {
+        hostingController.model.oledView
+    }
+
+    func togglePlayPause() {
+        hostingController.model.togglePlayPause()
+    }
+
+    func playNext() {
+        hostingController.model.next()
+    }
+
+    func playPrevious() {
+        hostingController.model.previous()
+    }
+
+    func rewind8s() {
+        hostingController.model.rewind8s()
+    }
+
+    func forward8s() {
+        hostingController.model.forward8s()
+    }
+
+    func adjustVolume(by delta: Double) {
+        hostingController.model.setVolume(hostingController.model.playbackVolume + delta)
+    }
+
+    func toggleShuffle() {
+        hostingController.model.toggleShuffle()
+    }
+
+    func cycleRepeatMode() {
+        hostingController.model.cycleRepeatMode()
     }
 
     override func showWindow(_ sender: Any?) {

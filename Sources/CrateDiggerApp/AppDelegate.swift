@@ -1,8 +1,13 @@
 import AppKit
+import CrateDiggerCore
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private var mainWindowController: MainWindowController?
     private var aboutWindowController: AboutWindowController?
+    private var preferencesWindowController: PreferencesWindowController?
+    private let prefs: PreferencesStore = .shared
+    private var openRecentMenu: NSMenu?
+    private var recentFolderURLs: [URL] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildMenu()
@@ -17,9 +22,84 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         true
     }
 
+    // MARK: - File menu actions
+
     @objc private func openFolder(_ sender: Any?) {
         mainWindowController?.openFolder()
     }
+
+    @objc private func openRecentItem(_ sender: NSMenuItem) {
+        guard let index = sender.tag as Int?, recentFolderURLs.indices.contains(index) else { return }
+        let url = recentFolderURLs[index]
+        mainWindowController?.loadFolders([url])
+    }
+
+    @objc private func clearRecentMenu(_ sender: Any?) {
+        prefs.savedLibraryFolderBookmarks = []
+        rebuildRecentFoldersCache()
+        rebuildOpenRecentMenu()
+    }
+
+    @objc private func revealSelectionInFinder(_ sender: Any?) {
+        guard let url = mainWindowController?.currentSelectionURL() else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
+    @objc private func convertSelected(_ sender: Any?) {
+        mainWindowController?.presentConversionSheet()
+    }
+
+    @objc private func cancelConversion(_ sender: Any?) {
+        mainWindowController?.cancelConversion()
+    }
+
+    // MARK: - View menu
+
+    @objc private func selectOLEDView(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let view = OLEDView(rawValue: raw) else { return }
+        mainWindowController?.setOLEDView(view)
+    }
+
+    // MARK: - Playback menu
+
+    @objc private func togglePlayPause(_ sender: Any?) {
+        mainWindowController?.togglePlayPause()
+    }
+
+    @objc private func playNext(_ sender: Any?) {
+        mainWindowController?.playNext()
+    }
+
+    @objc private func playPrevious(_ sender: Any?) {
+        mainWindowController?.playPrevious()
+    }
+
+    @objc private func rewind8s(_ sender: Any?) {
+        mainWindowController?.rewind8s()
+    }
+
+    @objc private func forward8s(_ sender: Any?) {
+        mainWindowController?.forward8s()
+    }
+
+    @objc private func volumeUp(_ sender: Any?) {
+        mainWindowController?.adjustVolume(by: 0.05)
+    }
+
+    @objc private func volumeDown(_ sender: Any?) {
+        mainWindowController?.adjustVolume(by: -0.05)
+    }
+
+    @objc private func toggleShuffle(_ sender: Any?) {
+        mainWindowController?.toggleShuffle()
+    }
+
+    @objc private func cycleRepeatMode(_ sender: Any?) {
+        mainWindowController?.cycleRepeatMode()
+    }
+
+    // MARK: - App menu actions
 
     @objc private func showAbout(_ sender: Any?) {
         if aboutWindowController == nil {
@@ -30,13 +110,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    @objc private func showPreferences(_ sender: Any?) {
+        if preferencesWindowController == nil {
+            preferencesWindowController = PreferencesWindowController()
+        }
+        preferencesWindowController?.showWindow(self)
+        preferencesWindowController?.window?.makeKeyAndOrderFront(self)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    @objc private func openHelpPage(_ sender: Any?) {
+        if let url = URL(string: "https://github.com/anthropics/cratedigger") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    @objc private func sendFeedback(_ sender: Any?) {
+        if let url = URL(string: "mailto:feedback@cratedigger.app?subject=CrateDigger%20Feedback") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
     @objc private func setAppearanceMode(_ sender: NSMenuItem) {
         guard let raw = sender.representedObject as? String,
               let mode = AppearanceMode(rawValue: raw)
         else { return }
         UserDefaults.standard.set(mode.rawValue, forKey: AppearanceMode.userDefaultsKey)
         NotificationCenter.default.post(name: AppearanceMode.didChangeNotification, object: nil)
-        // Refresh the menu state.
         if let appearanceMenu = NSApp.mainMenu?.item(at: 0)?.submenu?
             .items.first(where: { $0.title == "Appearance" })?.submenu {
             for item in appearanceMenu.items {
@@ -48,13 +148,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     }
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        if menuItem.action == #selector(setAppearanceMode(_:)) {
+        switch menuItem.action {
+        case #selector(setAppearanceMode(_:)):
             let raw = UserDefaults.standard.string(forKey: AppearanceMode.userDefaultsKey)
                 ?? AppearanceMode.system.rawValue
             menuItem.state = (menuItem.representedObject as? String == raw) ? .on : .off
             return true
+        case #selector(selectOLEDView(_:)):
+            if let raw = menuItem.representedObject as? String,
+               let view = OLEDView(rawValue: raw),
+               let current = mainWindowController?.currentOLEDView() {
+                menuItem.state = (view == current) ? .on : .off
+            }
+            return true
+        case #selector(revealSelectionInFinder(_:)),
+             #selector(convertSelected(_:)):
+            return mainWindowController?.currentSelectionURL() != nil
+        case #selector(cancelConversion(_:)):
+            return mainWindowController?.isConversionRunning ?? false
+        case #selector(togglePlayPause(_:)),
+             #selector(playNext(_:)),
+             #selector(playPrevious(_:)),
+             #selector(rewind8s(_:)),
+             #selector(forward8s(_:)),
+             #selector(volumeUp(_:)),
+             #selector(volumeDown(_:)),
+             #selector(toggleShuffle(_:)),
+             #selector(cycleRepeatMode(_:)):
+            return mainWindowController?.hasLoadedTracks ?? false
+        case #selector(openRecentItem(_:)):
+            return menuItem.tag < recentFolderURLs.count
+        default:
+            return true
         }
-        return true
     }
 
     private func currentAppearanceMode() -> AppearanceMode {
@@ -63,18 +189,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         return AppearanceMode(rawValue: raw) ?? .system
     }
 
+    private func rebuildRecentFoldersCache() {
+        recentFolderURLs = []
+        for data in prefs.savedLibraryFolderBookmarks {
+            if let resolved = PreferencesStore.resolveBookmark(data) {
+                recentFolderURLs.append(resolved.url)
+            }
+        }
+    }
+
+    private func rebuildOpenRecentMenu() {
+        guard let menu = openRecentMenu else { return }
+        menu.removeAllItems()
+        if recentFolderURLs.isEmpty {
+            let empty = NSMenuItem(title: "No Recent Folders", action: nil, keyEquivalent: "")
+            empty.isEnabled = false
+            menu.addItem(empty)
+        } else {
+            for (index, url) in recentFolderURLs.enumerated() {
+                let item = NSMenuItem(
+                    title: url.lastPathComponent,
+                    action: #selector(openRecentItem(_:)),
+                    keyEquivalent: ""
+                )
+                item.tag = index
+                item.target = self
+                item.toolTip = url.path
+                menu.addItem(item)
+            }
+            menu.addItem(NSMenuItem.separator())
+            let clear = NSMenuItem(title: "Clear Recent", action: #selector(clearRecentMenu(_:)), keyEquivalent: "")
+            clear.target = self
+            menu.addItem(clear)
+        }
+    }
+
     private func buildMenu() {
         let mainMenu = NSMenu()
 
+        // MARK: App menu
         let appMenuItem = NSMenuItem()
         mainMenu.addItem(appMenuItem)
-
         let appMenu = NSMenu()
-        let aboutItem = NSMenuItem(title: "About CrateDigger", action: #selector(showAbout(_:)), keyEquivalent: "")
-        aboutItem.target = self
-        appMenu.addItem(aboutItem)
-        appMenu.addItem(NSMenuItem.separator())
-
+        appMenu.addItem(makeItem(title: "About CrateDigger", action: #selector(showAbout(_:))))
+        appMenu.addItem(.separator())
+        appMenu.addItem(makeItem(title: "Preferences…", action: #selector(showPreferences(_:)), key: ","))
+        appMenu.addItem(.separator())
         let appearanceMenuItem = NSMenuItem(title: "Appearance", action: nil, keyEquivalent: "")
         let appearanceMenu = NSMenu(title: "Appearance")
         let currentMode = currentAppearanceMode()
@@ -87,25 +247,136 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         }
         appearanceMenuItem.submenu = appearanceMenu
         appMenu.addItem(appearanceMenuItem)
-
-        appMenu.addItem(NSMenuItem.separator())
-        appMenu.addItem(NSMenuItem(title: "Quit CrateDigger", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        appMenu.addItem(.separator())
+        appMenu.addItem(makeItem(title: "Hide CrateDigger", action: #selector(NSApplication.hide(_:)), key: "h", target: NSApp))
+        let hideOthers = makeItem(title: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), key: "h", target: NSApp)
+        hideOthers.keyEquivalentModifierMask = [.command, .option]
+        appMenu.addItem(hideOthers)
+        appMenu.addItem(makeItem(title: "Show All", action: #selector(NSApplication.unhideAllApplications(_:)), target: NSApp))
+        appMenu.addItem(.separator())
+        appMenu.addItem(makeItem(title: "Quit CrateDigger", action: #selector(NSApplication.terminate(_:)), key: "q", target: NSApp))
         appMenuItem.submenu = appMenu
 
+        // MARK: File menu
         let fileMenuItem = NSMenuItem()
         mainMenu.addItem(fileMenuItem)
-
         let fileMenu = NSMenu(title: "File")
-        fileMenu.addItem(NSMenuItem(title: "Open Folder...", action: #selector(openFolder(_:)), keyEquivalent: "o"))
+        fileMenu.addItem(makeItem(title: "Open Folder…", action: #selector(openFolder(_:)), key: "o"))
+        let openRecentItem = NSMenuItem(title: "Open Recent", action: nil, keyEquivalent: "")
+        let openRecentSubmenu = NSMenu(title: "Open Recent")
+        openRecentItem.submenu = openRecentSubmenu
+        self.openRecentMenu = openRecentSubmenu
+        rebuildRecentFoldersCache()
+        rebuildOpenRecentMenu()
+        fileMenu.addItem(openRecentItem)
+        fileMenu.addItem(.separator())
+        fileMenu.addItem(makeItem(title: "Reveal Selection in Finder", action: #selector(revealSelectionInFinder(_:)), key: "r"))
+        fileMenu.addItem(.separator())
+        let convertItem = makeItem(title: "Convert Selected…", action: #selector(convertSelected(_:)), key: "c")
+        convertItem.keyEquivalentModifierMask = [.command, .shift]
+        fileMenu.addItem(convertItem)
+        fileMenu.addItem(makeItem(title: "Cancel Conversion", action: #selector(cancelConversion(_:)), key: "."))
         fileMenuItem.submenu = fileMenu
 
+        // MARK: Edit menu (Cocoa responder-chain items; target nil)
         let editMenuItem = NSMenuItem()
         mainMenu.addItem(editMenuItem)
-
         let editMenu = NSMenu(title: "Edit")
-        editMenu.addItem(NSMenuItem(title: "Select All", action: #selector(NSResponder.selectAll(_:)), keyEquivalent: "a"))
+        editMenu.addItem(responderItem(title: "Cut", action: NSSelectorFromString("cut:"), key: "x"))
+        editMenu.addItem(responderItem(title: "Copy", action: NSSelectorFromString("copy:"), key: "c"))
+        editMenu.addItem(responderItem(title: "Paste", action: NSSelectorFromString("paste:"), key: "v"))
+        editMenu.addItem(.separator())
+        editMenu.addItem(responderItem(title: "Select All", action: #selector(NSResponder.selectAll(_:)), key: "a"))
         editMenuItem.submenu = editMenu
 
+        // MARK: View menu
+        let viewMenuItem = NSMenuItem()
+        mainMenu.addItem(viewMenuItem)
+        let viewMenu = NSMenu(title: "View")
+        // Match the order shown in the OLED view switcher (VU is hidden in the chrome).
+        let displayedViews: [(OLEDView, String)] = [
+            (.nowPlaying, "1"),
+            (.conversion, "2"),
+            (.scan, "3")
+        ]
+        for (view, key) in displayedViews {
+            let item = makeItem(title: "\(view.label) Display", action: #selector(selectOLEDView(_:)), key: key)
+            item.representedObject = view.rawValue
+            viewMenu.addItem(item)
+        }
+        viewMenuItem.submenu = viewMenu
+
+        // MARK: Playback menu
+        let playbackMenuItem = NSMenuItem()
+        mainMenu.addItem(playbackMenuItem)
+        let playbackMenu = NSMenu(title: "Playback")
+        playbackMenu.addItem(makeItem(title: "Play / Pause", action: #selector(togglePlayPause(_:)), key: " "))
+        let nextItem = makeItem(title: "Next", action: #selector(playNext(_:)), key: String(UnicodeScalar(NSRightArrowFunctionKey)!))
+        nextItem.keyEquivalentModifierMask = [.command]
+        playbackMenu.addItem(nextItem)
+        let prevItem = makeItem(title: "Previous", action: #selector(playPrevious(_:)), key: String(UnicodeScalar(NSLeftArrowFunctionKey)!))
+        prevItem.keyEquivalentModifierMask = [.command]
+        playbackMenu.addItem(prevItem)
+        let fwd8 = makeItem(title: "Forward 8 s", action: #selector(forward8s(_:)), key: String(UnicodeScalar(NSRightArrowFunctionKey)!))
+        fwd8.keyEquivalentModifierMask = [.command, .option]
+        playbackMenu.addItem(fwd8)
+        let rew8 = makeItem(title: "Rewind 8 s", action: #selector(rewind8s(_:)), key: String(UnicodeScalar(NSLeftArrowFunctionKey)!))
+        rew8.keyEquivalentModifierMask = [.command, .option]
+        playbackMenu.addItem(rew8)
+        playbackMenu.addItem(.separator())
+        let volUp = makeItem(title: "Volume Up", action: #selector(volumeUp(_:)), key: String(UnicodeScalar(NSUpArrowFunctionKey)!))
+        volUp.keyEquivalentModifierMask = [.command]
+        playbackMenu.addItem(volUp)
+        let volDown = makeItem(title: "Volume Down", action: #selector(volumeDown(_:)), key: String(UnicodeScalar(NSDownArrowFunctionKey)!))
+        volDown.keyEquivalentModifierMask = [.command]
+        playbackMenu.addItem(volDown)
+        playbackMenu.addItem(.separator())
+        let shuffleItem = makeItem(title: "Toggle Shuffle", action: #selector(toggleShuffle(_:)), key: "s")
+        shuffleItem.keyEquivalentModifierMask = [.command, .option]
+        playbackMenu.addItem(shuffleItem)
+        let repeatItem = makeItem(title: "Cycle Repeat Mode", action: #selector(cycleRepeatMode(_:)), key: "r")
+        repeatItem.keyEquivalentModifierMask = [.command, .option]
+        playbackMenu.addItem(repeatItem)
+        playbackMenuItem.submenu = playbackMenu
+
+        // MARK: Window menu
+        let windowMenuItem = NSMenuItem()
+        mainMenu.addItem(windowMenuItem)
+        let windowMenu = NSMenu(title: "Window")
+        windowMenu.addItem(responderItem(title: "Minimize", action: #selector(NSWindow.miniaturize(_:)), key: "m"))
+        windowMenu.addItem(responderItem(title: "Zoom", action: #selector(NSWindow.zoom(_:))))
+        windowMenu.addItem(.separator())
+        windowMenu.addItem(makeItem(title: "Bring All to Front", action: #selector(NSApplication.arrangeInFront(_:)), target: NSApp))
+        windowMenuItem.submenu = windowMenu
+        NSApp.windowsMenu = windowMenu
+
+        // MARK: Help menu
+        let helpMenuItem = NSMenuItem()
+        mainMenu.addItem(helpMenuItem)
+        let helpMenu = NSMenu(title: "Help")
+        helpMenu.addItem(makeItem(title: "CrateDigger Help", action: #selector(openHelpPage(_:)), key: "?"))
+        helpMenu.addItem(makeItem(title: "Send Feedback…", action: #selector(sendFeedback(_:))))
+        helpMenuItem.submenu = helpMenu
+        NSApp.helpMenu = helpMenu
+
         NSApp.mainMenu = mainMenu
+    }
+
+    private func makeItem(
+        title: String,
+        action: Selector,
+        key: String = "",
+        target: AnyObject? = nil
+    ) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+        item.target = target ?? self
+        return item
+    }
+
+    /// Menu item that travels the responder chain (target = nil).
+    private func responderItem(title: String, action: Selector, key: String = "") -> NSMenuItem {
+        // NSMenuItem has no NSNull-compatible "explicit nil" affordance, so
+        // construct without our helper to keep target nil.
+        NSMenuItem(title: title, action: action, keyEquivalent: key)
     }
 }
