@@ -64,6 +64,7 @@ final class LibraryViewModel: ObservableObject {
     @Published private(set) var playbackCurrentTime: Double = 0
     @Published private(set) var playbackDuration: Double = 0
     @Published private(set) var playbackErrorMessage: String?
+    @Published var appAlert: AppAlert?
 
     @Published var playbackVolume: Double = 0.8 {
         didSet { playback.setVolume(playbackVolume) }
@@ -353,7 +354,14 @@ final class LibraryViewModel: ObservableObject {
             }
         }
         playback.onError = { [weak self] message in
-            Task { @MainActor in self?.playbackErrorMessage = message }
+            Task { @MainActor in
+                self?.playbackErrorMessage = message
+                AppLog.playback.error("Playback failure: \(message, privacy: .public)")
+                self?.appAlert = .error(
+                    title: "Couldn't play this track",
+                    message: message
+                )
+            }
         }
     }
 }
