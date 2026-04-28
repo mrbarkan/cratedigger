@@ -6,22 +6,73 @@ struct BrowserPane: View {
     @EnvironmentObject private var model: LibraryViewModel
 
     var body: some View {
-        HStack(spacing: 0) {
-            ArtistColumn()
-                .frame(maxWidth: .infinity)
-            divider
-            AlbumColumn()
-                .frame(maxWidth: .infinity)
-            divider
-            TrackColumn()
-                .frame(maxWidth: .infinity)
+        ZStack {
+            HStack(spacing: 0) {
+                ArtistColumn()
+                    .frame(maxWidth: .infinity)
+                divider
+                AlbumColumn()
+                    .frame(maxWidth: .infinity)
+                divider
+                TrackColumn()
+                    .frame(maxWidth: .infinity)
+            }
+            if shouldShowEmptyState {
+                BrowserEmptyState()
+                    .transition(.opacity)
+            }
         }
+    }
+
+    private var shouldShowEmptyState: Bool {
+        model.index.allTracks.isEmpty && !model.scanProgress.isRunning
     }
 
     private var divider: some View {
         Rectangle()
             .fill(theme.isDark ? Color.white.opacity(0.05) : Color.black.opacity(0.08))
             .frame(width: 1)
+    }
+}
+
+private struct BrowserEmptyState: View {
+    @Environment(\.carbon) private var theme
+    @EnvironmentObject private var model: LibraryViewModel
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "square.stack.3d.up.slash")
+                .font(.system(size: 38, weight: .light))
+                .foregroundStyle(theme.ink3)
+            Text("No library loaded")
+                .font(CarbonFont.sans(18, weight: .heavy))
+                .foregroundStyle(theme.ink)
+            Text("Choose a folder of audio files to scan. CrateDigger will read tags, fetch artwork, and build the artist · album · track browser.")
+                .font(CarbonFont.mono(11))
+                .foregroundStyle(theme.ink3)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 380)
+            KeyButton(style: .glowingOrange, action: { model.openFolderViaPanel() }) {
+                HStack(spacing: 8) {
+                    Image(systemName: "folder.fill.badge.plus")
+                        .font(.system(size: 12, weight: .bold))
+                    Text("OPEN FOLDER…")
+                        .font(CarbonFont.mono(10, weight: .bold))
+                        .tracking(2)
+                }
+                .padding(.horizontal, 16)
+            }
+            .frame(width: 220, height: 38)
+            Text("Or press \u{2318}O")
+                .font(CarbonFont.mono(9.5))
+                .foregroundStyle(theme.ink4)
+                .padding(.top, 4)
+        }
+        .padding(28)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(
+            theme.paper.opacity(theme.isDark ? 0.92 : 0.96)
+        )
     }
 }
 
