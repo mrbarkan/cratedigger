@@ -239,6 +239,22 @@ final class LibraryViewModel: ObservableObject {
         playbackVolume = clamped
     }
 
+    // MARK: - Conversion entry
+
+    func makeInitialConversionSelection() -> ConversionOptionsSelection {
+        ConversionOptionsSelection(
+            batchScope: .selectedTracks,
+            outputFormat: .aac,
+            bitrate: 192,
+            sampleRate: 44_100,
+            artworkMaxDimension: 1024,
+            folderStructureMode: .flat,
+            applyMode: .applyAll,
+            templatePreset: .artistYearAlbum,
+            tokenOrder: TemplatePreset.artistYearAlbum.defaultTokenOrder
+        )
+    }
+
     func toggleShuffle() { shuffleEnabled.toggle() }
 
     func cycleRepeatMode() {

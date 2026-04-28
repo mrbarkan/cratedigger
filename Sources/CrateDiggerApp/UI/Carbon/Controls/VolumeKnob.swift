@@ -1,10 +1,19 @@
+import AppKit
 import SwiftUI
+
+private struct WindowDragGuard: NSViewRepresentable {
+    final class GuardView: NSView {
+        override var mouseDownCanMoveWindow: Bool { false }
+    }
+    func makeNSView(context: Context) -> NSView { GuardView() }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+}
 
 struct VolumeKnob: View {
     @Environment(\.carbon) private var theme
     @Binding var value: Double  // 0...1
 
-    @GestureState private var dragOffset: CGFloat = 0
+    @State private var dragStartValue: Double?
 
     var body: some View {
         VStack(spacing: 4) {
@@ -22,6 +31,8 @@ struct VolumeKnob: View {
                     .rotationEffect(rotationAngle)
             }
             .frame(width: CarbonLayout.volumeKnobSize, height: CarbonLayout.volumeKnobSize)
+            .contentShape(Circle())
+            .background(WindowDragGuard())
             .gesture(dragGesture)
             .onTapGesture(count: 2) {
                 value = 0.8
@@ -130,13 +141,12 @@ struct VolumeKnob: View {
 
     private var dragGesture: some Gesture {
         DragGesture(minimumDistance: 1)
-            .updating($dragOffset) { gesture, state, _ in
-                state = gesture.translation.height
-            }
             .onChanged { gesture in
+                let start = dragStartValue ?? value
+                if dragStartValue == nil { dragStartValue = start }
                 let delta = -gesture.translation.height / 200.0
-                let updated = min(max(value + delta * 0.05, 0), 1)
-                value = updated
+                value = min(max(start + delta, 0), 1)
             }
+            .onEnded { _ in dragStartValue = nil }
     }
 }

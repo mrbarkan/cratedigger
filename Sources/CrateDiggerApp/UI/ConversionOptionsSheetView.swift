@@ -46,17 +46,11 @@ struct ConversionOptionsSheetView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Conversion Options")
-                .font(CarbonFont.sans(30, weight: .heavy))
-                .foregroundStyle(theme.ink)
-
-            Text("Configure one conversion plan for this run. These settings are the source of truth for the files about to be converted.")
-                .font(CarbonFont.mono(13))
-                .foregroundStyle(theme.ink2)
+        VStack(alignment: .leading, spacing: 14) {
+            sheetHeader
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 14) {
                     scopeAndFormatSection
                     fileNamingSection
 
@@ -69,23 +63,11 @@ struct ConversionOptionsSheetView: View {
                 .padding(.trailing, 4)
             }
 
-            HStack(spacing: 12) {
-                Spacer()
-                Button("Cancel") {
-                    onDecision(nil)
-                }
-                .keyboardShortcut(.cancelAction)
-
-                Button("Continue") {
-                    onDecision(buildSelection())
-                }
-                .keyboardShortcut(.defaultAction)
-                .tint(theme.orange)
-            }
-            .padding(.top, 2)
+            actionBar
         }
-        .padding(18)
-        .frame(minWidth: 760, minHeight: 520)
+        .padding(.horizontal, 22)
+        .padding(.vertical, 18)
+        .frame(minWidth: 780, minHeight: 540)
         .background(theme.chassis)
         .onAppear {
             tokenOrder = Self.normalizeTokenOrder(tokenOrder)
@@ -105,6 +87,48 @@ struct ConversionOptionsSheetView: View {
         }
     }
 
+    private var sheetHeader: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Text("CONVERSION")
+                    .font(CarbonFont.mono(10, weight: .bold))
+                    .tracking(3)
+                    .foregroundStyle(theme.orange)
+                Rectangle()
+                    .fill(theme.hair)
+                    .frame(height: 1)
+            }
+            Text("Conversion Options")
+                .font(CarbonFont.sans(28, weight: .heavy))
+                .foregroundStyle(theme.ink)
+            Text("Configure one conversion plan for this run. These settings are the source of truth for the files about to be converted.")
+                .font(CarbonFont.mono(12))
+                .foregroundStyle(theme.ink2)
+        }
+    }
+
+    private var actionBar: some View {
+        HStack(spacing: 10) {
+            Spacer()
+            KeyButton(style: .normal, action: { onDecision(nil) }) {
+                Text("CANCEL")
+                    .font(CarbonFont.mono(10, weight: .bold))
+                    .tracking(2)
+            }
+            .frame(width: 124, height: 38)
+            .keyboardShortcut(.cancelAction)
+
+            KeyButton(style: .glowingOrange, action: { onDecision(buildSelection()) }) {
+                Text("CONTINUE")
+                    .font(CarbonFont.mono(10, weight: .bold))
+                    .tracking(2)
+            }
+            .frame(width: 144, height: 38)
+            .keyboardShortcut(.defaultAction)
+        }
+        .padding(.top, 4)
+    }
+
     private var scopeAndFormatSection: some View {
         sectionCard(title: "Scope + Format") {
             twoColumnGrid {
@@ -115,6 +139,8 @@ struct ConversionOptionsSheetView: View {
                         }
                     }
                     .pickerStyle(.menu)
+                    .labelsHidden()
+                    .tint(theme.orange)
                 }
 
                 field(title: "Format") {
@@ -124,6 +150,8 @@ struct ConversionOptionsSheetView: View {
                         }
                     }
                     .pickerStyle(.menu)
+                    .labelsHidden()
+                    .tint(theme.orange)
                 }
 
                 field(title: "Bitrate") {
@@ -133,6 +161,8 @@ struct ConversionOptionsSheetView: View {
                         }
                     }
                     .pickerStyle(.menu)
+                    .labelsHidden()
+                    .tint(theme.orange)
                     .disabled(isLosslessFormat(outputFormat))
                 }
 
@@ -143,6 +173,8 @@ struct ConversionOptionsSheetView: View {
                         }
                     }
                     .pickerStyle(.menu)
+                    .labelsHidden()
+                    .tint(theme.orange)
                 }
 
                 field(title: "Artwork Resize") {
@@ -154,6 +186,8 @@ struct ConversionOptionsSheetView: View {
                         Text("1400 px").tag("1400")
                     }
                     .pickerStyle(.menu)
+                    .labelsHidden()
+                    .tint(theme.orange)
                 }
 
                 Color.clear
@@ -172,6 +206,8 @@ struct ConversionOptionsSheetView: View {
                         }
                     }
                     .pickerStyle(.menu)
+                    .labelsHidden()
+                    .tint(theme.orange)
                 }
 
                 field(title: "Apply Mode") {
@@ -181,6 +217,8 @@ struct ConversionOptionsSheetView: View {
                         }
                     }
                     .pickerStyle(.menu)
+                    .labelsHidden()
+                    .tint(theme.orange)
                     .disabled(!isMetadataTemplateMode)
                 }
             }
@@ -201,6 +239,8 @@ struct ConversionOptionsSheetView: View {
                         }
                     }
                     .pickerStyle(.menu)
+                    .labelsHidden()
+                    .tint(theme.orange)
                 }
 
                 if templatePreset == .custom {
@@ -214,6 +254,7 @@ struct ConversionOptionsSheetView: View {
                                 }
                                 .pickerStyle(.menu)
                                 .labelsHidden()
+                                .tint(theme.orange)
                                 .frame(maxWidth: .infinity)
                             }
                         }

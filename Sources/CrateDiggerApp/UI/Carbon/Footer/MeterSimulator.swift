@@ -6,6 +6,8 @@ final class MeterSimulator: ObservableObject {
     @Published private(set) var leftLevel: Double = 0
     @Published private(set) var rightLevel: Double = 0
 
+    var volume: Double = 1.0
+
     private var timer: Timer?
     private var lastUpdate: Date = Date()
 
@@ -27,8 +29,9 @@ final class MeterSimulator: ObservableObject {
         let elapsed = Date().timeIntervalSince(lastUpdate)
         lastUpdate = Date()
 
-        let ll = pseudoEnvelope(seed: 0.7, t: Date().timeIntervalSinceReferenceDate)
-        let rl = pseudoEnvelope(seed: 0.31, t: Date().timeIntervalSinceReferenceDate + 0.2)
+        let scale = max(0, min(volume, 1))
+        let ll = pseudoEnvelope(seed: 0.7, t: Date().timeIntervalSinceReferenceDate) * scale
+        let rl = pseudoEnvelope(seed: 0.31, t: Date().timeIntervalSinceReferenceDate + 0.2) * scale
 
         leftLevel  = decay(current: leftLevel, target: ll, dt: elapsed)
         rightLevel = decay(current: rightLevel, target: rl, dt: elapsed)

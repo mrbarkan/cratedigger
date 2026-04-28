@@ -203,25 +203,24 @@ private struct TimeCapsule: View {
         ZStack {
             Capsule().fill(accent)
 
-            HStack {
-                Text(timeString(elapsed))
-                    .font(CarbonFont.mono(12, weight: .semibold))
-                    .foregroundStyle(inkColor)
-                Spacer()
-                Text("-" + timeString(max(0, total - elapsed)))
-                    .font(CarbonFont.mono(12, weight: .semibold))
-                    .foregroundStyle(inkColor)
-            }
-            .padding(.horizontal, 14)
+            VStack(spacing: 5) {
+                HStack {
+                    Text(timeString(elapsed))
+                        .font(CarbonFont.mono(12, weight: .semibold))
+                        .foregroundStyle(inkColor)
+                    Spacer()
+                    Text("-" + timeString(max(0, total - elapsed)))
+                        .font(CarbonFont.mono(12, weight: .semibold))
+                        .foregroundStyle(inkColor)
+                }
 
-            VStack {
-                Spacer()
                 ProgressDots(progress: progress, ink: inkColor)
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 6)
+                    .frame(height: 6)
             }
+            .padding(.horizontal, 22)
+            .padding(.vertical, 9)
         }
-        .frame(height: 44)
+        .frame(height: 52)
     }
 
     private var progress: Double {
