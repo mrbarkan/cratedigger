@@ -29,19 +29,7 @@ struct MainShell: View {
 
     private var inspectorWell: some View {
         wellShell(title: "Inspector", trailing: "Rec. Metadata") {
-            // Phase 6 will replace this with InspectorPane.
-            VStack {
-                Spacer()
-                Text(model.selectedAlbum?.title ?? "—")
-                    .font(CarbonFont.sans(18, weight: .bold))
-                    .foregroundStyle(theme.ink)
-                Text(model.selectedAlbum?.artistName ?? "")
-                    .font(CarbonFont.mono(10, weight: .semibold))
-                    .tracking(2)
-                    .foregroundStyle(theme.ink3)
-                Spacer()
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            InspectorPane()
         }
     }
 
