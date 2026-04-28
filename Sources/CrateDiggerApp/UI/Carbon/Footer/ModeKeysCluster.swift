@@ -19,12 +19,6 @@ struct ModeKeysCluster: View {
             modeKey(label: "Repeat", on: model.repeatMode != .off) {
                 model.cycleRepeatMode()
             }
-            modeKey(label: "A · B", disabled: true) {
-                // TODO: A-B loop point selection
-            }
-            modeKey(label: "EQ", disabled: true) {
-                // TODO: 5-band EQ overlay
-            }
         }
     }
 

@@ -35,19 +35,15 @@ struct AlbumRow: View {
     }
 
     private var leadColor: Color {
-        if selected { return theme.isDark ? Color(hex: 0x1A1209) : theme.cyan }
+        if selected { return theme.isDark ? theme.selectionInk : theme.cyan }
         if isPlayingHere { return theme.orange }
         return theme.ink3
     }
 
-    private var titleColor: Color { selected ? selectedTextColor : theme.ink }
+    private var titleColor: Color { selected ? theme.selectionInk : theme.ink }
     private var metaColor: Color  { selected ? selectedMetaColor : theme.ink3 }
 
-    private var selectedTextColor: Color {
-        theme.isDark ? Color(hex: 0x1A1209) : Color(hex: 0xF3F6EC)
-    }
-
     private var selectedMetaColor: Color {
-        theme.isDark ? Color(hex: 0x1A1209).opacity(0.7) : theme.chassisLo
+        theme.isDark ? theme.selectionInk.opacity(0.7) : theme.chassisLo
     }
 }

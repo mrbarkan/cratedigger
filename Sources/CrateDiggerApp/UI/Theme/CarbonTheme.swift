@@ -65,6 +65,12 @@ public struct CarbonTheme: Equatable {
     public let oledSurface: Color
     public let oledStrokeInner: Color
 
+    /// Foreground (text/icon) color when laid over a selected row background.
+    /// Linen: a near-white that reads on dark ink. Carbon: a deep brown that
+    /// reads on the orange selection gradient. Centralized so row views and
+    /// the sources sidebar stop hand-coding the same hex.
+    public let selectionInk: Color
+
     public var isDark: Bool { mode == .carbon }
 }
 
@@ -104,7 +110,8 @@ public extension CarbonTheme {
         backgroundGradientStart: Color(hex: 0xC2CDC4),
         backgroundGradientEnd:   Color(hex: 0x9CA8A0),
         oledSurface:     Color(hex: 0x0A0A0A),
-        oledStrokeInner: Color(hex: 0x1A1A1A)
+        oledStrokeInner: Color(hex: 0x1A1A1A),
+        selectionInk:    Color(hex: 0xF3F6EC)
     )
 
     static let carbon = CarbonTheme(
@@ -142,7 +149,8 @@ public extension CarbonTheme {
         backgroundGradientStart: Color(hex: 0x1A1A16),
         backgroundGradientEnd:   Color(hex: 0x050504),
         oledSurface:     Color(hex: 0x050504),
-        oledStrokeInner: Color(hex: 0x0E0E0C)
+        oledStrokeInner: Color(hex: 0x0E0E0C),
+        selectionInk:    Color(hex: 0x1A1209)
     )
 }
 

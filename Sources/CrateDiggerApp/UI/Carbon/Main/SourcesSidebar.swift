@@ -6,60 +6,13 @@ struct SourcesSidebar: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            sectionHeader("Library", trailing: "—")
+            sectionHeader("Library", trailing: "01")
 
             sidebarItem(
                 icon: Image(systemName: "square.stack"),
                 title: "All Records",
                 count: "\(model.index.allTracks.count)",
                 selected: true,
-                action: {}
-            )
-
-            sidebarItem(
-                icon: Image(systemName: "circle.dotted"),
-                title: "Recently Added",
-                count: "—",
-                selected: false,
-                disabled: true,
-                action: {}
-            )
-
-            sidebarItem(
-                icon: Image(systemName: "tray"),
-                title: "Unsorted Imports",
-                count: "—",
-                selected: false,
-                disabled: true,
-                action: {}
-            )
-
-            sectionHeader("Smart Lists", trailing: "03")
-
-            sidebarItem(
-                icon: Image(systemName: "list.number"),
-                title: "Top Played",
-                count: "—",
-                selected: false,
-                disabled: true,
-                action: {}
-            )
-
-            sidebarItem(
-                icon: Image(systemName: "waveform"),
-                title: "Lossless Only",
-                count: "—",
-                selected: false,
-                disabled: true,
-                action: {}
-            )
-
-            sidebarItem(
-                icon: Image(systemName: "photo"),
-                title: "Missing Artwork",
-                count: "—",
-                selected: false,
-                disabled: true,
                 action: {}
             )
 
@@ -120,20 +73,20 @@ struct SourcesSidebar: View {
 
     private func textColor(selected: Bool, disabled: Bool) -> Color {
         if disabled { return theme.ink3 }
-        if selected { return theme.isDark ? Color(hex: 0x1A1209) : Color(hex: 0xF3F6EC) }
+        if selected { return theme.selectionInk }
         return theme.ink
     }
 
     private func iconColor(selected: Bool, disabled: Bool) -> Color {
         if disabled { return theme.ink4 }
-        if selected { return theme.isDark ? Color(hex: 0x1A1209) : theme.orange }
+        if selected { return theme.isDark ? theme.selectionInk : theme.orange }
         return theme.ink3
     }
 
     private func countColor(selected: Bool, disabled: Bool) -> Color {
         if selected {
             return theme.isDark
-                ? Color(hex: 0x1A1209).opacity(0.7)
+                ? theme.selectionInk.opacity(0.7)
                 : theme.chassisLo
         }
         return theme.ink3

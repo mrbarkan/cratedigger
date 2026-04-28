@@ -26,18 +26,12 @@ struct UtilityCluster: View {
     }
 
     private var grid: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 8) {
-                key(label: "Mono", disabled: true) {}  // TODO: mono fold-down playback
-                key(label: "Loop", disabled: true) {}  // TODO: track-level repeat-one (separate from album repeat)
+        HStack(spacing: 8) {
+            key(label: "Tag", on: model.oledView == .nowPlaying) {
+                model.oledView = .nowPlaying
             }
-            HStack(spacing: 8) {
-                key(label: "Tag", on: model.oledView == .nowPlaying) {
-                    model.oledView = .nowPlaying
-                }
-                key(label: "Cnvrt", on: model.oledView == .conversion) {
-                    presentConversionOptions()
-                }
+            key(label: "Cnvrt", on: model.oledView == .conversion) {
+                presentConversionOptions()
             }
         }
     }

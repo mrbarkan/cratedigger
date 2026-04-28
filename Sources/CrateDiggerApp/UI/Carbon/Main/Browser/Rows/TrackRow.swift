@@ -38,19 +38,19 @@ struct TrackRow: View {
     }
 
     private var numberColor: Color {
-        if selected { return theme.isDark ? Color(hex: 0x1A1209) : theme.cyan }
+        if selected { return theme.isDark ? theme.selectionInk : theme.cyan }
         if isPlaying { return theme.orange }
         return theme.ink3
     }
 
     private var titleColor: Color {
-        if selected { return theme.isDark ? Color(hex: 0x1A1209) : Color(hex: 0xF3F6EC) }
+        if selected { return theme.selectionInk }
         if isPlaying { return theme.orange }
         return theme.ink
     }
 
     private var metaColor: Color {
-        if selected { return theme.isDark ? Color(hex: 0x1A1209).opacity(0.7) : theme.chassisLo }
+        if selected { return theme.isDark ? theme.selectionInk.opacity(0.7) : theme.chassisLo }
         return theme.ink3
     }
 
