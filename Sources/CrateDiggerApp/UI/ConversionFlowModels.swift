@@ -26,7 +26,7 @@ enum AppCapabilityStatus {
         }
     }
 
-    var tone: ModernRetroTheme.StatusTone {
+    var tone: StatusTone {
         switch self {
         case .ready:
             return .success
@@ -56,6 +56,6 @@ struct ConversionReport {
     let title: String
     let statusLine: String
     let details: String
-    let tone: ModernRetroTheme.StatusTone
+    let tone: StatusTone
     let showsDetailsButton: Bool
 }

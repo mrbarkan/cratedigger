@@ -35,7 +35,7 @@ final class ConversionOptionsSheetController: NSViewController {
     private let bitrateOptions: [Int]
     private let sampleRateOptions: [Int]
     private let initialSelection: ConversionOptionsSelection
-    private var hostingController: NSHostingController<ConversionOptionsSheetView>?
+    private var hostingController: NSViewController?
 
     init(
         initialSelection: ConversionOptionsSelection,
@@ -65,7 +65,8 @@ final class ConversionOptionsSheetController: NSViewController {
             self?.onDecision?(selection)
         }
 
-        let hostingController = NSHostingController(rootView: rootView)
+        let themed = ThemedSheetWrapper { rootView }
+        let hostingController = NSHostingController(rootView: themed)
         self.hostingController = hostingController
         addChild(hostingController)
         view = hostingController.view

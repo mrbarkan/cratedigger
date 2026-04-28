@@ -16,7 +16,7 @@ final class AlbumFolderReviewSheetController: NSViewController {
     var onDecision: (([AlbumFolderKey: String]?) -> Void)?
 
     private let rows: [AlbumFolderReviewRow]
-    private var hostingController: NSHostingController<AlbumFolderReviewSheetView>?
+    private var hostingController: NSViewController?
 
     init(rows: [AlbumFolderReviewRow]) {
         self.rows = rows
@@ -33,7 +33,8 @@ final class AlbumFolderReviewSheetController: NSViewController {
             self?.onDecision?(reviewedFolders)
         }
 
-        let hostingController = NSHostingController(rootView: rootView)
+        let themed = ThemedSheetWrapper { rootView }
+        let hostingController = NSHostingController(rootView: themed)
         self.hostingController = hostingController
         addChild(hostingController)
         view = hostingController.view

@@ -5,7 +5,7 @@ final class ConversionSummarySheetController: NSViewController {
     var onClose: (() -> Void)?
 
     private let report: ConversionReport
-    private var hostingController: NSHostingController<ConversionSummarySheetView>?
+    private var hostingController: NSViewController?
 
     init(report: ConversionReport) {
         self.report = report
@@ -22,7 +22,8 @@ final class ConversionSummarySheetController: NSViewController {
             self?.onClose?()
         }
 
-        let hostingController = NSHostingController(rootView: rootView)
+        let themed = ThemedSheetWrapper { rootView }
+        let hostingController = NSHostingController(rootView: themed)
         self.hostingController = hostingController
         addChild(hostingController)
         view = hostingController.view

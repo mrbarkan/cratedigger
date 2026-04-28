@@ -12,6 +12,8 @@ private struct EditableAlbumFolderRow: Identifiable {
 }
 
 struct AlbumFolderReviewSheetView: View {
+    @Environment(\.carbon) private var theme
+
     let onDecision: ([AlbumFolderKey: String]?) -> Void
 
     @State private var rows: [EditableAlbumFolderRow]
@@ -30,24 +32,24 @@ struct AlbumFolderReviewSheetView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Review Album Folders")
-                .font(.system(size: 26, weight: .semibold))
-                .foregroundColor(Color(nsColor: ModernRetroTheme.textPrimary))
+                .font(CarbonFont.sans(26, weight: .bold))
+                .foregroundStyle(theme.ink)
 
             Text("Confirm the destination subfolder for each album before conversion starts.")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundColor(Color(nsColor: ModernRetroTheme.textSecondary))
+                .font(CarbonFont.mono(13, weight: .medium))
+                .foregroundStyle(theme.ink2)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
                     ForEach($rows) { $row in
                         VStack(alignment: .leading, spacing: 6) {
                             Text(row.albumLabel)
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundColor(Color(nsColor: ModernRetroTheme.textPrimary))
+                                .font(CarbonFont.sans(12, weight: .semibold))
+                                .foregroundStyle(theme.ink)
 
                             TextField("Destination subfolder", text: $row.destinationSubpath)
                                 .textFieldStyle(.roundedBorder)
-                                .font(.system(size: 12, weight: .regular))
+                                .font(CarbonFont.mono(12))
                                 .accessibilityLabel("Destination subfolder for \(row.albumLabel)")
                                 .accessibilityHint("Edit the destination path that will be used for this album during conversion.")
                         }
@@ -55,11 +57,11 @@ struct AlbumFolderReviewSheetView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(
                             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(Color(nsColor: ModernRetroTheme.surfaceElevated))
+                                .fill(theme.paper)
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .stroke(Color(nsColor: ModernRetroTheme.separator).opacity(0.35), lineWidth: 1)
+                                .stroke(theme.hair.opacity(0.5), lineWidth: 1)
                         )
                     }
                 }
@@ -83,13 +85,13 @@ struct AlbumFolderReviewSheetView: View {
                     onDecision(reviewed)
                 }
                 .keyboardShortcut(.defaultAction)
-                .tint(Color(nsColor: ModernRetroTheme.accentInfo))
+                .tint(theme.orange)
                 .accessibilityHint("Confirm the reviewed album folder destinations and continue with conversion.")
             }
         }
         .padding(18)
         .frame(minWidth: 760, minHeight: 460)
-        .background(Color(nsColor: ModernRetroTheme.surfaceBase))
+        .background(theme.chassis)
     }
 
     private func sanitizeRelativeSubpath(_ rawPath: String, fallback: String) -> String {

@@ -3,6 +3,8 @@ import CrateDiggerCore
 import SwiftUI
 
 struct ConversionOptionsSheetView: View {
+    @Environment(\.carbon) private var theme
+
     private static let tokenCount = 5
 
     let outputFormats: [OutputFormat]
@@ -46,12 +48,12 @@ struct ConversionOptionsSheetView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Conversion Options")
-                .font(.system(size: 30, weight: .semibold))
-                .foregroundColor(Color(nsColor: ModernRetroTheme.textPrimary))
+                .font(CarbonFont.sans(30, weight: .heavy))
+                .foregroundStyle(theme.ink)
 
             Text("Configure one conversion plan for this run. These settings are the source of truth for the files about to be converted.")
-                .font(.system(size: 13, weight: .regular))
-                .foregroundColor(Color(nsColor: ModernRetroTheme.textSecondary))
+                .font(CarbonFont.mono(13))
+                .foregroundStyle(theme.ink2)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
@@ -78,13 +80,13 @@ struct ConversionOptionsSheetView: View {
                     onDecision(buildSelection())
                 }
                 .keyboardShortcut(.defaultAction)
-                .tint(Color(nsColor: ModernRetroTheme.accentInfo))
+                .tint(theme.orange)
             }
             .padding(.top, 2)
         }
         .padding(18)
         .frame(minWidth: 760, minHeight: 520)
-        .background(Color(nsColor: ModernRetroTheme.surfaceBase))
+        .background(theme.chassis)
         .onAppear {
             tokenOrder = Self.normalizeTokenOrder(tokenOrder)
             if isLosslessFormat(outputFormat) {
@@ -184,8 +186,8 @@ struct ConversionOptionsSheetView: View {
             }
 
             Text("Use 'Review album folders' when you want to confirm each album destination before conversion starts.")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundColor(Color(nsColor: ModernRetroTheme.textSecondary))
+                .font(CarbonFont.mono(11, weight: .medium))
+                .foregroundStyle(theme.ink3)
         }
     }
 
@@ -324,9 +326,10 @@ struct ConversionOptionsSheetView: View {
     @ViewBuilder
     private func field<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text(title)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundColor(Color(nsColor: ModernRetroTheme.textSecondary))
+            Text(title.uppercased())
+                .font(CarbonFont.mono(9, weight: .semibold))
+                .tracking(1.8)
+                .foregroundStyle(theme.ink3)
             content()
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -335,20 +338,21 @@ struct ConversionOptionsSheetView: View {
     @ViewBuilder
     private func sectionCard<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundColor(Color(nsColor: ModernRetroTheme.textSecondary))
+            Text(title.uppercased())
+                .font(CarbonFont.mono(9, weight: .bold))
+                .tracking(2.2)
+                .foregroundStyle(theme.ink2)
             content()
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 11)
-                .fill(Color(nsColor: ModernRetroTheme.surfaceElevated))
+                .fill(theme.paper)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 11)
-                .stroke(Color(nsColor: ModernRetroTheme.separator).opacity(0.35), lineWidth: 1)
+                .stroke(theme.hair.opacity(0.5), lineWidth: 1)
         )
     }
 
