@@ -19,16 +19,28 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.1.0</string>
+    <string>1.0.0</string>
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>LSApplicationCategoryType</key>
     <string>public.app-category.music</string>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
+    <key>LSApplicationSupportsSecureRestorableState</key>
+    <true/>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
+    <key>NSHumanReadableCopyright</key>
+    <string>Copyright © 2026 CrateDigger. All rights reserved.</string>
+    <key>NSDownloadsFolderUsageDescription</key>
+    <string>CrateDigger needs access to your Downloads folder to read music files you've placed there and to write converted files when you choose Downloads as the destination.</string>
+    <key>NSDesktopFolderUsageDescription</key>
+    <string>CrateDigger needs access to your Desktop to read music folders kept there and to save converted files when you point a conversion at the Desktop.</string>
+    <key>NSDocumentsFolderUsageDescription</key>
+    <string>CrateDigger needs access to your Documents folder to read music libraries and write converted files when you select Documents as the destination.</string>
+    <key>NSRemovableVolumesUsageDescription</key>
+    <string>CrateDigger needs access to removable volumes (USB drives, SD cards) to scan music folders and write converted files when you point a conversion at one.</string>
 </dict>
 </plist>

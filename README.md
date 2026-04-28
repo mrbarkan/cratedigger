@@ -32,8 +32,27 @@ You can also point the script at specific binaries:
 scripts/package-app.sh --ffmpeg /opt/homebrew/bin/ffmpeg --ffprobe /opt/homebrew/bin/ffprobe --output ./dist
 ```
 
-The packaged app is written to `dist/CrateDigger.app`.
+The packaged app is written to `dist/CrateDigger.app`. By default the bundle is ad-hoc signed (suitable for local development only).
 The packaging script also prefers a full Xcode developer directory when one is installed and uses a repo-local module cache so the build is less sensitive to machine-wide Swift cache state.
+
+### Distribution build (Developer ID + notarized DMG)
+
+A shippable build needs Developer ID signing, hardened runtime, notarization, and a DMG:
+
+```bash
+# One-time: store an app-specific password under a notarytool profile name
+xcrun notarytool store-credentials cratedigger-notary \
+  --apple-id <your-apple-id> --team-id <TEAMID> --password <app-specific-password>
+
+# Each release
+CRATEDIGGER_NOTARY_PROFILE=cratedigger-notary \
+  scripts/package-app.sh \
+    --sign "Developer ID Application: Your Name (TEAMID)" \
+    --notarize \
+    --dmg
+```
+
+This produces `dist/CrateDigger-<version>.dmg`, signed and stapled, that opens cleanly on any Mac. The hardened runtime entitlements live in `Packaging/CrateDiggerApp/CrateDigger.entitlements` (library-validation disabled so the bundled `ffmpeg`/`ffprobe` binaries can run).
 
 For the full beta release gate, see [docs/BETA_RELEASE_CHECKLIST.md](/Users/mrbarkan/Development/CrateDigger/docs/BETA_RELEASE_CHECKLIST.md).
 
