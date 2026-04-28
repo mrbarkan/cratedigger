@@ -23,7 +23,17 @@ public final class LibraryScanService {
         metadataProbe: MetadataProbing? = nil,
         supportedExtensions: Set<String> = ["mp3", "aac", "m4a", "flac", "wav", "aiff", "ogg", "opus", "caf"]
     ) {
-        let resolvedProbe = metadataProbe ?? (try? MetadataProbeService(fileManager: fileManager))
+        let resolvedProbe: MetadataProbing?
+        if let metadataProbe {
+            resolvedProbe = metadataProbe
+        } else {
+            do {
+                resolvedProbe = try MetadataProbeService(fileManager: fileManager)
+            } catch {
+                AppLog.scan.warning("Falling back to AVFoundation-only metadata; ffprobe unavailable: \(String(describing: error), privacy: .public)")
+                resolvedProbe = nil
+            }
+        }
         self.fileManager = fileManager
         self.artworkService = artworkService
         self.metadataProbe = resolvedProbe

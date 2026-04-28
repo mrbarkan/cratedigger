@@ -95,10 +95,16 @@ final class LibraryViewModel: ObservableObject {
             self.scanner = scanner
         } else {
             let toolLocator = ExternalToolLocator()
-            if let resolved = toolLocator.resolveOptional(.ffprobe),
-               let probe = try? MetadataProbeService(ffprobeExecutableURL: resolved.url) {
-                self.scanner = LibraryScanService(artworkService: artworkService, metadataProbe: probe)
+            if let resolved = toolLocator.resolveOptional(.ffprobe) {
+                do {
+                    let probe = try MetadataProbeService(ffprobeExecutableURL: resolved.url)
+                    self.scanner = LibraryScanService(artworkService: artworkService, metadataProbe: probe)
+                } catch {
+                    AppLog.tools.warning("Found ffprobe at \(resolved.url.path, privacy: .public) but could not initialize MetadataProbeService: \(String(describing: error), privacy: .public)")
+                    self.scanner = LibraryScanService(artworkService: artworkService, metadataProbe: nil)
+                }
             } else {
+                AppLog.tools.notice("ffprobe not found via ExternalToolLocator; scan will use AVFoundation metadata only")
                 self.scanner = LibraryScanService(artworkService: artworkService, metadataProbe: nil)
             }
         }
