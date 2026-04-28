@@ -167,7 +167,9 @@ extension LibraryViewModel {
 
     @MainActor
     func cancelConversion() {
+        activeConversionService?.cancel()
         conversionTask?.cancel()
+        AppLog.conversion.notice("User requested conversion cancellation")
     }
 
     // MARK: - Implementation
@@ -371,6 +373,9 @@ extension LibraryViewModel {
         )
 
         AppLog.conversion.info("Starting batch of \(total, privacy: .public) jobs as \(preset.outputFormat.rawValue, privacy: .public)")
+
+        activeConversionService = service
+        defer { activeConversionService = nil }
 
         let results: [ConversionExecutionResult] = await withCheckedContinuation { continuation in
             let task = Task.detached(priority: .userInitiated) {

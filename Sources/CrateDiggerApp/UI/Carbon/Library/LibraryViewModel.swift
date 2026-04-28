@@ -89,6 +89,7 @@ final class LibraryViewModel: ObservableObject {
     private var playbackQueue: [LoadedTrack] = []
     private var scanTask: Task<Void, Never>?
     var conversionTask: Task<Void, Never>?
+    weak var activeConversionService: ConversionService?
 
     // MARK: - Init
 

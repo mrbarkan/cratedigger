@@ -123,6 +123,35 @@ public final class ConversionService {
 
     public let maxParallelWorkers: Int
 
+    private let cancellationLock = NSLock()
+    private var _isCancelled = false
+
+    /// Set by `cancel()` and consumed at the start of each job dispatch.
+    /// Once true, every still-pending job is reported as failed with the
+    /// message "Cancelled" instead of being handed to ffmpeg.
+    public var isCancelled: Bool {
+        cancellationLock.lock()
+        defer { cancellationLock.unlock() }
+        return _isCancelled
+    }
+
+    /// Marks every remaining queued job as cancelled. The job currently
+    /// being run by ffmpeg keeps running to completion; the queue worker
+    /// observes the flag between dispatches. A future revision should kill
+    /// the in-flight Process; V1 settles for halting dispatch.
+    public func cancel() {
+        cancellationLock.lock()
+        _isCancelled = true
+        cancellationLock.unlock()
+    }
+
+    /// Reset the cancellation flag for reuse of the service across batches.
+    public func resetCancellation() {
+        cancellationLock.lock()
+        _isCancelled = false
+        cancellationLock.unlock()
+    }
+
     private static let canonicalMetadataKeySet: Set<String> = [
         "title",
         "artist",
@@ -405,6 +434,15 @@ public final class ConversionService {
     }
 
     private func runSingleConversion(_ queued: QueuedConversion) -> ConversionExecutionResult {
+        // Bail out before doing any work if the user already pressed Cancel.
+        if isCancelled {
+            return ConversionExecutionResult(
+                queuedID: queued.id,
+                status: .failed,
+                warning: nil,
+                log: "Cancelled"
+            )
+        }
         do {
             let command = try preparedCommand(for: queued)
             defer {
