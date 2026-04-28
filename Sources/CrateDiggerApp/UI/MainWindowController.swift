@@ -1,7 +1,10 @@
 import AppKit
+import CrateDiggerCore
 
 final class MainWindowController: NSWindowController, NSWindowDelegate {
     private let hostingController = CarbonHostingController()
+    private let prefs: PreferencesStore = .shared
+    private var didApplyRestoredFrame = false
 
     init() {
         let styleMask: NSWindow.StyleMask = [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView]
@@ -48,9 +51,20 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         hostingController.model.openFolderViaPanel()
     }
 
+    func restoreLastSession() {
+        hostingController.model.restoreLastFoldersIfPossible()
+    }
+
     override func showWindow(_ sender: Any?) {
         super.showWindow(sender)
-        applyWindowPlan(context: .initialLaunch, animated: false)
+        if !didApplyRestoredFrame {
+            didApplyRestoredFrame = true
+            if prefs.savedWindowFrame != nil {
+                applyWindowPlan(context: .clampToVisibleFrame, animated: false)
+            } else {
+                applyWindowPlan(context: .initialLaunch, animated: false)
+            }
+        }
     }
 
     func windowDidChangeScreen(_ notification: Notification) {
@@ -59,6 +73,23 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     func windowDidChangeBackingProperties(_ notification: Notification) {
         applyWindowPlan(context: .clampToVisibleFrame, animated: false)
+    }
+
+    func windowDidEndLiveResize(_ notification: Notification) {
+        persistFrame()
+    }
+
+    func windowDidMove(_ notification: Notification) {
+        persistFrame()
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        persistFrame()
+    }
+
+    private func persistFrame() {
+        guard let window else { return }
+        prefs.savedWindowFrame = window.frame
     }
 
     @objc private func handleAppearanceDidChange() {
@@ -82,9 +113,19 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let visibleFrame = window.screen?.visibleFrame
             ?? NSScreen.main?.visibleFrame
             ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
+
+        let baselineFrame: CGRect?
+        if context == .clampToVisibleFrame, prefs.savedWindowFrame != nil, !window.isVisible {
+            // First-launch restoration path: prefer the persisted frame over
+            // the (uninitialized) current frame.
+            baselineFrame = prefs.savedWindowFrame ?? window.frame
+        } else {
+            baselineFrame = window.frame
+        }
+
         let plan = WindowFramePlanner.plan(
             visibleFrame: visibleFrame,
-            currentFrame: window.frame,
+            currentFrame: baselineFrame,
             mode: .workspace,
             context: context
         )

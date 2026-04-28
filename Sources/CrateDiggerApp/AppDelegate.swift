@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         let windowController = MainWindowController()
         self.mainWindowController = windowController
         windowController.showWindow(self)
+        windowController.restoreLastSession()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

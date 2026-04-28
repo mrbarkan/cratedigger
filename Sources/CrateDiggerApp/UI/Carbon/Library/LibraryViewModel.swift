@@ -53,7 +53,9 @@ final class LibraryViewModel: ObservableObject {
     @Published var selectedAlbumID: String?
     @Published var selectedTrackID: UUID?
 
-    @Published var oledView: OLEDView = .nowPlaying
+    @Published var oledView: OLEDView = .nowPlaying {
+        didSet { prefs.savedOLEDView = oledView.rawValue }
+    }
     @Published var scanProgress: ScanProgress = .idle
     @Published var conversionProgress: ConversionProgressSnapshot = .idle
 
@@ -67,14 +69,19 @@ final class LibraryViewModel: ObservableObject {
         didSet { playback.setVolume(playbackVolume) }
     }
 
-    @Published var shuffleEnabled: Bool = false
-    @Published var repeatMode: RepeatMode = .off
+    @Published var shuffleEnabled: Bool = false {
+        didSet { prefs.savedShuffleEnabled = shuffleEnabled }
+    }
+    @Published var repeatMode: RepeatMode = .off {
+        didSet { prefs.savedRepeatMode = repeatMode.rawValue }
+    }
 
     // MARK: - Services
 
     let playback: PlaybackServiceProtocol
     let scanner: LibraryScanService
     let artworkService: ArtworkService
+    let prefs: PreferencesStore
 
     // MARK: - Private
 
@@ -86,10 +93,12 @@ final class LibraryViewModel: ObservableObject {
     init(
         playback: PlaybackServiceProtocol = PlaybackService(),
         artworkService: ArtworkService = ArtworkService(),
-        scanner: LibraryScanService? = nil
+        scanner: LibraryScanService? = nil,
+        prefs: PreferencesStore = .shared
     ) {
         self.playback = playback
         self.artworkService = artworkService
+        self.prefs = prefs
 
         if let scanner {
             self.scanner = scanner
@@ -107,6 +116,14 @@ final class LibraryViewModel: ObservableObject {
                 AppLog.tools.notice("ffprobe not found via ExternalToolLocator; scan will use AVFoundation metadata only")
                 self.scanner = LibraryScanService(artworkService: artworkService, metadataProbe: nil)
             }
+        }
+
+        if let saved = prefs.savedOLEDView, let view = OLEDView(rawValue: saved) {
+            oledView = view
+        }
+        shuffleEnabled = prefs.savedShuffleEnabled
+        if let saved = prefs.savedRepeatMode, let mode = RepeatMode(rawValue: saved) {
+            repeatMode = mode
         }
 
         wirePlaybackBindings()
@@ -157,6 +174,8 @@ final class LibraryViewModel: ObservableObject {
     }
 
     func loadFolders(_ urls: [URL]) {
+        persistFolderBookmarks(urls)
+
         scanTask?.cancel()
         scanProgress = ScanProgress(folderName: urls.first?.lastPathComponent, filesProbed: 0, totalCandidates: nil, isRunning: true)
         playback.load(queue: [], startIndex: 0, autoPlay: false)
@@ -196,6 +215,46 @@ final class LibraryViewModel: ObservableObject {
                 )
             }
         }
+    }
+
+    /// Re-open whichever folders the user had loaded last session. Silently
+    /// drops bookmarks that no longer resolve (volume gone, folder deleted).
+    func restoreLastFoldersIfPossible() {
+        let bookmarks = prefs.savedLibraryFolderBookmarks
+        guard !bookmarks.isEmpty else { return }
+
+        var refreshedBookmarks: [Data] = []
+        var resolvedURLs: [URL] = []
+        for data in bookmarks {
+            guard let (refreshed, resolved) = PreferencesStore.refreshBookmarkIfStale(data) else {
+                continue
+            }
+            refreshedBookmarks.append(refreshed)
+            resolvedURLs.append(resolved.url)
+        }
+
+        if refreshedBookmarks != bookmarks {
+            prefs.savedLibraryFolderBookmarks = refreshedBookmarks
+        }
+        guard !resolvedURLs.isEmpty else {
+            AppLog.library.notice("No saved library folders could be re-opened on launch")
+            return
+        }
+        AppLog.library.info("Restoring \(resolvedURLs.count, privacy: .public) saved library folder(s)")
+        loadFolders(resolvedURLs)
+    }
+
+    private func persistFolderBookmarks(_ urls: [URL]) {
+        var data: [Data] = []
+        for url in urls {
+            do {
+                let bookmark = try PreferencesStore.makeBookmark(for: url)
+                data.append(bookmark)
+            } catch {
+                AppLog.library.warning("Could not bookmark \(url.path, privacy: .public): \(String(describing: error), privacy: .public)")
+            }
+        }
+        prefs.savedLibraryFolderBookmarks = data
     }
 
     private static func deduplicate(tracks: [LoadedTrack]) -> [LoadedTrack] {
