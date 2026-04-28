@@ -2,6 +2,7 @@ import SwiftUI
 
 struct CarbonRootView: View {
     @AppStorage(AppearanceMode.userDefaultsKey) private var appearanceModeRaw: String = AppearanceMode.system.rawValue
+    @ObservedObject var model: LibraryViewModel
 
     private var mode: AppearanceMode {
         AppearanceMode(rawValue: appearanceModeRaw) ?? .system
@@ -18,6 +19,7 @@ struct CarbonRootView: View {
                     .frame(height: CarbonLayout.footerHeight)
             }
         }
+        .environmentObject(model)
         .carbonThemed(mode: mode)
     }
 }

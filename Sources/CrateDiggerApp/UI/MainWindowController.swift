@@ -45,7 +45,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func openFolder() {
-        // TODO(Phase 4): forward to LibraryViewModel.openFolder() once the view-model is wired in.
+        hostingController.model.openFolderViaPanel()
     }
 
     override func showWindow(_ sender: Any?) {
