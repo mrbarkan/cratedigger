@@ -81,12 +81,88 @@ extension LibraryViewModel {
                 return
             }
 
+            if let problem = validateBatchPreflight(jobs: jobs, destinationRoot: destinationRoot, sourceTracks: sourceTracks) {
+                appAlert = problem
+                return
+            }
+
             // Persist the user's selection for next launch.
             prefs.saveLastConversionSelection(PersistedConversionSelection(selection))
 
             let report = await runConversionQueue(service: service, jobs: jobs, preset: preset)
             presentSummary(report: report, presentingFrom: host)
         }
+    }
+
+    /// Block obvious failure modes before we hand off to ffmpeg. Returns an
+    /// alert to present, or nil to proceed.
+    private func validateBatchPreflight(
+        jobs: [ConversionJob],
+        destinationRoot: URL,
+        sourceTracks: [LoadedTrack]
+    ) -> AppAlert? {
+        if let writabilityProblem = probeDestinationWritability(destinationRoot) {
+            return writabilityProblem
+        }
+        if let spaceProblem = probeFreeDiskSpace(destinationRoot, sourceTracks: sourceTracks) {
+            return spaceProblem
+        }
+        return nil
+    }
+
+    private func probeDestinationWritability(_ destinationRoot: URL) -> AppAlert? {
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: destinationRoot.path) {
+            do {
+                try fm.createDirectory(at: destinationRoot, withIntermediateDirectories: true)
+            } catch {
+                AppLog.conversion.error("Could not create destination root \(destinationRoot.path, privacy: .public): \(String(describing: error), privacy: .public)")
+                return .error(
+                    title: "Can't write to destination",
+                    message: "CrateDigger could not create the destination folder \(destinationRoot.path). Pick another folder under Preferences > General."
+                )
+            }
+        }
+
+        let probe = destinationRoot
+            .appendingPathComponent(".cratedigger-write-probe-\(UUID().uuidString)")
+        do {
+            try Data().write(to: probe)
+            try? fm.removeItem(at: probe)
+            return nil
+        } catch {
+            AppLog.conversion.error("Destination not writable \(destinationRoot.path, privacy: .public): \(String(describing: error), privacy: .public)")
+            return .error(
+                title: "Destination isn't writable",
+                message: "CrateDigger doesn't have permission to write into \(destinationRoot.path). Choose a different folder under Preferences > General, or grant Files & Folders access in System Settings."
+            )
+        }
+    }
+
+    private func probeFreeDiskSpace(_ destinationRoot: URL, sourceTracks: [LoadedTrack]) -> AppAlert? {
+        let totalSourceBytes: Int64 = sourceTracks.reduce(0) { running, track in
+            let attrs = try? FileManager.default.attributesOfItem(atPath: track.track.fileURL.path)
+            let size = (attrs?[.size] as? NSNumber)?.int64Value ?? 0
+            return running + size
+        }
+        guard totalSourceBytes > 0 else { return nil }
+
+        let values = try? destinationRoot.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey, .volumeAvailableCapacityKey])
+        let available = (values?.volumeAvailableCapacityForImportantUsage)
+            ?? Int64(values?.volumeAvailableCapacity ?? 0)
+        guard available > 0 else { return nil }
+
+        // Conservative: require roughly source-byte total + 10% headroom.
+        let estimatedNeed = Int64(Double(totalSourceBytes) * 1.10)
+        if available < estimatedNeed {
+            let needGB = Double(estimatedNeed) / 1_000_000_000
+            let availGB = Double(available) / 1_000_000_000
+            return .error(
+                title: "Not enough free space",
+                message: String(format: "This batch needs ~%.1f GB on the destination volume but only %.1f GB is available. Free up space or pick a different output folder.", needGB, availGB)
+            )
+        }
+        return nil
     }
 
     @MainActor
