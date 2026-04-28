@@ -18,22 +18,15 @@ struct FooterShell: View {
                         .stroke(Color.white.opacity(theme.isDark ? 0.05 : 0.4), lineWidth: 1)
                 )
 
-            HStack {
-                placeholderCluster("Modes")
+            HStack(alignment: .center, spacing: 24) {
+                ModeKeysCluster()
                 Spacer()
-                placeholderCluster("Transport")
+                TransportCluster()
                 Spacer()
-                placeholderCluster("Volume")
+                UtilityCluster()
             }
-            .padding(.horizontal, 40)
+            .padding(.horizontal, 30)
         }
         .compositingGroup()
-    }
-
-    private func placeholderCluster(_ label: String) -> some View {
-        Text(label.uppercased())
-            .font(CarbonFont.mono(9, weight: .bold))
-            .tracking(2.2)
-            .foregroundStyle(theme.ink3)
     }
 }
