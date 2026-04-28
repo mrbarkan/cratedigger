@@ -1,0 +1,15 @@
+# macOS
+.DS_Store
+
+# SwiftPM
+.build/
+.swiftpm/
+Package.resolved
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+
+# Build outputs
+dist/
+
+# Local module cache used by scripts/package-app.sh
+**/module-cache/
