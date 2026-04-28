@@ -13,3 +13,7 @@ dist/
 
 # Local module cache used by scripts/package-app.sh
 **/module-cache/
+
+# Design assets workspace (uploads, exports). Treat as untracked so
+# git add -A doesn't sweep large binary blobs into source commits.
+CrateDigger_DESIGN/
