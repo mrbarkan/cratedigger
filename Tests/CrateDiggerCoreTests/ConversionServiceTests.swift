@@ -309,12 +309,12 @@ final class ConversionServiceTests: XCTestCase {
             artist: "Track Artist",
             albumArtist: "Album Artist",
             album: "Album",
+            compilation: false,
             trackNumber: 1,
             discNumber: 1,
             year: 2008,
             genre: "Electronic",
-            comment: "Test Comment",
-            compilation: false
+            comment: "Test Comment"
         )
 
         let queued = try service.enqueue(

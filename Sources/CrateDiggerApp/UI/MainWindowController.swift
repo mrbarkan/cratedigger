@@ -1,36 +1,38 @@
 import AppKit
 
 final class MainWindowController: NSWindowController, NSWindowDelegate {
-    private let mainViewController = MainViewController()
-    private var layoutMode: WindowLayoutMode = .emptyCompact
-    private var hasPromotedToWorkspace = false
+    private let hostingController = CarbonHostingController()
 
     init() {
-        let styleMask: NSWindow.StyleMask = [.titled, .closable, .resizable, .miniaturizable]
+        let styleMask: NSWindow.StyleMask = [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView]
         let window = NSWindow(
-            contentRect: NSRect(origin: .zero, size: WindowLayoutMode.emptyCompact.targetSize),
+            contentRect: NSRect(origin: .zero, size: WindowLayoutMode.workspace.targetSize),
             styleMask: styleMask,
             backing: .buffered,
             defer: false
         )
 
         window.title = "CrateDigger"
-        window.contentViewController = mainViewController
-        window.backgroundColor = ModernRetroTheme.surfaceBase
+        window.contentViewController = hostingController
+        window.backgroundColor = .clear
         window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
         window.toolbarStyle = .unified
         window.isMovableByWindowBackground = true
         window.isRestorable = false
 
         super.init(window: window)
 
-        mainViewController.onFirstLoadedLibrary = { [weak self] in
-            self?.promoteToWorkspaceIfNeeded()
-        }
-
         window.delegate = self
-        mainViewController.applyWindowLayoutMode(layoutMode)
+        applyAppearancePreference()
         applyWindowPlan(context: .initialLaunch, animated: false)
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAppearanceDidChange),
+            name: AppearanceMode.didChangeNotification,
+            object: nil
+        )
     }
 
     @available(*, unavailable)
@@ -38,8 +40,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         fatalError("init(coder:) has not been implemented")
     }
 
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
     func openFolder() {
-        mainViewController.openFolder()
+        // TODO(Phase 4): forward to LibraryViewModel.openFolder() once the view-model is wired in.
     }
 
     override func showWindow(_ sender: Any?) {
@@ -55,12 +61,19 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         applyWindowPlan(context: .clampToVisibleFrame, animated: false)
     }
 
-    private func promoteToWorkspaceIfNeeded() {
-        guard !hasPromotedToWorkspace else { return }
-        hasPromotedToWorkspace = true
-        layoutMode = .workspace
-        mainViewController.applyWindowLayoutMode(.workspace)
-        applyWindowPlan(context: .layoutTransition, animated: true)
+    @objc private func handleAppearanceDidChange() {
+        applyAppearancePreference()
+    }
+
+    private func applyAppearancePreference() {
+        guard let window else { return }
+        let raw = UserDefaults.standard.string(forKey: AppearanceMode.userDefaultsKey)
+        let mode = AppearanceMode(rawValue: raw ?? AppearanceMode.system.rawValue) ?? .system
+        switch mode {
+        case .light: window.appearance = NSAppearance(named: .aqua)
+        case .dark:  window.appearance = NSAppearance(named: .darkAqua)
+        case .system: window.appearance = nil
+        }
     }
 
     private func applyWindowPlan(context: WindowFramePlanningContext, animated: Bool) {
@@ -72,7 +85,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let plan = WindowFramePlanner.plan(
             visibleFrame: visibleFrame,
             currentFrame: window.frame,
-            mode: layoutMode,
+            mode: .workspace,
             context: context
         )
 

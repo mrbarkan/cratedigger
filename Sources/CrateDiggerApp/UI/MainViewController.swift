@@ -142,7 +142,7 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
     private var completionSound: NSSound?
 
     private let inspectorViewController = TrackInspectorViewController()
-    private var currentWindowLayoutMode: WindowLayoutMode = .emptyCompact
+    private var currentWindowLayoutMode: WindowLayoutMode = .workspace
     private var appliedWindowLayoutMode: WindowLayoutMode?
     private var inspectorPreferredWidthConstraint: NSLayoutConstraint!
     private var inspectorMinimumWidthConstraint: NSLayoutConstraint!
@@ -230,7 +230,7 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
 
         configureConversionOptions()
         configureServices()
-        applyWindowLayoutMode(.emptyCompact)
+        applyWindowLayoutMode(.workspace)
     }
 
     override func viewDidLayout() {
@@ -305,7 +305,7 @@ final class MainViewController: NSViewController, NSTableViewDataSource, NSTable
         guard isViewLoaded else { return }
         guard appliedWindowLayoutMode != currentWindowLayoutMode else { return }
 
-        let collapsesInspector = currentWindowLayoutMode.collapsesInspector
+        let collapsesInspector = false  // legacy view; new chassis uses fixed layout
         inspectorPreferredWidthConstraint.isActive = !collapsesInspector
         inspectorMinimumWidthConstraint.isActive = !collapsesInspector
         inspectorCollapsedWidthConstraint.isActive = collapsesInspector

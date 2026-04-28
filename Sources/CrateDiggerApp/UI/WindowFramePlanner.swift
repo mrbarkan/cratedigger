@@ -1,35 +1,19 @@
 import CoreGraphics
 
 enum WindowLayoutMode {
-    case emptyCompact
     case workspace
 
     var targetSize: CGSize {
-        switch self {
-        case .emptyCompact:
-            return CGSize(width: 960, height: 620)
-        case .workspace:
-            return CGSize(width: 1180, height: 760)
-        }
+        CGSize(width: 1400, height: 920)
     }
 
     var minimumSize: CGSize {
-        switch self {
-        case .emptyCompact:
-            return CGSize(width: 760, height: 540)
-        case .workspace:
-            return CGSize(width: 940, height: 620)
-        }
-    }
-
-    var collapsesInspector: Bool {
-        self == .emptyCompact
+        CGSize(width: 1200, height: 820)
     }
 }
 
 enum WindowFramePlanningContext {
     case initialLaunch
-    case layoutTransition
     case clampToVisibleFrame
 }
 
@@ -44,7 +28,7 @@ enum WindowFramePlanner {
     static func plan(
         visibleFrame: CGRect,
         currentFrame: CGRect?,
-        mode: WindowLayoutMode,
+        mode: WindowLayoutMode = .workspace,
         context: WindowFramePlanningContext
     ) -> PlannedWindowFrame {
         let availableWidth = max(1, visibleFrame.width - (outerMargin * 2))
@@ -61,7 +45,7 @@ enum WindowFramePlanner {
 
         let plannedSize: CGSize
         switch context {
-        case .initialLaunch, .layoutTransition:
+        case .initialLaunch:
             plannedSize = targetSize
         case .clampToVisibleFrame:
             let baseSize = currentFrame?.size ?? targetSize
@@ -73,7 +57,7 @@ enum WindowFramePlanner {
 
         let plannedOrigin: CGPoint
         switch context {
-        case .initialLaunch, .layoutTransition:
+        case .initialLaunch:
             plannedOrigin = centeredOrigin(for: plannedSize, in: visibleFrame)
         case .clampToVisibleFrame:
             if let currentFrame {

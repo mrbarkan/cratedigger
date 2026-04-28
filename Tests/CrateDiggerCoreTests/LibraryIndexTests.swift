@@ -1,0 +1,157 @@
+#if canImport(XCTest)
+import Foundation
+import XCTest
+@testable import CrateDiggerCore
+
+final class LibraryIndexTests: XCTestCase {
+
+    func testBuildEmptyReturnsEmpty() {
+        let index = LibraryIndex.build(from: [])
+        XCTAssertTrue(index.artists.isEmpty)
+        XCTAssertEqual(index.albumCount, 0)
+        XCTAssertEqual(index.totalSizeBytes, 0)
+    }
+
+    func testGroupsTracksByArtistAndAlbum() {
+        let tracks: [LoadedTrack] = [
+            makeTrack(file: "/m/A/Loose Pages/02.flac", title: "Cassiopeia Drift", artist: "Maggot Brain Quartet", album: "Loose Pages", year: 1974, trackNumber: 2),
+            makeTrack(file: "/m/A/Loose Pages/01.flac", title: "Distant Receiver", artist: "Maggot Brain Quartet", album: "Loose Pages", year: 1974, trackNumber: 1),
+            makeTrack(file: "/m/A/Blue Room/01.flac", title: "Window Seat", artist: "Maggot Brain Quartet", album: "Blue Room Sessions", year: 1976, trackNumber: 1),
+            makeTrack(file: "/m/B/Atlas/01.flac", title: "Static", artist: "Nova Atlas", album: "Atlas", year: 2020, trackNumber: 1)
+        ]
+
+        let index = LibraryIndex.build(from: tracks)
+
+        XCTAssertEqual(index.artists.count, 2)
+        XCTAssertEqual(index.albumCount, 3)
+        XCTAssertEqual(index.allTracks.count, 4)
+
+        let mbq = try! XCTUnwrap(index.artists.first { $0.name == "Maggot Brain Quartet" })
+        XCTAssertEqual(mbq.albums.count, 2)
+        XCTAssertEqual(mbq.trackCount, 3)
+        // Albums sorted by year asc
+        XCTAssertEqual(mbq.albums.map(\.year), [1974, 1976])
+        // Tracks within Loose Pages sorted by trackNumber
+        let loose = mbq.albums[0]
+        XCTAssertEqual(loose.tracks.map(\.track.trackNumber), [1, 2])
+    }
+
+    func testArtistsSortedAlphabeticallyUnknownLast() {
+        let tracks: [LoadedTrack] = [
+            makeTrack(file: "/m/c.flac", title: "C", artist: "", album: "Album C", year: 2010, trackNumber: 1),
+            makeTrack(file: "/m/a.flac", title: "A", artist: "Aurelia Vance", album: "Drift", year: 2010, trackNumber: 1),
+            makeTrack(file: "/m/b.flac", title: "B", artist: "Hana Yi",       album: "Roots", year: 2018, trackNumber: 1),
+            makeTrack(file: "/m/d.flac", title: "D", artist: "kepler",        album: "K-One", year: 2024, trackNumber: 1)
+        ]
+
+        let index = LibraryIndex.build(from: tracks)
+        let names = index.artists.map(\.name)
+        XCTAssertEqual(names, ["Aurelia Vance", "Hana Yi", "kepler", "Unknown Artist"])
+    }
+
+    func testVariousArtistsCompilationStaysOneAlbum() {
+        let tracks: [LoadedTrack] = [
+            makeTrack(file: "/m/va/01.flac", title: "Track 1", artist: "Alpha", albumArtist: "Various Artists", album: "Sunday Morning", year: 2024, trackNumber: 1, compilation: true),
+            makeTrack(file: "/m/va/02.flac", title: "Track 2", artist: "Bravo", albumArtist: "Various Artists", album: "Sunday Morning", year: 2024, trackNumber: 2, compilation: true),
+            makeTrack(file: "/m/va/03.flac", title: "Track 3", artist: "Charlie", albumArtist: "Various Artists", album: "Sunday Morning", year: 2024, trackNumber: 3, compilation: true)
+        ]
+
+        let index = LibraryIndex.build(from: tracks)
+        XCTAssertEqual(index.artists.count, 1)
+        let va = try! XCTUnwrap(index.artists.first)
+        XCTAssertEqual(va.name, "Various Artists")
+        XCTAssertEqual(va.albums.count, 1)
+        XCTAssertEqual(va.albums[0].tracks.count, 3)
+        XCTAssertEqual(va.albums[0].tracks.map(\.track.trackNumber), [1, 2, 3])
+    }
+
+    func testEmptyArtistAndAlbumBucketUnderUnknownDefaults() {
+        let tracks: [LoadedTrack] = [
+            makeTrack(file: "/m/x.flac", title: "Drift", artist: "", album: "", year: nil, trackNumber: nil)
+        ]
+
+        let index = LibraryIndex.build(from: tracks)
+        XCTAssertEqual(index.artists.count, 1)
+        XCTAssertEqual(index.artists[0].name, "Unknown Artist")
+        XCTAssertEqual(index.artists[0].albums.count, 1)
+        XCTAssertEqual(index.artists[0].albums[0].title, "Unknown Album")
+        XCTAssertNil(index.artists[0].albums[0].year)
+        // ID is stable and contains both artist and album components
+        let albumID = index.artists[0].albums[0].id
+        XCTAssertTrue(albumID.contains("unknown"))
+    }
+
+    func testDiscThenTrackThenTitleSortWithinAlbum() {
+        let tracks: [LoadedTrack] = [
+            makeTrack(file: "/m/2-3.flac", title: "Z", artist: "X", album: "Y", year: 2020, trackNumber: 3, discNumber: 2),
+            makeTrack(file: "/m/1-1.flac", title: "B", artist: "X", album: "Y", year: 2020, trackNumber: 1, discNumber: 1),
+            makeTrack(file: "/m/1-2.flac", title: "A", artist: "X", album: "Y", year: 2020, trackNumber: 2, discNumber: 1),
+            makeTrack(file: "/m/2-1.flac", title: "M", artist: "X", album: "Y", year: 2020, trackNumber: 1, discNumber: 2),
+            makeTrack(file: "/m/no-num.flac", title: "Aardvark", artist: "X", album: "Y", year: 2020, trackNumber: nil, discNumber: nil)
+        ]
+
+        let index = LibraryIndex.build(from: tracks)
+        let titles = index.artists[0].albums[0].tracks.map(\.track.title)
+        // (disc ?? 1, track ?? .max): no-num lands at disc 1 / track Int.max → end of disc 1
+        XCTAssertEqual(titles, ["B", "A", "Aardvark", "M", "Z"])
+    }
+
+    func testArtworkHashPromotedFromFirstNonNilTrack() {
+        let tracks: [LoadedTrack] = [
+            makeTrack(file: "/m/1.flac", title: "T1", artist: "X", album: "Y", year: 2020, trackNumber: 1, artworkHash: nil),
+            makeTrack(file: "/m/2.flac", title: "T2", artist: "X", album: "Y", year: 2020, trackNumber: 2, artworkHash: "HASH-2"),
+            makeTrack(file: "/m/3.flac", title: "T3", artist: "X", album: "Y", year: 2020, trackNumber: 3, artworkHash: "HASH-3")
+        ]
+
+        let index = LibraryIndex.build(from: tracks)
+        XCTAssertEqual(index.artists[0].albums[0].artworkHash, "HASH-2")
+    }
+
+    func testAlbumIDIsStableAcrossRebuilds() {
+        let tracks: [LoadedTrack] = [
+            makeTrack(file: "/m/1.flac", title: "Cassiopeia Drift", artist: "Maggot Brain Quartet", album: "Loose Pages", year: 1974, trackNumber: 2),
+            makeTrack(file: "/m/2.flac", title: "Distant Receiver", artist: "Maggot Brain Quartet", album: "Loose Pages", year: 1974, trackNumber: 1)
+        ]
+
+        let firstID = LibraryIndex.build(from: tracks).artists[0].albums[0].id
+        let secondID = LibraryIndex.build(from: Array(tracks.reversed())).artists[0].albums[0].id
+        XCTAssertEqual(firstID, secondID)
+    }
+}
+
+private func makeTrack(
+    file: String,
+    title: String,
+    artist: String = "",
+    albumArtist: String? = nil,
+    album: String = "",
+    year: Int? = nil,
+    trackNumber: Int? = nil,
+    discNumber: Int? = nil,
+    compilation: Bool? = nil,
+    artworkHash: String? = nil
+) -> LoadedTrack {
+    let metadata = ConversionMetadata(
+        title: title,
+        artist: artist.isEmpty ? nil : artist,
+        albumArtist: albumArtist,
+        album: album.isEmpty ? nil : album,
+        compilation: compilation,
+        trackNumber: trackNumber,
+        discNumber: discNumber,
+        year: year
+    )
+    let track = AudioTrack(
+        fileURL: URL(fileURLWithPath: file),
+        title: title,
+        artist: artist,
+        album: album,
+        year: year,
+        trackNumber: trackNumber,
+        discNumber: discNumber,
+        artworkSource: artworkHash == nil ? .none : .embedded,
+        artworkHash: artworkHash
+    )
+    return LoadedTrack(track: track, metadata: metadata)
+}
+#endif
