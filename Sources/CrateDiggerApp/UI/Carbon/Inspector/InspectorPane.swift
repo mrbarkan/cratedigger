@@ -38,7 +38,7 @@ struct InspectorPane: View {
             }
             Spacer(minLength: 0)
             VStack(alignment: .trailing, spacing: 4) {
-                tapeLabel(text: tapeIdentifier(album))
+                trailingBadge(album: album)
                 Text(serialIdentifier(album))
                     .font(CarbonFont.mono(9, weight: .medium))
                     .tracking(1.6)
@@ -54,6 +54,30 @@ struct InspectorPane: View {
                 .frame(height: 1),
             alignment: .bottom
         )
+    }
+
+    @ViewBuilder
+    private func trailingBadge(album: Album?) -> some View {
+        if let album, album.artworkHash == nil {
+            fetchArtworkButton(for: album)
+        } else {
+            tapeLabel(text: tapeIdentifier(album))
+        }
+    }
+
+    private func fetchArtworkButton(for album: Album) -> some View {
+        let isLoading = model.isFetchingArtwork(for: album)
+        let label = isLoading ? "FETCHING…" : "FETCH ART"
+        return KeyButton(
+            style: isLoading ? .disabled : .normal,
+            action: { model.fetchRemoteArtwork(for: album) }
+        ) {
+            Text(label)
+                .font(CarbonFont.mono(9, weight: .bold))
+                .tracking(1.6)
+        }
+        .frame(width: 96, height: CarbonLayout.keyHeight)
+        .help("Search iTunes for cover art for this album.")
     }
 
     private func captionSubtitle(_ album: Album?) -> String {

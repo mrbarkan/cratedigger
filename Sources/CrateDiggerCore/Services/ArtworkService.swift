@@ -44,6 +44,12 @@ public final class ArtworkService: ArtworkPreparing {
         return nil
     }
 
+    /// Make `asset.data` available to `generateThumbnail(artworkHash:size:)`.
+    /// Used after fetching artwork from sources outside the scan pipeline (e.g. iTunes).
+    public func ingest(_ asset: ArtworkAsset) {
+        storeData(asset.data, for: asset.hash)
+    }
+
     public func generateThumbnail(artworkHash: String, size: CGSize) -> NSImage? {
         let cacheKey = "\(artworkHash)-\(Int(size.width))x\(Int(size.height))" as NSString
         if let cached = thumbnailCache.object(forKey: cacheKey) {

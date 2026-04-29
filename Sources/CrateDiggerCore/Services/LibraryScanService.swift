@@ -14,12 +14,14 @@ public struct LoadedTrack: Sendable {
 public final class LibraryScanService {
     private let fileManager: FileManager
     private let artworkService: ArtworkService
+    private let remoteArtworkService: RemoteArtworkService?
     private let metadataProbe: MetadataProbing?
     private let supportedExtensions: Set<String>
 
     public init(
         fileManager: FileManager = .default,
         artworkService: ArtworkService = ArtworkService(),
+        remoteArtworkService: RemoteArtworkService? = nil,
         metadataProbe: MetadataProbing? = nil,
         supportedExtensions: Set<String> = ["mp3", "aac", "m4a", "flac", "wav", "aiff", "ogg", "opus", "caf"]
     ) {
@@ -36,6 +38,7 @@ public final class LibraryScanService {
         }
         self.fileManager = fileManager
         self.artworkService = artworkService
+        self.remoteArtworkService = remoteArtworkService
         self.metadataProbe = resolvedProbe
         self.supportedExtensions = supportedExtensions
     }
@@ -128,7 +131,13 @@ public final class LibraryScanService {
         let avCompilation = await boolValue(forIdentifierContains: ["compilation", "cpil", "tcmp"], in: allMetadata)
 
         let durationSeconds = await duration(from: asset)
-        let artwork = await artworkService.resolveArtwork(trackURL: fileURL)
+        var artwork = await artworkService.resolveArtwork(trackURL: fileURL)
+        if artwork == nil, let remoteArtworkService {
+            if let cached = await remoteArtworkService.cachedArtwork(artist: avArtist, album: avAlbum) {
+                artworkService.ingest(cached)
+                artwork = cached
+            }
+        }
 
         let avMetadata = ConversionMetadata(
             title: avTitle,

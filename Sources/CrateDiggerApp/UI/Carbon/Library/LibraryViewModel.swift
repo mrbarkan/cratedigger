@@ -65,6 +65,7 @@ final class LibraryViewModel: ObservableObject {
     @Published private(set) var playbackDuration: Double = 0
     @Published private(set) var playbackErrorMessage: String?
     @Published var appAlert: AppAlert?
+    @Published private(set) var albumsFetchingArtwork: Set<String> = []
 
     @Published var playbackVolume: Double = 0.8 {
         didSet { playback.setVolume(playbackVolume) }
@@ -82,6 +83,7 @@ final class LibraryViewModel: ObservableObject {
     let playback: PlaybackServiceProtocol
     let scanner: LibraryScanService
     let artworkService: ArtworkService
+    let remoteArtworkService: RemoteArtworkService
     let prefs: PreferencesStore
 
     // MARK: - Private
@@ -96,11 +98,13 @@ final class LibraryViewModel: ObservableObject {
     init(
         playback: PlaybackServiceProtocol = PlaybackService(),
         artworkService: ArtworkService = ArtworkService(),
+        remoteArtworkService: RemoteArtworkService = RemoteArtworkService(),
         scanner: LibraryScanService? = nil,
         prefs: PreferencesStore = .shared
     ) {
         self.playback = playback
         self.artworkService = artworkService
+        self.remoteArtworkService = remoteArtworkService
         self.prefs = prefs
 
         if let scanner {
@@ -110,14 +114,26 @@ final class LibraryViewModel: ObservableObject {
             if let resolved = toolLocator.resolveOptional(.ffprobe) {
                 do {
                     let probe = try MetadataProbeService(ffprobeExecutableURL: resolved.url)
-                    self.scanner = LibraryScanService(artworkService: artworkService, metadataProbe: probe)
+                    self.scanner = LibraryScanService(
+                        artworkService: artworkService,
+                        remoteArtworkService: remoteArtworkService,
+                        metadataProbe: probe
+                    )
                 } catch {
                     AppLog.tools.warning("Found ffprobe at \(resolved.url.path, privacy: .public) but could not initialize MetadataProbeService: \(String(describing: error), privacy: .public)")
-                    self.scanner = LibraryScanService(artworkService: artworkService, metadataProbe: nil)
+                    self.scanner = LibraryScanService(
+                        artworkService: artworkService,
+                        remoteArtworkService: remoteArtworkService,
+                        metadataProbe: nil
+                    )
                 }
             } else {
                 AppLog.tools.notice("ffprobe not found via ExternalToolLocator; scan will use AVFoundation metadata only")
-                self.scanner = LibraryScanService(artworkService: artworkService, metadataProbe: nil)
+                self.scanner = LibraryScanService(
+                    artworkService: artworkService,
+                    remoteArtworkService: remoteArtworkService,
+                    metadataProbe: nil
+                )
             }
         }
 
@@ -328,6 +344,66 @@ final class LibraryViewModel: ObservableObject {
     }
 
     func toggleShuffle() { shuffleEnabled.toggle() }
+
+    // MARK: - Remote artwork fetch
+
+    func isFetchingArtwork(for album: Album) -> Bool {
+        albumsFetchingArtwork.contains(album.id)
+    }
+
+    func fetchRemoteArtwork(for album: Album) {
+        let albumID = album.id
+        guard !albumsFetchingArtwork.contains(albumID) else { return }
+        albumsFetchingArtwork.insert(albumID)
+
+        let artistName = album.artistName
+        let albumTitle = album.title
+
+        Task { [weak self, remoteArtworkService] in
+            do {
+                let asset = try await remoteArtworkService.fetchArtwork(
+                    artist: artistName,
+                    album: albumTitle
+                )
+                await MainActor.run {
+                    guard let self else { return }
+                    self.albumsFetchingArtwork.remove(albumID)
+                    self.applyFetchedArtwork(asset, toAlbumID: albumID)
+                }
+            } catch {
+                AppLog.library.warning("Remote artwork fetch failed for \(albumTitle, privacy: .public): \(String(describing: error), privacy: .public)")
+                await MainActor.run {
+                    guard let self else { return }
+                    self.albumsFetchingArtwork.remove(albumID)
+                    self.appAlert = .error(
+                        title: "No artwork found",
+                        message: (error as? LocalizedError)?.errorDescription
+                            ?? "iTunes returned no match. Try a different album, or drop a cover.jpg next to the file."
+                    )
+                }
+            }
+        }
+    }
+
+    private func applyFetchedArtwork(_ asset: ArtworkAsset, toAlbumID albumID: String) {
+        artworkService.ingest(asset)
+
+        guard let album = index.album(id: albumID) else { return }
+        let affected = Set(album.tracks.map { $0.track.id })
+
+        let updatedTracks: [LoadedTrack] = index.allTracks.map { loaded in
+            guard affected.contains(loaded.track.id) else { return loaded }
+            var newTrack = loaded.track
+            newTrack.artworkSource = .remote
+            newTrack.artworkHash = asset.hash
+            newTrack.artworkDimensions = asset.dimensions
+            var newMetadata = loaded.metadata
+            newMetadata.artwork = asset
+            return LoadedTrack(track: newTrack, metadata: newMetadata)
+        }
+
+        index = LibraryIndex.build(from: updatedTracks)
+    }
 
     func cycleRepeatMode() {
         switch repeatMode {

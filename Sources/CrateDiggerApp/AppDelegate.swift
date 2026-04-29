@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private let prefs: PreferencesStore = .shared
     private var openRecentMenu: NSMenu?
     private var recentFolderURLs: [URL] = []
+    private var spaceKeyMonitor: Any?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildMenu()
@@ -16,6 +17,55 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         self.mainWindowController = windowController
         windowController.showWindow(self)
         windowController.restoreLastSession()
+
+        installSpaceKeyMonitor()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        if let token = spaceKeyMonitor {
+            NSEvent.removeMonitor(token)
+            spaceKeyMonitor = nil
+        }
+    }
+
+    /// Plain Space-as-menu-shortcut is unreliable in AppKit because focused
+    /// controls and the responder chain swallow the keyDown first. We install
+    /// a local monitor that fires Play/Pause when Space is pressed with no
+    /// modifiers and no text editor is active, then consumes the event.
+    private func installSpaceKeyMonitor() {
+        spaceKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+
+            let modifiers = event.modifierFlags
+                .intersection([.command, .option, .control, .shift])
+            guard modifiers.isEmpty else { return event }
+            guard event.charactersIgnoringModifiers == " " else { return event }
+            guard !Self.isTextEditingFirstResponder() else { return event }
+            guard NSApp.keyWindow != nil else { return event }
+
+            self.mainWindowController?.togglePlayPause()
+            return nil
+        }
+    }
+
+    private static func isTextEditingFirstResponder() -> Bool {
+        guard let responder = NSApp.keyWindow?.firstResponder else { return false }
+        if let textView = responder as? NSTextView, textView.isEditable {
+            return true
+        }
+        // When a text field is focused the firstResponder is usually the
+        // window's shared field editor (an NSTextView), but walk the superview
+        // chain too for cases where the field itself owns focus.
+        if let view = responder as? NSView {
+            var node: NSView? = view
+            while let n = node {
+                if n is NSTextField || n is NSSearchField || n is NSComboBox {
+                    return true
+                }
+                node = n.superview
+            }
+        }
+        return false
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

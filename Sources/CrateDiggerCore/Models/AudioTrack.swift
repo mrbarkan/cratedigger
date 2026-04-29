@@ -3,6 +3,7 @@ import Foundation
 public enum ArtworkSource: String, Codable, Sendable {
     case embedded
     case folderImage = "folder_image"
+    case remote
     case none
 }
 
