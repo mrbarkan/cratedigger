@@ -22,6 +22,7 @@ public final class PreferencesStore {
         static let oledView = "cratedigger.ui.oledView"
         static let shuffleEnabled = "cratedigger.playback.shuffle"
         static let repeatMode = "cratedigger.playback.repeatMode"
+        static let clickSoundsEnabled = "cratedigger.ui.clickSoundsEnabled"
     }
 
     // MARK: - Window frame
@@ -134,6 +135,16 @@ public final class PreferencesStore {
                 defaults.removeObject(forKey: Key.repeatMode)
             }
         }
+    }
+
+    public var clickSoundsEnabled: Bool {
+        get {
+            // Default true so the skeuomorphic feel is on out of the box.
+            // Use object(forKey:) so we can distinguish "never set" from "set to false".
+            if defaults.object(forKey: Key.clickSoundsEnabled) == nil { return true }
+            return defaults.bool(forKey: Key.clickSoundsEnabled)
+        }
+        set { defaults.set(newValue, forKey: Key.clickSoundsEnabled) }
     }
 
     // MARK: - Reset

@@ -108,10 +108,21 @@ private struct GeneralPreferencesView: View {
 private struct AdvancedPreferencesView: View {
     @State private var ffmpegPath: String = ""
     @State private var ffprobePath: String = ""
+    @State private var clickSoundsEnabled: Bool = PreferencesStore.shared.clickSoundsEnabled
     @State private var showResetConfirmation = false
 
     var body: some View {
         Form {
+            Section("Interface") {
+                Toggle("Click sounds", isOn: $clickSoundsEnabled)
+                    .onChange(of: clickSoundsEnabled) { newValue in
+                        PreferencesStore.shared.clickSoundsEnabled = newValue
+                    }
+                Text("Plays short hardware-style click sounds when you press chassis buttons. Off if you'd rather have silent chrome.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("External tools") {
                 LabeledContent("ffmpeg path") {
                     HStack {

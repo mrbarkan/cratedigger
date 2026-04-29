@@ -6,7 +6,10 @@ struct PlayDomeButton: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
+        Button(action: {
+            ClickPlayer.shared.play(.firm)
+            action()
+        }) {
             ZStack {
                 Circle()
                     .fill(

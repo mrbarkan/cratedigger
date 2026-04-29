@@ -27,10 +27,16 @@ struct UtilityCluster: View {
 
     private var grid: some View {
         HStack(spacing: 8) {
-            key(label: "Tag", on: model.oledView == .nowPlaying) {
+            // Tag shortcuts to the Now-Playing OLED view but its visual state
+            // doesn't mirror oledView — that's what the DisplayModeButton is
+            // for. Keeping it as a momentary trigger.
+            key(label: "Tag", on: false) {
                 model.oledView = .nowPlaying
             }
-            key(label: "Cnvrt", on: model.oledView == .conversion) {
+            // Cnvrt is a trigger that opens the conversion options sheet. It
+            // lights up only while a batch is actually running, not while the
+            // OLED happens to be on the Conversion view.
+            key(label: "Cnvrt", on: model.conversionProgress.isRunning) {
                 presentConversionOptions()
             }
         }

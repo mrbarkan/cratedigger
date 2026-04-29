@@ -10,11 +10,16 @@ enum KeyButtonStyle: Equatable {
 struct KeyButton<Label: View>: View {
     @Environment(\.carbon) private var theme
     var style: KeyButtonStyle = .normal
+    var clickVariant: ClickPlayer.Variant = .key
     var action: () -> Void = {}
     @ViewBuilder var label: () -> Label
 
     var body: some View {
-        Button(action: { if style != .disabled { action() } }) {
+        Button(action: {
+            guard style != .disabled else { return }
+            ClickPlayer.shared.play(clickVariant)
+            action()
+        }) {
             ZStack {
                 background
                 label()

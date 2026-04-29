@@ -35,6 +35,7 @@ struct VolumeKnob: View {
             .background(WindowDragGuard())
             .gesture(dragGesture)
             .onTapGesture(count: 2) {
+                ClickPlayer.shared.play(.tick)
                 value = 0.8
             }
             .accessibilityValue("\(Int(value * 100)) percent")
