@@ -33,11 +33,13 @@ struct UtilityCluster: View {
             key(label: "Tag", on: false) {
                 model.oledView = .nowPlaying
             }
-            // Cnvrt is a trigger that opens the conversion options sheet. It
-            // lights up only while a batch is actually running, not while the
-            // OLED happens to be on the Conversion view.
+            // Cnvrt jumps straight to the patch-bay (OLED + Inspector both
+            // switch to convert mode). Lights up while a batch is running.
             key(label: "Cnvrt", on: model.conversionProgress.isRunning) {
-                presentConversionOptions()
+                model.oledView = .conversion
+                if model.inspectorCollapsed {
+                    model.inspectorCollapsed = false
+                }
             }
         }
     }
@@ -58,26 +60,5 @@ struct UtilityCluster: View {
         } else {
             meters.stop()
         }
-    }
-
-    private func presentConversionOptions() {
-        model.oledView = .conversion
-
-        guard let host = NSApp.keyWindow?.contentViewController else { return }
-
-        let controller = ConversionOptionsSheetController(
-            initialSelection: model.makeInitialConversionSelection(),
-            outputFormats: OutputFormat.allCases,
-            bitrateOptions: [128, 160, 192, 256, 320],
-            sampleRateOptions: [44_100, 48_000, 88_200, 96_000]
-        )
-        controller.onDecision = { [weak controller, weak model = model] selection in
-            controller?.dismiss(nil)
-            guard let selection, let model else { return }
-            // Re-resolve the host after dismissal so the sheet stack is settled.
-            guard let host = NSApp.keyWindow?.contentViewController else { return }
-            model.runConversion(selection: selection, presentingFrom: host)
-        }
-        host.presentAsSheet(controller)
     }
 }

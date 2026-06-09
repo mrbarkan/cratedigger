@@ -6,50 +6,76 @@ struct ViewSwitcherColumn: View {
     var body: some View {
         VStack(spacing: 8) {
             DisplayModeButton()
-            AppearanceModeToggle()
+            AppearanceCycleButton()
         }
     }
 }
 
-private struct AppearanceModeToggle: View {
+/// Single skeuomorphic button that cycles `Light → Dark → System` on tap,
+/// replacing the previous three-segment LT / DK / AUTO selector. Uses the
+/// shared `ChromeChassis` so it sits in the chassis like a hardware switch.
+private struct AppearanceCycleButton: View {
     @Environment(\.carbon) private var theme
-    @State private var mode: AppearanceMode = AppearanceModeToggle.currentMode()
+    @State private var mode: AppearanceMode = AppearanceCycleButton.currentMode()
+
+    private static let cycle: [AppearanceMode] = [.system, .light, .dark]
 
     var body: some View {
-        HStack(spacing: 3) {
-            ForEach(AppearanceMode.allCases, id: \.self) { option in
-                segment(for: option)
+        Button(action: advance) {
+            HStack(spacing: 6) {
+                Text(symbol)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(symbolColor)
+                Text(label)
+                    .font(CarbonFont.mono(9, weight: .bold))
+                    .tracking(1.6)
+                    .foregroundStyle(theme.ink2)
             }
+            .padding(.horizontal, 10)
+            .frame(maxWidth: .infinity)
+            .frame(height: 26)
+            .background(ChromeChassis(theme: theme, cornerRadius: 5))
         }
+        .buttonStyle(.plain)
+        .help("Cycle appearance: System → Light → Dark")
+        .accessibilityLabel(Text("Appearance: \(label)"))
+        .accessibilityHint(Text("Tap to cycle"))
         .onReceive(NotificationCenter.default.publisher(for: AppearanceMode.didChangeNotification)) { _ in
-            mode = AppearanceModeToggle.currentMode()
+            mode = AppearanceCycleButton.currentMode()
         }
     }
 
-    @ViewBuilder
-    private func segment(for option: AppearanceMode) -> some View {
-        let isOn = (option == mode)
-        KeyButton(style: isOn ? .selected : .normal, action: { select(option) }) {
-            Text(label(for: option))
-                .font(CarbonFont.mono(8.5, weight: .bold))
-                .tracking(1.4)
-        }
-        .frame(maxWidth: .infinity)
+    private func advance() {
+        let cycle = Self.cycle
+        let idx = cycle.firstIndex(of: mode) ?? 0
+        let next = cycle[(idx + 1) % cycle.count]
+        mode = next
+        UserDefaults.standard.set(next.rawValue, forKey: AppearanceMode.userDefaultsKey)
+        NotificationCenter.default.post(name: AppearanceMode.didChangeNotification, object: nil)
     }
 
-    private func label(for option: AppearanceMode) -> String {
-        switch option {
-        case .light:  return "LT"
-        case .dark:   return "DK"
+    private var label: String {
+        switch mode {
+        case .light:  return "LIGHT"
+        case .dark:   return "DARK"
         case .system: return "AUTO"
         }
     }
 
-    private func select(_ option: AppearanceMode) {
-        guard option != mode else { return }
-        mode = option
-        UserDefaults.standard.set(option.rawValue, forKey: AppearanceMode.userDefaultsKey)
-        NotificationCenter.default.post(name: AppearanceMode.didChangeNotification, object: nil)
+    private var symbol: String {
+        switch mode {
+        case .light:  return "☀︎"
+        case .dark:   return "☾"
+        case .system: return "◐"
+        }
+    }
+
+    private var symbolColor: Color {
+        switch mode {
+        case .light:  return theme.sun
+        case .dark:   return theme.cyan
+        case .system: return theme.orange
+        }
     }
 
     private static func currentMode() -> AppearanceMode {

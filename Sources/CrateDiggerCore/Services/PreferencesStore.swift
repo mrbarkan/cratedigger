@@ -16,6 +16,7 @@ public final class PreferencesStore {
         static let windowFrame = "cratedigger.window.frame"
         static let libraryFolderBookmarks = "cratedigger.library.folderBookmarks"
         static let outputDestinationBookmark = "cratedigger.conversion.outputBookmark"
+        static let externalDeviceProfiles = "cratedigger.externalDevices.profiles"
         static let lastConversionSelection = "cratedigger.conversion.lastSelection"
         static let customFFmpegPath = "cratedigger.tools.ffmpegPath"
         static let customFFprobePath = "cratedigger.tools.ffprobePath"
@@ -65,6 +66,40 @@ public final class PreferencesStore {
                 defaults.removeObject(forKey: Key.outputDestinationBookmark)
             }
         }
+    }
+
+    // MARK: - External device profiles
+
+    public var savedExternalDeviceProfiles: [ExternalDeviceProfile] {
+        get {
+            guard let data = defaults.data(forKey: Key.externalDeviceProfiles) else {
+                return []
+            }
+            return (try? decoder.decode([ExternalDeviceProfile].self, from: data)) ?? []
+        }
+        set {
+            if newValue.isEmpty {
+                defaults.removeObject(forKey: Key.externalDeviceProfiles)
+            } else if let data = try? encoder.encode(newValue) {
+                defaults.set(data, forKey: Key.externalDeviceProfiles)
+            }
+        }
+    }
+
+    public func upsertExternalDeviceProfile(_ profile: ExternalDeviceProfile) {
+        var profiles = savedExternalDeviceProfiles
+        if let index = profiles.firstIndex(where: { $0.id == profile.id }) {
+            profiles[index] = profile
+        } else {
+            profiles.append(profile)
+        }
+        savedExternalDeviceProfiles = profiles.sorted {
+            $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+        }
+    }
+
+    public func removeExternalDeviceProfile(id: UUID) {
+        savedExternalDeviceProfiles = savedExternalDeviceProfiles.filter { $0.id != id }
     }
 
     // MARK: - Last-used conversion selection
@@ -160,6 +195,7 @@ public final class PreferencesStore {
             Key.windowFrame,
             Key.libraryFolderBookmarks,
             Key.outputDestinationBookmark,
+            Key.externalDeviceProfiles,
             Key.lastConversionSelection,
             Key.customFFmpegPath,
             Key.customFFprobePath,

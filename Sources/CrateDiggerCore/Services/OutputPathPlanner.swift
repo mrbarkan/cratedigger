@@ -174,7 +174,8 @@ public struct OutputPathPlanner {
         folderMode: FolderStructureMode,
         templateConfig: FolderTemplateConfig,
         reviewedAlbumFolders: [AlbumFolderKey: String] = [:],
-        reservedDestinationPaths: Set<String> = []
+        reservedDestinationPaths: Set<String> = [],
+        destinationFileExtension: String? = nil
     ) -> PlannedOutputPath {
         let track = loadedTrack.track
         let sourceDirectory = track.fileURL.deletingLastPathComponent()
@@ -209,14 +210,15 @@ public struct OutputPathPlanner {
         }
 
         let baseName = sanitizePathComponent(track.fileURL.deletingPathExtension().lastPathComponent, fallback: "Track")
+        let outputExtension = normalizedFileExtension(destinationFileExtension) ?? preset.outputExtension
         let destinationURL = uniqueDestinationURL(
             in: outputDirectory,
             baseName: baseName,
-            extension: preset.outputExtension,
+            extension: outputExtension,
             reservedDestinationPaths: reservedDestinationPaths
         )
 
-        let collisionCount = collisionCount(for: destinationURL, baseName: baseName, fileExtension: preset.outputExtension)
+        let collisionCount = collisionCount(for: destinationURL, baseName: baseName, fileExtension: outputExtension)
         return PlannedOutputPath(
             destinationURL: destinationURL,
             relativeSubpath: relativeSubpath,
@@ -263,6 +265,19 @@ public struct OutputPathPlanner {
         }
 
         return max(1, count)
+    }
+
+    private func normalizedFileExtension(_ rawValue: String?) -> String? {
+        guard var value = rawValue?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else {
+            return nil
+        }
+        if value.hasPrefix(".") {
+            value.removeFirst()
+        }
+        value = value.replacingOccurrences(of: "/", with: "")
+        value = value.replacingOccurrences(of: ":", with: "")
+        value = value.replacingOccurrences(of: "\\", with: "")
+        return value.isEmpty ? nil : value
     }
 
     private func tokenValue(for token: FolderToken, loadedTrack: LoadedTrack) -> String? {

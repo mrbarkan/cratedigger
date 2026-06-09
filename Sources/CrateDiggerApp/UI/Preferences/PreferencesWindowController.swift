@@ -28,10 +28,12 @@ private struct PreferencesView: View {
         TabView {
             GeneralPreferencesView()
                 .tabItem { Label("General", systemImage: "gearshape") }
+            DevicesPreferencesView()
+                .tabItem { Label("Devices", systemImage: "externaldrive") }
             AdvancedPreferencesView()
                 .tabItem { Label("Advanced", systemImage: "wrench.and.screwdriver") }
         }
-        .frame(minWidth: 480, minHeight: 320)
+        .frame(minWidth: 760, minHeight: 540)
         .padding(20)
     }
 }

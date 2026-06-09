@@ -174,19 +174,21 @@ extension LibraryViewModel {
 
     // MARK: - Implementation
 
-    private func customFFmpegExecutableURL() -> URL? {
+    func customFFmpegExecutableURL() -> URL? {
         guard let path = prefs.customFFmpegPath, !path.isEmpty else { return nil }
         return URL(fileURLWithPath: path)
     }
 
     @MainActor
-    private func tracksForBatchScope(_ scope: ConversionBatchScope) -> [LoadedTrack] {
+    func tracksForBatchScope(_ scope: ConversionBatchScope) -> [LoadedTrack] {
         switch scope {
         case .selectedTracks:
             // V1 semantics: "selected tracks" = the currently selected album's
             // tracks. Multi-track selection isn't a UI concept yet; this is the
             // most useful default a user will reach for from the Cnvrt key.
             return visibleTracks
+        case .currentAlbum:
+            return selectedAlbum?.tracks ?? []
         case .allLoadedTracks:
             return index.allTracks
         }
@@ -358,7 +360,7 @@ extension LibraryViewModel {
     }
 
     @MainActor
-    private func runConversionQueue(
+    func runConversionQueue(
         service: ConversionService,
         jobs: [ConversionJob],
         preset: ConversionPreset
@@ -469,7 +471,7 @@ extension LibraryViewModel {
     }
 
     @MainActor
-    private func presentSummary(report: ConversionReport, presentingFrom host: NSViewController) {
+    func presentSummary(report: ConversionReport, presentingFrom host: NSViewController) {
         let summary = ConversionSummarySheetController(report: report)
         summary.onClose = { [weak summary] in
             summary?.dismiss(nil)

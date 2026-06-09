@@ -41,11 +41,12 @@ struct DisplayModeButton: View {
 
     private var screen: some View {
         ZStack {
-            // Recessed dark "LCD" panel
+            // Recessed dark "LCD" panel — always near-black so the LED
+            // glyph pops; the chassis itself adapts to theme.
             RoundedRectangle(cornerRadius: 3, style: .continuous)
                 .fill(
                     LinearGradient(
-                        colors: [Color(hex: 0x050504), Color(hex: 0x0E0E0C)],
+                        colors: [theme.wellDeep, theme.metalDeep],
                         startPoint: .top,
                         endPoint: .bottom
                     )
@@ -110,23 +111,36 @@ struct DisplayModeButton: View {
 
     @ViewBuilder
     private var chassis: some View {
-        RoundedRectangle(cornerRadius: 7, style: .continuous)
+        ChromeChassis(theme: theme, cornerRadius: 7)
+    }
+}
+
+/// Shared chassis treatment used by `DisplayModeButton` and the patch bay's
+/// `PatchBayCycleButton`. Carbon: warm gunmetal gradient. Linen: light
+/// brushed chassis. Adds a top highlight + bottom inner shadow for the
+/// "raised" plate look, plus a soft drop shadow.
+struct ChromeChassis: View {
+    let theme: CarbonTheme
+    var cornerRadius: CGFloat = 7
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        return shape
             .fill(
                 LinearGradient(
                     colors: theme.isDark
-                        ? [Color(hex: 0x4A4A45), Color(hex: 0x1A1A18)]
+                        ? [theme.metalHi, theme.metalLo]
                         : [theme.chassisHi, theme.chassisLo],
                     startPoint: .top,
                     endPoint: .bottom
                 )
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .strokeBorder(Color.white.opacity(theme.isDark ? 0.10 : 0.55), lineWidth: 0.6)
+                shape.strokeBorder(Color.white.opacity(theme.isDark ? 0.10 : 0.55), lineWidth: 0.6)
             )
             .overlay(
                 // Bottom inner shadow for the "raised" feel
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                shape
                     .strokeBorder(Color.black.opacity(theme.isDark ? 0.35 : 0.15), lineWidth: 0.5)
                     .blur(radius: 0.5)
                     .mask(

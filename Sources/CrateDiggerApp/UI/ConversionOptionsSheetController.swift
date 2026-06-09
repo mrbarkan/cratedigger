@@ -4,12 +4,15 @@ import SwiftUI
 
 enum ConversionBatchScope: Int, CaseIterable {
     case selectedTracks
+    case currentAlbum
     case allLoadedTracks
 
     var title: String {
         switch self {
         case .selectedTracks:
             return "Selected Tracks"
+        case .currentAlbum:
+            return "Current Album"
         case .allLoadedTracks:
             return "All Loaded Tracks"
         }
@@ -17,15 +20,15 @@ enum ConversionBatchScope: Int, CaseIterable {
 }
 
 struct ConversionOptionsSelection {
-    let batchScope: ConversionBatchScope
-    let outputFormat: OutputFormat
-    let bitrate: Int?
-    let sampleRate: Int?
-    let artworkMaxDimension: Int?
-    let folderStructureMode: FolderStructureMode
-    let applyMode: TemplateApplyMode
-    let templatePreset: TemplatePreset
-    let tokenOrder: [FolderToken]
+    var batchScope: ConversionBatchScope
+    var outputFormat: OutputFormat
+    var bitrate: Int?
+    var sampleRate: Int?
+    var artworkMaxDimension: Int?
+    var folderStructureMode: FolderStructureMode
+    var applyMode: TemplateApplyMode
+    var templatePreset: TemplatePreset
+    var tokenOrder: [FolderToken]
 }
 
 final class ConversionOptionsSheetController: NSViewController {

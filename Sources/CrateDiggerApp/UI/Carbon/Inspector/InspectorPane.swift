@@ -5,20 +5,75 @@ struct InspectorPane: View {
     @Environment(\.carbon) private var theme
     @EnvironmentObject private var model: LibraryViewModel
 
+    /// Width threshold above which the inspector switches from the default
+    /// vertical layout (poster on top, metadata below) to a wide horizontal
+    /// layout (metadata on the left, square poster on the right). Tuned to
+    /// the inspector well width when the browser is collapsed: ~580pt+.
+    private static let wideLayoutThreshold: CGFloat = 520
+
     var body: some View {
+        ZStack {
+            if model.oledView == .conversion {
+                ConvertPatchBay()
+                    .transition(.opacity)
+            } else {
+                inspectorContent
+                    .transition(.opacity)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .animation(.easeInOut(duration: 0.22), value: model.oledView)
+    }
+
+    private var inspectorContent: some View {
+        GeometryReader { geo in
+            if geo.size.width >= Self.wideLayoutThreshold {
+                wideLayout(width: geo.size.width)
+            } else {
+                narrowLayout
+            }
+        }
+    }
+
+    // Default vertical layout: poster on top, caption + specs + tags stacked
+    // below. Used when the inspector is at its standard 380pt width.
+    private var narrowLayout: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(spacing: 0) {
                 AlbumPoster(album: model.selectedAlbum)
                     .padding(14)
-
                 captionBlock
-
                 SpecRows(album: model.selectedAlbum)
-
                 TagChips(album: model.selectedAlbum)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    // Wide layout: metadata column on the left, square album art on the
+    // right. Activated when the browser is collapsed and the inspector
+    // takes the freed chassis width — better proportions for the artwork
+    // and stops the metadata from being squashed.
+    private func wideLayout(width: CGFloat) -> some View {
+        // Reserve roughly half for the poster, capped so it doesn't dominate
+        // very wide chassis. The other half flows the metadata column.
+        let posterSize = min(max(width * 0.45, 280), 460)
+        return HStack(alignment: .top, spacing: 18) {
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 0) {
+                    captionBlock
+                    SpecRows(album: model.selectedAlbum)
+                    TagChips(album: model.selectedAlbum)
+                }
+            }
+            .frame(maxWidth: .infinity)
+
+            VStack(spacing: 0) {
+                AlbumPoster(album: model.selectedAlbum)
+                    .frame(width: posterSize, height: posterSize)
+                Spacer(minLength: 0)
+            }
+        }
+        .padding(EdgeInsets(top: 14, leading: 14, bottom: 14, trailing: 14))
     }
 
     @ViewBuilder

@@ -542,24 +542,16 @@ public final class ConversionService {
             writtenNormalizedKeys.insert(normalizedMetadataKey(key))
         }
 
-        if let trackNumber = metadata.trackNumber {
-            let trackValue: String
-            if let trackTotal = metadata.trackTotal, trackTotal > 0 {
-                trackValue = "\(trackNumber)/\(trackTotal)"
-            } else {
-                trackValue = "\(trackNumber)"
-            }
-            add("track", trackValue)
+        if let trackNumber = metadata.trackNumber,
+           let trackTotal = metadata.trackTotal,
+           trackTotal > 0 {
+            add("track", "\(trackNumber)/\(trackTotal)")
         }
 
-        if let discNumber = metadata.discNumber {
-            let discValue: String
-            if let discTotal = metadata.discTotal, discTotal > 0 {
-                discValue = "\(discNumber)/\(discTotal)"
-            } else {
-                discValue = "\(discNumber)"
-            }
-            add("disc", discValue)
+        if let discNumber = metadata.discNumber,
+           let discTotal = metadata.discTotal,
+           discTotal > 0 {
+            add("disc", "\(discNumber)/\(discTotal)")
         }
 
         add("album_artist", metadata.albumArtist)

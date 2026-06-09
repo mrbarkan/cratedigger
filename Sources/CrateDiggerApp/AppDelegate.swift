@@ -99,6 +99,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         mainWindowController?.presentConversionSheet()
     }
 
+    @objc private func transferToDevice(_ sender: Any?) {
+        mainWindowController?.presentExternalDeviceTransferSheet()
+    }
+
     @objc private func cancelConversion(_ sender: Any?) {
         mainWindowController?.cancelConversion()
     }
@@ -212,8 +216,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             }
             return true
         case #selector(revealSelectionInFinder(_:)),
-             #selector(convertSelected(_:)):
-            return mainWindowController?.currentSelectionURL() != nil
+             #selector(convertSelected(_:)),
+             #selector(transferToDevice(_:)):
+            return (mainWindowController?.currentSelectionURL() != nil)
+                && !(mainWindowController?.isConversionRunning ?? false)
         case #selector(cancelConversion(_:)):
             return mainWindowController?.isConversionRunning ?? false
         case #selector(togglePlayPause(_:)),
@@ -325,6 +331,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         let convertItem = makeItem(title: "Convert Selected…", action: #selector(convertSelected(_:)), key: "c")
         convertItem.keyEquivalentModifierMask = [.command, .shift]
         fileMenu.addItem(convertItem)
+        let transferItem = makeItem(title: "Transfer to Device…", action: #selector(transferToDevice(_:)), key: "t")
+        transferItem.keyEquivalentModifierMask = [.command, .shift]
+        fileMenu.addItem(transferItem)
         fileMenu.addItem(makeItem(title: "Cancel Conversion", action: #selector(cancelConversion(_:)), key: "."))
         fileMenuItem.submenu = fileMenu
 

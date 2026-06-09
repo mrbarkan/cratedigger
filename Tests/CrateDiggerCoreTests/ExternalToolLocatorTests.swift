@@ -18,7 +18,12 @@ final class ExternalToolLocatorTests: XCTestCase {
                 in: temporaryDirectory
             )
 
-            let locator = ExternalToolLocator(fileManager: .default, environment: [:], bundle: bundle)
+            let locator = ExternalToolLocator(
+                fileManager: .default,
+                environment: [:],
+                bundle: bundle,
+                defaultSystemSearchDirectories: []
+            )
             let resolved = try locator.resolveRequired(.ffmpeg, explicitOverride: explicitTool)
 
             XCTAssertEqual(resolved.url, bundledTool)
@@ -35,7 +40,12 @@ final class ExternalToolLocatorTests: XCTestCase {
                 in: temporaryDirectory
             )
 
-            let locator = ExternalToolLocator(fileManager: .default, environment: [:], bundle: bundle)
+            let locator = ExternalToolLocator(
+                fileManager: .default,
+                environment: [:],
+                bundle: bundle,
+                defaultSystemSearchDirectories: []
+            )
             let resolved = try locator.resolveRequired(.ffprobe, explicitOverride: explicitTool)
 
             XCTAssertEqual(resolved.url, explicitTool)
@@ -57,7 +67,8 @@ final class ExternalToolLocatorTests: XCTestCase {
             let locator = ExternalToolLocator(
                 fileManager: .default,
                 environment: ["PATH": binDirectory.path],
-                bundle: bundle
+                bundle: bundle,
+                defaultSystemSearchDirectories: []
             )
             let resolved = try locator.resolveRequired(.ffmpeg)
 
@@ -69,7 +80,12 @@ final class ExternalToolLocatorTests: XCTestCase {
     func testOptionalResolutionReturnsNilWhenToolIsMissing() throws {
         try withTemporaryDirectory(prefix: "CrateDiggerToolLocatorTests") { temporaryDirectory in
             let bundle = try makeBundle(in: temporaryDirectory)
-            let locator = ExternalToolLocator(fileManager: .default, environment: ["PATH": temporaryDirectory.path], bundle: bundle)
+            let locator = ExternalToolLocator(
+                fileManager: .default,
+                environment: ["PATH": temporaryDirectory.path],
+                bundle: bundle,
+                defaultSystemSearchDirectories: []
+            )
 
             XCTAssertNil(locator.resolveOptional(.ffprobe))
         }

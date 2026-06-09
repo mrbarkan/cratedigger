@@ -53,15 +53,22 @@ public struct ExternalToolLocator {
     private let fileManager: FileManager
     private let environment: [String: String]
     private let bundle: Bundle
+    private let defaultSystemSearchDirectories: [String]
 
     public init(
         fileManager: FileManager = .default,
         environment: [String: String] = ProcessInfo.processInfo.environment,
-        bundle: Bundle = .main
+        bundle: Bundle = .main,
+        defaultSystemSearchDirectories: [String] = [
+            "/opt/homebrew/bin",
+            "/usr/local/bin",
+            "/usr/bin"
+        ]
     ) {
         self.fileManager = fileManager
         self.environment = environment
         self.bundle = bundle
+        self.defaultSystemSearchDirectories = defaultSystemSearchDirectories
     }
 
     public func resolveRequired(_ tool: ExternalTool, explicitOverride: URL? = nil) throws -> ResolvedExternalTool {
@@ -85,7 +92,7 @@ public struct ExternalToolLocator {
     private func candidates(for tool: ExternalTool, explicitOverride: URL?) -> [(url: URL, source: ExternalToolSource)] {
         var candidates: [(URL, ExternalToolSource)] = []
 
-        if let resourceURL = bundle.resourceURL {
+        if let resourceURL = bundle.resourceURL?.absoluteURL {
             candidates.append((resourceURL.appendingPathComponent(tool.executableName), .bundled))
         }
 
@@ -109,11 +116,7 @@ public struct ExternalToolLocator {
     }
 
     private func systemSearchPaths(for tool: ExternalTool) -> [String] {
-        var orderedPaths: [String] = [
-            "/opt/homebrew/bin",
-            "/usr/local/bin",
-            "/usr/bin"
-        ]
+        var orderedPaths = defaultSystemSearchDirectories
 
         if let rawPath = environment["PATH"], !rawPath.isEmpty {
             orderedPaths.append(contentsOf: rawPath.split(separator: ":").map(String.init))

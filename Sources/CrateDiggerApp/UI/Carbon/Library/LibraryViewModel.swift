@@ -54,10 +54,79 @@ final class LibraryViewModel: ObservableObject {
     @Published var selectedTrackID: UUID?
 
     @Published var oledView: OLEDView = .nowPlaying {
-        didSet { prefs.savedOLEDView = oledView.rawValue }
+        didSet {
+            prefs.savedOLEDView = oledView.rawValue
+            handleOLEDViewChange(from: oldValue, to: oledView)
+        }
+    }
+
+    private func handleOLEDViewChange(from old: OLEDView, to new: OLEDView) {
+        // Entering convert mode: auto-collapse the browser to its compact
+        // context view so the patch bay gets stage space. Only auto-collapse
+        // if the user hadn't already collapsed it manually — and remember we
+        // did this so we can restore on exit.
+        if new == .conversion && old != .conversion {
+            if !browserCollapsed {
+                browserCollapsed = true
+                browserAutoCollapsedForConvert = true
+            }
+        } else if old == .conversion && new != .conversion {
+            if browserAutoCollapsedForConvert {
+                browserCollapsed = false
+                browserAutoCollapsedForConvert = false
+            }
+        }
     }
     @Published var scanProgress: ScanProgress = .idle
     @Published var conversionProgress: ConversionProgressSnapshot = .idle
+
+    /// Patch-bay state. Mutated directly by the Carbon convert panel via
+    /// SwiftUI bindings; persisted to prefs on every change so the patch bay
+    /// remembers its setting across launches and lines up with what the
+    /// legacy options sheet would have written.
+    @Published var conversionSelection: ConversionOptionsSelection = ConversionOptionsSelection(
+        batchScope: .selectedTracks,
+        outputFormat: .aac,
+        bitrate: 192,
+        sampleRate: 44_100,
+        artworkMaxDimension: 1024,
+        folderStructureMode: .flat,
+        applyMode: .applyAll,
+        templatePreset: .artistYearAlbum,
+        tokenOrder: TemplatePreset.artistYearAlbum.defaultTokenOrder
+    ) {
+        didSet { prefs.saveLastConversionSelection(PersistedConversionSelection(conversionSelection)) }
+    }
+
+    /// Sources, Browser, and Inspector wells can each collapse so the user
+    /// can give the other columns most of the chassis width. Sources and
+    /// Inspector collapse to thin rotated-title rails; Browser collapses to
+    /// a compact "now-playing context" track list.
+    @Published var sourcesCollapsed: Bool = false
+    @Published var browserCollapsed: Bool = false
+    @Published var inspectorCollapsed: Bool = false
+
+    /// User asked to enter convert mode: auto-collapse the browser so the
+    /// patch bay gets stage room. This flag tracks whether the auto-collapse
+    /// applied so we know to restore the user's previous state when leaving.
+    private var browserAutoCollapsedForConvert: Bool = false
+
+    /// Invariant-preserving setters: at most one of {browser, inspector} can
+    /// be collapsed at a time so the chassis main area always has at least
+    /// one flex pane absorbing leftover width — no dead space.
+    func toggleBrowserCollapsed() {
+        if !browserCollapsed && inspectorCollapsed {
+            inspectorCollapsed = false
+        }
+        browserCollapsed.toggle()
+    }
+
+    func toggleInspectorCollapsed() {
+        if !inspectorCollapsed && browserCollapsed {
+            browserCollapsed = false
+        }
+        inspectorCollapsed.toggle()
+    }
 
     @Published private(set) var playbackState: PlaybackState = .idle
     @Published private(set) var playbackCurrentIndex: Int?
@@ -143,6 +212,14 @@ final class LibraryViewModel: ObservableObject {
         shuffleEnabled = prefs.savedShuffleEnabled
         if let saved = prefs.savedRepeatMode, let mode = RepeatMode(rawValue: saved) {
             repeatMode = mode
+        }
+
+        // Hydrate the conversion patch-bay selection from prefs without
+        // tripping the didSet (which would just write the same data right
+        // back during init).
+        if let persisted = prefs.savedLastConversionSelection(as: PersistedConversionSelection.self),
+           let restored = persisted.materialize() {
+            conversionSelection = restored
         }
 
         wirePlaybackBindings()
@@ -344,6 +421,82 @@ final class LibraryViewModel: ObservableObject {
     }
 
     func toggleShuffle() { shuffleEnabled.toggle() }
+
+    // MARK: - Conversion patch-bay queue stats
+
+    /// Tracks the patch bay's CONVERT button will dispatch when armed. Driven
+    /// by the same scope rule the conversion runner uses, so the OLED queue
+    /// readout stays in sync with what actually runs.
+    var conversionQueueTracks: [LoadedTrack] {
+        tracksForBatchScope(conversionSelection.batchScope)
+    }
+
+    var conversionQueueDurationSeconds: Double {
+        conversionQueueTracks.reduce(0) { $0 + $1.track.durationSeconds }
+    }
+
+    var conversionEstimatedOutputBytes: Int64 {
+        let bitrate = conversionSelection.bitrate ?? 192
+        // For lossless we don't know — fall back to a conservative 5x lossy.
+        let effective = isLosslessSelectedFormat ? bitrate * 5 : bitrate
+        return Int64(conversionQueueDurationSeconds * Double(effective) * 1000.0 / 8.0)
+    }
+
+    var isLosslessSelectedFormat: Bool {
+        switch conversionSelection.outputFormat {
+        case .alac, .flac, .wav, .aiff: return true
+        case .mp3, .aac, .ogg, .opus:    return false
+        }
+    }
+
+    var conversionDestinationDisplayPath: String {
+        guard let url = currentConversionDestinationURL else {
+            return "~/Music/CrateDigger Library/"
+        }
+        return Self.tildeShortened(url.path) + "/"
+    }
+
+    var currentConversionDestinationURL: URL? {
+        guard let bookmark = prefs.savedOutputDestinationBookmark else { return nil }
+        guard let (refreshed, resolved) = PreferencesStore.refreshBookmarkIfStale(bookmark) else {
+            return nil
+        }
+        if refreshed != bookmark {
+            prefs.savedOutputDestinationBookmark = refreshed
+        }
+        return resolved.url
+    }
+
+    func chooseConversionDestinationViaPanel() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.title = "Choose where converted files go"
+        panel.prompt = "Choose"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        if let data = try? PreferencesStore.makeBookmark(for: url) {
+            prefs.savedOutputDestinationBookmark = data
+            // Force a redraw — the destination isn't @Published since we read
+            // it through the bookmark each time.
+            objectWillChange.send()
+        }
+    }
+
+    func triggerConversionFromPatchBay() {
+        guard let host = NSApp.keyWindow?.contentViewController else { return }
+        runConversion(selection: conversionSelection, presentingFrom: host)
+    }
+
+    private static func tildeShortened(_ path: String) -> String {
+        let home = NSHomeDirectory()
+        if path == home { return "~" }
+        if path.hasPrefix(home + "/") {
+            return "~" + path.dropFirst(home.count)
+        }
+        return path
+    }
 
     // MARK: - Remote artwork fetch
 

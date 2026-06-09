@@ -93,6 +93,22 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         hostingController.presentAsSheet(controller)
     }
 
+    func presentExternalDeviceTransferSheet() {
+        guard contentViewController != nil else { return }
+        let profiles = prefs.savedExternalDeviceProfiles
+        let controller = ExternalDeviceTransferSheetController(
+            profiles: profiles,
+            initialScope: .currentAlbum
+        )
+        controller.onDecision = { [weak controller, weak model = hostingController.model] selection in
+            controller?.dismiss(nil)
+            guard let selection, let model else { return }
+            guard let host = NSApp.keyWindow?.contentViewController else { return }
+            model.runExternalDeviceTransfer(selection: selection, presentingFrom: host)
+        }
+        hostingController.presentAsSheet(controller)
+    }
+
     func cancelConversion() {
         hostingController.model.cancelConversion()
     }
