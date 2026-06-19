@@ -147,6 +147,30 @@ final class LibraryViewModel: ObservableObject {
         didSet { prefs.cdAnimationSpeed = cdAnimationSpeed }
     }
 
+    /// How the Track column orders the currently shown album.
+    @Published var trackSortField: TrackSortField = .trackNumber {
+        didSet { prefs.savedTrackSortField = trackSortField.rawValue }
+    }
+    @Published var trackSortAscending: Bool = true {
+        didSet { prefs.savedTrackSortAscending = trackSortAscending }
+    }
+    @Published var artistSortField: ArtistSortField = .name {
+        didSet { prefs.savedArtistSortField = artistSortField.rawValue }
+    }
+    @Published var artistSortAscending: Bool = true {
+        didSet { prefs.savedArtistSortAscending = artistSortAscending }
+    }
+    @Published var albumSortField: AlbumSortField = .year {
+        didSet { prefs.savedAlbumSortField = albumSortField.rawValue }
+    }
+    @Published var albumSortAscending: Bool = true {
+        didSet { prefs.savedAlbumSortAscending = albumSortAscending }
+    }
+    /// Whether the per-column sort menus are shown in the browser headers.
+    @Published var showSortControls: Bool = true {
+        didSet { prefs.savedShowSortControls = showSortControls }
+    }
+
     // MARK: - New Sources & Playlists State
     @Published var currentSource: LibrarySource = .localAll
     @Published var availableCrates: [String] = []
@@ -272,6 +296,19 @@ final class LibraryViewModel: ObservableObject {
             repeatMode = mode
         }
         cdAnimationSpeed = prefs.cdAnimationSpeed
+        if let savedField = prefs.savedTrackSortField, let field = TrackSortField(rawValue: savedField) {
+            trackSortField = field
+        }
+        trackSortAscending = prefs.savedTrackSortAscending
+        if let savedField = prefs.savedArtistSortField, let field = ArtistSortField(rawValue: savedField) {
+            artistSortField = field
+        }
+        artistSortAscending = prefs.savedArtistSortAscending
+        if let savedField = prefs.savedAlbumSortField, let field = AlbumSortField(rawValue: savedField) {
+            albumSortField = field
+        }
+        albumSortAscending = prefs.savedAlbumSortAscending
+        showSortControls = prefs.savedShowSortControls
 
         if let persisted = prefs.savedLastConversionSelection(as: PersistedConversionSelection.self),
            let restored = persisted.materialize() {
@@ -446,8 +483,18 @@ final class LibraryViewModel: ObservableObject {
         return albums.first(where: { $0.id == id }) ?? albums.first
     }
 
+    var visibleArtists: [Artist] {
+        LibraryIndex.sortedArtists(index.artists, by: artistSortField, ascending: artistSortAscending)
+    }
+
+    var visibleAlbums: [Album] {
+        let base = selectedArtist?.albums ?? []
+        return LibraryIndex.sortedAlbums(base, by: albumSortField, ascending: albumSortAscending)
+    }
+
     var visibleTracks: [LoadedTrack] {
-        selectedAlbum?.tracks ?? []
+        let base = selectedAlbum?.tracks ?? []
+        return LibraryIndex.sortedTracks(base, by: trackSortField, ascending: trackSortAscending)
     }
 
     var selectedTrack: LoadedTrack? {
@@ -1290,45 +1337,156 @@ final class LibraryViewModel: ObservableObject {
             
             return (manifest, ingestedAssets, coverFilename, newCoverAsset)
         }.value
-        
-        // Back on MainActor: Ingest to cache and rebuild localIndex in-place
-        if !result.ingestedAssets.isEmpty {
-            for asset in result.ingestedAssets {
-                self.artworkService.ingest(asset)
-            }
-            
-            // Rebuild localIndex by updating the affected tracks in place
-            let affectedTrackIDs = Set(album.tracks.map { $0.track.id })
-            let updatedTracks: [LoadedTrack] = localIndex.allTracks.map { loaded in
-                guard affectedTrackIDs.contains(loaded.track.id) else { return loaded }
-                var newTrack = loaded.track
-                var newMetadata = loaded.metadata
-                
-                if let coverAsset = result.coverAsset {
-                    newTrack.artworkSource = .embedded
-                    newTrack.artworkHash = coverAsset.hash
-                    newTrack.artworkDimensions = coverAsset.dimensions
-                    newMetadata.artwork = coverAsset
+
+        // Back on MainActor: ingest to cache, rebuild indexes, notify, alert.
+        applyImportedArtwork(
+            ingestedAssets: result.ingestedAssets,
+            coverAsset: result.coverAsset,
+            for: album
+        )
+    }
+
+    /// Attach image files chosen from disk to `album`. The files are copied into
+    /// the album folder with role-based names; a `.cover` is embedded into every
+    /// track. Mirrors `downloadAndImportArtwork` but reads from the local disk.
+    func attachLocalArtwork(
+        fileURLs: [URL],
+        role: ArtworkRole = .cover,
+        for album: Album
+    ) async {
+        guard let representative = album.tracks.first?.track.fileURL else { return }
+        let albumFolder = representative.deletingLastPathComponent()
+
+        let result = await Task.detached(priority: .userInitiated) { () -> (ingestedAssets: [ArtworkAsset], coverAsset: ArtworkAsset?) in
+            var manifest = ArtworkManifest.load(from: albumFolder) ?? ArtworkManifest(mediaFormat: album.mediaFormat, roles: [:])
+            var ingestedAssets: [ArtworkAsset] = []
+            var coverFilename: String?
+            var newCoverAsset: ArtworkAsset?
+
+            for (offset, source) in fileURLs.enumerated() {
+                do {
+                    let data = try Data(contentsOf: source)
+                    guard let image = NSImage(data: data) else { continue }
+
+                    let ext = source.pathExtension.isEmpty ? "jpg" : source.pathExtension.lowercased()
+                    let filename = Self.suggestedArtworkFilename(role: role, index: offset, ext: ext)
+                    let fileURL = albumFolder.appendingPathComponent(filename)
+                    try data.write(to: fileURL, options: .atomic)
+
+                    manifest.roles[filename] = role
+
+                    let digest = SHA256.hash(data: data)
+                    let hashHex = digest.compactMap { String(format: "%02x", $0) }.joined()
+                    let asset = ArtworkAsset(
+                        source: .embedded,
+                        hash: hashHex,
+                        dimensions: ArtworkDimensions(width: Int(image.size.width), height: Int(image.size.height)),
+                        data: data
+                    )
+                    ingestedAssets.append(asset)
+
+                    if role == .cover, newCoverAsset == nil {
+                        newCoverAsset = asset
+                        coverFilename = filename
+                    }
+                } catch {
+                    AppLog.library.warning("Failed to import local artwork: \(error.localizedDescription)")
                 }
-                
-                return LoadedTrack(track: newTrack, metadata: newMetadata)
             }
-            
-            self.localIndex = LibraryIndex.build(from: updatedTracks)
-            if self.isLocalSource {
-                self.index = self.localIndex
+
+            // Embed the chosen cover into every track on the album.
+            if let coverName = coverFilename, newCoverAsset != nil, let editor = try? MetadataEditorService() {
+                let coverURL = albumFolder.appendingPathComponent(coverName)
+                for loadedTrack in album.tracks {
+                    try? editor.embedArtwork(to: loadedTrack.track.fileURL, imageURL: coverURL)
+                }
             }
-            
-            // Post notification to update SpinningRecordView immediately
-            NotificationCenter.default.post(name: NSNotification.Name("CrateDiggerArtworkImported"), object: nil)
-            
-            // Force re-resolution of selected album in UI
-            let currentAlbumID = self.selectedAlbumID
-            self.selectedAlbumID = nil
-            self.selectedAlbumID = currentAlbumID
+
+            if !ingestedAssets.isEmpty {
+                try? manifest.save(to: albumFolder)
+            }
+
+            return (ingestedAssets, newCoverAsset)
+        }.value
+
+        applyImportedArtwork(
+            ingestedAssets: result.ingestedAssets,
+            coverAsset: result.coverAsset,
+            for: album
+        )
+    }
+
+    /// Shared tail for artwork imports (download or local upload): ingest the
+    /// new assets, push the new cover into every index/cache the album lives in,
+    /// refresh the now-playing disc, and report the album-wide scope.
+    private func applyImportedArtwork(
+        ingestedAssets: [ArtworkAsset],
+        coverAsset: ArtworkAsset?,
+        for album: Album
+    ) {
+        guard !ingestedAssets.isEmpty else { return }
+
+        for asset in ingestedAssets {
+            self.artworkService.ingest(asset)
+        }
+
+        // Apply the new cover to the affected album's tracks wherever they
+        // live — the current source index, the local crate cache, and the
+        // prep crate — so the inspector poster, gallery, and (when playing)
+        // the disc all refresh, not only when we're on a local source.
+        let affectedTrackIDs = Set(album.tracks.map { $0.track.id })
+        func applyArtwork(_ loaded: LoadedTrack) -> LoadedTrack {
+            guard affectedTrackIDs.contains(loaded.track.id),
+                  let coverAsset = coverAsset else { return loaded }
+            var newTrack = loaded.track
+            var newMetadata = loaded.metadata
+            newTrack.artworkSource = .embedded
+            newTrack.artworkHash = coverAsset.hash
+            newTrack.artworkDimensions = coverAsset.dimensions
+            newMetadata.artwork = coverAsset
+            return LoadedTrack(track: newTrack, metadata: newMetadata)
+        }
+
+        self.localIndex = LibraryIndex.build(from: self.localIndex.allTracks.map(applyArtwork))
+        self.prepCrateTracks = self.prepCrateTracks.map(applyArtwork)
+        self.index = LibraryIndex.build(from: self.index.allTracks.map(applyArtwork))
+
+        // Update SpinningRecordView (now playing) immediately.
+        NotificationCenter.default.post(name: NSNotification.Name("CrateDiggerArtworkImported"), object: nil)
+
+        // Force re-resolution of the selected album in the UI.
+        let currentAlbumID = self.selectedAlbumID
+        self.selectedAlbumID = nil
+        self.selectedAlbumID = currentAlbumID
+
+        // Tell the user the scope so it's clear cover art is album-wide.
+        let trackCount = album.tracks.count
+        if coverAsset != nil {
+            self.appAlert = .info(
+                title: "Cover art updated",
+                message: "Applied to all \(trackCount) track\(trackCount == 1 ? "" : "s") of “\(album.title)”."
+            )
+        } else {
+            let imageCount = ingestedAssets.count
+            self.appAlert = .info(
+                title: "Artwork imported",
+                message: "Saved \(imageCount) image\(imageCount == 1 ? "" : "s") to the “\(album.title)” folder."
+            )
         }
     }
-    
+
+    /// Role-based filename for an imported image (cover.jpg, back.jpg, …).
+    nonisolated private static func suggestedArtworkFilename(role: ArtworkRole, index: Int, ext: String) -> String {
+        switch role {
+        case .cover:       return index == 0 ? "cover.\(ext)" : "cover_\(index + 1).\(ext)"
+        case .back:        return index == 0 ? "back.\(ext)" : "back_\(index + 1).\(ext)"
+        case .disc:        return index == 0 ? "disc.\(ext)" : "disc_\(index + 1).\(ext)"
+        case .bookletPage: return String(format: "booklet_%02d.\(ext)", index + 1)
+        case .ignore:      return "ignored_\(index + 1).\(ext)"
+        case .auto:        return "artwork_\(index + 1).\(ext)"
+        }
+    }
+
     private func sha256Hex(for data: Data) -> String {
         let digest = SHA256.hash(data: data)
         return digest.compactMap { String(format: "%02x", $0) }.joined()
@@ -1568,28 +1726,214 @@ final class LibraryViewModel: ObservableObject {
 
     // MARK: - Drag & Drop Handling
 
-    func addItemsToCrate(_ items: [String], crateName: String) {
-        // Find tracks corresponding to items. Each item can be "track::<uuid>" or "album::<id>".
-        var tracksToAdd: [LoadedTrack] = []
-        
+    /// Resolve drag payloads to tracks. Each item is "track::<uuid>",
+    /// "album::<id>", or "artist::<id>". Album/artist drops expand to all their
+    /// tracks (in index order).
+    func tracksForDragItems(_ items: [String]) -> [LoadedTrack] {
+        var tracks: [LoadedTrack] = []
         for item in items {
             if item.hasPrefix("track::") {
                 let uuidString = String(item.dropFirst("track::".count))
                 if let uuid = UUID(uuidString: uuidString),
                    let track = index.allTracks.first(where: { $0.track.id == uuid }) {
-                    tracksToAdd.append(track)
+                    tracks.append(track)
                 }
             } else if item.hasPrefix("album::") {
                 let albumID = String(item.dropFirst("album::".count))
                 if let album = index.artists.flatMap({ $0.albums }).first(where: { $0.id == albumID }) {
-                    tracksToAdd.append(contentsOf: album.tracks)
+                    tracks.append(contentsOf: album.tracks)
+                }
+            } else if item.hasPrefix("artist::") {
+                let artistID = String(item.dropFirst("artist::".count))
+                if let artist = index.artists.first(where: { $0.id == artistID }) {
+                    tracks.append(contentsOf: artist.albums.flatMap { $0.tracks })
                 }
             }
         }
-        
+        return tracks
+    }
+
+    func addItemsToCrate(_ items: [String], crateName: String) {
+        let tracksToAdd = tracksForDragItems(items)
         guard !tracksToAdd.isEmpty else { return }
-        
         importTracksIntoCrate(tracksToAdd, crateName: crateName)
+    }
+
+    /// Append dragged tracks/albums/artists to an M3U playlist, skipping paths
+    /// already in it.
+    func addItemsToPlaylist(_ items: [String], playlistName: String) {
+        guard var playlist = playlists.first(where: { $0.name == playlistName }) else { return }
+        let urls = tracksForDragItems(items).map { $0.track.fileURL }
+        guard !urls.isEmpty else { return }
+
+        let existing = Set(playlist.trackURLs.map { $0.standardizedFileURL.path })
+        let newURLs = urls.filter { !existing.contains($0.standardizedFileURL.path) }
+        guard !newURLs.isEmpty else { return }
+
+        playlist.trackURLs.append(contentsOf: newURLs)
+        try? playlistService.savePlaylist(playlist)
+        playlists = playlistService.listPlaylists()
+        if case .playlist(let currentName) = currentSource, currentName == playlistName {
+            selectPlaylist(name: playlistName)
+        }
+    }
+
+    // MARK: - Album removal
+
+    /// Remove an album's tracks from a single crate (matched by file path).
+    /// Files on disk are untouched.
+    func removeAlbumFromCrate(_ album: Album, crateName: String) {
+        let paths = Set(album.tracks.map { $0.track.fileURL.standardizedFileURL.path })
+        var tracks = loadCrateTracks(name: crateName)
+        let before = tracks.count
+        tracks.removeAll { paths.contains($0.track.fileURL.standardizedFileURL.path) }
+        guard tracks.count != before else { return }
+        saveCrateTracks(tracks, name: crateName)
+        refreshCrateCounts()
+        selectSource(currentSource)
+        appAlert = .info(title: "Removed from Crate", message: "“\(album.title)” removed from \(crateName).")
+    }
+
+    /// Ask how to remove an album from the whole library: unload (keep files),
+    /// move the files elsewhere, or move them to the Trash.
+    func promptRemoveAlbumFromLibrary(_ album: Album) {
+        let alert = NSAlert()
+        alert.messageText = "Remove “\(album.title)”?"
+        alert.informativeText = """
+        Unload removes it from the library and all crates but leaves the files on disk.
+        Move… relocates the files to a folder you choose.
+        Move to Trash deletes the underlying audio files.
+        """
+        alert.addButton(withTitle: "Unload")          // .alertFirstButtonReturn
+        alert.addButton(withTitle: "Move…")           // .alertSecondButtonReturn
+        alert.addButton(withTitle: "Move to Trash")   // .alertThirdButtonReturn
+        alert.addButton(withTitle: "Cancel")
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:  unloadAlbumFromLibrary(album)
+        case .alertSecondButtonReturn: moveAlbumFiles(album)
+        case .alertThirdButtonReturn:  trashAlbumFiles(album)
+        default: break
+        }
+    }
+
+    /// Drop an album from the in-memory library and every crate; keep the files.
+    func unloadAlbumFromLibrary(_ album: Album) {
+        let paths = Set(album.tracks.map { $0.track.fileURL.standardizedFileURL.path })
+        purgeTracksFromLibraryState(paths: paths)
+        appAlert = .info(
+            title: "Removed",
+            message: "“\(album.title)” removed from the library. Files were left on disk."
+        )
+    }
+
+    /// Move an album's files to the Trash, then drop it from library + crates.
+    func trashAlbumFiles(_ album: Album) {
+        let cleanup = LibraryCleanupService()
+        do {
+            try cleanup.deleteTracks(album.tracks, useTrash: true)
+            let paths = Set(album.tracks.map { $0.track.fileURL.standardizedFileURL.path })
+            purgeTracksFromLibraryState(paths: paths)
+            let n = album.tracks.count
+            appAlert = .info(
+                title: "Moved to Trash",
+                message: "“\(album.title)” (\(n) track\(n == 1 ? "" : "s")) moved to the Trash."
+            )
+        } catch {
+            appAlert = .error(title: "Trash Failed", message: error.localizedDescription)
+        }
+    }
+
+    /// Prompt for a destination folder and move the album's files there,
+    /// rewriting the stored paths in the library and every crate.
+    func moveAlbumFiles(_ album: Album) {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.title = "Move “\(album.title)” to…"
+        panel.prompt = "Move Here"
+        guard panel.runModal() == .OK, let dest = panel.url else { return }
+
+        let tracks = album.tracks
+        let title = album.title
+        scanProgress = ScanProgress(folderName: "Moving “\(title)”…", filesProbed: 0, totalCandidates: tracks.count, isRunning: true)
+
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let organizer = LibraryOrganizerService()
+                let moved = try await organizer.organize(
+                    tracks: tracks,
+                    destinationFolder: dest,
+                    copyOnly: false,
+                    organiseByAlbumArtist: self.prefs.organiseByAlbumArtist
+                ) { count, total in
+                    Task { @MainActor in
+                        self.scanProgress = ScanProgress(folderName: "Moving “\(title)”…", filesProbed: count, totalCandidates: total, isRunning: true)
+                    }
+                }
+                await MainActor.run {
+                    self.scanProgress = .idle
+                    // organize() returns the updated tracks in input order, so
+                    // map each old path to its relocated track.
+                    var byOldPath: [String: LoadedTrack] = [:]
+                    for (old, new) in zip(tracks, moved) {
+                        byOldPath[old.track.fileURL.standardizedFileURL.path] = new
+                    }
+                    self.rewriteTrackPaths(byOldPath)
+                    self.appAlert = .info(title: "Album Moved", message: "“\(title)” moved to \(dest.path).")
+                }
+            } catch {
+                await MainActor.run {
+                    self.scanProgress = .idle
+                    self.appAlert = .error(title: "Move Failed", message: error.localizedDescription)
+                }
+            }
+        }
+    }
+
+    /// Remove tracks (matched by file path) from the local index, prep crate,
+    /// and every saved crate. Does NOT touch files on disk.
+    private func purgeTracksFromLibraryState(paths: Set<String>) {
+        let remaining = localIndex.allTracks.filter {
+            !paths.contains($0.track.fileURL.standardizedFileURL.path)
+        }
+        localIndex = LibraryIndex.build(from: remaining)
+        prepCrateTracks.removeAll { paths.contains($0.track.fileURL.standardizedFileURL.path) }
+        for crateName in availableCrates {
+            var tracks = loadCrateTracks(name: crateName)
+            let before = tracks.count
+            tracks.removeAll { paths.contains($0.track.fileURL.standardizedFileURL.path) }
+            if tracks.count != before { saveCrateTracks(tracks, name: crateName) }
+        }
+        refreshCrateCounts()
+        selectSource(currentSource)
+    }
+
+    /// Rewrite stored file paths (old path → relocated track) across the local
+    /// index, prep crate, and every crate after files are moved on disk.
+    private func rewriteTrackPaths(_ byOldPath: [String: LoadedTrack]) {
+        let newLocal = localIndex.allTracks.map {
+            byOldPath[$0.track.fileURL.standardizedFileURL.path] ?? $0
+        }
+        localIndex = LibraryIndex.build(from: newLocal)
+        prepCrateTracks = prepCrateTracks.map {
+            byOldPath[$0.track.fileURL.standardizedFileURL.path] ?? $0
+        }
+        for crateName in availableCrates {
+            var tracks = loadCrateTracks(name: crateName)
+            var modified = false
+            for i in tracks.indices {
+                if let new = byOldPath[tracks[i].track.fileURL.standardizedFileURL.path] {
+                    tracks[i] = new
+                    modified = true
+                }
+            }
+            if modified { saveCrateTracks(tracks, name: crateName) }
+        }
+        refreshCrateCounts()
+        selectSource(currentSource)
     }
 
     func addURLsToCrate(_ urls: [URL], crateName: String) {

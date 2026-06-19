@@ -28,6 +28,7 @@ struct ArtistRow: View {
                 .font(CarbonFont.mono(9.5))
                 .foregroundStyle(metaColor)
         }
+        .draggable("artist::" + artist.id)
     }
 
     private var leadColor: Color {

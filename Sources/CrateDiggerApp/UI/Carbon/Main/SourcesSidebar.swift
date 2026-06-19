@@ -9,6 +9,7 @@ struct SourcesSidebar: View {
     @State private var showingCrateSheet = false
     @State private var newCrateName = ""
     @State private var targetedCrate: String? = nil
+    @State private var targetedPlaylist: String? = nil
 
     var body: some View {
         VStack(spacing: 0) {
@@ -176,6 +177,20 @@ struct SourcesSidebar: View {
                             }
                             .buttonStyle(.plain)
                             .padding(.trailing, 14)
+                        }
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(targetedPlaylist == pl.name ? theme.cyan : Color.clear, lineWidth: 1.5)
+                        )
+                        .dropDestination(for: String.self) { items, _ in
+                            model.addItemsToPlaylist(items, playlistName: pl.name)
+                            return true
+                        } isTargeted: { targeted in
+                            if targeted {
+                                targetedPlaylist = pl.name
+                            } else if targetedPlaylist == pl.name {
+                                targetedPlaylist = nil
+                            }
                         }
                     }
                 }

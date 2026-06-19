@@ -155,14 +155,13 @@ public final class LibraryScanService {
             artwork: artwork
         )
 
+        // Prefer ffprobe's tags (with AVFoundation as fallback) whenever the
+        // probe is available. ffprobe runs for every file regardless, so this
+        // costs nothing extra, and it is the only path that reads FLAC/OGG
+        // Vorbis comments — AVFoundation can't, which is why track/disc numbers
+        // came back nil for those files.
         let metadata: ConversionMetadata
-        if fileURL.pathExtension.lowercased() == "flac", let probedMetadata {
-            metadata = MetadataNormalization.normalize(
-                formatTags: probedMetadata.formatTags,
-                fallback: avMetadata,
-                artwork: artwork
-            )
-        } else if let probedMetadata, shouldBackfillCriticalMetadata(avMetadata) {
+        if let probedMetadata {
             metadata = MetadataNormalization.normalize(
                 formatTags: probedMetadata.formatTags,
                 fallback: avMetadata,
@@ -409,12 +408,6 @@ public final class LibraryScanService {
         }
 
         return (intValue(from: trimmed), nil)
-    }
-
-    private func shouldBackfillCriticalMetadata(_ metadata: ConversionMetadata) -> Bool {
-        normalizedString(metadata.artist) == nil ||
-            normalizedString(metadata.album) == nil ||
-            metadata.year == nil
     }
 
     private func preferredBitRateKbps(from metadata: ProbedMetadata?) -> Int? {

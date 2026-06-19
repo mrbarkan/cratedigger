@@ -97,6 +97,9 @@ struct SpinningRecordView: View {
         .onChange(of: model.nowPlayingTrack) { _ in
             updateDiscData()
         }
+        .onChange(of: model.selectedTrackID) { _ in
+            updateDiscData()
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("CrateDiggerArtworkImported"))) { _ in
             updateDiscData()
         }
@@ -265,7 +268,7 @@ struct SpinningRecordView: View {
     }
 
     private var nowPlayingAlbum: Album? {
-        guard let track = model.nowPlayingTrack else { return nil }
+        guard let track = model.nowPlayingTrack ?? model.selectedTrack else { return nil }
         for artist in model.index.artists {
             for album in artist.albums {
                 if album.tracks.contains(where: { $0.id == track.id }) {
@@ -282,7 +285,10 @@ struct SpinningRecordView: View {
             // Invalidate the cached CD faces so they re-render for the new art.
             faceToken &+= 1
         }
-        guard let track = model.nowPlayingTrack?.track else {
+        // Show the now-playing track's disc while playing; otherwise preview the
+        // currently selected album so the DISC tab reflects what you're browsing
+        // (and freshly-imported art).
+        guard let track = (model.nowPlayingTrack ?? model.selectedTrack)?.track else {
             discImage = nil
             isVinyl = false
             return

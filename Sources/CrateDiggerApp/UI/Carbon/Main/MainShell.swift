@@ -76,7 +76,12 @@ struct MainShell: View {
                 wellShell(
                     title: model.showArtworkGallery ? "Browser · GALLERY" : "Browser · \(browserSubtitle)",
                     trailing: browserTrailing,
-                    trailingControl: AnyView(collapseChevron(action: { model.toggleBrowserCollapsed() }))
+                    trailingControl: AnyView(HStack(spacing: 6) {
+                        if !model.showArtworkGallery {
+                            sortToggleButton()
+                        }
+                        collapseChevron(action: { model.toggleBrowserCollapsed() })
+                    })
                 ) {
                     if model.showArtworkGallery {
                         ArtworkGalleryView()
@@ -229,6 +234,21 @@ struct MainShell: View {
         }
         .buttonStyle(.plain)
         .help("Collapse panel")
+    }
+
+    /// Toggles the per-column sort menus in the browser headers.
+    private func sortToggleButton() -> some View {
+        Button(action: { model.showSortControls.toggle() }) {
+            ZStack {
+                ChromeChassis(theme: theme, cornerRadius: 4)
+                    .frame(width: 18, height: 14)
+                Image(systemName: "arrow.up.arrow.down")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(model.showSortControls ? theme.cyan : theme.ink3)
+            }
+        }
+        .buttonStyle(.plain)
+        .help(model.showSortControls ? "Hide sort controls" : "Show sort controls")
     }
 
     enum ChevronDirection { case collapse, expand }

@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import CrateDiggerCore
 
 struct ArtworkInspectorView: View {
@@ -28,6 +29,14 @@ struct ArtworkInspectorView: View {
                 
                 Spacer()
                 
+                if canUploadArtwork {
+                    KeyButton(style: .normal, action: uploadArtworkFromDisk) {
+                        Text("ADD FILE…")
+                            .font(CarbonFont.mono(9, weight: .bold))
+                    }
+                    .frame(width: 72, height: 18)
+                }
+
                 if album != nil {
                     KeyButton(style: .normal, action: { showingSearch = true }) {
                         Text("SEARCH ONLINE")
@@ -121,13 +130,40 @@ struct ArtworkInspectorView: View {
             }
             self.thumbnails = loaded
         }
-        .sheet(isPresented: $showingSearch) {
+        .sheet(isPresented: $showingSearch, onDismiss: { loadManifest() }) {
             if let album = album {
                 ArtworkSearchSheetView(album: album)
             }
         }
     }
     
+    /// Manual upload only makes sense for albums backed by real files on disk.
+    private var canUploadArtwork: Bool {
+        album?.tracks.first?.track.fileURL.isFileURL ?? false
+    }
+
+    private func uploadArtworkFromDisk() {
+        guard let album = album else { return }
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.image]
+        panel.title = "Choose cover art"
+        panel.message = "This image becomes the cover and is embedded into every track on the album."
+        panel.prompt = "Use as Cover"
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        isSaving = true
+        Task {
+            await model.attachLocalArtwork(fileURLs: [url], role: .cover, for: album)
+            await MainActor.run {
+                isSaving = false
+                loadManifest()
+            }
+        }
+    }
+
     private func generateThumbnail(for url: URL) async -> NSImage? {
         let cgImage = await Task.detached(priority: .userInitiated) { () -> CGImage? in
             let options: [CFString: Any] = [
@@ -184,7 +220,8 @@ struct ArtworkInspectorView: View {
             // 1. Save the manifest
             try? manifest.save(to: albumFolder)
             
-            // 2. Look for cover image
+            // 2. Look for cover image and embed it into every track on the album.
+            var embeddedCover = false
             if let coverFileName = manifest.roles.first(where: { $0.value == .cover })?.key {
                 let coverURL = albumFolder.appendingPathComponent(coverFileName)
                 if FileManager.default.fileExists(atPath: coverURL.path) {
@@ -193,13 +230,26 @@ struct ArtworkInspectorView: View {
                             let fileURL = loadedTrack.track.fileURL
                             try? editor.embedArtwork(to: fileURL, imageURL: coverURL)
                         }
+                        embeddedCover = true
                     }
                 }
             }
-            
+
+            let trackCount = album.tracks.count
             await MainActor.run {
                 isSaving = false
                 model.refreshLibrary()
+                if embeddedCover {
+                    model.appAlert = .info(
+                        title: "Cover art saved",
+                        message: "Embedded into all \(trackCount) track\(trackCount == 1 ? "" : "s") of “\(album.title)”."
+                    )
+                } else {
+                    model.appAlert = .info(
+                        title: "Saved",
+                        message: "Artwork roles saved for “\(album.title)”."
+                    )
+                }
             }
         }
     }

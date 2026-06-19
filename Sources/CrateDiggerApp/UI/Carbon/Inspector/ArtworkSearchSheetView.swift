@@ -1,6 +1,33 @@
 import SwiftUI
 import CrateDiggerCore
 
+/// Picker selection for an image's role. For multi-disc albums the "Disc" role
+/// fans out into a per-disc choice so each disc can get its own art. The disc
+/// number is carried into the saved filename (disc1.jpg, disc2.jpg, …); the
+/// stored manifest role stays `.disc`.
+private enum ArtRoleChoice: Hashable {
+    case cover
+    case back
+    case disc(Int)
+    case bookletPage
+    case ignore
+
+    var role: ArtworkRole {
+        switch self {
+        case .cover: return .cover
+        case .back: return .back
+        case .disc: return .disc
+        case .bookletPage: return .bookletPage
+        case .ignore: return .ignore
+        }
+    }
+
+    var discNumber: Int {
+        if case let .disc(number) = self { return number }
+        return 1
+    }
+}
+
 struct ArtworkSearchSheetView: View {
     @Environment(\.carbon) private var theme
     @EnvironmentObject private var model: LibraryViewModel
@@ -26,8 +53,11 @@ struct ArtworkSearchSheetView: View {
 
     // Image Selection state
     @State private var selectedImages: Set<String> = [] // imageURL string
-    @State private var imageRoles: [String: ArtworkRole] = [:] // imageURL string to Role
+    @State private var imageRoles: [String: ArtRoleChoice] = [:] // imageURL string to role choice
     @State private var isDownloading = false
+
+    // Full-size preview shown over the grid (does not affect selection).
+    @State private var previewImage: CAABookletImage? = nil
 
     init(album: Album) {
         self.album = album
@@ -85,6 +115,51 @@ struct ArtworkSearchSheetView: View {
                 .transition(.opacity)
             }
         }
+        .overlay {
+            if let preview = previewImage {
+                imagePreviewOverlay(preview)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.15), value: previewImage?.id)
+    }
+
+    private func imagePreviewOverlay(_ img: CAABookletImage) -> some View {
+        ZStack {
+            Color.black.opacity(0.82)
+                .ignoresSafeArea()
+                .onTapGesture { previewImage = nil }
+
+            VStack(spacing: 12) {
+                AsyncImage(url: img.imageURL) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image.resizable().aspectRatio(contentMode: .fit)
+                    case .failure:
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.system(size: 40))
+                            .foregroundColor(.white.opacity(0.6))
+                    default:
+                        ProgressView().controlSize(.large)
+                    }
+                }
+                .frame(maxWidth: 460, maxHeight: 400)
+                .cornerRadius(8)
+                .shadow(color: .black.opacity(0.6), radius: 18, y: 8)
+
+                if !img.comment.isEmpty {
+                    Text(img.comment)
+                        .font(CarbonFont.sans(11, weight: .regular))
+                        .foregroundColor(.white.opacity(0.8))
+                        .lineLimit(2)
+                        .multilineTextAlignment(.center)
+                }
+
+                Button("Close") { previewImage = nil }
+                    .buttonStyle(.bordered)
+            }
+            .padding(30)
+        }
     }
 
     // Header
@@ -121,7 +196,7 @@ struct ArtworkSearchSheetView: View {
 
     // Search bar
     private var searchBar: some View {
-        HStack(spacing: 12) {
+        HStack(alignment: .bottom, spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
                 Text("ARTIST")
                     .font(CarbonFont.mono(8, weight: .bold))
@@ -148,14 +223,11 @@ struct ArtworkSearchSheetView: View {
                     .overlay(RoundedRectangle(cornerRadius: 4).stroke(theme.ink4.opacity(0.25), lineWidth: 0.8))
             }
             
-            VStack(spacing: 0) {
-                Spacer()
-                KeyButton(style: .selected, action: executeSearch) {
-                    Text("SEARCH")
-                        .font(CarbonFont.mono(9.5, weight: .bold))
-                }
-                .frame(width: 80, height: 22)
+            KeyButton(style: .selected, action: executeSearch) {
+                Text("SEARCH")
+                    .font(CarbonFont.mono(9.5, weight: .bold))
             }
+            .frame(width: 80, height: 22)
         }
     }
 
@@ -368,10 +440,22 @@ struct ArtworkSearchSheetView: View {
                         .stroke(isSelected ? theme.orange : (theme.isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.1)), lineWidth: isSelected ? 2 : 1)
                 )
                 .shadow(color: Color.black.opacity(0.1), radius: 3, y: 1)
+                .overlay(alignment: .topTrailing) {
+                    Button(action: { previewImage = img }) {
+                        Image(systemName: "arrow.up.left.and.arrow.down.right")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(5)
+                            .background(Circle().fill(Color.black.opacity(0.45)))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(6)
+                    .help("Preview full size")
+                }
                 .onTapGesture {
                     toggleImageSelection(img)
                 }
-                
+
                 Button(action: {
                     toggleImageSelection(img)
                 }) {
@@ -409,11 +493,17 @@ struct ArtworkSearchSheetView: View {
                 get: { imageRoles[img.id] ?? defaultRole(for: img.types) },
                 set: { imageRoles[img.id] = $0 }
             )) {
-                Text("Cover").tag(ArtworkRole.cover)
-                Text("Back").tag(ArtworkRole.back)
-                Text("Disc/CD").tag(ArtworkRole.disc)
-                Text("Booklet Page").tag(ArtworkRole.bookletPage)
-                Text("Ignore").tag(ArtworkRole.ignore)
+                Text("Cover").tag(ArtRoleChoice.cover)
+                Text("Back").tag(ArtRoleChoice.back)
+                if album.discCount > 1 {
+                    ForEach(1...album.discCount, id: \.self) { disc in
+                        Text("Disc \(disc)").tag(ArtRoleChoice.disc(disc))
+                    }
+                } else {
+                    Text("Disc/CD").tag(ArtRoleChoice.disc(1))
+                }
+                Text("Booklet Page").tag(ArtRoleChoice.bookletPage)
+                Text("Ignore").tag(ArtRoleChoice.ignore)
             }
             .labelsHidden()
             .pickerStyle(.menu)
@@ -423,14 +513,14 @@ struct ArtworkSearchSheetView: View {
         .frame(width: 140)
     }
 
-    private func defaultRole(for types: [String]) -> ArtworkRole {
+    private func defaultRole(for types: [String]) -> ArtRoleChoice {
         let typesLower = types.map { $0.lowercased() }
         if typesLower.contains("front") {
             return .cover
         } else if typesLower.contains("back") {
             return .back
         } else if typesLower.contains("medium") {
-            return .disc
+            return .disc(1)
         } else if typesLower.contains("booklet") || typesLower.contains("liner") || typesLower.contains("tray") || typesLower.contains("inlay") {
             return .bookletPage
         } else {
@@ -543,37 +633,38 @@ struct ArtworkSearchSheetView: View {
         }
     }
 
-    private func getSuggestedFilename(for image: CAABookletImage, index: Int, role: ArtworkRole) -> String {
+    private func getSuggestedFilename(for image: CAABookletImage, index: Int, choice: ArtRoleChoice) -> String {
         let ext = image.imageURL.pathExtension.isEmpty ? "jpg" : image.imageURL.pathExtension.lowercased()
-        switch role {
+        switch choice {
         case .cover:
             return index == 0 ? "cover.\(ext)" : "cover_\(index + 1).\(ext)"
         case .back:
             return index == 0 ? "back.\(ext)" : "back_\(index + 1).\(ext)"
         case .disc:
-            return index == 0 ? "disc.\(ext)" : "disc_\(index + 1).\(ext)"
+            // Multi-disc albums get disc-numbered names (disc1.jpg, disc2.jpg);
+            // single-disc albums keep the plain "disc" name.
+            let base = album.discCount > 1 ? "disc\(choice.discNumber)" : "disc"
+            return index == 0 ? "\(base).\(ext)" : "\(base)_\(index + 1).\(ext)"
         case .bookletPage:
             return String(format: "booklet_%02d.\(ext)", index + 1)
         case .ignore:
             return "ignored_\(index + 1).\(ext)"
-        case .auto:
-            return "artwork_\(index + 1).\(ext)"
         }
     }
 
     private func compileDownloads() -> [(url: URL, role: ArtworkRole, suggestedFilename: String)] {
         var downloads: [(url: URL, role: ArtworkRole, suggestedFilename: String)] = []
-        var roleCounts: [ArtworkRole: Int] = [:]
-        
+        var choiceCounts: [ArtRoleChoice: Int] = [:]
+
         let orderedSelected = caaImages.filter { selectedImages.contains($0.id) }
-        
+
         for img in orderedSelected {
-            let role = imageRoles[img.id] ?? defaultRole(for: img.types)
-            let count = roleCounts[role, default: 0]
-            roleCounts[role] = count + 1
-            
-            let filename = getSuggestedFilename(for: img, index: count, role: role)
-            downloads.append((url: img.imageURL, role: role, suggestedFilename: filename))
+            let choice = imageRoles[img.id] ?? defaultRole(for: img.types)
+            let count = choiceCounts[choice, default: 0]
+            choiceCounts[choice] = count + 1
+
+            let filename = getSuggestedFilename(for: img, index: count, choice: choice)
+            downloads.append((url: img.imageURL, role: choice.role, suggestedFilename: filename))
         }
         return downloads
     }

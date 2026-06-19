@@ -43,6 +43,23 @@ public struct Album: Identifiable, Sendable, Equatable {
         Set(tracks.compactMap { $0.track.formatName })
     }
 
+    /// Distinct disc numbers actually present, ascending. Tracks with no disc
+    /// tag are treated as disc 1.
+    public var discNumbers: [Int] {
+        Set(tracks.map { $0.track.discNumber ?? 1 }).sorted()
+    }
+
+    /// True when the album's tracks span more than one disc.
+    public var isMultiDisc: Bool { discNumbers.count > 1 }
+
+    /// Number of discs to offer for per-disc artwork: the larger of the discs
+    /// present and any explicit disc-total tag.
+    public var discCount: Int {
+        let fromTracks = discNumbers.last ?? 1
+        let fromTotal = tracks.compactMap { $0.track.discTotal }.max() ?? 1
+        return max(fromTracks, fromTotal, 1)
+    }
+
     public static func == (lhs: Album, rhs: Album) -> Bool {
         lhs.id == rhs.id
     }

@@ -38,6 +38,13 @@ public final class PreferencesStore {
         static let organiseByAlbumArtist = "cratedigger.library.organiseByAlbumArtist"
         static let keepLibraryOrganised = "cratedigger.library.keepLibraryOrganised"
         static let cratesIndexFolderBookmark = "cratedigger.library.cratesIndexFolderBookmark"
+        static let trackSortField = "cratedigger.browser.trackSortField"
+        static let trackSortAscending = "cratedigger.browser.trackSortAscending"
+        static let artistSortField = "cratedigger.browser.artistSortField"
+        static let artistSortAscending = "cratedigger.browser.artistSortAscending"
+        static let albumSortField = "cratedigger.browser.albumSortField"
+        static let albumSortAscending = "cratedigger.browser.albumSortAscending"
+        static let showSortControls = "cratedigger.browser.showSortControls"
     }
 
     // MARK: - Window frame
@@ -237,6 +244,67 @@ public final class PreferencesStore {
                 defaults.removeObject(forKey: Key.repeatMode)
             }
         }
+    }
+
+    public var savedTrackSortField: String? {
+        get { defaults.string(forKey: Key.trackSortField) }
+        set {
+            if let value = newValue {
+                defaults.set(value, forKey: Key.trackSortField)
+            } else {
+                defaults.removeObject(forKey: Key.trackSortField)
+            }
+        }
+    }
+
+    public var savedTrackSortAscending: Bool {
+        get {
+            // Default ascending when never set.
+            if defaults.object(forKey: Key.trackSortAscending) == nil { return true }
+            return defaults.bool(forKey: Key.trackSortAscending)
+        }
+        set { defaults.set(newValue, forKey: Key.trackSortAscending) }
+    }
+
+    public var savedArtistSortField: String? {
+        get { defaults.string(forKey: Key.artistSortField) }
+        set {
+            if let value = newValue { defaults.set(value, forKey: Key.artistSortField) }
+            else { defaults.removeObject(forKey: Key.artistSortField) }
+        }
+    }
+
+    public var savedArtistSortAscending: Bool {
+        get {
+            if defaults.object(forKey: Key.artistSortAscending) == nil { return true }
+            return defaults.bool(forKey: Key.artistSortAscending)
+        }
+        set { defaults.set(newValue, forKey: Key.artistSortAscending) }
+    }
+
+    public var savedAlbumSortField: String? {
+        get { defaults.string(forKey: Key.albumSortField) }
+        set {
+            if let value = newValue { defaults.set(value, forKey: Key.albumSortField) }
+            else { defaults.removeObject(forKey: Key.albumSortField) }
+        }
+    }
+
+    public var savedAlbumSortAscending: Bool {
+        get {
+            if defaults.object(forKey: Key.albumSortAscending) == nil { return true }
+            return defaults.bool(forKey: Key.albumSortAscending)
+        }
+        set { defaults.set(newValue, forKey: Key.albumSortAscending) }
+    }
+
+    public var savedShowSortControls: Bool {
+        get {
+            // Default visible when never set.
+            if defaults.object(forKey: Key.showSortControls) == nil { return true }
+            return defaults.bool(forKey: Key.showSortControls)
+        }
+        set { defaults.set(newValue, forKey: Key.showSortControls) }
     }
 
     public var clickSoundsEnabled: Bool {

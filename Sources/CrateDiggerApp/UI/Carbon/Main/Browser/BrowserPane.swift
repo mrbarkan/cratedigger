@@ -84,9 +84,10 @@ private struct ArtistColumn: View {
     var body: some View {
         ColumnList(
             title: "Artist",
-            trailing: String(format: "%02d", model.index.artists.count)
+            trailing: String(format: "%02d", model.index.artists.count),
+            headerAccessory: model.showSortControls ? AnyView(ArtistSortControl()) : nil
         ) {
-            ForEach(model.index.artists) { artist in
+            ForEach(model.visibleArtists) { artist in
                 ArtistRow(
                     artist: artist,
                     selected: model.selectedArtistID == artist.id,
@@ -118,16 +119,38 @@ private struct AlbumColumn: View {
     var body: some View {
         ColumnList(
             title: "Album",
-            trailing: String(format: "%02d", model.selectedArtist?.albumCount ?? 0)
+            trailing: String(format: "%02d", model.selectedArtist?.albumCount ?? 0),
+            headerAccessory: model.showSortControls ? AnyView(AlbumSortControl()) : nil
         ) {
-            ForEach(model.selectedArtist?.albums ?? []) { album in
+            ForEach(model.visibleAlbums) { album in
                 AlbumRow(
                     album: album,
                     selected: model.selectedAlbumID == album.id,
                     isPlayingHere: isPlayingAlbum(album),
                     onSelect: { selectAlbum(album) }
                 )
+                .contextMenu { albumContextMenu(album) }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func albumContextMenu(_ album: Album) -> some View {
+        switch model.currentSource {
+        case .localCrate(let crateName):
+            Button("Remove from “\(crateName)”") {
+                model.removeAlbumFromCrate(album, crateName: crateName)
+            }
+            Divider()
+            Button("Remove from Library…") {
+                model.promptRemoveAlbumFromLibrary(album)
+            }
+        case .localAll, .prepCrate:
+            Button("Remove from Library…") {
+                model.promptRemoveAlbumFromLibrary(album)
+            }
+        default:
+            EmptyView()
         }
     }
 
@@ -148,18 +171,48 @@ private struct TrackColumn: View {
     var body: some View {
         ColumnList(
             title: "Track",
-            trailing: trackTrailing
+            trailing: trackTrailing,
+            headerAccessory: model.showSortControls ? AnyView(TrackSortControl()) : nil
         ) {
-            ForEach(model.visibleTracks) { loaded in
-                TrackRow(
-                    loaded: loaded,
-                    selected: model.selectedTrackID == loaded.track.id,
-                    isPlaying: model.nowPlayingTrack?.track.id == loaded.track.id,
-                    onSelect: { model.selectedTrackID = loaded.track.id },
-                    onActivate: { model.playTrack(id: loaded.track.id) }
-                )
+            ForEach(trackEntries) { entry in
+                switch entry {
+                case let .discHeader(disc, count):
+                    DiscHeaderRow(disc: disc, count: count)
+                case let .track(loaded):
+                    TrackRow(
+                        loaded: loaded,
+                        selected: model.selectedTrackID == loaded.track.id,
+                        isPlaying: model.nowPlayingTrack?.track.id == loaded.track.id,
+                        onSelect: { model.selectedTrackID = loaded.track.id },
+                        onActivate: { model.playTrack(id: loaded.track.id) }
+                    )
+                }
             }
         }
+    }
+
+    /// Track rows, with "DISC n" separators interleaved when the album spans
+    /// multiple discs and is shown in the natural track-number order.
+    private var trackEntries: [TrackListEntry] {
+        let tracks = model.visibleTracks
+        guard let album = model.selectedAlbum,
+              album.isMultiDisc,
+              model.trackSortField == .trackNumber else {
+            return tracks.map { .track($0) }
+        }
+        let counts = Dictionary(grouping: tracks, by: { $0.track.discNumber ?? 1 })
+            .mapValues(\.count)
+        var entries: [TrackListEntry] = []
+        var lastDisc: Int?
+        for loaded in tracks {
+            let disc = loaded.track.discNumber ?? 1
+            if disc != lastDisc {
+                entries.append(.discHeader(disc: disc, count: counts[disc] ?? 0))
+                lastDisc = disc
+            }
+            entries.append(.track(loaded))
+        }
+        return entries
     }
 
     private var trackTrailing: String {
@@ -169,5 +222,150 @@ private struct TrackColumn: View {
         let minutes = Int(total) / 60
         let seconds = Int(total) % 60
         return String(format: "%02d / %02d:%02d", count, minutes, seconds)
+    }
+}
+
+/// A row in the track column: either a disc separator or an actual track.
+private enum TrackListEntry: Identifiable {
+    case discHeader(disc: Int, count: Int)
+    case track(LoadedTrack)
+
+    var id: String {
+        switch self {
+        case let .discHeader(disc, _): return "disc-\(disc)"
+        case let .track(loaded): return "track-\(loaded.track.id.uuidString)"
+        }
+    }
+}
+
+/// Thin "DISC n" separator shown between discs of a multi-disc album.
+private struct DiscHeaderRow: View {
+    @Environment(\.carbon) private var theme
+    let disc: Int
+    let count: Int
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "opticaldisc")
+                .font(.system(size: 9))
+            Text("DISC \(disc)")
+                .font(CarbonFont.mono(8.5, weight: .bold))
+                .tracking(2)
+            Spacer()
+            Text(String(format: "%02d", count))
+                .font(CarbonFont.mono(8.5, weight: .semibold))
+        }
+        .foregroundStyle(theme.ink3)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 5)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(theme.isDark ? Color.white.opacity(0.05) : Color.black.opacity(0.06))
+        .overlay(
+            Rectangle()
+                .fill(theme.isDark ? Color.white.opacity(0.04) : Color.black.opacity(0.06))
+                .frame(height: 1),
+            alignment: .bottom
+        )
+    }
+}
+
+/// Compact, reusable sort control for a column header: a small mono field-name
+/// label (so it matches the header type exactly) plus an icon-only menu. The
+/// field name lives OUTSIDE the menu so its font is never overridden by the
+/// menu's button styling.
+private struct ColumnSortControl<Field: SortFieldDisplayable>: View {
+    @Environment(\.carbon) private var theme
+    let current: Field
+    let ascending: Bool
+    let allCases: [Field]
+    let select: (Field) -> Void
+
+    var body: some View {
+        HStack(spacing: 3) {
+            Text(current.displayName.uppercased())
+                .font(CarbonFont.mono(8, weight: .semibold))
+                .tracking(1)
+                .foregroundStyle(theme.ink2)
+            Image(systemName: ascending ? "chevron.up" : "chevron.down")
+                .font(.system(size: 6, weight: .bold))
+                .foregroundStyle(theme.ink3)
+            Menu {
+                ForEach(Array(allCases.enumerated()), id: \.offset) { _, field in
+                    Button { select(field) } label: {
+                        if field == current {
+                            Label(
+                                field.displayName,
+                                systemImage: ascending ? "chevron.up" : "chevron.down"
+                            )
+                        } else {
+                            Text(field.displayName)
+                        }
+                    }
+                }
+            } label: {
+                Image(systemName: "arrow.up.arrow.down")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(theme.ink3)
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .controlSize(.small)
+            .fixedSize()
+        }
+        .help("Sort")
+    }
+}
+
+private struct ArtistSortControl: View {
+    @EnvironmentObject private var model: LibraryViewModel
+    var body: some View {
+        ColumnSortControl(
+            current: model.artistSortField,
+            ascending: model.artistSortAscending,
+            allCases: Array(ArtistSortField.allCases)
+        ) { field in
+            if model.artistSortField == field {
+                model.artistSortAscending.toggle()
+            } else {
+                model.artistSortField = field
+                model.artistSortAscending = true
+            }
+        }
+    }
+}
+
+private struct AlbumSortControl: View {
+    @EnvironmentObject private var model: LibraryViewModel
+    var body: some View {
+        ColumnSortControl(
+            current: model.albumSortField,
+            ascending: model.albumSortAscending,
+            allCases: Array(AlbumSortField.allCases)
+        ) { field in
+            if model.albumSortField == field {
+                model.albumSortAscending.toggle()
+            } else {
+                model.albumSortField = field
+                model.albumSortAscending = true
+            }
+        }
+    }
+}
+
+private struct TrackSortControl: View {
+    @EnvironmentObject private var model: LibraryViewModel
+    var body: some View {
+        ColumnSortControl(
+            current: model.trackSortField,
+            ascending: model.trackSortAscending,
+            allCases: Array(TrackSortField.allCases)
+        ) { field in
+            if model.trackSortField == field {
+                model.trackSortAscending.toggle()
+            } else {
+                model.trackSortField = field
+                model.trackSortAscending = true
+            }
+        }
     }
 }

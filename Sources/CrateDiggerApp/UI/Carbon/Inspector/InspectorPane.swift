@@ -259,28 +259,10 @@ struct InspectorPane: View {
         )
     }
 
-    @ViewBuilder
     private func trailingBadge(album: Album?) -> some View {
-        if let album, album.artworkHash == nil {
-            fetchArtworkButton(for: album)
-        } else {
-            tapeLabel(text: tapeIdentifier(album))
-        }
-    }
-
-    private func fetchArtworkButton(for album: Album) -> some View {
-        let isLoading = model.isFetchingArtwork(for: album)
-        let label = isLoading ? "FETCHING…" : "FETCH ART"
-        return KeyButton(
-            style: isLoading ? .disabled : .normal,
-            action: { model.fetchRemoteArtwork(for: album) }
-        ) {
-            Text(label)
-                .font(CarbonFont.mono(9, weight: .bold))
-                .tracking(1.6)
-        }
-        .frame(width: 96, height: CarbonLayout.keyHeight)
-        .help("Search iTunes for cover art for this album.")
+        // Artwork fetching now lives in the inspector's ART tab (Search Online),
+        // so the caption just shows the tape/serial label.
+        tapeLabel(text: tapeIdentifier(album))
     }
 
     private func captionSubtitle(_ album: Album?) -> String {

@@ -4,13 +4,29 @@ struct ColumnList<Content: View>: View {
     @Environment(\.carbon) private var theme
     let title: String
     let trailing: String
+    let headerAccessory: AnyView?
     @ViewBuilder var content: () -> Content
+
+    init(
+        title: String,
+        trailing: String,
+        headerAccessory: AnyView? = nil,
+        @ViewBuilder content: @escaping () -> Content
+    ) {
+        self.title = title
+        self.trailing = trailing
+        self.headerAccessory = headerAccessory
+        self.content = content
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
+            HStack(spacing: 6) {
                 Text(title.uppercased())
                 Spacer()
+                if let headerAccessory {
+                    headerAccessory
+                }
                 Text(trailing)
             }
             .font(CarbonFont.mono(8.5, weight: .semibold))
