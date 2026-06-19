@@ -152,12 +152,26 @@ final class LibraryViewModel: ObservableObject {
     @Published var availableCrates: [String] = []
     @Published var prepCrateTracks: [LoadedTrack] = []
     @Published var targetCrateName: String = "Personal Crate"
-    var allRecordsCount: Int {
+    /// Cached counts shown in the Sources sidebar. These are recomputed only
+    /// when crates change (`refreshCrateCounts()`), NEVER read by decoding
+    /// `.cdlib` files inside a SwiftUI body — those files are JSON with
+    /// base64-embedded artwork, so decoding them during a render pass (which
+    /// the 60fps disc animation triggers constantly) pegs the CPU.
+    @Published private(set) var allRecordsCount: Int = 0
+    @Published private(set) var crateTrackCounts: [String: Int] = [:]
+
+    /// Decode every crate once and cache its track count + the deduplicated
+    /// all-records total. Call this on crate mutations only.
+    func refreshCrateCounts() {
+        var counts: [String: Int] = [:]
         var all: [LoadedTrack] = []
         for name in availableCrates {
-            all.append(contentsOf: loadCrateTracks(name: name))
+            let tracks = loadCrateTracks(name: name)
+            counts[name] = tracks.count
+            all.append(contentsOf: tracks)
         }
-        return LibraryViewModel.deduplicate(tracks: all).count
+        crateTrackCounts = counts
+        allRecordsCount = LibraryViewModel.deduplicate(tracks: all).count
     }
     @Published var playlists: [Playlist] = []
     @Published var mountedCDs: [AudioCDInfo] = []
@@ -487,6 +501,8 @@ final class LibraryViewModel: ObservableObject {
         selectedArtistID = index.artists.first?.id
         selectedAlbumID = index.artists.first?.albums.first?.id
         selectedTrackID = index.artists.first?.albums.first?.tracks.first?.track.id
+
+        refreshCrateCounts()
     }
 
     // MARK: - Folder loading
@@ -510,6 +526,9 @@ final class LibraryViewModel: ObservableObject {
     func loadFolders(_ urls: [URL], isRestore: Bool = false) {
         scanTask?.cancel()
         scanProgress = ScanProgress(folderName: urls.first?.lastPathComponent, filesProbed: 0, totalCandidates: nil, isRunning: true)
+        // An explicit import jumps the OLED to Scan. Skip on launch restore so
+        // we don't override the user's saved view every time the app opens.
+        if !isRestore { oledView = .scan }
         playback.load(queue: [], startIndex: 0, autoPlay: false)
         playbackQueue = []
 
@@ -914,6 +933,7 @@ final class LibraryViewModel: ObservableObject {
                 index = localIndex
             }
             deadTracks = []
+            refreshCrateCounts()
             appAlert = .error(title: "Cleared", message: "Removed reference to dead tracks.")
         } catch {
             appAlert = .error(title: "Removal Failed", message: error.localizedDescription)
@@ -957,6 +977,7 @@ final class LibraryViewModel: ObservableObject {
                 index = localIndex
             }
             duplicateGroups = []
+            refreshCrateCounts()
             appAlert = .error(title: "Duplicates Cleared", message: "Worst versions moved to Trash.")
         } catch {
             appAlert = .error(title: "Clear Failed", message: error.localizedDescription)
@@ -1003,6 +1024,8 @@ final class LibraryViewModel: ObservableObject {
     func playTrack(id: UUID) {
         let queue = currentAlbumQueue()
         guard let startIndex = queue.firstIndex(where: { $0.track.id == id }) else { return }
+        // Starting a track jumps the OLED to Now Playing.
+        oledView = .nowPlaying
         playbackQueue = queue
         let queueItems = queue.map { loaded -> PlaybackQueueItem in
             PlaybackQueueItem(
@@ -1498,6 +1521,8 @@ final class LibraryViewModel: ObservableObject {
                     targetCrateName = first
                 }
             }
+
+            refreshCrateCounts()
         } catch {
             AppLog.library.warning("Failed to list crates: \(error.localizedDescription)")
         }

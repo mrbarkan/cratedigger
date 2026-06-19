@@ -58,7 +58,7 @@ struct SourcesSidebar: View {
                             sidebarItem(
                                 icon: Image(systemName: crateName == model.targetCrateName ? "music.note.house.fill" : "music.note.house"),
                                 title: crateName,
-                                count: "\(model.loadCrateTracks(name: crateName).count)",
+                                count: "\(model.crateTrackCounts[crateName] ?? 0)",
                                 selected: isSelectedCrate(crateName),
                                 action: {
                                     model.selectSource(.localCrate(name: crateName))

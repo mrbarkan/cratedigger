@@ -24,6 +24,16 @@ struct SpinningRecordView: View {
     @State private var discImage: NSImage? = nil
     @State private var isVinyl: Bool = false
 
+    // Pre-rendered CD faces. The 60fps animation only rotates/crossfades these
+    // cached bitmaps; the expensive gradients + Gaussian blur are rasterized
+    // once (here), not rebuilt every frame. Rebuilt only when the disc art
+    // changes (tracked via `faceToken`), at a fixed canvas size so window
+    // resizes never trigger a re-render.
+    @State private var sharpFace: NSImage? = nil
+    @State private var blurredFace: NSImage? = nil
+    @State private var faceToken: Int = 0
+    private let faceRenderSize: CGFloat = 480
+
     var body: some View {
         GeometryReader { geo in
             let size = min(geo.size.width, geo.size.height)
@@ -34,52 +44,33 @@ struct SpinningRecordView: View {
                 } else {
                     // CD Layer
                     ZStack {
-                        // 1. Rotating CD Face
+                        // 1. Rotating CD Face — cached bitmaps. Per frame this is
+                        // just a textured quad being rotated + an opacity
+                        // crossfade, so it can hold 60fps without pegging the CPU.
                         ZStack {
-                            // Base Layer
-                            ZStack {
-                                if let cdImg = discImage {
-                                    Image(nsImage: cdImg).resizable().aspectRatio(contentMode: .fill)
-                                } else {
-                                    blankCDFace
-                                }
-                                rainbowDiffractionSheen
-                            }
-                            
-                            // Blur Layer (only when spinning)
+                            cdFaceImage(sharpFace, size: size)
+
+                            // Motion blur: a pre-blurred copy faded in by speed.
+                            // No per-frame blur or offscreen rasterization.
                             if animator.currentSpeed > 0 {
-                                ZStack {
-                                    if let cdImg = discImage {
-                                        Image(nsImage: cdImg).resizable().aspectRatio(contentMode: .fill)
-                                    } else {
-                                        blankCDFace
-                                    }
-                                    rainbowDiffractionSheen
-                                }
-                                .blur(radius: animator.currentSpeed * 0.08)
-                                .mask(
-                                    RadialGradient(
-                                        gradient: Gradient(colors: [.clear, .white]),
-                                        center: .center,
-                                        startRadius: size * 0.08,
-                                        endRadius: size * 0.45
-                                    )
-                                )
+                                cdFaceImage(blurredFace, size: size)
+                                    .opacity(blurOpacity(for: animator.currentSpeed))
                             }
                         }
-                        .drawingGroup() // GPU-accelerated blur on the rotating face only
-                        .rotationEffect(.degrees(-animator.rotationAngle))
+                        .rotationEffect(.degrees(animator.rotationAngle))
                         .animation(nil, value: animator.rotationAngle)
-                        
+
                         // 2. Static Overlays
                         if discImage == nil {
                             cdGroovesOverlay
                         }
-                        
+
                         Circle().stroke(Color.white.opacity(0.25), lineWidth: 1.5)
-                        
+
                         plasticCenterHub
                     }
+                    .onAppear { renderCDFaces() }
+                    .onChange(of: faceToken) { _ in renderCDFaces() }
                 }
             }
             .frame(width: size, height: size)
@@ -109,6 +100,71 @@ struct SpinningRecordView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("CrateDiggerArtworkImported"))) { _ in
             updateDiscData()
         }
+    }
+
+    // MARK: - Cached CD face rendering
+
+    /// Display a cached face bitmap, falling back to a live (sharp, unblurred)
+    /// render for the brief moment before the cache is populated so the disc
+    /// never flashes blank.
+    @ViewBuilder
+    private func cdFaceImage(_ image: NSImage?, size: CGFloat) -> some View {
+        if let image {
+            Image(nsImage: image)
+                .resizable()
+                .frame(width: size, height: size)
+        } else {
+            cdFaceContent(blurRadius: 0, size: size)
+        }
+    }
+
+    /// The CD face artwork + diffraction sheen. `blurRadius == 0` is the sharp
+    /// face; a positive radius (masked to the outer ring) is the motion smear.
+    private func cdFaceContent(blurRadius: CGFloat, size: CGFloat) -> some View {
+        ZStack {
+            if let cdImg = discImage {
+                Image(nsImage: cdImg).resizable().aspectRatio(contentMode: .fill)
+            } else {
+                blankCDFace
+            }
+            rainbowDiffractionSheen
+        }
+        .frame(width: size, height: size)
+        .clipped()
+        .blur(radius: blurRadius)
+        .mask(
+            blurRadius > 0
+                ? AnyView(RadialGradient(
+                    gradient: Gradient(colors: [.clear, .white]),
+                    center: .center,
+                    startRadius: size * 0.08,
+                    endRadius: size * 0.45
+                ))
+                : AnyView(Rectangle())
+        )
+    }
+
+    /// Rasterize the sharp + blurred faces once into bitmaps. Cheap to do on a
+    /// track/art change; rotating the results every frame is then nearly free.
+    @MainActor
+    private func renderCDFaces() {
+        let scale = NSScreen.main?.backingScaleFactor ?? 2
+
+        let sharp = ImageRenderer(content: cdFaceContent(blurRadius: 0, size: faceRenderSize))
+        sharp.scale = scale
+        sharpFace = sharp.nsImage
+
+        let blurred = ImageRenderer(
+            content: cdFaceContent(blurRadius: max(2, faceRenderSize * 0.02), size: faceRenderSize)
+        )
+        blurred.scale = scale
+        blurredFace = blurred.nsImage
+    }
+
+    /// How present the pre-blurred face is, as a function of spin speed. Fully
+    /// faded in by roughly medium speed; absent at rest.
+    private func blurOpacity(for speed: Double) -> Double {
+        min(1.0, max(0.0, speed / 30.0))
     }
 
     @ViewBuilder
@@ -150,7 +206,7 @@ struct SpinningRecordView: View {
                 }
                 .frame(width: labelSize, height: labelSize)
                 .clipShape(Circle())
-                .rotationEffect(.degrees(-animator.rotationAngle))
+                .rotationEffect(.degrees(animator.rotationAngle))
                 .animation(nil, value: animator.rotationAngle)
                 
                 // Small center hole (static)
@@ -223,6 +279,8 @@ struct SpinningRecordView: View {
     private func updateDiscData() {
         defer {
             animator.isVinyl = self.isVinyl
+            // Invalidate the cached CD faces so they re-render for the new art.
+            faceToken &+= 1
         }
         guard let track = model.nowPlayingTrack?.track else {
             discImage = nil
@@ -330,7 +388,9 @@ final class RecordAnimator: ObservableObject {
         
         let now = Date()
         let rawDt = lastUpdateTime.map { now.timeIntervalSince($0) } ?? 0.016
-        let dt = min(0.1, rawDt)
+        // Cap catch-up to ~3 frames. A larger clamp lets a single hitch advance
+        // the disc far enough to alias into apparent reverse spin.
+        let dt = min(0.05, rawDt)
         lastUpdateTime = now
         
         let targetSpeed: Double
@@ -355,7 +415,11 @@ final class RecordAnimator: ObservableObject {
         }
         
         if currentSpeed > 0 {
-            rotationAngle += currentSpeed * factor
+            // Hard-cap the per-rendered-frame advance well under 180° so a
+            // dropped frame can never read as backwards rotation (wagon-wheel
+            // effect). Better to briefly spin a touch slow than to reverse.
+            let delta = min(currentSpeed * factor, 120.0)
+            rotationAngle += delta
             if rotationAngle >= 360 {
                 rotationAngle = rotationAngle.truncatingRemainder(dividingBy: 360)
             }

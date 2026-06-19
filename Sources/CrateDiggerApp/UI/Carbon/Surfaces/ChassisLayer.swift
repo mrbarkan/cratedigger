@@ -8,11 +8,6 @@ struct ChassisLayer<Content: View>: View {
         ZStack {
             backgroundFill
             chassisPlate
-                .frame(
-                    width: CarbonLayout.chassisSize.width,
-                    height: CarbonLayout.chassisSize.height
-                )
-                .padding(CarbonLayout.chassisInsetH)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
