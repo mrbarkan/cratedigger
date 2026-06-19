@@ -74,11 +74,15 @@ struct MainShell: View {
                 }
             } else {
                 wellShell(
-                    title: "Browser · \(browserSubtitle)",
+                    title: model.showArtworkGallery ? "Browser · GALLERY" : "Browser · \(browserSubtitle)",
                     trailing: browserTrailing,
                     trailingControl: AnyView(collapseChevron(action: { model.toggleBrowserCollapsed() }))
                 ) {
-                    BrowserPane()
+                    if model.showArtworkGallery {
+                        ArtworkGalleryView()
+                    } else {
+                        BrowserPane()
+                    }
                 }
             }
         }
@@ -232,22 +236,8 @@ struct MainShell: View {
     private func chevronGlyph(direction: ChevronDirection) -> some View {
         let inset: CGFloat = 1
         return ZStack {
-            RoundedRectangle(cornerRadius: 3, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: theme.isDark
-                            ? [theme.metalHi, theme.metalLo]
-                            : [theme.chassisHi, theme.chassisLo],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
+            ChromeChassis(theme: theme, cornerRadius: 4)
                 .frame(width: 18, height: 14)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 3, style: .continuous)
-                        .stroke(Color.white.opacity(theme.isDark ? 0.10 : 0.45), lineWidth: 1)
-                        .frame(width: 18, height: 14)
-                )
             Text(direction == .collapse ? "›|" : "|‹")
                 .font(CarbonFont.mono(9, weight: .heavy))
                 .foregroundStyle(theme.ink2)
@@ -301,22 +291,8 @@ struct CollapsedRail: View {
 
     private var chevron: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 3, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: theme.isDark
-                            ? [theme.metalHi, theme.metalLo]
-                            : [theme.chassisHi, theme.chassisLo],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
+            ChromeChassis(theme: theme, cornerRadius: 5)
                 .frame(width: 22, height: 18)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 3, style: .continuous)
-                        .stroke(Color.white.opacity(theme.isDark ? 0.10 : 0.45), lineWidth: 1)
-                        .frame(width: 22, height: 18)
-                )
             Text("⟨⟩")
                 .font(CarbonFont.mono(10, weight: .heavy))
                 .foregroundStyle(theme.ink2)

@@ -18,6 +18,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         window.title = "CrateDigger"
         window.contentViewController = hostingController
         window.backgroundColor = .clear
+        window.isOpaque = false
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.toolbarStyle = .unified

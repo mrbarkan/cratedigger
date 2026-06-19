@@ -17,7 +17,7 @@ public struct ArtworkDimensions: Codable, Hashable, Sendable {
     }
 }
 
-public struct AudioTrack: Identifiable, Hashable, Sendable {
+public struct AudioTrack: Identifiable, Hashable, Codable, Sendable {
     public let id: UUID
     public let fileURL: URL
     public var title: String

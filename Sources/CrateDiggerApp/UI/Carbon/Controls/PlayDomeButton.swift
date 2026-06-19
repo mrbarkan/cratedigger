@@ -13,20 +13,26 @@ struct PlayDomeButton: View {
             ZStack {
                 Circle()
                     .fill(
-                        RadialGradient(
+                        LinearGradient(
                             colors: [theme.orangeHi, theme.orange, theme.orangeLo],
-                            center: UnitPoint(x: 0.35, y: 0.30),
-                            startRadius: 0,
-                            endRadius: CarbonLayout.playButtonSize * 0.6
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
                         )
                     )
                     .overlay(
                         Circle()
-                            .stroke(Color.white.opacity(0.35), lineWidth: 0.5)
-                            .padding(0.5)
+                            .fill(
+                                LinearGradient(
+                                    colors: [Color.white.opacity(0.34), Color.clear],
+                                    startPoint: .top,
+                                    endPoint: .center
+                                )
+                            )
+                            .padding(1)
                     )
-                    .shadow(color: Color.black.opacity(theme.isDark ? 0.7 : 0.4), radius: 4, y: 3)
-                    .shadow(color: theme.orange.opacity(isPlaying ? 0.6 : 0), radius: 16)
+                    .overlay(Circle().stroke(Color.white.opacity(0.42), lineWidth: 0.8))
+                    .shadow(color: Color.black.opacity(theme.isDark ? 0.58 : 0.24), radius: 9, y: 5)
+                    .shadow(color: theme.orange.opacity(isPlaying ? 0.56 : 0.24), radius: isPlaying ? 18 : 10)
 
                 Image(systemName: isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: CarbonLayout.playButtonSize * 0.32, weight: .black))

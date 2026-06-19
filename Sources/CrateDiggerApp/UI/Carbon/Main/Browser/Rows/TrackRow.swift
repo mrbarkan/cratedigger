@@ -28,6 +28,7 @@ struct TrackRow: View {
                 .font(CarbonFont.mono(10))
                 .foregroundStyle(metaColor)
         }
+        .draggable("track::" + loaded.track.id.uuidString)
     }
 
     private var numberLabel: String {
@@ -38,7 +39,7 @@ struct TrackRow: View {
     }
 
     private var numberColor: Color {
-        if selected { return theme.isDark ? theme.selectionInk : theme.cyan }
+        if selected { return theme.selectionInk }
         if isPlaying { return theme.orange }
         return theme.ink3
     }
@@ -50,7 +51,7 @@ struct TrackRow: View {
     }
 
     private var metaColor: Color {
-        if selected { return theme.isDark ? theme.selectionInk.opacity(0.7) : theme.chassisLo }
+        if selected { return theme.selectionInk.opacity(0.72) }
         return theme.ink3
     }
 

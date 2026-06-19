@@ -62,6 +62,18 @@ public struct LibraryIndex: Sendable {
                 .compactMap { $0.track.artworkHash }
                 .first ?? representative.track.artworkHash
 
+            let booklet: AlbumBooklet?
+            let mediaFormat: MediaFormat?
+            if representative.track.fileURL.isFileURL {
+                let albumFolder = representative.track.fileURL.deletingLastPathComponent()
+                let manifest = ArtworkManifest.load(from: albumFolder)
+                booklet = AlbumBooklet.scan(in: albumFolder, manifest: manifest)
+                mediaFormat = manifest?.mediaFormat
+            } else {
+                booklet = nil
+                mediaFormat = nil
+            }
+
             let album = Album(
                 id: albumID,
                 artistID: artistID,
@@ -69,7 +81,9 @@ public struct LibraryIndex: Sendable {
                 title: albumTitle,
                 year: year,
                 artworkHash: artworkHash,
-                tracks: sortedTracks
+                tracks: sortedTracks,
+                booklet: booklet,
+                mediaFormat: mediaFormat
             )
 
             albumsByArtistID[artistID, default: []].append(album)

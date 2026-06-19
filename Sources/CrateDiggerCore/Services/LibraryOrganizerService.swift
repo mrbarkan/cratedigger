@@ -1,0 +1,259 @@
+import Foundation
+
+public final class LibraryOrganizerService {
+    private let fileManager: FileManager
+
+    public init(fileManager: FileManager = .default) {
+        self.fileManager = fileManager
+    }
+
+    private func sanitizePathComponent(_ rawValue: String, fallback: String) -> String {
+        var value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        if value.isEmpty { return fallback }
+
+        value = value.replacingOccurrences(of: "/", with: "-")
+        value = value.replacingOccurrences(of: ":", with: "-")
+        value = value.replacingOccurrences(of: "\\", with: "-")
+
+        let collapsed = value.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+        let trimmed = collapsed.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? fallback : trimmed
+    }
+
+    private func commonAncestorDirectory(for urls: [URL]) -> URL? {
+        guard let first = urls.first else { return nil }
+        var commonComponents = first.deletingLastPathComponent().standardizedFileURL.pathComponents
+        for url in urls.dropFirst() {
+            let parts = url.deletingLastPathComponent().standardizedFileURL.pathComponents
+            var n = 0
+            while n < commonComponents.count, n < parts.count, commonComponents[n] == parts[n] {
+                n += 1
+            }
+            commonComponents = Array(commonComponents.prefix(n))
+            if commonComponents.isEmpty { return nil }
+        }
+        if commonComponents.isEmpty { return nil }
+        return URL(fileURLWithPath: "/" + commonComponents.dropFirst().joined(separator: "/"))
+    }
+
+    @discardableResult
+    public func organize(
+        tracks: [LoadedTrack],
+        destinationFolder: URL,
+        copyOnly: Bool = false,
+        organiseByAlbumArtist: Bool = true,
+        onProgress: (@Sendable (Int, Int) -> Void)? = nil
+    ) async throws -> [LoadedTrack] {
+        let total = tracks.count
+        var count = 0
+        var updatedTracks: [LoadedTrack] = []
+        updatedTracks.reserveCapacity(tracks.count)
+
+        let commonAncestor = organiseByAlbumArtist ? nil : commonAncestorDirectory(for: tracks.map { $0.track.fileURL })
+
+        var processedPairs: Set<String> = []
+        var uniqueSourceDirs: Set<URL> = []
+
+        for track in tracks {
+            let fileURL = track.track.fileURL
+            guard fileManager.fileExists(atPath: fileURL.path) else {
+                count += 1
+                onProgress?(count, total)
+                updatedTracks.append(track)
+                continue
+            }
+
+            let targetURL: URL
+            let targetDir: URL
+            let fileExtension = fileURL.pathExtension
+
+            if organiseByAlbumArtist {
+                // Extract tags with fallbacks
+                let artist = track.metadata.albumArtist ?? track.metadata.artist ?? track.track.artist
+                let album = track.metadata.album ?? track.track.album
+                let year = track.metadata.year.map(String.init) ?? ""
+                let trackNum = track.metadata.trackNumber ?? track.track.trackNumber ?? 0
+                let title = track.metadata.title ?? track.track.title
+
+                let artistFolder = sanitizePathComponent(artist, fallback: "Unknown Artist")
+                
+                let albumFolderName: String
+                let sanitizedAlbum = sanitizePathComponent(album, fallback: "Unknown Album")
+                if !year.isEmpty {
+                    albumFolderName = "[\(year)] - \(sanitizedAlbum)"
+                } else {
+                    albumFolderName = sanitizedAlbum
+                }
+
+                let trackPrefix = trackNum > 0 ? String(format: "%02d - ", trackNum) : ""
+                let sanitizedTitle = sanitizePathComponent(title, fallback: "Track")
+                let fileName = "\(trackPrefix)\(sanitizedTitle).\(fileExtension)"
+
+                targetDir = destinationFolder
+                    .appendingPathComponent(artistFolder, isDirectory: true)
+                    .appendingPathComponent(albumFolderName, isDirectory: true)
+                targetURL = targetDir.appendingPathComponent(fileName)
+            } else {
+                // Keep the relative structure from commonAncestor
+                if let ancestor = commonAncestor, fileURL.path.hasPrefix(ancestor.path) {
+                    let relativeComponents = Array(fileURL.pathComponents.dropFirst(ancestor.pathComponents.count))
+                    if relativeComponents.isEmpty {
+                        targetURL = destinationFolder.appendingPathComponent(fileURL.lastPathComponent)
+                        targetDir = destinationFolder
+                    } else {
+                        targetURL = destinationFolder.appendingPathComponent(relativeComponents.joined(separator: "/"))
+                        targetDir = targetURL.deletingLastPathComponent()
+                    }
+                } else {
+                    targetURL = destinationFolder.appendingPathComponent(fileURL.lastPathComponent)
+                    targetDir = destinationFolder
+                }
+            }
+
+            try fileManager.createDirectory(at: targetDir, withIntermediateDirectories: true)
+
+            // Handle name collision
+            var attempt = 1
+            var uniqueTargetURL = targetURL
+            
+            // Check if source and target are the same path
+            if targetURL.standardizedFileURL.path == fileURL.standardizedFileURL.path {
+                count += 1
+                onProgress?(count, total)
+                updatedTracks.append(track)
+                continue
+            }
+            
+            while fileManager.fileExists(atPath: uniqueTargetURL.path) {
+                // If it exists but it's the exact same file, we can break or rename
+                if uniqueTargetURL.standardizedFileURL.path == fileURL.standardizedFileURL.path {
+                    break
+                }
+                let base = targetURL.deletingPathExtension().lastPathComponent
+                let parentDir = targetURL.deletingLastPathComponent()
+                uniqueTargetURL = parentDir.appendingPathComponent("\(base) (\(attempt)).\(fileExtension)")
+                attempt += 1
+            }
+
+            if uniqueTargetURL.standardizedFileURL.path != fileURL.standardizedFileURL.path {
+                if copyOnly {
+                    try fileManager.copyItem(at: fileURL, to: uniqueTargetURL)
+                } else {
+                    try fileManager.moveItem(at: fileURL, to: uniqueTargetURL)
+                    // Clean up empty parent directories of the original file
+                    var originalDir = fileURL.deletingLastPathComponent()
+                    while originalDir.path.hasPrefix(destinationFolder.path) || originalDir.pathComponents.count > 3 {
+                        let contents = try? fileManager.contentsOfDirectory(atPath: originalDir.path)
+                        if let contents, contents.isEmpty {
+                            try? fileManager.removeItem(at: originalDir)
+                            originalDir = originalDir.deletingLastPathComponent()
+                        } else {
+                            break
+                        }
+                    }
+                }
+
+                // Copy supporting files (artwork, cue sheets, booklets, logs)
+                let sourceDir = fileURL.deletingLastPathComponent()
+                let sourceDirPath = sourceDir.standardizedFileURL.path
+                let pairKey = "\(sourceDirPath) -> \(targetDir.standardizedFileURL.path)"
+                if !processedPairs.contains(pairKey) {
+                    processedPairs.insert(pairKey)
+                    copySupportingFiles(from: sourceDir, to: targetDir)
+                    uniqueSourceDirs.insert(sourceDir)
+                }
+            }
+
+            // Create new LoadedTrack with updated URL
+            let updatedTrackInfo = AudioTrack(
+                id: track.track.id,
+                fileURL: uniqueTargetURL,
+                title: track.track.title,
+                artist: track.track.artist,
+                album: track.track.album,
+                durationSeconds: track.track.durationSeconds,
+                formatName: track.track.formatName,
+                bitrateKbps: track.track.bitrateKbps,
+                sampleRateHz: track.track.sampleRateHz,
+                year: track.track.year,
+                trackNumber: track.track.trackNumber,
+                artworkSource: track.track.artworkSource,
+                artworkHash: track.track.artworkHash,
+                artworkDimensions: track.track.artworkDimensions
+            )
+            updatedTracks.append(LoadedTrack(track: updatedTrackInfo, metadata: track.metadata))
+
+            count += 1
+            onProgress?(count, total)
+        }
+
+        if !copyOnly {
+            for sourceDir in uniqueSourceDirs {
+                if fileManager.fileExists(atPath: sourceDir.path), !hasAnyAudioFiles(in: sourceDir) {
+                    try? fileManager.removeItem(at: sourceDir)
+                    
+                    // Clean up empty parent directories
+                    var parent = sourceDir.deletingLastPathComponent()
+                    while parent.pathComponents.count > 3 {
+                        if let contents = try? fileManager.contentsOfDirectory(atPath: parent.path), contents.isEmpty {
+                            try? fileManager.removeItem(at: parent)
+                            parent = parent.deletingLastPathComponent()
+                        } else {
+                            break
+                        }
+                    }
+                }
+            }
+        }
+
+        return updatedTracks
+    }
+
+    private func copySupportingFiles(from sourceDir: URL, to targetDir: URL) {
+        guard let contents = try? fileManager.contentsOfDirectory(at: sourceDir, includingPropertiesForKeys: nil) else {
+            return
+        }
+
+        let audioExtensions: Set<String> = ["mp3", "aac", "m4a", "flac", "wav", "aiff", "ogg", "opus", "caf"]
+
+        for item in contents {
+            let isDirectory = (try? item.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
+            
+            if isDirectory {
+                let name = item.lastPathComponent.lowercased()
+                let isSupportingFolder = name.contains("art") || name.contains("cover") || name.contains("booklet") || name.contains("scan") || name.contains("doc") || name.contains("extra")
+                
+                if isSupportingFolder {
+                    let destFolder = targetDir.appendingPathComponent(item.lastPathComponent)
+                    if !fileManager.fileExists(atPath: destFolder.path) {
+                        try? fileManager.copyItem(at: item, to: destFolder)
+                    }
+                }
+            } else {
+                let ext = item.pathExtension.lowercased()
+                if !audioExtensions.contains(ext) {
+                    let destFile = targetDir.appendingPathComponent(item.lastPathComponent)
+                    if !fileManager.fileExists(atPath: destFile.path) {
+                        try? fileManager.copyItem(at: item, to: destFile)
+                    }
+                }
+            }
+        }
+    }
+
+    private func hasAnyAudioFiles(in dir: URL) -> Bool {
+        let enumerator = fileManager.enumerator(at: dir, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles])
+        let audioExtensions: Set<String> = ["mp3", "aac", "m4a", "flac", "wav", "aiff", "ogg", "opus", "caf"]
+        
+        while let fileURL = enumerator?.nextObject() as? URL {
+            let isDirectory = (try? fileURL.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
+            if !isDirectory {
+                let ext = fileURL.pathExtension.lowercased()
+                if audioExtensions.contains(ext) {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+}

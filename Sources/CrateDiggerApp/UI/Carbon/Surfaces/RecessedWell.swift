@@ -7,37 +7,45 @@ struct RecessedWell<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
     var body: some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         ZStack {
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [theme.wellDeep, theme.well, theme.well],
-                        startPoint: .top,
-                        endPoint: .bottom
+            shape
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    shape.fill(
+                        LinearGradient(
+                            colors: [
+                                theme.well.opacity(theme.isDark ? 0.42 : 0.58),
+                                theme.wellDeep.opacity(theme.isDark ? 0.42 : 0.42)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
                     )
                 )
-
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .stroke(
-                    LinearGradient(
-                        colors: [Color.black.opacity(theme.isDark ? 0.6 : 0.22), Color.clear],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    ),
-                    lineWidth: 2
+                .overlay(
+                    shape.strokeBorder(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(theme.isDark ? 0.18 : 0.84),
+                                theme.hair.opacity(theme.isDark ? 0.62 : 0.72),
+                                Color.black.opacity(theme.isDark ? 0.42 : 0.10)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
                 )
-                .blur(radius: 1.5)
-                .mask(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .stroke(
-                    LinearGradient(
-                        colors: [Color.clear, Color.white.opacity(theme.isDark ? 0.04 : 0.25)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    ),
-                    lineWidth: 1
+                .overlay(
+                    shape
+                        .stroke(Color.black.opacity(theme.isDark ? 0.30 : 0.08), lineWidth: 1)
+                        .blur(radius: 1.2)
+                        .offset(y: 1)
+                        .mask(shape)
                 )
+                .shadow(color: Color.black.opacity(theme.isDark ? 0.46 : 0.14), radius: 18, y: 8)
+                .shadow(color: Color.white.opacity(theme.isDark ? 0.00 : 0.42), radius: 1, y: -1)
 
             content()
                 .padding(padding)

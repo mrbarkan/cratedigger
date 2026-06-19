@@ -47,6 +47,7 @@ public protocol PlaybackServiceProtocol: AnyObject {
     func next()
     func previous()
     func setVolume(_ volume: Double)
+    func setOutputDeviceUID(_ uid: String?)
 }
 
 protocol PlaybackEngineProtocol: AnyObject {
@@ -63,6 +64,7 @@ protocol PlaybackEngineProtocol: AnyObject {
     func pause()
     func seek(toSeconds: Double)
     func setVolume(_ volume: Double)
+    func setOutputDeviceUID(_ uid: String?)
 }
 
 final class AVPlayerEngine: PlaybackEngineProtocol {
@@ -151,6 +153,10 @@ final class AVPlayerEngine: PlaybackEngineProtocol {
 
     func setVolume(_ volume: Double) {
         player.volume = Float(max(0, min(volume, 1)))
+    }
+
+    func setOutputDeviceUID(_ uid: String?) {
+        player.audioOutputDeviceUniqueID = uid
     }
 
     private func addPeriodicTimeObserver() {
@@ -326,6 +332,10 @@ public final class PlaybackService: PlaybackServiceProtocol {
 
     public func setVolume(_ volume: Double) {
         engine.setVolume(volume)
+    }
+
+    public func setOutputDeviceUID(_ uid: String?) {
+        engine.setOutputDeviceUID(uid)
     }
 
     private func bindEngineCallbacks() {

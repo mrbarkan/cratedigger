@@ -1,4 +1,5 @@
 import AppKit
+import CryptoKit
 import CrateDiggerCore
 import Foundation
 import SwiftUI
@@ -8,6 +9,8 @@ enum OLEDView: String, CaseIterable, Codable, Sendable {
     case vu
     case conversion
     case scan
+    case remoteSync
+    case cdRip
 
     var label: String {
         switch self {
@@ -15,6 +18,8 @@ enum OLEDView: String, CaseIterable, Codable, Sendable {
         case .vu:         return "VU"
         case .conversion: return "Cnvrt"
         case .scan:       return "Scan"
+        case .remoteSync: return "Sync"
+        case .cdRip:      return "CD"
         }
     }
 }
@@ -43,6 +48,15 @@ struct ConversionProgressSnapshot: Equatable, Sendable {
     static let idle = ConversionProgressSnapshot(jobsCompleted: 0, jobsTotal: 0, currentFilename: nil, isRunning: false)
 }
 
+enum LibrarySource: Hashable, Sendable {
+    case localAll
+    case localCrate(name: String)
+    case prepCrate
+    case remote
+    case playlist(name: String)
+    case cd(volumePath: String)
+}
+
 @MainActor
 final class LibraryViewModel: ObservableObject {
 
@@ -61,10 +75,6 @@ final class LibraryViewModel: ObservableObject {
     }
 
     private func handleOLEDViewChange(from old: OLEDView, to new: OLEDView) {
-        // Entering convert mode: auto-collapse the browser to its compact
-        // context view so the patch bay gets stage space. Only auto-collapse
-        // if the user hadn't already collapsed it manually — and remember we
-        // did this so we can restore on exit.
         if new == .conversion && old != .conversion {
             if !browserCollapsed {
                 browserCollapsed = true
@@ -80,10 +90,6 @@ final class LibraryViewModel: ObservableObject {
     @Published var scanProgress: ScanProgress = .idle
     @Published var conversionProgress: ConversionProgressSnapshot = .idle
 
-    /// Patch-bay state. Mutated directly by the Carbon convert panel via
-    /// SwiftUI bindings; persisted to prefs on every change so the patch bay
-    /// remembers its setting across launches and lines up with what the
-    /// legacy options sheet would have written.
     @Published var conversionSelection: ConversionOptionsSelection = ConversionOptionsSelection(
         batchScope: .selectedTracks,
         outputFormat: .aac,
@@ -98,22 +104,13 @@ final class LibraryViewModel: ObservableObject {
         didSet { prefs.saveLastConversionSelection(PersistedConversionSelection(conversionSelection)) }
     }
 
-    /// Sources, Browser, and Inspector wells can each collapse so the user
-    /// can give the other columns most of the chassis width. Sources and
-    /// Inspector collapse to thin rotated-title rails; Browser collapses to
-    /// a compact "now-playing context" track list.
     @Published var sourcesCollapsed: Bool = false
     @Published var browserCollapsed: Bool = false
     @Published var inspectorCollapsed: Bool = false
+    @Published var showArtworkGallery: Bool = false
 
-    /// User asked to enter convert mode: auto-collapse the browser so the
-    /// patch bay gets stage room. This flag tracks whether the auto-collapse
-    /// applied so we know to restore the user's previous state when leaving.
     private var browserAutoCollapsedForConvert: Bool = false
 
-    /// Invariant-preserving setters: at most one of {browser, inspector} can
-    /// be collapsed at a time so the chassis main area always has at least
-    /// one flex pane absorbing leftover width — no dead space.
     func toggleBrowserCollapsed() {
         if !browserCollapsed && inspectorCollapsed {
             inspectorCollapsed = false
@@ -146,6 +143,33 @@ final class LibraryViewModel: ObservableObject {
     @Published var repeatMode: RepeatMode = .off {
         didSet { prefs.savedRepeatMode = repeatMode.rawValue }
     }
+    @Published var cdAnimationSpeed: CDAnimationSpeed = .fast {
+        didSet { prefs.cdAnimationSpeed = cdAnimationSpeed }
+    }
+
+    // MARK: - New Sources & Playlists State
+    @Published var currentSource: LibrarySource = .localAll
+    @Published var availableCrates: [String] = []
+    @Published var prepCrateTracks: [LoadedTrack] = []
+    @Published var targetCrateName: String = "Personal Crate"
+    var allRecordsCount: Int {
+        var all: [LoadedTrack] = []
+        for name in availableCrates {
+            all.append(contentsOf: loadCrateTracks(name: name))
+        }
+        return LibraryViewModel.deduplicate(tracks: all).count
+    }
+    @Published var playlists: [Playlist] = []
+    @Published var mountedCDs: [AudioCDInfo] = []
+    @Published var deadTracks: [LoadedTrack] = []
+    @Published var duplicateGroups: [DuplicateGroup] = []
+
+    // Cache indexes for fast switching
+    private var localIndex: LibraryIndex = .empty
+    private var remoteIndex: LibraryIndex = .empty
+    private var cdIndex: LibraryIndex = .empty
+    private var playlistIndex: LibraryIndex = .empty
+    private var prepCrateIndex: LibraryIndex = .empty
 
     // MARK: - Services
 
@@ -155,12 +179,27 @@ final class LibraryViewModel: ObservableObject {
     let remoteArtworkService: RemoteArtworkService
     let prefs: PreferencesStore
 
+    // New services
+    let subsonicClient = SubsonicClient()
+    let cdRipper = CDRipperService()
+    let playlistService = PlaylistService()
+    let audioOutput = AudioOutputManager()
+    let lastFM = LastFMScrobbler()
+    var metadataEditor: MetadataEditorService?
+
+    // Last.fm tracking
+    private var lastScrobbledTrackID: UUID?
+    private var playbackStartTimestamp: Int = 0
+
     // MARK: - Private
 
     private var playbackQueue: [LoadedTrack] = []
     private var scanTask: Task<Void, Never>?
     var conversionTask: Task<Void, Never>?
     weak var activeConversionService: ConversionService?
+
+    // Keyboard Shortcuts Monitor
+    private var localEventMonitor: Any?
 
     // MARK: - Init
 
@@ -176,6 +215,12 @@ final class LibraryViewModel: ObservableObject {
         self.remoteArtworkService = remoteArtworkService
         self.prefs = prefs
 
+        do {
+            self.metadataEditor = try MetadataEditorService()
+        } catch {
+            AppLog.tools.warning("Could not initialize MetadataEditorService: \(error.localizedDescription)")
+        }
+
         if let scanner {
             self.scanner = scanner
         } else {
@@ -189,7 +234,7 @@ final class LibraryViewModel: ObservableObject {
                         metadataProbe: probe
                     )
                 } catch {
-                    AppLog.tools.warning("Found ffprobe at \(resolved.url.path, privacy: .public) but could not initialize MetadataProbeService: \(String(describing: error), privacy: .public)")
+                    AppLog.tools.warning("Found ffprobe but could not init MetadataProbeService: \(String(describing: error))")
                     self.scanner = LibraryScanService(
                         artworkService: artworkService,
                         remoteArtworkService: remoteArtworkService,
@@ -197,7 +242,6 @@ final class LibraryViewModel: ObservableObject {
                     )
                 }
             } else {
-                AppLog.tools.notice("ffprobe not found via ExternalToolLocator; scan will use AVFoundation metadata only")
                 self.scanner = LibraryScanService(
                     artworkService: artworkService,
                     remoteArtworkService: remoteArtworkService,
@@ -213,10 +257,8 @@ final class LibraryViewModel: ObservableObject {
         if let saved = prefs.savedRepeatMode, let mode = RepeatMode(rawValue: saved) {
             repeatMode = mode
         }
+        cdAnimationSpeed = prefs.cdAnimationSpeed
 
-        // Hydrate the conversion patch-bay selection from prefs without
-        // tripping the didSet (which would just write the same data right
-        // back during init).
         if let persisted = prefs.savedLastConversionSelection(as: PersistedConversionSelection.self),
            let restored = persisted.materialize() {
             conversionSelection = restored
@@ -224,6 +266,157 @@ final class LibraryViewModel: ObservableObject {
 
         wirePlaybackBindings()
         playback.setVolume(playbackVolume)
+
+        // Load playlists and CDs
+        self.playlists = playlistService.listPlaylists()
+        self.mountedCDs = cdRipper.detectAudioCDs()
+
+        if let outputUID = prefs.selectedOutputDeviceUID {
+            playback.setOutputDeviceUID(outputUID)
+        }
+
+        setupAudioDeviceObserver()
+        setupCDSpeedObserver()
+        setupKeyboardShortcutsMonitor()
+        setupLibraryOperationsObservers()
+        
+        refreshAvailableCrates()
+        selectSource(.localAll)
+    }
+
+    deinit {
+        if let monitor = localEventMonitor {
+            NSEvent.removeMonitor(monitor)
+        }
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    private func setupAudioDeviceObserver() {
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("CrateDiggerAudioDeviceChanged"),
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            let uid = notification.object as? String
+            Task { @MainActor [weak self] in
+                self?.playback.setOutputDeviceUID(uid)
+            }
+        }
+    }
+
+    private func setupCDSpeedObserver() {
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("CrateDiggerCDSpeedChanged"),
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            if let speed = notification.object as? CDAnimationSpeed {
+                Task { @MainActor [weak self] in
+                    self?.cdAnimationSpeed = speed
+                }
+            }
+        }
+    }
+
+    private func setupLibraryOperationsObservers() {
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("CrateDiggerMoveLibrary"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.moveLibrary()
+            }
+        }
+        
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("CrateDiggerConsolidateLibrary"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.consolidateLibrary()
+            }
+        }
+
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("CrateDiggerCratesFolderChanged"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.refreshAvailableCrates()
+                self?.selectSource(self?.currentSource ?? .localAll)
+            }
+        }
+    }
+
+    private func setupKeyboardShortcutsMonitor() {
+        localEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self = self else { return event }
+            
+            // Do not intercept shortcuts if user is typing in a text field (first responder is NSTextField)
+            if let _ = self.activeTextField() {
+                return event
+            }
+
+            let shortcuts = self.prefs.keyboardShortcuts
+            let key = self.shortcutKeyForEvent(event)
+            
+            for (action, mappedKey) in shortcuts {
+                let defaultVal = self.defaultShortcutKey(for: action)
+                if (mappedKey.isEmpty && key == defaultVal) || (!mappedKey.isEmpty && key == mappedKey) {
+                    self.executeShortcutAction(action)
+                    return nil // Handled
+                }
+            }
+
+            return event
+        }
+    }
+
+    private func activeTextField() -> NSTextField? {
+        guard let window = NSApp.keyWindow,
+              let responder = window.firstResponder as? NSTextView,
+              let delegate = responder.delegate as? NSTextField else {
+            return nil
+        }
+        return delegate
+    }
+
+    private func shortcutKeyForEvent(_ event: NSEvent) -> String {
+        if event.keyCode == 49 { return "Space" }
+        if event.keyCode == 124 { return "Right Arrow" }
+        if event.keyCode == 123 { return "Left Arrow" }
+        if event.keyCode == 126 { return "Up Arrow" }
+        if event.keyCode == 125 { return "Down Arrow" }
+        return event.charactersIgnoringModifiers?.uppercased() ?? ""
+    }
+
+    private func defaultShortcutKey(for action: String) -> String {
+        switch action {
+        case "playPause": return "Space"
+        case "next": return "Right Arrow"
+        case "previous": return "Left Arrow"
+        case "volumeUp": return "Up Arrow"
+        case "volumeDown": return "Down Arrow"
+        case "seekForward": return "F"
+        case "seekBackward": return "B"
+        default: return ""
+        }
+    }
+
+    private func executeShortcutAction(_ action: String) {
+        switch action {
+        case "playPause": togglePlayPause()
+        case "next": next()
+        case "previous": previous()
+        case "volumeUp": setVolume(playbackVolume + 0.05)
+        case "volumeDown": setVolume(playbackVolume - 0.05)
+        case "seekForward": forward8s()
+        case "seekBackward": rewind8s()
+        default: break
+        }
     }
 
     // MARK: - Selection helpers
@@ -253,9 +446,54 @@ final class LibraryViewModel: ObservableObject {
         return playbackQueue[i]
     }
 
+    // MARK: - Source Management
+
+    var isLocalSource: Bool {
+        switch currentSource {
+        case .localAll, .localCrate: return true
+        default: return false
+        }
+    }
+
+    func selectSource(_ source: LibrarySource) {
+        currentSource = source
+        switch source {
+        case .localAll:
+            var all: [LoadedTrack] = []
+            for name in availableCrates {
+                all.append(contentsOf: loadCrateTracks(name: name))
+            }
+            let merged = LibraryViewModel.deduplicate(tracks: all)
+            localIndex = LibraryIndex.build(from: merged)
+            index = localIndex
+        case .localCrate(let name):
+            let tracks = loadCrateTracks(name: name)
+            localIndex = LibraryIndex.build(from: tracks)
+            index = localIndex
+        case .prepCrate:
+            prepCrateIndex = LibraryIndex.build(from: prepCrateTracks)
+            index = prepCrateIndex
+        case .remote:
+            index = remoteIndex
+            if remoteIndex.artists.isEmpty {
+                connectSubsonic()
+            }
+        case .playlist(let name):
+            selectPlaylist(name: name)
+        case .cd(let path):
+            selectCD(volumePath: path)
+        }
+        
+        selectedArtistID = index.artists.first?.id
+        selectedAlbumID = index.artists.first?.albums.first?.id
+        selectedTrackID = index.artists.first?.albums.first?.tracks.first?.track.id
+    }
+
     // MARK: - Folder loading
 
     func openFolderViaPanel() {
+        _ = checkAndPromptForCratesFolder()
+
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
@@ -269,9 +507,7 @@ final class LibraryViewModel: ObservableObject {
         loadFolders(urls)
     }
 
-    func loadFolders(_ urls: [URL]) {
-        persistFolderBookmarks(urls)
-
+    func loadFolders(_ urls: [URL], isRestore: Bool = false) {
         scanTask?.cancel()
         scanProgress = ScanProgress(folderName: urls.first?.lastPathComponent, filesProbed: 0, totalCandidates: nil, isRunning: true)
         playback.load(queue: [], startIndex: 0, autoPlay: false)
@@ -296,25 +532,16 @@ final class LibraryViewModel: ObservableObject {
             if Task.isCancelled { return }
 
             let merged = LibraryViewModel.deduplicate(tracks: collected)
-            let built = LibraryIndex.build(from: merged)
 
             await MainActor.run {
-                self.index = built
-                self.selectedArtistID = built.artists.first?.id
-                self.selectedAlbumID = built.artists.first?.albums.first?.id
-                self.selectedTrackID = built.artists.first?.albums.first?.tracks.first?.track.id
-                self.scanProgress = ScanProgress(
-                    folderName: nil,
-                    filesProbed: built.allTracks.count,
-                    totalCandidates: built.allTracks.count,
-                    isRunning: false
-                )
+                if !isRestore {
+                    self.persistFolderBookmarks(urls)
+                }
+                self.handleImport(merged)
             }
         }
     }
 
-    /// Re-open whichever folders the user had loaded last session. Silently
-    /// drops bookmarks that no longer resolve (volume gone, folder deleted).
     func restoreLastFoldersIfPossible() {
         let bookmarks = prefs.savedLibraryFolderBookmarks
         guard !bookmarks.isEmpty else { return }
@@ -332,12 +559,8 @@ final class LibraryViewModel: ObservableObject {
         if refreshedBookmarks != bookmarks {
             prefs.savedLibraryFolderBookmarks = refreshedBookmarks
         }
-        guard !resolvedURLs.isEmpty else {
-            AppLog.library.notice("No saved library folders could be re-opened on launch")
-            return
-        }
-        AppLog.library.info("Restoring \(resolvedURLs.count, privacy: .public) saved library folder(s)")
-        loadFolders(resolvedURLs)
+        guard !resolvedURLs.isEmpty else { return }
+        loadFolders(resolvedURLs, isRestore: true)
     }
 
     private func persistFolderBookmarks(_ urls: [URL]) {
@@ -347,7 +570,7 @@ final class LibraryViewModel: ObservableObject {
                 let bookmark = try PreferencesStore.makeBookmark(for: url)
                 data.append(bookmark)
             } catch {
-                AppLog.library.warning("Could not bookmark \(url.path, privacy: .public): \(String(describing: error), privacy: .public)")
+                AppLog.library.warning("Could not bookmark \(url.path): \(String(describing: error))")
             }
         }
         prefs.savedLibraryFolderBookmarks = data
@@ -362,6 +585,417 @@ final class LibraryViewModel: ObservableObject {
             if seen.insert(key).inserted { result.append(track) }
         }
         return result
+    }
+
+    // MARK: - Subsonic / Navidrome integration
+
+    func connectSubsonic() {
+        guard let urlStr = prefs.subsonicURL, let user = prefs.subsonicUsername, let pass = prefs.subsonicPassword,
+              !urlStr.isEmpty, !user.isEmpty, !pass.isEmpty else {
+            return
+        }
+
+        let config = SubsonicConfig(url: urlStr, username: user, password: pass)
+        oledView = .remoteSync
+        scanProgress = ScanProgress(folderName: "Syncing Remote...", filesProbed: 0, totalCandidates: nil, isRunning: true)
+
+        Task {
+            do {
+                let artists = try await subsonicClient.getArtists(config: config)
+                var allTracks: [LoadedTrack] = []
+
+                // Fetch top 30 artists to populate real tracks quickly
+                let limit = min(artists.count, 30)
+                for i in 0..<limit {
+                    let art = artists[i]
+                    let albums = try await subsonicClient.getArtist(id: art.id, config: config)
+                    for alb in albums {
+                        let subTracks = try await subsonicClient.getAlbum(id: alb.id, config: config)
+                        for subTrack in subTracks {
+                            guard let streamURL = subsonicClient.streamURL(forTrackID: subTrack.id, config: config) else {
+                                continue
+                            }
+
+                            // Optional cover art mapping
+                            var artwork: ArtworkAsset?
+                            if let coverID = subTrack.coverArt,
+                               let artURL = subsonicClient.coverArtURL(forCoverArtID: coverID, config: config) {
+                                artwork = ArtworkAsset(source: .remote, hash: coverID, dimensions: ArtworkDimensions(width: 300, height: 300), data: Data())
+                                // Pre-cache Remote artwork URL
+                                self.artworkService.cacheRemoteArtworkURL(coverID, url: artURL)
+                            }
+
+                            let track = AudioTrack(
+                                fileURL: streamURL,
+                                title: subTrack.title,
+                                artist: subTrack.artist,
+                                album: subTrack.album,
+                                durationSeconds: Double(subTrack.duration ?? 0),
+                                formatName: subTrack.suffix?.uppercased(),
+                                bitrateKbps: subTrack.bitRate,
+                                sampleRateHz: subTrack.sampleRate,
+                                year: alb.year,
+                                trackNumber: subTrack.track,
+                                artworkSource: artwork != nil ? .remote : .none,
+                                artworkHash: artwork?.hash,
+                                artworkDimensions: artwork?.dimensions
+                            )
+                            let metadata = ConversionMetadata(
+                                title: subTrack.title,
+                                artist: subTrack.artist,
+                                album: subTrack.album,
+                                trackNumber: subTrack.track,
+                                year: alb.year,
+                                artwork: artwork
+                            )
+                            allTracks.append(LoadedTrack(track: track, metadata: metadata))
+                        }
+                    }
+                }
+
+                let built = LibraryIndex.build(from: allTracks)
+                await MainActor.run {
+                    self.remoteIndex = built
+                    if case .remote = self.currentSource {
+                        self.index = built
+                        self.selectedArtistID = built.artists.first?.id
+                        self.selectedAlbumID = built.artists.first?.albums.first?.id
+                        self.selectedTrackID = built.artists.first?.albums.first?.tracks.first?.track.id
+                    }
+                    self.oledView = .nowPlaying
+                    self.scanProgress = .idle
+                }
+            } catch {
+                await MainActor.run {
+                    self.oledView = .nowPlaying
+                    self.scanProgress = .idle
+                    self.appAlert = .error(title: "Remote Sync Failed", message: error.localizedDescription)
+                }
+            }
+        }
+    }
+
+    // MARK: - CD Rip integration
+
+    func refreshCDs() {
+        mountedCDs = cdRipper.detectAudioCDs()
+    }
+
+    private func selectCD(volumePath: String) {
+        guard let cd = mountedCDs.first(where: { $0.volumeURL.path == volumePath }) else { return }
+        let tracks = cd.tracks.map { track -> LoadedTrack in
+            let audioTrack = AudioTrack(
+                fileURL: track.fileURL,
+                title: track.title,
+                artist: "Audio CD",
+                album: cd.name,
+                durationSeconds: 0, // AVURLAsset will compute it
+                formatName: "AIFF",
+                trackNumber: track.trackNumber
+            )
+            let metadata = ConversionMetadata(
+                title: track.title,
+                artist: "Audio CD",
+                album: cd.name,
+                trackNumber: track.trackNumber
+            )
+            return LoadedTrack(track: audioTrack, metadata: metadata)
+        }
+        cdIndex = LibraryIndex.build(from: tracks)
+        index = cdIndex
+    }
+
+    func ripCD(info: AudioCDInfo) {
+        guard let dest = currentConversionDestinationURL else {
+            self.appAlert = .error(title: "No Destination Set", message: "Choose where converted files go in Preferences.")
+            return
+        }
+
+        oledView = .cdRip
+        conversionProgress = ConversionProgressSnapshot(jobsCompleted: 0, jobsTotal: info.tracks.count, currentFilename: nil, isRunning: true)
+
+        let targetPreset = conversionSelection.outputFormat
+        let preset = ConversionPreset(
+            id: "cd_rip",
+            name: "CD Rip",
+            outputFormat: targetPreset,
+            bitrateKbps: conversionSelection.bitrate,
+            sampleRateHz: conversionSelection.sampleRate,
+            channels: 2
+        )
+
+        Task {
+            do {
+                let service = try ConversionService(presets: [preset])
+                var jobs: [ConversionJob] = []
+
+                for track in info.tracks {
+                    let filename = "Track \(track.trackNumber).\(preset.outputExtension)"
+                    let targetURL = dest.appendingPathComponent(info.name).appendingPathComponent(filename)
+                    let metadata = ConversionMetadata(
+                        title: track.title,
+                        artist: "Audio CD",
+                        album: info.name,
+                        trackNumber: track.trackNumber
+                    )
+                    jobs.append(ConversionJob(sourceURL: track.fileURL, destinationURL: targetURL, metadata: metadata))
+                }
+
+                _ = service.enqueue(jobs, preset: preset)
+
+                let results = await Task.detached {
+                    return service.runQueuedJobs(maxConcurrentWorkers: 1)
+                }.value
+
+                await MainActor.run {
+                    self.oledView = .nowPlaying
+                    self.conversionProgress = .idle
+                    let fails = results.filter { $0.status == .failed }
+                    if fails.isEmpty {
+                        self.appAlert = .error(title: "CD Ripped!", message: "Successfully ripped \(info.tracks.count) tracks.")
+                        self.loadFolders([dest]) // Automatically scan destination
+                    } else {
+                        self.appAlert = .error(title: "Rip Failed", message: "Failed to rip \(fails.count) tracks.")
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    self.oledView = .nowPlaying
+                    self.conversionProgress = .idle
+                    self.appAlert = .error(title: "Rip Error", message: error.localizedDescription)
+                }
+            }
+        }
+    }
+
+    // MARK: - Playlist Actions
+
+    func createPlaylist(name: String) {
+        let playlist = Playlist(name: name, trackURLs: [])
+        try? playlistService.savePlaylist(playlist)
+        playlists = playlistService.listPlaylists()
+    }
+
+    func deletePlaylist(name: String) {
+        try? playlistService.deletePlaylist(name: name)
+        playlists = playlistService.listPlaylists()
+        selectSource(.localAll)
+    }
+
+    func addTrackToPlaylist(track: LoadedTrack, playlistName: String) {
+        guard var playlist = playlists.first(where: { $0.name == playlistName }) else { return }
+        playlist.trackURLs.append(track.track.fileURL)
+        try? playlistService.savePlaylist(playlist)
+        playlists = playlistService.listPlaylists()
+    }
+
+    func removeTrackFromPlaylist(track: LoadedTrack, playlistName: String) {
+        guard var playlist = playlists.first(where: { $0.name == playlistName }) else { return }
+        playlist.trackURLs.removeAll(where: { $0 == track.track.fileURL })
+        try? playlistService.savePlaylist(playlist)
+        playlists = playlistService.listPlaylists()
+        if case .playlist(let currentName) = currentSource, currentName == playlistName {
+            selectPlaylist(name: playlistName)
+        }
+    }
+
+    private func selectPlaylist(name: String) {
+        guard let pl = playlists.first(where: { $0.name == name }) else { return }
+        
+        // Match M3U URLs to loaded local tracks, fallback to creating temporary audio tracks
+        let tracks = pl.trackURLs.map { url -> LoadedTrack in
+            if let matched = localIndex.allTracks.first(where: { $0.track.fileURL.standardizedFileURL.path == url.standardizedFileURL.path }) {
+                return matched
+            }
+            let audioTrack = AudioTrack(fileURL: url, title: url.deletingPathExtension().lastPathComponent)
+            return LoadedTrack(track: audioTrack, metadata: ConversionMetadata(title: audioTrack.title))
+        }
+
+        playlistIndex = LibraryIndex.build(from: tracks)
+        index = playlistIndex
+    }
+
+    // MARK: - Metadata Editor Actions
+
+    func updateTrackMetadata(_ track: LoadedTrack, newMetadata: ConversionMetadata) {
+        guard let editor = metadataEditor else { return }
+        do {
+            try editor.writeMetadata(to: track.track.fileURL, metadata: newMetadata)
+            
+            let updatedTrack = AudioTrack(
+                id: track.track.id,
+                fileURL: track.track.fileURL,
+                title: newMetadata.title ?? track.track.title,
+                artist: newMetadata.artist ?? track.track.artist,
+                album: newMetadata.album ?? track.track.album,
+                durationSeconds: track.track.durationSeconds,
+                formatName: track.track.formatName,
+                bitrateKbps: track.track.bitrateKbps,
+                sampleRateHz: track.track.sampleRateHz,
+                year: newMetadata.year ?? track.track.year,
+                trackNumber: newMetadata.trackNumber ?? track.track.trackNumber,
+                artworkSource: track.track.artworkSource,
+                artworkHash: track.track.artworkHash,
+                artworkDimensions: track.track.artworkDimensions
+            )
+            let updatedTrackLoaded = LoadedTrack(track: updatedTrack, metadata: newMetadata)
+            
+            // Check if we should keep the library folder organised
+            if prefs.keepLibraryOrganised, let libURL = managedLibraryFolderURL, track.track.fileURL.path.hasPrefix(libURL.path) {
+                Task {
+                    let organizer = LibraryOrganizerService()
+                    do {
+                        let organized = try await organizer.organize(
+                            tracks: [updatedTrackLoaded],
+                            destinationFolder: libURL,
+                            copyOnly: false, // Move the file to keep organized
+                            organiseByAlbumArtist: prefs.organiseByAlbumArtist
+                        )
+                        
+                        if let movedTrack = organized.first {
+                            await MainActor.run {
+                                self.updateTrackURLInIndex(oldURL: track.track.fileURL, newTrack: movedTrack)
+                                self.appAlert = .error(title: "Saved & Organised", message: "Metadata saved and file relocated successfully.")
+                            }
+                        }
+                    } catch {
+                        await MainActor.run {
+                            self.updateTrackURLInIndex(oldURL: track.track.fileURL, newTrack: updatedTrackLoaded)
+                            self.appAlert = .error(title: "Save Alert", message: "Metadata written but file relocation failed: \(error.localizedDescription)")
+                        }
+                    }
+                }
+            } else {
+                self.updateTrackURLInIndex(oldURL: track.track.fileURL, newTrack: updatedTrackLoaded)
+                self.appAlert = .error(title: "Saved", message: "Metadata written successfully.")
+            }
+        } catch {
+            appAlert = .error(title: "Save Failed", message: error.localizedDescription)
+        }
+    }
+
+    // MARK: - Library Cleanup & Duplicates Actions
+
+    func scanForCleanup() {
+        let cleanup = LibraryCleanupService()
+        self.deadTracks = cleanup.findDeadTracks(in: localIndex)
+        self.duplicateGroups = cleanup.findDuplicates(in: localIndex)
+    }
+
+    func deleteDeadTracks() {
+        let cleanup = LibraryCleanupService()
+        do {
+            try cleanup.deleteTracks(deadTracks, useTrash: false)
+            let remaining = localIndex.allTracks.filter { track in
+                !deadTracks.contains(where: { $0.track.id == track.track.id })
+            }
+            localIndex = LibraryIndex.build(from: remaining)
+            
+            for track in deadTracks {
+                switch currentSource {
+                case .localAll:
+                    for crateName in self.availableCrates {
+                        var tracks = self.loadCrateTracks(name: crateName)
+                        if tracks.contains(where: { $0.track.id == track.track.id }) {
+                            tracks.removeAll(where: { $0.track.id == track.track.id })
+                            self.saveCrateTracks(tracks, name: crateName)
+                        }
+                    }
+                case .localCrate(let name):
+                    var tracks = self.loadCrateTracks(name: name)
+                    tracks.removeAll(where: { $0.track.id == track.track.id })
+                    self.saveCrateTracks(tracks, name: name)
+                default:
+                    break
+                }
+            }
+            
+            if isLocalSource {
+                index = localIndex
+            }
+            deadTracks = []
+            appAlert = .error(title: "Cleared", message: "Removed reference to dead tracks.")
+        } catch {
+            appAlert = .error(title: "Removal Failed", message: error.localizedDescription)
+        }
+    }
+
+    func resolveDuplicates(keepBest: Bool) {
+        let cleanup = LibraryCleanupService()
+        var toDelete: [LoadedTrack] = []
+        for group in duplicateGroups {
+            toDelete.append(contentsOf: group.worstTracks)
+        }
+
+        do {
+            try cleanup.deleteTracks(toDelete, useTrash: true)
+            let remaining = localIndex.allTracks.filter { track in
+                !toDelete.contains(where: { $0.track.id == track.track.id })
+            }
+            localIndex = LibraryIndex.build(from: remaining)
+            
+            for track in toDelete {
+                switch currentSource {
+                case .localAll:
+                    for crateName in self.availableCrates {
+                        var tracks = self.loadCrateTracks(name: crateName)
+                        if tracks.contains(where: { $0.track.id == track.track.id }) {
+                            tracks.removeAll(where: { $0.track.id == track.track.id })
+                            self.saveCrateTracks(tracks, name: crateName)
+                        }
+                    }
+                case .localCrate(let name):
+                    var tracks = self.loadCrateTracks(name: name)
+                    tracks.removeAll(where: { $0.track.id == track.track.id })
+                    self.saveCrateTracks(tracks, name: name)
+                default:
+                    break
+                }
+            }
+            
+            if isLocalSource {
+                index = localIndex
+            }
+            duplicateGroups = []
+            appAlert = .error(title: "Duplicates Cleared", message: "Worst versions moved to Trash.")
+        } catch {
+            appAlert = .error(title: "Clear Failed", message: error.localizedDescription)
+        }
+    }
+
+    func refreshLibrary() {
+        let newIndex = LibraryIndex.build(from: localIndex.allTracks)
+        localIndex = newIndex
+        if isLocalSource {
+            index = localIndex
+        }
+    }
+
+    func exportDuplicates(best: Bool, to destination: URL) {
+        let cleanup = LibraryCleanupService()
+        let tracksToCopy = duplicateGroups.map { best ? $0.bestTrack : $0.worstTracks.first! }
+        do {
+            try cleanup.copyTracks(tracksToCopy, to: destination)
+            appAlert = .error(title: "Exported", message: "Exported duplicates to folder.")
+        } catch {
+            appAlert = .error(title: "Export Failed", message: error.localizedDescription)
+        }
+    }
+
+    func automaticallyReorganizeLibrary() {
+        guard let dest = currentConversionDestinationURL else {
+            self.appAlert = .error(title: "No Destination Set", message: "Configure default output folder in Preferences.")
+            return
+        }
+        let organizer = LibraryOrganizerService()
+        Task {
+            do {
+                try await organizer.organize(tracks: localIndex.allTracks, destinationFolder: dest, copyOnly: false)
+                self.loadFolders([dest])
+            } catch {
+                self.appAlert = .error(title: "Reorganization Failed", message: error.localizedDescription)
+            }
+        }
     }
 
     // MARK: - Playback actions
@@ -424,9 +1058,6 @@ final class LibraryViewModel: ObservableObject {
 
     // MARK: - Conversion patch-bay queue stats
 
-    /// Tracks the patch bay's CONVERT button will dispatch when armed. Driven
-    /// by the same scope rule the conversion runner uses, so the OLED queue
-    /// readout stays in sync with what actually runs.
     var conversionQueueTracks: [LoadedTrack] {
         tracksForBatchScope(conversionSelection.batchScope)
     }
@@ -437,7 +1068,6 @@ final class LibraryViewModel: ObservableObject {
 
     var conversionEstimatedOutputBytes: Int64 {
         let bitrate = conversionSelection.bitrate ?? 192
-        // For lossless we don't know — fall back to a conservative 5x lossy.
         let effective = isLosslessSelectedFormat ? bitrate * 5 : bitrate
         return Int64(conversionQueueDurationSeconds * Double(effective) * 1000.0 / 8.0)
     }
@@ -478,8 +1108,6 @@ final class LibraryViewModel: ObservableObject {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         if let data = try? PreferencesStore.makeBookmark(for: url) {
             prefs.savedOutputDestinationBookmark = data
-            // Force a redraw — the destination isn't @Published since we read
-            // it through the bookmark each time.
             objectWillChange.send()
         }
     }
@@ -524,7 +1152,7 @@ final class LibraryViewModel: ObservableObject {
                     self.applyFetchedArtwork(asset, toAlbumID: albumID)
                 }
             } catch {
-                AppLog.library.warning("Remote artwork fetch failed for \(albumTitle, privacy: .public): \(String(describing: error), privacy: .public)")
+                AppLog.library.warning("Remote artwork fetch failed for \(albumTitle): \(String(describing: error))")
                 await MainActor.run {
                     guard let self else { return }
                     self.albumsFetchingArtwork.remove(albumID)
@@ -558,6 +1186,131 @@ final class LibraryViewModel: ObservableObject {
         index = LibraryIndex.build(from: updatedTracks)
     }
 
+    func downloadAndImportArtwork(
+        images: [(url: URL, role: ArtworkRole, suggestedFilename: String)],
+        for album: Album
+    ) async {
+        guard let representative = album.tracks.first?.track.fileURL else { return }
+        let albumFolder = representative.deletingLastPathComponent()
+        
+        let result = await Task.detached(priority: .userInitiated) { () -> (manifest: ArtworkManifest, ingestedAssets: [ArtworkAsset], coverFilename: String?, coverAsset: ArtworkAsset?) in
+            var manifest = ArtworkManifest.load(from: albumFolder) ?? ArtworkManifest(mediaFormat: album.mediaFormat, roles: [:])
+            var ingestedAssets: [ArtworkAsset] = []
+            var coverFilename: String? = nil
+            var newCoverAsset: ArtworkAsset? = nil
+            
+            // Parallel downloads
+            typealias DownloadResult = (item: (url: URL, role: ArtworkRole, suggestedFilename: String), data: Data)
+            var downloadedData: [DownloadResult] = []
+            
+            do {
+                try await withThrowingTaskGroup(of: DownloadResult.self) { group in
+                    for item in images {
+                        group.addTask {
+                            let (data, _) = try await URLSession.shared.data(from: item.url)
+                            return (item, data)
+                        }
+                    }
+                    for try await res in group {
+                        downloadedData.append(res)
+                    }
+                }
+            } catch {
+                AppLog.library.warning("Error downloading artwork in parallel: \(error.localizedDescription)")
+            }
+            
+            for res in downloadedData {
+                let item = res.item
+                let data = res.data
+                do {
+                    guard let image = NSImage(data: data) else { continue }
+                    
+                    let fileURL = albumFolder.appendingPathComponent(item.suggestedFilename)
+                    try data.write(to: fileURL, options: .atomic)
+                    
+                    let filename = fileURL.lastPathComponent
+                    manifest.roles[filename] = item.role
+                    
+                    let digest = SHA256.hash(data: data)
+                    let hashHex = digest.compactMap { String(format: "%02x", $0) }.joined()
+                    
+                    let asset = ArtworkAsset(
+                        source: .remote,
+                        hash: hashHex,
+                        dimensions: ArtworkDimensions(width: Int(image.size.width), height: Int(image.size.height)),
+                        data: data
+                    )
+                    ingestedAssets.append(asset)
+                    
+                    if item.role == .cover {
+                        newCoverAsset = asset
+                        coverFilename = filename
+                    }
+                } catch {
+                    AppLog.library.warning("Failed to save or parse artwork: \(error.localizedDescription)")
+                }
+            }
+            
+            // If a new cover was saved, embed it into the files
+            if newCoverAsset != nil, let coverName = coverFilename, let editor = try? MetadataEditorService() {
+                let coverURL = albumFolder.appendingPathComponent(coverName)
+                for loadedTrack in album.tracks {
+                    let fileURL = loadedTrack.track.fileURL
+                    try? editor.embedArtwork(to: fileURL, imageURL: coverURL)
+                }
+            }
+            
+            // Save manifest
+            if !ingestedAssets.isEmpty {
+                try? manifest.save(to: albumFolder)
+            }
+            
+            return (manifest, ingestedAssets, coverFilename, newCoverAsset)
+        }.value
+        
+        // Back on MainActor: Ingest to cache and rebuild localIndex in-place
+        if !result.ingestedAssets.isEmpty {
+            for asset in result.ingestedAssets {
+                self.artworkService.ingest(asset)
+            }
+            
+            // Rebuild localIndex by updating the affected tracks in place
+            let affectedTrackIDs = Set(album.tracks.map { $0.track.id })
+            let updatedTracks: [LoadedTrack] = localIndex.allTracks.map { loaded in
+                guard affectedTrackIDs.contains(loaded.track.id) else { return loaded }
+                var newTrack = loaded.track
+                var newMetadata = loaded.metadata
+                
+                if let coverAsset = result.coverAsset {
+                    newTrack.artworkSource = .embedded
+                    newTrack.artworkHash = coverAsset.hash
+                    newTrack.artworkDimensions = coverAsset.dimensions
+                    newMetadata.artwork = coverAsset
+                }
+                
+                return LoadedTrack(track: newTrack, metadata: newMetadata)
+            }
+            
+            self.localIndex = LibraryIndex.build(from: updatedTracks)
+            if self.isLocalSource {
+                self.index = self.localIndex
+            }
+            
+            // Post notification to update SpinningRecordView immediately
+            NotificationCenter.default.post(name: NSNotification.Name("CrateDiggerArtworkImported"), object: nil)
+            
+            // Force re-resolution of selected album in UI
+            let currentAlbumID = self.selectedAlbumID
+            self.selectedAlbumID = nil
+            self.selectedAlbumID = currentAlbumID
+        }
+    }
+    
+    private func sha256Hex(for data: Data) -> String {
+        let digest = SHA256.hash(data: data)
+        return digest.compactMap { String(format: "%02x", $0) }.joined()
+    }
+
     func cycleRepeatMode() {
         switch repeatMode {
         case .off: repeatMode = .all
@@ -573,11 +1326,62 @@ final class LibraryViewModel: ObservableObject {
         return visibleTracks
     }
 
+    // MARK: - Last.fm integration
+
+    private func handlePlaybackStateChange(_ state: PlaybackState) {
+        if state == .playing, let nowPlaying = nowPlayingTrack {
+            playbackStartTimestamp = Int(Date().timeIntervalSince1970)
+            
+            // Check if we need to update "Now Playing" on Last.fm
+            if let sessionKey = prefs.lastFmSessionKey, !sessionKey.isEmpty {
+                Task {
+                    _ = try? await lastFM.updateNowPlaying(
+                        artist: nowPlaying.track.artist,
+                        track: nowPlaying.track.title,
+                        album: nowPlaying.track.album,
+                        sessionKey: sessionKey
+                    )
+                }
+            }
+        }
+    }
+
+    private func checkScrobbleProgress(current: Double, duration: Double) {
+        guard let sessionKey = prefs.lastFmSessionKey, !sessionKey.isEmpty,
+              let nowPlaying = nowPlayingTrack,
+              lastScrobbledTrackID != nowPlaying.track.id else {
+            return
+        }
+
+        // Last.fm guidelines: scrobble if played at least 4 minutes (240s) or half the duration, whichever is shorter, and played for at least 30s.
+        let triggerTime = min(duration / 2.0, 240.0)
+        if current >= triggerTime && current >= 30.0 {
+            lastScrobbledTrackID = nowPlaying.track.id
+            let artist = nowPlaying.track.artist
+            let trackName = nowPlaying.track.title
+            let album = nowPlaying.track.album
+            let timestamp = playbackStartTimestamp
+            
+            Task {
+                _ = try? await lastFM.scrobble(
+                    artist: artist,
+                    track: trackName,
+                    album: album,
+                    timestamp: timestamp,
+                    sessionKey: sessionKey
+                )
+            }
+        }
+    }
+
     // MARK: - Bindings
 
     private func wirePlaybackBindings() {
         playback.onStateChange = { [weak self] state in
-            Task { @MainActor in self?.playbackState = state }
+            Task { @MainActor in
+                self?.playbackState = state
+                self?.handlePlaybackStateChange(state)
+            }
         }
         playback.onCurrentIndexChange = { [weak self] index in
             Task { @MainActor in self?.playbackCurrentIndex = index }
@@ -586,16 +1390,452 @@ final class LibraryViewModel: ObservableObject {
             Task { @MainActor in
                 self?.playbackCurrentTime = current
                 self?.playbackDuration = duration
+                self?.checkScrobbleProgress(current: current, duration: duration)
             }
         }
         playback.onError = { [weak self] message in
             Task { @MainActor in
                 self?.playbackErrorMessage = message
-                AppLog.playback.error("Playback failure: \(message, privacy: .public)")
                 self?.appAlert = .error(
                     title: "Couldn't play this track",
                     message: message
                 )
+            }
+        }
+    }
+
+    // MARK: - Managed Library Operations
+
+    var managedLibraryFolderURL: URL? {
+        guard let data = prefs.managedLibraryFolderBookmark else { return nil }
+        return PreferencesStore.resolveBookmark(data)?.url
+    }
+
+    private func handleImport(_ tracks: [LoadedTrack]) {
+        guard !tracks.isEmpty else {
+            prepCrateTracks = []
+            selectSource(.prepCrate)
+            return
+        }
+
+        // Newly loaded folders go straight into the Prep Crate!
+        prepCrateTracks = tracks
+        selectSource(.prepCrate)
+        
+        // Show a brief success alert in OLED display
+        scanProgress = ScanProgress(
+            folderName: nil,
+            filesProbed: tracks.count,
+            totalCandidates: tracks.count,
+            isRunning: false
+        )
+        scanForCleanup()
+    }
+
+    // MARK: - Crates Directory URL
+
+    var cratesDirectoryURL: URL {
+        let fm = FileManager.default
+        if let data = prefs.cratesIndexFolderBookmark,
+           let resolved = PreferencesStore.resolveBookmark(data)?.url {
+            try? fm.createDirectory(at: resolved, withIntermediateDirectories: true)
+            return resolved
+        }
+        let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let cratesDir = appSupport.appendingPathComponent("CrateDigger").appendingPathComponent("Crates")
+        try? fm.createDirectory(at: cratesDir, withIntermediateDirectories: true)
+        return cratesDir
+    }
+
+    func checkAndPromptForCratesFolder() -> Bool {
+        if prefs.cratesIndexFolderBookmark == nil {
+            let panel = NSOpenPanel()
+            panel.canChooseFiles = false
+            panel.canChooseDirectories = true
+            panel.canCreateDirectories = true
+            panel.allowsMultipleSelection = false
+            panel.title = "Choose default folder to save Crate Index Files (.cdlib)"
+            panel.prompt = "Choose"
+            panel.message = "Choose a default folder to store your Crate library index files. You can save/copy the actual music files to a separate location (like an external drive) later."
+            
+            NSApp.activate(ignoringOtherApps: true)
+            if panel.runModal() == .OK, let url = panel.url {
+                do {
+                    let data = try PreferencesStore.makeBookmark(for: url)
+                    prefs.cratesIndexFolderBookmark = data
+                    refreshAvailableCrates()
+                    selectSource(currentSource)
+                    return true
+                } catch {
+                    appAlert = .error(title: "Failed", message: "Could not set Crates folder: \(error.localizedDescription)")
+                    return false
+                }
+            }
+        }
+        return true
+    }
+
+    func refreshAvailableCrates() {
+        let fm = FileManager.default
+        let cratesDir = cratesDirectoryURL
+        do {
+            let contents = try fm.contentsOfDirectory(at: cratesDir, includingPropertiesForKeys: nil)
+            self.availableCrates = contents
+                .filter { $0.pathExtension == "cdlib" }
+                .map { $0.deletingPathExtension().lastPathComponent }
+                .sorted()
+            
+            // Auto-create Personal Crate if none exist
+            if self.availableCrates.isEmpty {
+                createCrate(name: "Personal Crate")
+                return
+            }
+            
+            if targetCrateName.isEmpty || !availableCrates.contains(targetCrateName) {
+                if availableCrates.contains("Personal Crate") {
+                    targetCrateName = "Personal Crate"
+                } else if let first = availableCrates.first {
+                    targetCrateName = first
+                }
+            }
+        } catch {
+            AppLog.library.warning("Failed to list crates: \(error.localizedDescription)")
+        }
+    }
+
+    func createCrate(name: String) {
+        let safeName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !safeName.isEmpty else { return }
+        saveCrateTracks([], name: safeName)
+        refreshAvailableCrates()
+    }
+
+    func deleteCrate(name: String) {
+        let fileURL = cratesDirectoryURL.appendingPathComponent("\(name).cdlib")
+        try? FileManager.default.removeItem(at: fileURL)
+        refreshAvailableCrates()
+        if case .localCrate(let currentName) = currentSource, currentName == name {
+            selectSource(.localAll)
+        } else {
+            // Re-render
+            selectSource(currentSource)
+        }
+    }
+
+    func loadCrateTracks(name: String) -> [LoadedTrack] {
+        let fileURL = cratesDirectoryURL.appendingPathComponent("\(name).cdlib")
+        guard let data = try? Data(contentsOf: fileURL) else { return [] }
+        let decoder = JSONDecoder()
+        return (try? decoder.decode([LoadedTrack].self, from: data)) ?? []
+    }
+
+    func saveCrateTracks(_ tracks: [LoadedTrack], name: String) {
+        let fileURL = cratesDirectoryURL.appendingPathComponent("\(name).cdlib")
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .prettyPrinted
+        do {
+            let data = try encoder.encode(tracks)
+            try data.write(to: fileURL, options: .atomic)
+        } catch {
+            AppLog.library.warning("Failed to save crate '\(name)': \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: - Drag & Drop Handling
+
+    func addItemsToCrate(_ items: [String], crateName: String) {
+        // Find tracks corresponding to items. Each item can be "track::<uuid>" or "album::<id>".
+        var tracksToAdd: [LoadedTrack] = []
+        
+        for item in items {
+            if item.hasPrefix("track::") {
+                let uuidString = String(item.dropFirst("track::".count))
+                if let uuid = UUID(uuidString: uuidString),
+                   let track = index.allTracks.first(where: { $0.track.id == uuid }) {
+                    tracksToAdd.append(track)
+                }
+            } else if item.hasPrefix("album::") {
+                let albumID = String(item.dropFirst("album::".count))
+                if let album = index.artists.flatMap({ $0.albums }).first(where: { $0.id == albumID }) {
+                    tracksToAdd.append(contentsOf: album.tracks)
+                }
+            }
+        }
+        
+        guard !tracksToAdd.isEmpty else { return }
+        
+        importTracksIntoCrate(tracksToAdd, crateName: crateName)
+    }
+
+    func addURLsToCrate(_ urls: [URL], crateName: String) {
+        // Scan files dropped from Finder
+        scanProgress = ScanProgress(folderName: "Scanning dropped files...", filesProbed: 0, totalCandidates: nil, isRunning: true)
+        
+        Task { [weak self] in
+            guard let self else { return }
+            var collected: [LoadedTrack] = []
+            for url in urls {
+                let scanned = await self.scanner.scanFolder(url)
+                collected.append(contentsOf: scanned)
+            }
+            
+            let deduplicated = LibraryViewModel.deduplicate(tracks: collected)
+            
+            await MainActor.run {
+                self.scanProgress = .idle
+                self.importTracksIntoCrate(deduplicated, crateName: crateName)
+            }
+        }
+    }
+
+    private func importTracksIntoCrate(_ tracks: [LoadedTrack], crateName: String) {
+        let copyEnabled = prefs.copyOnImport
+        let libraryFolderURL = managedLibraryFolderURL
+        
+        if copyEnabled, let destURL = libraryFolderURL {
+            // Copy files to the library folder in background
+            scanProgress = ScanProgress(folderName: "Copying to library...", filesProbed: 0, totalCandidates: tracks.count, isRunning: true)
+            
+            Task { [weak self] in
+                guard let self else { return }
+                let organizer = LibraryOrganizerService()
+                do {
+                    let updatedTracks = try await organizer.organize(
+                        tracks: tracks,
+                        destinationFolder: destURL,
+                        copyOnly: !self.prefs.deleteOriginalsAfterCopy,
+                        organiseByAlbumArtist: self.prefs.organiseByAlbumArtist
+                    ) { [weak self] count, total in
+                        Task { @MainActor in
+                            self?.scanProgress = ScanProgress(
+                                folderName: "Copying to library...",
+                                filesProbed: count,
+                                totalCandidates: total,
+                                isRunning: true
+                            )
+                        }
+                    }
+                    
+                    await MainActor.run {
+                        self.scanProgress = .idle
+                        self.appendTracksToCrateFile(updatedTracks, crateName: crateName)
+                        self.appAlert = .error(title: "Added", message: "Copied and added \(tracks.count) tracks to '\(crateName)'.")
+                    }
+                } catch {
+                    await MainActor.run {
+                        self.scanProgress = .idle
+                        self.appAlert = .error(title: "Copy Failed", message: "Failed to copy files: \(error.localizedDescription)")
+                    }
+                }
+            }
+        } else {
+            // Index files in place
+            appendTracksToCrateFile(tracks, crateName: crateName)
+            appAlert = .error(title: "Added", message: "Added \(tracks.count) tracks to '\(crateName)' in place.")
+        }
+    }
+
+    private func appendTracksToCrateFile(_ newTracks: [LoadedTrack], crateName: String) {
+        var existing = loadCrateTracks(name: crateName)
+        existing.append(contentsOf: newTracks)
+        let merged = LibraryViewModel.deduplicate(tracks: existing)
+        saveCrateTracks(merged, name: crateName)
+        
+        // Refresh active source if we are viewing the modified crate or All Records
+        if case .localCrate(let name) = currentSource, name == crateName {
+            selectSource(.localCrate(name: crateName))
+        } else if case .localAll = currentSource {
+            selectSource(.localAll)
+        }
+    }
+
+    private func updateTrackURLInIndex(oldURL: URL, newTrack: LoadedTrack) {
+        // When a track's file path is reorganized (on tag edit), we must update its path in all `.cdlib` crates that contain it!
+        for crateName in availableCrates {
+            var tracks = loadCrateTracks(name: crateName)
+            var modified = false
+            for i in 0..<tracks.count {
+                if tracks[i].track.fileURL.path == oldURL.path {
+                    tracks[i] = newTrack
+                    modified = true
+                }
+            }
+            if modified {
+                saveCrateTracks(tracks, name: crateName)
+            }
+        }
+        
+        // Refresh active view
+        selectSource(currentSource)
+    }
+
+    func moveLibrary() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.title = "Choose new location for Music Library"
+        panel.prompt = "Choose"
+
+        guard panel.runModal() == .OK, let newURL = panel.url else { return }
+
+        guard let currentURL = managedLibraryFolderURL else {
+            do {
+                let data = try PreferencesStore.makeBookmark(for: newURL)
+                prefs.managedLibraryFolderBookmark = data
+                NotificationCenter.default.post(name: NSNotification.Name("CrateDiggerLibraryFolderChanged"), object: newURL)
+                appAlert = .error(title: "Library Set", message: "Library folder set to: \(newURL.path)")
+            } catch {
+                appAlert = .error(title: "Failed", message: "Could not set library: \(error.localizedDescription)")
+            }
+            return
+        }
+
+        if currentURL.standardizedFileURL.path == newURL.standardizedFileURL.path {
+            appAlert = .error(title: "Same Folder", message: "The chosen folder is the same as the current library folder.")
+            return
+        }
+
+        scanProgress = ScanProgress(folderName: "Moving library files...", filesProbed: 0, totalCandidates: nil, isRunning: true)
+
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                // Find all tracks across all crates that are inside the current library folder
+                var allTracksInLib: [LoadedTrack] = []
+                for name in self.availableCrates {
+                    allTracksInLib.append(contentsOf: self.loadCrateTracks(name: name))
+                }
+                let uniqueTracksInLib = LibraryViewModel.deduplicate(tracks: allTracksInLib).filter {
+                    $0.track.fileURL.path.hasPrefix(currentURL.path)
+                }
+
+                let organizer = LibraryOrganizerService()
+                let updatedTracks = try await organizer.organize(
+                    tracks: uniqueTracksInLib,
+                    destinationFolder: newURL,
+                    copyOnly: false, // Move!
+                    organiseByAlbumArtist: self.prefs.organiseByAlbumArtist
+                ) { [weak self] count, total in
+                    Task { @MainActor in
+                        self?.scanProgress = ScanProgress(
+                            folderName: "Moving library files...",
+                            filesProbed: count,
+                            totalCandidates: total,
+                            isRunning: true
+                        )
+                    }
+                }
+
+                await MainActor.run {
+                    do {
+                        let data = try PreferencesStore.makeBookmark(for: newURL)
+                        self.prefs.managedLibraryFolderBookmark = data
+
+                        // Update the crates with the new file paths!
+                        for movedTrack in updatedTracks {
+                            for crateName in self.availableCrates {
+                                var tracks = self.loadCrateTracks(name: crateName)
+                                var modified = false
+                                for i in 0..<tracks.count {
+                                    if tracks[i].track.id == movedTrack.track.id {
+                                        tracks[i] = movedTrack
+                                        modified = true
+                                    }
+                                }
+                                if modified {
+                                    self.saveCrateTracks(tracks, name: crateName)
+                                }
+                            }
+                        }
+
+                        self.scanProgress = .idle
+                        NotificationCenter.default.post(name: NSNotification.Name("CrateDiggerLibraryFolderChanged"), object: newURL)
+                        self.selectSource(self.currentSource)
+                        self.appAlert = .error(title: "Library Moved", message: "Successfully moved library files to the new location.")
+                    } catch {
+                        self.appAlert = .error(title: "Save Failed", message: error.localizedDescription)
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    self.scanProgress = .idle
+                    self.appAlert = .error(title: "Move Failed", message: "Failed to move library: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
+    func consolidateLibrary() {
+        guard let libraryFolderURL = managedLibraryFolderURL else {
+            appAlert = .error(title: "No Library Folder", message: "Please set a library folder in Preferences first.")
+            return
+        }
+
+        // Find all tracks across all crates that are NOT in the library folder
+        var allTracks: [LoadedTrack] = []
+        for name in availableCrates {
+            allTracks.append(contentsOf: loadCrateTracks(name: name))
+        }
+        let tracksOutside = LibraryViewModel.deduplicate(tracks: allTracks).filter {
+            !$0.track.fileURL.path.hasPrefix(libraryFolderURL.path)
+        }
+
+        guard !tracksOutside.isEmpty else {
+            appAlert = .error(title: "Consolidated", message: "All tracks are already inside your library folder.")
+            return
+        }
+
+        scanProgress = ScanProgress(folderName: "Consolidating library...", filesProbed: 0, totalCandidates: tracksOutside.count, isRunning: true)
+
+        Task { [weak self] in
+            guard let self else { return }
+            let organizer = LibraryOrganizerService()
+            do {
+                let updatedTracks = try await organizer.organize(
+                    tracks: tracksOutside,
+                    destinationFolder: libraryFolderURL,
+                    copyOnly: true, // Copy, keeping originals
+                    organiseByAlbumArtist: self.prefs.organiseByAlbumArtist
+                ) { [weak self] count, total in
+                    Task { @MainActor in
+                        self?.scanProgress = ScanProgress(
+                            folderName: "Consolidating library...",
+                            filesProbed: count,
+                            totalCandidates: total,
+                            isRunning: true
+                        )
+                    }
+                }
+
+                await MainActor.run {
+                    // Update crates with the consolidated file URLs
+                    for consolidatedTrack in updatedTracks {
+                        for crateName in self.availableCrates {
+                            var tracks = self.loadCrateTracks(name: crateName)
+                            var modified = false
+                            for i in 0..<tracks.count {
+                                if tracks[i].track.id == consolidatedTrack.track.id {
+                                    tracks[i] = consolidatedTrack
+                                    modified = true
+                                }
+                            }
+                            if modified {
+                                self.saveCrateTracks(tracks, name: crateName)
+                            }
+                        }
+                    }
+
+                    self.scanProgress = .idle
+                    self.selectSource(self.currentSource)
+                    self.appAlert = .error(title: "Consolidation Complete", message: "Successfully consolidated \(tracksOutside.count) external tracks into your library folder.")
+                }
+            } catch {
+                await MainActor.run {
+                    self.scanProgress = .idle
+                    self.appAlert = .error(title: "Consolidation Failed", message: "Failed to consolidate tracks: \(error.localizedDescription)")
+                }
             }
         }
     }

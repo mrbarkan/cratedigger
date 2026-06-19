@@ -14,11 +14,17 @@ struct OLEDDisplay: View {
                 case .vu:         VUView()
                 case .conversion: ConversionView()
                 case .scan:       ScanView()
+                case .remoteSync: RemoteSyncView()
+                case .cdRip:      CDRipView()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .clipShape(RoundedRectangle(cornerRadius: CarbonLayout.oledCornerRadius, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: CarbonLayout.oledCornerRadius, style: .continuous)
+                .strokeBorder(Color.white.opacity(theme.isDark ? 0.08 : 0.22), lineWidth: 1)
+        )
         .compositingGroup()
     }
 
@@ -28,6 +34,17 @@ struct OLEDDisplay: View {
             .overlay(
                 RoundedRectangle(cornerRadius: CarbonLayout.oledCornerRadius, style: .continuous)
                     .strokeBorder(theme.oledStrokeInner, lineWidth: 2)
+            )
+            .overlay(
+                LinearGradient(
+                    colors: [
+                        Color.white.opacity(theme.isDark ? 0.04 : 0.08),
+                        Color.clear,
+                        Color.black.opacity(0.28)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
             )
             .overlay(
                 Canvas { context, size in
@@ -52,41 +69,28 @@ private struct NowPlayingView: View {
     @Environment(\.carbon) private var theme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             // Top status row
             HStack {
                 NowPlayingTag(active: model.playbackState == .playing)
-                if let positionLabel = positionLabel {
-                    Text(positionLabel)
-                        .font(CarbonFont.mono(10, weight: .medium))
-                        .tracking(2)
-                        .foregroundStyle(oledMuted)
-                }
                 Spacer()
-                if let formatLabel = formatLabel {
-                    Text(formatLabel)
-                        .font(CarbonFont.mono(9, weight: .medium))
-                        .tracking(2)
-                        .foregroundStyle(oledMuted)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 2)
-                        .overlay(
-                            Capsule().stroke(oledMuted.opacity(0.5), lineWidth: 1)
-                        )
-                }
+                Text("CrateDigger Player".uppercased())
+                    .font(CarbonFont.mono(8.5, weight: .bold))
+                    .tracking(2.0)
+                    .foregroundStyle(oledMuted)
             }
 
             // Headline
             HStack(alignment: .center, spacing: 24) {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text(displayTrackTitle)
-                        .font(CarbonFont.display(28))
+                        .font(CarbonFont.display(26))
                         .tracking(0.5)
                         .foregroundStyle(oledForeground)
                         .lineLimit(1)
                     Text(subtitle)
-                        .font(CarbonFont.mono(10, weight: .medium))
-                        .tracking(2.2)
+                        .font(CarbonFont.mono(9.5, weight: .semibold))
+                        .tracking(2.0)
                         .textCase(.uppercase)
                         .foregroundStyle(oledMuted)
                         .lineLimit(1)
@@ -99,20 +103,30 @@ private struct NowPlayingView: View {
                     accent: theme.orange,
                     inkColor: theme.ink
                 )
-                .frame(width: 220)
+                .frame(width: 200)
             }
 
-            // Bottom stats row
-            HStack(spacing: 14) {
-                statText(value: "\(model.selectedAlbum?.trackCount ?? model.visibleTracks.count)", label: "TRK")
-                Text("·").foregroundStyle(oledMuted.opacity(0.5))
-                statText(value: durationString(model.selectedAlbum?.totalDurationSeconds ?? 0), label: "DUR")
-                Text("·").foregroundStyle(oledMuted.opacity(0.5))
-                statText(value: "\(model.index.albumCount)", label: "ALB")
-                Text("·").foregroundStyle(oledMuted.opacity(0.5))
-                statText(value: "\(model.index.artists.count)", label: "ART")
-                Spacer()
+            // Bottom spec cells row (transferred from Inspector)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(alignment: .center, spacing: 0) {
+                    cell(key: "Track", value: trackValue, sub: trackSubValue)
+                    divider
+                    cell(key: "Format", value: formatValue, sub: formatSubValue)
+                    divider
+                    cell(key: "Bitrate", value: bitrateValue, sub: bitrateSubValue)
+                    divider
+                    cell(key: "Sample", value: sampleValue, sub: sampleSubValue)
+                    divider
+                    cell(key: "Size", value: sizeValue, sub: "FILE SIZE")
+                }
             }
+            .padding(.top, 4)
+            .overlay(
+                Rectangle()
+                    .fill(oledForeground.opacity(0.12))
+                    .frame(height: 1),
+                alignment: .top
+            )
         }
         .padding(.horizontal, CarbonLayout.oledPaddingH)
         .padding(.vertical, CarbonLayout.oledPaddingV)
@@ -131,46 +145,112 @@ private struct NowPlayingView: View {
         return parts.joined(separator: " · ")
     }
 
-    private var positionLabel: String? {
+    private var trackValue: String {
         guard let album = model.selectedAlbum,
               let track = model.nowPlayingTrack ?? model.selectedTrack,
               let index = album.tracks.firstIndex(where: { $0.track.id == track.track.id })
-        else { return nil }
-        return String(format: "TRK %02d / %02d", index + 1, album.tracks.count)
+        else {
+            let count = model.selectedAlbum?.trackCount ?? model.visibleTracks.count
+            return count > 0 ? "\(count) TRK" : "—"
+        }
+        return String(format: "%02d / %02d", index + 1, album.tracks.count)
     }
 
-    private var formatLabel: String? {
+    private var trackSubValue: String {
+        let count = model.selectedAlbum?.trackCount ?? model.visibleTracks.count
+        return count > 0 ? "\(count) TOTAL" : "—"
+    }
+
+    private var formatValue: String {
         let track = model.nowPlayingTrack ?? model.selectedTrack
-        guard let track else { return nil }
-        var parts: [String] = []
-        if let format = track.track.formatName { parts.append(format.uppercased()) }
-        if let sample = track.track.sampleRateHz { parts.append("\(sample / 1000) kHz") }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+        return track?.track.formatName?.uppercased() ?? "—"
+    }
+
+    private var formatSubValue: String {
+        let track = model.nowPlayingTrack ?? model.selectedTrack
+        guard let track = track else { return "—" }
+        let ext = track.track.fileURL.pathExtension.uppercased()
+        let isLossless = ["FLAC", "ALAC", "WAV", "AIFF"].contains(ext)
+        return isLossless ? "LOSSLESS" : "LOSSY"
+    }
+
+    private var bitrateValue: String {
+        let track = model.nowPlayingTrack ?? model.selectedTrack
+        if let br = track?.track.bitrateKbps {
+            return "\(br) kbps"
+        }
+        return "—"
+    }
+
+    private var bitrateSubValue: String {
+        let track = model.nowPlayingTrack ?? model.selectedTrack
+        guard let track = track else { return "—" }
+        let ext = track.track.fileURL.pathExtension.uppercased()
+        if ["FLAC", "ALAC", "WAV", "AIFF"].contains(ext) {
+            return "LOSSLESS"
+        }
+        return "CONSTANT"
+    }
+
+    private var sampleValue: String {
+        let track = model.nowPlayingTrack ?? model.selectedTrack
+        guard let hz = track?.track.sampleRateHz else { return "—" }
+        if hz % 1000 == 0 { return "\(hz / 1000) kHz" }
+        return String(format: "%.1f kHz", Double(hz) / 1000.0)
+    }
+
+    private var sampleSubValue: String {
+        let track = model.nowPlayingTrack ?? model.selectedTrack
+        guard let track = track else { return "—" }
+        let ext = track.track.fileURL.pathExtension.uppercased()
+        if ["FLAC", "ALAC"].contains(ext) {
+            return "16-BIT"
+        }
+        return "AUDIO"
+    }
+
+    private var sizeValue: String {
+        let track = model.nowPlayingTrack ?? model.selectedTrack
+        guard let url = track?.track.fileURL else { return "—" }
+        do {
+            let values = try url.resourceValues(forKeys: [.fileSizeKey])
+            if let size = values.fileSize {
+                let mb = Double(size) / 1_048_576.0
+                return String(format: "%.1f MB", mb)
+            }
+        } catch {}
+        return "—"
     }
 
     @ViewBuilder
-    private func statText(value: String, label: String) -> some View {
-        HStack(spacing: 4) {
+    private func cell(key: String, value: String, sub: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(key.uppercased())
+                .font(CarbonFont.mono(7.5, weight: .semibold))
+                .tracking(2.2)
+                .foregroundStyle(oledForeground.opacity(0.45))
             Text(value)
-                .font(CarbonFont.mono(10, weight: .semibold))
+                .font(CarbonFont.mono(13, weight: .bold))
+                .tracking(0.4)
                 .foregroundStyle(oledForeground)
-            Text(label)
-                .font(CarbonFont.mono(10, weight: .medium))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Text(sub.uppercased())
+                .font(CarbonFont.mono(7.5, weight: .semibold))
                 .tracking(1.8)
-                .foregroundStyle(oledMuted)
+                .foregroundStyle(oledForeground.opacity(0.55))
+                .lineLimit(1)
         }
+        .frame(minWidth: 80, alignment: .leading)
+        .padding(.trailing, 10)
     }
 
-    private func durationString(_ seconds: Double) -> String {
-        guard seconds.isFinite, seconds > 0 else { return "—" }
-        let total = Int(seconds)
-        let h = total / 3600
-        let m = (total % 3600) / 60
-        let s = total % 60
-        if h > 0 {
-            return String(format: "%d:%02d:%02d", h, m, s)
-        }
-        return String(format: "%02d:%02d", m, s)
+    private var divider: some View {
+        Rectangle()
+            .fill(oledForeground.opacity(0.12))
+            .frame(width: 1)
+            .padding(.vertical, 2)
+            .padding(.horizontal, 4)
     }
 }
 
@@ -651,35 +731,269 @@ private struct ConversionView: View {
 
 private struct ScanView: View {
     @EnvironmentObject private var model: LibraryViewModel
+    @Environment(\.carbon) private var theme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("SCAN")
-                .font(CarbonFont.display(26))
-                .tracking(2)
-                .foregroundStyle(oledForeground)
-            if model.scanProgress.isRunning {
-                if let name = model.scanProgress.folderName {
-                    Text(name)
-                        .font(CarbonFont.mono(10))
-                        .foregroundStyle(oledForeground)
-                        .lineLimit(1)
-                }
-                Text("\(model.scanProgress.filesProbed) files probed")
-                    .font(CarbonFont.mono(10, weight: .medium))
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center, spacing: 12) {
+                statusCapsule
+                Spacer()
+                Text(sourceLine)
+                    .font(CarbonFont.mono(9, weight: .medium))
+                    .tracking(1.8)
                     .foregroundStyle(oledMuted)
-            } else if model.index.allTracks.isEmpty {
-                Text("Library empty. ⌘O to load a folder.")
-                    .font(CarbonFont.mono(10))
-                    .foregroundStyle(oledMuted)
-            } else {
-                Text("\(model.index.allTracks.count) tracks · \(model.index.albumCount) albums")
-                    .font(CarbonFont.mono(10))
-                    .foregroundStyle(oledMuted)
+                    .lineLimit(1)
             }
+
+            Text(scanDetail)
+                .font(CarbonFont.mono(10, weight: .medium))
+                .tracking(1.6)
+                .foregroundStyle(oledMuted)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .center)
+
+            HStack(spacing: 10) {
+                Spacer(minLength: 0)
+                metricCell(title: "TRACKS", value: "\(model.index.allTracks.count)", accent: theme.cyan)
+                metricCell(title: "ALBUMS", value: "\(model.index.albumCount)", accent: theme.sun)
+                metricCell(title: "ARTISTS", value: "\(model.index.artists.count)", accent: theme.orange)
+                metricCell(title: "PROBED", value: probedLabel, accent: oledForeground.opacity(0.75))
+                Spacer(minLength: 0)
+            }
+
+            progressBar
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(.horizontal, CarbonLayout.oledPaddingH)
         .padding(.vertical, CarbonLayout.oledPaddingV)
+    }
+
+    private var statusCapsule: some View {
+        Text(statusText)
+            .font(CarbonFont.mono(8.5, weight: .bold))
+            .tracking(1.7)
+            .foregroundStyle(statusColor)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(Capsule().fill(statusColor.opacity(0.13)))
+            .overlay(Capsule().stroke(statusColor.opacity(0.40), lineWidth: 0.8))
+            .shadow(color: statusColor.opacity(model.scanProgress.isRunning ? 0.32 : 0), radius: 5)
+    }
+
+    private var progressBar: some View {
+        GeometryReader { proxy in
+            let width = max(proxy.size.width, 1)
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(oledForeground.opacity(0.10))
+                Capsule()
+                    .fill(
+                        LinearGradient(
+                            colors: [theme.cyan, theme.indigo, theme.orange],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .frame(width: width * progressValue)
+                    .shadow(color: theme.cyan.opacity(0.34), radius: 5)
+            }
+        }
+        .frame(height: 5)
+        .padding(.top, 2)
+        .padding(.horizontal, 24)
+    }
+
+    private func metricCell(title: String, value: String, accent: Color) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title)
+                .font(CarbonFont.mono(8.5, weight: .bold))
+                .tracking(1.8)
+                .foregroundStyle(oledMuted)
+            Text(value)
+                .font(CarbonFont.mono(16, weight: .bold))
+                .tracking(1.0)
+                .foregroundStyle(accent)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(width: 104, height: 50, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(oledForeground.opacity(0.075))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(oledForeground.opacity(0.13), lineWidth: 0.8)
+                )
+        )
+    }
+
+    private var statusText: String {
+        if model.scanProgress.isRunning { return "INDEXING" }
+        return model.index.allTracks.isEmpty ? "EMPTY" : "READY"
+    }
+
+    private var statusColor: Color {
+        if model.scanProgress.isRunning { return theme.cyan }
+        return model.index.allTracks.isEmpty ? theme.orange : theme.sun
+    }
+
+    private var sourceLine: String {
+        if let name = model.scanProgress.folderName, !name.isEmpty {
+            return name.uppercased()
+        }
+        return model.index.allTracks.isEmpty ? "NO SOURCE" : "LIBRARY INDEX"
+    }
+
+    private var scanDetail: String {
+        if model.scanProgress.isRunning {
+            if let total = model.scanProgress.totalCandidates {
+                return "\(model.scanProgress.filesProbed) / \(total) files probed"
+            }
+            return "\(model.scanProgress.filesProbed) files probed"
+        }
+        if model.index.allTracks.isEmpty {
+            return "Library empty. Press Command-O to load a folder."
+        }
+        return "\(model.index.allTracks.count) tracks indexed across \(model.index.albumCount) albums."
+    }
+
+    private var probedLabel: String {
+        if model.scanProgress.isRunning || model.scanProgress.filesProbed > 0 {
+            return "\(model.scanProgress.filesProbed)"
+        }
+        return "—"
+    }
+
+    private var progressValue: Double {
+        if model.scanProgress.isRunning, let total = model.scanProgress.totalCandidates, total > 0 {
+            return min(max(Double(model.scanProgress.filesProbed) / Double(total), 0), 1)
+        }
+        if model.scanProgress.isRunning { return 0.42 }
+        return model.index.allTracks.isEmpty ? 0.08 : 1
+    }
+}
+
+// MARK: - Remote Sync View
+
+private struct RemoteSyncView: View {
+    @EnvironmentObject private var model: LibraryViewModel
+    @Environment(\.carbon) private var theme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Text("SYNC")
+                    .font(CarbonFont.display(30))
+                    .tracking(2.4)
+                    .foregroundStyle(theme.indigo)
+                Text("CONNECTING")
+                    .font(CarbonFont.mono(8.5, weight: .bold))
+                    .tracking(1.7)
+                    .foregroundStyle(theme.indigo)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(theme.indigo.opacity(0.13)))
+                    .overlay(Capsule().stroke(theme.indigo.opacity(0.40), lineWidth: 0.8))
+                Spacer()
+                Text("Subsonic API")
+                    .font(CarbonFont.mono(9, weight: .medium))
+                    .tracking(1.8)
+                    .foregroundStyle(theme.ink3)
+            }
+
+            Text("Syncing metadata from Navidrome/Subsonic server...")
+                .font(CarbonFont.mono(10, weight: .medium))
+                .tracking(1.6)
+                .foregroundStyle(theme.ink2)
+                .lineLimit(1)
+
+            HStack(spacing: 10) {
+                metricCell(title: "ARTISTS", value: "\(model.index.artists.count)", accent: theme.orange)
+                metricCell(title: "ALBUMS", value: "\(model.index.albumCount)", accent: theme.sun)
+                metricCell(title: "TRACKS", value: "\(model.index.allTracks.count)", accent: theme.cyan)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(.horizontal, CarbonLayout.oledPaddingH)
+        .padding(.vertical, CarbonLayout.oledPaddingV)
+    }
+
+    private func metricCell(title: String, value: String, accent: Color) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(CarbonFont.mono(6.5, weight: .bold))
+                .tracking(1.4)
+                .foregroundStyle(theme.ink3)
+            HStack(spacing: 4) {
+                Rectangle()
+                    .fill(accent)
+                    .frame(width: 2.2, height: 11)
+                Text(value)
+                    .font(CarbonFont.mono(12.5, weight: .bold))
+                    .foregroundStyle(theme.ink)
+            }
+        }
+        .frame(minWidth: 54, alignment: .leading)
+    }
+}
+
+// MARK: - CD Rip View
+
+private struct CDRipView: View {
+    @EnvironmentObject private var model: LibraryViewModel
+    @Environment(\.carbon) private var theme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Text("CD-RIP")
+                    .font(CarbonFont.display(30))
+                    .tracking(2.4)
+                    .foregroundStyle(theme.orange)
+                Text("RIPPING")
+                    .font(CarbonFont.mono(8.5, weight: .bold))
+                    .tracking(1.7)
+                    .foregroundStyle(theme.orange)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(theme.orange.opacity(0.13)))
+                    .overlay(Capsule().stroke(theme.orange.opacity(0.40), lineWidth: 0.8))
+                Spacer()
+                Text("Audio CD")
+                    .font(CarbonFont.mono(9, weight: .medium))
+                    .tracking(1.8)
+                    .foregroundStyle(theme.ink3)
+            }
+
+            Text("Converting track \(model.conversionProgress.jobsCompleted + 1) of \(model.conversionProgress.jobsTotal)...")
+                .font(CarbonFont.mono(10, weight: .medium))
+                .tracking(1.6)
+                .foregroundStyle(theme.ink2)
+                .lineLimit(1)
+
+            progressBar
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(.horizontal, CarbonLayout.oledPaddingH)
+        .padding(.vertical, CarbonLayout.oledPaddingV)
+    }
+
+    private var progressBar: some View {
+        GeometryReader { proxy in
+            let width = max(proxy.size.width, 1)
+            let progress = model.conversionProgress.jobsTotal > 0 ? Double(model.conversionProgress.jobsCompleted) / Double(model.conversionProgress.jobsTotal) : 0.0
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(theme.ink3.opacity(0.10))
+                Capsule()
+                    .fill(theme.orange)
+                    .frame(width: width * CGFloat(progress))
+                    .shadow(color: theme.orange.opacity(0.34), radius: 5)
+            }
+        }
+        .frame(height: 5)
+        .padding(.top, 2)
     }
 }

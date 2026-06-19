@@ -27,18 +27,34 @@ struct UtilityCluster: View {
 
     private var grid: some View {
         HStack(spacing: 8) {
-            // Tag shortcuts to the Now-Playing OLED view but its visual state
-            // doesn't mirror oledView — that's what the DisplayModeButton is
-            // for. Keeping it as a momentary trigger.
-            key(label: "Tag", on: false) {
-                model.oledView = .nowPlaying
-            }
-            // Cnvrt jumps straight to the patch-bay (OLED + Inspector both
-            // switch to convert mode). Lights up while a batch is running.
-            key(label: "Cnvrt", on: model.conversionProgress.isRunning) {
-                model.oledView = .conversion
-                if model.inspectorCollapsed {
-                    model.inspectorCollapsed = false
+            if !model.prepCrateTracks.isEmpty {
+                let targetName = model.targetCrateName
+                let labelText = "ADD TO \(targetName.uppercased())"
+                KeyButton(style: .selected) {
+                    model.addItemsToCrate(
+                        model.prepCrateTracks.map { "track::" + $0.track.id.uuidString },
+                        crateName: targetName
+                    )
+                } label: {
+                    Text(labelText)
+                        .font(CarbonFont.mono(targetName.count > 12 ? 7.5 : 9, weight: .bold))
+                        .tracking(1.4)
+                }
+                .frame(width: 148, height: CarbonLayout.keyHeight)
+            } else {
+                // Tag shortcuts to the Now-Playing OLED view but its visual state
+                // doesn't mirror oledView — that's what the DisplayModeButton is
+                // for. Keeping it as a momentary trigger.
+                key(label: "Tag", on: false) {
+                    model.oledView = .nowPlaying
+                }
+                // Cnvrt jumps straight to the patch-bay (OLED + Inspector both
+                // switch to convert mode). Lights up while a batch is running.
+                key(label: "Cnvrt", on: model.conversionProgress.isRunning) {
+                    model.oledView = .conversion
+                    if model.inspectorCollapsed {
+                        model.inspectorCollapsed = false
+                    }
                 }
             }
         }

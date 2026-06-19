@@ -148,6 +148,10 @@ private final class MockPlaybackEngine: PlaybackEngineProtocol {
         self.volume = volume
     }
 
+    func setOutputDeviceUID(_ uid: String?) {
+        // No-op for mock
+    }
+
     func simulateReady() {
         onItemReady?()
     }

@@ -33,52 +33,63 @@ struct KeyButton<Label: View>: View {
 
     @ViewBuilder
     private var background: some View {
+        let shape = RoundedRectangle(cornerRadius: 7, style: .continuous)
         switch style {
         case .normal, .disabled:
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: theme.isDark
-                            ? [Color(hex: 0x3A3A37), Color(hex: 0x1A1A18)]
-                            : [theme.chassisHi, theme.chassisLo],
-                        startPoint: .top,
-                        endPoint: .bottom
+            shape
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    shape.fill(
+                        LinearGradient(
+                            colors: [
+                                theme.metalHi.opacity(theme.isDark ? 0.34 : 0.68),
+                                theme.metal.opacity(theme.isDark ? 0.28 : 0.44),
+                                theme.metalLo.opacity(theme.isDark ? 0.38 : 0.32)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
                     )
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .strokeBorder(Color.white.opacity(theme.isDark ? 0.06 : 0.5), lineWidth: 0.5)
+                    shape.strokeBorder(Color.white.opacity(theme.isDark ? 0.14 : 0.66), lineWidth: 0.7)
                 )
-                .shadow(color: Color.black.opacity(theme.isDark ? 0.4 : 0.12), radius: 1, y: 1)
+                .shadow(color: Color.black.opacity(theme.isDark ? 0.42 : 0.12), radius: 4, y: 2)
 
         case .selected:
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(theme.ink)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .stroke(Color.white.opacity(0.04), lineWidth: 0.5)
-                )
-
-        case .glowingOrange:
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
+            shape
                 .fill(
                     LinearGradient(
-                        colors: [Color(hex: 0x050504), Color(hex: 0x0E0E0C)],
+                        colors: [theme.orangeHi, theme.orange, theme.orangeLo],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .overlay(
+                    shape.stroke(Color.white.opacity(0.34), lineWidth: 0.7)
+                )
+                .shadow(color: theme.orange.opacity(0.35), radius: 12, y: 0)
+
+        case .glowingOrange:
+            shape
+                .fill(
+                    LinearGradient(
+                        colors: [theme.wellDeep, theme.metalDeep],
                         startPoint: .top,
                         endPoint: .bottom
                     )
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .stroke(theme.orange.opacity(0.5), lineWidth: 0.5)
+                    shape.stroke(theme.orange.opacity(0.55), lineWidth: 0.7)
                 )
+                .shadow(color: theme.orange.opacity(0.35), radius: 10)
         }
     }
 
     private var textColor: Color {
         switch style {
         case .normal:        return theme.ink2
-        case .selected:      return theme.isDark ? theme.orange : Color(hex: 0xF3F6EC)
+        case .selected:      return theme.selectionInk
         case .glowingOrange: return theme.orange
         case .disabled:      return theme.ink3
         }

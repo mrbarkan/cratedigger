@@ -71,7 +71,9 @@ private struct BrowserEmptyState: View {
         .padding(28)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(
-            theme.paper.opacity(theme.isDark ? 0.92 : 0.96)
+            Rectangle()
+                .fill(.regularMaterial)
+                .overlay(theme.paper.opacity(theme.isDark ? 0.70 : 0.78))
         )
     }
 }

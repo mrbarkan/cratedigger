@@ -130,76 +130,48 @@ struct LedDot: View {
     }
 
     private var ledOff: Color {
-        // Linen: dim brown so the dot reads as recessed metal, not a
-        // punched-through hole. Carbon: near-black slot.
+        // Light mode uses a dim graphite dot; dark mode keeps the near-black
+        // inactive slot used by the OLED-adjacent controls.
         theme.isDark ? Color.black.opacity(0.6) : theme.ink3.opacity(0.4)
     }
 }
 
 // MARK: - Recess for switch banks
 
-/// Theme-aware recess. Carbon: dark gradient + inverted shadow (a darker
-/// edge over a darker chassis reads as depth). Linen: medium-metal gradient
-/// + standard drop shadow on the bottom edge with a top highlight inset (an
-/// inverted shadow on a light surface reads as a glow halo, so we ship a
-/// different visual treatment per theme rather than just swapping colors).
+/// Glass tray behind fixed-width switch banks.
 struct PatchBayRecess: View {
     @Environment(\.carbon) private var theme
 
     var body: some View {
-        if theme.isDark {
-            ZStack {
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
-                    .fill(
+        let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
+        ZStack {
+            shape
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    shape.fill(
                         LinearGradient(
                             colors: [
-                                Color(hex: 0x0E0E0C),
-                                Color(hex: 0x1A1A18),
-                                Color(hex: 0x0A0A08)
+                                theme.wellDeep.opacity(theme.isDark ? 0.62 : 0.54),
+                                theme.metalDeep.opacity(theme.isDark ? 0.34 : 0.28)
                             ],
-                            startPoint: .top,
-                            endPoint: .bottom
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
                         )
                     )
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
-                    .stroke(Color.black.opacity(0.9), lineWidth: 1)
-                    .blur(radius: 0.5)
-            }
-            .compositingGroup()
-            .shadow(color: Color.black.opacity(0.6), radius: 1, y: -1)
-        } else {
-            ZStack {
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [theme.metalDeep, theme.metalLo, theme.metalDeep],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-                // Top inset highlight — a thin bright line at the top inner
-                // edge sells the recess on a light chassis.
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.18), lineWidth: 0.5)
-                    .mask(
-                        LinearGradient(
-                            colors: [Color.black, Color.clear],
-                            startPoint: .top,
-                            endPoint: .center
-                        )
-                    )
-            }
-            .compositingGroup()
-            .shadow(color: Color.black.opacity(0.20), radius: 1, y: 1)
+                )
+                .overlay(
+                    shape.strokeBorder(Color.white.opacity(theme.isDark ? 0.10 : 0.28), lineWidth: 0.7)
+                )
         }
+        .compositingGroup()
+        .shadow(color: Color.black.opacity(theme.isDark ? 0.44 : 0.16), radius: 3, y: 1)
     }
 }
 
 // MARK: - Cycle button (single-button fallback when a row can't fit)
 
-/// Skeuomorphic cycle button used as the narrow-fallback inside
-/// `PatchBayBank`. Tap = next (wraps). Mirrors the chrome treatment of the
-/// header `DisplayModeButton` so the look is coherent across the chassis.
+/// Cycle button used as the narrow-fallback inside `PatchBayBank`. Tap = next
+/// (wraps). Mirrors the header glass chrome so the patch bay stays coherent.
 struct PatchBayCycleButton<Item: Hashable>: View {
     @Environment(\.carbon) private var theme
 

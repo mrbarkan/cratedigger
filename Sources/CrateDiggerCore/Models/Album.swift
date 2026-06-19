@@ -8,6 +8,8 @@ public struct Album: Identifiable, Sendable, Equatable {
     public let year: Int?
     public let artworkHash: String?
     public let tracks: [LoadedTrack]
+    public let booklet: AlbumBooklet?
+    public let mediaFormat: MediaFormat?
 
     public init(
         id: String,
@@ -16,7 +18,9 @@ public struct Album: Identifiable, Sendable, Equatable {
         title: String,
         year: Int?,
         artworkHash: String?,
-        tracks: [LoadedTrack]
+        tracks: [LoadedTrack],
+        booklet: AlbumBooklet? = nil,
+        mediaFormat: MediaFormat? = nil
     ) {
         self.id = id
         self.artistID = artistID
@@ -25,6 +29,8 @@ public struct Album: Identifiable, Sendable, Equatable {
         self.year = year
         self.artworkHash = artworkHash
         self.tracks = tracks
+        self.booklet = booklet
+        self.mediaFormat = mediaFormat
     }
 
     public var trackCount: Int { tracks.count }

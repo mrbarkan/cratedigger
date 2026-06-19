@@ -24,10 +24,31 @@ public final class ArtworkService: ArtworkPreparing {
     private let thumbnailCache = NSCache<NSString, NSImage>()
     private let cacheQueue = DispatchQueue(label: "com.cratedigger.artwork.cache", attributes: .concurrent)
     private var dataByHash: [String: Data] = [:]
+    private var remoteUrlsByHash: [String: URL] = [:]
 
     public init(fileManager: FileManager = .default) {
         self.fileManager = fileManager
         thumbnailCache.countLimit = 512
+    }
+
+    public func cacheRemoteArtworkURL(_ hash: String, url: URL) {
+        cacheQueue.async(flags: .barrier) {
+            self.remoteUrlsByHash[hash] = url
+        }
+        
+        Task {
+            guard let (data, _) = try? await URLSession.shared.data(from: url),
+                  let image = NSImage(data: data) else {
+                return
+            }
+            let asset = ArtworkAsset(
+                source: .remote,
+                hash: hash,
+                dimensions: ArtworkDimensions(width: Int(image.size.width), height: Int(image.size.height)),
+                data: data
+            )
+            self.ingest(asset)
+        }
     }
 
     public func resolveArtwork(trackURL: URL) async -> ArtworkAsset? {
@@ -155,12 +176,25 @@ public final class ArtworkService: ArtworkPreparing {
             "front.jpg", "front.jpeg", "front.png"
         ]
 
-        for name in candidates {
-            let url = folderURL.appendingPathComponent(name)
-            if fileManager.fileExists(atPath: url.path),
-               let data = try? Data(contentsOf: url),
-               let artwork = artworkAsset(from: data, source: .folderImage) {
-                return artwork
+        let subfolders = [
+            "",
+            "Artwork",
+            "artwork",
+            "Art",
+            "art",
+            "Covers",
+            "covers"
+        ]
+
+        for subfolder in subfolders {
+            let baseFolder = subfolder.isEmpty ? folderURL : folderURL.appendingPathComponent(subfolder)
+            for name in candidates {
+                let url = baseFolder.appendingPathComponent(name)
+                if fileManager.fileExists(atPath: url.path),
+                   let data = try? Data(contentsOf: url),
+                   let artwork = artworkAsset(from: data, source: .folderImage) {
+                    return artwork
+                }
             }
         }
 

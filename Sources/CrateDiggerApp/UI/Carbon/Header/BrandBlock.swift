@@ -10,8 +10,7 @@ struct BrandBlock: View {
                 BrandMark(size: 38)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("CrateDigger")
-                        .font(CarbonFont.mono(17, weight: .bold))
-                        .tracking(0.7)
+                        .font(CarbonFont.sans(18, weight: .semibold))
                         .foregroundStyle(theme.ink)
                     Text("CD-01 · Library Mgr.")
                         .font(CarbonFont.mono(8.5, weight: .medium))
@@ -64,8 +63,8 @@ struct BrandMark: View {
                 .fill(
                     RadialGradient(
                         colors: theme.isDark
-                            ? [Color(hex: 0x5A5750), Color(hex: 0x3A3833), Color(hex: 0x1A1816), Color(hex: 0x050504)]
-                            : [.white, theme.chassisHi, theme.chassis, theme.chassisDeep],
+                            ? [theme.metalHi, theme.metal, theme.metalLo, theme.chassisDeep]
+                            : [.white, theme.chassisHi, theme.well, theme.chassisDeep],
                         center: UnitPoint(x: 0.35, y: 0.30),
                         startRadius: 0,
                         endRadius: size * 0.6
@@ -84,7 +83,7 @@ struct BrandMark: View {
             Circle()
                 .fill(theme.orange)
                 .frame(width: size * 0.13, height: size * 0.13)
-                .shadow(color: theme.isDark ? theme.orange.opacity(0.7) : .clear, radius: 4)
+                .shadow(color: theme.orange.opacity(theme.isDark ? 0.70 : 0.35), radius: 5)
         }
         .frame(width: size, height: size)
     }

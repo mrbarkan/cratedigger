@@ -54,22 +54,8 @@ struct BrowserCondensed: View {
     private var expandChevron: some View {
         Button(action: onExpand) {
             ZStack {
-                RoundedRectangle(cornerRadius: 3, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: theme.isDark
-                                ? [theme.metalHi, theme.metalLo]
-                                : [theme.chassisHi, theme.chassisLo],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
+                ChromeChassis(theme: theme, cornerRadius: 4)
                     .frame(width: 18, height: 14)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 3, style: .continuous)
-                            .stroke(Color.white.opacity(theme.isDark ? 0.10 : 0.45), lineWidth: 1)
-                            .frame(width: 18, height: 14)
-                    )
                 Text("|‹")
                     .font(CarbonFont.mono(9, weight: .heavy))
                     .foregroundStyle(theme.ink2)

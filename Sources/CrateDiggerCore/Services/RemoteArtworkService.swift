@@ -256,3 +256,204 @@ public actor RemoteArtworkService {
         return digest.compactMap { String(format: "%02x", $0) }.joined()
     }
 }
+
+public struct MBReleaseCandidate: Identifiable, Codable, Sendable {
+    public let id: String
+    public let title: String
+    public let date: String?
+    public let country: String?
+    public let barcode: String?
+    public let format: String?
+    public let status: String?
+    public let disambiguation: String?
+    public let trackCount: Int?
+    
+    public init(id: String, title: String, date: String?, country: String?, barcode: String?, format: String?, status: String?, disambiguation: String?, trackCount: Int?) {
+        self.id = id
+        self.title = title
+        self.date = date
+        self.country = country
+        self.barcode = barcode
+        self.format = format
+        self.status = status
+        self.disambiguation = disambiguation
+        self.trackCount = trackCount
+    }
+}
+
+public struct CAABookletImage: Identifiable, Codable, Sendable {
+    public var id: String { imageURL.absoluteString }
+    public let imageURL: URL
+    public let thumbnailURL: URL
+    public let types: [String]
+    public let comment: String
+    public let front: Bool
+    public let back: Bool
+    
+    public init(imageURL: URL, thumbnailURL: URL, types: [String], comment: String, front: Bool, back: Bool) {
+        self.imageURL = imageURL
+        self.thumbnailURL = thumbnailURL
+        self.types = types
+        self.comment = comment
+        self.front = front
+        self.back = back
+    }
+}
+
+public extension RemoteArtworkService {
+    func searchMusicBrainzReleases(artist: String, album: String) async throws -> [MBReleaseCandidate] {
+        let trimmedArtist = artist.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedAlbum = album.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedArtist.isEmpty || !trimmedAlbum.isEmpty else {
+            throw FetchError.missingQuery
+        }
+
+        var components = URLComponents(string: "https://musicbrainz.org/ws/2/release/")!
+        var queryParts: [String] = []
+        if !trimmedArtist.isEmpty {
+            queryParts.append("artist:\"\(trimmedArtist)\"")
+        }
+        if !trimmedAlbum.isEmpty {
+            queryParts.append("release:\"\(trimmedAlbum)\"")
+        }
+        let term = queryParts.joined(separator: " AND ")
+        
+        components.queryItems = [
+            URLQueryItem(name: "query", value: term),
+            URLQueryItem(name: "fmt", value: "json"),
+            URLQueryItem(name: "limit", value: "30")
+        ]
+        
+        guard let url = components.url else { return [] }
+        var request = URLRequest(url: url)
+        request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        request.cachePolicy = .returnCacheDataElseLoad
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch let urlError as URLError {
+            throw FetchError.networkFailure(urlError)
+        }
+
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            return []
+        }
+
+        struct MBSearchResponse: Decodable {
+            let releases: [MBRelease]?
+        }
+        struct MBRelease: Decodable {
+            let id: String
+            let title: String
+            let date: String?
+            let country: String?
+            let barcode: String?
+            let status: String?
+            let disambiguation: String?
+            let trackCount: Int?
+            let media: [MBMedia]?
+            
+            enum CodingKeys: String, CodingKey {
+                case id, title, date, country, barcode, status, disambiguation
+                case trackCount = "track-count"
+                case media
+            }
+        }
+        struct MBMedia: Decodable {
+            let format: String?
+        }
+
+        let decoded = try JSONDecoder().decode(MBSearchResponse.self, from: data)
+        guard let releases = decoded.releases else { return [] }
+
+        return releases.map { rel in
+            let format = rel.media?.first?.format
+            return MBReleaseCandidate(
+                id: rel.id,
+                title: rel.title,
+                date: rel.date,
+                country: rel.country,
+                barcode: rel.barcode,
+                format: format,
+                status: rel.status,
+                disambiguation: rel.disambiguation == "" ? nil : rel.disambiguation,
+                trackCount: rel.trackCount
+            )
+        }
+    }
+
+    func fetchCoverArtArchiveImages(releaseMBID: String) async throws -> [CAABookletImage] {
+        guard let url = URL(string: "https://coverartarchive.org/release/\(releaseMBID)") else {
+            return []
+        }
+        
+        var request = URLRequest(url: url)
+        request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        request.cachePolicy = .returnCacheDataElseLoad
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch let urlError as URLError {
+            throw FetchError.networkFailure(urlError)
+        }
+        
+        guard let http = response as? HTTPURLResponse else {
+            return []
+        }
+        
+        if http.statusCode == 404 {
+            return []
+        }
+        
+        guard (200..<300).contains(http.statusCode) else {
+            return []
+        }
+        
+        struct CAAEnvelope: Decodable {
+            let images: [CAAImage]
+        }
+        struct CAAImage: Decodable {
+            let image: String
+            let thumbnails: CAAThumbnails?
+            let types: [String]?
+            let comment: String?
+            let front: Bool?
+            let back: Bool?
+        }
+        struct CAAThumbnails: Decodable {
+            let large: String?
+            let small: String?
+            let size250: String?
+            let size500: String?
+            let size1200: String?
+            
+            enum CodingKeys: String, CodingKey {
+                case large, small
+                case size250 = "250"
+                case size500 = "500"
+                case size1200 = "1200"
+            }
+        }
+        
+        let envelope = try JSONDecoder().decode(CAAEnvelope.self, from: data)
+        return envelope.images.compactMap { img -> CAABookletImage? in
+            guard let imageURL = URL(string: img.image) else { return nil }
+            let thumbStr = img.thumbnails?.size250 ?? img.thumbnails?.size500 ?? img.thumbnails?.small ?? img.thumbnails?.large ?? img.image
+            guard let thumbURL = URL(string: thumbStr) else { return nil }
+            
+            return CAABookletImage(
+                imageURL: imageURL,
+                thumbnailURL: thumbURL,
+                types: img.types ?? [],
+                comment: img.comment ?? "",
+                front: img.front ?? false,
+                back: img.back ?? false
+            )
+        }
+    }
+}
+

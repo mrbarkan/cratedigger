@@ -24,6 +24,20 @@ public final class PreferencesStore {
         static let shuffleEnabled = "cratedigger.playback.shuffle"
         static let repeatMode = "cratedigger.playback.repeatMode"
         static let clickSoundsEnabled = "cratedigger.ui.clickSoundsEnabled"
+        static let subsonicURL = "cratedigger.remote.subsonicURL"
+        static let subsonicUsername = "cratedigger.remote.subsonicUsername"
+        static let subsonicPassword = "cratedigger.remote.subsonicPassword"
+        static let lastFmUsername = "cratedigger.lastfm.username"
+        static let lastFmSessionKey = "cratedigger.lastfm.sessionKey"
+        static let outputDeviceUID = "cratedigger.audio.outputDeviceUID"
+        static let keyboardShortcuts = "cratedigger.ui.keyboardShortcuts"
+        static let cdAnimationSpeed = "cratedigger.ui.cdAnimationSpeed"
+        static let managedLibraryFolderBookmark = "cratedigger.library.managedFolderBookmark"
+        static let copyOnImport = "cratedigger.library.copyOnImport"
+        static let deleteOriginalsAfterCopy = "cratedigger.library.deleteOriginalsAfterCopy"
+        static let organiseByAlbumArtist = "cratedigger.library.organiseByAlbumArtist"
+        static let keepLibraryOrganised = "cratedigger.library.keepLibraryOrganised"
+        static let cratesIndexFolderBookmark = "cratedigger.library.cratesIndexFolderBookmark"
     }
 
     // MARK: - Window frame
@@ -51,6 +65,59 @@ public final class PreferencesStore {
                 defaults.removeObject(forKey: Key.libraryFolderBookmarks)
             } else {
                 defaults.set(newValue, forKey: Key.libraryFolderBookmarks)
+            }
+        }
+    }
+
+    // MARK: - Managed Library Folder Settings
+
+    public var managedLibraryFolderBookmark: Data? {
+        get { defaults.data(forKey: Key.managedLibraryFolderBookmark) }
+        set {
+            if let data = newValue {
+                defaults.set(data, forKey: Key.managedLibraryFolderBookmark)
+            } else {
+                defaults.removeObject(forKey: Key.managedLibraryFolderBookmark)
+            }
+        }
+    }
+
+    public var copyOnImport: Bool {
+        get {
+            if defaults.object(forKey: Key.copyOnImport) == nil { return true }
+            return defaults.bool(forKey: Key.copyOnImport)
+        }
+        set { defaults.set(newValue, forKey: Key.copyOnImport) }
+    }
+
+    public var deleteOriginalsAfterCopy: Bool {
+        get { defaults.bool(forKey: Key.deleteOriginalsAfterCopy) }
+        set { defaults.set(newValue, forKey: Key.deleteOriginalsAfterCopy) }
+    }
+
+    public var organiseByAlbumArtist: Bool {
+        get {
+            if defaults.object(forKey: Key.organiseByAlbumArtist) == nil { return true }
+            return defaults.bool(forKey: Key.organiseByAlbumArtist)
+        }
+        set { defaults.set(newValue, forKey: Key.organiseByAlbumArtist) }
+    }
+
+    public var keepLibraryOrganised: Bool {
+        get {
+            if defaults.object(forKey: Key.keepLibraryOrganised) == nil { return true }
+            return defaults.bool(forKey: Key.keepLibraryOrganised)
+        }
+        set { defaults.set(newValue, forKey: Key.keepLibraryOrganised) }
+    }
+
+    public var cratesIndexFolderBookmark: Data? {
+        get { defaults.data(forKey: Key.cratesIndexFolderBookmark) }
+        set {
+            if let data = newValue {
+                defaults.set(data, forKey: Key.cratesIndexFolderBookmark)
+            } else {
+                defaults.removeObject(forKey: Key.cratesIndexFolderBookmark)
             }
         }
     }
@@ -182,6 +249,49 @@ public final class PreferencesStore {
         set { defaults.set(newValue, forKey: Key.clickSoundsEnabled) }
     }
 
+    // MARK: - Subsonic Remote Library
+
+    public var subsonicURL: String? {
+        get { defaults.string(forKey: Key.subsonicURL) }
+        set { defaults.set(newValue, forKey: Key.subsonicURL) }
+    }
+
+    public var subsonicUsername: String? {
+        get { defaults.string(forKey: Key.subsonicUsername) }
+        set { defaults.set(newValue, forKey: Key.subsonicUsername) }
+    }
+
+    public var subsonicPassword: String? {
+        get { defaults.string(forKey: Key.subsonicPassword) }
+        set { defaults.set(newValue, forKey: Key.subsonicPassword) }
+    }
+
+    // MARK: - Last.fm
+
+    public var lastFmUsername: String? {
+        get { defaults.string(forKey: Key.lastFmUsername) }
+        set { defaults.set(newValue, forKey: Key.lastFmUsername) }
+    }
+
+    public var lastFmSessionKey: String? {
+        get { defaults.string(forKey: Key.lastFmSessionKey) }
+        set { defaults.set(newValue, forKey: Key.lastFmSessionKey) }
+    }
+
+    // MARK: - Audio Device Selection
+
+    public var selectedOutputDeviceUID: String? {
+        get { defaults.string(forKey: Key.outputDeviceUID) }
+        set { defaults.set(newValue, forKey: Key.outputDeviceUID) }
+    }
+
+    // MARK: - Custom Keyboard Shortcuts
+
+    public var keyboardShortcuts: [String: String] {
+        get { defaults.dictionary(forKey: Key.keyboardShortcuts) as? [String: String] ?? [:] }
+        set { defaults.set(newValue, forKey: Key.keyboardShortcuts) }
+    }
+
     // MARK: - Reset
 
     public func resetAll() {
@@ -201,7 +311,13 @@ public final class PreferencesStore {
             Key.customFFprobePath,
             Key.oledView,
             Key.shuffleEnabled,
-            Key.repeatMode
+            Key.repeatMode,
+            Key.cdAnimationSpeed,
+            Key.managedLibraryFolderBookmark,
+            Key.copyOnImport,
+            Key.deleteOriginalsAfterCopy,
+            Key.organiseByAlbumArtist,
+            Key.keepLibraryOrganised
         ] {
             defaults.removeObject(forKey: key)
         }
@@ -239,5 +355,47 @@ public final class PreferencesStore {
         guard resolved.isStale else { return (data, resolved) }
         guard let refreshed = try? makeBookmark(for: resolved.url) else { return (data, resolved) }
         return (refreshed, ResolvedBookmark(url: resolved.url, isStale: false))
+    }
+}
+
+// MARK: - CD Animation Speed Settings
+
+public enum CDAnimationSpeed: String, CaseIterable, Codable, Sendable {
+    case fast = "fast"
+    case medium = "medium"
+    case slow = "slow"
+    case none = "none"
+    
+    public var label: String {
+        switch self {
+        case .fast: return "Fast/Realistic"
+        case .medium: return "Medium"
+        case .slow: return "Slow (Vinyl-like)"
+        case .none: return "No Motion"
+        }
+    }
+    
+    public var angleIncrement: Double {
+        switch self {
+        case .fast: return 50.0
+        case .medium: return 15.0
+        case .slow: return 3.3
+        case .none: return 0.0
+        }
+    }
+}
+
+public extension PreferencesStore {
+    var cdAnimationSpeed: CDAnimationSpeed {
+        get {
+            guard let raw = defaults.string(forKey: Key.cdAnimationSpeed),
+                  let speed = CDAnimationSpeed(rawValue: raw) else {
+                return .fast
+            }
+            return speed
+        }
+        set {
+            defaults.set(newValue.rawValue, forKey: Key.cdAnimationSpeed)
+        }
     }
 }

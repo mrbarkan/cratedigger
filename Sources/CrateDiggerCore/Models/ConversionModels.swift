@@ -168,7 +168,7 @@ public struct ConversionPreset: Identifiable, Hashable, Sendable {
     }
 }
 
-public struct ConversionMetadata: Hashable, Sendable {
+public struct ConversionMetadata: Hashable, Codable, Sendable {
     public var title: String?
     public var artist: String?
     public var albumArtist: String?

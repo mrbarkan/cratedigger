@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// Skeuomorphic single-button replacement for the labeled Now / Cnvrt / Scan
-/// view-switcher. Tapping cycles through the visible OLED views in order; an
-/// LED row underneath shows position. Plays the .firm click on each press.
+/// Single-button replacement for the labeled Now / Cnvrt / Scan view-switcher.
+/// Tapping cycles through the visible OLED views in order; an LED row
+/// underneath shows position. Plays the .firm click on each press.
 struct DisplayModeButton: View {
     @Environment(\.carbon) private var theme
     @EnvironmentObject private var model: LibraryViewModel
@@ -41,35 +41,44 @@ struct DisplayModeButton: View {
 
     private var screen: some View {
         ZStack {
-            // Recessed dark "LCD" panel — always near-black so the LED
-            // glyph pops; the chassis itself adapts to theme.
-            RoundedRectangle(cornerRadius: 3, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [theme.wellDeep, theme.metalDeep],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(.regularMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    Color.white.opacity(theme.isDark ? 0.06 : 0.42),
+                                    theme.well.opacity(theme.isDark ? 0.24 : 0.34)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 3, style: .continuous)
-                        .strokeBorder(Color.black.opacity(0.6), lineWidth: 0.5)
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .strokeBorder(Color.white.opacity(theme.isDark ? 0.12 : 0.62), lineWidth: 0.6)
                 )
-                .shadow(color: Color.black.opacity(0.5), radius: 1, y: 1)
-            Text(currentLabel)
-                .font(CarbonFont.mono(11, weight: .bold))
-                .tracking(2.4)
-                .foregroundStyle(screenColor)
-                .shadow(color: screenColor.opacity(0.7), radius: 3)
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(screenColor)
+                    .frame(width: 5, height: 5)
+                    .shadow(color: screenColor.opacity(0.55), radius: 4)
+                Text(currentLabel)
+                    .font(CarbonFont.mono(10.5, weight: .bold))
+                    .tracking(2.2)
+                    .foregroundStyle(screenColor)
+            }
         }
-        .frame(height: 22)
+        .frame(height: 24)
     }
 
     private var ledStrip: some View {
         HStack(spacing: 5) {
             ForEach(Self.cycle.indices, id: \.self) { index in
                 Circle()
-                    .fill(model.oledView == Self.cycle[index] ? activeLED : Color.black.opacity(0.35))
+                    .fill(model.oledView == Self.cycle[index] ? activeLED : theme.ink4.opacity(0.32))
                     .frame(width: 5, height: 5)
                     .overlay(
                         Circle()
@@ -90,6 +99,8 @@ struct DisplayModeButton: View {
         case .conversion: return "CNVRT"
         case .scan:       return "SCAN"
         case .vu:         return "VU"
+        case .remoteSync: return "SYNC"
+        case .cdRip:      return "CD-RIP"
         }
     }
 
@@ -97,6 +108,8 @@ struct DisplayModeButton: View {
         switch model.oledView {
         case .conversion: return theme.orange
         case .scan:       return theme.cyan
+        case .remoteSync: return theme.indigo
+        case .cdRip:      return theme.orange
         default:          return theme.sun
         }
     }
@@ -105,6 +118,8 @@ struct DisplayModeButton: View {
         switch model.oledView {
         case .conversion: return theme.orange
         case .scan:       return theme.cyan
+        case .remoteSync: return theme.indigo
+        case .cdRip:      return theme.orange
         default:          return theme.sun
         }
     }
@@ -115,10 +130,7 @@ struct DisplayModeButton: View {
     }
 }
 
-/// Shared chassis treatment used by `DisplayModeButton` and the patch bay's
-/// `PatchBayCycleButton`. Carbon: warm gunmetal gradient. Linen: light
-/// brushed chassis. Adds a top highlight + bottom inner shadow for the
-/// "raised" plate look, plus a soft drop shadow.
+/// Shared glass-chrome treatment used by compact control surfaces.
 struct ChromeChassis: View {
     let theme: CarbonTheme
     var cornerRadius: CGFloat = 7
@@ -126,22 +138,26 @@ struct ChromeChassis: View {
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         return shape
-            .fill(
-                LinearGradient(
-                    colors: theme.isDark
-                        ? [theme.metalHi, theme.metalLo]
-                        : [theme.chassisHi, theme.chassisLo],
-                    startPoint: .top,
-                    endPoint: .bottom
+            .fill(.ultraThinMaterial)
+            .overlay(
+                shape.fill(
+                    LinearGradient(
+                        colors: [
+                            theme.metalHi.opacity(theme.isDark ? 0.42 : 0.68),
+                            theme.metal.opacity(theme.isDark ? 0.34 : 0.46),
+                            theme.metalLo.opacity(theme.isDark ? 0.42 : 0.38)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
                 )
             )
             .overlay(
-                shape.strokeBorder(Color.white.opacity(theme.isDark ? 0.10 : 0.55), lineWidth: 0.6)
+                shape.strokeBorder(Color.white.opacity(theme.isDark ? 0.16 : 0.70), lineWidth: 0.7)
             )
             .overlay(
-                // Bottom inner shadow for the "raised" feel
                 shape
-                    .strokeBorder(Color.black.opacity(theme.isDark ? 0.35 : 0.15), lineWidth: 0.5)
+                    .strokeBorder(Color.black.opacity(theme.isDark ? 0.34 : 0.10), lineWidth: 0.5)
                     .blur(radius: 0.5)
                     .mask(
                         LinearGradient(
@@ -151,6 +167,6 @@ struct ChromeChassis: View {
                         )
                     )
             )
-            .shadow(color: Color.black.opacity(theme.isDark ? 0.55 : 0.18), radius: 2, y: 1)
+            .shadow(color: Color.black.opacity(theme.isDark ? 0.48 : 0.14), radius: 5, y: 2)
     }
 }

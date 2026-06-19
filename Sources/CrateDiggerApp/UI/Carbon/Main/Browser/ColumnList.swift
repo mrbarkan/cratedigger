@@ -79,19 +79,18 @@ struct ColumnRow<Lead: View, Title: View, Trail: View>: View {
     @ViewBuilder
     private var selectedBackground: some View {
         if selected {
-            if theme.isDark {
-                LinearGradient(
-                    colors: [theme.orange, theme.orangeLo],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .overlay(
-                    Rectangle().fill(Color.white.opacity(0.2)).frame(height: 1),
-                    alignment: .top
-                )
-            } else {
-                theme.ink
-            }
+            LinearGradient(
+                colors: [
+                    theme.indigo.opacity(theme.isDark ? 0.88 : 0.82),
+                    theme.cyan.opacity(theme.isDark ? 0.86 : 0.76)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .overlay(
+                Rectangle().fill(Color.white.opacity(0.22)).frame(height: 1),
+                alignment: .top
+            )
         } else {
             Color.clear
         }

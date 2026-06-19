@@ -1,6 +1,6 @@
 import Foundation
 
-public struct ArtworkAsset: Hashable, Sendable {
+public struct ArtworkAsset: Hashable, Codable, Sendable {
     public let source: ArtworkSource
     public let hash: String
     public let dimensions: ArtworkDimensions

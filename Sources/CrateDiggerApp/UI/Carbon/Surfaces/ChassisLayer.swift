@@ -18,32 +18,51 @@ struct ChassisLayer<Content: View>: View {
     }
 
     private var backgroundFill: some View {
-        Rectangle()
-            .fill(theme.backgroundBase)
-            .overlay(
-                LinearGradient(
-                    colors: [theme.backgroundGradientStart, theme.backgroundGradientEnd],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .opacity(0.6)
-            )
-            .ignoresSafeArea()
+        GoldenGateBackdrop()
     }
 
     private var chassisPlate: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: CarbonLayout.chassisCornerRadius, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [theme.chassisHi, theme.chassis, theme.chassisLo],
-                        startPoint: .top,
-                        endPoint: .bottom
+        let shape = RoundedRectangle(cornerRadius: CarbonLayout.chassisCornerRadius, style: .continuous)
+        return ZStack {
+            shape
+                .fill(.thinMaterial)
+                .overlay(
+                    shape.fill(
+                        LinearGradient(
+                            colors: [
+                                theme.chassisHi.opacity(theme.isDark ? 0.28 : 0.54),
+                                theme.chassis.opacity(theme.isDark ? 0.30 : 0.44),
+                                theme.chassisLo.opacity(theme.isDark ? 0.36 : 0.34)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
                     )
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: CarbonLayout.chassisCornerRadius, style: .continuous)
-                        .stroke(theme.isDark ? Color.black.opacity(0.6) : Color.black.opacity(0.18), lineWidth: 1)
+                    shape.strokeBorder(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(theme.isDark ? 0.18 : 0.76),
+                                theme.hair.opacity(theme.isDark ? 0.45 : 0.58),
+                                Color.black.opacity(theme.isDark ? 0.44 : 0.10)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+                )
+                .overlay(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(theme.isDark ? 0.05 : 0.42),
+                            Color.clear,
+                            Color.black.opacity(theme.isDark ? 0.22 : 0.05)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
                 )
                 .shadow(color: theme.shadow2.color, radius: theme.shadow2.radius, x: theme.shadow2.x, y: theme.shadow2.y)
 
@@ -52,5 +71,98 @@ struct ChassisLayer<Content: View>: View {
                 .padding(.vertical, CarbonLayout.chassisInsetV)
         }
         .compositingGroup()
+    }
+}
+
+private struct GoldenGateBackdrop: View {
+    @Environment(\.carbon) private var theme
+
+    var body: some View {
+        ZStack {
+            Rectangle()
+                .fill(theme.backgroundBase)
+            LinearGradient(
+                colors: [theme.backgroundGradientStart, theme.backgroundBase, theme.backgroundGradientEnd],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .opacity(theme.isDark ? 0.82 : 0.92)
+            GeometryReader { proxy in
+                let span = max(proxy.size.width, proxy.size.height)
+                ZStack {
+                    diagonalBand(
+                        span: span,
+                        width: span * 0.34,
+                        colors: [
+                            Color.clear,
+                            theme.orange.opacity(theme.isDark ? 0.14 : 0.18),
+                            Color.clear
+                        ],
+                        angle: -28,
+                        x: -span * 0.26,
+                        y: span * 0.18
+                    )
+                    diagonalBand(
+                        span: span,
+                        width: span * 0.42,
+                        colors: [
+                            Color.clear,
+                            theme.cyan.opacity(theme.isDark ? 0.12 : 0.16),
+                            Color.clear
+                        ],
+                        angle: -28,
+                        x: span * 0.30,
+                        y: -span * 0.22
+                    )
+                    diagonalBand(
+                        span: span,
+                        width: span * 0.22,
+                        colors: [
+                            Color.clear,
+                            theme.indigo.opacity(theme.isDark ? 0.10 : 0.12),
+                            Color.clear
+                        ],
+                        angle: 18,
+                        x: span * 0.06,
+                        y: span * 0.32
+                    )
+                }
+                .frame(width: proxy.size.width, height: proxy.size.height)
+            }
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .opacity(theme.isDark ? 0.16 : 0.24)
+            LinearGradient(
+                colors: [
+                    Color.white.opacity(theme.isDark ? 0.02 : 0.28),
+                    Color.clear,
+                    Color.black.opacity(theme.isDark ? 0.26 : 0.07)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        }
+        .ignoresSafeArea()
+    }
+
+    private func diagonalBand(
+        span: CGFloat,
+        width: CGFloat,
+        colors: [Color],
+        angle: Double,
+        x: CGFloat,
+        y: CGFloat
+    ) -> some View {
+        Rectangle()
+            .fill(
+                LinearGradient(
+                    colors: colors,
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+            )
+            .frame(width: width, height: span * 1.75)
+            .rotationEffect(.degrees(angle))
+            .offset(x: x, y: y)
     }
 }

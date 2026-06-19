@@ -37,17 +37,23 @@ struct ConvertPatchBay: View {
         .background(panelBackground)
     }
 
-    // MARK: - Background paper with horizontal scan lines
+    // MARK: - Background glass with horizontal scan lines
 
     private var panelBackground: some View {
         ZStack {
-            Rectangle().fill(
-                LinearGradient(
-                    colors: [theme.paper, theme.paper2],
-                    startPoint: .top,
-                    endPoint: .bottom
+            Rectangle()
+                .fill(.regularMaterial)
+            Rectangle()
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            theme.paper.opacity(theme.isDark ? 0.70 : 0.78),
+                            theme.paper2.opacity(theme.isDark ? 0.58 : 0.66)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
                 )
-            )
             // Horizontal scan-line texture (1px every 28px)
             Canvas { ctx, size in
                 var y: CGFloat = 0

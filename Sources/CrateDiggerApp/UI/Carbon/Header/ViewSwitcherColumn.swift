@@ -6,14 +6,42 @@ struct ViewSwitcherColumn: View {
     var body: some View {
         VStack(spacing: 8) {
             DisplayModeButton()
+            GalleryToggleButton()
             AppearanceCycleButton()
         }
     }
 }
 
-/// Single skeuomorphic button that cycles `Light → Dark → System` on tap,
-/// replacing the previous three-segment LT / DK / AUTO selector. Uses the
-/// shared `ChromeChassis` so it sits in the chassis like a hardware switch.
+private struct GalleryToggleButton: View {
+    @Environment(\.carbon) private var theme
+    @EnvironmentObject private var model: LibraryViewModel
+
+    var body: some View {
+        Button(action: {
+            ClickPlayer.shared.play(.key)
+            model.showArtworkGallery.toggle()
+        }) {
+            HStack(spacing: 6) {
+                Text(model.showArtworkGallery ? "⌗" : "☰")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(model.showArtworkGallery ? theme.orange : theme.ink3)
+                Text(model.showArtworkGallery ? "GALLERY" : "LIST VIEW")
+                    .font(CarbonFont.mono(9, weight: .bold))
+                    .tracking(1.4)
+                    .foregroundStyle(theme.ink2)
+            }
+            .padding(.horizontal, 10)
+            .frame(maxWidth: .infinity)
+            .frame(height: 26)
+            .background(ChromeChassis(theme: theme, cornerRadius: 5))
+        }
+        .buttonStyle(.plain)
+        .help("Toggle between List View and Album Art Gallery")
+    }
+}
+
+/// Single button that cycles Light -> Dark -> System on tap. Uses the shared
+/// glass chassis treatment so it reads as native chrome beside the OLED.
 private struct AppearanceCycleButton: View {
     @Environment(\.carbon) private var theme
     @State private var mode: AppearanceMode = AppearanceCycleButton.currentMode()

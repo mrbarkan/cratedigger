@@ -1,7 +1,7 @@
 import AVFoundation
 import Foundation
 
-public struct LoadedTrack: Sendable {
+public struct LoadedTrack: Hashable, Equatable, Codable, Sendable {
     public let track: AudioTrack
     public let metadata: ConversionMetadata
 

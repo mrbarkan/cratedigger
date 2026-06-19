@@ -1,14 +1,10 @@
 import SwiftUI
 
 struct ModeKeysCluster: View {
-    @Environment(\.carbon) private var theme
     @EnvironmentObject private var model: LibraryViewModel
 
     var body: some View {
-        HStack(spacing: 14) {
-            verticalLabel("Modes")
-            grid
-        }
+        grid
     }
 
     private var grid: some View {
@@ -30,14 +26,5 @@ struct ModeKeysCluster: View {
                 .tracking(1.6)
         }
         .frame(width: 70, height: CarbonLayout.keyHeight)
-    }
-
-    private func verticalLabel(_ label: String) -> some View {
-        Text(label.uppercased())
-            .font(CarbonFont.mono(8.5, weight: .bold))
-            .tracking(2.2)
-            .foregroundStyle(theme.ink3)
-            .rotationEffect(.degrees(-90))
-            .fixedSize()
     }
 }

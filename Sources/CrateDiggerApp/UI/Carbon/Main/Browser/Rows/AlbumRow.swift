@@ -27,6 +27,7 @@ struct AlbumRow: View {
                 .font(CarbonFont.mono(9.5))
                 .foregroundStyle(metaColor)
         }
+        .draggable("album::" + album.id)
     }
 
     private var yearLabel: String {
@@ -35,7 +36,7 @@ struct AlbumRow: View {
     }
 
     private var leadColor: Color {
-        if selected { return theme.isDark ? theme.selectionInk : theme.cyan }
+        if selected { return theme.selectionInk }
         if isPlayingHere { return theme.orange }
         return theme.ink3
     }
@@ -44,6 +45,6 @@ struct AlbumRow: View {
     private var metaColor: Color  { selected ? selectedMetaColor : theme.ink3 }
 
     private var selectedMetaColor: Color {
-        theme.isDark ? theme.selectionInk.opacity(0.7) : theme.chassisLo
+        theme.selectionInk.opacity(0.72)
     }
 }

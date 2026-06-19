@@ -117,6 +117,77 @@ final class LibraryIndexTests: XCTestCase {
         let secondID = LibraryIndex.build(from: Array(tracks.reversed())).artists[0].albums[0].id
         XCTAssertEqual(firstID, secondID)
     }
+
+    func testAlbumBookletScanning() throws {
+        let fileManager = FileManager.default
+        let tempDir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
+        try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true, attributes: nil)
+        defer {
+            try? fileManager.removeItem(at: tempDir)
+        }
+
+        // 1. Initially, no booklet
+        XCTAssertNil(AlbumBooklet.scan(in: tempDir))
+
+        // 2. Create a booklet PDF file
+        let pdfURL = tempDir.appendingPathComponent("booklet.pdf")
+        try "dummy-pdf-content".write(to: pdfURL, atomically: true, encoding: .utf8)
+
+        let bookletPdf = try XCTUnwrap(AlbumBooklet.scan(in: tempDir))
+        if case .pdf(let url) = bookletPdf.source {
+            XCTAssertEqual(url.lastPathComponent, "booklet.pdf")
+        } else {
+            XCTFail("Expected PDF source")
+        }
+
+        // Remove PDF to test image scanning
+        try fileManager.removeItem(at: pdfURL)
+
+        // 3. Create an Artwork folder with sequential images
+        let artworkDir = tempDir.appendingPathComponent("Artwork")
+        try fileManager.createDirectory(at: artworkDir, withIntermediateDirectories: true, attributes: nil)
+
+        let p1 = artworkDir.appendingPathComponent("page_01.jpg")
+        let p2 = artworkDir.appendingPathComponent("page_02.jpg")
+        try "img1".write(to: p1, atomically: true, encoding: .utf8)
+        try "img2".write(to: p2, atomically: true, encoding: .utf8)
+
+        let bookletImages = try XCTUnwrap(AlbumBooklet.scan(in: tempDir))
+        if case .images(let urls) = bookletImages.source {
+            XCTAssertEqual(urls.count, 2)
+            XCTAssertEqual(urls[0].lastPathComponent, "page_01.jpg")
+            XCTAssertEqual(urls[1].lastPathComponent, "page_02.jpg")
+        } else {
+            XCTFail("Expected image array source")
+        }
+    }
+
+    func testAlbumBookletCategorizationAndSorting() {
+        let urls = [
+            URL(fileURLWithPath: "/m/Artwork/cd.jpg"),
+            URL(fileURLWithPath: "/m/Artwork/back.jpg"),
+            URL(fileURLWithPath: "/m/Artwork/cover.jpg"),
+            URL(fileURLWithPath: "/m/Artwork/page_02.jpg"),
+            URL(fileURLWithPath: "/m/Artwork/inlay.jpg"),
+            URL(fileURLWithPath: "/m/Artwork/page_01.jpg"),
+        ]
+
+        let sorted = AlbumBooklet.sortAndCategorizeBookletImages(urls)
+        let filenames = sorted.map(\.lastPathComponent)
+
+        // Expected physical order (excluding disc label scans):
+        // 1. cover.jpg (front)
+        // 2. page_01.jpg, page_02.jpg (generic/liner notes)
+        // 3. inlay.jpg (inlay)
+        // 4. back.jpg (back cover)
+        XCTAssertEqual(filenames, [
+            "cover.jpg",
+            "page_01.jpg",
+            "page_02.jpg",
+            "inlay.jpg",
+            "back.jpg"
+        ])
+    }
 }
 
 private func makeTrack(
