@@ -69,25 +69,29 @@ private struct NowPlayingView: View {
     @Environment(\.carbon) private var theme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            // Top status row
-            HStack {
+        VStack(alignment: .leading, spacing: 8) {
+            // Top status row: now-playing tag + VIEW / THEME / EQ settings cells
+            HStack(alignment: .center) {
                 NowPlayingTag(active: model.playbackState == .playing)
                 Spacer()
-                Text("CrateDigger Player".uppercased())
-                    .font(CarbonFont.mono(8.5, weight: .bold))
-                    .tracking(2.0)
-                    .foregroundStyle(oledMuted)
+                NPSettings(
+                    viewValue: model.showArtworkGallery ? "GALLERY" : "LIST",
+                    themeValue: themeValue,
+                    eqValue: model.eqPreset.label
+                )
             }
 
-            // Headline
-            HStack(alignment: .center, spacing: 24) {
-                VStack(alignment: .leading, spacing: 2) {
+            // Headline — big thin track title on the left, large clock + volume
+            // bar-meter on the right (CrateDigger v6 OLED rework).
+            HStack(alignment: .bottom, spacing: 20) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text(displayTrackTitle)
-                        .font(CarbonFont.display(26))
-                        .tracking(0.5)
+                        .font(CarbonFont.display(44))
+                        .fontWeight(.thin)
+                        .tracking(-0.4)
                         .foregroundStyle(oledForeground)
                         .lineLimit(1)
+                        .minimumScaleFactor(0.55)
                     Text(subtitle)
                         .font(CarbonFont.mono(9.5, weight: .semibold))
                         .tracking(2.0)
@@ -97,14 +101,15 @@ private struct NowPlayingView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-                TimeCapsule(
-                    elapsed: model.playbackCurrentTime,
-                    total: model.playbackDuration,
-                    accent: theme.orange,
-                    inkColor: theme.ink
+                NPReadout(
+                    elapsed: timeString(model.playbackCurrentTime),
+                    total: timeString(model.playbackDuration),
+                    volume: model.playbackVolume
                 )
-                .frame(width: 200)
             }
+            .padding(.top, 4)
+
+            Spacer(minLength: 2)
 
             // Bottom spec cells row (transferred from Inspector)
             ScrollView(.horizontal, showsIndicators: false) {
@@ -130,6 +135,22 @@ private struct NowPlayingView: View {
         }
         .padding(.horizontal, CarbonLayout.oledPaddingH)
         .padding(.vertical, CarbonLayout.oledPaddingV)
+    }
+
+    private func timeString(_ seconds: Double) -> String {
+        guard seconds.isFinite else { return "00:00" }
+        let t = Int(seconds.rounded())
+        return String(format: "%02d:%02d", t / 60, t % 60)
+    }
+
+    private var themeValue: String {
+        let raw = UserDefaults.standard.string(forKey: AppearanceMode.userDefaultsKey)
+            ?? AppearanceMode.system.rawValue
+        switch AppearanceMode(rawValue: raw) ?? .system {
+        case .light:  return "LIGHT"
+        case .dark:   return "DARK"
+        case .system: return "AUTO"
+        }
     }
 
     private var displayTrackTitle: String {
@@ -276,68 +297,75 @@ private struct NowPlayingTag: View {
     }
 }
 
-private struct TimeCapsule: View {
-    let elapsed: Double
-    let total: Double
-    let accent: Color
-    let inkColor: Color
+/// Right-aligned VIEW / THEME / EQ readout cells in the OLED now-playing top row.
+private struct NPSettings: View {
+    @Environment(\.carbon) private var theme
+    let viewValue: String
+    let themeValue: String
+    let eqValue: String
 
     var body: some View {
-        ZStack {
-            Capsule().fill(accent)
-
-            VStack(spacing: 5) {
-                HStack {
-                    Text(timeString(elapsed))
-                        .font(CarbonFont.mono(12, weight: .semibold))
-                        .foregroundStyle(inkColor)
-                    Spacer()
-                    Text("-" + timeString(max(0, total - elapsed)))
-                        .font(CarbonFont.mono(12, weight: .semibold))
-                        .foregroundStyle(inkColor)
-                }
-
-                ProgressDots(progress: progress, ink: inkColor)
-                    .frame(height: 6)
-            }
-            .padding(.horizontal, 22)
-            .padding(.vertical, 9)
+        HStack(spacing: 16) {
+            cell("VIEW", viewValue)
+            cell("THEME", themeValue)
+            cell("EQ", eqValue)
         }
-        .frame(height: 52)
     }
 
-    private var progress: Double {
-        guard total > 0 else { return 0 }
-        return min(max(elapsed / total, 0), 1)
-    }
-
-    private func timeString(_ seconds: Double) -> String {
-        guard seconds.isFinite else { return "00:00" }
-        let total = Int(seconds.rounded())
-        return String(format: "%02d:%02d", total / 60, total % 60)
+    private func cell(_ key: String, _ value: String) -> some View {
+        VStack(alignment: .trailing, spacing: 1) {
+            Text(key)
+                .font(CarbonFont.mono(6.5, weight: .bold))
+                .tracking(1.6)
+                .foregroundStyle(oledForeground.opacity(0.3))
+            Text(value)
+                .font(CarbonFont.mono(9.5, weight: .bold))
+                .tracking(0.8)
+                .foregroundStyle(theme.orange)
+                .shadow(color: theme.orange.opacity(0.4), radius: 3)
+        }
     }
 }
 
-private struct ProgressDots: View {
-    let progress: Double
-    let ink: Color
-    let segments: Int = 60
+/// OLED now-playing right-side readout: a large elapsed clock above a graphic
+/// 16-bar volume meter (lit bars track the volume).
+private struct NPReadout: View {
+    @Environment(\.carbon) private var theme
+    let elapsed: String
+    let total: String
+    let volume: Double   // 0...1
+
+    private let barCount = 16
 
     var body: some View {
-        Canvas { context, size in
-            let segWidth = size.width / CGFloat(segments)
-            let nowIndex = Int(Double(segments) * progress)
-            for i in 0..<segments {
-                let x = CGFloat(i) * segWidth
-                let isFilled = i < nowIndex
-                let isNow = i == nowIndex
-                let height: CGFloat = isNow ? 6 : (isFilled ? 2 : 1.5)
-                let y = (size.height - height) / 2
-                let rect = CGRect(x: x + 0.5, y: y, width: max(1, segWidth - 1), height: height)
-                let opacity: Double = isNow ? 1 : (isFilled ? 0.95 : 0.35)
-                context.fill(Path(rect), with: .color(ink.opacity(opacity)))
+        VStack(alignment: .trailing, spacing: 9) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(elapsed)
+                    .font(CarbonFont.display(34))
+                    .fontWeight(.thin)
+                    .foregroundColor(oledForeground)
+                    .shadow(color: theme.orange.opacity(0.28), radius: 7)
+                Text("/ \(total)")
+                    .font(CarbonFont.mono(12, weight: .semibold))
+                    .tracking(1.4)
+                    .foregroundStyle(oledForeground.opacity(0.4))
+            }
+            volBars
+        }
+        .frame(width: 150, alignment: .trailing)
+    }
+
+    private var volBars: some View {
+        let lit = Int((volume * Double(barCount)).rounded())
+        return HStack(spacing: 3) {
+            ForEach(0..<barCount, id: \.self) { i in
+                RoundedRectangle(cornerRadius: 1, style: .continuous)
+                    .fill(i < lit ? theme.orange : Color.white.opacity(0.16))
+                    .shadow(color: i < lit ? theme.orange.opacity(0.65) : .clear, radius: 2)
             }
         }
+        .frame(height: 13)
+        .frame(maxWidth: .infinity)
     }
 }
 

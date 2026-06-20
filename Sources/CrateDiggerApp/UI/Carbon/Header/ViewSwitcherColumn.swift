@@ -1,114 +1,101 @@
 import SwiftUI
 
+/// Right-hand header column: the DISPLAY screen tile (OLED mode) plus three
+/// settings buttons — VIEW / THEME / EQ — each showing a dot indicator row for
+/// its current option, mirroring the CrateDigger v6 design.
 struct ViewSwitcherColumn: View {
+    @Environment(\.carbon) private var theme
     @EnvironmentObject private var model: LibraryViewModel
+    @State private var appearance: AppearanceMode = ViewSwitcherColumn.currentAppearance()
+
+    /// Order of the THEME dots: dark · light · auto.
+    private static let themeOrder: [AppearanceMode] = [.dark, .light, .system]
 
     var body: some View {
         VStack(spacing: 8) {
             DisplayModeButton()
-            GalleryToggleButton()
-            AppearanceCycleButton()
-        }
-    }
-}
 
-private struct GalleryToggleButton: View {
-    @Environment(\.carbon) private var theme
-    @EnvironmentObject private var model: LibraryViewModel
-
-    var body: some View {
-        Button(action: {
-            ClickPlayer.shared.play(.key)
-            model.showArtworkGallery.toggle()
-        }) {
-            HStack(spacing: 6) {
-                Text(model.showArtworkGallery ? "⌗" : "☰")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(model.showArtworkGallery ? theme.orange : theme.ink3)
-                Text(model.showArtworkGallery ? "GALLERY" : "LIST VIEW")
-                    .font(CarbonFont.mono(9, weight: .bold))
-                    .tracking(1.4)
-                    .foregroundStyle(theme.ink2)
+            SwitchButton(
+                name: "VIEW",
+                dotCount: 2,
+                activeIndex: model.showArtworkGallery ? 1 : 0
+            ) {
+                ClickPlayer.shared.play(.key)
+                model.showArtworkGallery.toggle()
             }
-            .padding(.horizontal, 10)
-            .frame(maxWidth: .infinity)
-            .frame(height: 26)
-            .background(ChromeChassis(theme: theme, cornerRadius: 5))
-        }
-        .buttonStyle(.plain)
-        .help("Toggle between List View and Album Art Gallery")
-    }
-}
 
-/// Single button that cycles Light -> Dark -> System on tap. Uses the shared
-/// glass chassis treatment so it reads as native chrome beside the OLED.
-private struct AppearanceCycleButton: View {
-    @Environment(\.carbon) private var theme
-    @State private var mode: AppearanceMode = AppearanceCycleButton.currentMode()
-
-    private static let cycle: [AppearanceMode] = [.system, .light, .dark]
-
-    var body: some View {
-        Button(action: advance) {
-            HStack(spacing: 6) {
-                Text(symbol)
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(symbolColor)
-                Text(label)
-                    .font(CarbonFont.mono(9, weight: .bold))
-                    .tracking(1.6)
-                    .foregroundStyle(theme.ink2)
+            SwitchButton(
+                name: "THEME",
+                dotCount: Self.themeOrder.count,
+                activeIndex: Self.themeOrder.firstIndex(of: appearance) ?? 0
+            ) {
+                cycleTheme()
             }
-            .padding(.horizontal, 10)
-            .frame(maxWidth: .infinity)
-            .frame(height: 26)
-            .background(ChromeChassis(theme: theme, cornerRadius: 5))
+
+            SwitchButton(
+                name: "EQ",
+                dotCount: EQPreset.allCases.count,
+                activeIndex: EQPreset.allCases.firstIndex(of: model.eqPreset) ?? 0
+            ) {
+                ClickPlayer.shared.play(.key)
+                model.cycleEQPreset()
+            }
         }
-        .buttonStyle(.plain)
-        .help("Cycle appearance: System → Light → Dark")
-        .accessibilityLabel(Text("Appearance: \(label)"))
-        .accessibilityHint(Text("Tap to cycle"))
         .onReceive(NotificationCenter.default.publisher(for: AppearanceMode.didChangeNotification)) { _ in
-            mode = AppearanceCycleButton.currentMode()
+            appearance = ViewSwitcherColumn.currentAppearance()
         }
     }
 
-    private func advance() {
-        let cycle = Self.cycle
-        let idx = cycle.firstIndex(of: mode) ?? 0
-        let next = cycle[(idx + 1) % cycle.count]
-        mode = next
+    private func cycleTheme() {
+        ClickPlayer.shared.play(.key)
+        let order = Self.themeOrder
+        let idx = order.firstIndex(of: appearance) ?? 0
+        let next = order[(idx + 1) % order.count]
+        appearance = next
         UserDefaults.standard.set(next.rawValue, forKey: AppearanceMode.userDefaultsKey)
         NotificationCenter.default.post(name: AppearanceMode.didChangeNotification, object: nil)
     }
 
-    private var label: String {
-        switch mode {
-        case .light:  return "LIGHT"
-        case .dark:   return "DARK"
-        case .system: return "AUTO"
-        }
-    }
-
-    private var symbol: String {
-        switch mode {
-        case .light:  return "☀︎"
-        case .dark:   return "☾"
-        case .system: return "◐"
-        }
-    }
-
-    private var symbolColor: Color {
-        switch mode {
-        case .light:  return theme.sun
-        case .dark:   return theme.cyan
-        case .system: return theme.orange
-        }
-    }
-
-    private static func currentMode() -> AppearanceMode {
+    private static func currentAppearance() -> AppearanceMode {
         let raw = UserDefaults.standard.string(forKey: AppearanceMode.userDefaultsKey)
             ?? AppearanceMode.system.rawValue
         return AppearanceMode(rawValue: raw) ?? .system
+    }
+}
+
+/// A header settings button: left-aligned name + right-aligned dot indicators.
+private struct SwitchButton: View {
+    @Environment(\.carbon) private var theme
+    let name: String
+    let dotCount: Int
+    let activeIndex: Int
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Text(name)
+                    .font(CarbonFont.mono(8.5, weight: .bold))
+                    .tracking(1.3)
+                    .foregroundStyle(theme.ink3)
+                    .lineLimit(1)
+                    .fixedSize()
+                Spacer(minLength: 4)
+                HStack(spacing: 3) {
+                    ForEach(0..<dotCount, id: \.self) { i in
+                        Circle()
+                            .fill(i == activeIndex ? theme.orange : theme.ink4.opacity(0.4))
+                            .frame(width: 5, height: 5)
+                            .shadow(color: i == activeIndex ? theme.orange.opacity(0.7) : .clear, radius: 2.5)
+                    }
+                }
+            }
+            .padding(.horizontal, 10)
+            .frame(maxWidth: .infinity)
+            .frame(height: 28)
+            .background(ChromeChassis(theme: theme, cornerRadius: 6))
+        }
+        .buttonStyle(.plain)
+        .help("\(name): tap to change")
     }
 }

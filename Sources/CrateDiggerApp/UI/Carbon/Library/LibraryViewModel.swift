@@ -147,6 +147,16 @@ final class LibraryViewModel: ObservableObject {
         didSet { prefs.cdAnimationSpeed = cdAnimationSpeed }
     }
 
+    /// Cosmetic EQ preset (drives the OLED readout, the view-switcher EQ button,
+    /// and the footer amber LCD). No real audio EQ — UI only.
+    @Published var eqPreset: EQPreset = .flat
+
+    func cycleEQPreset() {
+        let all = EQPreset.allCases
+        let idx = all.firstIndex(of: eqPreset) ?? 0
+        eqPreset = all[(idx + 1) % all.count]
+    }
+
     /// How the Track column orders the currently shown album.
     @Published var trackSortField: TrackSortField = .trackNumber {
         didSet { prefs.savedTrackSortField = trackSortField.rawValue }
@@ -1098,6 +1108,12 @@ final class LibraryViewModel: ObservableObject {
     func previous() { playback.previous() }
     func rewind8s()  { playback.seek(toSeconds: max(0, playbackCurrentTime - 8)) }
     func forward8s() { playback.seek(toSeconds: min(playbackDuration, playbackCurrentTime + 8)) }
+
+    /// Seek to a 0...1 fraction of the current track (footer POSITION dial).
+    func seek(toFraction fraction: Double) {
+        guard playbackDuration > 0 else { return }
+        playback.seek(toSeconds: min(max(fraction, 0), 1) * playbackDuration)
+    }
 
     func setVolume(_ value: Double) {
         let clamped = min(max(value, 0), 1)

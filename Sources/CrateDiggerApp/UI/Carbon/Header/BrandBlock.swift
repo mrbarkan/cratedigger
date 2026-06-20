@@ -23,6 +23,11 @@ struct BrandBlock: View {
                 statLabel(value: "\(model.index.allTracks.count)", suffix: "RECS")
                 statLabel(value: gigabytesString(bytes: model.index.totalSizeBytes), suffix: nil)
             }
+            HStack(spacing: 6) {
+                LibButton(title: "LOAD FOLDER", systemImage: "folder") { model.openFolderViaPanel() }
+                LibButton(title: "RESCAN", systemImage: "arrow.clockwise") { model.refreshLibrary() }
+            }
+            .padding(.top, 1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -50,6 +55,44 @@ struct BrandBlock: View {
             return String(format: "%.1f MB", mb)
         }
         return String(format: "%.1f GB", gb)
+    }
+}
+
+/// Small metal-chrome control button shown under the brand stats
+/// (Load Folder / Rescan) — mirrors the v6 `.lib-btn` row.
+private struct LibButton: View {
+    @Environment(\.carbon) private var theme
+    let title: String
+    let systemImage: String
+    let action: () -> Void
+
+    @State private var spinning = false
+
+    var body: some View {
+        Button(action: {
+            ClickPlayer.shared.play(.key)
+            if systemImage == "arrow.clockwise" {
+                spinning = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { spinning = false }
+            }
+            action()
+        }) {
+            HStack(spacing: 5) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 9, weight: .bold))
+                    .rotationEffect(.degrees(spinning ? 360 : 0))
+                    .animation(spinning ? .linear(duration: 0.9).repeatForever(autoreverses: false) : .default, value: spinning)
+                Text(title)
+                    .font(CarbonFont.mono(8, weight: .bold))
+                    .tracking(1.4)
+            }
+            .foregroundStyle(theme.ink2)
+            .padding(.horizontal, 9)
+            .frame(height: 24)
+            .background(ChromeChassis(theme: theme, cornerRadius: 6))
+        }
+        .buttonStyle(.plain)
+        .help(title.capitalized)
     }
 }
 

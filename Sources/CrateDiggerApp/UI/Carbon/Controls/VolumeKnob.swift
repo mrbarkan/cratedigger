@@ -16,21 +16,19 @@ struct VolumeKnob: View {
     @State private var dragStartValue: Double?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 7) {
                 Image(systemName: "speaker.wave.2.fill")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(theme.ink3)
                 Text("VOLUME")
                     .font(CarbonFont.mono(8, weight: .bold))
                     .tracking(1.8)
                     .foregroundStyle(theme.ink3)
                 Spacer(minLength: 0)
-                Text(percentLabel)
-                    .font(CarbonFont.mono(8, weight: .bold))
-                    .tracking(1.2)
-                    .foregroundStyle(theme.ink2)
             }
+
+            Spacer(minLength: 0)
 
             volumeTrack
                 .frame(height: 22)
@@ -44,14 +42,10 @@ struct VolumeKnob: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
-        .frame(width: 154)
+        .frame(width: 184, height: 64)
         .background(ChromeChassis(theme: theme, cornerRadius: 12))
         .accessibilityLabel("Volume")
         .accessibilityValue("\(Int(value * 100)) percent")
-    }
-
-    private var percentLabel: String {
-        String(format: "%02d", Int(value * 100))
     }
 
     private var volumeTrack: some View {

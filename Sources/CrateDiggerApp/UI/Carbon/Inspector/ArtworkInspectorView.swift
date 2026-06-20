@@ -13,19 +13,39 @@ struct ArtworkInspectorView: View {
     @State private var isSaving = false
     @State private var showingSearch = false
     
+    private var mediaFormatLabel: String {
+        switch manifest.mediaFormat {
+        case .some(.cd):    return "CD"
+        case .some(.vinyl): return "VINYL"
+        default:            return "AUTO"
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
                 Text("MEDIA FORMAT")
                     .font(CarbonFont.mono(9, weight: .bold))
                     .foregroundColor(theme.ink3)
-                Picker("", selection: $manifest.mediaFormat) {
-                    Text("Auto").tag(MediaFormat?.none)
-                    Text("CD").tag(MediaFormat?.some(.cd))
-                    Text("Vinyl").tag(MediaFormat?.some(.vinyl))
+                Menu {
+                    Button("Auto") { manifest.mediaFormat = nil }
+                    Button("CD") { manifest.mediaFormat = .cd }
+                    Button("Vinyl") { manifest.mediaFormat = .vinyl }
+                } label: {
+                    HStack(spacing: 5) {
+                        Text(mediaFormatLabel)
+                            .font(CarbonFont.mono(9, weight: .bold))
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.system(size: 7, weight: .bold))
+                    }
+                    .foregroundColor(theme.ink2)
+                    .padding(.horizontal, 10)
+                    .frame(height: 22)
+                    .background(ChromeChassis(theme: theme, cornerRadius: 6))
                 }
-                .pickerStyle(.menu)
-                .frame(width: 80)
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
                 
                 Spacer()
                 
@@ -34,7 +54,7 @@ struct ArtworkInspectorView: View {
                         Text("ADD FILE…")
                             .font(CarbonFont.mono(9, weight: .bold))
                     }
-                    .frame(width: 72, height: 18)
+                    .frame(width: 78, height: 22)
                 }
 
                 if album != nil {
@@ -42,7 +62,7 @@ struct ArtworkInspectorView: View {
                         Text("SEARCH ONLINE")
                             .font(CarbonFont.mono(9, weight: .bold))
                     }
-                    .frame(width: 92, height: 18)
+                    .frame(width: 104, height: 22)
                 }
                 
                 if isSaving {
@@ -53,7 +73,7 @@ struct ArtworkInspectorView: View {
                         Text("SAVE")
                             .font(CarbonFont.mono(9, weight: .bold))
                     }
-                    .frame(width: 44, height: 18)
+                    .frame(width: 56, height: 22)
                 }
             }
             .padding(.horizontal, 14)

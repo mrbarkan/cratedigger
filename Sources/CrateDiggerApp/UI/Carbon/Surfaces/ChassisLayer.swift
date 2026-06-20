@@ -10,6 +10,7 @@ struct ChassisLayer<Content: View>: View {
             chassisPlate
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .ignoresSafeArea()
     }
 
     private var backgroundFill: some View {

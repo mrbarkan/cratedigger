@@ -4,7 +4,7 @@ public enum CarbonLayout {
     public static let chassisSize  = CGSize(width: 1400, height: 920)
     public static let windowMin    = CGSize(width: 1200, height: 820)
 
-    public static let chassisCornerRadius: CGFloat = 28
+    public static let chassisCornerRadius: CGFloat = 10
     public static let chassisInsetH: CGFloat = 24
     public static let chassisInsetV: CGFloat = 18
     public static let chassisRowGap: CGFloat = 16

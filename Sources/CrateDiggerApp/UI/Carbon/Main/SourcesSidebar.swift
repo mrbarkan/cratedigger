@@ -198,7 +198,7 @@ struct SourcesSidebar: View {
             
             Spacer()
             
-            loadFolderButton
+            addToCrateButton
                 .padding(.horizontal, 4)
                 .padding(.vertical, 8)
         }
@@ -379,12 +379,13 @@ struct SourcesSidebar: View {
     }
 
     @ViewBuilder
-    private var loadFolderButton: some View {
-        KeyButton(style: .normal, action: { model.openFolderViaPanel() }) {
+    private var addToCrateButton: some View {
+        let armed = model.selectedTrack != nil
+        KeyButton(style: armed ? .glowingOrange : .normal, action: addSelectedTrackToCrate) {
             HStack(spacing: 8) {
-                Image(systemName: "folder")
+                Image(systemName: "tray.and.arrow.down.fill")
                     .font(.system(size: 11, weight: .semibold))
-                Text("LOAD FOLDER")
+                Text("ADD TO CRATE")
                     .font(CarbonFont.mono(10, weight: .bold))
                     .tracking(2)
                 Spacer(minLength: 0)
@@ -392,5 +393,14 @@ struct SourcesSidebar: View {
             .padding(.horizontal, 12)
         }
         .frame(height: 30)
+        .help(armed
+            ? "Add the selected track to \(model.targetCrateName)"
+            : "Select a track to arm, then add it to a crate")
+    }
+
+    private func addSelectedTrackToCrate() {
+        guard let track = model.selectedTrack else { return }
+        ClickPlayer.shared.play(.key)
+        model.addItemsToCrate(["track::" + track.track.id.uuidString], crateName: model.targetCrateName)
     }
 }

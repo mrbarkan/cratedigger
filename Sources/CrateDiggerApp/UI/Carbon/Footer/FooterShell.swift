@@ -25,14 +25,14 @@ struct FooterShell: View {
                     shape.strokeBorder(Color.white.opacity(theme.isDark ? 0.12 : 0.62), lineWidth: 1)
                 )
 
-            HStack(alignment: .center, spacing: 24) {
-                ModeKeysCluster()
-                Spacer()
+            HStack(alignment: .center, spacing: 0) {
+                FooterLeftCluster()
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 TransportCluster()
-                Spacer()
                 UtilityCluster()
+                    .frame(maxWidth: .infinity, alignment: .trailing)
             }
-            .padding(.horizontal, 30)
+            .padding(.horizontal, 26)
         }
         .compositingGroup()
     }

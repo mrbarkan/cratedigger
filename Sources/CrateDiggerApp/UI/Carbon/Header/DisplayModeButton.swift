@@ -11,8 +11,7 @@ struct DisplayModeButton: View {
 
     var body: some View {
         Button(action: cycleToNext) {
-            VStack(spacing: 4) {
-                topLabel
+            VStack(spacing: 5) {
                 screen
                 ledStrip
             }
@@ -30,13 +29,6 @@ struct DisplayModeButton: View {
         let current = cycle.firstIndex(of: model.oledView) ?? 0
         let next = cycle[(current + 1) % cycle.count]
         model.oledView = next
-    }
-
-    private var topLabel: some View {
-        Text("DISPLAY")
-            .font(CarbonFont.mono(7.5, weight: .bold))
-            .tracking(2)
-            .foregroundStyle(theme.ink3)
     }
 
     private var screen: some View {
