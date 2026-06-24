@@ -156,6 +156,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         hostingController.model.cycleRepeatMode()
     }
 
+    /// The user changed the Stream Engine preference (or yt-dlp path) via the menu.
+    func streamEnginePreferenceChanged() {
+        hostingController.model.streamEnginePreferenceChanged()
+    }
+
     override func showWindow(_ sender: Any?) {
         super.showWindow(sender)
         if !didApplyRestoredFrame {

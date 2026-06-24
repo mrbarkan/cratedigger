@@ -153,6 +153,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         mainWindowController?.cycleRepeatMode()
     }
 
+    // MARK: - Stream Engine menu
+
+    @objc private func setStreamEngine(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String else { return }
+        prefs.streamEngine = raw
+        mainWindowController?.streamEnginePreferenceChanged()
+        if let menu = sender.menu {
+            for item in menu.items where item.action == #selector(setStreamEngine(_:)) {
+                item.state = (item.representedObject as? String == raw) ? .on : .off
+            }
+        }
+    }
+
+    @objc private func setYtDlpPath(_ sender: Any?) {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.title = "Choose the yt-dlp binary"
+        panel.prompt = "Use"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        prefs.customYtDlpPath = url.path
+        mainWindowController?.streamEnginePreferenceChanged()
+    }
+
     // MARK: - App menu actions
 
     @objc private func showAbout(_ sender: Any?) {
@@ -214,6 +239,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                let current = mainWindowController?.currentOLEDView() {
                 menuItem.state = (view == current) ? .on : .off
             }
+            return true
+        case #selector(setStreamEngine(_:)):
+            menuItem.state = (menuItem.representedObject as? String == prefs.streamEngine) ? .on : .off
             return true
         case #selector(revealSelectionInFinder(_:)),
              #selector(convertSelected(_:)),
@@ -396,6 +424,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         let repeatItem = makeItem(title: "Cycle Repeat Mode", action: #selector(cycleRepeatMode(_:)), key: "r")
         repeatItem.keyEquivalentModifierMask = [.command, .option]
         playbackMenu.addItem(repeatItem)
+        playbackMenu.addItem(.separator())
+
+        // Radio / Streams engine picker (Auto / Native / WebView) + yt-dlp path.
+        let engineMenuItem = NSMenuItem(title: "Stream Engine", action: nil, keyEquivalent: "")
+        let engineMenu = NSMenu(title: "Stream Engine")
+        let engines: [(String, String)] = [
+            ("Auto (yt-dlp if available)", "auto"),
+            ("Native — yt-dlp", "native"),
+            ("WebView — embedded", "webview")
+        ]
+        for (title, raw) in engines {
+            let item = makeItem(title: title, action: #selector(setStreamEngine(_:)))
+            item.representedObject = raw
+            item.state = (prefs.streamEngine == raw) ? .on : .off
+            engineMenu.addItem(item)
+        }
+        engineMenu.addItem(.separator())
+        engineMenu.addItem(makeItem(title: "Set yt-dlp Path…", action: #selector(setYtDlpPath(_:))))
+        engineMenuItem.submenu = engineMenu
+        playbackMenu.addItem(engineMenuItem)
+
         playbackMenuItem.submenu = playbackMenu
 
         // MARK: Window menu

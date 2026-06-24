@@ -154,20 +154,68 @@ extension LibraryViewModel {
 
     private func makeEngine(for kind: RadioEngineKind) -> RadioPlaybackEngine {
         switch kind {
-        case .webview: return YouTubeEmbedStreamEngine()
-        case .native:  return YouTubeEmbedStreamEngine()   // Phase 4 swaps in YtDlpStreamEngine
+        case .webview:
+            return YouTubeEmbedStreamEngine()
+        case .native:
+            guard let url = resolvedYtDlpURL() else {
+                // Shouldn't happen (resolveActiveEngineKind guards), but fall back safely.
+                return YouTubeEmbedStreamEngine()
+            }
+            let engine = YtDlpStreamEngine(resolver: StreamResolver(ytdlpURL: url))
+            engine.setOutputDeviceUID(prefs.selectedOutputDeviceUID)
+            return engine
         }
     }
 
-    /// Phase 3 always resolves to the WebView engine; Phase 4 adds yt-dlp + Auto.
+    /// Resolves the engine from the `streamEngine` preference plus yt-dlp
+    /// availability. `auto` prefers native when yt-dlp is present, else WebView.
     func resolveActiveEngineKind() -> RadioEngineKind {
-        return .webview
+        switch prefs.streamEngine {
+        case "webview":
+            return .webview
+        case "native":
+            return resolvedYtDlpURL() != nil ? .native : .webview
+        default: // "auto"
+            return resolvedYtDlpURL() != nil ? .native : .webview
+        }
+    }
+
+    /// The yt-dlp binary to use: a user-set custom path (Settings) overrides the
+    /// PATH search. nil when yt-dlp can't be found (bring-your-own).
+    func resolvedYtDlpURL() -> URL? {
+        let override = prefs.customYtDlpPath.flatMap {
+            $0.isEmpty ? nil : URL(fileURLWithPath: $0)
+        }
+        return ExternalToolLocator().resolveOptional(.ytdlp, explicitOverride: override)?.url
     }
 
     private func engineLabel(for kind: RadioEngineKind) -> String {
-        switch kind {
-        case .webview: return "WEB"
-        case .native:  return "NATIVE"
+        switch prefs.streamEngine {
+        case "native":  return kind == .native ? "NATIVE" : "WEB*"   // * = requested native, fell back
+        case "webview": return "WEB"
+        default:        return kind == .native ? "AUTO·N" : "AUTO·W"
+        }
+    }
+
+    /// Called after the user changes the engine pref (or yt-dlp path) in the menu.
+    /// Refreshes the OLED label and, if a stream is currently playing, restarts it
+    /// on the newly-selected engine.
+    func streamEnginePreferenceChanged() {
+        let kind = resolveActiveEngineKind()
+        radioEngineKind = kind
+        radioEngineLabel = engineLabel(for: kind)
+
+        if prefs.streamEngine == "native" && resolvedYtDlpURL() == nil {
+            appAlert = .error(
+                title: "yt-dlp Not Found",
+                message: "CrateDigger will use the built-in WebView player until you install yt-dlp or set its path in the menu."
+            )
+        }
+
+        if isRadioMode, selectedStream != nil, radioEngine != nil {
+            radioEngine?.stop()
+            radioEngine = nil
+            playSelectedStream()
         }
     }
 }
