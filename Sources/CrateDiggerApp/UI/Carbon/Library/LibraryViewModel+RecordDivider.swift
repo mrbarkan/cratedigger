@@ -188,6 +188,51 @@ extension LibraryViewModel {
         persistRecordMarkers(nil, for: track)
     }
 
+    // MARK: - Playback navigation (divided tracks)
+
+    /// Markers of the file currently playing, if it's a divided record.
+    var nowPlayingRecordMarkers: [RecordMarker] {
+        nowPlayingTrack?.recordMarkers ?? []
+    }
+
+    /// Index of the Record Divider track playing right now (by playhead position),
+    /// or `nil` when the now-playing file isn't divided.
+    var currentRecordTrackIndex: Int? {
+        guard !nowPlayingRecordMarkers.isEmpty else { return nil }
+        return nowPlayingTrack?.recordTrackIndex(at: playbackCurrentTime)
+    }
+
+    var currentRecordTrack: RecordMarker? {
+        guard let i = currentRecordTrackIndex, nowPlayingRecordMarkers.indices.contains(i) else { return nil }
+        return nowPlayingRecordMarkers[i]
+    }
+
+    /// Seek to the next marker's start; returns false at the last marker (so the
+    /// caller advances to the next file instead).
+    func recordSeekToNextTrack() -> Bool {
+        let markers = nowPlayingRecordMarkers
+        guard let i = currentRecordTrackIndex, i + 1 < markers.count else { return false }
+        playback.seek(toSeconds: markers[i + 1].startSeconds)
+        return true
+    }
+
+    /// Previous-track behaviour within a divided file: restart the current track if
+    /// we're more than `restartThreshold` into it, else jump to the previous
+    /// marker. Returns false at the very start of the first marker.
+    func recordSeekToPreviousTrack(restartThreshold: Double = 3) -> Bool {
+        let markers = nowPlayingRecordMarkers
+        guard let i = currentRecordTrackIndex, markers.indices.contains(i) else { return false }
+        if playbackCurrentTime - markers[i].startSeconds > restartThreshold {
+            playback.seek(toSeconds: markers[i].startSeconds)
+            return true
+        }
+        if i > 0 {
+            playback.seek(toSeconds: markers[i - 1].startSeconds)
+            return true
+        }
+        return false
+    }
+
     private func closeRecordDivider() {
         showingRecordDividerSheet = false
         recordDividerTrack = nil

@@ -160,6 +160,8 @@ private struct NowPlayingView: View {
     }
 
     private var displayTrackTitle: String {
+        // A divided record shows the current track (marker), not the side filename.
+        if let recordTrack = model.currentRecordTrack { return recordTrack.title.uppercased() }
         let title = model.nowPlayingTrack?.track.title ?? model.selectedTrack?.track.title ?? "—"
         return title.uppercased()
     }
@@ -167,6 +169,11 @@ private struct NowPlayingView: View {
     private var subtitle: String {
         let track = model.nowPlayingTrack ?? model.selectedTrack
         guard let track else { return "Insert media" }
+        if let index = model.currentRecordTrackIndex {
+            let total = model.nowPlayingRecordMarkers.count
+            let album = track.track.album.isEmpty ? track.track.title : track.track.album
+            return "TRACK \(index + 1)/\(total) · \(album)"
+        }
         let parts = [track.track.artist, track.track.album, track.track.year.map(String.init) ?? ""]
             .filter { !$0.isEmpty }
         return parts.joined(separator: " · ")

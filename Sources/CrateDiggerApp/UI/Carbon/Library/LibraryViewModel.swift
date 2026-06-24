@@ -1213,10 +1213,13 @@ final class LibraryViewModel: ObservableObject {
 
     func next() {
         if isRadioMode { selectAdjacentStream(offset: 1); return }
+        // Divided record: step between its tracks before leaving the file.
+        if recordSeekToNextTrack() { return }
         playback.next()
     }
     func previous() {
         if isRadioMode { selectAdjacentStream(offset: -1); return }
+        if recordSeekToPreviousTrack() { return }
         playback.previous()
     }
     func rewind8s()  {
