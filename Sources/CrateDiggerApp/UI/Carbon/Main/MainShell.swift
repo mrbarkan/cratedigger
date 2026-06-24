@@ -21,6 +21,9 @@ struct MainShell: View {
         .animation(Self.collapseAnimation, value: model.browserCollapsed)
         .animation(Self.collapseAnimation, value: model.inspectorCollapsed)
         .animation(.easeInOut(duration: 0.22), value: model.oledView)
+        .sheet(isPresented: $model.showingAddStreamSheet) {
+            AddStreamSheet()
+        }
     }
 
     // MARK: - Sources
