@@ -33,6 +33,9 @@ public struct StreamSource: Codable, Sendable, Hashable, Identifiable {
     public var viewers: String?
     /// Known duration in seconds for VOD; nil for live or unknown.
     public var durationSeconds: Double?
+    /// Real cover thumbnail URL (fetched from yt-dlp/oEmbed); nil falls back to the
+    /// hue poster and signals that metadata still needs fetching.
+    public var thumbnailURL: String?
 
     public init(
         id: String,
@@ -44,7 +47,8 @@ public struct StreamSource: Codable, Sendable, Hashable, Identifiable {
         provider: StreamProvider = .youtube,
         addedAt: Date,
         viewers: String? = nil,
-        durationSeconds: Double? = nil
+        durationSeconds: Double? = nil,
+        thumbnailURL: String? = nil
     ) {
         self.id = id
         self.url = url
@@ -56,6 +60,7 @@ public struct StreamSource: Codable, Sendable, Hashable, Identifiable {
         self.addedAt = addedAt
         self.viewers = viewers
         self.durationSeconds = durationSeconds
+        self.thumbnailURL = thumbnailURL
     }
 
     public var isLive: Bool { kind == .live }

@@ -23,22 +23,15 @@ struct RadioInfoView: View {
 
     private var header: some View {
         HStack(spacing: 12) {
-            RoundedRectangle(cornerRadius: 8)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color(hue: Double(stream.hue) / 360, saturation: 0.7, brightness: 0.68),
-                            Color(hue: Double((stream.hue + 40) % 360) / 360, saturation: 0.6, brightness: 0.42)
-                        ],
-                        startPoint: .topLeading, endPoint: .bottomTrailing
-                    )
-                )
+            StreamThumbnail(stream: stream)
                 .frame(width: 56, height: 56)
                 .overlay(
                     Image(systemName: "play.fill")
                         .font(.system(size: 15, weight: .bold))
                         .foregroundStyle(.white.opacity(0.92))
+                        .shadow(color: .black.opacity(0.4), radius: 2)
                 )
+                .clipShape(RoundedRectangle(cornerRadius: 8))
                 .overlay(RoundedRectangle(cornerRadius: 8).stroke(.white.opacity(0.15), lineWidth: 1))
             VStack(alignment: .leading, spacing: 4) {
                 Text(stream.title)

@@ -397,6 +397,7 @@ final class LibraryViewModel: ObservableObject {
         refreshAvailableCrates()
         streams = streamStore.all()
         selectSource(.localAll)
+        fetchMissingMetadata()
     }
 
     deinit {

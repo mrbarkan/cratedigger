@@ -100,7 +100,37 @@ struct RadioListView: View {
     }
 }
 
-/// A single stream row: hue thumbnail with play/duration overlay, title + badge +
+/// A stream's cover: the real fetched thumbnail when available, otherwise the
+/// hue-generated poster (matches the v7 mockup). Fills its container.
+struct StreamThumbnail: View {
+    let stream: StreamSource
+
+    var body: some View {
+        if let urlString = stream.thumbnailURL, let url = URL(string: urlString) {
+            AsyncImage(url: url) { phase in
+                if case .success(let image) = phase {
+                    image.resizable().aspectRatio(contentMode: .fill)
+                } else {
+                    huePoster
+                }
+            }
+        } else {
+            huePoster
+        }
+    }
+
+    private var huePoster: some View {
+        LinearGradient(
+            colors: [
+                Color(hue: Double(stream.hue) / 360, saturation: 0.7, brightness: 0.68),
+                Color(hue: Double((stream.hue + 40) % 360) / 360, saturation: 0.6, brightness: 0.42)
+            ],
+            startPoint: .topLeading, endPoint: .bottomTrailing
+        )
+    }
+}
+
+/// A single stream row: thumbnail with play/duration overlay, title + badge +
 /// channel, and source/watching metadata.
 private struct RadioRow: View {
     @Environment(\.carbon) private var theme
@@ -153,16 +183,7 @@ private struct RadioRow: View {
 
     private var thumb: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 5)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color(hue: Double(stream.hue) / 360, saturation: 0.7, brightness: 0.68),
-                            Color(hue: Double((stream.hue + 40) % 360) / 360, saturation: 0.6, brightness: 0.42)
-                        ],
-                        startPoint: .topLeading, endPoint: .bottomTrailing
-                    )
-                )
+            StreamThumbnail(stream: stream)
             Image(systemName: selected ? "pause.fill" : "play.fill")
                 .font(.system(size: 11, weight: .bold))
                 .foregroundStyle(.white.opacity(0.92))
@@ -182,6 +203,7 @@ private struct RadioRow: View {
             }
         }
         .frame(width: 54, height: 40)
+        .clipShape(RoundedRectangle(cornerRadius: 5))
         .overlay(RoundedRectangle(cornerRadius: 5).stroke(.white.opacity(0.15), lineWidth: 1))
     }
 

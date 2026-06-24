@@ -57,6 +57,65 @@ extension LibraryViewModel {
             ? radioChannelFilter : nil
         enterRadio(channel: channel)
         selectStream(id: stream.id)
+        fetchMetadata(for: stream.id)
+    }
+
+    // MARK: - Metadata (real title / channel / thumbnail)
+
+    /// Fetch real metadata for every stream that doesn't have a thumbnail yet
+    /// (newly added, or saved before metadata existed). Called on launch.
+    func fetchMissingMetadata() {
+        for stream in streams where stream.thumbnailURL == nil {
+            fetchMetadata(for: stream.id)
+        }
+    }
+
+    /// Fetch real title/channel/thumbnail/live-status for one stream and apply it.
+    /// Uses yt-dlp when available (richest), else YouTube oEmbed (no dependency).
+    func fetchMetadata(for id: String) {
+        guard let stream = streams.first(where: { $0.id == id }) else { return }
+        let url = stream.url
+        let ytdlp = resolvedYtDlpURL()
+        Task { [weak self] in
+            let meta = ytdlp != nil
+                ? await Self.fetchMetadataViaYtDlp(url: url, ytdlpURL: ytdlp!)
+                : await Self.fetchMetadataViaOEmbed(url: url)
+            guard let meta else { return }
+            await MainActor.run { self?.applyMetadata(meta, to: id) }
+        }
+    }
+
+    private static func fetchMetadataViaYtDlp(url: String, ytdlpURL: URL) async -> StreamMetadata? {
+        await Task.detached {
+            let runner = ProcessCommandRunner()
+            guard let out = try? runner.run(executableURL: ytdlpURL,
+                                            arguments: StreamMetadataService.ytdlpArguments(url: url)),
+                  out.terminationStatus == 0 else { return nil }
+            return StreamMetadataService.parseYtDlp(out.standardOutput)
+        }.value
+    }
+
+    private static func fetchMetadataViaOEmbed(url: String) async -> StreamMetadata? {
+        guard let endpoint = StreamMetadataService.oEmbedURL(for: url),
+              let (data, _) = try? await URLSession.shared.data(from: endpoint) else { return nil }
+        return StreamMetadataService.parseOEmbed(data)
+    }
+
+    private func applyMetadata(_ meta: StreamMetadata, to id: String) {
+        guard let idx = streams.firstIndex(where: { $0.id == id }) else { return }
+        var s = streams[idx]
+        if let title = meta.title, !title.isEmpty { s.title = title }
+        if let channel = meta.channel, !channel.isEmpty { s.channel = channel }
+        if let thumb = meta.thumbnailURL { s.thumbnailURL = thumb }
+        if let dur = meta.durationSeconds { s.durationSeconds = dur }
+        if let viewers = meta.viewers { s.viewers = viewers }
+        if meta.isLive == true { s.kind = .live }
+        else if meta.isLive == false && s.kind == .live { s.kind = .video }
+        streams[idx] = s
+        streamStore.save(streams)
+
+        // Keep live uptime ticker in sync if this is the playing stream.
+        if selectedStreamID == id { startUptimeTickerIfNeeded() }
     }
 
     func removeStream(id: String) {
