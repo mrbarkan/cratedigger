@@ -252,6 +252,24 @@ private struct TrackColumn: View {
                 model.clearRecordMarkers(for: loaded)
             }
         }
+
+        switch model.currentSource {
+        case .localCrate(let crateName):
+            Divider()
+            Button("Remove from “\(crateName)”") {
+                model.removeTrackFromCrate(loaded, crateName: crateName)
+            }
+            Button("Remove from Library…") {
+                model.promptRemoveTrackFromLibrary(loaded)
+            }
+        case .localAll, .prepCrate:
+            Divider()
+            Button("Remove from Library…") {
+                model.promptRemoveTrackFromLibrary(loaded)
+            }
+        default:
+            EmptyView()
+        }
     }
 
     /// Track rows, with "DISC n" separators interleaved when the album spans

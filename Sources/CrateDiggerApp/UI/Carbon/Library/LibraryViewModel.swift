@@ -158,20 +158,43 @@ final class LibraryViewModel: ObservableObject {
     }
 
     private var scrubReleaseWorkItem: DispatchWorkItem?
+    private var pendingSeekTargetSeconds: Double?
 
-    /// Handle one scroll-seek step (a fraction delta from the locked POSITION
-    /// dial): preview it via `scrubbingFraction`, seek, then let the preview
-    /// revert to live playback shortly after scrolling stops.
+    /// Commit a scrub to `fraction` and hold the OLED preview on the target until
+    /// playback actually reaches it — otherwise the readout blinks back to the
+    /// old position between releasing and the seek landing. A fallback timer
+    /// clears the preview if no time update arrives (e.g. while paused).
+    func commitScrubSeek(toFraction fraction: Double) {
+        guard playbackDuration > 0 else { seek(toFraction: fraction); return }
+        let target = min(max(fraction, 0), 1)
+        scrubbingFraction = target
+        pendingSeekTargetSeconds = target * playbackDuration
+        seek(toFraction: target)
+        scrubReleaseWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.scrubbingFraction = nil
+            self?.pendingSeekTargetSeconds = nil
+        }
+        scrubReleaseWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: work)
+    }
+
+    /// One scroll-seek step (a fraction delta from the locked POSITION dial).
     func scrollSeek(byFraction delta: Double) {
         guard playbackDuration > 0 else { return }
         let base = scrubbingFraction ?? (playbackCurrentTime / playbackDuration)
-        let target = min(max(base + delta, 0), 1)
-        scrubbingFraction = target
-        seek(toFraction: target)
-        scrubReleaseWorkItem?.cancel()
-        let work = DispatchWorkItem { [weak self] in self?.scrubbingFraction = nil }
-        scrubReleaseWorkItem = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45, execute: work)
+        commitScrubSeek(toFraction: base + delta)
+    }
+
+    /// Clear the scrub preview once playback has reached the committed target,
+    /// so the OLED hands back to the live time without a blink.
+    private func clearScrubPreviewIfSeekLanded(_ current: Double) {
+        guard let target = pendingSeekTargetSeconds else { return }
+        if abs(current - target) < 0.75 {
+            scrubbingFraction = nil
+            pendingSeekTargetSeconds = nil
+            scrubReleaseWorkItem?.cancel()
+        }
     }
     @Published private(set) var playbackErrorMessage: String?
     @Published var appAlert: AppAlert?
@@ -1808,6 +1831,7 @@ final class LibraryViewModel: ObservableObject {
             Task { @MainActor in
                 self?.playbackCurrentTime = current
                 self?.playbackDuration = duration
+                self?.clearScrubPreviewIfSeekLanded(current)
                 self?.applyPendingRecordSeekIfNeeded()
                 self?.checkScrobbleProgress(current: current, duration: duration)
             }
@@ -2030,6 +2054,60 @@ final class LibraryViewModel: ObservableObject {
         refreshCrateCounts()
         selectSource(currentSource)
         appAlert = .info(title: "Removed from Crate", message: "“\(album.title)” removed from \(crateName).")
+    }
+
+    // MARK: - Single-track removal (track context menu)
+
+    func removeTrackFromCrate(_ track: LoadedTrack, crateName: String) {
+        let path = track.track.fileURL.standardizedFileURL.path
+        var tracks = loadCrateTracks(name: crateName)
+        let before = tracks.count
+        tracks.removeAll { $0.track.fileURL.standardizedFileURL.path == path }
+        guard tracks.count != before else { return }
+        saveCrateTracks(tracks, name: crateName)
+        refreshCrateCounts()
+        selectSource(currentSource)
+        appAlert = .info(title: "Removed from Crate", message: "“\(track.track.title)” removed from \(crateName).")
+    }
+
+    /// Ask how to remove a single track from the whole library: unload (keep the
+    /// file) or move it to the Trash.
+    func promptRemoveTrackFromLibrary(_ track: LoadedTrack) {
+        let alert = NSAlert()
+        alert.messageText = "Remove “\(track.track.title)”?"
+        alert.informativeText = """
+        Unload removes it from the library and all crates but leaves the file on disk.
+        Move to Trash deletes the underlying audio file.
+        """
+        alert.addButton(withTitle: "Unload")          // .alertFirstButtonReturn
+        alert.addButton(withTitle: "Move to Trash")   // .alertSecondButtonReturn
+        alert.addButton(withTitle: "Cancel")
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:  unloadTrackFromLibrary(track)
+        case .alertSecondButtonReturn: trashTrackFile(track)
+        default: break
+        }
+    }
+
+    /// Drop a track from the in-memory library and every crate; keep the file.
+    func unloadTrackFromLibrary(_ track: LoadedTrack) {
+        purgeTracksFromLibraryState(paths: [track.track.fileURL.standardizedFileURL.path])
+        appAlert = .info(
+            title: "Removed",
+            message: "“\(track.track.title)” removed from the library. The file was left on disk."
+        )
+    }
+
+    /// Move a track's file to the Trash, then drop it from library + crates.
+    func trashTrackFile(_ track: LoadedTrack) {
+        let cleanup = LibraryCleanupService()
+        do {
+            try cleanup.deleteTracks([track], useTrash: true)
+            purgeTracksFromLibraryState(paths: [track.track.fileURL.standardizedFileURL.path])
+            appAlert = .info(title: "Moved to Trash", message: "“\(track.track.title)” moved to the Trash.")
+        } catch {
+            appAlert = .error(title: "Trash Failed", message: error.localizedDescription)
+        }
     }
 
     /// Ask how to remove an album from the whole library: unload (keep files),

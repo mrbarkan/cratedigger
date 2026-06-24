@@ -98,9 +98,8 @@ struct PositionDial: View {
                     .onChanged { g in model.scrubbingFraction = min(max(g.location.x / w, 0), 1) }
                     .onEnded { g in
                         let f = min(max(g.location.x / w, 0), 1)
-                        model.scrubbingFraction = nil
                         ClickPlayer.shared.play(.tick)
-                        model.seek(toFraction: f)
+                        model.commitScrubSeek(toFraction: f)
                     }
             )
         }
