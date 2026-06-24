@@ -9,11 +9,16 @@ struct InspectorPane: View {
     @State private var showingCleanup = false
     @State private var activeTab: InspectorTab = .info
 
-    // The "DISC" tab (spinning record / cassette) is disabled for now — the v7
-    // redesign drops it. SpinningRecordView is retained for possible later use.
     private enum InspectorTab: String, CaseIterable {
         case info = "INFO"
         case art = "ART"
+        case disc = "DISC"
+    }
+
+    /// The DISC tab (spinning record) only makes sense for local files — it's
+    /// disabled while browsing Radio / Streams.
+    private func isTabDisabled(_ tab: InspectorTab) -> Bool {
+        tab == .disc && model.isRadioMode
     }
 
     /// Width threshold above which the inspector switches from the default
@@ -58,6 +63,9 @@ struct InspectorPane: View {
                 }
                 .frame(maxWidth: .infinity)
                 .frame(height: 22)
+                .disabled(isTabDisabled(tab))
+                .opacity(isTabDisabled(tab) ? 0.4 : 1)
+                .help(isTabDisabled(tab) ? "Not available for Radio / Streams" : "")
             }
         }
         .padding(.horizontal, 14)
@@ -82,6 +90,10 @@ struct InspectorPane: View {
                 }
             }
             .animation(.easeInOut(duration: 0.2), value: activeTab)
+        }
+        // Entering Radio / Streams while on the DISC tab falls back to INFO.
+        .onChange(of: model.isRadioMode) { isRadio in
+            if isRadio && activeTab == .disc { activeTab = .info }
         }
     }
 
@@ -109,6 +121,15 @@ struct InspectorPane: View {
         case .art:
             ArtworkInspectorView(album: model.selectedAlbum)
                 .frame(height: height)
+
+        case .disc:
+            VStack {
+                Spacer()
+                SpinningRecordView(model: model)
+                    .padding(20)
+                Spacer()
+            }
+            .frame(height: height)
         }
     }
 
@@ -118,6 +139,7 @@ struct InspectorPane: View {
     // and stops the metadata from being squashed.
     @ViewBuilder
     private func wideLayout(width: CGFloat) -> some View {
+        let posterSize = min(max(width * 0.45, 280), 460)
         switch activeTab {
         case .info:
             if model.isRadioMode, let stream = model.selectedStream {
@@ -147,6 +169,15 @@ struct InspectorPane: View {
         case .art:
             ArtworkInspectorView(album: model.selectedAlbum)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+        case .disc:
+            HStack {
+                Spacer()
+                SpinningRecordView(model: model)
+                    .frame(width: posterSize, height: posterSize)
+                Spacer()
+            }
+            .padding(14)
         }
     }
 
