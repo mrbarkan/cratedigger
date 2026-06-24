@@ -32,6 +32,15 @@ You can also point the script at specific binaries:
 scripts/package-app.sh --ffmpeg /opt/homebrew/bin/ffmpeg --ffprobe /opt/homebrew/bin/ffprobe --output ./dist
 ```
 
+> **For distribution, do NOT bundle Homebrew's ffmpeg.** Homebrew builds are
+> *dynamically* linked to `/opt/homebrew/Cellar/...` dylibs that don't exist on
+> other Macs, so conversion / ffprobe fail anywhere without Homebrew ffmpeg
+> installed. Bundle **statically-linked** binaries instead — for Apple Silicon,
+> the static arm64 `ffmpeg`/`ffprobe` from [osxexperts.net](https://www.osxexperts.net)
+> are fully self-contained (verify the published SHA256). Homebrew is fine for
+> local dev only. (Intel/universal distribution additionally needs a universal
+> Swift build + a `lipo`-merged universal ffmpeg.)
+
 The packaged app is written to `dist/CrateDigger.app`. By default the bundle is ad-hoc signed (suitable for local development only).
 The packaging script also prefers a full Xcode developer directory when one is installed and uses a repo-local module cache so the build is less sensitive to machine-wide Swift cache state.
 
@@ -47,6 +56,7 @@ xcrun notarytool store-credentials cratedigger-notary \
 # Each release
 CRATEDIGGER_NOTARY_PROFILE=cratedigger-notary \
   scripts/package-app.sh \
+    --ffmpeg /path/to/static/ffmpeg --ffprobe /path/to/static/ffprobe \
     --sign "Developer ID Application: Your Name (TEAMID)" \
     --notarize \
     --dmg
@@ -54,7 +64,7 @@ CRATEDIGGER_NOTARY_PROFILE=cratedigger-notary \
 
 This produces `dist/CrateDigger-<version>.dmg`, signed and stapled, that opens cleanly on any Mac. The hardened runtime entitlements live in `Packaging/CrateDiggerApp/CrateDigger.entitlements` (library-validation disabled so the bundled `ffmpeg`/`ffprobe` binaries can run).
 
-For the full beta release gate, see [docs/BETA_RELEASE_CHECKLIST.md](/Users/mrbarkan/Development/CrateDigger/docs/BETA_RELEASE_CHECKLIST.md).
+For the full beta release gate, see [docs/BETA_RELEASE_CHECKLIST.md](docs/BETA_RELEASE_CHECKLIST.md).
 
 ## Manual Smoke Checklist
 

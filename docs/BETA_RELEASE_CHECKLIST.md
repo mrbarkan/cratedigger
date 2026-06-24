@@ -46,7 +46,15 @@ scripts/test.sh
 scripts/package-app.sh --ffmpeg /opt/homebrew/bin/ffmpeg --ffprobe /opt/homebrew/bin/ffprobe
 ```
 
+> ⚠️ **The Homebrew path above is for LOCAL dev only.** Homebrew's ffmpeg is
+> dynamically linked to Cellar dylibs that aren't bundled, so it fails on any Mac
+> without Homebrew ffmpeg — and the smoke test below (clean Mac) will catch it.
+> For the actual beta/distribution build, point `--ffmpeg`/`--ffprobe` at
+> **static** binaries (Apple Silicon: static arm64 from osxexperts.net, SHA256-verified).
+
 - Confirm the output exists at `dist/CrateDigger.app`.
+- Verify the bundled ffmpeg is self-contained: `otool -L dist/CrateDigger.app/Contents/Resources/ffmpeg`
+  should show only `/System/…` and `/usr/lib/…` — no `/opt/homebrew` or Cellar paths.
 - Launch the packaged app directly from the bundle, not only from Xcode.
 - Confirm the app icon, bundle name, and version/build metadata are correct before sending the beta.
 
