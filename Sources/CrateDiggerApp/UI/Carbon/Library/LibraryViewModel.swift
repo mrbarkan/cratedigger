@@ -139,6 +139,18 @@ final class LibraryViewModel: ObservableObject {
     @Published private(set) var playbackCurrentIndex: Int?
     @Published private(set) var playbackCurrentTime: Double = 0
     @Published private(set) var playbackDuration: Double = 0
+
+    /// While the user drags (or scroll-seeks) the position dial, the in-progress
+    /// fraction (0–1) so the OLED time can follow the scrub before the seek
+    /// commits. Nil when not scrubbing.
+    @Published var scrubbingFraction: Double?
+
+    /// Elapsed time to display: the scrub target while scrubbing, else the live
+    /// playback time.
+    var displayedCurrentTime: Double {
+        if let fraction = scrubbingFraction { return fraction * playbackDuration }
+        return playbackCurrentTime
+    }
     @Published private(set) var playbackErrorMessage: String?
     @Published var appAlert: AppAlert?
     @Published private(set) var albumsFetchingArtwork: Set<String> = []

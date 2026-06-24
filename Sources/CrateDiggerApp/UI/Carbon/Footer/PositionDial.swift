@@ -15,10 +15,9 @@ private struct FooterDragGuard: NSViewRepresentable {
 struct PositionDial: View {
     @Environment(\.carbon) private var theme
     @EnvironmentObject private var model: LibraryViewModel
-    @State private var scrub: Double?
 
     private var progress: Double {
-        if let scrub { return scrub }
+        if let fraction = model.scrubbingFraction { return fraction }
         guard model.playbackDuration > 0 else { return 0 }
         return min(max(model.playbackCurrentTime / model.playbackDuration, 0), 1)
     }
@@ -79,10 +78,10 @@ struct PositionDial: View {
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)
-                    .onChanged { g in scrub = min(max(g.location.x / w, 0), 1) }
+                    .onChanged { g in model.scrubbingFraction = min(max(g.location.x / w, 0), 1) }
                     .onEnded { g in
                         let f = min(max(g.location.x / w, 0), 1)
-                        scrub = nil
+                        model.scrubbingFraction = nil
                         ClickPlayer.shared.play(.tick)
                         model.seek(toFraction: f)
                     }

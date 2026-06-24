@@ -108,7 +108,7 @@ private struct NowPlayingView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
                 NPReadout(
-                    elapsed: timeString(model.playbackCurrentTime),
+                    elapsed: timeString(model.displayedCurrentTime),
                     total: timeString(model.playbackDuration),
                     volume: model.playbackVolume
                 )
@@ -423,7 +423,7 @@ private struct RadioNowPlayingView: View {
         } else {
             VStack(alignment: .trailing, spacing: 8) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(timeString(model.playbackCurrentTime))
+                    Text(timeString(model.displayedCurrentTime))
                         .font(CarbonFont.display(34))
                         .fontWeight(.thin)
                         .foregroundColor(oledForeground)
