@@ -15,6 +15,42 @@ public enum StreamProvider: String, Codable, Sendable {
     case youtube
 }
 
+/// A grouping of streams shown as a "source" row in the sidebar — a provider +
+/// liveness pairing ("YT Live", "YT Records"). The sidebar lists the populated
+/// categories rather than one row per channel, so new providers slot in here.
+public enum RadioCategory: String, Codable, Sendable, Hashable, CaseIterable {
+    case youtubeLive
+    case youtubeRecords
+
+    /// Display name shown in the sidebar.
+    public var title: String {
+        switch self {
+        case .youtubeLive:    return "YT Live"
+        case .youtubeRecords: return "YT Records"
+        }
+    }
+
+    /// SF Symbol for the sidebar row.
+    public var iconName: String {
+        switch self {
+        case .youtubeLive:    return "antenna.radiowaves.left.and.right"
+        case .youtubeRecords: return "waveform"
+        }
+    }
+
+    /// The category a stream falls into.
+    public static func of(_ stream: StreamSource) -> RadioCategory {
+        switch stream.provider {
+        case .youtube: return stream.isLive ? .youtubeLive : .youtubeRecords
+        }
+    }
+
+    /// Whether a stream belongs to this category.
+    public func contains(_ stream: StreamSource) -> Bool {
+        RadioCategory.of(stream) == self
+    }
+}
+
 /// A timestamped section of a video (a YouTube "chapter"). For long mixes these
 /// are effectively the tracklist — clicking one seeks playback to its start.
 public struct StreamChapter: Codable, Sendable, Hashable, Identifiable {

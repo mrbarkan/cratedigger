@@ -44,7 +44,7 @@ struct RadioListView: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Text((model.radioChannelFilter ?? "All Streams").uppercased())
+            Text((model.radioCategoryFilter?.title ?? "All Streams").uppercased())
                 .font(CarbonFont.mono(9, weight: .bold))
                 .tracking(1.8)
                 .foregroundStyle(theme.ink2)
@@ -224,6 +224,9 @@ private struct RadioRow: View {
 
     private var subtext: String {
         if stream.isLive { return "● \(stream.viewers ?? "0") watching" }
+        if let count = stream.chapters?.count, count > 0 {
+            return "\(count) tracks"
+        }
         return stream.kind.rawValue.capitalized
     }
 

@@ -1,3 +1,4 @@
+import CrateDiggerCore
 import SwiftUI
 
 struct SourcesSidebar: View {
@@ -140,17 +141,17 @@ struct SourcesSidebar: View {
                         title: "All Streams",
                         count: "\(model.streams.count)",
                         selected: isSelectedRadio(nil),
-                        action: { model.enterRadio(channel: nil) }
+                        action: { model.enterRadio(category: nil) }
                     )
 
-                    ForEach(model.streamChannels, id: \.self) { channel in
+                    ForEach(model.streamCategories, id: \.self) { category in
                         sidebarItem(
-                            icon: Image(systemName: model.liveStreamChannels.contains(channel)
-                                ? "antenna.radiowaves.left.and.right" : "waveform"),
-                            title: channel,
-                            count: model.liveStreamChannels.contains(channel) ? "LIVE" : "\(model.streams.filter { $0.channel == channel }.count)",
-                            selected: isSelectedRadio(channel),
-                            action: { model.enterRadio(channel: channel) }
+                            icon: Image(systemName: category.iconName),
+                            title: category.title,
+                            count: category == .youtubeLive
+                                ? "LIVE" : "\(model.streamCount(in: category))",
+                            selected: isSelectedRadio(category),
+                            action: { model.enterRadio(category: category) }
                         )
                     }
 
@@ -267,9 +268,9 @@ struct SourcesSidebar: View {
         return false
     }
 
-    private func isSelectedRadio(_ channel: String?) -> Bool {
+    private func isSelectedRadio(_ category: RadioCategory?) -> Bool {
         if case .radio(let current) = model.currentSource {
-            return current == channel
+            return current == category
         }
         return false
     }

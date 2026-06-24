@@ -7,10 +7,10 @@ import Foundation
 @MainActor
 extension LibraryViewModel {
 
-    /// Enter radio mode, optionally filtered to one channel, and select a stream
-    /// (the previously-playing one if still visible, else the first in the list).
-    func enterRadio(channel: String?) {
-        selectSource(.radio(channel: channel))
+    /// Enter radio mode, optionally filtered to one source category, and select a
+    /// stream (the previously-playing one if still visible, else the first listed).
+    func enterRadio(category: RadioCategory?) {
+        selectSource(.radio(category: category))
         let visible = filteredStreams
         if let current = selectedStreamID, visible.contains(where: { $0.id == current }) {
             selectStream(id: current)
@@ -52,10 +52,12 @@ extension LibraryViewModel {
             viewers: parsed.kind == .live ? "0" : nil
         )
         streams = streamStore.add(stream)
-        // If we're filtered to a different channel, widen to All so the new one shows.
-        let channel: String? = (radioChannelFilter == nil || radioChannelFilter == stream.channel)
-            ? radioChannelFilter : nil
-        enterRadio(channel: channel)
+        // If we're filtered to a category the new stream isn't in, widen to All
+        // so it shows (its live-ness may also change once metadata arrives).
+        let category: RadioCategory? = radioCategoryFilter.flatMap {
+            $0.contains(stream) ? $0 : nil
+        }
+        enterRadio(category: category)
         selectStream(id: stream.id)
         fetchMetadata(for: stream.id)
     }

@@ -55,8 +55,9 @@ enum LibrarySource: Hashable, Sendable {
     case remote
     case playlist(name: String)
     case cd(volumePath: String)
-    /// Radio / Streams. `nil` channel == "All Streams"; otherwise filtered to one channel.
-    case radio(channel: String?)
+    /// Radio / Streams. `nil` category == "All Streams"; otherwise filtered to
+    /// one source category ("YT Live" / "YT Records").
+    case radio(category: RadioCategory?)
 }
 
 /// Which backend plays YouTube streams. Resolved from `PreferencesStore.streamEngine`
@@ -226,8 +227,8 @@ final class LibraryViewModel: ObservableObject {
 
     // MARK: - Radio / Streams state
     @Published var streams: [StreamSource] = []
-    /// nil == All Streams; otherwise the channel currently shown.
-    @Published var radioChannelFilter: String?
+    /// nil == All Streams; otherwise the source category currently shown.
+    @Published var radioCategoryFilter: RadioCategory?
     @Published var selectedStreamID: String?
     /// Drives the Add-Stream sheet (shared by the sidebar "+" and the radio list "ADD URL").
     @Published var showingAddStreamSheet: Bool = false
@@ -243,22 +244,21 @@ final class LibraryViewModel: ObservableObject {
         return false
     }
     var filteredStreams: [StreamSource] {
-        guard let channel = radioChannelFilter else { return streams }
-        return streams.filter { $0.channel == channel }
+        guard let category = radioCategoryFilter else { return streams }
+        return streams.filter { category.contains($0) }
     }
     var selectedStream: StreamSource? {
         guard let id = selectedStreamID else { return nil }
         return streams.first { $0.id == id }
     }
-    /// Distinct channel names in first-seen order (sidebar grouping).
-    var streamChannels: [String] {
-        var seen = Set<String>()
-        var result: [String] = []
-        for s in streams where seen.insert(s.channel).inserted { result.append(s.channel) }
-        return result
+    /// Source categories that currently have at least one stream, in a stable
+    /// order (sidebar grouping). Empty categories are hidden.
+    var streamCategories: [RadioCategory] {
+        RadioCategory.allCases.filter { cat in streams.contains { cat.contains($0) } }
     }
-    var liveStreamChannels: Set<String> {
-        Set(streams.filter(\.isLive).map(\.channel))
+    /// Stream count for a category (sidebar trailing count).
+    func streamCount(in category: RadioCategory) -> Int {
+        streams.filter { category.contains($0) }.count
     }
     /// Chapters of the selected stream (a tracklist for long mixes); empty if none.
     var selectedStreamChapters: [StreamChapter] {
@@ -624,9 +624,9 @@ final class LibraryViewModel: ObservableObject {
             selectPlaylist(name: name)
         case .cd(let path):
             selectCD(volumePath: path)
-        case .radio(let channel):
+        case .radio(let category):
             // The browser renders RadioListView from `filteredStreams`, not `index`.
-            radioChannelFilter = channel
+            radioCategoryFilter = category
             index = .empty
         }
 
