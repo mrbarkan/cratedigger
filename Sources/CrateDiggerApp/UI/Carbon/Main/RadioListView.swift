@@ -1,3 +1,4 @@
+import AppKit
 import CrateDiggerCore
 import SwiftUI
 
@@ -18,6 +19,16 @@ struct RadioListView: View {
                         ForEach(model.filteredStreams) { stream in
                             RadioRow(stream: stream, selected: model.selectedStreamID == stream.id)
                                 .onTapGesture { model.selectStream(id: stream.id) }
+                                .contextMenu {
+                                    Button("Copy Link") {
+                                        NSPasteboard.general.clearContents()
+                                        NSPasteboard.general.setString(stream.url, forType: .string)
+                                    }
+                                    Divider()
+                                    Button("Remove Stream", role: .destructive) {
+                                        model.removeStream(id: stream.id)
+                                    }
+                                }
                         }
                     }
                     .padding(.horizontal, 6)
