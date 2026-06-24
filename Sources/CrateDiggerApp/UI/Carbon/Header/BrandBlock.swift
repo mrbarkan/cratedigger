@@ -24,7 +24,7 @@ struct BrandBlock: View {
                 statLabel(value: gigabytesString(bytes: model.index.totalSizeBytes), suffix: nil)
             }
             HStack(spacing: 6) {
-                LibButton(title: "LOAD FOLDER", systemImage: "folder") { model.openFolderViaPanel() }
+                LibButton(title: "DIG CRATE", systemImage: "folder") { model.openFolderViaPanel() }
                 LibButton(title: "RESCAN", systemImage: "arrow.clockwise") { model.refreshLibrary() }
             }
             .padding(.top, 1)

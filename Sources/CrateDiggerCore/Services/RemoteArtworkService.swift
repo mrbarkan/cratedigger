@@ -30,7 +30,7 @@ public actor RemoteArtworkService {
 
     public init(
         session: URLSession? = nil,
-        userAgent: String = "CrateDigger/1.0 (https://github.com/mrbarkan/cratedigger)",
+        userAgent: String = "CrateDigger/1.0 (https://smash.mrbarkan.com)",
         preferredDimension: Int = 1200
     ) {
         if let session {

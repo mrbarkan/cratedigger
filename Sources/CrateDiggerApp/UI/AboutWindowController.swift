@@ -51,8 +51,11 @@ private final class AboutViewController: NSViewController {
         text: "MACOS + APPKIT",
         fill: BrandArtworkPalette.cyan.withAlphaComponent(0.18)
     )
-    private let creditsLabel = NSTextField(labelWithString: "Built with Swift, AppKit, and FFmpeg tooling.")
-    private let footerLabel = NSTextField(labelWithString: "Icon, splash artwork, and preview assets live in the repo's Branding package.")
+    private let creditsLabel = NSTextField(labelWithString: "Created by MrBrkn Smash")
+    private let linkButton = NSButton()
+    private let footerLabel = NSTextField(labelWithString: "Built with Swift, AppKit, and FFmpeg tooling.")
+
+    private static let smashURL = URL(string: "https://smash.mrbarkan.com")!
 
     override func loadView() {
         view = NSView()
@@ -77,6 +80,20 @@ private final class AboutViewController: NSViewController {
 
         creditsLabel.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
         creditsLabel.textColor = BrandArtworkPalette.slate
+
+        linkButton.isBordered = false
+        linkButton.bezelStyle = .inline
+        linkButton.target = self
+        linkButton.action = #selector(openSmashLink)
+        linkButton.toolTip = AboutViewController.smashURL.absoluteString
+        linkButton.attributedTitle = NSAttributedString(
+            string: "smash.mrbarkan.com",
+            attributes: [
+                .foregroundColor: BrandArtworkPalette.cyan,
+                .font: NSFont.systemFont(ofSize: 12, weight: .bold),
+                .underlineStyle: NSUnderlineStyle.single.rawValue
+            ]
+        )
 
         footerLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
         footerLabel.textColor = BrandArtworkPalette.slateSoft
@@ -151,6 +168,7 @@ private final class AboutViewController: NSViewController {
             featureStack,
             footerPills,
             creditsLabel,
+            linkButton,
             footerLabel
         ])
         infoStack.orientation = .vertical
@@ -201,10 +219,17 @@ private final class AboutViewController: NSViewController {
         updateVersionPill()
     }
 
+    @objc private func openSmashLink() {
+        NSWorkspace.shared.open(AboutViewController.smashURL)
+    }
+
     private func updateVersionPill() {
         let bundle = Bundle.main
-        let version = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.0"
-        let build = bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1"
-        versionPill.text = "VERSION \(version) (\(build))"
+        // Prefer the packaged bundle's values (canonical for Finder/DMG); fall
+        // back to the compiled-in AppVersion so a debug run — which has no
+        // embedded Info.plist — still shows the real number, not "0.1.0".
+        let version = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? AppVersion.marketing
+        let build = bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? AppVersion.build
+        versionPill.text = AppVersion.displayString(version: version, build: build)
     }
 }

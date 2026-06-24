@@ -199,13 +199,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     }
 
     @objc private func openHelpPage(_ sender: Any?) {
-        if let url = URL(string: "https://github.com/anthropics/cratedigger") {
+        if let url = URL(string: "https://smash.mrbarkan.com") {
             NSWorkspace.shared.open(url)
         }
     }
 
     @objc private func sendFeedback(_ sender: Any?) {
-        if let url = URL(string: "mailto:feedback@cratedigger.app?subject=CrateDigger%20Feedback") {
+        if let url = URL(string: "mailto:opa@mrbarkan.com?subject=CrateDigger%20Feedback") {
             NSWorkspace.shared.open(url)
         }
     }
@@ -345,7 +345,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         let fileMenuItem = NSMenuItem()
         mainMenu.addItem(fileMenuItem)
         let fileMenu = NSMenu(title: "File")
-        fileMenu.addItem(makeItem(title: "Open Folder…", action: #selector(openFolder(_:)), key: "o"))
+        fileMenu.addItem(makeItem(title: "Dig Crate…", action: #selector(openFolder(_:)), key: "o"))
         let openRecentItem = NSMenuItem(title: "Open Recent", action: nil, keyEquivalent: "")
         let openRecentSubmenu = NSMenu(title: "Open Recent")
         openRecentItem.submenu = openRecentSubmenu

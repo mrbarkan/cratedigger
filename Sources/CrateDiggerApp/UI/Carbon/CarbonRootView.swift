@@ -21,26 +21,16 @@ struct CarbonRootView: View {
         }
         .environmentObject(model)
         .carbonThemed(mode: mode)
-        .alert(
+        .sheet(
             item: Binding(
                 get: { model.appAlert },
                 set: { model.appAlert = $0 }
             )
         ) { alert in
-            if let actionTitle = alert.actionTitle, let action = alert.action {
-                return Alert(
-                    title: Text(alert.title),
-                    message: Text(alert.message),
-                    primaryButton: .default(Text(actionTitle), action: action),
-                    secondaryButton: .cancel(Text("OK"))
-                )
-            } else {
-                return Alert(
-                    title: Text(alert.title),
-                    message: Text(alert.message),
-                    dismissButton: .default(Text("OK"))
-                )
-            }
+            // Re-apply the theme so the sheet's own environment carries the
+            // Carbon palette and appearance, independent of propagation.
+            CarbonAlertView(alert: alert)
+                .carbonThemed(mode: mode)
         }
     }
 }
