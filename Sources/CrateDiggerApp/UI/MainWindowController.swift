@@ -3,6 +3,9 @@ import CrateDiggerCore
 
 final class MainWindowController: NSWindowController, NSWindowDelegate {
     private let hostingController = CarbonHostingController()
+
+    /// The single shared view model — also used by the mini player.
+    var model: LibraryViewModel { hostingController.model }
     private let prefs: PreferencesStore = .shared
     private var didApplyRestoredFrame = false
 

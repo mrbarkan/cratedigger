@@ -5,6 +5,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private var mainWindowController: MainWindowController?
     private var aboutWindowController: AboutWindowController?
     private var preferencesWindowController: PreferencesWindowController?
+    private var miniPlayerWindowController: MiniPlayerWindowController?
     private let prefs: PreferencesStore = .shared
     private var openRecentMenu: NSMenu?
     private var recentFolderURLs: [URL] = []
@@ -206,6 +207,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     }
 
     // MARK: - App menu actions
+
+    // MARK: - Mini Player
+
+    /// Open the floating mini player and tuck the full app away (alternate modes).
+    @objc private func showMiniPlayer(_ sender: Any?) {
+        guard let model = mainWindowController?.model else { return }
+        if miniPlayerWindowController == nil {
+            miniPlayerWindowController = MiniPlayerWindowController(model: model, onExpand: { [weak self] in
+                self?.exitMiniPlayer()
+            })
+        }
+        miniPlayerWindowController?.showWindow(nil)
+        miniPlayerWindowController?.window?.orderFrontRegardless()
+        mainWindowController?.window?.orderOut(nil)
+    }
+
+    /// Return from the mini player to the full app (keeps the mini's position).
+    private func exitMiniPlayer() {
+        miniPlayerWindowController?.window?.orderOut(nil)
+        mainWindowController?.showWindow(nil)
+        mainWindowController?.window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
 
     @objc private func showAbout(_ sender: Any?) {
         if aboutWindowController == nil {
@@ -480,6 +504,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         let windowMenu = NSMenu(title: "Window")
         windowMenu.addItem(responderItem(title: "Minimize", action: #selector(NSWindow.miniaturize(_:)), key: "m"))
         windowMenu.addItem(responderItem(title: "Zoom", action: #selector(NSWindow.zoom(_:))))
+        windowMenu.addItem(.separator())
+        windowMenu.addItem(makeItem(title: "Mini Player", action: #selector(showMiniPlayer(_:))))
         windowMenu.addItem(.separator())
         windowMenu.addItem(makeItem(title: "Bring All to Front", action: #selector(NSApplication.arrangeInFront(_:)), target: NSApp))
         windowMenuItem.submenu = windowMenu

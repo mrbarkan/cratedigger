@@ -20,6 +20,9 @@ struct CDMaskShape: Shape {
 
 struct SpinningRecordView: View {
     @ObservedObject var model: LibraryViewModel
+    /// When set, overrides the auto-detected CD/Vinyl medium (the mini player's
+    /// user toggle). Nil keeps the manifest-driven auto-detection (inspector).
+    var forcedVinyl: Bool? = nil
     @StateObject private var animator = RecordAnimator()
     @State private var discImage: NSImage? = nil
     @State private var isVinyl: Bool = false
@@ -99,6 +102,13 @@ struct SpinningRecordView: View {
         }
         .onChange(of: model.selectedTrackID) { _ in
             updateDiscData()
+        }
+        .onChange(of: forcedVinyl) { newValue in
+            if let newValue {
+                isVinyl = newValue
+                animator.isVinyl = newValue
+                faceToken &+= 1
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("CrateDiggerArtworkImported"))) { _ in
             updateDiscData()
@@ -281,6 +291,7 @@ struct SpinningRecordView: View {
 
     private func updateDiscData() {
         defer {
+            if let forcedVinyl { isVinyl = forcedVinyl }
             animator.isVinyl = self.isVinyl
             // Invalidate the cached CD faces so they re-render for the new art.
             faceToken &+= 1
