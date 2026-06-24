@@ -157,9 +157,9 @@ final class LibraryViewModel: ObservableObject {
         didSet { prefs.savedScrubLockEnabled = scrubLockEnabled }
     }
 
-    /// Mini player art mode: vinyl (true) or CD (false). Persisted.
-    @Published var miniPlayerVinyl: Bool = false {
-        didSet { prefs.savedMiniPlayerVinyl = miniPlayerVinyl }
+    /// Mini player art treatment (CD / Vinyl / Album Cover). Persisted.
+    @Published var miniPlayerArtMode: MiniPlayerArtMode = .cd {
+        didSet { prefs.savedMiniPlayerArtMode = miniPlayerArtMode.rawValue }
     }
 
     private var scrubReleaseWorkItem: DispatchWorkItem?
@@ -472,7 +472,9 @@ final class LibraryViewModel: ObservableObject {
             browserLayout = layout
         }
         scrubLockEnabled = prefs.savedScrubLockEnabled
-        miniPlayerVinyl = prefs.savedMiniPlayerVinyl
+        if let raw = prefs.savedMiniPlayerArtMode, let mode = MiniPlayerArtMode(rawValue: raw) {
+            miniPlayerArtMode = mode
+        }
 
         if let persisted = prefs.savedLastConversionSelection(as: PersistedConversionSelection.self),
            let restored = persisted.materialize() {

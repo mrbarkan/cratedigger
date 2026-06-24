@@ -25,6 +25,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         windowController.restoreLastSession()
 
         installSpaceKeyMonitor()
+
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(showMiniPlayer(_:)),
+            name: NSNotification.Name("CrateDiggerShowMiniPlayer"), object: nil)
     }
 
     /// Beta builds stop working after `AppVersion.betaExpiry`: show a notice

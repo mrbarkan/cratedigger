@@ -18,16 +18,24 @@ final class MiniPlayerWindowController: NSWindowController {
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 
         super.init(window: window)
-        positionBottomRight()
+
+        // Size to the SwiftUI content (the window's auto-size can be stale at
+        // init — which made it land off-screen), then place it top-right.
+        let fitting = hosting.view.fittingSize
+        let size = (fitting.width > 100 && fitting.height > 100)
+            ? fitting : NSSize(width: 272, height: 464)
+        window.setContentSize(size)
+        positionTopRight()
     }
 
-    /// Default the player to the bottom-right of the active screen.
-    private func positionBottomRight() {
-        guard let window, let screen = NSScreen.main else { return }
+    /// Default the player to the top-right of the active screen.
+    func positionTopRight() {
+        guard let window else { return }
+        let screen = window.screen ?? NSScreen.main
+        guard let visible = screen?.visibleFrame else { return }
         let size = window.frame.size
-        let visible = screen.visibleFrame
         window.setFrameOrigin(NSPoint(x: visible.maxX - size.width - 24,
-                                      y: visible.minY + 24))
+                                      y: visible.maxY - size.height - 24))
     }
 
     @available(*, unavailable)

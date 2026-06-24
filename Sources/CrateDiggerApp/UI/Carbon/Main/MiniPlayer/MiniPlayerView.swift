@@ -1,9 +1,37 @@
 import CrateDiggerCore
 import SwiftUI
 
+/// Mini player art treatment, cycled by the top-bar art button.
+enum MiniPlayerArtMode: String, CaseIterable {
+    case cd, vinyl, cover
+
+    var next: MiniPlayerArtMode {
+        switch self {
+        case .cd:    return .vinyl
+        case .vinyl: return .cover
+        case .cover: return .cd
+        }
+    }
+
+    var iconName: String {
+        switch self {
+        case .cd:    return "opticaldisc"
+        case .vinyl: return "smallcircle.filled.circle"
+        case .cover: return "photo"
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .cd:    return "CD"
+        case .vinyl: return "Vinyl"
+        case .cover: return "Album Cover"
+        }
+    }
+}
+
 /// The floating mini player — a compact Carbon glass strip that mirrors the full
-/// app's playback (shares the same `LibraryViewModel`). Lifted from the v7
-/// "CrateDigger Mini Player" design. Always dark glass, regardless of app theme.
+/// app's playback (shares the same `LibraryViewModel`). Always dark glass.
 struct MiniPlayerView: View {
     @ObservedObject var model: LibraryViewModel
     let onExpand: () -> Void
@@ -19,15 +47,15 @@ private struct MiniPlayerBody: View {
     let onExpand: () -> Void
     @Environment(\.carbon) private var theme
 
-    /// Warm phosphor white for the track title (design `--oled-fg`).
+    /// Warm phosphor white for the OLED text (design `--oled-fg`).
     private let oledFG = Color(red: 245 / 255, green: 241 / 255, blue: 230 / 255)
 
     var body: some View {
         VStack(spacing: 0) {
             topBar
             artFrame
-            titleBlock
-            seekBlock
+            oledDisplay.padding(.top, 13)
+            seekRail.padding(.top, 11).padding(.horizontal, 2)
             transport
         }
         .padding(13)
@@ -61,12 +89,8 @@ private struct MiniPlayerBody: View {
                     .foregroundStyle(theme.ink3)
             }
             Spacer(minLength: 0)
-            iconButton(system: "opticaldisc", active: model.miniPlayerVinyl, disabled: model.isRadioMode,
-                       help: model.miniPlayerVinyl ? "Vinyl — switch to CD" : "CD — switch to vinyl") {
-                model.miniPlayerVinyl.toggle()
-            }
-            iconButton(system: "arrow.up.left.and.arrow.down.right", active: false, disabled: false,
-                       help: "Open the full app") {
+            artModeButton
+            iconButton(system: "arrow.up.left.and.arrow.down.right", help: "Open the full app") {
                 onExpand()
             }
         }
@@ -75,20 +99,32 @@ private struct MiniPlayerBody: View {
         .padding(.horizontal, 2)
     }
 
-    private func iconButton(system: String, active: Bool, disabled: Bool, help: String,
-                            action: @escaping () -> Void) -> some View {
+    private var artModeButton: some View {
+        Button(action: {
+            ClickPlayer.shared.play(.key)
+            model.miniPlayerArtMode = model.miniPlayerArtMode.next
+        }) {
+            Image(systemName: model.miniPlayerArtMode.iconName)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(model.isRadioMode ? theme.ink4.opacity(0.5) : theme.ink3)
+                .frame(width: 24, height: 24)
+                .background(ChromeChassis(theme: theme, cornerRadius: 7))
+        }
+        .buttonStyle(.plain)
+        .disabled(model.isRadioMode)
+        .help("Art: \(model.miniPlayerArtMode.label) — tap to cycle")
+        .padding(.leading, 6)
+    }
+
+    private func iconButton(system: String, help: String, action: @escaping () -> Void) -> some View {
         Button(action: { ClickPlayer.shared.play(.key); action() }) {
             Image(systemName: system)
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(disabled ? theme.ink4.opacity(0.5) : (active ? theme.orange : theme.ink3))
+                .foregroundStyle(theme.ink3)
                 .frame(width: 24, height: 24)
                 .background(ChromeChassis(theme: theme, cornerRadius: 7))
-                .overlay(active
-                    ? RoundedRectangle(cornerRadius: 7).strokeBorder(theme.orange.opacity(0.5), lineWidth: 0.7)
-                    : nil)
         }
         .buttonStyle(.plain)
-        .disabled(disabled)
         .help(help)
         .padding(.leading, 6)
     }
@@ -99,8 +135,7 @@ private struct MiniPlayerBody: View {
         let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
         return ZStack {
             shape.fill(theme.wellDeep)
-            SpinningRecordView(model: model, forcedVinyl: model.isRadioMode ? nil : model.miniPlayerVinyl)
-                .padding(10)
+            artContent
             shape
                 .fill(LinearGradient(colors: [Color.white.opacity(0.16), .clear],
                                      startPoint: .topLeading, endPoint: .center))
@@ -112,53 +147,86 @@ private struct MiniPlayerBody: View {
         .shadow(color: .black.opacity(0.5), radius: 12, y: 6)
     }
 
-    // MARK: - Title
-
-    private var titleBlock: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(trackTitle)
-                .font(CarbonFont.sans(15, weight: .bold))
-                .foregroundStyle(oledFG)
-                .lineLimit(1)
-            Text(subtitle)
-                .font(CarbonFont.mono(9.5, weight: .semibold)).tracking(0.6)
-                .foregroundStyle(theme.ink3)
-                .lineLimit(1)
+    @ViewBuilder
+    private var artContent: some View {
+        switch model.miniPlayerArtMode {
+        case .cover:
+            if let image = coverImage {
+                Image(nsImage: image).resizable().aspectRatio(contentMode: .fill)
+            } else {
+                LinearGradient(colors: [Color(hex: 0xD97757), Color(hex: 0xC14A2E)],
+                               startPoint: .topLeading, endPoint: .bottomTrailing)
+            }
+        case .cd:
+            SpinningRecordView(model: model, forcedVinyl: false).padding(10)
+        case .vinyl:
+            SpinningRecordView(model: model, forcedVinyl: true).padding(10)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.top, 13)
-        .padding(.horizontal, 2)
+    }
+
+    private var coverImage: NSImage? {
+        guard let hash = model.nowPlayingTrack?.track.artworkHash else { return nil }
+        return model.artworkService.generateThumbnail(artworkHash: hash, size: CGSize(width: 480, height: 480))
+    }
+
+    // MARK: - OLED display (title · band · time)
+
+    private var oledDisplay: some View {
+        let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
+        return shape
+            .fill(theme.oledSurface)
+            .overlay(scanlines.clipShape(shape))
+            .overlay(shape.strokeBorder(theme.oledStrokeInner, lineWidth: 1.5))
+            .overlay(
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(trackTitle)
+                        .font(CarbonFont.sans(15, weight: .bold))
+                        .foregroundStyle(oledFG)
+                        .lineLimit(1)
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(band)
+                            .font(CarbonFont.mono(9, weight: .semibold)).tracking(0.6)
+                            .foregroundStyle(oledFG.opacity(0.52))
+                            .lineLimit(1)
+                        Spacer(minLength: 6)
+                        Text("\(timeString(model.displayedCurrentTime)) / \(timeString(model.playbackDuration))")
+                            .font(CarbonFont.mono(9, weight: .semibold))
+                            .foregroundStyle(theme.orange)
+                            .fixedSize()
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
+            )
+            .frame(height: 58)
+            .compositingGroup()
+    }
+
+    private var scanlines: some View {
+        Canvas { context, size in
+            var y: CGFloat = 0
+            while y < size.height {
+                context.fill(Path(CGRect(x: 0, y: y, width: size.width, height: 1)),
+                             with: .color(Color.white.opacity(0.02)))
+                y += 3
+            }
+        }
+        .allowsHitTesting(false)
     }
 
     private var trackTitle: String {
         model.nowPlayingTrack?.track.title ?? "Nothing Playing"
     }
 
-    private var subtitle: String {
+    private var band: String {
         guard let t = model.nowPlayingTrack?.track else { return "—" }
         var parts: [String] = []
         if !t.artist.isEmpty { parts.append(t.artist) }
         if !t.album.isEmpty { parts.append(t.album) }
-        if let year = t.year { parts.append(String(year)) }
         return parts.isEmpty ? "—" : parts.joined(separator: " · ").uppercased()
     }
 
     // MARK: - Seek
-
-    private var seekBlock: some View {
-        VStack(spacing: 7) {
-            seekRail
-            HStack {
-                Text(timeString(model.displayedCurrentTime))
-                    .font(CarbonFont.mono(9.5, weight: .semibold)).foregroundStyle(theme.ink3)
-                Spacer()
-                Text(timeString(model.playbackDuration))
-                    .font(CarbonFont.mono(9.5, weight: .semibold)).foregroundStyle(theme.ink4)
-            }
-        }
-        .padding(.top, 13)
-        .padding(.horizontal, 2)
-    }
 
     private var seekRail: some View {
         GeometryReader { proxy in

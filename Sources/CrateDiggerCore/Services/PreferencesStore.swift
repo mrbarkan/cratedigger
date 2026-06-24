@@ -47,7 +47,7 @@ public final class PreferencesStore {
         static let showSortControls = "cratedigger.browser.showSortControls"
         static let browserLayout = "cratedigger.browser.layout"
         static let scrubLock = "cratedigger.transport.scrubLock"
-        static let miniPlayerVinyl = "cratedigger.miniplayer.vinyl"
+        static let miniPlayerArtMode = "cratedigger.miniplayer.artMode"
         static let streamSources = "cratedigger.radio.streamSources"
         static let streamEngine = "cratedigger.radio.engine"
         static let customYtDlpPath = "cratedigger.tools.ytdlpPath"
@@ -279,9 +279,12 @@ public final class PreferencesStore {
         set { defaults.set(newValue, forKey: Key.scrubLock) }
     }
 
-    public var savedMiniPlayerVinyl: Bool {
-        get { defaults.bool(forKey: Key.miniPlayerVinyl) }
-        set { defaults.set(newValue, forKey: Key.miniPlayerVinyl) }
+    public var savedMiniPlayerArtMode: String? {
+        get { defaults.string(forKey: Key.miniPlayerArtMode) }
+        set {
+            if let value = newValue { defaults.set(value, forKey: Key.miniPlayerArtMode) }
+            else { defaults.removeObject(forKey: Key.miniPlayerArtMode) }
+        }
     }
 
     public var savedTrackSortAscending: Bool {
