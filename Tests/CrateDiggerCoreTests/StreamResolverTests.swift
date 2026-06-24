@@ -42,17 +42,24 @@ final class StreamResolverTests: XCTestCase {
         CommandOutput(terminationStatus: 0, standardOutput: stdout, standardError: "")
     }
 
-    func testLiveArgs() {
+    // AVPlayer 403s on YouTube's DASH `https` audio URLs (ANDROID_VR client),
+    // so the resolver must prefer HLS (m3u8) formats, which AVPlayer plays.
+    func testFormatPrefersHLS() {
         let r = StreamResolver(ytdlpURL: ytdlp, runner: FakeRunner(ok("")))
-        XCTAssertEqual(r.arguments(for: stream(.live)),
-                       ["-g", "-f", "bestaudio/best", "--no-playlist", "https://youtu.be/x"])
+        for kind in [StreamKind.live, .video, .mix, .playlist] {
+            let args = r.arguments(for: stream(kind))
+            let format = args[args.firstIndex(of: "-f")! + 1]
+            XCTAssertTrue(format.hasPrefix("bestaudio[protocol^=m3u8]"),
+                          "format should prefer HLS for \(kind): \(format)")
+            XCTAssertTrue(format.contains("ba[ext=m4a]"),
+                          "format should keep an m4a fallback for \(kind)")
+        }
     }
 
-    func testVodArgsPreferM4A() {
+    func testNonPlaylistUsesNoPlaylist() {
         let r = StreamResolver(ytdlpURL: ytdlp, runner: FakeRunner(ok("")))
-        let args = r.arguments(for: stream(.video))
-        XCTAssertTrue(args.contains("ba[ext=m4a]/bestaudio[acodec^=mp4a]/best"))
-        XCTAssertTrue(args.contains("--no-playlist"))
+        XCTAssertTrue(r.arguments(for: stream(.video)).contains("--no-playlist"))
+        XCTAssertTrue(r.arguments(for: stream(.live)).contains("--no-playlist"))
     }
 
     func testPlaylistArgsTakeFirstItem() {

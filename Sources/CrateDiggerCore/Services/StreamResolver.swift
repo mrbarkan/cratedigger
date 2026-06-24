@@ -38,17 +38,28 @@ public struct StreamResolver: @unchecked Sendable {
         self.runner = runner
     }
 
-    /// The yt-dlp argument vector for this stream. AVPlayer can't decode WebM/Opus,
-    /// so VOD prefers m4a/AAC; live takes best audio (YouTube live is HLS/AAC).
+    /// The yt-dlp argument vector for this stream.
+    ///
+    /// AVPlayer can't play YouTube's default DASH `https` audio: those URLs are
+    /// extracted via the `ANDROID_VR` client and return **HTTP 403** to AVPlayer's
+    /// streaming requests (curl with a plain range request happens to pass, but
+    /// AVFoundation's request pattern doesn't). HLS (`m3u8`) formats play fine.
+    /// So we prefer, in order:
+    ///   1. audio-only HLS (best, but needs a PO token — usually absent),
+    ///   2. a small (≤480p) muxed HLS rendition — we only use its audio,
+    ///   3. any muxed HLS,
+    ///   4. m4a/AAC DASH as a last resort (may 403, but better than nothing),
+    ///   5. best.
+    /// This works for VOD, live (already HLS), and playlists.
+    public static let formatSelector =
+        "bestaudio[protocol^=m3u8]/best[protocol^=m3u8][height<=480]/best[protocol^=m3u8]/ba[ext=m4a]/bestaudio[acodec^=mp4a]/best"
+
     public func arguments(for stream: StreamSource) -> [String] {
-        let vodFormat = "ba[ext=m4a]/bestaudio[acodec^=mp4a]/best"
         switch stream.kind {
-        case .live:
-            return ["-g", "-f", "bestaudio/best", "--no-playlist", stream.url]
-        case .video, .mix:
-            return ["-g", "-f", vodFormat, "--no-playlist", stream.url]
+        case .live, .video, .mix:
+            return ["-g", "-f", Self.formatSelector, "--no-playlist", stream.url]
         case .playlist:
-            return ["-g", "-f", vodFormat, "--yes-playlist", "--playlist-items", "1", stream.url]
+            return ["-g", "-f", Self.formatSelector, "--yes-playlist", "--playlist-items", "1", stream.url]
         }
     }
 
