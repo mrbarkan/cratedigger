@@ -23,22 +23,26 @@ struct ArtworkInspectorView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                Text("MEDIA FORMAT")
-                    .font(CarbonFont.mono(9, weight: .bold))
-                    .foregroundColor(theme.ink3)
+            HStack(spacing: 8) {
+                // Self-contained media-format selector. Keeping the "FORMAT"
+                // hint inside the pill means the label can never be clipped or
+                // stranded from its value when the inspector is narrow.
                 Menu {
                     Button("Auto") { manifest.mediaFormat = nil }
                     Button("CD") { manifest.mediaFormat = .cd }
                     Button("Vinyl") { manifest.mediaFormat = .vinyl }
                 } label: {
-                    HStack(spacing: 5) {
+                    HStack(spacing: 6) {
+                        Text("FORMAT")
+                            .font(CarbonFont.mono(9, weight: .bold))
+                            .foregroundColor(theme.ink3)
                         Text(mediaFormatLabel)
                             .font(CarbonFont.mono(9, weight: .bold))
+                            .foregroundColor(theme.ink2)
                         Image(systemName: "chevron.up.chevron.down")
                             .font(.system(size: 7, weight: .bold))
+                            .foregroundColor(theme.ink3)
                     }
-                    .foregroundColor(theme.ink2)
                     .padding(.horizontal, 10)
                     .frame(height: 22)
                     .background(ChromeChassis(theme: theme, cornerRadius: 6))
@@ -46,15 +50,16 @@ struct ArtworkInspectorView: View {
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
                 .fixedSize()
-                
-                Spacer()
-                
+
+                // Action buttons fill the remaining width evenly, matching the
+                // "Library Tools" row pattern in InspectorPane.
                 if canUploadArtwork {
                     KeyButton(style: .normal, action: uploadArtworkFromDisk) {
                         Text("ADD FILE…")
                             .font(CarbonFont.mono(9, weight: .bold))
                     }
-                    .frame(width: 78, height: 22)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 22)
                 }
 
                 if album != nil {
@@ -62,18 +67,21 @@ struct ArtworkInspectorView: View {
                         Text("SEARCH ONLINE")
                             .font(CarbonFont.mono(9, weight: .bold))
                     }
-                    .frame(width: 104, height: 22)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 22)
                 }
-                
+
                 if isSaving {
                     ProgressView()
                         .controlSize(.small)
+                        .frame(maxWidth: .infinity)
                 } else {
                     KeyButton(style: .selected, action: saveChanges) {
                         Text("SAVE")
                             .font(CarbonFont.mono(9, weight: .bold))
                     }
-                    .frame(width: 56, height: 22)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 22)
                 }
             }
             .padding(.horizontal, 14)
