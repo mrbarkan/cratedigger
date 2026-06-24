@@ -55,6 +55,15 @@ enum LibrarySource: Hashable, Sendable {
     case remote
     case playlist(name: String)
     case cd(volumePath: String)
+    /// Radio / Streams. `nil` channel == "All Streams"; otherwise filtered to one channel.
+    case radio(channel: String?)
+}
+
+/// Which backend plays YouTube streams. Resolved from `PreferencesStore.streamEngine`
+/// plus yt-dlp availability (see `LibraryViewModel.resolveActiveEngineKind`).
+enum RadioEngineKind: String {
+    case webview
+    case native
 }
 
 @MainActor
@@ -212,6 +221,43 @@ final class LibraryViewModel: ObservableObject {
     @Published var deadTracks: [LoadedTrack] = []
     @Published var duplicateGroups: [DuplicateGroup] = []
 
+    // MARK: - Radio / Streams state
+    @Published var streams: [StreamSource] = []
+    /// nil == All Streams; otherwise the channel currently shown.
+    @Published var radioChannelFilter: String?
+    @Published var selectedStreamID: String?
+    /// Uptime ticker for a live stream (seconds); formatted HH:MM:SS in the OLED.
+    @Published var radioUptimeSeconds: Int = 0
+    /// Short label for the active stream engine, shown in the OLED ("AUTO"/"NATIVE"/"WEB").
+    @Published var radioEngineLabel: String = "AUTO"
+    /// Active engine for the current stream; drives whether the OLED shows real codec/buffer.
+    @Published private(set) var radioEngineKind: RadioEngineKind = .webview
+
+    var isRadioMode: Bool {
+        if case .radio = currentSource { return true }
+        return false
+    }
+    var filteredStreams: [StreamSource] {
+        guard let channel = radioChannelFilter else { return streams }
+        return streams.filter { $0.channel == channel }
+    }
+    var selectedStream: StreamSource? {
+        guard let id = selectedStreamID else { return nil }
+        return streams.first { $0.id == id }
+    }
+    /// Distinct channel names in first-seen order (sidebar grouping).
+    var streamChannels: [String] {
+        var seen = Set<String>()
+        var result: [String] = []
+        for s in streams where seen.insert(s.channel).inserted { result.append(s.channel) }
+        return result
+    }
+    var liveStreamChannels: Set<String> {
+        Set(streams.filter(\.isLive).map(\.channel))
+    }
+    let streamStore = StreamStore()
+    var radioUptimeTimer: Timer?
+
     // Cache indexes for fast switching
     private var localIndex: LibraryIndex = .empty
     private var remoteIndex: LibraryIndex = .empty
@@ -342,6 +388,7 @@ final class LibraryViewModel: ObservableObject {
         setupLibraryOperationsObservers()
         
         refreshAvailableCrates()
+        streams = streamStore.all()
         selectSource(.localAll)
     }
 
@@ -553,8 +600,18 @@ final class LibraryViewModel: ObservableObject {
             selectPlaylist(name: name)
         case .cd(let path):
             selectCD(volumePath: path)
+        case .radio(let channel):
+            // The browser renders RadioListView from `filteredStreams`, not `index`.
+            radioChannelFilter = channel
+            index = .empty
         }
-        
+
+        if case .radio = source {
+            // Radio selection state is driven by selectedStreamID, not the library index.
+            refreshCrateCounts()
+            return
+        }
+
         selectedArtistID = index.artists.first?.id
         selectedAlbumID = index.artists.first?.albums.first?.id
         selectedTrackID = index.artists.first?.albums.first?.tracks.first?.track.id
