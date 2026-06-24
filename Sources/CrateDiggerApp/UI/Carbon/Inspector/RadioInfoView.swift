@@ -17,8 +17,77 @@ struct RadioInfoView: View {
                 header
                 specs
                 chips
+                if !model.selectedStreamChapters.isEmpty {
+                    tracklist
+                }
             }
         }
+    }
+
+    private var tracklist: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("TRACKS")
+                    .font(CarbonFont.mono(9, weight: .bold))
+                    .tracking(1.8)
+                    .foregroundStyle(theme.ink3)
+                Spacer()
+                Text("\(model.selectedStreamChapters.count)")
+                    .font(CarbonFont.mono(9))
+                    .foregroundStyle(theme.ink4)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            .padding(.bottom, 6)
+
+            ForEach(Array(model.selectedStreamChapters.enumerated()), id: \.element.id) { index, chapter in
+                chapterRow(index: index, chapter: chapter)
+            }
+        }
+        .padding(.bottom, 10)
+        .overlay(
+            Rectangle()
+                .fill(theme.isDark ? Color.white.opacity(0.06) : Color.black.opacity(0.08))
+                .frame(height: 1),
+            alignment: .top
+        )
+    }
+
+    private func chapterRow(index: Int, chapter: StreamChapter) -> some View {
+        let isCurrent = model.currentChapterIndex == index
+        return Button(action: { model.seekToChapter(chapter) }) {
+            HStack(spacing: 10) {
+                Group {
+                    if isCurrent {
+                        Image(systemName: "play.fill").font(.system(size: 8))
+                    } else {
+                        Text(String(format: "%02d", index + 1)).font(CarbonFont.mono(9, weight: .semibold))
+                    }
+                }
+                .foregroundStyle(isCurrent ? theme.cyan : theme.ink3)
+                .frame(width: 18, alignment: .leading)
+
+                Text(chapter.title)
+                    .font(CarbonFont.sans(12, weight: isCurrent ? .semibold : .regular))
+                    .foregroundStyle(isCurrent ? theme.ink : theme.ink2)
+                    .lineLimit(1)
+                Spacer(minLength: 6)
+                Text(Self.timeString(chapter.startSeconds))
+                    .font(CarbonFont.mono(9))
+                    .foregroundStyle(theme.ink3)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 6)
+            .background(isCurrent ? theme.cyan.opacity(0.10) : Color.clear)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private static func timeString(_ seconds: Double) -> String {
+        let t = Int(seconds.rounded())
+        let h = t / 3600, m = (t % 3600) / 60, s = t % 60
+        return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%d:%02d", m, s)
     }
 
     private var header: some View {

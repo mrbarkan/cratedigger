@@ -109,6 +109,7 @@ extension LibraryViewModel {
         if let thumb = meta.thumbnailURL { s.thumbnailURL = thumb }
         if let dur = meta.durationSeconds { s.durationSeconds = dur }
         if let viewers = meta.viewers { s.viewers = viewers }
+        if let chapters = meta.chapters { s.chapters = chapters }
         if meta.isLive == true { s.kind = .live }
         else if meta.isLive == false && s.kind == .live { s.kind = .video }
         streams[idx] = s
@@ -116,6 +117,16 @@ extension LibraryViewModel {
 
         // Keep live uptime ticker in sync if this is the playing stream.
         if selectedStreamID == id { startUptimeTickerIfNeeded() }
+    }
+
+    /// Seek the playing stream to a chapter's start (clicking a track in the list).
+    func seekToChapter(_ chapter: StreamChapter) {
+        guard isRadioMode, selectedStream != nil else { return }
+        // Start it if nothing is playing yet.
+        if radioEngine == nil { playSelectedStream() }
+        radioEngine?.seek(toSeconds: chapter.startSeconds)
+        // Optimistic position so the tracklist + OLED highlight update immediately.
+        radioPublish(currentTime: chapter.startSeconds, duration: playbackDuration)
     }
 
     func removeStream(id: String) {

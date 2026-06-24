@@ -9,15 +9,18 @@ public struct StreamMetadata: Sendable, Equatable {
     public var durationSeconds: Double?
     public var isLive: Bool?
     public var viewers: String?   // formatted, e.g. "13.6K"
+    public var chapters: [StreamChapter]?
 
     public init(title: String? = nil, channel: String? = nil, thumbnailURL: String? = nil,
-                durationSeconds: Double? = nil, isLive: Bool? = nil, viewers: String? = nil) {
+                durationSeconds: Double? = nil, isLive: Bool? = nil, viewers: String? = nil,
+                chapters: [StreamChapter]? = nil) {
         self.title = title
         self.channel = channel
         self.thumbnailURL = thumbnailURL
         self.durationSeconds = durationSeconds
         self.isLive = isLive
         self.viewers = viewers
+        self.chapters = chapters
     }
 }
 
@@ -31,9 +34,10 @@ public struct StreamMetadata: Sendable, Equatable {
 ///   2. YouTube oEmbed — title / channel / thumbnail only, but zero-dependency.
 public enum StreamMetadataService {
 
-    // Tab-separated, positional (titles can contain almost anything but tabs).
+    // Tab-separated, positional (titles can contain almost anything but tabs;
+    // %(chapters)j is compact single-line JSON, also tab-free).
     public static let ytdlpPrintTemplate =
-        "%(title)s\t%(uploader)s\t%(thumbnail)s\t%(duration)s\t%(is_live)s\t%(view_count)s\t%(concurrent_view_count)s"
+        "%(title)s\t%(uploader)s\t%(thumbnail)s\t%(duration)s\t%(is_live)s\t%(view_count)s\t%(concurrent_view_count)s\t%(chapters)j"
 
     public static func ytdlpArguments(url: String) -> [String] {
         ["--no-playlist", "--print", ytdlpPrintTemplate, url]
@@ -60,8 +64,25 @@ public enum StreamMetadataService {
             thumbnailURL: field(2),
             durationSeconds: field(3).flatMap(Double.init),
             isLive: isLive,
-            viewers: viewers
+            viewers: viewers,
+            chapters: field(7).flatMap(parseChapters)
         )
+    }
+
+    /// Parse yt-dlp's `%(chapters)j` JSON array into ordered chapters. Returns
+    /// nil for "NA"/"null"/empty/non-array so streams without chapters stay nil.
+    public static func parseChapters(_ json: String) -> [StreamChapter]? {
+        let trimmed = json.trimmingCharacters(in: .whitespaces)
+        guard trimmed != "NA", trimmed != "null", !trimmed.isEmpty,
+              let data = trimmed.data(using: .utf8),
+              let array = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
+              !array.isEmpty else { return nil }
+        let chapters = array.compactMap { obj -> StreamChapter? in
+            guard let start = obj["start_time"] as? Double else { return nil }
+            let title = (obj["title"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "Chapter"
+            return StreamChapter(startSeconds: start, endSeconds: obj["end_time"] as? Double, title: title)
+        }
+        return chapters.isEmpty ? nil : chapters.sorted { $0.startSeconds < $1.startSeconds }
     }
 
     public static func parseOEmbed(_ data: Data) -> StreamMetadata? {

@@ -304,7 +304,7 @@ private struct RadioNowPlayingView: View {
 
             HStack(alignment: .bottom, spacing: 20) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text((stream?.title ?? "—").uppercased())
+                    Text(headline.uppercased())
                         .font(CarbonFont.display(44))
                         .fontWeight(.thin)
                         .tracking(-0.4)
@@ -349,8 +349,19 @@ private struct RadioNowPlayingView: View {
         .padding(.vertical, CarbonLayout.oledPaddingV)
     }
 
+    /// For a chaptered mix, the headline is the current track (chapter); otherwise
+    /// the stream title.
+    private var headline: String {
+        if let chapter = model.currentChapter { return chapter.title }
+        return stream?.title ?? "—"
+    }
+
     private var subtitle: String {
         guard let stream else { return "Tune in" }
+        // When the headline is a chapter, the sub credits the source mix + channel.
+        if model.currentChapter != nil {
+            return "\(stream.title) · \(stream.channel)"
+        }
         let suffix = isLive ? "YouTube Live Stream" : stream.kind.rawValue.capitalized
         return "\(stream.channel) · \(suffix)"
     }

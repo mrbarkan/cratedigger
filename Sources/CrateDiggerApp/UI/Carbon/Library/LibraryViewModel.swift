@@ -260,6 +260,18 @@ final class LibraryViewModel: ObservableObject {
     var liveStreamChannels: Set<String> {
         Set(streams.filter(\.isLive).map(\.channel))
     }
+    /// Chapters of the selected stream (a tracklist for long mixes); empty if none.
+    var selectedStreamChapters: [StreamChapter] {
+        selectedStream?.chapters ?? []
+    }
+    /// Index of the chapter currently playing, based on playback position.
+    var currentChapterIndex: Int? {
+        selectedStream?.chapterIndex(at: playbackCurrentTime)
+    }
+    var currentChapter: StreamChapter? {
+        guard let i = currentChapterIndex, selectedStreamChapters.indices.contains(i) else { return nil }
+        return selectedStreamChapters[i]
+    }
     let streamStore = StreamStore()
     var radioUptimeTimer: Timer?
     /// Active playback engine while a stream is playing (WebView or native). nil when idle.

@@ -39,6 +39,31 @@ final class StreamMetadataServiceTests: XCTestCase {
         XCTAssertEqual(m.thumbnailURL, "https://i.ytimg.com/vi/x/hq.jpg")
     }
 
+    func testParseChapters() {
+        let json = """
+        [{"start_time": 0.0, "title": "intro", "end_time": 22.0},
+         {"start_time": 22.0, "title": "The Girl from Ipanema", "end_time": 370.0}]
+        """
+        let chapters = StreamMetadataService.parseChapters(json)!
+        XCTAssertEqual(chapters.count, 2)
+        XCTAssertEqual(chapters[1].title, "The Girl from Ipanema")
+        XCTAssertEqual(chapters[1].startSeconds, 22.0)
+        XCTAssertEqual(chapters[1].endSeconds, 370.0)
+    }
+
+    func testParseChaptersNoneYieldsNil() {
+        XCTAssertNil(StreamMetadataService.parseChapters("NA"))
+        XCTAssertNil(StreamMetadataService.parseChapters("null"))
+        XCTAssertNil(StreamMetadataService.parseChapters("[]"))
+    }
+
+    func testParseYtDlpIncludesChapters() {
+        let line = "mix\tchan\tthumb\t3846\tFalse\t100\tNA\t[{\"start_time\": 0.0, \"title\": \"a\"}]"
+        let m = StreamMetadataService.parseYtDlp(line)
+        XCTAssertEqual(m.chapters?.count, 1)
+        XCTAssertEqual(m.chapters?.first?.title, "a")
+    }
+
     func testFormatViewCount() {
         XCTAssertNil(StreamMetadataService.formatViewCount(nil))
         XCTAssertEqual(StreamMetadataService.formatViewCount(842), "842")
