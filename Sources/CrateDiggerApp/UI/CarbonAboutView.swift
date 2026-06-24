@@ -192,30 +192,31 @@ struct CarbonChassisIconView: View {
                 ForEach(0..<6, id: \.self) { i in
                     RoundedRectangle(cornerRadius: s * 0.012, style: .continuous)
                         .fill(i < 3 ? orange : Color(hex: 0x3A3A3A))
-                        .frame(width: s * 0.085, height: s * 0.052)
+                        .frame(width: s * 0.085, height: s * 0.05)
                 }
             }
-            .offset(x: -s * 0.055, y: -s * 0.30)
+            .offset(x: -s * 0.065, y: -s * 0.33)
 
             Circle()
                 .fill(cyan)
-                .frame(width: s * 0.055, height: s * 0.055)
+                .frame(width: s * 0.05, height: s * 0.05)
                 .shadow(color: cyan.opacity(0.85), radius: s * 0.03)
-                .offset(x: s * 0.30, y: -s * 0.30)
+                .offset(x: s * 0.31, y: -s * 0.33)
 
             ZStack {
                 Circle().fill(RadialGradient(
-                    colors: [Color(hex: 0x151515), Color(hex: 0x0B0B0B)],
-                    center: .center, startRadius: 0, endRadius: s * 0.26))
-                Circle().stroke(Color.white.opacity(0.05), lineWidth: max(1, s * 0.004))
+                    colors: [Color(hex: 0x161616), Color(hex: 0x0B0B0B)],
+                    center: .center, startRadius: 0, endRadius: s * 0.36))
+                Circle().stroke(Color.white.opacity(0.045), lineWidth: max(1, s * 0.003))
+                    .frame(width: s * 0.56, height: s * 0.56)
+                Circle().stroke(Color.white.opacity(0.045), lineWidth: max(1, s * 0.003))
                     .frame(width: s * 0.40, height: s * 0.40)
-                Circle().stroke(Color.white.opacity(0.05), lineWidth: max(1, s * 0.004))
-                    .frame(width: s * 0.30, height: s * 0.30)
-                Circle().fill(orange).frame(width: s * 0.09, height: s * 0.09)
-                Circle().fill(Color(hex: 0x0A0A0A)).frame(width: s * 0.03, height: s * 0.03)
+                // Small orange spindle + tiny centre hole, matching the real icon.
+                Circle().fill(orange).frame(width: s * 0.045, height: s * 0.045)
+                Circle().fill(Color(hex: 0x0A0A0A)).frame(width: s * 0.014, height: s * 0.014)
             }
-            .frame(width: s * 0.52, height: s * 0.52)
-            .offset(y: s * 0.06)
+            .frame(width: s * 0.72, height: s * 0.72)
+            .offset(y: s * 0.07)
         }
         .frame(width: s, height: s)
     }
