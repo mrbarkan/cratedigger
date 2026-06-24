@@ -1,3 +1,4 @@
+import CrateDiggerCore
 import SwiftUI
 
 struct OLEDDisplay: View {
@@ -10,7 +11,12 @@ struct OLEDDisplay: View {
 
             Group {
                 switch model.oledView {
-                case .nowPlaying: NowPlayingView()
+                case .nowPlaying:
+                    if model.isRadioMode && model.selectedStream != nil {
+                        RadioNowPlayingView()
+                    } else {
+                        NowPlayingView()
+                    }
                 case .vu:         VUView()
                 case .conversion: ConversionView()
                 case .scan:       ScanView()
@@ -241,6 +247,200 @@ private struct NowPlayingView: View {
             }
         } catch {}
         return "—"
+    }
+
+    @ViewBuilder
+    private func cell(key: String, value: String, sub: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(key.uppercased())
+                .font(CarbonFont.mono(7.5, weight: .semibold))
+                .tracking(2.2)
+                .foregroundStyle(oledForeground.opacity(0.45))
+            Text(value)
+                .font(CarbonFont.mono(13, weight: .bold))
+                .tracking(0.4)
+                .foregroundStyle(oledForeground)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Text(sub.uppercased())
+                .font(CarbonFont.mono(7.5, weight: .semibold))
+                .tracking(1.8)
+                .foregroundStyle(oledForeground.opacity(0.55))
+                .lineLimit(1)
+        }
+        .frame(minWidth: 80, alignment: .leading)
+        .padding(.trailing, 10)
+    }
+
+    private var divider: some View {
+        Rectangle()
+            .fill(oledForeground.opacity(0.12))
+            .frame(width: 1)
+            .padding(.vertical, 2)
+            .padding(.horizontal, 4)
+    }
+}
+
+/// OLED Now-Playing for radio mode: ON AIR / STREAMING tag, stream title +
+/// channel, an ON AIR + uptime readout for live (clock for VOD), and stream
+/// spec cells. Readouts stay honest under the WebView engine (no fake codec).
+private struct RadioNowPlayingView: View {
+    @EnvironmentObject private var model: LibraryViewModel
+    @Environment(\.carbon) private var theme
+
+    private var stream: StreamSource? { model.selectedStream }
+    private var isLive: Bool { stream?.isLive ?? false }
+    private var isNative: Bool { model.radioEngineKind == .native }
+
+    private let onAirRed = Color(red: 1, green: 0.36, blue: 0.29)
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .center) {
+                tag
+                Spacer()
+                engineCell
+            }
+
+            HStack(alignment: .bottom, spacing: 20) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text((stream?.title ?? "—").uppercased())
+                        .font(CarbonFont.display(44))
+                        .fontWeight(.thin)
+                        .tracking(-0.4)
+                        .foregroundStyle(oledForeground)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.55)
+                    Text(subtitle)
+                        .font(CarbonFont.mono(9.5, weight: .semibold))
+                        .tracking(2.0)
+                        .textCase(.uppercase)
+                        .foregroundStyle(oledMuted)
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                readout
+            }
+            .padding(.top, 4)
+
+            Spacer(minLength: 2)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(alignment: .center, spacing: 0) {
+                    cell(key: "Source", value: "YouTube", sub: isLive ? "LIVE STREAM" : (stream?.kind.rawValue ?? "—"))
+                    divider
+                    cell(key: "Codec", value: codecValue, sub: codecSub)
+                    divider
+                    cell(key: "Bitrate", value: bitrateValue, sub: bitrateSub)
+                    divider
+                    cell(key: "Buffer", value: bufferValue, sub: bufferSub)
+                    divider
+                    cell(key: "Tuned In", value: tunedValue, sub: isLive ? "LISTENING" : "SOURCE")
+                }
+            }
+            .padding(.top, 4)
+            .overlay(
+                Rectangle().fill(oledForeground.opacity(0.12)).frame(height: 1),
+                alignment: .top
+            )
+        }
+        .padding(.horizontal, CarbonLayout.oledPaddingH)
+        .padding(.vertical, CarbonLayout.oledPaddingV)
+    }
+
+    private var subtitle: String {
+        guard let stream else { return "Tune in" }
+        let suffix = isLive ? "YouTube Live Stream" : stream.kind.rawValue.capitalized
+        return "\(stream.channel) · \(suffix)"
+    }
+
+    private var tag: some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(isLive ? Color(hex: 0xFFF1EC) : theme.ink)
+                .frame(width: 6, height: 6)
+            Text(isLive ? "ON AIR" : "STREAMING")
+                .font(CarbonFont.mono(9, weight: .bold))
+                .tracking(1.8)
+                .foregroundStyle(isLive ? Color(hex: 0xFFF1EC) : theme.ink)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(Capsule().fill(isLive ? onAirRed : theme.orange))
+    }
+
+    private var engineCell: some View {
+        VStack(alignment: .trailing, spacing: 1) {
+            Text("ENGINE")
+                .font(CarbonFont.mono(6.5, weight: .bold))
+                .tracking(1.6)
+                .foregroundStyle(oledForeground.opacity(0.3))
+            Text(model.radioEngineLabel)
+                .font(CarbonFont.mono(9.5, weight: .bold))
+                .tracking(0.8)
+                .foregroundStyle(theme.orange)
+                .shadow(color: theme.orange.opacity(0.4), radius: 3)
+        }
+    }
+
+    @ViewBuilder
+    private var readout: some View {
+        if isLive {
+            VStack(alignment: .trailing, spacing: 8) {
+                HStack(spacing: 8) {
+                    Circle().fill(onAirRed).frame(width: 9, height: 9)
+                        .shadow(color: onAirRed.opacity(0.7), radius: 4)
+                    Text("ON AIR")
+                        .font(CarbonFont.display(30))
+                        .fontWeight(.thin)
+                        .foregroundColor(oledForeground)
+                }
+                Text("UPTIME \(uptimeString)")
+                    .font(CarbonFont.mono(10, weight: .semibold))
+                    .tracking(1.4)
+                    .foregroundStyle(oledForeground.opacity(0.5))
+            }
+            .frame(width: 150, alignment: .trailing)
+        } else {
+            VStack(alignment: .trailing, spacing: 8) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(timeString(model.playbackCurrentTime))
+                        .font(CarbonFont.display(34))
+                        .fontWeight(.thin)
+                        .foregroundColor(oledForeground)
+                        .shadow(color: theme.orange.opacity(0.28), radius: 7)
+                    Text("/ \(timeString(model.playbackDuration))")
+                        .font(CarbonFont.mono(12, weight: .semibold))
+                        .tracking(1.4)
+                        .foregroundStyle(oledForeground.opacity(0.4))
+                }
+            }
+            .frame(width: 150, alignment: .trailing)
+        }
+    }
+
+    private var uptimeString: String {
+        let t = max(0, model.radioUptimeSeconds)
+        return String(format: "%02d:%02d:%02d", t / 3600, (t % 3600) / 60, t % 60)
+    }
+
+    private func timeString(_ seconds: Double) -> String {
+        guard seconds.isFinite else { return "00:00" }
+        let t = Int(seconds.rounded())
+        return String(format: "%02d:%02d", t / 60, t % 60)
+    }
+
+    // Honest cell values: only the native engine knows the real container.
+    private var codecValue: String { isNative ? (isLive ? "HLS" : "AAC") : "—" }
+    private var codecSub: String { isNative ? (isLive ? "STREAM" : "M4A") : "EMBEDDED" }
+    private var bitrateValue: String { "—" }
+    private var bitrateSub: String { isNative ? "VBR" : "WEB PLAYER" }
+    private var bufferValue: String { "—" }
+    private var bufferSub: String { isNative ? "NATIVE" : "BROWSER" }
+    private var tunedValue: String {
+        if isLive { return stream?.viewers ?? "—" }
+        return (stream?.kind.rawValue ?? "—").uppercased()
     }
 
     @ViewBuilder
