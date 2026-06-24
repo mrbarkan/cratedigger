@@ -187,6 +187,14 @@ private struct TrackColumn: View {
                         onActivate: { model.playTrack(id: loaded.track.id) }
                     )
                     .contextMenu { trackContextMenu(loaded) }
+                case let .recordTrack(parent, marker, number):
+                    RecordSubTrackRow(
+                        marker: marker,
+                        number: number,
+                        isCurrent: model.nowPlayingTrack?.track.id == parent.track.id
+                            && model.currentRecordTrackIndex == number - 1,
+                        onActivate: { model.playRecordTrack(parent: parent, markerIndex: number - 1) }
+                    )
                 }
             }
         }
@@ -207,25 +215,29 @@ private struct TrackColumn: View {
     }
 
     /// Track rows, with "DISC n" separators interleaved when the album spans
-    /// multiple discs and is shown in the natural track-number order.
+    /// multiple discs, and Record Divider sub-tracks listed under a divided file.
     private var trackEntries: [TrackListEntry] {
         let tracks = model.visibleTracks
-        guard let album = model.selectedAlbum,
-              album.isMultiDisc,
-              model.trackSortField == .trackNumber else {
-            return tracks.map { .track($0) }
-        }
-        let counts = Dictionary(grouping: tracks, by: { $0.track.discNumber ?? 1 })
-            .mapValues(\.count)
+        let multiDisc = model.selectedAlbum?.isMultiDisc == true && model.trackSortField == .trackNumber
+        let counts = multiDisc
+            ? Dictionary(grouping: tracks, by: { $0.track.discNumber ?? 1 }).mapValues(\.count)
+            : [:]
+
         var entries: [TrackListEntry] = []
         var lastDisc: Int?
         for loaded in tracks {
-            let disc = loaded.track.discNumber ?? 1
-            if disc != lastDisc {
-                entries.append(.discHeader(disc: disc, count: counts[disc] ?? 0))
-                lastDisc = disc
+            if multiDisc {
+                let disc = loaded.track.discNumber ?? 1
+                if disc != lastDisc {
+                    entries.append(.discHeader(disc: disc, count: counts[disc] ?? 0))
+                    lastDisc = disc
+                }
             }
             entries.append(.track(loaded))
+            // A divided record lists its discovered tracks as indented sub-rows.
+            for (i, marker) in (loaded.recordMarkers ?? []).enumerated() {
+                entries.append(.recordTrack(parent: loaded, marker: marker, number: i + 1))
+            }
         }
         return entries
     }
@@ -240,16 +252,62 @@ private struct TrackColumn: View {
     }
 }
 
-/// A row in the track column: either a disc separator or an actual track.
+/// A row in the track column: a disc separator, an actual track, or a Record
+/// Divider sub-track listed beneath its (divided) parent file.
 private enum TrackListEntry: Identifiable {
     case discHeader(disc: Int, count: Int)
     case track(LoadedTrack)
+    case recordTrack(parent: LoadedTrack, marker: RecordMarker, number: Int)
 
     var id: String {
         switch self {
         case let .discHeader(disc, _): return "disc-\(disc)"
         case let .track(loaded): return "track-\(loaded.track.id.uuidString)"
+        case let .recordTrack(parent, _, number): return "rtrack-\(parent.track.id.uuidString)-\(number)"
         }
+    }
+}
+
+/// An indented Record Divider sub-track under a divided file. Double-click plays
+/// the file from this track's start; the currently-playing one is highlighted.
+private struct RecordSubTrackRow: View {
+    @Environment(\.carbon) private var theme
+    let marker: RecordMarker
+    let number: Int
+    let isCurrent: Bool
+    let onActivate: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: isCurrent ? "play.fill" : "music.note")
+                .font(.system(size: 8))
+                .foregroundStyle(isCurrent ? theme.orange : theme.ink4)
+                .frame(width: 14)
+            Text(String(format: "%02d", number))
+                .font(CarbonFont.mono(8.5))
+                .foregroundStyle(theme.ink4)
+            Text(marker.title)
+                .font(CarbonFont.sans(11, weight: isCurrent ? .semibold : .regular))
+                .foregroundStyle(isCurrent ? theme.orange : theme.ink2)
+                .lineLimit(1)
+            Spacer(minLength: 6)
+            Text(durationString(marker.durationSeconds))
+                .font(CarbonFont.mono(8.5))
+                .foregroundStyle(theme.ink4)
+        }
+        .padding(.leading, 30)
+        .padding(.trailing, 12)
+        .padding(.vertical, 3)
+        .background(isCurrent ? theme.orange.opacity(0.08) : Color.clear)
+        .contentShape(Rectangle())
+        .onTapGesture(count: 2, perform: onActivate)
+        .help("Double-click to play from here")
+    }
+
+    private func durationString(_ seconds: Double) -> String {
+        guard seconds.isFinite, seconds > 0 else { return "—" }
+        let total = Int(seconds.rounded())
+        return String(format: "%d:%02d", total / 60, total % 60)
     }
 }
 

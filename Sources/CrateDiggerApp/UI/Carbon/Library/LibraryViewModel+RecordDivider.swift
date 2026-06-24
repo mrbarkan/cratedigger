@@ -216,6 +216,37 @@ extension LibraryViewModel {
         return true
     }
 
+    /// Play a divided record from a specific marker (double-clicking a sub-track in
+    /// the browser). Seeks immediately if the file is already current; otherwise
+    /// starts it and defers the seek until playback is running.
+    func playRecordTrack(parent: LoadedTrack, markerIndex: Int) {
+        guard let markers = parent.recordMarkers, markers.indices.contains(markerIndex) else { return }
+        let start = markers[markerIndex].startSeconds
+        selectedTrackID = parent.track.id
+
+        if nowPlayingTrack?.track.id == parent.track.id,
+           playbackState == .playing || playbackState == .paused {
+            playback.seek(toSeconds: start)
+            if playbackState == .paused { playback.play() }
+            return
+        }
+        pendingRecordSeekTrackID = parent.track.id
+        pendingRecordSeekSeconds = start
+        playTrack(id: parent.track.id)
+    }
+
+    /// Apply a deferred marker seek once the target file is actually playing (its
+    /// duration is known). Called from the playback time binding.
+    func applyPendingRecordSeekIfNeeded() {
+        guard let seconds = pendingRecordSeekSeconds,
+              let id = pendingRecordSeekTrackID,
+              nowPlayingTrack?.track.id == id,
+              playbackDuration > 0 else { return }
+        pendingRecordSeekTrackID = nil
+        pendingRecordSeekSeconds = nil
+        playback.seek(toSeconds: seconds)
+    }
+
     /// Previous-track behaviour within a divided file: restart the current track if
     /// we're more than `restartThreshold` into it, else jump to the previous
     /// marker. Returns false at the very start of the first marker.

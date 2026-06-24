@@ -251,6 +251,10 @@ final class LibraryViewModel: ObservableObject {
     @Published var recordDividerIsScanning: Bool = false
     /// Hint shown when a scan finds 0–1 breaks (suggest raising sensitivity).
     @Published var recordDividerHint: String?
+    /// A marker start to seek to once a just-started divided file is playing
+    /// (clicking a sub-track in the browser before its file is loaded).
+    var pendingRecordSeekSeconds: Double?
+    var pendingRecordSeekTrackID: UUID?
 
     var isRadioMode: Bool {
         if case .radio = currentSource { return true }
@@ -1739,6 +1743,7 @@ final class LibraryViewModel: ObservableObject {
             Task { @MainActor in
                 self?.playbackCurrentTime = current
                 self?.playbackDuration = duration
+                self?.applyPendingRecordSeekIfNeeded()
                 self?.checkScrobbleProgress(current: current, duration: duration)
             }
         }
