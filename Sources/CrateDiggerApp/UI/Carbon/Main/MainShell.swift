@@ -74,16 +74,18 @@ struct MainShell: View {
                 }
             } else {
                 wellShell(
-                    title: model.showArtworkGallery ? "Browser · GALLERY" : "Browser · \(browserSubtitle)",
-                    trailing: browserTrailing,
+                    title: browserWellTitle,
+                    trailing: browserWellTrailing,
                     trailingControl: AnyView(HStack(spacing: 6) {
-                        if !model.showArtworkGallery {
+                        if !model.showArtworkGallery && !model.isRadioMode {
                             sortToggleButton()
                         }
                         collapseChevron(action: { model.toggleBrowserCollapsed() })
                     })
                 ) {
-                    if model.showArtworkGallery {
+                    if model.isRadioMode {
+                        RadioListView()
+                    } else if model.showArtworkGallery {
                         ArtworkGalleryView()
                     } else {
                         BrowserPane()
@@ -184,6 +186,20 @@ struct MainShell: View {
         if model.scanProgress.isRunning { return "Scanning" }
         if model.index.allTracks.isEmpty { return "Empty" }
         return "Library"
+    }
+
+    private var browserWellTitle: String {
+        if model.isRadioMode { return "Browser · RADIO" }
+        if model.showArtworkGallery { return "Browser · GALLERY" }
+        return "Browser · \(browserSubtitle)"
+    }
+
+    private var browserWellTrailing: String {
+        if model.isRadioMode {
+            let n = model.filteredStreams.count
+            return n == 0 ? "—" : "\(n) STREAMS"
+        }
+        return browserTrailing
     }
 
     private var browserTrailing: String {
