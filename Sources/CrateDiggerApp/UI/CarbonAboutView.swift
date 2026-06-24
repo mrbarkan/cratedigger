@@ -5,12 +5,15 @@ import SwiftUI
 /// so it matches the main UI and follows the light/dark appearance. Replaces the
 /// old light "design-package" layout (BrandArtworkView et al.).
 struct CarbonAboutView: View {
-    @AppStorage(AppearanceMode.userDefaultsKey) private var appearanceModeRaw = AppearanceMode.system.rawValue
-    private var mode: AppearanceMode { AppearanceMode(rawValue: appearanceModeRaw) ?? .system }
+    /// A concrete light/dark mode resolved by the window controller (never
+    /// `.system`), so the Carbon theme can't disagree with the window's
+    /// materials — a freshly-created hosting view otherwise resolves `.system`
+    /// to light while the materials follow the real (dark) appearance.
+    let mode: AppearanceMode
 
     var body: some View {
         ChassisLayer { faceplate }
-            .frame(minWidth: 700, minHeight: 480)
+            .frame(minWidth: 700, minHeight: 440)
             .carbonThemed(mode: mode)
     }
 

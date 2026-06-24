@@ -1,5 +1,5 @@
 import Foundation
-import CommonCrypto
+import CryptoKit
 
 public struct SubsonicArtist: Codable, Identifiable, Sendable {
     public let id: String
@@ -39,13 +39,12 @@ public final class SubsonicClient: Sendable {
         self.session = session
     }
 
+    // MD5 here is the Subsonic auth token scheme (md5(password + salt)), not a
+    // security hash — the protocol mandates it. Insecure.MD5 isn't deprecated.
     private func md5(_ string: String) -> String {
-        guard let data = string.data(using: .utf8) else { return "" }
-        var digest = [UInt8](repeating: 0, count: Int(CC_MD5_DIGEST_LENGTH))
-        data.withUnsafeBytes { ptr in
-            _ = CC_MD5(ptr.baseAddress, CC_LONG(data.count), &digest)
-        }
-        return digest.map { String(format: "%02hhx", $0) }.joined()
+        Insecure.MD5.hash(data: Data(string.utf8))
+            .map { String(format: "%02hhx", $0) }
+            .joined()
     }
 
     private func buildURL(endpoint: String, config: SubsonicConfig, extraParams: [URLQueryItem] = []) -> URL? {

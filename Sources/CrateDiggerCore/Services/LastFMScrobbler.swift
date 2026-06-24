@@ -1,5 +1,5 @@
 import Foundation
-import CommonCrypto
+import CryptoKit
 
 public final class LastFMScrobbler: Sendable {
     private let apiKey = "141b714fa4cf3c40f1a92e622b7a9ef0"
@@ -10,13 +10,12 @@ public final class LastFMScrobbler: Sendable {
         self.session = session
     }
 
+    // MD5 here is the Last.fm API signature scheme (api_sig), not a security
+    // hash — the protocol mandates it. Insecure.MD5 is the non-deprecated API.
     private func md5(_ string: String) -> String {
-        guard let data = string.data(using: .utf8) else { return "" }
-        var digest = [UInt8](repeating: 0, count: Int(CC_MD5_DIGEST_LENGTH))
-        data.withUnsafeBytes { ptr in
-            _ = CC_MD5(ptr.baseAddress, CC_LONG(data.count), &digest)
-        }
-        return digest.map { String(format: "%02hhx", $0) }.joined()
+        Insecure.MD5.hash(data: Data(string.utf8))
+            .map { String(format: "%02hhx", $0) }
+            .joined()
     }
 
     private func calculateSignature(params: [String: String]) -> String {

@@ -68,10 +68,12 @@ public final class AudioOutputManager: Sendable {
                 mElement: kAudioObjectPropertyElementMain
             )
 
-            var nameSize = UInt32(MemoryLayout<CFString>.size)
-            var nameCF: CFString = "" as CFString
-            status = AudioObjectGetPropertyData(id, &nameAddress, 0, nil, &nameSize, &nameCF)
-            guard status == noErr else { continue }
+            // CoreAudio returns a +1-retained CFString; take it through an
+            // Unmanaged box (passing &CFString directly is the unsafe-pointer warning).
+            var nameSize = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+            var nameUnmanaged: Unmanaged<CFString>?
+            status = AudioObjectGetPropertyData(id, &nameAddress, 0, nil, &nameSize, &nameUnmanaged)
+            guard status == noErr, let nameCF = nameUnmanaged?.takeRetainedValue() else { continue }
 
             // Retrieve device UID
             var uidAddress = AudioObjectPropertyAddress(
@@ -80,10 +82,10 @@ public final class AudioOutputManager: Sendable {
                 mElement: kAudioObjectPropertyElementMain
             )
 
-            var uidSize = UInt32(MemoryLayout<CFString>.size)
-            var uidCF: CFString = "" as CFString
-            status = AudioObjectGetPropertyData(id, &uidAddress, 0, nil, &uidSize, &uidCF)
-            guard status == noErr else { continue }
+            var uidSize = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+            var uidUnmanaged: Unmanaged<CFString>?
+            status = AudioObjectGetPropertyData(id, &uidAddress, 0, nil, &uidSize, &uidUnmanaged)
+            guard status == noErr, let uidCF = uidUnmanaged?.takeRetainedValue() else { continue }
 
             let deviceName = nameCF as String
             let deviceUID = uidCF as String

@@ -6,7 +6,10 @@ import SwiftUI
 /// itself via `@AppStorage`, so it tracks light/dark like the rest of the app.
 final class AboutWindowController: NSWindowController {
     init() {
-        let hosting = NSHostingController(rootView: CarbonAboutView())
+        // Resolve to a concrete light/dark so the SwiftUI theme and the window
+        // materials agree (see CarbonAboutView.mode).
+        let mode = Self.resolvedAppearance()
+        let hosting = NSHostingController(rootView: CarbonAboutView(mode: mode))
         let window = NSWindow(contentViewController: hosting)
         window.styleMask = [.titled, .closable, .miniaturizable, .fullSizeContentView]
         window.title = "About CrateDigger"
@@ -14,19 +17,25 @@ final class AboutWindowController: NSWindowController {
         window.titlebarAppearsTransparent = true
         window.isMovableByWindowBackground = true
         window.isReleasedWhenClosed = false
-        window.setContentSize(NSSize(width: 720, height: 500))
+        window.setContentSize(NSSize(width: 720, height: 450))
         window.center()
+        window.appearance = NSAppearance(named: mode == .dark ? .darkAqua : .aqua)
 
-        // Match the traffic-light buttons / chrome to the chosen appearance.
+        super.init(window: window)
+    }
+
+    /// The stored appearance, with `.system` collapsed to the app's current
+    /// effective light/dark.
+    private static func resolvedAppearance() -> AppearanceMode {
         let raw = UserDefaults.standard.string(forKey: AppearanceMode.userDefaultsKey)
             ?? AppearanceMode.system.rawValue
         switch AppearanceMode(rawValue: raw) ?? .system {
-        case .light:  window.appearance = NSAppearance(named: .aqua)
-        case .dark:   window.appearance = NSAppearance(named: .darkAqua)
-        case .system: window.appearance = nil
+        case .light: return .light
+        case .dark:  return .dark
+        case .system:
+            let match = NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua])
+            return match == .darkAqua ? .dark : .light
         }
-
-        super.init(window: window)
     }
 
     @available(*, unavailable)
