@@ -46,6 +46,7 @@ public final class PreferencesStore {
         static let albumSortAscending = "cratedigger.browser.albumSortAscending"
         static let showSortControls = "cratedigger.browser.showSortControls"
         static let browserLayout = "cratedigger.browser.layout"
+        static let scrubLock = "cratedigger.transport.scrubLock"
         static let streamSources = "cratedigger.radio.streamSources"
         static let streamEngine = "cratedigger.radio.engine"
         static let customYtDlpPath = "cratedigger.tools.ytdlpPath"
@@ -270,6 +271,11 @@ public final class PreferencesStore {
                 defaults.removeObject(forKey: Key.browserLayout)
             }
         }
+    }
+
+    public var savedScrubLockEnabled: Bool {
+        get { defaults.bool(forKey: Key.scrubLock) }
+        set { defaults.set(newValue, forKey: Key.scrubLock) }
     }
 
     public var savedTrackSortAscending: Bool {

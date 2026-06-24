@@ -151,6 +151,28 @@ final class LibraryViewModel: ObservableObject {
         if let fraction = scrubbingFraction { return fraction * playbackDuration }
         return playbackCurrentTime
     }
+
+    /// When on, scrolling over the POSITION dial seeks the playhead.
+    @Published var scrubLockEnabled: Bool = false {
+        didSet { prefs.savedScrubLockEnabled = scrubLockEnabled }
+    }
+
+    private var scrubReleaseWorkItem: DispatchWorkItem?
+
+    /// Handle one scroll-seek step (a fraction delta from the locked POSITION
+    /// dial): preview it via `scrubbingFraction`, seek, then let the preview
+    /// revert to live playback shortly after scrolling stops.
+    func scrollSeek(byFraction delta: Double) {
+        guard playbackDuration > 0 else { return }
+        let base = scrubbingFraction ?? (playbackCurrentTime / playbackDuration)
+        let target = min(max(base + delta, 0), 1)
+        scrubbingFraction = target
+        seek(toFraction: target)
+        scrubReleaseWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.scrubbingFraction = nil }
+        scrubReleaseWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45, execute: work)
+    }
     @Published private(set) var playbackErrorMessage: String?
     @Published var appAlert: AppAlert?
     @Published private(set) var albumsFetchingArtwork: Set<String> = []
@@ -421,6 +443,7 @@ final class LibraryViewModel: ObservableObject {
         if let savedLayout = prefs.savedBrowserLayout, let layout = BrowserLayout(rawValue: savedLayout) {
             browserLayout = layout
         }
+        scrubLockEnabled = prefs.savedScrubLockEnabled
 
         if let persisted = prefs.savedLastConversionSelection(as: PersistedConversionSelection.self),
            let restored = persisted.materialize() {

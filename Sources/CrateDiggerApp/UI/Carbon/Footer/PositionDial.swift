@@ -33,6 +33,18 @@ struct PositionDial: View {
                     .tracking(1.8)
                     .foregroundStyle(theme.ink3)
                 Spacer(minLength: 0)
+                Button {
+                    ClickPlayer.shared.play(.key)
+                    model.scrubLockEnabled.toggle()
+                } label: {
+                    Image(systemName: model.scrubLockEnabled ? "lock.fill" : "lock.open")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(model.scrubLockEnabled ? theme.cyan : theme.ink3)
+                }
+                .buttonStyle(.plain)
+                .help(model.scrubLockEnabled
+                    ? "Scroll-to-seek on — scroll the dial to search"
+                    : "Lock to scroll the dial to search")
             }
 
             Spacer(minLength: 0)
@@ -45,6 +57,11 @@ struct PositionDial: View {
         .padding(.vertical, 9)
         .frame(width: 184, height: 64)
         .background(ChromeChassis(theme: theme, cornerRadius: 12))
+        .overlay(
+            ScrollSeekCatcher(enabled: model.scrubLockEnabled) { delta in
+                model.scrollSeek(byFraction: delta)
+            }
+        )
         .accessibilityLabel("Playback position")
     }
 
@@ -86,6 +103,65 @@ struct PositionDial: View {
                         model.seek(toFraction: f)
                     }
             )
+        }
+    }
+}
+
+/// Transparent overlay that, while `enabled`, turns scroll-wheel / trackpad
+/// scrolling over the POSITION dial into seek steps. Uses a local event monitor
+/// (not `scrollWheel` on a hit-testing view) so it never blocks the drag gesture
+/// — `hitTest` returns nil, so clicks pass straight through to the dial below.
+private struct ScrollSeekCatcher: NSViewRepresentable {
+    let enabled: Bool
+    let onSeekDelta: (Double) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = MonitorView()
+        view.enabled = enabled
+        view.onSeekDelta = onSeekDelta
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        guard let view = nsView as? MonitorView else { return }
+        view.onSeekDelta = onSeekDelta
+        view.enabled = enabled
+    }
+
+    final class MonitorView: NSView {
+        var onSeekDelta: ((Double) -> Void)?
+        var enabled = false { didSet { refreshMonitor() } }
+        private var monitor: Any?
+
+        // Pass mouse events through to the dial's drag gesture below.
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            refreshMonitor()
+        }
+
+        private func refreshMonitor() {
+            if enabled, window != nil, monitor == nil {
+                monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+                    guard let self, let window = self.window, event.window == window else { return event }
+                    let frameInWindow = self.convert(self.bounds, to: nil)
+                    guard frameInWindow.contains(event.locationInWindow) else { return event }
+                    let raw = event.scrollingDeltaY
+                    guard raw != 0 else { return event }
+                    // ~1% of the track per wheel notch; finer for precise trackpad deltas.
+                    let factor = event.hasPreciseScrollingDeltas ? 0.0009 : 0.012
+                    self.onSeekDelta?(-raw * factor)
+                    return nil
+                }
+            } else if (!enabled || window == nil), let existing = monitor {
+                NSEvent.removeMonitor(existing)
+                monitor = nil
+            }
+        }
+
+        deinit {
+            if let monitor { NSEvent.removeMonitor(monitor) }
         }
     }
 }
