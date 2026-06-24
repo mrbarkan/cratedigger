@@ -318,6 +318,7 @@ final class BookletViewModel: ObservableObject {
                 await MainActor.run {
                     self.renderedPages[index] = image
                     self.loadingPages.remove(index)
+                    self.evictDistantPages(around: index)
                 }
             }
         } else {
@@ -327,9 +328,21 @@ final class BookletViewModel: ObservableObject {
                     await MainActor.run {
                         self.renderedPages[index] = image
                         self.loadingPages.remove(index)
+                        self.evictDistantPages(around: index)
                     }
                 }
             }
+        }
+    }
+
+    /// Keep only pages near the one just rendered, so paging through a long
+    /// booklet can't pin every full-resolution page in memory. Far pages
+    /// re-render on demand via `image(for:)`.
+    private func evictDistantPages(around index: Int, radius: Int = 2) {
+        guard renderedPages.count > (radius * 2 + 2) else { return }
+        let keep = (index - radius)...(index + radius)
+        for key in renderedPages.keys where !keep.contains(key) {
+            renderedPages.removeValue(forKey: key)
         }
     }
 }
