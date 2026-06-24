@@ -181,7 +181,9 @@ public final class LibraryOrganizerService {
                 artworkHash: track.track.artworkHash,
                 artworkDimensions: track.track.artworkDimensions
             )
-            updatedTracks.append(LoadedTrack(track: updatedTrackInfo, metadata: track.metadata))
+            // Preserve Record Divider markers (time-based, so valid after the move).
+            updatedTracks.append(LoadedTrack(track: updatedTrackInfo, metadata: track.metadata,
+                                             recordMarkers: track.recordMarkers))
 
             count += 1
             onProgress?(count, total)

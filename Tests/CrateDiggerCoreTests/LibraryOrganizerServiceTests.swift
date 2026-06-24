@@ -52,6 +52,35 @@ final class LibraryOrganizerServiceTests: XCTestCase {
         }
     }
     
+    func testOrganizePreservesRecordMarkers() async throws {
+        try await withTemporaryDirectory(prefix: "OrganizerMarkersTest") { tempDir in
+            let sourceDir = tempDir.appendingPathComponent("Original")
+            let destDir = tempDir.appendingPathComponent("Organized")
+            try FileManager.default.createDirectory(at: sourceDir, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: destDir, withIntermediateDirectories: true)
+
+            let trackURL = sourceDir.appendingPathComponent("sideA.aiff")
+            try "music data".write(to: trackURL, atomically: true, encoding: .utf8)
+
+            let loaded = LoadedTrack(
+                track: AudioTrack(fileURL: trackURL, title: "Side A", artist: "Lorde", album: "Solar Power"),
+                metadata: ConversionMetadata(albumArtist: "Lorde", album: "Solar Power"),
+                recordMarkers: [
+                    RecordMarker(startSeconds: 0, endSeconds: 180, title: "Track 01"),
+                    RecordMarker(startSeconds: 180, endSeconds: 400, title: "Track 02")
+                ]
+            )
+
+            let organizer = LibraryOrganizerService(fileManager: .default)
+            let result = try await organizer.organize(tracks: [loaded], destinationFolder: destDir, copyOnly: true)
+
+            // Markers survive the move/copy (they're time-based, not path-based).
+            XCTAssertEqual(result.first?.recordMarkers?.count, 2)
+            XCTAssertEqual(result.first?.recordMarkers?[1].title, "Track 02")
+            XCTAssertNotEqual(result.first?.track.fileURL, trackURL, "file should be relocated")
+        }
+    }
+
     func testOrganizeCopyAndCollision() async throws {
         try await withTemporaryDirectory(prefix: "OrganizerCopyTest") { tempDir in
             let sourceDir = tempDir.appendingPathComponent("Original")

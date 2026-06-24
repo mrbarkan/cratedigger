@@ -1012,7 +1012,8 @@ final class LibraryViewModel: ObservableObject {
                 artworkHash: track.track.artworkHash,
                 artworkDimensions: track.track.artworkDimensions
             )
-            let updatedTrackLoaded = LoadedTrack(track: updatedTrack, metadata: newMetadata)
+            let updatedTrackLoaded = LoadedTrack(track: updatedTrack, metadata: newMetadata,
+                                                 recordMarkers: track.recordMarkers)
             
             // Check if we should keep the library folder organised
             if prefs.keepLibraryOrganised, let libURL = managedLibraryFolderURL, track.track.fileURL.path.hasPrefix(libURL.path) {
@@ -1406,7 +1407,7 @@ final class LibraryViewModel: ObservableObject {
             newTrack.artworkDimensions = asset.dimensions
             var newMetadata = loaded.metadata
             newMetadata.artwork = asset
-            return LoadedTrack(track: newTrack, metadata: newMetadata)
+            return LoadedTrack(track: newTrack, metadata: newMetadata, recordMarkers: loaded.recordMarkers)
         }
 
         index = LibraryIndex.build(from: updatedTracks)
@@ -1600,7 +1601,7 @@ final class LibraryViewModel: ObservableObject {
             newTrack.artworkHash = coverAsset.hash
             newTrack.artworkDimensions = coverAsset.dimensions
             newMetadata.artwork = coverAsset
-            return LoadedTrack(track: newTrack, metadata: newMetadata)
+            return LoadedTrack(track: newTrack, metadata: newMetadata, recordMarkers: loaded.recordMarkers)
         }
 
         self.localIndex = LibraryIndex.build(from: self.localIndex.allTracks.map(applyArtwork))
