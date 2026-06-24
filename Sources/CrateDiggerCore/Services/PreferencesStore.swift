@@ -45,6 +45,9 @@ public final class PreferencesStore {
         static let albumSortField = "cratedigger.browser.albumSortField"
         static let albumSortAscending = "cratedigger.browser.albumSortAscending"
         static let showSortControls = "cratedigger.browser.showSortControls"
+        static let streamSources = "cratedigger.radio.streamSources"
+        static let streamEngine = "cratedigger.radio.engine"
+        static let customYtDlpPath = "cratedigger.tools.ytdlpPath"
     }
 
     // MARK: - Window frame
@@ -358,6 +361,38 @@ public final class PreferencesStore {
     public var keyboardShortcuts: [String: String] {
         get { defaults.dictionary(forKey: Key.keyboardShortcuts) as? [String: String] ?? [:] }
         set { defaults.set(newValue, forKey: Key.keyboardShortcuts) }
+    }
+
+    // MARK: - Radio / Streams
+
+    /// Raw JSON of `[StreamSource]`. `StreamStore` owns (de)serialization.
+    public var streamSourcesData: Data? {
+        get { defaults.data(forKey: Key.streamSources) }
+        set {
+            if let data = newValue {
+                defaults.set(data, forKey: Key.streamSources)
+            } else {
+                defaults.removeObject(forKey: Key.streamSources)
+            }
+        }
+    }
+
+    /// "auto" | "native" | "webview". Defaults to "auto" (native if yt-dlp is present, else webview).
+    public var streamEngine: String {
+        get { defaults.string(forKey: Key.streamEngine) ?? "auto" }
+        set { defaults.set(newValue, forKey: Key.streamEngine) }
+    }
+
+    /// User-chosen path to a yt-dlp binary (bring-your-own). nil/empty clears it.
+    public var customYtDlpPath: String? {
+        get { defaults.string(forKey: Key.customYtDlpPath) }
+        set {
+            if let value = newValue, !value.isEmpty {
+                defaults.set(value, forKey: Key.customYtDlpPath)
+            } else {
+                defaults.removeObject(forKey: Key.customYtDlpPath)
+            }
+        }
     }
 
     // MARK: - Reset
