@@ -23,12 +23,18 @@ public final class ArtworkService: ArtworkPreparing {
     private let fileManager: FileManager
     private let thumbnailCache = NSCache<NSString, NSImage>()
     private let cacheQueue = DispatchQueue(label: "com.cratedigger.artwork.cache", attributes: .concurrent)
-    private var dataByHash: [String: Data] = [:]
+    /// Full-resolution source image bytes, kept only to (re)generate thumbnails.
+    /// Cost-limited so a large scan can't grow it without bound — `NSData` is its
+    /// own LRU store and is internally thread-safe (no `cacheQueue` needed).
+    /// A miss simply yields no thumbnail (a handled `nil`), never a crash.
+    private let dataCache = NSCache<NSString, NSData>()
     private var remoteUrlsByHash: [String: URL] = [:]
 
     public init(fileManager: FileManager = .default) {
         self.fileManager = fileManager
         thumbnailCache.countLimit = 512
+        thumbnailCache.totalCostLimit = 48 * 1024 * 1024   // ~48 MB of decoded thumbnails
+        dataCache.totalCostLimit = 96 * 1024 * 1024        // ~96 MB of source image data
     }
 
     public func cacheRemoteArtworkURL(_ hash: String, url: URL) {
@@ -84,7 +90,8 @@ public final class ArtworkService: ArtworkPreparing {
             return nil
         }
 
-        thumbnailCache.setObject(thumbnail, forKey: cacheKey)
+        let cost = Int(size.width * size.height * 4)   // ~RGBA bytes, relative weight
+        thumbnailCache.setObject(thumbnail, forKey: cacheKey, cost: cost)
         return thumbnail
     }
 
@@ -324,15 +331,11 @@ public final class ArtworkService: ArtworkPreparing {
     }
 
     private func storeData(_ data: Data, for hash: String) {
-        cacheQueue.async(flags: .barrier) {
-            self.dataByHash[hash] = data
-        }
+        dataCache.setObject(data as NSData, forKey: hash as NSString, cost: data.count)
     }
 
     private func dataForHash(_ hash: String) -> Data? {
-        cacheQueue.sync {
-            dataByHash[hash]
-        }
+        dataCache.object(forKey: hash as NSString) as Data?
     }
 
     private static func sha256Hex(for data: Data) -> String {
