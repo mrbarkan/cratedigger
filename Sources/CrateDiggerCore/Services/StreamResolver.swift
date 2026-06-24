@@ -24,7 +24,12 @@ public enum StreamResolverError: Error, Equatable {
 /// Resolves a `StreamSource` to a playable URL by invoking yt-dlp. The argument
 /// vector and format selection are pure (and unit-tested with a fake
 /// `CommandRunning`); only `resolve` actually spawns the process.
-public struct StreamResolver {
+///
+/// `@unchecked Sendable`: the only non-Sendable member is the injected
+/// `CommandRunning`; in production that's `ProcessCommandRunner` (a stateless
+/// value type, safe to use from a background task). This lets `resolve` run
+/// off the main actor.
+public struct StreamResolver: @unchecked Sendable {
     private let ytdlpURL: URL
     private let runner: CommandRunning
 

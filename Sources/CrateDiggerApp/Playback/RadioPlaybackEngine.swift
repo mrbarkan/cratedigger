@@ -27,4 +27,11 @@ protocol RadioPlaybackEngine: AnyObject {
     func stop()
     func setVolume(_ volume: Double)   // 0...1
     func seek(toSeconds seconds: Double)  // ignored for live
+    /// Route audio to a CoreAudio output device. Honored by the native engine;
+    /// no-op for the WebView engine (it can't control routing).
+    func setOutputDeviceUID(_ uid: String?)
+}
+
+extension RadioPlaybackEngine {
+    func setOutputDeviceUID(_ uid: String?) {}
 }
