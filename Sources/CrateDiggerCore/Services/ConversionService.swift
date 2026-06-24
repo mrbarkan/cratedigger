@@ -340,6 +340,11 @@ public final class ConversionService {
         var arguments = globalArguments
         arguments.append(contentsOf: inputSection.arguments)
         arguments.append(contentsOf: outputArguments)
+        // Record Divider: limit the output to the marker's slice. `-ss` (input
+        // seek) is applied in buildInputSection; `-t` bounds the duration here.
+        if let duration = queued.job.segmentDuration {
+            arguments.append(contentsOf: ["-t", Self.formatSeconds(duration)])
+        }
         arguments.append(queued.job.destinationURL.path)
 
         return PreparedConversionCommand(
@@ -350,8 +355,19 @@ public final class ConversionService {
         )
     }
 
+    /// Format a time in seconds for ffmpeg (`-ss`/`-t`), e.g. `181.250`.
+    static func formatSeconds(_ seconds: Double) -> String {
+        String(format: "%.3f", max(0, seconds))
+    }
+
     private func buildInputSection(for queued: QueuedConversion) throws -> CommandInputSection {
-        var inputArguments: [String] = ["-i", queued.job.sourceURL.path]
+        var inputArguments: [String] = []
+        // Record Divider: seek to the slice start before the source input. `-ss`
+        // as an input option is fast and accurate enough for audio (no keyframes).
+        if let start = queued.job.startSeconds {
+            inputArguments.append(contentsOf: ["-ss", Self.formatSeconds(start)])
+        }
+        inputArguments.append(contentsOf: ["-i", queued.job.sourceURL.path])
         var outputMappingArguments: [String] = []
         var warning: String?
         var temporaryFiles: [URL] = []

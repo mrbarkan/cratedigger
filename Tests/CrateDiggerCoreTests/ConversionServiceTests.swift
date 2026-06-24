@@ -454,6 +454,42 @@ final class ConversionServiceTests: XCTestCase {
         XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: tempRoot.path).isEmpty)
     }
 
+    func testRecordSegmentEmitsSeekAndDuration() throws {
+        let service = try makeService(artworkPreparer: PassThroughArtworkPreparer())
+        let sourceURL = temporaryDirectory.appendingPathComponent("sideA.aiff")
+        let outputURL = temporaryDirectory.appendingPathComponent("01 Track.m4a")
+
+        let job = ConversionJob(sourceURL: sourceURL, destinationURL: outputURL,
+                                metadata: ConversionMetadata(title: "Track 01"),
+                                startSeconds: 181, endSeconds: 361)
+        let queued = try service.enqueue([job], presetID: "ipod_aac_192").first!
+        let args = try service.preparedCommand(for: queued).arguments
+
+        // `-ss` (input seek) precedes the source `-i`.
+        let ssIndex = try XCTUnwrap(args.firstIndex(of: "-ss"))
+        let iIndex = try XCTUnwrap(args.firstIndex(of: "-i"))
+        XCTAssertLessThan(ssIndex, iIndex)
+        XCTAssertEqual(args[ssIndex + 1], "181.000")
+
+        // `-t` bounds the slice length and stays before the destination path.
+        let tIndex = try XCTUnwrap(args.firstIndex(of: "-t"))
+        XCTAssertEqual(args[tIndex + 1], "180.000")
+        XCTAssertEqual(args.last, outputURL.path)
+        XCTAssertLessThan(tIndex, args.count - 1)
+    }
+
+    func testWholeFileJobHasNoSeekOrDuration() throws {
+        let service = try makeService(artworkPreparer: PassThroughArtworkPreparer())
+        let sourceURL = temporaryDirectory.appendingPathComponent("song.wav")
+        let outputURL = temporaryDirectory.appendingPathComponent("song.m4a")
+
+        let queued = try service.enqueue([ConversionJob(sourceURL: sourceURL, destinationURL: outputURL)],
+                                         presetID: "ipod_aac_192").first!
+        let args = try service.preparedCommand(for: queued).arguments
+        XCTAssertFalse(args.contains("-ss"))
+        XCTAssertFalse(args.contains("-t"))
+    }
+
     private func makeService(
         artworkPreparer: ArtworkPreparing,
         presets: [ConversionPreset] = ConversionPreset.defaultPresets,

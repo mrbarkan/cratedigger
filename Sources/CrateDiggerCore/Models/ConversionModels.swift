@@ -231,11 +231,25 @@ public struct ConversionJob: Hashable, Sendable {
     public let sourceURL: URL
     public let destinationURL: URL
     public let metadata: ConversionMetadata?
+    /// For Record Divider splits: extract only the `[startSeconds, endSeconds)`
+    /// slice of the source. Both `nil` (default) = convert the whole file.
+    public let startSeconds: Double?
+    public let endSeconds: Double?
 
-    public init(sourceURL: URL, destinationURL: URL, metadata: ConversionMetadata? = nil) {
+    public init(sourceURL: URL, destinationURL: URL, metadata: ConversionMetadata? = nil,
+                startSeconds: Double? = nil, endSeconds: Double? = nil) {
         self.sourceURL = sourceURL
         self.destinationURL = destinationURL
         self.metadata = metadata
+        self.startSeconds = startSeconds
+        self.endSeconds = endSeconds
+    }
+
+    /// Length of the slice in seconds, or `nil` when this job converts the whole
+    /// file (no segment, or a degenerate range).
+    public var segmentDuration: Double? {
+        guard let s = startSeconds, let e = endSeconds, e > s else { return nil }
+        return e - s
     }
 }
 

@@ -175,7 +175,8 @@ public struct OutputPathPlanner {
         templateConfig: FolderTemplateConfig,
         reviewedAlbumFolders: [AlbumFolderKey: String] = [:],
         reservedDestinationPaths: Set<String> = [],
-        destinationFileExtension: String? = nil
+        destinationFileExtension: String? = nil,
+        baseNameOverride: String? = nil
     ) -> PlannedOutputPath {
         let track = loadedTrack.track
         let sourceDirectory = track.fileURL.deletingLastPathComponent()
@@ -209,7 +210,10 @@ public struct OutputPathPlanner {
             }
         }
 
-        let baseName = sanitizePathComponent(track.fileURL.deletingPathExtension().lastPathComponent, fallback: "Track")
+        // Record Divider splits name each output by track number + title rather
+        // than the (shared) source-side filename.
+        let rawBaseName = baseNameOverride ?? track.fileURL.deletingPathExtension().lastPathComponent
+        let baseName = sanitizePathComponent(rawBaseName, fallback: "Track")
         let outputExtension = normalizedFileExtension(destinationFileExtension) ?? preset.outputExtension
         let destinationURL = uniqueDestinationURL(
             in: outputDirectory,
