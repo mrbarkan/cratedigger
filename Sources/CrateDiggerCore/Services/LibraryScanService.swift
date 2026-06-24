@@ -4,10 +4,25 @@ import Foundation
 public struct LoadedTrack: Hashable, Equatable, Codable, Sendable {
     public let track: AudioTrack
     public let metadata: ConversionMetadata
+    /// Record Divider track markers (vinyl-side splitting). `nil`/empty = an
+    /// ordinary, undivided track. Optional so pre-feature `.cdlib` crates decode.
+    public var recordMarkers: [RecordMarker]?
 
-    public init(track: AudioTrack, metadata: ConversionMetadata) {
+    public init(track: AudioTrack, metadata: ConversionMetadata, recordMarkers: [RecordMarker]? = nil) {
         self.track = track
         self.metadata = metadata
+        self.recordMarkers = recordMarkers
+    }
+
+    /// The index of the Record Divider track playing at `seconds` (the last marker
+    /// whose start is at or before `seconds`), or `nil` if the track is undivided.
+    public func recordTrackIndex(at seconds: Double) -> Int? {
+        guard let recordMarkers, !recordMarkers.isEmpty else { return nil }
+        var result: Int?
+        for (i, marker) in recordMarkers.enumerated() where marker.startSeconds <= seconds + 0.001 {
+            result = i
+        }
+        return result ?? 0
     }
 }
 
