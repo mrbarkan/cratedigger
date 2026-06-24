@@ -90,16 +90,84 @@ extension LibraryViewModel {
         radioUptimeTimer = nil
     }
 
-    // MARK: - Playback (stubbed in Phase 2; implemented in Phase 3/4)
+    // MARK: - Playback
 
-    /// Starts the selected stream on the active engine. No-op until the engines land.
+    /// Starts the selected stream on the active engine. Stops file playback first
+    /// (they're mutually exclusive), creates/reuses the engine, and mirrors its
+    /// state onto the shared `playbackState` / time so the OLED + footer react.
     func playSelectedStream() {
-        // Phase 3: create/reuse the RadioPlaybackEngine and call play(selectedStream).
+        guard let stream = selectedStream else { return }
+
+        // Stop any library playback so we don't hear both.
+        playback.pause()
+
+        // Radio always uses the Now Playing OLED.
+        oledView = .nowPlaying
+
+        let engine = ensureRadioEngine()
+        engine.play(stream)
+        engine.setVolume(playbackVolume)
     }
 
-    /// Stops radio playback and the uptime ticker.
+    /// Stops radio playback and the uptime ticker, and resets shared playback state.
     func stopRadio() {
+        radioEngine?.stop()
         stopRadioUptimeTicker()
-        // Phase 3: radioEngine?.stop()
+        if isRadioMode {
+            radioPublish(state: .idle)
+            radioPublish(currentTime: 0, duration: 0)
+        }
+    }
+
+    /// Lazily builds the engine for the current `streamEngine` preference, wiring
+    /// its callbacks onto the view model's shared playback state.
+    private func ensureRadioEngine() -> RadioPlaybackEngine {
+        let kind = resolveActiveEngineKind()
+        // Reuse only if the kind matches; otherwise rebuild.
+        if let existing = radioEngine, kind == radioEngineKind {
+            return existing
+        }
+        radioEngine?.stop()
+        radioEngineKind = kind
+        radioEngineLabel = engineLabel(for: kind)
+
+        let engine = makeEngine(for: kind)
+        engine.onStateChange = { [weak self] state in
+            guard let self else { return }
+            switch state {
+            case .idle:    self.radioPublish(state: .idle)
+            case .loading: self.radioPublish(state: .loading)
+            case .playing: self.radioPublish(state: .playing)
+            case .paused:  self.radioPublish(state: .paused)
+            case .failed(let message):
+                self.radioPublish(state: .failed(message: message))
+                self.appAlert = .error(title: "Stream Problem", message: message)
+            }
+        }
+        engine.onTimeChange = { [weak self] current, duration in
+            guard let self else { return }
+            self.radioPublish(currentTime: current, duration: duration)
+        }
+        radioEngine = engine
+        return engine
+    }
+
+    private func makeEngine(for kind: RadioEngineKind) -> RadioPlaybackEngine {
+        switch kind {
+        case .webview: return YouTubeEmbedStreamEngine()
+        case .native:  return YouTubeEmbedStreamEngine()   // Phase 4 swaps in YtDlpStreamEngine
+        }
+    }
+
+    /// Phase 3 always resolves to the WebView engine; Phase 4 adds yt-dlp + Auto.
+    func resolveActiveEngineKind() -> RadioEngineKind {
+        return .webview
+    }
+
+    private func engineLabel(for kind: RadioEngineKind) -> String {
+        switch kind {
+        case .webview: return "WEB"
+        case .native:  return "NATIVE"
+        }
     }
 }

@@ -143,7 +143,10 @@ final class LibraryViewModel: ObservableObject {
     @Published private(set) var albumsFetchingArtwork: Set<String> = []
 
     @Published var playbackVolume: Double = 0.8 {
-        didSet { playback.setVolume(playbackVolume) }
+        didSet {
+            playback.setVolume(playbackVolume)
+            radioEngine?.setVolume(playbackVolume)
+        }
     }
 
     @Published var shuffleEnabled: Bool = false {
@@ -233,7 +236,7 @@ final class LibraryViewModel: ObservableObject {
     /// Short label for the active stream engine, shown in the OLED ("AUTO"/"NATIVE"/"WEB").
     @Published var radioEngineLabel: String = "AUTO"
     /// Active engine for the current stream; drives whether the OLED shows real codec/buffer.
-    @Published private(set) var radioEngineKind: RadioEngineKind = .webview
+    @Published var radioEngineKind: RadioEngineKind = .webview
 
     var isRadioMode: Bool {
         if case .radio = currentSource { return true }
@@ -259,6 +262,8 @@ final class LibraryViewModel: ObservableObject {
     }
     let streamStore = StreamStore()
     var radioUptimeTimer: Timer?
+    /// Active playback engine while a stream is playing (WebView or native). nil when idle.
+    var radioEngine: RadioPlaybackEngine?
 
     // Cache indexes for fast switching
     private var localIndex: LibraryIndex = .empty
@@ -576,6 +581,10 @@ final class LibraryViewModel: ObservableObject {
     }
 
     func selectSource(_ source: LibrarySource) {
+        // Leaving radio for a library source stops the stream engine.
+        if isRadioMode {
+            if case .radio = source {} else { stopRadio() }
+        }
         currentSource = source
         switch source {
         case .localAll:
@@ -1138,6 +1147,8 @@ final class LibraryViewModel: ObservableObject {
     // MARK: - Playback actions
 
     func playTrack(id: UUID) {
+        // Library playback and stream playback are mutually exclusive.
+        stopRadio()
         let queue = currentAlbumQueue()
         guard let startIndex = queue.firstIndex(where: { $0.track.id == id }) else { return }
         // Starting a track jumps the OLED to Now Playing.
@@ -1156,6 +1167,17 @@ final class LibraryViewModel: ObservableObject {
     }
 
     func togglePlayPause() {
+        // Radio stream active: route play/pause to the radio engine.
+        if isRadioMode, selectedStream != nil, radioEngine != nil {
+            if playbackState == .playing { radioEngine?.pause() } else { radioEngine?.resume() }
+            return
+        }
+        if isRadioMode, let stream = selectedStream {
+            // No engine yet (e.g. just entered): start it.
+            _ = stream
+            playSelectedStream()
+            return
+        }
         if case .idle = playbackState, let track = visibleTracks.first {
             playTrack(id: track.track.id)
             return
@@ -1163,15 +1185,41 @@ final class LibraryViewModel: ObservableObject {
         playback.togglePlayPause()
     }
 
-    func next() { playback.next() }
-    func previous() { playback.previous() }
-    func rewind8s()  { playback.seek(toSeconds: max(0, playbackCurrentTime - 8)) }
-    func forward8s() { playback.seek(toSeconds: min(playbackDuration, playbackCurrentTime + 8)) }
+    func next() {
+        if isRadioMode { selectAdjacentStream(offset: 1); return }
+        playback.next()
+    }
+    func previous() {
+        if isRadioMode { selectAdjacentStream(offset: -1); return }
+        playback.previous()
+    }
+    func rewind8s()  {
+        if isRadioMode { radioEngine?.seek(toSeconds: max(0, playbackCurrentTime - 8)); return }
+        playback.seek(toSeconds: max(0, playbackCurrentTime - 8))
+    }
+    func forward8s() {
+        if isRadioMode { radioEngine?.seek(toSeconds: playbackCurrentTime + 8); return }
+        playback.seek(toSeconds: min(playbackDuration, playbackCurrentTime + 8))
+    }
 
     /// Seek to a 0...1 fraction of the current track (footer POSITION dial).
     func seek(toFraction fraction: Double) {
+        if isRadioMode {
+            // Live streams can't seek; VOD seeks against the known duration.
+            guard let stream = selectedStream, !stream.isLive, playbackDuration > 0 else { return }
+            radioEngine?.seek(toSeconds: min(max(fraction, 0), 1) * playbackDuration)
+            return
+        }
         guard playbackDuration > 0 else { return }
         playback.seek(toSeconds: min(max(fraction, 0), 1) * playbackDuration)
+    }
+
+    private func selectAdjacentStream(offset: Int) {
+        let list = filteredStreams
+        guard !list.isEmpty, let id = selectedStreamID,
+              let idx = list.firstIndex(where: { $0.id == id }) else { return }
+        let next = (idx + offset + list.count) % list.count
+        selectStream(id: list[next].id)
     }
 
     func setVolume(_ value: Double) {
@@ -1603,6 +1651,8 @@ final class LibraryViewModel: ObservableObject {
     }
 
     private func checkScrobbleProgress(current: Double, duration: Double) {
+        // Streams are never scrobbled.
+        guard !isRadioMode else { return }
         guard let sessionKey = prefs.lastFmSessionKey, !sessionKey.isEmpty,
               let nowPlaying = nowPlayingTrack,
               lastScrobbledTrackID != nowPlaying.track.id else {
@@ -1631,6 +1681,20 @@ final class LibraryViewModel: ObservableObject {
     }
 
     // MARK: - Bindings
+
+    // MARK: - Radio engine state bridge
+    //
+    // The radio engines live in LibraryViewModel+Radio.swift and need to push
+    // state onto these private(set) published properties. These helpers keep the
+    // `private(set)` contract (only this type mutates playback state) while
+    // letting the same-type extension drive it.
+
+    func radioPublish(state: PlaybackState) { playbackState = state }
+
+    func radioPublish(currentTime: Double, duration: Double) {
+        playbackCurrentTime = currentTime
+        playbackDuration = duration
+    }
 
     private func wirePlaybackBindings() {
         playback.onStateChange = { [weak self] state in
