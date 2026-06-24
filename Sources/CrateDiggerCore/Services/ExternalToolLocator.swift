@@ -3,9 +3,13 @@ import Foundation
 public enum ExternalTool: String, CaseIterable, Sendable {
     case ffmpeg
     case ffprobe
+    case ytdlp
 
     public var executableName: String {
-        rawValue
+        switch self {
+        case .ffmpeg, .ffprobe: return rawValue
+        case .ytdlp: return "yt-dlp"   // binary name differs from the case name
+        }
     }
 
     public var environmentOverrideKey: String {
@@ -14,6 +18,8 @@ public enum ExternalTool: String, CaseIterable, Sendable {
             return "CRATEDIGGER_FFMPEG_PATH"
         case .ffprobe:
             return "CRATEDIGGER_FFPROBE_PATH"
+        case .ytdlp:
+            return "CRATEDIGGER_YTDLP_PATH"
         }
     }
 }
