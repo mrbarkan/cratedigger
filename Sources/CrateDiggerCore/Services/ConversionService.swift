@@ -19,10 +19,37 @@ public protocol CommandRunning {
 public struct ProcessCommandRunner: CommandRunning {
     public init() {}
 
+    /// Standard CLI tool directories. GUI apps launch with a minimal PATH
+    /// (often just /usr/bin:/bin), so spawned tools like yt-dlp can't find their
+    /// own dependencies — e.g. the `deno`/`node` JS runtime yt-dlp needs to run
+    /// YouTube's player JS and unlock HLS formats (without it, only DASH URLs are
+    /// returned, which AVPlayer can't stream). We prepend these so subprocesses
+    /// see a normal developer PATH.
+    public static let standardToolDirectories = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"]
+
+    /// Merge `basePATH` with `additionalDirectories`, de-duplicated, base entries first.
+    public static func augmentedPATH(
+        _ basePATH: String?,
+        additionalDirectories: [String] = standardToolDirectories
+    ) -> String {
+        let baseDirs = basePATH?.split(separator: ":").map(String.init) ?? []
+        var seen = Set<String>()
+        var merged: [String] = []
+        for dir in baseDirs + additionalDirectories where !dir.isEmpty {
+            if seen.insert(dir).inserted { merged.append(dir) }
+        }
+        return merged.joined(separator: ":")
+    }
+
     public func run(executableURL: URL, arguments: [String]) throws -> CommandOutput {
         let process = Process()
         process.executableURL = executableURL
         process.arguments = arguments
+
+        // Ensure spawned tools see a normal PATH (GUI apps inherit a stripped one).
+        var environment = ProcessInfo.processInfo.environment
+        environment["PATH"] = ProcessCommandRunner.augmentedPATH(environment["PATH"])
+        process.environment = environment
 
         let stdoutPipe = Pipe()
         let stderrPipe = Pipe()
