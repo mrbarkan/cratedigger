@@ -308,6 +308,10 @@ public struct LibraryIndex: Sendable {
 }
 
 public extension LibraryIndex {
+    /// Every album across all artists, in artist order. Used by the browser's
+    /// "Album · Track" layout, which lists albums regardless of artist.
+    var allAlbums: [Album] { artists.flatMap { $0.albums } }
+
     func artist(id: String) -> Artist? { artists.first { $0.id == id } }
     func album(id: String) -> Album? {
         for artist in artists {

@@ -12,6 +12,18 @@ final class LibraryIndexTests: XCTestCase {
         XCTAssertEqual(index.totalSizeBytes, 0)
     }
 
+    func testAllAlbumsFlattensEveryArtist() {
+        let tracks: [LoadedTrack] = [
+            makeTrack(file: "/m/A/One/01.flac", title: "a1", artist: "Artist A", album: "One", year: 2001, trackNumber: 1),
+            makeTrack(file: "/m/A/Two/01.flac", title: "a2", artist: "Artist A", album: "Two", year: 2002, trackNumber: 1),
+            makeTrack(file: "/m/B/Three/01.flac", title: "b1", artist: "Artist B", album: "Three", year: 2003, trackNumber: 1)
+        ]
+        let index = LibraryIndex.build(from: tracks)
+        XCTAssertEqual(index.artists.count, 2)
+        XCTAssertEqual(index.allAlbums.count, 3)
+        XCTAssertEqual(Set(index.allAlbums.map(\.title)), ["One", "Two", "Three"])
+    }
+
     func testGroupsTracksByArtistAndAlbum() {
         let tracks: [LoadedTrack] = [
             makeTrack(file: "/m/A/Loose Pages/02.flac", title: "Cassiopeia Drift", artist: "Maggot Brain Quartet", album: "Loose Pages", year: 1974, trackNumber: 2),

@@ -1,3 +1,4 @@
+import CrateDiggerCore
 import SwiftUI
 
 struct MainShell: View {
@@ -84,6 +85,7 @@ struct MainShell: View {
                     trailing: browserWellTrailing,
                     trailingControl: AnyView(HStack(spacing: 6) {
                         if !model.showArtworkGallery && !model.isRadioMode {
+                            browserLayoutMenu()
                             sortToggleButton()
                         }
                         collapseChevron(action: { model.toggleBrowserCollapsed() })
@@ -257,6 +259,35 @@ struct MainShell: View {
         }
         .buttonStyle(.plain)
         .help("Collapse panel")
+    }
+
+    /// Menu to pick the browser column layout (3-pane / Album·Track / flat Track).
+    private func browserLayoutMenu() -> some View {
+        Menu {
+            ForEach(BrowserLayout.allCases, id: \.self) { layout in
+                Button {
+                    model.browserLayout = layout
+                } label: {
+                    if model.browserLayout == layout {
+                        Label(layout.title, systemImage: "checkmark")
+                    } else {
+                        Text(layout.title)
+                    }
+                }
+            }
+        } label: {
+            ZStack {
+                ChromeChassis(theme: theme, cornerRadius: 4)
+                    .frame(width: 18, height: 14)
+                Image(systemName: model.browserLayout.iconName)
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(theme.ink3)
+            }
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Browser columns")
     }
 
     /// Toggles the per-column sort menus in the browser headers.

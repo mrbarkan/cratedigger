@@ -8,19 +8,31 @@ struct BrowserPane: View {
     var body: some View {
         ZStack {
             HStack(spacing: 0) {
-                ArtistColumn()
-                    .frame(maxWidth: .infinity)
-                divider
-                AlbumColumn()
-                    .frame(maxWidth: .infinity)
-                divider
-                TrackColumn()
-                    .frame(maxWidth: .infinity)
+                columns
             }
             if shouldShowEmptyState {
                 BrowserEmptyState()
                     .transition(.opacity)
             }
+        }
+    }
+
+    /// Column composition per the selected browser layout.
+    @ViewBuilder
+    private var columns: some View {
+        switch model.browserLayout {
+        case .full:
+            ArtistColumn().frame(maxWidth: .infinity)
+            divider
+            AlbumColumn().frame(maxWidth: .infinity)
+            divider
+            TrackColumn().frame(maxWidth: .infinity)
+        case .albumTrack:
+            AlbumColumn(flat: true).frame(maxWidth: .infinity)
+            divider
+            TrackColumn().frame(maxWidth: .infinity)
+        case .track:
+            TrackColumn(flat: true).frame(maxWidth: .infinity)
         }
     }
 
@@ -115,14 +127,18 @@ private struct ArtistColumn: View {
 
 private struct AlbumColumn: View {
     @EnvironmentObject private var model: LibraryViewModel
+    /// When true, list every album across all artists (the "Album · Track" layout).
+    var flat: Bool = false
+
+    private var albums: [Album] { flat ? model.allAlbumsSorted : model.visibleAlbums }
 
     var body: some View {
         ColumnList(
             title: "Album",
-            trailing: String(format: "%02d", model.selectedArtist?.albumCount ?? 0),
+            trailing: String(format: "%02d", flat ? albums.count : (model.selectedArtist?.albumCount ?? 0)),
             headerAccessory: model.showSortControls ? AnyView(AlbumSortControl()) : nil
         ) {
-            ForEach(model.visibleAlbums) { album in
+            ForEach(albums) { album in
                 AlbumRow(
                     album: album,
                     selected: model.selectedAlbumID == album.id,
@@ -160,13 +176,24 @@ private struct AlbumColumn: View {
     }
 
     private func selectAlbum(_ album: Album) {
-        model.selectedAlbumID = album.id
-        model.selectedTrackID = album.tracks.first?.track.id
+        if flat {
+            model.selectAlbumFlat(album)
+        } else {
+            model.selectedAlbumID = album.id
+            model.selectedTrackID = album.tracks.first?.track.id
+        }
     }
 }
 
 private struct TrackColumn: View {
     @EnvironmentObject private var model: LibraryViewModel
+    /// When true, list every track in the source flat (the "Track" layout) — no
+    /// album scoping and no disc-header separators.
+    var flat: Bool = false
+
+    private var sourceTracks: [LoadedTrack] {
+        flat ? model.flatTracksSorted : model.visibleTracks
+    }
 
     var body: some View {
         ColumnList(
@@ -230,8 +257,8 @@ private struct TrackColumn: View {
     /// Track rows, with "DISC n" separators interleaved when the album spans
     /// multiple discs, and Record Divider sub-tracks listed under a divided file.
     private var trackEntries: [TrackListEntry] {
-        let tracks = model.visibleTracks
-        let multiDisc = model.selectedAlbum?.isMultiDisc == true && model.trackSortField == .trackNumber
+        let tracks = sourceTracks
+        let multiDisc = !flat && model.selectedAlbum?.isMultiDisc == true && model.trackSortField == .trackNumber
         let counts = multiDisc
             ? Dictionary(grouping: tracks, by: { $0.track.discNumber ?? 1 }).mapValues(\.count)
             : [:]
@@ -256,8 +283,10 @@ private struct TrackColumn: View {
     }
 
     private var trackTrailing: String {
-        let count = model.visibleTracks.count
-        let total = model.selectedAlbum?.totalDurationSeconds ?? 0
+        let count = sourceTracks.count
+        let total = flat
+            ? sourceTracks.reduce(0) { $0 + $1.track.durationSeconds }
+            : (model.selectedAlbum?.totalDurationSeconds ?? 0)
         guard count > 0 else { return "—" }
         let minutes = Int(total) / 60
         let seconds = Int(total) % 60

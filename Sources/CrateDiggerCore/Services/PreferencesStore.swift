@@ -45,6 +45,7 @@ public final class PreferencesStore {
         static let albumSortField = "cratedigger.browser.albumSortField"
         static let albumSortAscending = "cratedigger.browser.albumSortAscending"
         static let showSortControls = "cratedigger.browser.showSortControls"
+        static let browserLayout = "cratedigger.browser.layout"
         static let streamSources = "cratedigger.radio.streamSources"
         static let streamEngine = "cratedigger.radio.engine"
         static let customYtDlpPath = "cratedigger.tools.ytdlpPath"
@@ -256,6 +257,17 @@ public final class PreferencesStore {
                 defaults.set(value, forKey: Key.trackSortField)
             } else {
                 defaults.removeObject(forKey: Key.trackSortField)
+            }
+        }
+    }
+
+    public var savedBrowserLayout: String? {
+        get { defaults.string(forKey: Key.browserLayout) }
+        set {
+            if let value = newValue {
+                defaults.set(value, forKey: Key.browserLayout)
+            } else {
+                defaults.removeObject(forKey: Key.browserLayout)
             }
         }
     }

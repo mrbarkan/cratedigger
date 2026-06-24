@@ -194,6 +194,11 @@ final class LibraryViewModel: ObservableObject {
         didSet { prefs.savedShowSortControls = showSortControls }
     }
 
+    /// How the browser arranges its columns (3-pane / Album·Track / flat Track).
+    @Published var browserLayout: BrowserLayout = .full {
+        didSet { prefs.savedBrowserLayout = browserLayout.rawValue }
+    }
+
     // MARK: - New Sources & Playlists State
     @Published var currentSource: LibrarySource = .localAll
     @Published var availableCrates: [String] = []
@@ -401,6 +406,9 @@ final class LibraryViewModel: ObservableObject {
         }
         albumSortAscending = prefs.savedAlbumSortAscending
         showSortControls = prefs.savedShowSortControls
+        if let savedLayout = prefs.savedBrowserLayout, let layout = BrowserLayout(rawValue: savedLayout) {
+            browserLayout = layout
+        }
 
         if let persisted = prefs.savedLastConversionSelection(as: PersistedConversionSelection.self),
            let restored = persisted.materialize() {
@@ -589,6 +597,27 @@ final class LibraryViewModel: ObservableObject {
     var visibleTracks: [LoadedTrack] {
         let base = selectedAlbum?.tracks ?? []
         return LibraryIndex.sortedTracks(base, by: trackSortField, ascending: trackSortAscending)
+    }
+
+    /// Every album across all artists, sorted by the album-sort preference.
+    /// Drives the "Album · Track" browser layout.
+    var allAlbumsSorted: [Album] {
+        LibraryIndex.sortedAlbums(index.allAlbums, by: albumSortField, ascending: albumSortAscending)
+    }
+
+    /// Every track in the source, sorted by the track-sort preference. Drives
+    /// the flat "Track" browser layout.
+    var flatTracksSorted: [LoadedTrack] {
+        LibraryIndex.sortedTracks(index.allTracks, by: trackSortField, ascending: trackSortAscending)
+    }
+
+    /// Select an album from the flat album list — sets the artist too, since
+    /// `selectedAlbum` is scoped to the selected artist, so the Track column
+    /// resolves it and switching back to the 3-pane layout stays consistent.
+    func selectAlbumFlat(_ album: Album) {
+        selectedArtistID = album.artistID
+        selectedAlbumID = album.id
+        selectedTrackID = album.tracks.first?.track.id
     }
 
     var selectedTrack: LoadedTrack? {
