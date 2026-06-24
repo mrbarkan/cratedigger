@@ -11,6 +11,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private var spaceKeyMonitor: Any?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if AppVersion.isBetaExpired {
+            presentBetaExpiredAndTerminate()
+            return
+        }
+
         buildMenu()
 
         let windowController = MainWindowController()
@@ -19,6 +24,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         windowController.restoreLastSession()
 
         installSpaceKeyMonitor()
+    }
+
+    /// Beta builds stop working after `AppVersion.betaExpiry`: show a notice
+    /// (with a link to the latest build) and quit before the UI comes up.
+    private func presentBetaExpiredAndTerminate() {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "This CrateDigger beta has expired"
+        var info = "Beta \(AppVersion.marketing) (build \(AppVersion.build)) has reached its expiry date."
+        if let expiry = AppVersion.betaExpiry {
+            let formatter = DateFormatter()
+            formatter.dateStyle = .long
+            info = "Beta \(AppVersion.marketing) (build \(AppVersion.build)) expired on \(formatter.string(from: expiry))."
+        }
+        alert.informativeText = info + " Please download the latest build to keep using CrateDigger."
+        alert.addButton(withTitle: "Get the Latest Build")
+        alert.addButton(withTitle: "Quit")
+        if alert.runModal() == .alertFirstButtonReturn,
+           let url = URL(string: "https://smash.mrbarkan.com") {
+            NSWorkspace.shared.open(url)
+        }
+        NSApp.terminate(nil)
     }
 
     func applicationWillTerminate(_ notification: Notification) {

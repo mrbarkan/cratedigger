@@ -17,6 +17,25 @@ enum AppVersion {
     /// final release — at which point the pill reverts to "VERSION x (build)".
     static let channel = "BETA"
 
+    /// Hard expiry for beta builds — on/after this date the app shows a notice
+    /// and quits at launch. Bump per release; set to `nil` to disable.
+    static let betaExpiry: Date? = {
+        var components = DateComponents()
+        components.year = 2026
+        components.month = 7
+        components.day = 24
+        components.hour = 23
+        components.minute = 59
+        components.second = 59
+        return Calendar(identifier: .gregorian).date(from: components)
+    }()
+
+    /// True once the current date has passed `betaExpiry`.
+    static var isBetaExpired: Bool {
+        guard let betaExpiry else { return false }
+        return Date() > betaExpiry
+    }
+
     /// Formats the About version pill, e.g. "VERSION 0.9.0 · BETA 1" or, once
     /// `channel` is empty, "VERSION 1.0.0 (1)". Defaults to the compiled-in
     /// values but accepts the live bundle values when packaged.
