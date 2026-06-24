@@ -421,8 +421,9 @@ struct SourcesSidebar: View {
 
     @ViewBuilder
     private var addToCrateButton: some View {
-        let armed = model.selectedTrack != nil
-        KeyButton(style: armed ? .glowingOrange : .normal, action: addSelectedTrackToCrate) {
+        let albumTracks = model.selectedAlbum?.tracks ?? []
+        let armed = !albumTracks.isEmpty
+        KeyButton(style: armed ? .glowingFilled : .normal, action: addSelectedAlbumToCrate) {
             HStack(spacing: 8) {
                 Image(systemName: "tray.and.arrow.down.fill")
                     .font(.system(size: 11, weight: .semibold))
@@ -435,13 +436,14 @@ struct SourcesSidebar: View {
         }
         .frame(height: 30)
         .help(armed
-            ? "Add the selected track to \(model.targetCrateName)"
-            : "Select a track to arm, then add it to a crate")
+            ? "Add “\(model.selectedAlbum?.title ?? "")” (\(albumTracks.count) track\(albumTracks.count == 1 ? "" : "s")) to \(model.targetCrateName)"
+            : "Select an album, then add it to a crate")
     }
 
-    private func addSelectedTrackToCrate() {
-        guard let track = model.selectedTrack else { return }
-        ClickPlayer.shared.play(.key)
-        model.addItemsToCrate(["track::" + track.track.id.uuidString], crateName: model.targetCrateName)
+    private func addSelectedAlbumToCrate() {
+        let tracks = model.selectedAlbum?.tracks ?? []
+        guard !tracks.isEmpty else { return }
+        model.addItemsToCrate(tracks.map { "track::" + $0.track.id.uuidString },
+                              crateName: model.targetCrateName)
     }
 }

@@ -5,10 +5,10 @@ struct BrandBlock: View {
     @EnvironmentObject private var model: LibraryViewModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
                 BrandMark(size: 38)
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 3) {
                     Text("CrateDigger")
                         .font(CarbonFont.sans(18, weight: .semibold))
                         .foregroundStyle(theme.ink)
@@ -19,15 +19,18 @@ struct BrandBlock: View {
                         .textCase(.uppercase)
                 }
             }
-            HStack(spacing: 10) {
-                statLabel(value: "\(model.index.allTracks.count)", suffix: "RECS")
-                statLabel(value: gigabytesString(bytes: model.index.totalSizeBytes), suffix: nil)
+            // Stats + controls align to the title text (indented past the mark).
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 14) {
+                    statLabel(value: "\(model.index.allTracks.count)", suffix: "RECS")
+                    statLabel(value: gigabytesString(bytes: model.index.totalSizeBytes), suffix: nil)
+                }
+                HStack(spacing: 8) {
+                    LibButton(title: "DIG CRATE", systemImage: "folder") { model.openFolderViaPanel() }
+                    LibButton(title: "RESCAN", systemImage: "arrow.clockwise") { model.refreshLibrary() }
+                }
             }
-            HStack(spacing: 6) {
-                LibButton(title: "DIG CRATE", systemImage: "folder") { model.openFolderViaPanel() }
-                LibButton(title: "RESCAN", systemImage: "arrow.clockwise") { model.refreshLibrary() }
-            }
-            .padding(.top, 1)
+            .padding(.leading, 50)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

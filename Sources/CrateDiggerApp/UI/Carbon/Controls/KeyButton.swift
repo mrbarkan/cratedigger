@@ -4,6 +4,7 @@ enum KeyButtonStyle: Equatable {
     case normal
     case selected
     case glowingOrange
+    case glowingFilled
     case disabled
 }
 
@@ -83,6 +84,18 @@ struct KeyButton<Label: View>: View {
                     shape.stroke(theme.orange.opacity(0.55), lineWidth: 0.7)
                 )
                 .shadow(color: theme.orange.opacity(0.35), radius: 10)
+
+        case .glowingFilled:
+            shape
+                .fill(
+                    LinearGradient(
+                        colors: [theme.orangeHi, theme.orange, theme.orangeLo],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .overlay(shape.stroke(Color.white.opacity(0.30), lineWidth: 0.7))
+                .shadow(color: theme.orange.opacity(0.55), radius: 12)
         }
     }
 
@@ -91,6 +104,7 @@ struct KeyButton<Label: View>: View {
         case .normal:        return theme.ink2
         case .selected:      return theme.selectionInk
         case .glowingOrange: return theme.orange
+        case .glowingFilled: return Color(white: 0.07)
         case .disabled:      return theme.ink3
         }
     }
