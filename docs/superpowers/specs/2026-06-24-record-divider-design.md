@@ -42,6 +42,7 @@ destructive split.
 | Detection | ffmpeg **`silencedetect`** (already bundled) |
 | Input scope | **One file at a time** |
 | Skipped regions in playback | Still play; excluded only from export |
+| Min-track floor | **30 s**; no max length. Detection biased to long/clear silences so long songs aren't split internally |
 
 ## Architecture
 
@@ -96,12 +97,20 @@ LoadedTrack.recordMarkers = [...]  ── persisted into the track's .cdlib crat
     - Leading silence (lead-in groove) before the first audio is dropped — track 1
       starts at the first `silence_end` (or 0 if no leading silence).
     - The last track ends at file duration.
-    - **Min-track-length guard (~20 s):** spans shorter than the guard are merged
-      into the previous track, so quiet passages or inter-song noise don't create
-      spurious splits.
-  - **Sensitivity** maps to two ffmpeg knobs: noise floor (e.g. `-30 dB` …
-    `-40 dB`) and minimum silence duration (e.g. `1.0 s` … `2.5 s`). Higher
-    sensitivity = more splits.
+    - **Min-track-length guard (30 s):** spans shorter than 30 s are merged into
+      the previous track, so a brief quiet moment doesn't create a spurious
+      track. There is **no maximum** track length — a whole side with no real
+      gaps stays a single track.
+  - **Bias toward long, clear silences (protect long songs).** True between-songs
+    gaps on vinyl are short bursts of *near-total* silence; quiet musical passages
+    inside a long song (e.g. *Echoes*, ~25 min) are neither truly silent nor
+    sustained that long. To avoid falsely chopping such songs, the **default**
+    detection is conservative: a low noise floor (`-38 dB`) and a longer minimum
+    silence (`2.0 s`), so only genuine track breaks register. Manual **Merge** in
+    the review sheet is the backstop if one slips through.
+  - **Sensitivity** maps to the two ffmpeg knobs: noise floor (`-30 dB` …
+    `-42 dB`) and minimum silence duration (`1.2 s` … `2.8 s`), centered on the
+    conservative default above. Higher sensitivity = more splits.
   - Default titles: `Track 01`, `Track 02`, … (zero-padded to the count).
 
 ### 3. Review sheet (App)
