@@ -323,6 +323,34 @@ extension LibraryViewModel {
         let sourceRoot = commonAncestorDirectory(for: tracks.map { $0.track.fileURL })
 
         for track in tracks {
+            // Record Divider: a track with markers expands into one job per kept
+            // track, each cutting its slice from the shared source file.
+            let recordPlans = RecordTrackPlanner.trackPlans(for: track)
+            if !recordPlans.isEmpty {
+                for recordPlan in recordPlans {
+                    let plan = planner.planDestination(
+                        for: track,
+                        preset: preset,
+                        destinationRoot: destinationRoot,
+                        sourceRoot: sourceRoot,
+                        folderMode: folderMode,
+                        templateConfig: templateConfig,
+                        reviewedAlbumFolders: reviewedAlbumFolders,
+                        reservedDestinationPaths: reserved,
+                        baseNameOverride: recordPlan.baseName
+                    )
+                    reserved.insert(plan.destinationURL.standardizedFileURL.resolvingSymlinksInPath().path)
+                    jobs.append(ConversionJob(
+                        sourceURL: track.track.fileURL,
+                        destinationURL: plan.destinationURL,
+                        metadata: recordPlan.metadata,
+                        startSeconds: recordPlan.startSeconds,
+                        endSeconds: recordPlan.endSeconds
+                    ))
+                }
+                continue
+            }
+
             let plan = planner.planDestination(
                 for: track,
                 preset: preset,

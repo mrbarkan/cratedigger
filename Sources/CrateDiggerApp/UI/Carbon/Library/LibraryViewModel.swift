@@ -239,6 +239,19 @@ final class LibraryViewModel: ObservableObject {
     /// Active engine for the current stream; drives whether the OLED shows real codec/buffer.
     @Published var radioEngineKind: RadioEngineKind = .webview
 
+    // MARK: - Record Divider state
+    /// The track open in the Record Divider review sheet (a vinyl-side rip).
+    @Published var recordDividerTrack: LoadedTrack?
+    @Published var showingRecordDividerSheet: Bool = false
+    /// Editable working rows in the review sheet (skipped rows have `keep == false`).
+    @Published var recordDividerRows: [RecordDividerDraftRow] = []
+    /// Detection sensitivity slider, 0 (fewest splits) … 1 (most). Default is
+    /// conservative so long songs aren't split internally.
+    @Published var recordDividerSensitivity: Double = 0.4
+    @Published var recordDividerIsScanning: Bool = false
+    /// Hint shown when a scan finds 0–1 breaks (suggest raising sensitivity).
+    @Published var recordDividerHint: String?
+
     var isRadioMode: Bool {
         if case .radio = currentSource { return true }
         return false

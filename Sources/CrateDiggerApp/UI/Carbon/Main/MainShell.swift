@@ -24,6 +24,9 @@ struct MainShell: View {
         .sheet(isPresented: $model.showingAddStreamSheet) {
             AddStreamSheet()
         }
+        .sheet(isPresented: $model.showingRecordDividerSheet) {
+            RecordDividerSheet()
+        }
     }
 
     // MARK: - Sources

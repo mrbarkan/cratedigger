@@ -186,7 +186,22 @@ private struct TrackColumn: View {
                         onSelect: { model.selectedTrackID = loaded.track.id },
                         onActivate: { model.playTrack(id: loaded.track.id) }
                     )
+                    .contextMenu { trackContextMenu(loaded) }
                 }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func trackContextMenu(_ loaded: LoadedTrack) -> some View {
+        let hasMarkers = !(loaded.recordMarkers ?? []).isEmpty
+        Button(hasMarkers ? "Edit Record Divider…" : "Record Divider…") {
+            model.beginRecordDivider(for: loaded)
+        }
+        .disabled(!model.canRecordDivide(loaded))
+        if hasMarkers {
+            Button("Clear Track Markers") {
+                model.clearRecordMarkers(for: loaded)
             }
         }
     }
