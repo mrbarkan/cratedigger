@@ -121,6 +121,39 @@ struct SourcesSidebar: View {
                         action: { model.selectSource(.remote) }
                     )
                     
+                    HStack {
+                        sectionHeader("Radio / Streams", trailing: "")
+                        Spacer()
+                        Button(action: { model.showingAddStreamSheet = true }) {
+                            Image(systemName: "plus")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(theme.ink2)
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.trailing, 12)
+                        .padding(.top, 10)
+                        .help("Add a YouTube stream source")
+                    }
+
+                    sidebarItem(
+                        icon: Image(systemName: "dot.radiowaves.left.and.right"),
+                        title: "All Streams",
+                        count: "\(model.streams.count)",
+                        selected: isSelectedRadio(nil),
+                        action: { model.enterRadio(channel: nil) }
+                    )
+
+                    ForEach(model.streamChannels, id: \.self) { channel in
+                        sidebarItem(
+                            icon: Image(systemName: model.liveStreamChannels.contains(channel)
+                                ? "antenna.radiowaves.left.and.right" : "waveform"),
+                            title: channel,
+                            count: model.liveStreamChannels.contains(channel) ? "LIVE" : "\(model.streams.filter { $0.channel == channel }.count)",
+                            selected: isSelectedRadio(channel),
+                            action: { model.enterRadio(channel: channel) }
+                        )
+                    }
+
                     if !model.mountedCDs.isEmpty {
                         sectionHeader("CD Drives", trailing: "")
                         ForEach(model.mountedCDs) { cd in
@@ -230,6 +263,13 @@ struct SourcesSidebar: View {
     private func isSelectedCD(_ path: String) -> Bool {
         if case .cd(let currentPath) = model.currentSource {
             return currentPath == path
+        }
+        return false
+    }
+
+    private func isSelectedRadio(_ channel: String?) -> Bool {
+        if case .radio(let current) = model.currentSource {
+            return current == channel
         }
         return false
     }

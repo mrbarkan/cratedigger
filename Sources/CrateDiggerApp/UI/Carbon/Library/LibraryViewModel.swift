@@ -226,6 +226,8 @@ final class LibraryViewModel: ObservableObject {
     /// nil == All Streams; otherwise the channel currently shown.
     @Published var radioChannelFilter: String?
     @Published var selectedStreamID: String?
+    /// Drives the Add-Stream sheet (shared by the sidebar "+" and the radio list "ADD URL").
+    @Published var showingAddStreamSheet: Bool = false
     /// Uptime ticker for a live stream (seconds); formatted HH:MM:SS in the OLED.
     @Published var radioUptimeSeconds: Int = 0
     /// Short label for the active stream engine, shown in the OLED ("AUTO"/"NATIVE"/"WEB").
