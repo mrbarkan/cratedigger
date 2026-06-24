@@ -20,6 +20,9 @@ struct RadioListView: View {
                             RadioRow(stream: stream, selected: model.selectedStreamID == stream.id)
                                 .onTapGesture { model.selectStream(id: stream.id) }
                                 .contextMenu {
+                                    Button("Refresh Metadata") {
+                                        model.fetchMetadata(for: stream.id)
+                                    }
                                     Button("Copy Link") {
                                         NSPasteboard.general.clearContents()
                                         NSPasteboard.general.setString(stream.url, forType: .string)
