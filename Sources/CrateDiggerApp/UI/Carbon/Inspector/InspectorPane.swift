@@ -9,10 +9,11 @@ struct InspectorPane: View {
     @State private var showingCleanup = false
     @State private var activeTab: InspectorTab = .info
 
+    // The "DISC" tab (spinning record / cassette) is disabled for now — the v7
+    // redesign drops it. SpinningRecordView is retained for possible later use.
     private enum InspectorTab: String, CaseIterable {
         case info = "INFO"
         case art = "ART"
-        case disc = "DISC"
     }
 
     /// Width threshold above which the inspector switches from the default
@@ -89,30 +90,25 @@ struct InspectorPane: View {
     private func narrowLayout(height: CGFloat) -> some View {
         switch activeTab {
         case .info:
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: 0) {
-                    AlbumPoster(album: model.selectedAlbum)
-                        .frame(width: 120, height: 120)
-                        .padding(.vertical, 14)
-                    captionBlock
-                    SpecRows(album: model.selectedAlbum)
-                    TagChips(album: model.selectedAlbum)
-                    utilitiesBlock
+            if model.isRadioMode, let stream = model.selectedStream {
+                RadioInfoView(stream: stream)
+            } else {
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(spacing: 0) {
+                        AlbumPoster(album: model.selectedAlbum)
+                            .frame(width: 120, height: 120)
+                            .padding(.vertical, 14)
+                        captionBlock
+                        SpecRows(album: model.selectedAlbum)
+                        TagChips(album: model.selectedAlbum)
+                        utilitiesBlock
+                    }
                 }
             }
-            
+
         case .art:
             ArtworkInspectorView(album: model.selectedAlbum)
                 .frame(height: height)
-            
-        case .disc:
-            VStack {
-                Spacer()
-                SpinningRecordView(model: model)
-                    .padding(20)
-                Spacer()
-            }
-            .frame(height: height)
         }
     }
 
@@ -122,42 +118,35 @@ struct InspectorPane: View {
     // and stops the metadata from being squashed.
     @ViewBuilder
     private func wideLayout(width: CGFloat) -> some View {
-        let posterSize = min(max(width * 0.45, 280), 460)
-        
         switch activeTab {
         case .info:
-            HStack(alignment: .top, spacing: 18) {
-                ScrollView(.vertical, showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 0) {
-                        captionBlock
-                        SpecRows(album: model.selectedAlbum)
-                        TagChips(album: model.selectedAlbum)
-                        utilitiesBlock
+            if model.isRadioMode, let stream = model.selectedStream {
+                RadioInfoView(stream: stream)
+            } else {
+                HStack(alignment: .top, spacing: 18) {
+                    ScrollView(.vertical, showsIndicators: false) {
+                        VStack(alignment: .leading, spacing: 0) {
+                            captionBlock
+                            SpecRows(album: model.selectedAlbum)
+                            TagChips(album: model.selectedAlbum)
+                            utilitiesBlock
+                        }
                     }
+                    .frame(maxWidth: .infinity)
+
+                    VStack(spacing: 0) {
+                        AlbumPoster(album: model.selectedAlbum)
+                            .frame(width: 140, height: 140)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.top, 14)
                 }
-                .frame(maxWidth: .infinity)
-                
-                VStack(spacing: 0) {
-                    AlbumPoster(album: model.selectedAlbum)
-                        .frame(width: 140, height: 140)
-                    Spacer(minLength: 0)
-                }
-                .padding(.top, 14)
+                .padding(EdgeInsets(top: 14, leading: 14, bottom: 14, trailing: 14))
             }
-            .padding(EdgeInsets(top: 14, leading: 14, bottom: 14, trailing: 14))
-            
+
         case .art:
             ArtworkInspectorView(album: model.selectedAlbum)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-            
-        case .disc:
-            HStack {
-                Spacer()
-                SpinningRecordView(model: model)
-                    .frame(width: posterSize, height: posterSize)
-                Spacer()
-            }
-            .padding(14)
         }
     }
 

@@ -160,6 +160,7 @@ struct MainShell: View {
             let count = model.conversionQueueTracks.count
             return count == 0 ? "EMPTY" : "\(count) TRK · QUEUED"
         }
+        if model.isRadioMode { return "Stream" }
         return "Rec. Metadata"
     }
 
