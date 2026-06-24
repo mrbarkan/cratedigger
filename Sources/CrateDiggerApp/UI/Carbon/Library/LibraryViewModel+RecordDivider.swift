@@ -274,27 +274,9 @@ extension LibraryViewModel {
 
     // MARK: - Persistence
 
-    /// Write updated markers onto the track everywhere it lives — the in-memory
-    /// Prep Crate and every `.cdlib` crate that references the file (matched by
-    /// path, which markers don't change) — then refresh the active view.
+    /// Write updated markers onto the track everywhere it lives, then refresh.
     private func persistRecordMarkers(_ markers: [RecordMarker]?, for track: LoadedTrack) {
         let updated = LoadedTrack(track: track.track, metadata: track.metadata, recordMarkers: markers)
-        let path = track.track.fileURL.path
-
-        if let i = prepCrateTracks.firstIndex(where: { $0.track.fileURL.path == path }) {
-            prepCrateTracks[i] = updated
-        }
-
-        for crateName in availableCrates {
-            var tracks = loadCrateTracks(name: crateName)
-            var modified = false
-            for i in tracks.indices where tracks[i].track.fileURL.path == path {
-                tracks[i] = updated
-                modified = true
-            }
-            if modified { saveCrateTracks(tracks, name: crateName) }
-        }
-
-        selectSource(currentSource)
+        replaceTrackEverywhere(matchingPath: track.track.fileURL.path, with: updated)
     }
 }

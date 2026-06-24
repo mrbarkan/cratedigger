@@ -85,6 +85,13 @@ public final class LibraryScanService {
         }
     }
 
+    /// Re-read a single file's tags into a fresh `LoadedTrack` (e.g. the
+    /// context-menu "Refresh Tags"). The caller is responsible for re-attaching
+    /// any app-side state (track id, record markers).
+    public func reloadTrack(at fileURL: URL) async -> LoadedTrack? {
+        await loadTrack(at: fileURL)
+    }
+
     private func loadTrack(at fileURL: URL) async -> LoadedTrack? {
         let asset = AVURLAsset(url: fileURL)
         let commonMetadata = (try? await asset.load(.commonMetadata)) ?? []

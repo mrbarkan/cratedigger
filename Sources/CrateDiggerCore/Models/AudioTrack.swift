@@ -73,4 +73,16 @@ public struct AudioTrack: Identifiable, Hashable, Codable, Sendable {
         self.artworkHash = artworkHash
         self.artworkDimensions = artworkDimensions
     }
+
+    /// A copy with a different identity — used when re-reading a file's tags so
+    /// the refreshed track keeps the original `id` (selection, queue matching).
+    public func withID(_ newID: UUID) -> AudioTrack {
+        AudioTrack(
+            id: newID, fileURL: fileURL, title: title, artist: artist, album: album,
+            durationSeconds: durationSeconds, formatName: formatName, bitrateKbps: bitrateKbps,
+            sampleRateHz: sampleRateHz, year: year, trackNumber: trackNumber, trackTotal: trackTotal,
+            discNumber: discNumber, discTotal: discTotal, artworkSource: artworkSource,
+            artworkHash: artworkHash, artworkDimensions: artworkDimensions
+        )
+    }
 }

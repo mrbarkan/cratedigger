@@ -202,6 +202,19 @@ private struct TrackColumn: View {
 
     @ViewBuilder
     private func trackContextMenu(_ loaded: LoadedTrack) -> some View {
+        Button("Refresh Tags") {
+            model.refreshTrackTags(loaded)
+        }
+        if !model.availableCrates.isEmpty {
+            Menu("Add to Crate") {
+                ForEach(model.availableCrates, id: \.self) { crate in
+                    Button(crate) {
+                        model.addItemsToCrate(["track::" + loaded.track.id.uuidString], crateName: crate)
+                    }
+                }
+            }
+        }
+        Divider()
         let hasMarkers = !(loaded.recordMarkers ?? []).isEmpty
         Button(hasMarkers ? "Edit Record Divider…" : "Record Divider…") {
             model.beginRecordDivider(for: loaded)
