@@ -17,3 +17,9 @@ dist/
 # Design assets workspace (uploads, exports). Treat as untracked so
 # git add -A doesn't sweep large binary blobs into source commits.
 CrateDigger_DESIGN/
+
+# Local secrets (Last.fm API credentials, etc.) consumed at package time.
+# Never commit these — see scripts/lastfm.env.example.
+scripts/.lastfm.env
+.env
+.env.local

@@ -585,36 +585,29 @@ struct LastFMPreferencesView: View {
 
     private func startAuthFlow() {
         let scrobbler = LastFMScrobbler()
-        guard scrobbler.getAuthorizationURL() != nil else { return }
-        
-        // In Last.fm desktop web auth, we direct users to authorize the API key,
-        // and they can do so directly. We'll prompt them to type their username
-        // and we'll fetch the session key. Wait, to fetch the session key, we can ask Last.fm.
-        // If we don't pass a token, we can use the web auth token. Actually, we can get a token
-        // by making a quick api call or just using last.fm redirect. Let's make it easy:
-        // We open the browser and ask them to type their username and click confirm.
-        // Last.fm auth allows calling getSession with the request token. Let's get the token.
+        guard scrobbler.isConfigured else {
+            statusText = "Last.fm is not configured in this build."
+            return
+        }
+
+        // Last.fm desktop web auth: fetch a request token, open the browser for the
+        // user to authorize it, then (in confirmAuth) exchange the token for a
+        // session key. The API key/secret live in LastFMScrobbler, not here.
         statusText = "Redirecting to Last.fm..."
-        
+
         Task {
-            // Let's call the api to get a token. Since we don't want complex fetch, we'll
-            // let them authorize. In Last.fm, we can fetch token via HTTP request:
-            // http://ws.audioscrobbler.com/2.0/?method=auth.getToken&api_key=...&format=json
-            let apiKey = "141b714fa4cf3c40f1a92e622b7a9ef0"
-            guard let tokenUrl = URL(string: "https://ws.audioscrobbler.com/2.0/?method=auth.getToken&api_key=\(apiKey)&format=json") else { return }
             do {
-                let (data, _) = try await URLSession.shared.data(from: tokenUrl)
-                if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let token = json["token"] as? String {
-                    await MainActor.run {
-                        self.requestToken = token
-                        self.statusText = "Opened browser. Please authorize CrateDigger."
-                        let authURL = URL(string: "https://www.last.fm/api/auth/?api_key=\(apiKey)&token=\(token)")!
-                        NSWorkspace.shared.open(authURL)
-                    }
-                } else {
+                guard let token = try await scrobbler.fetchRequestToken() else {
                     await MainActor.run {
                         self.statusText = "Failed to obtain request token."
+                    }
+                    return
+                }
+                await MainActor.run {
+                    self.requestToken = token
+                    self.statusText = "Opened browser. Please authorize CrateDigger."
+                    if let authURL = scrobbler.authorizationURL(forToken: token) {
+                        NSWorkspace.shared.open(authURL)
                     }
                 }
             } catch {

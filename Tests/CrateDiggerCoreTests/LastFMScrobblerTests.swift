@@ -42,7 +42,12 @@ final class LastFMScrobblerTests: XCTestCase {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [MockURLProtocol.self]
         session = URLSession(configuration: config)
-        scrobbler = LastFMScrobbler(session: session)
+        // Inject test credentials so the scrobbler is "configured" and its
+        // network methods fire — the app's real key/secret are not in source.
+        scrobbler = LastFMScrobbler(
+            session: session,
+            credentials: LastFMCredentials(apiKey: "test_api_key", apiSecret: "test_api_secret")
+        )
     }
 
     override func tearDown() {
@@ -149,6 +154,74 @@ final class LastFMScrobblerTests: XCTestCase {
             sessionKey: "sk123"
         )
         XCTAssertTrue(success)
+    }
+
+    // MARK: - Credential configuration
+
+    func testUnconfiguredScrobblerNoOps() async throws {
+        let unconfigured = LastFMScrobbler(session: session, credentials: nil)
+        XCTAssertFalse(unconfigured.isConfigured)
+        XCTAssertNil(unconfigured.getAuthorizationURL())
+        XCTAssertNil(unconfigured.authorizationURL(forToken: "abc"))
+        // Network methods degrade gracefully instead of crashing or sending
+        // unsigned requests.
+        let nowPlaying = try await unconfigured.updateNowPlaying(
+            artist: "A", track: "B", album: nil, sessionKey: "sk"
+        )
+        XCTAssertFalse(nowPlaying)
+        let session = try await unconfigured.fetchSession(token: "t")
+        XCTAssertNil(session)
+    }
+
+    func testConfiguredScrobblerReportsConfigured() {
+        XCTAssertTrue(scrobbler.isConfigured)
+        XCTAssertNotNil(scrobbler.getAuthorizationURL())
+    }
+
+    // MARK: - Credential resolution precedence
+
+    func testResolverPrefersEnvironmentOverPlist() {
+        let creds = LastFMCredentialsResolver.resolve(
+            environment: [
+                LastFMCredentialsResolver.apiKeyEnvName: "env_key",
+                LastFMCredentialsResolver.apiSecretEnvName: "env_secret"
+            ],
+            infoPlistValue: { _ in "plist_value" }
+        )
+        XCTAssertEqual(creds, LastFMCredentials(apiKey: "env_key", apiSecret: "env_secret"))
+    }
+
+    func testResolverFallsBackToPlist() {
+        let creds = LastFMCredentialsResolver.resolve(
+            environment: [:],
+            infoPlistValue: { name in
+                name == LastFMCredentialsResolver.apiKeyPlistName ? "plist_key" : "plist_secret"
+            }
+        )
+        XCTAssertEqual(creds, LastFMCredentials(apiKey: "plist_key", apiSecret: "plist_secret"))
+    }
+
+    func testResolverReturnsNilWhenAbsent() {
+        XCTAssertNil(LastFMCredentialsResolver.resolve(environment: [:], infoPlistValue: { _ in nil }))
+    }
+
+    func testResolverReturnsNilWhenOnlyKeyPresent() {
+        let creds = LastFMCredentialsResolver.resolve(
+            environment: [LastFMCredentialsResolver.apiKeyEnvName: "only_key"],
+            infoPlistValue: { _ in nil }
+        )
+        XCTAssertNil(creds)
+    }
+
+    func testResolverTreatsEmptyStringAsAbsent() {
+        let creds = LastFMCredentialsResolver.resolve(
+            environment: [
+                LastFMCredentialsResolver.apiKeyEnvName: "",
+                LastFMCredentialsResolver.apiSecretEnvName: ""
+            ],
+            infoPlistValue: { _ in "" }
+        )
+        XCTAssertNil(creds)
     }
 }
 #endif

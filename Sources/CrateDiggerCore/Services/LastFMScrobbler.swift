@@ -2,13 +2,25 @@ import Foundation
 import CryptoKit
 
 public final class LastFMScrobbler: Sendable {
-    private let apiKey = "141b714fa4cf3c40f1a92e622b7a9ef0"
-    private let apiSecret = "8d30e3ff4db24718cd92b236113b2c6c"
+    private let credentials: LastFMCredentials?
     private let session: URLSession
 
     public init(session: URLSession = .shared) {
         self.session = session
+        self.credentials = LastFMCredentialsResolver.resolveDefault()
     }
+
+    /// Injection seam for tests / dev tooling. Internal so it never becomes
+    /// part of the public API surface.
+    init(session: URLSession, credentials: LastFMCredentials?) {
+        self.session = session
+        self.credentials = credentials
+    }
+
+    /// `true` when application API credentials are available. When `false`,
+    /// every network method below no-ops (returns `nil`/`false`) so the app
+    /// runs fine without Last.fm configured.
+    public var isConfigured: Bool { credentials != nil }
 
     // MD5 here is the Last.fm API signature scheme (api_sig), not a security
     // hash — the protocol mandates it. Insecure.MD5 is the non-deprecated API.
@@ -18,7 +30,7 @@ public final class LastFMScrobbler: Sendable {
             .joined()
     }
 
-    private func calculateSignature(params: [String: String]) -> String {
+    private func calculateSignature(params: [String: String], secret: String) -> String {
         let sortedKeys = params.keys.sorted()
         var signatureString = ""
         for key in sortedKeys {
@@ -26,15 +38,17 @@ public final class LastFMScrobbler: Sendable {
                 signatureString += key + val
             }
         }
-        signatureString += apiSecret
+        signatureString += secret
         return md5(signatureString)
     }
 
     private func postRequest(method: String, params: [String: String]) async throws -> [String: Any]? {
+        guard let credentials else { return nil }
+
         var allParams = params
         allParams["method"] = method
-        allParams["api_key"] = apiKey
-        allParams["api_sig"] = calculateSignature(params: allParams)
+        allParams["api_key"] = credentials.apiKey
+        allParams["api_sig"] = calculateSignature(params: allParams, secret: credentials.apiSecret)
         allParams["format"] = "json"
 
         var components = URLComponents(string: "https://ws.audioscrobbler.com/2.0/")!
@@ -53,7 +67,29 @@ public final class LastFMScrobbler: Sendable {
     }
 
     public func getAuthorizationURL() -> URL? {
-        URL(string: "https://www.last.fm/api/auth/?api_key=\(apiKey)")
+        guard let credentials else { return nil }
+        return URL(string: "https://www.last.fm/api/auth/?api_key=\(credentials.apiKey)")
+    }
+
+    /// Fetches a fresh request token for the desktop web-auth flow.
+    /// Returns `nil` when Last.fm is not configured or the request fails.
+    public func fetchRequestToken() async throws -> String? {
+        guard let credentials else { return nil }
+        guard let url = URL(string: "https://ws.audioscrobbler.com/2.0/?method=auth.getToken&api_key=\(credentials.apiKey)&format=json") else {
+            return nil
+        }
+        let (data, _) = try await session.data(from: url)
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let token = json["token"] as? String else {
+            return nil
+        }
+        return token
+    }
+
+    /// Web-auth URL the user opens to authorize a specific request token.
+    public func authorizationURL(forToken token: String) -> URL? {
+        guard let credentials else { return nil }
+        return URL(string: "https://www.last.fm/api/auth/?api_key=\(credentials.apiKey)&token=\(token)")
     }
 
     public func fetchSession(token: String) async throws -> (username: String, sessionKey: String)? {

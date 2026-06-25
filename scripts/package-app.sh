@@ -12,10 +12,21 @@ ENTITLEMENTS_SOURCE="${ROOT_DIR}/Packaging/CrateDiggerApp/CrateDigger.entitlemen
 ICON_SOURCE="${ROOT_DIR}/Packaging/CrateDiggerApp/Resources/CrateDigger.icns"
 DEFAULT_XCODE_DEVELOPER_DIR="/Applications/Xcode.app/Contents/Developer"
 
+# Optionally load local secrets (e.g. Last.fm API credentials) from an
+# untracked env file so release builds embed them without re-exporting vars
+# each time. See scripts/lastfm.env.example. This file is gitignored.
+LOCAL_ENV_FILE="${ROOT_DIR}/scripts/.lastfm.env"
+if [[ -f "${LOCAL_ENV_FILE}" ]]; then
+  # shellcheck disable=SC1090
+  source "${LOCAL_ENV_FILE}"
+fi
+
 FFMPEG_PATH="${CRATEDIGGER_FFMPEG_PATH:-}"
 FFPROBE_PATH="${CRATEDIGGER_FFPROBE_PATH:-}"
 SIGN_IDENTITY="${CRATEDIGGER_SIGNING_IDENTITY:-}"
 NOTARY_PROFILE="${CRATEDIGGER_NOTARY_PROFILE:-}"
+LASTFM_API_KEY="${CRATEDIGGER_LASTFM_API_KEY:-}"
+LASTFM_API_SECRET="${CRATEDIGGER_LASTFM_API_SECRET:-}"
 MAKE_DMG=0
 DO_NOTARIZE=0
 
@@ -248,6 +259,22 @@ fi
 cp "${BINARY_PATH}" "${APP_BUNDLE}/Contents/MacOS/CrateDiggerApp"
 cp "${INFO_PLIST_SOURCE}" "${APP_BUNDLE}/Contents/Info.plist"
 cp "${ICON_SOURCE}" "${APP_BUNDLE}/Contents/Resources/CrateDigger.icns"
+
+# Embed Last.fm API credentials into the bundled Info.plist when provided.
+# These are kept out of source control; supply them via scripts/.lastfm.env or
+# the CRATEDIGGER_LASTFM_API_KEY / _SECRET env vars. Without them, the app
+# simply ships with Last.fm scrobbling disabled.
+BUNDLE_PLIST="${APP_BUNDLE}/Contents/Info.plist"
+if [[ -n "${LASTFM_API_KEY}" && -n "${LASTFM_API_SECRET}" ]]; then
+  /usr/libexec/PlistBuddy -c "Add :LastFMAPIKey string ${LASTFM_API_KEY}" "${BUNDLE_PLIST}" 2>/dev/null \
+    || /usr/libexec/PlistBuddy -c "Set :LastFMAPIKey ${LASTFM_API_KEY}" "${BUNDLE_PLIST}"
+  /usr/libexec/PlistBuddy -c "Add :LastFMAPISecret string ${LASTFM_API_SECRET}" "${BUNDLE_PLIST}" 2>/dev/null \
+    || /usr/libexec/PlistBuddy -c "Set :LastFMAPISecret ${LASTFM_API_SECRET}" "${BUNDLE_PLIST}"
+  echo "Embedded Last.fm API credentials into Info.plist"
+else
+  echo "note: Last.fm API credentials not set — building without Last.fm scrobbling."
+  echo "      Set them in scripts/.lastfm.env (see scripts/lastfm.env.example) to enable it."
+fi
 cp "${FFMPEG_PATH}" "${APP_BUNDLE}/Contents/Resources/ffmpeg"
 cp "${FFPROBE_PATH}" "${APP_BUNDLE}/Contents/Resources/ffprobe"
 
