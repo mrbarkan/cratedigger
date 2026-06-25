@@ -48,6 +48,12 @@ public protocol PlaybackServiceProtocol: AnyObject {
     func previous()
     func setVolume(_ volume: Double)
     func setOutputDeviceUID(_ uid: String?)
+    /// Latest 0...1 VU meter positions per channel, from the real audio signal.
+    func currentLevels() -> (left: Double, right: Double)
+}
+
+public extension PlaybackServiceProtocol {
+    func currentLevels() -> (left: Double, right: Double) { (0, 0) }
 }
 
 protocol PlaybackEngineProtocol: AnyObject {
@@ -65,6 +71,11 @@ protocol PlaybackEngineProtocol: AnyObject {
     func seek(toSeconds: Double)
     func setVolume(_ volume: Double)
     func setOutputDeviceUID(_ uid: String?)
+    var currentLevels: (left: Double, right: Double) { get }
+}
+
+extension PlaybackEngineProtocol {
+    var currentLevels: (left: Double, right: Double) { (0, 0) }
 }
 
 final class AVPlayerEngine: PlaybackEngineProtocol {
@@ -85,6 +96,7 @@ final class AVPlayerEngine: PlaybackEngineProtocol {
     }
 
     private let player = AVPlayer()
+    private let levelTap = AudioLevelTap()
     private var timeObserverToken: Any?
     private var statusObservation: NSKeyValueObservation?
     private var itemEndObserver: NSObjectProtocol?
@@ -112,6 +124,7 @@ final class AVPlayerEngine: PlaybackEngineProtocol {
         }
 
         let item = AVPlayerItem(url: url)
+        attachLevelMetering(to: item)
         player.replaceCurrentItem(with: item)
 
         statusObservation = item.observe(\.status, options: [.new, .initial]) { [weak self] item, _ in
@@ -157,6 +170,35 @@ final class AVPlayerEngine: PlaybackEngineProtocol {
 
     func setOutputDeviceUID(_ uid: String?) {
         player.audioOutputDeviceUniqueID = uid
+    }
+
+    var currentLevels: (left: Double, right: Double) {
+        let peaks = levelTap.currentPeaks()
+        // Fold in the player volume so the meter tracks what you actually hear.
+        let v = Double(player.volume)
+        return (meterPosition(peaks.left * v), meterPosition(peaks.right * v))
+    }
+
+    /// Map a linear peak (0...1) to a meter fill position: -48 dBFS → 0 and
+    /// 0 dBFS → 0.80 so full scale lands on the meter's "0" tick.
+    private func meterPosition(_ linear: Double) -> Double {
+        guard linear > 0.000_001 else { return 0 }
+        let db = 20 * log10(linear)
+        return min(max((db + 48) / 48 * 0.80, 0), 1)
+    }
+
+    /// Attach an audio tap so `currentLevels` reflects the real signal. The
+    /// asset's audio track loads asynchronously, so wire the mix once it's ready.
+    private func attachLevelMetering(to item: AVPlayerItem) {
+        levelTap.reset()
+        let tap = levelTap
+        Task { [weak item] in
+            guard let item,
+                  let track = try? await item.asset.loadTracks(withMediaType: .audio).first
+            else { return }
+            let mix = tap.makeAudioMix(forTrack: track)
+            await MainActor.run { item.audioMix = mix }
+        }
     }
 
     private func addPeriodicTimeObserver() {
@@ -336,6 +378,10 @@ public final class PlaybackService: PlaybackServiceProtocol {
 
     public func setOutputDeviceUID(_ uid: String?) {
         engine.setOutputDeviceUID(uid)
+    }
+
+    public func currentLevels() -> (left: Double, right: Double) {
+        engine.currentLevels
     }
 
     private func bindEngineCallbacks() {

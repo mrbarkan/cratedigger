@@ -1360,6 +1360,12 @@ final class LibraryViewModel: ObservableObject {
         playbackVolume = clamped
     }
 
+    /// Latest real 0...1 VU levels (L/R) from the playback engine's audio tap.
+    /// The footer meter polls this while playing.
+    func currentPlaybackLevels() -> (left: Double, right: Double) {
+        playback.currentLevels()
+    }
+
     // MARK: - Conversion entry
 
     func makeInitialConversionSelection() -> ConversionOptionsSelection {

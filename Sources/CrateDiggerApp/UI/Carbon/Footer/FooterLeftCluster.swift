@@ -1,10 +1,11 @@
 import SwiftUI
 
 /// Footer left cluster (CrateDigger v6 `.f-left`): the VU meter + POSITION dial.
-/// Owns the meter simulator that the VU bars animate from during playback.
+/// The VU bars are driven by the real audio signal via the playback engine's
+/// audio tap (polled while playing).
 struct FooterLeftCluster: View {
     @EnvironmentObject private var model: LibraryViewModel
-    @StateObject private var meters = MeterSimulator()
+    @StateObject private var meters = MeterDriver()
 
     var body: some View {
         HStack(alignment: .center, spacing: 14) {
@@ -12,14 +13,11 @@ struct FooterLeftCluster: View {
             PositionDial()
         }
         .onAppear {
-            meters.volume = model.playbackVolume
+            meters.levelsProvider = { [weak model] in model?.currentPlaybackLevels() ?? (left: 0, right: 0) }
             syncMeterRunning()
         }
         .onChange(of: model.playbackState) { _ in
             syncMeterRunning()
-        }
-        .onChange(of: model.playbackVolume) { newValue in
-            meters.volume = newValue
         }
     }
 
