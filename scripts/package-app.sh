@@ -312,7 +312,19 @@ if [[ "${MAKE_DMG}" -eq 1 ]]; then
   if [[ "${DO_NOTARIZE}" -eq 1 ]]; then
     echo "Notarizing DMG..."
     xcrun notarytool submit "${DMG_PATH}" --keychain-profile "${NOTARY_PROFILE}" --wait
-    xcrun stapler staple "${DMG_PATH}"
+    # Let Apple's ticket service propagate before stapling. Stapling the DMG
+    # immediately after the submit returns can fail and truncate the image to a
+    # ~672-byte stub, so wait and retry a few times.
+    stapled=0
+    for attempt in 1 2 3 4 5; do
+      sleep 10
+      if xcrun stapler staple "${DMG_PATH}"; then stapled=1; break; fi
+      echo "  stapler attempt ${attempt} failed; retrying..."
+    done
+    if [[ "${stapled}" -ne 1 ]]; then
+      echo "error: could not staple ${DMG_PATH} after ${attempt} attempts" >&2
+      exit 1
+    fi
     xcrun stapler validate "${DMG_PATH}"
   fi
 
