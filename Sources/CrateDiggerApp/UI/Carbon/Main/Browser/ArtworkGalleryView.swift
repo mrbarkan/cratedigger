@@ -112,7 +112,7 @@ struct ArtworkGalleryView: View {
                         .shadow(radius: 2)
                         .padding(6)
                         .frame(width: 120, height: 120, alignment: .topTrailing)
-                        .help("Digital Booklet/Liner Notes Available")
+                        .carbonTip("Digital Booklet/Liner Notes Available")
                 }
 
                 // Fetch Art badge if artwork missing
@@ -128,7 +128,7 @@ struct ArtworkGalleryView: View {
                     }
                     .buttonStyle(.plain)
                     .padding(6)
-                    .help("Search Cover Art Online")
+                    .carbonTip("Search Cover Art Online")
                 }
             }
 
@@ -195,7 +195,7 @@ struct ArtworkGalleryView: View {
                 .foregroundStyle(theme.ink2)
             }
             .buttonStyle(.plain)
-            .help("Back to gallery")
+            .carbonTip("Back to gallery")
 
             Spacer()
 
@@ -219,7 +219,7 @@ struct ArtworkGalleryView: View {
         if album.booklet != nil {
             Button(action: { openBooklet(album) }) { cover }
                 .buttonStyle(.plain)
-                .help("Open booklet")
+                .carbonTip("Open booklet")
         } else {
             cover
         }
@@ -313,7 +313,7 @@ struct ArtworkGalleryView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help("Play \(loaded.track.title)")
+        .carbonTip("Play \(loaded.track.title)")
     }
 
     private func openBooklet(_ album: Album) {

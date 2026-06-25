@@ -18,7 +18,8 @@ struct ViewSwitcherColumn: View {
             SwitchButton(
                 name: "VIEW",
                 dotCount: 2,
-                activeIndex: model.showArtworkGallery ? 1 : 0
+                activeIndex: model.showArtworkGallery ? 1 : 0,
+                tip: "VIEW — switch the browser between the track list and the artwork gallery."
             ) {
                 ClickPlayer.shared.play(.key)
                 model.showArtworkGallery.toggle()
@@ -27,7 +28,8 @@ struct ViewSwitcherColumn: View {
             SwitchButton(
                 name: "THEME",
                 dotCount: Self.themeOrder.count,
-                activeIndex: Self.themeOrder.firstIndex(of: appearance) ?? 0
+                activeIndex: Self.themeOrder.firstIndex(of: appearance) ?? 0,
+                tip: "THEME — cycle the appearance: dark · light · auto."
             ) {
                 cycleTheme()
             }
@@ -35,7 +37,8 @@ struct ViewSwitcherColumn: View {
             SwitchButton(
                 name: "EQ",
                 dotCount: EQPreset.allCases.count,
-                activeIndex: EQPreset.allCases.firstIndex(of: model.eqPreset) ?? 0
+                activeIndex: EQPreset.allCases.firstIndex(of: model.eqPreset) ?? 0,
+                tip: "EQ — choose an equalizer preset."
             ) {
                 ClickPlayer.shared.play(.key)
                 model.cycleEQPreset()
@@ -69,6 +72,7 @@ private struct SwitchButton: View {
     let name: String
     let dotCount: Int
     let activeIndex: Int
+    var tip: String? = nil
     let action: () -> Void
 
     var body: some View {
@@ -96,6 +100,6 @@ private struct SwitchButton: View {
             .background(ChromeChassis(theme: theme, cornerRadius: 6))
         }
         .buttonStyle(.plain)
-        .help("\(name): tap to change")
+        .carbonTip(tip ?? "\(name): tap to change")
     }
 }

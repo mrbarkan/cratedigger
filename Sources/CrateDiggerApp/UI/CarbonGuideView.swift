@@ -64,10 +64,27 @@ private struct GuideContent: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 6)
+                // Top inset keeps the header clear of the window's traffic-light
+                // controls at rest; the mask below handles scrolled content.
+                .padding(.top, 40)
+                .padding(.bottom, 14)
             }
+            // Content scrolling up dissolves into the chassis instead of sliding
+            // solid under the traffic lights.
+            .mask(topFadeMask)
         }
         .frame(minWidth: 600, minHeight: 560)
+    }
+
+    /// Fully hides the band that sits under the traffic lights, then ramps to
+    /// opaque so the rest of the page reads normally.
+    private var topFadeMask: some View {
+        VStack(spacing: 0) {
+            Color.clear.frame(height: 16)
+            LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
+                .frame(height: 22)
+            Color.black
+        }
     }
 
     private var header: some View {

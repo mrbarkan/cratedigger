@@ -23,6 +23,9 @@ struct CarbonAboutView: View {
             infoColumn
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        // Head space so the eyebrow + icon bay clear the window's traffic lights
+        // and the faceplate has room to breathe at the top.
+        .padding(.top, 26)
     }
 
     // MARK: - Left bay

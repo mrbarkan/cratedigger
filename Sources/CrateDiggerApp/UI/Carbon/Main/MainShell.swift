@@ -261,7 +261,7 @@ struct MainShell: View {
             chevronGlyph(direction: .collapse)
         }
         .buttonStyle(.plain)
-        .help("Collapse panel")
+        .carbonTip("Collapse panel")
     }
 
     /// Menu to pick the browser column layout (3-pane / Album·Track / flat Track).
@@ -290,7 +290,7 @@ struct MainShell: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .help("Browser columns")
+        .carbonTip("Browser columns")
     }
 
     /// Toggles the per-column sort menus in the browser headers.
@@ -305,7 +305,7 @@ struct MainShell: View {
             }
         }
         .buttonStyle(.plain)
-        .help(model.showSortControls ? "Hide sort controls" : "Show sort controls")
+        .carbonTip(model.showSortControls ? "Hide sort controls" : "Show sort controls")
     }
 
     enum ChevronDirection { case collapse, expand }
@@ -338,7 +338,7 @@ struct CollapsedRail: View {
                     chevron
                 }
                 .buttonStyle(.plain)
-                .help("Expand \(title)")
+                .carbonTip("Expand \(title)")
 
                 Spacer(minLength: 0)
 

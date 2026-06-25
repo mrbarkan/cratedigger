@@ -62,7 +62,7 @@ struct BrowserCondensed: View {
             }
         }
         .buttonStyle(.plain)
-        .help("Expand browser")
+        .carbonTip("Expand browser")
     }
 
     private var albumLine: String {

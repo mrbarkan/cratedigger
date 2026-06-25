@@ -450,7 +450,7 @@ struct ArtworkSearchSheetView: View {
                     }
                     .buttonStyle(.plain)
                     .padding(6)
-                    .help("Preview full size")
+                    .carbonTip("Preview full size")
                 }
                 .onTapGesture {
                     toggleImageSelection(img)

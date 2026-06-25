@@ -133,7 +133,7 @@ struct SourcesSidebar: View {
                         .buttonStyle(.plain)
                         .padding(.trailing, 12)
                         .padding(.top, 10)
-                        .help("Add a YouTube stream source")
+                        .carbonTip("Add a YouTube stream source")
                     }
 
                     sidebarItem(
@@ -435,7 +435,7 @@ struct SourcesSidebar: View {
             .padding(.horizontal, 12)
         }
         .frame(height: 30)
-        .help(armed
+        .carbonTip(armed
             ? "Add “\(model.selectedAlbum?.title ?? "")” (\(albumTracks.count) track\(albumTracks.count == 1 ? "" : "s")) to \(model.targetCrateName)"
             : "Select an album, then add it to a crate")
     }

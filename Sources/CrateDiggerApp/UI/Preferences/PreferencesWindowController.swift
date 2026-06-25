@@ -312,6 +312,7 @@ private struct AdvancedPreferencesView: View {
     @State private var ffmpegPath: String = ""
     @State private var ffprobePath: String = ""
     @State private var clickSoundsEnabled: Bool = PreferencesStore.shared.clickSoundsEnabled
+    @State private var showHoverTips: Bool = PreferencesStore.shared.showHoverTips
     @State private var cdAnimationSpeed: CDAnimationSpeed = PreferencesStore.shared.cdAnimationSpeed
     @State private var showResetConfirmation = false
 
@@ -323,6 +324,14 @@ private struct AdvancedPreferencesView: View {
                         PreferencesStore.shared.clickSoundsEnabled = newValue
                     }
                 Text("Plays short hardware-style click sounds when you press chassis buttons. Off if you'd rather have silent chrome.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Toggle("Show hover tips", isOn: $showHoverTips)
+                    .onChange(of: showHoverTips) { newValue in
+                        PreferencesStore.shared.showHoverTips = newValue
+                    }
+                Text("Shows a short tooltip explaining what a control does when you hover over it. On by default.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -398,6 +407,7 @@ private struct AdvancedPreferencesView: View {
         ffmpegPath = PreferencesStore.shared.customFFmpegPath ?? ""
         ffprobePath = PreferencesStore.shared.customFFprobePath ?? ""
         cdAnimationSpeed = PreferencesStore.shared.cdAnimationSpeed
+        showHoverTips = PreferencesStore.shared.showHoverTips
     }
 
     private func persistFFmpeg() {

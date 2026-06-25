@@ -42,7 +42,7 @@ struct PositionDial: View {
                         .foregroundStyle(model.scrubLockEnabled ? theme.cyan : theme.ink3)
                 }
                 .buttonStyle(.plain)
-                .help(model.scrubLockEnabled
+                .carbonTip(model.scrubLockEnabled
                     ? "Scroll-to-seek on — scroll the dial to search"
                     : "Lock to scroll the dial to search")
             }

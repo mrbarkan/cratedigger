@@ -128,7 +128,7 @@ struct RecordDividerSheet: View {
             Toggle("", isOn: Binding(get: { row.keep }, set: { _ in model.recordDividerToggleKeep(row.id) }))
                 .labelsHidden()
                 .toggleStyle(.checkbox)
-                .help(row.keep ? "This track will be exported" : "Skipped — won't be exported")
+                .carbonTip(row.keep ? "This track will be exported" : "Skipped — won't be exported")
 
             Text(String(format: "%02d", index + 1))
                 .font(CarbonFont.mono(9, weight: .semibold))
@@ -153,13 +153,13 @@ struct RecordDividerSheet: View {
             Button(action: { model.recordDividerSplit(row.id) }) {
                 Image(systemName: "scissors").font(.system(size: 9))
             }
-            .buttonStyle(.plain).foregroundStyle(theme.ink3).help("Split at midpoint")
+            .buttonStyle(.plain).foregroundStyle(theme.ink3).carbonTip("Split at midpoint")
 
             Button(action: { model.recordDividerMergeWithNext(row.id) }) {
                 Image(systemName: "arrow.triangle.merge").font(.system(size: 9))
             }
             .buttonStyle(.plain).foregroundStyle(isLast ? theme.ink4.opacity(0.4) : theme.ink3)
-            .disabled(isLast).help("Merge with next")
+            .disabled(isLast).carbonTip("Merge with next")
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)

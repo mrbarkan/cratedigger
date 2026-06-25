@@ -361,7 +361,7 @@ private struct RecordSubTrackRow: View {
         .background(isCurrent ? theme.orange.opacity(0.08) : Color.clear)
         .contentShape(Rectangle())
         .onTapGesture(count: 2, perform: onActivate)
-        .help("Double-click to play from here")
+        .carbonTip("Double-click to play from here")
     }
 
     private func durationString(_ seconds: Double) -> String {
@@ -445,7 +445,7 @@ private struct ColumnSortControl<Field: SortFieldDisplayable>: View {
             .controlSize(.small)
             .fixedSize()
         }
-        .help("Sort")
+        .carbonTip("Sort")
     }
 }
 

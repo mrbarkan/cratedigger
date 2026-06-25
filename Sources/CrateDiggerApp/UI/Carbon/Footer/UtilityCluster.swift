@@ -26,6 +26,6 @@ struct UtilityCluster: View {
                 .background(ChromeChassis(theme: theme, cornerRadius: 7))
         }
         .buttonStyle(.plain)
-        .help("Open the mini player")
+        .carbonTip("Open the mini player")
     }
 }

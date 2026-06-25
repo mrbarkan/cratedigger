@@ -51,14 +51,29 @@ struct VolumeKnob: View {
     private var volumeTrack: some View {
         GeometryReader { proxy in
             let width = max(proxy.size.width, 1)
-            let fillWidth = max(8, width * value)
+            let frac = min(max(value, 0), 1)
+            // A thin rail with a knob that rides proud of it. The knob is larger
+            // than the line (the user wanted the knob bigger, the line thinner).
+            let lineHeight: CGFloat = 6
+            let knobSize: CGFloat = 18
+            // The knob centre travels between the two end stops; the coloured fill
+            // is revealed up to the knob centre.
+            let travel = max(width - knobSize, 0)
+            let knobCentreX = knobSize / 2 + travel * frac
             ZStack(alignment: .leading) {
+                // Recessed rail (the "line").
                 Capsule()
                     .fill(Color.black.opacity(theme.isDark ? 0.36 : 0.10))
                     .overlay(
                         Capsule()
-                            .stroke(Color.white.opacity(theme.isDark ? 0.08 : 0.56), lineWidth: 0.6)
+                            .stroke(Color.white.opacity(theme.isDark ? 0.08 : 0.56), lineWidth: 0.5)
                     )
+                    .frame(width: width, height: lineHeight)
+
+                // A FIXED cyan→orange gradient mapped across the full rail width,
+                // then revealed up to the knob via a mask. The colour at any point
+                // is constant — turning the volume up just uncovers more of the
+                // same gradient instead of stretching/compressing it.
                 Capsule()
                     .fill(
                         LinearGradient(
@@ -67,15 +82,21 @@ struct VolumeKnob: View {
                             endPoint: .trailing
                         )
                     )
-                    .frame(width: fillWidth)
+                    .frame(width: width, height: lineHeight)
+                    .mask(alignment: .leading) {
+                        Capsule().frame(width: knobCentreX, height: lineHeight)
+                    }
                     .shadow(color: theme.cyan.opacity(theme.isDark ? 0.26 : 0.18), radius: 6)
+
+                // Knob — larger than the rail, sits proud of it.
                 Circle()
                     .fill(theme.chassisHi)
-                    .frame(width: 16, height: 16)
+                    .frame(width: knobSize, height: knobSize)
                     .overlay(Circle().stroke(Color.white.opacity(0.70), lineWidth: 0.6))
                     .shadow(color: Color.black.opacity(theme.isDark ? 0.46 : 0.20), radius: 4, y: 2)
-                    .offset(x: min(max(fillWidth - 8, 0), width - 16))
+                    .offset(x: knobCentreX - knobSize / 2)
             }
+            .frame(width: width, height: proxy.size.height, alignment: .leading)
         }
     }
 

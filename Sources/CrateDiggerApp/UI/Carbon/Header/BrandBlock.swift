@@ -26,8 +26,10 @@ struct BrandBlock: View {
                     statLabel(value: gigabytesString(bytes: model.index.totalSizeBytes), suffix: nil)
                 }
                 HStack(spacing: 8) {
-                    LibButton(title: "DIG CRATE", systemImage: "folder") { model.openFolderViaPanel() }
-                    LibButton(title: "RESCAN", systemImage: "arrow.clockwise") { model.refreshLibrary() }
+                    LibButton(title: "DIG CRATE", systemImage: "folder",
+                              tip: "Dig Crate — scan a folder of audio. New tracks land in the Prep Crate.") { model.openFolderViaPanel() }
+                    LibButton(title: "RESCAN", systemImage: "arrow.clockwise",
+                              tip: "Rescan — re-read your library folders to pick up changes.") { model.refreshLibrary() }
                 }
             }
             .padding(.leading, 50)
@@ -67,6 +69,7 @@ private struct LibButton: View {
     @Environment(\.carbon) private var theme
     let title: String
     let systemImage: String
+    var tip: String? = nil
     let action: () -> Void
 
     @State private var spinning = false
@@ -95,7 +98,7 @@ private struct LibButton: View {
             .background(ChromeChassis(theme: theme, cornerRadius: 6))
         }
         .buttonStyle(.plain)
-        .help(title.capitalized)
+        .carbonTip(tip ?? title.capitalized)
     }
 }
 

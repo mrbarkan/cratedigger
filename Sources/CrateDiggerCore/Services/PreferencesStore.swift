@@ -24,6 +24,7 @@ public final class PreferencesStore {
         static let shuffleEnabled = "cratedigger.playback.shuffle"
         static let repeatMode = "cratedigger.playback.repeatMode"
         static let clickSoundsEnabled = "cratedigger.ui.clickSoundsEnabled"
+        static let showHoverTips = "cratedigger.ui.showHoverTips"
         static let subsonicURL = "cratedigger.remote.subsonicURL"
         static let subsonicUsername = "cratedigger.remote.subsonicUsername"
         static let subsonicPassword = "cratedigger.remote.subsonicPassword"
@@ -351,6 +352,17 @@ public final class PreferencesStore {
             return defaults.bool(forKey: Key.clickSoundsEnabled)
         }
         set { defaults.set(newValue, forKey: Key.clickSoundsEnabled) }
+    }
+
+    /// Whether to show hover tooltips explaining what controls do. Default on;
+    /// the `@AppStorage` key in `CarbonTip` mirrors this so toggling updates
+    /// every tip live.
+    public var showHoverTips: Bool {
+        get {
+            if defaults.object(forKey: Key.showHoverTips) == nil { return true }
+            return defaults.bool(forKey: Key.showHoverTips)
+        }
+        set { defaults.set(newValue, forKey: Key.showHoverTips) }
     }
 
     // MARK: - Subsonic Remote Library

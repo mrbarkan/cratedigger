@@ -65,7 +65,7 @@ struct InspectorPane: View {
                 .frame(height: 22)
                 .disabled(isTabDisabled(tab))
                 .opacity(isTabDisabled(tab) ? 0.4 : 1)
-                .help(isTabDisabled(tab) ? "Not available for Radio / Streams" : "")
+                .carbonTip(isTabDisabled(tab) ? "Not available for Radio / Streams" : "")
             }
         }
         .padding(.horizontal, 14)

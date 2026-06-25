@@ -112,7 +112,7 @@ private struct MiniPlayerBody: View {
         }
         .buttonStyle(.plain)
         .disabled(model.isRadioMode)
-        .help("Art: \(model.miniPlayerArtMode.label) — tap to cycle")
+        .carbonTip("Art: \(model.miniPlayerArtMode.label) — tap to cycle")
         .padding(.leading, 6)
     }
 
@@ -125,7 +125,7 @@ private struct MiniPlayerBody: View {
                 .background(ChromeChassis(theme: theme, cornerRadius: 7))
         }
         .buttonStyle(.plain)
-        .help(help)
+        .carbonTip(help)
         .padding(.leading, 6)
     }
 
@@ -294,7 +294,7 @@ private struct MiniPlayerBody: View {
                 .shadow(color: theme.orange.opacity(0.55), radius: 12)
         }
         .buttonStyle(.plain)
-        .help("Play / Pause")
+        .carbonTip("Play / Pause")
     }
 
     private func transportButton(system: String, size: CGFloat, action: @escaping () -> Void) -> some View {

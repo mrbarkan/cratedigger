@@ -9,13 +9,13 @@ struct TransportCluster: View {
             toggleButton(systemName: "shuffle", on: model.shuffleEnabled, label: "Shuffle") {
                 model.toggleShuffle()
             }
-            transportButton(systemName: "backward.end.fill", label: "Prev") { model.previous() }
-            transportButton(systemName: "gobackward.10", label: "Rew") { model.rewind8s() }
+            transportButton(systemName: "backward.end.fill", label: "Previous track") { model.previous() }
+            transportButton(systemName: "gobackward.10", label: "Rewind 8 seconds") { model.rewind8s() }
             PlayDomeButton(isPlaying: model.playbackState == .playing) {
                 model.togglePlayPause()
             }
-            transportButton(systemName: "goforward.10", label: "Fwd") { model.forward8s() }
-            transportButton(systemName: "forward.end.fill", label: "Next") { model.next() }
+            transportButton(systemName: "goforward.10", label: "Forward 8 seconds") { model.forward8s() }
+            transportButton(systemName: "forward.end.fill", label: "Next track") { model.next() }
             toggleButton(systemName: repeatIcon, on: model.repeatMode != .off, label: "Repeat") {
                 model.cycleRepeatMode()
             }
@@ -43,7 +43,7 @@ struct TransportCluster: View {
             .shadow(color: on ? theme.orange.opacity(0.4) : .clear, radius: 6)
         }
         .buttonStyle(.plain)
-        .help(label)
+        .carbonTip(label)
         .accessibilityLabel(label)
     }
 
@@ -59,7 +59,7 @@ struct TransportCluster: View {
             .frame(width: CarbonLayout.transportButtonSize, height: CarbonLayout.transportButtonSize)
         }
         .buttonStyle(.plain)
-        .help(label)
+        .carbonTip(label)
         .accessibilityLabel(label)
     }
 }
