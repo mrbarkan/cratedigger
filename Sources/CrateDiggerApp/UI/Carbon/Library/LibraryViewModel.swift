@@ -162,6 +162,9 @@ final class LibraryViewModel: ObservableObject {
         didSet { prefs.savedMiniPlayerArtMode = miniPlayerArtMode.rawValue }
     }
 
+    /// First-run onboarding sheet — shown when setup hasn't completed.
+    @Published var showingOnboarding: Bool = false
+
     private var scrubReleaseWorkItem: DispatchWorkItem?
     private var pendingSeekTargetSeconds: Double?
 
@@ -475,6 +478,7 @@ final class LibraryViewModel: ObservableObject {
         if let raw = prefs.savedMiniPlayerArtMode, let mode = MiniPlayerArtMode(rawValue: raw) {
             miniPlayerArtMode = mode
         }
+        showingOnboarding = !prefs.hasCompletedFirstRunSetup
 
         if let persisted = prefs.savedLastConversionSelection(as: PersistedConversionSelection.self),
            let restored = persisted.materialize() {

@@ -28,6 +28,9 @@ struct MainShell: View {
         .sheet(isPresented: $model.showingRecordDividerSheet) {
             RecordDividerSheet()
         }
+        .sheet(isPresented: $model.showingOnboarding) {
+            OnboardingView()
+        }
     }
 
     // MARK: - Sources
