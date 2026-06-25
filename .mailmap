@@ -1,0 +1,6 @@
+# Unifies commit author identities for `git log`, `git shortlog`, and GitHub
+# without rewriting history. Maps the local-hostname email and the "mrbarkan"
+# name onto a single canonical identity.
+#   Canonical <canonical-email>  Other Name <other-email>
+David Barkan <dbarkan@gmail.com> David Barkan <mrbarkan@BarkanPro.local>
+David Barkan <dbarkan@gmail.com> mrbarkan <dbarkan@gmail.com>

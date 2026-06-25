@@ -33,7 +33,7 @@
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
     <key>NSHumanReadableCopyright</key>
-    <string>Copyright © 2026 CrateDigger. All rights reserved.</string>
+    <string>Copyright © 2026 Mr. Barkan. MIT-licensed.</string>
     <key>NSDownloadsFolderUsageDescription</key>
     <string>CrateDigger needs access to your Downloads folder to read music files you've placed there and to write converted files when you choose Downloads as the destination.</string>
     <key>NSDesktopFolderUsageDescription</key>

@@ -1,8 +1,49 @@
 # CrateDigger
 
-CrateDigger is a macOS music utility built with Swift, AppKit, and FFmpeg tooling. It scans folders of audio files, previews tracks and artwork, inspects metadata, and converts files into cleaner library layouts.
+**A skeuomorphic music-library workbench for macOS.** CrateDigger scans your
+folders of audio files, browses and plays them on a tactile "hardware" console,
+inspects and edits tags and artwork, tidies up messy libraries, and batch-converts
+files with FFmpeg — plus Subsonic/Navidrome streaming, Audio-CD ripping, and
+Last.fm scrobbling.
 
-## Development
+![Platform: macOS 13+](https://img.shields.io/badge/platform-macOS%2013%2B-blue)
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
+
+<!-- Add a hero screenshot before launch, e.g.:
+![CrateDigger](docs/screenshots/hero.png) -->
+
+## Features
+
+- **Browse** your collection by Artist → Album → Track with cover art.
+- **Play** with a queue, shuffle/repeat, ±8s seek, and output-device selection.
+- **Inspect & edit** metadata and embedded artwork track-by-track.
+- **Organize & clean up** — move/consolidate libraries and fix folder layouts.
+- **Convert** with FFmpeg: choose codec, bitrate/sample-rate, artwork handling,
+  and flexible output-folder structures (mirror source, flat, or metadata template),
+  with collision-safe filenames.
+- **Crates** (`.cdlib`) to save and organize collections, with a staging "Prep Crate".
+- **Stream** from Subsonic / Navidrome servers.
+- **Rip** Audio CDs, and **scrobble** to Last.fm.
+- A skeuomorphic **"Carbon"** UI — chassis panels, an OLED display, VU meters, and knobs.
+
+## Requirements
+
+- **macOS 13 (Ventura) or later.**
+- **Apple Silicon** for the default build. (Intel/universal builds are possible but
+  need a universal Swift build and a `lipo`-merged universal FFmpeg — see below.)
+- The packaged app **bundles `ffmpeg` and `ffprobe`**, so end users need nothing
+  extra. When building from source, FFmpeg is optional: without it the app falls
+  back to AVFoundation-only metadata and conversion is disabled.
+
+## Install
+
+- **Download** the latest signed `.dmg` from the [Releases](https://github.com/mrbarkan/cratedigger/releases) page and drag CrateDigger to Applications.
+- Or **build it yourself** (see below).
+
+If you find CrateDigger useful, you can support development on
+[Patreon](https://www.patreon.com/mrbarkan). 💛
+
+## Building from source
 
 Build the app executable:
 
@@ -16,7 +57,9 @@ Run the test suite:
 scripts/test.sh
 ```
 
-`scripts/test.sh` forces the XCTest runner path, prefers a full Xcode developer directory when one is installed, and prints clear guidance if Xcode still needs its license accepted.
+`scripts/test.sh` forces the XCTest runner path, prefers a full Xcode developer
+directory when one is installed, and prints clear guidance if Xcode still needs
+its license accepted.
 
 ## Packaging
 
@@ -66,6 +109,19 @@ This produces `dist/CrateDigger-<version>.dmg`, signed and stapled, that opens c
 
 For the full beta release gate, see [docs/BETA_RELEASE_CHECKLIST.md](docs/BETA_RELEASE_CHECKLIST.md).
 
+### Last.fm scrobbling (optional)
+
+Last.fm requires an *application* API key + shared secret. These are **not**
+included in the source — the app runs fine without them (scrobbling is simply
+disabled). To enable Last.fm in your own build:
+
+1. Create an API account at <https://www.last.fm/api/account/create>.
+2. Copy `scripts/lastfm.env.example` to `scripts/.lastfm.env` (gitignored) and
+   fill in your key/secret. `scripts/package-app.sh` embeds them into the app
+   bundle automatically.
+3. For a `swift run` dev build, export `CRATEDIGGER_LASTFM_API_KEY` and
+   `CRATEDIGGER_LASTFM_API_SECRET` in your shell instead.
+
 ## Manual Smoke Checklist
 
 - Launch the packaged app on a Mac without Homebrew-installed FFmpeg tools.
@@ -77,3 +133,7 @@ For the full beta release gate, see [docs/BETA_RELEASE_CHECKLIST.md](docs/BETA_R
 - Use `Review album folders` and confirm the review sheet edits destinations correctly.
 - Convert files with duplicate basenames and verify CrateDigger renames outputs instead of overwriting them.
 - Verify the bottom status area and readiness text clearly explain whether playback, metadata probing, and conversion are available.
+
+## License
+
+Released under the [MIT License](LICENSE). © 2026 Mr. Barkan.
