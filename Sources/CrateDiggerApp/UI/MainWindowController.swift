@@ -131,6 +131,18 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         hostingController.model.togglePlayPause()
     }
 
+    func importLibraryFile() {
+        hostingController.model.importLibraryFile()
+    }
+
+    func exportLibraryFile() {
+        hostingController.model.exportSelectedCrate()
+    }
+
+    func backUpLibrary() {
+        hostingController.model.backUpLibrary()
+    }
+
     func playNext() {
         hostingController.model.next()
     }

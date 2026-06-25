@@ -212,6 +212,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     // MARK: - App menu actions
 
+    // MARK: - Library Files
+
+    @objc private func importLibraryFile(_ sender: Any?) {
+        mainWindowController?.importLibraryFile()
+    }
+
+    @objc private func exportLibraryFile(_ sender: Any?) {
+        mainWindowController?.exportLibraryFile()
+    }
+
+    @objc private func backUpLibrary(_ sender: Any?) {
+        mainWindowController?.backUpLibrary()
+    }
+
     // MARK: - Mini Player
 
     /// Open the floating mini player and tuck the full app away (alternate modes).
@@ -409,6 +423,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         rebuildOpenRecentMenu()
         fileMenu.addItem(openRecentItem)
         fileMenu.addItem(.separator())
+
+        let libraryMenu = NSMenu(title: "Library")
+        libraryMenu.addItem(makeItem(title: "Import Library File…", action: #selector(importLibraryFile(_:))))
+        libraryMenu.addItem(makeItem(title: "Export Library File…", action: #selector(exportLibraryFile(_:))))
+        libraryMenu.addItem(.separator())
+        libraryMenu.addItem(makeItem(title: "Back Up Library…", action: #selector(backUpLibrary(_:))))
+        let libraryItem = NSMenuItem(title: "Library", action: nil, keyEquivalent: "")
+        libraryItem.submenu = libraryMenu
+        fileMenu.addItem(libraryItem)
+        fileMenu.addItem(.separator())
+
         fileMenu.addItem(makeItem(title: "Reveal Selection in Finder", action: #selector(revealSelectionInFinder(_:)), key: "r"))
         fileMenu.addItem(.separator())
         let convertItem = makeItem(title: "Convert Selected…", action: #selector(convertSelected(_:)), key: "c")
