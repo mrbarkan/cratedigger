@@ -4,6 +4,7 @@ import CrateDiggerCore
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private var mainWindowController: MainWindowController?
     private var aboutWindowController: AboutWindowController?
+    private var guideWindowController: GuideWindowController?
     private var preferencesWindowController: PreferencesWindowController?
     private var miniPlayerWindowController: MiniPlayerWindowController?
     private let prefs: PreferencesStore = .shared
@@ -255,6 +256,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         }
         aboutWindowController?.showWindow(self)
         aboutWindowController?.window?.makeKeyAndOrderFront(self)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    @objc private func showGuide(_ sender: Any?) {
+        if guideWindowController == nil {
+            guideWindowController = GuideWindowController()
+        }
+        guideWindowController?.showWindow(self)
+        guideWindowController?.window?.makeKeyAndOrderFront(self)
         NSApp.activate(ignoringOtherApps: true)
     }
 
@@ -544,6 +554,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         let helpMenuItem = NSMenuItem()
         mainMenu.addItem(helpMenuItem)
         let helpMenu = NSMenu(title: "Help")
+        helpMenu.addItem(makeItem(title: "CrateDigger Guide", action: #selector(showGuide(_:))))
+        helpMenu.addItem(.separator())
         helpMenu.addItem(makeItem(title: "CrateDigger Help", action: #selector(openHelpPage(_:)), key: "?"))
         helpMenu.addItem(makeItem(title: "Send Feedback…", action: #selector(sendFeedback(_:))))
         helpMenuItem.submenu = helpMenu
