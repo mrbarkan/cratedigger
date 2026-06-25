@@ -9,8 +9,9 @@ Last.fm scrobbling.
 ![Platform: macOS 13+](https://img.shields.io/badge/platform-macOS%2013%2B-blue)
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 
-<!-- Add a hero screenshot before launch, e.g.:
-![CrateDigger](docs/screenshots/hero.png) -->
+<p align="center">
+  <img src="website/assets/screenshot_dark.png" alt="CrateDigger — the Carbon console: Sources, Browser, and Inspector panes with an OLED display and VU meters" width="820">
+</p>
 
 ## Features
 
