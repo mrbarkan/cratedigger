@@ -1,3 +1,4 @@
+import AppKit
 import CrateDiggerCore
 import SwiftUI
 
@@ -119,6 +120,7 @@ private struct ArtistColumn: View {
     }
 
     private func selectArtist(_ artist: Artist) {
+        model.clearMultiSelection()
         model.selectedArtistID = artist.id
         model.selectedAlbumID = artist.albums.first?.id
         model.selectedTrackID = artist.albums.first?.tracks.first?.track.id
@@ -141,9 +143,13 @@ private struct AlbumColumn: View {
             ForEach(albums) { album in
                 AlbumRow(
                     album: album,
-                    selected: model.selectedAlbumID == album.id,
+                    selected: model.isAlbumSelected(album.id),
                     isPlayingHere: isPlayingAlbum(album),
-                    onSelect: { selectAlbum(album) }
+                    onSelect: {
+                        let m = NSEvent.modifierFlags
+                        model.selectAlbum(album, command: m.contains(.command), shift: m.contains(.shift),
+                                          ordered: albums, flat: flat)
+                    }
                 )
                 .contextMenu { albumContextMenu(album) }
             }
@@ -174,15 +180,6 @@ private struct AlbumColumn: View {
         guard let nowID = model.nowPlayingTrack?.track.id else { return false }
         return album.tracks.contains { $0.track.id == nowID }
     }
-
-    private func selectAlbum(_ album: Album) {
-        if flat {
-            model.selectAlbumFlat(album)
-        } else {
-            model.selectedAlbumID = album.id
-            model.selectedTrackID = album.tracks.first?.track.id
-        }
-    }
 }
 
 private struct TrackColumn: View {
@@ -208,9 +205,13 @@ private struct TrackColumn: View {
                 case let .track(loaded):
                     TrackRow(
                         loaded: loaded,
-                        selected: model.selectedTrackID == loaded.track.id,
+                        selected: model.isTrackSelected(loaded.track.id),
                         isPlaying: model.nowPlayingTrack?.track.id == loaded.track.id,
-                        onSelect: { model.selectedTrackID = loaded.track.id },
+                        onSelect: {
+                            let m = NSEvent.modifierFlags
+                            model.selectTrack(loaded, command: m.contains(.command), shift: m.contains(.shift),
+                                              ordered: sourceTracks)
+                        },
                         onActivate: { model.playTrack(id: loaded.track.id) }
                     )
                     .contextMenu { trackContextMenu(loaded) }
@@ -233,10 +234,15 @@ private struct TrackColumn: View {
             model.refreshTrackTags(loaded)
         }
         if !model.availableCrates.isEmpty {
-            Menu("Add to Crate") {
+            let usesSelection = model.selectedTrackIDs.count > 1 && model.selectedTrackIDs.contains(loaded.track.id)
+            Menu(usesSelection ? "Add \(model.selectedTrackIDs.count) Selected to Crate" : "Add to Crate") {
                 ForEach(model.availableCrates, id: \.self) { crate in
                     Button(crate) {
-                        model.addItemsToCrate(["track::" + loaded.track.id.uuidString], crateName: crate)
+                        if usesSelection {
+                            model.addSelectionToCrate(crateName: crate)
+                        } else {
+                            model.addItemsToCrate(["track::" + loaded.track.id.uuidString], crateName: crate)
+                        }
                     }
                 }
             }

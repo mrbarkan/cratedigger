@@ -11,6 +11,9 @@ struct SourcesSidebar: View {
     @State private var newCrateName = ""
     @State private var targetedCrate: String? = nil
     @State private var targetedPlaylist: String? = nil
+    @State private var editTarget: SidebarEditTarget? = nil
+    @State private var editText: String = ""
+    @FocusState private var editFieldFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
@@ -25,6 +28,12 @@ struct SourcesSidebar: View {
                         action: { model.selectSource(.prepCrate) }
                     )
                     .contextMenu {
+                        if !model.selectedTracksForCrateAdd().isEmpty {
+                            Button("Add \(model.selectedTracksForCrateAdd().count) selected to \(model.targetCrateName)") {
+                                model.addSelectionToCrate(crateName: model.targetCrateName)
+                            }
+                            Divider()
+                        }
                         if !model.prepCrateTracks.isEmpty {
                             ForEach(model.availableCrates, id: \.self) { crateName in
                                 Button("Add all to \(crateName)") {
@@ -57,16 +66,7 @@ struct SourcesSidebar: View {
 
                     ForEach(model.availableCrates, id: \.self) { crateName in
                         HStack {
-                            sidebarItem(
-                                icon: Image(systemName: crateName == model.targetCrateName ? "music.note.house.fill" : "music.note.house"),
-                                title: crateName,
-                                count: "\(model.crateTrackCounts[crateName] ?? 0)",
-                                selected: isSelectedCrate(crateName),
-                                action: {
-                                    model.selectSource(.localCrate(name: crateName))
-                                    model.targetCrateName = crateName
-                                }
-                            )
+                            crateLabel(crateName)
                             if crateName != "Personal Crate" {
                                 Button(action: { model.deleteCrate(name: crateName) }) {
                                     Image(systemName: "trash")
@@ -82,6 +82,9 @@ struct SourcesSidebar: View {
                                 model.targetCrateName = crateName
                             }
                             if crateName != "Personal Crate" {
+                                Button("Rename") {
+                                    beginRename(.crate(crateName), current: crateName)
+                                }
                                 Button("Delete Crate") {
                                     model.deleteCrate(name: crateName)
                                 }
@@ -197,13 +200,7 @@ struct SourcesSidebar: View {
                     
                     ForEach(model.playlists) { pl in
                         HStack {
-                            sidebarItem(
-                                icon: Image(systemName: "music.note.list"),
-                                title: pl.name,
-                                count: "\(pl.trackURLs.count)",
-                                selected: isSelectedPlaylist(pl.name),
-                                action: { model.selectSource(.playlist(name: pl.name)) }
-                            )
+                            playlistLabel(pl)
                             Button(action: { model.deletePlaylist(name: pl.name) }) {
                                 Image(systemName: "trash")
                                     .font(.system(size: 9))
@@ -211,6 +208,14 @@ struct SourcesSidebar: View {
                             }
                             .buttonStyle(.plain)
                             .padding(.trailing, 14)
+                        }
+                        .contextMenu {
+                            Button("Rename") {
+                                beginRename(.playlist(pl.name), current: pl.name)
+                            }
+                            Button("Delete Playlist") {
+                                model.deletePlaylist(name: pl.name)
+                            }
                         }
                         .background(
                             RoundedRectangle(cornerRadius: 6)
@@ -421,9 +426,10 @@ struct SourcesSidebar: View {
 
     @ViewBuilder
     private var addToCrateButton: some View {
-        let albumTracks = model.selectedAlbum?.tracks ?? []
-        let armed = !albumTracks.isEmpty
-        KeyButton(style: armed ? .glowingFilled : .normal, action: addSelectedAlbumToCrate) {
+        let tracks = model.selectedTracksForCrateAdd()
+        let armed = !tracks.isEmpty
+        KeyButton(style: armed ? .glowingFilled : .normal,
+                  action: { model.addSelectionToCrate(crateName: model.targetCrateName) }) {
             HStack(spacing: 8) {
                 Image(systemName: "tray.and.arrow.down.fill")
                     .font(.system(size: 11, weight: .semibold))
@@ -436,14 +442,100 @@ struct SourcesSidebar: View {
         }
         .frame(height: 30)
         .carbonTip(armed
-            ? "Add “\(model.selectedAlbum?.title ?? "")” (\(albumTracks.count) track\(albumTracks.count == 1 ? "" : "s")) to \(model.targetCrateName)"
-            : "Select an album, then add it to a crate")
+            ? "Add \(tracks.count) track\(tracks.count == 1 ? "" : "s") to \(model.targetCrateName)"
+            : "Select albums or tracks (⌘-click for several), then add them to a crate")
     }
 
-    private func addSelectedAlbumToCrate() {
-        let tracks = model.selectedAlbum?.tracks ?? []
-        guard !tracks.isEmpty else { return }
-        model.addItemsToCrate(tracks.map { "track::" + $0.track.id.uuidString },
-                              crateName: model.targetCrateName)
+    // MARK: - Renamable crate / playlist rows
+
+    @ViewBuilder
+    private func crateLabel(_ crateName: String) -> some View {
+        if editTarget == .crate(crateName) {
+            renameField { commitRename(.crate(crateName)) }
+        } else {
+            sidebarItem(
+                icon: Image(systemName: crateName == model.targetCrateName ? "music.note.house.fill" : "music.note.house"),
+                title: crateName,
+                count: "\(model.crateTrackCounts[crateName] ?? 0)",
+                selected: isSelectedCrate(crateName),
+                action: {
+                    model.selectSource(.localCrate(name: crateName))
+                    model.targetCrateName = crateName
+                }
+            )
+            .simultaneousGesture(TapGesture(count: 2).onEnded {
+                guard crateName != "Personal Crate" else { return }
+                beginRename(.crate(crateName), current: crateName)
+            })
+        }
     }
+
+    @ViewBuilder
+    private func playlistLabel(_ pl: Playlist) -> some View {
+        if editTarget == .playlist(pl.name) {
+            renameField { commitRename(.playlist(pl.name)) }
+        } else {
+            sidebarItem(
+                icon: Image(systemName: "music.note.list"),
+                title: pl.name,
+                count: "\(pl.trackURLs.count)",
+                selected: isSelectedPlaylist(pl.name),
+                action: { model.selectSource(.playlist(name: pl.name)) }
+            )
+            .simultaneousGesture(TapGesture(count: 2).onEnded {
+                beginRename(.playlist(pl.name), current: pl.name)
+            })
+        }
+    }
+
+    /// Inline rename field, padded to line up with `sidebarItem`.
+    private func renameField(commit: @escaping () -> Void) -> some View {
+        TextField("", text: $editText)
+            .textFieldStyle(.plain)
+            .font(CarbonFont.sans(12.5, weight: .medium))
+            .foregroundStyle(theme.ink)
+            .focused($editFieldFocused)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(theme.well.opacity(theme.isDark ? 0.7 : 0.5))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .stroke(theme.cyan.opacity(0.7), lineWidth: 1)
+                    )
+            )
+            .padding(.horizontal, 4)
+            .onSubmit(commit)
+            .onExitCommand { cancelRename() }
+            .onAppear { editFieldFocused = true }
+            .onChange(of: editFieldFocused) { focused in
+                if !focused { cancelRename() }
+            }
+    }
+
+    private func beginRename(_ target: SidebarEditTarget, current: String) {
+        editText = current
+        editTarget = target
+        editFieldFocused = true
+    }
+
+    private func commitRename(_ target: SidebarEditTarget) {
+        let proposed = editText
+        editTarget = nil
+        switch target {
+        case .crate(let old): _ = model.renameCrate(old, to: proposed)
+        case .playlist(let old): _ = model.renamePlaylist(old, to: proposed)
+        }
+    }
+
+    private func cancelRename() {
+        editTarget = nil
+    }
+}
+
+/// Which sidebar item is being renamed inline.
+private enum SidebarEditTarget: Equatable {
+    case crate(String)
+    case playlist(String)
 }

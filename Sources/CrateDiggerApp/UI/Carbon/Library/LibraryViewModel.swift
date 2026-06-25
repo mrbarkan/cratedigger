@@ -77,6 +77,13 @@ final class LibraryViewModel: ObservableObject {
     @Published var selectedAlbumID: String?
     @Published var selectedTrackID: UUID?
 
+    /// Multi-selection sets for batch actions (⌘/⇧-click, ⌘A). The two are kept
+    /// mutually exclusive — you're selecting albums *or* tracks — while
+    /// `selectedAlbumID` / `selectedTrackID` stay the "anchor" (last-clicked) that
+    /// drives the Inspector and the ⇧-click range origin.
+    @Published var selectedAlbumIDs: Set<String> = []
+    @Published var selectedTrackIDs: Set<UUID> = []
+
     @Published var oledView: OLEDView = .nowPlaying {
         didSet {
             prefs.savedOLEDView = oledView.rawValue
@@ -98,6 +105,8 @@ final class LibraryViewModel: ObservableObject {
         }
     }
     @Published var scanProgress: ScanProgress = .idle
+    /// The OLED view to restore after an add-to-crate import status finishes.
+    private var importStatusReturnOLED: OLEDView?
     @Published var conversionProgress: ConversionProgressSnapshot = .idle
 
     @Published var conversionSelection: ConversionOptionsSelection = ConversionOptionsSelection(
@@ -755,6 +764,8 @@ final class LibraryViewModel: ObservableObject {
         selectedArtistID = index.artists.first?.id
         selectedAlbumID = index.artists.first?.albums.first?.id
         selectedTrackID = index.artists.first?.albums.first?.tracks.first?.track.id
+        selectedAlbumIDs = []
+        selectedTrackIDs = []
 
         refreshCrateCounts()
     }
@@ -2292,6 +2303,7 @@ final class LibraryViewModel: ObservableObject {
     }
 
     private func importTracksIntoCrate(_ tracks: [LoadedTrack], crateName: String) {
+        beginImportStatus(count: tracks.count, crateName: crateName)
         let copyEnabled = prefs.copyOnImport
         let libraryFolderURL = managedLibraryFolderURL
         
@@ -2320,9 +2332,8 @@ final class LibraryViewModel: ObservableObject {
                     }
                     
                     await MainActor.run {
-                        self.scanProgress = .idle
                         self.appendTracksToCrateFile(updatedTracks, crateName: crateName)
-                        self.appAlert = .error(title: "Added", message: "Copied and added \(tracks.count) tracks to '\(crateName)'.")
+                        self.finishImportStatus(count: tracks.count, crateName: crateName)
                     }
                 } catch {
                     await MainActor.run {
@@ -2334,7 +2345,31 @@ final class LibraryViewModel: ObservableObject {
         } else {
             // Index files in place
             appendTracksToCrateFile(tracks, crateName: crateName)
-            appAlert = .error(title: "Added", message: "Added \(tracks.count) tracks to '\(crateName)' in place.")
+            finishImportStatus(count: tracks.count, crateName: crateName)
+        }
+    }
+
+    /// Switch the OLED to SCAN and show an "adding" status while tracks are added
+    /// to a crate. Remembers the prior view so `finishImportStatus` can restore it.
+    private func beginImportStatus(count: Int, crateName: String) {
+        if oledView != .scan { importStatusReturnOLED = oledView }
+        oledView = .scan
+        scanProgress = ScanProgress(folderName: "Adding → \(crateName)", filesProbed: 0,
+                                    totalCandidates: count, isRunning: true)
+    }
+
+    /// Show a brief "added" confirmation on the SCAN OLED, then restore the prior
+    /// view after a short delay.
+    private func finishImportStatus(count: Int, crateName: String) {
+        scanProgress = ScanProgress(folderName: "Added \(count) → \(crateName)", filesProbed: count,
+                                    totalCandidates: count, isRunning: false)
+        let revertTo = importStatusReturnOLED ?? .nowPlaying
+        importStatusReturnOLED = nil
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 1_600_000_000)
+            guard let self else { return }
+            if self.oledView == .scan { self.oledView = revertTo }
+            if !self.scanProgress.isRunning { self.scanProgress = .idle }
         }
     }
 
