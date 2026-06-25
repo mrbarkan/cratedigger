@@ -74,6 +74,28 @@ public final class PlaylistService {
         }
     }
 
+    /// Rename a playlist file on disk (`<old>.m3u` → `<new>.m3u`). Throws if the
+    /// source is missing or a different playlist already uses the new name.
+    public func renamePlaylist(from oldName: String, to newName: String) throws {
+        let src = playlistsDirectoryURL.appendingPathComponent(oldName).appendingPathExtension("m3u")
+        let dest = playlistsDirectoryURL.appendingPathComponent(newName).appendingPathExtension("m3u")
+        guard fileManager.fileExists(atPath: src.path) else { throw CocoaError(.fileNoSuchFile) }
+
+        // On case-insensitive volumes a case-only rename needs a temp hop so the
+        // move isn't treated as "destination already exists".
+        let caseOnly = oldName.lowercased() == newName.lowercased()
+        if !caseOnly && fileManager.fileExists(atPath: dest.path) {
+            throw CocoaError(.fileWriteFileExists)
+        }
+        if caseOnly {
+            let tmp = playlistsDirectoryURL.appendingPathComponent(UUID().uuidString).appendingPathExtension("m3u")
+            try fileManager.moveItem(at: src, to: tmp)
+            try fileManager.moveItem(at: tmp, to: dest)
+        } else {
+            try fileManager.moveItem(at: src, to: dest)
+        }
+    }
+
     public func exportPlaylist(_ playlist: Playlist, to url: URL) throws {
         var lines = ["#EXTM3U"]
         for trackURL in playlist.trackURLs {
