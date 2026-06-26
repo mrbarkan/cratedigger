@@ -5,6 +5,83 @@ import XCTest
 
 final class LibraryIndexTests: XCTestCase {
 
+    private func loaded(album: String, format: String, title: String = "One More Time",
+                        artist: String = "Daft Punk", year: Int = 2001) -> LoadedTrack {
+        let url = URL(fileURLWithPath: "/tmp/\(album)/\(title).\(format)")
+        let t = AudioTrack(fileURL: url, title: title, artist: artist, album: album,
+                           formatName: format, bitrateKbps: 900, sampleRateHz: 44100, year: year)
+        return LoadedTrack(track: t, metadata: ConversionMetadata())
+    }
+
+    func testFoldsGroupedVersionsIntoOneRelease() {
+        let planner = OutputPathPlanner()
+        let us = loaded(album: "Discovery", format: "flac")
+        let jp = loaded(album: "Discovery (JP)", format: "flac")
+        let kUS = planner.albumFolderKey(for: us)
+        let kJP = planner.albumFolderKey(for: jp)
+        let group = AlbumGroup(id: "g1", name: "Discovery", artistID: "daft punk",
+                               originalYear: 1999, primaryKey: kUS,
+                               members: [VersionMember(key: kUS, editionLabel: "US"),
+                                         VersionMember(key: kJP, editionLabel: "JP")])
+        let index = LibraryIndex.build(from: [us, jp], groups: [group])
+
+        let albums = index.allAlbums
+        XCTAssertEqual(albums.count, 1)
+        let release = albums[0]
+        XCTAssertTrue(release.isVersionGroup)
+        XCTAssertEqual(release.title, "Discovery")
+        XCTAssertEqual(release.originalYear, 1999)
+        XCTAssertEqual(release.versions?.count, 2)
+        XCTAssertEqual(release.versions?.compactMap(\.editionLabel).sorted(), ["JP", "US"])
+        XCTAssertEqual(index.allTracks.count, 2)
+    }
+
+    func testDissolvesGroupWithFewerThanTwoLiveMembers() {
+        let planner = OutputPathPlanner()
+        let us = loaded(album: "Discovery", format: "flac")
+        let kUS = planner.albumFolderKey(for: us)
+        let ghost = AlbumFolderKey(artistBucket: "Daft Punk", album: "Gone", year: "2001")
+        let group = AlbumGroup(id: "g1", name: "Discovery", artistID: "daft punk",
+                               originalYear: 1999, primaryKey: kUS,
+                               members: [VersionMember(key: kUS), VersionMember(key: ghost)])
+        let index = LibraryIndex.build(from: [us], groups: [group])
+        XCTAssertEqual(index.allAlbums.count, 1)
+        XCTAssertFalse(index.allAlbums[0].isVersionGroup)
+    }
+
+    func testReleaseSortsByOriginalYear() {
+        let planner = OutputPathPlanner()
+        let newer = loaded(album: "Random Access Memories", format: "flac", title: "Giorgio", year: 2013)
+        let cd = loaded(album: "Discovery", format: "flac", year: 2001)
+        let vinyl = loaded(album: "Discovery (Vinyl)", format: "flac", year: 2016)
+        let kCD = planner.albumFolderKey(for: cd)
+        let kVinyl = planner.albumFolderKey(for: vinyl)
+        let group = AlbumGroup(id: "g1", name: "Discovery", artistID: "daft punk",
+                               originalYear: 1999, primaryKey: kCD,
+                               members: [VersionMember(key: kCD), VersionMember(key: kVinyl)])
+        let index = LibraryIndex.build(from: [newer, cd, vinyl], groups: [group])
+        let titles = index.artists[0].albums.map(\.title)
+        // Release (originalYear 1999) sorts before RAM (2013).
+        XCTAssertEqual(titles, ["Discovery", "Random Access Memories"])
+    }
+
+    func testAlbumOrVersionFindsPressing() {
+        let planner = OutputPathPlanner()
+        let us = loaded(album: "Discovery", format: "flac")
+        let jp = loaded(album: "Discovery (JP)", format: "flac")
+        let kUS = planner.albumFolderKey(for: us)
+        let kJP = planner.albumFolderKey(for: jp)
+        let group = AlbumGroup(id: "g1", name: "Discovery", artistID: "daft punk",
+                               originalYear: 1999, primaryKey: kUS,
+                               members: [VersionMember(key: kUS), VersionMember(key: kJP)])
+        let index = LibraryIndex.build(from: [us, jp], groups: [group])
+        let release = index.allAlbums[0]
+        let pressing = release.versions![0]
+        XCTAssertEqual(index.albumOrVersion(id: release.id)?.id, release.id)
+        XCTAssertEqual(index.albumOrVersion(id: pressing.id)?.id, pressing.id)
+        XCTAssertNil(index.albumOrVersion(id: "nope"))
+    }
+
     func testBuildEmptyReturnsEmpty() {
         let index = LibraryIndex.build(from: [])
         XCTAssertTrue(index.artists.isEmpty)

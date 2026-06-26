@@ -78,26 +78,29 @@ public struct LibraryIndex: Sendable {
     /// Build an `Artist → Album → Track` index from a flat array of loaded tracks.
     /// Grouping keys reuse `OutputPathPlanner.albumFolderKey(for:)` so the inspector,
     /// conversion folder review, and library browser all agree on what an album is.
-    public static func build(from loaded: [LoadedTrack]) -> LibraryIndex {
+    /// Pass `groups` to fold member albums into a single synthesised release album.
+    public static func build(from loaded: [LoadedTrack],
+                             groups: [AlbumGroup] = []) -> LibraryIndex {
         guard !loaded.isEmpty else { return .empty }
 
         let planner = OutputPathPlanner()
 
-        var groups: [AlbumFolderKey: [LoadedTrack]] = [:]
+        var groupsByKey: [AlbumFolderKey: [LoadedTrack]] = [:]
         var insertionOrder: [AlbumFolderKey] = []
         for track in loaded {
             let key = planner.albumFolderKey(for: track)
-            if groups[key] == nil {
+            if groupsByKey[key] == nil {
                 insertionOrder.append(key)
             }
-            groups[key, default: []].append(track)
+            groupsByKey[key, default: []].append(track)
         }
 
         var albumsByArtistID: [String: [Album]] = [:]
         var artistDisplayName: [String: String] = [:]
+        var albumByKey: [AlbumFolderKey: Album] = [:]
 
         for key in insertionOrder {
-            guard let tracks = groups[key], let representative = tracks.first else { continue }
+            guard let tracks = groupsByKey[key], let representative = tracks.first else { continue }
 
             let artistName = key.artistBucket
             let artistID = normalizedID(artistName)
@@ -136,7 +139,45 @@ public struct LibraryIndex: Sendable {
                 mediaFormat: mediaFormat
             )
 
+            albumByKey[key] = album
             albumsByArtistID[artistID, default: []].append(album)
+        }
+
+        // Fold user-defined version groups: replace member pressings with one
+        // synthesised "release" album that carries them in `versions`.
+        if !groups.isEmpty {
+            var consumed = Set<String>()
+            var releasesByArtist: [String: [Album]] = [:]
+            for group in groups {
+                let liveMembers: [Album] = group.members.compactMap { member in
+                    albumByKey[member.key]?.with(editionLabel: member.editionLabel)
+                }
+                guard liveMembers.count >= 2 else { continue }
+                let primary = albumByKey[group.primaryKey] ?? albumByKey[group.members.first!.key]
+                guard let primary else { continue }
+                for member in group.members {
+                    if let a = albumByKey[member.key] { consumed.insert(a.id) }
+                }
+                let release = Album(
+                    id: "group::\(group.id)",
+                    artistID: primary.artistID,
+                    artistName: primary.artistName,
+                    title: group.name,
+                    year: primary.year,
+                    artworkHash: primary.artworkHash,
+                    tracks: primary.tracks,
+                    booklet: primary.booklet,
+                    mediaFormat: primary.mediaFormat,
+                    versions: liveMembers,
+                    originalYear: group.originalYear
+                )
+                releasesByArtist[primary.artistID, default: []].append(release)
+            }
+            for (artistID, releases) in releasesByArtist {
+                var kept = (albumsByArtistID[artistID] ?? []).filter { !consumed.contains($0.id) }
+                kept.append(contentsOf: releases)
+                albumsByArtistID[artistID] = kept
+            }
         }
 
         let artists = albumsByArtistID
@@ -235,8 +276,10 @@ public struct LibraryIndex: Sendable {
         switch field {
         case .year:
             comparator = { lhs, rhs in
-                switch (lhs.year, rhs.year) {
-                case let (l?, r?) where l != r: return l < r
+                let l = lhs.originalYear ?? lhs.year
+                let r = rhs.originalYear ?? rhs.year
+                switch (l, r) {
+                case let (lv?, rv?) where lv != rv: return lv < rv
                 case (nil, _?): return false   // unknown year sorts last
                 case (_?, nil): return true
                 default: return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
@@ -316,6 +359,18 @@ public extension LibraryIndex {
     func album(id: String) -> Album? {
         for artist in artists {
             if let match = artist.albums.first(where: { $0.id == id }) { return match }
+        }
+        return nil
+    }
+
+    /// Find a top-level album by id, or a member pressing nested inside a grouped
+    /// release. Used so selecting a version sub-row resolves to that pressing.
+    public func albumOrVersion(id: String) -> Album? {
+        for artist in artists {
+            for album in artist.albums {
+                if album.id == id { return album }
+                if let v = album.versions?.first(where: { $0.id == id }) { return v }
+            }
         }
         return nil
     }
