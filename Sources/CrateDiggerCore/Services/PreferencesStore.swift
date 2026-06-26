@@ -53,6 +53,7 @@ public final class PreferencesStore {
         static let streamSources = "cratedigger.radio.streamSources"
         static let streamEngine = "cratedigger.radio.engine"
         static let customYtDlpPath = "cratedigger.tools.ytdlpPath"
+        static let albumGroups = "cratedigger.library.albumGroups"
     }
 
     // MARK: - Window frame
@@ -418,6 +419,18 @@ public final class PreferencesStore {
                 defaults.set(data, forKey: Key.streamSources)
             } else {
                 defaults.removeObject(forKey: Key.streamSources)
+            }
+        }
+    }
+
+    /// Raw JSON of `[AlbumGroup]`. `AlbumGroupStore` owns (de)serialization.
+    public var albumGroupsData: Data? {
+        get { defaults.data(forKey: Key.albumGroups) }
+        set {
+            if let data = newValue {
+                defaults.set(data, forKey: Key.albumGroups)
+            } else {
+                defaults.removeObject(forKey: Key.albumGroups)
             }
         }
     }
