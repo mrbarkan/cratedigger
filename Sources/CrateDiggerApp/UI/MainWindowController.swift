@@ -40,6 +40,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             name: AppearanceMode.didChangeNotification,
             object: nil
         )
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handlePresentGroupAlbumsSheet(_:)),
+            name: .crateDiggerPresentGroupAlbumsSheet,
+            object: nil
+        )
     }
 
     @available(*, unavailable)
@@ -93,6 +100,35 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             guard let selection, let model else { return }
             guard let host = NSApp.keyWindow?.contentViewController else { return }
             model.runConversion(selection: selection, presentingFrom: host)
+        }
+        hostingController.presentAsSheet(controller)
+    }
+
+    @objc private func handlePresentGroupAlbumsSheet(_ note: Notification) {
+        guard let inputs = note.object as? GroupSheetInputs else { return }
+        presentGroupAlbumsSheet(inputs: inputs)
+    }
+
+    func presentGroupAlbumsSheet(inputs: GroupSheetInputs) {
+        guard contentViewController != nil else { return }
+        let model = hostingController.model
+        let controller = GroupAlbumsSheetController(
+            name: inputs.name,
+            originalYear: inputs.year,
+            rows: inputs.rows,
+            primaryKey: inputs.primaryKey
+        )
+        let groupID = inputs.id
+        controller.onDecision = { [weak controller, weak model] result in
+            controller?.dismiss(nil)
+            guard let result, let model else { return }
+            model.commitGroup(
+                id: groupID,
+                name: result.name,
+                originalYear: result.originalYear,
+                primaryKey: result.primaryKey,
+                members: result.members
+            )
         }
         hostingController.presentAsSheet(controller)
     }

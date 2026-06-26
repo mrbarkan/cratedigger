@@ -1,6 +1,27 @@
 import AppKit
 import CrateDiggerCore
 
+// MARK: - Notification name
+
+extension NSNotification.Name {
+    /// Posted by `LibraryViewModel.beginGroupAlbums()` / `editGroup(_:)`.
+    /// `object` is a `GroupSheetInputs` value.
+    static let crateDiggerPresentGroupAlbumsSheet = NSNotification.Name(
+        "CrateDiggerPresentGroupAlbumsSheet"
+    )
+}
+
+/// Carries the pre-filled inputs from the view model to MainWindowController.
+struct GroupSheetInputs {
+    let id: String
+    let name: String
+    let year: Int?
+    let rows: [GroupAlbumsSheetController.VersionRow]
+    let primaryKey: AlbumFolderKey
+}
+
+// MARK: -
+
 /// Album version-group actions: grouping multiple albums into one release,
 /// editing/ungrouping, and the helpers the browser + sheet rely on. Grouping is
 /// non-destructive — it only writes to `AlbumGroupStore`; files are untouched.
@@ -81,6 +102,50 @@ extension LibraryViewModel {
         mutateGroup(of: release) { group in
             group.members.removeAll { $0.key == key }
         }
+    }
+
+    // MARK: - Sheet present actions
+
+    /// Open the group-albums sheet for the current multi-selection.
+    func beginGroupAlbums() {
+        let albums = selectedAlbumsForGrouping().filter { !$0.isVersionGroup }
+        guard albums.count >= 2 else { return }
+        let rows: [GroupAlbumsSheetController.VersionRow] = albums.compactMap { album in
+            guard let key = versionKey(for: album) else { return nil }
+            return .init(album: album, key: key,
+                         formatBadge: VersionLabel.formatBadge(for: album), editionLabel: "")
+        }
+        guard rows.count >= 2 else { return }
+        let suggestedName = albums.map(\.title).min(by: { $0.count < $1.count }) ?? albums[0].title
+        let suggestedYear = albums.compactMap(\.year).min()
+        presentGroupSheet(id: UUID().uuidString, name: suggestedName, year: suggestedYear,
+                          rows: rows, primaryKey: rows[0].key)
+    }
+
+    /// Re-open the sheet to edit an existing release.
+    func editGroup(_ release: Album) {
+        guard let id = groupID(of: release),
+              let group = albumGroupStore.all().first(where: { $0.id == id }) else { return }
+        let rows: [GroupAlbumsSheetController.VersionRow] = (release.versions ?? []).compactMap { v in
+            guard let key = versionKey(for: v) else { return nil }
+            let existing = group.members.first { $0.key == key }?.editionLabel ?? ""
+            return .init(album: v, key: key,
+                         formatBadge: VersionLabel.formatBadge(for: v), editionLabel: existing)
+        }
+        guard rows.count >= 2 else { return }
+        presentGroupSheet(id: id, name: group.name, year: group.originalYear,
+                          rows: rows, primaryKey: group.primaryKey)
+    }
+
+    private func presentGroupSheet(id: String, name: String, year: Int?,
+                                   rows: [GroupAlbumsSheetController.VersionRow],
+                                   primaryKey: AlbumFolderKey) {
+        let inputs = GroupSheetInputs(id: id, name: name, year: year,
+                                      rows: rows, primaryKey: primaryKey)
+        NotificationCenter.default.post(
+            name: .crateDiggerPresentGroupAlbumsSheet,
+            object: inputs
+        )
     }
 
     // MARK: - Helpers
