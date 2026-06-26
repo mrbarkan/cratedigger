@@ -104,6 +104,22 @@ extension LibraryViewModel {
         }
     }
 
+    // MARK: - Edition label prompt
+
+    func promptEditionLabel(for pressing: Album, in release: Album) {
+        let alert = NSAlert()
+        alert.messageText = "Edition label"
+        alert.informativeText = "e.g. Gold CD, JP Vinyl, 2011 Remaster"
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
+        field.stringValue = pressing.editionLabel ?? ""
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        if alert.runModal() == .alertFirstButtonReturn {
+            setEditionLabel(field.stringValue, for: pressing, in: release)
+        }
+    }
+
     // MARK: - Sheet present actions
 
     /// Open the group-albums sheet for the current multi-selection.

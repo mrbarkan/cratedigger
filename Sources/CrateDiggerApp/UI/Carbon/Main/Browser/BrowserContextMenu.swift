@@ -64,6 +64,12 @@ enum BrowserContextMenu {
         }
         Button("Select All") { model.selectAllAlbums() }
 
+        if model.canGroupSelection {
+            Button("Group \(model.selectedAlbumsForGrouping().filter { !$0.isVersionGroup }.count) Albums…") {
+                model.beginGroupAlbums()
+            }
+        }
+
         removalItems(forAlbum: album, model: model)
     }
 
@@ -113,23 +119,39 @@ enum BrowserContextMenu {
     }
 
     /// Menu for a version-group release row.
-    /// TODO(Task 10): replace with full release-specific actions (group editing UI).
     @ViewBuilder
     static func release(_ release: Album, model: LibraryViewModel) -> some View {
-        Button("Edit Version Group…") { model.editGroup(release) }
-        Button("Ungroup Releases") { model.ungroupRelease(release) }
-        Divider()
-        album(release, model: model)
+        if !model.availableCrates.isEmpty {
+            Menu("Add Primary Version to Crate") {
+                ForEach(model.availableCrates, id: \.self) { crate in
+                    Button(crate) {
+                        model.addItemsToCrate(release.tracks.map { "track::" + $0.track.id.uuidString },
+                                              crateName: crate)
+                    }
+                }
+            }
+        }
+        Button("Edit Group…") { model.editGroup(release) }
+        Button("Ungroup") { model.ungroupRelease(release) }
     }
 
     /// Menu for a version (pressing) sub-row.
-    /// TODO(Task 10): replace with full version-specific actions (set primary, set edition, remove).
     @ViewBuilder
     static func version(_ version: Album, release: Album, model: LibraryViewModel) -> some View {
-        Button("Set as Primary Version") { model.setPrimaryVersion(version, in: release) }
-        Button("Remove from Group") { model.removeFromGroup(version, release: release) }
+        if !model.availableCrates.isEmpty {
+            Menu("Add This Version to Crate") {
+                ForEach(model.availableCrates, id: \.self) { crate in
+                    Button(crate) {
+                        model.addItemsToCrate(version.tracks.map { "track::" + $0.track.id.uuidString },
+                                              crateName: crate)
+                    }
+                }
+            }
+        }
+        Button("Set as Primary") { model.setPrimaryVersion(version, in: release) }
+        Button("Edit Edition Label…") { model.promptEditionLabel(for: version, in: release) }
         Divider()
-        album(version, model: model)
+        Button("Remove from Group") { model.removeFromGroup(version, release: release) }
     }
 
     /// The source-specific "Remove from …" items shared by the album menu.
