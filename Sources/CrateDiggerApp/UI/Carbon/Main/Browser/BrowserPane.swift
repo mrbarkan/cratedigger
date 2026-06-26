@@ -164,7 +164,7 @@ private struct AlbumColumn: View {
             onSelect: {
                 let m = NSEvent.modifierFlags
                 model.selectAlbum(album, command: m.contains(.command), shift: m.contains(.shift),
-                                  ordered: albums.filter { !$0.isVersionGroup }, flat: flat)
+                                  ordered: albums, flat: flat)
             }
         )
         .contextMenu { BrowserContextMenu.album(album, model: model) }

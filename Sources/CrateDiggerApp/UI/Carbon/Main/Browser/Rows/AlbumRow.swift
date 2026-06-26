@@ -41,17 +41,15 @@ struct AlbumRow: View {
                 .foregroundStyle(titleColor)
         } trail: {
             if let badge {
-                HStack(spacing: 4) {
-                    Text(badge)
-                        .font(CarbonFont.mono(8.5, weight: .semibold))
-                        .foregroundStyle(selected ? theme.selectionInk.opacity(0.85) : theme.ink3)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 2)
-                        .background(
-                            RoundedRectangle(cornerRadius: 3)
-                                .fill(selected ? theme.selectionInk.opacity(0.18) : theme.ink.opacity(0.08))
-                        )
-                }
+                Text(badge)
+                    .font(CarbonFont.mono(8.5, weight: .semibold))
+                    .foregroundStyle(selected ? theme.selectionInk.opacity(0.85) : theme.ink3)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(selected ? theme.selectionInk.opacity(0.18) : theme.ink.opacity(0.08))
+                    )
             } else {
                 Text(yearLabel)
                     .font(CarbonFont.mono(9.5))

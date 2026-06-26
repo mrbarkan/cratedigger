@@ -30,7 +30,7 @@ public struct AlbumGroup: Codable, Sendable, Hashable, Identifiable {
     /// The pressings, in display order.
     public var members: [VersionMember]
 
-    public init(id: String, name: String, artistID: String, originalYear: Int?,
+    public init(id: String, name: String, artistID: String, originalYear: Int? = nil,
                 primaryKey: AlbumFolderKey, members: [VersionMember]) {
         self.id = id
         self.name = name

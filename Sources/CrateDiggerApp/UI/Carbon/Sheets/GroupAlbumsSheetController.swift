@@ -30,8 +30,6 @@ final class GroupAlbumsSheetController: NSViewController {
     private var primaryKey: AlbumFolderKey
     private let nameField = NSTextField()
     private let yearField = NSTextField()
-    private var editionFields: [NSTextField] = []
-    private var primaryPopup = NSPopUpButton()
     private var hostingController: NSViewController?
 
     init(name: String, originalYear: Int?, rows: [VersionRow], primaryKey: AlbumFolderKey) {

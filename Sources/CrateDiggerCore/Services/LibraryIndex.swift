@@ -158,6 +158,8 @@ public struct LibraryIndex: Sendable {
                 for member in group.members {
                     if let a = albumByKey[member.key] { consumed.insert(a.id) }
                 }
+                // Members are expected to share a single artist (enforced by
+                // `canGroupSelection` in the App layer); the release is placed under `primary.artistID`.
                 let release = Album(
                     id: "group::\(group.id)",
                     artistID: primary.artistID,
@@ -365,7 +367,7 @@ public extension LibraryIndex {
 
     /// Find a top-level album by id, or a member pressing nested inside a grouped
     /// release. Used so selecting a version sub-row resolves to that pressing.
-    public func albumOrVersion(id: String) -> Album? {
+    func albumOrVersion(id: String) -> Album? {
         for artist in artists {
             for album in artist.albums {
                 if album.id == id { return album }
