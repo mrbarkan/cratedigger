@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-CrateDigger is a native **macOS** music-library utility (AppKit + SwiftUI, Swift Package Manager). It scans folders of audio files, browses/plays them, inspects & edits metadata and artwork, organizes/cleans up libraries, and batch-converts files with **FFmpeg**. It also has integrations for Subsonic/Navidrome streaming, Audio-CD ripping, and Last.fm scrobbling. The UI is a skeuomorphic "hardware" aesthetic ("Carbon").
+CrateDigger is a native **macOS** music-library utility (AppKit + SwiftUI, Swift Package Manager). It scans folders of audio files, browses/plays them, inspects & edits metadata and artwork, organizes/cleans up libraries, and batch-converts files with **FFmpeg**. It also has integrations for Subsonic/Navidrome streaming, Audio-CD ripping, YouTube "radio" streaming (via **yt-dlp**), splitting continuous vinyl-side rips into per-track exports, and Last.fm scrobbling. The UI is a skeuomorphic "hardware" aesthetic ("Carbon").
 
 ## Commands
 
@@ -45,7 +45,7 @@ main.swift  →  AppDelegate  →  MainWindowController  →  CarbonHostingContr
 
 ### `LibraryViewModel` — the center of gravity
 
-`Sources/CrateDiggerApp/UI/Carbon/Library/LibraryViewModel.swift` (~1800 lines) is a single `@MainActor ObservableObject` that owns **all** app state, **all** services, and **most** behavior. Almost every SwiftUI view binds to it via `@EnvironmentObject`. Behavior is split across extensions: `LibraryViewModel+Conversion.swift`, `LibraryViewModel+ExternalDeviceTransfer.swift`. **When fixing app behavior, start here** — this is where the wiring lives.
+`Sources/CrateDiggerApp/UI/Carbon/Library/LibraryViewModel.swift` (~2600 lines) is a single `@MainActor ObservableObject` that owns **all** app state, **all** services, and **most** behavior. Almost every SwiftUI view binds to it via `@EnvironmentObject`. Behavior is split across `LibraryViewModel+*.swift` extensions in the same folder: `+Conversion`, `+ExternalDeviceTransfer`, `+LibraryFiles`, `+MultiSelect`, `+Onboarding`, `+Radio`, `+RecordDivider`, `+Rename`, `+TrackActions`. **When fixing app behavior, start here** — this is where the wiring lives.
 
 It is a large god-object; prefer extracting testable logic into a Core service over adding more to it.
 
@@ -55,14 +55,31 @@ It is a large god-object; prefer extracting testable logic into a Core service o
 - A flat `[LoadedTrack]` is turned into a browsable **`LibraryIndex`** (Artist → Album → Track) by `LibraryIndex.build(from:)`.
 - **Critical invariant:** grouping into albums uses `OutputPathPlanner.albumFolderKey(for:)`. The browser index, the conversion output planner, and the per-album review sheet **all reuse this same key** so they agree on "what an album is." If you change album grouping, change it there.
 
-### Sources model (Crates, Prep Crate, Remote, CD, Playlists)
+### Sources model (Crates, Prep Crate, Remote, CD, Playlists, Radio)
 
-`LibrarySource` selects what's shown. The view model keeps separate cached indexes (`localIndex`, `remoteIndex`, `cdIndex`, `playlistIndex`, `prepCrateIndex`) for fast switching via `selectSource(_:)`.
+`LibrarySource` (enum in `LibraryViewModel.swift`) selects what's shown — cases: `localCrate(name:)`, `prepCrate`, `remote`, `playlist(name:)`, `cd(volumePath:)`, `radio(category:)`. The view model keeps separate cached indexes (`localIndex`, `remoteIndex`, `cdIndex`, `playlistIndex`, `prepCrateIndex`) for fast switching via `selectSource(_:)`.
 
 - **Crates** are the persistence unit: each is a `.cdlib` file = a pretty-printed JSON array of `LoadedTrack`, stored in a user-chosen "Crates Index Folder". `loadCrateTracks`/`saveCrateTracks` are the I/O; a "Personal Crate" is auto-created.
 - **Prep Crate** is the staging area: newly scanned folders land here first (`handleImport`), not directly into a saved crate.
 - Editing a track's tags (or moving/consolidating the library) must **rewrite the file path inside every `.cdlib` that references it** (`updateTrackURLInIndex`, and the loops in `moveLibrary`/`consolidateLibrary`). Forgetting this leaves crates pointing at stale paths.
-- Remote = Subsonic/Navidrome (`SubsonicClient`); CD = `CDRipperService`; Playlists = M3U via `PlaylistService`.
+- Remote = Subsonic/Navidrome (`SubsonicClient`); CD = `CDRipperService`; Playlists = M3U via `PlaylistService`; Radio = YouTube streaming (see below).
+
+### Radio / YouTube streaming
+
+A second playback path that streams YouTube audio instead of local files. Entirely in Core except the `LibraryViewModel+Radio` wiring.
+
+- A **`StreamSource`** (`Models/StreamSource.swift`) is a saved YouTube URL + `StreamKind` (`live`/`video`/`mix`/`playlist`) + `StreamProvider`. Sources are grouped in the sidebar by **`RadioCategory`** (`youtubeLive` → "YT Live", `youtubeRecords` → "YT Records"), which is the payload of `LibrarySource.radio`.
+- **`StreamURLParser`** normalizes a pasted URL into a `StreamSource`; **`StreamStore`** persists the list as a small JSON blob in `PreferencesStore` (app-global, *not* a per-folder `.cdlib`).
+- **`StreamResolver`** invokes **yt-dlp** to turn a `StreamSource` into a `ResolvedStream` (HLS `.m3u8` for live, progressive m4a/AAC for VOD — formats AVPlayer can decode, unlike YouTube's default WebM/Opus). The argument vector is pure and unit-tested with a fake runner. **`StreamMetadataService`** fetches title/channel/thumbnail/viewers/`StreamChapter`s.
+- yt-dlp is resolved by `ExternalToolLocator` (`ToolKind.ytdlp`, binary name `yt-dlp`) with the same priority chain as ffmpeg/ffprobe. Missing yt-dlp degrades radio, not the rest of the app.
+
+### Record Divider (vinyl-side rip splitting)
+
+Splits one continuous recording (e.g. a whole vinyl side captured as a single file) into multiple per-track exports. Pure logic in Core, driven by `LibraryViewModel+RecordDivider`.
+
+- A **`RecordMarker`** (`Models/RecordMarker.swift`) is one *kept* track = `[startSeconds, endSeconds]` + title. Playback navigates between markers; conversion cuts one output file per marker; audio outside all markers is audible-but-skipped (omitted from export). Analogous to `StreamChapter` for streams.
+- **`RecordDividerService`** auto-detects breaks from sustained near-silence; `RecordDetectionSensitivity` maps a 0…1 UI slider onto a noise-floor (dB) + min-silence-duration pair (conservative by default so long songs aren't split internally).
+- **`RecordTrackPlanner`** turns markers into `RecordTrackPlan`s (per-track `ConversionMetadata`, source slice, suggested base name) that then flow through the normal `OutputPathPlanner` + `ConversionService` (ffmpeg cuts the slice).
 
 ### Conversion pipeline (FFmpeg)
 
@@ -74,7 +91,7 @@ It is a large god-object; prefer extracting testable logic into a Core service o
 
 ### External tools (ffmpeg / ffprobe)
 
-`ExternalToolLocator` resolves binaries in this priority: **bundled** (`Bundle.main` Resources) → explicit override → env var (`CRATEDIGGER_FFMPEG_PATH` / `CRATEDIGGER_FFPROBE_PATH`) → system PATH (`/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin`, then `$PATH`). `ffprobe` powers richer metadata via `MetadataProbeService`; if it's missing the app degrades gracefully to **AVFoundation-only** metadata, and conversion surfaces a "install ffmpeg" alert. The packaged `.app` bundles both binaries (entitlements disable library validation so they can run).
+`ExternalToolLocator` resolves binaries (`ToolKind`: `ffmpeg`, `ffprobe`, `ytdlp`) in this priority: **bundled** (`Bundle.main` Resources) → explicit override → env var (`CRATEDIGGER_FFMPEG_PATH` / `CRATEDIGGER_FFPROBE_PATH`) → system PATH (`/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin`, then `$PATH`). `ffprobe` powers richer metadata via `MetadataProbeService`; if it's missing the app degrades gracefully to **AVFoundation-only** metadata, and conversion surfaces a "install ffmpeg" alert. The packaged `.app` bundles both binaries (entitlements disable library validation so they can run).
 
 ### Playback
 
@@ -98,4 +115,4 @@ SwiftUI under `Sources/CrateDiggerApp/UI/Carbon/`. Skeuomorphic hardware look: c
 - `LibraryViewModel` is `@MainActor`; long work (scan, convert, organize, copy) runs in detached `Task`s and hops back via `await MainActor.run`/`@MainActor`.
 - Heads-up: many user-facing messages are surfaced through `appAlert = .error(title:…)` **even for success/info** ("Saved", "Library Moved", "CD Ripped!"). The tone/title in those `.error(...)` calls is often informational despite the case name — don't assume an error occurred from the enum case alone.
 - New testable logic belongs in `CrateDiggerCore` with an XCTest; UI glue belongs in `CrateDiggerApp`.
-- `CrateDigger_DESIGN/` and `Branding/` are design references/assets, not build inputs. `dist/` and `.build/` are generated.
+- `CrateDigger_DESIGN/` and `Branding/` are design references/assets, and `website/` is the static marketing landing page — none are build inputs. `dist/` and `.build/` are generated.
