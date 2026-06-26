@@ -78,6 +78,57 @@ final class LibraryCleanupServiceTests: XCTestCase {
         }
     }
     
+    private func grouped() throws -> (LibraryIndex, [LoadedTrack]) {
+        // Two pressings of Discovery, each with "One More Time".
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        func mk(_ album: String, _ fmt: String) throws -> LoadedTrack {
+            let url = dir.appendingPathComponent("\(album)-\(fmt).\(fmt)")
+            try "x".write(to: url, atomically: true, encoding: .utf8)
+            let t = AudioTrack(fileURL: url, title: "One More Time", artist: "Daft Punk",
+                               album: album, formatName: fmt, bitrateKbps: 900, sampleRateHz: 44100)
+            return LoadedTrack(track: t, metadata: ConversionMetadata())
+        }
+        let us = try mk("Discovery", "flac")
+        let jp = try mk("Discovery (JP)", "alac")
+        let planner = OutputPathPlanner()
+        let group = AlbumGroup(id: "g1", name: "Discovery", artistID: "daft punk",
+                               originalYear: 1999, primaryKey: planner.albumFolderKey(for: us),
+                               members: [VersionMember(key: planner.albumFolderKey(for: us)),
+                                         VersionMember(key: planner.albumFolderKey(for: jp))])
+        return (LibraryIndex.build(from: [us, jp], groups: [group]), [us, jp])
+    }
+
+    func testGroupedVersionsNotFlaggedAsDuplicates() throws {
+        let (index, _) = try grouped()
+        let dupes = LibraryCleanupService(fileManager: .default).findDuplicates(in: index)
+        XCTAssertEqual(dupes.count, 0)
+    }
+
+    func testDuplicateWithinSinglePressingStillFlagged() throws {
+        // Same pressing ("Discovery") contains "One More Time" twice.
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        func mk(_ album: String, _ file: String) throws -> LoadedTrack {
+            let url = dir.appendingPathComponent(file)
+            try "x".write(to: url, atomically: true, encoding: .utf8)
+            let t = AudioTrack(fileURL: url, title: "One More Time", artist: "Daft Punk",
+                               album: album, formatName: "flac", bitrateKbps: 900, sampleRateHz: 44100)
+            return LoadedTrack(track: t, metadata: ConversionMetadata())
+        }
+        let a = try mk("Discovery", "a.flac")
+        let b = try mk("Discovery", "b.flac")          // duplicate inside the same pressing
+        let jp = try mk("Discovery (JP)", "jp.flac")
+        let planner = OutputPathPlanner()
+        let group = AlbumGroup(id: "g1", name: "Discovery", artistID: "daft punk",
+                               originalYear: 1999, primaryKey: planner.albumFolderKey(for: a),
+                               members: [VersionMember(key: planner.albumFolderKey(for: a)),
+                                         VersionMember(key: planner.albumFolderKey(for: jp))])
+        let index = LibraryIndex.build(from: [a, b, jp], groups: [group])
+        let dupes = LibraryCleanupService(fileManager: .default).findDuplicates(in: index)
+        XCTAssertEqual(dupes.count, 1)
+    }
+
     func testDeleteAndCopyTracks() throws {
         try withTemporaryDirectory(prefix: "CleanupDeleteCopy") { tempDir in
             let file1 = tempDir.appendingPathComponent("track1.mp3")

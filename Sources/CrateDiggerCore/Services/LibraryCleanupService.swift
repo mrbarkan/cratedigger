@@ -25,28 +25,37 @@ public final class LibraryCleanupService {
     }
 
     public func findDuplicates(in index: LibraryIndex) -> [DuplicateGroup] {
-        // Group tracks by "Artist - Title" (case-insensitive)
+        // Tracks inside a grouped release must only ever match duplicates within the
+        // SAME member pressing — never across versions of the same release.
+        var versionAlbumOfTrack: [UUID: String] = [:]
+        for album in index.allAlbums where album.isVersionGroup {
+            for version in album.versions ?? [] {
+                for loaded in version.tracks {
+                    versionAlbumOfTrack[loaded.track.id] = version.id
+                }
+            }
+        }
+
         var grouped: [String: [LoadedTrack]] = [:]
         for loadedTrack in index.allTracks {
             let artist = loadedTrack.track.artist.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             let title = loadedTrack.track.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             guard !title.isEmpty else { continue }
-            let key = "\(artist) - \(title)"
+            let suffix = versionAlbumOfTrack[loadedTrack.track.id].map { " :: \($0)" } ?? ""
+            let key = "\(artist) - \(title)\(suffix)"
             grouped[key, default: []].append(loadedTrack)
         }
 
         var duplicateGroups: [DuplicateGroup] = []
         for (_, tracks) in grouped where tracks.count > 1 {
-            // Sort tracks to identify the "best" one (best is first in the list)
-            let sortedTracks = tracks.sorted { lhs, rhs in
-                isBetterTrack(lhs: lhs, rhs: rhs)
-            }
+            let sortedTracks = tracks.sorted { lhs, rhs in isBetterTrack(lhs: lhs, rhs: rhs) }
             if let best = sortedTracks.first {
-                let worst = Array(sortedTracks.dropFirst())
-                duplicateGroups.append(DuplicateGroup(bestTrack: best, worstTracks: worst))
+                duplicateGroups.append(DuplicateGroup(bestTrack: best, worstTracks: Array(sortedTracks.dropFirst())))
             }
         }
-        return duplicateGroups.sorted { $0.bestTrack.track.title.localizedCaseInsensitiveCompare($1.bestTrack.track.title) == .orderedAscending }
+        return duplicateGroups.sorted {
+            $0.bestTrack.track.title.localizedCaseInsensitiveCompare($1.bestTrack.track.title) == .orderedAscending
+        }
     }
 
     private func isBetterTrack(lhs: LoadedTrack, rhs: LoadedTrack) -> Bool {
