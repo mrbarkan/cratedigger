@@ -77,10 +77,11 @@ final class LibraryViewModel: ObservableObject {
     @Published var selectedAlbumID: String?
     @Published var selectedTrackID: UUID?
 
-    /// Multi-selection sets for batch actions (⌘/⇧-click, ⌘A). The two are kept
-    /// mutually exclusive — you're selecting albums *or* tracks — while
-    /// `selectedAlbumID` / `selectedTrackID` stay the "anchor" (last-clicked) that
-    /// drives the Inspector and the ⇧-click range origin.
+    /// Multi-selection sets for batch actions (⌘/⇧-click, ⌘A). The three are kept
+    /// mutually exclusive — you're selecting artists *or* albums *or* tracks — while
+    /// `selectedArtistID` / `selectedAlbumID` / `selectedTrackID` stay the "anchor"
+    /// (last-clicked) that drives the Inspector and the ⇧-click range origin.
+    @Published var selectedArtistIDs: Set<String> = []
     @Published var selectedAlbumIDs: Set<String> = []
     @Published var selectedTrackIDs: Set<UUID> = []
 
@@ -2083,6 +2084,20 @@ final class LibraryViewModel: ObservableObject {
         refreshCrateCounts()
         selectSource(currentSource)
         appAlert = .info(title: "Removed from Crate", message: "“\(album.title)” removed from \(crateName).")
+    }
+
+    /// Remove all of an artist's tracks from a single crate (matched by file path).
+    /// Files on disk are untouched.
+    func removeArtistFromCrate(_ artist: Artist, crateName: String) {
+        let paths = Set(artist.albums.flatMap { $0.tracks }.map { $0.track.fileURL.standardizedFileURL.path })
+        var tracks = loadCrateTracks(name: crateName)
+        let before = tracks.count
+        tracks.removeAll { paths.contains($0.track.fileURL.standardizedFileURL.path) }
+        guard tracks.count != before else { return }
+        saveCrateTracks(tracks, name: crateName)
+        refreshCrateCounts()
+        selectSource(currentSource)
+        appAlert = .info(title: "Removed from Crate", message: "“\(artist.name)” removed from \(crateName).")
     }
 
     // MARK: - Single-track removal (track context menu)

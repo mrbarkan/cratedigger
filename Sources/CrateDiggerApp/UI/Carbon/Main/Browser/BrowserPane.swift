@@ -103,11 +103,18 @@ private struct ArtistColumn: View {
             ForEach(model.visibleArtists) { artist in
                 ArtistRow(
                     artist: artist,
-                    selected: model.selectedArtistID == artist.id,
+                    selected: model.isArtistSelected(artist.id),
                     isPlayingHere: isPlayingArtist(artist),
-                    onSelect: { selectArtist(artist) },
-                    onPrimaryAction: { selectArtist(artist) }
+                    onSelect: {
+                        let m = NSEvent.modifierFlags
+                        model.selectArtist(artist, command: m.contains(.command), shift: m.contains(.shift),
+                                           ordered: model.visibleArtists)
+                    },
+                    onPrimaryAction: {
+                        model.selectArtist(artist, command: false, shift: false, ordered: model.visibleArtists)
+                    }
                 )
+                .contextMenu { BrowserContextMenu.artist(artist, model: model) }
             }
         }
     }
@@ -117,13 +124,6 @@ private struct ArtistColumn: View {
         return artist.albums.contains { album in
             album.tracks.contains { $0.track.id == nowID }
         }
-    }
-
-    private func selectArtist(_ artist: Artist) {
-        model.clearMultiSelection()
-        model.selectedArtistID = artist.id
-        model.selectedAlbumID = artist.albums.first?.id
-        model.selectedTrackID = artist.albums.first?.tracks.first?.track.id
     }
 }
 
@@ -151,28 +151,8 @@ private struct AlbumColumn: View {
                                           ordered: albums, flat: flat)
                     }
                 )
-                .contextMenu { albumContextMenu(album) }
+                .contextMenu { BrowserContextMenu.album(album, model: model) }
             }
-        }
-    }
-
-    @ViewBuilder
-    private func albumContextMenu(_ album: Album) -> some View {
-        switch model.currentSource {
-        case .localCrate(let crateName):
-            Button("Remove from “\(crateName)”") {
-                model.removeAlbumFromCrate(album, crateName: crateName)
-            }
-            Divider()
-            Button("Remove from Library…") {
-                model.promptRemoveAlbumFromLibrary(album)
-            }
-        case .localAll, .prepCrate:
-            Button("Remove from Library…") {
-                model.promptRemoveAlbumFromLibrary(album)
-            }
-        default:
-            EmptyView()
         }
     }
 
@@ -214,7 +194,7 @@ private struct TrackColumn: View {
                         },
                         onActivate: { model.playTrack(id: loaded.track.id) }
                     )
-                    .contextMenu { trackContextMenu(loaded) }
+                    .contextMenu { BrowserContextMenu.track(loaded, model: model) }
                 case let .recordTrack(parent, marker, number):
                     RecordSubTrackRow(
                         marker: marker,
@@ -225,56 +205,6 @@ private struct TrackColumn: View {
                     )
                 }
             }
-        }
-    }
-
-    @ViewBuilder
-    private func trackContextMenu(_ loaded: LoadedTrack) -> some View {
-        Button("Refresh Tags") {
-            model.refreshTrackTags(loaded)
-        }
-        if !model.availableCrates.isEmpty {
-            let usesSelection = model.selectedTrackIDs.count > 1 && model.selectedTrackIDs.contains(loaded.track.id)
-            Menu(usesSelection ? "Add \(model.selectedTrackIDs.count) Selected to Crate" : "Add to Crate") {
-                ForEach(model.availableCrates, id: \.self) { crate in
-                    Button(crate) {
-                        if usesSelection {
-                            model.addSelectionToCrate(crateName: crate)
-                        } else {
-                            model.addItemsToCrate(["track::" + loaded.track.id.uuidString], crateName: crate)
-                        }
-                    }
-                }
-            }
-        }
-        Divider()
-        let hasMarkers = !(loaded.recordMarkers ?? []).isEmpty
-        Button(hasMarkers ? "Edit Record Divider…" : "Record Divider…") {
-            model.beginRecordDivider(for: loaded)
-        }
-        .disabled(!model.canRecordDivide(loaded))
-        if hasMarkers {
-            Button("Clear Track Markers") {
-                model.clearRecordMarkers(for: loaded)
-            }
-        }
-
-        switch model.currentSource {
-        case .localCrate(let crateName):
-            Divider()
-            Button("Remove from “\(crateName)”") {
-                model.removeTrackFromCrate(loaded, crateName: crateName)
-            }
-            Button("Remove from Library…") {
-                model.promptRemoveTrackFromLibrary(loaded)
-            }
-        case .localAll, .prepCrate:
-            Divider()
-            Button("Remove from Library…") {
-                model.promptRemoveTrackFromLibrary(loaded)
-            }
-        default:
-            EmptyView()
         }
     }
 

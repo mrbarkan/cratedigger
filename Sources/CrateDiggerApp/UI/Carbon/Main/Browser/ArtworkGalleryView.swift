@@ -142,6 +142,24 @@ struct ArtworkGalleryView: View {
                 .lineLimit(1)
         }
         .frame(width: 120)
+        .contextMenu { albumContextMenu(album) }
+    }
+
+    /// Right-click on a cover: the shared album actions plus the gallery's own
+    /// artwork/booklet items.
+    @ViewBuilder
+    private func albumContextMenu(_ album: Album) -> some View {
+        BrowserContextMenu.album(album, model: model)
+        Divider()
+        if album.artworkHash == nil {
+            Button("Search Cover Art Online…") {
+                searchAlbum = album
+                searchArtworkOnline(for: album)
+            }
+        }
+        if album.booklet != nil {
+            Button("Open Booklet") { openBooklet(album) }
+        }
     }
 
     private func thumbnail(for album: Album) -> NSImage? {
@@ -314,6 +332,7 @@ struct ArtworkGalleryView: View {
         }
         .buttonStyle(.plain)
         .carbonTip("Play \(loaded.track.title)")
+        .contextMenu { BrowserContextMenu.track(loaded, model: model) }
     }
 
     private func openBooklet(_ album: Album) {

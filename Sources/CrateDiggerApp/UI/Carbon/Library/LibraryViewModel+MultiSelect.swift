@@ -2,10 +2,14 @@ import AppKit
 import CrateDiggerCore
 
 /// Multi-selection in the browser (⌘/⇧-click, ⌘A) and the batch Add-to-Crate
-/// resolver. Album and track selections are kept mutually exclusive — you're
-/// picking whole records *or* individual tracks.
+/// resolver. Artist, album, and track selections are kept mutually exclusive —
+/// you're picking whole artists *or* whole records *or* individual tracks.
 @MainActor
 extension LibraryViewModel {
+
+    func isArtistSelected(_ id: String) -> Bool {
+        selectedArtistIDs.contains(id) || selectedArtistID == id
+    }
 
     func isAlbumSelected(_ id: String) -> Bool {
         selectedAlbumIDs.contains(id) || selectedAlbumID == id
@@ -16,15 +20,38 @@ extension LibraryViewModel {
     }
 
     func clearMultiSelection() {
+        selectedArtistIDs = []
         selectedAlbumIDs = []
         selectedTrackIDs = []
     }
 
-    /// Album-column click with modifier keys. Clears the track set, updates the
-    /// anchor, and drills into the album so the Track column follows the last click.
+    /// Artist-column click with modifier keys. Clears the album/track sets, updates
+    /// the anchor, and drills into the artist so the Album/Track columns follow.
+    /// - Parameter ordered: the artists in their current display order (for ⇧-range).
+    func selectArtist(_ artist: Artist, command: Bool, shift: Bool, ordered: [Artist]) {
+        let id = artist.id
+        selectedAlbumIDs = []
+        selectedTrackIDs = []
+        if command {
+            if selectedArtistIDs.contains(id) { selectedArtistIDs.remove(id) } else { selectedArtistIDs.insert(id) }
+        } else if shift, let anchor = selectedArtistID,
+                  let a = ordered.firstIndex(where: { $0.id == anchor }),
+                  let b = ordered.firstIndex(where: { $0.id == id }) {
+            selectedArtistIDs = Set(ordered[min(a, b)...max(a, b)].map(\.id))
+        } else {
+            selectedArtistIDs = [id]
+        }
+        selectedArtistID = id
+        selectedAlbumID = artist.albums.first?.id
+        selectedTrackID = artist.albums.first?.tracks.first?.track.id
+    }
+
+    /// Album-column click with modifier keys. Clears the artist/track sets, updates
+    /// the anchor, and drills into the album so the Track column follows the last click.
     /// - Parameter ordered: the albums in their current display order (for ⇧-range).
     func selectAlbum(_ album: Album, command: Bool, shift: Bool, ordered: [Album], flat: Bool) {
         let id = album.id
+        selectedArtistIDs = []
         selectedTrackIDs = []
         if command {
             if selectedAlbumIDs.contains(id) { selectedAlbumIDs.remove(id) } else { selectedAlbumIDs.insert(id) }
@@ -40,10 +67,11 @@ extension LibraryViewModel {
         selectedTrackID = album.tracks.first?.track.id
     }
 
-    /// Track-column click with modifier keys. Clears the album set and updates the
-    /// anchor.
+    /// Track-column click with modifier keys. Clears the artist/album sets and
+    /// updates the anchor.
     func selectTrack(_ loaded: LoadedTrack, command: Bool, shift: Bool, ordered: [LoadedTrack]) {
         let id = loaded.track.id
+        selectedArtistIDs = []
         selectedAlbumIDs = []
         if command {
             if selectedTrackIDs.contains(id) { selectedTrackIDs.remove(id) } else { selectedTrackIDs.insert(id) }
@@ -57,18 +85,54 @@ extension LibraryViewModel {
         selectedTrackID = id
     }
 
-    /// ⌘A — select every track in the current source (the "batch-add everything"
-    /// gesture). When a text field is editing, the menu's Select All is handled by
-    /// the field editor first, so this isn't reached.
-    func selectAllTracksInSource() {
+    /// ⌘A — select everything in the current source (the "batch-add everything"
+    /// gesture, e.g. file every album in the Prep Crate into a crate at once). The
+    /// selection is made *visible* by matching the browser layout: the album-oriented
+    /// layouts (`.full`, `.albumTrack`) show selection in the Album column, while the
+    /// Track column there is scoped to a single album — so selecting all *tracks*
+    /// would highlight nothing. We therefore select all albums in those layouts and
+    /// all tracks only in the flat `.track` layout. Either selection resolves to the
+    /// same files through `selectedTracksForCrateAdd()`. When a text field is editing,
+    /// the field editor handles Select All first, so this isn't reached.
+    func selectAllInSource() {
+        switch browserLayout {
+        case .full, .albumTrack: selectAllAlbums()
+        case .track:             selectAllTracks()
+        }
+    }
+
+    /// Select every artist in the current source (the Artist column's "Select All").
+    func selectAllArtists() {
+        let artists = index.artists
+        guard !artists.isEmpty else { return }
+        selectedAlbumIDs = []
+        selectedTrackIDs = []
+        selectedArtistIDs = Set(artists.map(\.id))
+        if selectedArtistID == nil { selectedArtistID = artists.first?.id }
+    }
+
+    /// Select every album in the current source (the Album column's "Select All").
+    func selectAllAlbums() {
+        let albums = index.allAlbums
+        guard !albums.isEmpty else { return }
+        selectedArtistIDs = []
+        selectedTrackIDs = []
+        selectedAlbumIDs = Set(albums.map(\.id))
+        if selectedAlbumID == nil { selectedAlbumID = albums.first?.id }
+    }
+
+    /// Select every track in the current source (the Track column's "Select All").
+    func selectAllTracks() {
         guard !index.allTracks.isEmpty else { return }
+        selectedArtistIDs = []
         selectedAlbumIDs = []
         selectedTrackIDs = Set(index.allTracks.map { $0.track.id })
         if selectedTrackID == nil { selectedTrackID = index.allTracks.first?.track.id }
     }
 
-    /// The tracks an Add-to-Crate action resolves to: the selected tracks, else
-    /// the selected albums' tracks, else (fallback) the single anchor album.
+    /// The tracks an Add-to-Crate action resolves to: the selected tracks, else the
+    /// selected albums' tracks, else the selected artists' tracks, else (fallback)
+    /// the single anchor album.
     func selectedTracksForCrateAdd() -> [LoadedTrack] {
         if !selectedTrackIDs.isEmpty {
             let ids = selectedTrackIDs
@@ -77,6 +141,10 @@ extension LibraryViewModel {
         if !selectedAlbumIDs.isEmpty {
             let ids = selectedAlbumIDs
             return index.allAlbums.filter { ids.contains($0.id) }.flatMap { $0.tracks }
+        }
+        if !selectedArtistIDs.isEmpty {
+            let ids = selectedArtistIDs
+            return index.artists.filter { ids.contains($0.id) }.flatMap { $0.albums }.flatMap { $0.tracks }
         }
         return selectedAlbum?.tracks ?? []
     }

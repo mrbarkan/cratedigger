@@ -17,8 +17,9 @@ final class CarbonHostingController: NSHostingController<CarbonRootView> {
 
     /// Edit ▸ Select All (⌘A) routes here through the responder chain when no text
     /// field is editing (a focused field editor handles ⌘A first). Selects every
-    /// track in the browser so the whole source can be batch-added to a crate.
+    /// album (or every track, in the flat track layout) so the whole source can be
+    /// batch-added to a crate.
     override func selectAll(_ sender: Any?) {
-        model.selectAllTracksInSource()
+        model.selectAllInSource()
     }
 }
