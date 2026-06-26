@@ -131,6 +131,7 @@ private struct AlbumColumn: View {
     @EnvironmentObject private var model: LibraryViewModel
     /// When true, list every album across all artists (the "Album · Track" layout).
     var flat: Bool = false
+    @State private var expandedReleaseIDs: Set<String> = []
 
     private var albums: [Album] { flat ? model.allAlbumsSorted : model.visibleAlbums }
 
@@ -141,24 +142,73 @@ private struct AlbumColumn: View {
             headerAccessory: model.showSortControls ? AnyView(AlbumSortControl()) : nil
         ) {
             ForEach(albums) { album in
-                AlbumRow(
-                    album: album,
-                    selected: model.isAlbumSelected(album.id),
-                    isPlayingHere: isPlayingAlbum(album),
-                    onSelect: {
-                        let m = NSEvent.modifierFlags
-                        model.selectAlbum(album, command: m.contains(.command), shift: m.contains(.shift),
-                                          ordered: albums, flat: flat)
+                if album.isVersionGroup {
+                    releaseRow(album)
+                    if expandedReleaseIDs.contains(album.id) {
+                        ForEach(album.versions ?? []) { version in
+                            versionRow(version, in: album)
+                        }
                     }
-                )
-                .contextMenu { BrowserContextMenu.album(album, model: model) }
+                } else {
+                    plainRow(album)
+                }
             }
         }
     }
 
+    private func plainRow(_ album: Album) -> some View {
+        AlbumRow(
+            album: album,
+            selected: model.isAlbumSelected(album.id),
+            isPlayingHere: isPlayingAlbum(album),
+            onSelect: {
+                let m = NSEvent.modifierFlags
+                model.selectAlbum(album, command: m.contains(.command), shift: m.contains(.shift),
+                                  ordered: albums.filter { !$0.isVersionGroup }, flat: flat)
+            }
+        )
+        .contextMenu { BrowserContextMenu.album(album, model: model) }
+    }
+
+    private func releaseRow(_ release: Album) -> some View {
+        AlbumRow(
+            album: release,
+            selected: model.isAlbumSelected(release.id),
+            isPlayingHere: isPlayingAlbum(release),
+            onSelect: {
+                let m = NSEvent.modifierFlags
+                model.selectAlbum(release, command: m.contains(.command), shift: m.contains(.shift),
+                                  ordered: albums, flat: flat)
+            },
+            badge: "\(release.versions?.count ?? 0) ver",
+            disclosed: expandedReleaseIDs.contains(release.id),
+            onDisclose: {
+                if expandedReleaseIDs.contains(release.id) {
+                    expandedReleaseIDs.remove(release.id)
+                } else {
+                    expandedReleaseIDs.insert(release.id)
+                }
+            }
+        )
+        .contextMenu { BrowserContextMenu.release(release, model: model) }
+    }
+
+    private func versionRow(_ version: Album, in release: Album) -> some View {
+        VersionSubRow(
+            badge: VersionLabel.formatBadge(for: version),
+            edition: version.editionLabel,
+            selected: model.selectedAlbumID == version.id,
+            onSelect: { model.selectedAlbumID = version.id }
+        )
+        .contextMenu { BrowserContextMenu.version(version, release: release, model: model) }
+    }
+
     private func isPlayingAlbum(_ album: Album) -> Bool {
         guard let nowID = model.nowPlayingTrack?.track.id else { return false }
-        return album.tracks.contains { $0.track.id == nowID }
+        let pool = album.isVersionGroup
+            ? (album.versions ?? []).flatMap { $0.tracks }
+            : album.tracks
+        return pool.contains { $0.track.id == nowID }
     }
 }
 

@@ -112,6 +112,26 @@ enum BrowserContextMenu {
         }
     }
 
+    /// Menu for a version-group release row.
+    /// TODO(Task 10): replace with full release-specific actions (group editing UI).
+    @ViewBuilder
+    static func release(_ release: Album, model: LibraryViewModel) -> some View {
+        Button("Edit Version Group…") { model.editGroup(release) }
+        Button("Ungroup Releases") { model.ungroupRelease(release) }
+        Divider()
+        album(release, model: model)
+    }
+
+    /// Menu for a version (pressing) sub-row.
+    /// TODO(Task 10): replace with full version-specific actions (set primary, set edition, remove).
+    @ViewBuilder
+    static func version(_ version: Album, release: Album, model: LibraryViewModel) -> some View {
+        Button("Set as Primary Version") { model.setPrimaryVersion(version, in: release) }
+        Button("Remove from Group") { model.removeFromGroup(version, release: release) }
+        Divider()
+        album(version, model: model)
+    }
+
     /// The source-specific "Remove from …" items shared by the album menu.
     @ViewBuilder
     private static func removalItems(forAlbum album: Album, model: LibraryViewModel) -> some View {
