@@ -396,6 +396,7 @@ final class LibraryViewModel: ObservableObject {
     let audioOutput = AudioOutputManager()
     let lastFM = LastFMScrobbler()
     var metadataEditor: MetadataEditorService?
+    let albumGroupStore = AlbumGroupStore()
 
     // Last.fm tracking
     private var lastScrobbledTrackID: UUID?
@@ -660,9 +661,8 @@ final class LibraryViewModel: ObservableObject {
     }
 
     var selectedAlbum: Album? {
-        let albums = selectedArtist?.albums ?? []
-        guard let id = selectedAlbumID else { return albums.first }
-        return albums.first(where: { $0.id == id }) ?? albums.first
+        if let id = selectedAlbumID, let found = index.albumOrVersion(id: id) { return found }
+        return selectedArtist?.albums.first
     }
 
     var visibleArtists: [Artist] {
@@ -719,6 +719,14 @@ final class LibraryViewModel: ObservableObject {
         }
     }
 
+    /// Build a browsable index, folding in the user's album version groups. All
+    /// index construction goes through here so grouping applies uniformly. Grouping
+    /// only takes effect where ≥2 member pressings are present, so non-local indexes
+    /// (CD/playlist/remote) are unaffected — their keys never match local groups.
+    func buildIndex(_ tracks: [LoadedTrack]) -> LibraryIndex {
+        LibraryIndex.build(from: tracks, groups: albumGroupStore.all())
+    }
+
     func selectSource(_ source: LibrarySource) {
         // Leaving radio for a library source stops the stream engine.
         if isRadioMode {
@@ -732,14 +740,14 @@ final class LibraryViewModel: ObservableObject {
                 all.append(contentsOf: loadCrateTracks(name: name))
             }
             let merged = LibraryViewModel.deduplicate(tracks: all)
-            localIndex = LibraryIndex.build(from: merged)
+            localIndex = buildIndex(merged)
             index = localIndex
         case .localCrate(let name):
             let tracks = loadCrateTracks(name: name)
-            localIndex = LibraryIndex.build(from: tracks)
+            localIndex = buildIndex(tracks)
             index = localIndex
         case .prepCrate:
-            prepCrateIndex = LibraryIndex.build(from: prepCrateTracks)
+            prepCrateIndex = buildIndex(prepCrateTracks)
             index = prepCrateIndex
         case .remote:
             index = remoteIndex
@@ -938,7 +946,7 @@ final class LibraryViewModel: ObservableObject {
                     }
                 }
 
-                let built = LibraryIndex.build(from: allTracks)
+                let built = self.buildIndex(allTracks)
                 await MainActor.run {
                     self.remoteIndex = built
                     if case .remote = self.currentSource {
@@ -986,7 +994,7 @@ final class LibraryViewModel: ObservableObject {
             )
             return LoadedTrack(track: audioTrack, metadata: metadata)
         }
-        cdIndex = LibraryIndex.build(from: tracks)
+        cdIndex = buildIndex(tracks)
         index = cdIndex
     }
 
@@ -1096,7 +1104,7 @@ final class LibraryViewModel: ObservableObject {
             return LoadedTrack(track: audioTrack, metadata: ConversionMetadata(title: audioTrack.title))
         }
 
-        playlistIndex = LibraryIndex.build(from: tracks)
+        playlistIndex = buildIndex(tracks)
         index = playlistIndex
     }
 
@@ -1175,8 +1183,8 @@ final class LibraryViewModel: ObservableObject {
             let remaining = localIndex.allTracks.filter { track in
                 !deadTracks.contains(where: { $0.track.id == track.track.id })
             }
-            localIndex = LibraryIndex.build(from: remaining)
-            
+            localIndex = buildIndex(remaining)
+
             for track in deadTracks {
                 switch currentSource {
                 case .localAll:
@@ -1219,8 +1227,8 @@ final class LibraryViewModel: ObservableObject {
             let remaining = localIndex.allTracks.filter { track in
                 !toDelete.contains(where: { $0.track.id == track.track.id })
             }
-            localIndex = LibraryIndex.build(from: remaining)
-            
+            localIndex = buildIndex(remaining)
+
             for track in toDelete {
                 switch currentSource {
                 case .localAll:
@@ -1252,7 +1260,7 @@ final class LibraryViewModel: ObservableObject {
     }
 
     func refreshLibrary() {
-        let newIndex = LibraryIndex.build(from: localIndex.allTracks)
+        let newIndex = buildIndex(localIndex.allTracks)
         localIndex = newIndex
         if isLocalSource {
             index = localIndex
@@ -1527,7 +1535,7 @@ final class LibraryViewModel: ObservableObject {
             return LoadedTrack(track: newTrack, metadata: newMetadata, recordMarkers: loaded.recordMarkers)
         }
 
-        index = LibraryIndex.build(from: updatedTracks)
+        index = buildIndex(updatedTracks)
     }
 
     func downloadAndImportArtwork(
@@ -1721,9 +1729,9 @@ final class LibraryViewModel: ObservableObject {
             return LoadedTrack(track: newTrack, metadata: newMetadata, recordMarkers: loaded.recordMarkers)
         }
 
-        self.localIndex = LibraryIndex.build(from: self.localIndex.allTracks.map(applyArtwork))
+        self.localIndex = self.buildIndex(self.localIndex.allTracks.map(applyArtwork))
         self.prepCrateTracks = self.prepCrateTracks.map(applyArtwork)
-        self.index = LibraryIndex.build(from: self.index.allTracks.map(applyArtwork))
+        self.index = self.buildIndex(self.index.allTracks.map(applyArtwork))
 
         // Update SpinningRecordView (now playing) immediately.
         NotificationCenter.default.post(name: NSNotification.Name("CrateDiggerArtworkImported"), object: nil)
@@ -2259,7 +2267,7 @@ final class LibraryViewModel: ObservableObject {
         let remaining = localIndex.allTracks.filter {
             !paths.contains($0.track.fileURL.standardizedFileURL.path)
         }
-        localIndex = LibraryIndex.build(from: remaining)
+        localIndex = buildIndex(remaining)
         prepCrateTracks.removeAll { paths.contains($0.track.fileURL.standardizedFileURL.path) }
         for crateName in availableCrates {
             var tracks = loadCrateTracks(name: crateName)
@@ -2277,7 +2285,7 @@ final class LibraryViewModel: ObservableObject {
         let newLocal = localIndex.allTracks.map {
             byOldPath[$0.track.fileURL.standardizedFileURL.path] ?? $0
         }
-        localIndex = LibraryIndex.build(from: newLocal)
+        localIndex = buildIndex(newLocal)
         prepCrateTracks = prepCrateTracks.map {
             byOldPath[$0.track.fileURL.standardizedFileURL.path] ?? $0
         }
