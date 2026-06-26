@@ -87,7 +87,7 @@ public struct FolderTemplateConfig: Hashable, Codable, Sendable {
     }
 }
 
-public struct AlbumFolderKey: Hashable, Sendable {
+public struct AlbumFolderKey: Hashable, Sendable, Codable {
     public let artistBucket: String
     public let album: String
     public let year: String
