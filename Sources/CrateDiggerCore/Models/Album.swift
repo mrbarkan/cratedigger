@@ -10,6 +10,12 @@ public struct Album: Identifiable, Sendable, Equatable {
     public let tracks: [LoadedTrack]
     public let booklet: AlbumBooklet?
     public let mediaFormat: MediaFormat?
+    /// Non-nil when this `Album` is a grouped *release*: its member pressings.
+    public let versions: [Album]?
+    /// Canonical original release year for a grouped release (drives sorting).
+    public let originalYear: Int?
+    /// Edition label for a *member* pressing ("Gold CD"); nil otherwise.
+    public let editionLabel: String?
 
     public init(
         id: String,
@@ -20,7 +26,10 @@ public struct Album: Identifiable, Sendable, Equatable {
         artworkHash: String?,
         tracks: [LoadedTrack],
         booklet: AlbumBooklet? = nil,
-        mediaFormat: MediaFormat? = nil
+        mediaFormat: MediaFormat? = nil,
+        versions: [Album]? = nil,
+        originalYear: Int? = nil,
+        editionLabel: String? = nil
     ) {
         self.id = id
         self.artistID = artistID
@@ -31,6 +40,9 @@ public struct Album: Identifiable, Sendable, Equatable {
         self.tracks = tracks
         self.booklet = booklet
         self.mediaFormat = mediaFormat
+        self.versions = versions
+        self.originalYear = originalYear
+        self.editionLabel = editionLabel
     }
 
     public var trackCount: Int { tracks.count }
@@ -51,6 +63,18 @@ public struct Album: Identifiable, Sendable, Equatable {
 
     /// True when the album's tracks span more than one disc.
     public var isMultiDisc: Bool { discNumbers.count > 1 }
+
+    /// True when this album is a grouped release holding member pressings.
+    public var isVersionGroup: Bool { versions != nil }
+
+    /// A copy of this album carrying the given edition label (used when folding a
+    /// pressing into a release's `versions`).
+    public func with(editionLabel: String?) -> Album {
+        Album(id: id, artistID: artistID, artistName: artistName, title: title,
+              year: year, artworkHash: artworkHash, tracks: tracks, booklet: booklet,
+              mediaFormat: mediaFormat, versions: versions, originalYear: originalYear,
+              editionLabel: editionLabel)
+    }
 
     /// Number of discs to offer for per-disc artwork: the larger of the discs
     /// present and any explicit disc-total tag.

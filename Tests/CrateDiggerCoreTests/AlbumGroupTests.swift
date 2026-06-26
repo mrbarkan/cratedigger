@@ -18,5 +18,23 @@ final class AlbumGroupTests: XCTestCase {
         XCTAssertEqual(back.members.count, 2)
         XCTAssertEqual(back.primaryKey, key)
     }
+
+    func testAlbumVersionFieldsAndWithEdition() {
+        let plain = Album(id: "a", artistID: "x", artistName: "X", title: "T",
+                          year: 2001, artworkHash: nil, tracks: [])
+        XCTAssertFalse(plain.isVersionGroup)
+        XCTAssertNil(plain.editionLabel)
+
+        let labeled = plain.with(editionLabel: "JP Vinyl")
+        XCTAssertEqual(labeled.editionLabel, "JP Vinyl")
+        XCTAssertEqual(labeled.id, "a")
+
+        let release = Album(id: "g", artistID: "x", artistName: "X", title: "T",
+                            year: 2001, artworkHash: nil, tracks: [],
+                            versions: [plain], originalYear: 1975)
+        XCTAssertTrue(release.isVersionGroup)
+        XCTAssertEqual(release.originalYear, 1975)
+        XCTAssertEqual(release.versions?.count, 1)
+    }
 }
 #endif
