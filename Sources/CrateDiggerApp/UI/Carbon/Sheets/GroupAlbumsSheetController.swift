@@ -118,7 +118,7 @@ private struct GroupAlbumsSheetView: View {
             actionBar
         }
         .padding(20)
-        .frame(minWidth: 460)
+        .frame(minWidth: 500)
         .background(theme.chassis)
     }
 
@@ -169,13 +169,13 @@ private struct GroupAlbumsSheetView: View {
     // MARK: Versions table
 
     private var versionsSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("FORMAT")
+                Text("VERSION")
                     .font(CarbonFont.mono(8.5, weight: .bold))
                     .tracking(1.6)
                     .foregroundStyle(theme.ink3)
-                    .frame(width: 150, alignment: .leading)
+                    .frame(width: 200, alignment: .leading)
                 Text("EDITION LABEL")
                     .font(CarbonFont.mono(8.5, weight: .bold))
                     .tracking(1.6)
@@ -183,18 +183,9 @@ private struct GroupAlbumsSheetView: View {
             }
 
             ForEach(rows.indices, id: \.self) { i in
-                HStack(spacing: 10) {
-                    Text(rows[i].formatBadge)
-                        .font(CarbonFont.mono(10, weight: .medium))
-                        .foregroundStyle(theme.cyan)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(
-                            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                .fill(theme.cyan.opacity(0.12))
-                        )
-                        .frame(width: 150, alignment: .leading)
-                        .lineLimit(1)
+                HStack(alignment: .top, spacing: 10) {
+                    versionIdentity(rows[i])
+                        .frame(width: 200, alignment: .leading)
 
                     TextField("Edition label (optional)…", text: $editionLabels[i])
                         .textFieldStyle(.roundedBorder)
@@ -202,6 +193,45 @@ private struct GroupAlbumsSheetView: View {
                 }
             }
         }
+    }
+
+    /// The left-hand cell identifying a pressing: title + its year (the fields that
+    /// make it a distinct version) over the format badge + source folder, so two
+    /// same-format rips are still tellable apart.
+    private func versionIdentity(_ row: GroupAlbumsSheetController.VersionRow) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(row.album.title)
+                .font(CarbonFont.mono(11, weight: .medium))
+                .foregroundStyle(theme.ink)
+                .lineLimit(2)
+                .truncationMode(.tail)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 6) {
+                Text(row.formatBadge)
+                    .font(CarbonFont.mono(9, weight: .medium))
+                    .foregroundStyle(theme.cyan)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(theme.cyan.opacity(0.12))
+                    )
+                    .lineLimit(1)
+                if let year = row.album.year {
+                    Text(String(year))
+                        .font(CarbonFont.mono(9))
+                        .foregroundStyle(theme.ink3)
+                }
+            }
+        }
+    }
+
+    /// Title plus year — the per-pressing identity used as the Primary picker label
+    /// when no edition label is set (always distinct between two grouped versions,
+    /// since identical artist/title/year would be one album).
+    private func identityTitle(_ album: Album) -> String {
+        if let year = album.year { return "\(album.title) · \(year)" }
+        return album.title
     }
 
     // MARK: Primary picker
@@ -216,7 +246,7 @@ private struct GroupAlbumsSheetView: View {
             Picker("Primary", selection: $primaryKey) {
                 ForEach(rows.indices, id: \.self) { i in
                     let row = rows[i]
-                    let label = editionLabels[i].isEmpty ? row.formatBadge : editionLabels[i]
+                    let label = editionLabels[i].isEmpty ? identityTitle(row.album) : editionLabels[i]
                     Text(label).tag(row.key)
                 }
             }

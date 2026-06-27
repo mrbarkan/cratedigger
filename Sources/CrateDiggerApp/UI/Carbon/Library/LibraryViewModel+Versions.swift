@@ -122,17 +122,22 @@ extension LibraryViewModel {
 
     // MARK: - Sheet present actions
 
-    /// Open the group-albums sheet for the current multi-selection.
+    /// Open the group-albums sheet for the current multi-selection. The release name
+    /// defaults to the pressings' shared base title, and each row's edition label is
+    /// pre-filled with whatever distinguishes that pressing (a catalog suffix in the
+    /// album title, else its year/format/folder) so the user rarely has to type.
     func beginGroupAlbums() {
         let albums = selectedAlbumsForGrouping().filter { !$0.isVersionGroup }
         guard albums.count >= 2 else { return }
-        let rows: [GroupAlbumsSheetController.VersionRow] = albums.compactMap { album in
+        var rows: [GroupAlbumsSheetController.VersionRow] = albums.compactMap { album in
             guard let key = versionKey(for: album) else { return nil }
             return .init(album: album, key: key,
                          formatBadge: VersionLabel.formatBadge(for: album), editionLabel: "")
         }
         guard rows.count >= 2 else { return }
-        let suggestedName = albums.map(\.title).min(by: { $0.count < $1.count }) ?? albums[0].title
+        let autoLabels = VersionDistinguisher.labels(for: rows.map(\.album))
+        for i in rows.indices { rows[i].editionLabel = autoLabels[i] }
+        let suggestedName = VersionDistinguisher.commonBaseTitle(rows.map { $0.album.title })
         let suggestedYear = albums.compactMap(\.year).min()
         presentGroupSheet(id: UUID().uuidString, name: suggestedName, year: suggestedYear,
                           rows: rows, primaryKey: rows[0].key)
@@ -142,13 +147,16 @@ extension LibraryViewModel {
     func editGroup(_ release: Album) {
         guard let id = groupID(of: release),
               let group = albumGroupStore.all().first(where: { $0.id == id }) else { return }
-        let rows: [GroupAlbumsSheetController.VersionRow] = (release.versions ?? []).compactMap { v in
+        var rows: [GroupAlbumsSheetController.VersionRow] = (release.versions ?? []).compactMap { v in
             guard let key = versionKey(for: v) else { return nil }
             let existing = group.members.first { $0.key == key }?.editionLabel ?? ""
             return .init(album: v, key: key,
                          formatBadge: VersionLabel.formatBadge(for: v), editionLabel: existing)
         }
         guard rows.count >= 2 else { return }
+        // Fill in a suggested label only where the user hasn't already set one.
+        let autoLabels = VersionDistinguisher.labels(for: rows.map(\.album))
+        for i in rows.indices where rows[i].editionLabel.isEmpty { rows[i].editionLabel = autoLabels[i] }
         presentGroupSheet(id: id, name: group.name, year: group.originalYear,
                           rows: rows, primaryKey: group.primaryKey)
     }
