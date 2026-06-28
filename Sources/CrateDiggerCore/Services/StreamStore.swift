@@ -45,11 +45,7 @@ public final class StreamStore {
     /// Distinct channel names in first-seen order (for sidebar grouping).
     public func channels() -> [String] {
         var seen = Set<String>()
-        var result: [String] = []
-        for s in all() where seen.insert(s.channel).inserted {
-            result.append(s.channel)
-        }
-        return result
+        return all().map(\.channel).filter { seen.insert($0).inserted }
     }
 
     /// Channels that have at least one live stream (sidebar shows a LIVE badge).

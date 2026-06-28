@@ -258,7 +258,7 @@ struct MainShell: View {
 
     private func collapseChevron(action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            chevronGlyph(direction: .collapse)
+            chevronGlyph()
         }
         .buttonStyle(.plain)
         .carbonTip("Collapse panel")
@@ -308,14 +308,12 @@ struct MainShell: View {
         .carbonTip(model.showSortControls ? "Hide sort controls" : "Show sort controls")
     }
 
-    enum ChevronDirection { case collapse, expand }
-
-    private func chevronGlyph(direction: ChevronDirection) -> some View {
+    private func chevronGlyph() -> some View {
         let inset: CGFloat = 1
         return ZStack {
             ChromeChassis(theme: theme, cornerRadius: 4)
                 .frame(width: 18, height: 14)
-            Text(direction == .collapse ? "›|" : "|‹")
+            Text("›|")
                 .font(CarbonFont.mono(9, weight: .heavy))
                 .foregroundStyle(theme.ink2)
                 .padding(.horizontal, inset)

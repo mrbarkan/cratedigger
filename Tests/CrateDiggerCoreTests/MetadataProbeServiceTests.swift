@@ -50,7 +50,6 @@ final class MetadataProbeServiceTests: XCTestCase {
             XCTAssertEqual(metadata.formatTags["ARTIST"], "Thom Yorke")
             XCTAssertEqual(metadata.formatTags["ALBUM"], "The Eraser RMXS [Japan]")
             XCTAssertEqual(metadata.streams.count, 2)
-            XCTAssertTrue(metadata.hasAttachedArtworkStream)
         }
     }
 

@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// The About screen, rebuilt as a Carbon hardware faceplate hosted in the About
@@ -36,7 +37,9 @@ struct CarbonAboutView: View {
         RecessedWell {
             VStack(spacing: 16) {
                 Spacer(minLength: 0)
-                CarbonChassisIconView(size: 150)
+                Image(nsImage: NSApplication.shared.applicationIconImage)
+                    .resizable()
+                    .frame(width: 150, height: 150)
                     .shadow(color: .black.opacity(0.5), radius: 14, y: 7)
                 Text("CARBON CHASSIS")
                     .font(CarbonFont.mono(10, weight: .semibold))
@@ -167,60 +170,5 @@ private extension View {
     /// Pointing-hand cursor on hover for the link (no-op pre-macOS 15).
     @ViewBuilder func pointerStyleLink() -> some View {
         if #available(macOS 15.0, *) { self.pointerStyle(.link) } else { self }
-    }
-}
-
-/// A faithful vector rendition of the Carbon-chassis app icon — graphite
-/// squircle, OLED meter row, cyan LED, and a vinyl disc with an orange spindle.
-/// Drawn rather than bundled so it stays crisp and needs no resource plumbing.
-struct CarbonChassisIconView: View {
-    var size: CGFloat
-
-    private let orange = Color(hex: 0xFF6236)
-    private let cyan = Color(hex: 0x35C4D6)
-
-    var body: some View {
-        let s = size
-        ZStack {
-            RoundedRectangle(cornerRadius: s * 0.225, style: .continuous)
-                .fill(LinearGradient(
-                    colors: [Color(hex: 0x262626), Color(hex: 0x161616), Color(hex: 0x0A0A0A)],
-                    startPoint: .top, endPoint: .bottom))
-                .overlay(
-                    RoundedRectangle(cornerRadius: s * 0.225, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.07), lineWidth: max(1, s * 0.006))
-                )
-
-            HStack(spacing: s * 0.028) {
-                ForEach(0..<6, id: \.self) { i in
-                    RoundedRectangle(cornerRadius: s * 0.012, style: .continuous)
-                        .fill(i < 3 ? orange : Color(hex: 0x3A3A3A))
-                        .frame(width: s * 0.085, height: s * 0.05)
-                }
-            }
-            .offset(x: -s * 0.065, y: -s * 0.33)
-
-            Circle()
-                .fill(cyan)
-                .frame(width: s * 0.05, height: s * 0.05)
-                .shadow(color: cyan.opacity(0.85), radius: s * 0.03)
-                .offset(x: s * 0.31, y: -s * 0.33)
-
-            ZStack {
-                Circle().fill(RadialGradient(
-                    colors: [Color(hex: 0x161616), Color(hex: 0x0B0B0B)],
-                    center: .center, startRadius: 0, endRadius: s * 0.36))
-                Circle().stroke(Color.white.opacity(0.045), lineWidth: max(1, s * 0.003))
-                    .frame(width: s * 0.56, height: s * 0.56)
-                Circle().stroke(Color.white.opacity(0.045), lineWidth: max(1, s * 0.003))
-                    .frame(width: s * 0.40, height: s * 0.40)
-                // Small orange spindle + tiny centre hole, matching the real icon.
-                Circle().fill(orange).frame(width: s * 0.045, height: s * 0.045)
-                Circle().fill(Color(hex: 0x0A0A0A)).frame(width: s * 0.014, height: s * 0.014)
-            }
-            .frame(width: s * 0.72, height: s * 0.72)
-            .offset(y: s * 0.07)
-        }
-        .frame(width: s, height: s)
     }
 }

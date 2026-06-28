@@ -27,7 +27,6 @@ final class ExternalToolLocatorTests: XCTestCase {
             let resolved = try locator.resolveRequired(.ffmpeg, explicitOverride: explicitTool)
 
             XCTAssertEqual(resolved.url, bundledTool)
-            XCTAssertEqual(resolved.source, .bundled)
         }
     }
 
@@ -49,7 +48,6 @@ final class ExternalToolLocatorTests: XCTestCase {
             let resolved = try locator.resolveRequired(.ffprobe, explicitOverride: explicitTool)
 
             XCTAssertEqual(resolved.url, explicitTool)
-            XCTAssertEqual(resolved.source, .explicitOverride)
         }
     }
 
@@ -73,7 +71,6 @@ final class ExternalToolLocatorTests: XCTestCase {
             let resolved = try locator.resolveRequired(.ffmpeg)
 
             XCTAssertEqual(resolved.url, systemTool)
-            XCTAssertEqual(resolved.source, .system)
         }
     }
 

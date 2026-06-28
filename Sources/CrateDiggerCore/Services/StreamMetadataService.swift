@@ -57,7 +57,7 @@ public enum StreamMetadataService {
         let viewCount = field(5).flatMap(Int.init)
         let concurrent = field(6).flatMap(Int.init)
         // Live streams report concurrent viewers; VOD reports total views.
-        let viewers = formatViewCount((isLive == true ? concurrent : nil) ?? concurrent ?? viewCount)
+        let viewers = formatViewCount(concurrent ?? viewCount)
         return StreamMetadata(
             title: field(0),
             channel: field(1),

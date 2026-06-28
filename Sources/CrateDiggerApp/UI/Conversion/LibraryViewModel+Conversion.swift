@@ -87,7 +87,7 @@ extension LibraryViewModel {
             }
 
             // Persist the user's selection for next launch.
-            prefs.saveLastConversionSelection(PersistedConversionSelection(selection))
+            prefs.saveLastConversionSelection(selection)
 
             let report = await runConversionQueue(service: service, jobs: jobs, preset: preset)
             presentSummary(report: report, presentingFrom: host)
@@ -101,45 +101,67 @@ extension LibraryViewModel {
         destinationRoot: URL,
         sourceTracks: [LoadedTrack]
     ) -> AppAlert? {
-        if let writabilityProblem = probeDestinationWritability(destinationRoot) {
+        if let writabilityProblem = probeDestinationWritability(
+            destinationRoot,
+            createFailureTitle: "Can't write to destination",
+            createFailureMessage: "CrateDigger could not create the destination folder \(destinationRoot.path). Pick another folder under Preferences > General.",
+            notWritableTitle: "Destination isn't writable",
+            notWritableMessage: "CrateDigger doesn't have permission to write into \(destinationRoot.path). Choose a different folder under Preferences > General, or grant Files & Folders access in System Settings.",
+            probeFilenamePrefix: ".cratedigger-write-probe-"
+        ) {
             return writabilityProblem
         }
-        if let spaceProblem = probeFreeDiskSpace(destinationRoot, sourceTracks: sourceTracks) {
+        if let spaceProblem = probeFreeDiskSpace(
+            destinationRoot,
+            sourceTracks: sourceTracks,
+            insufficientSpaceMessageFormat: "This batch needs ~%.1f GB on the destination volume but only %.1f GB is available. Free up space or pick a different output folder."
+        ) {
             return spaceProblem
         }
         return nil
     }
 
-    private func probeDestinationWritability(_ destinationRoot: URL) -> AppAlert? {
+    /// Shared destination-writability probe used by both conversion and external
+    /// device transfer. Creates the folder if missing, then writes and removes a
+    /// tiny probe file. Callers supply their own alert copy.
+    func probeDestinationWritability(
+        _ destinationRoot: URL,
+        createFailureTitle: String,
+        createFailureMessage: String,
+        notWritableTitle: String,
+        notWritableMessage: String,
+        probeFilenamePrefix: String
+    ) -> AppAlert? {
         let fm = FileManager.default
         if !fm.fileExists(atPath: destinationRoot.path) {
             do {
                 try fm.createDirectory(at: destinationRoot, withIntermediateDirectories: true)
             } catch {
                 AppLog.conversion.error("Could not create destination root \(destinationRoot.path, privacy: .public): \(String(describing: error), privacy: .public)")
-                return .error(
-                    title: "Can't write to destination",
-                    message: "CrateDigger could not create the destination folder \(destinationRoot.path). Pick another folder under Preferences > General."
-                )
+                return .error(title: createFailureTitle, message: createFailureMessage)
             }
         }
 
         let probe = destinationRoot
-            .appendingPathComponent(".cratedigger-write-probe-\(UUID().uuidString)")
+            .appendingPathComponent("\(probeFilenamePrefix)\(UUID().uuidString)")
         do {
             try Data().write(to: probe)
             try? fm.removeItem(at: probe)
             return nil
         } catch {
             AppLog.conversion.error("Destination not writable \(destinationRoot.path, privacy: .public): \(String(describing: error), privacy: .public)")
-            return .error(
-                title: "Destination isn't writable",
-                message: "CrateDigger doesn't have permission to write into \(destinationRoot.path). Choose a different folder under Preferences > General, or grant Files & Folders access in System Settings."
-            )
+            return .error(title: notWritableTitle, message: notWritableMessage)
         }
     }
 
-    private func probeFreeDiskSpace(_ destinationRoot: URL, sourceTracks: [LoadedTrack]) -> AppAlert? {
+    /// Shared free-space probe. Sums source bytes, compares against the
+    /// destination volume's available capacity with ~10% headroom, and returns a
+    /// caller-supplied alert message when there isn't enough room.
+    func probeFreeDiskSpace(
+        _ destinationRoot: URL,
+        sourceTracks: [LoadedTrack],
+        insufficientSpaceMessageFormat: String
+    ) -> AppAlert? {
         let totalSourceBytes: Int64 = sourceTracks.reduce(0) { running, track in
             let attrs = try? FileManager.default.attributesOfItem(atPath: track.track.fileURL.path)
             let size = (attrs?[.size] as? NSNumber)?.int64Value ?? 0
@@ -154,15 +176,14 @@ extension LibraryViewModel {
 
         // Conservative: require roughly source-byte total + 10% headroom.
         let estimatedNeed = Int64(Double(totalSourceBytes) * 1.10)
-        if available < estimatedNeed {
-            let needGB = Double(estimatedNeed) / 1_000_000_000
-            let availGB = Double(available) / 1_000_000_000
-            return .error(
-                title: "Not enough free space",
-                message: String(format: "This batch needs ~%.1f GB on the destination volume but only %.1f GB is available. Free up space or pick a different output folder.", needGB, availGB)
-            )
-        }
-        return nil
+        guard available < estimatedNeed else { return nil }
+
+        let needGB = Double(estimatedNeed) / 1_000_000_000
+        let availGB = Double(available) / 1_000_000_000
+        return .error(
+            title: "Not enough free space",
+            message: String(format: insufficientSpaceMessageFormat, needGB, availGB)
+        )
     }
 
     @MainActor
@@ -239,7 +260,7 @@ extension LibraryViewModel {
     }
 
     private func makeAdHocPreset(from selection: ConversionOptionsSelection) -> ConversionPreset {
-        let bitrate = isLossless(selection.outputFormat) ? nil : selection.bitrate
+        let bitrate = selection.outputFormat.isLossless ? nil : selection.bitrate
         return ConversionPreset(
             id: "user_\(selection.outputFormat.rawValue)_\(bitrate ?? 0)",
             name: "User selection",
@@ -253,15 +274,6 @@ extension LibraryViewModel {
             artworkMode: selection.artworkMaxDimension == nil ? .preserve : .compatReembed,
             artworkMaxDimension: selection.artworkMaxDimension
         )
-    }
-
-    private func isLossless(_ format: OutputFormat) -> Bool {
-        switch format {
-        case .alac, .flac, .wav, .aiff:
-            return true
-        case .mp3, .aac, .ogg, .opus:
-            return false
-        }
     }
 
     private func buildAlbumFolderReviewRows(
@@ -513,52 +525,5 @@ extension LibraryViewModel {
 extension LibraryViewModel {
     var isConversionRunning: Bool {
         conversionProgress.isRunning
-    }
-}
-
-/// JSON-safe codable mirror of `ConversionOptionsSelection` so we can persist
-/// the user's last-used choices through PreferencesStore. Decoders read this
-/// back; the conversion entry seeds defaults from it on next launch.
-struct PersistedConversionSelection: Codable {
-    let batchScopeRaw: Int
-    let outputFormat: String
-    let bitrate: Int?
-    let sampleRate: Int?
-    let artworkMaxDimension: Int?
-    let folderStructureMode: String
-    let applyMode: String
-    let templatePreset: String
-    let tokenOrder: [String]
-
-    init(_ selection: ConversionOptionsSelection) {
-        batchScopeRaw = selection.batchScope.rawValue
-        outputFormat = selection.outputFormat.rawValue
-        bitrate = selection.bitrate
-        sampleRate = selection.sampleRate
-        artworkMaxDimension = selection.artworkMaxDimension
-        folderStructureMode = selection.folderStructureMode.rawValue
-        applyMode = selection.applyMode.rawValue
-        templatePreset = selection.templatePreset.rawValue
-        tokenOrder = selection.tokenOrder.map { $0.rawValue }
-    }
-
-    func materialize() -> ConversionOptionsSelection? {
-        guard let scope = ConversionBatchScope(rawValue: batchScopeRaw) else { return nil }
-        guard let format = OutputFormat(rawValue: outputFormat) else { return nil }
-        guard let folderMode = FolderStructureMode(rawValue: folderStructureMode) else { return nil }
-        guard let apply = TemplateApplyMode(rawValue: applyMode) else { return nil }
-        guard let preset = TemplatePreset(rawValue: templatePreset) else { return nil }
-        let tokens = tokenOrder.compactMap { FolderToken(rawValue: $0) }
-        return ConversionOptionsSelection(
-            batchScope: scope,
-            outputFormat: format,
-            bitrate: bitrate,
-            sampleRate: sampleRate,
-            artworkMaxDimension: artworkMaxDimension,
-            folderStructureMode: folderMode,
-            applyMode: apply,
-            templatePreset: preset,
-            tokenOrder: tokens.isEmpty ? preset.defaultTokenOrder : tokens
-        )
     }
 }

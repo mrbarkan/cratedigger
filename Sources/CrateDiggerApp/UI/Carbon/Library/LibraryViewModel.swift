@@ -121,7 +121,7 @@ final class LibraryViewModel: ObservableObject {
         templatePreset: .artistYearAlbum,
         tokenOrder: TemplatePreset.artistYearAlbum.defaultTokenOrder
     ) {
-        didSet { prefs.saveLastConversionSelection(PersistedConversionSelection(conversionSelection)) }
+        didSet { prefs.saveLastConversionSelection(conversionSelection) }
     }
 
     @Published var sourcesCollapsed: Bool = false
@@ -214,7 +214,6 @@ final class LibraryViewModel: ObservableObject {
             scrubReleaseWorkItem?.cancel()
         }
     }
-    @Published private(set) var playbackErrorMessage: String?
     @Published var appAlert: AppAlert?
     @Published private(set) var albumsFetchingArtwork: Set<String> = []
 
@@ -491,8 +490,8 @@ final class LibraryViewModel: ObservableObject {
         }
         showingOnboarding = !prefs.hasCompletedFirstRunSetup
 
-        if let persisted = prefs.savedLastConversionSelection(as: PersistedConversionSelection.self),
-           let restored = persisted.materialize() {
+        if var restored = prefs.savedLastConversionSelection(as: ConversionOptionsSelection.self) {
+            if restored.tokenOrder.isEmpty { restored.tokenOrder = restored.templatePreset.defaultTokenOrder }
             conversionSelection = restored
         }
 
@@ -689,15 +688,6 @@ final class LibraryViewModel: ObservableObject {
     /// the flat "Track" browser layout.
     var flatTracksSorted: [LoadedTrack] {
         LibraryIndex.sortedTracks(index.allTracks, by: trackSortField, ascending: trackSortAscending)
-    }
-
-    /// Select an album from the flat album list — sets the artist too, since
-    /// `selectedAlbum` is scoped to the selected artist, so the Track column
-    /// resolves it and switching back to the 3-pane layout stays consistent.
-    func selectAlbumFlat(_ album: Album) {
-        selectedArtistID = album.artistID
-        selectedAlbumID = album.id
-        selectedTrackID = album.tracks.first?.track.id
     }
 
     var selectedTrack: LoadedTrack? {
@@ -1075,23 +1065,6 @@ final class LibraryViewModel: ObservableObject {
         selectSource(.localAll)
     }
 
-    func addTrackToPlaylist(track: LoadedTrack, playlistName: String) {
-        guard var playlist = playlists.first(where: { $0.name == playlistName }) else { return }
-        playlist.trackURLs.append(track.track.fileURL)
-        try? playlistService.savePlaylist(playlist)
-        playlists = playlistService.listPlaylists()
-    }
-
-    func removeTrackFromPlaylist(track: LoadedTrack, playlistName: String) {
-        guard var playlist = playlists.first(where: { $0.name == playlistName }) else { return }
-        playlist.trackURLs.removeAll(where: { $0 == track.track.fileURL })
-        try? playlistService.savePlaylist(playlist)
-        playlists = playlistService.listPlaylists()
-        if case .playlist(let currentName) = currentSource, currentName == playlistName {
-            selectPlaylist(name: playlistName)
-        }
-    }
-
     private func selectPlaylist(name: String) {
         guard let pl = playlists.first(where: { $0.name == name }) else { return }
         
@@ -1180,42 +1153,15 @@ final class LibraryViewModel: ObservableObject {
         let cleanup = LibraryCleanupService()
         do {
             try cleanup.deleteTracks(deadTracks, useTrash: false)
-            let remaining = localIndex.allTracks.filter { track in
-                !deadTracks.contains(where: { $0.track.id == track.track.id })
-            }
-            localIndex = buildIndex(remaining)
-
-            for track in deadTracks {
-                switch currentSource {
-                case .localAll:
-                    for crateName in self.availableCrates {
-                        var tracks = self.loadCrateTracks(name: crateName)
-                        if tracks.contains(where: { $0.track.id == track.track.id }) {
-                            tracks.removeAll(where: { $0.track.id == track.track.id })
-                            self.saveCrateTracks(tracks, name: crateName)
-                        }
-                    }
-                case .localCrate(let name):
-                    var tracks = self.loadCrateTracks(name: name)
-                    tracks.removeAll(where: { $0.track.id == track.track.id })
-                    self.saveCrateTracks(tracks, name: name)
-                default:
-                    break
-                }
-            }
-            
-            if isLocalSource {
-                index = localIndex
-            }
+            purgeTracksFromLibraryState(paths: Set(deadTracks.map { $0.track.fileURL.standardizedFileURL.path }))
             deadTracks = []
-            refreshCrateCounts()
             appAlert = .error(title: "Cleared", message: "Removed reference to dead tracks.")
         } catch {
             appAlert = .error(title: "Removal Failed", message: error.localizedDescription)
         }
     }
 
-    func resolveDuplicates(keepBest: Bool) {
+    func resolveDuplicates() {
         let cleanup = LibraryCleanupService()
         var toDelete: [LoadedTrack] = []
         for group in duplicateGroups {
@@ -1224,35 +1170,8 @@ final class LibraryViewModel: ObservableObject {
 
         do {
             try cleanup.deleteTracks(toDelete, useTrash: true)
-            let remaining = localIndex.allTracks.filter { track in
-                !toDelete.contains(where: { $0.track.id == track.track.id })
-            }
-            localIndex = buildIndex(remaining)
-
-            for track in toDelete {
-                switch currentSource {
-                case .localAll:
-                    for crateName in self.availableCrates {
-                        var tracks = self.loadCrateTracks(name: crateName)
-                        if tracks.contains(where: { $0.track.id == track.track.id }) {
-                            tracks.removeAll(where: { $0.track.id == track.track.id })
-                            self.saveCrateTracks(tracks, name: crateName)
-                        }
-                    }
-                case .localCrate(let name):
-                    var tracks = self.loadCrateTracks(name: name)
-                    tracks.removeAll(where: { $0.track.id == track.track.id })
-                    self.saveCrateTracks(tracks, name: name)
-                default:
-                    break
-                }
-            }
-            
-            if isLocalSource {
-                index = localIndex
-            }
+            purgeTracksFromLibraryState(paths: Set(toDelete.map { $0.track.fileURL.standardizedFileURL.path }))
             duplicateGroups = []
-            refreshCrateCounts()
             appAlert = .error(title: "Duplicates Cleared", message: "Worst versions moved to Trash.")
         } catch {
             appAlert = .error(title: "Clear Failed", message: error.localizedDescription)
@@ -1389,21 +1308,7 @@ final class LibraryViewModel: ObservableObject {
     // MARK: - Conversion entry
 
     func makeInitialConversionSelection() -> ConversionOptionsSelection {
-        if let persisted = prefs.savedLastConversionSelection(as: PersistedConversionSelection.self),
-           let selection = persisted.materialize() {
-            return selection
-        }
-        return ConversionOptionsSelection(
-            batchScope: .selectedTracks,
-            outputFormat: .aac,
-            bitrate: 192,
-            sampleRate: 44_100,
-            artworkMaxDimension: 1024,
-            folderStructureMode: .flat,
-            applyMode: .applyAll,
-            templatePreset: .artistYearAlbum,
-            tokenOrder: TemplatePreset.artistYearAlbum.defaultTokenOrder
-        )
+        return conversionSelection
     }
 
     func toggleShuffle() { shuffleEnabled.toggle() }
@@ -1424,12 +1329,7 @@ final class LibraryViewModel: ObservableObject {
         return Int64(conversionQueueDurationSeconds * Double(effective) * 1000.0 / 8.0)
     }
 
-    var isLosslessSelectedFormat: Bool {
-        switch conversionSelection.outputFormat {
-        case .alac, .flac, .wav, .aiff: return true
-        case .mp3, .aac, .ogg, .opus:    return false
-        }
-    }
+    var isLosslessSelectedFormat: Bool { conversionSelection.outputFormat.isLossless }
 
     var conversionDestinationDisplayPath: String {
         guard let url = currentConversionDestinationURL else {
@@ -1769,11 +1669,6 @@ final class LibraryViewModel: ObservableObject {
         }
     }
 
-    private func sha256Hex(for data: Data) -> String {
-        let digest = SHA256.hash(data: data)
-        return digest.compactMap { String(format: "%02x", $0) }.joined()
-    }
-
     func cycleRepeatMode() {
         switch repeatMode {
         case .off: repeatMode = .all
@@ -1876,7 +1771,6 @@ final class LibraryViewModel: ObservableObject {
         }
         playback.onError = { [weak self] message in
             Task { @MainActor in
-                self?.playbackErrorMessage = message
                 self?.appAlert = .error(
                     title: "Couldn't play this track",
                     message: message

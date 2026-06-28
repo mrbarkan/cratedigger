@@ -12,7 +12,7 @@ import Foundation
 /// - `.tick` — sharp tick for steppers and toggles (~22 ms)
 final class ClickPlayer {
 
-    enum Variant: CaseIterable {
+    enum Variant {
         case key
         case firm
         case tick

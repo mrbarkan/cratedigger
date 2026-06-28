@@ -356,7 +356,6 @@ final class RealisticScenariosTests: XCTestCase {
                 ffmpegExecutableURL: fakeFfmpegURL,
                 presets: ConversionPreset.defaultPresets,
                 artworkPreparer: PassThroughArtworkPreparer(),
-                metadataProbe: nil,
                 commandRunner: mockRunner,
                 fileManager: fileManager
             )

@@ -25,10 +25,6 @@ public final class PlaylistService {
         try? fileManager.createDirectory(at: playlistsDirectoryURL, withIntermediateDirectories: true)
     }
 
-    public func getPlaylistsDirectory() -> URL {
-        return playlistsDirectoryURL
-    }
-
     public func listPlaylists() -> [Playlist] {
         guard let contents = try? fileManager.contentsOfDirectory(at: playlistsDirectoryURL, includingPropertiesForKeys: nil) else {
             return []
@@ -103,11 +99,5 @@ public final class PlaylistService {
         }
         let content = lines.joined(separator: "\n")
         try content.write(to: url, atomically: true, encoding: .utf8)
-    }
-
-    public func importPlaylist(from url: URL) throws -> Playlist {
-        let playlist = try loadPlaylist(from: url)
-        try savePlaylist(playlist)
-        return playlist
     }
 }

@@ -5,7 +5,7 @@ import SwiftUI
 /// follows the app appearance; the content themes itself to match.
 final class GuideWindowController: NSWindowController {
     init() {
-        let mode = Self.resolvedAppearance()
+        let mode = AppearanceMode.currentConcrete
         let hosting = NSHostingController(rootView: CarbonGuideView(mode: mode))
         let window = NSWindow(contentViewController: hosting)
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
@@ -18,18 +18,6 @@ final class GuideWindowController: NSWindowController {
         window.center()
         window.appearance = NSAppearance(named: mode == .dark ? .darkAqua : .aqua)
         super.init(window: window)
-    }
-
-    private static func resolvedAppearance() -> AppearanceMode {
-        let raw = UserDefaults.standard.string(forKey: AppearanceMode.userDefaultsKey)
-            ?? AppearanceMode.system.rawValue
-        switch AppearanceMode(rawValue: raw) ?? .system {
-        case .light: return .light
-        case .dark:  return .dark
-        case .system:
-            let match = NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua])
-            return match == .darkAqua ? .dark : .light
-        }
     }
 
     @available(*, unavailable)

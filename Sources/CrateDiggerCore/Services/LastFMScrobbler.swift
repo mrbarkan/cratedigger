@@ -25,9 +25,7 @@ public final class LastFMScrobbler: Sendable {
     // MD5 here is the Last.fm API signature scheme (api_sig), not a security
     // hash — the protocol mandates it. Insecure.MD5 is the non-deprecated API.
     private func md5(_ string: String) -> String {
-        Insecure.MD5.hash(data: Data(string.utf8))
-            .map { String(format: "%02hhx", $0) }
-            .joined()
+        Insecure.MD5.hash(data: Data(string.utf8)).hexString
     }
 
     private func calculateSignature(params: [String: String], secret: String) -> String {

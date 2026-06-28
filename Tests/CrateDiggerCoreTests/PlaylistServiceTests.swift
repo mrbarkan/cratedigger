@@ -42,42 +42,26 @@ final class PlaylistServiceTests: XCTestCase {
             XCTAssertEqual(list.first?.name, playlistName)
             XCTAssertEqual(list.first?.trackURLs, [track1, track2])
             
-            // 4. Load playlist directly
-            let playlistURL = service.getPlaylistsDirectory().appendingPathComponent(playlistName).appendingPathExtension("m3u")
-            let loaded = try service.loadPlaylist(from: playlistURL)
-            XCTAssertEqual(loaded.name, playlistName)
-            XCTAssertEqual(loaded.trackURLs, [track1, track2])
-            
-            // 5. Delete playlist
+            // 4. Delete playlist
             try service.deletePlaylist(name: playlistName)
             XCTAssertTrue(service.listPlaylists().isEmpty)
         }
     }
-    
-    func testExportAndImport() throws {
+
+    func testExport() throws {
         try withTemporaryDirectory(prefix: "PlaylistServiceTests") { tempDir in
             let mockFM = MockFileManager(appSupportURL: tempDir)
             let service = PlaylistService(fileManager: mockFM)
-            
-            let playlistName = "ImportExportTest"
-            let track1 = URL(fileURLWithPath: "/Music/Song.m4a")
-            let playlist = Playlist(name: playlistName, trackURLs: [track1])
-            
-            // Export to a custom location
+
+            let playlist = Playlist(name: "ExportTest", trackURLs: [URL(fileURLWithPath: "/Music/Song.m4a")])
+
             let exportURL = tempDir.appendingPathComponent("exported.m3u")
             try service.exportPlaylist(playlist, to: exportURL)
-            
+
             XCTAssertTrue(FileManager.default.fileExists(atPath: exportURL.path))
-            
-            // Import playlist
-            let imported = try service.importPlaylist(from: exportURL)
-            XCTAssertEqual(imported.name, "exported")
-            XCTAssertEqual(imported.trackURLs, [track1])
-            
-            // Should be in main list now
-            let list = service.listPlaylists()
-            XCTAssertEqual(list.count, 1)
-            XCTAssertEqual(list.first?.name, "exported")
+            let loaded = try service.loadPlaylist(from: exportURL)
+            XCTAssertEqual(loaded.name, "exported")
+            XCTAssertEqual(loaded.trackURLs, [URL(fileURLWithPath: "/Music/Song.m4a")])
         }
     }
 }

@@ -23,16 +23,13 @@ public actor RemoteArtworkService {
         }
     }
 
+    private static let userAgent = "CrateDigger/1.0 (https://smash.mrbarkan.com)"
+    private static let preferredDimension = 1200
+
     private let session: URLSession
     private let cacheDirectory: URL?
-    private let userAgent: String
-    private let preferredDimension: Int
 
-    public init(
-        session: URLSession? = nil,
-        userAgent: String = "CrateDigger/1.0 (https://smash.mrbarkan.com)",
-        preferredDimension: Int = 1200
-    ) {
+    public init(session: URLSession? = nil) {
         if let session {
             self.session = session
         } else {
@@ -42,8 +39,6 @@ public actor RemoteArtworkService {
             config.waitsForConnectivity = false
             self.session = URLSession(configuration: config)
         }
-        self.userAgent = userAgent
-        self.preferredDimension = max(300, preferredDimension)
         self.cacheDirectory = Self.makeCacheDirectory()
     }
 
@@ -64,7 +59,7 @@ public actor RemoteArtworkService {
             throw FetchError.noResults
         }
 
-        let highRes = upgradeArtworkURL(candidate.artworkURL, to: preferredDimension)
+        let highRes = upgradeArtworkURL(candidate.artworkURL, to: Self.preferredDimension)
         let data = try await downloadImage(from: highRes)
 
         guard let asset = makeAsset(from: data) else {
@@ -103,7 +98,7 @@ public actor RemoteArtworkService {
         ]
         guard let url = components.url else { return nil }
         var request = URLRequest(url: url)
-        request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
         request.cachePolicy = .returnCacheDataElseLoad
 
         let data: Data
@@ -155,7 +150,7 @@ public actor RemoteArtworkService {
 
     private func downloadImage(from url: URL) async throws -> Data {
         var request = URLRequest(url: url)
-        request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
         do {
             let (data, response) = try await session.data(for: request)
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
@@ -252,8 +247,7 @@ public actor RemoteArtworkService {
     }
 
     private static func sha256Hex(for data: Data) -> String {
-        let digest = SHA256.hash(data: data)
-        return digest.compactMap { String(format: "%02x", $0) }.joined()
+        SHA256.hash(data: data).hexString
     }
 }
 
@@ -326,7 +320,7 @@ public extension RemoteArtworkService {
         
         guard let url = components.url else { return [] }
         var request = URLRequest(url: url)
-        request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
         request.cachePolicy = .returnCacheDataElseLoad
 
         let data: Data
@@ -390,7 +384,7 @@ public extension RemoteArtworkService {
         }
         
         var request = URLRequest(url: url)
-        request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
         request.cachePolicy = .returnCacheDataElseLoad
 
         let data: Data

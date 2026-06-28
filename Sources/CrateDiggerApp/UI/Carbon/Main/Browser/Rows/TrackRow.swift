@@ -12,7 +12,6 @@ struct TrackRow: View {
     var body: some View {
         ColumnRow(
             selected: selected,
-            isPlaying: isPlaying,
             onSelect: onSelect,
             onActivate: onActivate
         ) {
@@ -57,7 +56,6 @@ struct TrackRow: View {
 
     private func durationString(_ seconds: Double) -> String {
         guard seconds.isFinite, seconds > 0 else { return "—" }
-        let total = Int(seconds.rounded())
-        return String(format: "%d:%02d", total / 60, total % 60)
+        return seconds.asClock
     }
 }

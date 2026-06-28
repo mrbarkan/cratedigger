@@ -175,7 +175,7 @@ private struct MiniPlayerBody: View {
         let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
         return shape
             .fill(theme.oledSurface)
-            .overlay(scanlines.clipShape(shape))
+            .overlay(Scanlines(opacity: 0.02).clipShape(shape))
             .overlay(shape.strokeBorder(theme.oledStrokeInner, lineWidth: 1.5))
             .overlay(
                 VStack(alignment: .leading, spacing: 5) {
@@ -200,18 +200,6 @@ private struct MiniPlayerBody: View {
             )
             .frame(height: 58)
             .compositingGroup()
-    }
-
-    private var scanlines: some View {
-        Canvas { context, size in
-            var y: CGFloat = 0
-            while y < size.height {
-                context.fill(Path(CGRect(x: 0, y: y, width: size.width, height: 1)),
-                             with: .color(Color.white.opacity(0.02)))
-                y += 3
-            }
-        }
-        .allowsHitTesting(false)
     }
 
     private var trackTitle: String {
@@ -328,14 +316,4 @@ private struct MiniPlayerBody: View {
         let t = Int(max(0, seconds))
         return String(format: "%d:%02d", t / 60, t % 60)
     }
-}
-
-/// Stops a drag inside the seek rail from moving the borderless window
-/// (the rest of the panel stays draggable via `isMovableByWindowBackground`).
-private struct WindowDragGuard: NSViewRepresentable {
-    final class GuardView: NSView {
-        override var mouseDownCanMoveWindow: Bool { false }
-    }
-    func makeNSView(context: Context) -> NSView { GuardView() }
-    func updateNSView(_ nsView: NSView, context: Context) {}
 }

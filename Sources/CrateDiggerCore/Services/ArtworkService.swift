@@ -22,13 +22,11 @@ public enum ArtworkServiceError: Error {
 public final class ArtworkService: ArtworkPreparing {
     private let fileManager: FileManager
     private let thumbnailCache = NSCache<NSString, NSImage>()
-    private let cacheQueue = DispatchQueue(label: "com.cratedigger.artwork.cache", attributes: .concurrent)
     /// Full-resolution source image bytes, kept only to (re)generate thumbnails.
     /// Cost-limited so a large scan can't grow it without bound — `NSData` is its
-    /// own LRU store and is internally thread-safe (no `cacheQueue` needed).
+    /// own LRU store and is internally thread-safe.
     /// A miss simply yields no thumbnail (a handled `nil`), never a crash.
     private let dataCache = NSCache<NSString, NSData>()
-    private var remoteUrlsByHash: [String: URL] = [:]
 
     public init(fileManager: FileManager = .default) {
         self.fileManager = fileManager
@@ -38,10 +36,6 @@ public final class ArtworkService: ArtworkPreparing {
     }
 
     public func cacheRemoteArtworkURL(_ hash: String, url: URL) {
-        cacheQueue.async(flags: .barrier) {
-            self.remoteUrlsByHash[hash] = url
-        }
-        
         Task {
             guard let (data, _) = try? await URLSession.shared.data(from: url),
                   let image = NSImage(data: data) else {
@@ -339,7 +333,6 @@ public final class ArtworkService: ArtworkPreparing {
     }
 
     private static func sha256Hex(for data: Data) -> String {
-        let digest = SHA256.hash(data: data)
-        return digest.compactMap { String(format: "%02x", $0) }.joined()
+        SHA256.hash(data: data).hexString
     }
 }

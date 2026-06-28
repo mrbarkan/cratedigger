@@ -52,10 +52,6 @@ public protocol PlaybackServiceProtocol: AnyObject {
     func currentLevels() -> (left: Double, right: Double)
 }
 
-public extension PlaybackServiceProtocol {
-    func currentLevels() -> (left: Double, right: Double) { (0, 0) }
-}
-
 protocol PlaybackEngineProtocol: AnyObject {
     var onItemReady: (() -> Void)? { get set }
     var onItemFailed: ((String) -> Void)? { get set }

@@ -327,14 +327,6 @@ public final class LibraryScanService {
         return intValue(from: value)
     }
 
-    private func intValue(forCommonKeys keys: [String], in metadataItems: [AVMetadataItem]) async -> Int? {
-        guard let value = await stringValue(forCommonKeys: keys, in: metadataItems) else {
-            return nil
-        }
-
-        return intValue(from: value)
-    }
-
     private func yearValue(forIdentifierContains keys: [String], in metadataItems: [AVMetadataItem]) async -> Int? {
         guard let value = await stringValue(forIdentifierContains: keys, in: metadataItems) else {
             return nil
@@ -403,6 +395,8 @@ public final class LibraryScanService {
         return nil
     }
 
+    // ponytail: keeps both async values eagerly evaluated; `a ?? (await b)` won't
+    // compile because `??`'s RHS autoclosure can't be async.
     private func coalesce(_ values: Int?...) -> Int? {
         for value in values {
             if let value {

@@ -30,25 +30,8 @@ struct AlbumPoster: View {
                 localThumbnail = nil
                 return
             }
-            localThumbnail = await loadLocalThumbnail(from: coverURL)
+            localThumbnail = await loadThumbnail(url: coverURL, maxPixelSize: 480)
         }
-    }
-    
-    private func loadLocalThumbnail(from url: URL) async -> NSImage? {
-        let cgImage = await Task.detached(priority: .userInitiated) { () -> CGImage? in
-            let options: [CFString: Any] = [
-                kCGImageSourceCreateThumbnailFromImageAlways: true,
-                kCGImageSourceCreateThumbnailWithTransform: true,
-                kCGImageSourceThumbnailMaxPixelSize: 480
-            ]
-            guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
-                return nil
-            }
-            return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
-        }.value
-        
-        guard let cgImage = cgImage else { return nil }
-        return NSImage(cgImage: cgImage, size: .zero)
     }
 
     private func thumbnail(for album: Album?) -> NSImage? {

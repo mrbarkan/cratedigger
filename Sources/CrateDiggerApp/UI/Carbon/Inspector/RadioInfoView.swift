@@ -72,7 +72,7 @@ struct RadioInfoView: View {
                     .foregroundStyle(isCurrent ? theme.ink : theme.ink2)
                     .lineLimit(1)
                 Spacer(minLength: 6)
-                Text(Self.timeString(chapter.startSeconds))
+                Text(chapter.startSeconds.asClockHMS)
                     .font(CarbonFont.mono(9))
                     .foregroundStyle(theme.ink3)
             }
@@ -82,12 +82,6 @@ struct RadioInfoView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-    }
-
-    private static func timeString(_ seconds: Double) -> String {
-        let t = Int(seconds.rounded())
-        let h = t / 3600, m = (t % 3600) / 60, s = t % 60
-        return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%d:%02d", m, s)
     }
 
     private var header: some View {

@@ -70,14 +70,14 @@ struct DisplayModeButton: View {
         HStack(spacing: 5) {
             ForEach(Self.cycle.indices, id: \.self) { index in
                 Circle()
-                    .fill(model.oledView == Self.cycle[index] ? activeLED : theme.ink4.opacity(0.32))
+                    .fill(model.oledView == Self.cycle[index] ? screenColor : theme.ink4.opacity(0.32))
                     .frame(width: 5, height: 5)
                     .overlay(
                         Circle()
                             .stroke(Color.white.opacity(0.06), lineWidth: 0.5)
                     )
                     .shadow(
-                        color: model.oledView == Self.cycle[index] ? activeLED.opacity(0.7) : .clear,
+                        color: model.oledView == Self.cycle[index] ? screenColor.opacity(0.7) : .clear,
                         radius: 3
                     )
             }
@@ -97,16 +97,6 @@ struct DisplayModeButton: View {
     }
 
     private var screenColor: Color {
-        switch model.oledView {
-        case .conversion: return theme.orange
-        case .scan:       return theme.cyan
-        case .remoteSync: return theme.indigo
-        case .cdRip:      return theme.orange
-        default:          return theme.sun
-        }
-    }
-
-    private var activeLED: Color {
         switch model.oledView {
         case .conversion: return theme.orange
         case .scan:       return theme.cyan

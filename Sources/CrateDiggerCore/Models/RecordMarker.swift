@@ -21,9 +21,4 @@ public struct RecordMarker: Codable, Sendable, Hashable, Identifiable {
 
     /// Length of this track in seconds.
     public var durationSeconds: Double { max(0, endSeconds - startSeconds) }
-
-    /// Whether `seconds` falls within this marker's range.
-    public func contains(_ seconds: Double) -> Bool {
-        seconds >= startSeconds - 0.001 && seconds < endSeconds
-    }
 }

@@ -133,7 +133,7 @@ struct DevicesPreferencesView: View {
                                 Text(option < 0 ? "Auto" : "\(option) kbps").tag(option)
                             }
                         }
-                        .disabled(draft.outputFormat.isLosslessForDeviceUI)
+                        .disabled(draft.outputFormat.isLossless)
 
                         Picker("Sample rate", selection: $draft.sampleRateTag) {
                             ForEach(sampleRateOptions, id: \.self) { option in
@@ -169,14 +169,14 @@ struct DevicesPreferencesView: View {
                         }
                         .onChange(of: draft.templatePreset) { newValue in
                             if newValue != .custom {
-                                draft.tokenOrder = Self.normalizedTokenOrder(newValue.defaultTokenOrder)
+                                draft.tokenOrder = FolderTokenOrder.normalize(newValue.defaultTokenOrder)
                             }
                         }
 
                         if draft.templatePreset == .custom {
                             HStack(spacing: 8) {
-                                ForEach(0..<Self.tokenCount, id: \.self) { index in
-                                    Picker("Token \(index + 1)", selection: tokenBinding(at: index)) {
+                                ForEach(0..<FolderTokenOrder.tokenCount, id: \.self) { index in
+                                    Picker("Token \(index + 1)", selection: FolderTokenOrder.tokenBinding(in: $draft.tokenOrder, at: index)) {
                                         ForEach(FolderToken.allCases, id: \.self) { token in
                                             Text(token.title).tag(token)
                                         }
@@ -203,8 +203,6 @@ struct DevicesPreferencesView: View {
             .formStyle(.grouped)
         }
     }
-
-    fileprivate static let tokenCount = 5
 
     private func reload() {
         profiles = PreferencesStore.shared.savedExternalDeviceProfiles
@@ -265,20 +263,6 @@ struct DevicesPreferencesView: View {
         }
     }
 
-    private func tokenBinding(at index: Int) -> Binding<FolderToken> {
-        Binding {
-            guard draft.tokenOrder.indices.contains(index) else { return .disabled }
-            return draft.tokenOrder[index]
-        } set: { newValue in
-            var next = draft.tokenOrder
-            if next.count < Self.tokenCount {
-                next.append(contentsOf: Array(repeating: .disabled, count: Self.tokenCount - next.count))
-            }
-            next[index] = newValue
-            draft.tokenOrder = Self.normalizedTokenOrder(next)
-        }
-    }
-
     private func makeSDCardProfile() -> ExternalDeviceProfile {
         ExternalDeviceProfile(
             name: "SD Card Player",
@@ -297,30 +281,6 @@ struct DevicesPreferencesView: View {
                 )
             )
         )
-    }
-
-    fileprivate static func normalizedTokenOrder(_ order: [FolderToken]) -> [FolderToken] {
-        var normalized: [FolderToken] = []
-        var used: Set<FolderToken> = []
-        let pool: [FolderToken] = [.year, .albumArtist, .album, .compilation]
-
-        for token in order.prefix(tokenCount) {
-            if token == .disabled {
-                normalized.append(.disabled)
-            } else if used.insert(token).inserted {
-                normalized.append(token)
-            } else if let fallback = pool.first(where: { !used.contains($0) }) {
-                normalized.append(fallback)
-                used.insert(fallback)
-            } else {
-                normalized.append(.disabled)
-            }
-        }
-
-        while normalized.count < tokenCount {
-            normalized.append(.disabled)
-        }
-        return normalized
     }
 }
 
@@ -356,7 +316,7 @@ private struct EditableExternalDeviceProfile {
         deviceProfile = profile.transferSettings.deviceProfile
         folderStructureMode = profile.transferSettings.folderStructureMode
         templatePreset = profile.transferSettings.templateConfig.preset
-        tokenOrder = DevicesPreferencesView.normalizedTokenOrder(profile.transferSettings.templateConfig.tokenOrder)
+        tokenOrder = FolderTokenOrder.normalize(profile.transferSettings.templateConfig.tokenOrder)
     }
 
     func materialize(id: UUID, createdAt: Date) -> ExternalDeviceProfile {
@@ -377,22 +337,11 @@ private struct EditableExternalDeviceProfile {
                 folderStructureMode: folderStructureMode,
                 templateConfig: FolderTemplateConfig(
                     preset: templatePreset,
-                    tokenOrder: DevicesPreferencesView.normalizedTokenOrder(tokenOrder)
+                    tokenOrder: FolderTokenOrder.normalize(tokenOrder)
                 )
             ),
             createdAt: createdAt,
             updatedAt: Date()
         )
-    }
-}
-
-private extension OutputFormat {
-    var isLosslessForDeviceUI: Bool {
-        switch self {
-        case .alac, .flac, .wav, .aiff:
-            return true
-        case .mp3, .aac, .ogg, .opus:
-            return false
-        }
     }
 }

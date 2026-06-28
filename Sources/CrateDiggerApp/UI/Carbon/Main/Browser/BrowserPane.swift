@@ -98,7 +98,11 @@ private struct ArtistColumn: View {
         ColumnList(
             title: "Artist",
             trailing: String(format: "%02d", model.index.artists.count),
-            headerAccessory: model.showSortControls ? AnyView(ArtistSortControl()) : nil
+            headerAccessory: model.showSortControls
+                ? AnyView(ColumnSortControl(field: $model.artistSortField,
+                                            ascending: $model.artistSortAscending,
+                                            allCases: Array(ArtistSortField.allCases)))
+                : nil
         ) {
             ForEach(model.visibleArtists) { artist in
                 ArtistRow(
@@ -139,7 +143,11 @@ private struct AlbumColumn: View {
         ColumnList(
             title: "Album",
             trailing: String(format: "%02d", flat ? albums.count : (model.selectedArtist?.albumCount ?? 0)),
-            headerAccessory: model.showSortControls ? AnyView(AlbumSortControl()) : nil
+            headerAccessory: model.showSortControls
+                ? AnyView(ColumnSortControl(field: $model.albumSortField,
+                                            ascending: $model.albumSortAscending,
+                                            allCases: Array(AlbumSortField.allCases)))
+                : nil
         ) {
             ForEach(albums) { album in
                 if album.isVersionGroup {
@@ -226,7 +234,11 @@ private struct TrackColumn: View {
         ColumnList(
             title: "Track",
             trailing: trackTrailing,
-            headerAccessory: model.showSortControls ? AnyView(TrackSortControl()) : nil
+            headerAccessory: model.showSortControls
+                ? AnyView(ColumnSortControl(field: $model.trackSortField,
+                                            ascending: $model.trackSortAscending,
+                                            allCases: Array(TrackSortField.allCases)))
+                : nil
         ) {
             ForEach(trackEntries) { entry in
                 switch entry {
@@ -352,8 +364,7 @@ private struct RecordSubTrackRow: View {
 
     private func durationString(_ seconds: Double) -> String {
         guard seconds.isFinite, seconds > 0 else { return "—" }
-        let total = Int(seconds.rounded())
-        return String(format: "%d:%02d", total / 60, total % 60)
+        return seconds.asClock
     }
 }
 
@@ -394,14 +405,13 @@ private struct DiscHeaderRow: View {
 /// menu's button styling.
 private struct ColumnSortControl<Field: SortFieldDisplayable>: View {
     @Environment(\.carbon) private var theme
-    let current: Field
-    let ascending: Bool
+    @Binding var field: Field
+    @Binding var ascending: Bool
     let allCases: [Field]
-    let select: (Field) -> Void
 
     var body: some View {
         HStack(spacing: 3) {
-            Text(current.displayName.uppercased())
+            Text(field.displayName.uppercased())
                 .font(CarbonFont.mono(8, weight: .semibold))
                 .tracking(1)
                 .foregroundStyle(theme.ink2)
@@ -409,15 +419,15 @@ private struct ColumnSortControl<Field: SortFieldDisplayable>: View {
                 .font(.system(size: 6, weight: .bold))
                 .foregroundStyle(theme.ink3)
             Menu {
-                ForEach(Array(allCases.enumerated()), id: \.offset) { _, field in
-                    Button { select(field) } label: {
-                        if field == current {
+                ForEach(Array(allCases.enumerated()), id: \.offset) { _, option in
+                    Button { select(option) } label: {
+                        if option == field {
                             Label(
-                                field.displayName,
+                                option.displayName,
                                 systemImage: ascending ? "chevron.up" : "chevron.down"
                             )
                         } else {
-                            Text(field.displayName)
+                            Text(option.displayName)
                         }
                     }
                 }
@@ -433,58 +443,15 @@ private struct ColumnSortControl<Field: SortFieldDisplayable>: View {
         }
         .carbonTip("Sort")
     }
-}
 
-private struct ArtistSortControl: View {
-    @EnvironmentObject private var model: LibraryViewModel
-    var body: some View {
-        ColumnSortControl(
-            current: model.artistSortField,
-            ascending: model.artistSortAscending,
-            allCases: Array(ArtistSortField.allCases)
-        ) { field in
-            if model.artistSortField == field {
-                model.artistSortAscending.toggle()
-            } else {
-                model.artistSortField = field
-                model.artistSortAscending = true
-            }
-        }
-    }
-}
-
-private struct AlbumSortControl: View {
-    @EnvironmentObject private var model: LibraryViewModel
-    var body: some View {
-        ColumnSortControl(
-            current: model.albumSortField,
-            ascending: model.albumSortAscending,
-            allCases: Array(AlbumSortField.allCases)
-        ) { field in
-            if model.albumSortField == field {
-                model.albumSortAscending.toggle()
-            } else {
-                model.albumSortField = field
-                model.albumSortAscending = true
-            }
-        }
-    }
-}
-
-private struct TrackSortControl: View {
-    @EnvironmentObject private var model: LibraryViewModel
-    var body: some View {
-        ColumnSortControl(
-            current: model.trackSortField,
-            ascending: model.trackSortAscending,
-            allCases: Array(TrackSortField.allCases)
-        ) { field in
-            if model.trackSortField == field {
-                model.trackSortAscending.toggle()
-            } else {
-                model.trackSortField = field
-                model.trackSortAscending = true
-            }
+    /// Tapping the current field flips direction; tapping another switches to it
+    /// ascending. Mirrors the per-column behaviour the wrappers used to inline.
+    private func select(_ option: Field) {
+        if field == option {
+            ascending.toggle()
+        } else {
+            field = option
+            ascending = true
         }
     }
 }

@@ -152,7 +152,7 @@ struct ArtworkInspectorView: View {
         .task(id: imageURLs) {
             var loaded: [URL: NSImage] = [:]
             for url in imageURLs {
-                if let nsImage = await generateThumbnail(for: url) {
+                if let nsImage = await loadThumbnail(url: url, maxPixelSize: 300) {
                     loaded[url] = nsImage
                 }
             }
@@ -192,23 +192,6 @@ struct ArtworkInspectorView: View {
         }
     }
 
-    private func generateThumbnail(for url: URL) async -> NSImage? {
-        let cgImage = await Task.detached(priority: .userInitiated) { () -> CGImage? in
-            let options: [CFString: Any] = [
-                kCGImageSourceCreateThumbnailFromImageAlways: true,
-                kCGImageSourceCreateThumbnailWithTransform: true,
-                kCGImageSourceThumbnailMaxPixelSize: 300
-            ]
-            guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
-                return nil
-            }
-            return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
-        }.value
-        
-        guard let cgImage = cgImage else { return nil }
-        return NSImage(cgImage: cgImage, size: .zero)
-    }
-    
     private func loadManifest() {
         guard let album = album, let representative = album.tracks.first?.track.fileURL else {
             imageURLs = []

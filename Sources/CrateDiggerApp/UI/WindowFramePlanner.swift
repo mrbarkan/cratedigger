@@ -1,17 +1,5 @@
 import CoreGraphics
 
-enum WindowLayoutMode {
-    case workspace
-
-    var targetSize: CGSize {
-        CGSize(width: 1400, height: 920)
-    }
-
-    var minimumSize: CGSize {
-        CGSize(width: 1200, height: 820)
-    }
-}
-
 enum WindowFramePlanningContext {
     case initialLaunch
     case clampToVisibleFrame
@@ -24,42 +12,38 @@ struct PlannedWindowFrame: Equatable {
 
 enum WindowFramePlanner {
     static let outerMargin: CGFloat = 28
+    static let targetSize = CGSize(width: 1400, height: 920)
+    static let minimumSize = CGSize(width: 1200, height: 820)
 
     static func plan(
         visibleFrame: CGRect,
         currentFrame: CGRect?,
-        mode: WindowLayoutMode = .workspace,
         context: WindowFramePlanningContext
     ) -> PlannedWindowFrame {
         let availableWidth = max(1, visibleFrame.width - (outerMargin * 2))
         let availableHeight = max(1, visibleFrame.height - (outerMargin * 2))
         let adaptiveMinimumSize = CGSize(
-            width: min(mode.minimumSize.width, availableWidth),
-            height: min(mode.minimumSize.height, availableHeight)
+            width: min(minimumSize.width, availableWidth),
+            height: min(minimumSize.height, availableHeight)
         )
 
         let targetSize = CGSize(
-            width: min(max(mode.targetSize.width, adaptiveMinimumSize.width), availableWidth),
-            height: min(max(mode.targetSize.height, adaptiveMinimumSize.height), availableHeight)
+            width: min(max(Self.targetSize.width, adaptiveMinimumSize.width), availableWidth),
+            height: min(max(Self.targetSize.height, adaptiveMinimumSize.height), availableHeight)
         )
 
         let plannedSize: CGSize
+        let plannedOrigin: CGPoint
         switch context {
         case .initialLaunch:
             plannedSize = targetSize
+            plannedOrigin = centeredOrigin(for: plannedSize, in: visibleFrame)
         case .clampToVisibleFrame:
             let baseSize = currentFrame?.size ?? targetSize
             plannedSize = CGSize(
                 width: min(max(baseSize.width, adaptiveMinimumSize.width), availableWidth),
                 height: min(max(baseSize.height, adaptiveMinimumSize.height), availableHeight)
             )
-        }
-
-        let plannedOrigin: CGPoint
-        switch context {
-        case .initialLaunch:
-            plannedOrigin = centeredOrigin(for: plannedSize, in: visibleFrame)
-        case .clampToVisibleFrame:
             if let currentFrame {
                 plannedOrigin = clampedOrigin(for: CGRect(origin: currentFrame.origin, size: plannedSize), in: visibleFrame)
             } else {

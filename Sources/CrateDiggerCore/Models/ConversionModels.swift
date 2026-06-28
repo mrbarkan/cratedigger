@@ -35,6 +35,15 @@ public enum OutputFormat: String, Codable, CaseIterable, Sendable {
             return rawValue
         }
     }
+
+    public var isLossless: Bool {
+        switch self {
+        case .alac, .flac, .wav, .aiff:
+            return true
+        case .mp3, .aac, .ogg, .opus:
+            return false
+        }
+    }
 }
 
 public struct ConversionPreset: Identifiable, Hashable, Sendable {
@@ -142,30 +151,6 @@ public struct ConversionPreset: Identifiable, Hashable, Sendable {
         }
         return presets
     }()
-
-    public static func preset(withID id: String, overrideDeviceProfile: DeviceProfile? = nil) -> ConversionPreset? {
-        guard var preset = defaultPresets.first(where: { $0.id == id }) else {
-            return nil
-        }
-
-        if let overrideDeviceProfile {
-            preset = ConversionPreset(
-                id: preset.id,
-                name: preset.name,
-                outputFormat: preset.outputFormat,
-                bitrateKbps: preset.bitrateKbps,
-                sampleRateHz: preset.sampleRateHz,
-                channels: preset.channels,
-                constantBitrate: preset.constantBitrate,
-                deviceProfile: overrideDeviceProfile,
-                tagMode: preset.tagMode,
-                artworkMode: preset.artworkMode,
-                artworkMaxDimension: preset.artworkMaxDimension
-            )
-        }
-
-        return preset
-    }
 }
 
 public struct ConversionMetadata: Hashable, Codable, Sendable {

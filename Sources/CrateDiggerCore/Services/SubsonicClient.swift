@@ -4,16 +4,12 @@ import CryptoKit
 public struct SubsonicArtist: Codable, Identifiable, Sendable {
     public let id: String
     public let name: String
-    public var albumCount: Int?
 }
 
 public struct SubsonicAlbum: Codable, Identifiable, Sendable {
     public let id: String
     public let name: String
     public let artist: String
-    public let artistId: String?
-    public let songCount: Int?
-    public let duration: Int?
     public let year: Int?
     public let coverArt: String?
 }
@@ -28,7 +24,6 @@ public struct SubsonicTrack: Codable, Identifiable, Sendable {
     public let bitRate: Int?
     public let sampleRate: Int?
     public let suffix: String?
-    public let size: Int64?
     public let coverArt: String?
 }
 
@@ -42,9 +37,7 @@ public final class SubsonicClient: Sendable {
     // MD5 here is the Subsonic auth token scheme (md5(password + salt)), not a
     // security hash — the protocol mandates it. Insecure.MD5 isn't deprecated.
     private func md5(_ string: String) -> String {
-        Insecure.MD5.hash(data: Data(string.utf8))
-            .map { String(format: "%02hhx", $0) }
-            .joined()
+        Insecure.MD5.hash(data: Data(string.utf8)).hexString
     }
 
     private func buildURL(endpoint: String, config: SubsonicConfig, extraParams: [URLQueryItem] = []) -> URL? {
@@ -114,7 +107,7 @@ public final class SubsonicClient: Sendable {
                 for art in artistList {
                     if let id = art["id"] as? String,
                        let name = art["name"] as? String {
-                        artists.append(SubsonicArtist(id: id, name: name, albumCount: art["albumCount"] as? Int))
+                        artists.append(SubsonicArtist(id: id, name: name))
                     }
                 }
             }
@@ -145,9 +138,6 @@ public final class SubsonicClient: Sendable {
                 id: id,
                 name: name,
                 artist: artist,
-                artistId: alb["artistId"] as? String,
-                songCount: alb["songCount"] as? Int,
-                duration: alb["duration"] as? Int,
                 year: alb["year"] as? Int,
                 coverArt: alb["coverArt"] as? String
             )
@@ -184,7 +174,6 @@ public final class SubsonicClient: Sendable {
                 bitRate: song["bitRate"] as? Int,
                 sampleRate: song["sampleRate"] as? Int,
                 suffix: song["suffix"] as? String,
-                size: song["size"] as? Int64,
                 coverArt: song["coverArt"] as? String
             )
         }

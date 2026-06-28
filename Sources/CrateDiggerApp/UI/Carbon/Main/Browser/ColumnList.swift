@@ -56,7 +56,6 @@ struct ColumnList<Content: View>: View {
 struct ColumnRow<Lead: View, Title: View, Trail: View>: View {
     @Environment(\.carbon) private var theme
     var selected: Bool
-    var isPlaying: Bool
     var onSelect: () -> Void
     var onActivate: (() -> Void)?
     @ViewBuilder var lead: () -> Lead

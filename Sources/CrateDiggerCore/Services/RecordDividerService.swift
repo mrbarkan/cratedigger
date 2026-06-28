@@ -76,8 +76,7 @@ public struct RecordDividerService: @unchecked Sendable {
     /// known length (from the scan) — used for the final track's end.
     public func detect(fileURL: URL,
                        totalDuration: Double,
-                       sensitivity: RecordDetectionSensitivity = .default,
-                       floorSeconds: Double = RecordDividerService.defaultFloorSeconds) throws -> [RecordMarker] {
+                       sensitivity: RecordDetectionSensitivity = .default) throws -> [RecordMarker] {
         guard totalDuration > 0 else { throw RecordDividerError.noAudioDuration }
         let out = try runner.run(executableURL: ffmpegURL,
                                  arguments: Self.arguments(fileURL: fileURL, sensitivity: sensitivity))
@@ -85,9 +84,7 @@ public struct RecordDividerService: @unchecked Sendable {
             throw RecordDividerError.commandFailed(out.terminationStatus, out.standardError)
         }
         // silencedetect writes to stderr.
-        return Self.markers(fromSilenceLog: out.standardError,
-                            totalDuration: totalDuration,
-                            floorSeconds: floorSeconds)
+        return Self.markers(fromSilenceLog: out.standardError, totalDuration: totalDuration)
     }
 
     // MARK: - Pure derivation
@@ -96,11 +93,10 @@ public struct RecordDividerService: @unchecked Sendable {
     ///
     /// Interior gaps are cut at the silence midpoint (each track keeps a little
     /// head/tail). A lead-in silence at the very start and a run-out silence at the
-    /// very end are dropped. Tracks shorter than `floorSeconds` merge into a
+    /// very end are dropped. Tracks shorter than `defaultFloorSeconds` merge into a
     /// neighbour. Always returns at least one marker for a positive-duration file.
     public static func markers(fromSilenceLog log: String,
-                               totalDuration: Double,
-                               floorSeconds: Double = defaultFloorSeconds) -> [RecordMarker] {
+                               totalDuration: Double) -> [RecordMarker] {
         let silences = parseSilences(from: log, totalDuration: totalDuration)
         let duration = max(totalDuration, silences.last?.end ?? 0)
 
@@ -129,7 +125,7 @@ public struct RecordDividerService: @unchecked Sendable {
         for i in 0..<(bounds.count - 1) where bounds[i + 1] > bounds[i] {
             segments.append((bounds[i], bounds[i + 1]))
         }
-        segments = mergeShort(segments, floor: floorSeconds)
+        segments = mergeShort(segments, floor: defaultFloorSeconds)
 
         let count = segments.count
         return segments.enumerated().map { i, seg in

@@ -5,8 +5,6 @@ import SwiftUI
 struct ConversionOptionsSheetView: View {
     @Environment(\.carbon) private var theme
 
-    private static let tokenCount = 5
-
     let outputFormats: [OutputFormat]
     let bitrateOptions: [Int]
     let sampleRateOptions: [Int]
@@ -42,7 +40,7 @@ struct ConversionOptionsSheetView: View {
         _folderStructureMode = State(initialValue: initialSelection.folderStructureMode)
         _applyMode = State(initialValue: initialSelection.applyMode)
         _templatePreset = State(initialValue: initialSelection.templatePreset)
-        _tokenOrder = State(initialValue: Self.normalizeTokenOrder(initialSelection.tokenOrder))
+        _tokenOrder = State(initialValue: FolderTokenOrder.normalize(initialSelection.tokenOrder))
     }
 
     var body: some View {
@@ -70,19 +68,19 @@ struct ConversionOptionsSheetView: View {
         .frame(minWidth: 780, minHeight: 540)
         .background(theme.chassis)
         .onAppear {
-            tokenOrder = Self.normalizeTokenOrder(tokenOrder)
-            if isLosslessFormat(outputFormat) {
+            tokenOrder = FolderTokenOrder.normalize(tokenOrder)
+            if outputFormat.isLossless {
                 bitrateTag = -1
             }
         }
         .onChange(of: outputFormat) { newValue in
-            if isLosslessFormat(newValue) {
+            if newValue.isLossless {
                 bitrateTag = -1
             }
         }
         .onChange(of: templatePreset) { newValue in
             if newValue != .custom {
-                tokenOrder = Self.normalizeTokenOrder(newValue.defaultTokenOrder)
+                tokenOrder = FolderTokenOrder.normalize(newValue.defaultTokenOrder)
             }
         }
     }
@@ -146,7 +144,7 @@ struct ConversionOptionsSheetView: View {
                 field(title: "Format") {
                     Picker("Format", selection: $outputFormat) {
                         ForEach(outputFormats, id: \.self) { format in
-                            Text(displayName(for: format)).tag(format)
+                            Text(format.appDisplayName).tag(format)
                         }
                     }
                     .pickerStyle(.menu)
@@ -163,7 +161,7 @@ struct ConversionOptionsSheetView: View {
                     .pickerStyle(.menu)
                     .labelsHidden()
                     .tint(theme.orange)
-                    .disabled(isLosslessFormat(outputFormat))
+                    .disabled(outputFormat.isLossless)
                 }
 
                 field(title: "Sample Rate") {
@@ -246,8 +244,8 @@ struct ConversionOptionsSheetView: View {
                 if templatePreset == .custom {
                     field(title: "Token Order") {
                         HStack(spacing: 8) {
-                            ForEach(0..<Self.tokenCount, id: \.self) { index in
-                                Picker("Token \(index + 1)", selection: tokenBinding(at: index)) {
+                            ForEach(0..<FolderTokenOrder.tokenCount, id: \.self) { index in
+                                Picker("Token \(index + 1)", selection: FolderTokenOrder.tokenBinding(in: $tokenOrder, at: index)) {
                                     ForEach(FolderToken.allCases, id: \.self) { token in
                                         Text(token.title).tag(token)
                                     }
@@ -278,90 +276,8 @@ struct ConversionOptionsSheetView: View {
             folderStructureMode: folderStructureMode,
             applyMode: applyMode,
             templatePreset: templatePreset,
-            tokenOrder: Self.normalizeTokenOrder(tokenOrder)
+            tokenOrder: FolderTokenOrder.normalize(tokenOrder)
         )
-    }
-
-    private func tokenBinding(at index: Int) -> Binding<FolderToken> {
-        Binding(
-            get: { tokenValue(at: index) },
-            set: { newValue in
-                var next = tokenOrder
-                if next.count < Self.tokenCount {
-                    next.append(contentsOf: Array(repeating: .disabled, count: Self.tokenCount - next.count))
-                }
-                guard next.indices.contains(index) else {
-                    return
-                }
-                next[index] = newValue
-                tokenOrder = Self.normalizeTokenOrder(next)
-            }
-        )
-    }
-
-    private func tokenValue(at index: Int) -> FolderToken {
-        guard tokenOrder.indices.contains(index) else {
-            return .disabled
-        }
-        return tokenOrder[index]
-    }
-
-    private static func normalizeTokenOrder(_ order: [FolderToken]) -> [FolderToken] {
-        var normalized: [FolderToken] = []
-        var used: Set<FolderToken> = []
-        let nonDisabledPool: [FolderToken] = [.year, .albumArtist, .album, .compilation]
-
-        for token in order.prefix(tokenCount) {
-            if token == .disabled {
-                normalized.append(.disabled)
-                continue
-            }
-
-            if used.insert(token).inserted {
-                normalized.append(token)
-            } else if let fallback = nonDisabledPool.first(where: { !used.contains($0) }) {
-                normalized.append(fallback)
-                used.insert(fallback)
-            } else {
-                normalized.append(.disabled)
-            }
-        }
-
-        while normalized.count < tokenCount {
-            normalized.append(.disabled)
-        }
-
-        return normalized
-    }
-
-    private func isLosslessFormat(_ format: OutputFormat) -> Bool {
-        switch format {
-        case .alac, .flac, .wav, .aiff:
-            return true
-        case .mp3, .aac, .ogg, .opus:
-            return false
-        }
-    }
-
-    private func displayName(for format: OutputFormat) -> String {
-        switch format {
-        case .mp3:
-            return "MP3"
-        case .aac:
-            return "AAC (M4A)"
-        case .alac:
-            return "ALAC (M4A)"
-        case .flac:
-            return "FLAC"
-        case .wav:
-            return "WAV"
-        case .aiff:
-            return "AIFF"
-        case .ogg:
-            return "Ogg Vorbis"
-        case .opus:
-            return "Opus"
-        }
     }
 
     @ViewBuilder

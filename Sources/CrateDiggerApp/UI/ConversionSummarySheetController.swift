@@ -1,11 +1,10 @@
 import AppKit
 import SwiftUI
 
-final class ConversionSummarySheetController: NSViewController {
+final class ConversionSummarySheetController: ThemedSheetHostingController {
     var onClose: (() -> Void)?
 
     private let report: ConversionReport
-    private var hostingController: NSViewController?
 
     init(report: ConversionReport) {
         self.report = report
@@ -22,10 +21,6 @@ final class ConversionSummarySheetController: NSViewController {
             self?.onClose?()
         }
 
-        let themed = ThemedSheetWrapper { rootView }
-        let hostingController = NSHostingController(rootView: themed)
-        self.hostingController = hostingController
-        addChild(hostingController)
-        view = hostingController.view
+        setThemedRoot(rootView)
     }
 }

@@ -80,7 +80,6 @@ final class OutputPathPlannerTests: XCTestCase {
             )
 
             XCTAssertEqual(planned.destinationURL.lastPathComponent, "Track 01 (3).m4a")
-            XCTAssertEqual(planned.collisionCount, 3)
         }
     }
 }

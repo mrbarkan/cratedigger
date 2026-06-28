@@ -1,15 +1,6 @@
 import AppKit
 import SwiftUI
 
-/// Stops a click-drag inside the scrub track from moving the borderless window.
-private struct FooterDragGuard: NSViewRepresentable {
-    final class GuardView: NSView {
-        override var mouseDownCanMoveWindow: Bool { false }
-    }
-    func makeNSView(context: Context) -> NSView { GuardView() }
-    func updateNSView(_ nsView: NSView, context: Context) {}
-}
-
 /// Footer POSITION seek dial — same panel chrome as the volume control.
 /// Reflects playback progress and scrubs to seek (CrateDigger v6 `.f-seek`).
 struct PositionDial: View {
@@ -51,7 +42,7 @@ struct PositionDial: View {
 
             track
                 .frame(height: 22)
-                .background(FooterDragGuard())
+                .background(WindowDragGuard())
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)

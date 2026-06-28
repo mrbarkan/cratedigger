@@ -2,7 +2,7 @@ import AppKit
 import CrateDiggerCore
 import SwiftUI
 
-enum ConversionBatchScope: Int, CaseIterable {
+enum ConversionBatchScope: Int, Codable, CaseIterable {
     case selectedTracks
     case currentAlbum
     case allLoadedTracks
@@ -19,7 +19,7 @@ enum ConversionBatchScope: Int, CaseIterable {
     }
 }
 
-struct ConversionOptionsSelection {
+struct ConversionOptionsSelection: Codable {
     var batchScope: ConversionBatchScope
     var outputFormat: OutputFormat
     var bitrate: Int?
@@ -31,14 +31,13 @@ struct ConversionOptionsSelection {
     var tokenOrder: [FolderToken]
 }
 
-final class ConversionOptionsSheetController: NSViewController {
+final class ConversionOptionsSheetController: ThemedSheetHostingController {
     var onDecision: ((ConversionOptionsSelection?) -> Void)?
 
     private let outputFormats: [OutputFormat]
     private let bitrateOptions: [Int]
     private let sampleRateOptions: [Int]
     private let initialSelection: ConversionOptionsSelection
-    private var hostingController: NSViewController?
 
     init(
         initialSelection: ConversionOptionsSelection,
@@ -68,10 +67,6 @@ final class ConversionOptionsSheetController: NSViewController {
             self?.onDecision?(selection)
         }
 
-        let themed = ThemedSheetWrapper { rootView }
-        let hostingController = NSHostingController(rootView: themed)
-        self.hostingController = hostingController
-        addChild(hostingController)
-        view = hostingController.view
+        setThemedRoot(rootView)
     }
 }

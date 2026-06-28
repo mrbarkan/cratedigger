@@ -10,7 +10,6 @@ final class WindowFramePlannerTests: XCTestCase {
         let plan = WindowFramePlanner.plan(
             visibleFrame: visibleFrame,
             currentFrame: nil,
-            mode: .workspace,
             context: .initialLaunch
         )
 
@@ -30,7 +29,6 @@ final class WindowFramePlannerTests: XCTestCase {
         let plan = WindowFramePlanner.plan(
             visibleFrame: visibleFrame,
             currentFrame: CGRect(x: 50, y: 40, width: 1400, height: 920),
-            mode: .workspace,
             context: .initialLaunch
         )
 
@@ -47,7 +45,6 @@ final class WindowFramePlannerTests: XCTestCase {
         let plan = WindowFramePlanner.plan(
             visibleFrame: visibleFrame,
             currentFrame: currentFrame,
-            mode: .workspace,
             context: .clampToVisibleFrame
         )
 
@@ -66,7 +63,6 @@ final class WindowFramePlannerTests: XCTestCase {
         let plan = WindowFramePlanner.plan(
             visibleFrame: visibleFrame,
             currentFrame: currentFrame,
-            mode: .workspace,
             context: .clampToVisibleFrame
         )
 

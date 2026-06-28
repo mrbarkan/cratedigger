@@ -192,7 +192,7 @@ struct LibraryCleanupView: View {
                     }
                     Spacer()
                     KeyButton(style: .selected, action: {
-                        model.resolveDuplicates(keepBest: true)
+                        model.resolveDuplicates()
                     }) {
                         Text("MOVE DUPLICATES TO TRASH")
                             .font(CarbonFont.mono(9, weight: .bold))

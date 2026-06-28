@@ -12,11 +12,10 @@ struct AlbumFolderReviewRow: Identifiable, Hashable {
     }
 }
 
-final class AlbumFolderReviewSheetController: NSViewController {
+final class AlbumFolderReviewSheetController: ThemedSheetHostingController {
     var onDecision: (([AlbumFolderKey: String]?) -> Void)?
 
     private let rows: [AlbumFolderReviewRow]
-    private var hostingController: NSViewController?
 
     init(rows: [AlbumFolderReviewRow]) {
         self.rows = rows
@@ -33,10 +32,6 @@ final class AlbumFolderReviewSheetController: NSViewController {
             self?.onDecision?(reviewedFolders)
         }
 
-        let themed = ThemedSheetWrapper { rootView }
-        let hostingController = NSHostingController(rootView: themed)
-        self.hostingController = hostingController
-        addChild(hostingController)
-        view = hostingController.view
+        setThemedRoot(rootView)
     }
 }

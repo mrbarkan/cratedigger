@@ -1,14 +1,6 @@
 import AppKit
 import SwiftUI
 
-private struct WindowDragGuard: NSViewRepresentable {
-    final class GuardView: NSView {
-        override var mouseDownCanMoveWindow: Bool { false }
-    }
-    func makeNSView(context: Context) -> NSView { GuardView() }
-    func updateNSView(_ nsView: NSView, context: Context) {}
-}
-
 struct VolumeKnob: View {
     @Environment(\.carbon) private var theme
     @Binding var value: Double  // 0...1

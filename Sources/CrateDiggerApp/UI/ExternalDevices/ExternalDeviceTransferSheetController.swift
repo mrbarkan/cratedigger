@@ -7,12 +7,11 @@ struct ExternalDeviceTransferSelection {
     let batchScope: ConversionBatchScope
 }
 
-final class ExternalDeviceTransferSheetController: NSViewController {
+final class ExternalDeviceTransferSheetController: ThemedSheetHostingController {
     var onDecision: ((ExternalDeviceTransferSelection?) -> Void)?
 
     private let profiles: [ExternalDeviceProfile]
     private let initialScope: ConversionBatchScope
-    private var hostingController: NSViewController?
 
     init(
         profiles: [ExternalDeviceProfile],
@@ -36,11 +35,7 @@ final class ExternalDeviceTransferSheetController: NSViewController {
             self?.onDecision?(selection)
         }
 
-        let themed = ThemedSheetWrapper { rootView }
-        let hostingController = NSHostingController(rootView: themed)
-        self.hostingController = hostingController
-        addChild(hostingController)
-        view = hostingController.view
+        setThemedRoot(rootView)
     }
 }
 

@@ -7,19 +7,6 @@ public final class LibraryOrganizerService {
         self.fileManager = fileManager
     }
 
-    private func sanitizePathComponent(_ rawValue: String, fallback: String) -> String {
-        var value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        if value.isEmpty { return fallback }
-
-        value = value.replacingOccurrences(of: "/", with: "-")
-        value = value.replacingOccurrences(of: ":", with: "-")
-        value = value.replacingOccurrences(of: "\\", with: "-")
-
-        let collapsed = value.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-        let trimmed = collapsed.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? fallback : trimmed
-    }
-
     private func commonAncestorDirectory(for urls: [URL]) -> URL? {
         guard let first = urls.first else { return nil }
         var commonComponents = first.deletingLastPathComponent().standardizedFileURL.pathComponents
@@ -75,10 +62,10 @@ public final class LibraryOrganizerService {
                 let trackNum = track.metadata.trackNumber ?? track.track.trackNumber ?? 0
                 let title = track.metadata.title ?? track.track.title
 
-                let artistFolder = sanitizePathComponent(artist, fallback: "Unknown Artist")
-                
+                let artistFolder = PathComponentSanitizer.sanitize(artist, fallback: "Unknown Artist")
+
                 let albumFolderName: String
-                let sanitizedAlbum = sanitizePathComponent(album, fallback: "Unknown Album")
+                let sanitizedAlbum = PathComponentSanitizer.sanitize(album, fallback: "Unknown Album")
                 if !year.isEmpty {
                     albumFolderName = "[\(year)] - \(sanitizedAlbum)"
                 } else {
@@ -86,7 +73,7 @@ public final class LibraryOrganizerService {
                 }
 
                 let trackPrefix = trackNum > 0 ? String(format: "%02d - ", trackNum) : ""
-                let sanitizedTitle = sanitizePathComponent(title, fallback: "Track")
+                let sanitizedTitle = PathComponentSanitizer.sanitize(title, fallback: "Track")
                 let fileName = "\(trackPrefix)\(sanitizedTitle).\(fileExtension)"
 
                 targetDir = destinationFolder

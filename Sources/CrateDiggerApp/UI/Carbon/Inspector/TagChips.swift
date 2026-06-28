@@ -40,7 +40,6 @@ struct TagChips: View {
 private enum ChipStyle {
     case normal
     case dark
-    case orange
 }
 
 private struct ChipView: View {
@@ -67,7 +66,6 @@ private struct ChipView: View {
         switch style {
         case .normal: Rectangle().fill(theme.isDark ? Color(hex: 0x2A2A27) : theme.chassisHi)
         case .dark:   Rectangle().fill(theme.ink)
-        case .orange: Rectangle().fill(theme.orange)
         }
     }
 
@@ -75,7 +73,6 @@ private struct ChipView: View {
         switch style {
         case .normal: return theme.ink2
         case .dark:   return theme.isDark ? theme.orange : Color(hex: 0xF3F6EC)
-        case .orange: return .white
         }
     }
 
@@ -83,7 +80,6 @@ private struct ChipView: View {
         switch style {
         case .normal: return theme.isDark ? Color(hex: 0x3A3A37) : theme.chassisLo
         case .dark:   return Color.black
-        case .orange: return theme.orangeLo
         }
     }
 }

@@ -17,11 +17,6 @@ public enum CrateNameValidation: Equatable, Sendable {
         if case .ok(let name) = self { return name }
         return nil
     }
-
-    public var reason: String? {
-        if case .invalid(let reason) = self { return reason }
-        return nil
-    }
 }
 
 /// Validates names for user-renamed crates (`.cdlib`) and playlists (`.m3u`).

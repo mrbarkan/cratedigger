@@ -16,7 +16,6 @@ struct AlbumRow: View {
     var body: some View {
         ColumnRow(
             selected: selected,
-            isPlaying: isPlayingHere,
             onSelect: onSelect,
             onActivate: nil
         ) {
@@ -33,12 +32,12 @@ struct AlbumRow: View {
             } else {
                 Text(isPlayingHere ? "▸" : "·")
                     .font(CarbonFont.mono(9.5, weight: .medium))
-                    .foregroundStyle(leadColor)
+                    .foregroundStyle(theme.rowLeadColor(selected: selected, isPlaying: isPlayingHere))
             }
         } title: {
             Text(album.title)
                 .font(CarbonFont.sans(12.5, weight: .medium))
-                .foregroundStyle(titleColor)
+                .foregroundStyle(theme.rowTitleColor(selected: selected))
         } trail: {
             if let badge {
                 Text(badge)
@@ -53,7 +52,7 @@ struct AlbumRow: View {
             } else {
                 Text(yearLabel)
                     .font(CarbonFont.mono(9.5))
-                    .foregroundStyle(metaColor)
+                    .foregroundStyle(theme.rowMetaColor(selected: selected))
             }
         }
         .draggable("album::" + album.id)
@@ -62,18 +61,5 @@ struct AlbumRow: View {
     private var yearLabel: String {
         guard let year = album.year else { return "—" }
         return "'" + String(format: "%02d", year % 100)
-    }
-
-    private var leadColor: Color {
-        if selected { return theme.selectionInk }
-        if isPlayingHere { return theme.orange }
-        return theme.ink3
-    }
-
-    private var titleColor: Color { selected ? theme.selectionInk : theme.ink }
-    private var metaColor: Color  { selected ? selectedMetaColor : theme.ink3 }
-
-    private var selectedMetaColor: Color {
-        theme.selectionInk.opacity(0.72)
     }
 }

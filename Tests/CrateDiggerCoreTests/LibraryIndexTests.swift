@@ -117,7 +117,7 @@ final class LibraryIndexTests: XCTestCase {
 
         let mbq = try! XCTUnwrap(index.artists.first { $0.name == "Maggot Brain Quartet" })
         XCTAssertEqual(mbq.albums.count, 2)
-        XCTAssertEqual(mbq.trackCount, 3)
+        XCTAssertEqual(mbq.albums.reduce(0) { $0 + $1.trackCount }, 3)
         // Albums sorted by year asc
         XCTAssertEqual(mbq.albums.map(\.year), [1974, 1976])
         // Tracks within Loose Pages sorted by trackNumber

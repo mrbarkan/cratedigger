@@ -15,8 +15,6 @@ struct ConvertPatchBay: View {
     @State private var overwriteExisting: Bool = false
     @State private var ejectAfter: Bool = false
 
-    @State private var armPressing: Bool = false
-
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(spacing: CarbonLayout.patchBayRowGap) {
@@ -55,15 +53,7 @@ struct ConvertPatchBay: View {
                     )
                 )
             // Horizontal scan-line texture (1px every 28px)
-            Canvas { ctx, size in
-                var y: CGFloat = 0
-                while y < size.height {
-                    let line = Path(CGRect(x: 0, y: y, width: size.width, height: 1))
-                    ctx.fill(line, with: .color(Color.white.opacity(theme.isDark ? 0.012 : 0.04)))
-                    y += 28
-                }
-            }
-            .allowsHitTesting(false)
+            Scanlines(opacity: theme.isDark ? 0.012 : 0.04, spacing: 28)
         }
     }
 
@@ -197,7 +187,6 @@ struct ConvertPatchBay: View {
                 .frame(maxWidth: .infinity)
 
                 ArmGoButton(
-                    pressing: $armPressing,
                     enabled: armEnabled
                 ) {
                     if armEnabled {
@@ -369,12 +358,7 @@ struct ConvertPatchBay: View {
 
     private func formatHHMMSS(_ s: Double) -> String {
         guard s.isFinite, s > 0 else { return "—" }
-        let total = Int(s.rounded())
-        let h = total / 3600
-        let m = (total % 3600) / 60
-        let sec = total % 60
-        if h > 0 { return String(format: "%d:%02d:%02d", h, m, sec) }
-        return String(format: "%d:%02d", m, sec)
+        return s.asClockHMS
     }
 }
 
@@ -568,7 +552,6 @@ private struct ArmCancelButton: View {
 
 private struct ArmGoButton: View {
     @Environment(\.carbon) private var theme
-    @Binding var pressing: Bool
     let enabled: Bool
     let action: () -> Void
 
@@ -620,7 +603,6 @@ private struct ArmGoButton: View {
             DragGesture(minimumDistance: 0)
                 .onChanged { _ in
                     guard enabled, holdTimer == nil else { return }
-                    pressing = true
                     holdProgress = 0
                     let duration: Double = 0.7
                     let tickInterval: Double = 0.03
@@ -631,14 +613,12 @@ private struct ArmGoButton: View {
                                 timer.invalidate()
                                 holdTimer = nil
                                 holdProgress = 0
-                                pressing = false
                                 action()
                             }
                         }
                     }
                 }
                 .onEnded { _ in
-                    pressing = false
                     holdProgress = 0
                     holdTimer?.invalidate()
                     holdTimer = nil

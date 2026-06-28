@@ -24,22 +24,13 @@ public enum ExternalTool: String, CaseIterable, Sendable {
     }
 }
 
-public enum ExternalToolSource: String, Sendable {
-    case bundled
-    case explicitOverride = "explicit_override"
-    case environmentOverride = "environment_override"
-    case system
-}
-
 public struct ResolvedExternalTool: Sendable, Hashable {
     public let tool: ExternalTool
     public let url: URL
-    public let source: ExternalToolSource
 
-    public init(tool: ExternalTool, url: URL, source: ExternalToolSource) {
+    public init(tool: ExternalTool, url: URL) {
         self.tool = tool
         self.url = url
-        self.source = source
     }
 }
 
@@ -87,38 +78,38 @@ public struct ExternalToolLocator {
 
     public func resolveOptional(_ tool: ExternalTool, explicitOverride: URL? = nil) -> ResolvedExternalTool? {
         for candidate in candidates(for: tool, explicitOverride: explicitOverride) {
-            if fileManager.isExecutableFile(atPath: candidate.url.path) {
-                return ResolvedExternalTool(tool: tool, url: candidate.url, source: candidate.source)
+            if fileManager.isExecutableFile(atPath: candidate.path) {
+                return ResolvedExternalTool(tool: tool, url: candidate)
             }
         }
 
         return nil
     }
 
-    private func candidates(for tool: ExternalTool, explicitOverride: URL?) -> [(url: URL, source: ExternalToolSource)] {
-        var candidates: [(URL, ExternalToolSource)] = []
+    private func candidates(for tool: ExternalTool, explicitOverride: URL?) -> [URL] {
+        var candidates: [URL] = []
 
         if let resourceURL = bundle.resourceURL?.absoluteURL {
-            candidates.append((resourceURL.appendingPathComponent(tool.executableName), .bundled))
+            candidates.append(resourceURL.appendingPathComponent(tool.executableName))
         }
 
         if let explicitOverride {
-            candidates.append((explicitOverride, .explicitOverride))
+            candidates.append(explicitOverride)
         }
 
         if let overridePath = environment[tool.environmentOverrideKey], !overridePath.isEmpty {
-            candidates.append((URL(fileURLWithPath: overridePath), .environmentOverride))
+            candidates.append(URL(fileURLWithPath: overridePath))
         }
 
         for path in systemSearchPaths(for: tool) {
-            candidates.append((URL(fileURLWithPath: path), .system))
+            candidates.append(URL(fileURLWithPath: path))
         }
 
         return deduplicated(candidates)
     }
 
     private func searchedLocations(for tool: ExternalTool, explicitOverride: URL?) -> [String] {
-        candidates(for: tool, explicitOverride: explicitOverride).map { $0.url.path }
+        candidates(for: tool, explicitOverride: explicitOverride).map(\.path)
     }
 
     private func systemSearchPaths(for tool: ExternalTool) -> [String] {
@@ -135,12 +126,12 @@ public struct ExternalToolLocator {
         }
     }
 
-    private func deduplicated(_ candidates: [(URL, ExternalToolSource)]) -> [(URL, ExternalToolSource)] {
+    private func deduplicated(_ candidates: [URL]) -> [URL] {
         var seen: Set<String> = []
-        var unique: [(URL, ExternalToolSource)] = []
+        var unique: [URL] = []
 
         for candidate in candidates {
-            let key = candidate.0.standardizedFileURL.path
+            let key = candidate.standardizedFileURL.path
             if seen.insert(key).inserted {
                 unique.append(candidate)
             }

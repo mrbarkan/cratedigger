@@ -1,19 +1,19 @@
 import Foundation
 
 public enum MetadataNormalization {
-    private static let canonicalKeyGroups: [Set<String>] = [
-        Set(["title"]),
-        Set(["artist"]),
-        Set(["albumartist"]),
-        Set(["album"]),
-        Set(["compilation", "tcmp", "cpil"]),
-        Set(["tracknumber", "track", "trck"]),
-        Set(["tracktotal", "totaltracks"]),
-        Set(["discnumber", "disc", "disk", "tpos"]),
-        Set(["disctotal", "totaldiscs"]),
-        Set(["date", "year", "originalyear"]),
-        Set(["genre"]),
-        Set(["comment", "description"])
+    private static let canonicalKeys: Set<String> = [
+        "title",
+        "artist",
+        "albumartist",
+        "album",
+        "compilation", "tcmp", "cpil",
+        "tracknumber", "track", "trck",
+        "tracktotal", "totaltracks",
+        "discnumber", "disc", "disk", "tpos",
+        "disctotal", "totaldiscs",
+        "date", "year", "originalyear",
+        "genre",
+        "comment", "description"
     ]
 
     public static func normalize(
@@ -92,7 +92,6 @@ public enum MetadataNormalization {
     }
 
     private static func customTagPairs(from tags: [String: String]) -> [MetadataTagPair] {
-        let canonicalKeys = Set(canonicalKeyGroups.joined())
         var results: [MetadataTagPair] = []
         results.reserveCapacity(tags.count)
 

@@ -198,10 +198,6 @@ public final class PreferencesStore {
         }
     }
 
-    public func clearLastConversionSelection() {
-        defaults.removeObject(forKey: Key.lastConversionSelection)
-    }
-
     // MARK: - Custom tool paths
 
     public var customFFmpegPath: String? {
@@ -461,26 +457,6 @@ public final class PreferencesStore {
             ?? ""
         if !domain.isEmpty {
             defaults.removePersistentDomain(forName: domain)
-        }
-        for key in [
-            Key.windowFrame,
-            Key.libraryFolderBookmarks,
-            Key.outputDestinationBookmark,
-            Key.externalDeviceProfiles,
-            Key.lastConversionSelection,
-            Key.customFFmpegPath,
-            Key.customFFprobePath,
-            Key.oledView,
-            Key.shuffleEnabled,
-            Key.repeatMode,
-            Key.cdAnimationSpeed,
-            Key.managedLibraryFolderBookmark,
-            Key.copyOnImport,
-            Key.deleteOriginalsAfterCopy,
-            Key.organiseByAlbumArtist,
-            Key.keepLibraryOrganised
-        ] {
-            defaults.removeObject(forKey: key)
         }
     }
 

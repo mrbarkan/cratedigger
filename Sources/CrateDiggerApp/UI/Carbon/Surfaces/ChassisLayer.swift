@@ -6,15 +6,11 @@ struct ChassisLayer<Content: View>: View {
 
     var body: some View {
         ZStack {
-            backgroundFill
+            GoldenGateBackdrop()
             chassisPlate
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea()
-    }
-
-    private var backgroundFill: some View {
-        GoldenGateBackdrop()
     }
 
     private var chassisPlate: some View {

@@ -37,9 +37,9 @@ enum AppVersion {
     }
 
     /// Formats the About version pill, e.g. "VERSION 0.9.0 · BETA 1" or, once
-    /// `channel` is empty, "VERSION 1.0.0 (1)". Defaults to the compiled-in
-    /// values but accepts the live bundle values when packaged.
-    static func displayString(version: String = marketing, build: String = AppVersion.build) -> String {
+    /// `channel` is empty, "VERSION 1.0.0 (1)". Callers pass the live bundle
+    /// values (falling back to the compiled-in constants above).
+    static func displayString(version: String, build: String) -> String {
         channel.isEmpty
             ? "VERSION \(version) (\(build))"
             : "VERSION \(version) · \(channel) \(build)"

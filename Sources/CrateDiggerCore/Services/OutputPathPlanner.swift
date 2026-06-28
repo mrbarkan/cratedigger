@@ -102,14 +102,10 @@ public struct AlbumFolderKey: Hashable, Sendable, Codable {
 public struct PlannedOutputPath: Hashable, Sendable {
     public let destinationURL: URL
     public let relativeSubpath: String?
-    public let albumKey: AlbumFolderKey?
-    public let collisionCount: Int
 
-    public init(destinationURL: URL, relativeSubpath: String?, albumKey: AlbumFolderKey?, collisionCount: Int) {
+    public init(destinationURL: URL, relativeSubpath: String?) {
         self.destinationURL = destinationURL
         self.relativeSubpath = relativeSubpath
-        self.albumKey = albumKey
-        self.collisionCount = collisionCount
     }
 }
 
@@ -143,17 +139,9 @@ public struct OutputPathPlanner {
         for loadedTrack: LoadedTrack,
         templateConfig: FolderTemplateConfig
     ) -> String {
-        let tokenOrder: [FolderToken]
-        switch templateConfig.preset {
-        case .artistYearAlbum:
-            tokenOrder = [.albumArtist, .year, .album]
-        case .yearArtistAlbum:
-            tokenOrder = [.year, .albumArtist, .album]
-        case .artistAlbumYear:
-            tokenOrder = [.albumArtist, .album, .year]
-        case .custom:
-            tokenOrder = templateConfig.tokenOrder
-        }
+        let tokenOrder = (templateConfig.preset == .custom)
+            ? templateConfig.tokenOrder
+            : templateConfig.preset.defaultTokenOrder
 
         let components = tokenOrder.compactMap { tokenValue(for: $0, loadedTrack: loadedTrack) }
         let fallbackPath = [
@@ -213,7 +201,7 @@ public struct OutputPathPlanner {
         // Record Divider splits name each output by track number + title rather
         // than the (shared) source-side filename.
         let rawBaseName = baseNameOverride ?? track.fileURL.deletingPathExtension().lastPathComponent
-        let baseName = sanitizePathComponent(rawBaseName, fallback: "Track")
+        let baseName = PathComponentSanitizer.sanitize(rawBaseName, fallback: "Track")
         let outputExtension = normalizedFileExtension(destinationFileExtension) ?? preset.outputExtension
         let destinationURL = uniqueDestinationURL(
             in: outputDirectory,
@@ -222,12 +210,9 @@ public struct OutputPathPlanner {
             reservedDestinationPaths: reservedDestinationPaths
         )
 
-        let collisionCount = collisionCount(for: destinationURL, baseName: baseName, fileExtension: outputExtension)
         return PlannedOutputPath(
             destinationURL: destinationURL,
-            relativeSubpath: relativeSubpath,
-            albumKey: albumKey,
-            collisionCount: collisionCount
+            relativeSubpath: relativeSubpath
         )
     }
 
@@ -252,23 +237,6 @@ public struct OutputPathPlanner {
 
             attempt += 1
         }
-    }
-
-    private func collisionCount(for url: URL, baseName: String, fileExtension: String) -> Int {
-        let stem = url.deletingPathExtension().lastPathComponent
-        if stem == baseName {
-            return 1
-        }
-
-        let prefix = "\(baseName) ("
-        guard stem.hasPrefix(prefix),
-              stem.hasSuffix(")"),
-              let count = Int(stem.dropFirst(prefix.count).dropLast())
-        else {
-            return 1
-        }
-
-        return max(1, count)
     }
 
     private func normalizedFileExtension(_ rawValue: String?) -> String? {
@@ -301,7 +269,7 @@ public struct OutputPathPlanner {
 
     private func resolvedYearComponent(for loadedTrack: LoadedTrack) -> String {
         let value = loadedTrack.metadata.year.map(String.init) ?? ""
-        return sanitizePathComponent(value, fallback: unknownYear)
+        return PathComponentSanitizer.sanitize(value, fallback: unknownYear)
     }
 
     private func resolvedAlbumArtistComponent(for loadedTrack: LoadedTrack) -> String {
@@ -309,14 +277,14 @@ public struct OutputPathPlanner {
             ?? normalizedMetadataValue(loadedTrack.metadata.artist)
             ?? normalizedMetadataValue(loadedTrack.track.artist)
             ?? unknownArtist
-        return sanitizePathComponent(value, fallback: unknownArtist)
+        return PathComponentSanitizer.sanitize(value, fallback: unknownArtist)
     }
 
     private func resolvedAlbumComponent(for loadedTrack: LoadedTrack) -> String {
         let value = normalizedMetadataValue(loadedTrack.metadata.album)
             ?? normalizedMetadataValue(loadedTrack.track.album)
             ?? unknownAlbum
-        return sanitizePathComponent(value, fallback: unknownAlbum)
+        return PathComponentSanitizer.sanitize(value, fallback: unknownAlbum)
     }
 
     private func normalizedMetadataValue(_ value: String?) -> String? {
@@ -328,23 +296,10 @@ public struct OutputPathPlanner {
         return trimmed.isEmpty ? nil : trimmed
     }
 
-    private func sanitizePathComponent(_ rawValue: String, fallback: String) -> String {
-        var value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        if value.isEmpty { return fallback }
-
-        value = value.replacingOccurrences(of: "/", with: "-")
-        value = value.replacingOccurrences(of: ":", with: "-")
-        value = value.replacingOccurrences(of: "\\", with: "-")
-
-        let collapsed = value.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-        let trimmed = collapsed.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? fallback : trimmed
-    }
-
     private func sanitizeRelativeSubpath(_ rawPath: String, fallback: String) -> String {
         let components = rawPath
             .split(separator: "/")
-            .map { sanitizePathComponent(String($0), fallback: "") }
+            .map { PathComponentSanitizer.sanitize(String($0), fallback: "") }
             .filter { !$0.isEmpty }
 
         if components.isEmpty {
@@ -355,5 +310,23 @@ public struct OutputPathPlanner {
 
     private func standardizedPathKey(for url: URL) -> String {
         url.standardizedFileURL.resolvingSymlinksInPath().path
+    }
+}
+
+/// Sanitizes a single filesystem path component (strips path separators, collapses
+/// whitespace, falls back when empty). Shared by `OutputPathPlanner` and
+/// `LibraryOrganizerService` so both agree on how names become folders/files.
+enum PathComponentSanitizer {
+    static func sanitize(_ rawValue: String, fallback: String) -> String {
+        var value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        if value.isEmpty { return fallback }
+
+        value = value.replacingOccurrences(of: "/", with: "-")
+        value = value.replacingOccurrences(of: ":", with: "-")
+        value = value.replacingOccurrences(of: "\\", with: "-")
+
+        let collapsed = value.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+        let trimmed = collapsed.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? fallback : trimmed
     }
 }

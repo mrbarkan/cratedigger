@@ -52,23 +52,54 @@ struct OLEDDisplay: View {
                     endPoint: .bottomTrailing
                 )
             )
-            .overlay(
-                Canvas { context, size in
-                    var y: CGFloat = 0
-                    while y < size.height {
-                        let line = Path(CGRect(x: 0, y: y, width: size.width, height: 1))
-                        context.fill(line, with: .color(Color.white.opacity(0.018)))
-                        y += 3
-                    }
-                }
-                .allowsHitTesting(false)
-            )
+            .scanlines(opacity: 0.018)
             .shadow(color: Color.black.opacity(0.5), radius: 6, y: 4)
     }
 }
 
 private let oledForeground = Color(red: 0.961, green: 0.945, blue: 0.902)
 private let oledMuted = Color.white.opacity(0.55)
+
+/// A labelled spec cell in the OLED bottom strip (key / value / sub). Shared by
+/// the now-playing and radio now-playing readouts.
+private struct OLEDCell: View {
+    let key: String
+    let value: String
+    let sub: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(key.uppercased())
+                .font(CarbonFont.mono(7.5, weight: .semibold))
+                .tracking(2.2)
+                .foregroundStyle(oledForeground.opacity(0.45))
+            Text(value)
+                .font(CarbonFont.mono(13, weight: .bold))
+                .tracking(0.4)
+                .foregroundStyle(oledForeground)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Text(sub.uppercased())
+                .font(CarbonFont.mono(7.5, weight: .semibold))
+                .tracking(1.8)
+                .foregroundStyle(oledForeground.opacity(0.55))
+                .lineLimit(1)
+        }
+        .frame(minWidth: 80, alignment: .leading)
+        .padding(.trailing, 10)
+    }
+}
+
+/// Thin vertical separator between `OLEDCell`s.
+private struct OLEDCellDivider: View {
+    var body: some View {
+        Rectangle()
+            .fill(oledForeground.opacity(0.12))
+            .frame(width: 1)
+            .padding(.vertical, 2)
+            .padding(.horizontal, 4)
+    }
+}
 
 private struct NowPlayingView: View {
     @EnvironmentObject private var model: LibraryViewModel
@@ -108,8 +139,8 @@ private struct NowPlayingView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
                 NPReadout(
-                    elapsed: timeString(model.displayedCurrentTime),
-                    total: timeString(model.playbackDuration),
+                    elapsed: model.displayedCurrentTime.asClockPadded,
+                    total: model.playbackDuration.asClockPadded,
                     volume: model.playbackVolume
                 )
             }
@@ -120,15 +151,15 @@ private struct NowPlayingView: View {
             // Bottom spec cells row (transferred from Inspector)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(alignment: .center, spacing: 0) {
-                    cell(key: "Track", value: trackValue, sub: trackSubValue)
-                    divider
-                    cell(key: "Format", value: formatValue, sub: formatSubValue)
-                    divider
-                    cell(key: "Bitrate", value: bitrateValue, sub: bitrateSubValue)
-                    divider
-                    cell(key: "Sample", value: sampleValue, sub: sampleSubValue)
-                    divider
-                    cell(key: "Size", value: sizeValue, sub: "FILE SIZE")
+                    OLEDCell(key: "Track", value: trackValue, sub: trackSubValue)
+                    OLEDCellDivider()
+                    OLEDCell(key: "Format", value: formatValue, sub: formatSubValue)
+                    OLEDCellDivider()
+                    OLEDCell(key: "Bitrate", value: bitrateValue, sub: bitrateSubValue)
+                    OLEDCellDivider()
+                    OLEDCell(key: "Sample", value: sampleValue, sub: sampleSubValue)
+                    OLEDCellDivider()
+                    OLEDCell(key: "Size", value: sizeValue, sub: "FILE SIZE")
                 }
             }
             .padding(.top, 4)
@@ -141,12 +172,6 @@ private struct NowPlayingView: View {
         }
         .padding(.horizontal, CarbonLayout.oledPaddingH)
         .padding(.vertical, CarbonLayout.oledPaddingV)
-    }
-
-    private func timeString(_ seconds: Double) -> String {
-        guard seconds.isFinite else { return "00:00" }
-        let t = Int(seconds.rounded())
-        return String(format: "%02d:%02d", t / 60, t % 60)
     }
 
     private var themeValue: String {
@@ -256,36 +281,6 @@ private struct NowPlayingView: View {
         return "—"
     }
 
-    @ViewBuilder
-    private func cell(key: String, value: String, sub: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(key.uppercased())
-                .font(CarbonFont.mono(7.5, weight: .semibold))
-                .tracking(2.2)
-                .foregroundStyle(oledForeground.opacity(0.45))
-            Text(value)
-                .font(CarbonFont.mono(13, weight: .bold))
-                .tracking(0.4)
-                .foregroundStyle(oledForeground)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-            Text(sub.uppercased())
-                .font(CarbonFont.mono(7.5, weight: .semibold))
-                .tracking(1.8)
-                .foregroundStyle(oledForeground.opacity(0.55))
-                .lineLimit(1)
-        }
-        .frame(minWidth: 80, alignment: .leading)
-        .padding(.trailing, 10)
-    }
-
-    private var divider: some View {
-        Rectangle()
-            .fill(oledForeground.opacity(0.12))
-            .frame(width: 1)
-            .padding(.vertical, 2)
-            .padding(.horizontal, 4)
-    }
 }
 
 /// OLED Now-Playing for radio mode: ON AIR / STREAMING tag, stream title +
@@ -335,15 +330,15 @@ private struct RadioNowPlayingView: View {
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(alignment: .center, spacing: 0) {
-                    cell(key: "Source", value: "YouTube", sub: isLive ? "LIVE STREAM" : (stream?.kind.rawValue ?? "—"))
-                    divider
-                    cell(key: "Codec", value: codecValue, sub: codecSub)
-                    divider
-                    cell(key: "Bitrate", value: bitrateValue, sub: bitrateSub)
-                    divider
-                    cell(key: "Buffer", value: bufferValue, sub: bufferSub)
-                    divider
-                    cell(key: "Tuned In", value: tunedValue, sub: isLive ? "LISTENING" : "SOURCE")
+                    OLEDCell(key: "Source", value: "YouTube", sub: isLive ? "LIVE STREAM" : (stream?.kind.rawValue ?? "—"))
+                    OLEDCellDivider()
+                    OLEDCell(key: "Codec", value: codecValue, sub: codecSub)
+                    OLEDCellDivider()
+                    OLEDCell(key: "Bitrate", value: bitrateValue, sub: bitrateSub)
+                    OLEDCellDivider()
+                    OLEDCell(key: "Buffer", value: bufferValue, sub: bufferSub)
+                    OLEDCellDivider()
+                    OLEDCell(key: "Tuned In", value: tunedValue, sub: isLive ? "LISTENING" : "SOURCE")
                 }
             }
             .padding(.top, 4)
@@ -423,12 +418,12 @@ private struct RadioNowPlayingView: View {
         } else {
             VStack(alignment: .trailing, spacing: 8) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(timeString(model.displayedCurrentTime))
+                    Text(model.displayedCurrentTime.asClockPadded)
                         .font(CarbonFont.display(34))
                         .fontWeight(.thin)
                         .foregroundColor(oledForeground)
                         .shadow(color: theme.orange.opacity(0.28), radius: 7)
-                    Text("/ \(timeString(model.playbackDuration))")
+                    Text("/ \(model.playbackDuration.asClockPadded)")
                         .font(CarbonFont.mono(12, weight: .semibold))
                         .tracking(1.4)
                         .foregroundStyle(oledForeground.opacity(0.4))
@@ -443,12 +438,6 @@ private struct RadioNowPlayingView: View {
         return String(format: "%02d:%02d:%02d", t / 3600, (t % 3600) / 60, t % 60)
     }
 
-    private func timeString(_ seconds: Double) -> String {
-        guard seconds.isFinite else { return "00:00" }
-        let t = Int(seconds.rounded())
-        return String(format: "%02d:%02d", t / 60, t % 60)
-    }
-
     // Honest cell values: only the native engine knows the real container.
     private var codecValue: String { isNative ? (isLive ? "HLS" : "AAC") : "—" }
     private var codecSub: String { isNative ? (isLive ? "STREAM" : "M4A") : "EMBEDDED" }
@@ -461,36 +450,6 @@ private struct RadioNowPlayingView: View {
         return (stream?.kind.rawValue ?? "—").uppercased()
     }
 
-    @ViewBuilder
-    private func cell(key: String, value: String, sub: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(key.uppercased())
-                .font(CarbonFont.mono(7.5, weight: .semibold))
-                .tracking(2.2)
-                .foregroundStyle(oledForeground.opacity(0.45))
-            Text(value)
-                .font(CarbonFont.mono(13, weight: .bold))
-                .tracking(0.4)
-                .foregroundStyle(oledForeground)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-            Text(sub.uppercased())
-                .font(CarbonFont.mono(7.5, weight: .semibold))
-                .tracking(1.8)
-                .foregroundStyle(oledForeground.opacity(0.55))
-                .lineLimit(1)
-        }
-        .frame(minWidth: 80, alignment: .leading)
-        .padding(.trailing, 10)
-    }
-
-    private var divider: some View {
-        Rectangle()
-            .fill(oledForeground.opacity(0.12))
-            .frame(width: 1)
-            .padding(.vertical, 2)
-            .padding(.horizontal, 4)
-    }
 }
 
 private struct NowPlayingTag: View {

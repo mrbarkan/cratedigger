@@ -5,13 +5,9 @@ final class RecordMarkerTests: XCTestCase {
 
     // MARK: - RecordMarker
 
-    func testDurationAndContains() {
+    func testDuration() {
         let m = RecordMarker(startSeconds: 60, endSeconds: 240, title: "Echoes")
         XCTAssertEqual(m.durationSeconds, 180, accuracy: 0.001)
-        XCTAssertTrue(m.contains(60))
-        XCTAssertTrue(m.contains(239.9))
-        XCTAssertFalse(m.contains(240))   // end is exclusive
-        XCTAssertFalse(m.contains(59))
     }
 
     func testCodableRoundTrip() throws {

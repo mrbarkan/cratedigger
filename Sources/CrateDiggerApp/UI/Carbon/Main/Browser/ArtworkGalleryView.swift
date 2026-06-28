@@ -162,11 +162,6 @@ struct ArtworkGalleryView: View {
         }
     }
 
-    private func thumbnail(for album: Album) -> NSImage? {
-        guard let hash = album.artworkHash else { return nil }
-        return model.artworkService.generateThumbnail(artworkHash: hash, size: CGSize(width: 240, height: 240))
-    }
-
     // MARK: - Album Page (cover + tracks, in-pane, non-blocking)
 
     private func albumDetailView(_ album: Album) -> some View {
@@ -347,8 +342,7 @@ struct ArtworkGalleryView: View {
 
     private func formatDuration(_ seconds: Double) -> String {
         guard seconds.isFinite, seconds > 0 else { return "--:--" }
-        let total = Int(seconds.rounded())
-        return String(format: "%d:%02d", total / 60, total % 60)
+        return seconds.asClock
     }
 
     // MARK: - Online Artwork Search
@@ -546,24 +540,7 @@ struct GalleryAlbumCoverView: View {
                 localImage = nil
                 return
             }
-            localImage = await loadLocalThumbnail(from: coverURL, maxPixelSize: Int(size * 2))
+            localImage = await loadThumbnail(url: coverURL, maxPixelSize: Int(size * 2))
         }
-    }
-
-    private func loadLocalThumbnail(from url: URL, maxPixelSize: Int) async -> NSImage? {
-        let cgImage = await Task.detached(priority: .userInitiated) { () -> CGImage? in
-            let options: [CFString: Any] = [
-                kCGImageSourceCreateThumbnailFromImageAlways: true,
-                kCGImageSourceCreateThumbnailWithTransform: true,
-                kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
-            ]
-            guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
-                return nil
-            }
-            return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
-        }.value
-        
-        guard let cgImage = cgImage else { return nil }
-        return NSImage(cgImage: cgImage, size: .zero)
     }
 }

@@ -97,8 +97,6 @@ public struct ProcessCommandRunner: CommandRunning {
 public enum ConversionServiceError: Error {
     case presetNotFound(String)
     case ffmpegExecutableMissing(URL)
-    case buildFailure(String)
-    case executionFailure(String)
 }
 
 extension ConversionServiceError: LocalizedError {
@@ -108,10 +106,6 @@ extension ConversionServiceError: LocalizedError {
             return "The conversion preset '\(id)' could not be found."
         case .ffmpegExecutableMissing(let url):
             return "ffmpeg was not found at \(url.path)."
-        case .buildFailure(let message):
-            return "The conversion command could not be built: \(message)"
-        case .executionFailure(let message):
-            return "The conversion command failed: \(message)"
         }
     }
 }
@@ -172,13 +166,6 @@ public final class ConversionService {
         cancellationLock.unlock()
     }
 
-    /// Reset the cancellation flag for reuse of the service across batches.
-    public func resetCancellation() {
-        cancellationLock.lock()
-        _isCancelled = false
-        cancellationLock.unlock()
-    }
-
     private static let canonicalMetadataKeySet: Set<String> = [
         "title",
         "artist",
@@ -208,11 +195,9 @@ public final class ConversionService {
         ffmpegExecutableURL: URL? = nil,
         presets: [ConversionPreset] = ConversionPreset.defaultPresets,
         artworkPreparer: ArtworkPreparing = ArtworkService(),
-        metadataProbe: MetadataProbing? = nil,
         commandRunner: CommandRunning = ProcessCommandRunner(),
         fileManager: FileManager = .default
     ) throws {
-        _ = metadataProbe
         self.fileManager = fileManager
         self.artworkPreparer = artworkPreparer
         self.commandRunner = commandRunner
@@ -248,10 +233,6 @@ public final class ConversionService {
 
         queue.append(contentsOf: queuedItems)
         return queuedItems
-    }
-
-    public func clearQueue() {
-        queue.removeAll()
     }
 
     public func runQueuedJobs(maxConcurrentWorkers: Int? = nil) -> [ConversionExecutionResult] {
@@ -582,7 +563,7 @@ public final class ConversionService {
                 return
             }
             arguments.append(contentsOf: ["-metadata", "\(key)=\(value)"])
-            writtenNormalizedKeys.insert(normalizedMetadataKey(key))
+            writtenNormalizedKeys.insert(Self.normalizedMetadataKey(key))
         }
 
         if let trackNumber = metadata.trackNumber,
@@ -611,17 +592,13 @@ public final class ConversionService {
                 continue
             }
 
-            let normalizedKey = normalizedMetadataKey(trimmedKey)
+            let normalizedKey = Self.normalizedMetadataKey(trimmedKey)
             if Self.canonicalMetadataKeySet.contains(normalizedKey) || writtenNormalizedKeys.contains(normalizedKey) {
                 continue
             }
 
             add(trimmedKey, trimmedValue)
         }
-    }
-
-    private func normalizedMetadataKey(_ key: String) -> String {
-        Self.normalizedMetadataKey(key)
     }
 
     private static func normalizedMetadataKey(_ key: String) -> String {

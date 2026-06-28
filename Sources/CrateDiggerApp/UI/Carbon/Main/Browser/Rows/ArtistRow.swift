@@ -12,40 +12,21 @@ struct ArtistRow: View {
     var body: some View {
         ColumnRow(
             selected: selected,
-            isPlaying: isPlayingHere,
             onSelect: onSelect,
             onActivate: onPrimaryAction
         ) {
             Text(isPlayingHere ? "▸" : "·")
                 .font(CarbonFont.mono(9.5, weight: .medium))
-                .foregroundStyle(leadColor)
+                .foregroundStyle(theme.rowLeadColor(selected: selected, isPlaying: isPlayingHere))
         } title: {
             Text(artist.name)
                 .font(CarbonFont.sans(12.5, weight: .medium))
-                .foregroundStyle(titleColor)
+                .foregroundStyle(theme.rowTitleColor(selected: selected))
         } trail: {
             Text("\(artist.albumCount)")
                 .font(CarbonFont.mono(9.5))
-                .foregroundStyle(metaColor)
+                .foregroundStyle(theme.rowMetaColor(selected: selected))
         }
         .draggable("artist::" + artist.id)
-    }
-
-    private var leadColor: Color {
-        if selected { return theme.selectionInk }
-        if isPlayingHere { return theme.orange }
-        return theme.ink3
-    }
-
-    private var titleColor: Color {
-        selected ? theme.selectionInk : theme.ink
-    }
-
-    private var metaColor: Color {
-        selected ? selectedMetaColor : theme.ink3
-    }
-
-    private var selectedMetaColor: Color {
-        theme.selectionInk.opacity(0.72)
     }
 }

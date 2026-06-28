@@ -72,7 +72,7 @@ public struct ExternalDeviceTransferSettings: Codable, Hashable, Sendable {
             return nil
         }
 
-        let bitrate = Self.isLossless(outputFormat) ? nil : bitrateKbps
+        let bitrate = outputFormat.isLossless ? nil : bitrateKbps
         return ConversionPreset(
             id: "external_device_\(outputFormat.rawValue)_\(bitrate ?? 0)",
             name: "External Device \(outputFormat.fileExtension.uppercased())",
@@ -100,15 +100,6 @@ public struct ExternalDeviceTransferSettings: Codable, Hashable, Sendable {
             }
         }
         return outputFormat == .mp3 ? .id3v23 : .auto
-    }
-
-    private static func isLossless(_ format: OutputFormat) -> Bool {
-        switch format {
-        case .alac, .flac, .wav, .aiff:
-            return true
-        case .mp3, .aac, .ogg, .opus:
-            return false
-        }
     }
 }
 

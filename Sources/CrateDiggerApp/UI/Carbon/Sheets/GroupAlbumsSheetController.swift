@@ -28,16 +28,16 @@ final class GroupAlbumsSheetController: NSViewController {
 
     private var rows: [VersionRow]
     private var primaryKey: AlbumFolderKey
-    private let nameField = NSTextField()
-    private let yearField = NSTextField()
+    private let initialName: String
+    private let initialYear: String
     private var hostingController: NSViewController?
 
     init(name: String, originalYear: Int?, rows: [VersionRow], primaryKey: AlbumFolderKey) {
         self.rows = rows
         self.primaryKey = primaryKey
+        self.initialName = name
+        self.initialYear = originalYear.map(String.init) ?? ""
         super.init(nibName: nil, bundle: nil)
-        nameField.stringValue = name
-        yearField.stringValue = originalYear.map(String.init) ?? ""
     }
 
     @available(*, unavailable)
@@ -45,8 +45,8 @@ final class GroupAlbumsSheetController: NSViewController {
 
     override func loadView() {
         let rootView = GroupAlbumsSheetView(
-            initialName: nameField.stringValue,
-            initialYear: yearField.stringValue,
+            initialName: initialName,
+            initialYear: initialYear,
             rows: rows,
             initialPrimaryKey: primaryKey
         ) { [weak self] result in

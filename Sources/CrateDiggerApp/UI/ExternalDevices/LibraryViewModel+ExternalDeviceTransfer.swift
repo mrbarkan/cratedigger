@@ -158,59 +158,20 @@ extension LibraryViewModel {
         destinationRoot: URL,
         sourceTracks: [LoadedTrack]
     ) -> AppAlert? {
-        if let writability = probeTransferDestinationWritability(destinationRoot) {
+        if let writability = probeDestinationWritability(
+            destinationRoot,
+            createFailureTitle: "Can't write to device",
+            createFailureMessage: "CrateDigger could not create \(destinationRoot.path). Confirm the device is mounted and writable.",
+            notWritableTitle: "Device isn't writable",
+            notWritableMessage: "CrateDigger cannot write into \(destinationRoot.path). Check the device lock switch, cable mode, or macOS Files & Folders access.",
+            probeFilenamePrefix: ".cratedigger-device-probe-"
+        ) {
             return writability
         }
-        return probeTransferFreeDiskSpace(destinationRoot, sourceTracks: sourceTracks)
-    }
-
-    private func probeTransferDestinationWritability(_ destinationRoot: URL) -> AppAlert? {
-        let fileManager = FileManager.default
-        if !fileManager.fileExists(atPath: destinationRoot.path) {
-            do {
-                try fileManager.createDirectory(at: destinationRoot, withIntermediateDirectories: true)
-            } catch {
-                return .error(
-                    title: "Can't write to device",
-                    message: "CrateDigger could not create \(destinationRoot.path). Confirm the device is mounted and writable."
-                )
-            }
-        }
-
-        let probe = destinationRoot.appendingPathComponent(".cratedigger-device-probe-\(UUID().uuidString)")
-        do {
-            try Data().write(to: probe)
-            try? fileManager.removeItem(at: probe)
-            return nil
-        } catch {
-            return .error(
-                title: "Device isn't writable",
-                message: "CrateDigger cannot write into \(destinationRoot.path). Check the device lock switch, cable mode, or macOS Files & Folders access."
-            )
-        }
-    }
-
-    private func probeTransferFreeDiskSpace(_ destinationRoot: URL, sourceTracks: [LoadedTrack]) -> AppAlert? {
-        let totalSourceBytes: Int64 = sourceTracks.reduce(0) { running, track in
-            let attrs = try? FileManager.default.attributesOfItem(atPath: track.track.fileURL.path)
-            let size = (attrs?[.size] as? NSNumber)?.int64Value ?? 0
-            return running + size
-        }
-        guard totalSourceBytes > 0 else { return nil }
-
-        let values = try? destinationRoot.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey, .volumeAvailableCapacityKey])
-        let available = (values?.volumeAvailableCapacityForImportantUsage)
-            ?? Int64(values?.volumeAvailableCapacity ?? 0)
-        guard available > 0 else { return nil }
-
-        let estimatedNeed = Int64(Double(totalSourceBytes) * 1.10)
-        guard available < estimatedNeed else { return nil }
-
-        let needGB = Double(estimatedNeed) / 1_000_000_000
-        let availGB = Double(available) / 1_000_000_000
-        return .error(
-            title: "Not enough free space",
-            message: String(format: "This transfer needs ~%.1f GB but the device has %.1f GB available.", needGB, availGB)
+        return probeFreeDiskSpace(
+            destinationRoot,
+            sourceTracks: sourceTracks,
+            insufficientSpaceMessageFormat: "This transfer needs ~%.1f GB but the device has %.1f GB available."
         )
     }
 

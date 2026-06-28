@@ -47,7 +47,6 @@ private struct PreferencesView: View {
 }
 
 private struct GeneralPreferencesView: View {
-    @State private var outputFolderPath: String = ""
     @State private var libraryDisplayPath: String = "Not set"
     @State private var libraryFolderExists: Bool = true
     @State private var cratesDisplayPath: String = "Not set (Defaulting to App Support)"
@@ -211,8 +210,6 @@ private struct GeneralPreferencesView: View {
     }
 
     private func refresh() {
-        outputFolderPath = displayPath
-        
         let libURL = currentLibraryURL
         libraryDisplayPath = libURL?.path ?? "Not set"
         if let url = libURL {
@@ -355,7 +352,7 @@ private struct AdvancedPreferencesView: View {
                         TextField("Auto-detect", text: $ffmpegPath, onCommit: persistFFmpeg)
                             .textFieldStyle(.roundedBorder)
                             .frame(maxWidth: .infinity)
-                        Button("Browse…") { browseFor(\.ffmpegPath) }
+                        Button("Browse…") { browseFor(.ffmpeg) }
                     }
                 }
                 LabeledContent("ffprobe path") {
@@ -363,7 +360,7 @@ private struct AdvancedPreferencesView: View {
                         TextField("Auto-detect", text: $ffprobePath, onCommit: persistFFprobe)
                             .textFieldStyle(.roundedBorder)
                             .frame(maxWidth: .infinity)
-                        Button("Browse…") { browseFor(\.ffprobePath) }
+                        Button("Browse…") { browseFor(.ffprobe) }
                     }
                 }
                 Text("Leave blank to use the bundled binaries (or system PATH for development builds). Restart the app after changing.")
@@ -398,9 +395,9 @@ private struct AdvancedPreferencesView: View {
         }
     }
 
-    private struct PathBindings {
-        var ffmpegPath: String
-        var ffprobePath: String
+    private enum ToolPath {
+        case ffmpeg
+        case ffprobe
     }
 
     private func refresh() {
@@ -418,7 +415,7 @@ private struct AdvancedPreferencesView: View {
         PreferencesStore.shared.customFFprobePath = ffprobePath.isEmpty ? nil : ffprobePath
     }
 
-    private func browseFor(_ keyPath: WritableKeyPath<PathBindings, String>) {
+    private func browseFor(_ tool: ToolPath) {
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
@@ -426,20 +423,19 @@ private struct AdvancedPreferencesView: View {
         panel.treatsFilePackagesAsDirectories = true
         panel.title = "Locate executable"
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        if keyPath == \PathBindings.ffmpegPath {
+        switch tool {
+        case .ffmpeg:
             ffmpegPath = url.path
             persistFFmpeg()
-        } else if keyPath == \PathBindings.ffprobePath {
+        case .ffprobe:
             ffprobePath = url.path
             persistFFprobe()
         }
     }
 
     private func openConsole() {
-        let url = URL(string: "x-apple.systempreferences:com.apple.preference.notifications") ?? URL(fileURLWithPath: "/System/Applications/Utilities/Console.app")
-        // Easier: open Console.app directly. The user filters from there.
+        // Open Console.app directly; the user filters to com.cratedigger.app from there.
         NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Console.app"))
-        _ = url // silence unused
     }
 
     private func resetAll() {

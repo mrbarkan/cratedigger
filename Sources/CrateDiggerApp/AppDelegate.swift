@@ -192,11 +192,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         guard let raw = sender.representedObject as? String else { return }
         prefs.streamEngine = raw
         mainWindowController?.streamEnginePreferenceChanged()
-        if let menu = sender.menu {
-            for item in menu.items where item.action == #selector(setStreamEngine(_:)) {
-                item.state = (item.representedObject as? String == raw) ? .on : .off
-            }
-        }
+        // The checkmark is set in validateMenuItem when the menu next opens.
     }
 
     @objc private func setYtDlpPath(_ sender: Any?) {
@@ -295,22 +291,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         else { return }
         UserDefaults.standard.set(mode.rawValue, forKey: AppearanceMode.userDefaultsKey)
         NotificationCenter.default.post(name: AppearanceMode.didChangeNotification, object: nil)
-        if let appearanceMenu = NSApp.mainMenu?.item(at: 0)?.submenu?
-            .items.first(where: { $0.title == "Appearance" })?.submenu {
-            for item in appearanceMenu.items {
-                if let raw = item.representedObject as? String {
-                    item.state = (raw == mode.rawValue) ? .on : .off
-                }
-            }
-        }
+        // The checkmark is set in validateMenuItem when the menu next opens.
     }
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         switch menuItem.action {
         case #selector(setAppearanceMode(_:)):
-            let raw = UserDefaults.standard.string(forKey: AppearanceMode.userDefaultsKey)
-                ?? AppearanceMode.system.rawValue
-            menuItem.state = (menuItem.representedObject as? String == raw) ? .on : .off
+            menuItem.state = (menuItem.representedObject as? String == AppearanceMode.current.rawValue) ? .on : .off
             return true
         case #selector(selectOLEDView(_:)):
             if let raw = menuItem.representedObject as? String,
@@ -344,12 +331,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         default:
             return true
         }
-    }
-
-    private func currentAppearanceMode() -> AppearanceMode {
-        let raw = UserDefaults.standard.string(forKey: AppearanceMode.userDefaultsKey)
-            ?? AppearanceMode.system.rawValue
-        return AppearanceMode(rawValue: raw) ?? .system
     }
 
     private func rebuildRecentFoldersCache() {
@@ -400,7 +381,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         appMenu.addItem(.separator())
         let appearanceMenuItem = NSMenuItem(title: "Appearance", action: nil, keyEquivalent: "")
         let appearanceMenu = NSMenu(title: "Appearance")
-        let currentMode = currentAppearanceMode()
+        let currentMode = AppearanceMode.current
         for mode in AppearanceMode.allCases {
             let item = NSMenuItem(title: mode.menuTitle, action: #selector(setAppearanceMode(_:)), keyEquivalent: "")
             item.target = self

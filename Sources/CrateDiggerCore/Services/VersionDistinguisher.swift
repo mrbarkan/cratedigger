@@ -51,10 +51,7 @@ public enum VersionDistinguisher {
         CharacterSet(charactersIn: " ()[]{}-–—:·,/|").union(.whitespacesAndNewlines)
 
     private static func longestCommonPrefix(_ a: String, _ b: String) -> String {
-        let aChars = Array(a), bChars = Array(b)
-        var i = 0
-        while i < aChars.count, i < bChars.count, aChars[i] == bChars[i] { i += 1 }
-        return String(aChars[0..<i])
+        String(zip(a, b).prefix { $0.0 == $0.1 }.map(\.0))
     }
 
     /// The portion of `title` following the common `base`, stripped of wrapping

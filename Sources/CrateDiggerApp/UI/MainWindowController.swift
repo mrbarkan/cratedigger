@@ -12,7 +12,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     init() {
         let styleMask: NSWindow.StyleMask = [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView]
         let window = NSWindow(
-            contentRect: NSRect(origin: .zero, size: WindowLayoutMode.workspace.targetSize),
+            contentRect: NSRect(origin: .zero, size: WindowFramePlanner.targetSize),
             styleMask: styleMask,
             backing: .buffered,
             defer: false
@@ -255,9 +255,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     private func applyAppearancePreference() {
         guard let window else { return }
-        let raw = UserDefaults.standard.string(forKey: AppearanceMode.userDefaultsKey)
-        let mode = AppearanceMode(rawValue: raw ?? AppearanceMode.system.rawValue) ?? .system
-        switch mode {
+        switch AppearanceMode.current {
         case .light: window.appearance = NSAppearance(named: .aqua)
         case .dark:  window.appearance = NSAppearance(named: .darkAqua)
         case .system: window.appearance = nil
@@ -283,7 +281,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let plan = WindowFramePlanner.plan(
             visibleFrame: visibleFrame,
             currentFrame: baselineFrame,
-            mode: .workspace,
             context: context
         )
 

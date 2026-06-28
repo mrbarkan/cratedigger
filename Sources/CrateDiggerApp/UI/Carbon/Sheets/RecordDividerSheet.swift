@@ -142,10 +142,10 @@ struct RecordDividerSheet: View {
                 .frame(minWidth: 120)
                 .opacity(row.keep ? 1 : 0.45)
 
-            edgeStepper(label: timeString(row.startSeconds), id: row.id, isStart: true)
-            edgeStepper(label: timeString(row.endSeconds), id: row.id, isStart: false)
+            edgeStepper(label: row.startSeconds.asClockHMS, id: row.id, isStart: true)
+            edgeStepper(label: row.endSeconds.asClockHMS, id: row.id, isStart: false)
 
-            Text(durString(row.durationSeconds))
+            Text(row.durationSeconds.asClock)
                 .font(CarbonFont.mono(8.5))
                 .foregroundStyle(theme.ink4)
                 .frame(width: 48, alignment: .trailing)
@@ -203,16 +203,4 @@ struct RecordDividerSheet: View {
         }
     }
 
-    // MARK: - Formatting
-
-    private func timeString(_ seconds: Double) -> String {
-        let t = Int(seconds.rounded())
-        let h = t / 3600, m = (t % 3600) / 60, s = t % 60
-        return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%d:%02d", m, s)
-    }
-
-    private func durString(_ seconds: Double) -> String {
-        let t = Int(seconds.rounded())
-        return String(format: "%d:%02d", t / 60, t % 60)
-    }
 }

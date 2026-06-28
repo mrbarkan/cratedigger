@@ -69,31 +69,6 @@ public struct ProbedMetadata: Codable, Hashable, Sendable {
         self.streams = streams
     }
 
-    public var hasAttachedArtworkStream: Bool {
-        streams.contains { stream in
-            let attachedPicValue = stream.dispositions["attached_pic"] ?? 0
-            if attachedPicValue == 1 {
-                return true
-            }
-
-            if stream.codecType == "video",
-               let comment = stream.tags["comment"]?.lowercased(),
-               comment.contains("cover") {
-                return true
-            }
-
-            return false
-        }
-    }
-
-    public var allStreamTags: [[String: String]] {
-        streams.map(\.tags)
-    }
-
-    public var allStreamDispositions: [[String: Int]] {
-        streams.map(\.dispositions)
-    }
-
     public var primaryAudioStream: ProbedStreamMetadata? {
         streams.first { $0.codecType == "audio" }
     }

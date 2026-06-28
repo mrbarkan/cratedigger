@@ -5,12 +5,12 @@ extension OutputFormat {
     var appDisplayName: String {
         switch self {
         case .mp3:  return "MP3"
-        case .aac:  return "AAC (.m4a)"
-        case .alac: return "ALAC (.m4a)"
+        case .aac:  return "AAC (M4A)"
+        case .alac: return "ALAC (M4A)"
         case .flac: return "FLAC"
         case .wav:  return "WAV"
         case .aiff: return "AIFF"
-        case .ogg:  return "OGG"
+        case .ogg:  return "Ogg Vorbis"
         case .opus: return "Opus"
         }
     }
