@@ -10,9 +10,9 @@ import Foundation
 /// are only the fallback the About pill uses when no bundle plist is present.
 enum AppVersion {
     /// Mirror of `CFBundleShortVersionString`.
-    static let marketing = "0.9.0"
+    static let marketing = "0.9.2"
     /// Mirror of `CFBundleVersion`.
-    static let build = "1"
+    static let build = "3"
     /// Release-channel label shown in About ("BETA", "RC", …). Empty for a
     /// final release — at which point the pill reverts to "VERSION x (build)".
     static let channel = "BETA"
@@ -22,8 +22,8 @@ enum AppVersion {
     static let betaExpiry: Date? = {
         var components = DateComponents()
         components.year = 2026
-        components.month = 7
-        components.day = 24
+        components.month = 12
+        components.day = 31
         components.hour = 23
         components.minute = 59
         components.second = 59

@@ -1,46 +1,46 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleDevelopmentRegion</key>
-    <string>en</string>
-    <key>CFBundleDisplayName</key>
-    <string>CrateDigger</string>
-    <key>CFBundleExecutable</key>
-    <string>CrateDiggerApp</string>
-    <key>CFBundleIconFile</key>
-    <string>CrateDigger</string>
-    <key>CFBundleIdentifier</key>
-    <string>com.cratedigger.app</string>
-    <key>CFBundleInfoDictionaryVersion</key>
-    <string>6.0</string>
-    <key>CFBundleName</key>
-    <string>CrateDigger</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>CFBundleShortVersionString</key>
-    <string>0.9.1</string>
-    <key>CFBundleVersion</key>
-    <string>2</string>
-    <key>LSApplicationCategoryType</key>
-    <string>public.app-category.music</string>
-    <key>LSMinimumSystemVersion</key>
-    <string>13.0</string>
-    <key>LSApplicationSupportsSecureRestorableState</key>
-    <true/>
-    <key>NSHighResolutionCapable</key>
-    <true/>
-    <key>NSPrincipalClass</key>
-    <string>NSApplication</string>
-    <key>NSHumanReadableCopyright</key>
-    <string>Copyright © 2026 Mr. Barkan. MIT-licensed.</string>
-    <key>NSDownloadsFolderUsageDescription</key>
-    <string>CrateDigger needs access to your Downloads folder to read music files you've placed there and to write converted files when you choose Downloads as the destination.</string>
-    <key>NSDesktopFolderUsageDescription</key>
-    <string>CrateDigger needs access to your Desktop to read music folders kept there and to save converted files when you point a conversion at the Desktop.</string>
-    <key>NSDocumentsFolderUsageDescription</key>
-    <string>CrateDigger needs access to your Documents folder to read music libraries and write converted files when you select Documents as the destination.</string>
-    <key>NSRemovableVolumesUsageDescription</key>
-    <string>CrateDigger needs access to removable volumes (USB drives, SD cards) to scan music folders and write converted files when you point a conversion at one.</string>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>CrateDigger</string>
+	<key>CFBundleExecutable</key>
+	<string>CrateDiggerApp</string>
+	<key>CFBundleIconFile</key>
+	<string>CrateDigger</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.cratedigger.app</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>CrateDigger</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.9.2</string>
+	<key>CFBundleVersion</key>
+	<string>3</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.music</string>
+	<key>LSApplicationSupportsSecureRestorableState</key>
+	<true/>
+	<key>LSMinimumSystemVersion</key>
+	<string>13.0</string>
+	<key>NSDesktopFolderUsageDescription</key>
+	<string>CrateDigger needs access to your Desktop to read music folders kept there and to save converted files when you point a conversion at the Desktop.</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>CrateDigger needs access to your Documents folder to read music libraries and write converted files when you select Documents as the destination.</string>
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>CrateDigger needs access to your Downloads folder to read music files you've placed there and to write converted files when you choose Downloads as the destination.</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>Copyright © 2026 Mr. Barkan. MIT-licensed.</string>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+	<key>NSRemovableVolumesUsageDescription</key>
+	<string>CrateDigger needs access to removable volumes (USB drives, SD cards) to scan music folders and write converted files when you point a conversion at one.</string>
 </dict>
 </plist>
