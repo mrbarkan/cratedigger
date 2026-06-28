@@ -1887,15 +1887,17 @@ final class LibraryViewModel: ObservableObject {
     }
 
     func refreshAvailableCrates() {
-        // The set of crates (or the active folder) is changing — drop the cache
+        // The set of crates (or the active folder) is changing — drop the caches
         // so stale/renamed/removed crates can't survive. Rare, non-hot path.
         crateTracksCache.removeAll()
+        trackStore = nil   // rebuilt lazily for the (possibly new) folder
+        migrateLegacyCratesIfNeeded()
         let fm = FileManager.default
         let cratesDir = cratesDirectoryURL
         do {
             let contents = try fm.contentsOfDirectory(at: cratesDir, includingPropertiesForKeys: nil)
             self.availableCrates = contents
-                .filter { $0.pathExtension == "cdlib" }
+                .filter { $0.pathExtension == "cdcrate" }
                 .map { $0.deletingPathExtension().lastPathComponent }
                 .sorted()
             
@@ -1927,7 +1929,7 @@ final class LibraryViewModel: ObservableObject {
     }
 
     func deleteCrate(name: String) {
-        let fileURL = cratesDirectoryURL.appendingPathComponent("\(name).cdlib")
+        let fileURL = cratesDirectoryURL.appendingPathComponent("\(name).cdcrate")
         try? FileManager.default.removeItem(at: fileURL)
         refreshAvailableCrates()
         if case .localCrate(let currentName) = currentSource, currentName == name {
@@ -1938,28 +1940,49 @@ final class LibraryViewModel: ObservableObject {
         }
     }
 
-    /// Decoded crate track lists, keyed by crate name. A `.cdlib` is JSON with
-    /// base64-embedded artwork, so decoding one at 14k tracks costs hundreds of
-    /// MB of work; without this cache every source switch / count refresh
-    /// re-decoded the whole library on the main actor. Kept coherent by
-    /// write-through in saveCrateTracks and a full clear in refreshAvailableCrates
-    /// (the only paths that change which files exist / which folder is active).
+    /// Per-crate resolved track lists, keyed by crate name. Avoids re-reading a
+    /// crate's membership file and re-resolving it against the shared TrackStore
+    /// on repeated source switches. Cleared whenever the store is mutated
+    /// (saveCrateTracks) or the folder changes (refreshAvailableCrates), so a
+    /// track shared by several crates can't go stale after an edit.
     private var crateTracksCache: [String: [LoadedTrack]] = [:]
+
+    /// The shared, deduplicated track store backing every crate. It lives inside
+    /// the crates folder as `library.cdtracks`, so it's rebuilt when that folder
+    /// changes. Crates only store membership (paths), not track copies.
+    private var trackStore: TrackStore?
+    private var trackStoreFolder: URL?
+
+    private func currentTrackStore() -> TrackStore {
+        let folder = cratesDirectoryURL
+        if let store = trackStore, trackStoreFolder?.path == folder.path {
+            return store
+        }
+        let store = TrackStore(fileURL: folder.appendingPathComponent("library.cdtracks"))
+        trackStore = store
+        trackStoreFolder = folder
+        return store
+    }
+
+    /// A crate is a membership list of standardized file paths into the store.
+    private func crateMembership(name: String) -> [String] {
+        let url = cratesDirectoryURL.appendingPathComponent("\(name).cdcrate")
+        guard let data = try? Data(contentsOf: url),
+              let paths = try? JSONDecoder().decode([String].self, from: data) else { return [] }
+        return paths
+    }
 
     func loadCrateTracks(name: String) -> [LoadedTrack] {
         if let cached = crateTracksCache[name] { return cached }
-        let fileURL = cratesDirectoryURL.appendingPathComponent("\(name).cdlib")
-        guard let data = try? Data(contentsOf: fileURL) else { return [] }
-        let tracks = (try? JSONDecoder().decode([LoadedTrack].self, from: data)) ?? []
-        ingestArtwork(from: tracks)
+        let tracks = currentTrackStore().tracks(paths: crateMembership(name: name))
         crateTracksCache[name] = tracks
         return tracks
     }
 
-    /// Move any artwork bytes still embedded in an older `.cdlib` into the
-    /// content-addressed `ArtworkStore`, so they survive once we stop persisting
-    /// them inline, and so cold-launch thumbnails resolve by hash. Write-once by
-    /// hash, so re-running over already-stored art is cheap.
+    /// Move any artwork bytes embedded in a legacy `.cdlib` into the
+    /// content-addressed `ArtworkStore`, so they survive the format change and
+    /// cold-launch thumbnails resolve by hash. Write-once by hash. Used by the
+    /// migration and by scan import.
     private func ingestArtwork(from tracks: [LoadedTrack]) {
         for track in tracks {
             if let art = track.metadata.artwork, !art.data.isEmpty {
@@ -1969,16 +1992,52 @@ final class LibraryViewModel: ObservableObject {
     }
 
     func saveCrateTracks(_ tracks: [LoadedTrack], name: String) {
-        let fileURL = cratesDirectoryURL.appendingPathComponent("\(name).cdlib")
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = .prettyPrinted
-        do {
-            let data = try encoder.encode(tracks)
-            try data.write(to: fileURL, options: .atomic)
-            crateTracksCache[name] = tracks
-        } catch {
-            AppLog.library.warning("Failed to save crate '\(name)': \(error.localizedDescription)")
+        let store = currentTrackStore()
+        for track in tracks { store.upsert(track) }
+        store.save()
+        let paths = tracks.map { TrackStore.key(for: $0.track.fileURL) }
+        let url = cratesDirectoryURL.appendingPathComponent("\(name).cdcrate")
+        if let data = try? JSONEncoder().encode(paths) {
+            try? data.write(to: url, options: .atomic)
         }
+        // The shared store changed; drop all per-crate caches so crates sharing
+        // an edited track re-resolve fresh. Re-resolution is cheap (in-memory).
+        crateTracksCache.removeAll()
+    }
+
+    /// One-time migration of legacy per-crate `.cdlib` files (full `LoadedTrack`s
+    /// with embedded artwork) into the shared `TrackStore` + `.cdcrate` membership
+    /// lists, moving artwork into the `ArtworkStore`. Originals are renamed to
+    /// `.cdlib.bak` (not deleted) for recovery — delete the backups once you've
+    /// confirmed the migration. Runs synchronously; a large library freezes the
+    /// UI briefly on first launch.
+    /// ponytail: synchronous decode of the whole library; make it async with a
+    /// progress sheet if the first-launch pause is too long.
+    private func migrateLegacyCratesIfNeeded() {
+        let fm = FileManager.default
+        let folder = cratesDirectoryURL
+        guard let contents = try? fm.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil) else { return }
+        let legacy = contents.filter { $0.pathExtension == "cdlib" }
+        guard !legacy.isEmpty else { return }
+
+        let store = currentTrackStore()
+        for url in legacy {
+            let name = url.deletingPathExtension().lastPathComponent
+            guard let data = try? Data(contentsOf: url),
+                  let tracks = try? JSONDecoder().decode([LoadedTrack].self, from: data) else { continue }
+            ingestArtwork(from: tracks)
+            for track in tracks { store.upsert(track) }
+            let paths = tracks.map { TrackStore.key(for: $0.track.fileURL) }
+            let crateURL = folder.appendingPathComponent("\(name).cdcrate")
+            if let membership = try? JSONEncoder().encode(paths) {
+                try? membership.write(to: crateURL, options: .atomic)
+            }
+            let backup = url.appendingPathExtension("bak")
+            try? fm.removeItem(at: backup)
+            try? fm.moveItem(at: url, to: backup)
+        }
+        store.save()
+        AppLog.library.info("Migrated \(legacy.count) legacy crate(s) into the shared track store.")
     }
 
     // MARK: - Drag & Drop Handling
