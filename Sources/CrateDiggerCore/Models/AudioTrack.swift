@@ -74,6 +74,18 @@ public struct AudioTrack: Identifiable, Hashable, Codable, Sendable {
         self.artworkDimensions = artworkDimensions
     }
 
+    /// A copy pointing at a new on-disk location, keeping identity and tags —
+    /// used when the user relocates a moved/missing file.
+    public func withFileURL(_ newURL: URL) -> AudioTrack {
+        AudioTrack(
+            id: id, fileURL: newURL, title: title, artist: artist, album: album,
+            durationSeconds: durationSeconds, formatName: formatName, bitrateKbps: bitrateKbps,
+            sampleRateHz: sampleRateHz, year: year, trackNumber: trackNumber, trackTotal: trackTotal,
+            discNumber: discNumber, discTotal: discTotal, artworkSource: artworkSource,
+            artworkHash: artworkHash, artworkDimensions: artworkDimensions
+        )
+    }
+
     /// A copy with a different identity — used when re-reading a file's tags so
     /// the refreshed track keeps the original `id` (selection, queue matching).
     public func withID(_ newID: UUID) -> AudioTrack {

@@ -1161,7 +1161,11 @@ final class LibraryViewModel: ObservableObject {
 
     func scanForCleanup() {
         let cleanup = LibraryCleanupService()
+        // Don't flag tracks on a disconnected drive as "dead" — the files aren't
+        // gone, the volume is just unplugged, and purging their references would
+        // wreck an external library that's merely offline.
         self.deadTracks = cleanup.findDeadTracks(in: localIndex)
+            .filter { offlineVolumeName(for: $0.track.fileURL) == nil }
         self.duplicateGroups = cleanup.findDuplicates(in: localIndex)
     }
 
@@ -1236,6 +1240,9 @@ final class LibraryViewModel: ObservableObject {
         stopRadio()
         let queue = currentAlbumQueue()
         guard let startIndex = queue.firstIndex(where: { $0.track.id == id }) else { return }
+        // Fail fast with an actionable prompt if the file is missing/offline,
+        // rather than a dead-end playback error.
+        if presentIfFileMissing(queue[startIndex]) { return }
         // Starting a track jumps the OLED to Now Playing.
         oledView = .nowPlaying
         playbackQueue = queue
@@ -1791,7 +1798,15 @@ final class LibraryViewModel: ObservableObject {
         }
         playback.onError = { [weak self] message in
             Task { @MainActor in
-                self?.appAlert = .error(
+                guard let self else { return }
+                // If the failure is a missing/offline file (e.g. auto-advanced
+                // into one), show the actionable locate/offline prompt instead
+                // of the raw playback error.
+                if let i = self.playbackCurrentIndex, i >= 0, i < self.playbackQueue.count,
+                   self.presentIfFileMissing(self.playbackQueue[i]) {
+                    return
+                }
+                self.appAlert = .error(
                     title: "Couldn't play this track",
                     message: message
                 )
@@ -2205,7 +2220,7 @@ final class LibraryViewModel: ObservableObject {
 
     /// Remove tracks (matched by file path) from the local index, prep crate,
     /// and every saved crate. Does NOT touch files on disk.
-    private func purgeTracksFromLibraryState(paths: Set<String>) {
+    func purgeTracksFromLibraryState(paths: Set<String>) {
         let remaining = localIndex.allTracks.filter {
             !paths.contains($0.track.fileURL.standardizedFileURL.path)
         }
@@ -2352,7 +2367,7 @@ final class LibraryViewModel: ObservableObject {
         }
     }
 
-    private func updateTrackURLInIndex(oldURL: URL, newTrack: LoadedTrack) {
+    func updateTrackURLInIndex(oldURL: URL, newTrack: LoadedTrack) {
         // When a track's file path is reorganized (on tag edit), we must update its path in all `.cdlib` crates that contain it!
         for crateName in availableCrates {
             var tracks = loadCrateTracks(name: crateName)
