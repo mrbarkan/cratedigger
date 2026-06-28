@@ -417,7 +417,7 @@ final class LibraryViewModel: ObservableObject {
 
     init(
         playback: PlaybackServiceProtocol = PlaybackService(),
-        artworkService: ArtworkService = ArtworkService(),
+        artworkService: ArtworkService = ArtworkService(store: ArtworkStore(directory: ArtworkStore.defaultDirectory)),
         remoteArtworkService: RemoteArtworkService = RemoteArtworkService(),
         scanner: LibraryScanService? = nil,
         prefs: PreferencesStore = .shared
@@ -1814,6 +1814,7 @@ final class LibraryViewModel: ObservableObject {
         }
 
         // Newly loaded folders go straight into the Prep Crate!
+        ingestArtwork(from: tracks)
         prepCrateTracks = tracks
         selectSource(.prepCrate)
         
@@ -1935,8 +1936,21 @@ final class LibraryViewModel: ObservableObject {
         let fileURL = cratesDirectoryURL.appendingPathComponent("\(name).cdlib")
         guard let data = try? Data(contentsOf: fileURL) else { return [] }
         let tracks = (try? JSONDecoder().decode([LoadedTrack].self, from: data)) ?? []
+        ingestArtwork(from: tracks)
         crateTracksCache[name] = tracks
         return tracks
+    }
+
+    /// Move any artwork bytes still embedded in an older `.cdlib` into the
+    /// content-addressed `ArtworkStore`, so they survive once we stop persisting
+    /// them inline, and so cold-launch thumbnails resolve by hash. Write-once by
+    /// hash, so re-running over already-stored art is cheap.
+    private func ingestArtwork(from tracks: [LoadedTrack]) {
+        for track in tracks {
+            if let art = track.metadata.artwork, !art.data.isEmpty {
+                artworkService.ingest(art)
+            }
+        }
     }
 
     func saveCrateTracks(_ tracks: [LoadedTrack], name: String) {

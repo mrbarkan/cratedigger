@@ -27,9 +27,15 @@ public final class ArtworkService: ArtworkPreparing {
     /// own LRU store and is internally thread-safe.
     /// A miss simply yields no thumbnail (a handled `nil`), never a crash.
     private let dataCache = NSCache<NSString, NSData>()
+    /// Persistent, content-addressed backing for `dataCache`. When set, source
+    /// bytes survive relaunches and offline source drives; a thumbnail miss can
+    /// reload from disk by hash instead of yielding a placeholder. `nil` keeps
+    /// the pure in-memory behavior (used by Core unit tests).
+    private let store: ArtworkStore?
 
-    public init(fileManager: FileManager = .default) {
+    public init(fileManager: FileManager = .default, store: ArtworkStore? = nil) {
         self.fileManager = fileManager
+        self.store = store
         thumbnailCache.countLimit = 512
         thumbnailCache.totalCostLimit = 48 * 1024 * 1024   // ~48 MB of decoded thumbnails
         dataCache.totalCostLimit = 96 * 1024 * 1024        // ~96 MB of source image data
@@ -325,11 +331,20 @@ public final class ArtworkService: ArtworkPreparing {
     }
 
     private func storeData(_ data: Data, for hash: String) {
+        guard !data.isEmpty else { return }
         dataCache.setObject(data as NSData, forKey: hash as NSString, cost: data.count)
+        store?.put(data, for: hash)
     }
 
     private func dataForHash(_ hash: String) -> Data? {
-        dataCache.object(forKey: hash as NSString) as Data?
+        if let cached = dataCache.object(forKey: hash as NSString) as Data? {
+            return cached
+        }
+        // Fall back to the on-disk store (survives relaunch / offline drives),
+        // then warm the in-memory cache for subsequent thumbnail renders.
+        guard let data = store?.data(for: hash) else { return nil }
+        dataCache.setObject(data as NSData, forKey: hash as NSString, cost: data.count)
+        return data
     }
 
     private static func sha256Hex(for data: Data) -> String {
