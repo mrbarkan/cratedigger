@@ -249,6 +249,7 @@ private struct TrackColumn: View {
                         loaded: loaded,
                         selected: model.isTrackSelected(loaded.track.id),
                         isPlaying: model.nowPlayingTrack?.track.id == loaded.track.id,
+                        isOffline: model.isOffline(loaded),
                         onSelect: {
                             let m = NSEvent.modifierFlags
                             model.selectTrack(loaded, command: m.contains(.command), shift: m.contains(.shift),

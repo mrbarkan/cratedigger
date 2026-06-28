@@ -65,10 +65,8 @@ extension LibraryViewModel {
     /// not currently mounted; `nil` if the volume is present (or the file lives
     /// on the boot volume, which is always mounted).
     func offlineVolumeName(for url: URL) -> String? {
-        let components = url.standardizedFileURL.pathComponents
-        guard components.count >= 3, components[1] == "Volumes" else { return nil }
-        let volumeRoot = "/Volumes/\(components[2])"
-        return FileManager.default.fileExists(atPath: volumeRoot) ? nil : components[2]
+        guard let volume = volumeName(of: url) else { return nil }
+        return FileManager.default.fileExists(atPath: "/Volumes/\(volume)") ? nil : volume
     }
 
     private func locateMissingFile(_ track: LoadedTrack) {
@@ -98,5 +96,44 @@ extension LibraryViewModel {
 
     private func removeTrackFromLibrary(_ track: LoadedTrack) {
         purgeTracksFromLibraryState(paths: [track.track.fileURL.standardizedFileURL.path])
+    }
+
+    // MARK: - Offline volume tracking
+
+    /// Subscribe to drive mount/unmount so the offline badge updates live.
+    func setupVolumeObservers() {
+        let center = NSWorkspace.shared.notificationCenter
+        for name in [NSWorkspace.didMountNotification, NSWorkspace.didUnmountNotification, NSWorkspace.didRenameVolumeNotification] {
+            center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor in self?.recomputeOfflineVolumes() }
+            }
+        }
+    }
+
+    /// Recompute which `/Volumes/<name>` drives referenced by the local library
+    /// are not currently mounted. Iterates the local index, so it's independent
+    /// of the visible source; runs only on mount/unmount + at startup.
+    func recomputeOfflineVolumes() {
+        var referenced = Set<String>()
+        for track in localIndex.allTracks {
+            if let volume = volumeName(of: track.track.fileURL) {
+                referenced.insert(volume)
+            }
+        }
+        offlineVolumes = referenced.filter { !FileManager.default.fileExists(atPath: "/Volumes/\($0)") }
+    }
+
+    /// Whether a track's file lives on a drive that isn't currently mounted.
+    func isOffline(_ track: LoadedTrack) -> Bool {
+        guard !offlineVolumes.isEmpty else { return false }   // fast path: nothing offline
+        guard let volume = volumeName(of: track.track.fileURL) else { return false }
+        return offlineVolumes.contains(volume)
+    }
+
+    /// The `/Volumes/<name>` drive a file lives on, or `nil` for the boot volume.
+    private func volumeName(of url: URL) -> String? {
+        let components = url.standardizedFileURL.pathComponents
+        guard components.count >= 3, components[1] == "Volumes" else { return nil }
+        return components[2]
     }
 }

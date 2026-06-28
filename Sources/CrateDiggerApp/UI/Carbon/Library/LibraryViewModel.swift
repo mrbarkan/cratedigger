@@ -304,6 +304,11 @@ final class LibraryViewModel: ObservableObject {
     @Published var playlists: [Playlist] = []
     @Published var mountedCDs: [AudioCDInfo] = []
     @Published var deadTracks: [LoadedTrack] = []
+    /// Names of `/Volumes/<name>` drives the library references that aren't
+    /// currently mounted. Drives the "offline" row badge. Recomputed only on
+    /// volume mount/unmount + at startup (see recomputeOfflineVolumes), which is
+    /// the only writer.
+    @Published var offlineVolumes: Set<String> = []
     @Published var duplicateGroups: [DuplicateGroup] = []
 
     // MARK: - Radio / Streams state
@@ -376,7 +381,7 @@ final class LibraryViewModel: ObservableObject {
     var radioEngine: RadioPlaybackEngine?
 
     // Cache indexes for fast switching
-    private var localIndex: LibraryIndex = .empty
+    private(set) var localIndex: LibraryIndex = .empty
     private var remoteIndex: LibraryIndex = .empty
     private var cdIndex: LibraryIndex = .empty
     private var playlistIndex: LibraryIndex = .empty
@@ -512,10 +517,12 @@ final class LibraryViewModel: ObservableObject {
         setupCDSpeedObserver()
         setupKeyboardShortcutsMonitor()
         setupLibraryOperationsObservers()
-        
+        setupVolumeObservers()
+
         refreshAvailableCrates()
         streams = streamStore.all()
         selectSource(.localAll)
+        recomputeOfflineVolumes()
         fetchMissingMetadata()
     }
 

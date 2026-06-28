@@ -6,6 +6,7 @@ struct TrackRow: View {
     let loaded: LoadedTrack
     let selected: Bool
     let isPlaying: Bool
+    var isOffline: Bool = false
     let onSelect: () -> Void
     let onActivate: () -> Void
 
@@ -23,10 +24,20 @@ struct TrackRow: View {
                 .font(CarbonFont.sans(12.5, weight: isPlaying ? .semibold : .medium))
                 .foregroundStyle(titleColor)
         } trail: {
-            Text(durationString(loaded.track.durationSeconds))
-                .font(CarbonFont.mono(10))
-                .foregroundStyle(metaColor)
+            HStack(spacing: 5) {
+                if isOffline {
+                    Image(systemName: "externaldrive.badge.xmark")
+                        .font(.system(size: 9))
+                        .foregroundStyle(metaColor)
+                        .help("On a disconnected drive")
+                }
+                Text(durationString(loaded.track.durationSeconds))
+                    .font(CarbonFont.mono(10))
+                    .foregroundStyle(metaColor)
+            }
         }
+        // Dim tracks whose drive is offline — present, just not playable now.
+        .opacity(isOffline && !selected ? 0.55 : 1)
         .draggable("track::" + loaded.track.id.uuidString)
     }
 
