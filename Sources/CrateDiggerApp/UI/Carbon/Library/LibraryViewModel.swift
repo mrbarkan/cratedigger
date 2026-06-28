@@ -72,7 +72,9 @@ final class LibraryViewModel: ObservableObject {
 
     // MARK: - Published state
 
-    @Published private(set) var index: LibraryIndex = .empty
+    @Published private(set) var index: LibraryIndex = .empty {
+        didSet { recomputeSortedCollections() }
+    }
     @Published var selectedArtistID: String?
     @Published var selectedAlbumID: String?
     @Published var selectedTrackID: UUID?
@@ -246,22 +248,22 @@ final class LibraryViewModel: ObservableObject {
 
     /// How the Track column orders the currently shown album.
     @Published var trackSortField: TrackSortField = .trackNumber {
-        didSet { prefs.savedTrackSortField = trackSortField.rawValue }
+        didSet { prefs.savedTrackSortField = trackSortField.rawValue; recomputeSortedCollections() }
     }
     @Published var trackSortAscending: Bool = true {
-        didSet { prefs.savedTrackSortAscending = trackSortAscending }
+        didSet { prefs.savedTrackSortAscending = trackSortAscending; recomputeSortedCollections() }
     }
     @Published var artistSortField: ArtistSortField = .name {
-        didSet { prefs.savedArtistSortField = artistSortField.rawValue }
+        didSet { prefs.savedArtistSortField = artistSortField.rawValue; recomputeSortedCollections() }
     }
     @Published var artistSortAscending: Bool = true {
-        didSet { prefs.savedArtistSortAscending = artistSortAscending }
+        didSet { prefs.savedArtistSortAscending = artistSortAscending; recomputeSortedCollections() }
     }
     @Published var albumSortField: AlbumSortField = .year {
-        didSet { prefs.savedAlbumSortField = albumSortField.rawValue }
+        didSet { prefs.savedAlbumSortField = albumSortField.rawValue; recomputeSortedCollections() }
     }
     @Published var albumSortAscending: Bool = true {
-        didSet { prefs.savedAlbumSortAscending = albumSortAscending }
+        didSet { prefs.savedAlbumSortAscending = albumSortAscending; recomputeSortedCollections() }
     }
     /// Whether the per-column sort menus are shown in the browser headers.
     @Published var showSortControls: Bool = true {
@@ -664,9 +666,10 @@ final class LibraryViewModel: ObservableObject {
         return selectedArtist?.albums.first
     }
 
-    var visibleArtists: [Artist] {
-        LibraryIndex.sortedArtists(index.artists, by: artistSortField, ascending: artistSortAscending)
-    }
+    /// All artists, sorted by the artist-sort preference. Cached — recomputed
+    /// only when the index or artist-sort preference changes, so the 60fps disc
+    /// animation re-reads a stored array instead of re-sorting every frame.
+    @Published private(set) var visibleArtists: [Artist] = []
 
     var visibleAlbums: [Album] {
         let base = selectedArtist?.albums ?? []
@@ -679,15 +682,22 @@ final class LibraryViewModel: ObservableObject {
     }
 
     /// Every album across all artists, sorted by the album-sort preference.
-    /// Drives the "Album · Track" browser layout.
-    var allAlbumsSorted: [Album] {
-        LibraryIndex.sortedAlbums(index.allAlbums, by: albumSortField, ascending: albumSortAscending)
-    }
+    /// Drives the "Album · Track" browser layout. Cached — see
+    /// recomputeSortedCollections().
+    @Published private(set) var allAlbumsSorted: [Album] = []
 
     /// Every track in the source, sorted by the track-sort preference. Drives
-    /// the flat "Track" browser layout.
-    var flatTracksSorted: [LoadedTrack] {
-        LibraryIndex.sortedTracks(index.allTracks, by: trackSortField, ascending: trackSortAscending)
+    /// the flat "Track" browser layout. Cached — see recomputeSortedCollections().
+    @Published private(set) var flatTracksSorted: [LoadedTrack] = []
+
+    /// Recompute the cached whole-library sorted collections. Cheap and rare —
+    /// runs only on index or sort-preference changes, never during a render
+    /// pass. At 14k tracks the locale-aware sort is far too expensive to repeat
+    /// per frame, which the spinning-disc animation would otherwise trigger.
+    private func recomputeSortedCollections() {
+        visibleArtists = LibraryIndex.sortedArtists(index.artists, by: artistSortField, ascending: artistSortAscending)
+        allAlbumsSorted = LibraryIndex.sortedAlbums(index.allAlbums, by: albumSortField, ascending: albumSortAscending)
+        flatTracksSorted = LibraryIndex.sortedTracks(index.allTracks, by: trackSortField, ascending: trackSortAscending)
     }
 
     var selectedTrack: LoadedTrack? {
@@ -713,8 +723,14 @@ final class LibraryViewModel: ObservableObject {
     /// index construction goes through here so grouping applies uniformly. Grouping
     /// only takes effect where ≥2 member pressings are present, so non-local indexes
     /// (CD/playlist/remote) are unaffected — their keys never match local groups.
+    /// Reused across rebuilds so `LibraryIndex.build` doesn't re-stat every file
+    /// and re-scan every album folder on each edit/source switch. Cleared after
+    /// in-place artwork edits (see applyImportedArtwork); move/import changes
+    /// self-invalidate because the cache is keyed by file/folder path.
+    private let indexDiskCache = LibraryIndexDiskCache()
+
     func buildIndex(_ tracks: [LoadedTrack]) -> LibraryIndex {
-        LibraryIndex.build(from: tracks, groups: albumGroupStore.all())
+        LibraryIndex.build(from: tracks, groups: albumGroupStore.all(), diskCache: indexDiskCache)
     }
 
     func selectSource(_ source: LibrarySource) {
@@ -1608,6 +1624,10 @@ final class LibraryViewModel: ObservableObject {
     ) {
         guard !ingestedAssets.isEmpty else { return }
 
+        // This album's folder just gained a manifest/booklet on disk; drop the
+        // cached disk-derived metadata so the rebuilds below re-scan it.
+        indexDiskCache.clear()
+
         for asset in ingestedAssets {
             self.artworkService.ingest(asset)
         }
@@ -1851,6 +1871,9 @@ final class LibraryViewModel: ObservableObject {
     }
 
     func refreshAvailableCrates() {
+        // The set of crates (or the active folder) is changing — drop the cache
+        // so stale/renamed/removed crates can't survive. Rare, non-hot path.
+        crateTracksCache.removeAll()
         let fm = FileManager.default
         let cratesDir = cratesDirectoryURL
         do {
@@ -1899,11 +1922,21 @@ final class LibraryViewModel: ObservableObject {
         }
     }
 
+    /// Decoded crate track lists, keyed by crate name. A `.cdlib` is JSON with
+    /// base64-embedded artwork, so decoding one at 14k tracks costs hundreds of
+    /// MB of work; without this cache every source switch / count refresh
+    /// re-decoded the whole library on the main actor. Kept coherent by
+    /// write-through in saveCrateTracks and a full clear in refreshAvailableCrates
+    /// (the only paths that change which files exist / which folder is active).
+    private var crateTracksCache: [String: [LoadedTrack]] = [:]
+
     func loadCrateTracks(name: String) -> [LoadedTrack] {
+        if let cached = crateTracksCache[name] { return cached }
         let fileURL = cratesDirectoryURL.appendingPathComponent("\(name).cdlib")
         guard let data = try? Data(contentsOf: fileURL) else { return [] }
-        let decoder = JSONDecoder()
-        return (try? decoder.decode([LoadedTrack].self, from: data)) ?? []
+        let tracks = (try? JSONDecoder().decode([LoadedTrack].self, from: data)) ?? []
+        crateTracksCache[name] = tracks
+        return tracks
     }
 
     func saveCrateTracks(_ tracks: [LoadedTrack], name: String) {
@@ -1913,6 +1946,7 @@ final class LibraryViewModel: ObservableObject {
         do {
             let data = try encoder.encode(tracks)
             try data.write(to: fileURL, options: .atomic)
+            crateTracksCache[name] = tracks
         } catch {
             AppLog.library.warning("Failed to save crate '\(name)': \(error.localizedDescription)")
         }

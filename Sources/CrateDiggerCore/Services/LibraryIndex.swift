@@ -80,7 +80,8 @@ public struct LibraryIndex: Sendable {
     /// conversion folder review, and library browser all agree on what an album is.
     /// Pass `groups` to fold member albums into a single synthesised release album.
     public static func build(from loaded: [LoadedTrack],
-                             groups: [AlbumGroup] = []) -> LibraryIndex {
+                             groups: [AlbumGroup] = [],
+                             diskCache: LibraryIndexDiskCache? = nil) -> LibraryIndex {
         guard !loaded.isEmpty else { return .empty }
 
         let planner = OutputPathPlanner()
@@ -119,9 +120,15 @@ public struct LibraryIndex: Sendable {
             let mediaFormat: MediaFormat?
             if representative.track.fileURL.isFileURL {
                 let albumFolder = representative.track.fileURL.deletingLastPathComponent()
-                let manifest = ArtworkManifest.load(from: albumFolder)
-                booklet = AlbumBooklet.scan(in: albumFolder, manifest: manifest)
-                mediaFormat = manifest?.mediaFormat
+                if let cached = diskCache?.albumInfo[albumFolder.path] {
+                    booklet = cached.booklet
+                    mediaFormat = cached.mediaFormat
+                } else {
+                    let manifest = ArtworkManifest.load(from: albumFolder)
+                    booklet = AlbumBooklet.scan(in: albumFolder, manifest: manifest)
+                    mediaFormat = manifest?.mediaFormat
+                    diskCache?.albumInfo[albumFolder.path] = AlbumDiskInfo(booklet: booklet, mediaFormat: mediaFormat)
+                }
             } else {
                 booklet = nil
                 mediaFormat = nil
@@ -194,7 +201,7 @@ public struct LibraryIndex: Sendable {
 
         let albumCount = artists.reduce(0) { $0 + $1.albums.count }
 
-        let totalBytes = computeTotalSizeBytes(loaded)
+        let totalBytes = computeTotalSizeBytes(loaded, cache: diskCache)
 
         return LibraryIndex(
             artists: artists,
@@ -340,15 +347,45 @@ public struct LibraryIndex: Sendable {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private static func computeTotalSizeBytes(_ tracks: [LoadedTrack]) -> Int64 {
+    private static func computeTotalSizeBytes(_ tracks: [LoadedTrack], cache: LibraryIndexDiskCache?) -> Int64 {
         var total: Int64 = 0
         for track in tracks {
-            if let attrs = try? FileManager.default.attributesOfItem(atPath: track.track.fileURL.path),
-               let size = attrs[.size] as? NSNumber {
-                total += size.int64Value
+            let path = track.track.fileURL.path
+            if let cached = cache?.sizeByPath[path] {
+                total += cached
+            } else if let attrs = try? FileManager.default.attributesOfItem(atPath: path),
+                      let size = (attrs[.size] as? NSNumber)?.int64Value {
+                // ponytail: a tag edit rewrites the file in place and shifts its
+                // size by a few bytes; the cached value then goes slightly stale.
+                // Fine for a header GB readout — invalidate via clear() if exact.
+                cache?.sizeByPath[path] = size
+                total += size
             }
         }
         return total
+    }
+}
+
+/// Internal memo of `LibraryIndex.build`'s disk reads.
+fileprivate struct AlbumDiskInfo {
+    let booklet: AlbumBooklet?
+    let mediaFormat: MediaFormat?
+}
+
+/// Process-local cache for the disk-derived parts of `LibraryIndex.build` —
+/// per-folder album booklet/media-format and per-path file size. `build` runs
+/// on every edit and source switch; without this each rebuild re-issued tens of
+/// thousands of filesystem syscalls. Owned by `LibraryViewModel` (main actor)
+/// and passed into `build`. Folder/path keys self-invalidate when files move or
+/// are added, so the only explicit reset needed is `clear()` after an in-place
+/// artwork/manifest edit (same folder, changed contents).
+public final class LibraryIndexDiskCache {
+    fileprivate var albumInfo: [String: AlbumDiskInfo] = [:]
+    fileprivate var sizeByPath: [String: Int64] = [:]
+    public init() {}
+    public func clear() {
+        albumInfo.removeAll()
+        sizeByPath.removeAll()
     }
 }
 
