@@ -5,15 +5,21 @@ import Foundation
 /// not the Apple iPod database). Audio CDs are handled separately by
 /// `CDRipperService`.
 public struct MountedDevice: Sendable, Identifiable, Hashable {
-    public let id: String        // volume path — stable while mounted
-    public let name: String      // volume name (display)
-    public let volumeURL: URL    // e.g. /Volumes/IPOD
+    public let id: String          // volume path — stable while mounted
+    public let name: String        // volume name (display)
+    public let volumeURL: URL      // e.g. /Volumes/IPOD
+    public let volumeUUID: String? // stable across remounts/renames when available
 
-    public init(name: String, volumeURL: URL) {
+    public init(name: String, volumeURL: URL, volumeUUID: String? = nil) {
         self.id = volumeURL.path
         self.name = name
         self.volumeURL = volumeURL
+        self.volumeUUID = volumeUUID
     }
+
+    /// Stable key for the persisted catalog — survives renames/path changes when
+    /// the volume reports a UUID, else falls back to the name.
+    public var catalogKey: String { volumeUUID ?? name }
 }
 
 /// Detects mounted removable/ejectable volumes (excluding the internal boot
@@ -28,7 +34,7 @@ public struct DeviceDetectionService {
     public func detectDevices() -> [MountedDevice] {
         let keys: [URLResourceKey] = [
             .volumeNameKey, .volumeIsRemovableKey, .volumeIsEjectableKey,
-            .volumeIsInternalKey, .volumeIsBrowsableKey
+            .volumeIsInternalKey, .volumeIsBrowsableKey, .volumeUUIDStringKey
         ]
         let urls = fileManager.mountedVolumeURLs(
             includingResourceValuesForKeys: keys,
@@ -43,7 +49,7 @@ public struct DeviceDetectionService {
             let browsable = values.volumeIsBrowsable ?? true
             guard removable, !isInternal, browsable else { continue }
             let name = values.volumeName ?? url.lastPathComponent
-            devices.append(MountedDevice(name: name, volumeURL: url))
+            devices.append(MountedDevice(name: name, volumeURL: url, volumeUUID: values.volumeUUIDString))
         }
         return devices.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }

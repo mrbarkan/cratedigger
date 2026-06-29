@@ -6,14 +6,20 @@ import SwiftUI
 struct FooterLeftCluster: View {
     @EnvironmentObject private var model: LibraryViewModel
     @StateObject private var meters = MeterDriver()
+    @AppStorage("cratedigger.meter.simpleHorizontalVU") private var simpleHorizontalVU = false
 
     var body: some View {
         HStack(alignment: .center, spacing: 14) {
-            LEDMeterPair(leftLevel: meters.leftLevel, rightLevel: meters.rightLevel)
+            if simpleHorizontalVU {
+                HorizontalLEDMeter(leftLevel: meters.leftLevel, rightLevel: meters.rightLevel)
+            } else {
+                LEDMeterPair(bands: meters.bands)
+            }
             PositionDial()
         }
         .onAppear {
             meters.levelsProvider = { [weak model] in model?.currentPlaybackLevels() ?? (left: 0, right: 0) }
+            meters.spectrumProvider = { [weak model] in model?.currentPlaybackSpectrum() ?? [] }
             syncMeterRunning()
         }
         .onChange(of: model.playbackState) { _ in

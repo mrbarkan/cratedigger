@@ -243,14 +243,50 @@ final class LibraryViewModel: ObservableObject {
         didSet { prefs.cdAnimationSpeed = cdAnimationSpeed }
     }
 
-    /// Cosmetic EQ preset (drives the OLED readout, the view-switcher EQ button,
-    /// and the footer amber LCD). No real audio EQ — UI only.
+    /// EQ preset label (OLED readout + view-switcher EQ button). Cycling one now
+    /// applies its real gain curve to the working equalizer.
     @Published var eqPreset: EQPreset = .flat
 
+    /// Working equalizer state — 12 per-band gains in dB + master enable. Drives
+    /// the footer EQ panel display *and* real audio (via the playback tap).
+    @Published var eqEnabled: Bool = false { didSet { eqDidChange() } }
+    @Published var eqGains: [Double] = Array(repeating: 0, count: EqualizerProcessor.bandCount) {
+        didSet { eqDidChange() }
+    }
+    /// Presents the graphic-EQ editor sheet (opened by clicking the footer EQ panel).
+    @Published var showingEQEditor = false
+
+    /// The footer EQ button: cycle to the next preset, apply its curve, and turn
+    /// the EQ on so it's audible (the flat preset is transparent anyway).
     func cycleEQPreset() {
         let all = EQPreset.allCases
         let idx = all.firstIndex(of: eqPreset) ?? 0
         eqPreset = all[(idx + 1) % all.count]
+        eqGains = eqPreset.gainCurve()
+        eqEnabled = true
+    }
+
+    private func eqDidChange() {
+        prefs.savedEQEnabled = eqEnabled
+        prefs.savedEQGains = eqGains
+        playback.setEqualizer(enabled: eqEnabled, gains: eqGains)
+    }
+
+    private func setupEqualizerObserver() {
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("CrateDiggerEQChanged"), object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.reloadEqualizerFromPrefs() }
+        }
+    }
+
+    /// Reload EQ from prefs (e.g. after the Settings panel edits it) and apply.
+    func reloadEqualizerFromPrefs() {
+        let saved = prefs.savedEQGains
+        eqGains = saved.count == EqualizerProcessor.bandCount
+            ? saved
+            : Array(repeating: 0, count: EqualizerProcessor.bandCount)
+        eqEnabled = prefs.savedEQEnabled
     }
 
     /// How the Track column orders the currently shown album.
@@ -402,6 +438,9 @@ final class LibraryViewModel: ObservableObject {
     /// reuses the scan instead of re-walking the disk. Invalidated on unplug
     /// (`refreshDevices`) and on RESCAN (`refreshLibrary`).
     private var deviceIndexCache: [String: LibraryIndex] = [:]
+    /// On-disk per-device catalogs so a device opens instantly across launches
+    /// (rescan only on RESCAN).
+    private let deviceCatalogStore = DeviceCatalogStore()
     private var playlistIndex: LibraryIndex = .empty
     private var prepCrateIndex: LibraryIndex = .empty
 
@@ -539,6 +578,8 @@ final class LibraryViewModel: ObservableObject {
         setupKeyboardShortcutsMonitor()
         setupLibraryOperationsObservers()
         setupVolumeObservers()
+        setupEqualizerObserver()
+        reloadEqualizerFromPrefs()
 
         refreshAvailableCrates()
         streams = streamStore.all()
@@ -1039,9 +1080,18 @@ final class LibraryViewModel: ObservableObject {
             index = .empty
             return
         }
+        let key = device.catalogKey
         if !forceRescan, let cached = deviceIndexCache[volumePath] {
             oledView = .scan   // surface the path bar without re-walking the disk
             adoptDeviceIndex(cached)
+            return
+        }
+        // Persisted catalog from a previous scan/launch → open instantly, no walk.
+        if !forceRescan, let saved = deviceCatalogStore.load(key: key) {
+            let built = buildIndex(saved)
+            deviceIndexCache[volumePath] = built
+            oledView = .scan
+            adoptDeviceIndex(built)
             return
         }
         index = .empty
@@ -1053,6 +1103,8 @@ final class LibraryViewModel: ObservableObject {
             guard let self else { return }
             let scanned = await self.scanner.scanFolder(root)
             if Task.isCancelled { return }
+            // Persist the catalog off-main so a big iPod doesn't hitch the UI.
+            Task.detached(priority: .utility) { DeviceCatalogStore().save(scanned, key: key) }
             await MainActor.run {
                 let built = self.buildIndex(scanned)
                 self.deviceIndexCache[volumePath] = built
@@ -1296,9 +1348,13 @@ final class LibraryViewModel: ObservableObject {
     }
 
     func refreshLibrary() {
-        // RESCAN on a device re-walks that volume (the only time we re-scan it).
+        // RESCAN on a device re-walks that volume (the only time we re-scan it)
+        // and refreshes its saved catalog.
         if case .device(let path) = currentSource {
             deviceIndexCache[path] = nil
+            if let device = mountedDevices.first(where: { $0.volumeURL.path == path }) {
+                deviceCatalogStore.remove(key: device.catalogKey)
+            }
             selectDevice(volumePath: path, forceRescan: true)
             return
         }
@@ -1429,6 +1485,10 @@ final class LibraryViewModel: ObservableObject {
     /// The footer meter polls this while playing.
     func currentPlaybackLevels() -> (left: Double, right: Double) {
         playback.currentLevels()
+    }
+
+    func currentPlaybackSpectrum() -> [Double] {
+        playback.currentSpectrum()
     }
 
     // MARK: - Conversion entry

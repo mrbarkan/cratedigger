@@ -50,6 +50,10 @@ public protocol PlaybackServiceProtocol: AnyObject {
     func setOutputDeviceUID(_ uid: String?)
     /// Latest 0...1 VU meter positions per channel, from the real audio signal.
     func currentLevels() -> (left: Double, right: Double)
+    /// Latest 0...1 log-spaced frequency-band magnitudes, for the spectrum meter.
+    func currentSpectrum() -> [Double]
+    /// Enable/disable the in-path EQ and set its 12 per-band gains (dB).
+    func setEqualizer(enabled: Bool, gains: [Double])
 }
 
 protocol PlaybackEngineProtocol: AnyObject {
@@ -68,10 +72,14 @@ protocol PlaybackEngineProtocol: AnyObject {
     func setVolume(_ volume: Double)
     func setOutputDeviceUID(_ uid: String?)
     var currentLevels: (left: Double, right: Double) { get }
+    var currentSpectrum: [Double] { get }
+    func setEqualizer(enabled: Bool, gains: [Double])
 }
 
 extension PlaybackEngineProtocol {
     var currentLevels: (left: Double, right: Double) { (0, 0) }
+    var currentSpectrum: [Double] { [] }
+    func setEqualizer(enabled: Bool, gains: [Double]) {}
 }
 
 final class AVPlayerEngine: PlaybackEngineProtocol {
@@ -173,6 +181,17 @@ final class AVPlayerEngine: PlaybackEngineProtocol {
         // Fold in the player volume so the meter tracks what you actually hear.
         let v = Double(player.volume)
         return (meterPosition(peaks.left * v), meterPosition(peaks.right * v))
+    }
+
+    var currentSpectrum: [Double] {
+        // Already 0...1 from the FFT's dB mapping; scale by volume so the bars
+        // fall when you turn it down, matching the level meter.
+        let v = Double(player.volume)
+        return levelTap.currentBands().map { $0 * v }
+    }
+
+    func setEqualizer(enabled: Bool, gains: [Double]) {
+        levelTap.setEQ(enabled: enabled, gains: gains)
     }
 
     /// Map a linear peak (0...1) to a meter fill position: -48 dBFS → 0 and
@@ -374,6 +393,14 @@ public final class PlaybackService: PlaybackServiceProtocol {
 
     public func setOutputDeviceUID(_ uid: String?) {
         engine.setOutputDeviceUID(uid)
+    }
+
+    public func currentSpectrum() -> [Double] {
+        engine.currentSpectrum
+    }
+
+    public func setEqualizer(enabled: Bool, gains: [Double]) {
+        engine.setEqualizer(enabled: enabled, gains: gains)
     }
 
     public func currentLevels() -> (left: Double, right: Double) {

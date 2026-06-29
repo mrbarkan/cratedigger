@@ -21,8 +21,21 @@ public final class AudioLevelTap {
         return (Double(snap.left), Double(snap.right))
     }
 
-    /// Clear the stored levels (e.g. when switching tracks).
-    public func reset() { store.update(left: 0, right: 0) }
+    /// Latest log-spaced frequency-band magnitudes (0...1) for the spectrum meter.
+    public func currentBands() -> [Double] {
+        store.snapshotBands().map(Double.init)
+    }
+
+    /// Clear the stored levels + spectrum (e.g. when switching tracks).
+    public func reset() {
+        store.update(left: 0, right: 0)
+        store.updateBands([Float](repeating: 0, count: SpectrumProcessor.bandCount))
+    }
+
+    /// Enable/disable the in-path EQ and set its per-band gains (dB).
+    public func setEQ(enabled: Bool, gains: [Double]) {
+        store.equalizer.update(enabled: enabled, gainsDB: gains)
+    }
 
     /// An audio mix wired to a fresh tap for `track`. Assign the result to
     /// `AVPlayerItem.audioMix`. Returns nil if the tap can't be created.
@@ -63,6 +76,11 @@ final class AudioTapLevelStore {
     private let lock = NSLock()
     private var left: Float = 0
     private var right: Float = 0
+    private var bands = [Float](repeating: 0, count: SpectrumProcessor.bandCount)
+
+    /// Owned here so the audio thread always has a valid, preallocated FFT + EQ.
+    let spectrum = SpectrumProcessor()
+    let equalizer = EqualizerProcessor()
 
     func update(left: Float, right: Float) {
         lock.lock(); self.left = left; self.right = right; lock.unlock()
@@ -71,6 +89,15 @@ final class AudioTapLevelStore {
     func snapshot() -> (left: Float, right: Float) {
         lock.lock(); defer { lock.unlock() }
         return (left, right)
+    }
+
+    func updateBands(_ b: [Float]) {
+        lock.lock(); bands = b; lock.unlock()
+    }
+
+    func snapshotBands() -> [Float] {
+        lock.lock(); defer { lock.unlock() }
+        return bands
     }
 }
 
@@ -108,6 +135,29 @@ private func levelTapProcess(
         .fromOpaque(MTAudioProcessingTapGetStorage(tap)).takeUnretainedValue()
 
     let buffers = UnsafeMutableAudioBufferListPointer(bufferListInOut)
+
+    // Apply the EQ in place FIRST so playback — and the meters below — reflect it.
+    if store.equalizer.isEnabled {
+        var channelIndex = 0
+        for buffer in buffers {
+            guard let data = buffer.mData else { continue }
+            let chans = max(Int(buffer.mNumberChannels), 1)
+            let total = Int(buffer.mDataByteSize) / MemoryLayout<Float>.size
+            guard total > 0 else { continue }
+            let s = data.assumingMemoryBound(to: Float.self)
+            if chans == 1 {
+                store.equalizer.processInPlace(s, stride: 1, frames: total, channel: channelIndex)
+                channelIndex += 1
+            } else {
+                let frames = total / chans
+                for c in 0..<chans {
+                    store.equalizer.processInPlace(s + c, stride: chans, frames: frames, channel: channelIndex)
+                    channelIndex += 1
+                }
+            }
+        }
+    }
+
     var peaks: [Float] = []
     for buffer in buffers {
         guard let data = buffer.mData else { continue }
@@ -135,4 +185,15 @@ private func levelTapProcess(
     let left = peaks.first ?? 0
     let right = peaks.count > 1 ? peaks[1] : left
     store.update(left: left, right: right)
+
+    // Spectrum from channel 0 (interleaved → stride by channel count).
+    if let first = buffers.first, let data = first.mData {
+        let channels = max(Int(first.mNumberChannels), 1)
+        let total = Int(first.mDataByteSize) / MemoryLayout<Float>.size
+        if total > 0 {
+            let samples = data.assumingMemoryBound(to: Float.self)
+            let bands = store.spectrum.compute(samples: samples, stride: channels, count: total / channels)
+            store.updateBands(bands)
+        }
+    }
 }

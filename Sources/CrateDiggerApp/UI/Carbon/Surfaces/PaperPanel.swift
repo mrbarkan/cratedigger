@@ -47,6 +47,7 @@ struct PaperPanel<Content: View>: View {
                 .shadow(color: Color.white.opacity(theme.isDark ? 0.00 : 0.46), radius: 1, y: -1)
 
             content()
+                .clipShape(shape)
         }
         .compositingGroup()
     }

@@ -5,9 +5,9 @@ public enum CarbonLayout {
     public static let windowMin    = CGSize(width: 1200, height: 820)
 
     public static let chassisCornerRadius: CGFloat = 10
-    public static let chassisInsetH: CGFloat = 24
-    public static let chassisInsetV: CGFloat = 18
-    public static let chassisRowGap: CGFloat = 16
+    public static let chassisInsetH: CGFloat = 16
+    public static let chassisInsetV: CGFloat = 12
+    public static let chassisRowGap: CGFloat = 10
 
     /// Sized to fit the busiest OLED layout (CONVERT — 4 stacked rows: top
     /// status / pipeline / 5-cell readout / ticker). All other modes (now
@@ -18,10 +18,10 @@ public enum CarbonLayout {
 
     public static let sidebarWidth: CGFloat = 268
     public static let inspectorWidth: CGFloat = 380
-    public static let mainGap: CGFloat = 14
+    public static let mainGap: CGFloat = 8
 
     public static let wellCornerRadius: CGFloat = 12
-    public static let wellPadding: CGFloat = 12
+    public static let wellPadding: CGFloat = 10
     public static let paperCornerRadius: CGFloat = 8
 
     public static let oledCornerRadius: CGFloat = 16

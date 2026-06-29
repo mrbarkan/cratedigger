@@ -310,6 +310,8 @@ private struct AdvancedPreferencesView: View {
     @State private var ffprobePath: String = ""
     @State private var clickSoundsEnabled: Bool = PreferencesStore.shared.clickSoundsEnabled
     @State private var showHoverTips: Bool = PreferencesStore.shared.showHoverTips
+    @State private var simpleHorizontalVU: Bool = PreferencesStore.shared.savedSimpleHorizontalVU
+    @State private var eqEnabled: Bool = PreferencesStore.shared.savedEQEnabled
     @State private var cdAnimationSpeed: CDAnimationSpeed = PreferencesStore.shared.cdAnimationSpeed
     @State private var showResetConfirmation = false
 
@@ -332,6 +334,14 @@ private struct AdvancedPreferencesView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
+                Toggle("Simple horizontal VU meter", isOn: $simpleHorizontalVU)
+                    .onChange(of: simpleHorizontalVU) { newValue in
+                        PreferencesStore.shared.savedSimpleHorizontalVU = newValue
+                    }
+                Text("Show the classic left/right horizontal VU bars in the footer instead of the vertical spectrum analyzer.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
                 Picker("CD Animation Speed", selection: $cdAnimationSpeed) {
                     ForEach(CDAnimationSpeed.allCases, id: \.self) { speed in
                         Text(speed.label).tag(speed)
@@ -342,6 +352,14 @@ private struct AdvancedPreferencesView: View {
                     NotificationCenter.default.post(name: NSNotification.Name("CrateDiggerCDSpeedChanged"), object: newValue)
                 }
                 Text("Controls the spinning rate of the optical CD player animation during playback.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Equalizer") {
+                Toggle("Apply equalizer to playback", isOn: $eqEnabled)
+                    .onChange(of: eqEnabled) { _ in saveEQ() }
+                Text("A real 12-band equalizer applied to what you hear. Click the EQ panel in the footer to open the graphic equalizer and set the bands.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -405,6 +423,13 @@ private struct AdvancedPreferencesView: View {
         ffprobePath = PreferencesStore.shared.customFFprobePath ?? ""
         cdAnimationSpeed = PreferencesStore.shared.cdAnimationSpeed
         showHoverTips = PreferencesStore.shared.showHoverTips
+    }
+
+    private func saveEQ() {
+        // Only the master enable lives here; the band gains are owned by the
+        // graphic-EQ modal (writing them from here could stomp newer edits).
+        PreferencesStore.shared.savedEQEnabled = eqEnabled
+        NotificationCenter.default.post(name: NSNotification.Name("CrateDiggerEQChanged"), object: nil)
     }
 
     private func persistFFmpeg() {

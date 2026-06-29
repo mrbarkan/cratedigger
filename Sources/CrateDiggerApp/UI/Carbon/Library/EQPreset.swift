@@ -10,7 +10,7 @@ enum EQPreset: String, CaseIterable, Identifiable, Sendable {
     var id: String { rawValue }
     var label: String { rawValue.uppercased() }
 
-    /// 12-band visual shape for the footer LCD, each value 0...6 lit segments.
+    /// 12-band visual shape, each value 0...6 (band 3 = centre / 0 dB).
     var bands: [Int] {
         switch self {
         case .flat:   return [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3]
@@ -20,5 +20,11 @@ enum EQPreset: String, CaseIterable, Identifiable, Sendable {
         case .treble: return [1, 1, 1, 1, 2, 2, 3, 4, 5, 5, 6, 6]
         case .jazz:   return [4, 5, 4, 3, 3, 2, 2, 3, 3, 4, 5, 4]
         }
+    }
+
+    /// The preset as real per-band gains in dB — band 3 maps to 0 dB and each
+    /// segment away from centre is `maxDB/3`. Drives the working equalizer.
+    func gainCurve(maxDB: Double = 12) -> [Double] {
+        bands.map { (Double($0) - 3) / 3 * maxDB }
     }
 }

@@ -433,11 +433,17 @@ public extension RemoteArtworkService {
             }
         }
         
+        // Cover Art Archive hands back `http://` URLs; App Transport Security
+        // blocks those, so the images would spin forever. Rewrite to https.
+        func https(_ string: String) -> URL? {
+            URL(string: string.hasPrefix("http://") ? "https://" + string.dropFirst(7) : string)
+        }
+
         let envelope = try JSONDecoder().decode(CAAEnvelope.self, from: data)
         return envelope.images.compactMap { img -> CAABookletImage? in
-            guard let imageURL = URL(string: img.image) else { return nil }
+            guard let imageURL = https(img.image) else { return nil }
             let thumbStr = img.thumbnails?.size250 ?? img.thumbnails?.size500 ?? img.thumbnails?.small ?? img.thumbnails?.large ?? img.image
-            guard let thumbURL = URL(string: thumbStr) else { return nil }
+            guard let thumbURL = https(thumbStr) else { return nil }
             
             return CAABookletImage(
                 imageURL: imageURL,

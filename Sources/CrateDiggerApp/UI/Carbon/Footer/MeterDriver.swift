@@ -13,9 +13,13 @@ import Foundation
 final class MeterDriver: ObservableObject {
     @Published private(set) var leftLevel: Double = 0
     @Published private(set) var rightLevel: Double = 0
+    /// Smoothed 0...1 spectrum-band magnitudes (low→high) for the vertical meter.
+    @Published private(set) var bands: [Double] = Array(repeating: 0, count: 12)
 
     /// Supplies the latest 0...1 L/R levels (from the audio tap). Set by the view.
     var levelsProvider: (() -> (left: Double, right: Double))?
+    /// Supplies the latest 0...1 frequency bands (from the FFT). Set by the view.
+    var spectrumProvider: (() -> [Double])?
 
     /// Time constants (seconds) for the meter ballistics.
     private let attackTau = 0.05
@@ -57,10 +61,17 @@ final class MeterDriver: ObservableObject {
         leftLevel = ballistic(current: leftLevel, target: target.left, dt: dt)
         rightLevel = ballistic(current: rightLevel, target: target.right, dt: dt)
 
+        let targetBands = active ? (spectrumProvider?() ?? []) : []
+        for i in bands.indices {
+            let t = i < targetBands.count ? targetBands[i] : 0
+            bands[i] = ballistic(current: bands[i], target: t, dt: dt)
+        }
+
         // Once idle and faded out, stop ticking to save CPU.
         if !active, leftLevel < restThreshold, rightLevel < restThreshold {
             leftLevel = 0
             rightLevel = 0
+            bands = Array(repeating: 0, count: bands.count)
             timer?.invalidate()
             timer = nil
         }

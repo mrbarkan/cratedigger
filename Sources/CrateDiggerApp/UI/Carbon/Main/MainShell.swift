@@ -34,6 +34,9 @@ struct MainShell: View {
         .sheet(item: $model.tagEditTarget) { target in
             MetadataEditorView(tracks: target.tracks)
         }
+        .sheet(isPresented: $model.showingEQEditor) {
+            EqualizerEditorView()
+        }
         // "View Artwork": a booklet opens the rich page viewer; otherwise the
         // cover lightbox. Both float in their own window, so neither disturbs the
         // current source/selection. The published album is a one-shot trigger.

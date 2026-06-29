@@ -286,6 +286,25 @@ public final class PreferencesStore {
         set { defaults.set(newValue, forKey: Key.scrubLock) }
     }
 
+    /// When true, the footer shows the classic horizontal L/R VU bars instead of
+    /// the vertical spectrum analyzer. Key is read reactively via `@AppStorage`
+    /// in the footer, so keep the string in sync there.
+    public var savedSimpleHorizontalVU: Bool {
+        get { defaults.bool(forKey: "cratedigger.meter.simpleHorizontalVU") }
+        set { defaults.set(newValue, forKey: "cratedigger.meter.simpleHorizontalVU") }
+    }
+
+    /// Real-EQ master enable + the 12 per-band gains (dB).
+    public var savedEQEnabled: Bool {
+        get { defaults.bool(forKey: "cratedigger.eq.enabled") }
+        set { defaults.set(newValue, forKey: "cratedigger.eq.enabled") }
+    }
+
+    public var savedEQGains: [Double] {
+        get { (defaults.array(forKey: "cratedigger.eq.gains") as? [Double]) ?? [] }
+        set { defaults.set(newValue, forKey: "cratedigger.eq.gains") }
+    }
+
     public var savedMiniPlayerArtMode: String? {
         get { defaults.string(forKey: Key.miniPlayerArtMode) }
         set {

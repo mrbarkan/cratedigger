@@ -19,7 +19,7 @@ struct EQScreen: View {
                     .tracking(1.8)
                     .foregroundStyle(theme.ink3)
                 Spacer(minLength: 0)
-                Text("31–16K")
+                Text("20–20K")
                     .font(CarbonFont.mono(7, weight: .bold))
                     .tracking(0.8)
                     .foregroundStyle(theme.ink4)
@@ -33,11 +33,19 @@ struct EQScreen: View {
         .padding(.vertical, 9)
         .frame(width: 184, height: 64)
         .background(ChromeChassis(theme: theme, cornerRadius: 12))
-        .accessibilityLabel("Equalizer preset \(model.eqPreset.label)")
+        .contentShape(Rectangle())
+        .onTapGesture { model.showingEQEditor = true }
+        .carbonTip("Open the equalizer")
+        .accessibilityLabel("Equalizer — click to edit")
+    }
+
+    /// Map a band gain (dB, −12…+12) to lit-segment height (0…6, 3 = 0 dB).
+    private func segmentHeight(_ gainDB: Double) -> Int {
+        min(max(Int((((gainDB + 12) / 24) * Double(segments)).rounded()), 0), segments)
     }
 
     private var lcd: some View {
-        let bands = model.eqPreset.bands
+        let bands = model.eqGains.map(segmentHeight)
         return HStack(spacing: 1.5) {
             ForEach(bands.indices, id: \.self) { col in
                 VStack(spacing: 1.5) {

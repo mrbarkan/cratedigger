@@ -587,6 +587,15 @@ struct ArtworkSearchSheetView: View {
                             .aspectRatio(contentMode: .fill)
                             .frame(width: 130, height: 130)
                             .clipped()
+                    case .failure:
+                        Rectangle()
+                            .fill(Color.gray.opacity(0.2))
+                            .frame(width: 130, height: 130)
+                            .overlay(
+                                Image(systemName: "photo")
+                                    .font(.system(size: 22))
+                                    .foregroundColor(.gray.opacity(0.55))
+                            )
                     default:
                         Rectangle()
                             .fill(Color.gray.opacity(0.2))

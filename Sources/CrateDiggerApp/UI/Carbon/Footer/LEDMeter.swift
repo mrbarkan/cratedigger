@@ -1,18 +1,15 @@
 import SwiftUI
 
-/// Footer VU-meter panel — a monochrome amber LCD matching the EQ panel
-/// (`EQScreen`): header + L/R **segmented** level rows on a recessed brown LCD,
-/// plus a dB tick scale. Sized to the other footer panels (184×64).
+/// Footer spectrum meter — a vertical amber LCD identical in style to the EQ
+/// panel (`EQScreen`), but driven live by the FFT bands from the audio tap so
+/// the columns move with the music (low → high, left → right). 184×64.
 struct LEDMeterPair: View {
     @Environment(\.carbon) private var theme
-    let leftLevel: Double
-    let rightLevel: Double
 
-    // dB ticks and their horizontal position (0...1) along the bar.
-    private static let ticks: [(label: String, pos: Double, zero: Bool)] = [
-        ("-20", 0.03, false), ("-12", 0.25, false), ("-6", 0.46, false),
-        ("-3", 0.63, false), ("0", 0.80, true), ("+3", 0.98, false)
-    ]
+    /// 0…1 per band, low frequencies first. Smoothed by `MeterDriver`.
+    let bands: [Double]
+
+    private let segments = 6
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -20,32 +17,46 @@ struct LEDMeterPair: View {
                 Image(systemName: "waveform")
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(theme.ink3)
-                Text("VU METER")
+                Text("VU")
                     .font(CarbonFont.mono(8, weight: .bold))
                     .tracking(1.8)
                     .foregroundStyle(theme.ink3)
                 Spacer(minLength: 0)
+                Text("20–20K")
+                    .font(CarbonFont.mono(7, weight: .bold))
+                    .tracking(0.8)
+                    .foregroundStyle(theme.ink4)
             }
 
             Spacer(minLength: 0)
 
-            lcd
-
-            scale
-                .padding(.leading, 13)
-                .padding(.top, 2)
+            lcd.frame(height: 27)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
         .frame(width: 184, height: 64)
         .background(ChromeChassis(theme: theme, cornerRadius: 12))
+        .accessibilityLabel("Audio spectrum")
     }
 
-    // The recessed LCD well: same brown radial gradient + amber rim as the EQ.
     private var lcd: some View {
-        VStack(spacing: 3) {
-            channel(label: "L", level: leftLevel)
-            channel(label: "R", level: rightLevel)
+        HStack(spacing: 1.5) {
+            ForEach(bands.indices, id: \.self) { col in
+                let lit = Int((min(max(bands[col], 0), 1) * Double(segments)).rounded())
+                VStack(spacing: 1.5) {
+                    ForEach(0..<segments, id: \.self) { rowFromTop in
+                        let seg = segments - rowFromTop      // 6 (top) ... 1 (bottom)
+                        let isLit = seg <= lit
+                        let isPeak = seg == lit && lit > 0
+                        RoundedRectangle(cornerRadius: 0.5, style: .continuous)
+                            .fill(segmentColor(lit: isLit, peak: isPeak))
+                            .shadow(
+                                color: isLit ? Color(hex: 0xFF7A1F).opacity(isPeak ? 0.9 : 0.6) : .clear,
+                                radius: isPeak ? 3 : 2
+                            )
+                    }
+                }
+            }
         }
         .padding(.horizontal, 5)
         .padding(.vertical, 3)
@@ -71,13 +82,62 @@ struct LEDMeterPair: View {
         )
     }
 
+    private func segmentColor(lit: Bool, peak: Bool) -> Color {
+        if peak { return Color(hex: 0xFFD7A0) }
+        if lit { return Color(hex: 0xFF7A1F) }
+        return Color(hex: 0xFF6A1A, opacity: 0.09)
+    }
+}
+
+/// The classic horizontal L/R VU bars (segmented amber), offered as an
+/// alternative to the vertical spectrum via the "Simple horizontal VU" setting.
+struct HorizontalLEDMeter: View {
+    @Environment(\.carbon) private var theme
+    let leftLevel: Double
+    let rightLevel: Double
+
+    private static let ticks: [(label: String, pos: Double, zero: Bool)] = [
+        ("-20", 0.03, false), ("-12", 0.25, false), ("-6", 0.46, false),
+        ("-3", 0.63, false), ("0", 0.80, true), ("+3", 0.98, false)
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 7) {
+                Image(systemName: "waveform")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(theme.ink3)
+                Text("VU METER")
+                    .font(CarbonFont.mono(8, weight: .bold))
+                    .tracking(1.8)
+                    .foregroundStyle(theme.ink3)
+                Spacer(minLength: 0)
+            }
+
+            Spacer(minLength: 0)
+
+            VStack(alignment: .leading, spacing: 3) {
+                channel(label: "L", level: leftLevel)
+                channel(label: "R", level: rightLevel)
+            }
+
+            scale
+                .padding(.leading, 13)
+                .padding(.top, 1)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .frame(width: 184, height: 64)
+        .background(ChromeChassis(theme: theme, cornerRadius: 12))
+    }
+
     private func channel(label: String, level: Double) -> some View {
-        HStack(spacing: 5) {
+        HStack(spacing: 6) {
             Text(label)
-                .font(CarbonFont.mono(6.5, weight: .bold))
-                .foregroundStyle(Color(hex: 0xFF7A1F).opacity(0.85))
-                .frame(width: 6, alignment: .leading)
-            SegmentRow(level: level)
+                .font(CarbonFont.mono(7.5, weight: .bold))
+                .foregroundStyle(theme.ink3)
+                .frame(width: 7, alignment: .leading)
+            HorizontalSegmentRow(level: level)
         }
     }
 
@@ -102,9 +162,7 @@ struct LEDMeterPair: View {
     }
 }
 
-/// One channel's level as a horizontal row of lit/unlit amber segments — the
-/// VU equivalent of EQScreen's vertical bars. Brightest cell marks the peak.
-private struct SegmentRow: View {
+private struct HorizontalSegmentRow: View {
     let level: Double
     private let segments = 14
 
