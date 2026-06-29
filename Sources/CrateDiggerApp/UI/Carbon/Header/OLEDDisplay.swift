@@ -941,13 +941,27 @@ private struct ScanView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .center, spacing: 12) {
-                statusCapsule
+                if model.scanProgress.isRunning { statusCapsule }
                 Spacer()
                 Text(sourceLine)
                     .font(CarbonFont.mono(9, weight: .medium))
                     .tracking(1.8)
                     .foregroundStyle(oledMuted)
                     .lineLimit(1)
+            }
+
+            if let path = devicePathBar {
+                HStack(spacing: 6) {
+                    Image(systemName: "folder")
+                        .font(.system(size: 9))
+                        .foregroundStyle(oledMuted)
+                    Text(path)
+                        .font(CarbonFont.mono(9.5, weight: .medium))
+                        .foregroundStyle(oledForeground.opacity(0.85))
+                        .lineLimit(1)
+                        .truncationMode(.head)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             Text(scanDetail)
@@ -966,23 +980,22 @@ private struct ScanView: View {
                 Spacer(minLength: 0)
             }
 
-            progressBar
+            if model.scanProgress.isRunning { progressBar }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(.horizontal, CarbonLayout.oledPaddingH)
         .padding(.vertical, CarbonLayout.oledPaddingV)
     }
 
+    // Rendered only while a scan is running (gated in `body`) — no capsule
+    // background, just the lit "INDEXING" label.
     private var statusCapsule: some View {
-        Text(statusText)
+        Text("INDEXING")
             .font(CarbonFont.mono(8.5, weight: .bold))
             .tracking(1.7)
-            .foregroundStyle(statusColor)
-            .padding(.horizontal, 8)
+            .foregroundStyle(theme.cyan)
             .padding(.vertical, 3)
-            .background(Capsule().fill(statusColor.opacity(0.13)))
-            .overlay(Capsule().stroke(statusColor.opacity(0.40), lineWidth: 0.8))
-            .shadow(color: statusColor.opacity(model.scanProgress.isRunning ? 0.32 : 0), radius: 5)
+            .shadow(color: theme.cyan.opacity(0.32), radius: 5)
     }
 
     private var progressBar: some View {
@@ -1034,21 +1047,27 @@ private struct ScanView: View {
         )
     }
 
-    private var statusText: String {
-        if model.scanProgress.isRunning { return "INDEXING" }
-        return model.index.allTracks.isEmpty ? "EMPTY" : "READY"
-    }
-
-    private var statusColor: Color {
-        if model.scanProgress.isRunning { return theme.cyan }
-        return model.index.allTracks.isEmpty ? theme.orange : theme.sun
-    }
-
     private var sourceLine: String {
         if let name = model.scanProgress.folderName, !name.isEmpty {
             return name.uppercased()
         }
         return model.index.allTracks.isEmpty ? "NO SOURCE" : "LIBRARY INDEX"
+    }
+
+    /// While browsing a device, show where files live: the volume name, plus the
+    /// selected track's containing folder relative to the device root. Nil for
+    /// non-device sources.
+    private var devicePathBar: String? {
+        guard case .device(let root) = model.currentSource else { return nil }
+        let volumeName = URL(fileURLWithPath: root).lastPathComponent
+        guard let dir = model.selectedTrack?.track.fileURL.deletingLastPathComponent().path else {
+            return "/" + volumeName
+        }
+        if dir.hasPrefix(root) {
+            let rel = String(dir.dropFirst(root.count))
+            return "/" + volumeName + rel
+        }
+        return dir
     }
 
     private var scanDetail: String {

@@ -7,18 +7,13 @@ import Foundation
 @MainActor
 extension LibraryViewModel {
 
-    /// Enter radio mode, optionally filtered to one source category, and select a
-    /// stream (the previously-playing one if still visible, else the first listed).
+    /// Enter radio mode, optionally filtered to one source category. Browsing a
+    /// stream list must NOT start or stop playback — it only swaps the view. The
+    /// currently-playing stream (if any) stays in `selectedStreamID`, so it keeps
+    /// its highlight when it's visible in this category. Playing a stream is an
+    /// explicit action (tapping a row, or `addStream`).
     func enterRadio(category: RadioCategory?) {
         selectSource(.radio(category: category))
-        let visible = filteredStreams
-        if let current = selectedStreamID, visible.contains(where: { $0.id == current }) {
-            selectStream(id: current)
-        } else if let first = visible.first {
-            selectStream(id: first.id)
-        } else {
-            selectedStreamID = nil
-        }
     }
 
     /// Select a stream and (Phase 3+) start playing it.

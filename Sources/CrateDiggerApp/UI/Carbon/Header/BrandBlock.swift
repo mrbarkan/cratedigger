@@ -6,70 +6,90 @@ struct BrandBlock: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 12) {
-                BrandMark(size: 38)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("CrateDigger")
-                        .font(CarbonFont.sans(18, weight: .semibold))
-                        .foregroundStyle(theme.ink)
-                    Text("CD-01 · Library Mgr.")
-                        .font(CarbonFont.mono(8.5, weight: .medium))
-                        .tracking(2)
-                        .foregroundStyle(theme.ink3)
-                        .textCase(.uppercase)
-                }
+            HStack(spacing: 11) {
+                ActivityLight(active: model.isWorking)
+                Text("CrateDigger")
+                    .font(CarbonFont.sans(18, weight: .semibold))
+                    .foregroundStyle(theme.ink)
             }
-            // Stats + controls align to the title text (indented past the mark).
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 14) {
-                    statLabel(value: "\(model.index.allTracks.count)", suffix: "RECS")
-                    statLabel(value: gigabytesString(bytes: model.index.totalSizeBytes), suffix: nil)
-                }
+
+            VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
                     LibButton(title: "DIG CRATE", systemImage: "folder",
                               tip: "Dig Crate — scan a folder of audio. New tracks land in the Prep Crate.") { model.openFolderViaPanel() }
                     LibButton(title: "RESCAN", systemImage: "arrow.clockwise",
-                              tip: "Rescan — re-read your library folders to pick up changes.") { model.refreshLibrary() }
+                              tip: "Rescan — re-read your library folders (or the selected device) to pick up changes.") { model.refreshLibrary() }
+                    LibButton(title: "", systemImage: "pip.enter",
+                              tip: "Open the mini player") {
+                        NotificationCenter.default.post(name: NSNotification.Name("CrateDiggerShowMiniPlayer"), object: nil)
+                    }
+                }
+                HStack(spacing: 8) {
+                    LibButton(title: "ADD TO CRATE", systemImage: "tray.and.arrow.down.fill",
+                              tip: addToCrateTip, highlighted: canAddToCrate) {
+                        model.addSelectionToCrate(crateName: model.targetCrateName)
+                    }
+                    LibButton(title: "TRANSFER TO", systemImage: "arrow.up.forward.square",
+                              tip: "Transfer the current selection to an external device") {
+                        model.requestExternalDeviceTransfer()
+                    }
                 }
             }
-            .padding(.leading, 50)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func statLabel(value: String, suffix: String?) -> some View {
-        HStack(spacing: 4) {
-            Text(value)
-                .font(CarbonFont.mono(8.5, weight: .semibold))
-                .foregroundStyle(theme.ink)
-            if let suffix {
-                Text(suffix)
-                    .font(CarbonFont.mono(8.5, weight: .medium))
-                    .foregroundStyle(theme.ink3)
-            }
-        }
-        .tracking(1.8)
-        .textCase(.uppercase)
+    private var canAddToCrate: Bool {
+        !model.selectedTracksForCrateAdd().isEmpty
     }
 
-    private func gigabytesString(bytes: Int64) -> String {
-        guard bytes > 0 else { return "0 GB" }
-        let gb = Double(bytes) / 1_000_000_000
-        if gb < 1 {
-            let mb = Double(bytes) / 1_000_000
-            return String(format: "%.1f MB", mb)
-        }
-        return String(format: "%.1f GB", gb)
+    private var addToCrateTip: String {
+        let count = model.selectedTracksForCrateAdd().count
+        return count == 0
+            ? "Select albums or tracks (⌘-click for several), then add them to a crate"
+            : "Add \(count) track\(count == 1 ? "" : "s") to \(model.targetCrateName)"
     }
 }
 
-/// Small metal-chrome control button shown under the brand stats
-/// (Load Folder / Rescan) — mirrors the v6 `.lib-btn` row.
+/// A small blue "drive access" light: steady-dim when idle, pulsing while the
+/// app is scanning or converting.
+private struct ActivityLight: View {
+    let active: Bool
+    @State private var pulsing = false
+
+    private let blue = Color(hex: 0x3BA7FF)
+
+    var body: some View {
+        Circle()
+            .fill(blue)
+            .frame(width: 11, height: 11)
+            .overlay(Circle().stroke(Color.white.opacity(0.25), lineWidth: 0.5))
+            .opacity(active ? (pulsing ? 1.0 : 0.4) : 0.5)
+            .shadow(color: blue.opacity(active && pulsing ? 0.9 : 0.22),
+                    radius: active && pulsing ? 6 : 2)
+            .onAppear { syncPulse() }
+            .onChange(of: active) { _ in syncPulse() }
+            .accessibilityLabel(active ? "Working" : "Idle")
+    }
+
+    private func syncPulse() {
+        if active {
+            withAnimation(.easeInOut(duration: 0.55).repeatForever(autoreverses: true)) { pulsing = true }
+        } else {
+            withAnimation(.easeInOut(duration: 0.2)) { pulsing = false }
+        }
+    }
+}
+
+/// Small metal-chrome control button for the header button group. When
+/// `highlighted` it lights up amber (used by ADD TO CRATE when a selection is
+/// ready). An empty `title` renders icon-only.
 private struct LibButton: View {
     @Environment(\.carbon) private var theme
     let title: String
     let systemImage: String
     var tip: String? = nil
+    var highlighted: Bool = false
     let action: () -> Void
 
     @State private var spinning = false
@@ -83,22 +103,36 @@ private struct LibButton: View {
             }
             action()
         }) {
-            HStack(spacing: 5) {
+            HStack(spacing: title.isEmpty ? 0 : 5) {
                 Image(systemName: systemImage)
                     .font(.system(size: 9, weight: .bold))
                     .rotationEffect(.degrees(spinning ? 360 : 0))
                     .animation(spinning ? .linear(duration: 0.9).repeatForever(autoreverses: false) : .default, value: spinning)
-                Text(title)
-                    .font(CarbonFont.mono(8, weight: .bold))
-                    .tracking(1.4)
+                if !title.isEmpty {
+                    Text(title)
+                        .font(CarbonFont.mono(8, weight: .bold))
+                        .tracking(1.4)
+                }
             }
-            .foregroundStyle(theme.ink2)
+            .foregroundStyle(highlighted ? theme.orange : theme.ink2)
             .padding(.horizontal, 9)
             .frame(height: 24)
-            .background(ChromeChassis(theme: theme, cornerRadius: 6))
+            .background(
+                ZStack {
+                    ChromeChassis(theme: theme, cornerRadius: 6)
+                    if highlighted {
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(theme.orange.opacity(0.14))
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .stroke(theme.orange.opacity(0.55), lineWidth: 1)
+                    }
+                }
+            )
+            .shadow(color: highlighted ? theme.orange.opacity(0.35) : .clear, radius: 5)
         }
         .buttonStyle(.plain)
         .carbonTip(tip ?? title.capitalized)
+        .animation(.easeInOut(duration: 0.18), value: highlighted)
     }
 }
 

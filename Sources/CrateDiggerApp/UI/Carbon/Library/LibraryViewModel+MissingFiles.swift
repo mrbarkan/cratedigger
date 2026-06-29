@@ -100,12 +100,17 @@ extension LibraryViewModel {
 
     // MARK: - Offline volume tracking
 
-    /// Subscribe to drive mount/unmount so the offline badge updates live.
+    /// Subscribe to drive mount/unmount so the offline badge + the Sources
+    /// "Devices" list update live.
     func setupVolumeObservers() {
         let center = NSWorkspace.shared.notificationCenter
         for name in [NSWorkspace.didMountNotification, NSWorkspace.didUnmountNotification, NSWorkspace.didRenameVolumeNotification] {
             center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                Task { @MainActor in self?.recomputeOfflineVolumes() }
+                Task { @MainActor in
+                    self?.recomputeOfflineVolumes()
+                    self?.refreshCDs()
+                    self?.refreshDevices()
+                }
             }
         }
     }

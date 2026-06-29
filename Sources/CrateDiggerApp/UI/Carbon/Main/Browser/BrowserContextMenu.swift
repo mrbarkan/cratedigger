@@ -30,10 +30,22 @@ enum BrowserContextMenu {
         }
         Button("Select All") { model.selectAllArtists() }
 
+        Divider()
+        Button("Edit Tags…") { model.editTags(for: artist.albums.flatMap { $0.tracks }) }
+        Button("View Artwork") {
+            if let album = artworkAlbum(for: artist) { model.showArtwork(for: album) }
+        }
+
         if case .localCrate(let crateName) = model.currentSource {
             Divider()
             Button("Remove from “\(crateName)”") { model.removeArtistFromCrate(artist, crateName: crateName) }
         }
+    }
+
+    /// Best album to represent an artist's artwork: the first with embedded art
+    /// or a booklet, else just the first album.
+    private static func artworkAlbum(for artist: Artist) -> Album? {
+        artist.albums.first { $0.artworkHash != nil || $0.booklet != nil } ?? artist.albums.first
     }
 
     /// Menu for a single album. "Add to Crate" becomes "Add N Albums to Crate"
@@ -69,6 +81,10 @@ enum BrowserContextMenu {
                 model.beginGroupAlbums()
             }
         }
+
+        Divider()
+        Button("Edit Tags…") { model.editTags(for: album.tracks) }
+        Button("View Artwork") { model.showArtwork(for: album) }
 
         removalItems(forAlbum: album, model: model)
     }

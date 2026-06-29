@@ -94,8 +94,15 @@ struct SourcesSidebar: View {
                             RoundedRectangle(cornerRadius: 6)
                                 .stroke(targetedCrate == crateName ? theme.cyan : Color.clear, lineWidth: 1.5)
                         )
+                        .draggable("crate::" + crateName)
                         .dropDestination(for: String.self) { items, _ in
-                            model.addItemsToCrate(items, crateName: crateName)
+                            // A crate dragged onto another reorders the list; any other
+                            // payload (track/artist/album) adds those tracks to this crate.
+                            if let dragged = items.first(where: { $0.hasPrefix("crate::") }) {
+                                model.moveCrate(String(dragged.dropFirst("crate::".count)), before: crateName)
+                            } else {
+                                model.addItemsToCrate(items, crateName: crateName)
+                            }
                             return true
                         } isTargeted: { targeted in
                             if targeted {
@@ -184,7 +191,20 @@ struct SourcesSidebar: View {
                             }
                         }
                     }
-                    
+
+                    if !model.mountedDevices.isEmpty {
+                        sectionHeader("Devices", trailing: "")
+                        ForEach(model.mountedDevices) { device in
+                            sidebarItem(
+                                icon: Image(systemName: "externaldrive"),
+                                title: device.name,
+                                count: isSelectedDevice(device.volumeURL.path) ? "\(model.index.allTracks.count)" : "—",
+                                selected: isSelectedDevice(device.volumeURL.path),
+                                action: { model.selectSource(.device(volumePath: device.volumeURL.path)) }
+                            )
+                        }
+                    }
+
                     HStack {
                         sectionHeader("Playlists", trailing: "")
                         Spacer()
@@ -234,12 +254,6 @@ struct SourcesSidebar: View {
                     }
                 }
             }
-            
-            Spacer()
-            
-            addToCrateButton
-                .padding(.horizontal, 4)
-                .padding(.vertical, 8)
         }
         .sheet(isPresented: $showingPlaylistSheet) {
             playlistCreationSheet
@@ -249,6 +263,7 @@ struct SourcesSidebar: View {
         }
         .onAppear {
             model.refreshCDs()
+            model.refreshDevices()
         }
     }
 
@@ -268,6 +283,13 @@ struct SourcesSidebar: View {
 
     private func isSelectedCD(_ path: String) -> Bool {
         if case .cd(let currentPath) = model.currentSource {
+            return currentPath == path
+        }
+        return false
+    }
+
+    private func isSelectedDevice(_ path: String) -> Bool {
+        if case .device(let currentPath) = model.currentSource {
             return currentPath == path
         }
         return false
@@ -422,28 +444,6 @@ struct SourcesSidebar: View {
         } else {
             Color.clear
         }
-    }
-
-    @ViewBuilder
-    private var addToCrateButton: some View {
-        let tracks = model.selectedTracksForCrateAdd()
-        let armed = !tracks.isEmpty
-        KeyButton(style: armed ? .glowingFilled : .normal,
-                  action: { model.addSelectionToCrate(crateName: model.targetCrateName) }) {
-            HStack(spacing: 8) {
-                Image(systemName: "tray.and.arrow.down.fill")
-                    .font(.system(size: 11, weight: .semibold))
-                Text("ADD TO CRATE")
-                    .font(CarbonFont.mono(10, weight: .bold))
-                    .tracking(2)
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 12)
-        }
-        .frame(height: 30)
-        .carbonTip(armed
-            ? "Add \(tracks.count) track\(tracks.count == 1 ? "" : "s") to \(model.targetCrateName)"
-            : "Select albums or tracks (⌘-click for several), then add them to a crate")
     }
 
     // MARK: - Renamable crate / playlist rows

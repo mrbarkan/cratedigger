@@ -55,6 +55,9 @@ enum LibrarySource: Hashable, Sendable {
     case remote
     case playlist(name: String)
     case cd(volumePath: String)
+    /// A mounted external device (USB drive, SD card, Rockbox iPod) browsed by
+    /// its volume path.
+    case device(volumePath: String)
     /// Radio / Streams. `nil` category == "All Streams"; otherwise filtered to
     /// one source category ("YT Live" / "YT Records").
     case radio(category: RadioCategory?)
@@ -90,23 +93,9 @@ final class LibraryViewModel: ObservableObject {
     @Published var oledView: OLEDView = .nowPlaying {
         didSet {
             prefs.savedOLEDView = oledView.rawValue
-            handleOLEDViewChange(from: oldValue, to: oledView)
         }
     }
 
-    private func handleOLEDViewChange(from old: OLEDView, to new: OLEDView) {
-        if new == .conversion && old != .conversion {
-            if !browserCollapsed {
-                browserCollapsed = true
-                browserAutoCollapsedForConvert = true
-            }
-        } else if old == .conversion && new != .conversion {
-            if browserAutoCollapsedForConvert {
-                browserCollapsed = false
-                browserAutoCollapsedForConvert = false
-            }
-        }
-    }
     @Published var scanProgress: ScanProgress = .idle
     /// The OLED view to restore after an add-to-crate import status finishes.
     private var importStatusReturnOLED: OLEDView?
@@ -131,7 +120,25 @@ final class LibraryViewModel: ObservableObject {
     @Published var inspectorCollapsed: Bool = false
     @Published var showArtworkGallery: Bool = false
 
-    private var browserAutoCollapsedForConvert: Bool = false
+    /// Tag-editor sheet target — one track (full editor) or many (batch editor).
+    /// Presented from `MainShell`, so it works from any row's context menu.
+    @Published var tagEditTarget: TagEditTarget?
+
+    /// Album whose artwork to show in the floating viewer. A transient trigger:
+    /// `MainShell` observes it, presents the viewer window, then clears it.
+    @Published var artworkViewerAlbum: Album?
+
+    /// Open the tag editor for a set of tracks (album/artist context menus pass
+    /// all their tracks; the inspector passes the single selected track).
+    func editTags(for tracks: [LoadedTrack]) {
+        guard !tracks.isEmpty else { return }
+        tagEditTarget = TagEditTarget(tracks: tracks)
+    }
+
+    /// Show an album's artwork (cover + booklet) in the floating viewer.
+    func showArtwork(for album: Album) {
+        artworkViewerAlbum = album
+    }
 
     func toggleBrowserCollapsed() {
         if !browserCollapsed && inspectorCollapsed {
@@ -303,6 +310,7 @@ final class LibraryViewModel: ObservableObject {
     }
     @Published var playlists: [Playlist] = []
     @Published var mountedCDs: [AudioCDInfo] = []
+    @Published var mountedDevices: [MountedDevice] = []
     @Published var deadTracks: [LoadedTrack] = []
     /// Names of `/Volumes/<name>` drives the library references that aren't
     /// currently mounted. Drives the "offline" row badge. Recomputed only on
@@ -346,6 +354,12 @@ final class LibraryViewModel: ObservableObject {
         if case .radio = currentSource { return true }
         return false
     }
+
+    /// True while the app is doing background work (scanning a folder/device or
+    /// converting) — drives the pulsing activity light in the header.
+    var isWorking: Bool {
+        scanProgress.isRunning || conversionProgress.isRunning
+    }
     var filteredStreams: [StreamSource] {
         guard let category = radioCategoryFilter else { return streams }
         return streams.filter { category.contains($0) }
@@ -384,6 +398,10 @@ final class LibraryViewModel: ObservableObject {
     private(set) var localIndex: LibraryIndex = .empty
     private var remoteIndex: LibraryIndex = .empty
     private var cdIndex: LibraryIndex = .empty
+    /// Scanned device indexes, keyed by volume path — so re-selecting a device
+    /// reuses the scan instead of re-walking the disk. Invalidated on unplug
+    /// (`refreshDevices`) and on RESCAN (`refreshLibrary`).
+    private var deviceIndexCache: [String: LibraryIndex] = [:]
     private var playlistIndex: LibraryIndex = .empty
     private var prepCrateIndex: LibraryIndex = .empty
 
@@ -398,6 +416,7 @@ final class LibraryViewModel: ObservableObject {
     // New services
     let subsonicClient = SubsonicClient()
     let cdRipper = CDRipperService()
+    let deviceDetector = DeviceDetectionService()
     let playlistService = PlaylistService()
     let audioOutput = AudioOutputManager()
     let lastFM = LastFMScrobbler()
@@ -505,9 +524,11 @@ final class LibraryViewModel: ObservableObject {
         wirePlaybackBindings()
         playback.setVolume(playbackVolume)
 
-        // Load playlists and CDs
+        // Load playlists, CDs, and external devices
         self.playlists = playlistService.listPlaylists()
         self.mountedCDs = cdRipper.detectAudioCDs()
+        self.mountedDevices = deviceDetector.detectDevices()
+            .filter { dev in !self.mountedCDs.contains { $0.volumeURL.path == dev.volumeURL.path } }
 
         if let outputUID = prefs.selectedOutputDeviceUID {
             playback.setOutputDeviceUID(outputUID)
@@ -771,6 +792,8 @@ final class LibraryViewModel: ObservableObject {
             selectPlaylist(name: name)
         case .cd(let path):
             selectCD(volumePath: path)
+        case .device(let path):
+            selectDevice(volumePath: path)
         case .radio(let category):
             // The browser renders RadioListView from `filteredStreams`, not `index`.
             radioCategoryFilter = category
@@ -985,6 +1008,73 @@ final class LibraryViewModel: ObservableObject {
 
     func refreshCDs() {
         mountedCDs = cdRipper.detectAudioCDs()
+    }
+
+    // MARK: - External devices
+
+    /// Re-detect mounted removable devices. Audio CDs are excluded so they don't
+    /// show in both "CD Drives" and "Devices". Wired to the volume mount/unmount
+    /// observers (see `setupVolumeObservers`) plus init + sidebar appear.
+    func refreshDevices() {
+        let cdPaths = Set(mountedCDs.map { $0.volumeURL.path })
+        let detected = deviceDetector.detectDevices().filter { !cdPaths.contains($0.volumeURL.path) }
+        if detected != mountedDevices { mountedDevices = detected }
+        // Drop cached scans for devices that are no longer mounted.
+        let mountedPaths = Set(detected.map { $0.volumeURL.path })
+        deviceIndexCache = deviceIndexCache.filter { mountedPaths.contains($0.key) }
+        // If the device we're browsing was unplugged, fall back to the library.
+        if case .device(let path) = currentSource,
+           !detected.contains(where: { $0.volumeURL.path == path }) {
+            selectSource(.localAll)
+        }
+    }
+
+    /// Browse a mounted device. The first visit scans its audio files (async — a
+    /// Rockbox iPod over USB can hold thousands of files; ponytail: full-volume
+    /// recursive scan, scope to a music subfolder if it ever feels slow) and
+    /// caches the result; later visits reuse the cache. RESCAN forces a fresh
+    /// walk via `forceRescan`.
+    private func selectDevice(volumePath: String, forceRescan: Bool = false) {
+        guard let device = mountedDevices.first(where: { $0.volumeURL.path == volumePath }) else {
+            index = .empty
+            return
+        }
+        if !forceRescan, let cached = deviceIndexCache[volumePath] {
+            oledView = .scan   // surface the path bar without re-walking the disk
+            adoptDeviceIndex(cached)
+            return
+        }
+        index = .empty
+        scanProgress = ScanProgress(folderName: device.name, filesProbed: 0, totalCandidates: nil, isRunning: true)
+        oledView = .scan
+        let root = device.volumeURL
+        scanTask?.cancel()
+        scanTask = Task { [weak self] in
+            guard let self else { return }
+            let scanned = await self.scanner.scanFolder(root)
+            if Task.isCancelled { return }
+            await MainActor.run {
+                let built = self.buildIndex(scanned)
+                self.deviceIndexCache[volumePath] = built
+                self.scanProgress = .idle
+                // Only adopt the result if the user is still on this device.
+                guard case .device(let current) = self.currentSource, current == volumePath else { return }
+                self.adoptDeviceIndex(built)
+            }
+        }
+    }
+
+    private func adoptDeviceIndex(_ built: LibraryIndex) {
+        index = built
+        selectedArtistID = built.artists.first?.id
+        selectedAlbumID = built.artists.first?.albums.first?.id
+        selectedTrackID = built.artists.first?.albums.first?.tracks.first?.track.id
+    }
+
+    /// Present the device-transfer sheet (the same one as ⌘⇧T), so the Sources
+    /// "Transfer here" button is a discoverable way into the existing flow.
+    func requestExternalDeviceTransfer() {
+        NotificationCenter.default.post(name: NSNotification.Name("CrateDiggerTransferToDevice"), object: nil)
     }
 
     private func selectCD(volumePath: String) {
@@ -1206,6 +1296,12 @@ final class LibraryViewModel: ObservableObject {
     }
 
     func refreshLibrary() {
+        // RESCAN on a device re-walks that volume (the only time we re-scan it).
+        if case .device(let path) = currentSource {
+            deviceIndexCache[path] = nil
+            selectDevice(volumePath: path, forceRescan: true)
+            return
+        }
         let newIndex = buildIndex(localIndex.allTracks)
         localIndex = newIndex
         if isLocalSource {
@@ -1903,11 +1999,11 @@ final class LibraryViewModel: ObservableObject {
         let cratesDir = cratesDirectoryURL
         do {
             let contents = try fm.contentsOfDirectory(at: cratesDir, includingPropertiesForKeys: nil)
-            self.availableCrates = contents
+            let names = contents
                 .filter { $0.pathExtension == "cdcrate" }
                 .map { $0.deletingPathExtension().lastPathComponent }
-                .sorted()
-            
+            self.availableCrates = orderedCrates(names)
+
             // Auto-create Personal Crate if none exist
             if self.availableCrates.isEmpty {
                 createCrate(name: "Personal Crate")
@@ -1926,6 +2022,32 @@ final class LibraryViewModel: ObservableObject {
         } catch {
             AppLog.library.warning("Failed to list crates: \(error.localizedDescription)")
         }
+    }
+
+    /// Orders crate names by the user's saved manual order (`prefs.savedCrateOrder`);
+    /// any crate not in that list (new, renamed, or first run) is appended
+    /// alphabetically. Saved names that no longer exist are dropped.
+    private func orderedCrates(_ names: [String]) -> [String] {
+        let present = Set(names)
+        let ordered = prefs.savedCrateOrder.filter { present.contains($0) }
+        let extras = names.filter { !ordered.contains($0) }.sorted()
+        return ordered + extras
+    }
+
+    /// Manual drag-reorder from the Sources sidebar: move `name` to just before
+    /// `beforeName` (or to the end when nil), then persist the order.
+    func moveCrate(_ name: String, before beforeName: String?) {
+        guard name != beforeName else { return }
+        var order = availableCrates
+        guard let from = order.firstIndex(of: name) else { return }
+        order.remove(at: from)
+        if let beforeName, let to = order.firstIndex(of: beforeName) {
+            order.insert(name, at: to)
+        } else {
+            order.append(name)
+        }
+        availableCrates = order
+        prefs.savedCrateOrder = order
     }
 
     func createCrate(name: String) {

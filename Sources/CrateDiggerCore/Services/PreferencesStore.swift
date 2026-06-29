@@ -39,6 +39,7 @@ public final class PreferencesStore {
         static let organiseByAlbumArtist = "cratedigger.library.organiseByAlbumArtist"
         static let keepLibraryOrganised = "cratedigger.library.keepLibraryOrganised"
         static let cratesIndexFolderBookmark = "cratedigger.library.cratesIndexFolderBookmark"
+        static let crateOrder = "cratedigger.library.crateOrder"
         static let trackSortField = "cratedigger.browser.trackSortField"
         static let trackSortAscending = "cratedigger.browser.trackSortAscending"
         static let artistSortField = "cratedigger.browser.artistSortField"
@@ -260,6 +261,13 @@ public final class PreferencesStore {
                 defaults.removeObject(forKey: Key.trackSortField)
             }
         }
+    }
+
+    /// User's manual crate ordering for the Sources sidebar. Empty until the user
+    /// drags a crate; crates absent from this list fall back to alphabetical.
+    public var savedCrateOrder: [String] {
+        get { defaults.array(forKey: Key.crateOrder) as? [String] ?? [] }
+        set { defaults.set(newValue, forKey: Key.crateOrder) }
     }
 
     public var savedBrowserLayout: String? {

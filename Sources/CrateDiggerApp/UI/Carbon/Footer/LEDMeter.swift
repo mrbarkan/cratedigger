@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// Footer VU-meter panel (CrateDigger v6 `.meterpair`): header + L/R level bars
-/// + a dB tick scale, sized to match the other footer panels (184×64).
+/// Footer VU-meter panel — a monochrome amber LCD matching the EQ panel
+/// (`EQScreen`): header + L/R **segmented** level rows on a recessed brown LCD,
+/// plus a dB tick scale. Sized to the other footer panels (184×64).
 struct LEDMeterPair: View {
     @Environment(\.carbon) private var theme
     let leftLevel: Double
@@ -28,14 +29,11 @@ struct LEDMeterPair: View {
 
             Spacer(minLength: 0)
 
-            VStack(alignment: .leading, spacing: 3) {
-                channel(label: "L", level: leftLevel)
-                channel(label: "R", level: rightLevel)
-            }
+            lcd
 
             scale
                 .padding(.leading, 13)
-                .padding(.top, 1)
+                .padding(.top, 2)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
@@ -43,13 +41,43 @@ struct LEDMeterPair: View {
         .background(ChromeChassis(theme: theme, cornerRadius: 12))
     }
 
+    // The recessed LCD well: same brown radial gradient + amber rim as the EQ.
+    private var lcd: some View {
+        VStack(spacing: 3) {
+            channel(label: "L", level: leftLevel)
+            channel(label: "R", level: rightLevel)
+        }
+        .padding(.horizontal, 5)
+        .padding(.vertical, 3)
+        .background(
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(
+                    RadialGradient(
+                        colors: [Color(hex: 0x2C1502), Color(hex: 0x170A01), Color(hex: 0x0D0500)],
+                        center: .center,
+                        startRadius: 2,
+                        endRadius: 90
+                    )
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .stroke(Color.black.opacity(0.65), lineWidth: 1)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .stroke(Color(hex: 0xFF7A1F).opacity(0.10), lineWidth: 0.5)
+                        .blur(radius: 0.5)
+                )
+        )
+    }
+
     private func channel(label: String, level: Double) -> some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 5) {
             Text(label)
-                .font(CarbonFont.mono(7.5, weight: .bold))
-                .foregroundStyle(theme.ink3)
-                .frame(width: 7, alignment: .leading)
-            LevelBar(level: level)
+                .font(CarbonFont.mono(6.5, weight: .bold))
+                .foregroundStyle(Color(hex: 0xFF7A1F).opacity(0.85))
+                .frame(width: 6, alignment: .leading)
+            SegmentRow(level: level)
         }
     }
 
@@ -74,28 +102,34 @@ struct LEDMeterPair: View {
     }
 }
 
-private struct LevelBar: View {
-    @Environment(\.carbon) private var theme
+/// One channel's level as a horizontal row of lit/unlit amber segments — the
+/// VU equivalent of EQScreen's vertical bars. Brightest cell marks the peak.
+private struct SegmentRow: View {
     let level: Double
+    private let segments = 14
 
     var body: some View {
-        GeometryReader { proxy in
-            let width = max(proxy.size.width, 1)
-            ZStack(alignment: .leading) {
-                Capsule()
-                    .fill(Color.black.opacity(theme.isDark ? 0.34 : 0.10))
-                Capsule()
-                    .fill(
-                        LinearGradient(
-                            colors: [theme.cyan, theme.sun, theme.orange],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
+        let clamped = min(max(level, 0), 1)
+        let litCount = Int((clamped * Double(segments)).rounded())
+        return HStack(spacing: 1.5) {
+            ForEach(0..<segments, id: \.self) { i in
+                let lit = i < litCount
+                let isPeak = lit && i == litCount - 1
+                RoundedRectangle(cornerRadius: 0.5, style: .continuous)
+                    .fill(segmentColor(lit: lit, peak: isPeak))
+                    .frame(maxWidth: .infinity)
+                    .shadow(
+                        color: lit ? Color(hex: 0xFF7A1F).opacity(isPeak ? 0.9 : 0.6) : .clear,
+                        radius: isPeak ? 3 : 2
                     )
-                    .frame(width: width * min(max(level, 0), 1))
-                    .shadow(color: theme.cyanGlow.opacity(theme.isDark ? 0.36 : 0.18), radius: 4)
             }
         }
         .frame(height: 5)
+    }
+
+    private func segmentColor(lit: Bool, peak: Bool) -> Color {
+        if peak { return Color(hex: 0xFFD7A0) }
+        if lit { return Color(hex: 0xFF7A1F) }
+        return Color(hex: 0xFF6A1A, opacity: 0.09)
     }
 }

@@ -31,6 +31,24 @@ struct MainShell: View {
         .sheet(isPresented: $model.showingOnboarding) {
             OnboardingView()
         }
+        .sheet(item: $model.tagEditTarget) { target in
+            MetadataEditorView(tracks: target.tracks)
+        }
+        // "View Artwork": a booklet opens the rich page viewer; otherwise the
+        // cover lightbox. Both float in their own window, so neither disturbs the
+        // current source/selection. The published album is a one-shot trigger.
+        .onChange(of: model.artworkViewerAlbum) { album in
+            guard let album else { return }
+            if let booklet = album.booklet {
+                BookletWindowManager.shared.showBooklet(booklet,
+                                                        albumTitle: album.title,
+                                                        artistName: album.artistName,
+                                                        theme: theme)
+            } else {
+                ArtworkViewerPresenter.show(album: album, theme: theme, model: model)
+            }
+            model.artworkViewerAlbum = nil
+        }
     }
 
     // MARK: - Sources

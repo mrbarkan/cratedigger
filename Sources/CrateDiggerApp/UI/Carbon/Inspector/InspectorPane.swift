@@ -5,7 +5,6 @@ struct InspectorPane: View {
     @Environment(\.carbon) private var theme
     @EnvironmentObject private var model: LibraryViewModel
 
-    @State private var showingEditor = false
     @State private var showingCleanup = false
     @State private var activeTab: InspectorTab = .info
 
@@ -20,6 +19,7 @@ struct InspectorPane: View {
     private func isTabDisabled(_ tab: InspectorTab) -> Bool {
         tab == .disc && model.isRadioMode
     }
+
 
     /// Width threshold above which the inspector switches from the default
     /// vertical layout (poster on top, metadata below) to a wide horizontal
@@ -39,11 +39,6 @@ struct InspectorPane: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .animation(.easeInOut(duration: 0.22), value: model.oledView)
-        .sheet(isPresented: $showingEditor) {
-            if let track = model.selectedTrack {
-                MetadataEditorView(track: track)
-            }
-        }
         .sheet(isPresented: $showingCleanup) {
             LibraryCleanupView()
         }
@@ -51,22 +46,9 @@ struct InspectorPane: View {
 
     private var tabSwitcher: some View {
         HStack(spacing: 8) {
-            ForEach(InspectorTab.allCases, id: \.self) { tab in
-                KeyButton(
-                    style: activeTab == tab ? .selected : .normal,
-                    action: { activeTab = tab }
-                ) {
-                    Text(tab.rawValue)
-                        .font(CarbonFont.mono(9, weight: .bold))
-                        .tracking(1.5)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-                .frame(maxWidth: .infinity)
-                .frame(height: 22)
-                .disabled(isTabDisabled(tab))
-                .opacity(isTabDisabled(tab) ? 0.4 : 1)
-                .carbonTip(isTabDisabled(tab) ? "Not available for Radio / Streams" : "")
-            }
+            tabButton(.info)
+            tabButton(.art)
+            tabButton(.disc)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
@@ -77,6 +59,24 @@ struct InspectorPane: View {
             alignment: .bottom
         )
     }
+
+    private func tabButton(_ tab: InspectorTab) -> some View {
+        KeyButton(
+            style: activeTab == tab ? .selected : .normal,
+            action: { activeTab = tab }
+        ) {
+            Text(tab.rawValue)
+                .font(CarbonFont.mono(9, weight: .bold))
+                .tracking(1.5)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 22)
+        .disabled(isTabDisabled(tab))
+        .opacity(isTabDisabled(tab) ? 0.4 : 1)
+        .carbonTip(isTabDisabled(tab) ? "Not available for Radio / Streams" : "")
+    }
+
 
     private var inspectorContent: some View {
         VStack(spacing: 0) {
@@ -192,7 +192,7 @@ struct InspectorPane: View {
             
             HStack(spacing: 8) {
                 KeyButton(style: model.selectedTrack != nil ? .normal : .disabled, action: {
-                    showingEditor = true
+                    if let track = model.selectedTrack { model.editTags(for: [track]) }
                 }) {
                     HStack(spacing: 4) {
                         Image(systemName: "tag.fill")

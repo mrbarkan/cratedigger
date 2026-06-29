@@ -18,6 +18,7 @@ struct ConvertPatchBay: View {
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(spacing: CarbonLayout.patchBayRowGap) {
+                if !model.browserCollapsed { roomHint }
                 scopeRow
                 formatRow
                 bitrateRow
@@ -55,6 +56,47 @@ struct ConvertPatchBay: View {
             // Horizontal scan-line texture (1px every 28px)
             Scanlines(opacity: theme.isDark ? 0.012 : 0.04, spacing: 28)
         }
+    }
+
+    // MARK: - Room hint
+
+    /// The patch bay is usable at the default inspector width, but it's cramped.
+    /// Rather than auto-collapsing the browser on every CNVRT switch (a slow,
+    /// GPU-heavy relayout), we leave it compact and offer a one-tap way in. Shown
+    /// only while the browser is open — once collapsed there's nothing to gain.
+    private var roomHint: some View {
+        Button(action: {
+            withAnimation(.easeInOut(duration: 0.25)) { model.browserCollapsed = true }
+        }) {
+            HStack(spacing: 8) {
+                Image(systemName: "arrow.left.and.right")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(theme.cyan)
+                Text("Collapse the browser for a roomier patch bay")
+                    .font(CarbonFont.mono(9, weight: .medium))
+                    .foregroundStyle(theme.ink3)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                Spacer(minLength: 6)
+                Text("EXPAND")
+                    .font(CarbonFont.mono(8.5, weight: .bold))
+                    .tracking(1.6)
+                    .foregroundStyle(theme.cyan)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(theme.cyan.opacity(theme.isDark ? 0.10 : 0.08))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .stroke(theme.cyan.opacity(0.30), lineWidth: 0.8)
+            )
+        }
+        .buttonStyle(.plain)
+        .carbonTip("Collapse the browser pane to widen the conversion panel")
     }
 
     // MARK: - Rows

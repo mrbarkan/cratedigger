@@ -47,6 +47,17 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             name: .crateDiggerPresentGroupAlbumsSheet,
             object: nil
         )
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleTransferToDevice(_:)),
+            name: NSNotification.Name("CrateDiggerTransferToDevice"),
+            object: nil
+        )
+    }
+
+    @objc private func handleTransferToDevice(_ note: Notification) {
+        presentExternalDeviceTransferSheet()
     }
 
     @available(*, unavailable)
