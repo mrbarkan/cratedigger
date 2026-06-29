@@ -10,6 +10,10 @@ struct ArtworkGalleryView: View {
     // album instead of the grid. Stored by id so it tracks index rebuilds (e.g.
     // after fetching artwork) rather than holding a stale Album snapshot.
     @State private var detailAlbumID: String? = nil
+    /// Last album opened into the detail page — scrolled back into view when the
+    /// grid re-appears, so returning doesn't jump to the top.
+    @State private var lastOpenedID: String? = nil
+    @Namespace private var artNamespace
     @State private var searchAlbum: Album? = nil
     @State private var searchResults: [RemoteArtCandidate] = []
     @State private var searching = false
@@ -33,13 +37,21 @@ struct ArtworkGalleryView: View {
                 VStack(spacing: 0) {
                     header
 
-                    ScrollView(.vertical, showsIndicators: true) {
-                        LazyVGrid(columns: columns, spacing: 18) {
-                            ForEach(allAlbums) { album in
-                                albumCoverCell(album)
+                    ScrollViewReader { proxy in
+                        ScrollView(.vertical, showsIndicators: true) {
+                            LazyVGrid(columns: columns, spacing: 18) {
+                                ForEach(allAlbums) { album in
+                                    albumCoverCell(album)
+                                        .id(album.id)
+                                }
                             }
+                            .padding(18)
                         }
-                        .padding(18)
+                        // Returning from the detail page: bring the opened album
+                        // back into view instead of resetting to the top.
+                        .onAppear {
+                            if let id = lastOpenedID { proxy.scrollTo(id, anchor: .center) }
+                        }
                     }
                 }
             }
@@ -51,7 +63,6 @@ struct ArtworkGalleryView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(theme.chassis)
-        .animation(.easeInOut(duration: 0.18), value: detailAlbumID)
     }
 
     /// Re-resolve the detail album from the live index each render so it
@@ -61,12 +72,16 @@ struct ArtworkGalleryView: View {
         return model.index.album(id: id)
     }
 
+    // Hero transition for the cover growing in/out of the detail page.
+    private static let heroAnimation: Animation = .spring(response: 0.42, dampingFraction: 0.82)
+
     private func openDetail(_ album: Album) {
         // Select the album so the Inspector (INFO/ART/DISC) follows it, and so
         // playTrack builds its queue from this album.
         model.selectedArtistID = album.artistID
         model.selectedAlbumID = album.id
-        detailAlbumID = album.id
+        lastOpenedID = album.id
+        withAnimation(Self.heroAnimation) { detailAlbumID = album.id }
     }
 
     private var header: some View {
@@ -98,6 +113,7 @@ struct ArtworkGalleryView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 4))
                         .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.black.opacity(0.12), lineWidth: 1))
                         .shadow(color: Color.black.opacity(0.15), radius: 4, y: 2)
+                        .matchedGeometryEffect(id: album.id, in: artNamespace)
                 }
                 .buttonStyle(.plain)
 
@@ -198,7 +214,7 @@ struct ArtworkGalleryView: View {
 
     private func detailHeader(_ album: Album) -> some View {
         HStack {
-            Button(action: { detailAlbumID = nil }) {
+            Button(action: { withAnimation(Self.heroAnimation) { detailAlbumID = nil } }) {
                 HStack(spacing: 6) {
                     Image(systemName: "chevron.left").font(.system(size: 10, weight: .bold))
                     Text("Gallery".uppercased())
@@ -228,6 +244,7 @@ struct ArtworkGalleryView: View {
             .cornerRadius(6)
             .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.black.opacity(0.15), lineWidth: 1))
             .shadow(color: .black.opacity(0.25), radius: 8, y: 4)
+            .matchedGeometryEffect(id: album.id, in: artNamespace)
 
         if album.booklet != nil {
             Button(action: { openBooklet(album) }) { cover }
@@ -524,23 +541,30 @@ struct GalleryAlbumCoverView: View {
                 Image(nsImage: img)
                     .resizable()
                     .aspectRatio(contentMode: contentMode)
-            } else if let hash = album.artworkHash,
-                      let img = model.artworkService.generateThumbnail(artworkHash: hash, size: CGSize(width: size * 2, height: size * 2)) {
-                Image(nsImage: img)
-                    .resizable()
-                    .aspectRatio(contentMode: contentMode)
             } else {
                 GeneratedPoster(seed: album.id)
             }
         }
         .frame(width: size, height: size)
         .clipped()
-        .task(id: album.booklet?.frontCoverURL) {
-            guard let coverURL = album.booklet?.frontCoverURL else {
-                localImage = nil
-                return
-            }
-            localImage = await loadThumbnail(url: coverURL, maxPixelSize: Int(size * 2))
+        .task(id: loadKey) { await loadCover() }
+    }
+
+    // Reload when the source art or requested size changes.
+    private var loadKey: String {
+        "\(album.booklet?.frontCoverURL?.path ?? album.artworkHash ?? album.id)-\(Int(size))"
+    }
+
+    /// All decoding happens off the main thread (folder cover via ImageIO,
+    /// embedded art via ArtworkService.thumbnailAsync) so the grid scrolls smoothly.
+    private func loadCover() async {
+        let maxPixel = Int(size * 2)
+        if let coverURL = album.booklet?.frontCoverURL {
+            localImage = await loadThumbnail(url: coverURL, maxPixelSize: maxPixel)
+        } else if let hash = album.artworkHash {
+            localImage = await model.artworkService.thumbnailAsync(artworkHash: hash, maxPixel: maxPixel)
+        } else {
+            localImage = nil
         }
     }
 }

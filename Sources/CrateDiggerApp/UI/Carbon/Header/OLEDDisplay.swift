@@ -12,7 +12,9 @@ struct OLEDDisplay: View {
             Group {
                 switch model.oledView {
                 case .nowPlaying:
-                    if model.isRadioMode && model.selectedStream != nil {
+                    // Show the stream while it's playing (or while browsing radio),
+                    // even if the user has navigated to a library source.
+                    if (model.isStreamActive || model.isRadioMode) && model.selectedStream != nil {
                         RadioNowPlayingView()
                     } else {
                         NowPlayingView()

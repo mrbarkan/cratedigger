@@ -18,6 +18,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             return
         }
 
+        // Sized HTTP cache so AsyncImage artwork (CAA thumbnails, previews) survives
+        // scroll recycling + reopen instead of re-downloading each time.
+        URLCache.shared = URLCache(memoryCapacity: 64 * 1024 * 1024,
+                                   diskCapacity: 512 * 1024 * 1024)
+
         buildMenu()
 
         let windowController = MainWindowController()

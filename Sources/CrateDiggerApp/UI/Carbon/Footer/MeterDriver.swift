@@ -21,9 +21,10 @@ final class MeterDriver: ObservableObject {
     /// Supplies the latest 0...1 frequency bands (from the FFT). Set by the view.
     var spectrumProvider: (() -> [Double])?
 
-    /// Time constants (seconds) for the meter ballistics.
-    private let attackTau = 0.05
-    private let releaseTau = 0.30
+    /// Time constants (seconds) for the meter ballistics. Fast attack (near
+    /// instant) + a short release so the meter feels real-time / punchy.
+    private let attackTau = 0.008
+    private let releaseTau = 0.12
     /// Below this the bars are treated as settled and the timer can stop.
     private let restThreshold = 0.0025
 

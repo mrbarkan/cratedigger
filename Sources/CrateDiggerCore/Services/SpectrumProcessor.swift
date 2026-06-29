@@ -11,8 +11,9 @@ import Accelerate
 /// The dB window (`floorDB`/`ceilDB`) is the knob to tune if the bars read too
 /// hot or too dead. Visual smoothing happens later in `MeterDriver`.
 final class SpectrumProcessor {
-    static let log2n: vDSP_Length = 12
-    static let size = 1 << 12            // 4096-point FFT
+    static let log2n: vDSP_Length = 11
+    static let size = 1 << 11            // 2048-pt FFT — ~46 ms window: snappier
+                                         // transient response, still resolves ~20 Hz.
     static let half = size / 2
     static let bandCount = 12
 

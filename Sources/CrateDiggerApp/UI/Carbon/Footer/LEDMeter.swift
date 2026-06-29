@@ -89,17 +89,16 @@ struct LEDMeterPair: View {
     }
 }
 
-/// The classic horizontal L/R VU bars (segmented amber), offered as an
-/// alternative to the vertical spectrum via the "Simple horizontal VU" setting.
+/// The classic L/R VU bars — the SAME amber-LCD design as the vertical spectrum
+/// (`LEDMeterPair`), just two **horizontal** bars (L and R levels) on the same
+/// recessed brown LCD. Toggled via the "Simple horizontal VU" setting or by
+/// clicking the meter.
 struct HorizontalLEDMeter: View {
     @Environment(\.carbon) private var theme
     let leftLevel: Double
     let rightLevel: Double
 
-    private static let ticks: [(label: String, pos: Double, zero: Bool)] = [
-        ("-20", 0.03, false), ("-12", 0.25, false), ("-6", 0.46, false),
-        ("-3", 0.63, false), ("0", 0.80, true), ("+3", 0.98, false)
-    ]
+    private let segments = 18
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -107,82 +106,69 @@ struct HorizontalLEDMeter: View {
                 Image(systemName: "waveform")
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(theme.ink3)
-                Text("VU METER")
+                Text("VU")
                     .font(CarbonFont.mono(8, weight: .bold))
                     .tracking(1.8)
                     .foregroundStyle(theme.ink3)
                 Spacer(minLength: 0)
+                Text("L / R")
+                    .font(CarbonFont.mono(7, weight: .bold))
+                    .tracking(0.8)
+                    .foregroundStyle(theme.ink4)
             }
 
             Spacer(minLength: 0)
 
-            VStack(alignment: .leading, spacing: 3) {
-                channel(label: "L", level: leftLevel)
-                channel(label: "R", level: rightLevel)
-            }
-
-            scale
-                .padding(.leading, 13)
-                .padding(.top, 1)
+            lcd.frame(height: 27)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
         .frame(width: 184, height: 64)
         .background(ChromeChassis(theme: theme, cornerRadius: 12))
+        .accessibilityLabel("Stereo VU meter")
     }
 
-    private func channel(label: String, level: Double) -> some View {
-        HStack(spacing: 6) {
-            Text(label)
-                .font(CarbonFont.mono(7.5, weight: .bold))
-                .foregroundStyle(theme.ink3)
-                .frame(width: 7, alignment: .leading)
-            HorizontalSegmentRow(level: level)
+    private var lcd: some View {
+        VStack(spacing: 4) {
+            bar(label: "L", level: leftLevel)
+            bar(label: "R", level: rightLevel)
         }
-    }
-
-    private var scale: some View {
-        GeometryReader { proxy in
-            let w = max(proxy.size.width, 1)
-            ForEach(Self.ticks.indices, id: \.self) { i in
-                let t = Self.ticks[i]
-                VStack(spacing: 1) {
-                    Rectangle()
-                        .fill((t.zero ? theme.orange : theme.ink4).opacity(t.zero ? 0.9 : 0.6))
-                        .frame(width: 1, height: 2)
-                    Text(t.label)
-                        .font(CarbonFont.mono(6.5, weight: .bold))
-                        .foregroundStyle(t.zero ? theme.orange : theme.ink4)
-                        .fixedSize()
-                }
-                .position(x: t.pos * w, y: 5)
-            }
-        }
-        .frame(height: 10)
-    }
-}
-
-private struct HorizontalSegmentRow: View {
-    let level: Double
-    private let segments = 14
-
-    var body: some View {
-        let clamped = min(max(level, 0), 1)
-        let litCount = Int((clamped * Double(segments)).rounded())
-        return HStack(spacing: 1.5) {
-            ForEach(0..<segments, id: \.self) { i in
-                let lit = i < litCount
-                let isPeak = lit && i == litCount - 1
-                RoundedRectangle(cornerRadius: 0.5, style: .continuous)
-                    .fill(segmentColor(lit: lit, peak: isPeak))
-                    .frame(maxWidth: .infinity)
-                    .shadow(
-                        color: lit ? Color(hex: 0xFF7A1F).opacity(isPeak ? 0.9 : 0.6) : .clear,
-                        radius: isPeak ? 3 : 2
+        .padding(.horizontal, 5)
+        .padding(.vertical, 4)
+        .background(
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(
+                    RadialGradient(
+                        colors: [Color(hex: 0x2C1502), Color(hex: 0x170A01), Color(hex: 0x0D0500)],
+                        center: .center, startRadius: 2, endRadius: 90
                     )
+                )
+                .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .stroke(Color.black.opacity(0.65), lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .stroke(Color(hex: 0xFF7A1F).opacity(0.10), lineWidth: 0.5).blur(radius: 0.5))
+        )
+    }
+
+    private func bar(label: String, level: Double) -> some View {
+        let lit = Int((min(max(level, 0), 1) * Double(segments)).rounded())
+        return HStack(spacing: 5) {
+            Text(label)
+                .font(CarbonFont.mono(6.5, weight: .bold))
+                .foregroundStyle(Color(hex: 0xFF7A1F).opacity(0.85))
+                .frame(width: 6, alignment: .leading)
+            HStack(spacing: 1.5) {
+                ForEach(0..<segments, id: \.self) { i in
+                    let isLit = i < lit
+                    let isPeak = isLit && i == lit - 1
+                    RoundedRectangle(cornerRadius: 0.5, style: .continuous)
+                        .fill(segmentColor(lit: isLit, peak: isPeak))
+                        .frame(maxWidth: .infinity)
+                        .shadow(color: isLit ? Color(hex: 0xFF7A1F).opacity(isPeak ? 0.9 : 0.6) : .clear,
+                                radius: isPeak ? 3 : 2)
+                }
             }
         }
-        .frame(height: 5)
     }
 
     private func segmentColor(lit: Bool, peak: Bool) -> Color {

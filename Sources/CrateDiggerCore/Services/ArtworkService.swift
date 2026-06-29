@@ -2,6 +2,7 @@ import AppKit
 import AVFoundation
 import CryptoKit
 import Foundation
+import ImageIO
 
 public protocol ArtworkPreparing {
     func prepareCompatibleArtwork(asset: ArtworkAsset, profile: DeviceProfile) throws -> ArtworkAsset
@@ -93,6 +94,29 @@ public final class ArtworkService: ArtworkPreparing {
         let cost = Int(size.width * size.height * 4)   // ~RGBA bytes, relative weight
         thumbnailCache.setObject(thumbnail, forKey: cacheKey, cost: cost)
         return thumbnail
+    }
+
+    /// Off-main thumbnail decode (ImageIO), cached by hash+size. Unlike
+    /// `generateThumbnail` it decodes/downscales on a background task instead of
+    /// the main-thread `lockFocus` path, so scrolling a gallery stays smooth.
+    public func thumbnailAsync(artworkHash: String, maxPixel: Int) async -> NSImage? {
+        let cacheKey = "\(artworkHash)-t\(maxPixel)" as NSString
+        if let cached = thumbnailCache.object(forKey: cacheKey) { return cached }
+        guard let data = dataForHash(artworkHash) else { return nil }
+        let image = await Task.detached(priority: .userInitiated) { () -> NSImage? in
+            guard let src = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+            let opts: [CFString: Any] = [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceThumbnailMaxPixelSize: maxPixel,
+                kCGImageSourceCreateThumbnailWithTransform: true
+            ]
+            guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary) else { return nil }
+            return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
+        }.value
+        if let image {
+            thumbnailCache.setObject(image, forKey: cacheKey, cost: maxPixel * maxPixel * 4)
+        }
+        return image
     }
 
     public func prepareCompatibleArtwork(asset: ArtworkAsset, profile: DeviceProfile) throws -> ArtworkAsset {

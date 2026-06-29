@@ -391,6 +391,14 @@ final class LibraryViewModel: ObservableObject {
         return false
     }
 
+    /// True when a stream is actually playing/paused — independent of which source
+    /// is being browsed. The now-playing OLED + transport follow this (not
+    /// `isRadioMode`), so a stream keeps playing and stays controllable while you
+    /// browse the library.
+    var isStreamActive: Bool {
+        radioEngine != nil && playbackState != .idle
+    }
+
     /// True while the app is doing background work (scanning a folder/device or
     /// converting) — drives the pulsing activity light in the header.
     var isWorking: Bool {
@@ -803,10 +811,8 @@ final class LibraryViewModel: ObservableObject {
     }
 
     func selectSource(_ source: LibrarySource) {
-        // Leaving radio for a library source stops the stream engine.
-        if isRadioMode {
-            if case .radio = source {} else { stopRadio() }
-        }
+        // Browsing never stops the stream — only playing a local track does
+        // (see playTrack). The stream keeps playing while you browse the library.
         currentSource = source
         switch source {
         case .localAll:
@@ -1418,13 +1424,14 @@ final class LibraryViewModel: ObservableObject {
     }
 
     func togglePlayPause() {
-        // Radio stream active: route play/pause to the radio engine.
-        if isRadioMode, selectedStream != nil, radioEngine != nil {
+        // A stream is the active playback (even if browsing the library): route
+        // play/pause to the radio engine.
+        if isStreamActive {
             if playbackState == .playing { radioEngine?.pause() } else { radioEngine?.resume() }
             return
         }
         if isRadioMode, let stream = selectedStream {
-            // No engine yet (e.g. just entered): start it.
+            // Browsing radio with nothing playing yet: start the selected stream.
             _ = stream
             playSelectedStream()
             return
@@ -1437,28 +1444,29 @@ final class LibraryViewModel: ObservableObject {
     }
 
     func next() {
-        if isRadioMode { selectAdjacentStream(offset: 1); return }
+        // Step streams when one is playing or while browsing radio.
+        if isStreamActive || isRadioMode { selectAdjacentStream(offset: 1); return }
         // Divided record: step between its tracks before leaving the file.
         if recordSeekToNextTrack() { return }
         playback.next()
     }
     func previous() {
-        if isRadioMode { selectAdjacentStream(offset: -1); return }
+        if isStreamActive || isRadioMode { selectAdjacentStream(offset: -1); return }
         if recordSeekToPreviousTrack() { return }
         playback.previous()
     }
     func rewind8s()  {
-        if isRadioMode { radioEngine?.seek(toSeconds: max(0, playbackCurrentTime - 8)); return }
+        if isStreamActive { radioEngine?.seek(toSeconds: max(0, playbackCurrentTime - 8)); return }
         playback.seek(toSeconds: max(0, playbackCurrentTime - 8))
     }
     func forward8s() {
-        if isRadioMode { radioEngine?.seek(toSeconds: playbackCurrentTime + 8); return }
+        if isStreamActive { radioEngine?.seek(toSeconds: playbackCurrentTime + 8); return }
         playback.seek(toSeconds: min(playbackDuration, playbackCurrentTime + 8))
     }
 
     /// Seek to a 0...1 fraction of the current track (footer POSITION dial).
     func seek(toFraction fraction: Double) {
-        if isRadioMode {
+        if isStreamActive {
             // Live streams can't seek; VOD seeks against the known duration.
             guard let stream = selectedStream, !stream.isLive, playbackDuration > 0 else { return }
             radioEngine?.seek(toSeconds: min(max(fraction, 0), 1) * playbackDuration)
@@ -1689,13 +1697,33 @@ final class LibraryViewModel: ObservableObject {
                 }
             }
             
-            // If a new cover was saved, embed it into the files
-            if newCoverAsset != nil, let coverName = coverFilename, let editor = try? MetadataEditorService() {
+            // Embed a downscaled copy of the cover (≤600px) into each track,
+            // concurrently — far cheaper than rewriting every file with the
+            // full-res image, one at a time.
+            if let coverAsset = newCoverAsset, let coverName = coverFilename,
+               (try? MetadataEditorService()) != nil {
                 let coverURL = albumFolder.appendingPathComponent(coverName)
-                for loadedTrack in album.tracks {
-                    let fileURL = loadedTrack.track.fileURL
-                    try? editor.embedArtwork(to: fileURL, imageURL: coverURL)
+                var target = coverURL
+                var tempURL: URL? = nil
+                if let small = try? ArtworkService().prepareCompatibleArtwork(asset: coverAsset, profile: .generic, maxDimension: 600),
+                   !small.data.isEmpty {
+                    let tmp = albumFolder.appendingPathComponent(".cd_embed_cover.jpg")
+                    if (try? small.data.write(to: tmp, options: .atomic)) != nil {
+                        target = tmp
+                        tempURL = tmp
+                    }
                 }
+                let embedURL = target
+                await withTaskGroup(of: Void.self) { group in
+                    var inFlight = 0
+                    for loadedTrack in album.tracks {
+                        if inFlight >= 4 { _ = await group.next(); inFlight -= 1 }
+                        let fileURL = loadedTrack.track.fileURL
+                        group.addTask { try? MetadataEditorService().embedArtwork(to: fileURL, imageURL: embedURL) }
+                        inFlight += 1
+                    }
+                }
+                if let tempURL { try? FileManager.default.removeItem(at: tempURL) }
             }
             
             // Save manifest

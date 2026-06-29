@@ -10,11 +10,16 @@ struct FooterLeftCluster: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 14) {
-            if simpleHorizontalVU {
-                HorizontalLEDMeter(leftLevel: meters.leftLevel, rightLevel: meters.rightLevel)
-            } else {
-                LEDMeterPair(bands: meters.bands)
+            Group {
+                if simpleHorizontalVU {
+                    HorizontalLEDMeter(leftLevel: meters.leftLevel, rightLevel: meters.rightLevel)
+                } else {
+                    LEDMeterPair(bands: meters.bands)
+                }
             }
+            .contentShape(Rectangle())
+            .onTapGesture { simpleHorizontalVU.toggle() }
+            .carbonTip("Click to switch L/R ↔ Spectrum")
             PositionDial()
         }
         .onAppear {
