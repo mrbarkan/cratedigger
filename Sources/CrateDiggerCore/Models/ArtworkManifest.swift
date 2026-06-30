@@ -12,10 +12,17 @@ public enum ArtworkRole: String, Codable, Equatable, Sendable, CaseIterable {
 public struct ArtworkManifest: Codable, Equatable, Sendable {
     public var mediaFormat: MediaFormat?
     public var roles: [String: ArtworkRole] // Key: Filename, Value: Role
+    /// Optional vinyl-side label (A, B, …) for `.disc`-roled images, so the
+    /// spinning record can show the correct label per the playing track's side.
+    /// Filename → side letter. Optional ⇒ old manifests still decode.
+    public var discSides: [String: String]?
 
-    public init(mediaFormat: MediaFormat? = nil, roles: [String: ArtworkRole] = [:]) {
+    public init(mediaFormat: MediaFormat? = nil,
+                roles: [String: ArtworkRole] = [:],
+                discSides: [String: String]? = nil) {
         self.mediaFormat = mediaFormat
         self.roles = roles
+        self.discSides = discSides
     }
 
     public static let fileName = ".cratedigger-art.json"

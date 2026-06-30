@@ -305,6 +305,17 @@ struct SpinningRecordView: View {
         return nil
     }
 
+    /// The disc-label image to show: the one tagged with the current track's side
+    /// (in the manifest's discSides map), else any disc-roled image.
+    private func discImageFilename(in manifest: ArtworkManifest, forSide side: String?) -> String? {
+        let discFiles = manifest.roles.compactMap { $0.value == .disc ? $0.key : nil }
+        if let side = side?.uppercased(), !side.isEmpty,
+           let match = discFiles.first(where: { manifest.discSides?[$0]?.uppercased() == side }) {
+            return match
+        }
+        return discFiles.first
+    }
+
     private func updateDiscData() {
         defer {
             if let forcedVinyl { isVinyl = forcedVinyl }
@@ -330,7 +341,7 @@ struct SpinningRecordView: View {
         let manifest = ArtworkManifest.load(from: folder)
         self.isVinyl = manifest?.mediaFormat == .vinyl
         
-        if let manifest = manifest, let discFileName = manifest.roles.first(where: { $0.value == .disc })?.key {
+        if let manifest = manifest, let discFileName = discImageFilename(in: manifest, forSide: currentSide) {
             let candidateSubfolders = ["", "artwork", "Artwork", "scans", "Scans", "covers", "Covers"]
             for sub in candidateSubfolders {
                 let base = sub.isEmpty ? folder : folder.appendingPathComponent(sub)

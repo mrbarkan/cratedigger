@@ -136,7 +136,24 @@ struct ArtworkInspectorView: View {
                             .labelsHidden()
                             .pickerStyle(.menu)
                             .frame(maxWidth: .infinity)
-                            
+
+                            // For disc/vinyl labels: which side this image is, so
+                            // the spinning record shows the right one per track.
+                            if (manifest.roles[fileName] ?? .auto) == .disc {
+                                TextField("Side (A/B…)", text: Binding(
+                                    get: { manifest.discSides?[fileName] ?? "" },
+                                    set: { setDiscSide(fileName, $0) }
+                                ))
+                                .textFieldStyle(.plain)
+                                .multilineTextAlignment(.center)
+                                .font(CarbonFont.mono(8.5, weight: .bold))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 3)
+                                .background(theme.isDark ? Color.white.opacity(0.05) : Color.black.opacity(0.04))
+                                .cornerRadius(4)
+                                .frame(maxWidth: .infinity)
+                            }
+
                             Text(fileName)
                                 .font(CarbonFont.mono(8, weight: .regular))
                                 .foregroundColor(theme.ink3)
@@ -202,6 +219,14 @@ struct ArtworkInspectorView: View {
                 isDirty = true   // a new cover was added
             }
         }
+    }
+
+    private func setDiscSide(_ fileName: String, _ raw: String) {
+        let v = raw.trimmingCharacters(in: .whitespaces).uppercased()
+        var sides = manifest.discSides ?? [:]
+        if v.isEmpty { sides[fileName] = nil } else { sides[fileName] = v }
+        manifest.discSides = sides.isEmpty ? nil : sides
+        isDirty = true
     }
 
     private func loadManifest() {
