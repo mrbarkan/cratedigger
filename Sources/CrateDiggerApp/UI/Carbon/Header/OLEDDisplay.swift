@@ -109,20 +109,15 @@ private struct NowPlayingView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // Top status row: now-playing tag + VIEW / THEME / EQ settings cells
-            HStack(alignment: .center) {
+            // Status pill only — the VIEW/THEME/EQ settings move below the divider.
+            HStack {
                 NowPlayingTag(active: model.playbackState == .playing)
                 Spacer()
-                NPSettings(
-                    viewValue: model.showArtworkGallery ? "GALLERY" : "LIST",
-                    themeValue: themeValue,
-                    eqValue: model.eqPreset.label
-                )
             }
 
-            // Headline — big thin track title on the left, large clock + volume
-            // bar-meter on the right (CrateDigger v6 OLED rework).
-            HStack(alignment: .bottom, spacing: 20) {
+            // Headline — big thin track title on the left, the elapsed clock on
+            // the same row, baseline-aligned with the title.
+            HStack(alignment: .firstTextBaseline, spacing: 20) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(displayTrackTitle)
                         .font(CarbonFont.display(44))
@@ -140,37 +135,56 @@ private struct NowPlayingView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-                NPReadout(
-                    elapsed: model.displayedCurrentTime.asClockPadded,
-                    total: model.playbackDuration.asClockPadded,
-                    volume: model.playbackVolume
-                )
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(model.displayedCurrentTime.asClockPadded)
+                        .font(CarbonFont.display(34))
+                        .fontWeight(.thin)
+                        .foregroundColor(oledForeground)
+                        .shadow(color: theme.orange.opacity(0.28), radius: 7)
+                    Text("/ \(model.playbackDuration.asClockPadded)")
+                        .font(CarbonFont.mono(12, weight: .semibold))
+                        .tracking(1.4)
+                        .foregroundStyle(oledForeground.opacity(0.4))
+                }
+                .fixedSize()
             }
             .padding(.top, 4)
 
             Spacer(minLength: 2)
 
-            // Bottom spec cells row (transferred from Inspector)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(alignment: .center, spacing: 0) {
-                    OLEDCell(key: "Track", value: trackValue, sub: trackSubValue)
-                    OLEDCellDivider()
-                    OLEDCell(key: "Format", value: formatValue, sub: formatSubValue)
-                    OLEDCellDivider()
-                    OLEDCell(key: "Bitrate", value: bitrateValue, sub: bitrateSubValue)
-                    OLEDCellDivider()
-                    OLEDCell(key: "Sample", value: sampleValue, sub: sampleSubValue)
-                    OLEDCellDivider()
-                    OLEDCell(key: "Size", value: sizeValue, sub: "FILE SIZE")
+            // Divider — everything beneath it is the lower zone.
+            Rectangle()
+                .fill(oledForeground.opacity(0.12))
+                .frame(height: 1)
+
+            // Lower zone: spec cells (left) + volume meter + VIEW/THEME/EQ (right).
+            HStack(alignment: .center, spacing: 14) {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(alignment: .center, spacing: 0) {
+                        OLEDCell(key: "Track", value: trackValue, sub: trackSubValue)
+                        OLEDCellDivider()
+                        OLEDCell(key: "Format", value: formatValue, sub: formatSubValue)
+                        OLEDCellDivider()
+                        OLEDCell(key: "Bitrate", value: bitrateValue, sub: bitrateSubValue)
+                        OLEDCellDivider()
+                        OLEDCell(key: "Sample", value: sampleValue, sub: sampleSubValue)
+                        OLEDCellDivider()
+                        OLEDCell(key: "Size", value: sizeValue, sub: "FILE SIZE")
+                    }
                 }
+
+                Spacer(minLength: 8)
+
+                OLEDVolBars(volume: model.playbackVolume)
+                    .frame(width: 120)
+                NPSettings(
+                    viewValue: model.showArtworkGallery ? "GALLERY" : "LIST",
+                    themeValue: themeValue,
+                    eqValue: model.eqPreset.label
+                )
+                .fixedSize()
             }
-            .padding(.top, 4)
-            .overlay(
-                Rectangle()
-                    .fill(oledForeground.opacity(0.12))
-                    .frame(height: 1),
-                alignment: .top
-            )
+            .padding(.top, 6)
         }
         .padding(.horizontal, CarbonLayout.oledPaddingH)
         .padding(.vertical, CarbonLayout.oledPaddingV)
@@ -506,35 +520,16 @@ private struct NPSettings: View {
     }
 }
 
-/// OLED now-playing right-side readout: a large elapsed clock above a graphic
-/// 16-bar volume meter (lit bars track the volume).
-private struct NPReadout: View {
+/// OLED graphic volume meter — 16 bars in a blue→orange gradient revealed through
+/// a mask of the lit segments (matches the footer POSITION bar). Lives in the
+/// now-playing lower zone alongside the spec cells and the VIEW/THEME/EQ settings.
+private struct OLEDVolBars: View {
     @Environment(\.carbon) private var theme
-    let elapsed: String
-    let total: String
     let volume: Double   // 0...1
 
     private let barCount = 16
 
     var body: some View {
-        VStack(alignment: .trailing, spacing: 9) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(elapsed)
-                    .font(CarbonFont.display(34))
-                    .fontWeight(.thin)
-                    .foregroundColor(oledForeground)
-                    .shadow(color: theme.orange.opacity(0.28), radius: 7)
-                Text("/ \(total)")
-                    .font(CarbonFont.mono(12, weight: .semibold))
-                    .tracking(1.4)
-                    .foregroundStyle(oledForeground.opacity(0.4))
-            }
-            volBars
-        }
-        .frame(width: 150, alignment: .trailing)
-    }
-
-    private var volBars: some View {
         let lit = Int((volume * Double(barCount)).rounded())
         // Same blue→orange gradient as the footer POSITION bar — spans the whole
         // row (segment 0 ≈ cyan … last lit ≈ orange), revealed through a mask of
