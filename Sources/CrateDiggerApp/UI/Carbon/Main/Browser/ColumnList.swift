@@ -5,17 +5,22 @@ struct ColumnList<Content: View>: View {
     let title: String
     let trailing: String
     let headerAccessory: AnyView?
+    /// When set, the list scrolls this id into view whenever it changes — keyboard
+    /// navigation passes the selected row's id so a moved selection stays visible.
+    var scrollTarget: AnyHashable?
     @ViewBuilder var content: () -> Content
 
     init(
         title: String,
         trailing: String,
         headerAccessory: AnyView? = nil,
+        scrollTarget: AnyHashable? = nil,
         @ViewBuilder content: @escaping () -> Content
     ) {
         self.title = title
         self.trailing = trailing
         self.headerAccessory = headerAccessory
+        self.scrollTarget = scrollTarget
         self.content = content
     }
 
@@ -43,9 +48,17 @@ struct ColumnList<Content: View>: View {
                 alignment: .bottom
             )
 
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    content()
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        content()
+                    }
+                }
+                .onChange(of: scrollTarget) { target in
+                    guard let target else { return }
+                    withAnimation(.easeOut(duration: 0.16)) {
+                        proxy.scrollTo(target, anchor: .center)
+                    }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

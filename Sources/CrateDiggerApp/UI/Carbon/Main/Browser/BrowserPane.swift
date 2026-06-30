@@ -102,7 +102,8 @@ private struct ArtistColumn: View {
                 ? AnyView(ColumnSortControl(field: $model.artistSortField,
                                             ascending: $model.artistSortAscending,
                                             allCases: Array(ArtistSortField.allCases)))
-                : nil
+                : nil,
+            scrollTarget: model.selectedArtistID.map(AnyHashable.init)
         ) {
             ForEach(model.visibleArtists) { artist in
                 ArtistRow(
@@ -111,6 +112,7 @@ private struct ArtistColumn: View {
                     isPlayingHere: isPlayingArtist(artist),
                     onSelect: {
                         let m = NSEvent.modifierFlags
+                        model.focusedColumn = .artist
                         model.selectArtist(artist, command: m.contains(.command), shift: m.contains(.shift),
                                            ordered: model.visibleArtists)
                     },
@@ -147,7 +149,8 @@ private struct AlbumColumn: View {
                 ? AnyView(ColumnSortControl(field: $model.albumSortField,
                                             ascending: $model.albumSortAscending,
                                             allCases: Array(AlbumSortField.allCases)))
-                : nil
+                : nil,
+            scrollTarget: model.selectedAlbumID.map(AnyHashable.init)
         ) {
             ForEach(albums) { album in
                 if album.isVersionGroup {
@@ -171,6 +174,7 @@ private struct AlbumColumn: View {
             isPlayingHere: isPlayingAlbum(album),
             onSelect: {
                 let m = NSEvent.modifierFlags
+                model.focusedColumn = .album
                 model.selectAlbum(album, command: m.contains(.command), shift: m.contains(.shift),
                                   ordered: albums, flat: flat)
             }
@@ -185,6 +189,7 @@ private struct AlbumColumn: View {
             isPlayingHere: isPlayingAlbum(release),
             onSelect: {
                 let m = NSEvent.modifierFlags
+                model.focusedColumn = .album
                 model.selectAlbum(release, command: m.contains(.command), shift: m.contains(.shift),
                                   ordered: albums, flat: flat)
             },
@@ -206,7 +211,7 @@ private struct AlbumColumn: View {
             badge: VersionLabel.formatBadge(for: version),
             edition: version.editionLabel,
             selected: model.selectedAlbumID == version.id,
-            onSelect: { model.selectedAlbumID = version.id }
+            onSelect: { model.focusedColumn = .album; model.selectedAlbumID = version.id }
         )
         .contextMenu { BrowserContextMenu.version(version, release: release, model: model) }
     }
@@ -238,7 +243,8 @@ private struct TrackColumn: View {
                 ? AnyView(ColumnSortControl(field: $model.trackSortField,
                                             ascending: $model.trackSortAscending,
                                             allCases: Array(TrackSortField.allCases)))
-                : nil
+                : nil,
+            scrollTarget: model.selectedTrackID.map(AnyHashable.init)
         ) {
             ForEach(trackEntries) { entry in
                 switch entry {
@@ -252,11 +258,13 @@ private struct TrackColumn: View {
                         isOffline: model.isOffline(loaded),
                         onSelect: {
                             let m = NSEvent.modifierFlags
+                            model.focusedColumn = .track
                             model.selectTrack(loaded, command: m.contains(.command), shift: m.contains(.shift),
                                               ordered: sourceTracks)
                         },
                         onActivate: { model.playTrack(id: loaded.track.id) }
                     )
+                    .id(loaded.track.id)
                     .contextMenu { BrowserContextMenu.track(loaded, model: model) }
                 case let .recordTrack(parent, marker, number):
                     RecordSubTrackRow(

@@ -318,6 +318,10 @@ final class LibraryViewModel: ObservableObject {
         didSet { prefs.savedBrowserLayout = browserLayout.rawValue }
     }
 
+    /// Which browser column the keyboard arrows act on: ↑/↓ move the selection in
+    /// it, ←/→ switch columns. Set when a row is clicked; see `LibraryViewModel+ArrowNav`.
+    @Published var focusedColumn: BrowserColumn = .track
+
     // MARK: - New Sources & Playlists State
     @Published var currentSource: LibrarySource = .localAll
     @Published var availableCrates: [String] = []
@@ -666,7 +670,13 @@ final class LibraryViewModel: ObservableObject {
     private func setupKeyboardShortcutsMonitor() {
         localEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self = self else { return event }
-            
+
+            // Bare arrows navigate the browser (↑/↓ select, ←/→ switch columns)
+            // when the main window is focused and no text field is editing. Takes
+            // precedence over the transport/volume shortcuts below, which remain on
+            // ⌘-arrows via the menu.
+            if self.handleBrowserArrowNav(event) { return nil }
+
             // Do not intercept shortcuts if user is typing in a text field (first responder is NSTextField)
             if let _ = self.activeTextField() {
                 return event
