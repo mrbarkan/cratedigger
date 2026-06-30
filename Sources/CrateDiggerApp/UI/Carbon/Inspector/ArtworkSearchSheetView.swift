@@ -609,6 +609,19 @@ struct ArtworkSearchSheetView: View {
                         .stroke(isSelected ? theme.orange : (theme.isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.1)), lineWidth: isSelected ? 2 : 1)
                 )
                 .shadow(color: Color.black.opacity(0.1), radius: 3, y: 1)
+                .overlay(alignment: .bottomTrailing) {
+                    if img.hasHiRes {
+                        Text("HD")
+                            .font(CarbonFont.mono(7.5, weight: .bold))
+                            .tracking(0.5)
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1.5)
+                            .background(Capsule().fill(theme.cyan))
+                            .padding(5)
+                            .carbonTip("A 1200px+ original is available")
+                    }
+                }
                 .onTapGesture {
                     toggleImageSelection(img)
                 }

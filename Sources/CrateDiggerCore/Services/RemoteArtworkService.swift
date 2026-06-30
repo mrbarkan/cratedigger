@@ -283,14 +283,19 @@ public struct CAABookletImage: Identifiable, Codable, Sendable {
     public let comment: String
     public let front: Bool
     public let back: Bool
-    
-    public init(imageURL: URL, thumbnailURL: URL, types: [String], comment: String, front: Bool, back: Bool) {
+    /// A 1200px tier is available from Cover Art Archive — a coarse "this one has
+    /// a high-resolution original" hint (CAA doesn't return pixel dimensions here).
+    public let hasHiRes: Bool
+
+    public init(imageURL: URL, thumbnailURL: URL, types: [String], comment: String,
+                front: Bool, back: Bool, hasHiRes: Bool = false) {
         self.imageURL = imageURL
         self.thumbnailURL = thumbnailURL
         self.types = types
         self.comment = comment
         self.front = front
         self.back = back
+        self.hasHiRes = hasHiRes
     }
 }
 
@@ -451,7 +456,8 @@ public extension RemoteArtworkService {
                 types: img.types ?? [],
                 comment: img.comment ?? "",
                 front: img.front ?? false,
-                back: img.back ?? false
+                back: img.back ?? false,
+                hasHiRes: img.thumbnails?.size1200 != nil
             )
         }
     }

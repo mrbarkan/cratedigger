@@ -510,7 +510,7 @@ struct ArtworkGalleryView: View {
         
         let query = "\(album.artistName) \(album.title)"
         let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        guard let url = URL(string: "https://itunes.apple.com/search?term=\(encodedQuery)&media=music&entity=album&limit=5") else {
+        guard let url = URL(string: "https://itunes.apple.com/search?term=\(encodedQuery)&media=music&entity=album&limit=12") else {
             searching = false
             return
         }
@@ -526,12 +526,14 @@ struct ArtworkGalleryView: View {
                 }
                 let envelope = try JSONDecoder().decode(ResultEnvelope.self, from: data)
                 let candidates = envelope.results.compactMap { hit -> RemoteArtCandidate? in
+                    // iTunes serves arbitrary sizes from this CDN path; request a
+                    // 1200px original (was 600) so picked covers are higher-res.
                     guard let urlStr = hit.artworkUrl100,
-                          let highResStr = urlStr.replacingOccurrences(of: "100x100bb", with: "600x600bb") as String?,
+                          let highResStr = urlStr.replacingOccurrences(of: "100x100bb", with: "1200x1200bb") as String?,
                           let artURL = URL(string: highResStr) else {
                         return nil
                     }
-                    return RemoteArtCandidate(url: artURL, source: "iTunes")
+                    return RemoteArtCandidate(url: artURL, source: "iTunes · 1200px")
                 }
                 await MainActor.run {
                     self.searchResults = candidates
