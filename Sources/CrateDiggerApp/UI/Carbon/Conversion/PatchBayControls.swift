@@ -219,8 +219,11 @@ struct PatchBayCycleButton<Item: Hashable>: View {
         ZStack {
             RoundedRectangle(cornerRadius: 3, style: .continuous)
                 .fill(
+                    // A hardware display reads black regardless of room light —
+                    // keep the screen dark in both themes so the orange readout
+                    // stays legible (theme.wellDeep was light-grey in linen).
                     LinearGradient(
-                        colors: [theme.wellDeep, theme.metalDeep],
+                        colors: [Color(hex: 0x1C2228), Color(hex: 0x0A0E12)],
                         startPoint: .top,
                         endPoint: .bottom
                     )

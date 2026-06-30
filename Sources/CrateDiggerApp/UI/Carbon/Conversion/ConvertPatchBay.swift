@@ -166,7 +166,7 @@ struct ConvertPatchBay: View {
     private var patternRow: some View {
         cvRow("Pattern") {
             TemplateStrip(text: templateString)
-                .opacity(model.conversionSelection.folderStructureMode == .metadataTemplate ? 1 : 0.55)
+                .opacity(model.conversionSelection.folderStructureMode == .metadataTemplate ? 1 : 0.72)
         }
     }
 
@@ -440,7 +440,10 @@ private struct TemplateStrip: View {
     private var formatted: AttributedString {
         var out = AttributedString("")
         let baseColor = Color(hex: 0x1A1209)
-        let varColor = Color(hex: 0xD65428)
+        // Deeper red-orange than before — #D65428 was too low-contrast on the
+        // yellow tape; this still reads as a distinct token tint vs. the near-black
+        // separators.
+        let varColor = Color(hex: 0xA5350D)
         var i = text.startIndex
         while i < text.endIndex {
             if text[i] == "{" {
@@ -507,8 +510,10 @@ private struct DestStrip: View {
         .background(
             RoundedRectangle(cornerRadius: 4, style: .continuous)
                 .fill(
+                    // Stay dark in both themes (the head text is white .45 and the
+                    // tail is cyan — both wash out on the light-grey linen recess).
                     LinearGradient(
-                        colors: [theme.wellDeep, theme.metalDeep],
+                        colors: [Color(hex: 0x1C2228), Color(hex: 0x0A0E12)],
                         startPoint: .top,
                         endPoint: .bottom
                     )
