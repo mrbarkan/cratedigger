@@ -75,7 +75,7 @@ struct MainShell: View {
             }
         }
         .frame(maxWidth: sourcesMaxWidth, maxHeight: .infinity)
-        .clipped()
+        .clipShape(RoundedRectangle(cornerRadius: CarbonLayout.wellCornerRadius, style: .continuous))
     }
 
     private var sourcesMaxWidth: CGFloat {
@@ -126,7 +126,7 @@ struct MainShell: View {
             }
         }
         .frame(maxWidth: browserMaxWidth, maxHeight: .infinity)
-        .clipped()
+        .clipShape(RoundedRectangle(cornerRadius: CarbonLayout.wellCornerRadius, style: .continuous))
     }
 
     /// Browser is at 200pt when condensed AND inspector is full (so inspector
@@ -166,7 +166,7 @@ struct MainShell: View {
             }
         }
         .frame(maxWidth: inspectorMaxWidth, maxHeight: .infinity)
-        .clipped()
+        .clipShape(RoundedRectangle(cornerRadius: CarbonLayout.wellCornerRadius, style: .continuous))
     }
 
     /// Inspector has three target widths:
