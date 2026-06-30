@@ -10,7 +10,7 @@ public extension ConversionMetadata {
     /// selection. Per-track fields (title, track/disc number) are deliberately
     /// excluded — a batch shouldn't stamp the same title onto every track.
     enum BatchField: CaseIterable, Sendable {
-        case artist, albumArtist, album, genre, year, trackTotal, discTotal, comment, compilation
+        case artist, albumArtist, album, genre, year, trackTotal, discTotal, comment, compilation, side
     }
 
     /// This metadata's value for `field` as the editor's string representation
@@ -26,6 +26,7 @@ public extension ConversionMetadata {
         case .discTotal:   return discTotal.map(String.init) ?? ""
         case .comment:     return comment ?? ""
         case .compilation: return compilation == true ? "1" : (compilation == false ? "0" : "")
+        case .side:        return side ?? ""
         }
     }
 
@@ -54,6 +55,7 @@ public extension ConversionMetadata {
             case .discTotal:   out.discTotal = Int(value)
             case .comment:     out.comment = value.isEmpty ? nil : value
             case .compilation: out.compilation = value == "1" ? true : (value == "0" ? false : nil)
+            case .side:        out.side = value.isEmpty ? nil : value.uppercased()
             }
         }
         return out

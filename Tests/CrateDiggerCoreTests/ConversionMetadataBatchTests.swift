@@ -117,4 +117,16 @@ final class ConversionMetadataBatchTests: XCTestCase {
         XCTAssertEqual(edited.album, "X")
         XCTAssertEqual(edited.albumArtist, "Y")
     }
+
+    // MARK: Vinyl side (batch)
+
+    func testSideCommonValueSharedVsMixed() {
+        XCTAssertEqual(ConversionMetadata.commonValue(.side, in: [ConversionMetadata(side: "A"), ConversionMetadata(side: "A")]), "A")
+        XCTAssertNil(ConversionMetadata.commonValue(.side, in: [ConversionMetadata(side: "A"), ConversionMetadata(side: "B")]))
+    }
+
+    func testApplySideUppercasesAndClears() {
+        XCTAssertEqual(ConversionMetadata().applyingBatchEdits([.side: "a"]).side, "A")
+        XCTAssertNil(ConversionMetadata(side: "A").applyingBatchEdits([.side: ""]).side)
+    }
 }

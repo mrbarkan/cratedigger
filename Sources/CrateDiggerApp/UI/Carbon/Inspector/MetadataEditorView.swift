@@ -61,7 +61,7 @@ struct MetadataEditorView: View {
             _trackTotalString = State(initialValue: common(.trackTotal))
             _discNumString = State(initialValue: "")
             _discTotalString = State(initialValue: common(.discTotal))
-            _side = State(initialValue: "")   // side is per-track, not batch-edited
+            _side = State(initialValue: common(.side))
             _comment = State(initialValue: common(.comment))
             // All-true → Yes, all-false → No, mixed/absent → Leave (don't touch).
             let comp = ConversionMetadata.commonValue(.compilation, in: metas)
@@ -119,9 +119,9 @@ struct MetadataEditorView: View {
                     HStack(spacing: 14) {
                         if !isBatch {
                             groupField("Disc No", text: $discNumString)
-                            groupField("Side", text: $side)
                         }
                         groupField("Disc Total", text: $discTotalString, field: .discTotal)
+                        groupField("Side", text: $side, field: .side)
                         Spacer()
                     }
 
@@ -254,6 +254,7 @@ struct MetadataEditorView: View {
         consider(.year, yearString)
         consider(.trackTotal, trackTotalString)
         consider(.discTotal, discTotalString)
+        consider(.side, side)
         consider(.comment, comment)
         // Compilation: only write when the user moved it off the opening choice
         // (and never when left on "Leave").
