@@ -1707,35 +1707,12 @@ final class LibraryViewModel: ObservableObject {
                 }
             }
             
-            // Embed a downscaled copy of the cover (≤600px) into each track,
-            // concurrently — far cheaper than rewriting every file with the
-            // full-res image, one at a time.
-            if let coverAsset = newCoverAsset, let coverName = coverFilename,
-               (try? MetadataEditorService()) != nil {
-                let coverURL = albumFolder.appendingPathComponent(coverName)
-                var target = coverURL
-                var tempURL: URL? = nil
-                if let small = try? ArtworkService().prepareCompatibleArtwork(asset: coverAsset, profile: .generic, maxDimension: 600),
-                   !small.data.isEmpty {
-                    let tmp = albumFolder.appendingPathComponent(".cd_embed_cover.jpg")
-                    if (try? small.data.write(to: tmp, options: .atomic)) != nil {
-                        target = tmp
-                        tempURL = tmp
-                    }
-                }
-                let embedURL = target
-                await withTaskGroup(of: Void.self) { group in
-                    var inFlight = 0
-                    for loadedTrack in album.tracks {
-                        if inFlight >= 4 { _ = await group.next(); inFlight -= 1 }
-                        let fileURL = loadedTrack.track.fileURL
-                        group.addTask { try? MetadataEditorService().embedArtwork(to: fileURL, imageURL: embedURL) }
-                        inFlight += 1
-                    }
-                }
-                if let tempURL { try? FileManager.default.removeItem(at: tempURL) }
-            }
-            
+            // The cover is written to the album folder as cover.jpg (above), which
+            // is what CrateDigger displays everywhere, so we deliberately do NOT
+            // rewrite every track file to embed it — that's hundreds of MB of I/O
+            // on a lossless album for no in-app benefit. Conversion/transfer still
+            // bake artwork into their *output* files when you export.
+
             // Save manifest
             if !ingestedAssets.isEmpty {
                 try? manifest.save(to: albumFolder)
@@ -1753,8 +1730,8 @@ final class LibraryViewModel: ObservableObject {
     }
 
     /// Attach image files chosen from disk to `album`. The files are copied into
-    /// the album folder with role-based names; a `.cover` is embedded into every
-    /// track. Mirrors `downloadAndImportArtwork` but reads from the local disk.
+    /// the album folder with role-based names; a `.cover` becomes the folder
+    /// cover.jpg. Mirrors `downloadAndImportArtwork` but reads from the local disk.
     func attachLocalArtwork(
         fileURLs: [URL],
         role: ArtworkRole = .cover,
@@ -1766,7 +1743,6 @@ final class LibraryViewModel: ObservableObject {
         let result = await Task.detached(priority: .userInitiated) { () -> (ingestedAssets: [ArtworkAsset], coverAsset: ArtworkAsset?) in
             var manifest = ArtworkManifest.load(from: albumFolder) ?? ArtworkManifest(mediaFormat: album.mediaFormat, roles: [:])
             var ingestedAssets: [ArtworkAsset] = []
-            var coverFilename: String?
             var newCoverAsset: ArtworkAsset?
 
             for (offset, source) in fileURLs.enumerated() {
@@ -1793,20 +1769,14 @@ final class LibraryViewModel: ObservableObject {
 
                     if role == .cover, newCoverAsset == nil {
                         newCoverAsset = asset
-                        coverFilename = filename
                     }
                 } catch {
                     AppLog.library.warning("Failed to import local artwork: \(error.localizedDescription)")
                 }
             }
 
-            // Embed the chosen cover into every track on the album.
-            if let coverName = coverFilename, newCoverAsset != nil, let editor = try? MetadataEditorService() {
-                let coverURL = albumFolder.appendingPathComponent(coverName)
-                for loadedTrack in album.tracks {
-                    try? editor.embedArtwork(to: loadedTrack.track.fileURL, imageURL: coverURL)
-                }
-            }
+            // No per-track embedding — the folder cover.jpg drives display; see
+            // downloadAndImportArtwork.
 
             if !ingestedAssets.isEmpty {
                 try? manifest.save(to: albumFolder)
@@ -1832,11 +1802,11 @@ final class LibraryViewModel: ObservableObject {
     ) {
         guard !ingestedAssets.isEmpty else { return }
 
-        // This album's folder just gained a manifest/booklet on disk (and its
-        // files grew). Invalidate ONLY that folder's cached disk info instead of
-        // clearing the whole cache — the rebuilds below then stay warm for every
-        // other folder rather than cold-rebuilding the entire library on the main
-        // actor (which is what froze the next album selection).
+        // This album's folder just gained cover.jpg / a manifest on disk.
+        // Invalidate ONLY that folder's cached disk info instead of clearing the
+        // whole cache — the rebuilds below then stay warm for every other folder
+        // rather than cold-rebuilding the entire library on the main actor (which
+        // is what froze the next album selection).
         if let albumFolder = album.tracks.first?.track.fileURL.deletingLastPathComponent().path {
             indexDiskCache.invalidate(albumFolderPath: albumFolder,
                                       filePaths: album.tracks.map { $0.track.fileURL.path })
@@ -1856,7 +1826,9 @@ final class LibraryViewModel: ObservableObject {
                   let coverAsset = coverAsset else { return loaded }
             var newTrack = loaded.track
             var newMetadata = loaded.metadata
-            newTrack.artworkSource = .embedded
+            // Folder cover (cover.jpg), not embedded-in-file — matches what was
+            // actually written and how a rescan would re-resolve it.
+            newTrack.artworkSource = .folderImage
             newTrack.artworkHash = coverAsset.hash
             newTrack.artworkDimensions = coverAsset.dimensions
             newMetadata.artwork = coverAsset
@@ -1878,7 +1850,7 @@ final class LibraryViewModel: ObservableObject {
         if coverAsset != nil {
             self.appAlert = .info(
                 title: "Cover art updated",
-                message: "Applied to all \(trackCount) track\(trackCount == 1 ? "" : "s") of “\(album.title)”."
+                message: "Saved as the cover for “\(album.title)” (\(trackCount) track\(trackCount == 1 ? "" : "s"))."
             )
         } else {
             let imageCount = ingestedAssets.count

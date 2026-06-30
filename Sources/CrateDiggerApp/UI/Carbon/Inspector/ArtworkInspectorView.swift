@@ -231,36 +231,17 @@ struct ArtworkInspectorView: View {
             // 1. Save the manifest
             try? manifest.save(to: albumFolder)
             
-            // 2. Look for cover image and embed it into every track on the album.
-            var embeddedCover = false
-            if let coverFileName = manifest.roles.first(where: { $0.value == .cover })?.key {
-                let coverURL = albumFolder.appendingPathComponent(coverFileName)
-                if FileManager.default.fileExists(atPath: coverURL.path) {
-                    if let editor = model.metadataEditor {
-                        for loadedTrack in album.tracks {
-                            let fileURL = loadedTrack.track.fileURL
-                            try? editor.embedArtwork(to: fileURL, imageURL: coverURL)
-                        }
-                        embeddedCover = true
-                    }
-                }
-            }
+            // The folder cover.jpg (referenced by the manifest) drives display — we
+            // deliberately don't rewrite every track file to embed it (hundreds of
+            // MB of I/O on a lossless album). See downloadAndImportArtwork.
 
-            let trackCount = album.tracks.count
             await MainActor.run {
                 isSaving = false
                 model.refreshLibrary()
-                if embeddedCover {
-                    model.appAlert = .info(
-                        title: "Cover art saved",
-                        message: "Embedded into all \(trackCount) track\(trackCount == 1 ? "" : "s") of “\(album.title)”."
-                    )
-                } else {
-                    model.appAlert = .info(
-                        title: "Saved",
-                        message: "Artwork roles saved for “\(album.title)”."
-                    )
-                }
+                model.appAlert = .info(
+                    title: "Artwork saved",
+                    message: "Artwork saved for “\(album.title)”."
+                )
             }
         }
     }
