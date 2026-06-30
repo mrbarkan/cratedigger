@@ -41,11 +41,13 @@ public enum ArtistSortField: String, CaseIterable, Codable, Sendable, SortFieldD
 public enum AlbumSortField: String, CaseIterable, Codable, Sendable, SortFieldDisplayable {
     case year
     case title
+    case albumArtist
 
     public var displayName: String {
         switch self {
-        case .year:  return "Year"
-        case .title: return "Title"
+        case .year:        return "Year"
+        case .title:       return "Title"
+        case .albumArtist: return "Album Artist"
         }
     }
 }
@@ -299,6 +301,13 @@ public struct LibraryIndex: Sendable {
                 let result = lhs.title.localizedCaseInsensitiveCompare(rhs.title)
                 if result != .orderedSame { return result == .orderedAscending }
                 return (lhs.year ?? Int.max) < (rhs.year ?? Int.max)
+            }
+        case .albumArtist:
+            comparator = { lhs, rhs in
+                let result = lhs.artistName.localizedCaseInsensitiveCompare(rhs.artistName)
+                if result != .orderedSame { return result == .orderedAscending }
+                // Within one artist, group chronologically then by title.
+                return (lhs.originalYear ?? lhs.year ?? Int.max) < (rhs.originalYear ?? rhs.year ?? Int.max)
             }
         }
         return albums.sorted { ascending ? comparator($0, $1) : comparator($1, $0) }

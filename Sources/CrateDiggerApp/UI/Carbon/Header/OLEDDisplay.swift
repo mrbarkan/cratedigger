@@ -536,15 +536,25 @@ private struct NPReadout: View {
 
     private var volBars: some View {
         let lit = Int((volume * Double(barCount)).rounded())
-        return HStack(spacing: 3) {
-            ForEach(0..<barCount, id: \.self) { i in
-                RoundedRectangle(cornerRadius: 1, style: .continuous)
-                    .fill(i < lit ? theme.orange : Color.white.opacity(0.16))
-                    .shadow(color: i < lit ? theme.orange.opacity(0.65) : .clear, radius: 2)
-            }
+        // Same blue→orange gradient as the footer POSITION bar — spans the whole
+        // row (segment 0 ≈ cyan … last lit ≈ orange), revealed through a mask of
+        // the lit segments so unlit ones stay dim.
+        return ZStack {
+            segmentRow { _ in Color.white.opacity(0.16) }
+            LinearGradient(colors: [theme.cyan, theme.orange], startPoint: .leading, endPoint: .trailing)
+                .mask(segmentRow { i in i < lit ? Color.black : Color.clear })
+                .shadow(color: theme.orange.opacity(0.5), radius: 2)
         }
         .frame(height: 13)
         .frame(maxWidth: .infinity)
+    }
+
+    private func segmentRow(_ fill: @escaping (Int) -> Color) -> some View {
+        HStack(spacing: 3) {
+            ForEach(0..<barCount, id: \.self) { i in
+                RoundedRectangle(cornerRadius: 1, style: .continuous).fill(fill(i))
+            }
+        }
     }
 }
 

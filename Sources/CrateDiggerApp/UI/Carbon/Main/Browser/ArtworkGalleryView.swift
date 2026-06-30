@@ -47,10 +47,12 @@ struct ArtworkGalleryView: View {
                             }
                             .padding(18)
                         }
-                        // Returning from the detail page: bring the opened album
-                        // back into view instead of resetting to the top.
+                        // Bring the selected album (synced with the list browser)
+                        // into view, falling back to the last opened one.
                         .onAppear {
-                            if let id = lastOpenedID { proxy.scrollTo(id, anchor: .center) }
+                            if let id = model.selectedAlbumID ?? lastOpenedID {
+                                proxy.scrollTo(id, anchor: .center)
+                            }
                         }
                     }
                 }
@@ -75,6 +77,14 @@ struct ArtworkGalleryView: View {
     // Hero transition for the cover growing in/out of the detail page.
     private static let heroAnimation: Animation = .spring(response: 0.42, dampingFraction: 0.82)
 
+    /// Single-click: select the album (highlights the cover here and the row in
+    /// the list browser, and drives the inspector's track list) without leaving
+    /// the grid.
+    private func selectAlbum(_ album: Album) {
+        model.selectedArtistID = album.artistID
+        model.selectedAlbumID = album.id
+    }
+
     private func openDetail(_ album: Album) {
         // Select the album so the Inspector (INFO/ART/DISC) follows it, and so
         // playTrack builds its queue from this album.
@@ -84,38 +94,84 @@ struct ArtworkGalleryView: View {
         withAnimation(Self.heroAnimation) { detailAlbumID = album.id }
     }
 
+    // The well header already reads "Browser · GALLERY", so this bar carries the
+    // sort control instead of a redundant title.
     private var header: some View {
-        HStack {
-            Text("Album Art Gallery".uppercased())
-                .font(CarbonFont.mono(11, weight: .bold))
-                .tracking(2)
-                .foregroundStyle(theme.ink)
+        HStack(spacing: 8) {
+            Text("SORT")
+                .font(CarbonFont.mono(8.5, weight: .bold))
+                .tracking(1.5)
+                .foregroundStyle(theme.ink4)
+
+            sortPill("YEAR", field: .year)
+            sortPill("A–Z", field: .title)
+            sortPill("ARTIST", field: .albumArtist)
+
+            Button(action: { model.albumSortAscending.toggle() }) {
+                Image(systemName: model.albumSortAscending ? "arrow.up" : "arrow.down")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(theme.ink2)
+                    .frame(width: 20, height: 18)
+                    .background(theme.chassisHi)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.black.opacity(0.18), lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .carbonTip(model.albumSortAscending ? "Ascending" : "Descending")
+
             Spacer()
             Text("\(allAlbums.count) Albums")
                 .font(CarbonFont.mono(9.5, weight: .semibold))
                 .foregroundStyle(theme.ink3)
         }
         .padding(.horizontal, 18)
-        .padding(.vertical, 12)
+        .padding(.vertical, 10)
         .background(theme.chassisHi)
         .overlay(Rectangle().fill(Color.black.opacity(0.12)).frame(height: 1), alignment: .bottom)
     }
 
+    private func sortPill(_ label: String, field: AlbumSortField) -> some View {
+        let active = model.albumSortField == field
+        return Button(action: { model.albumSortField = field }) {
+            Text(label)
+                .font(CarbonFont.mono(9, weight: .bold))
+                .tracking(0.8)
+                .foregroundStyle(active ? Color.white : theme.ink2)
+                .padding(.horizontal, 9)
+                .frame(height: 18)
+                .background(active ? theme.cyan : theme.chassisHi)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .overlay(RoundedRectangle(cornerRadius: 4)
+                    .stroke(active ? Color.clear : Color.black.opacity(0.18), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+
+    // Sorted by the shared album-sort preference (year / title / album-artist),
+    // so the gallery order matches the list browser and the header sort control.
     private var allAlbums: [Album] {
-        model.index.artists.flatMap { $0.albums }
+        model.allAlbumsSorted
     }
 
     private func albumCoverCell(_ album: Album) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        let selected = model.selectedAlbumID == album.id
+        return VStack(alignment: .leading, spacing: 6) {
             ZStack(alignment: .bottomTrailing) {
-                Button(action: { openDetail(album) }) {
-                    GalleryAlbumCoverView(album: album, size: 120)
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
-                        .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.black.opacity(0.12), lineWidth: 1))
-                        .shadow(color: Color.black.opacity(0.15), radius: 4, y: 2)
-                        .matchedGeometryEffect(id: album.id, in: artNamespace)
-                }
-                .buttonStyle(.plain)
+                GalleryAlbumCoverView(album: album, size: 120)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4)
+                            .stroke(selected ? theme.orange : Color.black.opacity(0.12),
+                                    lineWidth: selected ? 2.5 : 1)
+                    )
+                    .shadow(color: selected ? theme.orange.opacity(0.4) : Color.black.opacity(0.15),
+                            radius: selected ? 6 : 4, y: 2)
+                    .matchedGeometryEffect(id: album.id, in: artNamespace)
+                    .contentShape(Rectangle())
+                    // Single click selects (highlights + drives the inspector track
+                    // list); double click opens the full album page.
+                    .onTapGesture(count: 2) { openDetail(album) }
+                    .onTapGesture(count: 1) { selectAlbum(album) }
 
                 // Booklet Indicator Badge (Top Right of Cover)
                 if album.booklet != nil {

@@ -7,6 +7,9 @@ struct InspectorPane: View {
 
     @State private var showingCleanup = false
     @State private var activeTab: InspectorTab = .info
+    /// One-time tip (dismissable) pointing at the ART tab's online art search,
+    /// shown under OPEN ARTWORK when the album has no booklet to open.
+    @AppStorage("cratedigger.tip.artTabSearch.hidden") private var hideArtTip = false
 
     private enum InspectorTab: String, CaseIterable {
         case info = "INFO"
@@ -114,6 +117,7 @@ struct InspectorPane: View {
                         SpecRows(album: model.selectedAlbum)
                         TagChips(album: model.selectedAlbum)
                         utilitiesBlock
+                        trackListBlock
                     }
                 }
             }
@@ -152,6 +156,7 @@ struct InspectorPane: View {
                             SpecRows(album: model.selectedAlbum)
                             TagChips(album: model.selectedAlbum)
                             utilitiesBlock
+                            trackListBlock
                         }
                     }
                     .frame(maxWidth: .infinity)
@@ -234,7 +239,48 @@ struct InspectorPane: View {
                 .frame(height: CarbonLayout.keyHeight)
             }
             .padding(.horizontal, 16)
-            .padding(.bottom, 12)
+            .padding(.bottom, model.selectedAlbum == nil ? 12 : 8)
+
+            // Opens the album's booklet if it has one, otherwise the cover.
+            if let album = model.selectedAlbum {
+                let hasBooklet = album.booklet != nil
+                Button(action: { model.showArtwork(for: album) }) {
+                    HStack(spacing: 7) {
+                        Image(systemName: hasBooklet ? "book.fill" : "photo.fill").font(.system(size: 11))
+                        Text("OPEN ARTWORK")
+                            .font(CarbonFont.mono(10, weight: .bold))
+                            .tracking(1.0)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: CarbonLayout.keyHeight)
+                    .background(theme.orange)
+                    .foregroundColor(.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                    .shadow(color: .black.opacity(0.2), radius: 3, y: 1)
+                }
+                .buttonStyle(.plain)
+                .carbonTip(hasBooklet ? "Open this album's digital booklet" : "View the album cover")
+                .padding(.horizontal, 16)
+                .padding(.bottom, (!hasBooklet && !hideArtTip) ? 6 : 12)
+
+                // No booklet → nudge toward the ART tab's online art search.
+                if !hasBooklet && !hideArtTip {
+                    HStack(spacing: 6) {
+                        Image(systemName: "lightbulb.fill").font(.system(size: 8.5))
+                            .foregroundStyle(theme.sun)
+                        Text("Search for cover art in the ART tab.")
+                            .font(CarbonFont.mono(8.5, weight: .medium))
+                            .foregroundStyle(theme.ink3)
+                        Spacer(minLength: 4)
+                        Button("Don't show") { hideArtTip = true }
+                            .buttonStyle(.plain)
+                            .font(CarbonFont.mono(8, weight: .bold))
+                            .foregroundStyle(theme.ink4)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 12)
+                }
+            }
         }
         .overlay(
             Rectangle()
@@ -242,6 +288,60 @@ struct InspectorPane: View {
                 .frame(height: 1),
             alignment: .top
         )
+    }
+
+    /// In gallery mode the browser shows covers only, so the inspector carries
+    /// the selected album's track list (play / now-playing) here.
+    @ViewBuilder
+    private var trackListBlock: some View {
+        if model.showArtworkGallery, let album = model.selectedAlbum, !album.tracks.isEmpty {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Tracks".uppercased())
+                    .font(CarbonFont.mono(9, weight: .bold))
+                    .tracking(1.8)
+                    .foregroundStyle(theme.ink3)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 10)
+                    .padding(.bottom, 4)
+
+                ForEach(Array(album.tracks.enumerated()), id: \.element.track.id) { index, loaded in
+                    inspectorTrackRow(loaded, number: index + 1)
+                }
+            }
+            .padding(.bottom, 12)
+            .overlay(
+                Rectangle()
+                    .fill(theme.isDark ? Color.white.opacity(0.06) : Color.black.opacity(0.08))
+                    .frame(height: 1),
+                alignment: .top
+            )
+        }
+    }
+
+    private func inspectorTrackRow(_ loaded: LoadedTrack, number: Int) -> some View {
+        let isNowPlaying = model.nowPlayingTrack?.track.id == loaded.track.id
+        return Button(action: { model.playTrack(id: loaded.track.id) }) {
+            HStack(spacing: 10) {
+                Text(isNowPlaying ? "▸" : "\(number)")
+                    .font(CarbonFont.mono(9.5, weight: .bold))
+                    .foregroundStyle(isNowPlaying ? theme.orange : theme.ink4)
+                    .frame(width: 16, alignment: .trailing)
+                Text(loaded.track.title)
+                    .font(CarbonFont.sans(11, weight: isNowPlaying ? .bold : .regular))
+                    .foregroundStyle(isNowPlaying ? theme.ink : theme.ink2)
+                    .lineLimit(1)
+                Spacer()
+                Text(loaded.track.durationSeconds > 0 ? loaded.track.durationSeconds.asClock : "--:--")
+                    .font(CarbonFont.mono(9))
+                    .foregroundStyle(theme.ink4)
+            }
+            .padding(.vertical, 5)
+            .padding(.horizontal, 16)
+            .background(isNowPlaying ? theme.orange.opacity(0.12) : Color.clear)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .contextMenu { BrowserContextMenu.track(loaded, model: model) }
     }
 
     @ViewBuilder
