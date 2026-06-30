@@ -946,7 +946,8 @@ private struct ScanView: View {
     @Environment(\.carbon) private var theme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
+            // Top: indexing status (while scanning) + source label.
             HStack(alignment: .center, spacing: 12) {
                 if model.scanProgress.isRunning { statusCapsule }
                 Spacer()
@@ -957,34 +958,34 @@ private struct ScanView: View {
                     .lineLimit(1)
             }
 
-            if let path = devicePathBar {
-                HStack(spacing: 6) {
-                    Image(systemName: "folder")
-                        .font(.system(size: 9))
-                        .foregroundStyle(oledMuted)
-                    Text(path)
-                        .font(CarbonFont.mono(9.5, weight: .medium))
-                        .foregroundStyle(oledForeground.opacity(0.85))
-                        .lineLimit(1)
-                        .truncationMode(.head)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+            Text(scanDetail)
+                .font(CarbonFont.mono(11, weight: .semibold))
+                .tracking(1.0)
+                .foregroundStyle(oledForeground.opacity(0.85))
+                .lineLimit(1)
+
+            Spacer(minLength: 4)
+
+            // Lower zone: a CNVRT-style path ticker (when a track/device path is
+            // active) sits right above the flat, box-less stats.
+            if let data = pathTickerData {
+                pathTicker(data)
             }
 
-            Text(scanDetail)
-                .font(CarbonFont.mono(10, weight: .medium))
-                .tracking(1.6)
-                .foregroundStyle(oledMuted)
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .center)
+            Rectangle()
+                .fill(oledForeground.opacity(0.12))
+                .frame(height: 1)
 
-            HStack(spacing: 10) {
-                Spacer(minLength: 0)
-                metricCell(title: "TRACKS", value: "\(model.index.allTracks.count)", accent: theme.cyan)
-                metricCell(title: "ALBUMS", value: "\(model.index.albumCount)", accent: theme.sun)
-                metricCell(title: "ARTISTS", value: "\(model.index.artists.count)", accent: theme.orange)
-                metricCell(title: "PROBED", value: probedLabel, accent: oledForeground.opacity(0.75))
-                Spacer(minLength: 0)
+            HStack(alignment: .top, spacing: 0) {
+                statCell("Tracks", "\(model.index.allTracks.count)", "INDEXED", accent: theme.cyan)
+                OLEDCellDivider()
+                statCell("Albums", "\(model.index.albumCount)", "RELEASES", accent: theme.sun)
+                OLEDCellDivider()
+                statCell("Artists", "\(model.index.artists.count)", "PERFORMERS", accent: theme.orange)
+                OLEDCellDivider()
+                statCell("Size", sizeValue, "ON DISK", accent: oledForeground)
+                OLEDCellDivider()
+                statCell("Time", timeValue, "PLAYTIME", accent: oledForeground)
             }
 
             if model.scanProgress.isRunning { progressBar }
@@ -1028,30 +1029,47 @@ private struct ScanView: View {
         .padding(.horizontal, 24)
     }
 
-    private func metricCell(title: String, value: String, accent: Color) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(title)
-                .font(CarbonFont.mono(8.5, weight: .bold))
-                .tracking(1.8)
+    /// A flat, box-less stat (key / large value / sub) that fills its share of
+    /// the row — the OLED-native look, larger than the old boxed metric cells.
+    private func statCell(_ key: String, _ value: String, _ sub: String, accent: Color) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(key.uppercased())
+                .font(CarbonFont.mono(8, weight: .bold))
+                .tracking(2.0)
                 .foregroundStyle(oledMuted)
             Text(value)
-                .font(CarbonFont.mono(16, weight: .bold))
-                .tracking(1.0)
+                .font(CarbonFont.mono(20, weight: .bold))
+                .tracking(0.5)
                 .foregroundStyle(accent)
                 .lineLimit(1)
-                .minimumScaleFactor(0.75)
+                .minimumScaleFactor(0.55)
+            Text(sub.uppercased())
+                .font(CarbonFont.mono(7, weight: .semibold))
+                .tracking(1.6)
+                .foregroundStyle(oledForeground.opacity(0.4))
+                .lineLimit(1)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .frame(width: 104, height: 50, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(oledForeground.opacity(0.075))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .stroke(oledForeground.opacity(0.13), lineWidth: 0.8)
-                )
-        )
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Total library size on disk (already summed by the index build).
+    private var sizeValue: String { Self.byteString(model.index.totalSizeBytes) }
+
+    /// Total playtime across every indexed track.
+    private var timeValue: String {
+        let total = Int(model.index.allTracks.reduce(0.0) { $0 + $1.track.durationSeconds })
+        guard total > 0 else { return "—" }
+        let h = total / 3600, m = (total % 3600) / 60
+        if h >= 24 { return "\(h / 24)d \(h % 24)h" }
+        if h > 0 { return "\(h)h \(m)m" }
+        return "\(m)m \(total % 60)s"
+    }
+
+    static func byteString(_ bytes: Int64) -> String {
+        let mb = Double(bytes) / 1_048_576
+        if mb >= 1024 { return String(format: "%.1f GB", mb / 1024) }
+        if mb >= 1 { return String(format: "%.0f MB", mb) }
+        return String(format: "%.0f KB", Double(bytes) / 1024)
     }
 
     private var sourceLine: String {
@@ -1061,20 +1079,59 @@ private struct ScanView: View {
         return model.index.allTracks.isEmpty ? "NO SOURCE" : "LIBRARY INDEX"
     }
 
-    /// While browsing a device, show where files live: the volume name, plus the
-    /// selected track's containing folder relative to the device root. Nil for
-    /// non-device sources.
-    private var devicePathBar: String? {
-        guard case .device(let root) = model.currentSource else { return nil }
-        let volumeName = URL(fileURLWithPath: root).lastPathComponent
-        guard let dir = model.selectedTrack?.track.fileURL.deletingLastPathComponent().path else {
-            return "/" + volumeName
+    /// Lower-zone path ticker data: a left prefix (device volume + free space, or
+    /// "LIBRARY") and the selected track's folder as a colored breadcrumb (parent
+    /// folders dim, the leaf album folder lit orange). Nil when nothing's selected.
+    private var pathTickerData: (prefix: String, path: AttributedString)? {
+        guard let track = model.selectedTrack else { return nil }
+        let folder = track.track.fileURL.deletingLastPathComponent().path
+
+        let prefix: String
+        let display: String
+        if case .device(let root) = model.currentSource {
+            let volume = URL(fileURLWithPath: root).lastPathComponent
+            prefix = freeSpaceString(forPath: root).map { "\(volume) · \($0) FREE" } ?? volume
+            display = folder.hasPrefix(root) ? "/" + volume + String(folder.dropFirst(root.count)) : folder
+        } else {
+            prefix = "LIBRARY"
+            display = folder.replacingOccurrences(of: NSHomeDirectory(), with: "~")
         }
-        if dir.hasPrefix(root) {
-            let rel = String(dir.dropFirst(root.count))
-            return "/" + volumeName + rel
+
+        let leadingSlash = display.hasPrefix("/")
+        let parts = display.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
+        var path = AttributedString()
+        for (i, part) in parts.enumerated() {
+            let sep = i == 0 ? (leadingSlash ? "/" : "") : "/"
+            var seg = AttributedString(sep + part)
+            seg.foregroundColor = i == parts.count - 1 ? theme.orange : oledForeground.opacity(0.5)
+            path.append(seg)
         }
-        return dir
+        return (prefix, path)
+    }
+
+    private func pathTicker(_ data: (prefix: String, path: AttributedString)) -> some View {
+        HStack(spacing: 12) {
+            Text(data.prefix)
+                .font(CarbonFont.mono(8.5, weight: .bold))
+                .tracking(1.8)
+                .foregroundStyle(oledMuted)
+                .lineLimit(1)
+                .fixedSize()
+            Text(data.path)
+                .font(CarbonFont.mono(10))
+                .tracking(0.4)
+                .lineLimit(1)
+                .truncationMode(.head)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    /// Free space on the volume holding `path`, formatted (nil if unavailable).
+    private func freeSpaceString(forPath path: String) -> String? {
+        let url = URL(fileURLWithPath: path)
+        guard let values = try? url.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]),
+              let bytes = values.volumeAvailableCapacityForImportantUsage else { return nil }
+        return Self.byteString(Int64(bytes))
     }
 
     private var scanDetail: String {
@@ -1088,13 +1145,6 @@ private struct ScanView: View {
             return "Library empty. Press Command-O to load a folder."
         }
         return "\(model.index.allTracks.count) tracks indexed across \(model.index.albumCount) albums."
-    }
-
-    private var probedLabel: String {
-        if model.scanProgress.isRunning || model.scanProgress.filesProbed > 0 {
-            return "\(model.scanProgress.filesProbed)"
-        }
-        return "—"
     }
 
     private var progressValue: Double {
