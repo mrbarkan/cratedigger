@@ -25,6 +25,7 @@ struct MetadataEditorView: View {
     @State private var trackTotalString: String
     @State private var discNumString: String
     @State private var discTotalString: String
+    @State private var side: String
     @State private var comment: String
     @State private var compFlag: CompFlag
     /// The compilation choice the editor opened with — a batch save only writes
@@ -60,6 +61,7 @@ struct MetadataEditorView: View {
             _trackTotalString = State(initialValue: common(.trackTotal))
             _discNumString = State(initialValue: "")
             _discTotalString = State(initialValue: common(.discTotal))
+            _side = State(initialValue: "")   // side is per-track, not batch-edited
             _comment = State(initialValue: common(.comment))
             // All-true → Yes, all-false → No, mixed/absent → Leave (don't touch).
             let comp = ConversionMetadata.commonValue(.compilation, in: metas)
@@ -77,6 +79,7 @@ struct MetadataEditorView: View {
             _trackTotalString = State(initialValue: primary?.metadata.trackTotal.map(String.init) ?? "")
             _discNumString = State(initialValue: primary?.track.discNumber.map(String.init) ?? "")
             _discTotalString = State(initialValue: primary?.metadata.discTotal.map(String.init) ?? "")
+            _side = State(initialValue: primary?.metadata.side ?? "")
             _comment = State(initialValue: primary?.metadata.comment ?? "")
             let flag: CompFlag = primary?.metadata.compilation == true ? .yes : .no
             _compFlag = State(initialValue: flag)
@@ -116,6 +119,7 @@ struct MetadataEditorView: View {
                     HStack(spacing: 14) {
                         if !isBatch {
                             groupField("Disc No", text: $discNumString)
+                            groupField("Side", text: $side)
                         }
                         groupField("Disc Total", text: $discTotalString, field: .discTotal)
                         Spacer()
@@ -227,6 +231,7 @@ struct MetadataEditorView: View {
         updated.trackTotal = Int(trackTotalString)
         updated.discNumber = Int(discNumString)
         updated.discTotal = Int(discTotalString)
+        updated.side = side.trimmingCharacters(in: .whitespaces).isEmpty ? nil : side.trimmingCharacters(in: .whitespaces).uppercased()
         updated.comment = comment.isEmpty ? nil : comment
         updated.compilation = compFlag == .yes
         model.updateTrackMetadata(track, newMetadata: updated)

@@ -163,6 +163,9 @@ public struct ConversionMetadata: Hashable, Codable, Sendable {
     public var trackTotal: Int?
     public var discNumber: Int?
     public var discTotal: Int?
+    /// Vinyl side label (A, B, C, …). App-side annotation surfaced on the spinning
+    /// record; persisted in the crate, not written into the audio file's tags.
+    public var side: String?
     public var year: Int?
     public var genre: String?
     public var comment: String?
@@ -179,6 +182,7 @@ public struct ConversionMetadata: Hashable, Codable, Sendable {
         trackTotal: Int? = nil,
         discNumber: Int? = nil,
         discTotal: Int? = nil,
+        side: String? = nil,
         year: Int? = nil,
         genre: String? = nil,
         comment: String? = nil,
@@ -194,6 +198,7 @@ public struct ConversionMetadata: Hashable, Codable, Sendable {
         self.trackTotal = trackTotal
         self.discNumber = discNumber
         self.discTotal = discTotal
+        self.side = side
         self.year = year
         self.genre = genre
         self.comment = comment

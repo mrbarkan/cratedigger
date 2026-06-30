@@ -1792,6 +1792,50 @@ final class LibraryViewModel: ObservableObject {
         )
     }
 
+    /// Embed a small (≤600px, baseline/non-progressive JPEG) copy of the album's
+    /// cover into every track, leaving the full-res cover.jpg in the folder intact.
+    /// Runs detached and is NOT awaited, so the Save button returns instantly — the
+    /// per-file rewrite (ffmpeg `-c copy`, dominated by the audio, not the image)
+    /// happens quietly in the background.
+    func embedCoverIntoTracksInBackground(for album: Album) {
+        guard let folder = album.tracks.first?.track.fileURL.deletingLastPathComponent() else { return }
+        // Prefer the manifest's .cover-roled file, else cover.jpg.
+        let manifest = ArtworkManifest.load(from: folder)
+        let coverName = manifest?.roles.first(where: { $0.value == .cover })?.key ?? "cover.jpg"
+        let coverURL = folder.appendingPathComponent(coverName)
+        guard FileManager.default.fileExists(atPath: coverURL.path) else { return }
+        let tracks = album.tracks
+
+        Task.detached(priority: .utility) {
+            guard let data = try? Data(contentsOf: coverURL), let image = NSImage(data: data) else { return }
+            let hash = SHA256.hash(data: data).compactMap { String(format: "%02x", $0) }.joined()
+            let asset = ArtworkAsset(
+                source: .folderImage, hash: hash,
+                dimensions: ArtworkDimensions(width: Int(image.size.width), height: Int(image.size.height)),
+                data: data
+            )
+            // Downscale to a compatible 600px baseline JPEG written to a temp file.
+            var embedURL = coverURL
+            var tempURL: URL? = nil
+            if let small = try? ArtworkService().prepareCompatibleArtwork(asset: asset, profile: .generic, maxDimension: 600),
+               !small.data.isEmpty {
+                let tmp = folder.appendingPathComponent(".cd_embed_cover.jpg")
+                if (try? small.data.write(to: tmp, options: .atomic)) != nil { embedURL = tmp; tempURL = tmp }
+            }
+            let finalURL = embedURL
+            await withTaskGroup(of: Void.self) { group in
+                var inFlight = 0
+                for track in tracks {
+                    if inFlight >= 4 { _ = await group.next(); inFlight -= 1 }
+                    let fileURL = track.track.fileURL
+                    group.addTask { try? MetadataEditorService().embedArtwork(to: fileURL, imageURL: finalURL) }
+                    inFlight += 1
+                }
+            }
+            if let tempURL { try? FileManager.default.removeItem(at: tempURL) }
+        }
+    }
+
     /// Shared tail for artwork imports (download or local upload): ingest the
     /// new assets, push the new cover into every index/cache the album lives in,
     /// refresh the now-playing disc, and report the album-wide scope.

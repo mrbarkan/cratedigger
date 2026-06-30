@@ -26,6 +26,8 @@ struct SpinningRecordView: View {
     @StateObject private var animator = RecordAnimator()
     @State private var discImage: NSImage? = nil
     @State private var isVinyl: Bool = false
+    /// Vinyl side (A, B, …) of the current track, shown statically on the record.
+    @State private var currentSide: String? = nil
 
     // Pre-rendered CD faces. The 60fps animation only rotates/crossfades these
     // cached bitmaps; the expensive gradients + Gaussian blur are rasterized
@@ -224,6 +226,20 @@ struct SpinningRecordView: View {
                 
                 // Small center hole (static)
                 Circle().fill(Color.black).frame(width: holeSize, height: holeSize)
+
+                // Vinyl side badge (static, near the top edge) — follows the
+                // current track's `side` tag.
+                if let side = currentSide, !side.isEmpty {
+                    Text("SIDE \(side)")
+                        .font(CarbonFont.mono(9, weight: .bold))
+                        .tracking(1.5)
+                        .foregroundStyle(Color.white.opacity(0.85))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Capsule().fill(Color.black.opacity(0.55)))
+                        .overlay(Capsule().stroke(Color.white.opacity(0.2), lineWidth: 0.5))
+                        .offset(y: -w * 0.34)
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -299,7 +315,9 @@ struct SpinningRecordView: View {
         // Show the now-playing track's disc while playing; otherwise preview the
         // currently selected album so the DISC tab reflects what you're browsing
         // (and freshly-imported art).
-        guard let track = (model.nowPlayingTrack ?? model.selectedTrack)?.track else {
+        let loaded = model.nowPlayingTrack ?? model.selectedTrack
+        currentSide = loaded?.metadata.side
+        guard let track = loaded?.track else {
             discImage = nil
             isVinyl = false
             return

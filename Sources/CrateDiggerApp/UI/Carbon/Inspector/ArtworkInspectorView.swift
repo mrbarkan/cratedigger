@@ -12,6 +12,9 @@ struct ArtworkInspectorView: View {
     @State private var thumbnails: [URL: NSImage] = [:]
     @State private var isSaving = false
     @State private var showingSearch = false
+    /// The Save button only glows (and is worth pressing) once the user has
+    /// actually changed something — found new artwork, or edited a role/format.
+    @State private var isDirty = false
     
     private var mediaFormatLabel: String {
         switch manifest.mediaFormat {
@@ -28,9 +31,9 @@ struct ArtworkInspectorView: View {
                 // hint inside the pill means the label can never be clipped or
                 // stranded from its value when the inspector is narrow.
                 Menu {
-                    Button("Auto") { manifest.mediaFormat = nil }
-                    Button("CD") { manifest.mediaFormat = .cd }
-                    Button("Vinyl") { manifest.mediaFormat = .vinyl }
+                    Button("Auto") { manifest.mediaFormat = nil; isDirty = true }
+                    Button("CD") { manifest.mediaFormat = .cd; isDirty = true }
+                    Button("Vinyl") { manifest.mediaFormat = .vinyl; isDirty = true }
                 } label: {
                     HStack(spacing: 6) {
                         Text("FORMAT")
@@ -76,12 +79,13 @@ struct ArtworkInspectorView: View {
                         .controlSize(.small)
                         .frame(maxWidth: .infinity)
                 } else {
-                    KeyButton(style: .selected, action: saveChanges) {
+                    KeyButton(style: isDirty ? .selected : .normal, action: saveChanges) {
                         Text("SAVE")
                             .font(CarbonFont.mono(9, weight: .bold))
                     }
                     .frame(maxWidth: .infinity)
                     .frame(height: 22)
+                    .disabled(!isDirty)
                 }
             }
             .padding(.horizontal, 14)
@@ -119,6 +123,7 @@ struct ArtworkInspectorView: View {
                                 get: { manifest.roles[fileName] ?? .auto },
                                 set: { newValue in
                                     manifest.roles[fileName] = newValue
+                                    isDirty = true
                                 }
                             )) {
                                 Text("Auto").tag(ArtworkRole.auto)
@@ -145,9 +150,11 @@ struct ArtworkInspectorView: View {
         }
         .onAppear {
             loadManifest()
+            isDirty = false
         }
         .onChange(of: album) { _ in
             loadManifest()
+            isDirty = false
         }
         .task(id: imageURLs) {
             var loaded: [URL: NSImage] = [:]
@@ -158,7 +165,11 @@ struct ArtworkInspectorView: View {
             }
             self.thumbnails = loaded
         }
-        .sheet(isPresented: $showingSearch, onDismiss: { loadManifest() }) {
+        .sheet(isPresented: $showingSearch, onDismiss: {
+            let before = imageURLs.count
+            loadManifest()
+            if imageURLs.count > before { isDirty = true }   // new artwork found
+        }) {
             if let album = album {
                 ArtworkSearchSheetView(album: album)
             }
@@ -188,6 +199,7 @@ struct ArtworkInspectorView: View {
             await MainActor.run {
                 isSaving = false
                 loadManifest()
+                isDirty = true   // a new cover was added
             }
         }
     }
@@ -231,16 +243,18 @@ struct ArtworkInspectorView: View {
             // 1. Save the manifest
             try? manifest.save(to: albumFolder)
             
-            // The folder cover.jpg (referenced by the manifest) drives display — we
-            // deliberately don't rewrite every track file to embed it (hundreds of
-            // MB of I/O on a lossless album). See downloadAndImportArtwork.
-
             await MainActor.run {
                 isSaving = false
+                isDirty = false
                 model.refreshLibrary()
+                // Embed a compatible 600px baseline copy of the cover into each
+                // track in the BACKGROUND (keeping the full-res cover.jpg) — so the
+                // art travels inside the files without blocking on the per-file
+                // rewrite. The folder cover already drives in-app display.
+                model.embedCoverIntoTracksInBackground(for: album)
                 model.appAlert = .info(
                     title: "Artwork saved",
-                    message: "Artwork saved for “\(album.title)”."
+                    message: "Saved for “\(album.title)”. Embedding the cover into your tracks in the background."
                 )
             }
         }
