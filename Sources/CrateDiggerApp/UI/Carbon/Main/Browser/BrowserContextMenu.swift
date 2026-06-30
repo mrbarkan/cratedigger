@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import CrateDiggerCore
 
 /// Shared right-click menu contents for albums and tracks, so the column browser
@@ -41,10 +42,26 @@ enum BrowserContextMenu {
         Button("View Artwork") {
             if let album = artworkAlbum(for: artist) { model.showArtwork(for: album) }
         }
+        // One representative track — revealing every album would spawn a Finder
+        // window per folder.
+        showInFinderButton(for: artist.albums.first?.tracks.first.map { [$0] } ?? [])
 
         if case .localCrate(let crateName) = model.currentSource {
             Divider()
             Button("Remove from “\(crateName)”") { model.removeArtistFromCrate(artist, crateName: crateName) }
+        }
+    }
+
+    /// "Show in Finder" — reveals the given tracks' files in Finder (selecting
+    /// them). Only shown for real on-disk files, so it's hidden for Radio / remote
+    /// streaming sources whose tracks have no file URL.
+    @ViewBuilder
+    static func showInFinderButton(for tracks: [LoadedTrack]) -> some View {
+        let urls = tracks.map { $0.track.fileURL }.filter { $0.isFileURL }
+        if !urls.isEmpty {
+            Button("Show in Finder") {
+                NSWorkspace.shared.activateFileViewerSelecting(urls)
+            }
         }
     }
 
@@ -97,6 +114,7 @@ enum BrowserContextMenu {
             }
         }
         Button("View Artwork") { model.showArtwork(for: album) }
+        showInFinderButton(for: album.tracks)
 
         removalItems(forAlbum: album, model: model)
     }
@@ -131,6 +149,7 @@ enum BrowserContextMenu {
                 model.editTags(for: [loaded])
             }
         }
+        showInFinderButton(for: [loaded])
 
         Divider()
         let hasMarkers = !(loaded.recordMarkers ?? []).isEmpty
