@@ -609,18 +609,6 @@ struct ArtworkSearchSheetView: View {
                         .stroke(isSelected ? theme.orange : (theme.isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.1)), lineWidth: isSelected ? 2 : 1)
                 )
                 .shadow(color: Color.black.opacity(0.1), radius: 3, y: 1)
-                .overlay(alignment: .topTrailing) {
-                    Button(action: { previewImage = img }) {
-                        Image(systemName: "arrow.up.left.and.arrow.down.right")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundColor(.white)
-                            .padding(5)
-                            .background(Circle().fill(Color.black.opacity(0.45)))
-                    }
-                    .buttonStyle(.plain)
-                    .padding(6)
-                    .carbonTip("Preview full size")
-                }
                 .onTapGesture {
                     toggleImageSelection(img)
                 }
@@ -636,6 +624,21 @@ struct ArtworkSearchSheetView: View {
                 }
                 .buttonStyle(.plain)
                 .padding(6)
+
+                // Expand-to-preview is a ZStack sibling (NOT inside the image's
+                // .onTapGesture subtree, which otherwise steals the click and only
+                // toggles selection). Positioned top-right to mirror the checkmark.
+                Button(action: { previewImage = img }) {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(.white)
+                        .padding(5)
+                        .background(Circle().fill(Color.black.opacity(0.45)))
+                }
+                .buttonStyle(.plain)
+                .padding(6)
+                .frame(width: 130, height: 130, alignment: .topTrailing)
+                .carbonTip("Preview full size")
             }
             
             // Classification badge

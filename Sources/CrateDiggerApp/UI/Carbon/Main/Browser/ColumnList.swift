@@ -21,9 +21,9 @@ struct ColumnList<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 6) {
+            HStack(spacing: 10) {
                 Text(title.uppercased())
-                Spacer()
+                Spacer(minLength: 8)
                 if let headerAccessory {
                     headerAccessory
                 }

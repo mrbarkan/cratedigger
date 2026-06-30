@@ -411,14 +411,17 @@ private struct ColumnSortControl<Field: SortFieldDisplayable>: View {
     let allCases: [Field]
 
     var body: some View {
-        HStack(spacing: 3) {
-            Text(field.displayName.uppercased())
-                .font(CarbonFont.mono(8, weight: .semibold))
-                .tracking(1)
-                .foregroundStyle(theme.ink2)
-            Image(systemName: ascending ? "chevron.up" : "chevron.down")
-                .font(.system(size: 6, weight: .bold))
-                .foregroundStyle(theme.ink3)
+        HStack(spacing: 6) {
+            // Field name + direction caret read as one unit; the menu sits apart.
+            HStack(spacing: 3) {
+                Text(field.displayName.uppercased())
+                    .font(CarbonFont.mono(8, weight: .semibold))
+                    .tracking(1)
+                    .foregroundStyle(theme.ink2)
+                Image(systemName: ascending ? "chevron.up" : "chevron.down")
+                    .font(.system(size: 7, weight: .bold))
+                    .foregroundStyle(theme.ink3)
+            }
             Menu {
                 ForEach(Array(allCases.enumerated()), id: \.offset) { _, option in
                     Button { select(option) } label: {
