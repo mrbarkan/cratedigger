@@ -571,9 +571,10 @@ struct ArtworkGalleryView: View {
                 try? data.write(to: targetURL, options: .atomic)
             }
 
-            // Update in UI view-model
+            // Apply the image we just downloaded directly — no second iTunes
+            // round-trip (fetchRemoteArtwork would re-download to do the same thing).
             await MainActor.run {
-                model.fetchRemoteArtwork(for: album) // Force re-resolution
+                model.applyFetchedArtwork(asset, toAlbumID: album.id)
             }
         }
     }

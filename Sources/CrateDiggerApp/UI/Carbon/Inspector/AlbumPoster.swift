@@ -10,7 +10,7 @@ struct AlbumPoster: View {
 
     var body: some View {
         ZStack {
-            if let nsImage = localThumbnail ?? thumbnail(for: album) {
+            if let nsImage = localThumbnail {
                 Image(nsImage: nsImage)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
@@ -25,17 +25,24 @@ struct AlbumPoster: View {
                 .stroke(Color.black.opacity(theme.isDark ? 0.6 : 0.18), lineWidth: 1)
         )
         .shadow(color: Color.black.opacity(theme.isDark ? 0.5 : 0.35), radius: 8, y: 6)
-        .task(id: album?.booklet?.frontCoverURL) {
-            guard let coverURL = album?.booklet?.frontCoverURL else {
-                localThumbnail = nil
-                return
-            }
-            localThumbnail = await loadThumbnail(url: coverURL, maxPixelSize: 480)
-        }
+        // Decode off the main thread (folder cover via ImageIO, embedded art via
+        // ArtworkService.thumbnailAsync) so switching albums never blocks the
+        // inspector on a synchronous full-res render. Keys on the live art so it
+        // also reloads when a freshly-committed cover changes the album's hash.
+        .task(id: loadKey) { await loadThumbnailImage() }
     }
 
-    private func thumbnail(for album: Album?) -> NSImage? {
-        guard let album = album, let hash = album.artworkHash else { return nil }
-        return model.artworkService.generateThumbnail(artworkHash: hash, size: CGSize(width: 480, height: 480))
+    private var loadKey: String {
+        album?.booklet?.frontCoverURL?.path ?? album?.artworkHash ?? album?.id ?? "empty"
+    }
+
+    private func loadThumbnailImage() async {
+        if let coverURL = album?.booklet?.frontCoverURL {
+            localThumbnail = await loadThumbnail(url: coverURL, maxPixelSize: 480)
+        } else if let hash = album?.artworkHash {
+            localThumbnail = await model.artworkService.thumbnailAsync(artworkHash: hash, maxPixel: 480)
+        } else {
+            localThumbnail = nil
+        }
     }
 }

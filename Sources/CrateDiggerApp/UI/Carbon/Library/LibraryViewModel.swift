@@ -1612,7 +1612,7 @@ final class LibraryViewModel: ObservableObject {
         }
     }
 
-    private func applyFetchedArtwork(_ asset: ArtworkAsset, toAlbumID albumID: String) {
+    func applyFetchedArtwork(_ asset: ArtworkAsset, toAlbumID albumID: String) {
         artworkService.ingest(asset)
 
         guard let album = index.album(id: albumID) else { return }
@@ -1822,9 +1822,15 @@ final class LibraryViewModel: ObservableObject {
     ) {
         guard !ingestedAssets.isEmpty else { return }
 
-        // This album's folder just gained a manifest/booklet on disk; drop the
-        // cached disk-derived metadata so the rebuilds below re-scan it.
-        indexDiskCache.clear()
+        // This album's folder just gained a manifest/booklet on disk (and its
+        // files grew). Invalidate ONLY that folder's cached disk info instead of
+        // clearing the whole cache — the rebuilds below then stay warm for every
+        // other folder rather than cold-rebuilding the entire library on the main
+        // actor (which is what froze the next album selection).
+        if let albumFolder = album.tracks.first?.track.fileURL.deletingLastPathComponent().path {
+            indexDiskCache.invalidate(albumFolderPath: albumFolder,
+                                      filePaths: album.tracks.map { $0.track.fileURL.path })
+        }
 
         for asset in ingestedAssets {
             self.artworkService.ingest(asset)
@@ -1854,10 +1860,8 @@ final class LibraryViewModel: ObservableObject {
         // Update SpinningRecordView (now playing) immediately.
         NotificationCenter.default.post(name: NSNotification.Name("CrateDiggerArtworkImported"), object: nil)
 
-        // Force re-resolution of the selected album in the UI.
-        let currentAlbumID = self.selectedAlbumID
-        self.selectedAlbumID = nil
-        self.selectedAlbumID = currentAlbumID
+        // No need to bounce selectedAlbumID: the rebuilt index gives selectedAlbum
+        // a new artworkHash, and AlbumPoster's .task reloads on that hash change.
 
         // Tell the user the scope so it's clear cover art is album-wide.
         let trackCount = album.tracks.count

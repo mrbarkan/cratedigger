@@ -396,6 +396,16 @@ public final class LibraryIndexDiskCache {
         albumInfo.removeAll()
         sizeByPath.removeAll()
     }
+
+    /// Invalidate just one album's cached disk info (its booklet / media-format)
+    /// and the sizes of the given files — for an in-place artwork/manifest edit
+    /// that changed a folder's contents without moving paths. Lets the next
+    /// rebuild reuse the warm cache for every other folder instead of the
+    /// whole-library cold rebuild `clear()` forces.
+    public func invalidate(albumFolderPath: String, filePaths: [String]) {
+        albumInfo[albumFolderPath] = nil
+        for path in filePaths { sizeByPath[path] = nil }
+    }
 }
 
 public extension LibraryIndex {
