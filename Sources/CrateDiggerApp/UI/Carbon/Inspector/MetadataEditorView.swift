@@ -26,8 +26,16 @@ struct MetadataEditorView: View {
     @State private var discNumString: String
     @State private var discTotalString: String
     @State private var comment: String
+    @State private var compFlag: CompFlag
+    /// The compilation choice the editor opened with — a batch save only writes
+    /// the flag when the user actually moves it off this.
+    private let initialCompFlag: CompFlag
 
     private var isBatch: Bool { tracks.count > 1 }
+
+    /// Compilation is a `Bool?`, so it can't ride the String text-field path. In
+    /// batch mode `leave` means "don't touch it" (the default for mixed/absent).
+    enum CompFlag: Hashable { case leave, yes, no }
 
     init(track: LoadedTrack) {
         self.init(tracks: [track])
@@ -53,6 +61,11 @@ struct MetadataEditorView: View {
             _discNumString = State(initialValue: "")
             _discTotalString = State(initialValue: common(.discTotal))
             _comment = State(initialValue: common(.comment))
+            // All-true → Yes, all-false → No, mixed/absent → Leave (don't touch).
+            let comp = ConversionMetadata.commonValue(.compilation, in: metas)
+            let flag: CompFlag = comp == "1" ? .yes : (comp == "0" ? .no : .leave)
+            _compFlag = State(initialValue: flag)
+            initialCompFlag = flag
         } else {
             _title = State(initialValue: primary?.track.title ?? "")
             _artist = State(initialValue: primary?.track.artist ?? "")
@@ -65,6 +78,9 @@ struct MetadataEditorView: View {
             _discNumString = State(initialValue: primary?.track.discNumber.map(String.init) ?? "")
             _discTotalString = State(initialValue: primary?.metadata.discTotal.map(String.init) ?? "")
             _comment = State(initialValue: primary?.metadata.comment ?? "")
+            let flag: CompFlag = primary?.metadata.compilation == true ? .yes : .no
+            _compFlag = State(initialValue: flag)
+            initialCompFlag = flag
         }
     }
 
@@ -87,6 +103,7 @@ struct MetadataEditorView: View {
                     groupField("Album Artist", text: $albumArtist, field: .albumArtist)
                     groupField("Album", text: $album, field: .album)
                     groupField("Genre", text: $genre, field: .genre)
+                    compilationField
 
                     HStack(spacing: 14) {
                         groupField("Year", text: $yearString, field: .year)
@@ -168,6 +185,24 @@ struct MetadataEditorView: View {
         }
     }
 
+    /// Compilation flag — a native segmented control (it's a tri-state in batch:
+    /// Leave / Yes / No; single tracks just toggle Yes / No).
+    private var compilationField: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("COMPILATION")
+                .font(CarbonFont.mono(8, weight: .bold))
+                .tracking(1.4)
+                .foregroundStyle(theme.ink3)
+            Picker("", selection: $compFlag) {
+                if isBatch { Text("Leave").tag(CompFlag.leave) }
+                Text("Yes").tag(CompFlag.yes)
+                Text("No").tag(CompFlag.no)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+        }
+    }
+
     private func placeholder(for field: ConversionMetadata.BatchField?) -> String {
         guard isBatch, let field else { return "" }
         return ConversionMetadata.commonValue(field, in: tracks.map(\.metadata)) == nil
@@ -193,6 +228,7 @@ struct MetadataEditorView: View {
         updated.discNumber = Int(discNumString)
         updated.discTotal = Int(discTotalString)
         updated.comment = comment.isEmpty ? nil : comment
+        updated.compilation = compFlag == .yes
         model.updateTrackMetadata(track, newMetadata: updated)
     }
 
@@ -214,6 +250,11 @@ struct MetadataEditorView: View {
         consider(.trackTotal, trackTotalString)
         consider(.discTotal, discTotalString)
         consider(.comment, comment)
+        // Compilation: only write when the user moved it off the opening choice
+        // (and never when left on "Leave").
+        if compFlag != .leave, compFlag != initialCompFlag {
+            edits[.compilation] = compFlag == .yes ? "1" : "0"
+        }
 
         guard !edits.isEmpty else { return }
         for track in tracks {

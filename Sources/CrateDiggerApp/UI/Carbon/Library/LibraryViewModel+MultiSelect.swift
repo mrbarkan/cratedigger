@@ -149,6 +149,17 @@ extension LibraryViewModel {
         return selectedAlbum?.tracks ?? []
     }
 
+    /// Tracks the Inspector's EDIT TAGS should edit: any genuine multi-selection
+    /// (several tracks / albums / artists) resolves to all of its tracks; a single
+    /// selection stays the single anchor track (so one-track editing is unchanged,
+    /// not promoted to the whole album).
+    func tracksForInspectorTagEdit() -> [LoadedTrack] {
+        if selectedTrackIDs.count > 1 || selectedAlbumIDs.count > 1 || selectedArtistIDs.count > 1 {
+            return selectedTracksForCrateAdd()
+        }
+        return selectedTrack.map { [$0] } ?? []
+    }
+
     /// Add the current selection to a crate (drives the sidebar button + menus).
     func addSelectionToCrate(crateName: String) {
         let tracks = selectedTracksForCrateAdd()

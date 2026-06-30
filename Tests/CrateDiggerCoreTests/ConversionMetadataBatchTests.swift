@@ -87,4 +87,34 @@ final class ConversionMetadataBatchTests: XCTestCase {
         XCTAssertEqual(outA.title, "One More Time")
         XCTAssertEqual(outB.title, "Aerodynamic")
     }
+
+    // MARK: Compilation (Bool? carried as "1"/"0"/"")
+
+    func testCompilationCommonValueShared() {
+        let items = [ConversionMetadata(compilation: true), ConversionMetadata(compilation: true)]
+        XCTAssertEqual(ConversionMetadata.commonValue(.compilation, in: items), "1")
+    }
+
+    func testCompilationCommonValueMixedIsNil() {
+        let items = [ConversionMetadata(compilation: true), ConversionMetadata(compilation: false)]
+        XCTAssertNil(ConversionMetadata.commonValue(.compilation, in: items))
+    }
+
+    func testCompilationAbsentIsEmptyString() {
+        let items = [ConversionMetadata(), ConversionMetadata()]
+        XCTAssertEqual(ConversionMetadata.commonValue(.compilation, in: items), "")
+    }
+
+    func testApplyCompilationSetsTrueFalseNil() {
+        XCTAssertEqual(ConversionMetadata().applyingBatchEdits([.compilation: "1"]).compilation, true)
+        XCTAssertEqual(ConversionMetadata(compilation: true).applyingBatchEdits([.compilation: "0"]).compilation, false)
+        XCTAssertNil(ConversionMetadata(compilation: true).applyingBatchEdits([.compilation: ""]).compilation)
+    }
+
+    func testApplyCompilationLeavesOtherFields() {
+        let edited = meta(album: "X", albumArtist: "Y").applyingBatchEdits([.compilation: "1"])
+        XCTAssertEqual(edited.compilation, true)
+        XCTAssertEqual(edited.album, "X")
+        XCTAssertEqual(edited.albumArtist, "Y")
+    }
 }

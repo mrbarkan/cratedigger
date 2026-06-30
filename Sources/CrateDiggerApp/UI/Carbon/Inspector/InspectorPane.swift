@@ -197,7 +197,7 @@ struct InspectorPane: View {
             
             HStack(spacing: 8) {
                 KeyButton(style: model.selectedTrack != nil ? .normal : .disabled, action: {
-                    if let track = model.selectedTrack { model.editTags(for: [track]) }
+                    model.editTags(for: model.tracksForInspectorTagEdit())
                 }) {
                     HStack(spacing: 4) {
                         Image(systemName: "tag.fill")

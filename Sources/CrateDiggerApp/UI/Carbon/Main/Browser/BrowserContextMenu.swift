@@ -31,7 +31,13 @@ enum BrowserContextMenu {
         Button("Select All") { model.selectAllArtists() }
 
         Divider()
-        Button("Edit Tags…") { model.editTags(for: artist.albums.flatMap { $0.tracks }) }
+        Button("Edit Tags…") {
+            if model.selectedArtistIDs.count > 1 && model.selectedArtistIDs.contains(artist.id) {
+                model.editTags(for: model.selectedTracksForCrateAdd())
+            } else {
+                model.editTags(for: artist.albums.flatMap { $0.tracks })
+            }
+        }
         Button("View Artwork") {
             if let album = artworkAlbum(for: artist) { model.showArtwork(for: album) }
         }
@@ -83,7 +89,13 @@ enum BrowserContextMenu {
         }
 
         Divider()
-        Button("Edit Tags…") { model.editTags(for: album.tracks) }
+        Button("Edit Tags…") {
+            if model.selectedAlbumIDs.count > 1 && model.selectedAlbumIDs.contains(album.id) {
+                model.editTags(for: model.selectedTracksForCrateAdd())
+            } else {
+                model.editTags(for: album.tracks)
+            }
+        }
         Button("View Artwork") { model.showArtwork(for: album) }
 
         removalItems(forAlbum: album, model: model)
@@ -110,6 +122,15 @@ enum BrowserContextMenu {
             }
         }
         Button("Select All") { model.selectAllTracks() }
+
+        Divider()
+        Button("Edit Tags…") {
+            if model.selectedTrackIDs.count > 1 && model.selectedTrackIDs.contains(loaded.track.id) {
+                model.editTags(for: model.selectedTracksForCrateAdd())
+            } else {
+                model.editTags(for: [loaded])
+            }
+        }
 
         Divider()
         let hasMarkers = !(loaded.recordMarkers ?? []).isEmpty
