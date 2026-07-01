@@ -14,6 +14,7 @@ extension NSNotification.Name {
 /// Carries the pre-filled inputs from the view model to MainWindowController.
 struct GroupSheetInputs {
     let id: String
+    let kind: AlbumGroupKind
     let name: String
     let year: Int?
     let rows: [GroupAlbumsSheetController.VersionRow]
@@ -46,12 +47,23 @@ extension LibraryViewModel {
     }
 
     /// Enabled when 2+ plain (non-grouped) local albums of the same artist are selected.
-    var canGroupSelection: Bool {
+    var canGroupSelection: Bool { canGroup(as: .versionGroup) }
+
+    /// Whether the current selection can form a group of the given kind. Version
+    /// groups + box sets are same-artist; compilations are cross-artist by nature.
+    func canGroup(as kind: AlbumGroupKind) -> Bool {
         guard isLocalVersionSource else { return false }
         let albums = selectedAlbumsForGrouping().filter { !$0.isVersionGroup }
         guard albums.count >= 2 else { return false }
-        return Set(albums.map(\.artistID)).count == 1
+        switch kind {
+        case .versionGroup: return Set(albums.map(\.artistID)).count == 1
+        case .boxSet, .compilation: return true
+        }
     }
+
+    /// True when any group kind can be formed from the selection (drives the
+    /// "Group as ▸" submenu visibility).
+    var canGroupSelectionAnyKind: Bool { canGroup(as: .boxSet) }
 
     /// True for the library sources where grouping applies.
     private var isLocalVersionSource: Bool {
@@ -62,11 +74,11 @@ extension LibraryViewModel {
     }
 
     /// Create or update a group, persist it, and rebuild the local index.
-    func commitGroup(id: String, name: String, originalYear: Int?,
+    func commitGroup(id: String, kind: AlbumGroupKind, name: String, originalYear: Int?,
                      primaryKey: AlbumFolderKey, members: [VersionMember]) {
         guard members.count >= 2 else { return }
         let artistID = members.first.flatMap { albumForKey($0.key)?.artistID } ?? ""
-        let group = AlbumGroup(id: id, name: name, artistID: artistID,
+        let group = AlbumGroup(id: id, kind: kind, name: name, artistID: artistID,
                                originalYear: originalYear, primaryKey: primaryKey, members: members)
         albumGroupStore.upsert(group)
         reloadAfterGroupChange()
@@ -126,7 +138,7 @@ extension LibraryViewModel {
     /// defaults to the pressings' shared base title, and each row's edition label is
     /// pre-filled with whatever distinguishes that pressing (a catalog suffix in the
     /// album title, else its year/format/folder) so the user rarely has to type.
-    func beginGroupAlbums() {
+    func beginGroup(kind: AlbumGroupKind) {
         let albums = selectedAlbumsForGrouping().filter { !$0.isVersionGroup }
         guard albums.count >= 2 else { return }
         var rows: [GroupAlbumsSheetController.VersionRow] = albums.compactMap { album in
@@ -137,9 +149,10 @@ extension LibraryViewModel {
         guard rows.count >= 2 else { return }
         let autoLabels = VersionDistinguisher.labels(for: rows.map(\.album))
         for i in rows.indices { rows[i].editionLabel = autoLabels[i] }
+        // A compilation's title is usually the shared album name; version/box use the base title.
         let suggestedName = VersionDistinguisher.commonBaseTitle(rows.map { $0.album.title })
         let suggestedYear = albums.compactMap(\.year).min()
-        presentGroupSheet(id: UUID().uuidString, name: suggestedName, year: suggestedYear,
+        presentGroupSheet(id: UUID().uuidString, kind: kind, name: suggestedName, year: suggestedYear,
                           rows: rows, primaryKey: rows[0].key)
     }
 
@@ -157,14 +170,14 @@ extension LibraryViewModel {
         // Fill in a suggested label only where the user hasn't already set one.
         let autoLabels = VersionDistinguisher.labels(for: rows.map(\.album))
         for i in rows.indices where rows[i].editionLabel.isEmpty { rows[i].editionLabel = autoLabels[i] }
-        presentGroupSheet(id: id, name: group.name, year: group.originalYear,
+        presentGroupSheet(id: id, kind: group.kind, name: group.name, year: group.originalYear,
                           rows: rows, primaryKey: group.primaryKey)
     }
 
-    private func presentGroupSheet(id: String, name: String, year: Int?,
+    private func presentGroupSheet(id: String, kind: AlbumGroupKind, name: String, year: Int?,
                                    rows: [GroupAlbumsSheetController.VersionRow],
                                    primaryKey: AlbumFolderKey) {
-        let inputs = GroupSheetInputs(id: id, name: name, year: year,
+        let inputs = GroupSheetInputs(id: id, kind: kind, name: name, year: year,
                                       rows: rows, primaryKey: primaryKey)
         NotificationCenter.default.post(
             name: .crateDiggerPresentGroupAlbumsSheet,

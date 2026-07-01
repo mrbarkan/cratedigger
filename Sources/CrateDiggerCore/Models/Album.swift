@@ -16,6 +16,9 @@ public struct Album: Identifiable, Sendable, Equatable {
     public let originalYear: Int?
     /// Edition label for a *member* pressing ("Gold CD"); nil otherwise.
     public let editionLabel: String?
+    /// For a grouped release, what kind of group it is (drives badge/menu). Nil for
+    /// plain albums and member pressings.
+    public let groupKind: AlbumGroupKind?
 
     public init(
         id: String,
@@ -29,7 +32,8 @@ public struct Album: Identifiable, Sendable, Equatable {
         mediaFormat: MediaFormat? = nil,
         versions: [Album]? = nil,
         originalYear: Int? = nil,
-        editionLabel: String? = nil
+        editionLabel: String? = nil,
+        groupKind: AlbumGroupKind? = nil
     ) {
         self.id = id
         self.artistID = artistID
@@ -43,6 +47,7 @@ public struct Album: Identifiable, Sendable, Equatable {
         self.versions = versions
         self.originalYear = originalYear
         self.editionLabel = editionLabel
+        self.groupKind = groupKind
     }
 
     public var trackCount: Int { tracks.count }
@@ -73,7 +78,7 @@ public struct Album: Identifiable, Sendable, Equatable {
         Album(id: id, artistID: artistID, artistName: artistName, title: title,
               year: year, artworkHash: artworkHash, tracks: tracks, booklet: booklet,
               mediaFormat: mediaFormat, versions: versions, originalYear: originalYear,
-              editionLabel: editionLabel)
+              editionLabel: editionLabel, groupKind: groupKind)
     }
 
     /// Number of discs to offer for per-disc artwork: the larger of the discs

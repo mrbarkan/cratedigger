@@ -124,17 +124,20 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         guard contentViewController != nil else { return }
         let model = hostingController.model
         let controller = GroupAlbumsSheetController(
+            kind: inputs.kind,
             name: inputs.name,
             originalYear: inputs.year,
             rows: inputs.rows,
             primaryKey: inputs.primaryKey
         )
         let groupID = inputs.id
+        let groupKind = inputs.kind
         controller.onDecision = { [weak controller, weak model] result in
             controller?.dismiss(nil)
             guard let result, let model else { return }
             model.commitGroup(
                 id: groupID,
+                kind: groupKind,
                 name: result.name,
                 originalYear: result.originalYear,
                 primaryKey: result.primaryKey,

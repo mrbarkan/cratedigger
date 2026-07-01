@@ -99,9 +99,13 @@ enum BrowserContextMenu {
         }
         Button("Select All") { model.selectAllAlbums() }
 
-        if model.canGroupSelection {
-            Button("Group \(model.selectedAlbumsForGrouping().filter { !$0.isVersionGroup }.count) Albums…") {
-                model.beginGroupAlbums()
+        if model.canGroupSelectionAnyKind {
+            let n = model.selectedAlbumsForGrouping().filter { !$0.isVersionGroup }.count
+            Menu("Group \(n) as") {
+                Button("Version") { model.beginGroup(kind: .versionGroup) }
+                    .disabled(!model.canGroup(as: .versionGroup))
+                Button("Box Set") { model.beginGroup(kind: .boxSet) }
+                Button("Compilation") { model.beginGroup(kind: .compilation) }
             }
         }
 

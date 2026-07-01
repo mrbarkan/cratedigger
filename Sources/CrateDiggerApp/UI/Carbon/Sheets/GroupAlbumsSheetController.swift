@@ -30,9 +30,11 @@ final class GroupAlbumsSheetController: NSViewController {
     private var primaryKey: AlbumFolderKey
     private let initialName: String
     private let initialYear: String
+    private let kind: AlbumGroupKind
     private var hostingController: NSViewController?
 
-    init(name: String, originalYear: Int?, rows: [VersionRow], primaryKey: AlbumFolderKey) {
+    init(kind: AlbumGroupKind, name: String, originalYear: Int?, rows: [VersionRow], primaryKey: AlbumFolderKey) {
+        self.kind = kind
         self.rows = rows
         self.primaryKey = primaryKey
         self.initialName = name
@@ -45,6 +47,7 @@ final class GroupAlbumsSheetController: NSViewController {
 
     override func loadView() {
         let rootView = GroupAlbumsSheetView(
+            kind: kind,
             initialName: initialName,
             initialYear: initialYear,
             rows: rows,
@@ -74,14 +77,17 @@ private struct GroupAlbumsSheetView: View {
     @State private var editionLabels: [String]
 
     private let rows: [GroupAlbumsSheetController.VersionRow]
+    private let kind: AlbumGroupKind
 
     init(
+        kind: AlbumGroupKind,
         initialName: String,
         initialYear: String,
         rows: [GroupAlbumsSheetController.VersionRow],
         initialPrimaryKey: AlbumFolderKey,
         onDecision: @escaping (GroupAlbumsSheetController.Result?) -> Void
     ) {
+        self.kind = kind
         self.rows = rows
         self.onDecision = onDecision
         _name = State(initialValue: initialName)
@@ -91,6 +97,14 @@ private struct GroupAlbumsSheetView: View {
     }
 
     private var canConfirm: Bool { !name.trimmingCharacters(in: .whitespaces).isEmpty }
+
+    private var headerTitle: String {
+        switch kind {
+        case .versionGroup: return "GROUP ALBUM VERSIONS"
+        case .boxSet:       return "GROUP AS BOX SET"
+        case .compilation:  return "GROUP AS COMPILATION"
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -129,7 +143,7 @@ private struct GroupAlbumsSheetView: View {
             Circle()
                 .fill(theme.orange)
                 .frame(width: 7, height: 7)
-            Text("GROUP ALBUM VERSIONS")
+            Text(headerTitle)
                 .font(CarbonFont.mono(11, weight: .bold))
                 .tracking(2)
                 .foregroundStyle(theme.ink)

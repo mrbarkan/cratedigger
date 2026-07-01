@@ -157,6 +157,7 @@ public struct LibraryIndex: Sendable {
         if !groups.isEmpty {
             var consumed = Set<String>()
             var releasesByArtist: [String: [Album]] = [:]
+            let variousArtistsID = normalizedID("Various Artists")
             for group in groups {
                 let liveMembers: [Album] = group.members.compactMap { member in
                     albumByKey[member.key]?.with(editionLabel: member.editionLabel)
@@ -167,31 +168,57 @@ public struct LibraryIndex: Sendable {
                 for member in group.members {
                     if let a = albumByKey[member.key] { consumed.insert(a.id) }
                 }
-                // Members are expected to share a single artist (enforced by
-                // `canGroupSelection` in the App layer); the release is placed under `primary.artistID`.
+
+                // Track list + owning artist depend on the kind.
+                let releaseTracks: [LoadedTrack]
+                let releaseArtistID: String
+                let releaseArtistName: String
+                switch group.kind {
+                case .versionGroup:
+                    releaseTracks = primary.tracks                    // primary pressing only
+                    releaseArtistID = primary.artistID
+                    releaseArtistName = primary.artistName
+                case .boxSet:
+                    releaseTracks = liveMembers.flatMap { $0.tracks }  // all discs as one whole
+                    releaseArtistID = primary.artistID
+                    releaseArtistName = primary.artistName
+                case .compilation:
+                    releaseTracks = liveMembers.flatMap { $0.tracks }  // reunite under Various Artists
+                    releaseArtistID = variousArtistsID
+                    releaseArtistName = "Various Artists"
+                    artistDisplayName[variousArtistsID] = "Various Artists"
+                }
+
                 let release = Album(
                     id: "group::\(group.id)",
-                    artistID: primary.artistID,
-                    artistName: primary.artistName,
+                    artistID: releaseArtistID,
+                    artistName: releaseArtistName,
                     title: group.name,
                     year: primary.year,
                     artworkHash: primary.artworkHash,
-                    tracks: primary.tracks,
+                    tracks: releaseTracks,
                     booklet: primary.booklet,
                     mediaFormat: primary.mediaFormat,
                     versions: liveMembers,
-                    originalYear: group.originalYear
+                    originalYear: group.originalYear,
+                    groupKind: group.kind
                 )
-                releasesByArtist[primary.artistID, default: []].append(release)
+                releasesByArtist[releaseArtistID, default: []].append(release)
+            }
+            // Remove consumed member albums from EVERY artist (a compilation's members
+            // can live under many different artists), then add the synthesised releases.
+            if !consumed.isEmpty {
+                for artistID in albumsByArtistID.keys {
+                    albumsByArtistID[artistID] = albumsByArtistID[artistID]?.filter { !consumed.contains($0.id) }
+                }
             }
             for (artistID, releases) in releasesByArtist {
-                var kept = (albumsByArtistID[artistID] ?? []).filter { !consumed.contains($0.id) }
-                kept.append(contentsOf: releases)
-                albumsByArtistID[artistID] = kept
+                albumsByArtistID[artistID, default: []].append(contentsOf: releases)
             }
         }
 
         let artists = albumsByArtistID
+            .filter { !$0.value.isEmpty }   // artists fully consumed by a compilation vanish
             .map { (artistID, albums) -> Artist in
                 Artist(
                     id: artistID,

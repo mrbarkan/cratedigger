@@ -182,6 +182,16 @@ private struct AlbumColumn: View {
         .contextMenu { BrowserContextMenu.album(album, model: model) }
     }
 
+    /// Badge shown on a grouped release row, by group kind.
+    private func releaseBadge(_ release: Album) -> String {
+        let n = release.versions?.count ?? 0
+        switch release.groupKind {
+        case .boxSet:      return "\(n) disc\(n == 1 ? "" : "s")"
+        case .compilation: return "V/A · \(n)"
+        default:           return "\(n) ver"
+        }
+    }
+
     private func releaseRow(_ release: Album) -> some View {
         AlbumRow(
             album: release,
@@ -193,7 +203,7 @@ private struct AlbumColumn: View {
                 model.selectAlbum(release, command: m.contains(.command), shift: m.contains(.shift),
                                   ordered: albums, flat: flat)
             },
-            badge: "\(release.versions?.count ?? 0) ver",
+            badge: releaseBadge(release),
             disclosed: expandedReleaseIDs.contains(release.id),
             onDisclose: {
                 if expandedReleaseIDs.contains(release.id) {

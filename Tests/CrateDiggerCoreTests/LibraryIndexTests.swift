@@ -36,6 +36,60 @@ final class LibraryIndexTests: XCTestCase {
         XCTAssertEqual(index.allTracks.count, 2)
     }
 
+    func testBoxSetFoldsAllDiscTracksIntoOneRelease() {
+        let planner = OutputPathPlanner()
+        let d1 = loaded(album: "Box Disc 1", format: "flac", title: "D1T1")
+        let d2 = loaded(album: "Box Disc 2", format: "flac", title: "D2T1")
+        let k1 = planner.albumFolderKey(for: d1)
+        let k2 = planner.albumFolderKey(for: d2)
+        let group = AlbumGroup(id: "b1", kind: .boxSet, name: "The Box", artistID: "daft punk",
+                               primaryKey: k1,
+                               members: [VersionMember(key: k1), VersionMember(key: k2)])
+        let index = LibraryIndex.build(from: [d1, d2], groups: [group])
+
+        let albums = index.allAlbums
+        XCTAssertEqual(albums.count, 1)
+        let release = albums[0]
+        XCTAssertEqual(release.groupKind, .boxSet)
+        XCTAssertEqual(release.title, "The Box")
+        XCTAssertEqual(release.tracks.count, 2)      // ALL discs, not just the primary
+        XCTAssertEqual(release.versions?.count, 2)   // still expandable to discs
+        XCTAssertEqual(release.artistName, "Daft Punk")
+    }
+
+    func testCompilationReunitesUnderVariousArtists() {
+        let planner = OutputPathPlanner()
+        let a = loaded(album: "CompA", format: "flac", title: "Song A", artist: "Artist A")
+        let b = loaded(album: "CompB", format: "flac", title: "Song B", artist: "Artist B")
+        let kA = planner.albumFolderKey(for: a)
+        let kB = planner.albumFolderKey(for: b)
+        let group = AlbumGroup(id: "c1", kind: .compilation, name: "Now That's Music",
+                               artistID: "various", primaryKey: kA,
+                               members: [VersionMember(key: kA), VersionMember(key: kB)])
+        let index = LibraryIndex.build(from: [a, b], groups: [group])
+
+        // Both original artists are consumed; only a Various Artists release remains.
+        XCTAssertEqual(index.artists.count, 1)
+        XCTAssertEqual(index.artists.first?.name, "Various Artists")
+        let albums = index.allAlbums
+        XCTAssertEqual(albums.count, 1)
+        XCTAssertEqual(albums[0].groupKind, .compilation)
+        XCTAssertEqual(albums[0].artistName, "Various Artists")
+        XCTAssertEqual(albums[0].tracks.count, 2)
+    }
+
+    func testGroupKindDefaultsToVersionGroupWhenAbsent() throws {
+        // A group persisted before `kind` existed must decode as a version group.
+        let planner = OutputPathPlanner()
+        let key = planner.albumFolderKey(for: loaded(album: "X", format: "flac"))
+        let group = AlbumGroup(id: "g1", name: "X", artistID: "a", primaryKey: key,
+                               members: [VersionMember(key: key)])
+        var obj = try JSONSerialization.jsonObject(with: JSONEncoder().encode(group)) as! [String: Any]
+        obj.removeValue(forKey: "kind")
+        let data = try JSONSerialization.data(withJSONObject: obj)
+        XCTAssertEqual(try JSONDecoder().decode(AlbumGroup.self, from: data).kind, .versionGroup)
+    }
+
     func testDissolvesGroupWithFewerThanTwoLiveMembers() {
         let planner = OutputPathPlanner()
         let us = loaded(album: "Discovery", format: "flac")
