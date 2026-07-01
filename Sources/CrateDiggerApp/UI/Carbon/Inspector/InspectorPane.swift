@@ -224,9 +224,9 @@ struct InspectorPane: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: CarbonLayout.keyHeight)
                 
-                KeyButton(style: .normal, action: {
-                    model.automaticallyReorganizeLibrary()
-                }) {
+                // Disabled for now — the old "organize" moved the whole library on
+                // disk with no confirmation; to be repurposed later.
+                KeyButton(style: .disabled, action: {}) {
                     HStack(spacing: 4) {
                         Image(systemName: "folder.fill")
                             .font(.system(size: 9))
@@ -237,6 +237,7 @@ struct InspectorPane: View {
                 }
                 .frame(maxWidth: .infinity)
                 .frame(height: CarbonLayout.keyHeight)
+                .disabled(true)
             }
             .padding(.horizontal, 16)
             .padding(.bottom, model.selectedAlbum == nil ? 12 : 8)
