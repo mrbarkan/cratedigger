@@ -3,6 +3,7 @@ import CrateDiggerCore
 
 struct LibraryCleanupView: View {
     @Environment(\.carbon) private var theme
+    @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var model: LibraryViewModel
 
     @State private var activeTab = 0
@@ -11,13 +12,14 @@ struct LibraryCleanupView: View {
         VStack(spacing: 0) {
             header
             tabSwitcher
-            
+
             if activeTab == 0 {
                 deadTracksTab
             } else {
                 duplicatesTab
             }
         }
+        .frame(width: 680, height: 500)
         .background(theme.chassis)
         .onAppear {
             model.scanForCleanup()
@@ -25,7 +27,7 @@ struct LibraryCleanupView: View {
     }
 
     private var header: some View {
-        HStack {
+        HStack(spacing: 10) {
             Text("Library Maintenance Wells".uppercased())
                 .font(CarbonFont.mono(11, weight: .bold))
                 .tracking(2)
@@ -34,6 +36,14 @@ struct LibraryCleanupView: View {
             Button("Re-Scan") {
                 model.scanForCleanup()
             }
+            Button(action: { dismiss() }) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 16))
+                    .foregroundStyle(theme.ink3)
+            }
+            .buttonStyle(.plain)
+            .keyboardShortcut(.cancelAction)   // Esc also closes
+            .help("Close")
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 12)
@@ -98,11 +108,15 @@ struct LibraryCleanupView: View {
                         .padding(.vertical, 4)
                     }
                 }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .frame(maxHeight: .infinity)
 
                 HStack {
                     Text("These tracks refer to files that no longer exist. Removing them will clean up your CrateDigger library display.")
                         .font(.caption)
                         .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                     Spacer()
                     KeyButton(style: .selected, action: {
                         model.deleteDeadTracks()
@@ -182,6 +196,9 @@ struct LibraryCleanupView: View {
                         .padding(.vertical, 8)
                     }
                 }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .frame(maxHeight: .infinity)
 
                 HStack(spacing: 12) {
                     Button("Export Best versions") {
