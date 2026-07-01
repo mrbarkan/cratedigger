@@ -90,6 +90,61 @@ final class LibraryIndexTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode(AlbumGroup.self, from: data).kind, .versionGroup)
     }
 
+    // MARK: Auto-detect
+
+    private func track(url: String, artist: String, album: String, title: String,
+                       year: Int = 2020, compilation: Bool? = nil) -> LoadedTrack {
+        let t = AudioTrack(fileURL: URL(fileURLWithPath: url), title: title, artist: artist,
+                           album: album, formatName: "flac", bitrateKbps: 900,
+                           sampleRateHz: 44100, year: year)
+        return LoadedTrack(track: t, metadata: ConversionMetadata(compilation: compilation))
+    }
+
+    func testCompilationTracksReuniteUnderVariousArtistsByTag() {
+        let a = track(url: "/tmp/Comp/1.flac", artist: "Artist A", album: "Now 50", title: "S1", compilation: true)
+        let b = track(url: "/tmp/Comp/2.flac", artist: "Artist B", album: "Now 50", title: "S2", compilation: true)
+        let index = LibraryIndex.build(from: [a, b])
+        XCTAssertEqual(index.artists.count, 1)
+        XCTAssertEqual(index.artists.first?.name, "Various Artists")
+        XCTAssertEqual(index.allAlbums.count, 1)
+        XCTAssertEqual(index.allAlbums[0].tracks.count, 2)
+    }
+
+    func testNonCompilationTracksStayPerArtist() {
+        let a = track(url: "/tmp/A/1.flac", artist: "Artist A", album: "Now 50", title: "S1")
+        let b = track(url: "/tmp/B/2.flac", artist: "Artist B", album: "Now 50", title: "S2")
+        let index = LibraryIndex.build(from: [a, b])
+        XCTAssertEqual(index.artists.count, 2)   // no compilation tag → not reunited
+    }
+
+    func testBoxSetAutoDetectedFromParentFolder() {
+        let d1 = track(url: "/tmp/Foo [3-CD Box Set]/Disc 1/a.flac", artist: "The Band", album: "Disc 1", title: "a", year: 2007)
+        let d2 = track(url: "/tmp/Foo [3-CD Box Set]/Disc 2/b.flac", artist: "The Band", album: "Disc 2", title: "b", year: 2007)
+        let index = LibraryIndex.build(from: [d1, d2])
+        let albums = index.allAlbums
+        XCTAssertEqual(albums.count, 1)
+        XCTAssertEqual(albums[0].groupKind, .boxSet)
+        XCTAssertEqual(albums[0].title, "Foo")        // "[3-CD Box Set]" stripped
+        XCTAssertEqual(albums[0].tracks.count, 2)      // all discs
+        XCTAssertEqual(albums[0].versions?.count, 2)   // expandable to discs
+    }
+
+    func testPlainParentFolderNotBoxed() {
+        let a = track(url: "/tmp/Downloads/Album A/1.flac", artist: "X", album: "Album A", title: "a")
+        let b = track(url: "/tmp/Downloads/Album B/1.flac", artist: "X", album: "Album B", title: "b")
+        let albums = LibraryIndex.build(from: [a, b]).allAlbums
+        XCTAssertEqual(albums.count, 2)
+        XCTAssertNil(albums.first?.groupKind)
+    }
+
+    func testLooksLikeBoxFolderHeuristic() {
+        XCTAssertTrue(LibraryIndex.looksLikeBoxFolder("David Bowie Box (2007) [10-CD Box Set]"))
+        XCTAssertTrue(LibraryIndex.looksLikeBoxFolder("Foo 5-Disc Box"))
+        XCTAssertTrue(LibraryIndex.looksLikeBoxFolder("The Complete Anthology"))
+        XCTAssertFalse(LibraryIndex.looksLikeBoxFolder("Fardosh10123"))
+        XCTAssertFalse(LibraryIndex.looksLikeBoxFolder("Random Access Memories"))
+    }
+
     func testDissolvesGroupWithFewerThanTwoLiveMembers() {
         let planner = OutputPathPlanner()
         let us = loaded(album: "Discovery", format: "flac")

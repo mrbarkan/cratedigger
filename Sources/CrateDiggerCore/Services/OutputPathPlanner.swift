@@ -272,7 +272,18 @@ public struct OutputPathPlanner {
         return PathComponentSanitizer.sanitize(value, fallback: unknownYear)
     }
 
+    /// The "Various Artists" bucket a compilation reunites under.
+    public static let variousArtists = "Various Artists"
+
     private func resolvedAlbumArtistComponent(for loadedTrack: LoadedTrack) -> String {
+        // A compilation with no explicit album-artist tag reunites under "Various
+        // Artists" instead of shattering into one album per track artist. This is
+        // shared by the browser index, conversion output, and the review sheet, so
+        // they all agree a compilation is one album.
+        if loadedTrack.metadata.compilation == true,
+           normalizedMetadataValue(loadedTrack.metadata.albumArtist) == nil {
+            return PathComponentSanitizer.sanitize(Self.variousArtists, fallback: unknownArtist)
+        }
         let value = normalizedMetadataValue(loadedTrack.metadata.albumArtist)
             ?? normalizedMetadataValue(loadedTrack.metadata.artist)
             ?? normalizedMetadataValue(loadedTrack.track.artist)

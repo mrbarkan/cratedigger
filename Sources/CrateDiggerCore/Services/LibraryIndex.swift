@@ -217,8 +217,56 @@ public struct LibraryIndex: Sendable {
             }
         }
 
+        // Auto-detect box sets: 2+ album folders that share a box-named PARENT
+        // folder (e.g. ".../Foo [10-CD Box Set]/Disc 1", ".../Disc 2") fold into one
+        // box-set release. Ephemeral — recomputed each build so it mirrors the
+        // folders; manual groups win (their members are already consumed above).
+        // ponytail: single-artist assumption (uses the first member's artist); a
+        // Various-Artists box would file under the first disc's artist.
+        var albumsByParent: [String: [(name: String, album: Album)]] = [:]
+        for (_, albums) in albumsByArtistID {
+            for album in albums where album.versions == nil {
+                guard let f = album.tracks.first?.track.fileURL, f.isFileURL else { continue }
+                let parent = f.deletingLastPathComponent().deletingLastPathComponent()
+                albumsByParent[parent.path, default: []].append((parent.lastPathComponent, album))
+            }
+        }
+        var boxConsumed = Set<String>()
+        var boxByArtist: [String: [Album]] = [:]
+        for (parentPath, entries) in albumsByParent {
+            guard entries.count >= 2, looksLikeBoxFolder(entries[0].name) else { continue }
+            let members = entries.map(\.album)
+                .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+            let primary = members[0]
+            members.forEach { boxConsumed.insert($0.id) }
+            let year = members.compactMap(\.year).min()
+            let release = Album(
+                id: "boxauto::\(parentPath)",
+                artistID: primary.artistID,
+                artistName: primary.artistName,
+                title: cleanedBoxName(entries[0].name),
+                year: year,
+                artworkHash: primary.artworkHash,
+                tracks: members.flatMap { $0.tracks },          // all discs as one whole
+                booklet: primary.booklet,
+                mediaFormat: primary.mediaFormat,
+                versions: members.map { $0.with(editionLabel: $0.title) },  // disc = its album title
+                originalYear: year,
+                groupKind: .boxSet
+            )
+            boxByArtist[primary.artistID, default: []].append(release)
+        }
+        if !boxConsumed.isEmpty {
+            for artistID in albumsByArtistID.keys {
+                albumsByArtistID[artistID] = albumsByArtistID[artistID]?.filter { !boxConsumed.contains($0.id) }
+            }
+            for (artistID, releases) in boxByArtist {
+                albumsByArtistID[artistID, default: []].append(contentsOf: releases)
+            }
+        }
+
         let artists = albumsByArtistID
-            .filter { !$0.value.isEmpty }   // artists fully consumed by a compilation vanish
+            .filter { !$0.value.isEmpty }   // artists fully consumed by a compilation/box vanish
             .map { (artistID, albums) -> Artist in
                 Artist(
                     id: artistID,
@@ -381,6 +429,25 @@ public struct LibraryIndex: Sendable {
         return stripped
             .lowercased()
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Whether a folder name signals a box set: "box set"/"boxset", or a disc/CD
+    /// count paired with "box" (e.g. "[10-CD Box Set]", "5-Disc Box"), or "anthology".
+    /// Deliberately conservative to avoid boxing ordinary artist/download folders.
+    static func looksLikeBoxFolder(_ name: String) -> Bool {
+        let n = name.lowercased()
+        if n.contains("box set") || n.contains("boxset") || n.contains("anthology") { return true }
+        let hasCount = n.range(of: #"\d+\s*[- ]?\s*(cd|disc)"#, options: .regularExpression) != nil
+        return hasCount && n.contains("box")
+    }
+
+    /// A box-set display name from its folder name: drop a trailing "[…]" tag.
+    static func cleanedBoxName(_ name: String) -> String {
+        var s = name
+        if let r = s.range(of: #"\s*\[[^\]]*\]\s*$"#, options: .regularExpression) {
+            s.removeSubrange(r)
+        }
+        return s.trimmingCharacters(in: .whitespaces)
     }
 
     private static func computeTotalSizeBytes(_ tracks: [LoadedTrack], cache: LibraryIndexDiskCache?) -> Int64 {
