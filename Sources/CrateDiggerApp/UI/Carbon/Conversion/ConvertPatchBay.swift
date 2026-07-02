@@ -165,8 +165,22 @@ struct ConvertPatchBay: View {
 
     private var patternRow: some View {
         cvRow("Pattern") {
-            TemplateStrip(text: templateString)
-                .opacity(model.conversionSelection.folderStructureMode == .metadataTemplate ? 1 : 0.72)
+            // Editable: pick a folder-order preset. (Reordering individual tokens
+            // lives in Convert Selected… ⇧⌘C → Folder Strategy → Custom.)
+            Menu {
+                ForEach([TemplatePreset.artistYearAlbum, .yearArtistAlbum, .artistAlbumYear], id: \.self) { preset in
+                    Button(preset.title) {
+                        model.conversionSelection.templatePreset = preset
+                        model.conversionSelection.tokenOrder = FolderTokenOrder.normalize(preset.defaultTokenOrder)
+                    }
+                }
+            } label: {
+                TemplateStrip(text: templateString)
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .disabled(model.conversionSelection.folderStructureMode != .metadataTemplate)
+            .opacity(model.conversionSelection.folderStructureMode == .metadataTemplate ? 1 : 0.72)
         }
     }
 
@@ -222,7 +236,10 @@ struct ConvertPatchBay: View {
                         model.cancelConversion()
                     } else {
                         // No active job — Cancel exits convert mode back to
-                        // the inspector so the user has an obvious way out.
+                        // the inspector so the user has an obvious way out. Drop
+                        // any pending send-to-device hand-off (and restore the
+                        // pre-device conversion selection).
+                        model.clearPendingDeviceConversion()
                         model.oledView = .nowPlaying
                     }
                 }
@@ -603,7 +620,6 @@ private struct ArmGoButton: View {
     let action: () -> Void
 
     @State private var holdProgress: Double = 0
-    @State private var holdTimer: Timer?
 
     var body: some View {
         ZStack {
@@ -628,7 +644,6 @@ private struct ArmGoButton: View {
                 Rectangle()
                     .fill(Color.black.opacity(0.18))
                     .frame(width: geo.size.width * holdProgress)
-                    .animation(.linear(duration: 0.05), value: holdProgress)
             }
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             .blendMode(.multiply)
@@ -646,31 +661,19 @@ private struct ArmGoButton: View {
         .shadow(color: Color.black.opacity(0.5), radius: 4, y: 2)
         .opacity(enabled ? 1 : 0.55)
         .contentShape(Rectangle())
-        .gesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in
-                    guard enabled, holdTimer == nil else { return }
-                    holdProgress = 0
-                    let duration: Double = 0.7
-                    let tickInterval: Double = 0.03
-                    holdTimer = Timer.scheduledTimer(withTimeInterval: tickInterval, repeats: true) { timer in
-                        DispatchQueue.main.async {
-                            holdProgress += tickInterval / duration
-                            if holdProgress >= 1 {
-                                timer.invalidate()
-                                holdTimer = nil
-                                holdProgress = 0
-                                action()
-                            }
-                        }
-                    }
-                }
-                .onEnded { _ in
-                    holdProgress = 0
-                    holdTimer?.invalidate()
-                    holdTimer = nil
-                }
-        )
+        // A plain onLongPressGesture survives the enclosing ScrollView, unlike a
+        // minimumDistance-0 DragGesture (which the scroll view swallowed, leaving
+        // Convert unresponsive). Pressing fills the hazard bar over the hold;
+        // releasing early resets it.
+        .onLongPressGesture(minimumDuration: 0.7, maximumDistance: 80) {
+            guard enabled else { return }
+            holdProgress = 0
+            action()
+        } onPressingChanged: { pressing in
+            withAnimation(.linear(duration: pressing ? 0.7 : 0.15)) {
+                holdProgress = (pressing && enabled) ? 1 : 0
+            }
+        }
         .accessibilityLabel(Text("Convert"))
         .accessibilityHint(Text("Press and hold to start converting"))
     }

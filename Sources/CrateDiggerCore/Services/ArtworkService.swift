@@ -78,6 +78,16 @@ public final class ArtworkService: ArtworkPreparing {
         storeData(asset.data, for: asset.hash)
     }
 
+    /// Refill an asset's in-memory `data` from the store/cache by `hash`. Assets
+    /// decoded from a `.cdlib` come back with empty `data` (the bytes live in the
+    /// `ArtworkStore`, not the crate), so conversion/transfer must rehydrate them
+    /// before re-embedding artwork. Returns the asset unchanged when the data is
+    /// already present or the hash isn't cached anywhere.
+    public func hydrated(_ asset: ArtworkAsset) -> ArtworkAsset {
+        guard asset.data.isEmpty, let data = dataForHash(asset.hash) else { return asset }
+        return ArtworkAsset(source: asset.source, hash: asset.hash, dimensions: asset.dimensions, data: data)
+    }
+
     public func generateThumbnail(artworkHash: String, size: CGSize) -> NSImage? {
         let cacheKey = "\(artworkHash)-\(Int(size.width))x\(Int(size.height))" as NSString
         if let cached = thumbnailCache.object(forKey: cacheKey) {

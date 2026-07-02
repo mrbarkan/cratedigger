@@ -16,9 +16,6 @@ struct PositionDial: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 7) {
-                Image(systemName: "slider.horizontal.below.rectangle")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(theme.ink3)
                 Text("POSITION")
                     .font(CarbonFont.mono(8, weight: .bold))
                     .tracking(1.8)
@@ -40,12 +37,21 @@ struct PositionDial: View {
 
             Spacer(minLength: 0)
 
-            track
-                .frame(height: 22)
-                .background(WindowDragGuard())
+            FaderTrack(
+                progress: progress,
+                detents: [FaderDetent(fraction: 0.5)],   // center detent
+                onScrub: { model.scrubbingFraction = $0 },
+                onCommit: { f in
+                    ClickPlayer.shared.play(.tick)
+                    model.commitScrubSeek(toFraction: f)
+                }
+            )
+            .frame(height: 26)
+            .background(WindowDragGuard())
         }
+        .padding(.top, 6)
+        .padding(.bottom, 8)
         .padding(.horizontal, 12)
-        .padding(.vertical, 9)
         .frame(width: 184, height: 64)
         .background(ChromeChassis(theme: theme, cornerRadius: 12))
         .overlay(
@@ -54,46 +60,6 @@ struct PositionDial: View {
             }
         )
         .accessibilityLabel("Playback position")
-    }
-
-    private var track: some View {
-        GeometryReader { proxy in
-            let w = max(proxy.size.width, 1)
-            let p = progress
-            ZStack(alignment: .leading) {
-                Capsule()
-                    .fill(Color.black.opacity(theme.isDark ? 0.36 : 0.10))
-                    .overlay(Capsule().stroke(Color.white.opacity(theme.isDark ? 0.08 : 0.50), lineWidth: 0.6))
-                    .frame(height: 6)
-                Capsule()
-                    .fill(
-                        LinearGradient(
-                            colors: [theme.cyan.opacity(0.92), theme.orange.opacity(0.90)],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
-                    .frame(width: max(6, w * p), height: 6)
-                    .shadow(color: theme.cyan.opacity(theme.isDark ? 0.26 : 0.18), radius: 5)
-                Circle()
-                    .fill(theme.chassisHi)
-                    .frame(width: 16, height: 16)
-                    .overlay(Circle().stroke(Color.white.opacity(0.70), lineWidth: 0.6))
-                    .shadow(color: Color.black.opacity(theme.isDark ? 0.46 : 0.20), radius: 4, y: 2)
-                    .offset(x: min(max(w * p - 8, 0), w - 16))
-            }
-            .frame(maxHeight: .infinity, alignment: .center)
-            .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { g in model.scrubbingFraction = min(max(g.location.x / w, 0), 1) }
-                    .onEnded { g in
-                        let f = min(max(g.location.x / w, 0), 1)
-                        ClickPlayer.shared.play(.tick)
-                        model.commitScrubSeek(toFraction: f)
-                    }
-            )
-        }
     }
 }
 

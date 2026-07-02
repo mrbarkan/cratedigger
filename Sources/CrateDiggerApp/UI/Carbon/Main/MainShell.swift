@@ -37,12 +37,13 @@ struct MainShell: View {
         .sheet(isPresented: $model.showingEQEditor) {
             EqualizerEditorView()
         }
-        // "View Artwork": a booklet opens the rich page viewer; otherwise the
-        // cover lightbox. Both float in their own window, so neither disturbs the
-        // current source/selection. The published album is a one-shot trigger.
+        // "View Artwork": a PDF booklet opens the rich page reader; everything
+        // else (cover, booklet scans, inlay, disc, back, tray) flows through the
+        // unified artwork navigator. Both float in their own window, so neither
+        // disturbs the current source/selection. The album is a one-shot trigger.
         .onChange(of: model.artworkViewerAlbum) { album in
             guard let album else { return }
-            if let booklet = album.booklet {
+            if let booklet = album.booklet, case .pdf = booklet.source {
                 BookletWindowManager.shared.showBooklet(booklet,
                                                         albumTitle: album.title,
                                                         artistName: album.artistName,
@@ -249,7 +250,7 @@ struct MainShell: View {
         @ViewBuilder content: @escaping () -> Inner
     ) -> some View {
         RecessedWell {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {
                     Text(title.uppercased())
                         .font(CarbonFont.mono(9, weight: .bold))

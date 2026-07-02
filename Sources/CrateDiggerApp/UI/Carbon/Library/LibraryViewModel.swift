@@ -11,6 +11,7 @@ enum OLEDView: String, CaseIterable, Codable, Sendable {
     case scan
     case remoteSync
     case cdRip
+    case devices
 
     var label: String {
         switch self {
@@ -20,6 +21,7 @@ enum OLEDView: String, CaseIterable, Codable, Sendable {
         case .scan:       return "Scan"
         case .remoteSync: return "Sync"
         case .cdRip:      return "CD"
+        case .devices:    return "Dev"
         }
     }
 }
@@ -100,6 +102,26 @@ final class LibraryViewModel: ObservableObject {
     /// The OLED view to restore after an add-to-crate import status finishes.
     private var importStatusReturnOLED: OLEDView?
     @Published var conversionProgress: ConversionProgressSnapshot = .idle
+
+    /// Set while a "send to device (convert)" hand-off owns the CNVRT cockpit: the
+    /// device folder is the destination and its tracks are the queue. Cleared when
+    /// the run finishes or the user leaves convert mode.
+    @Published var pendingDeviceConversion: PendingDeviceConversion?
+
+    /// The conversion selection to restore after a device convert-transfer, which
+    /// temporarily seeds the cockpit with the device's saved format + folder layout
+    /// so files land in the device's folder pattern instead of dumped flat.
+    var conversionSelectionBeforeDevice: ConversionOptionsSelection?
+
+    /// Exit a device convert hand-off: drop the pending transfer and restore the
+    /// user's normal conversion selection.
+    func clearPendingDeviceConversion() {
+        pendingDeviceConversion = nil
+        if let restore = conversionSelectionBeforeDevice {
+            conversionSelectionBeforeDevice = nil
+            conversionSelection = restore
+        }
+    }
 
     @Published var conversionSelection: ConversionOptionsSelection = ConversionOptionsSelection(
         batchScope: .selectedTracks,
@@ -227,10 +249,16 @@ final class LibraryViewModel: ObservableObject {
     @Published private(set) var albumsFetchingArtwork: Set<String> = []
 
     @Published var playbackVolume: Double = 0.8 {
-        didSet {
-            playback.setVolume(playbackVolume)
-            radioEngine?.setVolume(playbackVolume)
-        }
+        didSet { applyVolumeToEngines() }
+    }
+
+    /// Apply the dB-curved fader position to the engines: the ≤0 dB part rides
+    /// `player.volume`, the >0 dB part (up to +5 dB) is real makeup gain in the
+    /// audio tap. Radio has no tap, so it caps at unity. See `VolumeCurve`.
+    func applyVolumeToEngines() {
+        playback.setVolume(VolumeCurve.playerVolume(forPosition: playbackVolume))
+        playback.setMasterGain(VolumeCurve.makeupGain(forPosition: playbackVolume))
+        radioEngine?.setVolume(VolumeCurve.playerVolume(forPosition: playbackVolume))
     }
 
     @Published var shuffleEnabled: Bool = false {
@@ -357,6 +385,10 @@ final class LibraryViewModel: ObservableObject {
     /// volume mount/unmount + at startup (see recomputeOfflineVolumes), which is
     /// the only writer.
     @Published var offlineVolumes: Set<String> = []
+    /// Standardized paths of library files that are gone from disk while their
+    /// drive is still mounted (moved / renamed / deleted). Drives the "missing"
+    /// row badge. Recomputed off the main thread by recomputeMissingFiles().
+    @Published var missingTrackKeys: Set<String> = []
     @Published var duplicateGroups: [DuplicateGroup] = []
 
     // MARK: - Radio / Streams state
@@ -573,7 +605,7 @@ final class LibraryViewModel: ObservableObject {
         }
 
         wirePlaybackBindings()
-        playback.setVolume(playbackVolume)
+        applyVolumeToEngines()
 
         // Load playlists, CDs, and external devices
         self.playlists = playlistService.listPlaylists()
@@ -597,6 +629,7 @@ final class LibraryViewModel: ObservableObject {
         streams = streamStore.all()
         selectSource(.localAll)
         recomputeOfflineVolumes()
+        recomputeMissingFiles()
         fetchMissingMetadata()
     }
 
@@ -1332,6 +1365,7 @@ final class LibraryViewModel: ObservableObject {
         self.deadTracks = cleanup.findDeadTracks(in: localIndex)
             .filter { offlineVolumeName(for: $0.track.fileURL) == nil }
         self.duplicateGroups = cleanup.findDuplicates(in: localIndex)
+        recomputeMissingFiles()
     }
 
     func deleteDeadTracks() {
@@ -1520,7 +1554,8 @@ final class LibraryViewModel: ObservableObject {
     // MARK: - Conversion patch-bay queue stats
 
     var conversionQueueTracks: [LoadedTrack] {
-        tracksForBatchScope(conversionSelection.batchScope)
+        if let pending = pendingDeviceConversion { return pending.tracks }
+        return tracksForBatchScope(conversionSelection.batchScope)
     }
 
     var conversionQueueDurationSeconds: Double {
@@ -1536,6 +1571,9 @@ final class LibraryViewModel: ObservableObject {
     var isLosslessSelectedFormat: Bool { conversionSelection.outputFormat.isLossless }
 
     var conversionDestinationDisplayPath: String {
+        if let pending = pendingDeviceConversion {
+            return "▶ \(pending.deviceName): " + Self.tildeShortened(pending.destinationRoot.path) + "/"
+        }
         guard let url = currentConversionDestinationURL else {
             return "~/Music/CrateDigger Library/"
         }
@@ -1543,6 +1581,7 @@ final class LibraryViewModel: ObservableObject {
     }
 
     var currentConversionDestinationURL: URL? {
+        if let pending = pendingDeviceConversion { return pending.destinationRoot }
         guard let bookmark = prefs.savedOutputDestinationBookmark else { return nil }
         guard let (refreshed, resolved) = PreferencesStore.refreshBookmarkIfStale(bookmark) else {
             return nil
@@ -1568,8 +1607,19 @@ final class LibraryViewModel: ObservableObject {
         }
     }
 
+    /// Host for presenting sheets/panels. Prefers the key window but falls back to
+    /// the main window — `keyWindow` can be nil right after a floating panel (e.g.
+    /// the artwork viewer, a borderless window with no `contentViewController`)
+    /// closes, which would otherwise silently no-op Convert / Transfer.
+    var presentationHostViewController: NSViewController? {
+        NSApp.keyWindow?.contentViewController ?? NSApp.mainWindow?.contentViewController
+    }
+
     func triggerConversionFromPatchBay() {
-        guard let host = NSApp.keyWindow?.contentViewController else { return }
+        guard let host = presentationHostViewController else {
+            AppLog.conversion.error("Convert pressed but no host window available")
+            return
+        }
         runConversion(selection: conversionSelection, presentingFrom: host)
     }
 
@@ -1797,7 +1847,7 @@ final class LibraryViewModel: ObservableObject {
     /// Runs detached and is NOT awaited, so the Save button returns instantly — the
     /// per-file rewrite (ffmpeg `-c copy`, dominated by the audio, not the image)
     /// happens quietly in the background.
-    func embedCoverIntoTracksInBackground(for album: Album) {
+    func embedCoverIntoTracksInBackground(for album: Album, deviceCompatible: Bool = true) {
         guard let folder = album.tracks.first?.track.fileURL.deletingLastPathComponent() else { return }
         // Prefer the manifest's .cover-roled file, else cover.jpg.
         let manifest = ArtworkManifest.load(from: folder)
@@ -1814,10 +1864,13 @@ final class LibraryViewModel: ObservableObject {
                 dimensions: ArtworkDimensions(width: Int(image.size.width), height: Int(image.size.height)),
                 data: data
             )
-            // Downscale to a compatible 600px baseline JPEG written to a temp file.
+            // Device-compatible: downscale to a 600px baseline JPEG (no PNG/progressive)
+            // so Rockbox and legacy players can read the embedded art. Off = embed the
+            // full-resolution original as-is (best for modern/desktop players).
             var embedURL = coverURL
             var tempURL: URL? = nil
-            if let small = try? ArtworkService().prepareCompatibleArtwork(asset: asset, profile: .generic, maxDimension: 600),
+            if deviceCompatible,
+               let small = try? ArtworkService().prepareCompatibleArtwork(asset: asset, profile: .generic, maxDimension: 600),
                !small.data.isEmpty {
                 let tmp = folder.appendingPathComponent(".cd_embed_cover.jpg")
                 if (try? small.data.write(to: tmp, options: .atomic)) != nil { embedURL = tmp; tempURL = tmp }
@@ -1911,6 +1964,7 @@ final class LibraryViewModel: ObservableObject {
         case .cover:       return index == 0 ? "cover.\(ext)" : "cover_\(index + 1).\(ext)"
         case .back:        return index == 0 ? "back.\(ext)" : "back_\(index + 1).\(ext)"
         case .disc:        return index == 0 ? "disc.\(ext)" : "disc_\(index + 1).\(ext)"
+        case .inlay:       return index == 0 ? "inlay.\(ext)" : "inlay_\(index + 1).\(ext)"
         case .bookletPage: return String(format: "booklet_%02d.\(ext)", index + 1)
         case .ignore:      return "ignored_\(index + 1).\(ext)"
         case .auto:        return "artwork_\(index + 1).\(ext)"
@@ -2319,7 +2373,12 @@ final class LibraryViewModel: ObservableObject {
     func addItemsToCrate(_ items: [String], crateName: String) {
         let tracksToAdd = tracksForDragItems(items)
         guard !tracksToAdd.isEmpty else { return }
-        importTracksIntoCrate(tracksToAdd, crateName: crateName)
+        // Copy-on-import only fires when files enter the library — i.e. committing
+        // staged tracks OUT of the Prep Crate. Adding between existing crates (or
+        // from All Records) is a reference-only move: the files are already indexed,
+        // so a WAV you converted or an SFX you're auditioning isn't duplicated.
+        let fromPrepCrate = { if case .prepCrate = currentSource { return true } else { return false } }()
+        importTracksIntoCrate(tracksToAdd, crateName: crateName, treatAsImport: fromPrepCrate)
     }
 
     /// Append dragged tracks/albums/artists to an M3U playlist, skipping paths
@@ -2372,6 +2431,31 @@ final class LibraryViewModel: ObservableObject {
     }
 
     // MARK: - Single-track removal (track context menu)
+
+    /// Move tracks from the crate currently being viewed into `target`: add the
+    /// references to `target`, then drop them from the source crate. Membership-only
+    /// — never copies files on disk, even when copy-on-import is enabled, because the
+    /// files already exist wherever they live; only the crate pointers change.
+    func moveTracksToCrate(_ tracks: [LoadedTrack], toCrate target: String) {
+        guard case .localCrate(let source) = currentSource, source != target else { return }
+        guard !tracks.isEmpty else { return }
+        let paths = Set(tracks.map { $0.track.fileURL.standardizedFileURL.path })
+
+        // Add references to the target crate (dedup keeps it idempotent).
+        var dest = loadCrateTracks(name: target)
+        dest.append(contentsOf: tracks)
+        saveCrateTracks(LibraryViewModel.deduplicate(tracks: dest), name: target)
+
+        // Remove the same references from the source crate.
+        var src = loadCrateTracks(name: source)
+        src.removeAll { paths.contains($0.track.fileURL.standardizedFileURL.path) }
+        saveCrateTracks(src, name: source)
+
+        refreshCrateCounts()
+        selectSource(currentSource)
+        appAlert = .info(title: "Moved to Crate",
+                         message: "Moved \(tracks.count) \(tracks.count == 1 ? "track" : "tracks") from “\(source)” to “\(target).”")
+    }
 
     func removeTrackFromCrate(_ track: LoadedTrack, crateName: String) {
         let path = track.track.fileURL.standardizedFileURL.path
@@ -2583,14 +2667,19 @@ final class LibraryViewModel: ObservableObject {
             
             await MainActor.run {
                 self.scanProgress = .idle
-                self.importTracksIntoCrate(deduplicated, crateName: crateName)
+                // Files dropped from Finder are genuinely new to the app, so this is
+                // a real import — honor copy-on-import.
+                self.importTracksIntoCrate(deduplicated, crateName: crateName, treatAsImport: true)
             }
         }
     }
 
-    private func importTracksIntoCrate(_ tracks: [LoadedTrack], crateName: String) {
+    /// - Parameter treatAsImport: whether these tracks are *entering* the library
+    ///   (Prep-Crate commit or a fresh Finder drop). Only then does copy-on-import
+    ///   apply; reference-only crate moves pass `false` so nothing is duplicated.
+    private func importTracksIntoCrate(_ tracks: [LoadedTrack], crateName: String, treatAsImport: Bool) {
         beginImportStatus(count: tracks.count, crateName: crateName)
-        let copyEnabled = prefs.copyOnImport
+        let copyEnabled = prefs.copyOnImport && treatAsImport
         let libraryFolderURL = managedLibraryFolderURL
         
         if copyEnabled, let destURL = libraryFolderURL {
@@ -2690,6 +2779,29 @@ final class LibraryViewModel: ObservableObject {
         }
         
         // Refresh active view
+        selectSource(currentSource)
+    }
+
+    /// Batch variant of `updateTrackURLInIndex`: repoint many tracks in one pass,
+    /// loading + saving each crate at most once. Matches by stable track id (the
+    /// relocated tracks keep their id via `withFileURL`), so a whole moved folder
+    /// re-attaches without rewriting every crate per file.
+    func updateTrackURLsInIndex(_ newTracks: [LoadedTrack]) {
+        guard !newTracks.isEmpty else { return }
+        let byID = Dictionary(newTracks.map { ($0.track.id, $0) }, uniquingKeysWith: { a, _ in a })
+        for crateName in availableCrates {
+            var tracks = loadCrateTracks(name: crateName)
+            var modified = false
+            for i in 0..<tracks.count {
+                if let replacement = byID[tracks[i].track.id] {
+                    tracks[i] = replacement
+                    modified = true
+                }
+            }
+            if modified {
+                saveCrateTracks(tracks, name: crateName)
+            }
+        }
         selectSource(currentSource)
     }
 

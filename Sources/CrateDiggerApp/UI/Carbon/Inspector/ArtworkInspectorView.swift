@@ -12,6 +12,10 @@ struct ArtworkInspectorView: View {
     @State private var thumbnails: [URL: NSImage] = [:]
     @State private var isSaving = false
     @State private var showingSearch = false
+    /// When on (default), the cover embedded into each track is downscaled to a
+    /// 600px baseline JPEG so Rockbox / legacy players can read it. Off embeds the
+    /// full-resolution original. Persisted so the choice sticks across sessions.
+    @AppStorage("embedDeviceCompatibleArt") private var deviceCompatibleArt = true
     /// The Save button only glows (and is worth pressing) once the user has
     /// actually changed something — found new artwork, or edited a role/format.
     @State private var isDirty = false
@@ -90,9 +94,22 @@ struct ArtworkInspectorView: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
-            
+
+            HStack(spacing: 6) {
+                Toggle(isOn: $deviceCompatibleArt) {
+                    Text("Device-safe artwork (600px baseline JPEG)")
+                        .font(CarbonFont.mono(9, weight: .bold))
+                        .foregroundColor(theme.ink2)
+                }
+                .toggleStyle(.checkbox)
+                .help("Embeds a downscaled baseline-JPEG cover so Rockbox and legacy players can read it. Turn off to embed the full-resolution original for modern/desktop players.")
+                Spacer()
+            }
+            .padding(.horizontal, 14)
+            .padding(.bottom, 6)
+
             Divider().background(theme.isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.1))
-            
+
             ScrollView {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 100, maximum: 120), spacing: 14)], spacing: 14) {
                     ForEach(imageURLs, id: \.self) { url in
@@ -131,6 +148,7 @@ struct ArtworkInspectorView: View {
                                 Text("Cover").tag(ArtworkRole.cover)
                                 Text("Back").tag(ArtworkRole.back)
                                 Text("Disc/Vinyl").tag(ArtworkRole.disc)
+                                Text("Inlay / Insert").tag(ArtworkRole.inlay)
                                 Text("Booklet Page").tag(ArtworkRole.bookletPage)
                             }
                             .labelsHidden()
@@ -276,7 +294,7 @@ struct ArtworkInspectorView: View {
                 // track in the BACKGROUND (keeping the full-res cover.jpg) — so the
                 // art travels inside the files without blocking on the per-file
                 // rewrite. The folder cover already drives in-app display.
-                model.embedCoverIntoTracksInBackground(for: album)
+                model.embedCoverIntoTracksInBackground(for: album, deviceCompatible: deviceCompatibleArt)
                 model.appAlert = .info(
                     title: "Artwork saved",
                     message: "Saved for “\(album.title)”. Embedding the cover into your tracks in the background."

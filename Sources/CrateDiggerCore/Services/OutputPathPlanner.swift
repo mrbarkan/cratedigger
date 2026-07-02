@@ -164,7 +164,8 @@ public struct OutputPathPlanner {
         reviewedAlbumFolders: [AlbumFolderKey: String] = [:],
         reservedDestinationPaths: Set<String> = [],
         destinationFileExtension: String? = nil,
-        baseNameOverride: String? = nil
+        baseNameOverride: String? = nil,
+        avoidExistingFiles: Bool = true
     ) -> PlannedOutputPath {
         let track = loadedTrack.track
         let sourceDirectory = track.fileURL.deletingLastPathComponent()
@@ -207,7 +208,8 @@ public struct OutputPathPlanner {
             in: outputDirectory,
             baseName: baseName,
             extension: outputExtension,
-            reservedDestinationPaths: reservedDestinationPaths
+            reservedDestinationPaths: reservedDestinationPaths,
+            avoidExistingFiles: avoidExistingFiles
         )
 
         return PlannedOutputPath(
@@ -216,11 +218,17 @@ public struct OutputPathPlanner {
         )
     }
 
+    /// Returns a destination that doesn't collide with other jobs in this batch
+    /// (`reservedDestinationPaths`). When `avoidExistingFiles` is true it also
+    /// steps past files already on disk (the ` (2)` "keep both" behavior); when
+    /// false it returns the natural path even if a file is already there, so the
+    /// caller can decide to skip or overwrite it.
     private func uniqueDestinationURL(
         in directory: URL,
         baseName: String,
         extension fileExtension: String,
-        reservedDestinationPaths: Set<String>
+        reservedDestinationPaths: Set<String>,
+        avoidExistingFiles: Bool
     ) -> URL {
         var attempt = 1
 
@@ -231,7 +239,9 @@ public struct OutputPathPlanner {
                 .appendingPathExtension(fileExtension)
             let key = standardizedPathKey(for: candidate)
 
-            if !reservedDestinationPaths.contains(key) && !fileManager.fileExists(atPath: candidate.path) {
+            let clashesWithBatch = reservedDestinationPaths.contains(key)
+            let clashesWithDisk = avoidExistingFiles && fileManager.fileExists(atPath: candidate.path)
+            if !clashesWithBatch && !clashesWithDisk {
                 return candidate
             }
 

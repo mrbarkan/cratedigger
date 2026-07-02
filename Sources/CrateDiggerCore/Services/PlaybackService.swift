@@ -54,6 +54,8 @@ public protocol PlaybackServiceProtocol: AnyObject {
     func currentSpectrum() -> [Double]
     /// Enable/disable the in-path EQ and set its 12 per-band gains (dB).
     func setEqualizer(enabled: Bool, gains: [Double])
+    /// Linear makeup gain (≥1) so the volume fader can push above unity (0 dB).
+    func setMasterGain(_ gain: Double)
 }
 
 protocol PlaybackEngineProtocol: AnyObject {
@@ -74,12 +76,14 @@ protocol PlaybackEngineProtocol: AnyObject {
     var currentLevels: (left: Double, right: Double) { get }
     var currentSpectrum: [Double] { get }
     func setEqualizer(enabled: Bool, gains: [Double])
+    func setMasterGain(_ gain: Double)
 }
 
 extension PlaybackEngineProtocol {
     var currentLevels: (left: Double, right: Double) { (0, 0) }
     var currentSpectrum: [Double] { [] }
     func setEqualizer(enabled: Bool, gains: [Double]) {}
+    func setMasterGain(_ gain: Double) {}
 }
 
 final class AVPlayerEngine: PlaybackEngineProtocol {
@@ -192,6 +196,10 @@ final class AVPlayerEngine: PlaybackEngineProtocol {
 
     func setEqualizer(enabled: Bool, gains: [Double]) {
         levelTap.setEQ(enabled: enabled, gains: gains)
+    }
+
+    func setMasterGain(_ gain: Double) {
+        levelTap.setMasterGain(gain)
     }
 
     /// Map a linear peak (0...1) to a meter fill position: -48 dBFS → 0 and
@@ -389,6 +397,10 @@ public final class PlaybackService: PlaybackServiceProtocol {
 
     public func setVolume(_ volume: Double) {
         engine.setVolume(volume)
+    }
+
+    public func setMasterGain(_ gain: Double) {
+        engine.setMasterGain(gain)
     }
 
     public func setOutputDeviceUID(_ uid: String?) {

@@ -54,7 +54,7 @@ struct LibraryCleanupView: View {
     private var tabSwitcher: some View {
         HStack(spacing: 0) {
             Button(action: { activeTab = 0 }) {
-                Text("Dead Tracks (\(model.deadTracks.count))")
+                Text("Missing Tracks (\(model.deadTracks.count))")
                     .font(CarbonFont.mono(9.5, weight: .bold))
                     .foregroundColor(activeTab == 0 ? theme.orange : theme.ink3)
                     .padding(.vertical, 8)
@@ -87,7 +87,7 @@ struct LibraryCleanupView: View {
                         .font(.system(size: 40))
                         .foregroundColor(.green)
                         .padding(.bottom, 8)
-                    Text("No dead tracks found! All file paths exist on disk.")
+                    Text("No missing tracks! Every file path exists on disk.")
                         .font(CarbonFont.sans(12))
                         .foregroundColor(.secondary)
                     Spacer()
@@ -95,15 +95,22 @@ struct LibraryCleanupView: View {
             } else {
                 List {
                     ForEach(model.deadTracks) { loaded in
-                        HStack {
+                        HStack(spacing: 10) {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(loaded.track.title)
+                                Text(loaded.track.title.isEmpty ? loaded.track.fileURL.lastPathComponent : loaded.track.title)
                                     .font(CarbonFont.sans(12, weight: .bold))
                                 Text(loaded.track.fileURL.path)
                                     .font(CarbonFont.mono(8.5))
                                     .foregroundColor(.red)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
                             }
-                            Spacer()
+                            Spacer(minLength: 8)
+                            Button("Locate…") { model.relinkMissingTrack(loaded) }
+                                .font(CarbonFont.mono(9, weight: .bold))
+                            Button("Remove") { model.removeMissingTrack(loaded) }
+                                .font(CarbonFont.mono(9))
+                                .foregroundColor(.secondary)
                         }
                         .padding(.vertical, 4)
                     }
@@ -112,20 +119,24 @@ struct LibraryCleanupView: View {
                 .scrollContentBackground(.hidden)
                 .frame(maxHeight: .infinity)
 
-                HStack {
-                    Text("These tracks refer to files that no longer exist. Removing them will clean up your CrateDigger library display.")
+                HStack(spacing: 12) {
+                    Text("These files moved, were renamed, or were deleted. Point CrateDigger at the folder they moved to and it re-links every match at once.")
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer()
+                    Button("Locate Folder…") {
+                        model.relinkMissingTracksFromFolder(model.deadTracks)
+                    }
+                    .font(CarbonFont.mono(9, weight: .bold))
                     KeyButton(style: .selected, action: {
                         model.deleteDeadTracks()
                     }) {
-                        Text("REMOVE FROM LIBRARY")
+                        Text("REMOVE ALL")
                             .font(CarbonFont.mono(9, weight: .bold))
                             .tracking(1.4)
                     }
-                    .frame(width: 170, height: CarbonLayout.keyHeight)
+                    .frame(width: 120, height: CarbonLayout.keyHeight)
                 }
                 .padding(14)
                 .background(theme.chassisHi)

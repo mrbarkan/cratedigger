@@ -28,6 +28,8 @@ enum BrowserContextMenu {
                     }
                 }
             }
+            moveToCrateMenu(for: usesSelection ? model.selectedTracksForCrateAdd() : artist.albums.flatMap { $0.tracks },
+                            model: model)
         }
         Button("Select All") { model.selectAllArtists() }
 
@@ -42,6 +44,9 @@ enum BrowserContextMenu {
         Button("View Artwork") {
             if let album = artworkAlbum(for: artist) { model.showArtwork(for: album) }
         }
+        let usesSel = model.selectedArtistIDs.count > 1 && model.selectedArtistIDs.contains(artist.id)
+        transferToDeviceMenu(for: usesSel ? model.selectedTracksForCrateAdd() : artist.albums.flatMap { $0.tracks },
+                             model: model)
         // One representative track — revealing every album would spawn a Finder
         // window per folder.
         showInFinderButton(for: artist.albums.first?.tracks.first.map { [$0] } ?? [])
@@ -49,6 +54,28 @@ enum BrowserContextMenu {
         if case .localCrate(let crateName) = model.currentSource {
             Divider()
             Button("Remove from “\(crateName)”") { model.removeArtistFromCrate(artist, crateName: crateName) }
+        }
+    }
+
+    /// "Transfer to Device" submenu — lists saved device profiles; picking one
+    /// copies/converts the given tracks straight to that device with its saved
+    /// settings. With no profiles saved yet, a single item opens the transfer
+    /// sheet whose empty-state points the user at Preferences > Devices. Hidden
+    /// for streaming sources whose tracks have no on-disk file to copy.
+    @ViewBuilder
+    static func transferToDeviceMenu(for tracks: [LoadedTrack], model: LibraryViewModel) -> some View {
+        if tracks.contains(where: { $0.track.fileURL.isFileURL }) {
+            Menu("Transfer to Device") {
+                let profiles = model.prefs.savedExternalDeviceProfiles
+                if profiles.isEmpty {
+                    Button("Set Up a Device…") { model.requestExternalDeviceTransfer() }
+                } else {
+                    ForEach(profiles) { profile in
+                        Button(profile.name) { model.transferToDevice(profileID: profile.id, tracks: tracks) }
+                    }
+                }
+            }
+            .disabled(model.isConversionRunning)
         }
     }
 
@@ -96,6 +123,7 @@ enum BrowserContextMenu {
                     }
                 }
             }
+            moveToCrateMenu(for: usesSelection ? model.selectedTracksForCrateAdd() : album.tracks, model: model)
         }
         Button("Select All") { model.selectAllAlbums() }
 
@@ -118,6 +146,8 @@ enum BrowserContextMenu {
             }
         }
         Button("View Artwork") { model.showArtwork(for: album) }
+        let usesSel = model.selectedAlbumIDs.count > 1 && model.selectedAlbumIDs.contains(album.id)
+        transferToDeviceMenu(for: usesSel ? model.selectedTracksForCrateAdd() : album.tracks, model: model)
         showInFinderButton(for: album.tracks)
 
         removalItems(forAlbum: album, model: model)
@@ -142,6 +172,7 @@ enum BrowserContextMenu {
                     }
                 }
             }
+            moveToCrateMenu(for: usesSelection ? model.selectedTracksForCrateAdd() : [loaded], model: model)
         }
         Button("Select All") { model.selectAllTracks() }
 
@@ -153,6 +184,8 @@ enum BrowserContextMenu {
                 model.editTags(for: [loaded])
             }
         }
+        let usesSel = model.selectedTrackIDs.count > 1 && model.selectedTrackIDs.contains(loaded.track.id)
+        transferToDeviceMenu(for: usesSel ? model.selectedTracksForCrateAdd() : [loaded], model: model)
         showInFinderButton(for: [loaded])
 
         Divider()
@@ -212,6 +245,23 @@ enum BrowserContextMenu {
         Button("Edit Edition Label…") { model.promptEditionLabel(for: version, in: release) }
         Divider()
         Button("Remove from Group") { model.removeFromGroup(version, release: release) }
+    }
+
+    /// "Move to Crate" submenu — only shown while viewing a specific crate (you can
+    /// only move *out of* the crate you're in). Lists every other crate as a target.
+    /// Membership-only: repoints the crate pointers, never copies files.
+    @ViewBuilder
+    static func moveToCrateMenu(for tracks: [LoadedTrack], model: LibraryViewModel) -> some View {
+        if case .localCrate(let current) = model.currentSource {
+            let targets = model.availableCrates.filter { $0 != current }
+            if !targets.isEmpty && !tracks.isEmpty {
+                Menu("Move to Crate") {
+                    ForEach(targets, id: \.self) { crate in
+                        Button(crate) { model.moveTracksToCrate(tracks, toCrate: crate) }
+                    }
+                }
+            }
+        }
     }
 
     /// The source-specific "Remove from …" items shared by the album menu.

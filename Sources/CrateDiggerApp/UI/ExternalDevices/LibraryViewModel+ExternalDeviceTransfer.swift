@@ -2,18 +2,32 @@ import AppKit
 import CrateDiggerCore
 import Foundation
 
+/// An in-flight "send to device (convert)" hand-off to the CNVRT Patch Bay: the
+/// device folder becomes the conversion destination and these tracks its queue,
+/// overriding the normal saved-output-destination + batch-scope for this one run.
+struct PendingDeviceConversion {
+    let profileID: UUID
+    let deviceName: String
+    let destinationRoot: URL
+    let tracks: [LoadedTrack]
+}
+
 extension LibraryViewModel {
+    /// Send tracks to a saved device. Copy-mode devices copy originals straight to
+    /// the device; convert-mode devices hand off to the CNVRT Patch Bay with the
+    /// device's music folder preset as the destination, where the user picks the
+    /// format/folder and hits Go. Grabs the key window as the host for the
+    /// mounted-root panel / summary sheet.
     @MainActor
-    func runExternalDeviceTransfer(
-        selection: ExternalDeviceTransferSelection,
-        presentingFrom host: NSViewController
-    ) {
+    func transferToDevice(profileID: UUID, tracks rawTracks: [LoadedTrack]) {
+        guard let host = presentationHostViewController else { return }
+
         guard !isConversionRunning else {
             AppLog.conversion.warning("Transfer requested while conversion/transfer is already running")
             return
         }
 
-        guard var profile = prefs.savedExternalDeviceProfiles.first(where: { $0.id == selection.profileID }) else {
+        guard let profile = prefs.savedExternalDeviceProfiles.first(where: { $0.id == profileID }) else {
             appAlert = .error(
                 title: "Device profile missing",
                 message: "The selected device profile could not be found. Open Preferences > Devices and choose the device again."
@@ -21,8 +35,10 @@ extension LibraryViewModel {
             return
         }
 
-        let sourceTracks = tracksForBatchScope(selection.batchScope)
-        guard !sourceTracks.isEmpty else {
+        // Rehydrate artwork bytes dropped by the .cdlib round-trip so re-embedding a
+        // device-compatible cover works instead of failing to decode.
+        let tracks = tracksWithHydratedArtwork(rawTracks)
+        guard !tracks.isEmpty else {
             appAlert = .info(
                 title: "Nothing to transfer",
                 message: "No tracks matched the chosen scope. Load a library and select an album or track first."
@@ -30,19 +46,72 @@ extension LibraryViewModel {
             return
         }
 
+        switch profile.transferSettings.mode {
+        case .copyOriginals:
+            runExternalDeviceCopy(profile: profile, tracks: tracks, presentingFrom: host)
+
+        case .convertDuringTransfer:
+            Task { @MainActor in
+                var resolved = profile
+                guard let mountedRoot = await resolveMountedRoot(for: &resolved, presentingFrom: host) else {
+                    AppLog.conversion.notice("User cancelled device root selection")
+                    return
+                }
+                let destinationRoot = ExternalDeviceTransferPlanner().destinationRoot(for: resolved, mountedAt: mountedRoot)
+
+                // Hand off to the CNVRT cockpit: the device folder becomes this
+                // run's destination and the selected tracks its queue. Seed the
+                // cockpit with the device's saved format + folder layout so files
+                // land in the device's folder pattern (e.g. AlbumArtist/Album)
+                // rather than dumped flat into the music folder. The user can tweak
+                // inline before hitting Go; the pre-device selection is restored
+                // after the run.
+                conversionSelectionBeforeDevice = conversionSelection
+                conversionSelection = seededConversionSelection(from: resolved.transferSettings)
+
+                pendingDeviceConversion = PendingDeviceConversion(
+                    profileID: resolved.id,
+                    deviceName: resolved.name,
+                    destinationRoot: destinationRoot,
+                    tracks: tracks
+                )
+                oledView = .conversion
+            }
+        }
+    }
+
+    /// Project a device's saved format + folder layout onto the current conversion
+    /// selection, so the CNVRT cockpit reflects (and applies) the device's pattern.
+    private func seededConversionSelection(from settings: ExternalDeviceTransferSettings) -> ConversionOptionsSelection {
+        var selection = conversionSelection
+        selection.outputFormat = settings.outputFormat
+        selection.bitrate = settings.bitrateKbps
+        selection.sampleRate = settings.sampleRateHz
+        selection.artworkMaxDimension = settings.artworkMaxDimension
+        selection.folderStructureMode = settings.folderStructureMode
+        selection.templatePreset = settings.templateConfig.preset
+        selection.tokenOrder = FolderTokenOrder.normalize(settings.templateConfig.tokenOrder)
+        return selection
+    }
+
+    // MARK: - Copy path
+
+    @MainActor
+    private func runExternalDeviceCopy(
+        profile: ExternalDeviceProfile,
+        tracks sourceTracks: [LoadedTrack],
+        presentingFrom host: NSViewController
+    ) {
         Task { @MainActor in
-            guard let mountedRoot = await resolveMountedRoot(for: &profile, presentingFrom: host) else {
+            var resolved = profile
+            guard let mountedRoot = await resolveMountedRoot(for: &resolved, presentingFrom: host) else {
                 AppLog.conversion.notice("User cancelled device root selection")
                 return
             }
 
             let planner = ExternalDeviceTransferPlanner()
-            let destinationRoot = planner.destinationRoot(for: profile, mountedAt: mountedRoot)
-            let plans = planner.planTransfers(
-                tracks: sourceTracks,
-                profile: profile,
-                mountedAt: mountedRoot
-            )
+            let destinationRoot = planner.destinationRoot(for: resolved, mountedAt: mountedRoot)
+            let plans = planner.planTransfers(tracks: sourceTracks, profile: resolved, mountedAt: mountedRoot)
 
             guard !plans.isEmpty else {
                 appAlert = .info(
@@ -57,48 +126,12 @@ extension LibraryViewModel {
                 return
             }
 
-            switch profile.transferSettings.mode {
-            case .copyOriginals:
-                let report = await runCopyTransferQueue(
-                    plans: plans,
-                    deviceName: profile.name
-                )
-                presentSummary(report: report, presentingFrom: host)
-
-            case .convertDuringTransfer:
-                guard let preset = profile.transferSettings.conversionPreset else {
-                    appAlert = .error(
-                        title: "Transfer profile incomplete",
-                        message: "This device is set to convert during transfer, but CrateDigger could not build a conversion preset for it."
-                    )
-                    return
-                }
-
-                let service: ConversionService
-                do {
-                    service = try ConversionService(ffmpegExecutableURL: customFFmpegExecutableURL())
-                } catch {
-                    AppLog.conversion.error("Could not initialize ConversionService for device transfer: \(String(describing: error), privacy: .public)")
-                    appAlert = .error(
-                        title: "Couldn't start transfer",
-                        message: "ffmpeg wasn't found in the app bundle or on your system PATH. Install ffmpeg or set a custom path under Preferences > Advanced."
-                    )
-                    return
-                }
-
-                let jobs = plans.compactMap(\.conversionJob)
-                let conversionReport = await runConversionQueue(
-                    service: service,
-                    jobs: jobs,
-                    preset: preset
-                )
-                presentSummary(
-                    report: deviceTransferReport(from: conversionReport, deviceName: profile.name),
-                    presentingFrom: host
-                )
-            }
+            let report = await runCopyTransferQueue(plans: plans, deviceName: resolved.name)
+            presentSummary(report: report, presentingFrom: host)
         }
     }
+
+    // MARK: - Mounted root
 
     @MainActor
     private func resolveMountedRoot(
@@ -262,28 +295,6 @@ extension LibraryViewModel {
             details: outcome.2.joined(separator: "\n"),
             tone: tone,
             showsDetailsButton: !outcome.2.isEmpty
-        )
-    }
-
-    private func deviceTransferReport(from report: ConversionReport, deviceName: String) -> ConversionReport {
-        let title: String
-        switch report.tone {
-        case .success:
-            title = "Transfer complete"
-        case .warning:
-            title = "Transfer finished with errors"
-        case .error:
-            title = "Transfer failed"
-        case .neutral, .info:
-            title = "Transfer summary"
-        }
-
-        return ConversionReport(
-            title: title,
-            statusLine: report.statusLine.replacingOccurrences(of: "written", with: "transferred to \(deviceName)"),
-            details: report.details,
-            tone: report.tone,
-            showsDetailsButton: report.showsDetailsButton
         )
     }
 }

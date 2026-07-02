@@ -30,16 +30,16 @@ struct TransportCluster: View {
     private func toggleButton(systemName: String, on: Bool, label: String, action: @escaping () -> Void) -> some View {
         Button(action: { ClickPlayer.shared.play(.key); action() }) {
             ZStack {
-                ChromeChassis(theme: theme, cornerRadius: 11)
+                ChromeChassis(theme: theme, cornerRadius: 12)
                 if on {
-                    RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .strokeBorder(theme.orange.opacity(0.5), lineWidth: 1)
                 }
                 Image(systemName: systemName)
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(on ? theme.orange : theme.ink3)
             }
-            .frame(width: 42, height: 42)
+            .frame(width: CarbonLayout.transportButtonSize, height: CarbonLayout.transportButtonSize)
             .shadow(color: on ? theme.orange.opacity(0.4) : .clear, radius: 6)
         }
         .buttonStyle(.plain)
@@ -50,10 +50,10 @@ struct TransportCluster: View {
     private func transportButton(systemName: String, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             ZStack {
-                ChromeChassis(theme: theme, cornerRadius: 11)
+                ChromeChassis(theme: theme, cornerRadius: 12)
 
                 Image(systemName: systemName)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 19, weight: .semibold))
                     .foregroundStyle(theme.ink2)
             }
             .frame(width: CarbonLayout.transportButtonSize, height: CarbonLayout.transportButtonSize)

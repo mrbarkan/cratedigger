@@ -1,32 +1,36 @@
 import CrateDiggerCore
 import SwiftUI
 
+// MARK: - Shared OLED palette
+
+/// The OLED foreground family (#F5F1E6) and helpers. Everything on the glass is
+/// drawn from this + the Carbon accents (orange/sun/cyan/indigo/red).
+let oledFG = Color(red: 0.961, green: 0.945, blue: 0.902)
+func oledFGo(_ opacity: Double) -> Color { oledFG.opacity(opacity) }
+private let oledMuted = Color.white.opacity(0.55)
+private let onAirRed = Color(red: 1.0, green: 0.357, blue: 0.29)   // #ff5b4a
+
+// MARK: - OLED display (one glass, three permanent zones)
+
+/// The OLED reads as ONE physical device screen with fixed geometry, not
+/// swappable cards: a persistent annunciator rail (top), a context zone whose
+/// panes swap inside a fixed frame (center), and a 5-cell data rail (bottom).
+/// Everything on the glass *snaps* between views — no crossfades.
 struct OLEDDisplay: View {
     @Environment(\.carbon) private var theme
     @EnvironmentObject private var model: LibraryViewModel
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
+        ZStack {
             background
-
-            Group {
-                switch model.oledView {
-                case .nowPlaying:
-                    // Show the stream while it's playing (or while browsing radio),
-                    // even if the user has navigated to a library source.
-                    if (model.isStreamActive || model.isRadioMode) && model.selectedStream != nil {
-                        RadioNowPlayingView()
-                    } else {
-                        NowPlayingView()
-                    }
-                case .vu:         VUView()
-                case .conversion: ConversionView()
-                case .scan:       ScanView()
-                case .remoteSync: RemoteSyncView()
-                case .cdRip:      CDRipView()
-                }
+            VStack(spacing: 0) {
+                DisplayRail()
+                DisplayContext()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .padding(.top, 8)
+            .padding(.horizontal, 18)
+            .padding(.bottom, 10)
         }
         .clipShape(RoundedRectangle(cornerRadius: CarbonLayout.oledCornerRadius, style: .continuous))
         .overlay(
@@ -59,136 +63,196 @@ struct OLEDDisplay: View {
     }
 }
 
-private let oledForeground = Color(red: 0.961, green: 0.945, blue: 0.902)
-private let oledMuted = Color.white.opacity(0.55)
-
-/// A labelled spec cell in the OLED bottom strip (key / value / sub). Shared by
-/// the now-playing and radio now-playing readouts.
-private struct OLEDCell: View {
-    let key: String
-    let value: String
-    let sub: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(key.uppercased())
-                .font(CarbonFont.mono(7.5, weight: .semibold))
-                .tracking(2.2)
-                .foregroundStyle(oledForeground.opacity(0.45))
-            Text(value)
-                .font(CarbonFont.mono(13, weight: .bold))
-                .tracking(0.4)
-                .foregroundStyle(oledForeground)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-            Text(sub.uppercased())
-                .font(CarbonFont.mono(7.5, weight: .semibold))
-                .tracking(1.8)
-                .foregroundStyle(oledForeground.opacity(0.55))
-                .lineLimit(1)
-        }
-        .frame(minWidth: 80, alignment: .leading)
-        .padding(.trailing, 10)
-    }
-}
-
-/// Thin vertical separator between `OLEDCell`s.
-private struct OLEDCellDivider: View {
-    var body: some View {
-        Rectangle()
-            .fill(oledForeground.opacity(0.12))
-            .frame(width: 1)
-            .padding(.vertical, 2)
-            .padding(.horizontal, 4)
-    }
-}
-
-private struct NowPlayingView: View {
+/// The context zone — the seven panes swap inside a fixed frame. A plain switch
+/// with no animation → the glass snaps like a real FL display.
+private struct DisplayContext: View {
     @EnvironmentObject private var model: LibraryViewModel
-    @Environment(\.carbon) private var theme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Status pill only — the VIEW/THEME/EQ settings move below the divider.
-            HStack {
-                NowPlayingTag(active: model.playbackState == .playing)
-                Spacer()
+        ZStack {
+            switch model.oledView {
+            case .nowPlaying:  NowPlayingPane()
+            case .vu:          VUPane()
+            case .conversion:  ConversionPane()
+            case .scan:        ScanPane()
+            case .remoteSync:  RemoteSyncPane()
+            case .cdRip:       CDRipPane()
+            case .devices:     DevicesPane()
             }
-
-            // Headline — big thin track title on the left, the elapsed clock on
-            // the same row, baseline-aligned with the title.
-            HStack(alignment: .firstTextBaseline, spacing: 20) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(displayTrackTitle)
-                        .font(CarbonFont.display(44))
-                        .fontWeight(.thin)
-                        .tracking(-0.4)
-                        .foregroundStyle(oledForeground)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.55)
-                    Text(subtitle)
-                        .font(CarbonFont.mono(9.5, weight: .semibold))
-                        .tracking(2.0)
-                        .textCase(.uppercase)
-                        .foregroundStyle(oledMuted)
-                        .lineLimit(1)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(model.displayedCurrentTime.asClockPadded)
-                        .font(CarbonFont.display(34))
-                        .fontWeight(.thin)
-                        .foregroundColor(oledForeground)
-                        .shadow(color: theme.orange.opacity(0.28), radius: 7)
-                    Text("/ \(model.playbackDuration.asClockPadded)")
-                        .font(CarbonFont.mono(12, weight: .semibold))
-                        .tracking(1.4)
-                        .foregroundStyle(oledForeground.opacity(0.4))
-                }
-                .fixedSize()
-            }
-            .padding(.top, 4)
-
-            Spacer(minLength: 2)
-
-            // Divider — everything beneath it is the lower zone.
-            Rectangle()
-                .fill(oledForeground.opacity(0.12))
-                .frame(height: 1)
-
-            // Lower zone: spec cells (left) + volume meter + VIEW/THEME/EQ (right).
-            HStack(alignment: .center, spacing: 14) {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(alignment: .center, spacing: 0) {
-                        OLEDCell(key: "Track", value: trackValue, sub: trackSubValue)
-                        OLEDCellDivider()
-                        OLEDCell(key: "Format", value: formatValue, sub: formatSubValue)
-                        OLEDCellDivider()
-                        OLEDCell(key: "Bitrate", value: bitrateValue, sub: bitrateSubValue)
-                        OLEDCellDivider()
-                        OLEDCell(key: "Sample", value: sampleValue, sub: sampleSubValue)
-                        OLEDCellDivider()
-                        OLEDCell(key: "Size", value: sizeValue, sub: "FILE SIZE")
-                    }
-                }
-
-                Spacer(minLength: 8)
-
-                OLEDVolBars(volume: model.playbackVolume)
-                    .frame(width: 120)
-                NPSettings(
-                    viewValue: model.showArtworkGallery ? "GALLERY" : "LIST",
-                    themeValue: themeValue,
-                    eqValue: model.eqPreset.label
-                )
-                .fixedSize()
-            }
-            .padding(.top, 6)
         }
-        .padding(.horizontal, CarbonLayout.oledPaddingH)
-        .padding(.vertical, CarbonLayout.oledPaddingV)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
+}
+
+// MARK: - Annunciator rail + persistent transport strip
+
+private struct DisplayRail: View {
+    @Environment(\.carbon) private var theme
+    @EnvironmentObject private var model: LibraryViewModel
+
+    private var v: OLEDView { model.oledView }
+    private var radioLive: Bool { model.isRadioMode || model.isStreamActive }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            // Annunciators — every mode permanently printed on the glass.
+            HStack(spacing: 12) {
+                ann("NOW", lit: v == .nowPlaying, color: theme.orange)
+                ann("VU", lit: v == .vu, color: theme.cyan)
+                ann("CNVRT", lit: v == .conversion, color: theme.red)
+                ann("SCAN", lit: v == .scan, color: theme.sun)
+                ann("SYNC", lit: v == .remoteSync, color: theme.indigo)
+                ann("CD", lit: v == .cdRip, color: theme.orange)
+                ann("DEV", lit: v == .devices, color: theme.cyan)
+                ann("ON AIR", lit: radioLive, color: onAirRed, pulse: true)
+            }
+
+            Spacer(minLength: 12)
+
+            RailLive()
+            RailSettings()
+        }
+        .padding(.bottom, 7)
+        .overlay(
+            Rectangle().fill(oledFGo(0.09)).frame(height: 1),
+            alignment: .bottom
+        )
+    }
+
+    /// One printed annunciator segment: ghost when inactive, lit (color + glow)
+    /// when its view is active. Segments snap — no fade.
+    private func ann(_ label: String, lit: Bool, color: Color, pulse: Bool = false) -> some View {
+        HStack(spacing: 5) {
+            AnnDot(lit: lit, color: color, pulse: pulse)
+            Text(label)
+                .font(CarbonFont.mono(8, weight: .bold))
+                .tracking(1.6)
+                .foregroundStyle(lit ? color : oledFGo(0.16))
+                .shadow(color: lit ? color.opacity(0.55) : .clear, radius: lit ? 7 : 0)
+        }
+        .fixedSize()
+    }
+}
+
+/// The annunciator dot — 5px, ghost or lit; the ON-AIR dot pulses.
+private struct AnnDot: View {
+    let lit: Bool
+    let color: Color
+    var pulse: Bool = false
+    @State private var pulsing = false
+
+    var body: some View {
+        Circle()
+            .fill(lit ? color : oledFGo(0.09))
+            .frame(width: 5, height: 5)
+            .shadow(color: lit ? color : .clear, radius: lit ? 5 : 0)
+            .opacity(lit && pulse ? (pulsing ? 1.0 : 0.4) : 1.0)
+            .onAppear { if pulse { startPulse() } }
+    }
+
+    private func startPulse() {
+        withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) { pulsing = true }
+    }
+}
+
+/// The persistent transport strip on the right of the rail: mini now-playing +
+/// progress (auto-hidden on the nowPlaying / vu views) then the always-visible
+/// VOL meter + dB.
+private struct RailLive: View {
+    @Environment(\.carbon) private var theme
+    @EnvironmentObject private var model: LibraryViewModel
+
+    private var showMini: Bool { model.oledView != .nowPlaying && model.oledView != .vu }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            if showMini {
+                Text(trackTitle)
+                    .font(CarbonFont.mono(9, weight: .bold))
+                    .tracking(1.08)
+                    .foregroundStyle(theme.orange)
+                    .shadow(color: theme.orange.opacity(0.4), radius: 6)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: 150, alignment: .leading)
+                    .fixedSize(horizontal: true, vertical: false)
+
+                HStack(spacing: 6) {
+                    Text(model.displayedCurrentTime.asClockPadded)
+                        .font(CarbonFont.mono(9, weight: .bold))
+                        .foregroundStyle(oledFG)
+                    Capsule().fill(oledFGo(0.14))
+                        .frame(width: 62, height: 3)
+                        .overlay(alignment: .leading) {
+                            Capsule().fill(theme.orange)
+                                .frame(width: 62 * progress, height: 3)
+                                .shadow(color: theme.orange.opacity(0.6), radius: 4)
+                        }
+                    Text(model.playbackDuration.asClockPadded)
+                        .font(CarbonFont.mono(9, weight: .bold))
+                        .foregroundStyle(oledFGo(0.4))
+                }
+                .fixedSize()
+            }
+
+            HStack(spacing: 6) {
+                Text("VOL")
+                    .font(CarbonFont.mono(6.5, weight: .bold))
+                    .tracking(1.3)
+                    .foregroundStyle(oledFGo(0.3))
+                RailVolBars(volume: model.playbackVolume)
+                    .frame(width: 52, height: 9)
+                Text(oledVolumeDB(model.playbackVolume))
+                    .font(CarbonFont.mono(9, weight: .bold))
+                    .foregroundStyle(oledFG)
+                    .frame(width: 48, alignment: .trailing)   // fixed: fits "−60 dB"
+            }
+            .fixedSize()
+        }
+    }
+
+    private var trackTitle: String {
+        (model.nowPlayingTrack?.track.title ?? model.selectedTrack?.track.title ?? "—").uppercased()
+    }
+
+    private var progress: CGFloat {
+        guard model.playbackDuration > 0 else { return 0 }
+        return CGFloat(min(max(model.displayedCurrentTime / model.playbackDuration, 0), 1))
+    }
+}
+
+/// The VIEW / THEME / EQ readouts on the rail — values only, no labels.
+private struct RailSettings: View {
+    @Environment(\.carbon) private var theme
+    @EnvironmentObject private var model: LibraryViewModel
+
+    var body: some View {
+        // Fixed-width slots so the values never shift as their text changes
+        // (VIEW ≤ GALLERY, THEME ≤ LIGHT, EQ ≤ TREBLE).
+        HStack(spacing: 14) {
+            value(viewValue, width: 54)
+            value(themeValue, width: 40)
+            value(model.eqPreset.label, width: 46)
+        }
+        .padding(.leading, 14)
+        .overlay(
+            Rectangle().fill(oledFGo(0.12)).frame(width: 1),
+            alignment: .leading
+        )
+        .fixedSize()
+    }
+
+    private func value(_ text: String, width: CGFloat) -> some View {
+        Text(text)
+            .font(CarbonFont.mono(9.5, weight: .bold))
+            .tracking(0.9)
+            .foregroundStyle(theme.orange)
+            .shadow(color: theme.orange.opacity(0.4), radius: 6)
+            .lineLimit(1)
+            .frame(width: width, alignment: .leading)
+    }
+
+    private var viewValue: String { model.showArtworkGallery ? "GALLERY" : "LIST" }
 
     private var themeValue: String {
         let raw = UserDefaults.standard.string(forKey: AppearanceMode.userDefaultsKey)
@@ -199,9 +263,321 @@ private struct NowPlayingView: View {
         case .system: return "AUTO"
         }
     }
+}
+
+/// A 16-segment cyan→orange VOL meter (revealed through a mask of the lit run),
+/// matching the footer POSITION bar's colour ramp.
+private struct RailVolBars: View {
+    @Environment(\.carbon) private var theme
+    let volume: Double
+
+    private let barCount = 16
+
+    var body: some View {
+        let lit = Int((volume * Double(barCount)).rounded())
+        ZStack {
+            segmentRow { _ in oledFGo(0.16) }
+            LinearGradient(colors: [theme.cyan, theme.orange], startPoint: .leading, endPoint: .trailing)
+                .mask(segmentRow { i in i < lit ? Color.black : Color.clear })
+                .shadow(color: theme.orange.opacity(0.5), radius: 2)
+        }
+    }
+
+    private func segmentRow(_ fill: @escaping (Int) -> Color) -> some View {
+        HStack(spacing: 2) {
+            ForEach(0..<barCount, id: \.self) { i in
+                RoundedRectangle(cornerRadius: 1, style: .continuous).fill(fill(i))
+            }
+        }
+    }
+}
+
+/// dB readout for the fader position, per the shared volume law (unity ~92%).
+func oledVolumeDB(_ position: Double) -> String {
+    VolumeCurve.label(forPosition: position)
+}
+
+// MARK: - Pane scaffold + shared parts
+
+/// Every pane shares one composition: a headline row (titles left / numeric
+/// readout right), an optional ticker just above the cell rail, and the 5-cell
+/// data rail pinned to the bottom.
+private struct OLEDPaneScaffold<Headline: View, Readout: View, Ticker: View, Cells: View>: View {
+    @ViewBuilder var headline: () -> Headline
+    @ViewBuilder var readout: () -> Readout
+    @ViewBuilder var ticker: () -> Ticker
+    @ViewBuilder var cells: () -> Cells
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .bottom, spacing: 24) {
+                headline().frame(maxWidth: .infinity, alignment: .leading)
+                readout()
+            }
+            Spacer(minLength: 8)
+            ticker()
+            cells()
+        }
+        .padding(.top, 10)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
+/// The big thin track title + uppercase sub line (np-titles).
+private struct NPTitles: View {
+    let title: String
+    let sub: String
+    var titleColor: Color = oledFG
+    var titleSize: CGFloat = 44
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(CarbonFont.display(titleSize))
+                .fontWeight(.thin)
+                .tracking(-0.4)
+                .foregroundStyle(titleColor)
+                .lineLimit(1)
+                .minimumScaleFactor(0.55)
+            Text(sub)
+                .font(CarbonFont.mono(9.5, weight: .semibold))
+                .tracking(1.9)
+                .textCase(.uppercase)
+                .foregroundStyle(oledMuted)
+                .lineLimit(1)
+        }
+    }
+}
+
+/// The large thin clock/number readout (np-clock): big `now` + smaller `tot`.
+private struct NPClock: View {
+    @Environment(\.carbon) private var theme
+    let now: String
+    let tot: String
+    var nowColor: Color = oledFG
+    var totColor: Color = oledFGo(0.4)
+    var nowSize: CGFloat = 34
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(now)
+                .font(CarbonFont.display(nowSize))
+                .fontWeight(.thin)
+                .foregroundStyle(nowColor)
+                .shadow(color: theme.orange.opacity(nowColor == oledFG ? 0.28 : 0), radius: 7)
+            if !tot.isEmpty {
+                Text(tot)
+                    .font(CarbonFont.mono(12, weight: .semibold))
+                    .tracking(1.7)
+                    .foregroundStyle(totColor)
+            }
+        }
+    }
+}
+
+/// One cell in the bottom data rail.
+private struct OLEDCellData: Identifiable {
+    let key: String
+    let value: String
+    let sub: String
+    var valueColor: Color = oledFG
+    var id: String { key }
+}
+
+/// The 5-cell data rail (np-cells) — equal-width cells with hairline separators,
+/// pinned to the bottom of every pane; an optional trailing view (the SORT
+/// readout) rides at the end behind its own separator.
+private struct OLEDCells<Trailing: View>: View {
+    let cells: [OLEDCellData]
+    @ViewBuilder var trailing: () -> Trailing
+
+    init(_ cells: [OLEDCellData], @ViewBuilder trailing: @escaping () -> Trailing = { EmptyView() }) {
+        self.cells = cells
+        self.trailing = trailing
+    }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(Array(cells.enumerated()), id: \.offset) { i, c in
+                if i > 0 {
+                    Rectangle().fill(oledFGo(0.12)).frame(width: 1).padding(.vertical, 1)
+                }
+                cell(c, leading: i > 0)
+            }
+            trailing()
+        }
+        .padding(.top, 8)
+        .overlay(Rectangle().fill(oledFGo(0.12)).frame(height: 1), alignment: .top)
+    }
+
+    private func cell(_ c: OLEDCellData, leading: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(c.key.uppercased())
+                .font(CarbonFont.mono(7.5, weight: .semibold))
+                .tracking(1.65)
+                .foregroundStyle(oledFGo(0.45))
+            Text(c.value)
+                .font(CarbonFont.mono(13, weight: .bold))
+                .tracking(0.5)
+                .foregroundStyle(c.valueColor)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Text(c.sub.uppercased())
+                .font(CarbonFont.mono(7.5, weight: .semibold))
+                .tracking(1.35)
+                .foregroundStyle(oledFGo(0.55))
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.trailing, 10)
+        .padding(.leading, leading ? 10 : 0)
+    }
+}
+
+/// The scan / sync / cd / devices path ticker (dsp-ticker): a prefix label + a
+/// breadcrumb path (leaf lit) + optional trailing meta, above the cell rail.
+private struct DSPTicker: View {
+    let prefix: String
+    let path: AttributedString
+    var meta: String? = nil
+    var leadingInset: CGFloat = 0
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text(prefix)
+                .font(CarbonFont.mono(8.5, weight: .bold))
+                .tracking(1.9)
+                .foregroundStyle(oledFGo(0.5))
+                .fixedSize()
+            Text(path)
+                .font(CarbonFont.mono(10))
+                .tracking(0.4)
+                .lineLimit(1)
+                .truncationMode(.head)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if let meta {
+                Text(meta)
+                    .font(CarbonFont.mono(9, weight: .semibold))
+                    .tracking(1.7)
+                    .foregroundStyle(oledFGo(0.5))
+                    .fixedSize()
+            }
+        }
+        .padding(.leading, leadingInset)
+        .padding(.bottom, 8)
+    }
+}
+
+/// A capsule tag (NOW PLAYING / CONVERT · ARMED / etc.).
+private struct OLEDTag: View {
+    let text: String
+    let ink: Color
+    let background: Color
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Circle().fill(ink).frame(width: 6, height: 6)
+            Text(text)
+                .font(CarbonFont.mono(9, weight: .bold))
+                .tracking(1.8)
+                .foregroundStyle(ink)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(Capsule().fill(background))
+    }
+}
+
+/// A thin progress / sweep bar shared by SCAN / SYNC / CD / DEVICES readouts.
+private struct ScanBar: View {
+    @Environment(\.carbon) private var theme
+
+    enum Style { case rainbow(Double), orange(Double), indigoSweep }
+    let style: Style
+    @State private var sweep = false
+
+    var body: some View {
+        GeometryReader { proxy in
+            let w = max(proxy.size.width, 1)
+            ZStack(alignment: .leading) {
+                Capsule().fill(oledFGo(0.10))
+                switch style {
+                case .rainbow(let f):
+                    Capsule()
+                        .fill(LinearGradient(colors: [theme.cyan, theme.indigo, theme.orange], startPoint: .leading, endPoint: .trailing))
+                        .frame(width: w * CGFloat(min(max(f, 0), 1)))
+                        .shadow(color: theme.cyan.opacity(0.34), radius: 5)
+                case .orange(let f):
+                    Capsule()
+                        .fill(theme.orange)
+                        .frame(width: w * CGFloat(min(max(f, 0), 1)))
+                        .shadow(color: theme.orange.opacity(0.34), radius: 5)
+                case .indigoSweep:
+                    Capsule()
+                        .fill(LinearGradient(colors: [theme.indigo, theme.cyan], startPoint: .leading, endPoint: .trailing))
+                        .frame(width: w * 0.24)
+                        .shadow(color: theme.indigo.opacity(0.4), radius: 5)
+                        .offset(x: sweep ? w * 0.72 : w * 0.04)
+                        .onAppear {
+                            withAnimation(.easeInOut(duration: 1.6).repeatForever(autoreverses: true)) { sweep = true }
+                        }
+                }
+            }
+        }
+        .frame(height: 5)
+    }
+}
+
+// MARK: - NOW PLAYING pane
+
+private struct NowPlayingPane: View {
+    @EnvironmentObject private var model: LibraryViewModel
+
+    private var isRadio: Bool {
+        (model.isStreamActive || model.isRadioMode) && model.selectedStream != nil
+    }
+
+    var body: some View {
+        if isRadio { RadioNowPlaying() } else { LibraryNowPlaying() }
+    }
+}
+
+private struct LibraryNowPlaying: View {
+    @EnvironmentObject private var model: LibraryViewModel
+    @Environment(\.carbon) private var theme
+
+    var body: some View {
+        OLEDPaneScaffold {
+            NPTitles(title: displayTrackTitle, sub: subtitle)
+        } readout: {
+            NPClock(now: model.displayedCurrentTime.asClockPadded,
+                    tot: "/ " + model.playbackDuration.asClockPadded)
+                .fixedSize()
+        } ticker: {
+            EmptyView()
+        } cells: {
+            OLEDCells(libraryCells) {
+                NPSort(rows: sortRows).padding(.leading, 12)
+                    .overlay(Rectangle().fill(oledFGo(0.12)).frame(width: 1), alignment: .leading)
+                    .fixedSize()
+            }
+        }
+    }
+
+    private var libraryCells: [OLEDCellData] { LibraryNowPlayingCells.make(model: model) }
+
+    private var sortRows: [NPSortRow] {
+        let artist = NPSortRow(key: "ART", field: model.artistSortField.displayName, ascending: model.artistSortAscending)
+        let album = NPSortRow(key: "ALB", field: model.albumSortField.displayName, ascending: model.albumSortAscending)
+        let track = NPSortRow(key: "TRK", field: model.trackSortField.displayName, ascending: model.trackSortAscending)
+        switch model.browserLayout {
+        case .full:       return [artist, album, track]
+        case .albumTrack: return [album, track]
+        case .track:      return [track]
+        }
+    }
 
     private var displayTrackTitle: String {
-        // A divided record shows the current track (marker), not the side filename.
         if let recordTrack = model.currentRecordTrack { return recordTrack.title.uppercased() }
         let title = model.nowPlayingTrack?.track.title ?? model.selectedTrack?.track.title ?? "—"
         return title.uppercased()
@@ -215,94 +591,12 @@ private struct NowPlayingView: View {
             let album = track.track.album.isEmpty ? track.track.title : track.track.album
             return "TRACK \(index + 1)/\(total) · \(album)"
         }
-        let parts = [track.track.artist, track.track.album, track.track.year.map(String.init) ?? ""]
-            .filter { !$0.isEmpty }
+        let parts = [track.track.artist, track.track.album, track.track.year.map(String.init) ?? ""].filter { !$0.isEmpty }
         return parts.joined(separator: " · ")
     }
-
-    private var trackValue: String {
-        guard let album = model.selectedAlbum,
-              let track = model.nowPlayingTrack ?? model.selectedTrack,
-              let index = album.tracks.firstIndex(where: { $0.track.id == track.track.id })
-        else {
-            let count = model.selectedAlbum?.trackCount ?? model.visibleTracks.count
-            return count > 0 ? "\(count) TRK" : "—"
-        }
-        return String(format: "%02d / %02d", index + 1, album.tracks.count)
-    }
-
-    private var trackSubValue: String {
-        let count = model.selectedAlbum?.trackCount ?? model.visibleTracks.count
-        return count > 0 ? "\(count) TOTAL" : "—"
-    }
-
-    private var formatValue: String {
-        let track = model.nowPlayingTrack ?? model.selectedTrack
-        return track?.track.formatName?.uppercased() ?? "—"
-    }
-
-    private var formatSubValue: String {
-        let track = model.nowPlayingTrack ?? model.selectedTrack
-        guard let track = track else { return "—" }
-        let ext = track.track.fileURL.pathExtension.uppercased()
-        let isLossless = ["FLAC", "ALAC", "WAV", "AIFF"].contains(ext)
-        return isLossless ? "LOSSLESS" : "LOSSY"
-    }
-
-    private var bitrateValue: String {
-        let track = model.nowPlayingTrack ?? model.selectedTrack
-        if let br = track?.track.bitrateKbps {
-            return "\(br) kbps"
-        }
-        return "—"
-    }
-
-    private var bitrateSubValue: String {
-        let track = model.nowPlayingTrack ?? model.selectedTrack
-        guard let track = track else { return "—" }
-        let ext = track.track.fileURL.pathExtension.uppercased()
-        if ["FLAC", "ALAC", "WAV", "AIFF"].contains(ext) {
-            return "LOSSLESS"
-        }
-        return "CONSTANT"
-    }
-
-    private var sampleValue: String {
-        let track = model.nowPlayingTrack ?? model.selectedTrack
-        guard let hz = track?.track.sampleRateHz else { return "—" }
-        if hz % 1000 == 0 { return "\(hz / 1000) kHz" }
-        return String(format: "%.1f kHz", Double(hz) / 1000.0)
-    }
-
-    private var sampleSubValue: String {
-        let track = model.nowPlayingTrack ?? model.selectedTrack
-        guard let track = track else { return "—" }
-        let ext = track.track.fileURL.pathExtension.uppercased()
-        if ["FLAC", "ALAC"].contains(ext) {
-            return "16-BIT"
-        }
-        return "AUDIO"
-    }
-
-    private var sizeValue: String {
-        let track = model.nowPlayingTrack ?? model.selectedTrack
-        guard let url = track?.track.fileURL else { return "—" }
-        do {
-            let values = try url.resourceValues(forKeys: [.fileSizeKey])
-            if let size = values.fileSize {
-                let mb = Double(size) / 1_048_576.0
-                return String(format: "%.1f MB", mb)
-            }
-        } catch {}
-        return "—"
-    }
-
 }
 
-/// OLED Now-Playing for radio mode: ON AIR / STREAMING tag, stream title +
-/// channel, an ON AIR + uptime readout for live (clock for VOD), and stream
-/// spec cells. Readouts stay honest under the WebView engine (no fake codec).
-private struct RadioNowPlayingView: View {
+private struct RadioNowPlaying: View {
     @EnvironmentObject private var model: LibraryViewModel
     @Environment(\.carbon) private var theme
 
@@ -310,65 +604,47 @@ private struct RadioNowPlayingView: View {
     private var isLive: Bool { stream?.isLive ?? false }
     private var isNative: Bool { model.radioEngineKind == .native }
 
-    private let onAirRed = Color(red: 1, green: 0.36, blue: 0.29)
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .center) {
-                tag
-                Spacer()
-                engineCell
-            }
-
-            HStack(alignment: .bottom, spacing: 20) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(headline.uppercased())
-                        .font(CarbonFont.display(44))
-                        .fontWeight(.thin)
-                        .tracking(-0.4)
-                        .foregroundStyle(oledForeground)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.55)
-                    Text(subtitle)
-                        .font(CarbonFont.mono(9.5, weight: .semibold))
-                        .tracking(2.0)
-                        .textCase(.uppercase)
-                        .foregroundStyle(oledMuted)
-                        .lineLimit(1)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                readout
-            }
-            .padding(.top, 4)
-
-            Spacer(minLength: 2)
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(alignment: .center, spacing: 0) {
-                    OLEDCell(key: "Source", value: "YouTube", sub: isLive ? "LIVE STREAM" : (stream?.kind.rawValue ?? "—"))
-                    OLEDCellDivider()
-                    OLEDCell(key: "Codec", value: codecValue, sub: codecSub)
-                    OLEDCellDivider()
-                    OLEDCell(key: "Bitrate", value: bitrateValue, sub: bitrateSub)
-                    OLEDCellDivider()
-                    OLEDCell(key: "Buffer", value: bufferValue, sub: bufferSub)
-                    OLEDCellDivider()
-                    OLEDCell(key: "Tuned In", value: tunedValue, sub: isLive ? "LISTENING" : "SOURCE")
-                }
-            }
-            .padding(.top, 4)
-            .overlay(
-                Rectangle().fill(oledForeground.opacity(0.12)).frame(height: 1),
-                alignment: .top
-            )
+        OLEDPaneScaffold {
+            NPTitles(title: headline.uppercased(), sub: subtitle)
+        } readout: {
+            radioReadout.fixedSize()
+        } ticker: {
+            EmptyView()
+        } cells: {
+            OLEDCells(radioCells)
         }
-        .padding(.horizontal, CarbonLayout.oledPaddingH)
-        .padding(.vertical, CarbonLayout.oledPaddingV)
     }
 
-    /// For a chaptered mix, the headline is the current track (chapter); otherwise
-    /// the stream title.
+    @ViewBuilder
+    private var radioReadout: some View {
+        if isLive {
+            VStack(alignment: .trailing, spacing: 8) {
+                HStack(spacing: 8) {
+                    Circle().fill(onAirRed).frame(width: 9, height: 9)
+                        .shadow(color: onAirRed.opacity(0.7), radius: 4)
+                    Text("ON AIR").font(CarbonFont.display(30)).fontWeight(.thin).foregroundStyle(oledFG)
+                }
+                Text("UPTIME \(uptimeString)")
+                    .font(CarbonFont.mono(10, weight: .semibold)).tracking(1.4)
+                    .foregroundStyle(oledFGo(0.5))
+            }
+        } else {
+            NPClock(now: model.displayedCurrentTime.asClockPadded,
+                    tot: "/ " + model.playbackDuration.asClockPadded)
+        }
+    }
+
+    private var radioCells: [OLEDCellData] {
+        [
+            OLEDCellData(key: "Source", value: "YouTube", sub: isLive ? "Live Stream" : (stream?.kind.rawValue ?? "—")),
+            OLEDCellData(key: "Codec", value: codecValue, sub: codecSub),
+            OLEDCellData(key: "Bitrate", value: "—", sub: isNative ? "VBR" : "Web Player"),
+            OLEDCellData(key: "Buffer", value: "—", sub: isNative ? "Native" : "Browser"),
+            OLEDCellData(key: "Tuned In", value: tunedValue, sub: isLive ? "Listening" : "Source")
+        ]
+    }
+
     private var headline: String {
         if let chapter = model.currentChapter { return chapter.title }
         return stream?.title ?? "—"
@@ -376,77 +652,9 @@ private struct RadioNowPlayingView: View {
 
     private var subtitle: String {
         guard let stream else { return "Tune in" }
-        // When the headline is a chapter, the sub credits the source mix + channel.
-        if model.currentChapter != nil {
-            return "\(stream.title) · \(stream.channel)"
-        }
+        if model.currentChapter != nil { return "\(stream.title) · \(stream.channel)" }
         let suffix = isLive ? "YouTube Live Stream" : stream.kind.rawValue.capitalized
         return "\(stream.channel) · \(suffix)"
-    }
-
-    private var tag: some View {
-        HStack(spacing: 6) {
-            Circle()
-                .fill(isLive ? Color(hex: 0xFFF1EC) : theme.ink)
-                .frame(width: 6, height: 6)
-            Text(isLive ? "ON AIR" : "STREAMING")
-                .font(CarbonFont.mono(9, weight: .bold))
-                .tracking(1.8)
-                .foregroundStyle(isLive ? Color(hex: 0xFFF1EC) : theme.ink)
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 3)
-        .background(Capsule().fill(isLive ? onAirRed : theme.orange))
-    }
-
-    private var engineCell: some View {
-        VStack(alignment: .trailing, spacing: 1) {
-            Text("ENGINE")
-                .font(CarbonFont.mono(6.5, weight: .bold))
-                .tracking(1.6)
-                .foregroundStyle(oledForeground.opacity(0.3))
-            Text(model.radioEngineLabel)
-                .font(CarbonFont.mono(9.5, weight: .bold))
-                .tracking(0.8)
-                .foregroundStyle(theme.orange)
-                .shadow(color: theme.orange.opacity(0.4), radius: 3)
-        }
-    }
-
-    @ViewBuilder
-    private var readout: some View {
-        if isLive {
-            VStack(alignment: .trailing, spacing: 8) {
-                HStack(spacing: 8) {
-                    Circle().fill(onAirRed).frame(width: 9, height: 9)
-                        .shadow(color: onAirRed.opacity(0.7), radius: 4)
-                    Text("ON AIR")
-                        .font(CarbonFont.display(30))
-                        .fontWeight(.thin)
-                        .foregroundColor(oledForeground)
-                }
-                Text("UPTIME \(uptimeString)")
-                    .font(CarbonFont.mono(10, weight: .semibold))
-                    .tracking(1.4)
-                    .foregroundStyle(oledForeground.opacity(0.5))
-            }
-            .frame(width: 150, alignment: .trailing)
-        } else {
-            VStack(alignment: .trailing, spacing: 8) {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(model.displayedCurrentTime.asClockPadded)
-                        .font(CarbonFont.display(34))
-                        .fontWeight(.thin)
-                        .foregroundColor(oledForeground)
-                        .shadow(color: theme.orange.opacity(0.28), radius: 7)
-                    Text("/ \(model.playbackDuration.asClockPadded)")
-                        .font(CarbonFont.mono(12, weight: .semibold))
-                        .tracking(1.4)
-                        .foregroundStyle(oledForeground.opacity(0.4))
-                }
-            }
-            .frame(width: 150, alignment: .trailing)
-        }
     }
 
     private var uptimeString: String {
@@ -454,415 +662,344 @@ private struct RadioNowPlayingView: View {
         return String(format: "%02d:%02d:%02d", t / 3600, (t % 3600) / 60, t % 60)
     }
 
-    // Honest cell values: only the native engine knows the real container.
     private var codecValue: String { isNative ? (isLive ? "HLS" : "AAC") : "—" }
-    private var codecSub: String { isNative ? (isLive ? "STREAM" : "M4A") : "EMBEDDED" }
-    private var bitrateValue: String { "—" }
-    private var bitrateSub: String { isNative ? "VBR" : "WEB PLAYER" }
-    private var bufferValue: String { "—" }
-    private var bufferSub: String { isNative ? "NATIVE" : "BROWSER" }
+    private var codecSub: String { isNative ? (isLive ? "Stream" : "M4A") : "Embedded" }
     private var tunedValue: String {
         if isLive { return stream?.viewers ?? "—" }
         return (stream?.kind.rawValue ?? "—").uppercased()
     }
-
 }
 
-private struct NowPlayingTag: View {
-    @Environment(\.carbon) private var theme
-    let active: Bool
+// MARK: - SORT readout (horizontal, read-only browser sort state)
 
-    var body: some View {
-        HStack(spacing: 6) {
-            Circle()
-                .fill(theme.ink)
-                .frame(width: 6, height: 6)
-            Text(active ? "NOW PLAYING" : "STANDBY")
-                .font(CarbonFont.mono(9, weight: .bold))
-                .tracking(1.8)
-                .foregroundStyle(theme.ink)
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 3)
-        .background(
-            Capsule().fill(theme.orange)
-        )
-    }
+private struct NPSortRow: Identifiable {
+    let key: String
+    let field: String
+    let ascending: Bool
+    var id: String { key }
 }
 
-/// Right-aligned VIEW / THEME / EQ readout cells in the OLED now-playing top row.
-private struct NPSettings: View {
+private struct NPSort: View {
     @Environment(\.carbon) private var theme
-    let viewValue: String
-    let themeValue: String
-    let eqValue: String
+    let rows: [NPSortRow]
 
     var body: some View {
-        HStack(spacing: 16) {
-            cell("VIEW", viewValue)
-            cell("THEME", themeValue)
-            cell("EQ", eqValue)
-        }
-    }
-
-    private func cell(_ key: String, _ value: String) -> some View {
-        VStack(alignment: .trailing, spacing: 1) {
-            Text(key)
+        HStack(alignment: .firstTextBaseline, spacing: 9) {
+            Text("SORT")
                 .font(CarbonFont.mono(6.5, weight: .bold))
-                .tracking(1.6)
-                .foregroundStyle(oledForeground.opacity(0.3))
-            Text(value)
-                .font(CarbonFont.mono(9.5, weight: .bold))
-                .tracking(0.8)
-                .foregroundStyle(theme.orange)
-                .shadow(color: theme.orange.opacity(0.4), radius: 3)
-        }
-    }
-}
-
-/// OLED graphic volume meter — 16 bars in a blue→orange gradient revealed through
-/// a mask of the lit segments (matches the footer POSITION bar). Lives in the
-/// now-playing lower zone alongside the spec cells and the VIEW/THEME/EQ settings.
-private struct OLEDVolBars: View {
-    @Environment(\.carbon) private var theme
-    let volume: Double   // 0...1
-
-    private let barCount = 16
-
-    var body: some View {
-        let lit = Int((volume * Double(barCount)).rounded())
-        // Same blue→orange gradient as the footer POSITION bar — spans the whole
-        // row (segment 0 ≈ cyan … last lit ≈ orange), revealed through a mask of
-        // the lit segments so unlit ones stay dim.
-        return ZStack {
-            segmentRow { _ in Color.white.opacity(0.16) }
-            LinearGradient(colors: [theme.cyan, theme.orange], startPoint: .leading, endPoint: .trailing)
-                .mask(segmentRow { i in i < lit ? Color.black : Color.clear })
-                .shadow(color: theme.orange.opacity(0.5), radius: 2)
-        }
-        .frame(height: 13)
-        .frame(maxWidth: .infinity)
-    }
-
-    private func segmentRow(_ fill: @escaping (Int) -> Color) -> some View {
-        HStack(spacing: 3) {
-            ForEach(0..<barCount, id: \.self) { i in
-                RoundedRectangle(cornerRadius: 1, style: .continuous).fill(fill(i))
+                .tracking(1.3)
+                .foregroundStyle(oledFGo(0.3))
+            ForEach(rows) { row in
+                HStack(spacing: 4) {
+                    Text(row.key)
+                        .font(CarbonFont.mono(7, weight: .semibold))
+                        .tracking(1.0)
+                        .foregroundStyle(oledFGo(0.4))
+                    Text(row.field.uppercased())
+                        .font(CarbonFont.mono(9, weight: .bold))
+                        .tracking(0.4)
+                        .foregroundStyle(theme.orange)
+                        .shadow(color: theme.orange.opacity(0.4), radius: 6)
+                    Text(row.ascending ? "↑" : "↓")
+                        .font(CarbonFont.mono(8, weight: .bold))
+                        .foregroundStyle(theme.orange.opacity(0.85))
+                }
             }
         }
     }
 }
 
-private struct VUView: View {
+// MARK: - VU pane (28-segment stereo meters with peak-hold)
+
+private struct VUPane: View {
+    @EnvironmentObject private var model: LibraryViewModel
+    @Environment(\.carbon) private var theme
+    @StateObject private var meters = MeterDriver()
+
+    @State private var peakL = 0
+    @State private var peakR = 0
+    @State private var ageL = 0
+    @State private var ageR = 0
+
     var body: some View {
-        VStack(spacing: 6) {
-            Text("V U")
-                .font(CarbonFont.display(36))
-                .tracking(4)
-                .foregroundStyle(oledForeground)
-            Text("METERS · LIVE")
-                .font(CarbonFont.mono(10, weight: .medium))
-                .tracking(2)
-                .foregroundStyle(oledMuted)
+        OLEDPaneScaffold {
+            VStack(alignment: .leading, spacing: 8) {
+                VUMeterRow(channel: "L", level: meters.leftLevel, peak: peakL)
+                VUMeterRow(channel: "R", level: meters.rightLevel, peak: peakR)
+                VUScale()
+            }
+        } readout: {
+            VStack(alignment: .trailing, spacing: 4) {
+                NPClock(now: model.displayedCurrentTime.asClockPadded,
+                        tot: "/ " + model.playbackDuration.asClockPadded)
+                Text(trackName)
+                    .font(CarbonFont.mono(9.5, weight: .semibold))
+                    .tracking(1.9).textCase(.uppercase)
+                    .foregroundStyle(oledMuted)
+                    .lineLimit(1)
+            }
+            .fixedSize()
+        } ticker: {
+            EmptyView()
+        } cells: {
+            OLEDCells(cells)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear {
+            meters.levelsProvider = { [weak model] in model?.currentPlaybackLevels() ?? (left: 0, right: 0) }
+            meters.spectrumProvider = { [weak model] in model?.currentPlaybackSpectrum() ?? [] }
+            syncRunning()
+        }
+        .onChange(of: model.playbackState) { _ in syncRunning() }
+        .onChange(of: meters.leftLevel) { lvl in (peakL, ageL) = Self.peakStep(level: lvl, peak: peakL, age: ageL) }
+        .onChange(of: meters.rightLevel) { lvl in (peakR, ageR) = Self.peakStep(level: lvl, peak: peakR, age: ageR) }
+    }
+
+    private func syncRunning() {
+        if model.playbackState == .playing { meters.start() } else { meters.stop() }
+    }
+
+    /// Peak-hold ballistics matching the mock: raise instantly to the top lit
+    /// segment, then hold ~9 ticks before decaying one segment at a time.
+    private static func peakStep(level: Double, peak: Int, age: Int) -> (peak: Int, age: Int) {
+        let lit = Int((level * Double(VUMeterRow.segments)).rounded())
+        if lit - 1 >= peak { return (lit - 1, 0) }
+        if age + 1 > 9 { return (max(0, peak - 1), 0) }
+        return (peak, age + 1)
+    }
+
+    private var trackName: String {
+        (model.nowPlayingTrack?.track.title ?? model.selectedTrack?.track.title ?? "—").uppercased()
+    }
+
+    private var cells: [OLEDCellData] {
+        LibraryNowPlayingCells.make(model: model)
     }
 }
 
-private struct ConversionView: View {
+private struct VUMeterRow: View {
+    @Environment(\.carbon) private var theme
+    let channel: String
+    let level: Double
+    let peak: Int
+
+    static let segments = 28
+    private static let hot = 25   // > 0 dB (red)
+    private static let mid = 21   // −3..0 dB (sun)
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Text(channel)
+                .font(CarbonFont.mono(9, weight: .bold))
+                .tracking(0.8)
+                .foregroundStyle(oledFGo(0.5))
+                .frame(width: 10, alignment: .leading)
+            HStack(spacing: 2) {
+                let lit = Int((level * Double(Self.segments)).rounded())
+                ForEach(0..<Self.segments, id: \.self) { i in
+                    RoundedRectangle(cornerRadius: 1, style: .continuous)
+                        .fill(color(index: i, lit: lit))
+                        .shadow(color: glow(index: i, lit: lit), radius: i < lit ? 4 : 0)
+                }
+            }
+            .frame(height: 15)
+            Text(dbString)
+                .font(CarbonFont.mono(10, weight: .bold))
+                .foregroundStyle(oledFG)
+                .frame(width: 42, alignment: .trailing)
+        }
+    }
+
+    private func color(index i: Int, lit: Int) -> Color {
+        if i == peak && i >= lit { return oledFGo(0.85) }   // peak-hold segment
+        if i < lit {
+            if i >= Self.hot { return theme.red }
+            if i >= Self.mid { return theme.sun }
+            return theme.cyan
+        }
+        return oledFGo(0.1)
+    }
+
+    private func glow(index i: Int, lit: Int) -> Color {
+        guard i < lit else { return .clear }
+        if i >= Self.hot { return theme.red.opacity(0.6) }
+        if i >= Self.mid { return theme.sun.opacity(0.5) }
+        return theme.cyan.opacity(0.45)
+    }
+
+    private var dbString: String {
+        guard level > 0.0001 else { return "−∞" }
+        let db = 20 * log10(level)
+        return String(format: "%.1f", db)
+    }
+}
+
+private struct VUScale: View {
+    private let marks = ["-40", "-30", "-20", "-12", "-6", "-3", "0", "+3"]
+
+    var body: some View {
+        HStack {
+            ForEach(marks, id: \.self) { m in
+                Text(m)
+                    .font(CarbonFont.mono(7, weight: .semibold))
+                    .tracking(0.6)
+                    .foregroundStyle(oledFGo(0.35))
+                if m != marks.last { Spacer(minLength: 0) }
+            }
+        }
+        .padding(.leading, 20)
+        .padding(.trailing, 52)
+    }
+}
+
+/// Shared builder for the library spec cells (used by NOW PLAYING and VU).
+private enum LibraryNowPlayingCells {
+    @MainActor
+    static func make(model: LibraryViewModel) -> [OLEDCellData] {
+        let track = model.nowPlayingTrack ?? model.selectedTrack
+        let ext = track?.track.fileURL.pathExtension.uppercased() ?? ""
+        let lossless = ["FLAC", "ALAC", "WAV", "AIFF"].contains(ext)
+
+        let trackVal: String
+        let trackSub: String
+        if let album = model.selectedAlbum, let t = track,
+           let idx = album.tracks.firstIndex(where: { $0.track.id == t.track.id }) {
+            trackVal = String(format: "%02d / %02d", idx + 1, album.tracks.count)
+        } else {
+            let count = model.selectedAlbum?.trackCount ?? model.visibleTracks.count
+            trackVal = count > 0 ? "\(count) TRK" : "—"
+        }
+        let total = model.selectedAlbum?.trackCount ?? model.visibleTracks.count
+        trackSub = total > 0 ? "\(total) Total" : "—"
+
+        let bitrate = track?.track.bitrateKbps.map { "\($0) kbps" } ?? "—"
+        let sample: String = {
+            guard let hz = track?.track.sampleRateHz else { return "—" }
+            return hz % 1000 == 0 ? "\(hz / 1000) kHz" : String(format: "%.1f kHz", Double(hz) / 1000.0)
+        }()
+        let size: String = {
+            guard let url = track?.track.fileURL,
+                  let v = try? url.resourceValues(forKeys: [.fileSizeKey]), let s = v.fileSize else { return "—" }
+            return String(format: "%.1f MB", Double(s) / 1_048_576.0)
+        }()
+
+        return [
+            OLEDCellData(key: "Track", value: trackVal, sub: trackSub),
+            OLEDCellData(key: "Format", value: track?.track.formatName?.uppercased() ?? "—", sub: lossless ? "Lossless" : "Lossy"),
+            OLEDCellData(key: "Bitrate", value: bitrate, sub: lossless ? "Lossless" : "Constant"),
+            OLEDCellData(key: "Sample", value: sample, sub: ["FLAC", "ALAC"].contains(ext) ? "16-bit" : "Audio"),
+            OLEDCellData(key: "Size", value: size, sub: "File Size")
+        ]
+    }
+}
+
+// MARK: - CONVERT pane
+
+private struct ConversionPane: View {
     @EnvironmentObject private var model: LibraryViewModel
     @Environment(\.carbon) private var theme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            topRow
-            pipelineRow
-            readoutCells
-                .frame(maxHeight: .infinity)
-            ticker
-        }
-        .padding(.horizontal, CarbonLayout.oledPaddingH)
-        .padding(.vertical, CarbonLayout.oledPaddingV)
-    }
-
-    // MARK: - Top status row
-
-    private var topRow: some View {
-        HStack(spacing: 14) {
-            armedTag
-
-            Text(queueLabel)
-                .font(CarbonFont.mono(10, weight: .medium))
-                .tracking(1.8)
-                .foregroundStyle(oledMuted)
-
-            Text(estimateLabel)
-                .font(CarbonFont.mono(10, weight: .medium))
-                .tracking(1.8)
-                .foregroundStyle(oledMuted)
-
-            Spacer()
-
-            Text(durationLabel)
-                .font(CarbonFont.mono(10, weight: .medium))
-                .tracking(1.8)
-                .foregroundStyle(oledMuted)
-        }
-    }
-
-    // MARK: - Pipeline row (source → target, full-width banner)
-
-    private var pipelineRow: some View {
-        HStack(spacing: 14) {
-            // Source side — dim/historic
-            VStack(alignment: .leading, spacing: 1) {
-                Text(sourceFormatPrimary)
-                    .font(CarbonFont.display(20))
-                    .tracking(0.4)
-                    .foregroundStyle(oledForeground.opacity(0.55))
-                    .lineLimit(1)
-                Text(sourceFormatSpec)
-                    .font(CarbonFont.mono(8.5, weight: .semibold))
-                    .tracking(2)
-                    .foregroundStyle(oledForeground.opacity(0.4))
+        OLEDPaneScaffold {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .bottom, spacing: 14) {
+                    formatBlock(sourceFormatPrimary, dim: true)
+                    Text("►")
+                        .font(CarbonFont.display(26))
+                        .foregroundStyle(theme.orange)
+                        .shadow(color: theme.orange.opacity(0.6), radius: 4)
+                    formatBlock(targetFormatPrimary, dim: false)
+                }
+                Text(pipelineSub)
+                    .font(CarbonFont.mono(9.5, weight: .semibold))
+                    .tracking(1.9).textCase(.uppercase)
+                    .foregroundStyle(oledMuted)
                     .lineLimit(1)
             }
-
-            // Arrow
-            Text("►")
-                .font(CarbonFont.display(22))
-                .foregroundStyle(theme.orange)
-                .shadow(color: theme.orange.opacity(0.6), radius: 4)
-
-            // Target side — bright/current selection
-            VStack(alignment: .leading, spacing: 1) {
-                Text(targetFormatPrimary)
-                    .font(CarbonFont.display(20))
-                    .tracking(0.4)
-                    .foregroundStyle(oledForeground)
-                    .lineLimit(1)
-                Text(targetFormatSpec)
-                    .font(CarbonFont.mono(8.5, weight: .semibold))
-                    .tracking(2)
-                    .foregroundStyle(oledForeground.opacity(0.6))
-                    .lineLimit(1)
+        } readout: {
+            VStack(alignment: .trailing, spacing: 4) {
+                NPClock(now: estimateNow, tot: "EST")
+                Text("OUTPUT \(outputValue)")
+                    .font(CarbonFont.mono(9.5, weight: .semibold))
+                    .tracking(1.9).textCase(.uppercase)
+                    .foregroundStyle(oledMuted)
             }
-
-            Spacer()
+            .fixedSize()
+        } ticker: {
+            DSPTicker(prefix: tickerPrefix, path: tickerPath, meta: tickerMeta)
+        } cells: {
+            OLEDCells(cells)
         }
-        .padding(.vertical, 2)
-        .overlay(
-            Rectangle()
-                .fill(oledForeground.opacity(0.12))
-                .frame(height: 1)
-                .padding(.top, 2),
-            alignment: .bottom
-        )
     }
 
-    private var sourceFormatPrimary: String {
-        sourceFormatLabel().uppercased()
+    private func formatBlock(_ text: String, dim: Bool) -> some View {
+        Text(text)
+            .font(CarbonFont.display(40))
+            .fontWeight(.thin)
+            .foregroundStyle(dim ? oledFGo(0.55) : oledFG)
+            .lineLimit(1)
     }
 
-    private var sourceFormatSpec: String {
-        // Best-effort: median sample-rate / bit-depth across queued tracks.
-        // Falls back to "—" when the queue is empty.
-        let tracks = model.conversionQueueTracks
-        guard !tracks.isEmpty else { return "—" }
-        let rates = tracks.compactMap { $0.track.sampleRateHz }
-        guard let first = rates.first else { return "" }
-        let kHz = Double(first) / 1000.0
-        let formatted = first % 1000 == 0 ? "\(first / 1000)" : String(format: "%.1f", kHz)
-        return "16-BIT · \(formatted) kHz".uppercased()
+    private var cells: [OLEDCellData] {
+        [
+            OLEDCellData(key: "Scope", value: scopeValue, sub: scopeSub),
+            OLEDCellData(key: "Format", value: formatValue, sub: formatSub),
+            OLEDCellData(key: "Bitrate", value: bitrateValue, sub: "kbps · CBR"),
+            OLEDCellData(key: "Sample", value: sampleValue + " kHz", sub: "16-bit"),
+            OLEDCellData(key: "Output", value: outputValue, sub: outputSub)
+        ]
     }
 
-    private var targetFormatPrimary: String {
-        formatValue
-    }
-
-    private var targetFormatSpec: String {
-        if model.isLosslessSelectedFormat {
-            return "LOSSLESS · \(sampleValue) kHz"
-        }
-        let bitrate = model.conversionSelection.bitrate ?? 192
-        return "\(bitrate) kbps · \(sampleValue) kHz"
-    }
-
-    private var armedTag: some View {
-        HStack(spacing: 6) {
-            Circle()
-                .fill(armedTagInk)
-                .frame(width: 6, height: 6)
-            Text(armedTagText)
-                .font(CarbonFont.mono(9, weight: .bold))
-                .tracking(1.8)
-                .foregroundStyle(armedTagInk)
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 3)
-        .background(Capsule().fill(armedTagBackground))
-    }
-
-    private var armedTagText: String {
-        if model.conversionProgress.isRunning {
-            return "CONVERT · RUNNING"
-        }
-        if model.conversionQueueTracks.isEmpty {
-            return "CONVERT · IDLE"
-        }
-        return "CONVERT · ARMED"
-    }
-
-    private var armedTagBackground: Color {
-        if model.conversionProgress.isRunning { return theme.cyan }
-        if model.conversionQueueTracks.isEmpty { return Color(hex: 0x3A3A37) }
-        return theme.red
-    }
-
-    private var armedTagInk: Color {
-        if model.conversionQueueTracks.isEmpty && !model.conversionProgress.isRunning {
-            return oledMuted
-        }
-        return Color(hex: 0xFFF1EC)
-    }
-
-    // MARK: - Readout cells
-
-    private var readoutCells: some View {
-        HStack(alignment: .center, spacing: 0) {
-            cell(key: "Scope", value: scopeValue, sub: scopeSub)
-            divider
-            cell(key: "Format", value: formatValue, sub: formatSub)
-            divider
-            cell(key: "Bitrate", value: bitrateValue, sub: "KBPS · CBR")
-            divider
-            cell(key: "Sample", value: sampleValue, sub: "KHZ · 16-BIT")
-            divider
-            cell(key: "Output", value: outputValue, sub: outputSub, small: true)
-        }
-        .padding(.top, 2)
-    }
-
-    @ViewBuilder
-    private func cell(key: String, value: String, sub: String, small: Bool = false) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(key.uppercased())
-                .font(CarbonFont.mono(8.5, weight: .semibold))
-                .tracking(2.2)
-                .foregroundStyle(oledForeground.opacity(0.45))
-            Text(value)
-                .font(small ? CarbonFont.mono(13, weight: .semibold) : CarbonFont.display(22))
-                .tracking(0.4)
-                .foregroundStyle(oledForeground)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-            Text(sub.uppercased())
-                .font(CarbonFont.mono(8.5, weight: .semibold))
-                .tracking(1.8)
-                .foregroundStyle(oledForeground.opacity(0.55))
-                .lineLimit(1)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.trailing, 14)
-    }
-
-    private var divider: some View {
-        Rectangle()
-            .fill(oledForeground.opacity(0.12))
-            .frame(width: 1)
-    }
-
-    // MARK: - Path ticker
-
-    private var ticker: some View {
-        HStack(spacing: 12) {
-            Text(tickerPrefix)
-                .font(CarbonFont.mono(8.5, weight: .semibold))
-                .tracking(2.2)
-                .foregroundStyle(oledForeground.opacity(0.5))
-
-            Text(tickerPath)
-                .font(CarbonFont.mono(10))
-                .tracking(0.6)
-                .foregroundStyle(theme.orange)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            Text(tickerMeta)
-                .font(CarbonFont.mono(9, weight: .semibold))
-                .tracking(1.8)
-                .foregroundStyle(oledForeground.opacity(0.5))
-        }
-        .padding(.top, 4)
-        .overlay(
-            Rectangle()
-                .fill(oledForeground.opacity(0.12))
-                .frame(height: 1)
-                .padding(.top, 0),
-            alignment: .top
-        )
-    }
-
-    // MARK: - Computed labels
-
-    private var queueLabel: String {
+    private var pipelineSub: String {
         let count = model.conversionQueueTracks.count
-        return count == 0 ? "QUEUE EMPTY" : "QUEUE \(count) TRK"
-    }
-
-    private var estimateLabel: String {
-        let bytes = model.conversionEstimatedOutputBytes
-        if bytes <= 0 { return "EST. —" }
-        let mb = Double(bytes) / 1_048_576.0
-        if mb >= 1024 {
-            return String(format: "EST. %.1f GB", mb / 1024.0)
+        let kind = model.isLosslessSelectedFormat ? "Lossless" : "Lossy"
+        let container: String
+        switch model.conversionSelection.outputFormat {
+        case .aac, .alac: container = "M4A"
+        default: container = model.conversionSelection.outputFormat.fileExtension.uppercased()
         }
-        return String(format: "EST. %.0f MB", mb)
+        if count == 0 { return "Queue Idle · \(container) · \(kind)" }
+        return "Queue Armed · \(count) Tracks · \(container) · \(kind)"
     }
 
-    private var durationLabel: String {
+    private var estimateNow: String {
         let s = model.conversionQueueDurationSeconds
-        guard s > 0 else { return "—" }
-        let total = Int(s.rounded())
-        let h = total / 3600
-        let m = (total % 3600) / 60
-        let sec = total % 60
+        guard s > 0 else { return "~—" }
+        let total = Int(s.rounded()), h = total / 3600, m = (total % 3600) / 60, sec = total % 60
         if h > 0 { return String(format: "~%d:%02d:%02d", h, m, sec) }
         return String(format: "~%d:%02d", m, sec)
     }
 
-    private var scopeValue: String {
-        let count = model.conversionQueueTracks.count
-        return "\(count) TRK"
+    private var sourceFormatPrimary: String {
+        let formats = Set(model.conversionQueueTracks.compactMap { $0.track.formatName?.uppercased() })
+        if formats.isEmpty { return "—" }
+        if formats.count == 1, let only = formats.first { return only }
+        return "MIX"
     }
 
+    private var targetFormatPrimary: String { formatValue }
+
+    private var scopeValue: String { "\(model.conversionQueueTracks.count) TRK" }
     private var scopeSub: String {
         switch model.conversionSelection.batchScope {
-        case .selectedTracks: return "Selected"
-        case .currentAlbum:   return "Album"
+        case .selectedTracks:  return "Selected"
+        case .currentAlbum:    return "Album"
         case .allLoadedTracks: return "All Loaded"
         }
     }
 
     private var formatValue: String {
         switch model.conversionSelection.outputFormat {
-        case .mp3:  return "MP3"
-        case .aac:  return "AAC"
-        case .alac: return "ALAC"
-        case .flac: return "FLAC"
-        case .wav:  return "WAV"
-        case .aiff: return "AIFF"
-        case .ogg:  return "OGG"
-        case .opus: return "OPUS"
+        case .mp3: return "MP3"; case .aac: return "AAC"; case .alac: return "ALAC"
+        case .flac: return "FLAC"; case .wav: return "WAV"; case .aiff: return "AIFF"
+        case .ogg: return "OGG"; case .opus: return "OPUS"
         }
     }
 
     private var formatSub: String {
         switch model.conversionSelection.outputFormat {
-        case .aac, .alac: return "M4A · " + (model.isLosslessSelectedFormat ? "LOSSLESS" : "LOSSY")
-        case .mp3, .ogg, .opus: return model.conversionSelection.outputFormat.fileExtension.uppercased() + " · LOSSY"
-        case .flac: return "FLAC · LOSSLESS"
+        case .aac, .alac: return "M4A · " + (model.isLosslessSelectedFormat ? "Lossless" : "Lossy")
+        case .mp3, .ogg, .opus: return model.conversionSelection.outputFormat.fileExtension.uppercased() + " · Lossy"
+        case .flac: return "FLAC · Lossless"
         case .wav, .aiff: return model.conversionSelection.outputFormat.fileExtension.uppercased() + " · PCM"
         }
     }
@@ -882,180 +1019,120 @@ private struct ConversionView: View {
         let bytes = model.conversionEstimatedOutputBytes
         if bytes <= 0 { return "—" }
         let mb = Double(bytes) / 1_048_576.0
-        if mb >= 1024 {
-            return String(format: "~%.1f GB", mb / 1024.0)
-        }
+        if mb >= 1024 { return String(format: "~%.1f GB", mb / 1024.0) }
         return String(format: "~%.1f MB", mb)
     }
 
     private var outputSub: String {
         let count = model.conversionQueueTracks.count
-        if count == 0 { return "NO QUEUE" }
-        return "\(count) TRACKS"
+        return count == 0 ? "No Queue" : "\(count) Tracks"
     }
-
-    private func sourceFormatLabel() -> String {
-        let formats = Set(model.conversionQueueTracks.compactMap { $0.track.formatName?.uppercased() })
-        if formats.isEmpty { return "—" }
-        if formats.count == 1, let only = formats.first { return only }
-        return "MIX (\(formats.count))"
-    }
-
-    // MARK: - Ticker
 
     private var tickerPrefix: String {
         let count = model.conversionQueueTracks.count
-        if count == 0 { return "PREVIEW · —" }
-        return String(format: "PREVIEW · 01 / %02d", count)
+        return count == 0 ? "PREVIEW · —" : String(format: "PREVIEW · 01 / %02d", count)
     }
 
     private var tickerPath: AttributedString {
         var out = AttributedString("")
-        let head = "~/Music/CrateDigger Library/"
-        var headSeg = AttributedString(head)
-        headSeg.foregroundColor = theme.orange
-        out.append(headSeg)
-
+        var head = AttributedString("~/Music/CrateDigger Library/")
+        head.foregroundColor = theme.orange
+        out.append(head)
         if let preview = model.conversionQueueTracks.first {
-            let albumPart = "\(preview.track.artist)/\(preview.track.year.map(String.init) ?? "—") \(preview.track.album)/"
-            var albumSeg = AttributedString(albumPart)
-            albumSeg.foregroundColor = Color(hex: 0xFFD1BD)
-            out.append(albumSeg)
-
+            var album = AttributedString("\(preview.track.artist)/\(preview.track.year.map(String.init) ?? "—") \(preview.track.album)/")
+            album.foregroundColor = Color(hex: 0xFFD1BD)
+            out.append(album)
             let ext = model.conversionSelection.outputFormat.fileExtension
-            let trackNum = String(format: "%02d", preview.track.trackNumber ?? 1)
-            let titlePart = "\(trackNum) \(preview.track.title).\(ext)"
-            var titleSeg = AttributedString(titlePart)
-            titleSeg.foregroundColor = theme.orange
-            out.append(titleSeg)
+            let num = String(format: "%02d", preview.track.trackNumber ?? 1)
+            var title = AttributedString("\(num) \(preview.track.title).\(ext)")
+            title.foregroundColor = theme.orange
+            out.append(title)
         }
         return out
     }
 
     private var tickerMeta: String {
         switch model.conversionSelection.folderStructureMode {
-        case .sourceRelative:  return "LAYOUT · SOURCE"
-        case .flat:            return "LAYOUT · FLAT"
+        case .sourceRelative:   return "LAYOUT · SOURCE"
+        case .flat:             return "LAYOUT · FLAT"
         case .metadataTemplate: return "TEMPLATE · {ARTIST}/{YEAR} {ALBUM}"
         }
     }
 }
 
-private struct ScanView: View {
+// MARK: - SCAN pane
+
+private struct ScanPane: View {
     @EnvironmentObject private var model: LibraryViewModel
     @Environment(\.carbon) private var theme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            // Top: indexing status (while scanning) + source label.
-            HStack(alignment: .center, spacing: 12) {
-                if model.scanProgress.isRunning { statusCapsule }
-                Spacer()
-                Text(sourceLine)
-                    .font(CarbonFont.mono(9, weight: .medium))
-                    .tracking(1.8)
-                    .foregroundStyle(oledMuted)
-                    .lineLimit(1)
+        OLEDPaneScaffold {
+            NPTitles(title: headline, sub: subtitle)
+        } readout: {
+            VStack(alignment: .trailing, spacing: 6) {
+                HStack(alignment: .firstTextBaseline, spacing: 2) {
+                    Text(percentValue)
+                        .font(CarbonFont.display(34)).fontWeight(.thin).foregroundStyle(oledFG)
+                    Text("%")
+                        .font(CarbonFont.mono(12, weight: .semibold)).foregroundStyle(oledFGo(0.4))
+                }
+                ScanBar(style: .rainbow(progressValue)).frame(width: 150)
             }
-
-            Text(scanDetail)
-                .font(CarbonFont.mono(11, weight: .semibold))
-                .tracking(1.0)
-                .foregroundStyle(oledForeground.opacity(0.85))
-                .lineLimit(1)
-
-            Spacer(minLength: 4)
-
-            // Lower zone: a CNVRT-style path ticker (when a track/device path is
-            // active) sits right above the flat, box-less stats.
+            .fixedSize()
+        } ticker: {
             if let data = pathTickerData {
-                pathTicker(data)
+                DSPTicker(prefix: data.prefix, path: data.path)
+            } else {
+                EmptyView()
             }
+        } cells: {
+            OLEDCells(cells)
+        }
+    }
 
-            Rectangle()
-                .fill(oledForeground.opacity(0.12))
-                .frame(height: 1)
+    private var cells: [OLEDCellData] {
+        [
+            OLEDCellData(key: "Tracks", value: "\(model.index.allTracks.count)", sub: "Indexed", valueColor: theme.cyan),
+            OLEDCellData(key: "Albums", value: "\(model.index.albumCount)", sub: "Releases", valueColor: theme.sun),
+            OLEDCellData(key: "Artists", value: "\(model.index.artists.count)", sub: "Performers", valueColor: theme.orange),
+            OLEDCellData(key: "Size", value: sizeValue, sub: "On Disk"),
+            OLEDCellData(key: "Time", value: timeValue, sub: "Playtime")
+        ]
+    }
 
-            HStack(alignment: .top, spacing: 0) {
-                statCell("Tracks", "\(model.index.allTracks.count)", "INDEXED", accent: theme.cyan)
-                OLEDCellDivider()
-                statCell("Albums", "\(model.index.albumCount)", "RELEASES", accent: theme.sun)
-                OLEDCellDivider()
-                statCell("Artists", "\(model.index.artists.count)", "PERFORMERS", accent: theme.orange)
-                OLEDCellDivider()
-                statCell("Size", sizeValue, "ON DISK", accent: oledForeground)
-                OLEDCellDivider()
-                statCell("Time", timeValue, "PLAYTIME", accent: oledForeground)
+    private var headline: String {
+        model.index.allTracks.isEmpty ? "NO LIBRARY" : "\(model.index.allTracks.count) TRACKS"
+    }
+
+    private var subtitle: String {
+        if model.scanProgress.isRunning {
+            if let total = model.scanProgress.totalCandidates {
+                return "\(model.scanProgress.filesProbed) / \(total) files probed · Indexing"
             }
-
-            if model.scanProgress.isRunning { progressBar }
+            return "\(model.scanProgress.filesProbed) files probed · Indexing"
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .padding(.horizontal, CarbonLayout.oledPaddingH)
-        .padding(.vertical, CarbonLayout.oledPaddingV)
+        if model.index.allTracks.isEmpty { return "Library empty · Press ⌘O to load a folder" }
+        return "Indexed across \(model.index.albumCount) albums · \(sourceLine) · Ready"
     }
 
-    // Rendered only while a scan is running (gated in `body`) — no capsule
-    // background, just the lit "INDEXING" label.
-    private var statusCapsule: some View {
-        Text("INDEXING")
-            .font(CarbonFont.mono(8.5, weight: .bold))
-            .tracking(1.7)
-            .foregroundStyle(theme.cyan)
-            .padding(.vertical, 3)
-            .shadow(color: theme.cyan.opacity(0.32), radius: 5)
+    private var sourceLine: String {
+        if let name = model.scanProgress.folderName, !name.isEmpty { return name }
+        return "Library Index"
     }
 
-    private var progressBar: some View {
-        GeometryReader { proxy in
-            let width = max(proxy.size.width, 1)
-            ZStack(alignment: .leading) {
-                Capsule()
-                    .fill(oledForeground.opacity(0.10))
-                Capsule()
-                    .fill(
-                        LinearGradient(
-                            colors: [theme.cyan, theme.indigo, theme.orange],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
-                    .frame(width: width * progressValue)
-                    .shadow(color: theme.cyan.opacity(0.34), radius: 5)
-            }
+    private var percentValue: String { "\(Int((progressValue * 100).rounded()))" }
+
+    private var progressValue: Double {
+        if model.scanProgress.isRunning, let total = model.scanProgress.totalCandidates, total > 0 {
+            return min(max(Double(model.scanProgress.filesProbed) / Double(total), 0), 1)
         }
-        .frame(height: 5)
-        .padding(.top, 2)
-        .padding(.horizontal, 24)
+        if model.scanProgress.isRunning { return 0.42 }
+        return model.index.allTracks.isEmpty ? 0.08 : 1
     }
 
-    /// A flat, box-less stat (key / large value / sub) that fills its share of
-    /// the row — the OLED-native look, larger than the old boxed metric cells.
-    private func statCell(_ key: String, _ value: String, _ sub: String, accent: Color) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(key.uppercased())
-                .font(CarbonFont.mono(8, weight: .bold))
-                .tracking(2.0)
-                .foregroundStyle(oledMuted)
-            Text(value)
-                .font(CarbonFont.mono(20, weight: .bold))
-                .tracking(0.5)
-                .foregroundStyle(accent)
-                .lineLimit(1)
-                .minimumScaleFactor(0.55)
-            Text(sub.uppercased())
-                .font(CarbonFont.mono(7, weight: .semibold))
-                .tracking(1.6)
-                .foregroundStyle(oledForeground.opacity(0.4))
-                .lineLimit(1)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
+    private var sizeValue: String { OLEDByte.string(model.index.totalSizeBytes) }
 
-    /// Total library size on disk (already summed by the index build).
-    private var sizeValue: String { Self.byteString(model.index.totalSizeBytes) }
-
-    /// Total playtime across every indexed track.
     private var timeValue: String {
         let total = Int(model.index.allTracks.reduce(0.0) { $0 + $1.track.durationSeconds })
         guard total > 0 else { return "—" }
@@ -1065,216 +1142,335 @@ private struct ScanView: View {
         return "\(m)m \(total % 60)s"
     }
 
-    static func byteString(_ bytes: Int64) -> String {
-        let mb = Double(bytes) / 1_048_576
-        if mb >= 1024 { return String(format: "%.1f GB", mb / 1024) }
-        if mb >= 1 { return String(format: "%.0f MB", mb) }
-        return String(format: "%.0f KB", Double(bytes) / 1024)
-    }
-
-    private var sourceLine: String {
-        if let name = model.scanProgress.folderName, !name.isEmpty {
-            return name.uppercased()
-        }
-        return model.index.allTracks.isEmpty ? "NO SOURCE" : "LIBRARY INDEX"
-    }
-
-    /// Lower-zone path ticker data: a left prefix (device volume + free space, or
-    /// "LIBRARY") and the selected track's folder as a colored breadcrumb (parent
-    /// folders dim, the leaf album folder lit orange). Nil when nothing's selected.
     private var pathTickerData: (prefix: String, path: AttributedString)? {
         guard let track = model.selectedTrack else { return nil }
         let folder = track.track.fileURL.deletingLastPathComponent().path
-
         let prefix: String
         let display: String
         if case .device(let root) = model.currentSource {
             let volume = URL(fileURLWithPath: root).lastPathComponent
-            prefix = freeSpaceString(forPath: root).map { "\(volume) · \($0) FREE" } ?? volume
+            prefix = OLEDByte.freeSpace(forPath: root).map { "\(volume) · \($0) FREE" } ?? volume
             display = folder.hasPrefix(root) ? "/" + volume + String(folder.dropFirst(root.count)) : folder
         } else {
             prefix = "LIBRARY"
             display = folder.replacingOccurrences(of: NSHomeDirectory(), with: "~")
         }
-
         let leadingSlash = display.hasPrefix("/")
         let parts = display.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
         var path = AttributedString()
         for (i, part) in parts.enumerated() {
             let sep = i == 0 ? (leadingSlash ? "/" : "") : "/"
             var seg = AttributedString(sep + part)
-            seg.foregroundColor = i == parts.count - 1 ? theme.orange : oledForeground.opacity(0.5)
+            seg.foregroundColor = i == parts.count - 1 ? theme.orange : oledFGo(0.5)
             path.append(seg)
         }
         return (prefix, path)
     }
+}
 
-    private func pathTicker(_ data: (prefix: String, path: AttributedString)) -> some View {
-        HStack(spacing: 12) {
-            Text(data.prefix)
-                .font(CarbonFont.mono(8.5, weight: .bold))
-                .tracking(1.8)
-                .foregroundStyle(oledMuted)
-                .lineLimit(1)
-                .fixedSize()
-            Text(data.path)
-                .font(CarbonFont.mono(10))
-                .tracking(0.4)
-                .lineLimit(1)
-                .truncationMode(.head)
-                .frame(maxWidth: .infinity, alignment: .leading)
+// MARK: - REMOTE SYNC pane
+
+private struct RemoteSyncPane: View {
+    @EnvironmentObject private var model: LibraryViewModel
+    @Environment(\.carbon) private var theme
+
+    var body: some View {
+        OLEDPaneScaffold {
+            NPTitles(title: "SYNC", sub: "Navidrome · Syncing metadata from Subsonic server…",
+                     titleColor: theme.indigo)
+        } readout: {
+            VStack(alignment: .trailing, spacing: 6) {
+                Text("CONNECTING")
+                    .font(CarbonFont.mono(12, weight: .semibold)).tracking(1.7)
+                    .foregroundStyle(theme.indigo)
+                ScanBar(style: .indigoSweep).frame(width: 150)
+            }
+            .fixedSize()
+        } ticker: {
+            DSPTicker(prefix: "SERVER", path: serverPath)
+        } cells: {
+            OLEDCells([
+                OLEDCellData(key: "Artists", value: "\(model.index.artists.count)", sub: "Performers", valueColor: theme.orange),
+                OLEDCellData(key: "Albums", value: "\(model.index.albumCount)", sub: "Releases", valueColor: theme.sun),
+                OLEDCellData(key: "Tracks", value: "\(model.index.allTracks.count)", sub: "Indexed", valueColor: theme.cyan)
+            ])
         }
     }
 
-    /// Free space on the volume holding `path`, formatted (nil if unavailable).
-    private func freeSpaceString(forPath path: String) -> String? {
+    private var serverPath: AttributedString {
+        var out = AttributedString("https://music.example.net")
+        out.foregroundColor = theme.orange
+        var tail = AttributedString(" · SUBSONIC API v1.16")
+        tail.foregroundColor = oledFGo(0.5)
+        out.append(tail)
+        return out
+    }
+}
+
+// MARK: - CD RIP pane
+
+private struct CDRipPane: View {
+    @EnvironmentObject private var model: LibraryViewModel
+    @Environment(\.carbon) private var theme
+
+    private var done: Int { model.conversionProgress.jobsCompleted }
+    private var total: Int { model.conversionProgress.jobsTotal }
+
+    var body: some View {
+        OLEDPaneScaffold {
+            NPTitles(title: "CD-RIP", sub: "Audio CD · 44.1 kHz · 16-bit PCM · Ripping")
+        } readout: {
+            VStack(alignment: .trailing, spacing: 6) {
+                NPClock(now: String(format: "%02d", min(done + 1, max(total, 1))),
+                        tot: "/ \(String(format: "%02d", total))")
+                ScanBar(style: .orange(progress)).frame(width: 150)
+            }
+            .fixedSize()
+        } ticker: {
+            DSPTicker(prefix: String(format: "RIPPING · %02d / %02d", min(done + 1, max(total, 1)), total),
+                      path: AttributedString("~/Music/CrateDigger Library/"))
+        } cells: {
+            OLEDCells([
+                OLEDCellData(key: "Disc", value: "CDDA", sub: "Audio CD"),
+                OLEDCellData(key: "Output", value: "FLAC", sub: "Lossless"),
+                OLEDCellData(key: "Speed", value: "8.2×", sub: "Average"),
+                OLEDCellData(key: "Elapsed", value: "—", sub: "This Disc"),
+                OLEDCellData(key: "Remain", value: total > done ? "\(total - done) TRK" : "—", sub: "Remaining")
+            ])
+        }
+    }
+
+    private var progress: Double {
+        total > 0 ? Double(done) / Double(total) : 0
+    }
+}
+
+// MARK: - DEVICES pane
+
+private struct DevicesPane: View {
+    @EnvironmentObject private var model: LibraryViewModel
+    @Environment(\.carbon) private var theme
+
+    private var profiles: [ExternalDeviceProfile] { PreferencesStore.shared.savedExternalDeviceProfiles }
+
+    var body: some View {
+        if let c = connected {
+            deviceBody(profile: c.profile, device: c.device)
+        } else {
+            emptyBody
+        }
+    }
+
+    /// A saved device profile whose configured root is *currently mounted* — the
+    /// pane only shows a device that is actually connected and set up in Settings.
+    /// Prefers the device the user is browsing.
+    private var connected: (profile: ExternalDeviceProfile, device: MountedDevice)? {
+        let mounted = model.mountedDevices
+        guard !mounted.isEmpty, !profiles.isEmpty else { return nil }
+        func match(_ dev: MountedDevice) -> ExternalDeviceProfile? {
+            profiles.first { p in
+                (p.rootDisplayPath.map { $0 == dev.volumeURL.path } ?? false)
+                    || p.name.caseInsensitiveCompare(dev.name) == .orderedSame
+            }
+        }
+        if case .device(let path) = model.currentSource,
+           let dev = mounted.first(where: { $0.volumeURL.path == path }), let p = match(dev) {
+            return (p, dev)
+        }
+        for dev in mounted { if let p = match(dev) { return (p, dev) } }
+        return nil
+    }
+
+    // MARK: Connected device
+
+    private func deviceBody(profile: ExternalDeviceProfile, device: MountedDevice) -> some View {
+        OLEDPaneScaffold {
+            HStack(alignment: .bottom, spacing: 18) {
+                DevGlyph()
+                NPTitles(title: device.name.uppercased(),
+                         sub: "\(profile.kind.title) · Mounted · \(device.volumeURL.path)",
+                         titleSize: 40)
+            }
+        } readout: {
+            capacityReadout(for: device).fixedSize()
+        } ticker: {
+            DSPTicker(prefix: "MUSIC DIR", path: musicDirPath(profile, device), leadingInset: 62)
+        } cells: {
+            OLEDCells(cells(for: profile))
+        }
+    }
+
+    // MARK: Empty state (nothing connected / configured)
+
+    private var emptyBody: some View {
+        OLEDPaneScaffold {
+            HStack(alignment: .bottom, spacing: 18) {
+                DevGlyph().opacity(0.4)
+                NPTitles(title: "NO DEVICE", sub: emptySub, titleSize: 40)
+            }
+        } readout: {
+            NPClock(now: "—", tot: "GB FREE").fixedSize()
+        } ticker: {
+            EmptyView()
+        } cells: {
+            OLEDCells([
+                OLEDCellData(key: "Kind", value: "—", sub: "No Device", valueColor: theme.cyan),
+                OLEDCellData(key: "Transfer", value: "—", sub: "—"),
+                OLEDCellData(key: "Format", value: "—", sub: "—"),
+                OLEDCellData(key: "Artwork", value: "—", sub: "—"),
+                OLEDCellData(key: "Profiles", value: "\(profiles.count)", sub: "Saved")
+            ])
+        }
+    }
+
+    private var emptySub: String {
+        profiles.isEmpty
+            ? "Add a device profile in Settings, then connect it"
+            : "Connect a saved device — none mounted right now"
+    }
+
+    // MARK: Readout (capacity)
+
+    @ViewBuilder
+    private func capacityReadout(for device: MountedDevice) -> some View {
+        if let cap = capacity(of: device) {
+            let freeGB = Double(cap.free) / 1_000_000_000
+            let totalGB = Double(cap.total) / 1_000_000_000
+            let usedFrac = 1 - Double(cap.free) / Double(cap.total)
+            VStack(alignment: .trailing, spacing: 6) {
+                NPClock(now: String(format: "%.1f", freeGB), tot: "GB FREE")
+                Text("OF \(Int(totalGB.rounded())) GB · \(Int((usedFrac * 100).rounded()))% USED")
+                    .font(CarbonFont.mono(9.5, weight: .semibold))
+                    .tracking(1.9).textCase(.uppercase)
+                    .foregroundStyle(oledMuted)
+                ScanBar(style: .orange(usedFrac)).frame(width: 150)
+            }
+        } else {
+            NPClock(now: "—", tot: "GB FREE")
+        }
+    }
+
+    private func capacity(of device: MountedDevice) -> (free: Int64, total: Int64)? {
+        guard let v = try? device.volumeURL.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey, .volumeTotalCapacityKey]),
+              let free = v.volumeAvailableCapacityForImportantUsage,
+              let total = v.volumeTotalCapacity, total > 0
+        else { return nil }
+        return (Int64(free), Int64(total))
+    }
+
+    // MARK: Ticker (music dir + template)
+
+    private func musicDirPath(_ profile: ExternalDeviceProfile, _ device: MountedDevice) -> AttributedString {
+        let sub = profile.musicDirectorySubpath.isEmpty ? "" : profile.musicDirectorySubpath + "/"
+        var out = AttributedString("/\(device.name)/")
+        out.foregroundColor = oledFGo(0.5)
+        if !sub.isEmpty {
+            var leaf = AttributedString(sub)
+            leaf.foregroundColor = theme.orange
+            out.append(leaf)
+        }
+        var tmpl = AttributedString(" · \(templateString(profile))")
+        tmpl.foregroundColor = oledFGo(0.5)
+        out.append(tmpl)
+        return out
+    }
+
+    private func templateString(_ p: ExternalDeviceProfile) -> String {
+        switch p.transferSettings.folderStructureMode {
+        case .flat:           return "FLAT"
+        case .sourceRelative: return "SOURCE"
+        case .metadataTemplate:
+            let tokens = p.transferSettings.templateConfig.tokenOrder.filter { !$0.isDisabled }
+            guard !tokens.isEmpty else { return "FLAT" }
+            return tokens.map { "{\($0.title.uppercased())}" }.joined(separator: "/")
+        }
+    }
+
+    // MARK: Cells
+
+    private func cells(for profile: ExternalDeviceProfile) -> [OLEDCellData] {
+        let s = profile.transferSettings
+        let transfer = s.mode == .copyOriginals ? ("COPY", "Originals") : ("CONVERT", "During Copy")
+        let fmt = s.outputFormat.fileExtension.uppercased()
+        let fmtSub = s.outputFormat.isLossless ? "Lossless" : "\(s.bitrateKbps ?? 192) kbps"
+        let artwork: (String, String) = s.artworkMaxDimension.map { ("\($0) px", "Re-embed") } ?? ("KEEP", "Preserve")
+        return [
+            OLEDCellData(key: "Kind", value: kindCell(profile.kind).0, sub: kindCell(profile.kind).1, valueColor: theme.cyan),
+            OLEDCellData(key: "Transfer", value: transfer.0, sub: transfer.1),
+            OLEDCellData(key: "Format", value: fmt, sub: fmtSub),
+            OLEDCellData(key: "Artwork", value: artwork.0, sub: artwork.1),
+            OLEDCellData(key: "Profiles", value: "\(profiles.count)", sub: "Saved")
+        ]
+    }
+
+    private func kindCell(_ kind: ExternalDeviceKind) -> (String, String) {
+        switch kind {
+        case .rockboxIPod:            return ("ROCKBOX", "iPod")
+        case .sdCard:                 return ("SD CARD", "Player")
+        case .directFilePlayer:       return ("PLAYER", "Direct")
+        case .genericExternalStorage: return ("STORAGE", "External")
+        }
+    }
+}
+
+/// The connected player drawn as lit display segments (like the cassette/CD
+/// glyphs on 90s Sony FL displays) — NOT an image: an outlined body, a
+/// cyan-tinted screen, a click-wheel with a glowing orange hub, and a pulsing
+/// dock-connector bar below.
+private struct DevGlyph: View {
+    @Environment(\.carbon) private var theme
+    @State private var plugDim = false
+
+    var body: some View {
+        VStack(spacing: 4) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                    .fill(theme.cyan.opacity(0.14))
+                    .overlay(RoundedRectangle(cornerRadius: 2.5, style: .continuous).stroke(oledFGo(0.65), lineWidth: 1))
+                    .frame(width: 30, height: 21)
+                    .frame(maxHeight: .infinity, alignment: .top)
+                    .padding(.top, 7)
+
+                ZStack {
+                    Circle().stroke(oledFGo(0.65), lineWidth: 1).frame(width: 27, height: 27)
+                    Circle().fill(theme.orange).frame(width: 8, height: 8)
+                        .shadow(color: theme.orange.opacity(0.6), radius: 5)
+                }
+                .frame(maxHeight: .infinity, alignment: .bottom)
+                .padding(.bottom, 8)
+            }
+            .frame(width: 44, height: 74)
+            .overlay(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .stroke(oledFGo(0.8), lineWidth: 1.5)
+            )
+            .shadow(color: oledFGo(0.16), radius: 9)
+
+            RoundedRectangle(cornerRadius: 1, style: .continuous)
+                .fill(oledFGo(0.5))
+                .frame(width: 14, height: 3)
+                .opacity(plugDim ? 0.25 : 1)
+        }
+        .onAppear {
+            withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) { plugDim = true }
+        }
+    }
+}
+
+// MARK: - Byte / free-space helpers
+
+enum OLEDByte {
+    static func string(_ bytes: Int64) -> String {
+        let mb = Double(bytes) / 1_048_576
+        if mb >= 1024 { return String(format: "%.1f GB", mb / 1024) }
+        if mb >= 1 { return String(format: "%.0f MB", mb) }
+        return String(format: "%.0f KB", Double(bytes) / 1024)
+    }
+
+    static func freeSpace(forPath path: String) -> String? {
         let url = URL(fileURLWithPath: path)
         guard let values = try? url.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]),
               let bytes = values.volumeAvailableCapacityForImportantUsage else { return nil }
-        return Self.byteString(Int64(bytes))
-    }
-
-    private var scanDetail: String {
-        if model.scanProgress.isRunning {
-            if let total = model.scanProgress.totalCandidates {
-                return "\(model.scanProgress.filesProbed) / \(total) files probed"
-            }
-            return "\(model.scanProgress.filesProbed) files probed"
-        }
-        if model.index.allTracks.isEmpty {
-            return "Library empty. Press Command-O to load a folder."
-        }
-        return "\(model.index.allTracks.count) tracks indexed across \(model.index.albumCount) albums."
-    }
-
-    private var progressValue: Double {
-        if model.scanProgress.isRunning, let total = model.scanProgress.totalCandidates, total > 0 {
-            return min(max(Double(model.scanProgress.filesProbed) / Double(total), 0), 1)
-        }
-        if model.scanProgress.isRunning { return 0.42 }
-        return model.index.allTracks.isEmpty ? 0.08 : 1
-    }
-}
-
-// MARK: - Remote Sync View
-
-private struct RemoteSyncView: View {
-    @EnvironmentObject private var model: LibraryViewModel
-    @Environment(\.carbon) private var theme
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline, spacing: 12) {
-                Text("SYNC")
-                    .font(CarbonFont.display(30))
-                    .tracking(2.4)
-                    .foregroundStyle(theme.indigo)
-                Text("CONNECTING")
-                    .font(CarbonFont.mono(8.5, weight: .bold))
-                    .tracking(1.7)
-                    .foregroundStyle(theme.indigo)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Capsule().fill(theme.indigo.opacity(0.13)))
-                    .overlay(Capsule().stroke(theme.indigo.opacity(0.40), lineWidth: 0.8))
-                Spacer()
-                Text("Subsonic API")
-                    .font(CarbonFont.mono(9, weight: .medium))
-                    .tracking(1.8)
-                    .foregroundStyle(theme.ink3)
-            }
-
-            Text("Syncing metadata from Navidrome/Subsonic server...")
-                .font(CarbonFont.mono(10, weight: .medium))
-                .tracking(1.6)
-                .foregroundStyle(theme.ink2)
-                .lineLimit(1)
-
-            HStack(spacing: 10) {
-                metricCell(title: "ARTISTS", value: "\(model.index.artists.count)", accent: theme.orange)
-                metricCell(title: "ALBUMS", value: "\(model.index.albumCount)", accent: theme.sun)
-                metricCell(title: "TRACKS", value: "\(model.index.allTracks.count)", accent: theme.cyan)
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .padding(.horizontal, CarbonLayout.oledPaddingH)
-        .padding(.vertical, CarbonLayout.oledPaddingV)
-    }
-
-    private func metricCell(title: String, value: String, accent: Color) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-                .font(CarbonFont.mono(6.5, weight: .bold))
-                .tracking(1.4)
-                .foregroundStyle(theme.ink3)
-            HStack(spacing: 4) {
-                Rectangle()
-                    .fill(accent)
-                    .frame(width: 2.2, height: 11)
-                Text(value)
-                    .font(CarbonFont.mono(12.5, weight: .bold))
-                    .foregroundStyle(theme.ink)
-            }
-        }
-        .frame(minWidth: 54, alignment: .leading)
-    }
-}
-
-// MARK: - CD Rip View
-
-private struct CDRipView: View {
-    @EnvironmentObject private var model: LibraryViewModel
-    @Environment(\.carbon) private var theme
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline, spacing: 12) {
-                Text("CD-RIP")
-                    .font(CarbonFont.display(30))
-                    .tracking(2.4)
-                    .foregroundStyle(theme.orange)
-                Text("RIPPING")
-                    .font(CarbonFont.mono(8.5, weight: .bold))
-                    .tracking(1.7)
-                    .foregroundStyle(theme.orange)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Capsule().fill(theme.orange.opacity(0.13)))
-                    .overlay(Capsule().stroke(theme.orange.opacity(0.40), lineWidth: 0.8))
-                Spacer()
-                Text("Audio CD")
-                    .font(CarbonFont.mono(9, weight: .medium))
-                    .tracking(1.8)
-                    .foregroundStyle(theme.ink3)
-            }
-
-            Text("Converting track \(model.conversionProgress.jobsCompleted + 1) of \(model.conversionProgress.jobsTotal)...")
-                .font(CarbonFont.mono(10, weight: .medium))
-                .tracking(1.6)
-                .foregroundStyle(theme.ink2)
-                .lineLimit(1)
-
-            progressBar
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .padding(.horizontal, CarbonLayout.oledPaddingH)
-        .padding(.vertical, CarbonLayout.oledPaddingV)
-    }
-
-    private var progressBar: some View {
-        GeometryReader { proxy in
-            let width = max(proxy.size.width, 1)
-            let progress = model.conversionProgress.jobsTotal > 0 ? Double(model.conversionProgress.jobsCompleted) / Double(model.conversionProgress.jobsTotal) : 0.0
-            ZStack(alignment: .leading) {
-                Capsule()
-                    .fill(theme.ink3.opacity(0.10))
-                Capsule()
-                    .fill(theme.orange)
-                    .frame(width: width * CGFloat(progress))
-                    .shadow(color: theme.orange.opacity(0.34), radius: 5)
-            }
-        }
-        .frame(height: 5)
-        .padding(.top, 2)
+        return string(Int64(bytes))
     }
 }

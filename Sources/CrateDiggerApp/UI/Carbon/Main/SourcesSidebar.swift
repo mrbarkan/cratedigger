@@ -365,9 +365,9 @@ struct SourcesSidebar: View {
         .font(CarbonFont.mono(8.5, weight: .semibold))
         .tracking(2.2)
         .foregroundStyle(theme.ink4)
-        .padding(.horizontal, 12)
-        .padding(.top, 10)
-        .padding(.bottom, 4)
+        .padding(.horizontal, 10)
+        .padding(.top, 8)
+        .padding(.bottom, 3)
     }
 
     private func sidebarItem(
@@ -392,8 +392,8 @@ struct SourcesSidebar: View {
                     .font(CarbonFont.mono(9.5))
                     .foregroundStyle(countColor(selected: selected, disabled: disabled))
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
             .background(rowBackground(selected: selected))
             .padding(.horizontal, 4)
             .contentShape(Rectangle())
@@ -495,8 +495,8 @@ struct SourcesSidebar: View {
             .font(CarbonFont.sans(12.5, weight: .medium))
             .foregroundStyle(theme.ink)
             .focused($editFieldFocused)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
             .background(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .fill(theme.well.opacity(theme.isDark ? 0.7 : 0.5))

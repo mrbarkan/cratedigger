@@ -28,7 +28,11 @@ extension LibraryViewModel {
             return
         }
 
-        let sourceTracks = tracksForBatchScope(selection.batchScope)
+        // A "send to device" hand-off owns the queue + destination for this run.
+        let deviceTransfer = pendingDeviceConversion
+        let sourceTracks = tracksWithHydratedArtwork(
+            deviceTransfer?.tracks ?? tracksForBatchScope(selection.batchScope)
+        )
         guard !sourceTracks.isEmpty else {
             appAlert = .info(
                 title: "Nothing to convert",
@@ -38,7 +42,12 @@ extension LibraryViewModel {
         }
 
         Task { @MainActor in
-            guard let destinationRoot = await resolveOutputDestination(presentingFrom: host) else {
+            let destinationRoot: URL
+            if let deviceTransfer {
+                destinationRoot = deviceTransfer.destinationRoot
+            } else if let resolved = await resolveOutputDestination(presentingFrom: host) {
+                destinationRoot = resolved
+            } else {
                 AppLog.conversion.notice("User cancelled output-destination selection")
                 return
             }
@@ -86,12 +95,119 @@ extension LibraryViewModel {
                 return
             }
 
+            // Collision handling: some outputs already exist on disk. Ask once for
+            // the whole batch rather than silently duplicating or overwriting.
+            let existing = jobs.filter { FileManager.default.fileExists(atPath: $0.destinationURL.path) }
+            var finalJobs = jobs
+            if !existing.isEmpty {
+                switch await presentCollisionPrompt(
+                    existingCount: existing.count,
+                    totalCount: jobs.count,
+                    destinationRoot: destinationRoot,
+                    presentingFrom: host
+                ) {
+                case .cancel:
+                    AppLog.conversion.notice("User cancelled at destination-collision prompt")
+                    return
+                case .overwrite:
+                    finalJobs = jobs   // canonical paths; ffmpeg -y replaces them
+                case .skip:
+                    let existingKeys = Set(existing.map(\.destinationURL.path))
+                    finalJobs = jobs.filter { !existingKeys.contains($0.destinationURL.path) }
+                    guard !finalJobs.isEmpty else {
+                        appAlert = .info(
+                            title: "Nothing to convert",
+                            message: "Every track already exists in the destination — nothing new to add."
+                        )
+                        return
+                    }
+                }
+            }
+
             // Persist the user's selection for next launch.
             prefs.saveLastConversionSelection(selection)
 
-            let report = await runConversionQueue(service: service, jobs: jobs, preset: preset)
-            presentSummary(report: report, presentingFrom: host)
+            let report = await runConversionQueue(service: service, jobs: finalJobs, preset: preset)
+            if let deviceTransfer {
+                // Remember any format/folder tweaks on the device profile, then
+                // restore the user's normal conversion selection.
+                persistSelectionToDevice(selection, profileID: deviceTransfer.profileID)
+            }
+            clearPendingDeviceConversion()
+            presentSummary(
+                report: deviceTransfer.map { deviceReport(report, deviceName: $0.deviceName) } ?? report,
+                presentingFrom: host
+            )
         }
+    }
+
+    /// Write the format + folder layout the user just used back onto the device
+    /// profile, so the next transfer to it defaults to the same pattern.
+    private func persistSelectionToDevice(_ selection: ConversionOptionsSelection, profileID: UUID) {
+        guard var profile = prefs.savedExternalDeviceProfiles.first(where: { $0.id == profileID }) else { return }
+        var settings = profile.transferSettings
+        settings.outputFormat = selection.outputFormat
+        settings.bitrateKbps = selection.bitrate
+        settings.sampleRateHz = selection.sampleRate
+        settings.artworkMaxDimension = selection.artworkMaxDimension
+        settings.folderStructureMode = selection.folderStructureMode
+        settings.templateConfig = FolderTemplateConfig(
+            preset: selection.templatePreset,
+            tokenOrder: FolderTokenOrder.normalize(selection.tokenOrder)
+        )
+        profile.transferSettings = settings
+        prefs.upsertExternalDeviceProfile(profile)
+    }
+
+    private enum CollisionResolution { case skip, overwrite, cancel }
+
+    /// One prompt for the whole batch when some outputs already exist. Skip
+    /// (default) fills in only what's missing — a safe re-run/merge; Overwrite
+    /// replaces; Cancel bails.
+    @MainActor
+    private func presentCollisionPrompt(
+        existingCount: Int,
+        totalCount: Int,
+        destinationRoot: URL,
+        presentingFrom host: NSViewController
+    ) async -> CollisionResolution {
+        await withCheckedContinuation { continuation in
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = existingCount == totalCount
+                ? "These tracks already exist in the destination"
+                : "\(existingCount) of \(totalCount) tracks already exist in the destination"
+            alert.informativeText = "In \(destinationRoot.path)\n\nSkip keeps the existing files and converts only what's missing. Overwrite replaces them."
+            alert.addButton(withTitle: "Skip Existing")   // .alertFirstButtonReturn
+            alert.addButton(withTitle: "Overwrite")        // .alertSecondButtonReturn
+            alert.addButton(withTitle: "Cancel")           // .alertThirdButtonReturn
+
+            let resolve: (NSApplication.ModalResponse) -> CollisionResolution = { response in
+                switch response {
+                case .alertFirstButtonReturn: return .skip
+                case .alertSecondButtonReturn: return .overwrite
+                default: return .cancel
+                }
+            }
+
+            if let window = host.view.window {
+                alert.beginSheetModal(for: window) { continuation.resume(returning: resolve($0)) }
+            } else {
+                continuation.resume(returning: resolve(alert.runModal()))
+            }
+        }
+    }
+
+    /// Reword a conversion summary as a device transfer ("… written" → "… sent to
+    /// <device>") when the run was a send-to-device hand-off.
+    private func deviceReport(_ report: ConversionReport, deviceName: String) -> ConversionReport {
+        ConversionReport(
+            title: report.tone == .success ? "Sent to \(deviceName)" : report.title,
+            statusLine: report.statusLine.replacingOccurrences(of: "written", with: "sent to \(deviceName)"),
+            details: report.details,
+            tone: report.tone,
+            showsDetailsButton: report.showsDetailsButton
+        )
     }
 
     /// Block obvious failure modes before we hand off to ffmpeg. Returns an
@@ -198,6 +314,21 @@ extension LibraryViewModel {
     func customFFmpegExecutableURL() -> URL? {
         guard let path = prefs.customFFmpegPath, !path.isEmpty else { return nil }
         return URL(fileURLWithPath: path)
+    }
+
+    /// Refill embedded-artwork bytes that were dropped when tracks were decoded
+    /// from a `.cdlib` (the crate stores only the hash; the bytes live in the
+    /// `ArtworkStore`). Without this, re-embedding a compatible cover during
+    /// conversion/transfer fails with `couldNotDecodeImage` on empty data and
+    /// silently falls back to copying the source art stream.
+    @MainActor
+    func tracksWithHydratedArtwork(_ tracks: [LoadedTrack]) -> [LoadedTrack] {
+        tracks.map { track in
+            guard let art = track.metadata.artwork, art.data.isEmpty else { return track }
+            var metadata = track.metadata
+            metadata.artwork = artworkService.hydrated(art)
+            return LoadedTrack(track: track.track, metadata: metadata, recordMarkers: track.recordMarkers)
+        }
     }
 
     @MainActor
@@ -349,7 +480,8 @@ extension LibraryViewModel {
                         templateConfig: templateConfig,
                         reviewedAlbumFolders: reviewedAlbumFolders,
                         reservedDestinationPaths: reserved,
-                        baseNameOverride: recordPlan.baseName
+                        baseNameOverride: recordPlan.baseName,
+                        avoidExistingFiles: false
                     )
                     reserved.insert(plan.destinationURL.standardizedFileURL.resolvingSymlinksInPath().path)
                     jobs.append(ConversionJob(
@@ -371,7 +503,8 @@ extension LibraryViewModel {
                 folderMode: folderMode,
                 templateConfig: templateConfig,
                 reviewedAlbumFolders: reviewedAlbumFolders,
-                reservedDestinationPaths: reserved
+                reservedDestinationPaths: reserved,
+                avoidExistingFiles: false
             )
             reserved.insert(plan.destinationURL.standardizedFileURL.resolvingSymlinksInPath().path)
             jobs.append(ConversionJob(

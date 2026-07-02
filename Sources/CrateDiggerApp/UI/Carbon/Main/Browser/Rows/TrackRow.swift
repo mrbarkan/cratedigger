@@ -7,6 +7,7 @@ struct TrackRow: View {
     let selected: Bool
     let isPlaying: Bool
     var isOffline: Bool = false
+    var isMissing: Bool = false
     let onSelect: () -> Void
     let onActivate: () -> Void
 
@@ -30,14 +31,19 @@ struct TrackRow: View {
                         .font(.system(size: 9))
                         .foregroundStyle(metaColor)
                         .help("On a disconnected drive")
+                } else if isMissing {
+                    Image(systemName: "questionmark.folder")
+                        .font(.system(size: 9))
+                        .foregroundStyle(theme.orange)
+                        .help("File is missing — locate it in Library Maintenance")
                 }
                 Text(durationString(loaded.track.durationSeconds))
                     .font(CarbonFont.mono(10))
                     .foregroundStyle(metaColor)
             }
         }
-        // Dim tracks whose drive is offline — present, just not playable now.
-        .opacity(isOffline && !selected ? 0.55 : 1)
+        // Dim tracks that aren't playable right now — offline drive or missing file.
+        .opacity((isOffline || isMissing) && !selected ? 0.55 : 1)
         .draggable("track::" + loaded.track.id.uuidString)
     }
 

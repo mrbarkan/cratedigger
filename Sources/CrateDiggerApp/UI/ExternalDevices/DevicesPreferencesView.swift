@@ -7,10 +7,7 @@ struct DevicesPreferencesView: View {
     @State private var selectedID: UUID?
     @State private var draft = EditableExternalDeviceProfile()
     @State private var deleteConfirmationShown = false
-
-    private let bitrateOptions = [-1, 128, 160, 192, 256, 320]
-    private let sampleRateOptions = [-1, 44_100, 48_000, 88_200, 96_000]
-    private let artworkOptions = [-1, 300, 600, 1000, 1400]
+    @State private var showSavedConfirmation = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 16) {
@@ -66,10 +63,24 @@ struct DevicesPreferencesView: View {
 
     private var addDeviceMenu: some View {
         Menu {
-            Button("External Storage") { addProfile(.genericStorage(name: "External Storage")) }
-            Button("SD Card Player") { addProfile(makeSDCardProfile()) }
-            Button("Rockbox iPod") { addProfile(.rockboxIPod()) }
-            Button("Direct File Player") { addProfile(.directFilePlayer()) }
+            // Connected volumes, pre-identified (kind + mount point + music folder
+            // + suggested settings) so one click adds a ready-to-use profile.
+            let suggestions = DeviceDetectionService().detectDevices()
+                .map { DeviceProfileSuggester.suggestedProfile(for: $0) }
+            if !suggestions.isEmpty {
+                Section("Detected") {
+                    ForEach(suggestions) { profile in
+                        Button("\(profile.name) — \(profile.kind.title)") { addProfile(profile) }
+                    }
+                }
+            }
+
+            Section("Add manually") {
+                Button("External Storage") { addProfile(.genericStorage(name: "External Storage")) }
+                Button("SD Card Player") { addProfile(makeSDCardProfile()) }
+                Button("Rockbox iPod") { addProfile(.rockboxIPod()) }
+                Button("Direct File Player") { addProfile(.directFilePlayer()) }
+            }
         } label: {
             Image(systemName: "plus")
         }
@@ -98,6 +109,17 @@ struct DevicesPreferencesView: View {
                         }
                     }
 
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Icon")
+                            Spacer()
+                            Text(iconLabel)
+                                .font(.caption)
+                                .foregroundStyle(draft.iconID == nil ? .secondary : Color(hex: 0xFF6D3F))
+                        }
+                        DeviceIconPicker(selection: $draft.iconID)
+                    }
+
                     LabeledContent("Mounted root") {
                         HStack {
                             Text(draft.rootDisplayPath ?? "Not set")
@@ -115,76 +137,19 @@ struct DevicesPreferencesView: View {
                 }
 
                 Section("Transfer") {
-                    Picker("Mode", selection: $draft.transferMode) {
-                        ForEach(ExternalDeviceTransferMode.allCases, id: \.self) { mode in
-                            Text(mode.title).tag(mode)
-                        }
-                    }
+                    Toggle("Convert before transferring", isOn: Binding(
+                        get: { draft.settings.mode == .convertDuringTransfer },
+                        set: { draft.settings.mode = $0 ? .convertDuringTransfer : .copyOriginals }
+                    ))
 
-                    if draft.transferMode == .convertDuringTransfer {
-                        Picker("Format", selection: $draft.outputFormat) {
-                            ForEach(OutputFormat.allCases, id: \.self) { format in
-                                Text(format.appDisplayName).tag(format)
-                            }
-                        }
-
-                        Picker("Bitrate", selection: $draft.bitrateTag) {
-                            ForEach(bitrateOptions, id: \.self) { option in
-                                Text(option < 0 ? "Auto" : "\(option) kbps").tag(option)
-                            }
-                        }
-                        .disabled(draft.outputFormat.isLossless)
-
-                        Picker("Sample rate", selection: $draft.sampleRateTag) {
-                            ForEach(sampleRateOptions, id: \.self) { option in
-                                Text(option < 0 ? "Source" : Optional(option).appSampleRateLabel).tag(option)
-                            }
-                        }
-
-                        Picker("Artwork", selection: $draft.artworkTag) {
-                            ForEach(artworkOptions, id: \.self) { option in
-                                Text(option < 0 ? "Original" : "\(option) px").tag(option)
-                            }
-                        }
-
-                        Picker("Compatibility", selection: $draft.deviceProfile) {
+                    if draft.settings.mode == .convertDuringTransfer {
+                        Picker("Compatibility", selection: $draft.settings.deviceProfile) {
                             Text("Generic").tag(DeviceProfile.generic)
                             Text("iPod legacy safe").tag(DeviceProfile.ipodLegacySafe)
                         }
-                    }
-                }
-
-                Section("Folder layout") {
-                    Picker("Structure", selection: $draft.folderStructureMode) {
-                        ForEach(FolderStructureMode.allCases, id: \.self) { mode in
-                            Text(mode.title).tag(mode)
-                        }
-                    }
-
-                    if draft.folderStructureMode == .metadataTemplate {
-                        Picker("Preset", selection: $draft.templatePreset) {
-                            ForEach(TemplatePreset.allCases, id: \.self) { preset in
-                                Text(preset.title).tag(preset)
-                            }
-                        }
-                        .onChange(of: draft.templatePreset) { newValue in
-                            if newValue != .custom {
-                                draft.tokenOrder = FolderTokenOrder.normalize(newValue.defaultTokenOrder)
-                            }
-                        }
-
-                        if draft.templatePreset == .custom {
-                            HStack(spacing: 8) {
-                                ForEach(0..<FolderTokenOrder.tokenCount, id: \.self) { index in
-                                    Picker("Token \(index + 1)", selection: FolderTokenOrder.tokenBinding(in: $draft.tokenOrder, at: index)) {
-                                        ForEach(FolderToken.allCases, id: \.self) { token in
-                                            Text(token.title).tag(token)
-                                        }
-                                    }
-                                    .labelsHidden()
-                                }
-                            }
-                        }
+                        Text("You'll choose the format and folder layout in the transfer panel each time you send tracks to this device.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 }
 
@@ -193,6 +158,12 @@ struct DevicesPreferencesView: View {
                         deleteConfirmationShown = true
                     }
                     Spacer()
+                    if showSavedConfirmation {
+                        Label("Settings Saved", systemImage: "checkmark.circle.fill")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.green)
+                            .transition(.opacity)
+                    }
                     Button("Save") {
                         saveDraft()
                     }
@@ -202,6 +173,10 @@ struct DevicesPreferencesView: View {
             }
             .formStyle(.grouped)
         }
+    }
+
+    private var iconLabel: String {
+        IPodCatalog.entry(for: draft.iconID)?.displayName ?? "None"
     }
 
     private func reload() {
@@ -229,6 +204,11 @@ struct DevicesPreferencesView: View {
         reload()
         selectedID = saved.id
         loadDraft(for: saved.id)
+
+        withAnimation { showSavedConfirmation = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            withAnimation { showSavedConfirmation = false }
+        }
     }
 
     private func deleteSelectedProfile() {
@@ -290,15 +270,10 @@ private struct EditableExternalDeviceProfile {
     var rootBookmark: Data?
     var rootDisplayPath: String?
     var musicDirectorySubpath: String = "Music"
-    var transferMode: ExternalDeviceTransferMode = .convertDuringTransfer
-    var outputFormat: OutputFormat = .aac
-    var bitrateTag: Int = 192
-    var sampleRateTag: Int = 44_100
-    var artworkTag: Int = 1024
-    var deviceProfile: DeviceProfile = .generic
-    var folderStructureMode: FolderStructureMode = .metadataTemplate
-    var templatePreset: TemplatePreset = .artistYearAlbum
-    var tokenOrder: [FolderToken] = TemplatePreset.artistYearAlbum.defaultTokenOrder
+    var iconID: String?
+    /// The whole transfer settings value — device-only fields (mode, compatibility)
+    /// are edited inline; the format+folder core is edited via the Patch Bay.
+    var settings = ExternalDeviceTransferSettings()
 
     init() {}
 
@@ -308,15 +283,8 @@ private struct EditableExternalDeviceProfile {
         rootBookmark = profile.rootBookmark
         rootDisplayPath = profile.rootDisplayPath
         musicDirectorySubpath = profile.musicDirectorySubpath
-        transferMode = profile.transferSettings.mode
-        outputFormat = profile.transferSettings.outputFormat
-        bitrateTag = profile.transferSettings.bitrateKbps ?? -1
-        sampleRateTag = profile.transferSettings.sampleRateHz ?? -1
-        artworkTag = profile.transferSettings.artworkMaxDimension ?? -1
-        deviceProfile = profile.transferSettings.deviceProfile
-        folderStructureMode = profile.transferSettings.folderStructureMode
-        templatePreset = profile.transferSettings.templateConfig.preset
-        tokenOrder = FolderTokenOrder.normalize(profile.transferSettings.templateConfig.tokenOrder)
+        iconID = profile.iconID
+        settings = profile.transferSettings
     }
 
     func materialize(id: UUID, createdAt: Date) -> ExternalDeviceProfile {
@@ -327,19 +295,8 @@ private struct EditableExternalDeviceProfile {
             rootBookmark: rootBookmark,
             rootDisplayPath: rootDisplayPath,
             musicDirectorySubpath: musicDirectorySubpath,
-            transferSettings: ExternalDeviceTransferSettings(
-                mode: transferMode,
-                outputFormat: outputFormat,
-                bitrateKbps: bitrateTag > 0 ? bitrateTag : nil,
-                sampleRateHz: sampleRateTag > 0 ? sampleRateTag : nil,
-                artworkMaxDimension: artworkTag > 0 ? artworkTag : nil,
-                deviceProfile: deviceProfile,
-                folderStructureMode: folderStructureMode,
-                templateConfig: FolderTemplateConfig(
-                    preset: templatePreset,
-                    tokenOrder: FolderTokenOrder.normalize(tokenOrder)
-                )
-            ),
+            iconID: iconID,
+            transferSettings: settings,
             createdAt: createdAt,
             updatedAt: Date()
         )

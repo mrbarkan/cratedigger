@@ -111,6 +111,7 @@ public struct AlbumBooklet: Codable, Hashable, Sendable {
                 switch role {
                 case .cover: front.append(url)
                 case .bookletPage: booklet.append(url)
+                case .inlay: inlay.append(url)
                 case .back: back.append(url)
                 case .disc, .ignore: continue
                 case .auto: break

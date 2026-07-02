@@ -37,8 +37,8 @@ struct ColumnList<Content: View>: View {
             .font(CarbonFont.mono(8.5, weight: .semibold))
             .tracking(2.2)
             .foregroundStyle(theme.ink3)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(theme.isDark ? Color.black.opacity(0.4) : Color.black.opacity(0.04))
             .overlay(
@@ -85,8 +85,8 @@ struct ColumnRow<Lead: View, Title: View, Trail: View>: View {
                     .lineLimit(1)
                 trail()
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
             .background(selectedBackground)
             .overlay(
                 Rectangle()

@@ -5,34 +5,34 @@ struct BrandBlock: View {
     @EnvironmentObject private var model: LibraryViewModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 11) {
-                ActivityLight(active: model.isWorking)
+        // v10 brand column: brand-row (name → drive LED → mini-player pip at
+        // far right), then a 4-row full-width library-button column.
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
                 Text("CrateDigger")
-                    .font(CarbonFont.sans(18, weight: .semibold))
+                    .font(CarbonFont.sans(14, weight: .semibold))
                     .foregroundStyle(theme.ink)
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 8) {
-                    LibButton(title: "DIG CRATE", systemImage: "folder",
-                              tip: "Dig Crate — scan a folder of audio. New tracks land in the Prep Crate.") { model.openFolderViaPanel() }
-                    LibButton(title: "RESCAN", systemImage: "arrow.clockwise",
-                              tip: "Rescan — re-read your library folders (or the selected device) to pick up changes.") { model.refreshLibrary() }
-                    LibButton(title: "", systemImage: "pip.enter",
-                              tip: "Open the mini player") {
-                        NotificationCenter.default.post(name: NSNotification.Name("CrateDiggerShowMiniPlayer"), object: nil)
-                    }
+                ActivityLight(active: model.isWorking)
+                Spacer(minLength: 0)
+                LibButton(style: .pip, title: "", systemImage: "pip.enter",
+                          tip: "Open the mini player") {
+                    NotificationCenter.default.post(name: NSNotification.Name("CrateDiggerShowMiniPlayer"), object: nil)
                 }
-                HStack(spacing: 8) {
-                    LibButton(title: "ADD TO CRATE", systemImage: "tray.and.arrow.down.fill",
-                              tip: addToCrateTip, highlighted: canAddToCrate) {
-                        model.addSelectionToCrate(crateName: model.targetCrateName)
-                    }
-                    LibButton(title: "TRANSFER TO", systemImage: "arrow.up.forward.square",
-                              tip: "Transfer the current selection to an external device") {
-                        model.requestExternalDeviceTransfer()
-                    }
+            }
+            .padding(.top, 7)   // clear the traffic lights
+
+            VStack(alignment: .leading, spacing: 6) {
+                LibButton(style: .wide, title: "DIG CRATE", systemImage: "folder",
+                          tip: "Dig Crate — scan a folder of audio. New tracks land in the Prep Crate.") { model.openFolderViaPanel() }
+                LibButton(style: .wide, title: "RESCAN", systemImage: "arrow.clockwise",
+                          tip: "Rescan — re-read your library folders (or the selected device) to pick up changes.") { model.refreshLibrary() }
+                LibButton(style: .wide, title: "ADD TO CRATE", systemImage: "tray.and.arrow.down.fill",
+                          tip: addToCrateTip, highlighted: canAddToCrate) {
+                    model.addSelectionToCrate(crateName: model.targetCrateName)
+                }
+                LibButton(style: .wide, title: "TRANSFER TO", systemImage: "arrow.up.forward.square",
+                          tip: "Transfer the current selection to an external device") {
+                    model.requestExternalDeviceTransfer()
                 }
             }
         }
@@ -51,11 +51,14 @@ struct BrandBlock: View {
     }
 }
 
-/// A small blue "drive access" light: steady-dim when idle, pulsing while the
-/// app is scanning or converting.
+/// A small blue "drive access" LED: steady-dim when idle; while the app is
+/// working it flickers *irregularly* like a real disk-access light — mostly-on
+/// with ragged gaps (~70% duty, re-rolled every 40–170ms), snapping hard (0.04s)
+/// rather than pulsing on a smooth sine.
 private struct ActivityLight: View {
     let active: Bool
-    @State private var pulsing = false
+    @State private var on = false
+    @State private var ticker: Task<Void, Never>? = nil
 
     private let blue = Color(hex: 0x3BA7FF)
 
@@ -64,28 +67,39 @@ private struct ActivityLight: View {
             .fill(blue)
             .frame(width: 11, height: 11)
             .overlay(Circle().stroke(Color.white.opacity(0.25), lineWidth: 0.5))
-            .opacity(active ? (pulsing ? 1.0 : 0.4) : 0.5)
-            .shadow(color: blue.opacity(active && pulsing ? 0.9 : 0.22),
-                    radius: active && pulsing ? 6 : 2)
-            .onAppear { syncPulse() }
-            .onChange(of: active) { _ in syncPulse() }
-            .accessibilityLabel(active ? "Working" : "Idle")
+            // Dark when idle; only lights (and flickers) while the app is working.
+            .opacity(active ? (on ? 1.0 : 0.5) : 0.12)
+            .shadow(color: (active && on) ? blue.opacity(0.95) : .clear, radius: (active && on) ? 7 : 0)
+            .animation(.linear(duration: 0.04), value: on)
+            .animation(.easeOut(duration: 0.15), value: active)
+            .onAppear { restart() }
+            .onChange(of: active) { _ in restart() }
+            .onDisappear { ticker?.cancel() }
+            .accessibilityLabel(active ? "Disk access" : "Idle")
     }
 
-    private func syncPulse() {
-        if active {
-            withAnimation(.easeInOut(duration: 0.55).repeatForever(autoreverses: true)) { pulsing = true }
-        } else {
-            withAnimation(.easeInOut(duration: 0.2)) { pulsing = false }
+    private func restart() {
+        ticker?.cancel()
+        guard active else { on = false; return }
+        ticker = Task { @MainActor in
+            while !Task.isCancelled {
+                on = Double.random(in: 0...1) > 0.3          // ~70% duty
+                let ms = 40 + Int.random(in: 0...130)        // 40–170ms
+                try? await Task.sleep(nanoseconds: UInt64(ms) * 1_000_000)
+            }
         }
     }
 }
 
-/// Small metal-chrome control button for the header button group. When
-/// `highlighted` it lights up amber (used by ADD TO CRATE when a selection is
-/// ready). An empty `title` renders icon-only.
+/// Small metal-chrome control button. `.wide` fills its column left-aligned
+/// (the 4-row library column); `.pip` is a compact 20pt icon-only chip (the
+/// mini-player button on the brand row). When `highlighted` it lights up amber
+/// (ADD TO CRATE when a selection is ready).
+private enum LibButtonStyle { case normal, wide, pip }
+
 private struct LibButton: View {
     @Environment(\.carbon) private var theme
+    var style: LibButtonStyle = .normal
     let title: String
     let systemImage: String
     var tip: String? = nil
@@ -93,6 +107,9 @@ private struct LibButton: View {
     let action: () -> Void
 
     @State private var spinning = false
+
+    private var height: CGFloat { style == .pip ? 20 : 24 }
+    private var horizPad: CGFloat { style == .pip ? 6 : 9 }
 
     var body: some View {
         Button(action: {
@@ -115,8 +132,10 @@ private struct LibButton: View {
                 }
             }
             .foregroundStyle(highlighted ? theme.orange : theme.ink2)
-            .padding(.horizontal, 9)
-            .frame(height: 24)
+            .padding(.horizontal, horizPad)
+            .frame(maxWidth: style == .wide ? .infinity : nil,
+                   alignment: .leading)
+            .frame(height: height)
             .background(
                 ZStack {
                     ChromeChassis(theme: theme, cornerRadius: 6)

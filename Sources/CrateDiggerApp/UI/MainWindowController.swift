@@ -147,20 +147,50 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         hostingController.presentAsSheet(controller)
     }
 
+    /// ⌘⇧T / the Sources "transfer here" button: send the current album to a saved
+    /// device. One device → straight in; several → a lightweight device menu.
+    /// Precise selections use the browser's right-click "Transfer to Device" instead.
     func presentExternalDeviceTransferSheet() {
-        guard contentViewController != nil else { return }
+        guard let contentView = contentViewController?.view else { return }
+        let model = hostingController.model
         let profiles = prefs.savedExternalDeviceProfiles
-        let controller = ExternalDeviceTransferSheetController(
-            profiles: profiles,
-            initialScope: .currentAlbum
-        )
-        controller.onDecision = { [weak controller, weak model = hostingController.model] selection in
-            controller?.dismiss(nil)
-            guard let selection, let model else { return }
-            guard let host = NSApp.keyWindow?.contentViewController else { return }
-            model.runExternalDeviceTransfer(selection: selection, presentingFrom: host)
+
+        guard !profiles.isEmpty else {
+            model.appAlert = .info(
+                title: "No devices yet",
+                message: "Add a device under Preferences > Devices, then use Transfer to Device."
+            )
+            return
         }
-        hostingController.presentAsSheet(controller)
+
+        let tracks = model.tracksForBatchScope(.currentAlbum)
+        guard !tracks.isEmpty else {
+            model.appAlert = .info(
+                title: "Nothing to transfer",
+                message: "Select an album or track first, or right-click an item and choose Transfer to Device."
+            )
+            return
+        }
+
+        if profiles.count == 1 {
+            model.transferToDevice(profileID: profiles[0].id, tracks: tracks)
+            return
+        }
+
+        let menu = NSMenu()
+        for profile in profiles {
+            let item = NSMenuItem(title: profile.name, action: #selector(pickDeviceForTransfer(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = profile.id
+            menu.addItem(item)
+        }
+        menu.popUp(positioning: nil, at: NSPoint(x: 24, y: 24), in: contentView)
+    }
+
+    @objc private func pickDeviceForTransfer(_ sender: NSMenuItem) {
+        guard let profileID = sender.representedObject as? UUID else { return }
+        let model = hostingController.model
+        model.transferToDevice(profileID: profileID, tracks: model.tracksForBatchScope(.currentAlbum))
     }
 
     func cancelConversion() {

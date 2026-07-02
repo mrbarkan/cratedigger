@@ -5,6 +5,7 @@ public enum ArtworkRole: String, Codable, Equatable, Sendable, CaseIterable {
     case cover = "Cover"
     case back = "Back"
     case disc = "Disc"
+    case inlay = "Inlay"
     case bookletPage = "Booklet Page"
     case ignore = "Ignore"
 }

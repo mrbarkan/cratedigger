@@ -53,8 +53,8 @@ struct InspectorPane: View {
             tabButton(.art)
             tabButton(.disc)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
         .overlay(
             Rectangle()
                 .fill(theme.isDark ? Color.white.opacity(0.06) : Color.black.opacity(0.08))

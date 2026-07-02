@@ -5,35 +5,37 @@ public enum CarbonLayout {
     public static let windowMin    = CGSize(width: 1200, height: 820)
 
     public static let chassisCornerRadius: CGFloat = 10
-    public static let chassisInsetH: CGFloat = 16
-    public static let chassisInsetV: CGFloat = 12
-    public static let chassisRowGap: CGFloat = 10
+    // v10 density: chassis padding 14×18.
+    public static let chassisInsetH: CGFloat = 18
+    public static let chassisInsetV: CGFloat = 14
+    public static let chassisRowGap: CGFloat = 12
 
-    /// Sized to fit the busiest OLED layout (CONVERT — 4 stacked rows: top
-    /// status / pipeline / 5-cell readout / ticker). All other modes (now
-    /// playing, scan, vu) render at the same frame so the OLED never resizes
-    /// across mode swaps.
-    public static let headerHeight: CGFloat = 184
-    public static let footerHeight: CGFloat = 118
+    /// v10: the OLED is one glass with fixed geometry (rail + context zone +
+    /// cell rail), so the header row is a fixed 170 and the display never
+    /// resizes across view swaps.
+    public static let headerHeight: CGFloat = 170
+    public static let footerHeight: CGFloat = 92
 
-    public static let sidebarWidth: CGFloat = 268
-    public static let inspectorWidth: CGFloat = 380
-    public static let mainGap: CGFloat = 8
+    // v10 main grid: Sources 236 · browser 1fr · Inspector 348, gap 12.
+    public static let sidebarWidth: CGFloat = 236
+    public static let inspectorWidth: CGFloat = 348
+    public static let mainGap: CGFloat = 12
 
     public static let wellCornerRadius: CGFloat = 12
-    public static let wellPadding: CGFloat = 10
+    public static let wellPadding: CGFloat = 8
     public static let paperCornerRadius: CGFloat = 8
 
     public static let oledCornerRadius: CGFloat = 16
     public static let oledPaddingH: CGFloat = 20
     public static let oledPaddingV: CGFloat = 12
 
+    // v10 header grid: brand 156 · OLED flex · switcher 110.
     public static let viewSwitchWidth: CGFloat = 110
-    public static let brandWidth: CGFloat = 200
+    public static let brandWidth: CGFloat = 156
 
-    public static let transportButtonSize: CGFloat = 44
-    public static let playButtonSize: CGFloat = 58
-    public static let volumeKnobSize: CGFloat = 76
+    // v10 footer transport: side buttons 46 (radius 12, 19pt icon), play dome 78.
+    public static let transportButtonSize: CGFloat = 46
+    public static let playButtonSize: CGFloat = 78
 
     public static let keyHeight: CGFloat = 30
 

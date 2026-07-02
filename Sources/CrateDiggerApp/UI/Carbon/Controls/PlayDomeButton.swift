@@ -35,7 +35,7 @@ struct PlayDomeButton: View {
                     .shadow(color: theme.orange.opacity(isPlaying ? 0.56 : 0.24), radius: isPlaying ? 18 : 10)
 
                 Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: CarbonLayout.playButtonSize * 0.32, weight: .black))
+                    .font(.system(size: 26, weight: .black))
                     .foregroundStyle(Color.white)
             }
             .frame(width: CarbonLayout.playButtonSize, height: CarbonLayout.playButtonSize)

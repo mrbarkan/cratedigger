@@ -173,7 +173,7 @@ extension LibraryViewModel {
 
         let engine = ensureRadioEngine()
         engine.play(stream)
-        engine.setVolume(playbackVolume)
+        engine.setVolume(VolumeCurve.playerVolume(forPosition: playbackVolume))
     }
 
     /// Stops radio playback and the uptime ticker, and resets shared playback state.

@@ -110,6 +110,10 @@ public struct ExternalDeviceProfile: Identifiable, Codable, Hashable, Sendable {
     public var rootBookmark: Data?
     public var rootDisplayPath: String?
     public var musicDirectorySubpath: String
+    /// Chosen device-icon identifier (e.g. "classic.black") from the iPod icon
+    /// catalog. Optional so decoding older saved profiles (which have no such
+    /// key) yields `nil` rather than throwing — no data-loss migration needed.
+    public var iconID: String?
     public var transferSettings: ExternalDeviceTransferSettings
     public var createdAt: Date
     public var updatedAt: Date
@@ -121,6 +125,7 @@ public struct ExternalDeviceProfile: Identifiable, Codable, Hashable, Sendable {
         rootBookmark: Data? = nil,
         rootDisplayPath: String? = nil,
         musicDirectorySubpath: String = "Music",
+        iconID: String? = nil,
         transferSettings: ExternalDeviceTransferSettings = ExternalDeviceTransferSettings(),
         createdAt: Date = Date(),
         updatedAt: Date = Date()
@@ -131,6 +136,7 @@ public struct ExternalDeviceProfile: Identifiable, Codable, Hashable, Sendable {
         self.rootBookmark = rootBookmark
         self.rootDisplayPath = rootDisplayPath
         self.musicDirectorySubpath = Self.normalizedSubpath(musicDirectorySubpath)
+        self.iconID = iconID
         self.transferSettings = transferSettings
         self.createdAt = createdAt
         self.updatedAt = updatedAt

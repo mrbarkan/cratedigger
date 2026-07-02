@@ -7,7 +7,7 @@ struct DisplayModeButton: View {
     @Environment(\.carbon) private var theme
     @EnvironmentObject private var model: LibraryViewModel
 
-    private static let cycle: [OLEDView] = [.nowPlaying, .conversion, .scan]
+    private static let cycle: [OLEDView] = [.nowPlaying, .conversion, .scan, .devices]
 
     var body: some View {
         Button(action: cycleToNext) {
@@ -93,6 +93,7 @@ struct DisplayModeButton: View {
         case .vu:         return "VU"
         case .remoteSync: return "SYNC"
         case .cdRip:      return "CD-RIP"
+        case .devices:    return "DEV"
         }
     }
 
@@ -102,6 +103,7 @@ struct DisplayModeButton: View {
         case .scan:       return theme.cyan
         case .remoteSync: return theme.indigo
         case .cdRip:      return theme.orange
+        case .devices:    return theme.cyan
         default:          return theme.sun
         }
     }

@@ -37,6 +37,13 @@ public final class AudioLevelTap {
         store.equalizer.update(enabled: enabled, gainsDB: gains)
     }
 
+    /// Linear makeup gain (≥1) applied in-path so the volume fader can push above
+    /// unity (0 dB). 1.0 = no boost. Applied post-EQ, before the meters measure,
+    /// so the VU reflects the boosted signal.
+    public func setMasterGain(_ gain: Double) {
+        store.setMasterGain(Float(max(0, gain)))
+    }
+
     /// An audio mix wired to a fresh tap for `track`. Assign the result to
     /// `AVPlayerItem.audioMix`. Returns nil if the tap can't be created.
     public func makeAudioMix(forTrack track: AVAssetTrack) -> AVAudioMix? {
@@ -77,10 +84,14 @@ final class AudioTapLevelStore {
     private var left: Float = 0
     private var right: Float = 0
     private var bands = [Float](repeating: 0, count: SpectrumProcessor.bandCount)
+    private var masterGain: Float = 1
 
     /// Owned here so the audio thread always has a valid, preallocated FFT + EQ.
     let spectrum = SpectrumProcessor()
     let equalizer = EqualizerProcessor()
+
+    func setMasterGain(_ g: Float) { lock.lock(); masterGain = g; lock.unlock() }
+    func gainValue() -> Float { lock.lock(); defer { lock.unlock() }; return masterGain }
 
     func update(left: Float, right: Float) {
         lock.lock(); self.left = left; self.right = right; lock.unlock()
@@ -155,6 +166,19 @@ private func levelTapProcess(
                     channelIndex += 1
                 }
             }
+        }
+    }
+
+    // Volume makeup gain (>1 = boost above unity) applied in-place AFTER the EQ
+    // and BEFORE the meters, so both what you hear and the VU reflect it.
+    var gain = store.gainValue()
+    if gain != 1 {
+        for buffer in buffers {
+            guard let data = buffer.mData else { continue }
+            let total = Int(buffer.mDataByteSize) / MemoryLayout<Float>.size
+            guard total > 0 else { continue }
+            let s = data.assumingMemoryBound(to: Float.self)
+            vDSP_vsmul(s, 1, &gain, s, 1, vDSP_Length(total))
         }
     }
 
