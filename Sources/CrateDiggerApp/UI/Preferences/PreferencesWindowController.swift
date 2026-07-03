@@ -53,15 +53,13 @@ private struct PreferencesView: View {
 /// folder settings so they read identically.
 private struct FolderSettingRow: View {
     let url: URL?
+    /// Computed once by the owning view's refresh() — not per render, since a
+    /// folder on an unmounted network volume can make fileExists stall.
+    let exists: Bool
     let placeholder: String
     let chooseTitle: String
     var onChoose: (URL) -> Void
     var onClear: (() -> Void)? = nil
-
-    private var exists: Bool {
-        guard let url else { return true }
-        return FileManager.default.fileExists(atPath: url.path)
-    }
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -110,8 +108,11 @@ private struct FolderSettingRow: View {
 
 private struct GeneralPreferencesView: View {
     @State private var libraryURL: URL?
+    @State private var libraryExists = true
     @State private var cratesURL: URL?
+    @State private var cratesExists = true
     @State private var outputURL: URL?
+    @State private var outputExists = true
     @State private var copyOnImport: Bool = false
     @State private var deleteOriginals: Bool = false
     @State private var organiseByArtist: Bool = true
@@ -122,6 +123,7 @@ private struct GeneralPreferencesView: View {
             Section {
                 FolderSettingRow(
                     url: libraryURL,
+                    exists: libraryExists,
                     placeholder: "Not set",
                     chooseTitle: "Choose library folder",
                     onChoose: { url in
@@ -140,6 +142,7 @@ private struct GeneralPreferencesView: View {
             Section {
                 FolderSettingRow(
                     url: cratesURL,
+                    exists: cratesExists,
                     placeholder: "Not set (defaults to Application Support)",
                     chooseTitle: "Choose crates index folder",
                     onChoose: { url in
@@ -158,6 +161,7 @@ private struct GeneralPreferencesView: View {
             Section {
                 FolderSettingRow(
                     url: outputURL,
+                    exists: outputExists,
                     placeholder: "Not set",
                     chooseTitle: "Choose default output folder",
                     onChoose: { url in
@@ -229,9 +233,13 @@ private struct GeneralPreferencesView: View {
 
     private func refresh() {
         let prefs = PreferencesStore.shared
+        let fm = FileManager.default
         libraryURL = resolved(prefs.managedLibraryFolderBookmark)
+        libraryExists = libraryURL.map { fm.fileExists(atPath: $0.path) } ?? true
         cratesURL = resolved(prefs.cratesIndexFolderBookmark)
+        cratesExists = cratesURL.map { fm.fileExists(atPath: $0.path) } ?? true
         outputURL = resolved(prefs.savedOutputDestinationBookmark)
+        outputExists = outputURL.map { fm.fileExists(atPath: $0.path) } ?? true
         copyOnImport = prefs.copyOnImport
         deleteOriginals = prefs.deleteOriginalsAfterCopy
         organiseByArtist = prefs.organiseByAlbumArtist
@@ -307,9 +315,19 @@ private struct InterfacePreferencesView: View {
             }
         }
         .formStyle(.grouped)
-        .onAppear {
-            showTourAtLaunch = !PreferencesStore.shared.hasSeenWelcomeTour
-        }
+        .onAppear { refresh() }
+    }
+
+    /// Re-read everything from the store: the window controller is cached
+    /// across opens, so @State would otherwise go stale after e.g. a
+    /// Reset Preferences from the Advanced tab.
+    private func refresh() {
+        let prefs = PreferencesStore.shared
+        clickSoundsEnabled = prefs.clickSoundsEnabled
+        showHoverTips = prefs.showHoverTips
+        simpleHorizontalVU = prefs.savedSimpleHorizontalVU
+        cdAnimationSpeed = prefs.cdAnimationSpeed
+        showTourAtLaunch = !prefs.hasSeenWelcomeTour
     }
 }
 

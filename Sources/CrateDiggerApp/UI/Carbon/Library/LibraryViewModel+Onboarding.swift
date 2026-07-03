@@ -126,35 +126,46 @@ extension LibraryViewModel {
         showingWelcomeTour = true
     }
 
-    /// Finish or skip the tour. On first run this chains straight into the
-    /// folder-setup sheet (after the tour sheet's dismissal animation).
+    /// Finish or skip the tour (both buttons land here); just dismisses — the
+    /// follow-up work runs from `welcomeTourDidDismiss()` so it's sequenced by
+    /// the sheet's real dismissal, not a timer.
     func completeWelcomeTour() {
-        prefs.hasSeenWelcomeTour = true
         showingWelcomeTour = false
-        guard !prefs.hasCompletedFirstRunSetup else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
-            guard let self, !self.prefs.hasCompletedFirstRunSetup else { return }
-            self.showingOnboarding = true
+    }
+
+    /// The tour sheet's `onDismiss`: mark it seen, then chain into folder
+    /// setup on first run — or, for an already-set-up library (upgrade or
+    /// replay), make sure the starter album the tour mentions exists.
+    func welcomeTourDidDismiss() {
+        prefs.hasSeenWelcomeTour = true
+        if !prefs.hasCompletedFirstRunSetup {
+            showingOnboarding = true
+        } else {
+            installStarterContentIfNeeded()
         }
     }
 
     // MARK: - Starter content
 
-    /// The bundled starter album ("The CrateDigger Manual"), shipped as an SPM
-    /// resource. Looked up manually — not via `Bundle.module` — so a packaged
-    /// app missing the resource bundle degrades to a no-op instead of trapping.
+    /// The bundled starter album ("The CrateDigger Manual"): the StarterCrate
+    /// folder inside whichever SPM resource bundle sits next to the app
+    /// binary / in Contents/Resources. Found by scanning `*.bundle` rather
+    /// than hardcoding the generated bundle name (and not via `Bundle.module`,
+    /// which traps when the bundle is missing) so a package rename or a
+    /// packaged app without resources degrades to a no-op.
     private var starterAlbumSourceURL: URL? {
-        let bundleName = "CrateDigger_CrateDiggerApp.bundle"
-        let candidates = [Bundle.main.resourceURL, Bundle.main.bundleURL]
-        for base in candidates {
-            guard let base else { continue }
-            let folder = base
-                .appendingPathComponent(bundleName, isDirectory: true)
-                .appendingPathComponent("StarterCrate", isDirectory: true)
-            var isDirectory: ObjCBool = false
-            if FileManager.default.fileExists(atPath: folder.path, isDirectory: &isDirectory),
-               isDirectory.boolValue {
-                return folder
+        let fm = FileManager.default
+        for base in [Bundle.main.resourceURL, Bundle.main.bundleURL] {
+            guard let base,
+                  let entries = try? fm.contentsOfDirectory(at: base, includingPropertiesForKeys: nil)
+            else { continue }
+            for entry in entries where entry.pathExtension == "bundle" {
+                let folder = entry.appendingPathComponent("StarterCrate", isDirectory: true)
+                var isDirectory: ObjCBool = false
+                if fm.fileExists(atPath: folder.path, isDirectory: &isDirectory),
+                   isDirectory.boolValue {
+                    return folder
+                }
             }
         }
         return nil
@@ -162,48 +173,59 @@ extension LibraryViewModel {
 
     /// Copy the bundled starter album into the Local Library and file it into
     /// the Personal Crate, so a brand-new install has something to play (and
-    /// the album art doubles as a quick-reference manual). Runs at most once;
-    /// quietly does nothing when the resource bundle isn't present.
+    /// the album art doubles as a quick-reference manual). File I/O and the
+    /// scan run off the main actor; the installed flag is only latched once
+    /// the tracks are actually in the crate, so a failed scan retries on the
+    /// next entry point. Quietly does nothing when the resource bundle isn't
+    /// present.
     func installStarterContentIfNeeded() {
         guard !prefs.starterContentInstalled else { return }
         guard let source = starterAlbumSourceURL,
               let libraryRoot = managedLibraryFolderURL else { return }
 
-        let fm = FileManager.default
         let artistFolder = libraryRoot.appendingPathComponent("MRBRKN", isDirectory: true)
         let albumFolder = artistFolder.appendingPathComponent("The CrateDigger Manual", isDirectory: true)
-        do {
-            if !fm.fileExists(atPath: albumFolder.path) {
-                try fm.createDirectory(at: artistFolder, withIntermediateDirectories: true)
-                try fm.copyItem(at: source, to: albumFolder)
+        let scanner = self.scanner
+
+        Task.detached(priority: .utility) { [weak self] in
+            let fm = FileManager.default
+            do {
+                if !fm.fileExists(atPath: albumFolder.path) {
+                    try fm.createDirectory(at: artistFolder, withIntermediateDirectories: true)
+                    try fm.copyItem(at: source, to: albumFolder)
+                }
+            } catch {
+                AppLog.library.warning("Couldn't install starter album: \(String(describing: error), privacy: .public)")
+                return
             }
-        } catch {
-            AppLog.library.warning("Couldn't install starter album: \(String(describing: error), privacy: .public)")
-            return
+            let scanned = await scanner.scanFolder(albumFolder)
+            guard !scanned.isEmpty else {
+                AppLog.library.warning("Starter album copied but scan found no tracks; will retry later.")
+                return
+            }
+            await self?.fileStarterTracks(scanned)
+        }
+    }
+
+    /// Merge the scanned starter tracks into the Personal Crate, then latch
+    /// the installed flag.
+    private func fileStarterTracks(_ scanned: [LoadedTrack]) {
+        for track in scanned {
+            if let art = track.metadata.artwork, !art.data.isEmpty {
+                artworkService.ingest(art)
+            }
+        }
+        let crateName = Self.personalCrateName
+        let existing = loadCrateTracks(name: crateName)
+        let existingPaths = Set(existing.map { $0.track.fileURL.standardizedFileURL.path })
+        let fresh = scanned.filter {
+            !existingPaths.contains($0.track.fileURL.standardizedFileURL.path)
+        }
+        if !fresh.isEmpty {
+            saveCrateTracks(existing + fresh, name: crateName)
+            refreshAvailableCrates()
+            selectSource(currentSource)
         }
         prefs.starterContentInstalled = true
-
-        Task { [weak self] in
-            guard let self else { return }
-            let scanned = await self.scanner.scanFolder(albumFolder)
-            await MainActor.run {
-                guard !scanned.isEmpty else { return }
-                for track in scanned {
-                    if let art = track.metadata.artwork, !art.data.isEmpty {
-                        self.artworkService.ingest(art)
-                    }
-                }
-                let crateName = "Personal Crate"
-                let existing = self.loadCrateTracks(name: crateName)
-                let existingPaths = Set(existing.map { $0.track.fileURL.standardizedFileURL.path })
-                let fresh = scanned.filter {
-                    !existingPaths.contains($0.track.fileURL.standardizedFileURL.path)
-                }
-                guard !fresh.isEmpty else { return }
-                self.saveCrateTracks(existing + fresh, name: crateName)
-                self.refreshAvailableCrates()
-                self.selectSource(self.currentSource)
-            }
-        }
     }
 }

@@ -46,9 +46,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             self, selector: #selector(showWelcomeTour(_:)),
             name: NSNotification.Name("CrateDiggerShowWelcomeTour"), object: nil)
 
-        // Hold the splash long enough for its boot animation to read, then
-        // hand the stage to the main window.
-        splash.fadeOutAndClose(after: 1.5) { [weak self] in
+        // Hold the splash for its boot animation, then hand the stage to the
+        // main window (which keeps loading underneath in the meantime).
+        splash.fadeOutAndClose(after: SplashView.displayDuration) { [weak self] in
             self?.splashWindowController = nil
         }
     }

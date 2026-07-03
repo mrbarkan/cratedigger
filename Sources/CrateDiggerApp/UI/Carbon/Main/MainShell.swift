@@ -31,7 +31,8 @@ struct MainShell: View {
         .sheet(isPresented: $model.showingOnboarding) {
             OnboardingView()
         }
-        .sheet(isPresented: $model.showingWelcomeTour) {
+        .sheet(isPresented: $model.showingWelcomeTour,
+               onDismiss: { model.welcomeTourDidDismiss() }) {
             WelcomeTourView()
         }
         .sheet(item: $model.tagEditTarget) { target in

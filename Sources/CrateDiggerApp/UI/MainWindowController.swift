@@ -302,12 +302,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func applyAppearancePreference() {
-        guard let window else { return }
-        switch AppearanceMode.current {
-        case .light: window.appearance = NSAppearance(named: .aqua)
-        case .dark:  window.appearance = NSAppearance(named: .darkAqua)
-        case .system: window.appearance = nil
-        }
+        window?.appearance = AppearanceMode.current.nsAppearance
     }
 
     private func applyWindowPlan(context: WindowFramePlanningContext, animated: Bool) {

@@ -10,7 +10,7 @@ extension LibraryViewModel {
     /// Returns false (and shows a Carbon alert) on an invalid name or file error.
     @discardableResult
     func renameCrate(_ oldName: String, to proposed: String) -> Bool {
-        guard oldName != "Personal Crate" else { return false }
+        guard oldName != LibraryViewModel.personalCrateName else { return false }
         let others = availableCrates.filter { $0 != oldName }
         switch CrateNameValidator.validate(proposed, existing: others, currentName: oldName) {
         case .invalid(let reason):

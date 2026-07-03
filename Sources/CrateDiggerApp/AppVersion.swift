@@ -44,4 +44,14 @@ enum AppVersion {
             ? "VERSION \(version) (\(build))"
             : "VERSION \(version) · \(channel) \(build)"
     }
+
+    /// The version pill for the current process: live bundle values when an
+    /// Info.plist is present (packaged app), else the compiled-in constants
+    /// (a bare `swift build` run). Single source for About and the splash.
+    static var currentDisplayString: String {
+        let bundle = Bundle.main
+        let liveVersion = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? marketing
+        let liveBuild = bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? build
+        return displayString(version: liveVersion, build: liveBuild)
+    }
 }

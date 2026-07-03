@@ -3,8 +3,10 @@ import SwiftUI
 
 /// Hosts the launch splash (`SplashView`) in a small borderless, transparent
 /// window floated above the main window while it comes up. The app delegate
-/// shows it first thing in `applicationDidFinishLaunching` and calls
-/// `fadeOutAndClose` once the main window is on screen.
+/// shows it first thing in `applicationDidFinishLaunching`, then schedules
+/// `fadeOutAndClose` for a fixed branding hold (`SplashView.displayDuration`)
+/// — the fade is a timed cover, not a readiness signal; the main window keeps
+/// loading underneath it either way.
 final class SplashWindowController: NSWindowController {
     init() {
         let mode = AppearanceMode.currentConcrete
@@ -19,7 +21,7 @@ final class SplashWindowController: NSWindowController {
         window.ignoresMouseEvents = true
         window.setContentSize(NSSize(width: 520, height: 340))
         window.center()
-        window.appearance = NSAppearance(named: mode == .dark ? .darkAqua : .aqua)
+        window.appearance = mode.nsAppearance
         super.init(window: window)
     }
 

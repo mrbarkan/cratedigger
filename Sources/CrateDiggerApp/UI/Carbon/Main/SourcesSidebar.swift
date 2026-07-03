@@ -67,7 +67,7 @@ struct SourcesSidebar: View {
                     ForEach(model.availableCrates, id: \.self) { crateName in
                         HStack {
                             crateLabel(crateName)
-                            if crateName != "Personal Crate" {
+                            if crateName != LibraryViewModel.personalCrateName {
                                 Button(action: { model.deleteCrate(name: crateName) }) {
                                     Image(systemName: "trash")
                                         .font(.system(size: 9))
@@ -81,7 +81,7 @@ struct SourcesSidebar: View {
                             Button("Set as Target Crate") {
                                 model.targetCrateName = crateName
                             }
-                            if crateName != "Personal Crate" {
+                            if crateName != LibraryViewModel.personalCrateName {
                                 Button("Rename") {
                                     beginRename(.crate(crateName), current: crateName)
                                 }
@@ -464,7 +464,7 @@ struct SourcesSidebar: View {
                 }
             )
             .simultaneousGesture(TapGesture(count: 2).onEnded {
-                guard crateName != "Personal Crate" else { return }
+                guard crateName != LibraryViewModel.personalCrateName else { return }
                 beginRename(.crate(crateName), current: crateName)
             })
         }

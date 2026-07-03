@@ -358,7 +358,10 @@ final class LibraryViewModel: ObservableObject {
     @Published var currentSource: LibrarySource = .localAll
     @Published var availableCrates: [String] = []
     @Published var prepCrateTracks: [LoadedTrack] = []
-    @Published var targetCrateName: String = "Personal Crate"
+    /// The reserved, auto-created crate — can't be renamed or deleted.
+    static let personalCrateName = "Personal Crate"
+
+    @Published var targetCrateName: String = LibraryViewModel.personalCrateName
     /// Cached counts shown in the Sources sidebar. These are recomputed only
     /// when crates change (`refreshCrateCounts()`), NEVER read by decoding
     /// `.cdlib` files inside a SwiftUI body — those files are JSON with
@@ -601,17 +604,14 @@ final class LibraryViewModel: ObservableObject {
         if let raw = prefs.savedMiniPlayerArtMode, let mode = MiniPlayerArtMode(rawValue: raw) {
             miniPlayerArtMode = mode
         }
-        // First run: welcome tour first, then folder setup (the tour chains
-        // into onboarding when it finishes — see completeWelcomeTour()).
-        if !prefs.hasCompletedFirstRunSetup {
-            if prefs.hasSeenWelcomeTour {
-                showingOnboarding = true
-            } else {
-                showingWelcomeTour = true
-            }
-        } else if !prefs.hasSeenWelcomeTour {
-            // Existing library, tour re-armed from Preferences.
+        // The tour takes priority; when it dismisses it chains into folder
+        // setup (and starter-content install) as needed — see
+        // welcomeTourDidDismiss(). "Not seen" covers fresh installs, upgrades,
+        // and a tour re-armed from Preferences.
+        if !prefs.hasSeenWelcomeTour {
             showingWelcomeTour = true
+        } else if !prefs.hasCompletedFirstRunSetup {
+            showingOnboarding = true
         }
 
         if var restored = prefs.savedLastConversionSelection(as: ConversionOptionsSelection.self) {
@@ -2193,13 +2193,13 @@ final class LibraryViewModel: ObservableObject {
 
             // Auto-create Personal Crate if none exist
             if self.availableCrates.isEmpty {
-                createCrate(name: "Personal Crate")
+                createCrate(name: Self.personalCrateName)
                 return
             }
-            
+
             if targetCrateName.isEmpty || !availableCrates.contains(targetCrateName) {
-                if availableCrates.contains("Personal Crate") {
-                    targetCrateName = "Personal Crate"
+                if availableCrates.contains(Self.personalCrateName) {
+                    targetCrateName = Self.personalCrateName
                 } else if let first = availableCrates.first {
                     targetCrateName = first
                 }

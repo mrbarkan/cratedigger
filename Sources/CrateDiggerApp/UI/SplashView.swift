@@ -1,10 +1,15 @@
 import SwiftUI
 
 /// Launch splash: a small Carbon faceplate card shown in a borderless window
-/// while the main window warms up (see `SplashWindowController`). Purely
-/// decorative — the fake "boot sequence" runs on a fixed clock and the window
-/// is faded out by the app delegate once the main window is on screen.
+/// over the main window while it comes up (see `SplashWindowController`).
+/// Purely decorative — the fake "boot sequence" runs on a fixed clock and the
+/// app delegate fades the window out after `displayDuration`.
 struct SplashView: View {
+    /// How long the splash stays up before the fade-out starts. Keep this at
+    /// or above the boot animation length below (progress sweep 1.45s, boot
+    /// lines 2 × 0.55s) so the LEDs finish before the card fades.
+    static let displayDuration: TimeInterval = 1.5
+
     /// Concrete light/dark resolved by the window controller (see CarbonAboutView).
     let mode: AppearanceMode
 
@@ -21,6 +26,7 @@ private struct SplashCard: View {
     @State private var progress: CGFloat = 0
     @State private var bootLineIndex = 0
     @State private var markVisible = false
+    @State private var bootTicker: Task<Void, Never>?
 
     private static let bootLines = [
         "CALIBRATING TONE ARM",
@@ -79,6 +85,7 @@ private struct SplashCard: View {
         .shadow(color: theme.shadow2.color, radius: theme.shadow2.radius,
                 x: theme.shadow2.x, y: theme.shadow2.y)
         .onAppear(perform: startBootSequence)
+        .onDisappear { bootTicker?.cancel() }
     }
 
     private func chassisSurface(_ shape: RoundedRectangle) -> some View {
@@ -147,12 +154,7 @@ private struct SplashCard: View {
         }
     }
 
-    private var versionText: String {
-        let bundle = Bundle.main
-        let version = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? AppVersion.marketing
-        let build = bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? AppVersion.build
-        return AppVersion.displayString(version: version, build: build)
-    }
+    private var versionText: String { AppVersion.currentDisplayString }
 
     private func startBootSequence() {
         withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
@@ -161,7 +163,7 @@ private struct SplashCard: View {
         withAnimation(.easeInOut(duration: 1.45)) {
             progress = 1
         }
-        Task { @MainActor in
+        bootTicker = Task { @MainActor in
             for index in 1..<Self.bootLines.count {
                 try? await Task.sleep(nanoseconds: 550_000_000)
                 guard !Task.isCancelled else { return }

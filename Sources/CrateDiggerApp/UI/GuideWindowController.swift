@@ -16,7 +16,7 @@ final class GuideWindowController: NSWindowController {
         window.isReleasedWhenClosed = false
         window.setContentSize(NSSize(width: 660, height: 620))
         window.center()
-        window.appearance = NSAppearance(named: mode == .dark ? .darkAqua : .aqua)
+        window.appearance = mode.nsAppearance
         super.init(window: window)
     }
 

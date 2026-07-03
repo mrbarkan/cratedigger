@@ -172,12 +172,7 @@ struct CarbonAboutView: View {
         }
     }
 
-    private var versionText: String {
-        let bundle = Bundle.main
-        let version = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? AppVersion.marketing
-        let build = bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? AppVersion.build
-        return AppVersion.displayString(version: version, build: build)
-    }
+    private var versionText: String { AppVersion.currentDisplayString }
 
     private func featureRow(dot: Color, label: String, desc: String) -> some View {
         HStack(alignment: .center, spacing: 12) {

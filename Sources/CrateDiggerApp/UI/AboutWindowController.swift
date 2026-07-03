@@ -19,7 +19,7 @@ final class AboutWindowController: NSWindowController {
         window.isReleasedWhenClosed = false
         window.setContentSize(NSSize(width: 720, height: 450))
         window.center()
-        window.appearance = NSAppearance(named: mode == .dark ? .darkAqua : .aqua)
+        window.appearance = mode.nsAppearance
 
         super.init(window: window)
     }

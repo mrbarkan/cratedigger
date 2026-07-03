@@ -23,6 +23,16 @@ public enum AppearanceMode: String, Codable, CaseIterable, Sendable {
         return AppearanceMode(rawValue: raw) ?? .system
     }
 
+    /// The NSAppearance for window chrome — nil for `.system`, so assigning it
+    /// to `NSWindow.appearance` makes the window follow the system.
+    public var nsAppearance: NSAppearance? {
+        switch self {
+        case .light: return NSAppearance(named: .aqua)
+        case .dark: return NSAppearance(named: .darkAqua)
+        case .system: return nil
+        }
+    }
+
     /// The stored preference with `.system` resolved to the app's current
     /// effective light/dark — never returns `.system`.
     public static var currentConcrete: AppearanceMode {
