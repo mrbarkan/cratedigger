@@ -454,7 +454,7 @@ struct SourcesSidebar: View {
             renameField { commitRename(.crate(crateName)) }
         } else {
             sidebarItem(
-                icon: Image(systemName: crateName == model.targetCrateName ? "music.note.house.fill" : "music.note.house"),
+                icon: Image(systemName: crateName == model.targetCrateName ? "shippingbox.fill" : "shippingbox"),
                 title: crateName,
                 count: "\(model.crateTrackCounts[crateName] ?? 0)",
                 selected: isSelectedCrate(crateName),

@@ -16,22 +16,29 @@ struct ConvertPatchBay: View {
     @State private var ejectAfter: Bool = false
 
     var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            VStack(spacing: CarbonLayout.patchBayRowGap) {
-                if !model.browserCollapsed { roomHint }
-                scopeRow
-                formatRow
-                bitrateRow
-                sampleRow
-                layoutRow
-                patternRow
-                destRow
-                optsRow
-                Spacer(minLength: 4)
-                armBlock
+        // The settings rows scroll; the arm block (queue readout + Cancel /
+        // Convert) is pinned below the scroller so the two critical buttons
+        // are always on screen — on short panels they used to scroll out of
+        // view with no indicator hinting they existed.
+        VStack(spacing: 0) {
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: CarbonLayout.patchBayRowGap) {
+                    if !model.browserCollapsed { roomHint }
+                    scopeRow
+                    formatRow
+                    bitrateRow
+                    sampleRow
+                    layoutRow
+                    patternRow
+                    destRow
+                    optsRow
+                }
+                .padding(EdgeInsets(top: 14, leading: 14, bottom: 10, trailing: 14))
+                .frame(maxWidth: .infinity, alignment: .top)
             }
-            .padding(EdgeInsets(top: 14, leading: 14, bottom: 16, trailing: 14))
-            .frame(maxWidth: .infinity, alignment: .top)
+
+            armBlock
+                .padding(EdgeInsets(top: 6, leading: 14, bottom: 14, trailing: 14))
         }
         .background(panelBackground)
     }
@@ -254,7 +261,7 @@ struct ConvertPatchBay: View {
                 }
                 .frame(maxWidth: .infinity)
             }
-            .frame(height: 56)
+            .frame(height: 50)
         }
     }
 

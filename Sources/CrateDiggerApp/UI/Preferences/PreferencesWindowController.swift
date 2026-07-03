@@ -5,7 +5,7 @@ import SwiftUI
 final class PreferencesWindowController: NSWindowController {
     convenience init() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 780, height: 560),
+            contentRect: NSRect(x: 0, y: 0, width: 780, height: 580),
             styleMask: [.titled, .closable, .miniaturizable],
             backing: .buffered,
             defer: false
@@ -42,16 +42,18 @@ private struct PreferencesView: View {
             AdvancedPreferencesView()
                 .tabItem { Label("Advanced", systemImage: "wrench.and.screwdriver") }
         }
-        .frame(width: 780, height: 560)
+        .frame(width: 780, height: 580)
     }
 }
 
 // MARK: - Shared folder row
 
-/// One folder setting: label + current path (with a missing-folder warning),
-/// and Choose / optional Reveal / optional Clear actions. Shared by all three
-/// folder settings so they read identically.
+/// One folder setting: leading label, current path (with a missing-folder
+/// warning), and Choose / optional Reveal / optional Clear actions. Shared by
+/// all three folder settings so they read identically — compact single rows,
+/// with the explanation in a hover tooltip rather than a caption line.
 private struct FolderSettingRow: View {
+    let label: String
     let url: URL?
     /// Computed once by the owning view's refresh() — not per render, since a
     /// folder on an unmounted network volume can make fileExists stall.
@@ -63,6 +65,9 @@ private struct FolderSettingRow: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(label)
+                .frame(width: 118, alignment: .leading)
+
             HStack(spacing: 6) {
                 Text(url?.path ?? placeholder)
                     .lineLimit(1)
@@ -120,8 +125,11 @@ private struct GeneralPreferencesView: View {
 
     var body: some View {
         Form {
-            Section {
+            // One compact section for all three folders — no scrolling. The
+            // longer explanations live in hover tooltips (.help).
+            Section("Folders") {
                 FolderSettingRow(
+                    label: "Local Library",
                     url: libraryURL,
                     exists: libraryExists,
                     placeholder: "Not set",
@@ -132,15 +140,10 @@ private struct GeneralPreferencesView: View {
                             name: NSNotification.Name("CrateDiggerLibraryFolderChanged"), object: url)
                     }
                 )
-                Text("Where your music files live — can be an external drive.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } header: {
-                Text("Local Library")
-            }
+                .help("Where your music files live — can be an external drive.")
 
-            Section {
                 FolderSettingRow(
+                    label: "Library Files",
                     url: cratesURL,
                     exists: cratesExists,
                     placeholder: "Not set (defaults to Application Support)",
@@ -151,15 +154,10 @@ private struct GeneralPreferencesView: View {
                             name: NSNotification.Name("CrateDiggerCratesFolderChanged"), object: url)
                     }
                 )
-                Text("Where crate index files are saved. Keep this on a local disk.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } header: {
-                Text("Library Files (Crates Index)")
-            }
+                .help("Where crate index files are saved. Keep this on a local disk.")
 
-            Section {
                 FolderSettingRow(
+                    label: "Default Output",
                     url: outputURL,
                     exists: outputExists,
                     placeholder: "Not set",
@@ -172,11 +170,7 @@ private struct GeneralPreferencesView: View {
                         refresh()
                     }
                 )
-                Text("Destination for converted files. The first conversion prompts you if this is empty.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } header: {
-                Text("Default Output")
+                .help("Destination for converted files. The first conversion prompts you if this is empty.")
             }
 
             Section("Importing & Organizing") {

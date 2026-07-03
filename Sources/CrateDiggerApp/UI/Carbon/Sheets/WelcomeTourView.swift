@@ -16,11 +16,11 @@ struct WelcomeTourView: View {
         VStack(spacing: 0) {
             illustrationWell
             textBlock
-            Spacer(minLength: 0)
+            Spacer(minLength: 18)
             controls
         }
-        .padding(24)
-        .frame(width: 620, height: 480)
+        .padding(28)
+        .frame(width: 680, height: 540)
         .animation(.spring(response: 0.34, dampingFraction: 0.9), value: page)
     }
 
@@ -54,22 +54,23 @@ struct WelcomeTourView: View {
 
     private var textBlock: some View {
         let current = pages[page]
-        return VStack(alignment: .leading, spacing: 8) {
+        return VStack(alignment: .leading, spacing: 10) {
             Text(current.eyebrow)
                 .font(CarbonFont.mono(9.5, weight: .bold))
                 .tracking(2.4)
                 .foregroundStyle(current.accent(theme))
             Text(current.title)
-                .font(CarbonFont.sans(21, weight: .bold))
+                .font(CarbonFont.sans(22, weight: .bold))
                 .foregroundStyle(theme.ink)
             Text(current.body)
-                .font(CarbonFont.sans(12.5))
+                .font(CarbonFont.sans(13))
                 .foregroundStyle(theme.ink2)
                 .fixedSize(horizontal: false, vertical: true)
-                .lineSpacing(2.5)
+                .lineSpacing(3.5)
+                .padding(.trailing, 8)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.top, 18)
+        .padding(.top, 22)
         .id(page)
         .transition(.opacity)
     }
@@ -414,7 +415,9 @@ private struct TourArtConvert: View {
     }
 }
 
-/// Spinning record + transport keys.
+/// Spinning record + the app's real transport look (chrome keys around the
+/// orange play dome — kept visually identical to `TransportCluster` /
+/// `PlayDomeButton`, just non-interactive).
 private struct TourArtPlay: View {
     @Environment(\.carbon) private var theme
     @State private var spinning = false
@@ -447,11 +450,11 @@ private struct TourArtPlay: View {
             .animation(.linear(duration: 5).repeatForever(autoreverses: false), value: spinning)
             .onAppear { spinning = true }
 
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 8) {
-                    transportKey("backward.fill")
-                    transportKey("play.fill", primary: true)
-                    transportKey("forward.fill")
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 11) {
+                    chromeKey("backward.end.fill")
+                    playDome
+                    chromeKey("forward.end.fill")
                 }
                 Text("SPACE · PLAY / PAUSE")
                     .font(CarbonFont.mono(8.5, weight: .bold))
@@ -470,22 +473,49 @@ private struct TourArtPlay: View {
         }
     }
 
-    private func transportKey(_ symbol: String, primary: Bool = false) -> some View {
-        Image(systemName: symbol)
-            .font(.system(size: primary ? 15 : 11, weight: .bold))
-            .foregroundStyle(primary ? theme.orange : theme.ink2)
-            .frame(width: primary ? 44 : 36, height: primary ? 34 : 28)
-            .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(
-                        LinearGradient(colors: [theme.metalHi, theme.metal, theme.metalLo],
-                                       startPoint: .top, endPoint: .bottom)
+    /// Mirror of TransportCluster.transportButton, at 80% footer scale.
+    private func chromeKey(_ symbol: String) -> some View {
+        ZStack {
+            ChromeChassis(theme: theme, cornerRadius: 10)
+            Image(systemName: symbol)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(theme.ink2)
+        }
+        .frame(width: CarbonLayout.transportButtonSize * 0.8,
+               height: CarbonLayout.transportButtonSize * 0.8)
+    }
+
+    /// Mirror of PlayDomeButton's dome, at 80% footer scale.
+    private var playDome: some View {
+        ZStack {
+            Circle()
+                .fill(
+                    LinearGradient(
+                        colors: [theme.orangeHi, theme.orange, theme.orangeLo],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
                     )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .strokeBorder(Color.black.opacity(theme.isDark ? 0.5 : 0.15), lineWidth: 1)
-                    )
-            )
-            .shadow(color: Color.black.opacity(theme.isDark ? 0.4 : 0.15), radius: 3, y: 2)
+                )
+                .overlay(
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: [Color.white.opacity(0.34), Color.clear],
+                                startPoint: .top,
+                                endPoint: .center
+                            )
+                        )
+                        .padding(1)
+                )
+                .overlay(Circle().stroke(Color.white.opacity(0.42), lineWidth: 0.8))
+                .shadow(color: Color.black.opacity(theme.isDark ? 0.58 : 0.24), radius: 9, y: 5)
+                .shadow(color: theme.orange.opacity(0.35), radius: 10)
+
+            Image(systemName: "play.fill")
+                .font(.system(size: 21, weight: .black))
+                .foregroundStyle(Color.white)
+        }
+        .frame(width: CarbonLayout.playButtonSize * 0.8,
+               height: CarbonLayout.playButtonSize * 0.8)
     }
 }

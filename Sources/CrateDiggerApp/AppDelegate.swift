@@ -3,7 +3,6 @@ import CrateDiggerCore
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private var mainWindowController: MainWindowController?
-    private var splashWindowController: SplashWindowController?
     private var aboutWindowController: AboutWindowController?
     private var guideWindowController: GuideWindowController?
     private var preferencesWindowController: PreferencesWindowController?
@@ -24,12 +23,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         URLCache.shared = URLCache(memoryCapacity: 64 * 1024 * 1024,
                                    diskCapacity: 512 * 1024 * 1024)
 
-        // Splash first, so something branded is on screen while the main
-        // window builds its view tree and restores the last session.
-        let splash = SplashWindowController()
-        splashWindowController = splash
-        splash.showWindow(self)
-
         buildMenu()
 
         let windowController = MainWindowController()
@@ -45,12 +38,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         NotificationCenter.default.addObserver(
             self, selector: #selector(showWelcomeTour(_:)),
             name: NSNotification.Name("CrateDiggerShowWelcomeTour"), object: nil)
-
-        // Hold the splash for its boot animation, then hand the stage to the
-        // main window (which keeps loading underneath in the meantime).
-        splash.fadeOutAndClose(after: SplashView.displayDuration) { [weak self] in
-            self?.splashWindowController = nil
-        }
     }
 
     /// Beta builds stop working after `AppVersion.betaExpiry`: show a notice
