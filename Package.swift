@@ -18,7 +18,12 @@ let package = Package(
         .executableTarget(
             name: "CrateDiggerApp",
             dependencies: ["CrateDiggerCore"],
-            path: "Sources/CrateDiggerApp"
+            path: "Sources/CrateDiggerApp",
+            resources: [
+                // Starter album installed into the library on first run
+                // (see LibraryViewModel+Onboarding.installStarterContentIfNeeded).
+                .copy("Resources/StarterCrate")
+            ]
         ),
         .testTarget(
             name: "CrateDiggerCoreTests",

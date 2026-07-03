@@ -3,6 +3,7 @@ import CrateDiggerCore
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private var mainWindowController: MainWindowController?
+    private var splashWindowController: SplashWindowController?
     private var aboutWindowController: AboutWindowController?
     private var guideWindowController: GuideWindowController?
     private var preferencesWindowController: PreferencesWindowController?
@@ -23,6 +24,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         URLCache.shared = URLCache(memoryCapacity: 64 * 1024 * 1024,
                                    diskCapacity: 512 * 1024 * 1024)
 
+        // Splash first, so something branded is on screen while the main
+        // window builds its view tree and restores the last session.
+        let splash = SplashWindowController()
+        splashWindowController = splash
+        splash.showWindow(self)
+
         buildMenu()
 
         let windowController = MainWindowController()
@@ -35,6 +42,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         NotificationCenter.default.addObserver(
             self, selector: #selector(showMiniPlayer(_:)),
             name: NSNotification.Name("CrateDiggerShowMiniPlayer"), object: nil)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(showWelcomeTour(_:)),
+            name: NSNotification.Name("CrateDiggerShowWelcomeTour"), object: nil)
+
+        // Hold the splash long enough for its boot animation to read, then
+        // hand the stage to the main window.
+        splash.fadeOutAndClose(after: 1.5) { [weak self] in
+            self?.splashWindowController = nil
+        }
     }
 
     /// Beta builds stop working after `AppVersion.betaExpiry`: show a notice
@@ -257,6 +273,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         }
         aboutWindowController?.showWindow(self)
         aboutWindowController?.window?.makeKeyAndOrderFront(self)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    @objc private func showWelcomeTour(_ sender: Any?) {
+        mainWindowController?.showWelcomeTour()
+        mainWindowController?.window?.makeKeyAndOrderFront(self)
         NSApp.activate(ignoringOtherApps: true)
     }
 
@@ -542,6 +564,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         mainMenu.addItem(helpMenuItem)
         let helpMenu = NSMenu(title: "Help")
         helpMenu.addItem(makeItem(title: "CrateDigger Guide", action: #selector(showGuide(_:))))
+        helpMenu.addItem(makeItem(title: "Welcome Tour", action: #selector(showWelcomeTour(_:))))
         helpMenu.addItem(.separator())
         helpMenu.addItem(makeItem(title: "CrateDigger Help", action: #selector(openHelpPage(_:)), key: "?"))
         helpMenu.addItem(makeItem(title: "Send Feedback…", action: #selector(sendFeedback(_:))))

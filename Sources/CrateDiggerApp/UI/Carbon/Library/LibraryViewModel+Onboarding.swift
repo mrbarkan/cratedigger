@@ -116,5 +116,94 @@ extension LibraryViewModel {
         prefs.hasCompletedFirstRunSetup = true
         refreshAvailableCrates()
         showingOnboarding = false
+        installStarterContentIfNeeded()
+    }
+
+    // MARK: - Welcome tour
+
+    /// Replay entry point (Help ▸ Welcome Tour, Preferences "Show Tour Now").
+    func startWelcomeTour() {
+        showingWelcomeTour = true
+    }
+
+    /// Finish or skip the tour. On first run this chains straight into the
+    /// folder-setup sheet (after the tour sheet's dismissal animation).
+    func completeWelcomeTour() {
+        prefs.hasSeenWelcomeTour = true
+        showingWelcomeTour = false
+        guard !prefs.hasCompletedFirstRunSetup else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+            guard let self, !self.prefs.hasCompletedFirstRunSetup else { return }
+            self.showingOnboarding = true
+        }
+    }
+
+    // MARK: - Starter content
+
+    /// The bundled starter album ("The CrateDigger Manual"), shipped as an SPM
+    /// resource. Looked up manually — not via `Bundle.module` — so a packaged
+    /// app missing the resource bundle degrades to a no-op instead of trapping.
+    private var starterAlbumSourceURL: URL? {
+        let bundleName = "CrateDigger_CrateDiggerApp.bundle"
+        let candidates = [Bundle.main.resourceURL, Bundle.main.bundleURL]
+        for base in candidates {
+            guard let base else { continue }
+            let folder = base
+                .appendingPathComponent(bundleName, isDirectory: true)
+                .appendingPathComponent("StarterCrate", isDirectory: true)
+            var isDirectory: ObjCBool = false
+            if FileManager.default.fileExists(atPath: folder.path, isDirectory: &isDirectory),
+               isDirectory.boolValue {
+                return folder
+            }
+        }
+        return nil
+    }
+
+    /// Copy the bundled starter album into the Local Library and file it into
+    /// the Personal Crate, so a brand-new install has something to play (and
+    /// the album art doubles as a quick-reference manual). Runs at most once;
+    /// quietly does nothing when the resource bundle isn't present.
+    func installStarterContentIfNeeded() {
+        guard !prefs.starterContentInstalled else { return }
+        guard let source = starterAlbumSourceURL,
+              let libraryRoot = managedLibraryFolderURL else { return }
+
+        let fm = FileManager.default
+        let artistFolder = libraryRoot.appendingPathComponent("MRBRKN", isDirectory: true)
+        let albumFolder = artistFolder.appendingPathComponent("The CrateDigger Manual", isDirectory: true)
+        do {
+            if !fm.fileExists(atPath: albumFolder.path) {
+                try fm.createDirectory(at: artistFolder, withIntermediateDirectories: true)
+                try fm.copyItem(at: source, to: albumFolder)
+            }
+        } catch {
+            AppLog.library.warning("Couldn't install starter album: \(String(describing: error), privacy: .public)")
+            return
+        }
+        prefs.starterContentInstalled = true
+
+        Task { [weak self] in
+            guard let self else { return }
+            let scanned = await self.scanner.scanFolder(albumFolder)
+            await MainActor.run {
+                guard !scanned.isEmpty else { return }
+                for track in scanned {
+                    if let art = track.metadata.artwork, !art.data.isEmpty {
+                        self.artworkService.ingest(art)
+                    }
+                }
+                let crateName = "Personal Crate"
+                let existing = self.loadCrateTracks(name: crateName)
+                let existingPaths = Set(existing.map { $0.track.fileURL.standardizedFileURL.path })
+                let fresh = scanned.filter {
+                    !existingPaths.contains($0.track.fileURL.standardizedFileURL.path)
+                }
+                guard !fresh.isEmpty else { return }
+                self.saveCrateTracks(existing + fresh, name: crateName)
+                self.refreshAvailableCrates()
+                self.selectSource(self.currentSource)
+            }
+        }
     }
 }

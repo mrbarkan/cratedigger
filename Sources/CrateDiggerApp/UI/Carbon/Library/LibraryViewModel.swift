@@ -206,6 +206,10 @@ final class LibraryViewModel: ObservableObject {
     /// First-run onboarding sheet — shown when setup hasn't completed.
     @Published var showingOnboarding: Bool = false
 
+    /// Visual welcome tour — shown before folder setup on the very first
+    /// launch, and replayable from Help ▸ Welcome Tour or Preferences.
+    @Published var showingWelcomeTour: Bool = false
+
     private var scrubReleaseWorkItem: DispatchWorkItem?
     private var pendingSeekTargetSeconds: Double?
 
@@ -597,7 +601,18 @@ final class LibraryViewModel: ObservableObject {
         if let raw = prefs.savedMiniPlayerArtMode, let mode = MiniPlayerArtMode(rawValue: raw) {
             miniPlayerArtMode = mode
         }
-        showingOnboarding = !prefs.hasCompletedFirstRunSetup
+        // First run: welcome tour first, then folder setup (the tour chains
+        // into onboarding when it finishes — see completeWelcomeTour()).
+        if !prefs.hasCompletedFirstRunSetup {
+            if prefs.hasSeenWelcomeTour {
+                showingOnboarding = true
+            } else {
+                showingWelcomeTour = true
+            }
+        } else if !prefs.hasSeenWelcomeTour {
+            // Existing library, tour re-armed from Preferences.
+            showingWelcomeTour = true
+        }
 
         if var restored = prefs.savedLastConversionSelection(as: ConversionOptionsSelection.self) {
             if restored.tokenOrder.isEmpty { restored.tokenOrder = restored.templatePreset.defaultTokenOrder }

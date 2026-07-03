@@ -211,6 +211,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         hostingController.model.togglePlayPause()
     }
 
+    func showWelcomeTour() {
+        hostingController.model.startWelcomeTour()
+    }
+
     func importLibraryFile() {
         hostingController.model.importLibraryFile()
     }

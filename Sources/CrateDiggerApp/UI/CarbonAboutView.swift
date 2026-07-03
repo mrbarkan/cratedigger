@@ -72,13 +72,15 @@ struct CarbonAboutView: View {
 
             oledStrip
 
-            VStack(alignment: .leading, spacing: 14) {
-                featureRow(dot: theme.cyan, label: "SCAN",
-                           desc: "Browse mixed folders and see what's there.")
-                featureRow(dot: theme.sun, label: "PREVIEW",
-                           desc: "Artwork, metadata, and playback together.")
+            VStack(alignment: .leading, spacing: 12) {
+                featureRow(dot: theme.cyan, label: "DIG",
+                           desc: "Scan mixed folders into the Prep Crate and see what's really there.")
+                featureRow(dot: theme.sun, label: "ORGANIZE",
+                           desc: "File albums into crates; fix tags and artwork in the Inspector.")
                 featureRow(dot: theme.orange, label: "CONVERT",
-                           desc: "Reshape chaotic folders into clean libraries.")
+                           desc: "Batch-reshape chaotic rips into clean libraries with FFmpeg.")
+                featureRow(dot: theme.indigo, label: "SPIN",
+                           desc: "Play local files, CDs, streams, and YouTube radio — or split vinyl rips.")
             }
             .padding(.top, 2)
 
@@ -88,19 +90,18 @@ struct CarbonAboutView: View {
                 .fill(theme.hair.opacity(theme.isDark ? 0.5 : 0.7))
                 .frame(height: 1)
 
-            HStack {
-                Button { openURL(URL(string: "https://smash.mrbarkan.com")!) } label: {
-                    Text("smash.mrbarkan.com")
-                        .font(CarbonFont.mono(12, weight: .semibold))
-                        .foregroundStyle(theme.cyan)
-                        .underline()
-                }
-                .buttonStyle(.plain)
-                .pointerStyleLink()
+            HStack(spacing: 16) {
+                linkButton("smash.mrbarkan.com", url: "https://smash.mrbarkan.com")
+                linkButton("Send Feedback", url: "mailto:opa@mrbarkan.com?subject=CrateDigger%20Feedback")
                 Spacer()
-                Text("macOS · Swift · AppKit · FFmpeg")
-                    .font(CarbonFont.mono(10))
-                    .foregroundStyle(theme.ink4)
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("© 2026 MRBRKN SMASH")
+                        .font(CarbonFont.mono(9))
+                        .foregroundStyle(theme.ink4)
+                    Text("Powered by FFmpeg · yt-dlp · AVFoundation")
+                        .font(CarbonFont.mono(9))
+                        .foregroundStyle(theme.ink4)
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -108,36 +109,67 @@ struct CarbonAboutView: View {
 
     @Environment(\.openURL) private var openURL
 
+    private func linkButton(_ title: String, url: String) -> some View {
+        Button {
+            if let url = URL(string: url) { openURL(url) }
+        } label: {
+            Text(title)
+                .font(CarbonFont.mono(11, weight: .semibold))
+                .foregroundStyle(theme.cyan)
+                .underline()
+        }
+        .buttonStyle(.plain)
+        .pointerStyleLink()
+    }
+
     // MARK: - OLED strip
 
+    @State private var versionCopied = false
+
+    /// Click to copy the version string — handy for bug reports.
     private var oledStrip: some View {
         // Text on the OLED is always light — it sits on a near-black surface in
         // both themes, so it uses fixed colours rather than theme.ink.
         let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
-        return shape
-            .fill(theme.oledSurface)
-            .overlay(shape.strokeBorder(theme.oledStrokeInner, lineWidth: 1))
-            .overlay(
-                HStack(spacing: 10) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(versionText)
-                            .font(CarbonFont.mono(12.5, weight: .bold))
-                            .tracking(1.4)
-                            .foregroundStyle(theme.orange)
-                        Text("CREATED BY MRBRKN SMASH")
-                            .font(CarbonFont.mono(10, weight: .medium))
-                            .tracking(1.4)
-                            .foregroundStyle(Color.white.opacity(0.62))
+        return Button(action: copyVersion) {
+            shape
+                .fill(theme.oledSurface)
+                .overlay(shape.strokeBorder(theme.oledStrokeInner, lineWidth: 1))
+                .overlay(
+                    HStack(spacing: 10) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(versionText)
+                                .font(CarbonFont.mono(12.5, weight: .bold))
+                                .tracking(1.4)
+                                .foregroundStyle(theme.orange)
+                            Text(versionCopied ? "COPIED TO CLIPBOARD" : "CREATED BY MRBRKN SMASH · CLICK TO COPY")
+                                .font(CarbonFont.mono(10, weight: .medium))
+                                .tracking(1.4)
+                                .foregroundStyle(versionCopied ? theme.cyan : Color.white.opacity(0.62))
+                        }
+                        Spacer(minLength: 0)
+                        Circle()
+                            .fill(theme.cyan)
+                            .frame(width: 7, height: 7)
+                            .shadow(color: theme.cyan.opacity(0.85), radius: 4)
                     }
-                    Spacer(minLength: 0)
-                    Circle()
-                        .fill(theme.cyan)
-                        .frame(width: 7, height: 7)
-                        .shadow(color: theme.cyan.opacity(0.85), radius: 4)
-                }
-                .padding(.horizontal, 16)
-            )
-            .frame(height: 54)
+                    .padding(.horizontal, 16)
+                )
+                .frame(height: 54)
+                .contentShape(shape)
+        }
+        .buttonStyle(.plain)
+        .animation(.easeInOut(duration: 0.15), value: versionCopied)
+    }
+
+    private func copyVersion() {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(versionText, forType: .string)
+        versionCopied = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
+            versionCopied = false
+        }
     }
 
     private var versionText: String {

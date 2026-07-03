@@ -260,6 +260,15 @@ cp "${BINARY_PATH}" "${APP_BUNDLE}/Contents/MacOS/CrateDiggerApp"
 cp "${INFO_PLIST_SOURCE}" "${APP_BUNDLE}/Contents/Info.plist"
 cp "${ICON_SOURCE}" "${APP_BUNDLE}/Contents/Resources/CrateDigger.icns"
 
+# Copy SwiftPM resource bundles (e.g. CrateDigger_CrateDiggerApp.bundle with
+# the starter album) into Contents/Resources, where the app resolves them via
+# Bundle.main.resourceURL.
+RELEASE_DIR="$(dirname "${BINARY_PATH}")"
+while IFS= read -r resource_bundle; do
+  cp -R "${resource_bundle}" "${APP_BUNDLE}/Contents/Resources/"
+  echo "Bundled resources: $(basename "${resource_bundle}")"
+done < <(find "${RELEASE_DIR}" -maxdepth 1 -type d -name '*.bundle')
+
 # Embed Last.fm API credentials into the bundled Info.plist when provided.
 # These are kept out of source control; supply them via scripts/.lastfm.env or
 # the CRATEDIGGER_LASTFM_API_KEY / _SECRET env vars. Without them, the app

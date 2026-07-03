@@ -51,6 +51,8 @@ public final class PreferencesStore {
         static let scrubLock = "cratedigger.transport.scrubLock"
         static let miniPlayerArtMode = "cratedigger.miniplayer.artMode"
         static let hasCompletedFirstRunSetup = "cratedigger.onboarding.completed"
+        static let hasSeenWelcomeTour = "cratedigger.onboarding.tourSeen"
+        static let starterContentInstalled = "cratedigger.onboarding.starterInstalled"
         static let streamSources = "cratedigger.radio.streamSources"
         static let streamEngine = "cratedigger.radio.engine"
         static let customYtDlpPath = "cratedigger.tools.ytdlpPath"
@@ -316,6 +318,20 @@ public final class PreferencesStore {
     public var hasCompletedFirstRunSetup: Bool {
         get { defaults.bool(forKey: Key.hasCompletedFirstRunSetup) }
         set { defaults.set(newValue, forKey: Key.hasCompletedFirstRunSetup) }
+    }
+
+    /// Whether the visual welcome tour has been shown. Cleared from Preferences
+    /// ("Show welcome tour at next launch") to replay it on the next start.
+    public var hasSeenWelcomeTour: Bool {
+        get { defaults.bool(forKey: Key.hasSeenWelcomeTour) }
+        set { defaults.set(newValue, forKey: Key.hasSeenWelcomeTour) }
+    }
+
+    /// Whether the bundled starter album has been copied into the library, so
+    /// it's installed at most once per preferences domain.
+    public var starterContentInstalled: Bool {
+        get { defaults.bool(forKey: Key.starterContentInstalled) }
+        set { defaults.set(newValue, forKey: Key.starterContentInstalled) }
     }
 
     public var savedTrackSortAscending: Bool {

@@ -31,6 +31,9 @@ struct MainShell: View {
         .sheet(isPresented: $model.showingOnboarding) {
             OnboardingView()
         }
+        .sheet(isPresented: $model.showingWelcomeTour) {
+            WelcomeTourView()
+        }
         .sheet(item: $model.tagEditTarget) { target in
             MetadataEditorView(tracks: target.tracks)
         }
