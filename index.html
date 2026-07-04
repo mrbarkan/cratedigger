@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CrateDigger — The hi-fi console for your offline music library</title>
+  <meta name="description" content="CrateDigger is a native macOS music workbench with a skeuomorphic hardware console: batch FFmpeg conversion, a real 12-band EQ with live spectrum analysis, YouTube radio, vinyl-side splitting, Rockbox/DAP sync, CD ripping, and Subsonic streaming.">
+  
+  <!-- Modern Typography -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="index.css">
+</head>
+<body data-theme="dark">
+
+  <!-- Background Gradients -->
+  <div class="backdrop"></div>
+
+  <!-- Header / Navigation -->
+  <header class="navbar">
+    <div class="nav-container">
+      <div class="logo">
+        <span class="logo-led"></span>
+        <span class="logo-text">CrateDigger</span>
+        <span class="logo-sub">CD-01</span>
+      </div>
+      <nav class="nav-links">
+        <a href="#features">Features</a>
+        <a href="#demo">Interactive UI</a>
+        <a href="#comparison">Compare</a>
+        <a href="#specs">Specs</a>
+        <a href="#signup" class="btn btn-secondary">Get Beta</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Hero Section -->
+  <section class="hero" id="signup">
+    <div class="container hero-container">
+      <div class="hero-content">
+        <div class="badge">macOS 13+ · CLOSED BETA</div>
+        <h1 class="hero-title">Your music. Your library. <br><span class="accent-text">Your crates.</span></h1>
+        <p class="hero-lead">
+          A native macOS console for people who still own their music. Batch-convert with FFmpeg, carve vinyl-side rips into tracks, shape the sound with a real 12-band EQ and live spectrum analyzer, pull in YouTube radio, and push it all to a Rockbox iPod — on hardware that looks and feels like the gear it's replacing.
+        </p>
+
+        <!-- Beta Signup Card -->
+        <div class="signup-card">
+          <h3 class="signup-title">Join the Closed Beta</h3>
+          <p class="signup-desc">Get early access to the macOS release, static FFmpeg builds, and scrobble integrations.</p>
+          <form id="beta-form" class="signup-form">
+            <input type="email" id="beta-email" placeholder="Enter your email address..." required autocomplete="off">
+            <button type="submit" class="btn btn-primary">Reserve Spot</button>
+          </form>
+          <div id="form-success" class="form-feedback hide">
+            <span class="success-dot"></span> Joined successfully! We'll ping you when the next build drops.
+          </div>
+        </div>
+      </div>
+      <div class="hero-image-wrapper">
+        <div class="hero-app-container">
+          <img src="assets/app_icon.png" alt="CrateDigger App Icon" class="hero-app-icon">
+          <div class="hero-app-glow"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Signature Meter Rail: a lit VU/spectrum bridge between hero and demo, echoing the app's own 12-band meter -->
+  <div class="meter-rail" aria-hidden="true">
+    <div class="meter-rail-inner">
+      <span class="meter-bar" style="--i:0"></span><span class="meter-bar" style="--i:1"></span>
+      <span class="meter-bar" style="--i:2"></span><span class="meter-bar" style="--i:3"></span>
+      <span class="meter-bar" style="--i:4"></span><span class="meter-bar" style="--i:5"></span>
+      <span class="meter-bar" style="--i:6"></span><span class="meter-bar" style="--i:7"></span>
+      <span class="meter-bar" style="--i:8"></span><span class="meter-bar" style="--i:9"></span>
+      <span class="meter-bar" style="--i:10"></span><span class="meter-bar" style="--i:11"></span>
+      <span class="meter-bar" style="--i:12"></span><span class="meter-bar" style="--i:13"></span>
+      <span class="meter-bar" style="--i:14"></span><span class="meter-bar" style="--i:15"></span>
+      <span class="meter-bar" style="--i:16"></span><span class="meter-bar" style="--i:17"></span>
+      <span class="meter-bar" style="--i:18"></span><span class="meter-bar" style="--i:19"></span>
+      <span class="meter-bar" style="--i:20"></span><span class="meter-bar" style="--i:21"></span>
+      <span class="meter-bar" style="--i:22"></span><span class="meter-bar" style="--i:23"></span>
+    </div>
+  </div>
+
+  <!-- Interactive UI Demo Section -->
+  <section class="demo-section" id="demo">
+    <div class="container">
+      <div class="section-header">
+        <h2 class="section-title">Hardware-Level Curating</h2>
+        <p class="section-lead">Toggle between <strong>Carbon (Dark)</strong> and <strong>Linen (Light)</strong> modes and hover over the hotspots to tour the console.</p>
+        
+        <!-- Theme Selector -->
+        <div class="theme-switcher">
+          <button id="theme-carbon" class="theme-btn active" data-mode="dark">
+            <span class="theme-icon dark-icon"></span> Carbon (Dark)
+          </button>
+          <button id="theme-linen" class="theme-btn" data-mode="light">
+            <span class="theme-icon light-icon"></span> Linen (Light)
+          </button>
+        </div>
+      </div>
+
+      <!-- App Canvas Container -->
+      <div class="app-canvas-container">
+        <div class="app-canvas">
+          <!-- The screenshot that changes -->
+          <img id="app-screenshot" src="assets/screenshot_dark.png" alt="CrateDigger Interface Screenshot" class="screenshot-img">
+          
+          <!-- Hotspots -->
+          <!-- Hotspot 1: OLED Display -->
+          <div class="hotspot" style="top: 10%; left: 52%;" data-tooltip="oled">
+            <span class="hotspot-pulse"></span>
+            <span class="hotspot-dot"></span>
+          </div>
+          <!-- Hotspot 2: Sources Sidebar -->
+          <div class="hotspot" style="top: 45%; left: 13%;" data-tooltip="sources">
+            <span class="hotspot-pulse"></span>
+            <span class="hotspot-dot"></span>
+          </div>
+          <!-- Hotspot 3: Inspector Panel -->
+          <div class="hotspot" style="top: 50%; left: 82%;" data-tooltip="inspector">
+            <span class="hotspot-pulse"></span>
+            <span class="hotspot-dot"></span>
+          </div>
+          <!-- Hotspot 4: Transport Decks -->
+          <div class="hotspot" style="top: 92%; left: 50%;" data-tooltip="transport">
+            <span class="hotspot-pulse"></span>
+            <span class="hotspot-dot"></span>
+          </div>
+        </div>
+
+        <!-- Dynamic Explanation Tooltips Panel -->
+        <div class="tooltip-panel">
+          <!-- Default text -->
+          <div id="tooltip-default" class="tooltip-content active">
+            <div class="tooltip-header">
+              <span class="led-indicator cyan"></span>
+              <h4>Tactile Console Tour</h4>
+            </div>
+            <p>Hover or click on the pulsing orange hotspots scattered on the console above to inspect CrateDigger's features and hardware components.</p>
+          </div>
+
+          <!-- OLED Display Explanation -->
+          <div id="tooltip-oled" class="tooltip-content">
+            <div class="tooltip-header">
+              <span class="led-indicator amber"></span>
+              <h4>OLED LCD Status Row</h4>
+            </div>
+            <p class="tooltip-body">
+              Inspired by physical retro-modern receivers, the glowing OLED center displays a high-fidelity readout: track tags, format, live bitrate and sample rate, and an LCD scrub bar. Cycle views to a real 28-segment VU + 12-band spectrum analyzer, scan/conversion status, or your connected external device — all pulled from the actual post-EQ audio tap, not a fake animation.
+            </p>
+          </div>
+
+          <!-- Sources Sidebar Explanation -->
+          <div id="tooltip-sources" class="tooltip-content">
+            <div class="tooltip-header">
+              <span class="led-indicator cyan"></span>
+              <h4>Double-Tier Crates Index</h4>
+            </div>
+            <p class="tooltip-body">
+              Organize offline tracks into portable, lightweight crates (saved as pretty-printed JSON arrays in your local folders). The <strong>Prep Crate</strong> stages new imports for tagging and review before they land in your real crates. Also browses Subsonic/Navidrome libraries, ripped CDs, local playlists, mounted external devices (Rockbox iPods included), and YouTube radio — live streams, mixes, and playlists, resolved via yt-dlp.
+            </p>
+          </div>
+
+          <!-- Inspector Panel Explanation -->
+          <div id="tooltip-inspector" class="tooltip-content">
+            <div class="tooltip-header">
+              <span class="led-indicator coral"></span>
+              <h4>Active Tag & Artwork Inspector</h4>
+            </div>
+            <p class="tooltip-body">
+              Inspect nested audio tags and metadata details instantly, including vinyl side, pressing, and edition. Distinguishes album versions and pressings, auto-detects box sets and compilations, and resolves artwork from a content-addressed store — embedded art, folder covers, or a quality-ranked iTunes search — with a full gallery view for browsing and re-tagging covers in bulk.
+            </p>
+          </div>
+
+          <!-- Transport Decks Explanation -->
+          <div id="tooltip-transport" class="tooltip-content">
+            <div class="tooltip-header">
+              <span class="led-indicator green"></span>
+              <h4>Physical Decks & VU Monitors</h4>
+            </div>
+            <p class="tooltip-body">
+              The bottom chassis hosts the mechanical audio control deck: cue loops (A-B repeat), playlist advance, shuffle, and output-device selection. The fader drives a real +5 dB makeup-gain volume law, and the EQ bands are a genuine 12-band peaking-biquad equalizer with presets (Flat, Rock, Bass, Vocal, Treble, Jazz) or fully custom gains — feeding the same tap that lights the spectrum meters.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Core Features Section -->
+  <section class="features-section" id="features">
+    <div class="container">
+      <div class="section-header">
+        <h2 class="section-title">Designed for Library Curators</h2>
+        <p class="section-lead">We built CrateDigger because streaming services hide your music. It's time to own your files again.</p>
+      </div>
+
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon font-icon">📻</div>
+          <h3 class="feature-card-title">YouTube Radio</h3>
+          <p class="feature-card-text">
+            Live streams, mixes, and playlists resolved via yt-dlp — HLS for live sets, clean AAC for VOD — with chapter markers and now-playing metadata pulled straight from the channel.
+          </p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon font-icon">✂️</div>
+          <h3 class="feature-card-title">Vinyl-Side Record Divider</h3>
+          <p class="feature-card-text">
+            Auto-detects silence between songs in one continuous vinyl-side rip and slices it into per-track exports, with a sensitivity slider so long ambient passages don't get chopped up.
+          </p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon font-icon">🎚️</div>
+          <h3 class="feature-card-title">Real 12-Band EQ + Spectrum</h3>
+          <p class="feature-card-text">
+            A genuine peaking-biquad equalizer — not a cosmetic slider — paired with a live FFT spectrum display, both running on the actual playback audio tap in real time.
+          </p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon font-icon">🔌</div>
+          <h3 class="feature-card-title">External Device Transfer</h3>
+          <p class="feature-card-text">
+            Detects mounted USB drives and DAPs — Rockbox iPods included — then copies or converts-on-the-fly straight to a folder template you choose.
+          </p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon font-icon">🗂️</div>
+          <h3 class="feature-card-title">Album Version Groups</h3>
+          <p class="feature-card-text">
+            Group different pressings and editions of the same album under one entry, with automatic box-set and compilation detection so your browser stays clean.
+          </p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon font-icon">⚙️</div>
+          <h3 class="feature-card-title">Batch FFmpeg Engine</h3>
+          <p class="feature-card-text">
+            Converts entire directories of mixed audio formats in parallel across every core but one, preserving artwork and injecting tags as it goes.
+          </p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon font-icon">📁</div>
+          <h3 class="feature-card-title">Collision-Safe Path Planner</h3>
+          <p class="feature-card-text">
+            Flat, Source-Relative, or Metadata-Template output layouts, with a per-album review sheet to edit destination folders before anything gets written — and guaranteed non-colliding filenames.
+          </p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon font-icon">💿</div>
+          <h3 class="feature-card-title">CD Ripper & Subsonic Client</h3>
+          <p class="feature-card-text">
+            Rip physical CD audio tracks directly to FLAC or MP3. Connect to your Navidrome, Subsonic, or local streaming servers to browse and cache remote libraries offline.
+          </p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon font-icon">🖼️</div>
+          <h3 class="feature-card-title">Artwork Gallery & Last.fm</h3>
+          <p class="feature-card-text">
+            A content-addressed artwork store with a searchable gallery and quality-ranked iTunes lookups, plus "now playing" and scrobble support for Last.fm.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Software Comparison Section -->
+  <section class="comparison-section" id="comparison">
+    <div class="container">
+      <div class="section-header">
+        <h2 class="section-title">How CrateDigger Compares</h2>
+        <p class="section-lead">The landscape of offline music managers is either bloated or looks like a spreadsheet. CrateDigger bridges the gap.</p>
+      </div>
+
+      <div class="table-wrapper">
+        <table class="comparison-table">
+          <thead>
+            <tr>
+              <th>Feature</th>
+              <th class="highlight">CrateDigger</th>
+              <th>Apple Music / iTunes</th>
+              <th>Foobar2000</th>
+              <th>Plex / Navidrome</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="feat-name">Batch FFmpeg Conversion</td>
+              <td class="highlight feat-yes">✓ Yes (Built-in, Multi-threaded)</td>
+              <td class="feat-no">✗ Single file only (AAC/ALAC)</td>
+              <td class="feat-yes">✓ Yes (Requires external plugin setup)</td>
+              <td class="feat-no">✗ No (On-the-fly streaming transcode only)</td>
+            </tr>
+            <tr>
+              <td class="feat-name">Tactile Hardware Interface</td>
+              <td class="highlight feat-yes">✓ Yes (Carbon/Linen Themes)</td>
+              <td class="feat-no">✗ No (Modern flat list style)</td>
+              <td class="feat-no">✗ No (Windows-classic sheet grids)</td>
+              <td class="feat-no">✗ No (Responsive grid layout)</td>
+            </tr>
+            <tr>
+              <td class="feat-name">Collision-Safe Path Renamer</td>
+              <td class="highlight feat-yes">✓ Yes (Flat / Template / Mirror)</td>
+              <td class="feat-no">✗ No (Forces proprietary folders)</td>
+              <td class="feat-yes">✓ Yes (Complex tag-scripts)</td>
+              <td class="feat-no">✗ No (Requires prep-organized folders)</td>
+            </tr>
+            <tr>
+              <td class="feat-name">Double-Tier Crate Staging</td>
+              <td class="highlight feat-yes">✓ Yes (Prep Crate vs. Saved Crates)</td>
+              <td class="feat-no">✗ No (Imports directly to main database)</td>
+              <td class="feat-no">✗ No (Flat playlists only)</td>
+              <td class="feat-no">✗ No (Monolithic library folders)</td>
+            </tr>
+            <tr>
+              <td class="feat-name">JSON Portable Libraries</td>
+              <td class="highlight feat-yes">✓ Yes (Lightweight .cdlib files)</td>
+              <td class="feat-no">✗ No (Locked in binary SQLite/XML db)</td>
+              <td class="feat-no">✗ No (Proprietary database binary)</td>
+              <td class="feat-no">✗ No (SQL databases on server host)</td>
+            </tr>
+            <tr>
+              <td class="feat-name">Native macOS Performance</td>
+              <td class="highlight feat-yes">✓ Yes (AppKit/SwiftUI + Sandbox)</td>
+              <td class="feat-yes">✓ Yes (Native, but bloated)</td>
+              <td class="feat-no">✗ No (Wine wrapper/Basic port)</td>
+              <td class="feat-yes">✓ Yes (Electron client or web browser)</td>
+            </tr>
+            <tr>
+              <td class="feat-name">Real 12-Band EQ + Live Spectrum</td>
+              <td class="highlight feat-yes">✓ Yes (Biquad EQ + FFT, on-tap)</td>
+              <td class="feat-yes">✓ Yes (Fixed presets, no spectrum)</td>
+              <td class="feat-yes">✓ Yes (Third-party plugin required)</td>
+              <td class="feat-no">✗ No (Server has no client-side DSP)</td>
+            </tr>
+            <tr>
+              <td class="feat-name">YouTube Radio Streaming</td>
+              <td class="highlight feat-yes">✓ Yes (Live, mix & playlist sources)</td>
+              <td class="feat-no">✗ No</td>
+              <td class="feat-no">✗ No (Needs external plugin)</td>
+              <td class="feat-no">✗ No</td>
+            </tr>
+            <tr>
+              <td class="feat-name">Vinyl-Rip Auto-Splitting</td>
+              <td class="highlight feat-yes">✓ Yes (Silence-detect + slice)</td>
+              <td class="feat-no">✗ No</td>
+              <td class="feat-no">✗ No (Manual cue-sheet editing)</td>
+              <td class="feat-no">✗ No</td>
+            </tr>
+            <tr>
+              <td class="feat-name">External Device Sync</td>
+              <td class="highlight feat-yes">✓ Yes (Rockbox iPods & USB DAPs)</td>
+              <td class="feat-yes">✓ Yes (Apple devices only)</td>
+              <td class="feat-no">✗ No (Manual file copy)</td>
+              <td class="feat-no">✗ No</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- Technical Specifications / Specs Footer -->
+  <section class="specs-section" id="specs">
+    <div class="container">
+      <div class="specs-card">
+        <h3 class="specs-title">Under the Hood</h3>
+        <div class="specs-grid">
+          <div class="spec-item">
+            <h5>Audio Pipeline</h5>
+            <p>FFmpeg 6.x + FFprobe static compilation. Asynchronous execution blocks using <code>ProcessCommandRunner</code> pipelines.</p>
+          </div>
+          <div class="spec-item">
+            <h5>OS Platform</h5>
+            <p>Built exclusively for macOS 13+ (Ventura, Sonoma, Sequoia, Tahoe). Programmed using native Swift 5.10, AppKit bridging, and SwiftUI components.</p>
+          </div>
+          <div class="spec-item">
+            <h5>Storage & Formats</h5>
+            <p>Decodes FLAC, ALAC, WAV, MP3, AAC, AIFF, OGG, and M4A. Persists libraries via secure security-scoped bookmarks and lightweight <code>.cdlib</code> files.</p>
+          </div>
+          <div class="spec-item">
+            <h5>Hardware Safety</h5>
+            <p>Supports sandbox environments. Validates batch preflight destinations for write permissions and disk-space estimates prior to encoding runs.</p>
+          </div>
+          <div class="spec-item">
+            <h5>Radio & Streaming</h5>
+            <p>YouTube live/video/mix/playlist sources resolved by <code>yt-dlp</code> into AVPlayer-native HLS or AAC. Browse without interrupting playback.</p>
+          </div>
+          <div class="spec-item">
+            <h5>External Devices</h5>
+            <p>Detects removable volumes and DAPs on mount, including Rockbox-formatted iPods, with per-device folder templates and a persistent on-disk catalog.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="container footer-container">
+      <p class="copyright">&copy; 2026 CrateDigger. All rights reserved. macOS, SwiftUI, and AppKit are trademarks of Apple Inc.</p>
+      <div class="footer-meta">
+        <span>Current Build: v1.0.0 (RC · Build 30)</span>
+        <span class="footer-led"></span>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Scripts -->
+  <script src="index.js"></script>
+</body>
+</html>
