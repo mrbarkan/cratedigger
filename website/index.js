@@ -121,4 +121,51 @@ document.addEventListener('DOMContentLoaded', () => {
     formSuccess.classList.remove('hide');
     formSuccess.innerHTML = `<span class="success-dot"></span> Welcome back! You are registered as <strong>${registeredEmail}</strong>.`;
   }
+
+  // --- Scroll Reveal ---
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const revealEls = document.querySelectorAll(
+    '.section-header, .feature-card, .artwork-wall, .app-canvas-container, .table-wrapper, .specs-card'
+  );
+  revealEls.forEach(el => el.classList.add('reveal'));
+
+  if (reducedMotion) {
+    revealEls.forEach(el => el.classList.add('in-view'));
+  } else if ('IntersectionObserver' in window) {
+    const revealObserver = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('in-view');
+          revealObserver.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.15, rootMargin: '0px 0px -60px 0px' });
+    revealEls.forEach(el => revealObserver.observe(el));
+  } else {
+    revealEls.forEach(el => el.classList.add('in-view'));
+  }
+
+  // --- Subtle Parallax (hero icon + artwork wall) ---
+  const parallaxEls = document.querySelectorAll('[data-parallax]');
+  if (!reducedMotion && parallaxEls.length) {
+    let ticking = false;
+    const updateParallax = () => {
+      const viewportMid = window.innerHeight / 2;
+      parallaxEls.forEach(el => {
+        const speed = parseFloat(el.dataset.parallax) || 0;
+        const rect = el.getBoundingClientRect();
+        const distanceFromMid = (rect.top + rect.height / 2) - viewportMid;
+        const offset = Math.max(-40, Math.min(40, -distanceFromMid * speed));
+        el.style.setProperty('--py', `${offset.toFixed(1)}px`);
+      });
+      ticking = false;
+    };
+    window.addEventListener('scroll', () => {
+      if (!ticking) {
+        requestAnimationFrame(updateParallax);
+        ticking = true;
+      }
+    }, { passive: true });
+    updateParallax();
+  }
 });

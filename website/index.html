@@ -29,6 +29,7 @@
       </div>
       <nav class="nav-links">
         <a href="#features">Features</a>
+        <a href="#artwork">Artwork</a>
         <a href="#demo">Interactive UI</a>
         <a href="#comparison">Compare</a>
         <a href="#specs">Specs</a>
@@ -61,7 +62,7 @@
         </div>
       </div>
       <div class="hero-image-wrapper">
-        <div class="hero-app-container">
+        <div class="hero-app-container" data-parallax="0.1">
           <img src="assets/app_icon.png" alt="CrateDigger App Icon" class="hero-app-icon">
           <div class="hero-app-glow"></div>
         </div>
@@ -203,7 +204,9 @@
 
       <div class="features-grid">
         <div class="feature-card">
-          <div class="feature-icon font-icon">📻</div>
+          <div class="feature-icon icon-cyan">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><path d="M8.5 8.5a5 5 0 000 7"/><path d="M15.5 8.5a5 5 0 010 7"/><path d="M5.5 5.5a9 9 0 000 13"/><path d="M18.5 5.5a9 9 0 010 13"/></svg>
+          </div>
           <h3 class="feature-card-title">YouTube Radio</h3>
           <p class="feature-card-text">
             Live streams, mixes, and playlists resolved via yt-dlp — HLS for live sets, clean AAC for VOD — with chapter markers and now-playing metadata pulled straight from the channel.
@@ -211,7 +214,9 @@
         </div>
 
         <div class="feature-card">
-          <div class="feature-icon font-icon">✂️</div>
+          <div class="feature-icon icon-amber">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.6"/><circle cx="6" cy="18" r="2.6"/><line x1="19.5" y1="4.5" x2="8.6" y2="15.4"/><line x1="14" y1="14" x2="19.5" y2="19.5"/><line x1="8.6" y1="8.6" x2="12" y2="12"/></svg>
+          </div>
           <h3 class="feature-card-title">Vinyl-Side Record Divider</h3>
           <p class="feature-card-text">
             Auto-detects silence between songs in one continuous vinyl-side rip and slices it into per-track exports, with a sensitivity slider so long ambient passages don't get chopped up.
@@ -219,7 +224,9 @@
         </div>
 
         <div class="feature-card">
-          <div class="feature-icon font-icon">🎚️</div>
+          <div class="feature-icon icon-coral">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="21" x2="5" y2="3"/><line x1="12" y1="21" x2="12" y2="3"/><line x1="19" y1="21" x2="19" y2="3"/><circle cx="5" cy="15" r="2.1" fill="currentColor" stroke="none"/><circle cx="12" cy="8" r="2.1" fill="currentColor" stroke="none"/><circle cx="19" cy="12.5" r="2.1" fill="currentColor" stroke="none"/></svg>
+          </div>
           <h3 class="feature-card-title">Real 12-Band EQ + Spectrum</h3>
           <p class="feature-card-text">
             A genuine peaking-biquad equalizer — not a cosmetic slider — paired with a live FFT spectrum display, both running on the actual playback audio tap in real time.
@@ -227,7 +234,9 @@
         </div>
 
         <div class="feature-card">
-          <div class="feature-icon font-icon">🔌</div>
+          <div class="feature-icon icon-green">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v10"/><path d="M8.3 9.3L12 13l3.7-3.7"/><rect x="4" y="15" width="16" height="6" rx="2"/></svg>
+          </div>
           <h3 class="feature-card-title">External Device Transfer</h3>
           <p class="feature-card-text">
             Detects mounted USB drives and DAPs — Rockbox iPods included — then copies or converts-on-the-fly straight to a folder template you choose.
@@ -235,7 +244,9 @@
         </div>
 
         <div class="feature-card">
-          <div class="feature-icon font-icon">🗂️</div>
+          <div class="feature-icon icon-cyan">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg>
+          </div>
           <h3 class="feature-card-title">Album Version Groups</h3>
           <p class="feature-card-text">
             Group different pressings and editions of the same album under one entry, with automatic box-set and compilation detection so your browser stays clean.
@@ -243,7 +254,9 @@
         </div>
 
         <div class="feature-card">
-          <div class="feature-icon font-icon">⚙️</div>
+          <div class="feature-icon icon-amber">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3.2M12 18.3v3.2M4.4 4.4l2.3 2.3M17.3 17.3l2.3 2.3M2.5 12h3.2M18.3 12h3.2M4.4 19.6l2.3-2.3M17.3 6.7l2.3-2.3"/></svg>
+          </div>
           <h3 class="feature-card-title">Batch FFmpeg Engine</h3>
           <p class="feature-card-text">
             Converts entire directories of mixed audio formats in parallel across every core but one, preserving artwork and injecting tags as it goes.
@@ -251,7 +264,9 @@
         </div>
 
         <div class="feature-card">
-          <div class="feature-icon font-icon">📁</div>
+          <div class="feature-icon icon-coral">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/><path d="M9 14.3l2 2 4-4.6"/></svg>
+          </div>
           <h3 class="feature-card-title">Collision-Safe Path Planner</h3>
           <p class="feature-card-text">
             Flat, Source-Relative, or Metadata-Template output layouts, with a per-album review sheet to edit destination folders before anything gets written — and guaranteed non-colliding filenames.
@@ -259,7 +274,9 @@
         </div>
 
         <div class="feature-card">
-          <div class="feature-icon font-icon">💿</div>
+          <div class="feature-icon icon-green">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5.2" stroke-dasharray="1.2 2.6"/><circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"/></svg>
+          </div>
           <h3 class="feature-card-title">CD Ripper & Subsonic Client</h3>
           <p class="feature-card-text">
             Rip physical CD audio tracks directly to FLAC or MP3. Connect to your Navidrome, Subsonic, or local streaming servers to browse and cache remote libraries offline.
@@ -267,12 +284,40 @@
         </div>
 
         <div class="feature-card">
-          <div class="feature-icon font-icon">🖼️</div>
+          <div class="feature-icon icon-cyan">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v10a2 2 0 01-2 2H9"/><rect x="3" y="3" width="14" height="14" rx="2"/><path d="M3 13.5l3.3-3.3a1.5 1.5 0 012.1 0L13 14.5"/><circle cx="8" cy="7.5" r="1.3" fill="currentColor" stroke="none"/></svg>
+          </div>
           <h3 class="feature-card-title">Artwork Gallery & Last.fm</h3>
           <p class="feature-card-text">
             A content-addressed artwork store with a searchable gallery and quality-ranked iTunes lookups, plus "now playing" and scrobble support for Last.fm.
           </p>
         </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Artwork Showcase Section -->
+  <section class="artwork-section" id="artwork">
+    <div class="container">
+      <div class="section-header reveal">
+        <h2 class="section-title">Every Cover, In Focus</h2>
+        <p class="section-lead">A content-addressed store keeps one copy of each image no matter how many tracks share it. Browse your whole collection as a gallery, or let quality-ranked iTunes search fill in the gaps.</p>
+      </div>
+      <div class="artwork-wall reveal">
+        <div class="art-tile art-tile--lg" style="--hue:18" data-parallax="0.10"></div>
+        <div class="art-tile" style="--hue:265" data-parallax="0.18"></div>
+        <div class="art-tile" style="--hue:190" data-parallax="0.06"></div>
+        <div class="art-tile" style="--hue:340" data-parallax="0.14"></div>
+        <div class="art-tile art-tile--lg" style="--hue:45" data-parallax="0.08"></div>
+        <div class="art-tile" style="--hue:210" data-parallax="0.16"></div>
+        <div class="art-tile" style="--hue:300" data-parallax="0.05"></div>
+        <div class="art-tile" style="--hue:160" data-parallax="0.12"></div>
+        <div class="art-tile" style="--hue:25" data-parallax="0.09"></div>
+        <div class="art-tile art-tile--lg" style="--hue:250" data-parallax="0.15"></div>
+        <div class="art-tile" style="--hue:55" data-parallax="0.07"></div>
+        <div class="art-tile" style="--hue:285" data-parallax="0.13"></div>
+        <div class="art-tile" style="--hue:195" data-parallax="0.11"></div>
+        <div class="art-tile" style="--hue:10" data-parallax="0.06"></div>
       </div>
     </div>
   </section>

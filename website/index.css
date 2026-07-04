@@ -120,6 +120,30 @@ a {
 }
 
 /* ==========================================================================
+   Scroll Reveal (base state — defined early so later component :hover rules
+   of equal specificity still win once an element has settled into view)
+   ========================================================================== */
+
+.reveal {
+  opacity: 0;
+  transform: translateY(28px);
+  transition: opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1), transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.reveal.in-view {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}
+
+/* ==========================================================================
    Typography & Accents
    ========================================================================== */
 
@@ -332,6 +356,8 @@ body[data-theme="light"] .navbar {
   justify-content: center;
   align-items: center;
   perspective: 1000px;
+  transform: translateY(var(--py, 0px));
+  will-change: transform;
 }
 
 .hero-app-icon {
@@ -482,6 +508,13 @@ body[data-theme="light"] .navbar {
   .meter-bar {
     animation: none;
     transform: scaleY(0.5);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-app-container,
+  .art-tile {
+    transform: none !important;
   }
 }
 
@@ -720,12 +753,37 @@ body[data-theme="light"] .navbar {
 }
 
 .feature-icon {
+  width: 46px;
+  height: 46px;
   margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 13px;
+  background: var(--well);
+  border: 1px solid var(--border);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.3s ease;
 }
 
-.font-icon {
-  font-size: 32px;
+.feature-card:hover .feature-icon {
+  transform: scale(1.06);
 }
+
+.feature-icon svg {
+  width: 24px;
+  height: 24px;
+}
+
+.feature-icon.icon-cyan { color: var(--cyan); }
+.feature-icon.icon-amber { color: var(--amber); }
+.feature-icon.icon-coral { color: var(--coral); }
+.feature-icon.icon-green { color: var(--green); }
+
+.feature-card:hover .feature-icon.icon-cyan { border-color: var(--cyan); }
+.feature-card:hover .feature-icon.icon-amber { border-color: var(--amber); }
+.feature-card:hover .feature-icon.icon-coral { border-color: var(--coral); }
+.feature-card:hover .feature-icon.icon-green { border-color: var(--green); }
 
 .feature-card-title {
   font-size: 20px;
@@ -736,6 +794,43 @@ body[data-theme="light"] .navbar {
   font-size: 14px;
   color: var(--text-muted);
   line-height: 1.6;
+}
+
+/* ==========================================================================
+   Artwork Showcase Section
+   ========================================================================== */
+
+.artwork-section {
+  padding: 80px 0;
+  border-top: 1px solid var(--border);
+}
+
+.artwork-wall {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  grid-auto-rows: 90px;
+  grid-auto-flow: dense;
+  gap: 14px;
+  margin-top: 10px;
+}
+
+.art-tile {
+  border-radius: 12px;
+  background: linear-gradient(135deg, hsl(var(--hue) 78% 62%) 0%, hsl(calc(var(--hue) + 45) 70% 38%) 100%);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  transform: translateY(var(--py, 0px));
+  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.35s ease;
+  will-change: transform;
+}
+
+.art-tile:hover {
+  transform: translateY(calc(var(--py, 0px) - 4px)) scale(1.03);
+  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.art-tile--lg {
+  grid-column: span 2;
+  grid-row: span 2;
 }
 
 /* ==========================================================================
@@ -920,25 +1015,36 @@ body[data-theme="light"] .navbar {
   .features-grid {
     grid-template-columns: repeat(2, 1fr);
   }
+
+  .artwork-wall {
+    grid-template-columns: repeat(4, 1fr);
+    grid-auto-rows: 70px;
+  }
 }
 
 @media (max-width: 768px) {
   .nav-links {
     display: none; /* simple collapse for landing page draft */
   }
-  
+
   .hero-title {
     font-size: 36px;
   }
-  
+
   .features-grid {
     grid-template-columns: 1fr;
   }
-  
+
   .specs-grid {
     grid-template-columns: 1fr;
   }
-  
+
+  .artwork-wall {
+    grid-template-columns: repeat(3, 1fr);
+    grid-auto-rows: 60px;
+    gap: 8px;
+  }
+
   .footer-container {
     flex-direction: column;
     gap: 16px;
