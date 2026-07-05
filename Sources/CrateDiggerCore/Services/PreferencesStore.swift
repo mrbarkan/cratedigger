@@ -5,11 +5,13 @@ public final class PreferencesStore {
     public static let shared = PreferencesStore()
 
     private let defaults: UserDefaults
+    private let secrets: SecretStoring
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
 
-    public init(defaults: UserDefaults = .standard) {
+    public init(defaults: UserDefaults = .standard, secrets: SecretStoring = KeychainStore()) {
         self.defaults = defaults
+        self.secrets = secrets
     }
 
     private enum Key {
@@ -417,9 +419,10 @@ public final class PreferencesStore {
         set { defaults.set(newValue, forKey: Key.subsonicUsername) }
     }
 
+    /// Stored in the keychain, not UserDefaults (plaintext credentials on disk).
     public var subsonicPassword: String? {
-        get { defaults.string(forKey: Key.subsonicPassword) }
-        set { defaults.set(newValue, forKey: Key.subsonicPassword) }
+        get { secretValue(forKey: Key.subsonicPassword) }
+        set { setSecretValue(newValue, forKey: Key.subsonicPassword) }
     }
 
     // MARK: - Last.fm
@@ -429,9 +432,42 @@ public final class PreferencesStore {
         set { defaults.set(newValue, forKey: Key.lastFmUsername) }
     }
 
+    /// Stored in the keychain, not UserDefaults (long-lived bearer token).
     public var lastFmSessionKey: String? {
-        get { defaults.string(forKey: Key.lastFmSessionKey) }
-        set { defaults.set(newValue, forKey: Key.lastFmSessionKey) }
+        get { secretValue(forKey: Key.lastFmSessionKey) }
+        set { setSecretValue(newValue, forKey: Key.lastFmSessionKey) }
+    }
+
+    // MARK: - Secrets (keychain-backed)
+
+    /// In-memory copy of keychain values. Every `secrets.get` is an XPC
+    /// round-trip to securityd, and the scrobble check reads the session key
+    /// on every playback tick — uncached that's 5 keychain calls per second.
+    private var secretCache: [String: String?] = [:]
+
+    private func secretValue(forKey key: String) -> String? {
+        if let cached = secretCache[key] { return cached }
+        migrateLegacySecretIfNeeded(forKey: key)
+        let value = secrets.get(key)
+        secretCache[key] = value
+        return value
+    }
+
+    private func setSecretValue(_ value: String?, forKey key: String) {
+        // Drop any legacy plaintext copy so it stops existing on disk.
+        defaults.removeObject(forKey: key)
+        secrets.set(key, value)
+        secretCache[key] = value
+    }
+
+    /// One-time migration: credentials used to live in plaintext UserDefaults.
+    /// Move any leftover value into the keychain and delete it from defaults.
+    private func migrateLegacySecretIfNeeded(forKey key: String) {
+        guard let legacy = defaults.string(forKey: key) else { return }
+        if secrets.get(key) == nil {
+            secrets.set(key, legacy)
+        }
+        defaults.removeObject(forKey: key)
     }
 
     // MARK: - Audio Device Selection
