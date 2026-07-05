@@ -3,6 +3,10 @@ import Foundation
 public enum ArtworkRole: String, Codable, Equatable, Sendable, CaseIterable {
     case auto = "Auto"
     case cover = "Cover"
+    /// A secondary front cover (alternate pressing/region art). Saved and shown
+    /// as a front image, but never becomes the embedded main cover — that stays
+    /// `.cover` (cover.jpg).
+    case altCover = "Alt Cover"
     case back = "Back"
     case disc = "Disc"
     case inlay = "Inlay"
@@ -17,13 +21,19 @@ public struct ArtworkManifest: Codable, Equatable, Sendable {
     /// spinning record can show the correct label per the playing track's side.
     /// Filename → side letter. Optional ⇒ old manifests still decode.
     public var discSides: [String: String]?
+    /// Optional CD/disc index (1, 2, …) for `.disc`-roled images on multi-disc
+    /// sets, so the spinning record shows the art for the playing track's disc.
+    /// Filename → disc number. Optional ⇒ old manifests still decode.
+    public var discNumbers: [String: Int]?
 
     public init(mediaFormat: MediaFormat? = nil,
                 roles: [String: ArtworkRole] = [:],
-                discSides: [String: String]? = nil) {
+                discSides: [String: String]? = nil,
+                discNumbers: [String: Int]? = nil) {
         self.mediaFormat = mediaFormat
         self.roles = roles
         self.discSides = discSides
+        self.discNumbers = discNumbers
     }
 
     public static let fileName = ".cratedigger-art.json"

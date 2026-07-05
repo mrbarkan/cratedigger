@@ -119,7 +119,7 @@ public enum AlbumArtCatalog {
         let name = url.lastPathComponent
         if let role = manifest?.roles[name], role != .auto {
             switch role {
-            case .cover: return .cover
+            case .cover, .altCover: return .cover
             case .back: return .back
             case .disc: return .disc
             case .inlay: return .inlay

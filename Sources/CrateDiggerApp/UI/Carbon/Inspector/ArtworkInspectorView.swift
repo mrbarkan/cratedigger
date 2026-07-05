@@ -145,7 +145,8 @@ struct ArtworkInspectorView: View {
                             )) {
                                 Text("Auto").tag(ArtworkRole.auto)
                                 Text("Ignore").tag(ArtworkRole.ignore)
-                                Text("Cover").tag(ArtworkRole.cover)
+                                Text("Main Cover").tag(ArtworkRole.cover)
+                                Text("Alt Cover").tag(ArtworkRole.altCover)
                                 Text("Back").tag(ArtworkRole.back)
                                 Text("Disc/Vinyl").tag(ArtworkRole.disc)
                                 Text("Inlay / Insert").tag(ArtworkRole.inlay)
@@ -155,9 +156,24 @@ struct ArtworkInspectorView: View {
                             .pickerStyle(.menu)
                             .frame(maxWidth: .infinity)
 
-                            // For disc/vinyl labels: which side this image is, so
-                            // the spinning record shows the right one per track.
+                            // For disc labels: the CD number (multi-disc sets) and/or
+                            // vinyl side, so the spinning record shows the right one
+                            // per the playing track's disc.
                             if (manifest.roles[fileName] ?? .auto) == .disc {
+                                if (album?.discCount ?? 1) > 1 {
+                                    TextField("CD #", text: Binding(
+                                        get: { manifest.discNumbers?[fileName].map(String.init) ?? "" },
+                                        set: { setDiscNumber(fileName, $0) }
+                                    ))
+                                    .textFieldStyle(.plain)
+                                    .multilineTextAlignment(.center)
+                                    .font(CarbonFont.mono(8.5, weight: .bold))
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 3)
+                                    .background(theme.isDark ? Color.white.opacity(0.05) : Color.black.opacity(0.04))
+                                    .cornerRadius(4)
+                                    .frame(maxWidth: .infinity)
+                                }
                                 TextField("Side (A/B…)", text: Binding(
                                     get: { manifest.discSides?[fileName] ?? "" },
                                     set: { setDiscSide(fileName, $0) }
@@ -183,11 +199,11 @@ struct ArtworkInspectorView: View {
                 .padding(14)
             }
         }
-        .onAppear {
-            loadManifest()
-            isDirty = false
-        }
-        .onChange(of: album) { _ in
+        // Reload the folder scan on album switch. Keyed on album.id via .task(id:) —
+        // the same trigger AlbumPoster uses and which reliably re-fires. A plain
+        // .onChange(of: album) was missing switches here (Album's Equatable is
+        // id-only), leaving the ART grid showing the previously-selected album's art.
+        .task(id: album?.id) {
             loadManifest()
             isDirty = false
         }
@@ -244,6 +260,17 @@ struct ArtworkInspectorView: View {
         var sides = manifest.discSides ?? [:]
         if v.isEmpty { sides[fileName] = nil } else { sides[fileName] = v }
         manifest.discSides = sides.isEmpty ? nil : sides
+        isDirty = true
+    }
+
+    private func setDiscNumber(_ fileName: String, _ raw: String) {
+        var nums = manifest.discNumbers ?? [:]
+        if let n = Int(raw.trimmingCharacters(in: .whitespaces)), n > 0 {
+            nums[fileName] = n
+        } else {
+            nums[fileName] = nil
+        }
+        manifest.discNumbers = nums.isEmpty ? nil : nums
         isDirty = true
     }
 

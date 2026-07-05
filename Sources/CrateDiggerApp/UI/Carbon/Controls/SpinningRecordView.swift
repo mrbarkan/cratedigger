@@ -305,10 +305,14 @@ struct SpinningRecordView: View {
         return nil
     }
 
-    /// The disc-label image to show: the one tagged with the current track's side
-    /// (in the manifest's discSides map), else any disc-roled image.
-    private func discImageFilename(in manifest: ArtworkManifest, forSide side: String?) -> String? {
+    /// The disc-label image to show, in priority order: the one tagged with the
+    /// current track's CD number (multi-disc sets, via `discNumbers`), then its
+    /// vinyl side (via `discSides`), else any disc-roled image.
+    private func discImageFilename(in manifest: ArtworkManifest, forSide side: String?, forDisc disc: Int?) -> String? {
         let discFiles = manifest.roles.compactMap { $0.value == .disc ? $0.key : nil }
+        if let disc, let match = discFiles.first(where: { manifest.discNumbers?[$0] == disc }) {
+            return match
+        }
         if let side = side?.uppercased(), !side.isEmpty,
            let match = discFiles.first(where: { manifest.discSides?[$0]?.uppercased() == side }) {
             return match
@@ -341,7 +345,7 @@ struct SpinningRecordView: View {
         let manifest = ArtworkManifest.load(from: folder)
         self.isVinyl = manifest?.mediaFormat == .vinyl
         
-        if let manifest = manifest, let discFileName = discImageFilename(in: manifest, forSide: currentSide) {
+        if let manifest = manifest, let discFileName = discImageFilename(in: manifest, forSide: currentSide, forDisc: track.discNumber) {
             let candidateSubfolders = ["", "artwork", "Artwork", "scans", "Scans", "covers", "Covers"]
             for sub in candidateSubfolders {
                 let base = sub.isEmpty ? folder : folder.appendingPathComponent(sub)

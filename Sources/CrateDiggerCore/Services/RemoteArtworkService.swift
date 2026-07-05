@@ -23,7 +23,7 @@ public actor RemoteArtworkService {
         }
     }
 
-    private static let userAgent = "CrateDigger/1.0 (https://smash.mrbarkan.com)"
+    private static let userAgent = "CrateDigger/1.0 (https://cratedigger.mrbarkan.com)"
     private static let preferredDimension = 1200
 
     private let session: URLSession

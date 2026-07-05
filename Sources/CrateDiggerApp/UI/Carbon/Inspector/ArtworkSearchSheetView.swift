@@ -1,12 +1,15 @@
 import SwiftUI
+import AppKit
 import CrateDiggerCore
 
-/// Picker selection for an image's role. For multi-disc albums the "Disc" role
-/// fans out into a per-disc choice so each disc can get its own art. The disc
-/// number is carried into the saved filename (disc1.jpg, disc2.jpg, …); the
-/// stored manifest role stays `.disc`.
+/// Picker selection for an image's role. `.cover` is the embedded main cover;
+/// `.altCover` is a secondary front kept alongside it. For multi-disc albums the
+/// "CD" role fans out into a per-disc choice so each disc gets its own art — the
+/// disc number is saved both into the filename (disc1.jpg, disc2.jpg, …) and
+/// structurally into the manifest's `discNumbers` map.
 private enum ArtRoleChoice: Hashable {
     case cover
+    case altCover
     case back
     case disc(Int)
     case bookletPage
@@ -15,6 +18,7 @@ private enum ArtRoleChoice: Hashable {
     var role: ArtworkRole {
         switch self {
         case .cover: return .cover
+        case .altCover: return .altCover
         case .back: return .back
         case .disc: return .disc
         case .bookletPage: return .bookletPage
@@ -22,9 +26,10 @@ private enum ArtRoleChoice: Hashable {
         }
     }
 
-    var discNumber: Int {
+    /// The CD/disc index for `.disc` choices; nil for every other role.
+    var discNumber: Int? {
         if case let .disc(number) = self { return number }
-        return 1
+        return nil
     }
 }
 
@@ -54,6 +59,8 @@ struct ArtworkSearchSheetView: View {
     // Image Selection state
     @State private var selectedImages: Set<String> = [] // imageURL string
     @State private var imageRoles: [String: ArtRoleChoice] = [:] // imageURL string to role choice
+    /// Last plain-clicked image, so ⇧-click can select the contiguous range.
+    @State private var selectionAnchorID: String? = nil
     @State private var isDownloading = false
 
     // Full-size preview shown over the grid (does not affect selection).
@@ -444,10 +451,56 @@ struct ArtworkSearchSheetView: View {
         return "Standard"
     }
 
+    /// The release that best matches the album we're finding art for — badged so
+    /// the user reaches for the right edition. Scored on metadata only (title,
+    /// official status, format, year); Cover Art Archive image counts aren't in
+    /// the MusicBrainz search response, so factoring them in would cost a fetch
+    /// per edition. Nil unless something scores a real title match.
+    private var bestReleaseID: String? {
+        guard let best = displayedReleases.max(by: { releaseScore($0) < releaseScore($1) }),
+              releaseScore(best) >= 40 else { return nil }
+        return best.id
+    }
+
+    private func releaseScore(_ r: MBReleaseCandidate) -> Int {
+        var score = 0
+        let want = album.title.lowercased().trimmingCharacters(in: .whitespaces)
+        let got = r.title.lowercased().trimmingCharacters(in: .whitespaces)
+        if got == want {
+            score += 100
+        } else if !want.isEmpty && (got.contains(want) || want.contains(got)) {
+            score += 40
+        }
+        if r.status == "Official" { score += 30 }
+        if let fmt = r.format?.lowercased() {
+            switch album.mediaFormat {
+            case .some(.cd) where fmt.contains("cd"): score += 20
+            case .some(.vinyl) where fmt.contains("vinyl") || fmt.contains("lp"): score += 20
+            default: break
+            }
+        }
+        if let y = album.year, let ry = yearValue(r) {
+            if ry == y { score += 25 } else if abs(ry - y) <= 1 { score += 10 }
+        }
+        return score
+    }
+
     private func releaseRow(_ release: MBReleaseCandidate) -> some View {
-        HStack(spacing: 14) {
+        let isBest = release.id == bestReleaseID
+        return HStack(spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 8) {
+                    if isBest {
+                        Text("★ BEST")
+                            .font(CarbonFont.mono(8, weight: .bold))
+                            .tracking(0.5)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1.5)
+                            .background(theme.orange)
+                            .foregroundColor(.white)
+                            .cornerRadius(3)
+                            .carbonTip("Closest match to this album's title, format and year")
+                    }
                     Text(release.title)
                         .font(CarbonFont.sans(12, weight: .bold))
                         .foregroundStyle(theme.ink)
@@ -514,6 +567,7 @@ struct ArtworkSearchSheetView: View {
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 10)
+        .background(isBest ? theme.orange.opacity(0.06) : Color.clear)
     }
 
     // Artwork grid section
@@ -547,14 +601,21 @@ struct ArtworkSearchSheetView: View {
                 }
             } else {
                 VStack(spacing: 0) {
-                    HStack {
+                    HStack(spacing: 10) {
                         Text(selectedReleaseTitle.uppercased())
                             .font(CarbonFont.mono(9, weight: .bold))
                             .foregroundStyle(theme.ink3)
-                        Spacer()
-                        Text("\(caaImages.count) images available")
+                            .lineLimit(1)
+                        Spacer(minLength: 8)
+                        selectionButton("SELECT ALL") { selectAllImages() }
+                        selectionButton("NONE") {
+                            selectedImages = []
+                            selectionAnchorID = nil
+                        }
+                        Text("\(selectedImages.count)/\(caaImages.count)")
                             .font(CarbonFont.mono(8.5, weight: .semibold))
                             .foregroundStyle(theme.ink4)
+                            .help("Tip: ⇧-click to select a range")
                     }
                     .padding(.horizontal, 18)
                     .padding(.vertical, 8)
@@ -623,11 +684,11 @@ struct ArtworkSearchSheetView: View {
                     }
                 }
                 .onTapGesture {
-                    toggleImageSelection(img)
+                    handleImageTap(img)
                 }
 
                 Button(action: {
-                    toggleImageSelection(img)
+                    handleImageTap(img)
                 }) {
                     Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                         .font(.system(size: 16))
@@ -678,14 +739,15 @@ struct ArtworkSearchSheetView: View {
                 get: { imageRoles[img.id] ?? defaultRole(for: img.types) },
                 set: { imageRoles[img.id] = $0 }
             )) {
-                Text("Cover").tag(ArtRoleChoice.cover)
+                Text("Main Cover").tag(ArtRoleChoice.cover)
+                Text("Alt Cover").tag(ArtRoleChoice.altCover)
                 Text("Back").tag(ArtRoleChoice.back)
                 if album.discCount > 1 {
                     ForEach(1...album.discCount, id: \.self) { disc in
-                        Text("Disc \(disc)").tag(ArtRoleChoice.disc(disc))
+                        Text("CD \(disc)").tag(ArtRoleChoice.disc(disc))
                     }
                 } else {
-                    Text("Disc/CD").tag(ArtRoleChoice.disc(1))
+                    Text("Disc / CD").tag(ArtRoleChoice.disc(1))
                 }
                 Text("Booklet Page").tag(ArtRoleChoice.bookletPage)
                 Text("Ignore").tag(ArtRoleChoice.ignore)
@@ -717,11 +779,47 @@ struct ArtworkSearchSheetView: View {
         if selectedImages.contains(img.id) {
             selectedImages.remove(img.id)
         } else {
-            selectedImages.insert(img.id)
-            if imageRoles[img.id] == nil {
-                imageRoles[img.id] = defaultRole(for: img.types)
-            }
+            selectSingle(img)
         }
+    }
+
+    /// Add one image to the selection and seed its default role.
+    private func selectSingle(_ img: CAABookletImage) {
+        selectedImages.insert(img.id)
+        if imageRoles[img.id] == nil {
+            imageRoles[img.id] = defaultRole(for: img.types)
+        }
+    }
+
+    /// Plain click toggles one image and moves the ⇧-anchor there; ⇧-click adds
+    /// the contiguous range from the anchor to the clicked cell (grid order).
+    private func handleImageTap(_ img: CAABookletImage) {
+        if NSEvent.modifierFlags.contains(.shift),
+           let anchor = selectionAnchorID,
+           let a = caaImages.firstIndex(where: { $0.id == anchor }),
+           let b = caaImages.firstIndex(where: { $0.id == img.id }) {
+            for i in min(a, b)...max(a, b) { selectSingle(caaImages[i]) }
+        } else {
+            toggleImageSelection(img)
+            selectionAnchorID = img.id
+        }
+    }
+
+    private func selectAllImages() {
+        for img in caaImages { selectSingle(img) }
+    }
+
+    private func selectionButton(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(CarbonFont.mono(8.5, weight: .bold))
+                .tracking(0.8)
+                .foregroundStyle(theme.orange)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .overlay(RoundedRectangle(cornerRadius: 4).stroke(theme.orange.opacity(0.4), lineWidth: 0.8))
+        }
+        .buttonStyle(.plain)
     }
 
     // Footer
@@ -826,12 +924,14 @@ struct ArtworkSearchSheetView: View {
         switch choice {
         case .cover:
             return index == 0 ? "cover.\(ext)" : "cover_\(index + 1).\(ext)"
+        case .altCover:
+            return index == 0 ? "cover_alt.\(ext)" : "cover_alt_\(index + 1).\(ext)"
         case .back:
             return index == 0 ? "back.\(ext)" : "back_\(index + 1).\(ext)"
         case .disc:
             // Multi-disc albums get disc-numbered names (disc1.jpg, disc2.jpg);
             // single-disc albums keep the plain "disc" name.
-            let base = album.discCount > 1 ? "disc\(choice.discNumber)" : "disc"
+            let base = album.discCount > 1 ? "disc\(choice.discNumber ?? 1)" : "disc"
             return index == 0 ? "\(base).\(ext)" : "\(base)_\(index + 1).\(ext)"
         case .bookletPage:
             return String(format: "booklet_%02d.\(ext)", index + 1)
@@ -840,8 +940,8 @@ struct ArtworkSearchSheetView: View {
         }
     }
 
-    private func compileDownloads() -> [(url: URL, role: ArtworkRole, suggestedFilename: String)] {
-        var downloads: [(url: URL, role: ArtworkRole, suggestedFilename: String)] = []
+    private func compileDownloads() -> [(url: URL, role: ArtworkRole, suggestedFilename: String, discNumber: Int?)] {
+        var downloads: [(url: URL, role: ArtworkRole, suggestedFilename: String, discNumber: Int?)] = []
         var choiceCounts: [ArtRoleChoice: Int] = [:]
 
         let orderedSelected = caaImages.filter { selectedImages.contains($0.id) }
@@ -852,7 +952,7 @@ struct ArtworkSearchSheetView: View {
             choiceCounts[choice] = count + 1
 
             let filename = getSuggestedFilename(for: img, index: count, choice: choice)
-            downloads.append((url: img.imageURL, role: choice.role, suggestedFilename: filename))
+            downloads.append((url: img.imageURL, role: choice.role, suggestedFilename: filename, discNumber: choice.discNumber))
         }
         return downloads
     }
