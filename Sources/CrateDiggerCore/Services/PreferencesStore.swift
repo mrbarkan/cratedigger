@@ -184,11 +184,18 @@ public final class PreferencesStore {
         savedExternalDeviceProfiles = profiles.sorted {
             $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
         }
+        NotificationCenter.default.post(name: Self.deviceProfilesDidChange, object: nil)
     }
 
     public func removeExternalDeviceProfile(id: UUID) {
         savedExternalDeviceProfiles = savedExternalDeviceProfiles.filter { $0.id != id }
+        NotificationCenter.default.post(name: Self.deviceProfilesDidChange, object: nil)
     }
+
+    /// Posted whenever a device profile is added, edited, or removed, so the
+    /// Sources sidebar (which only lists volumes matching a saved profile) can
+    /// re-filter without waiting for a mount event.
+    public static let deviceProfilesDidChange = Notification.Name("CrateDiggerDeviceProfilesChanged")
 
     // MARK: - Last-used conversion selection
 

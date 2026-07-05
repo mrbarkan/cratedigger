@@ -247,6 +247,13 @@ extension LibraryViewModel {
                 }
             }
         }
+        // Adding/removing a device profile in Settings changes which mounted
+        // volumes qualify as devices — re-filter immediately.
+        NotificationCenter.default.addObserver(
+            forName: PreferencesStore.deviceProfilesDidChange, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.refreshDevices() }
+        }
     }
 
     /// Recompute which `/Volumes/<name>` drives referenced by the local library

@@ -177,7 +177,12 @@ struct IPodIcon: View {
     var height: CGFloat = 56
 
     var body: some View {
-        if let entry = IPodCatalog.entry(for: id) {
+        if let nsImage = DeviceSystemIcons.image(for: id) {
+            Image(nsImage: nsImage)
+                .resizable()
+                .scaledToFit()
+                .frame(height: height)
+        } else if let entry = IPodCatalog.entry(for: id) {
             Canvas { ctx, size in IPodCatalog.draw(entry, in: ctx, size: size) }
                 .frame(width: entry.aspectWidth(forHeight: height), height: height)
         } else {
@@ -204,19 +209,29 @@ struct DeviceIconPicker: View {
     private let columns = [GridItem(.adaptive(minimum: 52, maximum: 52), spacing: 8, alignment: .leading)]
 
     var body: some View {
-        LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
-            ForEach(IPodCatalog.all) { entry in
-                tile(entry)
+        VStack(alignment: .leading, spacing: 10) {
+            // The real Apple device portraits, when the OS provides them.
+            if !DeviceSystemIcons.all.isEmpty {
+                LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
+                    ForEach(DeviceSystemIcons.all, id: \.id) { entry in
+                        tile(id: entry.id, help: entry.name)
+                    }
+                }
+            }
+            LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
+                ForEach(IPodCatalog.all) { entry in
+                    tile(id: entry.id, help: entry.displayName)
+                }
             }
         }
     }
 
-    private func tile(_ entry: IPodIconEntry) -> some View {
-        let selected = selection == entry.id
+    private func tile(id: String, help: String) -> some View {
+        let selected = selection == id
         return Button {
-            selection = selected ? nil : entry.id
+            selection = selected ? nil : id
         } label: {
-            IPodIcon(id: entry.id, height: 48)
+            IPodIcon(id: id, height: 48)
                 .frame(width: 52, height: 64)
                 .background(
                     RoundedRectangle(cornerRadius: 9, style: .continuous)
@@ -229,6 +244,6 @@ struct DeviceIconPicker: View {
                 .shadow(color: selected ? Self.orange.opacity(0.35) : .clear, radius: 8)
         }
         .buttonStyle(.plain)
-        .help(entry.displayName)
+        .help(help)
     }
 }

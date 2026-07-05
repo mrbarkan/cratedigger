@@ -176,7 +176,9 @@ struct DevicesPreferencesView: View {
     }
 
     private var iconLabel: String {
-        IPodCatalog.entry(for: draft.iconID)?.displayName ?? "None"
+        DeviceSystemIcons.displayName(for: draft.iconID)
+            ?? IPodCatalog.entry(for: draft.iconID)?.displayName
+            ?? "None"
     }
 
     private func reload() {

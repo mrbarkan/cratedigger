@@ -51,7 +51,7 @@ struct SourcesSidebar: View {
                                 .font(.system(size: 10, weight: .bold))
                                 .foregroundColor(theme.ink2)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.carbonHover)
                         .padding(.trailing, 12)
                         .padding(.top, 10)
                     }
@@ -73,7 +73,7 @@ struct SourcesSidebar: View {
                                         .font(.system(size: 9))
                                         .foregroundColor(theme.ink3)
                                 }
-                                .buttonStyle(.plain)
+                                .buttonStyle(.carbonHover)
                                 .padding(.trailing, 14)
                             }
                         }
@@ -140,7 +140,7 @@ struct SourcesSidebar: View {
                                 .font(.system(size: 10, weight: .bold))
                                 .foregroundColor(theme.ink2)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.carbonHover)
                         .padding(.trailing, 12)
                         .padding(.top, 10)
                         .carbonTip("Add a YouTube stream source")
@@ -185,7 +185,7 @@ struct SourcesSidebar: View {
                                         .background(theme.orange)
                                         .cornerRadius(4)
                                 }
-                                .buttonStyle(.plain)
+                                .buttonStyle(.carbonHover)
                                 .padding(.leading, 36)
                                 .padding(.bottom, 6)
                             }
@@ -196,7 +196,7 @@ struct SourcesSidebar: View {
                         sectionHeader("Devices", trailing: "")
                         ForEach(model.mountedDevices) { device in
                             sidebarItem(
-                                icon: Image(systemName: "externaldrive"),
+                                icon: deviceIcon(for: device),
                                 title: device.name,
                                 count: isSelectedDevice(device.volumeURL.path) ? "\(model.index.allTracks.count)" : "—",
                                 selected: isSelectedDevice(device.volumeURL.path),
@@ -213,7 +213,7 @@ struct SourcesSidebar: View {
                                 .font(.system(size: 10, weight: .bold))
                                 .foregroundColor(theme.ink2)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.carbonHover)
                         .padding(.trailing, 12)
                         .padding(.top, 10)
                     }
@@ -226,7 +226,7 @@ struct SourcesSidebar: View {
                                     .font(.system(size: 9))
                                     .foregroundColor(theme.ink3)
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.carbonHover)
                             .padding(.trailing, 14)
                         }
                         .contextMenu {
@@ -370,6 +370,17 @@ struct SourcesSidebar: View {
         .padding(.bottom, 3)
     }
 
+    /// Device rows show the real thing: the profile's chosen device portrait
+    /// (e.g. an iPod) when one is set, else the volume's own Finder icon.
+    private func deviceIcon(for device: MountedDevice) -> Image {
+        if let nsImage = DeviceSystemIcons.image(for: model.deviceProfile(for: device)?.iconID) {
+            return DeviceSystemIcons.sidebarImage(nsImage, points: 16)
+        }
+        return DeviceSystemIcons.sidebarImage(
+            NSWorkspace.shared.icon(forFile: device.volumeURL.path), points: 16
+        )
+    }
+
     private func sidebarItem(
         icon: Image,
         title: String,
@@ -398,7 +409,7 @@ struct SourcesSidebar: View {
             .padding(.horizontal, 4)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.carbonHover)
         .opacity(disabled ? 0.5 : 1)
         .allowsHitTesting(!disabled)
     }
