@@ -342,7 +342,11 @@ struct AlbumArtworkNavigator: View {
     private func loadCurrent() async {
         guard let page = current else { return }
         for url in [page.imageURL, page.overlayURL].compactMap({ $0 }) where images[url] == nil {
-            if let image = await Task.detached(priority: .userInitiated, operation: { NSImage(contentsOf: url) }).value {
+            // Boxed hand-off: NSImage is only Sendable as of macOS 14.
+            let boxed = await Task.detached(priority: .userInitiated) {
+                UncheckedSendableBox(NSImage(contentsOf: url))
+            }.value
+            if let image = boxed.value {
                 images[url] = image
             }
         }

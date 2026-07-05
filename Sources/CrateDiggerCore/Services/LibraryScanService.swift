@@ -72,11 +72,36 @@ public final class LibraryScanService {
             candidateURLs.append(fileURL)
         }
 
+        // Fresh scan: folder covers may have changed on disk since the last one.
+        artworkService.clearFolderArtworkMemo()
+
+        // Load tracks concurrently — each loadTrack blocks on a synchronous
+        // ffprobe spawn plus AVAsset metadata loads, so the old serial loop left
+        // every other core idle (15-30 min for a 14k-track library). Sliding
+        // window: seed one task per core, refill as each finishes. Completion
+        // order doesn't matter; results are sorted below.
+        let maxConcurrent = max(1, ProcessInfo.processInfo.activeProcessorCount)
         var loadedTracks: [LoadedTrack] = []
         loadedTracks.reserveCapacity(candidateURLs.count)
-        for fileURL in candidateURLs {
-            if let loadedTrack = await loadTrack(at: fileURL) {
-                loadedTracks.append(loadedTrack)
+
+        await withTaskGroup(of: LoadedTrack?.self) { group in
+            var nextIndex = 0
+            while nextIndex < min(maxConcurrent, candidateURLs.count) {
+                let fileURL = candidateURLs[nextIndex]
+                group.addTask { await self.loadTrack(at: fileURL) }
+                nextIndex += 1
+            }
+            for await loadedTrack in group {
+                if let loadedTrack {
+                    loadedTracks.append(loadedTrack)
+                }
+                // Stop dispatching new work when the surrounding task is
+                // cancelled; the view model discards partial results anyway.
+                if nextIndex < candidateURLs.count, !Task.isCancelled {
+                    let fileURL = candidateURLs[nextIndex]
+                    group.addTask { await self.loadTrack(at: fileURL) }
+                    nextIndex += 1
+                }
             }
         }
 
@@ -89,7 +114,10 @@ public final class LibraryScanService {
     /// context-menu "Refresh Tags"). The caller is responsible for re-attaching
     /// any app-side state (track id, record markers).
     public func reloadTrack(at fileURL: URL) async -> LoadedTrack? {
-        await loadTrack(at: fileURL)
+        // "Refresh Tags" must re-read the folder cover from disk, not serve a
+        // possibly-stale entry from the last scan's memo.
+        artworkService.clearFolderArtworkMemo()
+        return await loadTrack(at: fileURL)
     }
 
     private func loadTrack(at fileURL: URL) async -> LoadedTrack? {
@@ -153,7 +181,9 @@ public final class LibraryScanService {
         let avCompilation = await boolValue(forIdentifierContains: ["compilation", "cpil", "tcmp"], in: allMetadata)
 
         let durationSeconds = await duration(from: asset)
-        var artwork = await artworkService.resolveArtwork(trackURL: fileURL)
+        // Pass the metadata this function already loaded so ArtworkService
+        // doesn't build and re-load a second AVURLAsset for the same file.
+        var artwork = await artworkService.resolveArtwork(trackURL: fileURL, preloadedMetadata: allMetadata)
         if artwork == nil, let remoteArtworkService {
             if let cached = await remoteArtworkService.cachedArtwork(artist: avArtist, album: avAlbum) {
                 artworkService.ingest(cached)

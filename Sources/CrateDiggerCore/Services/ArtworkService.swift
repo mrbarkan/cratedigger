@@ -20,6 +20,15 @@ public enum ArtworkServiceError: Error {
     case couldNotEncodeCompatibleJPEG
 }
 
+/// Hand-off box for a value that is safe to move across concurrency domains
+/// but lacks a Sendable annotation on our deployment target — e.g. `NSImage`,
+/// whose conformance only ships in macOS 14. Only for freshly-created values
+/// handed to exactly one receiver, never for shared mutable state.
+public struct UncheckedSendableBox<T>: @unchecked Sendable {
+    public let value: T
+    public init(_ value: T) { self.value = value }
+}
+
 public final class ArtworkService: ArtworkPreparing {
     private let fileManager: FileManager
     private let thumbnailCache = NSCache<NSString, NSImage>()
@@ -33,6 +42,22 @@ public final class ArtworkService: ArtworkPreparing {
     /// reload from disk by hash instead of yielding a placeholder. `nil` keeps
     /// the pure in-memory behavior (used by Core unit tests).
     private let store: ArtworkStore?
+    /// Per-folder cover lookup memo (negative results included) so a scan probes
+    /// each album folder's candidate files once instead of ~63 syscalls + a full
+    /// read + decode + hash per *track*. Guarded by `folderMemoLock` — the scan
+    /// resolves tracks concurrently. Cleared at the start of every scan.
+    private var folderArtworkMemo: [String: ArtworkAsset?] = [:]
+    private let folderMemoLock = NSLock()
+    /// `prepareCompatibleArtwork` output keyed by (source hash, profile, max
+    /// dimension). A batch conversion calls prepare once per *job*, so identical
+    /// covers shared across an album would otherwise re-decode/re-encode
+    /// thousands of times. NSCache: thread-safe and cost-bounded.
+    private let preparedArtworkCache = NSCache<NSString, PreparedArtworkBox>()
+
+    private final class PreparedArtworkBox {
+        let asset: ArtworkAsset
+        init(_ asset: ArtworkAsset) { self.asset = asset }
+    }
 
     public init(fileManager: FileManager = .default, store: ArtworkStore? = nil) {
         self.fileManager = fileManager
@@ -40,6 +65,7 @@ public final class ArtworkService: ArtworkPreparing {
         thumbnailCache.countLimit = 512
         thumbnailCache.totalCostLimit = 48 * 1024 * 1024   // ~48 MB of decoded thumbnails
         dataCache.totalCostLimit = 96 * 1024 * 1024        // ~96 MB of source image data
+        preparedArtworkCache.totalCostLimit = 64 * 1024 * 1024  // ~64 MB of prepared covers
     }
 
     public func cacheRemoteArtworkURL(_ hash: String, url: URL) {
@@ -59,17 +85,32 @@ public final class ArtworkService: ArtworkPreparing {
     }
 
     public func resolveArtwork(trackURL: URL) async -> ArtworkAsset? {
-        if let embedded = await embeddedArtwork(for: trackURL) {
+        await resolveArtwork(trackURL: trackURL, preloadedMetadata: nil)
+    }
+
+    /// `preloadedMetadata` lets the scan hand over the AVAsset metadata items it
+    /// already loaded (common + every format), so embedded-art extraction skips
+    /// constructing and re-loading a second AVURLAsset for the same file.
+    public func resolveArtwork(trackURL: URL, preloadedMetadata: [AVMetadataItem]?) async -> ArtworkAsset? {
+        if let embedded = await embeddedArtwork(for: trackURL, preloadedMetadata: preloadedMetadata) {
             storeData(embedded.data, for: embedded.hash)
             return embedded
         }
 
-        if let folder = folderArtwork(for: trackURL) {
+        if let folder = memoizedFolderArtwork(for: trackURL) {
             storeData(folder.data, for: folder.hash)
             return folder
         }
 
         return nil
+    }
+
+    /// Drop the per-folder cover memo so the next lookup re-reads from disk.
+    /// Called at the start of every scan (covers can change between scans).
+    public func clearFolderArtworkMemo() {
+        folderMemoLock.lock()
+        folderArtworkMemo.removeAll()
+        folderMemoLock.unlock()
     }
 
     /// Make `asset.data` available to `generateThumbnail(artworkHash:size:)`.
@@ -113,16 +154,16 @@ public final class ArtworkService: ArtworkPreparing {
         let cacheKey = "\(artworkHash)-t\(maxPixel)" as NSString
         if let cached = thumbnailCache.object(forKey: cacheKey) { return cached }
         guard let data = dataForHash(artworkHash) else { return nil }
-        let image = await Task.detached(priority: .userInitiated) { () -> NSImage? in
-            guard let src = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        let image = await Task.detached(priority: .userInitiated) { () -> UncheckedSendableBox<NSImage?> in
+            guard let src = CGImageSourceCreateWithData(data as CFData, nil) else { return UncheckedSendableBox(nil) }
             let opts: [CFString: Any] = [
                 kCGImageSourceCreateThumbnailFromImageAlways: true,
                 kCGImageSourceThumbnailMaxPixelSize: maxPixel,
                 kCGImageSourceCreateThumbnailWithTransform: true
             ]
-            guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary) else { return nil }
-            return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
-        }.value
+            guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary) else { return UncheckedSendableBox(nil) }
+            return UncheckedSendableBox(NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height)))
+        }.value.value
         if let image {
             thumbnailCache.setObject(image, forKey: cacheKey, cost: maxPixel * maxPixel * 4)
         }
@@ -137,6 +178,11 @@ public final class ArtworkService: ArtworkPreparing {
         let resizedDimension = maxDimension.map { max(120, $0) }
         guard profile == .ipodLegacySafe || resizedDimension != nil else {
             return asset
+        }
+
+        let memoKey = "\(asset.hash)|\(profile.rawValue)|\(resizedDimension ?? 0)" as NSString
+        if let cached = preparedArtworkCache.object(forKey: memoKey) {
+            return cached.asset
         }
 
         guard let image = NSImage(data: asset.data) else {
@@ -182,10 +228,18 @@ public final class ArtworkService: ArtworkPreparing {
         )
 
         storeData(compatible.data, for: compatible.hash)
+        preparedArtworkCache.setObject(PreparedArtworkBox(compatible), forKey: memoKey, cost: compatible.data.count)
         return compatible
     }
 
-    private func embeddedArtwork(for trackURL: URL) async -> ArtworkAsset? {
+    private func embeddedArtwork(for trackURL: URL, preloadedMetadata: [AVMetadataItem]?) async -> ArtworkAsset? {
+        if let preloadedMetadata {
+            guard let data = await Self.firstArtworkData(in: preloadedMetadata) else {
+                return nil
+            }
+            return artworkAsset(from: data, source: .embedded)
+        }
+
         let asset = AVURLAsset(url: trackURL)
 
         if let commonMetadata = try? await asset.load(.commonMetadata),
@@ -207,6 +261,21 @@ public final class ArtworkService: ArtworkPreparing {
         }
 
         return nil
+    }
+
+    private func memoizedFolderArtwork(for trackURL: URL) -> ArtworkAsset? {
+        let folderPath = trackURL.deletingLastPathComponent().path
+        // ponytail: lock held across the disk probe so concurrent tracks in one
+        // folder read the cover exactly once; the probe is tiny next to each
+        // track's ffprobe spawn. Per-folder locks if this ever contends.
+        folderMemoLock.lock()
+        defer { folderMemoLock.unlock() }
+        if let memoized = folderArtworkMemo[folderPath] {
+            return memoized
+        }
+        let artwork = folderArtwork(for: trackURL)
+        folderArtworkMemo[folderPath] = artwork
+        return artwork
     }
 
     private func folderArtwork(for trackURL: URL) -> ArtworkAsset? {
