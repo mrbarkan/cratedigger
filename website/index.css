@@ -640,6 +640,97 @@ body[data-theme="light"] .navbar {
 }
 
 /* ==========================================================================
+   Feature Spotlights
+   ========================================================================== */
+
+.spotlight-section {
+  padding: 40px 0 80px;
+}
+
+.spotlight-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: center;
+  gap: 60px;
+  margin-bottom: 100px;
+}
+
+.spotlight-row:last-child {
+  margin-bottom: 0;
+}
+
+.spotlight-row.reverse .spotlight-media {
+  order: 2;
+}
+
+.spotlight-row.reverse .spotlight-copy {
+  order: 1;
+}
+
+.spotlight-media {
+  border-radius: 20px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.35);
+}
+
+.spotlight-img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.spotlight-eyebrow {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--cyan);
+  margin-bottom: 14px;
+}
+
+.spotlight-title {
+  font-size: 30px;
+  line-height: 1.2;
+  margin-bottom: 16px;
+}
+
+.spotlight-text {
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--text-muted);
+  margin-bottom: 20px;
+}
+
+.spotlight-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.spotlight-list li {
+  font-size: 14px;
+  color: var(--text-muted);
+  padding-left: 22px;
+  position: relative;
+}
+
+.spotlight-list li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 7px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--coral);
+  box-shadow: 0 0 6px var(--coral);
+}
+
+/* ==========================================================================
    Features Section
    ========================================================================== */
 
@@ -869,6 +960,17 @@ body[data-theme="light"] .navbar {
   
   .features-grid {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .spotlight-row {
+    grid-template-columns: 1fr;
+    gap: 30px;
+    margin-bottom: 60px;
+  }
+
+  .spotlight-row.reverse .spotlight-media,
+  .spotlight-row.reverse .spotlight-copy {
+    order: initial;
   }
 }
 
