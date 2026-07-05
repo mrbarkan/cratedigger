@@ -1,47 +1,82 @@
 # CrateDigger
 
-**A skeuomorphic music-library workbench for macOS.** CrateDigger scans your
-folders of audio files, browses and plays them on a tactile "hardware" console,
-inspects and edits tags and artwork, tidies up messy libraries, and batch-converts
-files with FFmpeg — plus Subsonic/Navidrome streaming, Audio-CD ripping, and
-Last.fm scrobbling.
+A music-library workbench for macOS, for people who still keep their music as
+files. I got tired of juggling five different tools to rip, tag, convert and
+organize my collection, so I built one that does the whole job. Then I made it
+look like the hardware I wish I owned.
 
 ![Platform: macOS 13+](https://img.shields.io/badge/platform-macOS%2013%2B-blue)
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 
 <p align="center">
-  <img src="website/assets/screenshot_dark.png" alt="CrateDigger — the Carbon console: Sources, Browser, and Inspector panes with an OLED display and VU meters" width="820">
+  <img src="website/assets/screenshot_dark.png" alt="CrateDigger playing an album: Sources, Browser and Inspector panes under the OLED display, transport controls and VU meters below" width="820">
 </p>
 
-## Features
+The whole interface is a hardware console (the design system is called
+Carbon): chassis panels, an OLED display, VU meters, faders, knobs, buttons
+that light up when you hover. Light and dark, your pick. No cloud, no
+accounts, no database lock-in — your files stay files.
 
-- **Browse** your collection by Artist → Album → Track with cover art.
-- **Play** with a queue, shuffle/repeat, ±8s seek, and output-device selection.
-- **Inspect & edit** metadata and embedded artwork track-by-track.
-- **Organize & clean up** — move/consolidate libraries and fix folder layouts.
-- **Convert** with FFmpeg: choose codec, bitrate/sample-rate, artwork handling,
-  and flexible output-folder structures (mirror source, flat, or metadata template),
-  with collision-safe filenames.
-- **Crates** (`.cdlib`) to save and organize collections, with a staging "Prep Crate".
-- **Stream** from Subsonic / Navidrome servers.
-- **Rip** Audio CDs, and **scrobble** to Last.fm.
-- A skeuomorphic **"Carbon"** UI — chassis panels, an OLED display, VU meters, and knobs.
+## What it does
+
+**Library.** Hit *Dig Crate*, point it at a folder, and it scans everything in
+it, however deep. Browse by Artist → Album → Track with cover art. Collections
+are saved as *crates* — plain JSON files, so nothing is held hostage. Newly
+dug music lands in a staging Prep Crate first so your good crates stay clean.
+Or skip all of that and just drop files and folders onto the window.
+
+**Playback.** Queue, shuffle, repeat, ±8s nudge, output-device picker, a real
+12-band EQ (20 Hz–20 kHz) and a live spectrum on the VU meters. There's a mini
+player for when the console is too much console.
+
+**Tags & artwork.** Inspect and edit metadata track by track, fix embedded
+artwork, pull missing covers, and keep album booklets and scans together with
+the music.
+
+**Cleanup & conversion.** Move or consolidate the whole library, straighten
+out messy folder layouts, and batch-convert with FFmpeg: codec, bitrate,
+sample rate, artwork handling, and the output folder structure (mirror the
+source tree, flat, or built from metadata). Filename collisions are handled
+for you.
+
+**Vinyl rips.** The Record Divider takes one long recording of a record side,
+finds the silences between songs, and cuts it into per-track files with proper
+tags. Detection sensitivity is a slider, so quiet passages don't get a song
+chopped in half.
+
+**Radio.** Paste a YouTube URL and treat it like a tuner — live stations, full
+sets, mixes and playlists, straight through the same transport and meters.
+(Needs yt-dlp, see requirements.)
+
+**More sources.** Rip audio CDs. Browse and stream a Subsonic / Navidrome
+server. M3U playlists.
+
+**Devices.** Copy music onto anything that mounts as a drive — USB players, SD
+cards — with per-device profiles and one shortcut (⌘⇧T).
+
+**Scrobbling.** Last.fm, if that's your thing.
 
 ## Requirements
 
 - **macOS 13 (Ventura) or later.**
-- **Apple Silicon** for the default build. (Intel/universal builds are possible but
-  need a universal Swift build and a `lipo`-merged universal FFmpeg — see below.)
-- The packaged app **bundles `ffmpeg` and `ffprobe`**, so end users need nothing
-  extra. When building from source, FFmpeg is optional: without it the app falls
-  back to AVFoundation-only metadata and conversion is disabled.
+- **Apple Silicon** for the default build. (Intel/universal builds are possible
+  but need a universal Swift build and a `lipo`-merged universal FFmpeg — see
+  below.)
+- The packaged app **bundles `ffmpeg` and `ffprobe`**, so there's nothing extra
+  to install. When building from source, FFmpeg is optional: without it the app
+  falls back to AVFoundation-only metadata and conversion is disabled.
+- YouTube radio needs [yt-dlp](https://github.com/yt-dlp/yt-dlp)
+  (`brew install yt-dlp`). Everything else works fine without it.
 
 ## Install
 
-- **Download** the latest signed `.dmg` from the [Releases](https://github.com/mrbarkan/cratedigger/releases) page and drag CrateDigger to Applications.
-- Or **build it yourself** (see below).
+Grab the latest signed `.dmg` from the
+[Releases](https://github.com/mrbarkan/cratedigger/releases) page and drag
+CrateDigger to Applications. Currently at a 1.0 release candidate.
 
-If you find CrateDigger useful, you can support development on
+Or build it yourself (below).
+
+If CrateDigger is useful to you, you can chip in on
 [Patreon](https://www.patreon.com/mrbarkan). 💛
 
 ## Building from source
@@ -85,8 +120,11 @@ scripts/package-app.sh --ffmpeg /opt/homebrew/bin/ffmpeg --ffprobe /opt/homebrew
 > local dev only. (Intel/universal distribution additionally needs a universal
 > Swift build + a `lipo`-merged universal ffmpeg.)
 
-The packaged app is written to `dist/CrateDigger.app`. By default the bundle is ad-hoc signed (suitable for local development only).
-The packaging script also prefers a full Xcode developer directory when one is installed and uses a repo-local module cache so the build is less sensitive to machine-wide Swift cache state.
+The packaged app is written to `dist/CrateDigger.app`. By default the bundle is
+ad-hoc signed (suitable for local development only). The packaging script also
+prefers a full Xcode developer directory when one is installed and uses a
+repo-local module cache so the build is less sensitive to machine-wide Swift
+cache state.
 
 ### Distribution build (Developer ID + notarized DMG)
 
@@ -106,9 +144,12 @@ CRATEDIGGER_NOTARY_PROFILE=cratedigger-notary \
     --dmg
 ```
 
-This produces `dist/CrateDigger-<version>.dmg`, signed and stapled, that opens cleanly on any Mac. The hardened runtime entitlements live in `Packaging/CrateDiggerApp/CrateDigger.entitlements` (library-validation disabled so the bundled `ffmpeg`/`ffprobe` binaries can run).
+This produces `dist/CrateDigger-<version>.dmg`, signed and stapled, that opens
+cleanly on any Mac. The hardened runtime entitlements live in
+`Packaging/CrateDiggerApp/CrateDigger.entitlements` (library-validation
+disabled so the bundled `ffmpeg`/`ffprobe` binaries can run).
 
-For the full beta release gate, see [docs/BETA_RELEASE_CHECKLIST.md](docs/BETA_RELEASE_CHECKLIST.md).
+For the full release gate, see [docs/BETA_RELEASE_CHECKLIST.md](docs/BETA_RELEASE_CHECKLIST.md).
 
 ### Last.fm scrobbling (optional)
 
@@ -123,13 +164,13 @@ disabled). To enable Last.fm in your own build:
 3. For a `swift run` dev build, export `CRATEDIGGER_LASTFM_API_KEY` and
    `CRATEDIGGER_LASTFM_API_SECRET` in your shell instead.
 
-## Manual Smoke Checklist
+## Manual smoke checklist
 
 - Launch the packaged app on a Mac without Homebrew-installed FFmpeg tools.
 - Load a mixed-format music folder.
 - Confirm the empty state, loading state, and loaded-track state all make sense.
 - Inspect artwork and metadata for several tracks.
-- Play tracks, pause, seek on the LCD timeline, and use previous/next controls.
+- Play tracks, pause, seek on the OLED timeline, and use previous/next controls.
 - Convert files using `Source Relative`, `Flat`, and `Metadata Template` folder structures.
 - Use `Review album folders` and confirm the review sheet edits destinations correctly.
 - Convert files with duplicate basenames and verify CrateDigger renames outputs instead of overwriting them.
