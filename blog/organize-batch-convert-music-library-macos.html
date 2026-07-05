@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>How to Batch-Convert and Organize a Messy Music Library on macOS</title>
+  <meta name="description" content="A step-by-step guide to cleaning up a messy offline music library on macOS — batch-converting formats, planning folder structure, and avoiding duplicate or overwritten files.">
+  <link rel="canonical" href="https://cratedigger.mrbarkan.com/blog/organize-batch-convert-music-library-macos.html">
+
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="How to Batch-Convert and Organize a Messy Music Library on macOS">
+  <meta property="og:description" content="A step-by-step guide to cleaning up a messy offline music library on macOS — formats, folder structure, and avoiding overwritten files.">
+  <meta property="og:url" content="https://cratedigger.mrbarkan.com/blog/organize-batch-convert-music-library-macos.html">
+  <meta property="og:image" content="https://cratedigger.mrbarkan.com/assets/app_icon.png">
+  <meta property="og:site_name" content="CrateDigger">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="How to Batch-Convert and Organize a Messy Music Library on macOS">
+  <meta name="twitter:description" content="A step-by-step guide to cleaning up a messy offline music library on macOS — formats, folder structure, and avoiding overwritten files.">
+  <meta name="twitter:image" content="https://cratedigger.mrbarkan.com/assets/app_icon.png">
+
+  <link rel="alternate" type="application/rss+xml" title="CrateDigger Blog" href="feed.xml">
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    "headline": "How to Batch-Convert and Organize a Messy Music Library on macOS",
+    "datePublished": "2026-07-05",
+    "dateModified": "2026-07-05",
+    "author": { "@type": "Organization", "name": "CrateDigger" },
+    "publisher": {
+      "@type": "Organization",
+      "name": "CrateDigger",
+      "logo": { "@type": "ImageObject", "url": "https://cratedigger.mrbarkan.com/assets/app_icon.png" }
+    },
+    "image": "https://cratedigger.mrbarkan.com/assets/app_icon.png",
+    "mainEntityOfPage": "https://cratedigger.mrbarkan.com/blog/organize-batch-convert-music-library-macos.html"
+  }
+  </script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://cratedigger.mrbarkan.com/" },
+      { "@type": "ListItem", "position": 2, "name": "Blog", "item": "https://cratedigger.mrbarkan.com/blog/index.html" },
+      { "@type": "ListItem", "position": 3, "name": "How to Batch-Convert and Organize a Messy Music Library on macOS", "item": "https://cratedigger.mrbarkan.com/blog/organize-batch-convert-music-library-macos.html" }
+    ]
+  }
+  </script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {
+        "@type": "Question",
+        "name": "What format should I convert FLAC to for my phone?",
+        "acceptedAnswer": { "@type": "Answer", "text": "AAC or MP3 at a moderate bitrate (256kbps or higher) gives the best size-to-quality trade-off for phones and cars. Keep your FLAC originals if you have the disk space." }
+      },
+      {
+        "@type": "Question",
+        "name": "Will batch converting overwrite my original files?",
+        "acceptedAnswer": { "@type": "Answer", "text": "Not if the tool guarantees collision-safe output naming. A conversion should always write to a distinct destination path and never silently replace a source file." }
+      }
+    ]
+  }
+  </script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../index.css">
+</head>
+<body data-theme="dark">
+
+  <div class="backdrop"></div>
+
+  <header class="navbar">
+    <div class="nav-container">
+      <div class="logo">
+        <span class="logo-led"></span>
+        <span class="logo-text">CrateDigger</span>
+        <span class="logo-sub">CD-01</span>
+      </div>
+      <nav class="nav-links">
+        <a href="../index.html#features">Features</a>
+        <a href="../index.html#demo">Interactive UI</a>
+        <a href="../index.html#comparison">Compare</a>
+        <a href="../index.html#specs">Specs</a>
+        <a href="index.html">Blog</a>
+        <a href="../index.html#signup" class="btn btn-secondary">Get Beta</a>
+      </nav>
+    </div>
+  </header>
+
+  <section class="article-section">
+    <div class="article-container">
+      <div class="breadcrumb">
+        <a href="../index.html">Home</a> / <a href="index.html">Blog</a> / How to Organize a Messy Music Library
+      </div>
+
+      <div class="article-header">
+        <span class="article-eyebrow">Guide</span>
+        <h1 class="article-title">How to Batch-Convert and Organize a Messy Music Library on macOS</h1>
+        <div class="article-meta">CrateDigger Team · July 5, 2026 · 7 min read</div>
+      </div>
+
+      <div class="article-body">
+        <p>
+          If your music folder is a graveyard of half-ripped CDs, downloads in three different formats, and albums named "Track01.mp3," you're not alone. Streaming services never had to solve this problem for you, so it just piles up. Here's a practical, step-by-step way to clean it up without losing anything or accidentally overwriting a file you actually wanted to keep.
+        </p>
+
+        <h2>Step 1: Scan and stage before you touch anything</h2>
+        <p>
+          Don't point a conversion tool straight at your master library. Import into a staging area first — a "prep" folder or crate that's separate from your permanent collection — so you can review what got scanned, fix obviously wrong tags, and spot duplicates before anything is renamed or converted. Committing straight to your main library skips the one step that catches most mistakes.
+        </p>
+
+        <h2>Step 2: Decide your target format</h2>
+        <p>
+          FLAC or ALAC for anything you consider an archival copy — they're lossless, and storage is cheap enough that there's rarely a reason not to keep a lossless master. AAC or MP3 for a phone, a car, or anywhere space is actually constrained. If you're not sure yet, the safest default is to convert to a copy and leave your originals untouched — you can always re-encode from a lossless source later, but you can't undo a lossy-to-lossy conversion.
+        </p>
+
+        <h2>Step 3: Pick a folder structure</h2>
+        <p>
+          There are three sane options. <strong>Flat</strong> dumps every converted file into one folder — fine for a small, already-tagged library, useless for anything bigger. <strong>Source-relative</strong> mirrors your existing folder tree at the destination — good if your current structure is already reasonable and you just need a format change. <strong>Metadata-template</strong> (album artist / year / album, with compilation handling) rebuilds the structure from tags instead of trusting whatever folder names you inherited — this is usually the right call for a messy library, since it fixes the organization instead of just copying the mess.
+        </p>
+
+        <h2>Step 4: Avoid overwriting files</h2>
+        <p>
+          This is the step people skip and regret. A manual batch rename — via Finder, a shell script, or Automator — will happily overwrite a file the moment two tracks resolve to the same destination name, and there's often no warning until it's too late. Any tool you use for this should generate collision-safe names automatically (appending " (2)", " (3)", and so on) rather than silently replacing whatever's already there.
+        </p>
+
+        <h2>Step 5: Preflight before you commit</h2>
+        <p>
+          Before kicking off a batch job that might run for hours, check two things: does the destination volume have enough free space for the whole job, and does the process actually have write permission to every folder it's about to touch. Catching a permissions error or a full disk after three hours of encoding is a bad way to spend an afternoon.
+        </p>
+
+        <h2>Step 6: Batch convert</h2>
+        <p>
+          With staging, format, folder structure, and destination all decided, the actual conversion should be the boring part. A good batch engine queues everything at once, uses multiple CPU cores in parallel, and preserves embedded artwork and tags through the conversion instead of dropping them — so what comes out the other end is a clean, correctly tagged, correctly organized library, not just a pile of re-encoded files you have to fix by hand.
+        </p>
+
+        <p>
+          CrateDigger builds Steps 1 through 6 directly into its workflow — Prep Crate staging, three folder modes, collision-safe naming, and preflight checks are all built on top of a multi-threaded FFmpeg engine. It's free to try if you'd rather not script this yourself.
+        </p>
+      </div>
+
+      <div class="article-faq">
+        <h2>Frequently Asked Questions</h2>
+        <div class="faq-item">
+          <h3>What format should I convert FLAC to for my phone?</h3>
+          <p>AAC or MP3 at a moderate bitrate (256kbps or higher) gives the best size-to-quality trade-off for phones and cars. Keep your FLAC originals if you have the disk space.</p>
+        </div>
+        <div class="faq-item">
+          <h3>Will batch converting overwrite my original files?</h3>
+          <p>Not if the tool guarantees collision-safe output naming. A conversion should always write to a distinct destination path and never silently replace a source file.</p>
+        </div>
+      </div>
+
+      <div class="article-cta">
+        <p>CrateDigger is free, open source, and in closed beta right now.</p>
+        <a href="../index.html#signup" class="btn btn-primary">Reserve Your Spot</a>
+      </div>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="container footer-container">
+      <p class="copyright">&copy; 2026 CrateDigger. All rights reserved. macOS, SwiftUI, and AppKit are trademarks of Apple Inc.</p>
+      <div class="footer-meta">
+        <a href="index.html">Blog</a>
+        <span class="footer-led"></span>
+      </div>
+    </div>
+  </footer>
+
+</body>
+</html>

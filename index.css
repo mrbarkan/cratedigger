@@ -436,56 +436,6 @@ body[data-theme="light"] .navbar {
 }
 
 /* ==========================================================================
-   Signature Meter Rail — a lit VU/spectrum bridge between hero and demo,
-   echoing the app's own 12-band EQ + live spectrum analyzer.
-   ========================================================================== */
-
-.meter-rail {
-  border-top: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
-  background: var(--well-solid);
-  overflow: hidden;
-}
-
-.meter-rail-inner {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 14px 24px;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  gap: clamp(3px, 0.6vw, 8px);
-  height: 40px;
-}
-
-.meter-bar {
-  flex: 1 1 0;
-  max-width: 20px;
-  height: 100%;
-  border-radius: 2px;
-  background: linear-gradient(0deg, var(--green) 0%, var(--amber) 55%, var(--coral) 100%);
-  opacity: 0.85;
-  transform-origin: bottom;
-  animation: meter-bounce 2.4s ease-in-out infinite;
-  animation-delay: calc(var(--i) * -0.11s);
-}
-
-@keyframes meter-bounce {
-  0%, 100% { transform: scaleY(0.12); }
-  20% { transform: scaleY(0.85); }
-  40% { transform: scaleY(0.3); }
-  60% { transform: scaleY(0.95); }
-  80% { transform: scaleY(0.45); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .meter-bar {
-    animation: none;
-    transform: scaleY(0.5);
-  }
-}
-
-/* ==========================================================================
    Section Layouts
    ========================================================================== */
 
@@ -690,6 +640,97 @@ body[data-theme="light"] .navbar {
 }
 
 /* ==========================================================================
+   Feature Spotlights
+   ========================================================================== */
+
+.spotlight-section {
+  padding: 40px 0 80px;
+}
+
+.spotlight-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: center;
+  gap: 60px;
+  margin-bottom: 100px;
+}
+
+.spotlight-row:last-child {
+  margin-bottom: 0;
+}
+
+.spotlight-row.reverse .spotlight-media {
+  order: 2;
+}
+
+.spotlight-row.reverse .spotlight-copy {
+  order: 1;
+}
+
+.spotlight-media {
+  border-radius: 20px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.35);
+}
+
+.spotlight-img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.spotlight-eyebrow {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--cyan);
+  margin-bottom: 14px;
+}
+
+.spotlight-title {
+  font-size: 30px;
+  line-height: 1.2;
+  margin-bottom: 16px;
+}
+
+.spotlight-text {
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--text-muted);
+  margin-bottom: 20px;
+}
+
+.spotlight-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.spotlight-list li {
+  font-size: 14px;
+  color: var(--text-muted);
+  padding-left: 22px;
+  position: relative;
+}
+
+.spotlight-list li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 7px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--coral);
+  box-shadow: 0 0 6px var(--coral);
+}
+
+/* ==========================================================================
    Features Section
    ========================================================================== */
 
@@ -852,6 +893,208 @@ body[data-theme="light"] .navbar {
 }
 
 /* ==========================================================================
+   Blog
+   ========================================================================== */
+
+.blog-hero {
+  padding: 150px 0 40px;
+  text-align: center;
+}
+
+.blog-hero .hero-lead {
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.blog-list-section {
+  padding: 40px 0 100px;
+}
+
+.post-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 30px;
+}
+
+.post-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 28px;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.post-card:hover {
+  transform: translateY(-5px);
+  border-color: var(--cyan);
+  box-shadow: 0 20px 40px rgba(0,0,0,0.15);
+}
+
+.post-card-date {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: var(--cyan);
+  margin-bottom: 12px;
+}
+
+.post-card-title {
+  font-size: 18px;
+  margin-bottom: 10px;
+}
+
+.post-card-excerpt {
+  font-size: 14px;
+  color: var(--text-muted);
+  line-height: 1.6;
+  margin-bottom: 16px;
+  flex-grow: 1;
+}
+
+.post-card-read {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--coral);
+}
+
+/* Article */
+.article-section {
+  padding: 150px 0 100px;
+}
+
+.article-container {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+.breadcrumb {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 24px;
+}
+
+.breadcrumb a {
+  color: var(--cyan);
+}
+
+.article-header {
+  margin-bottom: 40px;
+}
+
+.article-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--cyan);
+  margin-bottom: 14px;
+  display: block;
+}
+
+.article-title {
+  font-size: 38px;
+  line-height: 1.15;
+  margin-bottom: 14px;
+}
+
+.article-meta {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.article-body h2 {
+  font-size: 24px;
+  margin: 40px 0 16px;
+}
+
+.article-body p {
+  font-size: 16px;
+  line-height: 1.75;
+  color: var(--text-muted);
+  margin-bottom: 20px;
+}
+
+.article-body ul, .article-body ol {
+  margin: 0 0 20px 20px;
+  color: var(--text-muted);
+}
+
+.article-body li {
+  font-size: 16px;
+  line-height: 1.75;
+  margin-bottom: 8px;
+}
+
+.article-body code {
+  font-family: var(--font-mono);
+  background: var(--well);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.article-faq {
+  margin-top: 50px;
+  padding-top: 30px;
+  border-top: 1px solid var(--border);
+}
+
+.article-faq h2 {
+  font-size: 22px;
+  margin-bottom: 20px;
+}
+
+.faq-item {
+  margin-bottom: 20px;
+}
+
+.faq-item h3 {
+  font-size: 16px;
+  margin-bottom: 6px;
+}
+
+.faq-item p {
+  font-size: 15px;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+.article-cta {
+  margin-top: 50px;
+  padding: 30px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  text-align: center;
+}
+
+.article-cta p {
+  margin-bottom: 16px;
+  color: var(--text-muted);
+}
+
+.related-posts {
+  margin-top: 60px;
+  padding-top: 30px;
+  border-top: 1px solid var(--border);
+}
+
+.related-posts h2 {
+  font-size: 20px;
+  margin-bottom: 20px;
+}
+
+.related-posts-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20px;
+}
+
+/* ==========================================================================
    Footer
    ========================================================================== */
 
@@ -920,6 +1163,17 @@ body[data-theme="light"] .navbar {
   .features-grid {
     grid-template-columns: repeat(2, 1fr);
   }
+
+  .spotlight-row {
+    grid-template-columns: 1fr;
+    gap: 30px;
+    margin-bottom: 60px;
+  }
+
+  .spotlight-row.reverse .spotlight-media,
+  .spotlight-row.reverse .spotlight-copy {
+    order: initial;
+  }
 }
 
 @media (max-width: 768px) {
@@ -943,5 +1197,17 @@ body[data-theme="light"] .navbar {
     flex-direction: column;
     gap: 16px;
     text-align: center;
+  }
+
+  .post-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .related-posts-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .article-title {
+    font-size: 28px;
   }
 }

@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Introducing CrateDigger 0.9: A Hardware-Inspired Way to Manage Your Offline Music</title>
+  <meta name="description" content="CrateDigger 0.9 is now in closed beta — a native macOS music manager with a skeuomorphic hardware interface, batch FFmpeg conversion, YouTube radio streaming, and more.">
+  <link rel="canonical" href="https://cratedigger.mrbarkan.com/blog/introducing-cratedigger-0-9.html">
+
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Introducing CrateDigger 0.9: A Hardware-Inspired Way to Manage Your Offline Music">
+  <meta property="og:description" content="CrateDigger 0.9 is now in closed beta — a native macOS music manager with a skeuomorphic hardware interface, batch FFmpeg conversion, and more.">
+  <meta property="og:url" content="https://cratedigger.mrbarkan.com/blog/introducing-cratedigger-0-9.html">
+  <meta property="og:image" content="https://cratedigger.mrbarkan.com/assets/app_icon.png">
+  <meta property="og:site_name" content="CrateDigger">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Introducing CrateDigger 0.9: A Hardware-Inspired Way to Manage Your Offline Music">
+  <meta name="twitter:description" content="CrateDigger 0.9 is now in closed beta — a native macOS music manager with a skeuomorphic hardware interface, batch FFmpeg conversion, and more.">
+  <meta name="twitter:image" content="https://cratedigger.mrbarkan.com/assets/app_icon.png">
+
+  <link rel="alternate" type="application/rss+xml" title="CrateDigger Blog" href="feed.xml">
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    "headline": "Introducing CrateDigger 0.9: A Hardware-Inspired Way to Manage Your Offline Music",
+    "datePublished": "2026-07-05",
+    "dateModified": "2026-07-05",
+    "author": { "@type": "Organization", "name": "CrateDigger" },
+    "publisher": {
+      "@type": "Organization",
+      "name": "CrateDigger",
+      "logo": { "@type": "ImageObject", "url": "https://cratedigger.mrbarkan.com/assets/app_icon.png" }
+    },
+    "image": "https://cratedigger.mrbarkan.com/assets/app_icon.png",
+    "mainEntityOfPage": "https://cratedigger.mrbarkan.com/blog/introducing-cratedigger-0-9.html"
+  }
+  </script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://cratedigger.mrbarkan.com/" },
+      { "@type": "ListItem", "position": 2, "name": "Blog", "item": "https://cratedigger.mrbarkan.com/blog/index.html" },
+      { "@type": "ListItem", "position": 3, "name": "Introducing CrateDigger 0.9", "item": "https://cratedigger.mrbarkan.com/blog/introducing-cratedigger-0-9.html" }
+    ]
+  }
+  </script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../index.css">
+</head>
+<body data-theme="dark">
+
+  <div class="backdrop"></div>
+
+  <header class="navbar">
+    <div class="nav-container">
+      <div class="logo">
+        <span class="logo-led"></span>
+        <span class="logo-text">CrateDigger</span>
+        <span class="logo-sub">CD-01</span>
+      </div>
+      <nav class="nav-links">
+        <a href="../index.html#features">Features</a>
+        <a href="../index.html#demo">Interactive UI</a>
+        <a href="../index.html#comparison">Compare</a>
+        <a href="../index.html#specs">Specs</a>
+        <a href="index.html">Blog</a>
+        <a href="../index.html#signup" class="btn btn-secondary">Get Beta</a>
+      </nav>
+    </div>
+  </header>
+
+  <section class="article-section">
+    <div class="article-container">
+      <div class="breadcrumb">
+        <a href="../index.html">Home</a> / <a href="index.html">Blog</a> / Introducing CrateDigger 0.9
+      </div>
+
+      <div class="article-header">
+        <span class="article-eyebrow">Release Notes</span>
+        <h1 class="article-title">Introducing CrateDigger 0.9: A Hardware-Inspired Way to Manage Your Offline Music</h1>
+        <div class="article-meta">CrateDigger Team · July 5, 2026 · 5 min read</div>
+      </div>
+
+      <div class="article-body">
+        <p>
+          Streaming services are great at recommending you something new. They're much less interested in helping you manage the music you already own — the CD rips, the Bandcamp downloads, the vinyl transfers, the files that don't live in anyone's catalog but yours. CrateDigger exists for that library: a native macOS app built to scan, tag, convert, and actually enjoy browsing the music you've already collected. Closed beta starts today.
+        </p>
+
+        <h2>What's in 0.9</h2>
+        <p>
+          This first beta build is intentionally full-featured rather than a bare-bones preview:
+        </p>
+        <ul>
+          <li><strong>Carbon / Linen hardware interface</strong> — a skeuomorphic design with an OLED-style status display, physical-feeling transport controls, and dark/light chassis themes, instead of a standard flat list.</li>
+          <li><strong>Batch FFmpeg conversion + collision-safe path planner</strong> — queue whole directories for multi-threaded conversion with three folder-organization modes and guaranteed non-overwriting output names.</li>
+          <li><strong>Prep Crate staging</strong> — new imports land in a review area before joining your permanent library, and crates are portable <code>.cdlib</code> JSON files, not a locked database.</li>
+          <li><strong>CD ripping + Subsonic/Navidrome sync</strong> — rip physical discs straight to FLAC or MP3, or connect to a remote streaming library alongside your local files.</li>
+          <li><strong>Radio</strong> — stream YouTube live sets, videos, mixes, and playlists as a source right next to your offline tracks.</li>
+          <li><strong>Record Divider</strong> — split a continuous vinyl-side rip into clean per-track exports, with auto-detection and manual marker editing.</li>
+          <li><strong>Artwork inspector</strong> — a full-size artwork viewer that resolves embedded art, folder images, and remote covers into one shared cache.</li>
+          <li><strong>Last.fm scrobbling</strong> and <strong>external device transfer</strong> (⌘⇧T to an iPod, USB drive, or phone) round out the day-to-day workflow.</li>
+        </ul>
+
+        <h2>What's next</h2>
+        <p>
+          The beta period is about hardening all of the above against real-world libraries — messy tag data, huge crates, and folder structures nobody planned for on purpose. Expect continued stability work and more flexibility in the folder-template options based on what beta users actually run into. No promises on dates; we'd rather ship it right than ship it by a deadline.
+        </p>
+
+        <h2>Try the beta</h2>
+        <p>
+          CrateDigger is free and open source under the MIT license. If you've got a music folder you've been meaning to deal with, this is a good excuse.
+        </p>
+      </div>
+
+      <div class="article-cta">
+        <p>CrateDigger is free, open source, and in closed beta right now.</p>
+        <a href="../index.html#signup" class="btn btn-primary">Reserve Your Spot</a>
+      </div>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="container footer-container">
+      <p class="copyright">&copy; 2026 CrateDigger. All rights reserved. macOS, SwiftUI, and AppKit are trademarks of Apple Inc.</p>
+      <div class="footer-meta">
+        <a href="index.html">Blog</a>
+        <span class="footer-led"></span>
+      </div>
+    </div>
+  </footer>
+
+</body>
+</html>

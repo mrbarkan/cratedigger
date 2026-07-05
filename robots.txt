@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://cratedigger.mrbarkan.com/sitemap.xml
