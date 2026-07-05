@@ -45,10 +45,25 @@ final class MeterDriver: ObservableObject {
         ensureTimer()
     }
 
+    /// Continuous ballistic state. Published values are quantized snapshots of
+    /// these — publishing the raw Doubles re-rendered the meter views 60×/s
+    /// even when no LED visibly changed, which (14 objectWillChange per tick)
+    /// pegged a full core during playback.
+    private var rawLeft: Double = 0
+    private var rawRight: Double = 0
+    private var rawBands: [Double] = Array(repeating: 0, count: 12)
+    /// Publish at the LEDs' own resolution — the displays are discrete
+    /// (6-segment spectrum columns, 18-segment L/R bars), so any finer publish
+    /// re-renders identical pixels. A pass now happens only when an LED flips.
+    private let bandQuantum = 1.0 / 6.0
+    private let levelQuantum = 1.0 / 18.0
+
     private func ensureTimer() {
         guard timer == nil else { return }
         lastUpdate = Date()
-        timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
+        // 30fps: LED meters with ~120ms release ballistics look identical at
+        // half the invalidation rate of the old 60fps tick.
+        timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in self?.tick() }
         }
     }
@@ -58,24 +73,44 @@ final class MeterDriver: ObservableObject {
         let dt = now.timeIntervalSince(lastUpdate)
         lastUpdate = now
 
+        // NOTE: the provider values are already meter positions — AVPlayerEngine
+        // maps the tap's RMS through its dB curve (`meterPosition`, -48dBFS→0,
+        // full scale→0.8). Do NOT re-map here: a second dB pass compresses the
+        // whole scale into the top segments and the bar looks frozen.
         let target = active ? (levelsProvider?() ?? (left: 0, right: 0)) : (left: 0, right: 0)
-        leftLevel = ballistic(current: leftLevel, target: target.left, dt: dt)
-        rightLevel = ballistic(current: rightLevel, target: target.right, dt: dt)
+        rawLeft = ballistic(current: rawLeft, target: target.left, dt: dt)
+        rawRight = ballistic(current: rawRight, target: target.right, dt: dt)
 
         let targetBands = active ? (spectrumProvider?() ?? []) : []
-        for i in bands.indices {
+        for i in rawBands.indices {
             let t = i < targetBands.count ? targetBands[i] : 0
-            bands[i] = ballistic(current: bands[i], target: t, dt: dt)
+            rawBands[i] = ballistic(current: rawBands[i], target: t, dt: dt)
         }
 
+        // Publish batched and only on visible change: one objectWillChange per
+        // value that actually moved an LED, zero when the meter is steady.
+        let qLeft = quantize(rawLeft, to: levelQuantum)
+        let qRight = quantize(rawRight, to: levelQuantum)
+        if qLeft != leftLevel { leftLevel = qLeft }
+        if qRight != rightLevel { rightLevel = qRight }
+        let qBands = rawBands.map { quantize($0, to: bandQuantum) }
+        if qBands != bands { bands = qBands }
+
         // Once idle and faded out, stop ticking to save CPU.
-        if !active, leftLevel < restThreshold, rightLevel < restThreshold {
+        if !active, rawLeft < restThreshold, rawRight < restThreshold {
+            rawLeft = 0
+            rawRight = 0
+            rawBands = Array(repeating: 0, count: rawBands.count)
             leftLevel = 0
             rightLevel = 0
             bands = Array(repeating: 0, count: bands.count)
             timer?.invalidate()
             timer = nil
         }
+    }
+
+    private func quantize(_ value: Double, to quantum: Double) -> Double {
+        (value / quantum).rounded() * quantum
     }
 
     /// Exponential smoothing toward `target`: fast attack, slower release.

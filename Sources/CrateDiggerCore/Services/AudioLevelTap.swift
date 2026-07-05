@@ -15,7 +15,7 @@ public final class AudioLevelTap {
 
     public init() {}
 
-    /// Latest linear peak per channel (0...1).
+    /// Latest linear RMS level per channel (0...1).
     public func currentPeaks() -> (left: Double, right: Double) {
         let snap = store.snapshot()
         return (Double(snap.left), Double(snap.right))
@@ -77,8 +77,8 @@ public final class AudioLevelTap {
     }
 }
 
-/// Thread-safe holder for the latest L/R peaks: written on the audio thread,
-/// read on the main thread.
+/// Thread-safe holder for the latest L/R RMS levels: written on the audio
+/// thread, read on the main thread.
 final class AudioTapLevelStore {
     private let lock = NSLock()
     private var left: Float = 0
@@ -182,7 +182,11 @@ private func levelTapProcess(
         }
     }
 
-    var peaks: [Float] = []
+    // RMS, not peak: modern loud masters keep peaks pinned near 1.0, so a
+    // peak-driven bar sat at the top barely moving. RMS tracks perceived
+    // loudness and actually breathes with the music (vDSP_rmsqv costs the
+    // same as the old vDSP_maxmgv scan).
+    var levels: [Float] = []
     for buffer in buffers {
         guard let data = buffer.mData else { continue }
         let channels = max(Int(buffer.mNumberChannels), 1)
@@ -191,23 +195,23 @@ private func levelTapProcess(
         let samples = data.assumingMemoryBound(to: Float.self)
         if channels == 1 {
             // Non-interleaved: one channel per buffer.
-            var peak: Float = 0
-            vDSP_maxmgv(samples, 1, &peak, vDSP_Length(totalSamples))
-            peaks.append(peak)
+            var rms: Float = 0
+            vDSP_rmsqv(samples, 1, &rms, vDSP_Length(totalSamples))
+            levels.append(rms)
         } else {
             // Interleaved: stride through each channel.
             let frames = totalSamples / channels
             guard frames > 0 else { continue }
             for c in 0..<channels {
-                var peak: Float = 0
-                vDSP_maxmgv(samples + c, vDSP_Stride(channels), &peak, vDSP_Length(frames))
-                peaks.append(peak)
+                var rms: Float = 0
+                vDSP_rmsqv(samples + c, vDSP_Stride(channels), &rms, vDSP_Length(frames))
+                levels.append(rms)
             }
         }
     }
 
-    let left = peaks.first ?? 0
-    let right = peaks.count > 1 ? peaks[1] : left
+    let left = levels.first ?? 0
+    let right = levels.count > 1 ? levels[1] : left
     store.update(left: left, right: right)
 
     // Spectrum from channel 0 (interleaved → stride by channel count).

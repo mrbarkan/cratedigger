@@ -72,7 +72,7 @@ private struct DisplayContext: View {
         ZStack {
             switch model.oledView {
             case .nowPlaying:  NowPlayingPane()
-            case .vu:          VUPane()
+            case .vu:          VUPane(clock: model.playbackClock)
             case .conversion:  ConversionPane()
             case .scan:        ScanPane()
             case .remoteSync:  RemoteSyncPane()
@@ -109,7 +109,7 @@ private struct DisplayRail: View {
 
             Spacer(minLength: 12)
 
-            RailLive()
+            RailLive(clock: model.playbackClock)
             RailSettings()
         }
         .padding(.bottom, 7)
@@ -161,6 +161,8 @@ private struct AnnDot: View {
 private struct RailLive: View {
     @Environment(\.carbon) private var theme
     @EnvironmentObject private var model: LibraryViewModel
+    // Playback time lives on the isolated clock; observe it to keep ticking.
+    @ObservedObject var clock: PlaybackClock
 
     private var showMini: Bool { model.oledView != .nowPlaying && model.oledView != .vu }
 
@@ -538,13 +540,15 @@ private struct NowPlayingPane: View {
     }
 
     var body: some View {
-        if isRadio { RadioNowPlaying() } else { LibraryNowPlaying() }
+        if isRadio { RadioNowPlaying(clock: model.playbackClock) } else { LibraryNowPlaying(clock: model.playbackClock) }
     }
 }
 
 private struct LibraryNowPlaying: View {
     @EnvironmentObject private var model: LibraryViewModel
     @Environment(\.carbon) private var theme
+    // Playback time lives on the isolated clock; observe it to keep ticking.
+    @ObservedObject var clock: PlaybackClock
 
     var body: some View {
         OLEDPaneScaffold {
@@ -599,6 +603,8 @@ private struct LibraryNowPlaying: View {
 private struct RadioNowPlaying: View {
     @EnvironmentObject private var model: LibraryViewModel
     @Environment(\.carbon) private var theme
+    // Playback time lives on the isolated clock; observe it to keep ticking.
+    @ObservedObject var clock: PlaybackClock
 
     private var stream: StreamSource? { model.selectedStream }
     private var isLive: Bool { stream?.isLive ?? false }
@@ -714,6 +720,8 @@ private struct NPSort: View {
 private struct VUPane: View {
     @EnvironmentObject private var model: LibraryViewModel
     @Environment(\.carbon) private var theme
+    // Playback time lives on the isolated clock; observe it to keep ticking.
+    @ObservedObject var clock: PlaybackClock
     @StateObject private var meters = MeterDriver()
 
     @State private var peakL = 0

@@ -39,23 +39,47 @@ struct LEDMeterPair: View {
         .accessibilityLabel("Audio spectrum")
     }
 
+    // Canvas, not 72 diffed shape views: a meter pass is one draw-command emit,
+    // so per-frame cost no longer scales with how busy the music is.
     private var lcd: some View {
-        HStack(spacing: 1.5) {
-            ForEach(bands.indices, id: \.self) { col in
+        Canvas { context, size in
+            let cols = bands.count
+            guard cols > 0 else { return }
+            let gap = 1.5
+            let cellW = (size.width - CGFloat(cols - 1) * gap) / CGFloat(cols)
+            let cellH = (size.height - CGFloat(segments - 1) * gap) / CGFloat(segments)
+
+            var unlit = Path()
+            var litBody = Path()
+            var peak = Path()
+            for col in 0..<cols {
                 let lit = Int((min(max(bands[col], 0), 1) * Double(segments)).rounded())
-                VStack(spacing: 1.5) {
-                    ForEach(0..<segments, id: \.self) { rowFromTop in
-                        let seg = segments - rowFromTop      // 6 (top) ... 1 (bottom)
-                        let isLit = seg <= lit
-                        let isPeak = seg == lit && lit > 0
-                        RoundedRectangle(cornerRadius: 0.5, style: .continuous)
-                            .fill(segmentColor(lit: isLit, peak: isPeak))
-                            .shadow(
-                                color: isLit ? Color(hex: 0xFF7A1F).opacity(isPeak ? 0.9 : 0.6) : .clear,
-                                radius: isPeak ? 3 : 2
-                            )
+                for rowFromTop in 0..<segments {
+                    let seg = segments - rowFromTop      // 6 (top) ... 1 (bottom)
+                    let rect = CGRect(
+                        x: CGFloat(col) * (cellW + gap),
+                        y: CGFloat(rowFromTop) * (cellH + gap),
+                        width: cellW, height: cellH
+                    )
+                    let cell = Path(roundedRect: rect, cornerRadius: 0.5, style: .continuous)
+                    if seg == lit, lit > 0 {
+                        peak.addPath(cell)
+                    } else if seg <= lit {
+                        litBody.addPath(cell)
+                    } else {
+                        unlit.addPath(cell)
                     }
                 }
+            }
+
+            context.fill(unlit, with: .color(segmentColor(lit: false, peak: false)))
+            context.drawLayer { layer in
+                layer.addFilter(.shadow(color: Color(hex: 0xFF7A1F).opacity(0.6), radius: 2))
+                layer.fill(litBody, with: .color(segmentColor(lit: true, peak: false)))
+            }
+            context.drawLayer { layer in
+                layer.addFilter(.shadow(color: Color(hex: 0xFF7A1F).opacity(0.9), radius: 3))
+                layer.fill(peak, with: .color(segmentColor(lit: true, peak: true)))
             }
         }
         .padding(.horizontal, 5)
@@ -150,6 +174,8 @@ struct HorizontalLEDMeter: View {
         )
     }
 
+    // Canvas for the same reason as LEDMeterPair.lcd: one draw per pass
+    // instead of 18 diffed shape views per bar.
     private func bar(label: String, level: Double) -> some View {
         let lit = Int((min(max(level, 0), 1) * Double(segments)).rounded())
         return HStack(spacing: 5) {
@@ -157,15 +183,30 @@ struct HorizontalLEDMeter: View {
                 .font(CarbonFont.mono(6.5, weight: .bold))
                 .foregroundStyle(Color(hex: 0xFF7A1F).opacity(0.85))
                 .frame(width: 6, alignment: .leading)
-            HStack(spacing: 1.5) {
-                ForEach(0..<segments, id: \.self) { i in
-                    let isLit = i < lit
-                    let isPeak = isLit && i == lit - 1
-                    RoundedRectangle(cornerRadius: 0.5, style: .continuous)
-                        .fill(segmentColor(lit: isLit, peak: isPeak))
-                        .frame(maxWidth: .infinity)
-                        .shadow(color: isLit ? Color(hex: 0xFF7A1F).opacity(isPeak ? 0.9 : 0.6) : .clear,
-                                radius: isPeak ? 3 : 2)
+            Canvas { context, size in
+                let gap = 1.5
+                let cellW = (size.width - CGFloat(segments - 1) * gap) / CGFloat(segments)
+                var unlit = Path()
+                var litBody = Path()
+                var peak = Path()
+                for i in 0..<segments {
+                    let rect = CGRect(x: CGFloat(i) * (cellW + gap), y: 0,
+                                      width: cellW, height: size.height)
+                    let cell = Path(roundedRect: rect, cornerRadius: 0.5, style: .continuous)
+                    if i < lit {
+                        if i == lit - 1 { peak.addPath(cell) } else { litBody.addPath(cell) }
+                    } else {
+                        unlit.addPath(cell)
+                    }
+                }
+                context.fill(unlit, with: .color(segmentColor(lit: false, peak: false)))
+                context.drawLayer { layer in
+                    layer.addFilter(.shadow(color: Color(hex: 0xFF7A1F).opacity(0.6), radius: 2))
+                    layer.fill(litBody, with: .color(segmentColor(lit: true, peak: false)))
+                }
+                context.drawLayer { layer in
+                    layer.addFilter(.shadow(color: Color(hex: 0xFF7A1F).opacity(0.9), radius: 3))
+                    layer.fill(peak, with: .color(segmentColor(lit: true, peak: true)))
                 }
             }
         }

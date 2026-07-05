@@ -6,6 +6,9 @@ import SwiftUI
 struct PositionDial: View {
     @Environment(\.carbon) private var theme
     @EnvironmentObject private var model: LibraryViewModel
+    /// Time ticks live on the isolated clock — observing it here keeps the
+    /// dial moving without the 5Hz tick invalidating every model observer.
+    @ObservedObject var clock: PlaybackClock
 
     private var progress: Double {
         if let fraction = model.scrubbingFraction { return fraction }

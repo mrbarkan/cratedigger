@@ -37,13 +37,16 @@ struct MiniPlayerView: View {
     let onExpand: () -> Void
 
     var body: some View {
-        MiniPlayerBody(model: model, onExpand: onExpand)
+        MiniPlayerBody(model: model, clock: model.playbackClock, onExpand: onExpand)
             .carbonThemed(mode: .dark)
     }
 }
 
 private struct MiniPlayerBody: View {
     @ObservedObject var model: LibraryViewModel
+    /// Observed so the OLED time/seek rail keep ticking — playback time lives
+    /// on the isolated clock, not the view model.
+    @ObservedObject var clock: PlaybackClock
     let onExpand: () -> Void
     @Environment(\.carbon) private var theme
 
