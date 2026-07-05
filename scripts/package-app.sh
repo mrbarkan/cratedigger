@@ -138,6 +138,22 @@ read_app_version() {
   /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "${INFO_PLIST_SOURCE}" 2>/dev/null || echo "0.0.0"
 }
 
+# Distribution builds must bundle statically-linked ffmpeg/ffprobe. A Homebrew
+# (dynamic) binary references /opt/homebrew dylibs that don't exist on other
+# Macs, and hardened-runtime signing blocks loading them even on Macs that
+# have Homebrew (Team ID mismatch) — so it fails everywhere.
+require_static_tool() {
+  local tool_path="$1"
+  local deps
+  deps="$(otool -L "${tool_path}" | grep -E '/opt/homebrew|/usr/local' || true)"
+  if [[ -n "${deps}" ]]; then
+    echo "error: ${tool_path} is dynamically linked to non-system libraries:" >&2
+    printf '%s\n' "${deps}" >&2
+    echo "Distribution builds need static binaries (Apple Silicon: osxexperts.net, SHA256-verified) — see README 'Packaging'." >&2
+    exit 1
+  fi
+}
+
 sign_distribution() {
   local target="$1"
   local needs_entitlements="${2:-no}"
@@ -231,6 +247,10 @@ fi
 
 FFMPEG_PATH="$(resolve_tool "${FFMPEG_PATH}" "ffmpeg")"
 FFPROBE_PATH="$(resolve_tool "${FFPROBE_PATH}" "ffprobe")"
+if [[ -n "${SIGN_IDENTITY}" ]]; then
+  require_static_tool "${FFMPEG_PATH}"
+  require_static_tool "${FFPROBE_PATH}"
+fi
 prepare_swift_environment
 
 mkdir -p "${OUTPUT_DIR}"
