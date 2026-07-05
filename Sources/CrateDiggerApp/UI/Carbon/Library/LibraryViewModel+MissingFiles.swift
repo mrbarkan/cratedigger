@@ -158,7 +158,10 @@ extension LibraryViewModel {
                     recordMarkers: loaded.recordMarkers
                 ))
             }
-            await MainActor.run {
+            // Explicit capture list: `self` (weak) and `newTracks` are mutable
+            // vars in this scope; Swift 6 requires immutable captures in
+            // concurrently-executing closures.
+            await MainActor.run { [weak self, newTracks] in
                 guard let self else { return }
                 let matched = mapping.count
                 if matched > 0 {
@@ -218,7 +221,7 @@ extension LibraryViewModel {
                     missing.insert(url.standardizedFileURL.path)
                 }
             }
-            await MainActor.run { self?.missingTrackKeys = missing }
+            await MainActor.run { [weak self, missing] in self?.missingTrackKeys = missing }
         }
     }
 

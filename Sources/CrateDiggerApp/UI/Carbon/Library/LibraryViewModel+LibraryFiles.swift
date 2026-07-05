@@ -12,60 +12,68 @@ extension LibraryViewModel {
         return targetCrateName
     }
 
-    /// Import a `.cdlib` crate index into the Library File folder as a new crate.
+    /// Import a `.cdlib` crate file as a new crate. The `.cdlib` format (a full
+    /// `[LoadedTrack]` JSON array) stays the interchange format because it's
+    /// self-contained — a bare `.cdcrate` membership list is just paths and
+    /// means nothing without this machine's shared TrackStore.
     func importLibraryFile() {
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
         panel.title = "Import Library File"
-        panel.message = "Choose a crate index (.cdlib) file to add to your library."
+        panel.message = "Choose a crate (.cdlib) file to add to your library."
         panel.prompt = "Import"
         NSApp.activate(ignoringOtherApps: true)
         guard panel.runModal() == .OK, let src = panel.url else { return }
         guard src.pathExtension.lowercased() == "cdlib" else {
-            appAlert = .error(title: "Not a Library File", message: "Choose a .cdlib crate index file.")
+            appAlert = .error(title: "Not a Library File", message: "Choose a .cdlib crate file.")
             return
         }
 
         // Collision-safe name within the crates folder.
         let base = src.deletingPathExtension().lastPathComponent
         var name = base
-        var dest = cratesDirectoryURL.appendingPathComponent("\(name).cdlib")
         var n = 2
-        while FileManager.default.fileExists(atPath: dest.path) {
+        while availableCrates.contains(name)
+            || FileManager.default.fileExists(atPath: cratesDirectoryURL.appendingPathComponent("\(name).cdcrate").path) {
             name = "\(base) (\(n))"
-            dest = cratesDirectoryURL.appendingPathComponent("\(name).cdlib")
             n += 1
         }
         do {
-            try FileManager.default.copyItem(at: src, to: dest)
+            let data = try Data(contentsOf: src)
+            let tracks = try JSONDecoder().decode([LoadedTrack].self, from: data)
+            ingestArtwork(from: tracks)
+            saveCrateTracks(tracks, name: name)
             refreshAvailableCrates()
-            appAlert = .info(title: "Imported", message: "Added crate “\(name)” to your library.")
+            appAlert = .info(title: "Imported", message: "Added crate “\(name)” with \(tracks.count) track\(tracks.count == 1 ? "" : "s").")
         } catch {
             appAlert = .error(title: "Import Failed", message: error.localizedDescription)
         }
     }
 
-    /// Export the current crate to a `.cdlib` file anywhere (share/move a crate).
+    /// Export the current crate as a self-contained `.cdlib` file anywhere
+    /// (share/move a crate): the crate's resolved tracks, not the membership list.
     func exportSelectedCrate() {
         let name = exportableCrateName
-        let src = cratesDirectoryURL.appendingPathComponent("\(name).cdlib")
-        guard FileManager.default.fileExists(atPath: src.path) else {
+        guard availableCrates.contains(name) else {
             appAlert = .error(title: "No Crate to Export", message: "Select a crate first.")
             return
         }
+        let tracks = loadCrateTracks(name: name)
         let panel = NSSavePanel()
         panel.nameFieldStringValue = "\(name).cdlib"
         panel.title = "Export Library File"
-        panel.message = "Save “\(name)” as a .cdlib crate index file."
+        panel.message = "Save “\(name)” as a .cdlib crate file."
         panel.prompt = "Export"
         NSApp.activate(ignoringOtherApps: true)
         guard panel.runModal() == .OK, let dest = panel.url else { return }
         do {
-            try? FileManager.default.removeItem(at: dest)
-            try FileManager.default.copyItem(at: src, to: dest)
-            appAlert = .info(title: "Exported", message: "Saved “\(name).cdlib”.")
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            let data = try encoder.encode(tracks)
+            try data.write(to: dest, options: .atomic)
+            appAlert = .info(title: "Exported", message: "Saved “\(name).cdlib” (\(tracks.count) track\(tracks.count == 1 ? "" : "s")).")
         } catch {
             appAlert = .error(title: "Export Failed", message: error.localizedDescription)
         }

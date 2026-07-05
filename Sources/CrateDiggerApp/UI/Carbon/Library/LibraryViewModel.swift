@@ -32,6 +32,15 @@ enum RepeatMode: String, Codable, Sendable {
     case one
 }
 
+/// Isolated playback time state. Views that show the moving playhead observe
+/// this object directly; everything else observing `LibraryViewModel` stays
+/// untouched by the 5Hz tick.
+@MainActor
+final class PlaybackClock: ObservableObject {
+    @Published fileprivate(set) var currentTime: Double = 0
+    @Published fileprivate(set) var duration: Double = 0
+}
+
 struct ScanProgress: Equatable, Sendable {
     var folderName: String?
     var filesProbed: Int
@@ -178,8 +187,31 @@ final class LibraryViewModel: ObservableObject {
 
     @Published private(set) var playbackState: PlaybackState = .idle
     @Published private(set) var playbackCurrentIndex: Int?
-    @Published private(set) var playbackCurrentTime: Double = 0
-    @Published private(set) var playbackDuration: Double = 0
+
+    /// The 5Hz time tick lives on its own object so it only re-renders the few
+    /// views that display time (POSITION dial, OLED clock, mini player) instead
+    /// of invalidating every observer of this view model — at 14k tracks the
+    /// flat track list alone made that a constant-CPU render storm.
+    let playbackClock = PlaybackClock()
+    private(set) var playbackCurrentTime: Double {
+        get { playbackClock.currentTime }
+        set {
+            // Publish at display resolution: the OLED/mini player show M:SS and
+            // the dial moves ~1px per second, so the 5Hz sub-second ticks were
+            // re-rendering identical pixels. Zero always lands (stop/track change).
+            if newValue == 0 || abs(playbackClock.currentTime - newValue) >= 0.5 {
+                playbackClock.currentTime = newValue
+            }
+        }
+    }
+    private(set) var playbackDuration: Double {
+        get { playbackClock.duration }
+        set {
+            if newValue == 0 || abs(playbackClock.duration - newValue) >= 0.5 {
+                playbackClock.duration = newValue
+            }
+        }
+    }
 
     /// While the user drags (or scroll-seeks) the position dial, the in-progress
     /// fraction (0–1) so the OLED time can follow the scrub before the seek
@@ -269,7 +301,12 @@ final class LibraryViewModel: ObservableObject {
         didSet { prefs.savedShuffleEnabled = shuffleEnabled }
     }
     @Published var repeatMode: RepeatMode = .off {
-        didSet { prefs.savedRepeatMode = repeatMode.rawValue }
+        didSet {
+            prefs.savedRepeatMode = repeatMode.rawValue
+            // Auto-advance lives in Core — without this forward the transport
+            // button was purely cosmetic.
+            playback.repeatMode = PlaybackRepeatMode(rawValue: repeatMode.rawValue) ?? .off
+        }
     }
     @Published var cdAnimationSpeed: CDAnimationSpeed = .fast {
         didSet { prefs.cdAnimationSpeed = cdAnimationSpeed }
@@ -516,6 +553,10 @@ final class LibraryViewModel: ObservableObject {
     // Last.fm tracking
     private var lastScrobbledTrackID: UUID?
     private var playbackStartTimestamp: Int = 0
+    /// Actual listened time, accumulated from time-change deltas — the playhead
+    /// position alone would scrobble instantly after a seek to 60%.
+    private var listenedSeconds: Double = 0
+    private var lastScrobbleTickTime: Double?
 
     // MARK: - Private
 
@@ -583,6 +624,9 @@ final class LibraryViewModel: ObservableObject {
         if let saved = prefs.savedRepeatMode, let mode = RepeatMode(rawValue: saved) {
             repeatMode = mode
         }
+        // Property observers don't fire during init — forward the restored
+        // mode to the playback service explicitly.
+        playback.repeatMode = PlaybackRepeatMode(rawValue: repeatMode.rawValue) ?? .off
         cdAnimationSpeed = prefs.cdAnimationSpeed
         if let savedField = prefs.savedTrackSortField, let field = TrackSortField(rawValue: savedField) {
             trackSortField = field
@@ -1708,7 +1752,7 @@ final class LibraryViewModel: ObservableObject {
     }
 
     func downloadAndImportArtwork(
-        images: [(url: URL, role: ArtworkRole, suggestedFilename: String)],
+        images: [(url: URL, role: ArtworkRole, suggestedFilename: String, discNumber: Int?)],
         for album: Album
     ) async {
         guard let representative = album.tracks.first?.track.fileURL else { return }
@@ -1721,7 +1765,7 @@ final class LibraryViewModel: ObservableObject {
             var newCoverAsset: ArtworkAsset? = nil
             
             // Parallel downloads
-            typealias DownloadResult = (item: (url: URL, role: ArtworkRole, suggestedFilename: String), data: Data)
+            typealias DownloadResult = (item: (url: URL, role: ArtworkRole, suggestedFilename: String, discNumber: Int?), data: Data)
             var downloadedData: [DownloadResult] = []
             
             do {
@@ -1751,7 +1795,12 @@ final class LibraryViewModel: ObservableObject {
                     
                     let filename = fileURL.lastPathComponent
                     manifest.roles[filename] = item.role
-                    
+                    if item.role == .disc, let disc = item.discNumber {
+                        var discs = manifest.discNumbers ?? [:]
+                        discs[filename] = disc
+                        manifest.discNumbers = discs
+                    }
+
                     let digest = SHA256.hash(data: data)
                     let hashHex = digest.compactMap { String(format: "%02x", $0) }.joined()
                     
@@ -1977,6 +2026,7 @@ final class LibraryViewModel: ObservableObject {
     nonisolated private static func suggestedArtworkFilename(role: ArtworkRole, index: Int, ext: String) -> String {
         switch role {
         case .cover:       return index == 0 ? "cover.\(ext)" : "cover_\(index + 1).\(ext)"
+        case .altCover:    return index == 0 ? "cover_alt.\(ext)" : "cover_alt_\(index + 1).\(ext)"
         case .back:        return index == 0 ? "back.\(ext)" : "back_\(index + 1).\(ext)"
         case .disc:        return index == 0 ? "disc.\(ext)" : "disc_\(index + 1).\(ext)"
         case .inlay:       return index == 0 ? "inlay.\(ext)" : "inlay_\(index + 1).\(ext)"
@@ -2005,8 +2055,12 @@ final class LibraryViewModel: ObservableObject {
 
     private func handlePlaybackStateChange(_ state: PlaybackState) {
         if state == .playing, let nowPlaying = nowPlayingTrack {
-            playbackStartTimestamp = Int(Date().timeIntervalSince1970)
-            
+            // Track-start timestamp is set on index change; resetting it here
+            // too would stamp scrobbles with the last *unpause* time instead.
+            if playbackStartTimestamp == 0 {
+                playbackStartTimestamp = Int(Date().timeIntervalSince1970)
+            }
+
             // Check if we need to update "Now Playing" on Last.fm
             if let sessionKey = prefs.lastFmSessionKey, !sessionKey.isEmpty {
                 Task {
@@ -2024,6 +2078,15 @@ final class LibraryViewModel: ObservableObject {
     private func checkScrobbleProgress(current: Double, duration: Double) {
         // Streams are never scrobbled.
         guard !isRadioMode else { return }
+
+        // Accumulate real listened time from tick deltas. A seek produces a
+        // jump far larger than the ~0.2s tick interval and adds nothing.
+        if let last = lastScrobbleTickTime {
+            let delta = current - last
+            if delta > 0, delta < 2.0 { listenedSeconds += delta }
+        }
+        lastScrobbleTickTime = current
+
         guard let sessionKey = prefs.lastFmSessionKey, !sessionKey.isEmpty,
               let nowPlaying = nowPlayingTrack,
               lastScrobbledTrackID != nowPlaying.track.id else {
@@ -2032,7 +2095,7 @@ final class LibraryViewModel: ObservableObject {
 
         // Last.fm guidelines: scrobble if played at least 4 minutes (240s) or half the duration, whichever is shorter, and played for at least 30s.
         let triggerTime = min(duration / 2.0, 240.0)
-        if current >= triggerTime && current >= 30.0 {
+        if listenedSeconds >= triggerTime && listenedSeconds >= 30.0 {
             lastScrobbledTrackID = nowPlaying.track.id
             let artist = nowPlaying.track.artist
             let trackName = nowPlaying.track.title
@@ -2075,7 +2138,16 @@ final class LibraryViewModel: ObservableObject {
             }
         }
         playback.onCurrentIndexChange = { [weak self] index in
-            Task { @MainActor in self?.playbackCurrentIndex = index }
+            Task { @MainActor in
+                guard let self else { return }
+                self.playbackCurrentIndex = index
+                // New track (or repeat-one replay): reset the scrobble state so
+                // a re-played track scrobbles again and listened time restarts.
+                self.lastScrobbledTrackID = nil
+                self.listenedSeconds = 0
+                self.lastScrobbleTickTime = nil
+                self.playbackStartTimestamp = Int(Date().timeIntervalSince1970)
+            }
         }
         playback.onTimeChange = { [weak self] current, duration in
             Task { @MainActor in
@@ -2299,7 +2371,7 @@ final class LibraryViewModel: ObservableObject {
     /// content-addressed `ArtworkStore`, so they survive the format change and
     /// cold-launch thumbnails resolve by hash. Write-once by hash. Used by the
     /// migration and by scan import.
-    private func ingestArtwork(from tracks: [LoadedTrack]) {
+    func ingestArtwork(from tracks: [LoadedTrack]) {
         for track in tracks {
             if let art = track.metadata.artwork, !art.data.isEmpty {
                 artworkService.ingest(art)
@@ -2307,18 +2379,46 @@ final class LibraryViewModel: ObservableObject {
         }
     }
 
-    func saveCrateTracks(_ tracks: [LoadedTrack], name: String) {
+    /// Persist the shared track store, surfacing failures (full disk, unmounted
+    /// volume) instead of silently dropping edits while the UI claims success.
+    @discardableResult
+    func persistTrackStore() -> Bool {
+        do {
+            try currentTrackStore().save()
+            return true
+        } catch {
+            AppLog.library.error("Failed to save track store: \(error.localizedDescription)")
+            appAlert = .error(title: "Library Save Failed",
+                              message: "Could not write the library index: \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    /// Save a crate's membership (and its tracks into the shared store).
+    /// Pass `persistStore: false` inside multi-crate loops and call
+    /// `persistTrackStore()` once after — the store write re-encodes every
+    /// track it holds, so per-crate saves froze the UI for seconds at 14k tracks.
+    @discardableResult
+    func saveCrateTracks(_ tracks: [LoadedTrack], name: String, persistStore: Bool = true) -> Bool {
         let store = currentTrackStore()
         for track in tracks { store.upsert(track) }
-        store.save()
+        if persistStore, !persistTrackStore() { return false }
         let paths = tracks.map { TrackStore.key(for: $0.track.fileURL) }
         let url = cratesDirectoryURL.appendingPathComponent("\(name).cdcrate")
-        if let data = try? JSONEncoder().encode(paths) {
-            try? data.write(to: url, options: .atomic)
+        do {
+            let data = try JSONEncoder().encode(paths)
+            try data.write(to: url, options: .atomic)
+        } catch {
+            AppLog.library.error("Failed to save crate “\(name)”: \(error.localizedDescription)")
+            appAlert = .error(title: "Crate Save Failed",
+                              message: "Could not save “\(name)”: \(error.localizedDescription)")
+            crateTracksCache.removeAll()
+            return false
         }
         // The shared store changed; drop all per-crate caches so crates sharing
         // an edited track re-resolve fresh. Re-resolution is cheap (in-memory).
         crateTracksCache.removeAll()
+        return true
     }
 
     /// One-time migration of legacy per-crate `.cdlib` files (full `LoadedTrack`s
@@ -2352,7 +2452,7 @@ final class LibraryViewModel: ObservableObject {
             try? fm.removeItem(at: backup)
             try? fm.moveItem(at: url, to: backup)
         }
-        store.save()
+        try? store.save()
         AppLog.library.info("Migrated \(legacy.count) legacy crate(s) into the shared track store.")
     }
 
@@ -2457,9 +2557,11 @@ final class LibraryViewModel: ObservableObject {
         let paths = Set(tracks.map { $0.track.fileURL.standardizedFileURL.path })
 
         // Add references to the target crate (dedup keeps it idempotent).
+        // Only remove from the source once the target save actually succeeded —
+        // otherwise a full/unmounted volume silently drops the tracks from both.
         var dest = loadCrateTracks(name: target)
         dest.append(contentsOf: tracks)
-        saveCrateTracks(LibraryViewModel.deduplicate(tracks: dest), name: target)
+        guard saveCrateTracks(LibraryViewModel.deduplicate(tracks: dest), name: target) else { return }
 
         // Remove the same references from the source crate.
         var src = loadCrateTracks(name: source)
@@ -2631,12 +2733,17 @@ final class LibraryViewModel: ObservableObject {
         }
         localIndex = buildIndex(remaining)
         prepCrateTracks.removeAll { paths.contains($0.track.fileURL.standardizedFileURL.path) }
+        // Purged tracks leave the shared store too, or it grows dead entries
+        // forever. One store write for the whole purge, not one per crate.
+        let store = currentTrackStore()
+        for path in paths { store.remove(path: path) }
         for crateName in availableCrates {
             var tracks = loadCrateTracks(name: crateName)
             let before = tracks.count
             tracks.removeAll { paths.contains($0.track.fileURL.standardizedFileURL.path) }
-            if tracks.count != before { saveCrateTracks(tracks, name: crateName) }
+            if tracks.count != before { saveCrateTracks(tracks, name: crateName, persistStore: false) }
         }
+        persistTrackStore()
         refreshCrateCounts()
         selectSource(currentSource)
     }
@@ -2651,6 +2758,15 @@ final class LibraryViewModel: ObservableObject {
         prepCrateTracks = prepCrateTracks.map {
             byOldPath[$0.track.fileURL.standardizedFileURL.path] ?? $0
         }
+        // Repoint the shared store first (dropping the now-dead old keys), then
+        // rewrite memberships. One store write total — per-crate saves re-encode
+        // the whole store and froze the UI for seconds on a library move.
+        let store = currentTrackStore()
+        let newKeys = Set(byOldPath.values.map { TrackStore.key(for: $0.track.fileURL) })
+        for (oldPath, new) in byOldPath {
+            store.upsert(new)
+            if !newKeys.contains(oldPath) { store.remove(path: oldPath) }
+        }
         for crateName in availableCrates {
             var tracks = loadCrateTracks(name: crateName)
             var modified = false
@@ -2660,8 +2776,9 @@ final class LibraryViewModel: ObservableObject {
                     modified = true
                 }
             }
-            if modified { saveCrateTracks(tracks, name: crateName) }
+            if modified { saveCrateTracks(tracks, name: crateName, persistStore: false) }
         }
+        persistTrackStore()
         refreshCrateCounts()
         selectSource(currentSource)
     }
@@ -2768,33 +2885,49 @@ final class LibraryViewModel: ObservableObject {
         existing.append(contentsOf: newTracks)
         let merged = LibraryViewModel.deduplicate(tracks: existing)
         saveCrateTracks(merged, name: crateName)
-        
-        // Refresh active source if we are viewing the modified crate or All Records
-        if case .localCrate(let name) = currentSource, name == crateName {
-            selectSource(.localCrate(name: crateName))
-        } else if case .localAll = currentSource {
-            selectSource(.localAll)
+
+        // Land in the destination crate and reveal the album we just added, so an
+        // add is visible instead of silently mutating a crate off-screen.
+        // selectSource rebuilds `index` from the crate and resets selection to the
+        // first album — so we set our reveal target *after* it.
+        selectSource(.localCrate(name: crateName))
+        revealAlbum(containingTrackID: newTracks.last?.track.id)
+    }
+
+    /// Select and scroll-reveal the album containing `trackID` in the current
+    /// `index`. Setting `selectedAlbumID` drives the browser's ScrollViewReader to
+    /// center the row; `selectedArtistID` keeps the Album column on the right
+    /// artist in the full three-column layout. No-op if the track isn't found.
+    private func revealAlbum(containingTrackID trackID: UUID?) {
+        guard let trackID else { return }
+        for artist in index.artists {
+            for album in artist.albums {
+                if album.tracks.contains(where: { $0.track.id == trackID }) {
+                    selectedArtistID = album.artistID
+                    selectedAlbumID = album.id
+                    selectedTrackID = trackID
+                    return
+                }
+                for version in album.versions ?? [] where version.tracks.contains(where: { $0.track.id == trackID }) {
+                    selectedArtistID = version.artistID
+                    selectedAlbumID = version.id
+                    selectedTrackID = trackID
+                    return
+                }
+            }
         }
     }
 
     func updateTrackURLInIndex(oldURL: URL, newTrack: LoadedTrack) {
-        // When a track's file path is reorganized (on tag edit), we must update its path in all `.cdlib` crates that contain it!
-        for crateName in availableCrates {
-            var tracks = loadCrateTracks(name: crateName)
-            var modified = false
-            for i in 0..<tracks.count {
-                if tracks[i].track.fileURL.path == oldURL.path {
-                    tracks[i] = newTrack
-                    modified = true
-                }
-            }
-            if modified {
-                saveCrateTracks(tracks, name: crateName)
-            }
+        // When a track's file path changes (tag edit + auto-organise), drop the
+        // stale store key and let the shared funnel update the Prep Crate and
+        // every crate that references it — patching only saved crates left
+        // staged tracks pointing at the pre-move path.
+        let oldKey = TrackStore.key(for: oldURL)
+        if oldKey != TrackStore.key(for: newTrack.track.fileURL) {
+            currentTrackStore().remove(path: oldKey)
         }
-        
-        // Refresh active view
-        selectSource(currentSource)
+        replaceTrackEverywhere(matchingPath: oldURL.path, with: newTrack)
     }
 
     /// Batch variant of `updateTrackURLInIndex`: repoint many tracks in one pass,
@@ -2804,19 +2937,36 @@ final class LibraryViewModel: ObservableObject {
     func updateTrackURLsInIndex(_ newTracks: [LoadedTrack]) {
         guard !newTracks.isEmpty else { return }
         let byID = Dictionary(newTracks.map { ($0.track.id, $0) }, uniquingKeysWith: { a, _ in a })
+        // The staging area holds tracks too — leaving it stale points staged
+        // entries at pre-move paths (unplayable until rescan).
+        for i in prepCrateTracks.indices {
+            if let replacement = byID[prepCrateTracks[i].track.id] {
+                prepCrateTracks[i] = replacement
+            }
+        }
+        let store = currentTrackStore()
+        var staleKeys = Set<String>()
         for crateName in availableCrates {
             var tracks = loadCrateTracks(name: crateName)
             var modified = false
             for i in 0..<tracks.count {
                 if let replacement = byID[tracks[i].track.id] {
+                    let oldKey = TrackStore.key(for: tracks[i].track.fileURL)
+                    if oldKey != TrackStore.key(for: replacement.track.fileURL) {
+                        staleKeys.insert(oldKey)
+                    }
                     tracks[i] = replacement
                     modified = true
                 }
             }
             if modified {
-                saveCrateTracks(tracks, name: crateName)
+                saveCrateTracks(tracks, name: crateName, persistStore: false)
             }
         }
+        // Drop dead old-path keys, then persist the store once for the batch.
+        let liveKeys = Set(newTracks.map { TrackStore.key(for: $0.track.fileURL) })
+        for key in staleKeys.subtracting(liveKeys) { store.remove(path: key) }
+        persistTrackStore()
         selectSource(currentSource)
     }
 
@@ -2852,67 +3002,59 @@ final class LibraryViewModel: ObservableObject {
 
         Task { [weak self] in
             guard let self else { return }
-            do {
-                // Find all tracks across all crates that are inside the current library folder
-                var allTracksInLib: [LoadedTrack] = []
-                for name in self.availableCrates {
-                    allTracksInLib.append(contentsOf: self.loadCrateTracks(name: name))
+            // Find all tracks across all crates that are inside the current library folder
+            var allTracksInLib: [LoadedTrack] = []
+            for name in self.availableCrates {
+                allTracksInLib.append(contentsOf: self.loadCrateTracks(name: name))
+            }
+            let uniqueTracksInLib = LibraryViewModel.deduplicate(tracks: allTracksInLib).filter {
+                $0.track.fileURL.path.hasPrefix(currentURL.path)
+            }
+
+            let organizer = LibraryOrganizerService()
+            // Failure-reporting variant: a file that fails mid-batch no
+            // longer aborts the move and discards the repointed tracks —
+            // everything that DID move still gets its crates rewritten.
+            let result = await organizer.organizeReportingFailures(
+                tracks: uniqueTracksInLib,
+                destinationFolder: newURL,
+                copyOnly: false, // Move!
+                organiseByAlbumArtist: self.prefs.organiseByAlbumArtist
+            ) { [weak self] count, total in
+                Task { @MainActor in
+                    self?.scanProgress = ScanProgress(
+                        folderName: "Moving library files...",
+                        filesProbed: count,
+                        totalCandidates: total,
+                        isRunning: true
+                    )
                 }
-                let uniqueTracksInLib = LibraryViewModel.deduplicate(tracks: allTracksInLib).filter {
-                    $0.track.fileURL.path.hasPrefix(currentURL.path)
-                }
+            }
+            let updatedTracks = result.tracks
 
-                let organizer = LibraryOrganizerService()
-                let updatedTracks = try await organizer.organize(
-                    tracks: uniqueTracksInLib,
-                    destinationFolder: newURL,
-                    copyOnly: false, // Move!
-                    organiseByAlbumArtist: self.prefs.organiseByAlbumArtist
-                ) { [weak self] count, total in
-                    Task { @MainActor in
-                        self?.scanProgress = ScanProgress(
-                            folderName: "Moving library files...",
-                            filesProbed: count,
-                            totalCandidates: total,
-                            isRunning: true
-                        )
-                    }
-                }
-
-                await MainActor.run {
-                    do {
-                        let data = try PreferencesStore.makeBookmark(for: newURL)
-                        self.prefs.managedLibraryFolderBookmark = data
-
-                        // Update the crates with the new file paths!
-                        for movedTrack in updatedTracks {
-                            for crateName in self.availableCrates {
-                                var tracks = self.loadCrateTracks(name: crateName)
-                                var modified = false
-                                for i in 0..<tracks.count {
-                                    if tracks[i].track.id == movedTrack.track.id {
-                                        tracks[i] = movedTrack
-                                        modified = true
-                                    }
-                                }
-                                if modified {
-                                    self.saveCrateTracks(tracks, name: crateName)
-                                }
-                            }
-                        }
-
-                        self.scanProgress = .idle
-                        NotificationCenter.default.post(name: NSNotification.Name("CrateDiggerLibraryFolderChanged"), object: newURL)
-                        self.selectSource(self.currentSource)
+            await MainActor.run {
+                // Repoint crates at the moved files FIRST — the files are
+                // already at the new location, so a bookmark failure below
+                // must not leave every crate referencing dead paths. The
+                // batch helper loads/saves each crate once (the old
+                // per-track × per-crate loop re-encoded the whole store
+                // thousands of times on a large move).
+                self.updateTrackURLsInIndex(updatedTracks)
+                self.scanProgress = .idle
+                do {
+                    let data = try PreferencesStore.makeBookmark(for: newURL)
+                    self.prefs.managedLibraryFolderBookmark = data
+                    NotificationCenter.default.post(name: NSNotification.Name("CrateDiggerLibraryFolderChanged"), object: newURL)
+                    if result.failures.isEmpty {
                         self.appAlert = .error(title: "Library Moved", message: "Successfully moved library files to the new location.")
-                    } catch {
-                        self.appAlert = .error(title: "Save Failed", message: error.localizedDescription)
+                    } else {
+                        self.appAlert = .error(title: "Library Moved (with issues)",
+                                               message: "Moved with \(result.failures.count) failure(s) — those files stayed at the old location:\n"
+                                                   + result.failures.prefix(5).joined(separator: "\n"))
                     }
-                }
-            } catch {
-                await MainActor.run {
-                    self.scanProgress = .idle
-                    self.appAlert = .error(title: "Move Failed", message: "Failed to move library: \(error.localizedDescription)")
+                } catch {
+                    self.appAlert = .error(title: "Save Failed",
+                                           message: "Files moved and crates updated, but the new folder couldn't be saved as the library location: \(error.localizedDescription)")
                 }
             }
         }
@@ -2943,49 +3085,35 @@ final class LibraryViewModel: ObservableObject {
         Task { [weak self] in
             guard let self else { return }
             let organizer = LibraryOrganizerService()
-            do {
-                let updatedTracks = try await organizer.organize(
-                    tracks: tracksOutside,
-                    destinationFolder: libraryFolderURL,
-                    copyOnly: true, // Copy, keeping originals
-                    organiseByAlbumArtist: self.prefs.organiseByAlbumArtist
-                ) { [weak self] count, total in
-                    Task { @MainActor in
-                        self?.scanProgress = ScanProgress(
-                            folderName: "Consolidating library...",
-                            filesProbed: count,
-                            totalCandidates: total,
-                            isRunning: true
-                        )
-                    }
+            // Failure-reporting variant: tracks that DID copy still get their
+            // crates repointed even if a later file fails.
+            let result = await organizer.organizeReportingFailures(
+                tracks: tracksOutside,
+                destinationFolder: libraryFolderURL,
+                copyOnly: true, // Copy, keeping originals
+                organiseByAlbumArtist: self.prefs.organiseByAlbumArtist
+            ) { [weak self] count, total in
+                Task { @MainActor in
+                    self?.scanProgress = ScanProgress(
+                        folderName: "Consolidating library...",
+                        filesProbed: count,
+                        totalCandidates: total,
+                        isRunning: true
+                    )
                 }
+            }
 
-                await MainActor.run {
-                    // Update crates with the consolidated file URLs
-                    for consolidatedTrack in updatedTracks {
-                        for crateName in self.availableCrates {
-                            var tracks = self.loadCrateTracks(name: crateName)
-                            var modified = false
-                            for i in 0..<tracks.count {
-                                if tracks[i].track.id == consolidatedTrack.track.id {
-                                    tracks[i] = consolidatedTrack
-                                    modified = true
-                                }
-                            }
-                            if modified {
-                                self.saveCrateTracks(tracks, name: crateName)
-                            }
-                        }
-                    }
-
-                    self.scanProgress = .idle
-                    self.selectSource(self.currentSource)
+            await MainActor.run {
+                // Batch crate rewrite: loads/saves each crate once (the old
+                // per-track × per-crate loop re-encoded the whole store per hit).
+                self.updateTrackURLsInIndex(result.tracks)
+                self.scanProgress = .idle
+                if result.failures.isEmpty {
                     self.appAlert = .error(title: "Consolidation Complete", message: "Successfully consolidated \(tracksOutside.count) external tracks into your library folder.")
-                }
-            } catch {
-                await MainActor.run {
-                    self.scanProgress = .idle
-                    self.appAlert = .error(title: "Consolidation Failed", message: "Failed to consolidate tracks: \(error.localizedDescription)")
+                } else {
+                    self.appAlert = .error(title: "Consolidated (with issues)",
+                                           message: "\(result.failures.count) file(s) could not be copied:\n"
+                                               + result.failures.prefix(5).joined(separator: "\n"))
                 }
             }
         }

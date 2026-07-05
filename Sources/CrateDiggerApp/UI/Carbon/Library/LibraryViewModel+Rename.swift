@@ -19,12 +19,14 @@ extension LibraryViewModel {
         case .ok(let newName):
             guard newName != oldName else { return true }
             let dir = cratesDirectoryURL
-            let src = dir.appendingPathComponent("\(oldName).cdlib")
-            let dest = dir.appendingPathComponent("\(newName).cdlib")
+            // Crates live as `.cdcrate` membership files since the TrackStore
+            // migration — renaming the old `.cdlib` name made every rename fail.
+            let src = dir.appendingPathComponent("\(oldName).cdcrate")
+            let dest = dir.appendingPathComponent("\(newName).cdcrate")
             do {
                 try Self.moveFile(at: src, to: dest,
                                   caseOnly: oldName.lowercased() == newName.lowercased(),
-                                  ext: "cdlib", in: dir)
+                                  ext: "cdcrate", in: dir)
             } catch {
                 appAlert = .error(title: "Rename Failed", message: error.localizedDescription)
                 return false

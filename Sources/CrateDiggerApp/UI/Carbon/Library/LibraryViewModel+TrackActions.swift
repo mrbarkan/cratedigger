@@ -20,8 +20,12 @@ extension LibraryViewModel {
                 tracks[i] = updated
                 modified = true
             }
-            if modified { saveCrateTracks(tracks, name: crateName) }
+            if modified { saveCrateTracks(tracks, name: crateName, persistStore: false) }
         }
+        // One store write for the whole pass (the store re-encodes everything
+        // it holds on save), and it also persists any stale-key removal done
+        // by updateTrackURLInIndex before delegating here.
+        persistTrackStore()
         selectSource(currentSource)
     }
 
