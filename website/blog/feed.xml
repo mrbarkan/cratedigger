@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>CrateDigger Blog</title>
+    <link>https://cratedigger.mrbarkan.com/blog/index.html</link>
+    <description>Guides, comparisons, and release notes from CrateDigger.</description>
+    <language>en-us</language>
+    <item>
+      <title>Introducing CrateDigger 0.9</title>
+      <link>https://cratedigger.mrbarkan.com/blog/introducing-cratedigger-0-9.html</link>
+      <guid>https://cratedigger.mrbarkan.com/blog/introducing-cratedigger-0-9.html</guid>
+      <pubDate>Sun, 05 Jul 2026 00:00:00 -0000</pubDate>
+      <description>A hardware-inspired way to manage your offline music is now in closed beta.</description>
+    </item>
+    <item>
+      <title>Swinsian vs. CrateDigger vs. Foobar2000: Native macOS Music Library Managers in 2026</title>
+      <link>https://cratedigger.mrbarkan.com/blog/swinsian-vs-cratedigger-vs-foobar2000.html</link>
+      <guid>https://cratedigger.mrbarkan.com/blog/swinsian-vs-cratedigger-vs-foobar2000.html</guid>
+      <pubDate>Sun, 05 Jul 2026 00:00:00 -0000</pubDate>
+      <description>Comparing native macOS music library managers on conversion, organization, and price.</description>
+    </item>
+    <item>
+      <title>How to Batch-Convert and Organize a Messy Music Library on macOS</title>
+      <link>https://cratedigger.mrbarkan.com/blog/organize-batch-convert-music-library-macos.html</link>
+      <guid>https://cratedigger.mrbarkan.com/blog/organize-batch-convert-music-library-macos.html</guid>
+      <pubDate>Sun, 05 Jul 2026 00:00:00 -0000</pubDate>
+      <description>A step-by-step cleanup guide: formats, folder structure, and avoiding overwritten files.</description>
+    </item>
+  </channel>
+</rss>
