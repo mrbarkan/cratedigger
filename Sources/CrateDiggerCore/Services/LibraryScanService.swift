@@ -31,6 +31,11 @@ public final class LibraryScanService {
     private let artworkService: ArtworkService
     private let remoteArtworkService: RemoteArtworkService?
     private let metadataProbe: MetadataProbing?
+    /// The audio types a scan will pick up — shared so drop targets can
+    /// classify a dragged payload the same way the scanner will.
+    public static let defaultSupportedExtensions: Set<String> =
+        ["mp3", "aac", "m4a", "flac", "wav", "aiff", "ogg", "opus", "caf"]
+
     private let supportedExtensions: Set<String>
 
     public init(
@@ -38,7 +43,7 @@ public final class LibraryScanService {
         artworkService: ArtworkService = ArtworkService(),
         remoteArtworkService: RemoteArtworkService? = nil,
         metadataProbe: MetadataProbing? = nil,
-        supportedExtensions: Set<String> = ["mp3", "aac", "m4a", "flac", "wav", "aiff", "ogg", "opus", "caf"]
+        supportedExtensions: Set<String> = LibraryScanService.defaultSupportedExtensions
     ) {
         let resolvedProbe: MetadataProbing?
         if let metadataProbe {
@@ -59,17 +64,27 @@ public final class LibraryScanService {
     }
 
     public func scanFolder(_ folderURL: URL) async -> [LoadedTrack] {
-        guard let enumerator = fileManager.enumerator(at: folderURL, includingPropertiesForKeys: nil) else {
-            return []
-        }
-
         var candidateURLs: [URL] = []
-        while let object = enumerator.nextObject() {
-            guard let fileURL = object as? URL,
-                  supportedExtensions.contains(fileURL.pathExtension.lowercased()) else {
-                continue
+        var isDirectory: ObjCBool = false
+        if fileManager.fileExists(atPath: folderURL.path, isDirectory: &isDirectory), !isDirectory.boolValue {
+            // A single audio file (Finder drop, single-file dig): the directory
+            // enumerator below yields nothing for a plain file, so take it directly.
+            if supportedExtensions.contains(folderURL.pathExtension.lowercased()) {
+                candidateURLs = [folderURL]
             }
-            candidateURLs.append(fileURL)
+        } else {
+            // Directories are walked with a *deep* enumerator — every subfolder,
+            // however nested, is read.
+            guard let enumerator = fileManager.enumerator(at: folderURL, includingPropertiesForKeys: nil) else {
+                return []
+            }
+            while let object = enumerator.nextObject() {
+                guard let fileURL = object as? URL,
+                      supportedExtensions.contains(fileURL.pathExtension.lowercased()) else {
+                    continue
+                }
+                candidateURLs.append(fileURL)
+            }
         }
 
         // Fresh scan: folder covers may have changed on disk since the last one.

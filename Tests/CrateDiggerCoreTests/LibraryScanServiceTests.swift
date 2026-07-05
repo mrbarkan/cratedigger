@@ -87,5 +87,39 @@ final class LibraryScanServiceTests: XCTestCase {
             )
         }
     }
+
+    /// Deep recursion + single files: a track nested several folders down is
+    /// found, and scanning a plain file URL (Finder drop) yields that track
+    /// instead of nothing — a directory enumerator over a file is empty.
+    func testScanReachesNestedFoldersAndSingleFiles() async throws {
+        try await withTemporaryDirectory(prefix: "LibraryScanServiceTests") { tempDir in
+            let fileManager = FileManager.default
+
+            let deep = tempDir.appendingPathComponent("a/b/c/d")
+            try fileManager.createDirectory(at: deep, withIntermediateDirectories: true)
+            let nested = deep.appendingPathComponent("deep.mp3")
+            try "dummy audio".write(to: nested, atomically: true, encoding: .utf8)
+
+            let probe = TitleProbe(tagsByFilename: ["deep.mp3": ["title": "Deep"]])
+            let scanner = LibraryScanService(
+                fileManager: fileManager,
+                artworkService: ArtworkService(),
+                remoteArtworkService: nil,
+                metadataProbe: probe
+            )
+
+            let folderScan = await scanner.scanFolder(tempDir)
+            XCTAssertEqual(folderScan.map { $0.track.title }, ["Deep"])
+
+            let fileScan = await scanner.scanFolder(nested)
+            XCTAssertEqual(fileScan.map { $0.track.title }, ["Deep"])
+
+            // A non-audio file scans to nothing rather than crashing/misfiling.
+            let stray = tempDir.appendingPathComponent("cover.txt")
+            try "not audio".write(to: stray, atomically: true, encoding: .utf8)
+            let strayScan = await scanner.scanFolder(stray)
+            XCTAssertTrue(strayScan.isEmpty)
+        }
+    }
 }
 #endif

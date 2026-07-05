@@ -669,8 +669,7 @@ final class LibraryViewModel: ObservableObject {
         // Load playlists, CDs, and external devices
         self.playlists = playlistService.listPlaylists()
         self.mountedCDs = cdRipper.detectAudioCDs()
-        self.mountedDevices = deviceDetector.detectDevices()
-            .filter { dev in !self.mountedCDs.contains { $0.volumeURL.path == dev.volumeURL.path } }
+        self.mountedDevices = detectSavedDevices()
 
         if let outputUID = prefs.selectedOutputDeviceUID {
             playback.setOutputDeviceUID(outputUID)
@@ -1161,12 +1160,10 @@ final class LibraryViewModel: ObservableObject {
 
     // MARK: - External devices
 
-    /// Re-detect mounted removable devices. Audio CDs are excluded so they don't
-    /// show in both "CD Drives" and "Devices". Wired to the volume mount/unmount
+    /// Re-detect mounted removable devices. Wired to the volume mount/unmount
     /// observers (see `setupVolumeObservers`) plus init + sidebar appear.
     func refreshDevices() {
-        let cdPaths = Set(mountedCDs.map { $0.volumeURL.path })
-        let detected = deviceDetector.detectDevices().filter { !cdPaths.contains($0.volumeURL.path) }
+        let detected = detectSavedDevices()
         if detected != mountedDevices { mountedDevices = detected }
         // Drop cached scans for devices that are no longer mounted.
         let mountedPaths = Set(detected.map { $0.volumeURL.path })
@@ -1175,6 +1172,25 @@ final class LibraryViewModel: ObservableObject {
         if case .device(let path) = currentSource,
            !detected.contains(where: { $0.volumeURL.path == path }) {
             selectSource(.localAll)
+        }
+    }
+
+    /// Mounted removable volumes that match a device profile saved in Settings
+    /// (by configured root path, else by name), minus audio CDs. Random drives
+    /// and DMG mounts never reach Sources — only devices the user has added.
+    private func detectSavedDevices() -> [MountedDevice] {
+        let cdPaths = Set(mountedCDs.map { $0.volumeURL.path })
+        return deviceDetector.detectDevices().filter { dev in
+            !cdPaths.contains(dev.volumeURL.path) && deviceProfile(for: dev) != nil
+        }
+    }
+
+    /// The saved Settings profile a mounted device belongs to (by configured
+    /// root path, else by name), or nil for an unknown volume.
+    func deviceProfile(for device: MountedDevice) -> ExternalDeviceProfile? {
+        prefs.savedExternalDeviceProfiles.first { p in
+            (p.rootDisplayPath.map { $0 == device.volumeURL.path } ?? false)
+                || p.name.caseInsensitiveCompare(device.name) == .orderedSame
         }
     }
 
@@ -2181,6 +2197,46 @@ final class LibraryViewModel: ObservableObject {
     var managedLibraryFolderURL: URL? {
         guard let data = prefs.managedLibraryFolderBookmark else { return nil }
         return PreferencesStore.resolveBookmark(data)?.url
+    }
+
+    /// Finder drop anywhere on the window: scan the dropped files/folders and
+    /// MERGE them into the Prep Crate. Unlike a dig (`handleImport`), a drop
+    /// never replaces what's already staged.
+    func importDroppedURLs(_ urls: [URL]) {
+        guard !urls.isEmpty else { return }
+        scanProgress = ScanProgress(
+            folderName: "Scanning dropped items…",
+            filesProbed: 0, totalCandidates: nil, isRunning: true
+        )
+        Task { [weak self] in
+            guard let self else { return }
+            var collected: [LoadedTrack] = []
+            for url in urls {
+                collected.append(contentsOf: await self.scanner.scanFolder(url))
+            }
+            await MainActor.run {
+                guard !collected.isEmpty else {
+                    self.scanProgress = .idle
+                    self.appAlert = .error(
+                        title: "Nothing to Import",
+                        message: "No supported audio files were found in the dropped items."
+                    )
+                    return
+                }
+                self.ingestArtwork(from: collected)
+                self.prepCrateTracks = LibraryViewModel.deduplicate(
+                    tracks: self.prepCrateTracks + collected
+                )
+                self.selectSource(.prepCrate)
+                self.scanProgress = ScanProgress(
+                    folderName: nil,
+                    filesProbed: collected.count,
+                    totalCandidates: collected.count,
+                    isRunning: false
+                )
+                self.scanForCleanup()
+            }
+        }
     }
 
     private func handleImport(_ tracks: [LoadedTrack]) {
