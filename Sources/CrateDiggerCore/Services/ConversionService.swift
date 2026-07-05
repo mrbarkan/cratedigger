@@ -156,6 +156,11 @@ public final class ConversionService {
         return _isCancelled
     }
 
+    /// Sentinel log message for jobs that never ran because the user
+    /// cancelled the batch. `ConversionExecutionResult.wasCancelled` keys
+    /// off this value.
+    public static let cancelledLogMessage = "Cancelled"
+
     /// Marks every remaining queued job as cancelled. The job currently
     /// being run by ffmpeg keeps running to completion; the queue worker
     /// observes the flag between dispatches. A future revision should kill
@@ -296,21 +301,26 @@ public final class ConversionService {
 
         operationQueue.waitUntilAllOperationsAreFinished()
 
-        let statuses = Dictionary(uniqueKeysWithValues: results.map { ($0.queuedID, $0.status) })
+        // Workers append in completion order; put results back in queue order
+        // so callers can safely pair result N with the Nth job they enqueued.
+        let resultsByID = Dictionary(uniqueKeysWithValues: results.map { ($0.queuedID, $0) })
+        let orderedResults = items.compactMap { resultsByID[$0.id] }
+
         queue = queue.map { item in
             var updated = item
-            if let status = statuses[item.id] {
+            if let status = resultsByID[item.id]?.status {
                 updated.status = status
             }
             return updated
         }
 
-        return results
+        return orderedResults
     }
 
     public func preparedCommand(for queued: QueuedConversion) throws -> PreparedConversionCommand {
         let globalArguments: [String] = [
             "-hide_banner",
+            "-nostats",
             "-nostdin",
             "-y"
         ]
@@ -464,7 +474,7 @@ public final class ConversionService {
                 queuedID: queued.id,
                 status: .failed,
                 warning: nil,
-                log: "Cancelled"
+                log: Self.cancelledLogMessage
             )
         }
         do {
@@ -480,7 +490,10 @@ public final class ConversionService {
                     queuedID: queued.id,
                     status: .completed,
                     warning: command.warning,
-                    log: output.standardError.isEmpty ? output.standardOutput : output.standardError
+                    // Drop the ffmpeg log on success: nothing reads it, and
+                    // retaining tens of KB of stderr per job for the whole
+                    // batch balloons memory on large libraries.
+                    log: ""
                 )
             }
 
@@ -672,4 +685,16 @@ public final class ConversionService {
         return resolvedPreset
     }
 
+}
+
+public extension ConversionExecutionResult {
+    /// True when this job never ran because the user cancelled the batch.
+    /// The service reports these as `.failed`; use this to tell a deliberate
+    /// cancel apart from a real conversion failure.
+    /// ponytail: keyed off the log sentinel — `QueueStatus` lives in
+    /// ConversionModels.swift; promote to a real `.cancelled` case there
+    /// when that file is next open for changes.
+    var wasCancelled: Bool {
+        status == .failed && log == ConversionService.cancelledLogMessage
+    }
 }

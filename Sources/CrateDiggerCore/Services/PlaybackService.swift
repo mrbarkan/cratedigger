@@ -17,6 +17,12 @@ public struct PlaybackQueueItem: Hashable, Sendable {
     }
 }
 
+public enum PlaybackRepeatMode: String, Codable, Sendable {
+    case off
+    case all
+    case one
+}
+
 public enum PlaybackState: Equatable, Sendable {
     case idle
     case loading
@@ -33,6 +39,7 @@ public protocol PlaybackServiceProtocol: AnyObject {
     var durationSeconds: Double { get }
     var errorMessage: String? { get }
     var queue: [PlaybackQueueItem] { get }
+    var repeatMode: PlaybackRepeatMode { get set }
 
     var onStateChange: ((PlaybackState) -> Void)? { get set }
     var onCurrentIndexChange: ((Int?) -> Void)? { get set }
@@ -202,8 +209,10 @@ final class AVPlayerEngine: PlaybackEngineProtocol {
         levelTap.setMasterGain(gain)
     }
 
-    /// Map a linear peak (0...1) to a meter fill position: -48 dBFS → 0 and
-    /// 0 dBFS → 0.80 so full scale lands on the meter's "0" tick.
+    /// Map a linear RMS level (0...1) to a meter fill position: -48 dBFS → 0
+    /// and 0 dBFS → 0.80 so full scale lands on the meter's "0" tick. This is
+    /// the ONLY dB mapping in the level path — consumers (MeterDriver) must
+    /// take these values as-is or the scale gets compressed twice.
     private func meterPosition(_ linear: Double) -> Double {
         guard linear > 0.000_001 else { return 0 }
         let db = 20 * log10(linear)
@@ -271,6 +280,7 @@ public final class PlaybackService: PlaybackServiceProtocol {
     }
     public private(set) var errorMessage: String?
     public private(set) var queue: [PlaybackQueueItem] = []
+    public var repeatMode: PlaybackRepeatMode = .off
 
     public var onStateChange: ((PlaybackState) -> Void)?
     public var onCurrentIndexChange: ((Int?) -> Void)?
@@ -450,8 +460,20 @@ public final class PlaybackService: PlaybackServiceProtocol {
 
         engine.onItemEnded = { [weak self] in
             guard let self else { return }
+            if self.repeatMode == .one, let currentIndex {
+                self.load(queue: self.queue, startIndex: currentIndex, autoPlay: true)
+                return
+            }
+
             if let currentIndex, self.queue.indices.contains(currentIndex + 1) {
                 self.load(queue: self.queue, startIndex: currentIndex + 1, autoPlay: true)
+                return
+            }
+
+            // Repeat-all wraps within the queue as loaded; a shuffled queue is
+            // shuffled by the caller before load, so the wrap follows that order.
+            if self.repeatMode == .all, !self.queue.isEmpty {
+                self.load(queue: self.queue, startIndex: 0, autoPlay: true)
                 return
             }
 

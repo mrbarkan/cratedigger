@@ -82,6 +82,69 @@ final class OutputPathPlannerTests: XCTestCase {
             XCTAssertEqual(planned.destinationURL.lastPathComponent, "Track 01 (3).m4a")
         }
     }
+
+    func testCollisionHandlingIsCaseInsensitive() {
+        // APFS destinations are case-insensitive by default: "Mix.m4a" and
+        // "MIX.m4a" are the same file, so the second output must step aside.
+        let planner = OutputPathPlanner()
+        let destinationRoot = URL(fileURLWithPath: "/Converted", isDirectory: true)
+        let templateConfig = FolderTemplateConfig(preset: .yearArtistAlbum, tokenOrder: TemplatePreset.yearArtistAlbum.defaultTokenOrder)
+
+        let first = planner.planDestination(
+            for: makeLoadedTrack(fileURL: URL(fileURLWithPath: "/Music/Mix.flac"), artist: "Artist", album: "Album", year: 2001),
+            preset: .genericAAC,
+            destinationRoot: destinationRoot,
+            sourceRoot: nil,
+            folderMode: .flat,
+            templateConfig: templateConfig
+        )
+        XCTAssertEqual(first.destinationURL.lastPathComponent, "Mix.m4a")
+
+        // Reserve the first path exactly the way the conversion/transfer callers do.
+        let reserved: Set<String> = [first.destinationURL.standardizedFileURL.resolvingSymlinksInPath().path]
+        let second = planner.planDestination(
+            for: makeLoadedTrack(fileURL: URL(fileURLWithPath: "/Music/MIX.flac"), artist: "Artist", album: "Album", year: 2001),
+            preset: .genericAAC,
+            destinationRoot: destinationRoot,
+            sourceRoot: nil,
+            folderMode: .flat,
+            templateConfig: templateConfig,
+            reservedDestinationPaths: reserved
+        )
+
+        XCTAssertEqual(second.destinationURL.lastPathComponent, "MIX (2).m4a")
+    }
+
+    func testDotDotMetadataComponentCannotEscapeOutputRoot() {
+        // A track tagged with album-artist ".." must not traverse above the
+        // chosen destination root in metadataTemplate mode.
+        let planner = OutputPathPlanner()
+        let loadedTrack = makeLoadedTrack(
+            fileURL: URL(fileURLWithPath: "/Music/Track 01.flac"),
+            artist: "..",
+            album: "Album",
+            year: 2001
+        )
+
+        let planned = planner.planDestination(
+            for: loadedTrack,
+            preset: .genericAAC,
+            destinationRoot: URL(fileURLWithPath: "/Converted", isDirectory: true),
+            sourceRoot: nil,
+            folderMode: .metadataTemplate,
+            templateConfig: FolderTemplateConfig(preset: .artistYearAlbum, tokenOrder: TemplatePreset.artistYearAlbum.defaultTokenOrder)
+        )
+
+        XCTAssertEqual(planned.destinationURL.path, "/Converted/Unknown Artist/2001/Album/Track 01.m4a")
+        XCTAssertFalse(planned.destinationURL.path.contains(".."))
+    }
+
+    func testSanitizerRejectsDotComponentsAndHiddenNames() {
+        XCTAssertEqual(PathComponentSanitizer.sanitize(".", fallback: "Fallback"), "Fallback")
+        XCTAssertEqual(PathComponentSanitizer.sanitize("..", fallback: "Fallback"), "Fallback")
+        XCTAssertEqual(PathComponentSanitizer.sanitize(". .", fallback: "Fallback"), "Fallback")
+        XCTAssertEqual(PathComponentSanitizer.sanitize(".hidden", fallback: "Fallback"), "hidden")
+    }
 }
 
 private func makeLoadedTrack(

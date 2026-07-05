@@ -40,7 +40,8 @@ public enum StreamMetadataService {
         "%(title)s\t%(uploader)s\t%(thumbnail)s\t%(duration)s\t%(is_live)s\t%(view_count)s\t%(concurrent_view_count)s\t%(chapters)j"
 
     public static func ytdlpArguments(url: String) -> [String] {
-        ["--no-playlist", "--print", ytdlpPrintTemplate, url]
+        // "--" ends option parsing so a stored URL can never be read as a flag.
+        ["--no-playlist", "--print", ytdlpPrintTemplate, "--", url]
     }
 
     public static func parseYtDlp(_ output: String) -> StreamMetadata {

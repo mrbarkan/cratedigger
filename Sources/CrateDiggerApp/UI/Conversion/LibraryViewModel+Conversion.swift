@@ -90,7 +90,12 @@ extension LibraryViewModel {
                 return
             }
 
-            if let problem = validateBatchPreflight(jobs: jobs, destinationRoot: destinationRoot, sourceTracks: sourceTracks) {
+            if let problem = validateBatchPreflight(
+                jobs: jobs,
+                destinationRoot: destinationRoot,
+                sourceTracks: sourceTracks,
+                outputFormat: selection.outputFormat
+            ) {
                 appAlert = problem
                 return
             }
@@ -215,7 +220,8 @@ extension LibraryViewModel {
     private func validateBatchPreflight(
         jobs: [ConversionJob],
         destinationRoot: URL,
-        sourceTracks: [LoadedTrack]
+        sourceTracks: [LoadedTrack],
+        outputFormat: OutputFormat
     ) -> AppAlert? {
         if let writabilityProblem = probeDestinationWritability(
             destinationRoot,
@@ -230,6 +236,9 @@ extension LibraryViewModel {
         if let spaceProblem = probeFreeDiskSpace(
             destinationRoot,
             sourceTracks: sourceTracks,
+            // Uncompressed PCM output typically runs ~2x a lossless source;
+            // 2.5x is a safe ceiling. Everything else: source total + 10%.
+            estimateFactor: (outputFormat == .wav || outputFormat == .aiff) ? 2.5 : 1.10,
             insufficientSpaceMessageFormat: "This batch needs ~%.1f GB on the destination volume but only %.1f GB is available. Free up space or pick a different output folder."
         ) {
             return spaceProblem
@@ -271,11 +280,13 @@ extension LibraryViewModel {
     }
 
     /// Shared free-space probe. Sums source bytes, compares against the
-    /// destination volume's available capacity with ~10% headroom, and returns a
-    /// caller-supplied alert message when there isn't enough room.
+    /// destination volume's available capacity scaled by `estimateFactor`
+    /// (default: source total + 10% headroom), and returns a caller-supplied
+    /// alert message when there isn't enough room.
     func probeFreeDiskSpace(
         _ destinationRoot: URL,
         sourceTracks: [LoadedTrack],
+        estimateFactor: Double = 1.10,
         insufficientSpaceMessageFormat: String
     ) -> AppAlert? {
         let totalSourceBytes: Int64 = sourceTracks.reduce(0) { running, track in
@@ -290,8 +301,7 @@ extension LibraryViewModel {
             ?? Int64(values?.volumeAvailableCapacity ?? 0)
         guard available > 0 else { return nil }
 
-        // Conservative: require roughly source-byte total + 10% headroom.
-        let estimatedNeed = Int64(Double(totalSourceBytes) * 1.10)
+        let estimatedNeed = Int64(Double(totalSourceBytes) * estimateFactor)
         guard available < estimatedNeed else { return nil }
 
         let needGB = Double(estimatedNeed) / 1_000_000_000
@@ -554,23 +564,22 @@ extension LibraryViewModel {
 
         let results: [ConversionExecutionResult] = await withCheckedContinuation { continuation in
             let task = Task.detached(priority: .userInitiated) {
-                _ = service.enqueue(jobs, preset: preset)
+                let queued = service.enqueue(jobs, preset: preset)
+                // Parallel workers finish in any order, so name the file that
+                // actually just finished — keyed by its queued ID, not by count.
+                let filenameByID = Dictionary(uniqueKeysWithValues: queued.map {
+                    ($0.id, $0.job.sourceURL.lastPathComponent)
+                })
                 let outcomes = service.runQueuedJobs(maxConcurrentWorkers: nil) { result, completed, totalCount in
                     Task { @MainActor in
-                        let nextFilename: String?
-                        if completed < jobs.count {
-                            nextFilename = jobs[completed].sourceURL.lastPathComponent
-                        } else {
-                            nextFilename = nil
-                        }
                         self.conversionProgress = ConversionProgressSnapshot(
                             jobsCompleted: completed,
                             jobsTotal: totalCount,
-                            currentFilename: nextFilename,
+                            currentFilename: completed < totalCount ? filenameByID[result.queuedID] : nil,
                             isRunning: completed < totalCount
                         )
                     }
-                    if result.status == .failed {
+                    if result.status == .failed && !result.wasCancelled {
                         AppLog.conversion.error("Job failed: \(result.log, privacy: .public)")
                     } else if let warning = result.warning {
                         AppLog.conversion.warning("Job warning: \(warning, privacy: .public)")
@@ -590,14 +599,21 @@ extension LibraryViewModel {
         conversionTask = nil
 
         let succeeded = results.filter { $0.status == .completed }.count
-        let failed = results.filter { $0.status == .failed }.count
+        let cancelled = results.filter { $0.wasCancelled }.count
+        let failed = results.filter { $0.status == .failed }.count - cancelled
         let warnings = results.compactMap { $0.warning }.count
-        AppLog.conversion.info("Batch finished: \(succeeded, privacy: .public) ok, \(failed, privacy: .public) failed, \(warnings, privacy: .public) with warnings")
+        AppLog.conversion.info("Batch finished: \(succeeded, privacy: .public) ok, \(failed, privacy: .public) failed, \(cancelled, privacy: .public) cancelled, \(warnings, privacy: .public) with warnings")
 
         let title: String
         let statusLine: String
         let tone: StatusTone
-        if failed == 0 {
+        if cancelled > 0 {
+            // A deliberate cancel isn't a failure — report it neutrally.
+            title = "Conversion cancelled"
+            statusLine = "Cancelled — \(succeeded) converted, \(cancelled) skipped"
+                + (failed > 0 ? ", \(failed) failed" : "")
+            tone = failed > 0 ? .warning : .info
+        } else if failed == 0 {
             title = "Conversion complete"
             statusLine = "\(succeeded) file\(succeeded == 1 ? "" : "s") written"
             tone = .success
@@ -627,7 +643,7 @@ extension LibraryViewModel {
             let prefix: String
             switch result.status {
             case .completed: prefix = "ok"
-            case .failed:    prefix = "FAILED"
+            case .failed:    prefix = result.wasCancelled ? "cancelled" : "FAILED"
             case .running:   prefix = "running"
             case .queued:    prefix = "queued"
             }
@@ -635,7 +651,7 @@ extension LibraryViewModel {
             if let warning = result.warning, !warning.isEmpty {
                 line += " — \(warning)"
             }
-            if result.status == .failed {
+            if result.status == .failed && !result.wasCancelled {
                 line += "\n    \(result.log.split(separator: "\n").last.map(String.init) ?? result.log)"
             }
             lines.append(line)

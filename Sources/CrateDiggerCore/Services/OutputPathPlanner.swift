@@ -230,19 +230,25 @@ public struct OutputPathPlanner {
         reservedDestinationPaths: Set<String>,
         avoidExistingFiles: Bool
     ) -> URL {
+        // Fold both sides once so batch reservations and candidates compare the
+        // way the (case-insensitive, APFS-default) destination volume does.
+        let reservedKeys = Set(reservedDestinationPaths.map(collisionKey(forPath:)))
+        let directoryPath = directory.standardizedFileURL.resolvingSymlinksInPath().path
         var attempt = 1
 
+        // ponytail: O(m²) attempts for m same-named files, but each attempt is
+        // now string work plus at most one fileExists stat — no symlink walk.
         while true {
             let candidateName = attempt == 1 ? baseName : "\(baseName) (\(attempt))"
-            let candidate = directory
-                .appendingPathComponent(candidateName)
-                .appendingPathExtension(fileExtension)
-            let key = standardizedPathKey(for: candidate)
+            let candidatePath = (directoryPath as NSString)
+                .appendingPathComponent("\(candidateName).\(fileExtension)")
 
-            let clashesWithBatch = reservedDestinationPaths.contains(key)
-            let clashesWithDisk = avoidExistingFiles && fileManager.fileExists(atPath: candidate.path)
+            let clashesWithBatch = reservedKeys.contains(collisionKey(forPath: candidatePath))
+            let clashesWithDisk = avoidExistingFiles && fileManager.fileExists(atPath: candidatePath)
             if !clashesWithBatch && !clashesWithDisk {
-                return candidate
+                return directory
+                    .appendingPathComponent(candidateName)
+                    .appendingPathExtension(fileExtension)
             }
 
             attempt += 1
@@ -329,8 +335,12 @@ public struct OutputPathPlanner {
         return components.joined(separator: "/")
     }
 
-    private func standardizedPathKey(for url: URL) -> String {
-        url.standardizedFileURL.resolvingSymlinksInPath().path
+    /// Case-folds + Unicode-normalizes a path so collision checks agree with
+    /// case-insensitive destination volumes, where `Mix.m4a` and `MIX.m4a` are
+    /// the same file. Callers pass in already-standardized/symlink-resolved
+    /// reserved paths; this folds both sides for comparison.
+    private func collisionKey(forPath path: String) -> String {
+        path.precomposedStringWithCanonicalMapping.lowercased()
     }
 }
 
@@ -338,6 +348,9 @@ public struct OutputPathPlanner {
 /// whitespace, falls back when empty). Shared by `OutputPathPlanner` and
 /// `LibraryOrganizerService` so both agree on how names become folders/files.
 enum PathComponentSanitizer {
+    /// Compiled once; sanitize runs ~4x per track on every index rebuild.
+    private static let whitespaceRuns = try! NSRegularExpression(pattern: "\\s+")
+
     static func sanitize(_ rawValue: String, fallback: String) -> String {
         var value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
         if value.isEmpty { return fallback }
@@ -346,8 +359,18 @@ enum PathComponentSanitizer {
         value = value.replacingOccurrences(of: ":", with: "-")
         value = value.replacingOccurrences(of: "\\", with: "-")
 
-        let collapsed = value.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-        let trimmed = collapsed.trimmingCharacters(in: .whitespacesAndNewlines)
+        let collapsed = whitespaceRuns.stringByReplacingMatches(
+            in: value,
+            range: NSRange(value.startIndex..., in: value),
+            withTemplate: " "
+        )
+        var trimmed = collapsed.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Traversal/hidden-file guard: "." and ".." would escape the output
+        // root as path components; a leading "." hides the output file.
+        while trimmed.first == "." {
+            trimmed = String(trimmed.dropFirst()).trimmingCharacters(in: .whitespaces)
+        }
         return trimmed.isEmpty ? fallback : trimmed
     }
 }

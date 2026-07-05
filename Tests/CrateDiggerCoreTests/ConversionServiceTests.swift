@@ -397,6 +397,52 @@ final class ConversionServiceTests: XCTestCase {
         XCTAssertEqual(Set(callbacks.map(\.total)), [5])
     }
 
+    func testGlobalArgumentsIncludeNoStats() throws {
+        let service = try makeService(artworkPreparer: PassThroughArtworkPreparer())
+        let sourceURL = temporaryDirectory.appendingPathComponent("source.wav")
+        let outputURL = temporaryDirectory.appendingPathComponent("out.m4a")
+
+        let queued = try service.enqueue([ConversionJob(sourceURL: sourceURL, destinationURL: outputURL)], presetID: "ipod_aac_192").first!
+        let command = try service.preparedCommand(for: queued)
+
+        XCTAssertTrue(command.arguments.contains("-nostats"))
+    }
+
+    func testParallelResultsReturnInEnqueueOrderWhenCompletionOrderScrambles() throws {
+        let service = try makeService(
+            artworkPreparer: PassThroughArtworkPreparer(),
+            commandRunner: DelayingSelectiveFailureRunner()
+        )
+        let jobs = makeJobs(count: 3)
+        let queued = service.enqueue(jobs, preset: .ipodAAC(bitrate: 192))
+
+        let results = service.runQueuedJobs(maxConcurrentWorkers: 3)
+
+        // The runner delays out-0 the longest and fails out-1, so completion
+        // order scrambles — results must still come back in enqueue order.
+        XCTAssertEqual(results.map(\.queuedID), queued.map(\.id))
+        XCTAssertEqual(results.map(\.status), [.completed, .failed, .completed])
+        XCTAssertTrue(results[1].log.contains("boom out-1"))
+        XCTAssertFalse(results[1].wasCancelled)
+        // Successful jobs drop their ffmpeg log to keep batch memory flat.
+        XCTAssertEqual(results[0].log, "")
+    }
+
+    func testCancelledJobsCarryCancelledOutcomeNotPlainFailure() throws {
+        let service = try makeService(artworkPreparer: PassThroughArtworkPreparer())
+        let jobs = makeJobs(count: 3)
+        _ = service.enqueue(jobs, preset: .ipodAAC(bitrate: 192))
+
+        service.cancel()
+        let results = service.runQueuedJobs(maxConcurrentWorkers: 1)
+
+        XCTAssertEqual(results.count, 3)
+        for result in results {
+            XCTAssertEqual(result.status, .failed)
+            XCTAssertTrue(result.wasCancelled)
+        }
+    }
+
     func testProcessCommandRunnerCapturesLargeStdoutAndStderrWithoutDeadlock() throws {
         let script = try writeExecutableStub(
             named: "emit-large-output.sh",
@@ -586,6 +632,22 @@ private struct ArgPair: Hashable {
 private struct StubCommandRunner: CommandRunning {
     func run(executableURL: URL, arguments: [String]) throws -> CommandOutput {
         CommandOutput(terminationStatus: 0, standardOutput: "ok", standardError: "")
+    }
+}
+
+/// Scrambles completion order: the first job sleeps longest, the second
+/// sleeps briefly and fails, the rest return immediately.
+private struct DelayingSelectiveFailureRunner: CommandRunning {
+    func run(executableURL: URL, arguments: [String]) throws -> CommandOutput {
+        let destination = arguments.last ?? ""
+        if destination.contains("out-0") {
+            Thread.sleep(forTimeInterval: 0.3)
+        }
+        if destination.contains("out-1") {
+            Thread.sleep(forTimeInterval: 0.15)
+            return CommandOutput(terminationStatus: 1, standardOutput: "", standardError: "boom out-1")
+        }
+        return CommandOutput(terminationStatus: 0, standardOutput: "", standardError: "ffmpeg noise")
     }
 }
 

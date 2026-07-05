@@ -30,10 +30,12 @@ public final class TrackStore {
 
     /// Persist the whole store. Cheap relative to the old per-crate writes — it's
     /// text only (no artwork bytes) and written once regardless of crate count.
-    public func save() {
+    /// Throws so callers can surface a full disk / unmounted volume instead of
+    /// silently dropping the user's edits.
+    public func save() throws {
         let tracks = Array(byPath.values)
-        guard let data = try? JSONEncoder().encode(tracks) else { return }
-        try? data.write(to: fileURL, options: .atomic)
+        let data = try JSONEncoder().encode(tracks)
+        try data.write(to: fileURL, options: .atomic)
     }
 
     public func track(path: String) -> LoadedTrack? { byPath[path] }

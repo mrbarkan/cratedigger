@@ -9,13 +9,17 @@ public struct ParsedStream: Equatable, Sendable {
     public var suggestedTitle: String
     public var channel: String
     public var host: String
+    /// The paste, trimmed and with an https scheme ensured. Store this (not the
+    /// raw paste) so what reaches yt-dlp is always a well-formed URL.
+    public var normalizedURL: String
 
-    public init(isValidHost: Bool, kind: StreamKind, suggestedTitle: String, channel: String, host: String) {
+    public init(isValidHost: Bool, kind: StreamKind, suggestedTitle: String, channel: String, host: String, normalizedURL: String) {
         self.isValidHost = isValidHost
         self.kind = kind
         self.suggestedTitle = suggestedTitle
         self.channel = channel
         self.host = host
+        self.normalizedURL = normalizedURL
     }
 }
 
@@ -35,7 +39,10 @@ public enum StreamURLParser {
         guard let url = URL(string: withScheme), let rawHost = url.host else { return nil }
 
         let host = rawHost.replacingOccurrences(of: "^www\\.", with: "", options: .regularExpression)
-        let isValidHost = host.range(of: "(youtube\\.com|youtu\\.be)$", options: .regularExpression) != nil
+        // Exact host or a real subdomain (music.youtube.com) — a plain suffix
+        // match would also accept look-alikes such as fakeyoutube.com.
+        let isValidHost = host.range(of: "(^|\\.)(youtube\\.com|youtu\\.be)$",
+                                     options: [.regularExpression, .caseInsensitive]) != nil
 
         // A non-YouTube host with no dot is just garbage text, not a URL.
         if !isValidHost && !host.contains(".") { return nil }
@@ -43,10 +50,15 @@ public enum StreamURLParser {
         let path = url.path
         let query = queryItems(url)
 
-        // 1. Playlist — ?list= or a /playlist path.
-        if query["list"] != nil || path.range(of: "playlist", options: .caseInsensitive) != nil {
+        // 1. Playlist — ?list= or a /playlist path, but a share URL that names a
+        //    specific video (watch?v=… or youtu.be/<id>) is that video, even
+        //    when it also carries a &list= context.
+        let hasVideoID = query["v"] != nil || (host == "youtu.be" && path.count > 1)
+        if !hasVideoID,
+           query["list"] != nil || path.range(of: "playlist", options: .caseInsensitive) != nil {
             return ParsedStream(isValidHost: isValidHost, kind: .playlist,
-                                suggestedTitle: "YouTube Playlist", channel: "Playlist", host: host)
+                                suggestedTitle: "YouTube Playlist", channel: "Playlist", host: host,
+                                normalizedURL: withScheme)
         }
 
         // 2. /channel/<id>
@@ -56,7 +68,8 @@ public enum StreamURLParser {
             let decoded = id.removingPercentEncoding ?? id
             let channel = decoded.count > 16 ? String(decoded.prefix(14)) + "\u{2026}" : decoded
             return ParsedStream(isValidHost: isValidHost, kind: .live,
-                                suggestedTitle: "YouTube Channel", channel: channel, host: host)
+                                suggestedTitle: "YouTube Channel", channel: channel, host: host,
+                                normalizedURL: withScheme)
         }
 
         // 3. /@handle
@@ -65,7 +78,8 @@ public enum StreamURLParser {
             let handle = rest.split(separator: "/").first.map(String.init) ?? rest
             let title = handle.replacingOccurrences(of: "[-_]", with: " ", options: .regularExpression)
             return ParsedStream(isValidHost: isValidHost, kind: .live,
-                                suggestedTitle: title, channel: "@" + handle, host: host)
+                                suggestedTitle: title, channel: "@" + handle, host: host,
+                                normalizedURL: withScheme)
         }
 
         // 4. /c/<name> or /user/<name>
@@ -73,18 +87,21 @@ public enum StreamURLParser {
             let name = path.split(separator: "/").last.map(String.init) ?? ""
             let decoded = name.removingPercentEncoding ?? name
             return ParsedStream(isValidHost: isValidHost, kind: .live,
-                                suggestedTitle: decoded, channel: decoded, host: host)
+                                suggestedTitle: decoded, channel: decoded, host: host,
+                                normalizedURL: withScheme)
         }
 
         // 5. /live
         if path.range(of: "/live", options: .caseInsensitive) != nil {
             return ParsedStream(isValidHost: isValidHost, kind: .live,
-                                suggestedTitle: "Live Stream", channel: "YouTube", host: host)
+                                suggestedTitle: "Live Stream", channel: "YouTube", host: host,
+                                normalizedURL: withScheme)
         }
 
         // 6. ?v= or youtu.be short link → video. 7. default → video.
         return ParsedStream(isValidHost: isValidHost, kind: .video,
-                            suggestedTitle: "YouTube Video", channel: "YouTube", host: host)
+                            suggestedTitle: "YouTube Video", channel: "YouTube", host: host,
+                            normalizedURL: withScheme)
     }
 
     private static func queryItems(_ url: URL) -> [String: String] {

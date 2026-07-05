@@ -23,6 +23,27 @@ public final class LibraryOrganizerService {
         return URL(fileURLWithPath: "/" + commonComponents.dropFirst().joined(separator: "/"))
     }
 
+    /// The outcome of an organize pass. `tracks` always contains every input
+    /// track — moved/copied ones repointed at their new URL, failed or skipped
+    /// ones unchanged — so callers can rewrite crate references even after a
+    /// partial failure instead of stranding already-moved files.
+    public struct OrganizeResult: Sendable {
+        public let tracks: [LoadedTrack]
+        /// Human-readable per-file failures ("name.flac: reason"). Empty on success.
+        public let failures: [String]
+    }
+
+    public enum OrganizeError: LocalizedError {
+        case partialFailure([String])
+        public var errorDescription: String? {
+            guard case .partialFailure(let failures) = self else { return nil }
+            return "\(failures.count) file(s) could not be organised:\n" + failures.joined(separator: "\n")
+        }
+    }
+
+    /// Legacy throwing wrapper. Unlike the old behavior it finishes the whole
+    /// batch before throwing, but a throw still discards the repointed tracks —
+    /// batch callers should use `organizeReportingFailures` instead.
     @discardableResult
     public func organize(
         tracks: [LoadedTrack],
@@ -31,8 +52,24 @@ public final class LibraryOrganizerService {
         organiseByAlbumArtist: Bool = true,
         onProgress: (@Sendable (Int, Int) -> Void)? = nil
     ) async throws -> [LoadedTrack] {
+        let result = await organizeReportingFailures(
+            tracks: tracks, destinationFolder: destinationFolder, copyOnly: copyOnly,
+            organiseByAlbumArtist: organiseByAlbumArtist, onProgress: onProgress
+        )
+        guard result.failures.isEmpty else { throw OrganizeError.partialFailure(result.failures) }
+        return result.tracks
+    }
+
+    public func organizeReportingFailures(
+        tracks: [LoadedTrack],
+        destinationFolder: URL,
+        copyOnly: Bool = false,
+        organiseByAlbumArtist: Bool = true,
+        onProgress: (@Sendable (Int, Int) -> Void)? = nil
+    ) async -> OrganizeResult {
         let total = tracks.count
         var count = 0
+        var failures: [String] = []
         var updatedTracks: [LoadedTrack] = []
         updatedTracks.reserveCapacity(tracks.count)
 
@@ -97,7 +134,15 @@ public final class LibraryOrganizerService {
                 }
             }
 
-            try fileManager.createDirectory(at: targetDir, withIntermediateDirectories: true)
+            do {
+                try fileManager.createDirectory(at: targetDir, withIntermediateDirectories: true)
+            } catch {
+                failures.append("\(fileURL.lastPathComponent): \(error.localizedDescription)")
+                updatedTracks.append(track)
+                count += 1
+                onProgress?(count, total)
+                continue
+            }
 
             // Handle name collision
             var attempt = 1
@@ -123,21 +168,31 @@ public final class LibraryOrganizerService {
             }
 
             if uniqueTargetURL.standardizedFileURL.path != fileURL.standardizedFileURL.path {
-                if copyOnly {
-                    try fileManager.copyItem(at: fileURL, to: uniqueTargetURL)
-                } else {
-                    try fileManager.moveItem(at: fileURL, to: uniqueTargetURL)
-                    // Clean up empty parent directories of the original file
-                    var originalDir = fileURL.deletingLastPathComponent()
-                    while originalDir.path.hasPrefix(destinationFolder.path) || originalDir.pathComponents.count > 3 {
-                        let contents = try? fileManager.contentsOfDirectory(atPath: originalDir.path)
-                        if let contents, contents.isEmpty {
-                            try? fileManager.removeItem(at: originalDir)
-                            originalDir = originalDir.deletingLastPathComponent()
-                        } else {
-                            break
+                do {
+                    if copyOnly {
+                        try fileManager.copyItem(at: fileURL, to: uniqueTargetURL)
+                    } else {
+                        try fileManager.moveItem(at: fileURL, to: uniqueTargetURL)
+                        // Clean up empty parent directories of the original file
+                        var originalDir = fileURL.deletingLastPathComponent()
+                        while originalDir.path.hasPrefix(destinationFolder.path) || originalDir.pathComponents.count > 3 {
+                            let contents = try? fileManager.contentsOfDirectory(atPath: originalDir.path)
+                            if let contents, contents.isEmpty {
+                                try? fileManager.removeItem(at: originalDir)
+                                originalDir = originalDir.deletingLastPathComponent()
+                            } else {
+                                break
+                            }
                         }
                     }
+                } catch {
+                    // A failed move leaves the file at its source, so the
+                    // original (still-valid) track goes back to the caller.
+                    failures.append("\(fileURL.lastPathComponent): \(error.localizedDescription)")
+                    updatedTracks.append(track)
+                    count += 1
+                    onProgress?(count, total)
+                    continue
                 }
 
                 // Copy supporting files (artwork, cue sheets, booklets, logs)
@@ -195,7 +250,7 @@ public final class LibraryOrganizerService {
             }
         }
 
-        return updatedTracks
+        return OrganizeResult(tracks: updatedTracks, failures: failures)
     }
 
     private func copySupportingFiles(from sourceDir: URL, to targetDir: URL) {

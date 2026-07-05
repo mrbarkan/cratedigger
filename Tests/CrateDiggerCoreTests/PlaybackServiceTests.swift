@@ -86,6 +86,90 @@ final class PlaybackServiceTests: XCTestCase {
         XCTAssertEqual(service.currentTimeSeconds, 100, accuracy: 0.001)
     }
 
+    func testRepeatOneReplaysSameIndexOnItemEnd() async {
+        let engine = MockPlaybackEngine()
+        let service = PlaybackService(engine: engine)
+        let queue = [
+            PlaybackQueueItem(url: URL(fileURLWithPath: "/tmp/a.flac"), title: "A", artist: "", album: "", durationSeconds: 100),
+            PlaybackQueueItem(url: URL(fileURLWithPath: "/tmp/b.flac"), title: "B", artist: "", album: "", durationSeconds: 120)
+        ]
+
+        service.repeatMode = .one
+        service.load(queue: queue, startIndex: 0, autoPlay: true)
+        engine.simulateReady()
+        await pumpMainQueue()
+        XCTAssertEqual(service.state, .playing)
+
+        engine.simulateEnd()
+        XCTAssertEqual(service.currentIndex, 0)
+        XCTAssertEqual(service.state, .loading)
+        XCTAssertEqual(engine.replacedURLs.last, queue[0].url)
+
+        engine.simulateReady()
+        await pumpMainQueue()
+        XCTAssertEqual(service.state, .playing)
+    }
+
+    func testRepeatAllWrapsFromLastToFirstOnItemEnd() async {
+        let engine = MockPlaybackEngine()
+        let service = PlaybackService(engine: engine)
+        let queue = [
+            PlaybackQueueItem(url: URL(fileURLWithPath: "/tmp/a.flac"), title: "A", artist: "", album: "", durationSeconds: 100),
+            PlaybackQueueItem(url: URL(fileURLWithPath: "/tmp/b.flac"), title: "B", artist: "", album: "", durationSeconds: 120)
+        ]
+
+        service.repeatMode = .all
+        service.load(queue: queue, startIndex: 1, autoPlay: true)
+        engine.simulateReady()
+        await pumpMainQueue()
+        XCTAssertEqual(service.currentIndex, 1)
+
+        engine.simulateEnd()
+        XCTAssertEqual(service.currentIndex, 0)
+        XCTAssertEqual(service.state, .loading)
+        XCTAssertEqual(engine.replacedURLs.last, queue[0].url)
+
+        engine.simulateReady()
+        await pumpMainQueue()
+        XCTAssertEqual(service.state, .playing)
+    }
+
+    func testRepeatAllAdvancesNormallyMidQueue() async {
+        let engine = MockPlaybackEngine()
+        let service = PlaybackService(engine: engine)
+        let queue = [
+            PlaybackQueueItem(url: URL(fileURLWithPath: "/tmp/a.flac"), title: "A", artist: "", album: "", durationSeconds: 100),
+            PlaybackQueueItem(url: URL(fileURLWithPath: "/tmp/b.flac"), title: "B", artist: "", album: "", durationSeconds: 120)
+        ]
+
+        service.repeatMode = .all
+        service.load(queue: queue, startIndex: 0, autoPlay: true)
+        engine.simulateReady()
+        await pumpMainQueue()
+
+        engine.simulateEnd()
+        XCTAssertEqual(service.currentIndex, 1)
+        XCTAssertEqual(engine.replacedURLs.last, queue[1].url)
+    }
+
+    func testRepeatOffStillEndsAtQueueEnd() async {
+        let engine = MockPlaybackEngine()
+        let service = PlaybackService(engine: engine)
+        let queue = [
+            PlaybackQueueItem(url: URL(fileURLWithPath: "/tmp/a.flac"), title: "A", artist: "", album: "", durationSeconds: 100)
+        ]
+
+        service.repeatMode = .off
+        service.load(queue: queue, startIndex: 0, autoPlay: true)
+        engine.durationSeconds = 100
+        engine.simulateReady()
+        await pumpMainQueue()
+
+        engine.simulateEnd()
+        XCTAssertEqual(service.state, .ended)
+        XCTAssertEqual(service.currentIndex, 0)
+    }
+
     func testFailureSkipsToNextTrackWhenAvailable() async {
         let engine = MockPlaybackEngine()
         let service = PlaybackService(engine: engine)

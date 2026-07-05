@@ -50,7 +50,7 @@ final class TrackStoreTests: XCTestCase {
             do {
                 let store = TrackStore(fileURL: url)
                 store.upsert(track("/m/a.flac", title: "A", artworkBytes: Data([1, 2, 3, 4])))
-                store.save()
+                try? store.save()
             }
             // A fresh instance (relaunch) resolves the track, and the persisted
             // file carries no artwork bytes (those live in ArtworkStore by hash).

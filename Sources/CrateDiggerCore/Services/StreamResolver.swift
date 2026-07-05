@@ -55,11 +55,12 @@ public struct StreamResolver: @unchecked Sendable {
         "bestaudio[protocol^=m3u8]/best[protocol^=m3u8][height<=480]/best[protocol^=m3u8]/ba[ext=m4a]/bestaudio[acodec^=mp4a]/best"
 
     public func arguments(for stream: StreamSource) -> [String] {
+        // "--" ends option parsing so a stored URL can never be read as a flag.
         switch stream.kind {
         case .live, .video, .mix:
-            return ["-g", "-f", Self.formatSelector, "--no-playlist", stream.url]
+            return ["-g", "-f", Self.formatSelector, "--no-playlist", "--", stream.url]
         case .playlist:
-            return ["-g", "-f", Self.formatSelector, "--yes-playlist", "--playlist-items", "1", stream.url]
+            return ["-g", "-f", Self.formatSelector, "--yes-playlist", "--playlist-items", "1", "--", stream.url]
         }
     }
 

@@ -20,9 +20,16 @@ final class StreamURLParserTests: XCTestCase {
         XCTAssertEqual(p.channel, "Playlist")
     }
 
-    func testWatchWithListIsPlaylist() {
+    // A share URL that names a specific video is that video, even with a
+    // &list= context — otherwise the resolver plays the playlist's first item.
+    func testWatchWithListIsVideo() {
         let p = StreamURLParser.parse("https://www.youtube.com/watch?v=abc&list=PL999")!
-        XCTAssertEqual(p.kind, .playlist)
+        XCTAssertEqual(p.kind, .video)
+    }
+
+    func testShortLinkWithListIsVideo() {
+        let p = StreamURLParser.parse("https://youtu.be/abc123?list=PL999")!
+        XCTAssertEqual(p.kind, .video)
     }
 
     func testChannelIdTruncated() {
@@ -59,6 +66,17 @@ final class StreamURLParserTests: XCTestCase {
     func testNonYouTubeHostFlaggedInvalidButClassifies() {
         let p = StreamURLParser.parse("https://vimeo.com/watch?v=1")!
         XCTAssertFalse(p.isValidHost)
+    }
+
+    func testLookAlikeHostRejectedSubdomainAccepted() {
+        XCTAssertFalse(StreamURLParser.parse("https://fakeyoutube.com/watch?v=1")!.isValidHost)
+        XCTAssertFalse(StreamURLParser.parse("https://notyoutu.be/abc")!.isValidHost)
+        XCTAssertTrue(StreamURLParser.parse("https://music.youtube.com/watch?v=1")!.isValidHost)
+    }
+
+    func testNormalizedURLGetsScheme() {
+        XCTAssertEqual(StreamURLParser.parse("youtube.com/@x")!.normalizedURL, "https://youtube.com/@x")
+        XCTAssertEqual(StreamURLParser.parse(" https://youtu.be/abc \n")!.normalizedURL, "https://youtu.be/abc")
     }
 
     func testGarbageReturnsNil() {

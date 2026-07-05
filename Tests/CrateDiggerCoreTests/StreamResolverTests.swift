@@ -69,6 +69,17 @@ final class StreamResolverTests: XCTestCase {
         XCTAssertEqual(args[args.firstIndex(of: "--playlist-items").map { $0 + 1 } ?? 0], "1")
     }
 
+    // The URL is user-pasted; "--" must end option parsing right before it so
+    // it can never be interpreted as a yt-dlp flag.
+    func testArgumentsTerminateOptionsBeforeURL() {
+        let r = StreamResolver(ytdlpURL: ytdlp, runner: FakeRunner(ok("")))
+        for kind in [StreamKind.live, .video, .mix, .playlist] {
+            let args = r.arguments(for: stream(kind))
+            XCTAssertEqual(Array(args.suffix(2)), ["--", "https://youtu.be/x"],
+                           "argv must end with -- <url> for \(kind)")
+        }
+    }
+
     func testResolveReturnsFirstNonEmptyURL() throws {
         let runner = FakeRunner(ok("\nhttps://cdn/audio.m4a\nhttps://cdn/video.mp4\n"))
         let r = StreamResolver(ytdlpURL: ytdlp, runner: runner)

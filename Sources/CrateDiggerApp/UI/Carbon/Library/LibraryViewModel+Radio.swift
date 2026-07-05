@@ -38,7 +38,7 @@ extension LibraryViewModel {
         }
         let stream = StreamSource(
             id: "u" + UUID().uuidString,
-            url: raw.trimmingCharacters(in: .whitespacesAndNewlines),
+            url: parsed.normalizedURL,
             title: parsed.suggestedTitle,
             channel: parsed.channel,
             kind: parsed.kind,
