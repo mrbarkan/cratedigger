@@ -113,7 +113,7 @@ private struct MiniPlayerBody: View {
                 .frame(width: 24, height: 24)
                 .background(ChromeChassis(theme: theme, cornerRadius: 7))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.carbonHover)
         .disabled(model.isRadioMode)
         .carbonTip("Art: \(model.miniPlayerArtMode.label) — tap to cycle")
         .padding(.leading, 6)
@@ -127,7 +127,7 @@ private struct MiniPlayerBody: View {
                 .frame(width: 24, height: 24)
                 .background(ChromeChassis(theme: theme, cornerRadius: 7))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.carbonHover)
         .carbonTip(help)
         .padding(.leading, 6)
     }
@@ -284,7 +284,7 @@ private struct MiniPlayerBody: View {
                 .overlay(Circle().strokeBorder(Color.white.opacity(0.42), lineWidth: 0.8))
                 .shadow(color: theme.orange.opacity(0.55), radius: 12)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.carbonHover)
         .carbonTip("Play / Pause")
     }
 
@@ -296,7 +296,7 @@ private struct MiniPlayerBody: View {
                 .frame(width: 36, height: 36)
                 .background(ChromeChassis(theme: theme, cornerRadius: 10))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.carbonHover)
     }
 
     private func toggleButton(system: String, on: Bool, action: @escaping () -> Void) -> some View {
@@ -310,7 +310,7 @@ private struct MiniPlayerBody: View {
                     ? RoundedRectangle(cornerRadius: 10).strokeBorder(theme.orange.opacity(0.5), lineWidth: 0.7)
                     : nil)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.carbonHover)
     }
 
     // MARK: - Formatting

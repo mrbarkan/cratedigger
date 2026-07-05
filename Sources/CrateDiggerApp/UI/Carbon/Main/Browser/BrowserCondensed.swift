@@ -61,7 +61,7 @@ struct BrowserCondensed: View {
                     .foregroundStyle(theme.ink2)
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.carbonHover)
         .carbonTip("Expand browser")
     }
 

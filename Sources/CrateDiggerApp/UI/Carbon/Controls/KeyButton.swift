@@ -27,7 +27,7 @@ struct KeyButton<Label: View>: View {
                     .foregroundStyle(textColor)
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.carbonHover)
         .opacity(style == .disabled ? 0.42 : 1)
         .allowsHitTesting(style != .disabled)
     }

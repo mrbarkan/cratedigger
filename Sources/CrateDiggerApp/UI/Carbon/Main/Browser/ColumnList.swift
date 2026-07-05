@@ -96,7 +96,7 @@ struct ColumnRow<Lead: View, Title: View, Trail: View>: View {
             )
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.carbonHover)
         .simultaneousGesture(
             TapGesture(count: 2).onEnded {
                 onActivate?()

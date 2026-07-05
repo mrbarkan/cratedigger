@@ -149,7 +149,7 @@ private struct LibButton: View {
             )
             .shadow(color: highlighted ? theme.orange.opacity(0.35) : .clear, radius: 5)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.carbonHover)
         .carbonTip(tip ?? title.capitalized)
         .animation(.easeInOut(duration: 0.18), value: highlighted)
     }

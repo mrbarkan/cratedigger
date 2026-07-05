@@ -42,7 +42,7 @@ struct TransportCluster: View {
             .frame(width: CarbonLayout.transportButtonSize, height: CarbonLayout.transportButtonSize)
             .shadow(color: on ? theme.orange.opacity(0.4) : .clear, radius: 6)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.carbonHover)
         .carbonTip(label)
         .accessibilityLabel(label)
     }
@@ -58,7 +58,7 @@ struct TransportCluster: View {
             }
             .frame(width: CarbonLayout.transportButtonSize, height: CarbonLayout.transportButtonSize)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.carbonHover)
         .carbonTip(label)
         .accessibilityLabel(label)
     }

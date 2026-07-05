@@ -259,7 +259,7 @@ struct InspectorPane: View {
                     .clipShape(RoundedRectangle(cornerRadius: 4))
                     .shadow(color: .black.opacity(0.2), radius: 3, y: 1)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.carbonHover)
                 .carbonTip(hasBooklet ? "Open this album's digital booklet" : "View the album cover")
                 .padding(.horizontal, 16)
                 .padding(.bottom, (!hasBooklet && !hideArtTip) ? 6 : 12)
@@ -274,7 +274,7 @@ struct InspectorPane: View {
                             .foregroundStyle(theme.ink3)
                         Spacer(minLength: 4)
                         Button("Don't show") { hideArtTip = true }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.carbonHover)
                             .font(CarbonFont.mono(8, weight: .bold))
                             .foregroundStyle(theme.ink4)
                     }
@@ -341,7 +341,7 @@ struct InspectorPane: View {
             .background(isNowPlaying ? theme.orange.opacity(0.12) : Color.clear)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.carbonHover)
         .contextMenu { BrowserContextMenu.track(loaded, model: model) }
     }
 

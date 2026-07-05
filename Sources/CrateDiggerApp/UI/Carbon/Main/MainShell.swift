@@ -286,7 +286,7 @@ struct MainShell: View {
         Button(action: action) {
             chevronGlyph()
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.carbonHover)
         .carbonTip("Collapse panel")
     }
 
@@ -330,7 +330,7 @@ struct MainShell: View {
                     .foregroundStyle(model.showSortControls ? theme.cyan : theme.ink3)
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.carbonHover)
         .carbonTip(model.showSortControls ? "Hide sort controls" : "Show sort controls")
     }
 
@@ -361,7 +361,7 @@ struct CollapsedRail: View {
                 Button(action: onExpand) {
                     chevron
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.carbonHover)
                 .carbonTip("Expand \(title)")
 
                 Spacer(minLength: 0)

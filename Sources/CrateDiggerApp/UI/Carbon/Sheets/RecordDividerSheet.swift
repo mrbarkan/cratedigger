@@ -74,7 +74,7 @@ struct RecordDividerSheet: View {
                 }
                 .foregroundStyle(theme.cyan)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.carbonHover)
             .disabled(model.recordDividerIsScanning)
         }
     }
@@ -153,12 +153,12 @@ struct RecordDividerSheet: View {
             Button(action: { model.recordDividerSplit(row.id) }) {
                 Image(systemName: "scissors").font(.system(size: 9))
             }
-            .buttonStyle(.plain).foregroundStyle(theme.ink3).carbonTip("Split at midpoint")
+            .buttonStyle(.carbonHover).foregroundStyle(theme.ink3).carbonTip("Split at midpoint")
 
             Button(action: { model.recordDividerMergeWithNext(row.id) }) {
                 Image(systemName: "arrow.triangle.merge").font(.system(size: 9))
             }
-            .buttonStyle(.plain).foregroundStyle(isLast ? theme.ink4.opacity(0.4) : theme.ink3)
+            .buttonStyle(.carbonHover).foregroundStyle(isLast ? theme.ink4.opacity(0.4) : theme.ink3)
             .disabled(isLast).carbonTip("Merge with next")
         }
         .padding(.horizontal, 8)
@@ -171,7 +171,7 @@ struct RecordDividerSheet: View {
             Button(action: { model.recordDividerNudge(id, isStart: isStart, by: -1) }) {
                 Image(systemName: "minus").font(.system(size: 7, weight: .bold))
             }
-            .buttonStyle(.plain).foregroundStyle(theme.ink3)
+            .buttonStyle(.carbonHover).foregroundStyle(theme.ink3)
             Text(label)
                 .font(CarbonFont.mono(8.5))
                 .foregroundStyle(theme.ink2)
@@ -179,7 +179,7 @@ struct RecordDividerSheet: View {
             Button(action: { model.recordDividerNudge(id, isStart: isStart, by: 1) }) {
                 Image(systemName: "plus").font(.system(size: 7, weight: .bold))
             }
-            .buttonStyle(.plain).foregroundStyle(theme.ink3)
+            .buttonStyle(.carbonHover).foregroundStyle(theme.ink3)
         }
         .padding(.horizontal, 4)
         .padding(.vertical, 2)

@@ -66,7 +66,7 @@ struct RadioListView: View {
                 .padding(.vertical, 4)
                 .background(ChromeChassis(theme: theme, cornerRadius: 5))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.carbonHover)
             .carbonTip("Add a YouTube stream source")
         }
         .padding(.horizontal, 10)
@@ -95,7 +95,7 @@ struct RadioListView: View {
                     .padding(.vertical, 6)
                     .background(ChromeChassis(theme: theme, cornerRadius: 6))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.carbonHover)
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

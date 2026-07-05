@@ -376,7 +376,7 @@ struct ArtworkSearchSheetView: View {
                 .overlay(RoundedRectangle(cornerRadius: 4)
                     .stroke(isOn ? theme.orange.opacity(0.5) : theme.ink4.opacity(0.25), lineWidth: 0.8))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.carbonHover)
     }
 
     private func groupHeaderRow(_ edition: String, count: Int) -> some View {
@@ -696,7 +696,7 @@ struct ArtworkSearchSheetView: View {
                         .background(Circle().fill(Color.black.opacity(0.4)))
                         .clipShape(Circle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.carbonHover)
                 .padding(6)
 
                 // Expand-to-preview is a ZStack sibling (NOT inside the image's
@@ -709,7 +709,7 @@ struct ArtworkSearchSheetView: View {
                         .padding(5)
                         .background(Circle().fill(Color.black.opacity(0.45)))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.carbonHover)
                 .padding(6)
                 .frame(width: 130, height: 130, alignment: .topTrailing)
                 .carbonTip("Preview full size")
@@ -819,7 +819,7 @@ struct ArtworkSearchSheetView: View {
                 .padding(.vertical, 3)
                 .overlay(RoundedRectangle(cornerRadius: 4).stroke(theme.orange.opacity(0.4), lineWidth: 0.8))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.carbonHover)
     }
 
     // Footer

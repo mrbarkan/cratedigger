@@ -20,7 +20,7 @@ struct DisplayModeButton: View {
             .frame(maxWidth: .infinity)
             .background(chassis)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.carbonHover)
     }
 
     private func cycleToNext() {

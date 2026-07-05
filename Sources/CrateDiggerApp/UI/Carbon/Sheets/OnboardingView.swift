@@ -36,7 +36,7 @@ struct OnboardingView: View {
                 }
                 .foregroundStyle(theme.cyan)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.carbonHover)
 
             footer
         }

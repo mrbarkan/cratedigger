@@ -49,7 +49,7 @@ struct PatchBaySwitch: View {
             .opacity(disabled ? 0.45 : 1)
             .shadow(color: on ? theme.orange.opacity(0.30) : .clear, radius: 6, y: 0)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.carbonHover)
         .disabled(disabled)
         .onHover { hovering = $0 }
         .accessibilityLabel(Text(sub.map { "\(label) (\($0))" } ?? label))
@@ -194,7 +194,7 @@ struct PatchBayCycleButton<Item: Hashable>: View {
             .frame(height: CarbonLayout.patchBayCycleButtonHeight)
             .background(ChromeChassis(theme: theme, cornerRadius: 7))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.carbonHover)
         .accessibilityLabel(Text("\(label): \(currentText)"))
         .accessibilityHint(Text("Tap to advance"))
         .accessibilityValue(Text(currentText))
@@ -355,7 +355,7 @@ struct PatchBayPaddle: View {
             }
             .frame(width: 30, height: 16)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.carbonHover)
         .accessibilityAddTraits(isOn ? [.isSelected, .isButton] : [.isButton])
     }
 }

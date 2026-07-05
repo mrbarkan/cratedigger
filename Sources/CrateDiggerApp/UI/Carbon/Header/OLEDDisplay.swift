@@ -331,12 +331,16 @@ private struct NPTitles: View {
     let sub: String
     var titleColor: Color = oledFG
     var titleSize: CGFloat = 44
+    /// System messages (the idle nudge) render oblique so they can never be
+    /// mistaken for a track title.
+    var titleItalic: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
                 .font(CarbonFont.display(titleSize))
                 .fontWeight(.thin)
+                .italic(titleItalic)
                 .tracking(-0.4)
                 .foregroundStyle(titleColor)
                 .lineLimit(1)
@@ -544,18 +548,54 @@ private struct NowPlayingPane: View {
     }
 }
 
+/// What the NOW pane shows while nothing is playing — a little crate-digger
+/// nudge instead of leaking the browser selection onto the glass.
+private enum OLEDIdleMessages {
+    static let all: [String] = [
+        "Play something you love",
+        "Drop the needle",
+        "The crates are calling",
+        "Silence is just a long intro",
+        "Spin something dusty",
+        "Your records miss you",
+        "Find that B-side",
+        "Every dig starts with play",
+        "Warm up the tubes",
+        "Press play, dig deep",
+        "One more spin won't hurt",
+        "Dust off a classic",
+        "The groove is waiting",
+        "Feed the turntable",
+        "What's on side B?",
+        "Make the speakers proud",
+        "Somewhere, a record spins",
+        "Rewind. Replay. Repeat.",
+        "Today deserves a soundtrack",
+        "Good ears deserve good records"
+    ]
+
+    static func pick() -> String { all.randomElement() ?? all[0] }
+}
+
 private struct LibraryNowPlaying: View {
     @EnvironmentObject private var model: LibraryViewModel
     @Environment(\.carbon) private var theme
     // Playback time lives on the isolated clock; observe it to keep ticking.
     @ObservedObject var clock: PlaybackClock
+    @State private var idleMessage = OLEDIdleMessages.pick()
+
+    /// The NOW pane shows only what is actually playing — never the browser
+    /// selection. No track loaded = the idle message.
+    private var isIdle: Bool { model.nowPlayingTrack == nil }
 
     var body: some View {
         OLEDPaneScaffold {
-            NPTitles(title: displayTrackTitle, sub: subtitle)
+            NPTitles(title: displayTrackTitle, sub: subtitle,
+                     titleColor: isIdle ? oledFGo(0.6) : oledFG,
+                     titleItalic: isIdle)
         } readout: {
-            NPClock(now: model.displayedCurrentTime.asClockPadded,
-                    tot: "/ " + model.playbackDuration.asClockPadded)
+            NPClock(now: isIdle ? "--:--" : model.displayedCurrentTime.asClockPadded,
+                    tot: isIdle ? "" : "/ " + model.playbackDuration.asClockPadded)
                 .fixedSize()
         } ticker: {
             EmptyView()
@@ -565,6 +605,10 @@ private struct LibraryNowPlaying: View {
                     .overlay(Rectangle().fill(oledFGo(0.12)).frame(width: 1), alignment: .leading)
                     .fixedSize()
             }
+        }
+        // A fresh nudge each time playback winds down.
+        .onChange(of: isIdle) { nowIdle in
+            if nowIdle { idleMessage = OLEDIdleMessages.pick() }
         }
     }
 
@@ -582,14 +626,13 @@ private struct LibraryNowPlaying: View {
     }
 
     private var displayTrackTitle: String {
+        if isIdle { return idleMessage.uppercased() }
         if let recordTrack = model.currentRecordTrack { return recordTrack.title.uppercased() }
-        let title = model.nowPlayingTrack?.track.title ?? model.selectedTrack?.track.title ?? "—"
-        return title.uppercased()
+        return (model.nowPlayingTrack?.track.title ?? "—").uppercased()
     }
 
     private var subtitle: String {
-        let track = model.nowPlayingTrack ?? model.selectedTrack
-        guard let track else { return "Insert media" }
+        guard let track = model.nowPlayingTrack else { return "Nothing playing" }
         if let index = model.currentRecordTrackIndex {
             let total = model.nowPlayingRecordMarkers.count
             let album = track.track.album.isEmpty ? track.track.title : track.track.album
@@ -863,7 +906,9 @@ private struct VUScale: View {
 private enum LibraryNowPlayingCells {
     @MainActor
     static func make(model: LibraryViewModel) -> [OLEDCellData] {
-        let track = model.nowPlayingTrack ?? model.selectedTrack
+        // NOW/VU cells describe the *playing* file only; browser selection
+        // stays off the glass (the Inspector is where selection lives).
+        let track = model.nowPlayingTrack
         let ext = track?.track.fileURL.pathExtension.uppercased() ?? ""
         let lossless = ["FLAC", "ALAC", "WAV", "AIFF"].contains(ext)
 
@@ -1423,11 +1468,10 @@ private struct DevicesPane: View {
 
 /// The connected player drawn as lit display segments (like the cassette/CD
 /// glyphs on 90s Sony FL displays) — NOT an image: an outlined body, a
-/// cyan-tinted screen, a click-wheel with a glowing orange hub, and a pulsing
+/// cyan-tinted screen, a click-wheel with a glowing orange hub, and a
 /// dock-connector bar below.
 private struct DevGlyph: View {
     @Environment(\.carbon) private var theme
-    @State private var plugDim = false
 
     var body: some View {
         VStack(spacing: 4) {
@@ -1457,11 +1501,13 @@ private struct DevGlyph: View {
             RoundedRectangle(cornerRadius: 1, style: .continuous)
                 .fill(oledFGo(0.5))
                 .frame(width: 14, height: 3)
-                .opacity(plugDim ? 0.25 : 1)
         }
-        .onAppear {
-            withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) { plugDim = true }
-        }
+        // Scaled down so the DEV headline matches the NPTitles height of every
+        // other pane — the glass has fixed geometry and must never grow when
+        // panes swap. (The old repeatForever connector pulse is gone too: an
+        // infinite CA animation keeps WindowServer compositing at ~12% GPU.)
+        .scaleEffect(0.79)
+        .frame(width: 35, height: 64)
     }
 }
 

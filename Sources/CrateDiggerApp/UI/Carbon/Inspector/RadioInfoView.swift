@@ -81,7 +81,7 @@ struct RadioInfoView: View {
             .background(isCurrent ? theme.cyan.opacity(0.10) : Color.clear)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.carbonHover)
     }
 
     private var header: some View {

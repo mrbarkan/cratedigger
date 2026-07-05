@@ -130,7 +130,7 @@ private struct AboutFaceplate: View {
                 .foregroundStyle(theme.cyan)
                 .underline()
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.carbonHover)
         .pointerStyleLink()
     }
 
@@ -170,7 +170,7 @@ private struct AboutFaceplate: View {
                 .frame(height: 54)
                 .contentShape(shape)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.carbonHover)
         .animation(.easeInOut(duration: 0.15), value: versionCopied)
     }
 

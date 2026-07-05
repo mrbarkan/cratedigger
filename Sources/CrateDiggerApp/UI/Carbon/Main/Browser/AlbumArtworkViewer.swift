@@ -266,7 +266,7 @@ struct AlbumArtworkNavigator: View {
             .padding(.vertical, 9)
             .background(Capsule().fill(Color.white.opacity(highlighted ? 0.20 : 0.10)))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.carbonHover)
     }
 
     // MARK: - Behavior

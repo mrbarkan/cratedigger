@@ -40,7 +40,7 @@ struct PlayDomeButton: View {
             }
             .frame(width: CarbonLayout.playButtonSize, height: CarbonLayout.playButtonSize)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.carbonHover)
         .accessibilityLabel(isPlaying ? "Pause" : "Play")
     }
 }

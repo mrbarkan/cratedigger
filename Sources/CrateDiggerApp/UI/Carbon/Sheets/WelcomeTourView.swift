@@ -82,7 +82,7 @@ struct WelcomeTourView: View {
     private var controls: some View {
         HStack(spacing: 12) {
             Button("Skip Tour") { model.completeWelcomeTour() }
-                .buttonStyle(.plain)
+                .buttonStyle(.carbonHover)
                 .font(CarbonFont.mono(10, weight: .semibold))
                 .foregroundStyle(theme.ink3)
 

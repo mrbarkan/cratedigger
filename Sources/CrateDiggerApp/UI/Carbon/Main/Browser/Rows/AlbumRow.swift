@@ -27,7 +27,7 @@ struct AlbumRow: View {
                         .foregroundStyle(selected ? theme.selectionInk : theme.ink3)
                         .frame(width: 16, alignment: .center)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.carbonHover)
                 .frame(width: 16, alignment: .center)
             } else {
                 Text(isPlayingHere ? "▸" : "·")

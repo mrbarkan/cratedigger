@@ -116,7 +116,7 @@ struct ArtworkGalleryView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 4))
                     .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.black.opacity(0.18), lineWidth: 1))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.carbonHover)
             .carbonTip(model.albumSortAscending ? "Ascending" : "Descending")
 
             Spacer()
@@ -144,7 +144,7 @@ struct ArtworkGalleryView: View {
                 .overlay(RoundedRectangle(cornerRadius: 4)
                     .stroke(active ? Color.clear : Color.black.opacity(0.18), lineWidth: 1))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.carbonHover)
     }
 
     // Sorted by the shared album-sort preference (year / title / album-artist),
@@ -198,7 +198,7 @@ struct ArtworkGalleryView: View {
                             .foregroundColor(theme.orange)
                             .background(Circle().fill(Color.white))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.carbonHover)
                     .padding(6)
                     .carbonTip("Search Cover Art Online")
                 }
@@ -279,7 +279,7 @@ struct ArtworkGalleryView: View {
                 }
                 .foregroundStyle(theme.ink2)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.carbonHover)
             .carbonTip("Back to gallery")
 
             Spacer()
@@ -304,7 +304,7 @@ struct ArtworkGalleryView: View {
 
         if album.booklet != nil {
             Button(action: { openBooklet(album) }) { cover }
-                .buttonStyle(.plain)
+                .buttonStyle(.carbonHover)
                 .carbonTip("Open booklet")
         } else {
             cover
@@ -364,7 +364,7 @@ struct ArtworkGalleryView: View {
             )
             .shadow(color: .black.opacity(filled ? 0.2 : 0), radius: 3, y: 1)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.carbonHover)
     }
 
     private func trackList(_ album: Album) -> some View {
@@ -398,7 +398,7 @@ struct ArtworkGalleryView: View {
             .cornerRadius(4)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.carbonHover)
         .carbonTip("Play \(loaded.track.title)")
         .contextMenu { BrowserContextMenu.track(loaded, model: model) }
     }
@@ -488,7 +488,7 @@ struct ArtworkGalleryView: View {
                                         alignment: .bottomLeading
                                     )
                                 }
-                                .buttonStyle(.plain)
+                                .buttonStyle(.carbonHover)
                             }
                         }
                         .padding(16)

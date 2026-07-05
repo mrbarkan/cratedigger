@@ -102,7 +102,7 @@ struct ConvertPatchBay: View {
                     .stroke(theme.cyan.opacity(0.30), lineWidth: 0.8)
             )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.carbonHover)
         .carbonTip("Collapse the browser pane to widen the conversion panel")
     }
 
@@ -527,7 +527,7 @@ private struct DestStrip: View {
                     )
                     .shadow(color: Color.black.opacity(0.4), radius: 1, y: 1)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.carbonHover)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
@@ -614,7 +614,7 @@ private struct ArmCancelButton: View {
                 )
                 .shadow(color: Color.black.opacity(theme.isDark ? 0.5 : 0.2), radius: 4, y: 2)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.carbonHover)
         .accessibilityLabel(Text("Cancel"))
     }
 }

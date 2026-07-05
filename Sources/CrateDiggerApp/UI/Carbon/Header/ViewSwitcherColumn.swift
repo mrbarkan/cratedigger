@@ -99,7 +99,7 @@ private struct SwitchButton: View {
             .frame(height: 28)
             .background(ChromeChassis(theme: theme, cornerRadius: 6))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.carbonHover)
         .carbonTip(tip ?? "\(name): tap to change")
     }
 }

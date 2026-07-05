@@ -41,7 +41,7 @@ struct LibraryCleanupView: View {
                     .font(.system(size: 16))
                     .foregroundStyle(theme.ink3)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.carbonHover)
             .keyboardShortcut(.cancelAction)   // Esc also closes
             .help("Close")
         }
@@ -61,7 +61,7 @@ struct LibraryCleanupView: View {
                     .frame(maxWidth: .infinity)
                     .background(activeTab == 0 ? theme.chassis : theme.chassisHi)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.carbonHover)
 
             Button(action: { activeTab = 1 }) {
                 Text("Duplicates (\(model.duplicateGroups.count) groups)")
@@ -71,7 +71,7 @@ struct LibraryCleanupView: View {
                     .frame(maxWidth: .infinity)
                     .background(activeTab == 1 ? theme.chassis : theme.chassisHi)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.carbonHover)
         }
         .overlay(Rectangle().fill(Color.black.opacity(0.12)).frame(height: 1), alignment: .bottom)
     }

@@ -34,6 +34,6 @@ struct VersionSubRow: View {
             )
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.carbonHover)
     }
 }
