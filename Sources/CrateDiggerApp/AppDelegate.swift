@@ -299,6 +299,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         }
     }
 
+    @objc private func openSupportPage(_ sender: Any?) {
+        if let url = URL(string: "https://www.patreon.com/mrbarkan") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
     @objc private func setAppearanceMode(_ sender: NSMenuItem) {
         guard let raw = sender.representedObject as? String,
               let mode = AppearanceMode(rawValue: raw)
@@ -555,6 +561,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         helpMenu.addItem(.separator())
         helpMenu.addItem(makeItem(title: "CrateDigger Help", action: #selector(openHelpPage(_:)), key: "?"))
         helpMenu.addItem(makeItem(title: "Send Feedback…", action: #selector(sendFeedback(_:))))
+        helpMenu.addItem(.separator())
+        helpMenu.addItem(makeItem(title: "Support CrateDigger…", action: #selector(openSupportPage(_:))))
         helpMenuItem.submenu = helpMenu
         NSApp.helpMenu = helpMenu
 
