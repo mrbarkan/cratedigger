@@ -34,7 +34,7 @@ struct DisplayModeButton: View {
     private var screen: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(.regularMaterial)
+                .fill(theme.well) // opaque, not Material — see ChassisLayer
                 .overlay(
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
                         .fill(
@@ -122,7 +122,7 @@ struct ChromeChassis: View {
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         return shape
-            .fill(.ultraThinMaterial)
+            .fill(theme.metal) // opaque, not Material — see ChassisLayer
             .overlay(
                 shape.fill(
                     LinearGradient(

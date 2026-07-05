@@ -16,8 +16,12 @@ struct ChassisLayer<Content: View>: View {
     private var chassisPlate: some View {
         let shape = RoundedRectangle(cornerRadius: CarbonLayout.chassisCornerRadius, style: .continuous)
         return ZStack {
+            // Opaque base coat, NOT a Material. SwiftUI Materials become
+            // CABackdropLayer live blurs that WindowServer re-samples every
+            // frame — the app idled at ~60% GPU with 12 of them. The gradient
+            // overlays below carry the Carbon look; keep these fills opaque.
             shape
-                .fill(.thinMaterial)
+                .fill(theme.chassis)
                 .overlay(
                     shape.fill(
                         LinearGradient(
@@ -122,7 +126,7 @@ private struct GoldenGateBackdrop: View {
                 .frame(width: proxy.size.width, height: proxy.size.height)
             }
             Rectangle()
-                .fill(.ultraThinMaterial)
+                .fill(theme.backgroundBase)
                 .opacity(theme.isDark ? 0.16 : 0.24)
             LinearGradient(
                 colors: [

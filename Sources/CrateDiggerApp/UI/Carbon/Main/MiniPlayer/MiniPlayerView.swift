@@ -71,7 +71,7 @@ private struct MiniPlayerBody: View {
     private var panel: some View {
         let shape = RoundedRectangle(cornerRadius: 22, style: .continuous)
         return shape
-            .fill(.ultraThinMaterial)
+            .fill(theme.chassis) // opaque, not Material — see ChassisLayer
             .overlay(
                 shape.fill(LinearGradient(
                     colors: [theme.chassisHi.opacity(0.5), theme.chassis.opacity(0.55), theme.chassisLo.opacity(0.62)],

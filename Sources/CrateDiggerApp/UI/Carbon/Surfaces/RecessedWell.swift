@@ -10,7 +10,7 @@ struct RecessedWell<Content: View>: View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         ZStack {
             shape
-                .fill(.ultraThinMaterial)
+                .fill(theme.well) // opaque, not Material — see ChassisLayer
                 .overlay(
                     shape.fill(
                         LinearGradient(

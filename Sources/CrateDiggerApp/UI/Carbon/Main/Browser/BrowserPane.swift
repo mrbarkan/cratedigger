@@ -85,7 +85,7 @@ private struct BrowserEmptyState: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(
             Rectangle()
-                .fill(.regularMaterial)
+                .fill(theme.paper) // opaque, not Material — see ChassisLayer
                 .overlay(theme.paper.opacity(theme.isDark ? 0.70 : 0.78))
         )
     }

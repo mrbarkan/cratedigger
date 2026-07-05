@@ -48,7 +48,7 @@ struct ConvertPatchBay: View {
     private var panelBackground: some View {
         ZStack {
             Rectangle()
-                .fill(.regularMaterial)
+                .fill(theme.paper) // opaque, not Material — see ChassisLayer
             Rectangle()
                 .fill(
                     LinearGradient(

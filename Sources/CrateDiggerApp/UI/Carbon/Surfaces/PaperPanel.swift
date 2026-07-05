@@ -9,7 +9,7 @@ struct PaperPanel<Content: View>: View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         ZStack {
             shape
-                .fill(.regularMaterial)
+                .fill(theme.paper) // opaque, not Material — see ChassisLayer
                 .overlay(
                     shape.fill(
                         LinearGradient(

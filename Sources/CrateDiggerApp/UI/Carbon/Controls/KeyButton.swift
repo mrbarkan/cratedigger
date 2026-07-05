@@ -38,7 +38,7 @@ struct KeyButton<Label: View>: View {
         switch style {
         case .normal, .disabled:
             shape
-                .fill(.ultraThinMaterial)
+                .fill(theme.metal) // opaque, not Material — see ChassisLayer
                 .overlay(
                     shape.fill(
                         LinearGradient(

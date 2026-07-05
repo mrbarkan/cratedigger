@@ -146,7 +146,7 @@ struct PatchBayRecess: View {
         let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
         ZStack {
             shape
-                .fill(.ultraThinMaterial)
+                .fill(theme.wellDeep) // opaque, not Material — see ChassisLayer
                 .overlay(
                     shape.fill(
                         LinearGradient(

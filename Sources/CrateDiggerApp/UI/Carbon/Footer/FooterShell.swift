@@ -7,7 +7,7 @@ struct FooterShell: View {
         let shape = RoundedRectangle(cornerRadius: CarbonLayout.wellCornerRadius, style: .continuous)
         ZStack {
             shape
-                .fill(.thinMaterial)
+                .fill(theme.chassis) // opaque, not Material — see ChassisLayer
                 .overlay(
                     shape.fill(
                         LinearGradient(
