@@ -77,7 +77,8 @@ CrateDigger to Applications. Currently at a 1.0 release candidate.
 Or build it yourself (below).
 
 If CrateDigger is useful to you, you can chip in on
-[Patreon](https://www.patreon.com/mrbarkan). 💛
+[Patreon](https://www.patreon.com/mrbarkan) or
+[GitHub Sponsors](https://github.com/sponsors/mrbarkan). 💛
 
 ## Building from source
 
