@@ -4,7 +4,7 @@
 
 ## Pages
 
-- [Home](https://cratedigger.mrbarkan.com/): Overview, feature spotlights, beta signup.
+- [Home](https://cratedigger.mrbarkan.com/): Overview, feature spotlights, open-source info, download.
 - [Blog](https://cratedigger.mrbarkan.com/blog/index.html): Guides, comparisons, and release notes.
 - [Introducing CrateDigger 0.9](https://cratedigger.mrbarkan.com/blog/introducing-cratedigger-0-9.html): Launch announcement and feature rundown.
 - [Swinsian vs. CrateDigger vs. Foobar2000](https://cratedigger.mrbarkan.com/blog/swinsian-vs-cratedigger-vs-foobar2000.html): Comparison of native macOS music library managers.

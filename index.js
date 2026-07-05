@@ -84,41 +84,4 @@ document.addEventListener('DOMContentLoaded', () => {
       resetTooltip();
     });
   }
-
-
-  // --- Beta Signup Form Submission ---
-  const betaForm = document.getElementById('beta-form');
-  const formSuccess = document.getElementById('form-success');
-  const emailInput = document.getElementById('beta-email');
-
-  if (betaForm) {
-    betaForm.addEventListener('submit', (e) => {
-      e.preventDefault();
-      
-      const email = emailInput.value.trim();
-      if (!email) return;
-
-      // Simulate network request delay
-      const submitBtn = betaForm.querySelector('button[type="submit"]');
-      submitBtn.disabled = true;
-      submitBtn.textContent = 'Registering...';
-
-      setTimeout(() => {
-        // Hide form and show success
-        betaForm.classList.add('hide');
-        formSuccess.classList.remove('hide');
-        
-        // Save to localStorage just for mockup status tracking
-        localStorage.setItem('cratedigger_beta_registered', email);
-      }, 1000);
-    });
-  }
-
-  // Pre-check if already signed up in local storage
-  const registeredEmail = localStorage.getItem('cratedigger_beta_registered');
-  if (registeredEmail && betaForm && formSuccess) {
-    betaForm.classList.add('hide');
-    formSuccess.classList.remove('hide');
-    formSuccess.innerHTML = `<span class="success-dot"></span> Welcome back! You are registered as <strong>${registeredEmail}</strong>.`;
-  }
 });
