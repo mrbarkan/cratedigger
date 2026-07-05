@@ -23,3 +23,6 @@ CrateDigger_DESIGN/
 scripts/.lastfm.env
 .env
 .env.local
+
+# Claude Code local session state (permissions, worktrees).
+.claude/

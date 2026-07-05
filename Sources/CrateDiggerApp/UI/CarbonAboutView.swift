@@ -13,9 +13,19 @@ struct CarbonAboutView: View {
     let mode: AppearanceMode
 
     var body: some View {
-        ChassisLayer { faceplate }
+        // The faceplate lives in a child view because `.carbonThemed` only
+        // themes the subtree BELOW it — an `@Environment(\.carbon)` read on
+        // this view would get the default (linen) palette and paint light-mode
+        // ink onto the dark chassis.
+        AboutFaceplate()
             .frame(minWidth: 700, minHeight: 440)
             .carbonThemed(mode: mode)
+    }
+}
+
+private struct AboutFaceplate: View {
+    var body: some View {
+        ChassisLayer { faceplate }
     }
 
     private var faceplate: some View {
@@ -91,9 +101,9 @@ struct CarbonAboutView: View {
                 .frame(height: 1)
 
             HStack(spacing: 16) {
-                linkButton("smash.mrbarkan.com", url: "https://smash.mrbarkan.com")
+                linkButton("cratedigger.mrbarkan.com", url: "https://cratedigger.mrbarkan.com")
                 linkButton("Send Feedback", url: "mailto:opa@mrbarkan.com?subject=CrateDigger%20Feedback")
-                Spacer()
+                Spacer(minLength: 12)
                 VStack(alignment: .trailing, spacing: 2) {
                     Text("© 2026 MRBRKN SMASH")
                         .font(CarbonFont.mono(9))
@@ -102,6 +112,8 @@ struct CarbonAboutView: View {
                         .font(CarbonFont.mono(9))
                         .foregroundStyle(theme.ink4)
                 }
+                // Never truncate the credits ("AVFoun…"); the links yield first.
+                .fixedSize()
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -175,19 +187,23 @@ struct CarbonAboutView: View {
     private var versionText: String { AppVersion.currentDisplayString }
 
     private func featureRow(dot: Color, label: String, desc: String) -> some View {
-        HStack(alignment: .center, spacing: 12) {
+        // Top-aligned so the LED dot sits beside the caps label, not floating
+        // between the two lines.
+        HStack(alignment: .top, spacing: 12) {
             Circle()
                 .fill(dot)
                 .frame(width: 8, height: 8)
                 .shadow(color: dot.opacity(0.7), radius: 3)
-            VStack(alignment: .leading, spacing: 2) {
+                .padding(.top, 3)
+            VStack(alignment: .leading, spacing: 3) {
                 Text(label)
                     .font(CarbonFont.mono(11, weight: .bold))
                     .tracking(1.6)
                     .foregroundStyle(theme.ink)
                 Text(desc)
                     .font(CarbonFont.sans(12))
-                    .foregroundStyle(theme.ink3)
+                    .foregroundStyle(theme.ink2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }

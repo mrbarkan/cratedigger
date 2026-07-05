@@ -56,7 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         alert.addButton(withTitle: "Get the Latest Build")
         alert.addButton(withTitle: "Quit")
         if alert.runModal() == .alertFirstButtonReturn,
-           let url = URL(string: "https://smash.mrbarkan.com") {
+           let url = URL(string: "https://cratedigger.mrbarkan.com") {
             NSWorkspace.shared.open(url)
         }
         NSApp.terminate(nil)
@@ -288,7 +288,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     }
 
     @objc private func openHelpPage(_ sender: Any?) {
-        if let url = URL(string: "https://smash.mrbarkan.com") {
+        if let url = URL(string: "https://cratedigger.mrbarkan.com") {
             NSWorkspace.shared.open(url)
         }
     }
