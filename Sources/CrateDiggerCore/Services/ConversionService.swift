@@ -17,7 +17,14 @@ public protocol CommandRunning {
 }
 
 public struct ProcessCommandRunner: CommandRunning {
-    public init() {}
+    /// Kill the spawned tool after this many seconds (nil = wait forever).
+    /// Probe-style callers set this so one wedged binary can't hang a whole
+    /// scan; conversion keeps nil — ffmpeg legitimately runs for minutes.
+    private let timeoutSeconds: TimeInterval?
+
+    public init(timeoutSeconds: TimeInterval? = nil) {
+        self.timeoutSeconds = timeoutSeconds
+    }
 
     /// Standard CLI tool directories. GUI apps launch with a minimal PATH
     /// (often just /usr/bin:/bin), so spawned tools like yt-dlp can't find their
@@ -83,7 +90,21 @@ public struct ProcessCommandRunner: CommandRunning {
         }
 
         try process.run()
-        process.waitUntilExit()
+        if let timeoutSeconds {
+            // ponytail: SIGTERM only — enough for ffprobe/ffmpeg; a process
+            // stuck in uninterruptible I/O (dead network volume) can't be
+            // killed by any signal anyway.
+            let killer = DispatchWorkItem {
+                if process.isRunning { process.terminate() }
+            }
+            DispatchQueue.global(qos: .utility).asyncAfter(
+                deadline: .now() + timeoutSeconds, execute: killer
+            )
+            process.waitUntilExit()
+            killer.cancel()
+        } else {
+            process.waitUntilExit()
+        }
         group.wait()
 
         return CommandOutput(

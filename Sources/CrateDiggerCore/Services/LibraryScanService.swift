@@ -63,7 +63,13 @@ public final class LibraryScanService {
         self.supportedExtensions = supportedExtensions
     }
 
-    public func scanFolder(_ folderURL: URL) async -> [LoadedTrack] {
+    /// `onProgress(probed, total)` fires from the concurrent scan as each file
+    /// finishes (and once up front with `(0, total)` after candidate
+    /// enumeration), so callers can show real per-file progress.
+    public func scanFolder(
+        _ folderURL: URL,
+        onProgress: (@Sendable (Int, Int) -> Void)? = nil
+    ) async -> [LoadedTrack] {
         var candidateURLs: [URL] = []
         var isDirectory: ObjCBool = false
         if fileManager.fileExists(atPath: folderURL.path, isDirectory: &isDirectory), !isDirectory.boolValue {
@@ -90,6 +96,8 @@ public final class LibraryScanService {
         // Fresh scan: folder covers may have changed on disk since the last one.
         artworkService.clearFolderArtworkMemo()
 
+        onProgress?(0, candidateURLs.count)
+
         // Load tracks concurrently — each loadTrack blocks on a synchronous
         // ffprobe spawn plus AVAsset metadata loads, so the old serial loop left
         // every other core idle (15-30 min for a 14k-track library). Sliding
@@ -106,10 +114,13 @@ public final class LibraryScanService {
                 group.addTask { await self.loadTrack(at: fileURL) }
                 nextIndex += 1
             }
+            var probed = 0
             for await loadedTrack in group {
                 if let loadedTrack {
                     loadedTracks.append(loadedTrack)
                 }
+                probed += 1
+                onProgress?(probed, candidateURLs.count)
                 // Stop dispatching new work when the surrounding task is
                 // cancelled; the view model discards partial results anyway.
                 if nextIndex < candidateURLs.count, !Task.isCancelled {

@@ -40,6 +40,10 @@ struct SourcesSidebar: View {
                                     model.addItemsToCrate(model.prepCrateTracks.map { "track::" + $0.track.id.uuidString }, crateName: crateName)
                                 }
                             }
+                            Divider()
+                            Button("Clear Prep Crate", role: .destructive) {
+                                model.clearPrepCrate()
+                            }
                         }
                     }
 

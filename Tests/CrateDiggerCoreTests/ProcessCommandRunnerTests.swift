@@ -19,3 +19,26 @@ final class ProcessCommandRunnerPathTests: XCTestCase {
         XCTAssertEqual(result, "/opt/homebrew/bin")
     }
 }
+
+final class ProcessCommandRunnerTimeoutTests: XCTestCase {
+    func testTimeoutKillsHungProcess() throws {
+        let runner = ProcessCommandRunner(timeoutSeconds: 0.5)
+        let start = Date()
+        let output = try runner.run(
+            executableURL: URL(fileURLWithPath: "/bin/sleep"),
+            arguments: ["30"]
+        )
+        XCTAssertLessThan(Date().timeIntervalSince(start), 10, "timeout should fire long before sleep finishes")
+        XCTAssertNotEqual(output.terminationStatus, 0, "a killed process must not report success")
+    }
+
+    func testWithoutTimeoutProcessRunsToCompletion() throws {
+        let runner = ProcessCommandRunner()
+        let output = try runner.run(
+            executableURL: URL(fileURLWithPath: "/bin/echo"),
+            arguments: ["ok"]
+        )
+        XCTAssertEqual(output.terminationStatus, 0)
+        XCTAssertEqual(output.standardOutput.trimmingCharacters(in: .whitespacesAndNewlines), "ok")
+    }
+}

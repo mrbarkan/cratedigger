@@ -285,7 +285,10 @@ final class LibraryViewModel: ObservableObject {
     @Published private(set) var albumsFetchingArtwork: Set<String> = []
 
     @Published var playbackVolume: Double = 0.8 {
-        didSet { applyVolumeToEngines() }
+        didSet {
+            applyVolumeToEngines()
+            prefs.savedPlaybackVolume = playbackVolume
+        }
     }
 
     /// Apply the dB-curved fader position to the engines: the ≤0 dB part rides
@@ -562,6 +565,9 @@ final class LibraryViewModel: ObservableObject {
 
     private var playbackQueue: [LoadedTrack] = []
     private var scanTask: Task<Void, Never>?
+    /// Bumped when a new scan starts so progress callbacks from a superseded
+    /// scan can't clobber the OLED with stale numbers.
+    private var scanGeneration = 0
     var conversionTask: Task<Void, Never>?
     weak var activeConversionService: ConversionService?
 
@@ -624,9 +630,13 @@ final class LibraryViewModel: ObservableObject {
         if let saved = prefs.savedRepeatMode, let mode = RepeatMode(rawValue: saved) {
             repeatMode = mode
         }
+        if let savedVolume = prefs.savedPlaybackVolume {
+            playbackVolume = min(max(savedVolume, 0), 1)
+        }
         // Property observers don't fire during init — forward the restored
-        // mode to the playback service explicitly.
+        // mode and volume to the playback service explicitly.
         playback.repeatMode = PlaybackRepeatMode(rawValue: repeatMode.rawValue) ?? .off
+        applyVolumeToEngines()
         cdAnimationSpeed = prefs.cdAnimationSpeed
         if let savedField = prefs.savedTrackSortField, let field = TrackSortField(rawValue: savedField) {
             trackSortField = field
@@ -983,6 +993,8 @@ final class LibraryViewModel: ObservableObject {
 
     func loadFolders(_ urls: [URL], isRestore: Bool = false) {
         scanTask?.cancel()
+        scanGeneration += 1
+        let generation = scanGeneration
         scanProgress = ScanProgress(folderName: urls.first?.lastPathComponent, filesProbed: 0, totalCandidates: nil, isRunning: true)
         // An explicit import jumps the OLED to Scan. Skip on launch restore so
         // we don't override the user's saved view every time the app opens.
@@ -995,16 +1007,15 @@ final class LibraryViewModel: ObservableObject {
             var collected: [LoadedTrack] = []
             for url in urls {
                 if Task.isCancelled { break }
-                let scanned = await self.scanner.scanFolder(url)
-                collected.append(contentsOf: scanned)
-                await MainActor.run {
-                    self.scanProgress = ScanProgress(
+                let scanned = await self.scanner.scanFolder(
+                    url,
+                    onProgress: self.scanProgressReporter(
+                        generation: generation,
                         folderName: url.lastPathComponent,
-                        filesProbed: collected.count,
-                        totalCandidates: nil,
-                        isRunning: true
+                        baseProbed: collected.count
                     )
-                }
+                )
+                collected.append(contentsOf: scanned)
             }
             if Task.isCancelled { return }
 
@@ -1041,16 +1052,51 @@ final class LibraryViewModel: ObservableObject {
     }
 
     private func persistFolderBookmarks(_ urls: [URL]) {
-        var data: [Data] = []
+        // Merge with the already-saved dig folders (dedup by path) so a new dig
+        // adds to the restored Prep Crate on next launch instead of replacing it.
+        var byPath: [String: Data] = [:]
+        var order: [String] = []
+        for data in prefs.savedLibraryFolderBookmarks {
+            guard let resolved = PreferencesStore.resolveBookmark(data) else { continue }
+            let path = resolved.url.standardizedFileURL.path
+            if byPath[path] == nil { order.append(path) }
+            byPath[path] = data
+        }
         for url in urls {
             do {
                 let bookmark = try PreferencesStore.makeBookmark(for: url)
-                data.append(bookmark)
+                let path = url.standardizedFileURL.path
+                if byPath[path] == nil { order.append(path) }
+                byPath[path] = bookmark
             } catch {
                 AppLog.library.warning("Could not bookmark \(url.path): \(String(describing: error))")
             }
         }
-        prefs.savedLibraryFolderBookmarks = data
+        // ponytail: keep the 20 most recent folders so launch restore stays bounded.
+        prefs.savedLibraryFolderBookmarks = order.suffix(20).compactMap { byPath[$0] }
+    }
+
+    /// Builds the `onProgress` closure a scan hands to `LibraryScanService`:
+    /// throttled to ~1% steps, hopped to the main actor, and generation-guarded
+    /// so a superseded scan can't overwrite a newer one's numbers.
+    nonisolated private func scanProgressReporter(
+        generation: Int,
+        folderName: String,
+        baseProbed: Int
+    ) -> @Sendable (Int, Int) -> Void {
+        { [weak self] probed, total in
+            let step = max(1, total / 100)
+            guard probed % step == 0 || probed == total else { return }
+            Task { @MainActor [weak self] in
+                guard let self, self.scanGeneration == generation else { return }
+                self.scanProgress = ScanProgress(
+                    folderName: folderName,
+                    filesProbed: baseProbed + probed,
+                    totalCandidates: baseProbed + total,
+                    isRunning: true
+                )
+            }
+        }
     }
 
     private static func deduplicate(tracks: [LoadedTrack]) -> [LoadedTrack] {
@@ -2204,6 +2250,8 @@ final class LibraryViewModel: ObservableObject {
     /// never replaces what's already staged.
     func importDroppedURLs(_ urls: [URL]) {
         guard !urls.isEmpty else { return }
+        scanGeneration += 1
+        let generation = scanGeneration
         scanProgress = ScanProgress(
             folderName: "Scanning dropped items…",
             filesProbed: 0, totalCandidates: nil, isRunning: true
@@ -2212,7 +2260,15 @@ final class LibraryViewModel: ObservableObject {
             guard let self else { return }
             var collected: [LoadedTrack] = []
             for url in urls {
-                collected.append(contentsOf: await self.scanner.scanFolder(url))
+                let scanned = await self.scanner.scanFolder(
+                    url,
+                    onProgress: self.scanProgressReporter(
+                        generation: generation,
+                        folderName: url.lastPathComponent,
+                        baseProbed: collected.count
+                    )
+                )
+                collected.append(contentsOf: scanned)
             }
             await MainActor.run {
                 guard !collected.isEmpty else {
@@ -2241,14 +2297,15 @@ final class LibraryViewModel: ObservableObject {
 
     private func handleImport(_ tracks: [LoadedTrack]) {
         guard !tracks.isEmpty else {
-            prepCrateTracks = []
             selectSource(.prepCrate)
             return
         }
 
-        // Newly loaded folders go straight into the Prep Crate!
+        // Newly loaded folders MERGE into the Prep Crate — like a Finder drop,
+        // a dig never replaces what's already staged. "Clear Prep Crate" is the
+        // explicit way to empty it.
         ingestArtwork(from: tracks)
-        prepCrateTracks = tracks
+        prepCrateTracks = LibraryViewModel.deduplicate(tracks: prepCrateTracks + tracks)
         selectSource(.prepCrate)
         
         // Show a brief success alert in OLED display
@@ -2259,6 +2316,16 @@ final class LibraryViewModel: ObservableObject {
             isRunning: false
         )
         scanForCleanup()
+    }
+
+    /// Empty the Prep Crate — including the saved dig-folder bookmarks, or
+    /// launch restore would just rescan them straight back into the crate.
+    func clearPrepCrate() {
+        prepCrateTracks = []
+        prefs.savedLibraryFolderBookmarks = []
+        if currentSource == .prepCrate {
+            selectSource(.prepCrate)
+        }
     }
 
     // MARK: - Crates Directory URL

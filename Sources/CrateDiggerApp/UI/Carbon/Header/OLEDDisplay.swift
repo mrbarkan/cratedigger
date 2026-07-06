@@ -1180,7 +1180,9 @@ private struct ScanPane: View {
         if model.scanProgress.isRunning, let total = model.scanProgress.totalCandidates, total > 0 {
             return min(max(Double(model.scanProgress.filesProbed) / Double(total), 0), 1)
         }
-        if model.scanProgress.isRunning { return 0.42 }
+        // Total not known yet (candidate enumeration) — show an empty bar, not
+        // a fake stuck percentage.
+        if model.scanProgress.isRunning { return 0 }
         return model.index.allTracks.isEmpty ? 0.08 : 1
     }
 

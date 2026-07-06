@@ -81,7 +81,11 @@ public final class MetadataProbeService: MetadataProbing {
 
     public init(
         ffprobeExecutableURL: URL? = nil,
-        commandRunner: CommandRunning = ProcessCommandRunner(),
+        // 30s guard: a probe is normally milliseconds, but one wedged ffprobe
+        // (exotic file, stalling volume) must not hang an entire library scan.
+        // On timeout the probe fails and the scan falls back to AVFoundation
+        // metadata for that file.
+        commandRunner: CommandRunning = ProcessCommandRunner(timeoutSeconds: 30),
         fileManager: FileManager = .default
     ) throws {
         self.commandRunner = commandRunner

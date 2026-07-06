@@ -25,6 +25,9 @@ public final class PreferencesStore {
         static let oledView = "cratedigger.ui.oledView"
         static let shuffleEnabled = "cratedigger.playback.shuffle"
         static let repeatMode = "cratedigger.playback.repeatMode"
+        static let playbackVolume = "cratedigger.playback.volume"
+        static let lastUpdateCheckDate = "cratedigger.updates.lastCheckDate"
+        static let lastNotifiedUpdateTag = "cratedigger.updates.lastNotifiedTag"
         static let clickSoundsEnabled = "cratedigger.ui.clickSoundsEnabled"
         static let showHoverTips = "cratedigger.ui.showHoverTips"
         static let subsonicURL = "cratedigger.remote.subsonicURL"
@@ -261,6 +264,32 @@ public final class PreferencesStore {
                 defaults.removeObject(forKey: Key.repeatMode)
             }
         }
+    }
+
+    /// Last fader position (0…1). Optional so "never set" is distinguishable
+    /// from a deliberate 0 (muted).
+    public var savedPlaybackVolume: Double? {
+        get { defaults.object(forKey: Key.playbackVolume) as? Double }
+        set {
+            if let value = newValue {
+                defaults.set(value, forKey: Key.playbackVolume)
+            } else {
+                defaults.removeObject(forKey: Key.playbackVolume)
+            }
+        }
+    }
+
+    /// Throttles the background update check to once a day.
+    public var lastUpdateCheckDate: Date? {
+        get { defaults.object(forKey: Key.lastUpdateCheckDate) as? Date }
+        set { defaults.set(newValue, forKey: Key.lastUpdateCheckDate) }
+    }
+
+    /// The release tag the user was last alerted about, so the background
+    /// check notifies once per version instead of nagging daily.
+    public var lastNotifiedUpdateTag: String? {
+        get { defaults.string(forKey: Key.lastNotifiedUpdateTag) }
+        set { defaults.set(newValue, forKey: Key.lastNotifiedUpdateTag) }
     }
 
     public var savedTrackSortField: String? {
