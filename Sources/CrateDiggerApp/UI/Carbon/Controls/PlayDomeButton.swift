@@ -37,6 +37,9 @@ struct PlayDomeButton: View {
                 Image(systemName: isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: 26, weight: .black))
                     .foregroundStyle(Color.white)
+                    // play.fill's visual mass leans left of its glyph box —
+                    // nudge right so the triangle sits optically centered.
+                    .offset(x: isPlaying ? 0 : 2)
             }
             .frame(width: CarbonLayout.playButtonSize, height: CarbonLayout.playButtonSize)
         }

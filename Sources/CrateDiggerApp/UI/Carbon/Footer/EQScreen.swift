@@ -24,6 +24,7 @@ struct EQScreen: View {
                     .tracking(0.8)
                     .foregroundStyle(theme.ink4)
             }
+            .frame(height: 12)   // fixed label-row height: all four footer pods share one text line
 
             Spacer(minLength: 0)
 

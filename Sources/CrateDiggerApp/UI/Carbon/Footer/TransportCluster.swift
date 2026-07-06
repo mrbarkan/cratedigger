@@ -36,7 +36,7 @@ struct TransportCluster: View {
                         .strokeBorder(theme.orange.opacity(0.5), lineWidth: 1)
                 }
                 Image(systemName: systemName)
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.system(size: 19, weight: .semibold))   // same size as the transport icons
                     .foregroundStyle(on ? theme.orange : theme.ink3)
             }
             .frame(width: CarbonLayout.transportButtonSize, height: CarbonLayout.transportButtonSize)
