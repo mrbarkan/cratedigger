@@ -12,10 +12,14 @@ enum AppVersion {
     /// Mirror of `CFBundleShortVersionString`.
     static let marketing = "1.0.0"
     /// Mirror of `CFBundleVersion`.
-    static let build = "32"
+    static let build = "34"
     /// Release-channel label shown in About ("BETA", "RC", …). Empty for a
     /// final release — at which point the pill reverts to "VERSION x (build)".
     static let channel = "RC"
+    /// Human ordinal within the channel ("RC 3"), hand-bumped per release
+    /// alongside `build` — the build number is monotonic across the whole
+    /// beta/RC run, so it can't double as the ordinal (RC 3 = build 33).
+    static let channelOrdinal = "4"
 
     /// Hard expiry for beta builds — on/after this date the app shows a notice
     /// and quits at launch. Bump per release; set to `nil` to disable.
@@ -36,13 +40,13 @@ enum AppVersion {
         return Date() > betaExpiry
     }
 
-    /// Formats the About version pill, e.g. "VERSION 0.9.0 · BETA 1" or, once
-    /// `channel` is empty, "VERSION 1.0.0 (1)". Callers pass the live bundle
-    /// values (falling back to the compiled-in constants above).
+    /// Formats the About version pill, e.g. "VERSION 1.0.0 · RC 3 (33)" or,
+    /// once `channel` is empty, "VERSION 1.0.0 (33)". Callers pass the live
+    /// bundle values (falling back to the compiled-in constants above).
     static func displayString(version: String, build: String) -> String {
         channel.isEmpty
             ? "VERSION \(version) (\(build))"
-            : "VERSION \(version) · \(channel) \(build)"
+            : "VERSION \(version) · \(channel) \(channelOrdinal) (\(build))"
     }
 
     /// The version pill for the current process: live bundle values when an
@@ -53,5 +57,17 @@ enum AppVersion {
         let liveVersion = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? marketing
         let liveBuild = bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? build
         return displayString(version: liveVersion, build: liveBuild)
+    }
+
+    /// The running app as a semver string the update checker can compare
+    /// against GitHub release tags. Convention: prerelease tags carry the
+    /// BUILD number as the prerelease number (v1.0.0-rc.33 = build 33), so
+    /// channel + build reconstructs the tag exactly. Keep release tags on
+    /// that convention or update checks will misorder.
+    static var currentSemverString: String {
+        let bundle = Bundle.main
+        let liveVersion = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? marketing
+        let liveBuild = bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? build
+        return channel.isEmpty ? liveVersion : "\(liveVersion)-\(channel.lowercased()).\(liveBuild)"
     }
 }

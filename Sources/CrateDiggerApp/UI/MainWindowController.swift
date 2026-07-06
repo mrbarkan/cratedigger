@@ -79,6 +79,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     func restoreLastSession() {
         hostingController.model.restoreLastFoldersIfPossible()
+        // Silent daily update check — throttled inside, quiet unless there's news.
+        hostingController.model.checkForUpdates(userInitiated: false)
+    }
+
+    func checkForUpdates() {
+        hostingController.model.checkForUpdates(userInitiated: true)
     }
 
     // MARK: - Selection-aware menu actions

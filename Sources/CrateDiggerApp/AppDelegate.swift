@@ -254,6 +254,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    @objc private func checkForUpdates(_ sender: Any?) {
+        mainWindowController?.checkForUpdates()
+    }
+
     @objc private func showAbout(_ sender: Any?) {
         if aboutWindowController == nil {
             aboutWindowController = AboutWindowController()
@@ -396,6 +400,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         mainMenu.addItem(appMenuItem)
         let appMenu = NSMenu()
         appMenu.addItem(makeItem(title: "About CrateDigger", action: #selector(showAbout(_:))))
+        appMenu.addItem(makeItem(title: "Check for Updates…", action: #selector(checkForUpdates(_:))))
         appMenu.addItem(.separator())
         appMenu.addItem(makeItem(title: "Preferences…", action: #selector(showPreferences(_:)), key: ","))
         appMenu.addItem(.separator())
