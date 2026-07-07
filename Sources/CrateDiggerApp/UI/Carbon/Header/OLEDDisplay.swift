@@ -240,6 +240,10 @@ private struct RailLive: View {
 private struct RailSettings: View {
     @Environment(\.carbon) private var theme
     @EnvironmentObject private var model: LibraryViewModel
+    // Observe the stored appearance *preference* so the THEME readout refreshes on
+    // any change — including LIGHT→AUTO, where the resolved appearance (and thus
+    // the injected `theme`) is unchanged, so nothing else would trigger a redraw.
+    @AppStorage(AppearanceMode.userDefaultsKey) private var appearanceRaw = AppearanceMode.system.rawValue
 
     var body: some View {
         // Fixed-width slots so the values never shift as their text changes
@@ -270,9 +274,7 @@ private struct RailSettings: View {
     private var viewValue: String { model.showArtworkGallery ? "GALLERY" : "LIST" }
 
     private var themeValue: String {
-        let raw = UserDefaults.standard.string(forKey: AppearanceMode.userDefaultsKey)
-            ?? AppearanceMode.system.rawValue
-        switch AppearanceMode(rawValue: raw) ?? .system {
+        switch AppearanceMode(rawValue: appearanceRaw) ?? .system {
         case .light:  return "LIGHT"
         case .dark:   return "DARK"
         case .system: return "AUTO"

@@ -15,11 +15,11 @@ struct VersionSubRow: View {
                 Spacer().frame(width: 18)
                 Text(badge)
                     .font(CarbonFont.mono(9.5, weight: .semibold))
-                    .foregroundStyle(selected ? theme.selectionInk : theme.ink2)
+                    .foregroundStyle(selected ? theme.slotInk : theme.ink2)
                 if let edition, !edition.isEmpty {
                     Text(edition)
                         .font(CarbonFont.mono(9.5))
-                        .foregroundStyle(selected ? theme.selectionInk.opacity(0.8) : theme.ink3)
+                        .foregroundStyle(selected ? theme.slotInk.opacity(0.8) : theme.ink3)
                 }
                 Spacer(minLength: 0)
             }

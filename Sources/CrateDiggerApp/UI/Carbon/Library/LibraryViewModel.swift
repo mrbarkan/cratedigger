@@ -928,6 +928,13 @@ final class LibraryViewModel: ObservableObject {
     func selectSource(_ source: LibrarySource) {
         // Browsing never stops the stream — only playing a local track does
         // (see playTrack). The stream keeps playing while you browse the library.
+        //
+        // A genuine source switch lands the browser at the top; re-selecting the
+        // *same* source is an in-place refresh (after a tag edit, cleanup, delete,
+        // artwork import, …) and must keep the user's place — the selectedArtist/
+        // Album/Track computed vars already fall back to first if an anchor id no
+        // longer resolves in the rebuilt index.
+        let sourceChanged = source != currentSource
         currentSource = source
         switch source {
         case .localAll:
@@ -968,11 +975,13 @@ final class LibraryViewModel: ObservableObject {
             return
         }
 
-        selectedArtistID = index.artists.first?.id
-        selectedAlbumID = index.artists.first?.albums.first?.id
-        selectedTrackID = index.artists.first?.albums.first?.tracks.first?.track.id
-        selectedAlbumIDs = []
-        selectedTrackIDs = []
+        if sourceChanged {
+            selectedArtistID = index.artists.first?.id
+            selectedAlbumID = index.artists.first?.albums.first?.id
+            selectedTrackID = index.artists.first?.albums.first?.tracks.first?.track.id
+            selectedAlbumIDs = []
+            selectedTrackIDs = []
+        }
 
         refreshCrateCounts()
     }

@@ -20,6 +20,13 @@ struct CDMaskShape: Shape {
 
 struct SpinningRecordView: View {
     @ObservedObject var model: LibraryViewModel
+    /// When true (the inspector's DISC tab), the disc previews the *selected*
+    /// album so it follows what you're browsing. When false (the mini player),
+    /// it follows the now-playing track. `nowPlayingTrack` stays set through
+    /// pause/stop (it's the queue's current index, not a live-playback flag), so
+    /// the old `nowPlaying ?? selected` rule almost never reached the selection
+    /// fallback — which is why the DISC tab kept showing the last-played disc.
+    var followsSelection: Bool = false
     @StateObject private var animator = RecordAnimator()
     @State private var discImage: NSImage? = nil
     @State private var isVinyl: Bool = false
@@ -100,6 +107,11 @@ struct SpinningRecordView: View {
             updateDiscData()
         }
         .onChange(of: model.selectedTrackID) { _ in
+            updateDiscData()
+        }
+        // Album-only selection (artwork gallery, version picker) changes the
+        // selected album without touching selectedTrackID — keep the disc in sync.
+        .onChange(of: model.selectedAlbumID) { _ in
             updateDiscData()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("CrateDiggerArtworkImported"))) { _ in
@@ -332,10 +344,12 @@ struct SpinningRecordView: View {
             // Invalidate the cached CD faces so they re-render for the new art.
             faceToken &+= 1
         }
-        // Show the now-playing track's disc while playing; otherwise preview the
-        // currently selected album so the DISC tab reflects what you're browsing
-        // (and freshly-imported art).
-        let loaded = model.nowPlayingTrack ?? model.selectedTrack
+        // The DISC tab (followsSelection) previews what you're browsing; the mini
+        // player follows the now-playing track. Each falls back to the other so
+        // the disc is never needlessly blank (e.g. nothing selected yet).
+        let loaded = followsSelection
+            ? (model.selectedTrack ?? model.nowPlayingTrack)
+            : (model.nowPlayingTrack ?? model.selectedTrack)
         currentSide = loaded?.metadata.side
         guard let track = loaded?.track else {
             discImage = nil

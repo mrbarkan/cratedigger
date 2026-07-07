@@ -38,6 +38,67 @@ extension View {
     }
 }
 
+/// The Carbon "selected row" treatment: a calm, flat cool fill that reads like a
+/// backlit recessed slot, with a leading LED accent bar (the "you are here" cue)
+/// and a soft top-lit rim for depth. Replaces the old diagonal indigo→cyan
+/// gradient, which fought the content. Shared by the browser columns and the
+/// Sources sidebar so selection looks identical everywhere; selection stays cool
+/// while playback stays orange (the ▸ marker), keeping the two states distinct.
+/// `cornerRadius` is 0 for full-bleed column rows, 6 for the sidebar's pills.
+struct CarbonSelectionSlot: View {
+    @Environment(\.carbon) private var theme
+    var cornerRadius: CGFloat = 0
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        // A cool cyan LED over an indigo spread in dark mode; a warm orange LED +
+        // orange spread in light mode (reads better on a light panel and matches
+        // the app's warm accent). Either way the fill is that LED's light: brightest
+        // at the leading edge, falling off toward the trailing edge. Dark fades to
+        // the true background (clear); light keeps a floor so the white selection
+        // text stays legible across the whole row.
+        // Dark: cyan LED over an indigo spread. Light: a bright near-yellow LED
+        // whose warm orange spread falls off across the row — the LED reads as the
+        // light source, the fill as its cast light. Both fade fully to the
+        // background; the selection text uses `slotInk` so it stays legible where
+        // the fill fades out (white in dark, dark ink in light).
+        let ledCore = theme.isDark ? theme.cyanGlow : Color(hex: 0xFFD24A)
+        let ledGlow = theme.isDark ? theme.cyan : theme.orange
+        let spread  = theme.isDark ? theme.indigo : theme.orange
+        let ledFill = LinearGradient(
+            colors: [
+                spread.opacity(theme.isDark ? 0.90 : 0.85),
+                Color.clear
+            ],
+            startPoint: .leading,
+            endPoint: .trailing
+        )
+        shape
+            .fill(ledFill)
+            .overlay(
+                // Top-lit rim that also fades left→right, tracking the light.
+                shape.stroke(
+                    LinearGradient(
+                        colors: [Color.white.opacity(0.20), Color.white.opacity(0)],
+                        startPoint: .leading, endPoint: .trailing
+                    ),
+                    lineWidth: 1
+                )
+            )
+            .clipShape(shape)
+            // Leading LED — overlaid *after* the clip so its glow spills a little
+            // past the slot edge (a lit bulb, not a painted stripe).
+            .overlay(alignment: .leading) {
+                Capsule()
+                    .fill(ledCore)
+                    .frame(width: 3)
+                    .padding(.vertical, 2)
+                    .shadow(color: ledGlow.opacity(0.9), radius: 5)
+                    .shadow(color: ledCore.opacity(0.55), radius: 10)
+            }
+    }
+}
+
 /// Loads a downsampled thumbnail for an on-disk image via ImageIO, off the main
 /// actor. Shared by the inspector poster, the artwork inspector grid, and the
 /// gallery cover cells (which differ only in the max pixel size they request).
@@ -59,21 +120,28 @@ func loadThumbnail(url: URL, maxPixelSize: Int) async -> NSImage? {
 }
 
 extension CarbonTheme {
+    /// Ink for text sitting on a selection slot (`CarbonSelectionSlot`): white on
+    /// the dark-mode indigo fill; the primary dark ink on the light-mode orange
+    /// fill, which fades to a light background — white would drop out on the far
+    /// side. Distinct from `selectionInk` (kept white for saturated-orange
+    /// contexts like the patch bay and LEDs).
+    var slotInk: Color { isDark ? selectionInk : ink }
+
     /// Lead-glyph tint for a browser row: selection ink when selected, orange
     /// when it hosts the now-playing track, otherwise muted ink.
     func rowLeadColor(selected: Bool, isPlaying: Bool) -> Color {
-        if selected { return selectionInk }
+        if selected { return slotInk }
         if isPlaying { return orange }
         return ink3
     }
 
     /// Title tint for a browser row.
     func rowTitleColor(selected: Bool) -> Color {
-        selected ? selectionInk : ink
+        selected ? slotInk : ink
     }
 
     /// Trailing-meta tint for a browser row.
     func rowMetaColor(selected: Bool) -> Color {
-        selected ? selectionInk.opacity(0.72) : ink3
+        selected ? slotInk.opacity(0.72) : ink3
     }
 }

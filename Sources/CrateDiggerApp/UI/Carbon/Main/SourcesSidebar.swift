@@ -71,16 +71,9 @@ struct SourcesSidebar: View {
                     ForEach(model.availableCrates, id: \.self) { crateName in
                         HStack {
                             crateLabel(crateName)
-                            if crateName != LibraryViewModel.personalCrateName {
-                                Button(action: { model.deleteCrate(name: crateName) }) {
-                                    Image(systemName: "trash")
-                                        .font(.system(size: 9))
-                                        .foregroundColor(theme.ink3)
-                                }
-                                .buttonStyle(.carbonHover)
-                                .padding(.trailing, 14)
-                            }
                         }
+                        // Removal lives in the right-click menu (below), not an
+                        // always-visible trash button.
                         .contextMenu {
                             Button("Set as Target Crate") {
                                 model.targetCrateName = crateName
@@ -225,14 +218,9 @@ struct SourcesSidebar: View {
                     ForEach(model.playlists) { pl in
                         HStack {
                             playlistLabel(pl)
-                            Button(action: { model.deletePlaylist(name: pl.name) }) {
-                                Image(systemName: "trash")
-                                    .font(.system(size: 9))
-                                    .foregroundColor(theme.ink3)
-                            }
-                            .buttonStyle(.carbonHover)
-                            .padding(.trailing, 14)
                         }
+                        // Removal lives in the right-click menu (below), not an
+                        // always-visible trash button.
                         .contextMenu {
                             Button("Rename") {
                                 beginRename(.playlist(pl.name), current: pl.name)
@@ -420,19 +408,19 @@ struct SourcesSidebar: View {
 
     private func textColor(selected: Bool, disabled: Bool) -> Color {
         if disabled { return theme.ink3 }
-        if selected { return theme.selectionInk }
+        if selected { return theme.slotInk }
         return theme.ink
     }
 
     private func iconColor(selected: Bool, disabled: Bool) -> Color {
         if disabled { return theme.ink4 }
-        if selected { return theme.selectionInk }
+        if selected { return theme.slotInk }
         return theme.ink3
     }
 
     private func countColor(selected: Bool, disabled: Bool) -> Color {
         if selected {
-            return theme.selectionInk.opacity(0.72)
+            return theme.slotInk.opacity(0.72)
         }
         return theme.ink3
     }
@@ -440,22 +428,7 @@ struct SourcesSidebar: View {
     @ViewBuilder
     private func rowBackground(selected: Bool) -> some View {
         if selected {
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            theme.indigo.opacity(theme.isDark ? 0.88 : 0.82),
-                            theme.cyan.opacity(theme.isDark ? 0.86 : 0.76)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .stroke(Color.white.opacity(0.26), lineWidth: 1)
-                )
-                .shadow(color: theme.cyan.opacity(theme.isDark ? 0.24 : 0.18), radius: 10)
+            CarbonSelectionSlot(cornerRadius: 6)
         } else {
             Color.clear
         }
