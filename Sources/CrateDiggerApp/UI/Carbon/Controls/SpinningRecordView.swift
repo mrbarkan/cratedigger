@@ -20,9 +20,6 @@ struct CDMaskShape: Shape {
 
 struct SpinningRecordView: View {
     @ObservedObject var model: LibraryViewModel
-    /// When set, overrides the auto-detected CD/Vinyl medium (the mini player's
-    /// user toggle). Nil keeps the manifest-driven auto-detection (inspector).
-    var forcedVinyl: Bool? = nil
     @StateObject private var animator = RecordAnimator()
     @State private var discImage: NSImage? = nil
     @State private var isVinyl: Bool = false
@@ -30,7 +27,7 @@ struct SpinningRecordView: View {
     @State private var currentSide: String? = nil
 
     // Pre-rendered CD faces. The 60fps animation only rotates/crossfades these
-    // cached bitmaps; the expensive gradients + Gaussian blur are rasterized
+    // cached bitmaps; the expensive gradients + motion smear are rasterized
     // once (here), not rebuilt every frame. Rebuilt only when the disc art
     // changes (tracked via `faceToken`), at a fixed canvas size so window
     // resizes never trigger a re-render.
@@ -55,7 +52,7 @@ struct SpinningRecordView: View {
                         ZStack {
                             cdFaceImage(sharpFace, size: size)
 
-                            // Motion blur: a pre-blurred copy faded in by speed.
+                            // Motion blur: a pre-smeared copy faded in by speed.
                             // No per-frame blur or offscreen rasterization.
                             if animator.currentSpeed > 0 {
                                 cdFaceImage(blurredFace, size: size)
@@ -105,13 +102,6 @@ struct SpinningRecordView: View {
         .onChange(of: model.selectedTrackID) { _ in
             updateDiscData()
         }
-        .onChange(of: forcedVinyl) { newValue in
-            if let newValue {
-                isVinyl = newValue
-                animator.isVinyl = newValue
-                faceToken &+= 1
-            }
-        }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("CrateDiggerArtworkImported"))) { _ in
             updateDiscData()
         }
@@ -129,13 +119,12 @@ struct SpinningRecordView: View {
                 .resizable()
                 .frame(width: size, height: size)
         } else {
-            cdFaceContent(blurRadius: 0, size: size)
+            cdFaceContent(size: size)
         }
     }
 
-    /// The CD face artwork + diffraction sheen. `blurRadius == 0` is the sharp
-    /// face; a positive radius (masked to the outer ring) is the motion smear.
-    private func cdFaceContent(blurRadius: CGFloat, size: CGFloat) -> some View {
+    /// The sharp CD face: artwork + diffraction sheen.
+    private func cdFaceContent(size: CGFloat) -> some View {
         ZStack {
             if let cdImg = discImage {
                 Image(nsImage: cdImg).resizable().aspectRatio(contentMode: .fill)
@@ -146,34 +135,51 @@ struct SpinningRecordView: View {
         }
         .frame(width: size, height: size)
         .clipped()
-        .blur(radius: blurRadius)
-        .mask(
-            blurRadius > 0
-                ? AnyView(RadialGradient(
-                    gradient: Gradient(colors: [.clear, .white]),
-                    center: .center,
-                    startRadius: size * 0.08,
-                    endRadius: size * 0.45
-                ))
-                : AnyView(Rectangle())
-        )
     }
 
-    /// Rasterize the sharp + blurred faces once into bitmaps. Cheap to do on a
+    /// Rasterize the sharp + smeared faces once into bitmaps. Cheap to do on a
     /// track/art change; rotating the results every frame is then nearly free.
+    ///
+    /// The "blurred" face is a *rotational* motion smear, not a Gaussian blur:
+    /// the sharp face averaged across `smearArcDegrees` of rotation (the
+    /// standard onion-skin trick — copy i drawn at alpha 1/(i+1) accumulates a
+    /// uniform average). Streaks follow the spin direction, the hub stays
+    /// naturally sharp, and the rim smears hardest — like a long-exposure
+    /// photo of a spinning disc, not an out-of-focus one.
     @MainActor
     private func renderCDFaces() {
         let scale = NSScreen.main?.backingScaleFactor ?? 2
 
-        let sharp = ImageRenderer(content: cdFaceContent(blurRadius: 0, size: faceRenderSize))
+        let sharp = ImageRenderer(content: cdFaceContent(size: faceRenderSize))
         sharp.scale = scale
         sharpFace = sharp.nsImage
 
-        let blurred = ImageRenderer(
-            content: cdFaceContent(blurRadius: max(2, faceRenderSize * 0.02), size: faceRenderSize)
+        guard let sharpFace else {
+            blurredFace = nil
+            return
+        }
+
+        // ponytail: fixed arc tuned for the "fast" preset; per-speed smear
+        // faces if the medium/slow presets ever look over-smeared.
+        let copies = 24
+        let smearArcDegrees = 18.0
+        let smear = ImageRenderer(content:
+            ZStack {
+                ForEach(0..<copies, id: \.self) { i in
+                    Image(nsImage: sharpFace)
+                        .resizable()
+                        .frame(width: faceRenderSize, height: faceRenderSize)
+                        .rotationEffect(.degrees(smearArcDegrees * (Double(i) / Double(copies - 1) - 0.5)))
+                        .opacity(1.0 / Double(i + 1))
+                }
+            }
+            .frame(width: faceRenderSize, height: faceRenderSize)
+            // Just enough to melt the discrete copies into a continuous streak.
+            .blur(radius: 1.2)
+            .clipped()
         )
-        blurred.scale = scale
-        blurredFace = blurred.nsImage
+        smear.scale = scale
+        blurredFace = smear.nsImage
     }
 
     /// How present the pre-blurred face is, as a function of spin speed. Fully
@@ -322,7 +328,6 @@ struct SpinningRecordView: View {
 
     private func updateDiscData() {
         defer {
-            if let forcedVinyl { isVinyl = forcedVinyl }
             animator.isVinyl = self.isVinyl
             // Invalidate the cached CD faces so they re-render for the new art.
             faceToken &+= 1
@@ -369,11 +374,11 @@ struct SpinningRecordView: View {
             let baseFolder = subfolder.isEmpty ? folder : folder.appendingPathComponent(subfolder)
             for candidate in candidates {
                 let url = baseFolder.appendingPathComponent(candidate)
+                // Note: a "vinyl.jpg" here is only a *label image* — the medium
+                // itself is decided solely by the manifest's media format
+                // (Art tab dropdown). Auto/unset always reads as CD.
                 if fileManager.fileExists(atPath: url.path), let image = NSImage(contentsOf: url) {
                     self.discImage = image
-                    if candidate.lowercased().contains("vinyl") {
-                        self.isVinyl = true
-                    }
                     return
                 }
             }

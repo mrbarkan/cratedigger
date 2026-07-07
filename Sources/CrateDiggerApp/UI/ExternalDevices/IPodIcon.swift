@@ -200,29 +200,51 @@ private extension IPodIconEntry {
     }
 }
 
-/// The add-device sheet's icon picker: a wrapping grid of 52×64 tappable tiles,
+/// The add-device sheet's icon picker: a wrapping grid of tappable tiles,
 /// orange ring + tint on the selection. Tapping the selected tile clears it.
+/// Collapsed to the first row by default (there are dozens of icons); a chevron
+/// reveals the rest. Clipping to one row height keeps "first row" correct for
+/// any column count, so no width math is needed.
 struct DeviceIconPicker: View {
     @Binding var selection: String?
+    @State private var expanded = false
 
     private static let orange = Color(hex: 0xFF6D3F)
-    private let columns = [GridItem(.adaptive(minimum: 52, maximum: 52), spacing: 8, alignment: .leading)]
+    private let columns = [GridItem(.adaptive(minimum: 56, maximum: 56), spacing: 12, alignment: .leading)]
+    private let rowHeight: CGFloat = 68   // one tile row (tile is 66 tall)
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            // The real Apple device portraits, when the OS provides them.
-            if !DeviceSystemIcons.all.isEmpty {
-                LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
-                    ForEach(DeviceSystemIcons.all, id: \.id) { entry in
-                        tile(id: entry.id, help: entry.name)
+        VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 12) {
+                // The real Apple device portraits, when the OS provides them.
+                if !DeviceSystemIcons.all.isEmpty {
+                    LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
+                        ForEach(DeviceSystemIcons.all, id: \.id) { entry in
+                            tile(id: entry.id, help: entry.name)
+                        }
+                    }
+                }
+                LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
+                    ForEach(IPodCatalog.all) { entry in
+                        tile(id: entry.id, help: entry.displayName)
                     }
                 }
             }
-            LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
-                ForEach(IPodCatalog.all) { entry in
-                    tile(id: entry.id, help: entry.displayName)
+            .frame(maxWidth: .infinity, maxHeight: expanded ? nil : rowHeight, alignment: .topLeading)
+            .clipped()
+
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() }
+            } label: {
+                HStack(spacing: 4) {
+                    Text(expanded ? "Show fewer" : "More icons")
+                    Image(systemName: "chevron.down")
+                        .rotationEffect(.degrees(expanded ? 180 : 0))
                 }
+                .font(.caption.weight(.medium))
             }
+            .buttonStyle(.plain)
+            .foregroundStyle(Self.orange)
         }
     }
 
@@ -231,8 +253,8 @@ struct DeviceIconPicker: View {
         return Button {
             selection = selected ? nil : id
         } label: {
-            IPodIcon(id: id, height: 48)
-                .frame(width: 52, height: 64)
+            IPodIcon(id: id, height: 50)
+                .frame(width: 56, height: 66)
                 .background(
                     RoundedRectangle(cornerRadius: 9, style: .continuous)
                         .fill(selected ? Self.orange.opacity(0.08) : Color.white.opacity(0.04))

@@ -12,27 +12,20 @@ enum AppVersion {
     /// Mirror of `CFBundleShortVersionString`.
     static let marketing = "1.0.0"
     /// Mirror of `CFBundleVersion`.
-    static let build = "34"
+    static let build = "36"
     /// Release-channel label shown in About ("BETA", "RC", …). Empty for a
     /// final release — at which point the pill reverts to "VERSION x (build)".
-    static let channel = "RC"
+    static let channel = ""
     /// Human ordinal within the channel ("RC 3"), hand-bumped per release
     /// alongside `build` — the build number is monotonic across the whole
     /// beta/RC run, so it can't double as the ordinal (RC 3 = build 33).
+    /// Unused once `channel` is empty (the final release).
     static let channelOrdinal = "4"
 
     /// Hard expiry for beta builds — on/after this date the app shows a notice
-    /// and quits at launch. Bump per release; set to `nil` to disable.
-    static let betaExpiry: Date? = {
-        var components = DateComponents()
-        components.year = 2026
-        components.month = 12
-        components.day = 31
-        components.hour = 23
-        components.minute = 59
-        components.second = 59
-        return Calendar(identifier: .gregorian).date(from: components)
-    }()
+    /// and quits at launch. `nil` disables it: a shipping final release must
+    /// never brick itself, so 1.0.0 carries no expiry.
+    static let betaExpiry: Date? = nil
 
     /// True once the current date has passed `betaExpiry`.
     static var isBetaExpired: Bool {

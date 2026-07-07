@@ -33,6 +33,14 @@ struct DevicesPreferencesView: View {
                 Text("Devices")
                     .font(.headline)
                 Spacer()
+                Button {
+                    deleteConfirmationShown = true
+                } label: {
+                    Image(systemName: "minus")
+                }
+                .buttonStyle(.borderless)
+                .disabled(selectedID == nil)
+                .help("Remove selected device profile")
                 addDeviceMenu
             }
 
@@ -240,6 +248,9 @@ struct DevicesPreferencesView: View {
         do {
             draft.rootBookmark = try PreferencesStore.makeBookmark(for: url)
             draft.rootDisplayPath = url.path
+            // Capture the volume's UUID so this profile binds to *this* physical
+            // device — two identically-named iPods at /Volumes/IPOD stay distinct.
+            draft.volumeUUID = (try? url.resourceValues(forKeys: [.volumeUUIDStringKey]))?.volumeUUIDString
         } catch {
             AppLog.prefs.warning("Could not bookmark device root: \(String(describing: error), privacy: .public)")
         }
@@ -271,6 +282,7 @@ private struct EditableExternalDeviceProfile {
     var kind: ExternalDeviceKind = .genericExternalStorage
     var rootBookmark: Data?
     var rootDisplayPath: String?
+    var volumeUUID: String?
     var musicDirectorySubpath: String = "Music"
     var iconID: String?
     /// The whole transfer settings value — device-only fields (mode, compatibility)
@@ -284,6 +296,7 @@ private struct EditableExternalDeviceProfile {
         kind = profile.kind
         rootBookmark = profile.rootBookmark
         rootDisplayPath = profile.rootDisplayPath
+        volumeUUID = profile.volumeUUID
         musicDirectorySubpath = profile.musicDirectorySubpath
         iconID = profile.iconID
         settings = profile.transferSettings
@@ -296,6 +309,7 @@ private struct EditableExternalDeviceProfile {
             kind: kind,
             rootBookmark: rootBookmark,
             rootDisplayPath: rootDisplayPath,
+            volumeUUID: volumeUUID,
             musicDirectorySubpath: musicDirectorySubpath,
             iconID: iconID,
             transferSettings: settings,

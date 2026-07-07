@@ -11,9 +11,19 @@ struct AppAlert: Identifiable {
     /// Optional secondary action button. If nil, the alert only has OK.
     var actionTitle: String?
     var action: (() -> Void)?
+    /// Optional plain hyperlink shown in the footer, left of the buttons — e.g.
+    /// the update alerts' link to the GitHub releases page.
+    var linkTitle: String?
+    var linkURL: URL?
 
-    static func info(title: String, message: String) -> AppAlert {
-        AppAlert(title: title, message: message, actionTitle: nil, action: nil)
+    static func info(
+        title: String,
+        message: String,
+        linkTitle: String? = nil,
+        linkURL: URL? = nil
+    ) -> AppAlert {
+        AppAlert(title: title, message: message, actionTitle: nil, action: nil,
+                 linkTitle: linkTitle, linkURL: linkURL)
     }
 
     static func error(title: String, message: String) -> AppAlert {
@@ -24,8 +34,11 @@ struct AppAlert: Identifiable {
         title: String,
         message: String,
         actionTitle: String,
+        linkTitle: String? = nil,
+        linkURL: URL? = nil,
         action: @escaping () -> Void
     ) -> AppAlert {
-        AppAlert(title: title, message: message, actionTitle: actionTitle, action: action)
+        AppAlert(title: title, message: message, actionTitle: actionTitle, action: action,
+                 linkTitle: linkTitle, linkURL: linkURL)
     }
 }

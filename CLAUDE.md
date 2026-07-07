@@ -57,12 +57,13 @@ It is a large god-object; prefer extracting testable logic into a Core service o
 
 ### Sources model (Crates, Prep Crate, Remote, CD, Playlists, Radio)
 
-`LibrarySource` (enum in `LibraryViewModel.swift`) selects what's shown — cases: `localCrate(name:)`, `prepCrate`, `remote`, `playlist(name:)`, `cd(volumePath:)`, `radio(category:)`. The view model keeps separate cached indexes (`localIndex`, `remoteIndex`, `cdIndex`, `playlistIndex`, `prepCrateIndex`) for fast switching via `selectSource(_:)`.
+`LibrarySource` (enum in `LibraryViewModel.swift`) selects what's shown — cases: `localCrate(name:)`, `prepCrate`, `remote`, `playlist(name:)`, `cd(volumePath:)`, `device(volumePath:)`, `radio(category:)`. The view model keeps separate cached indexes (`localIndex`, `remoteIndex`, `cdIndex`, `playlistIndex`, `prepCrateIndex`) for fast switching via `selectSource(_:)`.
 
 - **Crates** are the persistence unit: each is a `.cdlib` file = a pretty-printed JSON array of `LoadedTrack`, stored in a user-chosen "Crates Index Folder". `loadCrateTracks`/`saveCrateTracks` are the I/O; a "Personal Crate" is auto-created.
 - **Prep Crate** is the staging area: newly scanned folders land here first (`handleImport`), not directly into a saved crate.
 - Editing a track's tags (or moving/consolidating the library) must **rewrite the file path inside every `.cdlib` that references it** (`updateTrackURLInIndex`, and the loops in `moveLibrary`/`consolidateLibrary`). Forgetting this leaves crates pointing at stale paths.
 - Remote = Subsonic/Navidrome (`SubsonicClient`); CD = `CDRipperService`; Playlists = M3U via `PlaylistService`; Radio = YouTube streaming (see below).
+- **External devices** (`.device`) are mounted removable volumes (`DeviceDetectionService`) that match a saved `ExternalDeviceProfile` — random drives never reach Sources. Matching is `ExternalDeviceProfile.match(_:in:)`: a stored `volumeUUID` is **authoritative** when both the profile and the volume report one, so two iPods that both mount at `/Volumes/IPOD` named "IPOD" stay distinct; profiles saved before UUIDs (or volumes reporting none) fall back to mount path, then name. Legacy profiles self-heal via `backfillVolumeUUIDs` on first connect.
 
 ### Radio / YouTube streaming
 

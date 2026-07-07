@@ -238,7 +238,7 @@ public final class LibraryScanService {
         // costs nothing extra, and it is the only path that reads FLAC/OGG
         // Vorbis comments — AVFoundation can't, which is why track/disc numbers
         // came back nil for those files.
-        let metadata: ConversionMetadata
+        var metadata: ConversionMetadata
         if let probedMetadata {
             metadata = MetadataNormalization.normalize(
                 formatTags: probedMetadata.formatTags,
@@ -247,6 +247,15 @@ public final class LibraryScanService {
             )
         } else {
             metadata = avMetadata
+        }
+
+        // Files tagged without a track number often carry it in the name
+        // ("01 Song.mp3") — fall back to that so imports and rescans still
+        // order albums correctly.
+        if metadata.trackNumber == nil {
+            metadata.trackNumber = MetadataNormalization.trackNumber(
+                fromFilename: fileURL.deletingPathExtension().lastPathComponent
+            )
         }
 
         let trackTitle = normalizedString(metadata.title) ?? fileURL.deletingPathExtension().lastPathComponent

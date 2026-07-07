@@ -5,15 +5,19 @@ struct BrandBlock: View {
     @EnvironmentObject private var model: LibraryViewModel
 
     var body: some View {
-        // v10 brand column: brand-row (name → drive LED → mini-player pip at
+        // v10 brand column: brand-row (name → settings cog + mini-player pip at
         // far right), then a 4-row full-width library-button column.
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Text("CrateDigger")
                     .font(CarbonFont.sans(14, weight: .semibold))
                     .foregroundStyle(theme.ink)
-                ActivityLight(active: model.isWorking)
                 Spacer(minLength: 0)
+                LibButton(style: .pip, title: "", systemImage: "gearshape",
+                          tip: "Settings") {
+                    // Same route the ⌘, menu item takes — up the responder chain to AppDelegate.
+                    NSApp.sendAction(Selector(("showPreferences:")), to: nil, from: nil)
+                }
                 LibButton(style: .pip, title: "", systemImage: "pip.enter",
                           tip: "Open the mini player") {
                     NotificationCenter.default.post(name: NSNotification.Name("CrateDiggerShowMiniPlayer"), object: nil)
@@ -48,46 +52,6 @@ struct BrandBlock: View {
         return count == 0
             ? "Select albums or tracks (⌘-click for several), then add them to a crate"
             : "Add \(count) track\(count == 1 ? "" : "s") to \(model.targetCrateName)"
-    }
-}
-
-/// A small blue "drive access" LED: steady-dim when idle; while the app is
-/// working it flickers *irregularly* like a real disk-access light — mostly-on
-/// with ragged gaps (~70% duty, re-rolled every 40–170ms), snapping hard (0.04s)
-/// rather than pulsing on a smooth sine.
-private struct ActivityLight: View {
-    let active: Bool
-    @State private var on = false
-    @State private var ticker: Task<Void, Never>? = nil
-
-    private let blue = Color(hex: 0x3BA7FF)
-
-    var body: some View {
-        Circle()
-            .fill(blue)
-            .frame(width: 11, height: 11)
-            .overlay(Circle().stroke(Color.white.opacity(0.25), lineWidth: 0.5))
-            // Dark when idle; only lights (and flickers) while the app is working.
-            .opacity(active ? (on ? 1.0 : 0.5) : 0.12)
-            .shadow(color: (active && on) ? blue.opacity(0.95) : .clear, radius: (active && on) ? 7 : 0)
-            .animation(.linear(duration: 0.04), value: on)
-            .animation(.easeOut(duration: 0.15), value: active)
-            .onAppear { restart() }
-            .onChange(of: active) { _ in restart() }
-            .onDisappear { ticker?.cancel() }
-            .accessibilityLabel(active ? "Disk access" : "Idle")
-    }
-
-    private func restart() {
-        ticker?.cancel()
-        guard active else { on = false; return }
-        ticker = Task { @MainActor in
-            while !Task.isCancelled {
-                on = Double.random(in: 0...1) > 0.3          // ~70% duty
-                let ms = 40 + Int.random(in: 0...130)        // 40–170ms
-                try? await Task.sleep(nanoseconds: UInt64(ms) * 1_000_000)
-            }
-        }
     }
 }
 

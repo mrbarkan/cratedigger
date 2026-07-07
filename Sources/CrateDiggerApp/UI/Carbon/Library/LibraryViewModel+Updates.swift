@@ -53,7 +53,9 @@ extension LibraryViewModel {
             if userInitiated {
                 appAlert = .info(
                     title: "You're Up to Date",
-                    message: "\(AppVersion.currentDisplayString) is the newest version."
+                    message: "\(AppVersion.currentDisplayString) is the newest version.",
+                    linkTitle: "All releases ↗",
+                    linkURL: GitHubReleaseFeed.releasesPageURL
                 )
             }
         case .updateAvailable(let release):
@@ -66,7 +68,9 @@ extension LibraryViewModel {
             appAlert = .actionable(
                 title: "Update Available",
                 message: "\(release.name) is out — you're on \(AppVersion.currentDisplayString). The download page has the release notes and the DMG.",
-                actionTitle: "Download"
+                actionTitle: "Download",
+                linkTitle: "All releases ↗",
+                linkURL: GitHubReleaseFeed.releasesPageURL
             ) {
                 NSWorkspace.shared.open(release.htmlURL)
             }

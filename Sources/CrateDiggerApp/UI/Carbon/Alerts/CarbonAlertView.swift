@@ -33,6 +33,11 @@ struct CarbonAlertView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             HStack(spacing: 10) {
+                if let linkTitle = alert.linkTitle, let linkURL = alert.linkURL {
+                    Link(linkTitle, destination: linkURL)
+                        .font(CarbonFont.sans(12))
+                        .foregroundStyle(theme.orange)
+                }
                 Spacer()
                 if let actionTitle = alert.actionTitle, let action = alert.action {
                     Button("Cancel") { dismiss() }

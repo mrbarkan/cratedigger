@@ -109,6 +109,19 @@ private struct DisplayRail: View {
 
             Spacer(minLength: 12)
 
+            // Transient system notice (tag saves etc.) — snaps in on the rail
+            // instead of interrupting the user with a modal alert.
+            if let notice = model.oledNotice {
+                Text(notice)
+                    .font(CarbonFont.mono(9, weight: .bold))
+                    .tracking(1.8)
+                    .foregroundStyle(theme.sun)
+                    .shadow(color: theme.sun.opacity(0.55), radius: 6)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .padding(.trailing, 14)
+            }
+
             RailLive(clock: model.playbackClock)
             RailSettings()
         }

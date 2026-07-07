@@ -59,5 +59,27 @@ final class MetadataNormalizationTests: XCTestCase {
         XCTAssertEqual(normalized.trackNumber, 1)
         XCTAssertEqual(normalized.trackTotal, 12)
     }
+
+    func testTrackNumberFromFilename() {
+        // Leading track-number prefixes in their common shapes.
+        XCTAssertEqual(MetadataNormalization.trackNumber(fromFilename: "01 Intro"), 1)
+        XCTAssertEqual(MetadataNormalization.trackNumber(fromFilename: "03 - Some Song"), 3)
+        XCTAssertEqual(MetadataNormalization.trackNumber(fromFilename: "7. Some Song"), 7)
+        XCTAssertEqual(MetadataNormalization.trackNumber(fromFilename: "04_Some Song"), 4)
+        XCTAssertEqual(MetadataNormalization.trackNumber(fromFilename: "12"), 12)
+        XCTAssertEqual(MetadataNormalization.trackNumber(fromFilename: "  09 Song  "), 9)
+
+        // Disc-track prefixes: the second run is the track.
+        XCTAssertEqual(MetadataNormalization.trackNumber(fromFilename: "1-01 Some Song"), 1)
+        XCTAssertEqual(MetadataNormalization.trackNumber(fromFilename: "2-05 Some Song"), 5)
+        XCTAssertEqual(MetadataNormalization.trackNumber(fromFilename: "2.05 Some Song"), 5)
+
+        // Non-matches: years, mid-name numbers, no leading digits, track zero.
+        XCTAssertNil(MetadataNormalization.trackNumber(fromFilename: "1999 - Some Song"))
+        XCTAssertNil(MetadataNormalization.trackNumber(fromFilename: "Some Song 05"))
+        XCTAssertNil(MetadataNormalization.trackNumber(fromFilename: "Some Song"))
+        XCTAssertNil(MetadataNormalization.trackNumber(fromFilename: "00 Hidden"))
+        XCTAssertNil(MetadataNormalization.trackNumber(fromFilename: "10cc - Song"))
+    }
 }
 #endif

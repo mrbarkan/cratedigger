@@ -101,6 +101,12 @@ public struct GitHubReleaseFeed: UpdateFeedFetching {
         string: "https://api.github.com/repos/mrbarkan/cratedigger/releases?per_page=10"
     )!
 
+    /// The human-facing releases listing (all releases, notes, and DMGs) — for
+    /// "browse updates" links in the UI. Distinct from the API `feedURL`.
+    public static let releasesPageURL = URL(
+        string: "https://github.com/mrbarkan/cratedigger/releases"
+    )!
+
     public init() {}
 
     public func fetchReleasesJSON() async throws -> Data {

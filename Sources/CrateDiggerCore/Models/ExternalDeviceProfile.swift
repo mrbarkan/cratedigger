@@ -109,6 +109,13 @@ public struct ExternalDeviceProfile: Identifiable, Codable, Hashable, Sendable {
     public var kind: ExternalDeviceKind
     public var rootBookmark: Data?
     public var rootDisplayPath: String?
+    /// The mounted volume's filesystem UUID (`URLResourceKey.volumeUUIDStringKey`),
+    /// captured when the profile is added. This is what tells two otherwise-identical
+    /// devices apart: every Rockbox iPod mounts at `/Volumes/IPOD` named "IPOD", so
+    /// path/name matching alone recognizes *any* iPod as this one. Optional so profiles
+    /// saved before this existed — and volumes that report no UUID — decode to `nil`
+    /// and fall back to path/name matching. See `match(_:in:)`.
+    public var volumeUUID: String?
     public var musicDirectorySubpath: String
     /// Chosen device-icon identifier (e.g. "classic.black") from the iPod icon
     /// catalog. Optional so decoding older saved profiles (which have no such
@@ -124,6 +131,7 @@ public struct ExternalDeviceProfile: Identifiable, Codable, Hashable, Sendable {
         kind: ExternalDeviceKind = .genericExternalStorage,
         rootBookmark: Data? = nil,
         rootDisplayPath: String? = nil,
+        volumeUUID: String? = nil,
         musicDirectorySubpath: String = "Music",
         iconID: String? = nil,
         transferSettings: ExternalDeviceTransferSettings = ExternalDeviceTransferSettings(),
@@ -135,6 +143,7 @@ public struct ExternalDeviceProfile: Identifiable, Codable, Hashable, Sendable {
         self.kind = kind
         self.rootBookmark = rootBookmark
         self.rootDisplayPath = rootDisplayPath
+        self.volumeUUID = volumeUUID
         self.musicDirectorySubpath = Self.normalizedSubpath(musicDirectorySubpath)
         self.iconID = iconID
         self.transferSettings = transferSettings
@@ -215,6 +224,22 @@ public struct ExternalDeviceProfile: Identifiable, Codable, Hashable, Sendable {
                 )
             )
         )
+    }
+
+    /// The saved profile a mounted `device` belongs to, or nil for an unknown
+    /// volume. A stored `volumeUUID` is authoritative when both the profile and the
+    /// device report one — so two iPods that both mount at `/Volumes/IPOD` with the
+    /// same volume name are told apart, and a profile bound to iPod A never matches
+    /// iPod B. Profiles saved before UUIDs were captured (or volumes that report
+    /// none) fall back to the mount path, then the volume name.
+    public static func match(_ device: MountedDevice, in profiles: [ExternalDeviceProfile]) -> ExternalDeviceProfile? {
+        profiles.first { profile in
+            if let profileUUID = profile.volumeUUID, let deviceUUID = device.volumeUUID {
+                return profileUUID == deviceUUID
+            }
+            return (profile.rootDisplayPath.map { $0 == device.volumeURL.path } ?? false)
+                || profile.name.caseInsensitiveCompare(device.name) == .orderedSame
+        }
     }
 
     public static func normalizedSubpath(_ rawValue: String) -> String {

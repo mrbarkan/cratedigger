@@ -91,6 +91,26 @@ public enum MetadataNormalization {
         )
     }
 
+    /// Infer a track number from a filename (extension already stripped) when
+    /// the tags carry none — "01 Song", "03 - Song", "7. Song", "04_Song", a
+    /// bare "04", or a disc-track prefix like "1-01 Song" / "2.05 Song".
+    /// Conservative on purpose: only a *leading* 1–2 digit run followed by a
+    /// separator counts, so years ("1999 - Song") and titles that merely
+    /// contain numbers never match.
+    public static func trackNumber(fromFilename name: String) -> Int? {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        // Disc-track prefix ("1-01 Song", "2.05 Song"): the second run is the track.
+        if let match = trimmed.firstMatch(of: #/^(\d)[-.](\d{1,2})(?:[\s._)-]|$)/#),
+           let number = Int(match.2), number >= 1 {
+            return number
+        }
+        if let match = trimmed.firstMatch(of: #/^(\d{1,2})(?:[\s._)-]|$)/#),
+           let number = Int(match.1), number >= 1 {
+            return number
+        }
+        return nil
+    }
+
     private static func customTagPairs(from tags: [String: String]) -> [MetadataTagPair] {
         var results: [MetadataTagPair] = []
         results.reserveCapacity(tags.count)

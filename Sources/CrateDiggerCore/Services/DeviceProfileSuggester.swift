@@ -51,6 +51,7 @@ public enum DeviceProfileSuggester {
             profile = .genericStorage(name: device.name, rootBookmark: bookmark, rootDisplayPath: path)
         }
         profile.musicDirectorySubpath = ExternalDeviceProfile.normalizedSubpath(musicSubpath)
+        profile.volumeUUID = device.volumeUUID
         return profile
     }
 }

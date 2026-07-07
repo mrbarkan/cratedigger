@@ -1,30 +1,29 @@
 import CrateDiggerCore
 import SwiftUI
 
-/// Mini player art treatment, cycled by the top-bar art button.
+/// Mini player art treatment, cycled by the top-bar art button. Disc follows
+/// the album's marked media format (Art tab dropdown) — vinyl shows only when
+/// the album is explicitly marked Vinyl; Auto reads as CD.
 enum MiniPlayerArtMode: String, CaseIterable {
-    case cd, vinyl, cover
+    // Raw value stays "cd" so pre-existing saved prefs restore; an old saved
+    // "vinyl" fails the rawValue init and falls back to the default (.disc).
+    case disc = "cd"
+    case cover
 
     var next: MiniPlayerArtMode {
-        switch self {
-        case .cd:    return .vinyl
-        case .vinyl: return .cover
-        case .cover: return .cd
-        }
+        self == .disc ? .cover : .disc
     }
 
     var iconName: String {
         switch self {
-        case .cd:    return "opticaldisc"
-        case .vinyl: return "smallcircle.filled.circle"
+        case .disc:  return "opticaldisc"
         case .cover: return "photo"
         }
     }
 
     var label: String {
         switch self {
-        case .cd:    return "CD"
-        case .vinyl: return "Vinyl"
+        case .disc:  return "Disc"
         case .cover: return "Album Cover"
         }
     }
@@ -160,10 +159,8 @@ private struct MiniPlayerBody: View {
                 LinearGradient(colors: [Color(hex: 0xD97757), Color(hex: 0xC14A2E)],
                                startPoint: .topLeading, endPoint: .bottomTrailing)
             }
-        case .cd:
-            SpinningRecordView(model: model, forcedVinyl: false).padding(10)
-        case .vinyl:
-            SpinningRecordView(model: model, forcedVinyl: true).padding(10)
+        case .disc:
+            SpinningRecordView(model: model).padding(10)
         }
     }
 
@@ -227,9 +224,17 @@ private struct MiniPlayerBody: View {
             ZStack(alignment: .leading) {
                 Capsule().fill(Color.black.opacity(0.42)).frame(height: 6)
                     .overlay(Capsule().stroke(Color.white.opacity(0.07), lineWidth: 0.6))
+                // Full-width cyan→orange ramp revealed by the lit mask — the
+                // gradient's endpoints stay fixed (like the OLED/footer bars)
+                // instead of stretching with playback progress.
                 Capsule()
                     .fill(LinearGradient(colors: [theme.cyan, theme.orange], startPoint: .leading, endPoint: .trailing))
-                    .frame(width: max(6, w * p), height: 6)
+                    .frame(height: 6)
+                    .mask(
+                        Capsule()
+                            .frame(width: max(6, w * p))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    )
                     .shadow(color: theme.cyan.opacity(0.4), radius: 5)
                 Circle()
                     .fill(RadialGradient(colors: [.white, Color(white: 0.82)],

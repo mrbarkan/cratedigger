@@ -231,7 +231,7 @@ final class LibraryViewModel: ObservableObject {
     }
 
     /// Mini player art treatment (CD / Vinyl / Album Cover). Persisted.
-    @Published var miniPlayerArtMode: MiniPlayerArtMode = .cd {
+    @Published var miniPlayerArtMode: MiniPlayerArtMode = .disc {
         didSet { prefs.savedMiniPlayerArtMode = miniPlayerArtMode.rawValue }
     }
 
@@ -282,6 +282,10 @@ final class LibraryViewModel: ObservableObject {
         }
     }
     @Published var appAlert: AppAlert?
+    /// Transient confirmation shown on the OLED glass (tag saves etc.) instead
+    /// of a modal alert; auto-clears after a couple of seconds.
+    @Published var oledNotice: String?
+    private var oledNoticeClearTask: Task<Void, Never>?
     @Published private(set) var albumsFetchingArtwork: Set<String> = []
 
     @Published var playbackVolume: Double = 0.8 {
@@ -1210,6 +1214,7 @@ final class LibraryViewModel: ObservableObject {
     /// observers (see `setupVolumeObservers`) plus init + sidebar appear.
     func refreshDevices() {
         let detected = detectSavedDevices()
+        backfillVolumeUUIDs(for: detected)
         if detected != mountedDevices { mountedDevices = detected }
         // Drop cached scans for devices that are no longer mounted.
         let mountedPaths = Set(detected.map { $0.volumeURL.path })
@@ -1231,12 +1236,25 @@ final class LibraryViewModel: ObservableObject {
         }
     }
 
-    /// The saved Settings profile a mounted device belongs to (by configured
-    /// root path, else by name), or nil for an unknown volume.
+    /// The saved Settings profile a mounted device belongs to (by volume UUID when
+    /// known, else configured root path, else name), or nil for an unknown volume.
     func deviceProfile(for device: MountedDevice) -> ExternalDeviceProfile? {
-        prefs.savedExternalDeviceProfiles.first { p in
-            (p.rootDisplayPath.map { $0 == device.volumeURL.path } ?? false)
-                || p.name.caseInsensitiveCompare(device.name) == .orderedSame
+        ExternalDeviceProfile.match(device, in: prefs.savedExternalDeviceProfiles)
+    }
+
+    /// Self-heal for profiles saved before volume UUIDs were captured: stamp a
+    /// mounted volume's UUID onto its matched profile the first time we see them
+    /// together, so a *different* device that merely shares the mount path or name
+    /// stops matching. ponytail: first device to connect wins the stamp — correct
+    /// for the usual one-profile-one-device case; re-add the profile to re-point it.
+    private func backfillVolumeUUIDs(for devices: [MountedDevice]) {
+        for device in devices {
+            guard let uuid = device.volumeUUID,
+                  var profile = deviceProfile(for: device),
+                  profile.volumeUUID == nil else { continue }
+            profile.volumeUUID = uuid
+            profile.updatedAt = Date()
+            prefs.upsertExternalDeviceProfile(profile)
         }
     }
 
@@ -1418,32 +1436,69 @@ final class LibraryViewModel: ObservableObject {
 
     // MARK: - Metadata Editor Actions
 
+    /// Flash a short confirmation on the OLED rail. Repeated calls (batch tag
+    /// saves) just restart the clear timer.
+    func showOLEDNotice(_ text: String) {
+        oledNotice = text
+        oledNoticeClearTask?.cancel()
+        oledNoticeClearTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            guard !Task.isCancelled else { return }
+            self?.oledNotice = nil
+        }
+    }
+
     func updateTrackMetadata(_ track: LoadedTrack, newMetadata: ConversionMetadata) {
         guard let editor = metadataEditor else { return }
-        do {
-            try editor.writeMetadata(to: track.track.fileURL, metadata: newMetadata)
-            
-            let updatedTrack = AudioTrack(
-                id: track.track.id,
-                fileURL: track.track.fileURL,
-                title: newMetadata.title ?? track.track.title,
-                artist: newMetadata.artist ?? track.track.artist,
-                album: newMetadata.album ?? track.track.album,
-                durationSeconds: track.track.durationSeconds,
-                formatName: track.track.formatName,
-                bitrateKbps: track.track.bitrateKbps,
-                sampleRateHz: track.track.sampleRateHz,
-                year: newMetadata.year ?? track.track.year,
-                trackNumber: newMetadata.trackNumber ?? track.track.trackNumber,
-                artworkSource: track.track.artworkSource,
-                artworkHash: track.track.artworkHash,
-                artworkDimensions: track.track.artworkDimensions
-            )
-            let updatedTrackLoaded = LoadedTrack(track: updatedTrack, metadata: newMetadata,
-                                                 recordMarkers: track.recordMarkers)
-            
-            // Check if we should keep the library folder organised
-            if prefs.keepLibraryOrganised, let libURL = managedLibraryFolderURL, track.track.fileURL.path.hasPrefix(libURL.path) {
+
+        let updatedTrack = AudioTrack(
+            id: track.track.id,
+            fileURL: track.track.fileURL,
+            title: newMetadata.title ?? track.track.title,
+            artist: newMetadata.artist ?? track.track.artist,
+            album: newMetadata.album ?? track.track.album,
+            durationSeconds: track.track.durationSeconds,
+            formatName: track.track.formatName,
+            bitrateKbps: track.track.bitrateKbps,
+            sampleRateHz: track.track.sampleRateHz,
+            year: newMetadata.year ?? track.track.year,
+            trackNumber: newMetadata.trackNumber ?? track.track.trackNumber,
+            artworkSource: track.track.artworkSource,
+            artworkHash: track.track.artworkHash,
+            artworkDimensions: track.track.artworkDimensions
+        )
+        let updatedTrackLoaded = LoadedTrack(track: updatedTrack, metadata: newMetadata,
+                                             recordMarkers: track.recordMarkers)
+        let sourceURL = track.track.fileURL
+        // Keep-organised decision made up front so the background hop below
+        // doesn't need to touch main-actor state.
+        let organiseFolder: URL? = {
+            guard prefs.keepLibraryOrganised, let libURL = managedLibraryFolderURL,
+                  sourceURL.path.hasPrefix(libURL.path) else { return nil }
+            return libURL
+        }()
+        let organiseByAlbumArtist = prefs.organiseByAlbumArtist
+
+        showOLEDNotice("SAVING…")
+        // Writing tags = ffmpeg rewriting the whole file — quick, but not
+        // instant on a big FLAC, so it must not block the main actor. Serial
+        // queue so batch saves stream one ffmpeg at a time, not a burst.
+        Self.tagWriteQueue.async { [weak self] in
+            do {
+                try editor.writeMetadata(to: sourceURL, metadata: newMetadata)
+            } catch {
+                DispatchQueue.main.async {
+                    self?.appAlert = .error(title: "Save Failed", message: error.localizedDescription)
+                }
+                return
+            }
+            DispatchQueue.main.async {
+                guard let self else { return }
+                guard let libURL = organiseFolder else {
+                    self.updateTrackURLInIndex(oldURL: sourceURL, newTrack: updatedTrackLoaded)
+                    self.showOLEDNotice("TAGS SAVED")
+                    return
+                }
                 Task {
                     let organizer = LibraryOrganizerService()
                     do {
@@ -1451,30 +1506,28 @@ final class LibraryViewModel: ObservableObject {
                             tracks: [updatedTrackLoaded],
                             destinationFolder: libURL,
                             copyOnly: false, // Move the file to keep organized
-                            organiseByAlbumArtist: prefs.organiseByAlbumArtist
+                            organiseByAlbumArtist: organiseByAlbumArtist
                         )
-                        
+
                         if let movedTrack = organized.first {
                             await MainActor.run {
-                                self.updateTrackURLInIndex(oldURL: track.track.fileURL, newTrack: movedTrack)
-                                self.appAlert = .error(title: "Saved & Organised", message: "Metadata saved and file relocated successfully.")
+                                self.updateTrackURLInIndex(oldURL: sourceURL, newTrack: movedTrack)
+                                self.showOLEDNotice("SAVED · FILE RELOCATED")
                             }
                         }
                     } catch {
                         await MainActor.run {
-                            self.updateTrackURLInIndex(oldURL: track.track.fileURL, newTrack: updatedTrackLoaded)
+                            self.updateTrackURLInIndex(oldURL: sourceURL, newTrack: updatedTrackLoaded)
                             self.appAlert = .error(title: "Save Alert", message: "Metadata written but file relocation failed: \(error.localizedDescription)")
                         }
                     }
                 }
-            } else {
-                self.updateTrackURLInIndex(oldURL: track.track.fileURL, newTrack: updatedTrackLoaded)
-                self.appAlert = .error(title: "Saved", message: "Metadata written successfully.")
             }
-        } catch {
-            appAlert = .error(title: "Save Failed", message: error.localizedDescription)
         }
     }
+
+    /// Tag writes run here: off the main actor, one at a time.
+    private static let tagWriteQueue = DispatchQueue(label: "com.cratedigger.tag-write", qos: .userInitiated)
 
     // MARK: - Library Cleanup & Duplicates Actions
 
