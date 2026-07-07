@@ -678,6 +678,7 @@ final class LibraryViewModel: ObservableObject {
         }
 
         wirePlaybackBindings()
+        configureNowPlaying()
         applyVolumeToEngines()
 
         // Load playlists, CDs, and external devices
@@ -2259,6 +2260,7 @@ final class LibraryViewModel: ObservableObject {
             Task { @MainActor in
                 self?.playbackState = state
                 self?.handlePlaybackStateChange(state)
+                self?.refreshNowPlayingInfo()
             }
         }
         playback.onCurrentIndexChange = { [weak self] index in
@@ -2271,6 +2273,7 @@ final class LibraryViewModel: ObservableObject {
                 self.listenedSeconds = 0
                 self.lastScrobbleTickTime = nil
                 self.playbackStartTimestamp = Int(Date().timeIntervalSince1970)
+                self.refreshNowPlayingInfo()
             }
         }
         playback.onTimeChange = { [weak self] current, duration in
@@ -2280,6 +2283,7 @@ final class LibraryViewModel: ObservableObject {
                 self?.clearScrubPreviewIfSeekLanded(current)
                 self?.applyPendingRecordSeekIfNeeded()
                 self?.checkScrobbleProgress(current: current, duration: duration)
+                self?.updateNowPlayingElapsed()
             }
         }
         playback.onError = { [weak self] message in

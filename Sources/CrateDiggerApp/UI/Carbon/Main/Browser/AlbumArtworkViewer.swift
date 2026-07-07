@@ -2,19 +2,122 @@ import AppKit
 import CrateDiggerCore
 import SwiftUI
 
-/// Presents the album artwork navigator in a floating, borderless full-screen
-/// window over the app — the same window class the booklet viewer uses, so it
-/// sits above CrateDigger without disturbing the current source or selection. PDF
-/// booklets still open the richer `AlbumBookletView` (see the `showArtwork` wiring
-/// in `MainShell`); everything else — cover, booklet scans, inlay, disc, back, and
-/// the composited "tray" page — flows through this navigator.
+/// A small, movable, resizable panel that keeps album art on screen while the
+/// user keeps working in the main window. Non-activating so clicking or dragging
+/// it never steals key focus (Edit Tags etc. stay usable), floating so it stays
+/// on top, titled so macOS gives free edge-resize handles. Its own ✕ pill closes
+/// it, so the native window buttons are hidden.
+public final class FloatingArtworkPanel: NSPanel {
+    init(content: AnyView, near reference: NSWindow?) {
+        let size = NSSize(width: 340, height: 400)
+        super.init(
+            contentRect: NSRect(origin: .zero, size: size),
+            styleMask: [.titled, .closable, .resizable, .fullSizeContentView, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        isReleasedWhenClosed = false
+        isMovableByWindowBackground = true          // drag the art to move the panel
+        isFloatingPanel = true
+        level = .floating
+        hidesOnDeactivate = false
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        titlebarAppearsTransparent = true
+        titleVisibility = .hidden
+        // Chromeless: the art floats with a transparent surround, rendering exactly
+        // like the full-screen viewer (just without the dimmed backdrop). Edge-resize
+        // still works because the window stays titled+resizable.
+        isOpaque = false
+        backgroundColor = .clear
+        hasShadow = false
+        minSize = NSSize(width: 220, height: 260)
+        standardWindowButton(.closeButton)?.isHidden = true
+        standardWindowButton(.miniaturizeButton)?.isHidden = true
+        standardWindowButton(.zoomButton)?.isHidden = true
+
+        let hosting = NSHostingView(rootView: content)
+        hosting.frame = NSRect(origin: .zero, size: size)
+        hosting.autoresizingMask = [.width, .height]
+        contentView = hosting
+
+        // Tuck into the top-right of the app window, else center on screen.
+        if let ref = reference {
+            let rf = ref.frame
+            setFrameTopLeftPoint(NSPoint(x: rf.maxX - size.width - 24, y: rf.maxY - 24))
+        } else {
+            center()
+        }
+    }
+
+    public override var canBecomeKey: Bool { true }
+}
+
+/// Presents the album artwork navigator two ways: full-screen over the app (the
+/// same window class the booklet viewer uses, so it sits above CrateDigger without
+/// disturbing the current source or selection), or — via the FLOAT button — popped
+/// out into a small `FloatingArtworkPanel` that stays open while you keep using the
+/// app. PDF booklets still open the richer `AlbumBookletView` (see the `showArtwork`
+/// wiring in `MainShell`); everything else — cover, booklet scans, inlay, disc,
+/// back, and the composited "tray" page — flows through this navigator.
 @MainActor
 enum ArtworkViewerPresenter {
     private static var window: BorderlessBookletWindow?
+    private static var panel: FloatingArtworkPanel?
 
-    static func show(album: Album, theme: CarbonTheme, model: LibraryViewModel) {
-        window?.close()
+    /// Full-screen presentation. `index` restores the page the user was on when
+    /// docking back from the floating panel.
+    static func show(album: Album, theme: CarbonTheme, model: LibraryViewModel, index: Int = 0) {
+        closeAll()
+        let pages = buildPages(album)
+        let view = AlbumArtworkNavigator(
+            album: album,
+            pages: pages,
+            startIndex: index,
+            floating: false,
+            onClose: { close() },
+            onFloat: { idx in float(album: album, theme: theme, model: model, index: idx) }
+        )
+        .environmentObject(model)
+        .environment(\.carbon, theme)
+        let w = BorderlessBookletWindow(contentView: AnyView(view))
+        w.makeKeyAndOrderFront(nil)
+        window = w
+    }
 
+    /// Floating-panel presentation. Opens at `index` and can expand back to
+    /// full-screen at whatever page it's showing.
+    static func float(album: Album, theme: CarbonTheme, model: LibraryViewModel, index: Int) {
+        let reference = NSApp.mainWindow
+        closeAll()
+        let pages = buildPages(album)
+        let view = AlbumArtworkNavigator(
+            album: album,
+            pages: pages,
+            startIndex: index,
+            floating: true,
+            onClose: { closeFloating() },
+            onExpand: { idx in show(album: album, theme: theme, model: model, index: idx) }
+        )
+        .environmentObject(model)
+        .environment(\.carbon, theme)
+        let p = FloatingArtworkPanel(content: AnyView(view), near: reference)
+        p.makeKeyAndOrderFront(nil)
+        panel = p
+    }
+
+    static func close() { closeAll() }
+
+    static func closeFloating() {
+        panel?.close()
+        panel = nil
+    }
+
+    private static func closeAll() {
+        window?.close(); window = nil
+        panel?.close(); panel = nil
+    }
+
+    private static func buildPages(_ album: Album) -> [ArtworkPage] {
         let albumFolder = album.tracks.first?.track.fileURL.deletingLastPathComponent()
         var pages = albumFolder.map { AlbumArtCatalog.pages(in: $0) } ?? []
         // Always guarantee a Cover page: when no cover file is on disk, a synthetic
@@ -22,18 +125,7 @@ enum ArtworkViewerPresenter {
         if !pages.contains(where: { $0.kind == .cover }) {
             pages.insert(ArtworkPage(kind: .cover, label: "Cover", imageURL: nil), at: 0)
         }
-
-        let view = AlbumArtworkNavigator(album: album, pages: pages, onClose: { close() })
-            .environmentObject(model)
-            .environment(\.carbon, theme)
-        let w = BorderlessBookletWindow(contentView: AnyView(view))
-        w.makeKeyAndOrderFront(nil)
-        window = w
-    }
-
-    static func close() {
-        window?.close()
-        window = nil
+        return pages
     }
 }
 
@@ -60,20 +152,51 @@ struct AlbumArtworkNavigator: View {
     @Environment(\.carbon) private var theme
     let album: Album
     let pages: [ArtworkPage]
+    /// Full-screen overlay when false; small always-on-top panel when true.
+    let floating: Bool
     let onClose: () -> Void
+    /// Full-screen only: pop out into the floating panel at the current page.
+    var onFloat: ((Int) -> Void)? = nil
+    /// Floating only: dock back to full-screen at the current page.
+    var onExpand: ((Int) -> Void)? = nil
 
-    @State private var index = 0
+    @State private var index: Int
     @State private var images: [URL: NSImage] = [:]
     @State private var zoom: ArtZoom = .fit
     @State private var pan: CGSize = .zero
     @State private var dragPan: CGSize = .zero
     @State private var eventMonitor: Any?
+    /// Pointer is over the floating panel — lights its frame.
+    @State private var floatingHovering = false
     /// Focus mode darkens the backdrop so nothing behind competes with the art.
     @AppStorage("artworkFocusMode") private var focusMode = false
+
+    init(album: Album, pages: [ArtworkPage], startIndex: Int = 0, floating: Bool = false,
+         onClose: @escaping () -> Void, onFloat: ((Int) -> Void)? = nil, onExpand: ((Int) -> Void)? = nil) {
+        self.album = album
+        self.pages = pages
+        self.floating = floating
+        self.onClose = onClose
+        self.onFloat = onFloat
+        self.onExpand = onExpand
+        _index = State(initialValue: max(0, min(startIndex, max(0, pages.count - 1))))
+    }
 
     private var current: ArtworkPage? { pages.indices.contains(index) ? pages[index] : nil }
 
     var body: some View {
+        Group {
+            if floating { floatingBody } else { fullscreenBody }
+        }
+        // Arrow/Esc key capture only in full-screen — a floating panel must not
+        // hijack the browser's arrow-key navigation while the user works.
+        .onAppear { if !floating { installKeyMonitor() } }
+        .onDisappear { removeKeyMonitor() }
+        .task(id: index) { await loadCurrent() }
+        .onChange(of: index) { _ in resetView() }
+    }
+
+    private var fullscreenBody: some View {
         ZStack {
             Color.black.opacity(focusMode ? 0.94 : 0.55)
                 .ignoresSafeArea()
@@ -91,10 +214,34 @@ struct AlbumArtworkNavigator: View {
                     .padding(.bottom, 30)
             }
         }
-        .onAppear { installKeyMonitor() }
-        .onDisappear { removeKeyMonitor() }
-        .task(id: index) { await loadCurrent() }
-        .onChange(of: index) { _ in resetView() }
+    }
+
+    private var floatingBody: some View {
+        VStack(spacing: 0) {
+            artworkViewport
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.horizontal, 14)
+                .padding(.top, 16)
+
+            floatingControls
+                .padding(.top, 8)
+                .padding(.bottom, 12)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contentShape(Rectangle())
+        // A fine frame around the floating panel: near-black at rest, lit cyan when
+        // the pointer is over it, so it reads as a live, grabbable window.
+        .overlay(
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .strokeBorder(
+                    floatingHovering ? theme.cyan : Color.black.opacity(0.6),
+                    lineWidth: floatingHovering ? 1.5 : 1
+                )
+                .shadow(color: floatingHovering ? theme.cyan.opacity(0.6) : .clear, radius: 6)
+                .padding(1)
+                .animation(.easeInOut(duration: 0.18), value: floatingHovering)
+        )
+        .onHover { floatingHovering = $0 }
     }
 
     // MARK: - Artwork viewport (fills all remaining space)
@@ -102,10 +249,13 @@ struct AlbumArtworkNavigator: View {
     private var artworkViewport: some View {
         GeometryReader { geo in
             ZStack {
-                // Taps in the letterbox area around the art dismiss the viewer.
-                Color.clear
-                    .contentShape(Rectangle())
-                    .onTapGesture { onClose() }
+                // Full-screen: taps in the letterbox area around the art dismiss the
+                // viewer. Floating: empty space is left free so the drag moves the panel.
+                if !floating {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture { onClose() }
+                }
 
                 artworkContent(viewport: geo.size)
             }
@@ -228,6 +378,8 @@ struct AlbumArtworkNavigator: View {
                 zoomMenu
 
                 pillButton(label: "FOCUS", highlighted: focusMode) { focusMode.toggle() }
+
+                pillButton(label: "FLOAT") { onFloat?(index) }
             }
             .padding(.top, 4)
         }
@@ -265,6 +417,40 @@ struct AlbumArtworkNavigator: View {
             .padding(.horizontal, 18)
             .padding(.vertical, 9)
             .background(Capsule().fill(Color.white.opacity(highlighted ? 0.20 : 0.10)))
+        }
+        .buttonStyle(.carbonHover)
+    }
+
+    // MARK: - Floating panel controls (compact, pinned at the bottom)
+
+    private var floatingControls: some View {
+        VStack(spacing: 6) {
+            if let role = current?.label {
+                Text(role.uppercased())
+                    .font(CarbonFont.mono(9, weight: .bold))
+                    .tracking(1.6)
+                    .foregroundStyle(theme.orange)
+                    .lineLimit(1)
+            }
+            HStack(spacing: 8) {
+                iconPill("chevron.left") { step(-1) }.disabled(pages.count <= 1)
+                zoomMenu
+                iconPill("chevron.right") { step(1) }.disabled(pages.count <= 1)
+                Spacer(minLength: 4)
+                iconPill("arrow.up.left.and.arrow.down.right") { onExpand?(index) }   // dock back to full-screen
+                iconPill("xmark") { onClose() }
+            }
+            .padding(.horizontal, 14)
+        }
+    }
+
+    private func iconPill(_ systemName: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(.white.opacity(0.85))
+                .frame(width: 30, height: 28)
+                .background(Capsule().fill(Color.white.opacity(0.10)))
         }
         .buttonStyle(.carbonHover)
     }
