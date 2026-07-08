@@ -53,6 +53,33 @@ final class OutputPathPlannerTests: XCTestCase {
         XCTAssertEqual(planned.destinationURL.path, "/Converted/1998/Boards of Canada/Music Has the Right to Children/Loose Track.m4a")
     }
 
+    func testMetadataTemplateGroupsTokensBySeparators() {
+        // A `space` separator keeps the next token in the same folder, so
+        // Year + Album collapse into one "1998 Album" folder under the artist.
+        let planner = OutputPathPlanner()
+        let loadedTrack = makeLoadedTrack(
+            fileURL: URL(fileURLWithPath: "/Music/Loose Track.flac"),
+            artist: "Boards of Canada",
+            album: "Music Has the Right to Children",
+            year: 1998
+        )
+
+        let planned = planner.planDestination(
+            for: loadedTrack,
+            preset: .genericAAC,
+            destinationRoot: URL(fileURLWithPath: "/Converted", isDirectory: true),
+            sourceRoot: nil,
+            folderMode: .metadataTemplate,
+            templateConfig: FolderTemplateConfig(
+                preset: .custom,
+                tokenOrder: [.albumArtist, .year, .album, .disabled, .disabled],
+                separators: [.slash, .space, .slash, .slash]
+            )
+        )
+
+        XCTAssertEqual(planned.relativeSubpath, "Boards of Canada/1998 Music Has the Right to Children")
+    }
+
     func testCollisionHandlingAppendsNumericSuffixes() throws {
         try withTemporaryDirectory(prefix: "CrateDiggerOutputPlannerTests") { temporaryDirectory in
             let planner = OutputPathPlanner(fileManager: .default)

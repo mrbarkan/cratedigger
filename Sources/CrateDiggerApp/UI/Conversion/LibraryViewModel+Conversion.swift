@@ -55,7 +55,8 @@ extension LibraryViewModel {
             let preset = makeAdHocPreset(from: selection)
             let templateConfig = FolderTemplateConfig(
                 preset: selection.templatePreset,
-                tokenOrder: selection.tokenOrder
+                tokenOrder: selection.tokenOrder,
+                separators: selection.separators
             )
 
             // Preflight per-album review when the user explicitly asked for it.
@@ -158,7 +159,8 @@ extension LibraryViewModel {
         settings.folderStructureMode = selection.folderStructureMode
         settings.templateConfig = FolderTemplateConfig(
             preset: selection.templatePreset,
-            tokenOrder: FolderTokenOrder.normalize(selection.tokenOrder)
+            tokenOrder: FolderTokenOrder.normalize(selection.tokenOrder),
+            separators: selection.separators
         )
         profile.transferSettings = settings
         prefs.upsertExternalDeviceProfile(profile)

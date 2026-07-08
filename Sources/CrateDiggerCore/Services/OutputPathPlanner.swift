@@ -23,6 +23,7 @@ public enum FolderToken: String, Codable, CaseIterable, Sendable {
     case albumArtist = "album_artist"
     case album
     case compilation
+    case genre
 
     public var title: String {
         switch self {
@@ -36,12 +37,22 @@ public enum FolderToken: String, Codable, CaseIterable, Sendable {
             return "Album"
         case .compilation:
             return "Compilation"
+        case .genre:
+            return "Genre"
         }
     }
 
     public var isDisabled: Bool {
         self == .disabled
     }
+}
+
+/// What follows a token in the folder pattern: `slash` ends the current folder
+/// (the next token starts a new one); `space` keeps the next token in the same
+/// folder, so tokens can be grouped like "1998 OK Computer".
+public enum FolderSeparator: String, Codable, Sendable {
+    case slash = "/"
+    case space = " "
 }
 
 public enum TemplatePreset: String, Codable, CaseIterable, Sendable {
@@ -80,10 +91,26 @@ public enum TemplatePreset: String, Codable, CaseIterable, Sendable {
 public struct FolderTemplateConfig: Hashable, Codable, Sendable {
     public let preset: TemplatePreset
     public let tokenOrder: [FolderToken]
+    /// Separator after `tokenOrder[i]`. Empty (every preset, and any config written
+    /// before this field existed) means every gap is a folder break — the original
+    /// all-`/` behavior. Read defensively by index so any length is tolerated.
+    public let separators: [FolderSeparator]
 
-    public init(preset: TemplatePreset, tokenOrder: [FolderToken]) {
+    public init(preset: TemplatePreset, tokenOrder: [FolderToken], separators: [FolderSeparator] = []) {
         self.preset = preset
         self.tokenOrder = tokenOrder
+        self.separators = separators
+    }
+
+    private enum CodingKeys: String, CodingKey { case preset, tokenOrder, separators }
+
+    /// Back-compatible decode: device profiles / selections saved before separators
+    /// existed simply have no key, so they decode as `[]` (all-`/`, unchanged).
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        preset = try container.decode(TemplatePreset.self, forKey: .preset)
+        tokenOrder = try container.decode([FolderToken].self, forKey: .tokenOrder)
+        separators = try container.decodeIfPresent([FolderSeparator].self, forKey: .separators) ?? []
     }
 }
 
@@ -142,8 +169,26 @@ public struct OutputPathPlanner {
         let tokenOrder = (templateConfig.preset == .custom)
             ? templateConfig.tokenOrder
             : templateConfig.preset.defaultTokenOrder
+        // Presets are always one-folder-per-token; only custom order carries the
+        // user's separators. Empty separators ⇒ every gap is `/` (original behavior).
+        let separators = (templateConfig.preset == .custom) ? templateConfig.separators : []
 
-        let components = tokenOrder.compactMap { tokenValue(for: $0, loadedTrack: loadedTrack) }
+        // Group token values into folder levels: a `/` after a token ends the
+        // current folder; a `space` keeps the next token in the same folder.
+        var levels: [[String]] = [[]]
+        for (i, token) in tokenOrder.enumerated() {
+            if let value = tokenValue(for: token, loadedTrack: loadedTrack) {
+                levels[levels.count - 1].append(value)
+            }
+            if i < tokenOrder.count - 1 {
+                let separator = i < separators.count ? separators[i] : .slash
+                if separator == .slash { levels.append([]) }
+            }
+        }
+        let components = levels
+            .map { $0.joined(separator: " ") }
+            .filter { !$0.isEmpty }
+
         let fallbackPath = [
             resolvedYearComponent(for: loadedTrack),
             resolvedAlbumArtistComponent(for: loadedTrack),
@@ -280,6 +325,9 @@ public struct OutputPathPlanner {
             return resolvedAlbumComponent(for: loadedTrack)
         case .compilation:
             return loadedTrack.metadata.compilation == true ? "Compilation" : nil
+        case .genre:
+            guard let genre = normalizedMetadataValue(loadedTrack.metadata.genre) else { return nil }
+            return PathComponentSanitizer.sanitize(genre, fallback: "Genre")
         }
     }
 

@@ -14,6 +14,9 @@ struct ConvertPatchBay: View {
     @State private var replayGain: Bool = true
     @State private var overwriteExisting: Bool = false
     @State private var ejectAfter: Bool = false
+    /// Measured height of the scrollable settings rows, vs. the viewport, so a
+    /// discrete "more below" fade appears only when a row is scrolled out of sight.
+    @State private var patchContentHeight: CGFloat = 0
 
     var body: some View {
         // The settings rows scroll; the arm block (queue readout + Cancel /
@@ -21,26 +24,57 @@ struct ConvertPatchBay: View {
         // are always on screen — on short panels they used to scroll out of
         // view with no indicator hinting they existed.
         VStack(spacing: 0) {
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: CarbonLayout.patchBayRowGap) {
-                    if !model.browserCollapsed { roomHint }
-                    scopeRow
-                    formatRow
-                    bitrateRow
-                    sampleRow
-                    layoutRow
-                    patternRow
-                    destRow
-                    optsRow
+            GeometryReader { viewport in
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(spacing: CarbonLayout.patchBayRowGap) {
+                        if !model.browserCollapsed { roomHint }
+                        scopeRow
+                        formatRow
+                        bitrateRow
+                        sampleRow
+                        layoutRow
+                        patternRow
+                        destRow
+                        optsRow
+                    }
+                    .padding(EdgeInsets(top: 14, leading: 14, bottom: 10, trailing: 14))
+                    .frame(maxWidth: .infinity, alignment: .top)
+                    .background(
+                        GeometryReader { content in
+                            Color.clear.preference(key: PatchContentHeightKey.self, value: content.size.height)
+                        }
+                    )
                 }
-                .padding(EdgeInsets(top: 14, leading: 14, bottom: 10, trailing: 14))
-                .frame(maxWidth: .infinity, alignment: .top)
+                .onPreferenceChange(PatchContentHeightKey.self) { patchContentHeight = $0 }
+                .overlay(alignment: .bottom) {
+                    if patchContentHeight > viewport.size.height + 1 {
+                        scrollMoreIndicator
+                    }
+                }
             }
 
             armBlock
                 .padding(EdgeInsets(top: 6, leading: 14, bottom: 14, trailing: 14))
         }
         .background(panelBackground)
+    }
+
+    /// A discrete "there's more below" cue: the last visible rows fade into the
+    /// panel with a soft chevron. Never intercepts scrolling.
+    private var scrollMoreIndicator: some View {
+        LinearGradient(
+            colors: [theme.paper.opacity(0), theme.paper.opacity(theme.isDark ? 0.92 : 0.96)],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+        .frame(height: 24)
+        .overlay(alignment: .bottom) {
+            Image(systemName: "chevron.compact.down")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(theme.ink3)
+                .padding(.bottom, 2)
+        }
+        .allowsHitTesting(false)
     }
 
     // MARK: - Background glass with horizontal scan lines
@@ -172,20 +206,21 @@ struct ConvertPatchBay: View {
 
     private var patternRow: some View {
         cvRow("Pattern") {
-            // Editable: pick a folder-order preset. (Reordering individual tokens
-            // lives in Convert Selected… ⇧⌘C → Folder Strategy → Custom.)
-            Menu {
-                ForEach([TemplatePreset.artistYearAlbum, .yearArtistAlbum, .artistAlbumYear], id: \.self) { preset in
-                    Button(preset.title) {
-                        model.conversionSelection.templatePreset = preset
-                        model.conversionSelection.tokenOrder = FolderTokenOrder.normalize(preset.defaultTokenOrder)
-                    }
-                }
-            } label: {
-                TemplateStrip(text: templateString)
-            }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
+            // Freeform: drag tags to reorder, toggle `/`↔`·` to shape folders.
+            FolderPatternEditor(
+                tokenOrder: Binding(
+                    get: { model.conversionSelection.tokenOrder },
+                    set: { model.conversionSelection.tokenOrder = $0 }
+                ),
+                separators: Binding(
+                    get: { model.conversionSelection.separators },
+                    set: { model.conversionSelection.separators = $0 }
+                ),
+                preset: Binding(
+                    get: { model.conversionSelection.templatePreset },
+                    set: { model.conversionSelection.templatePreset = $0 }
+                )
+            )
             .disabled(model.conversionSelection.folderStructureMode != .metadataTemplate)
             .opacity(model.conversionSelection.folderStructureMode == .metadataTemplate ? 1 : 0.72)
         }
@@ -393,21 +428,6 @@ struct ConvertPatchBay: View {
         }
     }
 
-    private var templateString: String {
-        // Visual readout for the user's selected preset. Matches the strip
-        // in the design: tokens are colored, separators ink-1.
-        switch model.conversionSelection.templatePreset {
-        case .artistYearAlbum:
-            return "{albumartist}/{year} {album}/{track} {title}"
-        case .yearArtistAlbum:
-            return "{year}/{albumartist}/{album}/{track} {title}"
-        case .artistAlbumYear:
-            return "{albumartist}/{album} {year}/{track} {title}"
-        case .custom:
-            return "(custom token order)"
-        }
-    }
-
     private func shortCount(_ n: Int) -> String {
         if n == 0 { return "—" }
         if n >= 1000 { return String(format: "%.1fK", Double(n) / 1000.0) }
@@ -428,64 +448,10 @@ struct ConvertPatchBay: View {
     }
 }
 
-// MARK: - Yellow label-maker template strip
-//
-// Stays sun-yellow in both themes — it's a labelmaker tape, theme-agnostic.
-
-private struct TemplateStrip: View {
-    let text: String
-    var body: some View {
-        Text(formatted)
-            .font(CarbonFont.mono(10.5, weight: .semibold))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 3, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [Color(hex: 0xF5CB5C), Color(hex: 0xC9A23A)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 3, style: .continuous)
-                    .stroke(Color.white.opacity(0.4), lineWidth: 1)
-                    .blendMode(.plusLighter)
-                    .padding(0.5)
-            )
-            .shadow(color: Color.black.opacity(0.5), radius: 1, y: 1)
-    }
-
-    /// Color-tint variables (the {token} parts) like the design. Tokens
-    /// render in deep red-orange; separators stay near-black on yellow.
-    private var formatted: AttributedString {
-        var out = AttributedString("")
-        let baseColor = Color(hex: 0x1A1209)
-        // Deeper red-orange than before — #D65428 was too low-contrast on the
-        // yellow tape; this still reads as a distinct token tint vs. the near-black
-        // separators.
-        let varColor = Color(hex: 0xA5350D)
-        var i = text.startIndex
-        while i < text.endIndex {
-            if text[i] == "{" {
-                if let close = text[i...].firstIndex(of: "}") {
-                    let token = String(text[i...close])
-                    var seg = AttributedString(token)
-                    seg.foregroundColor = varColor
-                    out.append(seg)
-                    i = text.index(after: close)
-                    continue
-                }
-            }
-            var seg = AttributedString(String(text[i]))
-            seg.foregroundColor = baseColor
-            out.append(seg)
-            i = text.index(after: i)
-        }
-        return out
+private struct PatchContentHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }
 
