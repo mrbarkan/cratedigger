@@ -22,7 +22,11 @@ let package = Package(
             resources: [
                 // Starter album installed into the library on first run
                 // (see LibraryViewModel+Onboarding.installStarterContentIfNeeded).
-                .copy("Resources/StarterCrate")
+                .copy("Resources/StarterCrate"),
+                // Built-in themes, shipped in the same .cdtheme/theme.json
+                // format a 3rd-party theme uses (see ThemeLoaderService) —
+                // dogfoods the format instead of special-casing the defaults.
+                .copy("Resources/Themes")
             ]
         ),
         .testTarget(

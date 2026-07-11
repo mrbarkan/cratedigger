@@ -1,3 +1,4 @@
+import CrateDiggerCore
 import SwiftUI
 
 public struct ShadowSpec: Equatable {
@@ -65,6 +66,16 @@ public struct CarbonTheme: Equatable {
     public let oledSurface: Color
     public let oledStrokeInner: Color
 
+    /// The OLED glass's warm phosphor foreground + its "ON AIR" accent.
+    /// Both built-ins ship identical values (the display reads as one fixed
+    /// physical screen regardless of light/dark) but a theme can override them.
+    public let oledForeground: Color
+    public let oledForegroundMuted: Color
+    public let onAir: Color
+
+    /// The light-mode selection-row LED core color (`CarbonSelectionSlot`).
+    public let selectionLedCore: Color
+
     /// Foreground (text/icon) color when laid over a selected row background.
     /// Centralized so row views and the sources sidebar keep selected text
     /// readable over the accent gradients.
@@ -110,6 +121,10 @@ public extension CarbonTheme {
         backgroundGradientEnd:   Color(hex: 0xC7D8DF),
         oledSurface:     Color(hex: 0x0A0A0A),
         oledStrokeInner: Color(hex: 0x1A1A1A),
+        oledForeground:      Color(red: 0.961, green: 0.945, blue: 0.902),
+        oledForegroundMuted: Color.white.opacity(0.55),
+        onAir:               Color(red: 1.0, green: 0.357, blue: 0.29),
+        selectionLedCore: Color(hex: 0xFFD24A),
         selectionInk:    Color(hex: 0xFFFFFF)
     )
 
@@ -149,6 +164,10 @@ public extension CarbonTheme {
         backgroundGradientEnd:   Color(hex: 0x030406),
         oledSurface:     Color(hex: 0x050504),
         oledStrokeInner: Color(hex: 0x0E0E0C),
+        oledForeground:      Color(red: 0.961, green: 0.945, blue: 0.902),
+        oledForegroundMuted: Color.white.opacity(0.55),
+        onAir:               Color(red: 1.0, green: 0.357, blue: 0.29),
+        selectionLedCore: Color(hex: 0xFFD24A),
         selectionInk:    Color(hex: 0xFFFFFF)
     )
 }
@@ -159,5 +178,103 @@ public extension Color {
         let g = Double((hex >> 8)  & 0xFF) / 255.0
         let b = Double(hex & 0xFF) / 255.0
         self.init(.sRGB, red: r, green: g, blue: b, opacity: opacity)
+    }
+
+    /// Parses a theme-file color token: `"#RRGGBB"` or `"#RRGGBBAA"`
+    /// (leading `#` optional, case-insensitive). `nil` for anything else so
+    /// callers can fall back to a known-good default rather than crash on a
+    /// malformed 3rd-party theme.
+    init?(hexString: String) {
+        var value = hexString.trimmingCharacters(in: .whitespacesAndNewlines)
+        if value.hasPrefix("#") { value.removeFirst() }
+        guard value.count == 6 || value.count == 8, let parsed = UInt32(value, radix: 16) else { return nil }
+
+        if value.count == 8 {
+            let r = Double((parsed >> 24) & 0xFF) / 255.0
+            let g = Double((parsed >> 16) & 0xFF) / 255.0
+            let b = Double((parsed >> 8) & 0xFF) / 255.0
+            let a = Double(parsed & 0xFF) / 255.0
+            self.init(.sRGB, red: r, green: g, blue: b, opacity: a)
+        } else {
+            self.init(hex: parsed)
+        }
+    }
+}
+
+public extension CarbonTheme {
+    /// Converts a (possibly partial) `ThemeDefinition` into a fully-populated
+    /// `CarbonTheme`. Every token the definition doesn't override — an
+    /// unset/malformed color, an omitted shadow — falls back to the matching
+    /// field on `resolvedBase` (normally `.linen` or `.carbon`, matching the
+    /// definition's declared `baseAppearance`), so a theme that only sets a
+    /// few colors still renders a complete, correct theme.
+    init(definition: ThemeDefinition, resolvedBase: CarbonTheme) {
+        func color(_ key: String, _ fallback: Color) -> Color {
+            guard let hex = definition.colors?[key], let parsed = Color(hexString: hex) else { return fallback }
+            return parsed
+        }
+        func shadow(_ key: String, _ fallback: ShadowSpec) -> ShadowSpec {
+            guard let shadowDefinition = definition.shadows?[key] else { return fallback }
+            return ShadowSpec(definition: shadowDefinition, fallback: fallback)
+        }
+
+        mode = definition.baseAppearance == .dark ? .carbon : .linen
+
+        chassis = color("chassis", resolvedBase.chassis)
+        chassisHi = color("chassisHi", resolvedBase.chassisHi)
+        chassisLo = color("chassisLo", resolvedBase.chassisLo)
+        chassisDeep = color("chassisDeep", resolvedBase.chassisDeep)
+
+        well = color("well", resolvedBase.well)
+        wellDeep = color("wellDeep", resolvedBase.wellDeep)
+
+        paper = color("paper", resolvedBase.paper)
+        paper2 = color("paper2", resolvedBase.paper2)
+
+        ink = color("ink", resolvedBase.ink)
+        ink2 = color("ink2", resolvedBase.ink2)
+        ink3 = color("ink3", resolvedBase.ink3)
+        ink4 = color("ink4", resolvedBase.ink4)
+        hair = color("hair", resolvedBase.hair)
+
+        orange = color("orange", resolvedBase.orange)
+        orangeHi = color("orangeHi", resolvedBase.orangeHi)
+        orangeLo = color("orangeLo", resolvedBase.orangeLo)
+        sun = color("sun", resolvedBase.sun)
+        sunHi = color("sunHi", resolvedBase.sunHi)
+        sunLo = color("sunLo", resolvedBase.sunLo)
+        cyan = color("cyan", resolvedBase.cyan)
+        cyanGlow = color("cyanGlow", resolvedBase.cyanGlow)
+        red = color("red", resolvedBase.red)
+        indigo = color("indigo", resolvedBase.indigo)
+
+        metalHi = color("metalHi", resolvedBase.metalHi)
+        metal = color("metal", resolvedBase.metal)
+        metalLo = color("metalLo", resolvedBase.metalLo)
+        metalDeep = color("metalDeep", resolvedBase.metalDeep)
+
+        shadow1 = shadow("shadow1", resolvedBase.shadow1)
+        shadow2 = shadow("shadow2", resolvedBase.shadow2)
+
+        backgroundBase = color("backgroundBase", resolvedBase.backgroundBase)
+        backgroundGradientStart = color("backgroundGradientStart", resolvedBase.backgroundGradientStart)
+        backgroundGradientEnd = color("backgroundGradientEnd", resolvedBase.backgroundGradientEnd)
+
+        oledSurface = color("oledSurface", resolvedBase.oledSurface)
+        oledStrokeInner = color("oledStrokeInner", resolvedBase.oledStrokeInner)
+        oledForeground = color("oledForeground", resolvedBase.oledForeground)
+        oledForegroundMuted = color("oledForegroundMuted", resolvedBase.oledForegroundMuted)
+        onAir = color("onAir", resolvedBase.onAir)
+
+        selectionLedCore = color("selectionLedCore", resolvedBase.selectionLedCore)
+        selectionInk = color("selectionInk", resolvedBase.selectionInk)
+    }
+}
+
+private extension ShadowSpec {
+    init(definition: ShadowDefinition, fallback: ShadowSpec) {
+        let base = Color(hexString: definition.color) ?? fallback.color
+        let resolvedColor = definition.opacity.map { base.opacity($0) } ?? base
+        self.init(color: resolvedColor, radius: definition.radius, x: definition.x, y: definition.y)
     }
 }

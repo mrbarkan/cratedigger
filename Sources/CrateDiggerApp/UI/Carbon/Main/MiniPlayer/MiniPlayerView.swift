@@ -49,9 +49,6 @@ private struct MiniPlayerBody: View {
     let onExpand: () -> Void
     @Environment(\.carbon) private var theme
 
-    /// Warm phosphor white for the OLED text (design `--oled-fg`).
-    private let oledFG = Color(red: 245 / 255, green: 241 / 255, blue: 230 / 255)
-
     var body: some View {
         VStack(spacing: 0) {
             topBar
@@ -181,12 +178,12 @@ private struct MiniPlayerBody: View {
                 VStack(alignment: .leading, spacing: 5) {
                     Text(trackTitle)
                         .font(CarbonFont.sans(15, weight: .bold))
-                        .foregroundStyle(oledFG)
+                        .foregroundStyle(theme.oledForeground)
                         .lineLimit(1)
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text(band)
                             .font(CarbonFont.mono(9, weight: .semibold)).tracking(0.6)
-                            .foregroundStyle(oledFG.opacity(0.52))
+                            .foregroundStyle(theme.oledForeground.opacity(0.52))
                             .lineLimit(1)
                         Spacer(minLength: 6)
                         Text("\(timeString(model.displayedCurrentTime)) / \(timeString(model.playbackDuration))")

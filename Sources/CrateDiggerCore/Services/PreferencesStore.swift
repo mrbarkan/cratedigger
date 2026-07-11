@@ -62,6 +62,7 @@ public final class PreferencesStore {
         static let streamEngine = "cratedigger.radio.engine"
         static let customYtDlpPath = "cratedigger.tools.ytdlpPath"
         static let albumGroups = "cratedigger.library.albumGroups"
+        static let selectedThemeID = "cratedigger.ui.selectedThemeID"
     }
 
     // MARK: - Window frame
@@ -199,6 +200,29 @@ public final class PreferencesStore {
     /// Sources sidebar (which only lists volumes matching a saved profile) can
     /// re-filter without waiting for a mount event.
     public static let deviceProfilesDidChange = Notification.Name("CrateDiggerDeviceProfilesChanged")
+
+    // MARK: - Theming
+
+    /// The active 3rd-party/installed theme's stable id, or `nil` to follow
+    /// the built-in light/dark/system pairing (today's exact behavior — see
+    /// `CarbonThemed`). Picking a specific theme is picking its declared
+    /// appearance too, same as choosing a Winamp skin.
+    public var selectedThemeID: String? {
+        get { defaults.string(forKey: Key.selectedThemeID) }
+        set {
+            if let value = newValue {
+                defaults.set(value, forKey: Key.selectedThemeID)
+            } else {
+                defaults.removeObject(forKey: Key.selectedThemeID)
+            }
+            NotificationCenter.default.post(name: Self.themesDidChange, object: nil)
+        }
+    }
+
+    /// Posted when the selected theme changes, or a manual re-scan of the
+    /// themes folder completes, so `CarbonThemed` and the theme picker
+    /// refresh without polling.
+    public static let themesDidChange = Notification.Name("CrateDiggerThemesChanged")
 
     // MARK: - Last-used conversion selection
 

@@ -1,23 +1,35 @@
+import CrateDiggerCore
 import SwiftUI
 
 struct CarbonRootView: View {
     @AppStorage(AppearanceMode.userDefaultsKey) private var appearanceModeRaw: String = AppearanceMode.system.rawValue
     @ObservedObject var model: LibraryViewModel
+    @ObservedObject private var themeRegistry = ThemeRegistry.shared
     @State private var dropHint: PrepCrateDropHint? = nil
 
     private var mode: AppearanceMode {
         AppearanceMode(rawValue: appearanceModeRaw) ?? .system
     }
 
+    /// Resolved the same way `CarbonThemed` resolves it — `body` sits
+    /// *outside* the environment scope `.carbonThemed(mode:)` establishes for
+    /// its child below (a view's own `@Environment` reads reflect what its
+    /// parent set, never what it sets for its own descendants), so reading
+    /// `@Environment(\.carbonGeometry)` here would silently stay at the
+    /// default regardless of the active theme.
+    private var geometry: CarbonGeometry {
+        themeRegistry.resolvedTheme(for: PreferencesStore.shared.selectedThemeID)?.geometry ?? .standard
+    }
+
     var body: some View {
         ChassisLayer {
-            VStack(spacing: CarbonLayout.chassisRowGap) {
+            VStack(spacing: geometry.chassisRowGap) {
                 HeaderShell()
-                    .frame(height: CarbonLayout.headerHeight)
+                    .frame(height: geometry.headerHeight)
                 MainShell()
                     .frame(maxHeight: .infinity)
                 FooterShell()
-                    .frame(height: CarbonLayout.footerHeight)
+                    .frame(height: geometry.footerHeight)
             }
         }
         .environmentObject(model)

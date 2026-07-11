@@ -3,6 +3,7 @@ import SwiftUI
 
 struct InspectorPane: View {
     @Environment(\.carbon) private var theme
+    @Environment(\.carbonGeometry) private var geometry
     @EnvironmentObject private var model: LibraryViewModel
 
     @State private var showingCleanup = false
@@ -208,7 +209,7 @@ struct InspectorPane: View {
                     }
                 }
                 .frame(maxWidth: .infinity)
-                .frame(height: CarbonLayout.keyHeight)
+                .frame(height: geometry.keyHeight)
                 
                 KeyButton(style: .normal, action: {
                     showingCleanup = true
@@ -222,7 +223,7 @@ struct InspectorPane: View {
                     }
                 }
                 .frame(maxWidth: .infinity)
-                .frame(height: CarbonLayout.keyHeight)
+                .frame(height: geometry.keyHeight)
                 
                 // Disabled for now — the old "organize" moved the whole library on
                 // disk with no confirmation; to be repurposed later.
@@ -236,7 +237,7 @@ struct InspectorPane: View {
                     }
                 }
                 .frame(maxWidth: .infinity)
-                .frame(height: CarbonLayout.keyHeight)
+                .frame(height: geometry.keyHeight)
                 .disabled(true)
             }
             .padding(.horizontal, 16)
@@ -253,7 +254,7 @@ struct InspectorPane: View {
                             .tracking(1.0)
                     }
                     .frame(maxWidth: .infinity)
-                    .frame(height: CarbonLayout.keyHeight)
+                    .frame(height: geometry.keyHeight)
                     .background(theme.orange)
                     .foregroundColor(.white)
                     .clipShape(RoundedRectangle(cornerRadius: 4))

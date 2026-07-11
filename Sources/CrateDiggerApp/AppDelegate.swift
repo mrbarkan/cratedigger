@@ -23,6 +23,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         URLCache.shared = URLCache(memoryCapacity: 64 * 1024 * 1024,
                                    diskCapacity: 512 * 1024 * 1024)
 
+        FontRegistrar.registerBundledFonts()
+
         buildMenu()
 
         let windowController = MainWindowController()

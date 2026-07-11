@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ChassisLayer<Content: View>: View {
     @Environment(\.carbon) private var theme
+    @Environment(\.carbonGeometry) private var geometry
     @ViewBuilder var content: () -> Content
 
     var body: some View {
@@ -14,7 +15,7 @@ struct ChassisLayer<Content: View>: View {
     }
 
     private var chassisPlate: some View {
-        let shape = RoundedRectangle(cornerRadius: CarbonLayout.chassisCornerRadius, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: geometry.chassisCornerRadius, style: .continuous)
         return ZStack {
             // Opaque base coat, NOT a Material. SwiftUI Materials become
             // CABackdropLayer live blurs that WindowServer re-samples every
@@ -63,8 +64,8 @@ struct ChassisLayer<Content: View>: View {
                 .shadow(color: theme.shadow2.color, radius: theme.shadow2.radius, x: theme.shadow2.x, y: theme.shadow2.y)
 
             content()
-                .padding(.horizontal, CarbonLayout.chassisInsetH)
-                .padding(.vertical, CarbonLayout.chassisInsetV)
+                .padding(.horizontal, geometry.chassisInsetH)
+                .padding(.vertical, geometry.chassisInsetV)
         }
         .compositingGroup()
     }
