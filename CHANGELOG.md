@@ -4,6 +4,23 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 1.1.0 (40) — BETA 1 — 2026-07-14
+
+### Added
+- **Theming ("skins").** CrateDigger's Carbon look is now a themeable skin
+  system, the same way a Winamp `.wsz` reskins Winamp: drop a `.cdtheme`
+  folder (colors, shadows, fonts, geometry, plus optional custom typefaces)
+  into `~/Library/Application Support/CrateDigger/Themes/`, pick it from the
+  new THEME menu, done — no rebuild, no restart. Themes can partially
+  override another installed theme via `inherits`, so a 3-color reskin is as
+  valid as a full one. Ships with two bundled themes, Carbon and Linen; see
+  `docs/THEMING.md` for the format if you want to build your own.
+
+This is a beta build — the theming system is new and hasn't seen wide use
+yet. Everything from 1.0.2 (FIX TAGS, artwork search image counts, the empty
+media-case placeholder, the disc tray, and the mini player / EQ / Now
+Playing fixes) is included.
+
 ## 1.0.2 (39) — 2026-07-14
 
 ### Added
