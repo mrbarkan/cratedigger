@@ -62,7 +62,7 @@ struct CarbonSelectionSlot: View {
         // light source, the fill as its cast light. Both fade fully to the
         // background; the selection text uses `slotInk` so it stays legible where
         // the fill fades out (white in dark, dark ink in light).
-        let ledCore = theme.isDark ? theme.cyanGlow : Color(hex: 0xFFD24A)
+        let ledCore = theme.isDark ? theme.cyanGlow : theme.selectionLedCore
         let ledGlow = theme.isDark ? theme.cyan : theme.orange
         let spread  = theme.isDark ? theme.indigo : theme.orange
         let ledFill = LinearGradient(

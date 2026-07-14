@@ -1,3 +1,5 @@
+import AppKit
+import CrateDiggerCore
 import SwiftUI
 
 /// Right-hand header column: the DISPLAY screen tile (OLED mode) plus three
@@ -6,10 +8,9 @@ import SwiftUI
 struct ViewSwitcherColumn: View {
     @Environment(\.carbon) private var theme
     @EnvironmentObject private var model: LibraryViewModel
+    @ObservedObject private var themeRegistry = ThemeRegistry.shared
     @State private var appearance: AppearanceMode = ViewSwitcherColumn.currentAppearance()
-
-    /// Order of the THEME dots: dark · light · auto.
-    private static let themeOrder: [AppearanceMode] = [.dark, .light, .system]
+    @State private var selectedThemeID: String? = PreferencesStore.shared.selectedThemeID
 
     var body: some View {
         VStack(spacing: 8) {
@@ -25,14 +26,15 @@ struct ViewSwitcherColumn: View {
                 model.showArtworkGallery.toggle()
             }
 
-            SwitchButton(
-                name: "THEME",
-                dotCount: Self.themeOrder.count,
-                activeIndex: Self.themeOrder.firstIndex(of: appearance) ?? 0,
-                tip: "THEME — cycle the appearance: dark · light · auto."
-            ) {
-                cycleTheme()
-            }
+            ThemeSwitchButton(
+                appearance: appearance,
+                selectedThemeID: selectedThemeID,
+                manifests: themeRegistry.manifests,
+                onSelectAppearance: selectAppearance,
+                onSelectTheme: selectTheme,
+                onRefresh: { themeRegistry.refresh() },
+                onShowThemesFolder: showThemesFolderInFinder
+            )
 
             SwitchButton(
                 name: "EQ",
@@ -47,16 +49,31 @@ struct ViewSwitcherColumn: View {
         .onReceive(NotificationCenter.default.publisher(for: AppearanceMode.didChangeNotification)) { _ in
             appearance = ViewSwitcherColumn.currentAppearance()
         }
+        .onReceive(NotificationCenter.default.publisher(for: PreferencesStore.themesDidChange)) { _ in
+            selectedThemeID = PreferencesStore.shared.selectedThemeID
+        }
     }
 
-    private func cycleTheme() {
+    /// Picking an appearance (dark/light/system) clears any installed-theme
+    /// override — same as picking "off" on a skin switcher.
+    private func selectAppearance(_ mode: AppearanceMode) {
         ClickPlayer.shared.play(.key)
-        let order = Self.themeOrder
-        let idx = order.firstIndex(of: appearance) ?? 0
-        let next = order[(idx + 1) % order.count]
-        appearance = next
-        UserDefaults.standard.set(next.rawValue, forKey: AppearanceMode.userDefaultsKey)
+        appearance = mode
+        UserDefaults.standard.set(mode.rawValue, forKey: AppearanceMode.userDefaultsKey)
         NotificationCenter.default.post(name: AppearanceMode.didChangeNotification, object: nil)
+        PreferencesStore.shared.selectedThemeID = nil
+        selectedThemeID = nil
+    }
+
+    private func selectTheme(_ id: String) {
+        ClickPlayer.shared.play(.key)
+        PreferencesStore.shared.selectedThemeID = id
+        selectedThemeID = id
+    }
+
+    private func showThemesFolderInFinder() {
+        guard let url = themeRegistry.userThemesDirectory else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 
     private static func currentAppearance() -> AppearanceMode {
@@ -101,5 +118,92 @@ private struct SwitchButton: View {
         }
         .buttonStyle(.carbonHover)
         .carbonTip(tip ?? "\(name): tap to change")
+    }
+}
+
+/// The THEME button: same footprint as `SwitchButton`, but opens a menu
+/// listing the three built-in appearances plus every installed theme
+/// (bundled + dropped into the Themes folder), instead of just cycling.
+/// Picking a specific theme shows a single lit dot ("custom skin active");
+/// picking an appearance shows the familiar dark·light·auto three dots.
+private struct ThemeSwitchButton: View {
+    @Environment(\.carbon) private var theme
+    let appearance: AppearanceMode
+    let selectedThemeID: String?
+    let manifests: [ThemeManifest]
+    let onSelectAppearance: (AppearanceMode) -> Void
+    let onSelectTheme: (String) -> Void
+    let onRefresh: () -> Void
+    let onShowThemesFolder: () -> Void
+
+    private static let appearanceOrder: [AppearanceMode] = [.dark, .light, .system]
+
+    var body: some View {
+        Menu {
+            ForEach(Self.appearanceOrder, id: \.self) { mode in
+                Button {
+                    onSelectAppearance(mode)
+                } label: {
+                    if selectedThemeID == nil && mode == appearance {
+                        Label(mode.menuTitle, systemImage: "checkmark")
+                    } else {
+                        Text(mode.menuTitle)
+                    }
+                }
+            }
+
+            if !manifests.isEmpty {
+                Divider()
+                ForEach(manifests) { manifest in
+                    Button {
+                        onSelectTheme(manifest.id)
+                    } label: {
+                        if selectedThemeID == manifest.id {
+                            Label(manifest.definition.name, systemImage: "checkmark")
+                        } else {
+                            Text(manifest.definition.name)
+                        }
+                    }
+                }
+            }
+
+            Divider()
+            Button("Refresh Themes", action: onRefresh)
+            Button("Show Themes Folder…", action: onShowThemesFolder)
+        } label: {
+            HStack(spacing: 6) {
+                Text("THEME")
+                    .font(CarbonFont.mono(8.5, weight: .bold))
+                    .tracking(1.3)
+                    .foregroundStyle(theme.ink3)
+                    .lineLimit(1)
+                    .fixedSize()
+                Spacer(minLength: 4)
+                HStack(spacing: 3) {
+                    ForEach(0..<dotCount, id: \.self) { i in
+                        Circle()
+                            .fill(i == activeIndex ? theme.orange : theme.ink4.opacity(0.4))
+                            .frame(width: 5, height: 5)
+                            .shadow(color: i == activeIndex ? theme.orange.opacity(0.7) : .clear, radius: 2.5)
+                    }
+                }
+            }
+            .padding(.horizontal, 10)
+            .frame(maxWidth: .infinity)
+            .frame(height: 28)
+            .background(ChromeChassis(theme: theme, cornerRadius: 6))
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .carbonTip("THEME — pick an appearance, or an installed theme.")
+    }
+
+    private var dotCount: Int {
+        selectedThemeID == nil ? Self.appearanceOrder.count : 1
+    }
+
+    private var activeIndex: Int {
+        guard selectedThemeID == nil else { return 0 }
+        return Self.appearanceOrder.firstIndex(of: appearance) ?? 0
     }
 }

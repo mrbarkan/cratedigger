@@ -3,6 +3,7 @@ import SwiftUI
 
 struct InspectorPane: View {
     @Environment(\.carbon) private var theme
+    @Environment(\.carbonGeometry) private var geometry
     @EnvironmentObject private var model: LibraryViewModel
 
     @State private var showingCleanup = false
@@ -216,7 +217,7 @@ struct InspectorPane: View {
                     }
                 }
                 .frame(maxWidth: .infinity)
-                .frame(height: CarbonLayout.keyHeight)
+                .frame(height: geometry.keyHeight)
                 
                 KeyButton(style: .normal, action: {
                     showingCleanup = true
@@ -230,7 +231,7 @@ struct InspectorPane: View {
                     }
                 }
                 .frame(maxWidth: .infinity)
-                .frame(height: CarbonLayout.keyHeight)
+                .frame(height: geometry.keyHeight)
                 
                 // Repurposed the old disabled ORGANIZE placeholder: re-probe
                 // tracks that lost their track number and heal the crate from
@@ -252,7 +253,7 @@ struct InspectorPane: View {
                     }
                 }
                 .frame(maxWidth: .infinity)
-                .frame(height: CarbonLayout.keyHeight)
+                .frame(height: geometry.keyHeight)
                 .disabled(!model.canRepairMetadata || model.isRepairingMetadata)
                 .carbonTip("Re-check files for tracks missing a track number and fill in blank tags from the files")
             }
@@ -270,7 +271,7 @@ struct InspectorPane: View {
                             .tracking(1.0)
                     }
                     .frame(maxWidth: .infinity)
-                    .frame(height: CarbonLayout.keyHeight)
+                    .frame(height: geometry.keyHeight)
                     .background(theme.orange)
                     .foregroundColor(.white)
                     .clipShape(RoundedRectangle(cornerRadius: 4))

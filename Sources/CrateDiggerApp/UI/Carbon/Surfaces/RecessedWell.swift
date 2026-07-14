@@ -2,12 +2,15 @@ import SwiftUI
 
 struct RecessedWell<Content: View>: View {
     @Environment(\.carbon) private var theme
-    var cornerRadius: CGFloat = CarbonLayout.wellCornerRadius
-    var padding: CGFloat = CarbonLayout.wellPadding
+    @Environment(\.carbonGeometry) private var geometry
+    /// `nil` uses the active theme's `wellCornerRadius`/`wellPadding`; pass a
+    /// value to override either for this instance regardless of theme.
+    var cornerRadius: CGFloat? = nil
+    var padding: CGFloat? = nil
     @ViewBuilder var content: () -> Content
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: cornerRadius ?? geometry.wellCornerRadius, style: .continuous)
         ZStack {
             shape
                 .fill(theme.well) // opaque, not Material — see ChassisLayer
@@ -50,7 +53,7 @@ struct RecessedWell<Content: View>: View {
                 // highlight above supplies the sheen, fully inside the shape.)
 
             content()
-                .padding(padding)
+                .padding(padding ?? geometry.wellPadding)
         }
         .compositingGroup()
     }

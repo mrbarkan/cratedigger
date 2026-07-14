@@ -35,6 +35,7 @@ private enum ArtRoleChoice: Hashable {
 
 struct ArtworkSearchSheetView: View {
     @Environment(\.carbon) private var theme
+    @Environment(\.carbonGeometry) private var geometry
     @EnvironmentObject private var model: LibraryViewModel
     @Environment(\.dismiss) private var dismiss
 
@@ -883,7 +884,7 @@ struct ArtworkSearchSheetView: View {
                             .font(CarbonFont.mono(9.5, weight: .bold))
                             .tracking(1.5)
                     }
-                    .frame(width: 140, height: CarbonLayout.keyHeight)
+                    .frame(width: 140, height: geometry.keyHeight)
                 }
             }
         }

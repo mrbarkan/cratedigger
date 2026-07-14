@@ -5,6 +5,13 @@ import SwiftUI
 
 /// The OLED foreground family (#F5F1E6) and helpers. Everything on the glass is
 /// drawn from this + the Carbon accents (orange/sun/cyan/indigo/red).
+///
+/// These mirror `CarbonTheme.oledForeground`/`.oledForegroundMuted`/`.onAir`
+/// (same literal values) so 3rd-party themes *can* override the OLED glass via
+/// JSON — but the ~50 call sites in this file default-parameter off these free
+/// globals rather than reading `theme` directly (default parameter values
+/// can't reach `@Environment`), so an override here won't yet propagate to
+/// every pane. Left as a known follow-up rather than a blind file-wide rewrite.
 let oledFG = Color(red: 0.961, green: 0.945, blue: 0.902)
 func oledFGo(_ opacity: Double) -> Color { oledFG.opacity(opacity) }
 private let oledMuted = Color.white.opacity(0.55)
@@ -18,6 +25,7 @@ private let onAirRed = Color(red: 1.0, green: 0.357, blue: 0.29)   // #ff5b4a
 /// Everything on the glass *snaps* between views — no crossfades.
 struct OLEDDisplay: View {
     @Environment(\.carbon) private var theme
+    @Environment(\.carbonGeometry) private var geometry
     @EnvironmentObject private var model: LibraryViewModel
 
     var body: some View {
@@ -32,19 +40,19 @@ struct OLEDDisplay: View {
             .padding(.horizontal, 18)
             .padding(.bottom, 10)
         }
-        .clipShape(RoundedRectangle(cornerRadius: CarbonLayout.oledCornerRadius, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: geometry.oledCornerRadius, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: CarbonLayout.oledCornerRadius, style: .continuous)
+            RoundedRectangle(cornerRadius: geometry.oledCornerRadius, style: .continuous)
                 .strokeBorder(Color.white.opacity(theme.isDark ? 0.08 : 0.22), lineWidth: 1)
         )
         .compositingGroup()
     }
 
     private var background: some View {
-        RoundedRectangle(cornerRadius: CarbonLayout.oledCornerRadius, style: .continuous)
+        RoundedRectangle(cornerRadius: geometry.oledCornerRadius, style: .continuous)
             .fill(theme.oledSurface)
             .overlay(
-                RoundedRectangle(cornerRadius: CarbonLayout.oledCornerRadius, style: .continuous)
+                RoundedRectangle(cornerRadius: geometry.oledCornerRadius, style: .continuous)
                     .strokeBorder(theme.oledStrokeInner, lineWidth: 2)
             )
             .overlay(

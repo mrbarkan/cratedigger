@@ -8,6 +8,7 @@ import SwiftUI
 /// `PatchBayControls.swift`.
 struct ConvertPatchBay: View {
     @Environment(\.carbon) private var theme
+    @Environment(\.carbonGeometry) private var geometry
     @EnvironmentObject private var model: LibraryViewModel
 
     @State private var keepTags: Bool = true
@@ -26,7 +27,7 @@ struct ConvertPatchBay: View {
         VStack(spacing: 0) {
             GeometryReader { viewport in
                 ScrollView(.vertical, showsIndicators: false) {
-                    VStack(spacing: CarbonLayout.patchBayRowGap) {
+                    VStack(spacing: geometry.patchBayRowGap) {
                         if !model.browserCollapsed { roomHint }
                         scopeRow
                         formatRow

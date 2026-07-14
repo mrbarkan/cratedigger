@@ -2,6 +2,7 @@ import SwiftUI
 
 struct PlayDomeButton: View {
     @Environment(\.carbon) private var theme
+    @Environment(\.carbonGeometry) private var geometry
     let isPlaying: Bool
     let action: () -> Void
 
@@ -41,7 +42,7 @@ struct PlayDomeButton: View {
                     // nudge right so the triangle sits optically centered.
                     .offset(x: isPlaying ? 0 : 2)
             }
-            .frame(width: CarbonLayout.playButtonSize, height: CarbonLayout.playButtonSize)
+            .frame(width: geometry.playButtonSize, height: geometry.playButtonSize)
         }
         .buttonStyle(.carbonHover)
         .accessibilityLabel(isPlaying ? "Pause" : "Play")

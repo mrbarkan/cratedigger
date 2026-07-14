@@ -11,9 +11,15 @@ public enum FontRegistrar {
         let ttfURLs = bundle.urls(forResourcesWithExtension: "ttf", subdirectory: "Fonts") ?? []
         let otfURLs = bundle.urls(forResourcesWithExtension: "otf", subdirectory: "Fonts") ?? []
 
-        let urls = ttfURLs + otfURLs
-        guard !urls.isEmpty else { return }
+        registerFonts(at: ttfURLs + otfURLs)
+    }
 
+    /// Registers font files shipped inside an installed `.cdtheme`'s `Fonts/`
+    /// subfolder (see `ThemeLoaderService.fontURLs(for:)`). Safe to call with
+    /// an empty array; a name that fails to register just means `Font.custom`
+    /// falls back to the system font, same as any other missing PostScript name.
+    public static func registerFonts(at urls: [URL]) {
+        guard !urls.isEmpty else { return }
         CTFontManagerRegisterFontURLs(urls as CFArray, .process, true) { _, _ in true }
     }
 }

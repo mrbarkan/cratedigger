@@ -2,11 +2,14 @@ import SwiftUI
 
 struct PaperPanel<Content: View>: View {
     @Environment(\.carbon) private var theme
-    var cornerRadius: CGFloat = CarbonLayout.paperCornerRadius
+    @Environment(\.carbonGeometry) private var geometry
+    /// `nil` uses the active theme's `paperCornerRadius`; pass a value to
+    /// override it for this instance regardless of theme.
+    var cornerRadius: CGFloat? = nil
     @ViewBuilder var content: () -> Content
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: cornerRadius ?? geometry.paperCornerRadius, style: .continuous)
         ZStack {
             shape
                 .fill(theme.paper) // opaque, not Material — see ChassisLayer

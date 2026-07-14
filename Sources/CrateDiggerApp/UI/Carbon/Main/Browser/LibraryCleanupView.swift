@@ -3,6 +3,7 @@ import CrateDiggerCore
 
 struct LibraryCleanupView: View {
     @Environment(\.carbon) private var theme
+    @Environment(\.carbonGeometry) private var geometry
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var model: LibraryViewModel
 
@@ -136,7 +137,7 @@ struct LibraryCleanupView: View {
                             .font(CarbonFont.mono(9, weight: .bold))
                             .tracking(1.4)
                     }
-                    .frame(width: 120, height: CarbonLayout.keyHeight)
+                    .frame(width: 120, height: geometry.keyHeight)
                 }
                 .padding(14)
                 .background(theme.chassisHi)
@@ -226,7 +227,7 @@ struct LibraryCleanupView: View {
                             .font(CarbonFont.mono(9, weight: .bold))
                             .tracking(1.2)
                     }
-                    .frame(width: 200, height: CarbonLayout.keyHeight)
+                    .frame(width: 200, height: geometry.keyHeight)
                 }
                 .padding(14)
                 .background(theme.chassisHi)
