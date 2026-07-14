@@ -78,15 +78,26 @@ extension LibraryViewModel {
             info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
         }
         center.nowPlayingInfo = info
+        nowPlayingElapsedAnchor = (playbackCurrentTime, Date(), info[MPNowPlayingInfoPropertyPlaybackRate] as? Double ?? 0)
     }
 
-    /// Lightweight tick update — only the elapsed time and rate — so the system
-    /// scrubber tracks play/pause and seeks without rebuilding the artwork.
+    /// Keep the system scrubber honest without per-tick IPC: macOS extrapolates
+    /// elapsed time from the last pushed (elapsed, rate) on its own, so this
+    /// only re-pushes when actual playback has diverged from that extrapolation
+    /// (a seek/jump from any path — scrub dial, ±8s, record-divider, radio VOD).
+    /// During normal playback the guard never trips and no push happens.
     func updateNowPlayingElapsed() {
+        let rate = playbackState == .playing ? 1.0 : 0.0
+        if let anchor = nowPlayingElapsedAnchor, rate == anchor.rate {
+            let extrapolated = anchor.elapsed + anchor.rate * Date().timeIntervalSince(anchor.wall)
+            if abs(playbackCurrentTime - extrapolated) < 1.0 { return }
+        }
+
         let center = MPNowPlayingInfoCenter.default()
         guard var info = center.nowPlayingInfo else { return }
         info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = playbackCurrentTime
-        info[MPNowPlayingInfoPropertyPlaybackRate] = playbackState == .playing ? 1.0 : 0.0
+        info[MPNowPlayingInfoPropertyPlaybackRate] = rate
         center.nowPlayingInfo = info
+        nowPlayingElapsedAnchor = (playbackCurrentTime, Date(), rate)
     }
 }

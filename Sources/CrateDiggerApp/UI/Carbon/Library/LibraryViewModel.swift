@@ -213,6 +213,13 @@ final class LibraryViewModel: ObservableObject {
         }
     }
 
+    /// Last elapsed/rate pushed to MPNowPlayingInfoCenter, with the wall time of
+    /// the push. The system extrapolates elapsed from rate × wall clock on its
+    /// own, so we only re-push when reality diverges (a seek/jump) instead of
+    /// on every 0.2s tick — each push is IPC to mediaremoted, and 5/s for the
+    /// whole of playback showed up as constant background churn.
+    var nowPlayingElapsedAnchor: (elapsed: Double, wall: Date, rate: Double)?
+
     /// While the user drags (or scroll-seeks) the position dial, the in-progress
     /// fraction (0–1) so the OLED time can follow the scrub before the seek
     /// commits. Nil when not scrubbing.

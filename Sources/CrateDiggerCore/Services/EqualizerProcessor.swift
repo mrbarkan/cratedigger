@@ -32,6 +32,14 @@ public final class EqualizerProcessor {
     private let lock = NSLock()
     private var gains = [Double](repeating: 0, count: bandCount)   // dB
     private var enabled = false
+    /// All bands within ±0.05 dB of zero. At 0 dB a peaking biquad is exactly
+    /// H(z)=1, so a flat EQ filters every sample to produce the input — the tap
+    /// checks `isActive` and skips the cascade entirely instead.
+    private var flat = true
+    /// Set when the EQ transitions bypassed → active so the audio thread zeroes
+    /// the biquad delay state before filtering resumes — the state is stale from
+    /// whenever the EQ was last active, and reusing it can pop.
+    private var pendingStateReset = false
     private var version = 0
     private var appliedVersion = -1
 
@@ -49,15 +57,20 @@ public final class EqualizerProcessor {
 
     public func update(enabled: Bool, gainsDB: [Double]) {
         lock.lock()
+        let wasActive = self.enabled && !flat
         self.enabled = enabled
         for i in 0..<gains.count { gains[i] = i < gainsDB.count ? gainsDB[i] : 0 }
+        flat = gains.allSatisfy { abs($0) < 0.05 }
+        if enabled && !flat && !wasActive { pendingStateReset = true }
         version += 1
         lock.unlock()
     }
 
-    public var isEnabled: Bool {
+    /// True when the cascade should actually run: enabled AND at least one band
+    /// off zero. A flat curve is an identity filter, so the tap skips it.
+    public var isActive: Bool {
         lock.lock(); defer { lock.unlock() }
-        return enabled
+        return enabled && !flat
     }
 
     // MARK: - Processing (audio thread)
@@ -80,7 +93,15 @@ public final class EqualizerProcessor {
         let v = version
         guard v != appliedVersion else { lock.unlock(); return }
         let snapshot = gains
+        let reset = pendingStateReset
+        pendingStateReset = false
         lock.unlock()
+
+        if reset {
+            for c in delays.indices {
+                for i in delays[c].indices { delays[c][i] = 0 }
+            }
+        }
 
         Self.fillCoeffs(&coeffs, gainsDB: snapshot)
         coeffs.withUnsafeBufferPointer {

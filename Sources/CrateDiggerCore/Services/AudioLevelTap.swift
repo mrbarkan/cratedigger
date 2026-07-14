@@ -147,8 +147,10 @@ private func levelTapProcess(
 
     let buffers = UnsafeMutableAudioBufferListPointer(bufferListInOut)
 
-    // Apply the EQ in place FIRST so playback — and the meters below — reflect it.
-    if store.equalizer.isEnabled {
+    // Apply the EQ in place FIRST so playback — and the meters below — reflect
+    // it. `isActive` (not just enabled): a flat curve is an identity filter, so
+    // an EQ that's on but zeroed skips the 12-band cascade entirely.
+    if store.equalizer.isActive {
         var channelIndex = 0
         for buffer in buffers {
             guard let data = buffer.mData else { continue }
