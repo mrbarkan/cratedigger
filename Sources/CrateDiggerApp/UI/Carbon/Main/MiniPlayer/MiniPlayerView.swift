@@ -52,6 +52,9 @@ private struct MiniPlayerBody: View {
     /// Warm phosphor white for the OLED text (design `--oled-fg`).
     private let oledFG = Color(red: 245 / 255, green: 241 / 255, blue: 230 / 255)
 
+    /// Cover for the COVER art mode, resolved off-main like AlbumPoster.
+    @State private var coverImage: NSImage?
+
     var body: some View {
         VStack(spacing: 0) {
             topBar
@@ -63,6 +66,7 @@ private struct MiniPlayerBody: View {
         .padding(13)
         .frame(width: 272)
         .background(panel)
+        .task(id: coverKey) { await loadCoverImage() }
     }
 
     // MARK: - Glass panel
@@ -164,9 +168,40 @@ private struct MiniPlayerBody: View {
         }
     }
 
-    private var coverImage: NSImage? {
-        guard let hash = model.nowPlayingTrack?.track.artworkHash else { return nil }
-        return model.artworkService.generateThumbnail(artworkHash: hash, size: CGSize(width: 480, height: 480))
+    /// Reload key: track change or a freshly committed cover (hash change).
+    private var coverKey: String {
+        let track = model.nowPlayingTrack?.track
+        return "\(track?.id.uuidString ?? "none")-\(track?.artworkHash ?? "")"
+    }
+
+    /// Same resolution order as AlbumPoster — album cover file on disk first,
+    /// then cached bytes by hash. A hash-only lookup (the original code here)
+    /// came back empty for crate-loaded tracks whose artwork bytes weren't in
+    /// the session cache/store, leaving the cover mode on the placeholder
+    /// gradient. Last resort: re-extract from the audio file itself, which also
+    /// re-primes the hash cache.
+    private func loadCoverImage() async {
+        guard let loaded = model.nowPlayingTrack else {
+            coverImage = nil
+            return
+        }
+        if let album = model.album(containing: loaded.track.id),
+           let coverURL = album.booklet?.frontCoverURL,
+           let image = await loadThumbnail(url: coverURL, maxPixelSize: 480) {
+            coverImage = image
+            return
+        }
+        if let hash = loaded.track.artworkHash,
+           let image = await model.artworkService.thumbnailAsync(artworkHash: hash, maxPixel: 480) {
+            coverImage = image
+            return
+        }
+        if loaded.track.fileURL.isFileURL,
+           let asset = await model.artworkService.resolveArtwork(trackURL: loaded.track.fileURL) {
+            coverImage = await model.artworkService.thumbnailAsync(artworkHash: asset.hash, maxPixel: 480)
+            return
+        }
+        coverImage = nil
     }
 
     // MARK: - OLED display (title · band · time)

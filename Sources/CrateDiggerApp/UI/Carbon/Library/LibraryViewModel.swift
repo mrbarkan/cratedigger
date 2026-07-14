@@ -903,6 +903,18 @@ final class LibraryViewModel: ObservableObject {
         return playbackQueue[i]
     }
 
+    /// The browsed album containing a track (linear scan over the current
+    /// index). Shared by the spinning disc and the mini player so both resolve
+    /// cover files (booklet/folder art) the same way.
+    func album(containing trackID: UUID) -> Album? {
+        for artist in index.artists {
+            for album in artist.albums where album.tracks.contains(where: { $0.id == trackID }) {
+                return album
+            }
+        }
+        return nil
+    }
+
     // MARK: - Source Management
 
     var isLocalSource: Bool {
