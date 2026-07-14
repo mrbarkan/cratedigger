@@ -98,6 +98,10 @@ public struct AlbumBooklet: Codable, Hashable, Sendable {
     /// Note: Excludes CD/disc label artwork scans.
     public static func sortAndCategorizeBookletImages(_ urls: [URL], manifest: ArtworkManifest? = nil) -> [URL] {
         var front: [URL] = []
+        // Alt covers stay front images but must never outrank the main cover:
+        // "cover_alt.jpg" filename-sorts BEFORE "cover.jpg", so a shared bucket
+        // would make the alt the album's frontCoverURL everywhere.
+        var altFront: [URL] = []
         var booklet: [URL] = []
         var inlay: [URL] = []
         var back: [URL] = []
@@ -109,7 +113,8 @@ public struct AlbumBooklet: Codable, Hashable, Sendable {
 
             if let manifest = manifest, let role = manifest.roles[name], role != .auto {
                 switch role {
-                case .cover, .altCover: front.append(url)
+                case .cover: front.append(url)
+                case .altCover: altFront.append(url)
                 case .bookletPage: booklet.append(url)
                 case .inlay: inlay.append(url)
                 case .back: back.append(url)
@@ -139,11 +144,12 @@ public struct AlbumBooklet: Codable, Hashable, Sendable {
 
         let sortByFilename: (URL, URL) -> Bool = { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
         front.sort(by: sortByFilename)
+        altFront.sort(by: sortByFilename)
         booklet.sort(by: sortByFilename)
         inlay.sort(by: sortByFilename)
         back.sort(by: sortByFilename)
         generic.sort(by: sortByFilename)
 
-        return front + booklet + generic + inlay + back
+        return front + altFront + booklet + generic + inlay + back
     }
 }

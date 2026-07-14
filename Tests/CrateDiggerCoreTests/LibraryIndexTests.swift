@@ -386,6 +386,26 @@ final class LibraryIndexTests: XCTestCase {
             "back.jpg"
         ])
     }
+
+    func testAltCoverNeverBecomesFrontCover() {
+        // "cover_alt.jpg" filename-sorts BEFORE "cover.jpg", so without a
+        // separate alt bucket it would win frontCoverURL (the album poster,
+        // spinning disc, and gallery all display urls.first as THE cover).
+        let manifest = ArtworkManifest(roles: [
+            "cover.jpg": .cover,
+            "cover_alt.jpg": .altCover,
+        ])
+        let urls = [
+            URL(fileURLWithPath: "/m/cover_alt.jpg"),
+            URL(fileURLWithPath: "/m/cover.jpg"),
+        ]
+
+        let sorted = AlbumBooklet.sortAndCategorizeBookletImages(urls, manifest: manifest)
+        XCTAssertEqual(sorted.map(\.lastPathComponent), ["cover.jpg", "cover_alt.jpg"])
+
+        let booklet = AlbumBooklet(source: .images(sorted))
+        XCTAssertEqual(booklet.frontCoverURL?.lastPathComponent, "cover.jpg")
+    }
 }
 
 private func makeTrack(

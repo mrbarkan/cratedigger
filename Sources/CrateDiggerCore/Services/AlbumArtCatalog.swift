@@ -32,11 +32,12 @@ public enum AlbumArtCatalog {
     private static let imageExtensions: Set<String> = ["jpg", "jpeg", "png", "tiff", "webp", "gif", "bmp"]
 
     public static func pages(imageURLs: [URL], manifest: ArtworkManifest?) -> [ArtworkPage] {
-        var covers: [URL] = [], bookletPages: [URL] = [], inlays: [URL] = [], discs: [URL] = [], backs: [URL] = []
+        var covers: [URL] = [], altCovers: [URL] = [], bookletPages: [URL] = [], inlays: [URL] = [], discs: [URL] = [], backs: [URL] = []
 
         for url in imageURLs {
             switch classify(url, manifest: manifest) {
             case .cover: covers.append(url)
+            case .altCover: altCovers.append(url)
             case .bookletPage: bookletPages.append(url)
             case .inlay: inlays.append(url)
             case .disc: discs.append(url)
@@ -48,8 +49,11 @@ public enum AlbumArtCatalog {
         let byName: (URL, URL) -> Bool = {
             $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending
         }
-        covers.sort(by: byName); bookletPages.sort(by: byName)
+        covers.sort(by: byName); altCovers.sort(by: byName); bookletPages.sort(by: byName)
         inlays.sort(by: byName); discs.sort(by: byName); backs.sort(by: byName)
+        // Alt covers are front pages too, but always AFTER the main cover —
+        // "cover_alt.jpg" would otherwise filename-sort ahead of "cover.jpg".
+        covers += altCovers
 
         var pages: [ArtworkPage] = []
 
@@ -109,7 +113,7 @@ public enum AlbumArtCatalog {
         count > 1 ? "\(base) \(index + 1)" : base
     }
 
-    private enum Bucket { case cover, bookletPage, inlay, disc, back, ignore }
+    private enum Bucket { case cover, altCover, bookletPage, inlay, disc, back, ignore }
 
     /// Manifest role wins; otherwise fall back to the same filename heuristics the
     /// booklet sorter uses. Order matters: inlay/back are checked before the more
@@ -119,7 +123,8 @@ public enum AlbumArtCatalog {
         let name = url.lastPathComponent
         if let role = manifest?.roles[name], role != .auto {
             switch role {
-            case .cover, .altCover: return .cover
+            case .cover: return .cover
+            case .altCover: return .altCover
             case .back: return .back
             case .disc: return .disc
             case .inlay: return .inlay

@@ -37,6 +37,15 @@ final class AlbumArtCatalogTests: XCTestCase {
         XCTAssertTrue(pages.contains { $0.kind == .tray }) // inlay + disc → tray
     }
 
+    func testMainCoverPrecedesAltCover() {
+        // "cover_alt.jpg" filename-sorts BEFORE "cover.jpg" (underscore vs dot),
+        // so the alt must be bucketed separately or it becomes the first cover page.
+        let manifest = ArtworkManifest(roles: ["cover.jpg": .cover, "cover_alt.jpg": .altCover])
+        let pages = AlbumArtCatalog.pages(imageURLs: [url("cover_alt.jpg"), url("cover.jpg")], manifest: manifest)
+        XCTAssertEqual(pages.map { $0.imageURL?.lastPathComponent }, ["cover.jpg", "cover_alt.jpg"])
+        XCTAssertEqual(pages.map(\.kind), [.cover, .cover])
+    }
+
     func testDiscSideLabelFromManifest() {
         let manifest = ArtworkManifest(roles: ["side.png": .disc], discSides: ["side.png": "A"])
         let pages = AlbumArtCatalog.pages(imageURLs: [url("side.png")], manifest: manifest)
