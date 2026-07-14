@@ -9,16 +9,21 @@ struct AlbumPoster: View {
     @State private var localThumbnail: NSImage?
 
     var body: some View {
-        ZStack {
+        Group {
             if let nsImage = localThumbnail {
-                Image(nsImage: nsImage)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
+                Color.clear
+                    .aspectRatio(1, contentMode: .fit)
+                    .overlay(
+                        Image(nsImage: nsImage)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                    )
             } else {
-                GeneratedPoster(seed: album?.id ?? "empty")
+                // Sizes itself: square vinyl sleeve, or a jewel case slightly
+                // wider than square (the spine lives outside the 1×1 lid).
+                EmptyMediaCase(format: album?.mediaFormat, seed: album?.id ?? "empty")
             }
         }
-        .aspectRatio(1, contentMode: .fit)
         .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 3, style: .continuous)

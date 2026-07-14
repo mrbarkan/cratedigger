@@ -601,7 +601,7 @@ struct GalleryAlbumCoverView: View {
                     .resizable()
                     .aspectRatio(contentMode: contentMode)
             } else {
-                GeneratedPoster(seed: album.id)
+                EmptyMediaCase(format: album.mediaFormat, seed: album.id)
             }
         }
         .frame(width: size, height: size)
