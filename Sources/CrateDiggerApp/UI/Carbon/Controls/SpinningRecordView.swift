@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 import CrateDiggerCore
 
@@ -20,16 +21,18 @@ struct CDMaskShape: Shape {
 
 struct SpinningRecordView: View {
     @ObservedObject var model: LibraryViewModel
-    /// When true (the inspector's DISC tab), the disc previews the *selected*
-    /// album so it follows what you're browsing. When false (the mini player),
-    /// it follows the now-playing track. `nowPlayingTrack` stays set through
-    /// pause/stop (it's the queue's current index, not a live-playback flag), so
-    /// the old `nowPlaying ?? selected` rule almost never reached the selection
-    /// fallback — which is why the DISC tab kept showing the last-played disc.
-    var followsSelection: Bool = false
+    /// Tray semantics: this view is the deck's transport, so it always shows
+    /// the *loaded* disc (the now-playing queue's album — which persists
+    /// through pause/stop, like a real tray) and never the browsed selection.
+    /// Previewing a browsed album's disc art belongs to the ART tab / artwork
+    /// viewer. An earlier follows-selection mode spun the browsed album's art
+    /// while something else was playing, which read as the wrong album playing.
     @StateObject private var animator = RecordAnimator()
     @State private var discImage: NSImage? = nil
     @State private var isVinyl: Bool = false
+    /// No track loaded in the queue at all — render the empty tray instead of
+    /// a blank disc, so "nothing playing" doesn't look like a blank CD-R.
+    @State private var trayEmpty = true
     /// Vinyl side (A, B, …) of the current track, shown statically on the record.
     @State private var currentSide: String? = nil
 
@@ -48,7 +51,9 @@ struct SpinningRecordView: View {
             let size = min(geo.size.width, geo.size.height)
             
             ZStack {
-                if isVinyl {
+                if trayEmpty {
+                    emptyTrayLayer
+                } else if isVinyl {
                     vinylRecordLayer
                 } else {
                     // CD Layer
@@ -87,7 +92,7 @@ struct SpinningRecordView: View {
             .clipShape(Circle())
             .mask(
                 Group {
-                    if isVinyl {
+                    if isVinyl || trayEmpty {
                         Circle()
                     } else {
                         CDMaskShape().fill(style: FillStyle(eoFill: true))
@@ -103,19 +108,31 @@ struct SpinningRecordView: View {
         .onDisappear {
             animator.stop()
         }
+        // Tray semantics: only a queue change swaps the disc — browsing
+        // (selection changes) never touches the tray, which also stops the
+        // per-selection manifest re-reads this view used to do.
         .onChange(of: model.nowPlayingTrack) { _ in
-            updateDiscData()
-        }
-        .onChange(of: model.selectedTrackID) { _ in
-            updateDiscData()
-        }
-        // Album-only selection (artwork gallery, version picker) changes the
-        // selected album without touching selectedTrackID — keep the disc in sync.
-        .onChange(of: model.selectedAlbumID) { _ in
             updateDiscData()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("CrateDiggerArtworkImported"))) { _ in
             updateDiscData()
+        }
+    }
+
+    /// Nothing loaded in the queue yet — a dark, open tray instead of a disc.
+    private var emptyTrayLayer: some View {
+        ZStack {
+            Circle()
+                .fill(Color.primary.opacity(0.04))
+            Circle()
+                .stroke(Color.primary.opacity(0.12), lineWidth: 1.5)
+            Circle()
+                .stroke(Color.primary.opacity(0.06), lineWidth: 1)
+                .scaleEffect(0.72)
+            Text("NO DISC")
+                .font(CarbonFont.mono(10, weight: .bold))
+                .tracking(2.5)
+                .foregroundStyle(Color.primary.opacity(0.35))
         }
     }
 
@@ -312,15 +329,8 @@ struct SpinningRecordView: View {
     }
 
     private var nowPlayingAlbum: Album? {
-        guard let track = model.nowPlayingTrack ?? model.selectedTrack else { return nil }
-        for artist in model.index.artists {
-            for album in artist.albums {
-                if album.tracks.contains(where: { $0.id == track.id }) {
-                    return album
-                }
-            }
-        }
-        return nil
+        guard let track = model.nowPlayingTrack else { return nil }
+        return model.album(containing: track.track.id)
     }
 
     /// The disc-label image to show, in priority order: the one tagged with the
@@ -344,12 +354,10 @@ struct SpinningRecordView: View {
             // Invalidate the cached CD faces so they re-render for the new art.
             faceToken &+= 1
         }
-        // The DISC tab (followsSelection) previews what you're browsing; the mini
-        // player follows the now-playing track. Each falls back to the other so
-        // the disc is never needlessly blank (e.g. nothing selected yet).
-        let loaded = followsSelection
-            ? (model.selectedTrack ?? model.nowPlayingTrack)
-            : (model.nowPlayingTrack ?? model.selectedTrack)
+        // Tray semantics: only the loaded (now-playing queue) disc, never the
+        // browsed selection. The queue survives pause/stop, like a real tray.
+        let loaded = model.nowPlayingTrack
+        trayEmpty = loaded == nil
         currentSide = loaded?.metadata.side
         guard let track = loaded?.track else {
             discImage = nil
@@ -429,14 +437,31 @@ final class RecordAnimator: ObservableObject {
     private weak var model: LibraryViewModel?
     private var timer: Timer?
     private var lastUpdateTime: Date?
-    
+    private var playbackStateSub: AnyCancellable?
+
     func start(model: LibraryViewModel) {
         self.model = model
-        
+
         stop()
-        
+        ensureTimer()
+        // The tick self-halts once the disc settles at rest (no point waking
+        // the run loop 60×/s to compute a zero delta while paused) — this
+        // restarts it when playback resumes. Same pattern as MeterDriver.
+        playbackStateSub = model.$playbackState.sink { [weak self] state in
+            MainActor.assumeIsolated {
+                if state == .playing { self?.ensureTimer() }
+            }
+        }
+    }
+
+    func stop() {
+        playbackStateSub = nil
+        haltTimer()
+    }
+
+    private func ensureTimer() {
+        guard timer == nil else { return }
         lastUpdateTime = Date()
-        
         let t = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.tick()
@@ -445,13 +470,13 @@ final class RecordAnimator: ObservableObject {
         self.timer = t
         RunLoop.main.add(t, forMode: .common)
     }
-    
-    func stop() {
+
+    private func haltTimer() {
         timer?.invalidate()
         timer = nil
         lastUpdateTime = nil
     }
-    
+
     private func tick() {
         guard let model = model else { return }
         
@@ -492,6 +517,10 @@ final class RecordAnimator: ObservableObject {
             if rotationAngle >= 360 {
                 rotationAngle = rotationAngle.truncatingRemainder(dividingBy: 360)
             }
+        } else if targetSpeed == 0 {
+            // Fully settled at rest — stop ticking. The playback-state
+            // subscription in start() restarts the timer on the next play.
+            haltTimer()
         }
     }
 }
