@@ -45,6 +45,14 @@ struct InspectorPane: View {
         .sheet(isPresented: $showingCleanup) {
             LibraryCleanupView()
         }
+        // FIX TAGS conflict review — driven by the conflicts themselves so a
+        // repair pass with no disagreements never flashes an empty sheet.
+        .sheet(isPresented: Binding(
+            get: { !model.metadataRepairConflicts.isEmpty },
+            set: { if !$0 { model.metadataRepairConflicts = [] } }
+        )) {
+            MetadataRepairSheetView()
+        }
     }
 
     private var tabSwitcher: some View {
@@ -224,20 +232,29 @@ struct InspectorPane: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: CarbonLayout.keyHeight)
                 
-                // Disabled for now — the old "organize" moved the whole library on
-                // disk with no confirmation; to be repurposed later.
-                KeyButton(style: .disabled, action: {}) {
+                // Repurposed the old disabled ORGANIZE placeholder: re-probe
+                // tracks that lost their track number and heal the crate from
+                // the files' own tags (see LibraryViewModel+MetadataRepair).
+                KeyButton(style: model.canRepairMetadata && !model.isRepairingMetadata ? .normal : .disabled, action: {
+                    model.repairMissingMetadata()
+                }) {
                     HStack(spacing: 4) {
-                        Image(systemName: "folder.fill")
-                            .font(.system(size: 9))
-                        Text("ORGANIZE")
+                        if model.isRepairingMetadata {
+                            ProgressView()
+                                .controlSize(.mini)
+                        } else {
+                            Image(systemName: "bandage.fill")
+                                .font(.system(size: 9))
+                        }
+                        Text("FIX TAGS")
                             .font(CarbonFont.mono(9, weight: .bold))
                             .tracking(1.0)
                     }
                 }
                 .frame(maxWidth: .infinity)
                 .frame(height: CarbonLayout.keyHeight)
-                .disabled(true)
+                .disabled(!model.canRepairMetadata || model.isRepairingMetadata)
+                .carbonTip("Re-check files for tracks missing a track number and fill in blank tags from the files")
             }
             .padding(.horizontal, 16)
             .padding(.bottom, model.selectedAlbum == nil ? 12 : 8)

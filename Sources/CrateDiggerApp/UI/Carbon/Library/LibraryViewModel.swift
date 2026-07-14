@@ -441,6 +441,11 @@ final class LibraryViewModel: ObservableObject {
     /// row badge. Recomputed off the main thread by recomputeMissingFiles().
     @Published var missingTrackKeys: Set<String> = []
     @Published var duplicateGroups: [DuplicateGroup] = []
+    /// FIX TAGS (metadata repair) run state — see LibraryViewModel+MetadataRepair.
+    @Published var isRepairingMetadata = false
+    /// Stored-vs-file tag disagreements from the last repair pass; non-empty
+    /// presents the review sheet.
+    @Published var metadataRepairConflicts: [MetadataRepairConflictGroup] = []
 
     // MARK: - Radio / Streams state
     @Published var streams: [StreamSource] = []
