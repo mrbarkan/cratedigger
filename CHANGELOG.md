@@ -4,6 +4,34 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 1.0.2 (39) — 2026-07-14
+
+### Added
+- **FIX TAGS.** A one-press repair for tracks that lost their track number on
+  import (e.g. scanned before ffmpeg/ffprobe was set up). Re-checks each
+  affected track against its file, fills in blanks automatically, and shows a
+  review sheet for any tag that genuinely disagrees with the file — including
+  albums where every track's number collided (all "11", for example).
+- **Artwork search shows how many images each release actually has.** Every
+  result in the album-art search now carries an "N IMAGES" badge from the
+  Cover Art Archive, loaded in the background as you scroll, so you can tell
+  which edition is worth opening before you click into it.
+- **An empty case stands in for missing artwork**, instead of an abstract
+  generated poster — a CD jewel case for CD/digital albums, a bare vinyl
+  inner sleeve (with ring wear) for vinyl.
+
+### Changed
+- The DISC tab (and mini player) now always shows the disc that's actually
+  loaded and playing, like a hardware deck's tray — it no longer follows
+  whatever album you're browsing.
+- Reduced background CPU/IPC usage: the system Now Playing display is only
+  updated on a seek or state change instead of five times a second, and the
+  12-band EQ is skipped entirely while every band is flat.
+
+### Fixed
+- Alt cover art no longer gets picked as an album's main cover art.
+- Cover art now loads reliably in the mini player.
+
 ## 1.0.1 (38) — 2026-07-08
 
 ### Added
