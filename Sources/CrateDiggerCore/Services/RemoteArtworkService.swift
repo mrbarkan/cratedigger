@@ -29,6 +29,12 @@ public actor RemoteArtworkService {
     private let session: URLSession
     private let cacheDirectory: URL?
 
+    /// Release MBID → decoded Cover Art Archive image list. The release list
+    /// probes counts per visible row while the user browses, and GET ARTWORK
+    /// re-requests the same small JSON — cache it once per session so neither
+    /// path refetches (404 "no images" results included).
+    private var caaImagesByRelease: [String: [CAABookletImage]] = [:]
+
     public init(session: URLSession? = nil) {
         if let session {
             self.session = session
@@ -383,7 +389,16 @@ public extension RemoteArtworkService {
         }
     }
 
+    /// Image count for the release list's "N IMAGES" badge; nil when the lookup
+    /// failed (network) so the UI can stay quiet rather than claim zero.
+    func coverArtImageCount(releaseMBID: String) async -> Int? {
+        (try? await fetchCoverArtArchiveImages(releaseMBID: releaseMBID))?.count
+    }
+
     func fetchCoverArtArchiveImages(releaseMBID: String) async throws -> [CAABookletImage] {
+        if let cached = caaImagesByRelease[releaseMBID] {
+            return cached
+        }
         guard let url = URL(string: "https://coverartarchive.org/release/\(releaseMBID)") else {
             return []
         }
@@ -405,9 +420,11 @@ public extension RemoteArtworkService {
         }
         
         if http.statusCode == 404 {
+            // A definitive "no images exist" — cacheable, unlike server errors.
+            caaImagesByRelease[releaseMBID] = []
             return []
         }
-        
+
         guard (200..<300).contains(http.statusCode) else {
             return []
         }
@@ -445,7 +462,7 @@ public extension RemoteArtworkService {
         }
 
         let envelope = try JSONDecoder().decode(CAAEnvelope.self, from: data)
-        return envelope.images.compactMap { img -> CAABookletImage? in
+        let images = envelope.images.compactMap { img -> CAABookletImage? in
             guard let imageURL = https(img.image) else { return nil }
             let thumbStr = img.thumbnails?.size250 ?? img.thumbnails?.size500 ?? img.thumbnails?.small ?? img.thumbnails?.large ?? img.image
             guard let thumbURL = https(thumbStr) else { return nil }
@@ -460,6 +477,8 @@ public extension RemoteArtworkService {
                 hasHiRes: img.thumbnails?.size1200 != nil
             )
         }
+        caaImagesByRelease[releaseMBID] = images
+        return images
     }
 }
 

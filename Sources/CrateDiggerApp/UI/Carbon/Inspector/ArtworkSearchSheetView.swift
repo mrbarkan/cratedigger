@@ -72,6 +72,11 @@ struct ArtworkSearchSheetView: View {
     @State private var sortByYear = false
     @State private var groupByRelease = false
 
+    /// Cover Art Archive image count per release, probed lazily as rows become
+    /// visible. Missing key = probe not finished; value nil = probe failed
+    /// (network), shown as nothing rather than a false "no images".
+    @State private var imageCounts: [String: Int?] = [:]
+
     init(album: Album) {
         self.album = album
         _artistQuery = State(initialValue: album.artistName)
@@ -556,7 +561,9 @@ struct ArtworkSearchSheetView: View {
             }
             
             Spacer()
-            
+
+            imageCountBadge(release)
+
             KeyButton(style: .normal, action: {
                 loadReleaseArtwork(release)
             }) {
@@ -568,6 +575,38 @@ struct ArtworkSearchSheetView: View {
         .padding(.horizontal, 18)
         .padding(.vertical, 10)
         .background(isBest ? theme.orange.opacity(0.06) : Color.clear)
+        // Probe the CAA image count only once this row is on screen (LazyVStack)
+        // — a full result set would otherwise fire 30 requests up front.
+        .task(id: release.id) {
+            guard !imageCounts.keys.contains(release.id) else { return }
+            let count = await model.remoteArtworkService.coverArtImageCount(releaseMBID: release.id)
+            imageCounts[release.id] = count
+        }
+    }
+
+    /// "N IMAGES" per release so the user knows which edition is worth opening.
+    /// "…" while the probe is in flight; silent if the lookup failed.
+    @ViewBuilder
+    private func imageCountBadge(_ release: MBReleaseCandidate) -> some View {
+        if let probed = imageCounts[release.id] {
+            if let count = probed {
+                Text(count == 0 ? "NO IMAGES" : "\(count) IMAGE\(count == 1 ? "" : "S")")
+                    .font(CarbonFont.mono(8, weight: .bold))
+                    .tracking(0.5)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1.5)
+                    .background(count == 0 ? theme.ink4.opacity(0.12) : theme.cyan.opacity(0.15))
+                    .foregroundColor(count == 0 ? theme.ink4 : theme.cyan)
+                    .cornerRadius(3)
+                    .carbonTip(count == 0
+                        ? "The Cover Art Archive has no scans for this release"
+                        : "Scans available in the Cover Art Archive")
+            }
+        } else {
+            Text("…")
+                .font(CarbonFont.mono(8, weight: .bold))
+                .foregroundStyle(theme.ink4)
+        }
     }
 
     // Artwork grid section
