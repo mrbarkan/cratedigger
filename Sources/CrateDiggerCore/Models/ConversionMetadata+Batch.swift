@@ -7,10 +7,12 @@ import Foundation
 public extension ConversionMetadata {
 
     /// The album/artist-level fields that make sense to edit across a whole
-    /// selection. Per-track fields (title, track/disc number) are deliberately
-    /// excluded — a batch shouldn't stamp the same title onto every track.
+    /// selection. Title and track number stay excluded — a batch shouldn't stamp
+    /// the same title or track number onto every track. Disc number *is* shared
+    /// by every track on a disc, so stamping it across a selection is exactly the
+    /// point (e.g. select all of disc 2, set Disc No = 2).
     enum BatchField: CaseIterable, Sendable {
-        case artist, albumArtist, album, genre, year, trackTotal, discTotal, comment, compilation, side
+        case artist, albumArtist, album, genre, year, trackTotal, discNumber, discTotal, comment, compilation, side
     }
 
     /// This metadata's value for `field` as the editor's string representation
@@ -23,6 +25,7 @@ public extension ConversionMetadata {
         case .genre:       return genre ?? ""
         case .year:        return year.map(String.init) ?? ""
         case .trackTotal:  return trackTotal.map(String.init) ?? ""
+        case .discNumber:  return discNumber.map(String.init) ?? ""
         case .discTotal:   return discTotal.map(String.init) ?? ""
         case .comment:     return comment ?? ""
         case .compilation: return compilation == true ? "1" : (compilation == false ? "0" : "")
@@ -52,6 +55,7 @@ public extension ConversionMetadata {
             case .genre:       out.genre = value.isEmpty ? nil : value
             case .year:        out.year = Int(value)
             case .trackTotal:  out.trackTotal = Int(value)
+            case .discNumber:  out.discNumber = Int(value)
             case .discTotal:   out.discTotal = Int(value)
             case .comment:     out.comment = value.isEmpty ? nil : value
             case .compilation: out.compilation = value == "1" ? true : (value == "0" ? false : nil)

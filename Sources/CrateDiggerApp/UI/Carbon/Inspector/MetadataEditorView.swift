@@ -59,7 +59,7 @@ struct MetadataEditorView: View {
             _yearString = State(initialValue: common(.year))
             _trackNumString = State(initialValue: "")
             _trackTotalString = State(initialValue: common(.trackTotal))
-            _discNumString = State(initialValue: "")
+            _discNumString = State(initialValue: common(.discNumber))
             _discTotalString = State(initialValue: common(.discTotal))
             _side = State(initialValue: common(.side))
             _comment = State(initialValue: common(.comment))
@@ -117,9 +117,7 @@ struct MetadataEditorView: View {
                     }
 
                     HStack(spacing: 14) {
-                        if !isBatch {
-                            groupField("Disc No", text: $discNumString)
-                        }
+                        groupField("Disc No", text: $discNumString, field: .discNumber)
                         groupField("Disc Total", text: $discTotalString, field: .discTotal)
                         groupField("Side", text: $side, field: .side)
                         Spacer()
@@ -253,6 +251,7 @@ struct MetadataEditorView: View {
         consider(.genre, genre)
         consider(.year, yearString)
         consider(.trackTotal, trackTotalString)
+        consider(.discNumber, discNumString)
         consider(.discTotal, discTotalString)
         consider(.side, side)
         consider(.comment, comment)

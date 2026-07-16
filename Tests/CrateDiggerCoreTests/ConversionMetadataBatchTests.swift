@@ -118,6 +118,26 @@ final class ConversionMetadataBatchTests: XCTestCase {
         XCTAssertEqual(edited.albumArtist, "Y")
     }
 
+    // MARK: Disc number (batch) — stamped across a selection, unlike track number
+
+    func testDiscNumberCommonValueSharedVsMixed() {
+        XCTAssertEqual(ConversionMetadata.commonValue(.discNumber, in: [ConversionMetadata(discNumber: 2), ConversionMetadata(discNumber: 2)]), "2")
+        XCTAssertNil(ConversionMetadata.commonValue(.discNumber, in: [ConversionMetadata(discNumber: 1), ConversionMetadata(discNumber: 2)]))
+    }
+
+    func testApplyDiscNumberSetsAndClears() {
+        XCTAssertEqual(ConversionMetadata().applyingBatchEdits([.discNumber: "2"]).discNumber, 2)
+        XCTAssertNil(ConversionMetadata(discNumber: 2).applyingBatchEdits([.discNumber: ""]).discNumber)
+    }
+
+    func testApplyDiscNumberLeavesTrackNumberUntouched() {
+        // The whole point: stamping a shared disc number must not touch the
+        // per-track track number.
+        let edited = ConversionMetadata(trackNumber: 5, discNumber: 1).applyingBatchEdits([.discNumber: "2"])
+        XCTAssertEqual(edited.discNumber, 2)
+        XCTAssertEqual(edited.trackNumber, 5)
+    }
+
     // MARK: Vinyl side (batch)
 
     func testSideCommonValueSharedVsMixed() {
