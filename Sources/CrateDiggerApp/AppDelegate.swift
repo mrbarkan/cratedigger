@@ -25,6 +25,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
         FontRegistrar.registerBundledFonts()
 
+        migrateLegacyArtworkStore()
+
         buildMenu()
 
         let windowController = MainWindowController()
@@ -68,6 +70,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         if let token = spaceKeyMonitor {
             NSEvent.removeMonitor(token)
             spaceKeyMonitor = nil
+        }
+    }
+
+    /// Before 1.1.0 the artwork cache kept a full-resolution copy of every cover
+    /// it ever saw, which grew to gigabytes on a large library. Squeeze that hoard
+    /// down into the thumbnail cache and delete it — off the main thread, since a
+    /// long-running library can have thousands of blobs to re-encode. Covers stay
+    /// resolvable throughout: the migration only shrinks what's already there.
+    private func migrateLegacyArtworkStore() {
+        Task.detached(priority: .utility) {
+            let store = ArtworkStore(directory: ArtworkStore.defaultDirectory)
+            let reclaimed = store.migrateLegacyFullResolutionStore()
+            guard reclaimed > 0 else { return }
+            let megabytes = Double(reclaimed) / 1_000_000
+            AppLog.library.notice("Migrated legacy artwork store; reclaimed \(megabytes, format: .fixed(precision: 1)) MB")
         }
     }
 

@@ -30,10 +30,8 @@ extension LibraryViewModel {
 
         // A "send to device" hand-off owns the queue + destination for this run.
         let deviceTransfer = pendingDeviceConversion
-        let sourceTracks = tracksWithHydratedArtwork(
-            deviceTransfer?.tracks ?? tracksForBatchScope(selection.batchScope)
-        )
-        guard !sourceTracks.isEmpty else {
+        let queuedTracks = deviceTransfer?.tracks ?? tracksForBatchScope(selection.batchScope)
+        guard !queuedTracks.isEmpty else {
             appAlert = .info(
                 title: "Nothing to convert",
                 message: "No tracks matched the chosen scope. Load a folder, pick an album, then try again."
@@ -42,6 +40,8 @@ extension LibraryViewModel {
         }
 
         Task { @MainActor in
+            let sourceTracks = await tracksWithHydratedArtwork(queuedTracks)
+
             let destinationRoot: URL
             if let deviceTransfer {
                 destinationRoot = deviceTransfer.destinationRoot
@@ -328,19 +328,29 @@ extension LibraryViewModel {
         return URL(fileURLWithPath: path)
     }
 
-    /// Refill embedded-artwork bytes that were dropped when tracks were decoded
-    /// from a `.cdlib` (the crate stores only the hash; the bytes live in the
-    /// `ArtworkStore`). Without this, re-embedding a compatible cover during
-    /// conversion/transfer fails with `couldNotDecodeImage` on empty data and
-    /// silently falls back to copying the source art stream.
+    /// Refill artwork bytes that were dropped when tracks were decoded from a
+    /// `.cdlib` (the crate stores only the hash). Without this, re-embedding a
+    /// compatible cover during conversion/transfer fails with
+    /// `couldNotDecodeImage` on empty data and silently falls back to copying
+    /// the source art stream.
+    ///
+    /// Bytes are re-read from each track's own file/folder when they aren't
+    /// cached in memory — the disk cache holds thumbnails, which must never be
+    /// re-embedded (see `ArtworkService.hydrated`).
     @MainActor
-    func tracksWithHydratedArtwork(_ tracks: [LoadedTrack]) -> [LoadedTrack] {
-        tracks.map { track in
-            guard let art = track.metadata.artwork, art.data.isEmpty else { return track }
+    func tracksWithHydratedArtwork(_ tracks: [LoadedTrack]) async -> [LoadedTrack] {
+        var hydrated: [LoadedTrack] = []
+        hydrated.reserveCapacity(tracks.count)
+        for track in tracks {
+            guard let art = track.metadata.artwork, art.data.isEmpty else {
+                hydrated.append(track)
+                continue
+            }
             var metadata = track.metadata
-            metadata.artwork = artworkService.hydrated(art)
-            return LoadedTrack(track: track.track, metadata: metadata, recordMarkers: track.recordMarkers)
+            metadata.artwork = await artworkService.hydrated(art, trackURL: track.track.fileURL)
+            hydrated.append(LoadedTrack(track: track.track, metadata: metadata, recordMarkers: track.recordMarkers))
         }
+        return hydrated
     }
 
     @MainActor

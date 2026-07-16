@@ -35,9 +35,10 @@ extension LibraryViewModel {
             return
         }
 
-        // Rehydrate artwork bytes dropped by the .cdlib round-trip so re-embedding a
-        // device-compatible cover works instead of failing to decode.
-        let tracks = tracksWithHydratedArtwork(rawTracks)
+        // No artwork hydration here: copy-mode transfers move the original files
+        // untouched, and convert-mode hands off to runConversion, which hydrates
+        // its own queue.
+        let tracks = rawTracks
         guard !tracks.isEmpty else {
             appAlert = .info(
                 title: "Nothing to transfer",

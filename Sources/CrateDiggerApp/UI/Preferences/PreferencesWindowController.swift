@@ -122,6 +122,7 @@ private struct GeneralPreferencesView: View {
     @State private var deleteOriginals: Bool = false
     @State private var organiseByArtist: Bool = true
     @State private var keepOrganised: Bool = true
+    @State private var thumbnailCacheSize: String = "—"
 
     var body: some View {
         Form {
@@ -203,6 +204,18 @@ private struct GeneralPreferencesView: View {
                     }
                 }
             }
+
+            Section("Artwork Cache") {
+                LabeledContent("Cached thumbnails") {
+                    HStack(spacing: 12) {
+                        Text(thumbnailCacheSize)
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                        Button("Clean…") { cleanThumbnailCache() }
+                    }
+                }
+                .help("Covers are stored with your music; this is only a thumbnail cache for fast, offline browsing. Cleaning it is always safe — thumbnails come back as you browse.")
+            }
         }
         .formStyle(.grouped)
         .onAppear { refresh() }
@@ -238,6 +251,17 @@ private struct GeneralPreferencesView: View {
         deleteOriginals = prefs.deleteOriginalsAfterCopy
         organiseByArtist = prefs.organiseByAlbumArtist
         keepOrganised = prefs.keepLibraryOrganised
+        refreshThumbnailCacheSize()
+    }
+
+    private func refreshThumbnailCacheSize() {
+        let bytes = ArtworkStore(directory: ArtworkStore.defaultDirectory).diskSizeBytes()
+        thumbnailCacheSize = ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
+    }
+
+    private func cleanThumbnailCache() {
+        ArtworkStore(directory: ArtworkStore.defaultDirectory).clear()
+        refreshThumbnailCacheSize()
     }
 }
 
