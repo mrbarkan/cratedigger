@@ -22,22 +22,33 @@ extension LibraryViewModel {
         return isLocalSource
     }
 
-    /// One-press repair for the current source: re-probe every track whose
-    /// number is missing OR duplicated within its album (an album of all "11"s
-    /// is as broken as one with blanks), fill blank tags from the file, and
-    /// save the healed crates. Never writes to the audio files.
+    /// One-press repair. With an explicit selection it re-probes *every* selected
+    /// track thoroughly (the user hand-picked them); with nothing selected it
+    /// falls back to the whole source but only probes tracks whose number is
+    /// missing OR duplicated within its album (an album of all "11"s is as broken
+    /// as one with blanks) — probing an entire library on every press is too slow.
+    /// Fills blank tags from the file and saves the healed crates. Never writes to
+    /// the audio files.
     func repairMissingMetadata() {
         guard canRepairMetadata, !isRepairingMetadata else { return }
 
+        // Duplicated (disc, track#) within an album — cheap, in-memory, over the
+        // whole index. Selected tracks live in this index, so their dup status
+        // (used by the filename-inference below) is captured here regardless of
+        // scope.
         var duplicatedIDs: Set<UUID> = []
         for artist in index.artists {
             for album in artist.albums {
                 duplicatedIDs.formUnion(MetadataRepairPlanner.duplicatedNumberTrackIDs(in: album.tracks))
             }
         }
-        let candidates = index.allTracks.filter {
-            MetadataRepairPlanner.needsRepair($0.metadata) || duplicatedIDs.contains($0.track.id)
-        }
+
+        let hasSelection = !selectedTrackIDs.isEmpty || !selectedAlbumIDs.isEmpty || !selectedArtistIDs.isEmpty
+        let candidates = hasSelection
+            ? selectedTracksForCrateAdd()
+            : index.allTracks.filter {
+                MetadataRepairPlanner.needsRepair($0.metadata) || duplicatedIDs.contains($0.track.id)
+            }
         guard !candidates.isEmpty else {
             appAlert = .info(title: "Tags Check Out",
                              message: "Every track in this source has a track number, with no duplicates inside an album.")
@@ -50,6 +61,7 @@ extension LibraryViewModel {
         let scanner = self.scanner
         let dupIDs = duplicatedIDs
         let total = candidates.count
+        let scoped = hasSelection
 
         // Detached: the probes must not touch the main actor at all — the first
         // (sequential, main-inherited) version of this loop froze the app for
@@ -132,7 +144,9 @@ extension LibraryViewModel {
                 self.metadataRepairConflicts = finalGroups
                 self.showOLEDNotice(finalRepaired.isEmpty ? "TAGS CHECKED" : "TAGS REPAIRED")
 
-                var lines = ["Checked \(total) track\(total == 1 ? "" : "s") with a missing or duplicated track number."]
+                var lines = [scoped
+                    ? "Checked \(total) selected track\(total == 1 ? "" : "s")."
+                    : "Checked \(total) track\(total == 1 ? "" : "s") with a missing or duplicated track number."]
                 lines.append(finalRepaired.isEmpty
                     ? "No fixes found in the files' tags."
                     : "Filled tags on \(finalRepaired.count) track\(finalRepaired.count == 1 ? "" : "s") from the files.")

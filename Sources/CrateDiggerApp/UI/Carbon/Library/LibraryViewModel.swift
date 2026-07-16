@@ -1497,6 +1497,12 @@ final class LibraryViewModel: ObservableObject {
             sampleRateHz: track.track.sampleRateHz,
             year: newMetadata.year ?? track.track.year,
             trackNumber: newMetadata.trackNumber ?? track.track.trackNumber,
+            // Surface track/disc totals too — the browser groups and sorts discs
+            // off the AudioTrack's own fields, so omitting these silently reverted
+            // an edited disc number to nil (disc 1) even though the tag was saved.
+            trackTotal: newMetadata.trackTotal ?? track.track.trackTotal,
+            discNumber: newMetadata.discNumber ?? track.track.discNumber,
+            discTotal: newMetadata.discTotal ?? track.track.discTotal,
             artworkSource: track.track.artworkSource,
             artworkHash: track.track.artworkHash,
             artworkDimensions: track.track.artworkDimensions

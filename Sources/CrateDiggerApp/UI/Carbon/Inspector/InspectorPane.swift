@@ -255,7 +255,7 @@ struct InspectorPane: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: geometry.keyHeight)
                 .disabled(!model.canRepairMetadata || model.isRepairingMetadata)
-                .carbonTip("Re-check files for tracks missing a track number and fill in blank tags from the files")
+                .carbonTip("Re-check the selected tracks against their files and fill in blank tags (checks the whole source when nothing is selected)")
             }
             .padding(.horizontal, 16)
             .padding(.bottom, model.selectedAlbum == nil ? 12 : 8)
