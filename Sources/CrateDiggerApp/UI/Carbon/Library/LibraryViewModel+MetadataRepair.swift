@@ -22,13 +22,19 @@ extension LibraryViewModel {
         return isLocalSource
     }
 
-    /// One-press repair. With an explicit selection it re-probes *every* selected
-    /// track thoroughly (the user hand-picked them); with nothing selected it
-    /// falls back to the whole source but only probes tracks whose number is
-    /// missing OR duplicated within its album (an album of all "11"s is as broken
-    /// as one with blanks) — probing an entire library on every press is too slow.
-    /// Fills blank tags from the file and saves the healed crates. Never writes to
-    /// the audio files.
+    /// One-press repair.
+    ///
+    /// **With a selection** (the everyday case): re-probe every selected track,
+    /// heal blank tags from the file, then look the release up online and offer
+    /// the differences for review — the user picks which fields to overwrite.
+    /// The local probe runs first on purpose: filling blanks from the file's own
+    /// tags gives the lookup better search terms than an empty crate row would.
+    ///
+    /// **With nothing selected**: the whole source, but only tracks whose number
+    /// is missing OR duplicated within its album (an album of all "11"s is as
+    /// broken as one with blanks) — probing an entire library on every press is
+    /// too slow, and looking every album up online would hammer the services.
+    /// This path stays local-only and never writes to the audio files.
     func repairMissingMetadata() {
         guard canRepairMetadata, !isRepairingMetadata else { return }
 
@@ -140,21 +146,93 @@ extension LibraryViewModel {
                 if !finalRepaired.isEmpty {
                     self.updateTrackURLsInIndex(finalRepaired)
                 }
-                self.isRepairingMetadata = false
-                self.metadataRepairConflicts = finalGroups
                 self.showOLEDNotice(finalRepaired.isEmpty ? "TAGS CHECKED" : "TAGS REPAIRED")
-
-                var lines = [scoped
-                    ? "Checked \(total) selected track\(total == 1 ? "" : "s")."
-                    : "Checked \(total) track\(total == 1 ? "" : "s") with a missing or duplicated track number."]
-                lines.append(finalRepaired.isEmpty
-                    ? "No fixes found in the files' tags."
-                    : "Filled tags on \(finalRepaired.count) track\(finalRepaired.count == 1 ? "" : "s") from the files.")
-                if finalUnreadable > 0 { lines.append("\(finalUnreadable) file\(finalUnreadable == 1 ? "" : "s") couldn't be read.") }
-                if !finalGroups.isEmpty { lines.append("\(finalGroups.count) track\(finalGroups.count == 1 ? "" : "s") have tags that differ from the files — review them next.") }
-                self.appAlert = .info(title: "Tag Check Complete", message: lines.joined(separator: " "))
             }
+
+            guard scoped else {
+                await MainActor.run {
+                    self.isRepairingMetadata = false
+                    self.metadataRepairConflicts = finalGroups
+
+                    var lines = ["Checked \(total) track\(total == 1 ? "" : "s") with a missing or duplicated track number."]
+                    lines.append(finalRepaired.isEmpty
+                        ? "No fixes found in the files' tags."
+                        : "Filled tags on \(finalRepaired.count) track\(finalRepaired.count == 1 ? "" : "s") from the files.")
+                    if finalUnreadable > 0 { lines.append("\(finalUnreadable) file\(finalUnreadable == 1 ? "" : "s") couldn't be read.") }
+                    if !finalGroups.isEmpty { lines.append("\(finalGroups.count) track\(finalGroups.count == 1 ? "" : "s") have tags that differ from the files — review them next.") }
+                    self.appAlert = .info(title: "Tag Check Complete", message: lines.joined(separator: " "))
+                }
+                return
+            }
+
+            // Hand the *healed* tracks to the lookup, not the stale originals.
+            let healedByID = Dictionary(uniqueKeysWithValues: finalRepaired.map { ($0.track.id, $0) })
+            let healed = candidates.map { healedByID[$0.track.id] ?? $0 }
+            await self.matchSelectionOnline(tracks: healed, localConflicts: finalGroups, unreadable: finalUnreadable)
         }
+    }
+
+    /// The online half of FIX TAGS: look the selection's release up and present
+    /// the differences for review. Writes nothing on its own.
+    ///
+    /// A dry lookup falls back to whatever the local pass found rather than
+    /// throwing that work away — being offline should cost you the online
+    /// answers, not the ones already in hand.
+    @MainActor
+    private func matchSelectionOnline(
+        tracks: [LoadedTrack],
+        localConflicts: [MetadataRepairConflictGroup],
+        unreadable: Int
+    ) async {
+        showOLEDNotice("MATCHING TAGS…")
+        let matches = await matchService.match(for: tracks)
+        isRepairingMetadata = false
+
+        if !matches.isEmpty {
+            metadataMatches = matches
+            showOLEDNotice("MATCH FOUND")
+            return
+        }
+
+        if !localConflicts.isEmpty {
+            metadataRepairConflicts = localConflicts
+            return
+        }
+
+        var lines = ["No online release matched \(tracks.count == 1 ? "this track" : "these \(tracks.count) tracks")."]
+        lines.append("Check the artist and album tags — they're what the lookup searches with.")
+        if unreadable > 0 { lines.append("\(unreadable) file\(unreadable == 1 ? "" : "s") couldn't be read.") }
+        appAlert = .info(title: "No Match Found", message: lines.joined(separator: " "))
+    }
+
+    /// Apply a reviewed match: for every track, write just the fields the user
+    /// checked. Goes through the normal tag-write path, so files are rewritten,
+    /// crates re-pointed, and the library re-organised exactly as a hand edit
+    /// would be.
+    func applyReleaseMatch(_ match: ReleaseMatch, fields: Set<MetadataRepairField>) {
+        metadataMatches = []
+        guard !fields.isEmpty else { return }
+
+        var written = 0
+        for proposal in match.trackProposals {
+            let chosen = proposal.changedFields.filter { fields.contains($0) }
+            // Re-read the track from the index rather than trusting the snapshot
+            // the proposal captured — it may have been healed since.
+            guard !chosen.isEmpty,
+                  let track = index.allTracks.first(where: { $0.track.id == proposal.trackID })
+            else { continue }
+
+            let merged = MetadataRepairPlanner.adopt(chosen, from: proposal.proposed, into: track.metadata)
+            guard merged != track.metadata else { continue }
+            updateTrackMetadata(track, newMetadata: merged)
+            written += 1
+        }
+
+        guard written > 0 else { return }
+        showOLEDNotice("TAGS MATCHED")
+        AppLog.library.notice(
+            "Applied \(match.candidate.source.rawValue, privacy: .public) match to \(written) track(s)"
+        )
     }
 
     /// Apply the review sheet's decisions: for each group, adopt the chosen

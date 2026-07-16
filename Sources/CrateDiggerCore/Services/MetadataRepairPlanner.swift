@@ -95,8 +95,10 @@ public enum MetadataRepairPlanner {
     }
 
     /// Display/compare value of a field. Strings are trimmed and empty-collapsed
-    /// so a stray trailing space never registers as a conflict.
-    private static func value(of field: MetadataRepairField, in metadata: ConversionMetadata) -> String? {
+    /// so a stray trailing space never registers as a conflict. Shared with
+    /// `ReleaseScorer` so "did this field actually change?" means the same thing
+    /// whether the new value came from the file or from an online release.
+    public static func value(of field: MetadataRepairField, in metadata: ConversionMetadata) -> String? {
         func clean(_ s: String?) -> String? {
             guard let t = s?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty else { return nil }
             return t

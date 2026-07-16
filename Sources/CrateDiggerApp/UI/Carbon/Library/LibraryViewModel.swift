@@ -453,6 +453,9 @@ final class LibraryViewModel: ObservableObject {
     /// Stored-vs-file tag disagreements from the last repair pass; non-empty
     /// presents the review sheet.
     @Published var metadataRepairConflicts: [MetadataRepairConflictGroup] = []
+    /// Online release matches for the selection, best-first; non-empty presents
+    /// the match review sheet. Nothing is written until the user says so there.
+    @Published var metadataMatches: [ReleaseMatch] = []
 
     // MARK: - Radio / Streams state
     @Published var streams: [StreamSource] = []
@@ -557,6 +560,8 @@ final class LibraryViewModel: ObservableObject {
     let scanner: LibraryScanService
     let artworkService: ArtworkService
     let remoteArtworkService: RemoteArtworkService
+    /// Online release lookup behind FIX TAGS — see LibraryViewModel+MetadataRepair.
+    let matchService: MetadataMatchService
     let prefs: PreferencesStore
 
     // New services
@@ -596,12 +601,14 @@ final class LibraryViewModel: ObservableObject {
         playback: PlaybackServiceProtocol = PlaybackService(),
         artworkService: ArtworkService = ArtworkService(store: ArtworkStore(directory: ArtworkStore.defaultDirectory)),
         remoteArtworkService: RemoteArtworkService = RemoteArtworkService(),
+        matchService: MetadataMatchService = .live(),
         scanner: LibraryScanService? = nil,
         prefs: PreferencesStore = .shared
     ) {
         self.playback = playback
         self.artworkService = artworkService
         self.remoteArtworkService = remoteArtworkService
+        self.matchService = matchService
         self.prefs = prefs
 
         do {
