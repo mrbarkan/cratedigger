@@ -1,6 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 import CrateDiggerCore
+import CryptoKit
 
 struct ArtworkInspectorView: View {
     @Environment(\.carbon) private var theme
@@ -19,7 +20,9 @@ struct ArtworkInspectorView: View {
     /// The Save button only glows (and is worth pressing) once the user has
     /// actually changed something — found new artwork, or edited a role/format.
     @State private var isDirty = false
-    
+    /// The image awaiting a remove confirmation, if any.
+    @State private var pendingRemoval: URL? = nil
+
     /// Grid order: role first (Main Cover → … → Ignore), then filename via
     /// `localizedStandardCompare` so `booklet_2` precedes `booklet_10`.
     ///
@@ -129,16 +132,28 @@ struct ArtworkInspectorView: View {
                     ForEach(orderedImageURLs, id: \.self) { url in
                         VStack(spacing: 6) {
                             if let nsImage = thumbnails[url] {
-                                Image(nsImage: nsImage)
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fill)
-                                    .frame(width: 100, height: 100)
-                                    .clipped()
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 4)
-                                            .stroke(theme.isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.1), lineWidth: 1)
-                                    )
-                                    .cornerRadius(4)
+                                ZStack(alignment: .topTrailing) {
+                                    Image(nsImage: nsImage)
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fill)
+                                        .frame(width: 100, height: 100)
+                                        .clipped()
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 4)
+                                                .stroke(theme.isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.1), lineWidth: 1)
+                                        )
+                                        .cornerRadius(4)
+
+                                    Button(action: { pendingRemoval = url }) {
+                                        Image(systemName: "xmark.circle.fill")
+                                            .font(.system(size: 15))
+                                            .foregroundColor(.white)
+                                            .background(Circle().fill(Color.black.opacity(0.65)))
+                                    }
+                                    .buttonStyle(.plain)
+                                    .padding(4)
+                                    .help("Remove this image (moves it to the Trash)")
+                                }
                             } else {
                                 Rectangle()
                                     .fill(Color.gray.opacity(0.2))
@@ -240,6 +255,19 @@ struct ArtworkInspectorView: View {
                 ArtworkSearchSheetView(album: album)
             }
         }
+        .alert(
+            "Remove “\(pendingRemoval?.lastPathComponent ?? "")”?",
+            isPresented: Binding(get: { pendingRemoval != nil }, set: { if !$0 { pendingRemoval = nil } }),
+            presenting: pendingRemoval
+        ) { url in
+            Button("Move to Trash", role: .destructive) {
+                removeArtwork(url)
+                pendingRemoval = nil
+            }
+            Button("Cancel", role: .cancel) { pendingRemoval = nil }
+        } message: { _ in
+            Text("The file moves to the Trash and is removed from this album's artwork.")
+        }
     }
     
     /// Manual upload only makes sense for albums backed by real files on disk.
@@ -287,6 +315,56 @@ struct ArtworkInspectorView: View {
         }
         manifest.discNumbers = nums.isEmpty ? nil : nums
         isDirty = true
+    }
+
+    /// Move one artwork file to the Trash and forget it everywhere: the manifest's
+    /// three filename-keyed maps, and the thumbnail cache entry for its bytes.
+    ///
+    /// Trash rather than delete — this can be someone's only scan of a booklet page,
+    /// and there is no undo otherwise.
+    private func removeArtwork(_ url: URL) {
+        guard let album = album, let representative = album.tracks.first?.track.fileURL else { return }
+        let albumFolder = representative.deletingLastPathComponent()
+        let fileName = url.lastPathComponent
+
+        // Hash the bytes before trashing — afterwards they're unreadable, and the
+        // thumbnail cache is keyed by content hash.
+        let hash = (try? Data(contentsOf: url)).map { SHA256.hash(data: $0).compactMap { String(format: "%02x", $0) }.joined() }
+
+        do {
+            try FileManager.default.trashItem(at: url, resultingItemURL: nil)
+        } catch {
+            model.appAlert = .error(
+                title: "Couldn't remove artwork",
+                message: "“\(fileName)” could not be moved to the Trash: \(error.localizedDescription)"
+            )
+            return
+        }
+
+        // Drop the file from every map keyed by filename, else orphans accumulate.
+        manifest.roles[fileName] = nil
+        manifest.discSides?[fileName] = nil
+        manifest.discNumbers?[fileName] = nil
+        if manifest.discSides?.isEmpty == true { manifest.discSides = nil }
+        if manifest.discNumbers?.isEmpty == true { manifest.discNumbers = nil }
+
+        do {
+            try manifest.save(to: albumFolder)
+        } catch {
+            model.appAlert = .error(
+                title: "Artwork removed, but the manifest didn't save",
+                message: "“\(fileName)” is in the Trash, but its role couldn't be cleared: \(error.localizedDescription)"
+            )
+        }
+
+        if let hash { model.artworkService.removeCached(hash: hash) }
+
+        model.indexDiskCache.invalidate(
+            albumFolderPath: albumFolder.path,
+            filePaths: album.tracks.map { $0.track.fileURL.path }
+        )
+        loadManifest()
+        model.refreshLibrary()
     }
 
     private func loadManifest() {
