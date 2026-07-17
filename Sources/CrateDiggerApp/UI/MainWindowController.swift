@@ -97,6 +97,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         !hostingController.model.index.allTracks.isEmpty
     }
 
+    var hasNowPlayingTrack: Bool {
+        hostingController.model.nowPlayingTrack != nil
+    }
+
+    func revealNowPlaying() {
+        hostingController.model.revealNowPlaying()
+    }
+
     var isConversionRunning: Bool {
         hostingController.model.conversionProgress.isRunning
     }

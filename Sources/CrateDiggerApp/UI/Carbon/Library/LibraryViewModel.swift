@@ -926,13 +926,31 @@ final class LibraryViewModel: ObservableObject {
         return playbackQueue[i]
     }
 
+    /// Select the playing track's album so the browser and inspector both jump to
+    /// it. No-op when the playing track isn't in the current source's index — the
+    /// queue can outlive a source switch, and silently swapping crates under the
+    /// user is worse than doing nothing.
+    func revealNowPlaying() {
+        guard let playing = nowPlayingTrack,
+              let album = album(containing: playing.track.id) else { return }
+        clearMultiSelection()
+        selectedArtistID = album.artistID
+        selectedAlbumID = album.id
+        selectedTrackID = playing.track.id
+    }
+
     /// The browsed album containing a track (linear scan over the current
     /// index). Shared by the spinning disc and the mini player so both resolve
     /// cover files (booklet/folder art) the same way.
     func album(containing trackID: UUID) -> Album? {
         for artist in index.artists {
-            for album in artist.albums where album.tracks.contains(where: { $0.id == trackID }) {
-                return album
+            for album in artist.albums {
+                if album.tracks.contains(where: { $0.id == trackID }) {
+                    return album
+                }
+                for version in album.versions ?? [] where version.tracks.contains(where: { $0.track.id == trackID }) {
+                    return version
+                }
             }
         }
         return nil

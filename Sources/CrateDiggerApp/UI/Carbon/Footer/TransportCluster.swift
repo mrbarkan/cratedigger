@@ -7,6 +7,11 @@ struct TransportCluster: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 11) {
+            transportButton(systemName: "scope", label: "Go to Current Song (⌘L)") {
+                model.revealNowPlaying()
+            }
+            .disabled(model.nowPlayingTrack == nil)
+            .opacity(model.nowPlayingTrack == nil ? 0.45 : 1)
             toggleButton(systemName: "shuffle", on: model.shuffleEnabled, label: "Shuffle") {
                 model.toggleShuffle()
             }

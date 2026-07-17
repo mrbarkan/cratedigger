@@ -181,6 +181,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         mainWindowController?.togglePlayPause()
     }
 
+    @objc private func goToCurrentSong(_ sender: Any?) {
+        mainWindowController?.revealNowPlaying()
+    }
+
     @objc private func playNext(_ sender: Any?) {
         mainWindowController?.playNext()
     }
@@ -369,6 +373,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
              #selector(toggleShuffle(_:)),
              #selector(cycleRepeatMode(_:)):
             return mainWindowController?.hasLoadedTracks ?? false
+        case #selector(goToCurrentSong(_:)):
+            return mainWindowController?.hasNowPlayingTrack ?? false
         case #selector(openRecentItem(_:)):
             return menuItem.tag < recentFolderURLs.count
         default:
@@ -507,6 +513,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             item.representedObject = view.rawValue
             viewMenu.addItem(item)
         }
+        viewMenu.addItem(.separator())
+        // ⌘L is what Music.app binds "Go to Current Song" to — muscle memory for free.
+        viewMenu.addItem(makeItem(title: "Go to Current Song", action: #selector(goToCurrentSong(_:)), key: "l"))
         viewMenuItem.submenu = viewMenu
 
         // MARK: Playback menu
