@@ -150,6 +150,10 @@ final class LibraryViewModel: ObservableObject {
     @Published var browserCollapsed: Bool = false
     @Published var inspectorCollapsed: Bool = false
     @Published var showArtworkGallery: Bool = false
+    /// Columns the gallery grid is currently laying out. Published by the view
+    /// (only it knows the pane width) and read by ↑/↓ arrow nav, which has to
+    /// move by a whole row.
+    @Published var galleryColumnsPerRow: Int = 1
 
     /// Tag-editor sheet target — one track (full editor) or many (batch editor).
     /// Presented from `MainShell`, so it works from any row's context menu.

@@ -19,9 +19,22 @@ struct ArtworkGalleryView: View {
     @State private var searchResults: [RemoteArtCandidate] = []
     @State private var searching = false
 
-    private let columns = [
-        GridItem(.adaptive(minimum: 120, maximum: 160), spacing: 18)
-    ]
+    private static let tileSize: CGFloat = 120
+    private static let gridSpacing: CGFloat = 18
+    private static let gridPadding: CGFloat = 18
+
+    /// `.adaptive` resolves its column count at layout time and never reports it,
+    /// but ↑/↓ arrow nav has to move by a whole row — so the grid owns the count
+    /// explicitly rather than re-deriving SwiftUI's arithmetic and hoping it matches.
+    private func columnCount(for width: CGFloat) -> Int {
+        let usable = max(width - Self.gridPadding * 2, Self.tileSize)
+        return max(1, Int((usable + Self.gridSpacing) / (Self.tileSize + Self.gridSpacing)))
+    }
+
+    private func gridColumns(for width: CGFloat) -> [GridItem] {
+        Array(repeating: GridItem(.flexible(), spacing: Self.gridSpacing),
+              count: columnCount(for: width))
+    }
 
     struct RemoteArtCandidate: Identifiable {
         let id = UUID()
@@ -38,21 +51,35 @@ struct ArtworkGalleryView: View {
                 VStack(spacing: 0) {
                     header
 
-                    ScrollViewReader { proxy in
-                        ScrollView(.vertical, showsIndicators: true) {
-                            LazyVGrid(columns: columns, spacing: 18) {
-                                ForEach(allAlbums) { album in
-                                    albumCoverCell(album)
-                                        .id(album.id)
+                    GeometryReader { geo in
+                        ScrollViewReader { proxy in
+                            ScrollView(.vertical, showsIndicators: true) {
+                                LazyVGrid(columns: gridColumns(for: geo.size.width), spacing: Self.gridSpacing) {
+                                    ForEach(allAlbums) { album in
+                                        albumCoverCell(album)
+                                            .id(album.id)
+                                    }
+                                }
+                                .padding(Self.gridPadding)
+                            }
+                            // Bring the selected album (synced with the list browser)
+                            // into view, falling back to the last opened one.
+                            .onAppear {
+                                model.galleryColumnsPerRow = columnCount(for: geo.size.width)
+                                if let id = model.selectedAlbumID ?? lastOpenedID {
+                                    proxy.scrollTo(id, anchor: .center)
                                 }
                             }
-                            .padding(18)
-                        }
-                        // Bring the selected album (synced with the list browser)
-                        // into view, falling back to the last opened one.
-                        .onAppear {
-                            if let id = model.selectedAlbumID ?? lastOpenedID {
-                                proxy.scrollTo(id, anchor: .center)
+                            .onChange(of: geo.size.width) { width in
+                                model.galleryColumnsPerRow = columnCount(for: width)
+                            }
+                            // Follow the selection — arrow nav and Go to Current Song
+                            // both move it off screen otherwise. Mirrors ColumnList.
+                            .onChange(of: model.selectedAlbumID) { target in
+                                guard let target else { return }
+                                withAnimation(.easeOut(duration: 0.16)) {
+                                    proxy.scrollTo(target, anchor: .center)
+                                }
                             }
                         }
                     }
