@@ -20,6 +20,21 @@ struct ArtworkInspectorView: View {
     /// actually changed something — found new artwork, or edited a role/format.
     @State private var isDirty = false
     
+    /// Grid order: role first (Main Cover → … → Ignore), then filename via
+    /// `localizedStandardCompare` so `booklet_2` precedes `booklet_10`.
+    ///
+    /// Kept separate from `imageURLs` on purpose: `imageURLs` keys the
+    /// thumbnail-loading `.task(id:)`, so reordering it on every role change
+    /// would reload every thumbnail in the grid.
+    private var orderedImageURLs: [URL] {
+        imageURLs.sorted { lhs, rhs in
+            let lRole = manifest.roles[lhs.lastPathComponent] ?? .auto
+            let rRole = manifest.roles[rhs.lastPathComponent] ?? .auto
+            if lRole.sortOrder != rRole.sortOrder { return lRole.sortOrder < rRole.sortOrder }
+            return lhs.lastPathComponent.localizedStandardCompare(rhs.lastPathComponent) == .orderedAscending
+        }
+    }
+
     private var mediaFormatLabel: String {
         switch manifest.mediaFormat {
         case .some(.cd):    return "CD"
@@ -112,7 +127,7 @@ struct ArtworkInspectorView: View {
 
             ScrollView {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 100, maximum: 120), spacing: 14)], spacing: 14) {
-                    ForEach(imageURLs, id: \.self) { url in
+                    ForEach(orderedImageURLs, id: \.self) { url in
                         VStack(spacing: 6) {
                             if let nsImage = thumbnails[url] {
                                 Image(nsImage: nsImage)
@@ -143,14 +158,15 @@ struct ArtworkInspectorView: View {
                                     isDirty = true
                                 }
                             )) {
-                                Text("Auto").tag(ArtworkRole.auto)
-                                Text("Ignore").tag(ArtworkRole.ignore)
                                 Text("Main Cover").tag(ArtworkRole.cover)
                                 Text("Alt Cover").tag(ArtworkRole.altCover)
                                 Text("Back").tag(ArtworkRole.back)
                                 Text("Disc/Vinyl").tag(ArtworkRole.disc)
                                 Text("Inlay / Insert").tag(ArtworkRole.inlay)
                                 Text("Booklet Page").tag(ArtworkRole.bookletPage)
+                                Divider()
+                                Text("Auto").tag(ArtworkRole.auto)
+                                Text("Ignore").tag(ArtworkRole.ignore)
                             }
                             .labelsHidden()
                             .pickerStyle(.menu)

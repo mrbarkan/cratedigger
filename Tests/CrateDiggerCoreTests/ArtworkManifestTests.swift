@@ -43,4 +43,16 @@ final class ArtworkManifestTests: XCTestCase {
         XCTAssertEqual(manifest.roles["disc.jpg"], .disc)
         XCTAssertEqual(manifest.discSides?["disc.jpg"], "A")
     }
+
+    func testRolesSortCoverFirstThenBackDiscBooklet() {
+        let shuffled: [ArtworkRole] = [.ignore, .bookletPage, .back, .auto, .cover, .disc, .inlay, .altCover]
+        let sorted = shuffled.sorted { $0.sortOrder < $1.sortOrder }
+        XCTAssertEqual(sorted, [.cover, .altCover, .back, .disc, .inlay, .bookletPage, .auto, .ignore])
+    }
+
+    func testEveryRoleHasADistinctSortOrder() {
+        let orders = ArtworkRole.allCases.map(\.sortOrder)
+        XCTAssertEqual(Set(orders).count, ArtworkRole.allCases.count,
+                       "Duplicate sortOrder makes grid ordering non-deterministic")
+    }
 }

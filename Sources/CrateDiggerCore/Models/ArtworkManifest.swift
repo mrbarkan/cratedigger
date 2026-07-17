@@ -14,6 +14,29 @@ public enum ArtworkRole: String, Codable, Equatable, Sendable, CaseIterable {
     case ignore = "Ignore"
 }
 
+public extension ArtworkRole {
+    /// Display order for the ART grid: the main cover first, then the physical
+    /// parts of the package, then booklet pages. Unclassified (`.auto`) and
+    /// hidden (`.ignore`) sink to the bottom, where they read as "needs
+    /// attention".
+    ///
+    /// The artwork *viewer* deliberately uses a different order — see
+    /// `AlbumArtCatalog.pages`, which sequences a booklet for reading rather
+    /// than for editing.
+    var sortOrder: Int {
+        switch self {
+        case .cover:       return 0
+        case .altCover:    return 1
+        case .back:        return 2
+        case .disc:        return 3
+        case .inlay:       return 4
+        case .bookletPage: return 5
+        case .auto:        return 6
+        case .ignore:      return 7
+        }
+    }
+}
+
 public struct ArtworkManifest: Codable, Equatable, Sendable {
     public var mediaFormat: MediaFormat?
     public var roles: [String: ArtworkRole] // Key: Filename, Value: Role
