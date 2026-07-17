@@ -238,6 +238,18 @@ struct ArtworkGalleryView: View {
                     .padding(6)
                     .carbonTip("Search Cover Art Online")
                 }
+
+                // First consumer of albumsFetchingArtwork — batch cover search
+                // marks each album while its match is in flight.
+                if model.isFetchingArtwork(for: album) {
+                    ZStack {
+                        Color.black.opacity(0.45)
+                        ProgressView().controlSize(.small)
+                    }
+                    .frame(width: 120, height: 120)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                    .allowsHitTesting(false)
+                }
             }
 
             // Selection reads as an underline rather than a frame: the empty
@@ -274,9 +286,24 @@ struct ArtworkGalleryView: View {
                 searchArtworkOnline(for: album)
             }
         }
+        // Mirrors BrowserContextMenu.album's usesSelection rule: act on the whole
+        // selection when the right-clicked album is part of it, else just this one.
+        let batchTargets = batchCoverTargets(for: album)
+        Button(batchTargets.count > 1 ? "Search & Add Covers (\(batchTargets.count) Albums)" : "Search & Add Cover") {
+            model.searchAndAddCovers(for: batchTargets)
+        }
         if album.booklet != nil {
             Button("Open Booklet") { openBooklet(album) }
         }
+    }
+
+    /// The albums a batch cover action should run on.
+    private func batchCoverTargets(for album: Album) -> [Album] {
+        guard model.selectedAlbumIDs.count > 1, model.selectedAlbumIDs.contains(album.id) else {
+            return [album]
+        }
+        let ids = model.selectedAlbumIDs
+        return allAlbums.filter { ids.contains($0.id) }
     }
 
     // MARK: - Album Page (cover + tracks, in-pane, non-blocking)
@@ -619,7 +646,7 @@ struct ArtworkGalleryView: View {
             }
 
             // Apply the image we just downloaded directly — no second iTunes
-            // round-trip (fetchRemoteArtwork would re-download to do the same thing).
+            // round-trip.
             await MainActor.run {
                 model.applyFetchedArtwork(asset, toAlbumID: album.id)
             }

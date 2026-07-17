@@ -297,7 +297,9 @@ final class LibraryViewModel: ObservableObject {
     /// of a modal alert; auto-clears after a couple of seconds.
     @Published var oledNotice: String?
     private var oledNoticeClearTask: Task<Void, Never>?
-    @Published private(set) var albumsFetchingArtwork: Set<String> = []
+    // Not private(set): transient UI state — LibraryViewModel+BatchArtwork
+    // marks/clears albums from a different file while a fetch is in flight.
+    @Published var albumsFetchingArtwork: Set<String> = []
 
     @Published var playbackVolume: Double = 0.8 {
         didSet {
@@ -1883,40 +1885,6 @@ final class LibraryViewModel: ObservableObject {
         albumsFetchingArtwork.contains(album.id)
     }
 
-    func fetchRemoteArtwork(for album: Album) {
-        let albumID = album.id
-        guard !albumsFetchingArtwork.contains(albumID) else { return }
-        albumsFetchingArtwork.insert(albumID)
-
-        let artistName = album.artistName
-        let albumTitle = album.title
-
-        Task { [weak self, remoteArtworkService] in
-            do {
-                let asset = try await remoteArtworkService.fetchArtwork(
-                    artist: artistName,
-                    album: albumTitle
-                )
-                await MainActor.run {
-                    guard let self else { return }
-                    self.albumsFetchingArtwork.remove(albumID)
-                    self.applyFetchedArtwork(asset, toAlbumID: albumID)
-                }
-            } catch {
-                AppLog.library.warning("Remote artwork fetch failed for \(albumTitle): \(String(describing: error))")
-                await MainActor.run {
-                    guard let self else { return }
-                    self.albumsFetchingArtwork.remove(albumID)
-                    self.appAlert = .error(
-                        title: "No artwork found",
-                        message: (error as? LocalizedError)?.errorDescription
-                            ?? "iTunes returned no match. Try a different album, or drop a cover.jpg next to the file."
-                    )
-                }
-            }
-        }
-    }
-
     func applyFetchedArtwork(_ asset: ArtworkAsset, toAlbumID albumID: String) {
         artworkService.ingest(asset)
 
@@ -2212,6 +2180,27 @@ final class LibraryViewModel: ObservableObject {
                 message: "Saved \(imageCount) image\(imageCount == 1 ? "" : "s") to the “\(album.title)” folder."
             )
         }
+    }
+
+    /// Rebuild every browsable index with new folder covers applied, in one pass.
+    /// Lives here (not in +BatchArtwork) so it can write the private(set)
+    /// index/localIndex; the batch fetch builds the map and calls this.
+    func applyFolderCovers(_ assetByTrackID: [UUID: ArtworkAsset]) {
+        guard !assetByTrackID.isEmpty else { return }
+        func applyArtwork(_ loaded: LoadedTrack) -> LoadedTrack {
+            guard let asset = assetByTrackID[loaded.track.id] else { return loaded }
+            var newTrack = loaded.track
+            var newMetadata = loaded.metadata
+            newTrack.artworkSource = .folderImage
+            newTrack.artworkHash = asset.hash
+            newTrack.artworkDimensions = asset.dimensions
+            newMetadata.artwork = asset
+            return LoadedTrack(track: newTrack, metadata: newMetadata, recordMarkers: loaded.recordMarkers)
+        }
+        localIndex = buildIndex(localIndex.allTracks.map(applyArtwork))
+        prepCrateTracks = prepCrateTracks.map(applyArtwork)
+        index = buildIndex(index.allTracks.map(applyArtwork))
+        NotificationCenter.default.post(name: NSNotification.Name("CrateDiggerArtworkImported"), object: nil)
     }
 
     /// Role-based filename for an imported image (cover.jpg, back.jpg, …).
