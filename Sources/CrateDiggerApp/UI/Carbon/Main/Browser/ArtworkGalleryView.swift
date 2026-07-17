@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import CryptoKit
 import CrateDiggerCore
 
@@ -80,9 +81,13 @@ struct ArtworkGalleryView: View {
     /// Single-click: select the album (highlights the cover here and the row in
     /// the list browser, and drives the inspector's track list) without leaving
     /// the grid.
-    private func selectAlbum(_ album: Album) {
-        model.selectedArtistID = album.artistID
-        model.selectedAlbumID = album.id
+    ///
+    /// Routes through the model's modifier-aware selectAlbum rather than setting
+    /// the anchor directly — the old local version shadowed it, which is why
+    /// ⌘-click and ⇧-click did nothing in the gallery. The tap gesture below
+    /// forwards the live ⌘/⇧ flags in; this function just passes them through.
+    private func selectAlbum(_ album: Album, command: Bool = false, shift: Bool = false) {
+        model.selectAlbum(album, command: command, shift: shift, ordered: allAlbums, flat: true)
     }
 
     private func openDetail(_ album: Album) {
@@ -154,24 +159,28 @@ struct ArtworkGalleryView: View {
     }
 
     private func albumCoverCell(_ album: Album) -> some View {
-        let selected = model.selectedAlbumID == album.id
+        // isAlbumSelected, not selectedAlbumID: the anchor alone ignored
+        // selectedAlbumIDs, so ⌘A and ⌘-click selected albums the gallery
+        // never drew.
+        let selected = model.isAlbumSelected(album.id)
         return VStack(alignment: .leading, spacing: 6) {
             ZStack(alignment: .bottomTrailing) {
                 GalleryAlbumCoverView(album: album, size: 120)
                     .clipShape(RoundedRectangle(cornerRadius: 4))
                     .overlay(
                         RoundedRectangle(cornerRadius: 4)
-                            .stroke(selected ? theme.orange : Color.black.opacity(0.12),
-                                    lineWidth: selected ? 2.5 : 1)
+                            .stroke(Color.black.opacity(0.12), lineWidth: 1)
                     )
-                    .shadow(color: selected ? theme.orange.opacity(0.4) : Color.black.opacity(0.15),
-                            radius: selected ? 6 : 4, y: 2)
+                    .shadow(color: Color.black.opacity(0.15), radius: 4, y: 2)
                     .matchedGeometryEffect(id: album.id, in: artNamespace)
                     .contentShape(Rectangle())
                     // Single click selects (highlights + drives the inspector track
                     // list); double click opens the full album page.
                     .onTapGesture(count: 2) { openDetail(album) }
-                    .onTapGesture(count: 1) { selectAlbum(album) }
+                    .onTapGesture(count: 1) {
+                        let m = NSEvent.modifierFlags
+                        selectAlbum(album, command: m.contains(.command), shift: m.contains(.shift))
+                    }
 
                 // Booklet Indicator Badge (Top Right of Cover)
                 if album.booklet != nil {
@@ -203,6 +212,15 @@ struct ArtworkGalleryView: View {
                     .carbonTip("Search Cover Art Online")
                 }
             }
+
+            // Selection reads as an underline rather than a frame: the empty
+            // jewel case is 1.13:1 (the spine adds width outside the square lid)
+            // and letterboxes inside the square tile, so a frame on the tile
+            // bounds can never hug it. An underline doesn't have to.
+            RoundedRectangle(cornerRadius: 1.5)
+                .fill(selected ? theme.orange : Color.clear)
+                .frame(height: 3)
+                .shadow(color: selected ? theme.orange.opacity(0.5) : .clear, radius: 4)
 
             Text(album.title)
                 .font(CarbonFont.sans(10.5, weight: .bold))
