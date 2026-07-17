@@ -66,6 +66,13 @@ public final class ArtworkStore {
         try? Data(contentsOf: url(for: hash))
     }
 
+    /// Drop one cached thumbnail — used when its source art is deleted, so the
+    /// cache doesn't keep a cover the user removed. Silent when absent: the
+    /// thumbnail may simply never have been drawn.
+    public func remove(_ hash: String) {
+        try? fileManager.removeItem(at: url(for: hash))
+    }
+
     /// Drop every cached thumbnail. Safe at any time — thumbnails regenerate
     /// from the source art the next time a cover is drawn.
     public func clear() {

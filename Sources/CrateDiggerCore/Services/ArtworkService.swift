@@ -119,6 +119,17 @@ public final class ArtworkService: ArtworkPreparing {
         storeData(asset.data, for: asset.hash)
     }
 
+    /// Forget one cover's cached thumbnail — used when its source art is deleted.
+    ///
+    /// Only the on-disk store is pruned. The in-memory NSCaches are keyed
+    /// `hash-WxH` / `hash-tN` and NSCache cannot enumerate its keys, so per-key
+    /// eviction would mean tracking every key by hand — for entries that nothing
+    /// references once the index rebuilds, in a cache that already evicts under
+    /// pressure. Not worth the bookkeeping.
+    public func removeCached(hash: String) {
+        store?.remove(hash)
+    }
+
     /// Refill an asset's full-resolution `data`. Assets decoded from a `.cdlib`
     /// come back with empty `data` (the crate stores only the hash), so
     /// conversion/transfer must rehydrate them before re-embedding artwork.

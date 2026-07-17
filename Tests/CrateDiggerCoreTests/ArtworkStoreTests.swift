@@ -86,6 +86,23 @@ final class ArtworkStoreTests: XCTestCase {
         store.put(Data([7, 8, 9]), for: "c")
         XCTAssertTrue(store.contains("c"))
     }
+
+    func testRemoveDeletesTheCachedThumbnail() {
+        let store = ArtworkStore(directory: directory)
+        store.put(Data("not-an-image-but-stored-as-is".utf8), for: "deadbeef")
+        XCTAssertTrue(store.contains("deadbeef"))
+
+        store.remove("deadbeef")
+
+        XCTAssertFalse(store.contains("deadbeef"))
+        XCTAssertNil(store.data(for: "deadbeef"))
+    }
+
+    func testRemoveIsSilentForAnAbsentHash() {
+        let store = ArtworkStore(directory: directory)
+        store.remove("never-existed")   // must not throw or trap
+        XCTAssertFalse(store.contains("never-existed"))
+    }
 }
 
 final class ArtworkStoreMigrationTests: XCTestCase {
