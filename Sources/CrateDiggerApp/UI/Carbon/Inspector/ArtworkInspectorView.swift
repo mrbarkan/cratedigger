@@ -98,30 +98,29 @@ struct ArtworkInspectorView: View {
                         .controlSize(.small)
                         .frame(maxWidth: .infinity)
                 } else {
-                    KeyButton(style: isDirty ? .selected : .normal, action: saveChanges) {
+                    // The device-safe setting lives here rather than in a row of
+                    // its own: it is a global preference whose only effect is on
+                    // this button's background embed step, so it belongs with the
+                    // action it modifies, not with the per-album art above.
+                    Menu {
+                        Toggle("Device-safe artwork (600px baseline JPEG)", isOn: $deviceCompatibleArt)
+                    } label: {
                         Text("SAVE")
                             .font(CarbonFont.mono(9, weight: .bold))
+                    } primaryAction: {
+                        saveChanges()
                     }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.visible)
                     .frame(maxWidth: .infinity)
                     .frame(height: 22)
+                    .background(ChromeChassis(theme: theme, cornerRadius: 6))
                     .disabled(!isDirty)
+                    .help("Saves artwork roles and format, and embeds the cover into every track on the album. Device-safe artwork embeds a downscaled baseline JPEG so Rockbox and legacy players can read it.")
                 }
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
-
-            HStack(spacing: 6) {
-                Toggle(isOn: $deviceCompatibleArt) {
-                    Text("Device-safe artwork (600px baseline JPEG)")
-                        .font(CarbonFont.mono(9, weight: .bold))
-                        .foregroundColor(theme.ink2)
-                }
-                .toggleStyle(.checkbox)
-                .help("Embeds a downscaled baseline-JPEG cover so Rockbox and legacy players can read it. Turn off to embed the full-resolution original for modern/desktop players.")
-                Spacer()
-            }
-            .padding(.horizontal, 14)
-            .padding(.bottom, 6)
 
             Divider().background(theme.isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.1))
 
