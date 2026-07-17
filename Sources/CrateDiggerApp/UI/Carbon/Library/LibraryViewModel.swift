@@ -951,7 +951,9 @@ final class LibraryViewModel: ObservableObject {
     /// and re-scan every album folder on each edit/source switch. Cleared after
     /// in-place artwork edits (see applyImportedArtwork); move/import changes
     /// self-invalidate because the cache is keyed by file/folder path.
-    private let indexDiskCache = LibraryIndexDiskCache()
+    /// Internal, not private: the ART inspector invalidates the folder it just
+    /// wrote a manifest into, the same way applyImportedArtwork does.
+    let indexDiskCache = LibraryIndexDiskCache()
 
     func buildIndex(_ tracks: [LoadedTrack]) -> LibraryIndex {
         LibraryIndex.build(from: tracks, groups: albumGroupStore.all(), diskCache: indexDiskCache)
@@ -2075,9 +2077,15 @@ final class LibraryViewModel: ObservableObject {
     /// happens quietly in the background.
     func embedCoverIntoTracksInBackground(for album: Album, deviceCompatible: Bool = true) {
         guard let folder = album.tracks.first?.track.fileURL.deletingLastPathComponent() else { return }
-        // Prefer the manifest's .cover-roled file, else cover.jpg.
+        // Prefer the manifest's .cover-roled file, else cover.jpg. `roles` is a
+        // dictionary, so `.first(where:)` picked a different file run to run when
+        // an album had more than one .cover — sort for a stable choice.
         let manifest = ArtworkManifest.load(from: folder)
-        let coverName = manifest?.roles.first(where: { $0.value == .cover })?.key ?? "cover.jpg"
+        let coverName = manifest?.roles
+            .filter { $0.value == .cover }
+            .map(\.key)
+            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+            .first ?? "cover.jpg"
         let coverURL = folder.appendingPathComponent(coverName)
         guard FileManager.default.fileExists(atPath: coverURL.path) else { return }
         let tracks = album.tracks

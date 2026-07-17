@@ -322,16 +322,38 @@ struct ArtworkInspectorView: View {
     private func saveChanges() {
         guard let album = album, let representative = album.tracks.first?.track.fileURL else { return }
         isSaving = true
-        
+
         Task {
             let albumFolder = representative.deletingLastPathComponent()
-            
-            // 1. Save the manifest
-            try? manifest.save(to: albumFolder)
-            
+
+            do {
+                try manifest.save(to: albumFolder)
+            } catch {
+                // A read-only or full volume used to report "Artwork saved" and
+                // silently drop the edit. Keep isDirty so the work isn't lost.
+                await MainActor.run {
+                    isSaving = false
+                    model.appAlert = .error(
+                        title: "Couldn't save artwork",
+                        message: "Writing to “\(albumFolder.lastPathComponent)” failed: \(error.localizedDescription)"
+                    )
+                }
+                return
+            }
+
             await MainActor.run {
                 isSaving = false
                 isDirty = false
+                // This folder's manifest just changed on disk. refreshLibrary()
+                // rebuilds the indexes but reads per-folder booklet/mediaFormat
+                // info from the disk cache, so without this the rebuild reuses
+                // stale info for the folder we just edited (a FORMAT change
+                // wouldn't take until a full rescan). applyImportedArtwork does
+                // the same thing for the import path.
+                model.indexDiskCache.invalidate(
+                    albumFolderPath: albumFolder.path,
+                    filePaths: album.tracks.map { $0.track.fileURL.path }
+                )
                 model.refreshLibrary()
                 // Embed a compatible 600px baseline copy of the cover into each
                 // track in the BACKGROUND (keeping the full-res cover.jpg) — so the
