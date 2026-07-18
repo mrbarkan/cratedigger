@@ -933,12 +933,28 @@ final class LibraryViewModel: ObservableObject {
     /// queue can outlive a source switch, and silently swapping crates under the
     /// user is worse than doing nothing.
     func revealNowPlaying() {
-        guard let playing = nowPlayingTrack,
-              let album = album(containing: playing.track.id) else { return }
+        guard let playing = nowPlayingTrack else { return }
+        let trackID = playing.track.id
+        // The browsable owner: the album actually present in index.allAlbums. For a
+        // grouped release that's the parent group album (member pressings live only
+        // inside its `.versions`, so a member's id would match no gallery tile and no
+        // list row). album(containing:) returns the member — right for the artwork
+        // callers, wrong for browser selection — so resolve the parent here instead.
+        var owner: Album?
+        outer: for artist in index.artists {
+            for album in artist.albums {
+                if album.tracks.contains(where: { $0.track.id == trackID })
+                    || (album.versions ?? []).contains(where: { $0.tracks.contains { $0.track.id == trackID } }) {
+                    owner = album
+                    break outer
+                }
+            }
+        }
+        guard let album = owner else { return }
         clearMultiSelection()
         selectedArtistID = album.artistID
         selectedAlbumID = album.id
-        selectedTrackID = playing.track.id
+        selectedTrackID = trackID
     }
 
     /// The browsed album containing a track (linear scan over the current
@@ -947,7 +963,7 @@ final class LibraryViewModel: ObservableObject {
     func album(containing trackID: UUID) -> Album? {
         for artist in index.artists {
             for album in artist.albums {
-                if album.tracks.contains(where: { $0.id == trackID }) {
+                if album.tracks.contains(where: { $0.track.id == trackID }) {
                     return album
                 }
                 for version in album.versions ?? [] where version.tracks.contains(where: { $0.track.id == trackID }) {
