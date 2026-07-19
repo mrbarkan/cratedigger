@@ -1,6 +1,10 @@
 import Foundation
 
-public final class MetadataEditorService {
+// Immutable after init — three `let`s, no mutable state; the only work it does is
+// shell out to ffmpeg per call. Safe to share across threads / capture in the
+// @Sendable tag-write closure, but the compiler can't prove it because
+// CommandRunning and FileManager aren't Sendable-marked — hence @unchecked.
+public final class MetadataEditorService: @unchecked Sendable {
     private let ffmpegExecutableURL: URL
     private let commandRunner: CommandRunning
     private let fileManager: FileManager
