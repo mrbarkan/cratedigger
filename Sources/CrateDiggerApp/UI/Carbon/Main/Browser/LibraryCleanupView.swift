@@ -9,6 +9,10 @@ struct LibraryCleanupView: View {
 
     @State private var activeTab = 0
 
+    /// Checked = will be trashed. Keyed by standardized file path; reseeded
+    /// (worst versions pre-checked) whenever scan results change.
+    @State private var checkedPaths: Set<String> = []
+
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -149,7 +153,19 @@ struct LibraryCleanupView: View {
 
     private var duplicatesTab: some View {
         VStack(spacing: 0) {
-            if model.duplicateGroups.isEmpty {
+            modeBar
+
+            if model.isCleanupScanning {
+                VStack {
+                    Spacer()
+                    ProgressView().controlSize(.large)
+                    Text("Scanning…")
+                        .font(CarbonFont.sans(12))
+                        .foregroundColor(.secondary)
+                        .padding(.top, 8)
+                    Spacer()
+                }
+            } else if model.duplicateGroups.isEmpty {
                 VStack {
                     Spacer()
                     Image(systemName: "checkmark.circle")
@@ -164,48 +180,7 @@ struct LibraryCleanupView: View {
             } else {
                 List {
                     ForEach(model.duplicateGroups) { group in
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("\(group.bestTrack.track.artist) - \(group.bestTrack.track.title)")
-                                .font(CarbonFont.sans(12.5, weight: .bold))
-                                .foregroundColor(theme.ink)
-                            
-                            // Best version
-                            HStack {
-                                Image(systemName: "star.fill")
-                                    .foregroundColor(.yellow)
-                                    .font(.system(size: 9))
-                                Text("[BEST]")
-                                    .font(CarbonFont.mono(8, weight: .bold))
-                                    .foregroundColor(.green)
-                                Text(specString(for: group.bestTrack))
-                                    .font(CarbonFont.mono(9))
-                                Text(group.bestTrack.track.fileURL.lastPathComponent)
-                                    .font(CarbonFont.mono(9))
-                                    .foregroundColor(.secondary)
-                                    .lineLimit(1)
-                            }
-                            .padding(.leading, 8)
-
-                            // Worst versions
-                            ForEach(group.worstTracks) { worst in
-                                HStack {
-                                    Image(systemName: "trash")
-                                        .foregroundColor(.red.opacity(0.7))
-                                        .font(.system(size: 9))
-                                    Text("[DUP]")
-                                        .font(CarbonFont.mono(8, weight: .bold))
-                                        .foregroundColor(.red)
-                                    Text(specString(for: worst))
-                                        .font(CarbonFont.mono(9))
-                                    Text(worst.track.fileURL.lastPathComponent)
-                                        .font(CarbonFont.mono(9))
-                                        .foregroundColor(.secondary)
-                                        .lineLimit(1)
-                                }
-                                .padding(.leading, 8)
-                            }
-                        }
-                        .padding(.vertical, 8)
+                        duplicateGroupRow(group)
                     }
                 }
                 .listStyle(.plain)
@@ -213,26 +188,125 @@ struct LibraryCleanupView: View {
                 .frame(maxHeight: .infinity)
 
                 HStack(spacing: 12) {
-                    Button("Export Best versions") {
-                        chooseAndExport(best: true)
-                    }
-                    Button("Export Dup versions") {
-                        chooseAndExport(best: false)
-                    }
+                    Button("Export Best versions") { chooseAndExport(best: true) }
+                    Button("Export Dup versions") { chooseAndExport(best: false) }
                     Spacer()
-                    KeyButton(style: .selected, action: {
-                        model.resolveDuplicates()
-                    }) {
-                        Text("MOVE DUPLICATES TO TRASH")
+                    KeyButton(style: checkedPaths.isEmpty ? .disabled : .selected, action: trashSelected) {
+                        Text("TRASH SELECTED (\(checkedPaths.count))")
                             .font(CarbonFont.mono(9, weight: .bold))
                             .tracking(1.2)
                     }
                     .frame(width: 200, height: geometry.keyHeight)
+                    .disabled(checkedPaths.isEmpty)
                 }
                 .padding(14)
                 .background(theme.chassisHi)
             }
         }
+        .onChange(of: model.duplicateGroups) { groups in
+            checkedPaths = Set(groups.flatMap { g in
+                g.worstTracks.map { $0.track.fileURL.standardizedFileURL.path }
+            })
+        }
+        .onAppear {
+            checkedPaths = Set(model.duplicateGroups.flatMap { g in
+                g.worstTracks.map { $0.track.fileURL.standardizedFileURL.path }
+            })
+        }
+    }
+
+    /// STRICT / BROAD selector — strict = re-encodes of the same release only,
+    /// broad = the same recording anywhere.
+    private var modeBar: some View {
+        HStack(spacing: 8) {
+            Text("MATCH")
+                .font(CarbonFont.mono(8, weight: .bold))
+                .tracking(1.4)
+                .foregroundStyle(theme.ink3)
+            ForEach([DuplicateScanMode.strict, .broad], id: \.self) { mode in
+                Button(action: { model.duplicateScanMode = mode }) {
+                    Text(mode == .strict ? "STRICT · SAME ALBUM" : "BROAD · ANY RELEASE")
+                        .font(CarbonFont.mono(8.5, weight: .bold))
+                        .foregroundColor(model.duplicateScanMode == mode ? theme.orange : theme.ink3)
+                        .padding(.vertical, 5)
+                        .padding(.horizontal, 10)
+                        .background(model.duplicateScanMode == mode ? theme.chassis : theme.chassisHi)
+                        .cornerRadius(3)
+                }
+                .buttonStyle(.carbonHover)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(theme.chassisHi)
+        .overlay(Rectangle().fill(Color.black.opacity(0.12)).frame(height: 1), alignment: .bottom)
+    }
+
+    private func duplicateGroupRow(_ group: DuplicateGroup) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("\(group.bestTrack.track.artist) - \(group.bestTrack.track.title)")
+                    .font(CarbonFont.sans(12.5, weight: .bold))
+                    .foregroundColor(theme.ink)
+                Spacer()
+                Button("NOT A DUPLICATE") { model.ignoreDuplicateGroup(group) }
+                    .font(CarbonFont.mono(8, weight: .bold))
+                    .foregroundColor(.secondary)
+                    .help("Never flag this exact set of files again")
+            }
+
+            memberRow(group.bestTrack, isBest: true)
+            ForEach(group.worstTracks) { worst in
+                memberRow(worst, isBest: false)
+            }
+        }
+        .padding(.vertical, 8)
+    }
+
+    private func memberRow(_ loaded: LoadedTrack, isBest: Bool) -> some View {
+        let path = loaded.track.fileURL.standardizedFileURL.path
+        let checked = checkedPaths.contains(path)
+        return HStack {
+            Button(action: {
+                if checked { checkedPaths.remove(path) } else { checkedPaths.insert(path) }
+            }) {
+                Image(systemName: checked ? "checkmark.square.fill" : "square")
+                    .foregroundColor(checked ? .red : theme.ink3)
+                    .font(.system(size: 12))
+            }
+            .buttonStyle(.plain)
+            .help(checked ? "Will be moved to Trash" : "Will be kept")
+
+            if isBest {
+                Image(systemName: "star.fill")
+                    .foregroundColor(.yellow)
+                    .font(.system(size: 9))
+                Text("[BEST]")
+                    .font(CarbonFont.mono(8, weight: .bold))
+                    .foregroundColor(.green)
+            } else {
+                Text("[DUP]")
+                    .font(CarbonFont.mono(8, weight: .bold))
+                    .foregroundColor(.red)
+            }
+            Text(specString(for: loaded))
+                .font(CarbonFont.mono(9))
+            Text(loaded.track.fileURL.lastPathComponent)
+                .font(CarbonFont.mono(9))
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+        }
+        .padding(.leading, 8)
+    }
+
+    private func trashSelected() {
+        let selected = model.duplicateGroups.flatMap { group in
+            ([group.bestTrack] + group.worstTracks).filter {
+                checkedPaths.contains($0.track.fileURL.standardizedFileURL.path)
+            }
+        }
+        model.resolveDuplicates(selected: selected)
     }
 
     private func specString(for track: LoadedTrack) -> String {
