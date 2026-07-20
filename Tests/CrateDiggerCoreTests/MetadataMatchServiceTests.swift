@@ -280,4 +280,48 @@ final class MetadataMatchServiceTests: XCTestCase {
         let matches = await service.match(for: [])
         XCTAssertTrue(matches.isEmpty)
     }
+
+    func testPartitionByAlbumSplitsAndPreservesFirstAppearanceOrder() {
+        func loaded(_ file: String, album: String, artist: String = "Daft Punk") -> LoadedTrack {
+            let track = AudioTrack(
+                fileURL: URL(fileURLWithPath: "/tmp/\(file)"),
+                title: file, artist: artist, album: album, durationSeconds: 200
+            )
+            var metadata = ConversionMetadata()
+            metadata.artist = artist
+            metadata.album = album
+            return LoadedTrack(track: track, metadata: metadata)
+        }
+
+        let discovery1 = loaded("a.mp3", album: "Discovery")
+        let homework1 = loaded("b.mp3", album: "Homework")
+        let discovery2 = loaded("c.mp3", album: "Discovery")
+        let homework2 = loaded("d.mp3", album: "Homework")
+
+        let groups = MetadataMatchService.partitionByAlbum(
+            [discovery1, homework1, discovery2, homework2]
+        )
+
+        XCTAssertEqual(groups.count, 2)
+        // First-appearance order: Discovery group first.
+        XCTAssertEqual(groups[0].map { $0.track.id }, [discovery1.track.id, discovery2.track.id])
+        XCTAssertEqual(groups[1].map { $0.track.id }, [homework1.track.id, homework2.track.id])
+    }
+
+    func testPartitionByAlbumSingleAlbumPassthrough() {
+        func loaded(_ file: String) -> LoadedTrack {
+            let track = AudioTrack(
+                fileURL: URL(fileURLWithPath: "/tmp/\(file)"),
+                title: file, artist: "Daft Punk", album: "Discovery", durationSeconds: 200
+            )
+            var metadata = ConversionMetadata()
+            metadata.artist = "Daft Punk"
+            metadata.album = "Discovery"
+            return LoadedTrack(track: track, metadata: metadata)
+        }
+        let tracks = [loaded("a.mp3"), loaded("b.mp3")]
+        let groups = MetadataMatchService.partitionByAlbum(tracks)
+        XCTAssertEqual(groups.count, 1)
+        XCTAssertEqual(groups[0].count, 2)
+    }
 }

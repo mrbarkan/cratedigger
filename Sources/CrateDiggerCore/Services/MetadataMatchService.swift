@@ -71,6 +71,22 @@ public struct MetadataMatchService: Sendable {
         return ReleaseQuery(artist: artist, album: album, year: year, tracks: queryTracks)
     }
 
+    /// Split a selection into per-album groups using the same
+    /// `albumFolderKey` invariant the browser index and conversion planner
+    /// share — FIX TAGS must agree with the rest of the app on "what an album
+    /// is". Groups come back in first-appearance order.
+    public static func partitionByAlbum(_ tracks: [LoadedTrack]) -> [[LoadedTrack]] {
+        let planner = OutputPathPlanner()
+        var order: [AlbumFolderKey] = []
+        var byKey: [AlbumFolderKey: [LoadedTrack]] = [:]
+        for track in tracks {
+            let key = planner.albumFolderKey(for: track)
+            if byKey[key] == nil { order.append(key) }
+            byKey[key, default: []].append(track)
+        }
+        return order.compactMap { byKey[$0] }
+    }
+
     private static func clean(_ value: String?) -> String? {
         guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else {
             return nil
