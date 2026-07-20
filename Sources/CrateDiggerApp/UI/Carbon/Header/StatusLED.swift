@@ -31,6 +31,13 @@ struct StatusLED: View {
                     withAnimation(.linear(duration: 0.1)) { pulsing = false }
                 }
             }
+            .onAppear {
+                if model.isWorking {
+                    withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
+                        pulsing = true
+                    }
+                }
+            }
     }
 
     private var helpText: String {
