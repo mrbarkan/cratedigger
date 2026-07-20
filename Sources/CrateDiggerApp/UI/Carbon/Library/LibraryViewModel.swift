@@ -1710,20 +1710,70 @@ final class LibraryViewModel: ObservableObject {
         }
     }
 
-    func resolveDuplicates() {
-        let cleanup = LibraryCleanupService()
-        var toDelete: [LoadedTrack] = []
+    /// Trash exactly the reviewed selection. Crates that referenced a trashed
+    /// file whose group keeps a better copy are repointed to the kept copy —
+    /// cleanup must not silently shrink a DJ's crates.
+    func resolveDuplicates(selected: [LoadedTrack]) {
+        guard !selected.isEmpty else { return }
+        let selectedPaths = Set(selected.map { $0.track.fileURL.standardizedFileURL.path })
+
+        // Keeper per group = best-ranked survivor (members are best-first).
+        var repoint: [String: LoadedTrack] = [:]
         for group in duplicateGroups {
-            toDelete.append(contentsOf: group.worstTracks)
+            let members = [group.bestTrack] + group.worstTracks
+            let survivors = members.filter {
+                !selectedPaths.contains($0.track.fileURL.standardizedFileURL.path)
+            }
+            guard let keeper = survivors.first else { continue }
+            for member in members
+            where selectedPaths.contains(member.track.fileURL.standardizedFileURL.path) {
+                repoint[member.track.fileURL.standardizedFileURL.path] = keeper
+            }
         }
 
         do {
-            try cleanup.deleteTracks(toDelete, useTrash: true)
-            purgeTracksFromLibraryState(paths: Set(toDelete.map { $0.track.fileURL.standardizedFileURL.path }))
-            duplicateGroups = []
-            appAlert = .error(title: "Duplicates Cleared", message: "Worst versions moved to Trash.")
+            try LibraryCleanupService().deleteTracks(selected, useTrash: true)
+            repointCrateReferences(repoint)
+            purgeTracksFromLibraryState(paths: selectedPaths)
+            scanForCleanup()
+            let repointNote = repoint.isEmpty ? "" : " Crate entries now point at the kept copies."
+            appAlert = .info(title: "Duplicates Cleared",
+                             message: "\(selected.count) file\(selected.count == 1 ? "" : "s") moved to Trash.\(repointNote)")
         } catch {
             appAlert = .error(title: "Clear Failed", message: error.localizedDescription)
+            scanForCleanup()
+        }
+    }
+
+    /// Swap trashed paths for their keepers inside every crate + the prep
+    /// crate, deduping by path (a crate holding both copies must end with one
+    /// keeper entry, not two). Runs BEFORE purge, which then only strips
+    /// references that had no surviving groupmate.
+    private func repointCrateReferences(_ repoint: [String: LoadedTrack]) {
+        guard !repoint.isEmpty else { return }
+
+        func rewrite(_ tracks: [LoadedTrack]) -> [LoadedTrack]? {
+            var seen = Set<String>()
+            var changed = false
+            var result: [LoadedTrack] = []
+            for entry in tracks {
+                let path = entry.track.fileURL.standardizedFileURL.path
+                let mapped = repoint[path] ?? entry
+                if repoint[path] != nil { changed = true }
+                let mappedPath = mapped.track.fileURL.standardizedFileURL.path
+                guard seen.insert(mappedPath).inserted else { changed = true; continue }
+                result.append(mapped)
+            }
+            return changed ? result : nil
+        }
+
+        for crateName in availableCrates {
+            if let rewritten = rewrite(loadCrateTracks(name: crateName)) {
+                saveCrateTracks(rewritten, name: crateName, persistStore: false)
+            }
+        }
+        if let rewritten = rewrite(prepCrateTracks) {
+            prepCrateTracks = rewritten
         }
     }
 
