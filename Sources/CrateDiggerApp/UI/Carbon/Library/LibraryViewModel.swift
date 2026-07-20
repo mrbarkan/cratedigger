@@ -486,6 +486,9 @@ final class LibraryViewModel: ObservableObject {
     @Published var missingTrackKeys: Set<String> = []
     @Published var duplicateGroups: [DuplicateGroup] = []
     @Published var isCleanupScanning = false
+    /// A scan request arrived while one was in flight — run one more pass
+    /// when it lands so mode flips mid-scan are never silently dropped.
+    private var pendingCleanupRescan = false
     @Published var duplicateScanMode: DuplicateScanMode =
         DuplicateScanMode(rawValue: PreferencesStore.shared.duplicateScanMode ?? "") ?? .strict {
         didSet {
@@ -1656,7 +1659,10 @@ final class LibraryViewModel: ObservableObject {
     // MARK: - Library Cleanup & Duplicates Actions
 
     func scanForCleanup() {
-        guard !isCleanupScanning else { return }
+        guard !isCleanupScanning else {
+            pendingCleanupRescan = true
+            return
+        }
         isCleanupScanning = true
         let activity = beginActivity("Scanning library for cleanup…")
         let snapshot = localIndex
@@ -1676,6 +1682,10 @@ final class LibraryViewModel: ObservableObject {
                 self.recomputeMissingFiles()
                 self.isCleanupScanning = false
                 self.endActivity(activity)
+                if self.pendingCleanupRescan {
+                    self.pendingCleanupRescan = false
+                    self.scanForCleanup()
+                }
             }
         }
     }
