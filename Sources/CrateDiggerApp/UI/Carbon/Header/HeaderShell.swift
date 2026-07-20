@@ -16,5 +16,10 @@ struct HeaderShell: View {
             ViewSwitcherColumn()
                 .frame(width: geometry.viewSwitchWidth)
         }
+        .overlay(alignment: .topTrailing) {
+            StatusLED()
+                .padding(.top, 4)
+                .padding(.trailing, 4)
+        }
     }
 }
