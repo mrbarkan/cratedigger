@@ -1685,7 +1685,12 @@ final class LibraryViewModel: ObservableObject {
                 // aren't gone, the volume is just unplugged, and purging their
                 // references would wreck an external library that's merely offline.
                 self.deadTracks = dead.filter { self.offlineVolumeName(for: $0.track.fileURL) == nil }
-                self.duplicateGroups = dups
+                // Re-check the ignore list at publish time — a group ignored
+                // while this scan was in flight must not resurface.
+                let ignoredNow = Set(PreferencesStore.shared.duplicateIgnoreSignatures)
+                self.duplicateGroups = dups.filter {
+                    !ignoredNow.contains(LibraryCleanupService.signature(for: $0))
+                }
                 self.recomputeMissingFiles()
                 self.isCleanupScanning = false
                 self.endActivity(activity)

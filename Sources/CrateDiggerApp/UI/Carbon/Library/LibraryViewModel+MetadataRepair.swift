@@ -205,6 +205,7 @@ extension LibraryViewModel {
         var batches: [AlbumMatchBatch] = []
         var noMatch: [String] = []
         let activity = beginActivity("Matching tags online…")
+        defer { endActivity(activity) }
 
         for (i, group) in groups.enumerated() {
             showOLEDNotice(groups.count == 1
@@ -218,7 +219,6 @@ extension LibraryViewModel {
                 batches.append(AlbumMatchBatch(albumLabel: label, matches: matches))
             }
         }
-        endActivity(activity)
         isRepairingMetadata = false
 
         if let first = batches.first {

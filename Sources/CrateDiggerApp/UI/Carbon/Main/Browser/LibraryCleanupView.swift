@@ -203,10 +203,15 @@ struct LibraryCleanupView: View {
                 .background(theme.chassisHi)
             }
         }
-        .onChange(of: model.duplicateGroups) { groups in
-            checkedPaths = Set(groups.flatMap { g in
-                g.worstTracks.map { $0.track.fileURL.standardizedFileURL.path }
-            })
+        .onChange(of: model.isCleanupScanning) { scanning in
+            // Reseed only when a scan lands — NOT on every duplicateGroups
+            // mutation, or ignoring one group would revert explicit
+            // keep/trash choices in every other group.
+            if !scanning {
+                checkedPaths = Set(model.duplicateGroups.flatMap { g in
+                    g.worstTracks.map { $0.track.fileURL.standardizedFileURL.path }
+                })
+            }
         }
         .onAppear {
             checkedPaths = Set(model.duplicateGroups.flatMap { g in
@@ -250,7 +255,12 @@ struct LibraryCleanupView: View {
                     .font(CarbonFont.sans(12.5, weight: .bold))
                     .foregroundColor(theme.ink)
                 Spacer()
-                Button("NOT A DUPLICATE") { model.ignoreDuplicateGroup(group) }
+                Button("NOT A DUPLICATE") {
+                    let memberPaths = ([group.bestTrack] + group.worstTracks)
+                        .map { $0.track.fileURL.standardizedFileURL.path }
+                    checkedPaths.subtract(memberPaths)
+                    model.ignoreDuplicateGroup(group)
+                }
                     .font(CarbonFont.mono(8, weight: .bold))
                     .foregroundColor(.secondary)
                     .help("Never flag this exact set of files again")
