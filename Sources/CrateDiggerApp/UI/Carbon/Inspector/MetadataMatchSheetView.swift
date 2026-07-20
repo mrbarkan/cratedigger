@@ -42,7 +42,9 @@ struct MetadataMatchSheetView: View {
         .frame(width: 660, height: 520)
         .onAppear { seedChecks() }
         .onChange(of: candidateIndex) { _ in seedChecks() }
-        .onChange(of: model.currentMatchAlbumLabel) { _ in
+        // Keyed on queue position, not the album label — two consecutive
+        // "Unknown Album" batches must still reset the pager and checks.
+        .onChange(of: model.matchQueueProgress?.current) { _ in
             candidateIndex = 0
             seedChecks()
         }
