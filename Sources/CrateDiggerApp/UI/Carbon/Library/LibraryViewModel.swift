@@ -301,6 +301,37 @@ final class LibraryViewModel: ObservableObject {
     // marks/clears albums from a different file while a fetch is in flight.
     @Published var albumsFetchingArtwork: Set<String> = []
 
+    /// Global activity registry driving the header status LED. Anything
+    /// long-running registers a label; the LED lights while any are active
+    /// (or any legacy busy flag below is set).
+    @Published private(set) var activities: [UUID: String] = [:]
+
+    @discardableResult
+    func beginActivity(_ label: String) -> UUID {
+        let id = UUID()
+        activities[id] = label
+        return id
+    }
+
+    func endActivity(_ id: UUID) {
+        activities.removeValue(forKey: id)
+    }
+
+    /// One switch for "is the app doing something" — new registrations OR the
+    /// pre-existing per-feature busy flags, so already-instrumented features
+    /// light the LED with no changes.
+    var isWorking: Bool {
+        !activities.isEmpty
+            || scanProgress.isRunning
+            || conversionProgress.isRunning
+            || isRepairingMetadata
+            || !albumsFetchingArtwork.isEmpty
+    }
+
+    var activityLabels: [String] {
+        Array(activities.values).sorted()
+    }
+
     @Published var playbackVolume: Double = 0.8 {
         didSet {
             applyVolumeToEngines()
@@ -507,11 +538,6 @@ final class LibraryViewModel: ObservableObject {
         radioEngine != nil && playbackState != .idle
     }
 
-    /// True while the app is doing background work (scanning a folder/device or
-    /// converting) — drives the pulsing activity light in the header.
-    var isWorking: Bool {
-        scanProgress.isRunning || conversionProgress.isRunning
-    }
     var filteredStreams: [StreamSource] {
         guard let category = radioCategoryFilter else { return streams }
         return streams.filter { category.contains($0) }
@@ -1925,6 +1951,8 @@ final class LibraryViewModel: ObservableObject {
         images: [(url: URL, role: ArtworkRole, suggestedFilename: String, discNumber: Int?)],
         for album: Album
     ) async {
+        let activity = beginActivity("Importing artwork…")
+        defer { endActivity(activity) }
         guard let representative = album.tracks.first?.track.fileURL else { return }
         let albumFolder = representative.deletingLastPathComponent()
         
