@@ -41,6 +41,8 @@ public final class PreferencesStore {
         static let managedLibraryFolderBookmark = "cratedigger.library.managedFolderBookmark"
         static let copyOnImport = "cratedigger.library.copyOnImport"
         static let deleteOriginalsAfterCopy = "cratedigger.library.deleteOriginalsAfterCopy"
+        static let duplicateScanMode = "duplicateScanMode"
+        static let duplicateIgnoreSignatures = "duplicateIgnoreSignatures"
         static let organiseByAlbumArtist = "cratedigger.library.organiseByAlbumArtist"
         static let keepLibraryOrganised = "cratedigger.library.keepLibraryOrganised"
         static let cratesIndexFolderBookmark = "cratedigger.library.cratesIndexFolderBookmark"
@@ -118,6 +120,18 @@ public final class PreferencesStore {
     public var deleteOriginalsAfterCopy: Bool {
         get { defaults.bool(forKey: Key.deleteOriginalsAfterCopy) }
         set { defaults.set(newValue, forKey: Key.deleteOriginalsAfterCopy) }
+    }
+
+    /// Last-used duplicate scan mode ("strict" / "broad"); nil → strict.
+    public var duplicateScanMode: String? {
+        get { defaults.string(forKey: Key.duplicateScanMode) }
+        set { defaults.set(newValue, forKey: Key.duplicateScanMode) }
+    }
+
+    /// Signatures of duplicate groups the user marked "not a duplicate".
+    public var duplicateIgnoreSignatures: [String] {
+        get { defaults.stringArray(forKey: Key.duplicateIgnoreSignatures) ?? [] }
+        set { defaults.set(newValue, forKey: Key.duplicateIgnoreSignatures) }
     }
 
     public var organiseByAlbumArtist: Bool {
