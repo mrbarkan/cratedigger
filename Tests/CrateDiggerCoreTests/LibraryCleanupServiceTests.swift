@@ -133,27 +133,56 @@ final class LibraryCleanupServiceTests: XCTestCase {
         try withTemporaryDirectory(prefix: "CleanupDeleteCopy") { tempDir in
             let file1 = tempDir.appendingPathComponent("track1.mp3")
             let file2 = tempDir.appendingPathComponent("track2.mp3")
-            
+
             try "song1".write(to: file1, atomically: true, encoding: .utf8)
             try "song2".write(to: file2, atomically: true, encoding: .utf8)
-            
+
             let track1 = LoadedTrack(track: AudioTrack(fileURL: file1, title: "Track 1"), metadata: ConversionMetadata())
             let track2 = LoadedTrack(track: AudioTrack(fileURL: file2, title: "Track 2"), metadata: ConversionMetadata())
-            
+
             let cleanupService = LibraryCleanupService(fileManager: .default)
-            
+
             // Copy to a new folder
             let destFolder = tempDir.appendingPathComponent("CopiedFolder")
             try cleanupService.copyTracks([track1, track2], to: destFolder)
-            
+
             XCTAssertTrue(FileManager.default.fileExists(atPath: destFolder.appendingPathComponent("track1.mp3").path))
             XCTAssertTrue(FileManager.default.fileExists(atPath: destFolder.appendingPathComponent("track2.mp3").path))
-            
+
             // Delete track1 (non-trash, simple delete for test speed and reliability)
             try cleanupService.deleteTracks([track1], useTrash: false)
             XCTAssertFalse(FileManager.default.fileExists(atPath: file1.path))
             XCTAssertTrue(FileManager.default.fileExists(atPath: file2.path))
         }
+    }
+
+    func testNormalizeForMatchStripsDecorationAndPunctuation() {
+        XCTAssertEqual(
+            LibraryCleanupService.normalizeForMatch("One More Time (Remastered 2011)"),
+            "one more time"
+        )
+        XCTAssertEqual(
+            LibraryCleanupService.normalizeForMatch("Harder, Better, Faster, Stronger [Explicit]"),
+            "harder better faster stronger"
+        )
+        // Different-recording markers are NOT stripped.
+        XCTAssertEqual(
+            LibraryCleanupService.normalizeForMatch("Around the World (Live)"),
+            "around the world live"
+        )
+    }
+
+    func testNormalizeForMatchUnifiesFeaturing() {
+        let a = LibraryCleanupService.normalizeForMatch("Stardust feat. Ben Diamond")
+        let b = LibraryCleanupService.normalizeForMatch("Stardust ft. Ben Diamond")
+        let c = LibraryCleanupService.normalizeForMatch("Stardust featuring Ben Diamond")
+        XCTAssertEqual(a, b)
+        XCTAssertEqual(b, c)
+    }
+
+    func testDuplicateMatchKeyNilForEmptyTitle() {
+        XCTAssertNil(LibraryCleanupService.duplicateMatchKey(artist: "Daft Punk", title: "  "))
+        XCTAssertNotNil(LibraryCleanupService.duplicateMatchKey(artist: "", title: "Aerodynamic"))
     }
 }
 #endif

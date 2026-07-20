@@ -1,5 +1,14 @@
 import Foundation
 
+public enum DuplicateScanMode: String, Sendable {
+    /// Same recording AND same (normalized) album tag — re-rips/re-encodes of
+    /// one release. A missing album tag on one copy drops the pair out of
+    /// strict; documented ceiling.
+    case strict
+    /// Same recording anywhere in the library (album + compilation copies).
+    case broad
+}
+
 public struct DuplicateGroup: Sendable, Identifiable, Hashable {
     public var id: String { bestTrack.track.id.uuidString }
     public let bestTrack: LoadedTrack
@@ -16,6 +25,37 @@ public final class LibraryCleanupService {
 
     public init(fileManager: FileManager = .default) {
         self.fileManager = fileManager
+    }
+
+    // MARK: - Duplicate match normalization
+
+    /// Decoration tails that don't change the recording: "(Remastered 2011)",
+    /// "[Explicit]", "(Deluxe Edition)"… "(Live)" / "(Radio Edit)" are NOT
+    /// listed — those are different recordings; the duration guard backstops
+    /// either way.
+    private static let decorationPattern = try! NSRegularExpression(
+        pattern: "[\\(\\[][^\\)\\]]*(remaster|reissue|explicit|deluxe|anniversary|edition|bonus|mono|stereo)[^\\)\\]]*[\\)\\]]",
+        options: [.caseInsensitive]
+    )
+
+    static func normalizeForMatch(_ raw: String) -> String {
+        var s = raw.lowercased()
+        s = Self.decorationPattern.stringByReplacingMatches(
+            in: s, range: NSRange(s.startIndex..., in: s), withTemplate: " "
+        )
+        // Longest first so "featuring" never leaves a stray "uring".
+        s = s.replacingOccurrences(of: "featuring", with: "feat")
+        s = s.replacingOccurrences(of: "feat.", with: "feat")
+        s = s.replacingOccurrences(of: "ft.", with: "feat")
+        s = String(s.map { $0.isLetter || $0.isNumber || $0 == " " ? $0 : " " })
+        return s.split(separator: " ").joined(separator: " ")
+    }
+
+    /// nil when the title normalizes to nothing — untitled tracks never group.
+    static func duplicateMatchKey(artist: String, title: String) -> String? {
+        let cleanTitle = normalizeForMatch(title)
+        guard !cleanTitle.isEmpty else { return nil }
+        return normalizeForMatch(artist) + " :: " + cleanTitle
     }
 
     public func findDeadTracks(in index: LibraryIndex) -> [LoadedTrack] {
