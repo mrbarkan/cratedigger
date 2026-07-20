@@ -485,6 +485,15 @@ final class LibraryViewModel: ObservableObject {
     /// row badge. Recomputed off the main thread by recomputeMissingFiles().
     @Published var missingTrackKeys: Set<String> = []
     @Published var duplicateGroups: [DuplicateGroup] = []
+    @Published var isCleanupScanning = false
+    @Published var duplicateScanMode: DuplicateScanMode =
+        DuplicateScanMode(rawValue: PreferencesStore.shared.duplicateScanMode ?? "") ?? .strict {
+        didSet {
+            guard oldValue != duplicateScanMode else { return }
+            PreferencesStore.shared.duplicateScanMode = duplicateScanMode.rawValue
+            scanForCleanup()
+        }
+    }
     /// FIX TAGS (metadata repair) run state — see LibraryViewModel+MetadataRepair.
     @Published var isRepairingMetadata = false
     /// Stored-vs-file tag disagreements from the last repair pass; non-empty
@@ -1647,14 +1656,36 @@ final class LibraryViewModel: ObservableObject {
     // MARK: - Library Cleanup & Duplicates Actions
 
     func scanForCleanup() {
-        let cleanup = LibraryCleanupService()
-        // Don't flag tracks on a disconnected drive as "dead" — the files aren't
-        // gone, the volume is just unplugged, and purging their references would
-        // wreck an external library that's merely offline.
-        self.deadTracks = cleanup.findDeadTracks(in: localIndex)
-            .filter { offlineVolumeName(for: $0.track.fileURL) == nil }
-        self.duplicateGroups = cleanup.findDuplicates(in: localIndex)
-        recomputeMissingFiles()
+        guard !isCleanupScanning else { return }
+        isCleanupScanning = true
+        let activity = beginActivity("Scanning library for cleanup…")
+        let snapshot = localIndex
+        let mode = duplicateScanMode
+        let ignored = Set(PreferencesStore.shared.duplicateIgnoreSignatures)
+
+        Task.detached(priority: .userInitiated) {
+            let cleanup = LibraryCleanupService()
+            let dead = cleanup.findDeadTracks(in: snapshot)
+            let dups = cleanup.findDuplicates(in: snapshot, mode: mode, ignoring: ignored)
+            await MainActor.run {
+                // Don't flag tracks on a disconnected drive as "dead" — the files
+                // aren't gone, the volume is just unplugged, and purging their
+                // references would wreck an external library that's merely offline.
+                self.deadTracks = dead.filter { self.offlineVolumeName(for: $0.track.fileURL) == nil }
+                self.duplicateGroups = dups
+                self.recomputeMissingFiles()
+                self.isCleanupScanning = false
+                self.endActivity(activity)
+            }
+        }
+    }
+
+    func ignoreDuplicateGroup(_ group: DuplicateGroup) {
+        let sig = LibraryCleanupService.signature(for: group)
+        var sigs = PreferencesStore.shared.duplicateIgnoreSignatures
+        if !sigs.contains(sig) { sigs.append(sig) }
+        PreferencesStore.shared.duplicateIgnoreSignatures = sigs
+        duplicateGroups.removeAll { $0.id == group.id }
     }
 
     func deleteDeadTracks() {
