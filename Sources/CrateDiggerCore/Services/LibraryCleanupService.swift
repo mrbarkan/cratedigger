@@ -29,24 +29,46 @@ public final class LibraryCleanupService {
 
     // MARK: - Duplicate match normalization
 
-    /// Decoration tails that don't change the recording: "(Remastered 2011)",
-    /// "[Explicit]", "(Deluxe Edition)"… "(Live)" / "(Radio Edit)" are NOT
-    /// listed — those are different recordings; the duration guard backstops
-    /// either way.
-    private static let decorationPattern = try! NSRegularExpression(
-        pattern: "[\\(\\[][^\\)\\]]*(remaster|reissue|explicit|deluxe|anniversary|edition|bonus|mono|stereo)[^\\)\\]]*[\\)\\]]",
+    /// Decoration tails that don't change the recording. Word-bounded so
+    /// "mono" never matches "Monochrome". A bracket group is only stripped
+    /// when it contains a decoration keyword AND no different-recording
+    /// marker — "(Live Remastered Version)" survives whole: a missed dup
+    /// (false negative) is cheaper than trashing a distinct recording.
+    private static let decorationKeywords = try! NSRegularExpression(
+        pattern: "\\b(remaster(ed)?|reissued?|explicit|deluxe|anniversary|editions?|bonus|mono|stereo)\\b",
+        options: [.caseInsensitive]
+    )
+    private static let protectedKeywords = try! NSRegularExpression(
+        pattern: "\\b(live|mix|remix|edit|demo|acoustic|instrumental|dub|session)\\b",
+        options: [.caseInsensitive]
+    )
+    private static let bracketGroup = try! NSRegularExpression(
+        pattern: "[\\(\\[][^\\)\\]]*[\\)\\]]"
+    )
+    private static let featuringToken = try! NSRegularExpression(
+        pattern: "\\b(featuring|feat\\.|ft\\.)",
         options: [.caseInsensitive]
     )
 
     static func normalizeForMatch(_ raw: String) -> String {
         var s = raw.lowercased()
-        s = Self.decorationPattern.stringByReplacingMatches(
-            in: s, range: NSRange(s.startIndex..., in: s), withTemplate: " "
+
+        // Strip decoration-only bracket groups, back to front so ranges stay valid.
+        let groups = Self.bracketGroup.matches(in: s, range: NSRange(s.startIndex..., in: s))
+        for match in groups.reversed() {
+            guard let range = Range(match.range, in: s) else { continue }
+            let content = String(s[range])
+            let contentRange = NSRange(content.startIndex..., in: content)
+            let isDecoration = Self.decorationKeywords.firstMatch(in: content, range: contentRange) != nil
+            let isProtected = Self.protectedKeywords.firstMatch(in: content, range: contentRange) != nil
+            if isDecoration && !isProtected {
+                s.replaceSubrange(range, with: " ")
+            }
+        }
+
+        s = Self.featuringToken.stringByReplacingMatches(
+            in: s, range: NSRange(s.startIndex..., in: s), withTemplate: "feat"
         )
-        // Longest first so "featuring" never leaves a stray "uring".
-        s = s.replacingOccurrences(of: "featuring", with: "feat")
-        s = s.replacingOccurrences(of: "feat.", with: "feat")
-        s = s.replacingOccurrences(of: "ft.", with: "feat")
         s = String(s.map { $0.isLetter || $0.isNumber || $0 == " " ? $0 : " " })
         return s.split(separator: " ").joined(separator: " ")
     }

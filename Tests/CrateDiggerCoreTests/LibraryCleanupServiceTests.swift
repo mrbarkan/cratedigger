@@ -184,5 +184,19 @@ final class LibraryCleanupServiceTests: XCTestCase {
         XCTAssertNil(LibraryCleanupService.duplicateMatchKey(artist: "Daft Punk", title: "  "))
         XCTAssertNotNil(LibraryCleanupService.duplicateMatchKey(artist: "", title: "Aerodynamic"))
     }
+
+    func testNormalizeForMatchKeepsProtectedMarkersInMixedBrackets() {
+        XCTAssertEqual(
+            LibraryCleanupService.normalizeForMatch("One More Time (Live Remastered Version)"),
+            "one more time live remastered version"
+        )
+        XCTAssertEqual(LibraryCleanupService.normalizeForMatch("Song (Monochrome Mix)"), "song monochrome mix")
+        XCTAssertEqual(LibraryCleanupService.normalizeForMatch("Song (Stereotype Remix)"), "song stereotype remix")
+    }
+
+    func testNormalizeForMatchDoesNotCorruptWordsEndingInFt() {
+        XCTAssertEqual(LibraryCleanupService.normalizeForMatch("Swift."), "swift")
+        XCTAssertEqual(LibraryCleanupService.normalizeForMatch("Left. Right."), "left right")
+    }
 }
 #endif
