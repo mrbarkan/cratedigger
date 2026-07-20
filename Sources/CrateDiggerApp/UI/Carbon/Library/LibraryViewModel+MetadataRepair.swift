@@ -12,6 +12,18 @@ struct MetadataRepairConflictGroup: Identifiable {
     var id: UUID { trackID }
 }
 
+/// One album's worth of FIX TAGS online matches, queued for sequential review.
+struct AlbumMatchBatch: Identifiable {
+    let id = UUID()
+    let albumLabel: String
+    let matches: [ReleaseMatch]
+}
+
+struct MatchQueueProgress: Equatable {
+    var current: Int
+    var total: Int
+}
+
 // MARK: - Metadata repair (FIX TAGS)
 
 extension LibraryViewModel {
@@ -172,8 +184,10 @@ extension LibraryViewModel {
         }
     }
 
-    /// The online half of FIX TAGS: look the selection's release up and present
-    /// the differences for review. Writes nothing on its own.
+    /// The online half of FIX TAGS: partition the selection into albums (the
+    /// old code collapsed everything into ONE release query — a multi-album
+    /// selection got shoehorned into the majority album), look each album up,
+    /// and queue the results for sequential review.
     ///
     /// A dry lookup falls back to whatever the local pass found rather than
     /// throwing that work away — being offline should cost you the online
@@ -184,12 +198,37 @@ extension LibraryViewModel {
         localConflicts: [MetadataRepairConflictGroup],
         unreadable: Int
     ) async {
-        showOLEDNotice("MATCHING TAGS…")
-        let matches = await matchService.match(for: tracks)
+        let groups = MetadataMatchService.partitionByAlbum(tracks)
+        // ponytail: uncapped — 30 loose singles = 30 sequential lookups
+        // (~1s each behind the MusicBrainz throttle); the OLED counter keeps
+        // the wait visible rather than mysterious.
+        var batches: [AlbumMatchBatch] = []
+        var noMatch: [String] = []
+        let activity = beginActivity("Matching tags online…")
+
+        for (i, group) in groups.enumerated() {
+            showOLEDNotice(groups.count == 1
+                           ? "MATCHING TAGS…"
+                           : "MATCHING TAGS… \(i + 1)/\(groups.count)")
+            let label = Self.albumLabel(for: group)
+            let matches = await matchService.match(for: group)
+            if matches.isEmpty {
+                noMatch.append(label)
+            } else {
+                batches.append(AlbumMatchBatch(albumLabel: label, matches: matches))
+            }
+        }
+        endActivity(activity)
         isRepairingMetadata = false
 
-        if !matches.isEmpty {
-            metadataMatches = matches
+        if let first = batches.first {
+            matchQueueNoMatchLabels = noMatch
+            matchQueueProgress = groups.count > 1
+                ? MatchQueueProgress(current: 1, total: batches.count)
+                : nil
+            pendingMatchBatches = Array(batches.dropFirst())
+            currentMatchAlbumLabel = first.albumLabel
+            metadataMatches = first.matches
             showOLEDNotice("MATCH FOUND")
             return
         }
@@ -205,12 +244,54 @@ extension LibraryViewModel {
         appAlert = .info(title: "No Match Found", message: lines.joined(separator: " "))
     }
 
+    private static func albumLabel(for group: [LoadedTrack]) -> String {
+        let album = group.first?.metadata.album ?? group.first?.track.album
+        let trimmed = album?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? "Unknown Album" : trimmed
+    }
+
+    /// Pop the next album's matches into the sheet, or wrap up the queue.
+    func advanceMatchQueue() {
+        if let next = pendingMatchBatches.first {
+            pendingMatchBatches.removeFirst()
+            currentMatchAlbumLabel = next.albumLabel
+            metadataMatches = next.matches
+            if var progress = matchQueueProgress {
+                progress.current += 1
+                matchQueueProgress = progress
+            }
+        } else {
+            finishMatchQueue()
+        }
+    }
+
+    /// Closing the sheet abandons the remaining queue — the predictable
+    /// escape hatch; SKIP is the per-album pass.
+    func cancelMatchQueue() {
+        pendingMatchBatches = []
+        finishMatchQueue()
+    }
+
+    private func finishMatchQueue() {
+        metadataMatches = []
+        currentMatchAlbumLabel = nil
+        matchQueueProgress = nil
+        let skipped = matchQueueNoMatchLabels
+        matchQueueNoMatchLabels = []
+        if !skipped.isEmpty {
+            appAlert = .info(
+                title: "Some Albums Didn't Match",
+                message: "No online release matched: \(skipped.joined(separator: ", ")). Check their artist and album tags."
+            )
+        }
+    }
+
     /// Apply a reviewed match: for every track, write just the fields the user
     /// checked. Goes through the normal tag-write path, so files are rewritten,
     /// crates re-pointed, and the library re-organised exactly as a hand edit
     /// would be.
     func applyReleaseMatch(_ match: ReleaseMatch, fields: Set<MetadataRepairField>) {
-        metadataMatches = []
+        defer { advanceMatchQueue() }
         guard !fields.isEmpty else { return }
 
         var written = 0

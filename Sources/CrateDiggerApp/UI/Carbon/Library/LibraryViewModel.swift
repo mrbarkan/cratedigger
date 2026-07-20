@@ -505,6 +505,13 @@ final class LibraryViewModel: ObservableObject {
     /// Online release matches for the selection, best-first; non-empty presents
     /// the match review sheet. Nothing is written until the user says so there.
     @Published var metadataMatches: [ReleaseMatch] = []
+    /// FIX TAGS multi-album queue: `metadataMatches` is the batch under
+    /// review; these are the ones behind it.
+    @Published var pendingMatchBatches: [AlbumMatchBatch] = []
+    @Published var matchQueueProgress: MatchQueueProgress?
+    @Published var currentMatchAlbumLabel: String?
+    /// Albums that came back with no online match — reported once at the end.
+    var matchQueueNoMatchLabels: [String] = []
 
     // MARK: - Radio / Streams state
     @Published var streams: [StreamSource] = []
