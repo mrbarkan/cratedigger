@@ -57,7 +57,7 @@ struct InspectorPane: View {
         // FIX TAGS online match review — same pattern: the matches are the state.
         .sheet(isPresented: Binding(
             get: { !model.metadataMatches.isEmpty },
-            set: { if !$0 { model.metadataMatches = [] } }
+            set: { if !$0 { model.cancelMatchQueue() } }
         )) {
             MetadataMatchSheetView()
         }

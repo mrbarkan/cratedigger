@@ -42,6 +42,10 @@ struct MetadataMatchSheetView: View {
         .frame(width: 660, height: 520)
         .onAppear { seedChecks() }
         .onChange(of: candidateIndex) { _ in seedChecks() }
+        .onChange(of: model.currentMatchAlbumLabel) { _ in
+            candidateIndex = 0
+            seedChecks()
+        }
     }
 
     // MARK: - Header
@@ -53,6 +57,14 @@ struct MetadataMatchSheetView: View {
                 .tracking(1.6)
                 .foregroundStyle(theme.ink2)
             Spacer()
+            if let progress = model.matchQueueProgress {
+                Text("ALBUM \(progress.current) OF \(progress.total)\(model.currentMatchAlbumLabel.map { " · \($0.uppercased())" } ?? "")")
+                    .font(CarbonFont.mono(8, weight: .bold))
+                    .tracking(1.2)
+                    .foregroundStyle(theme.orange)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
             if matches.count > 1 {
                 Text("\(candidateIndex + 1) OF \(matches.count) MATCHES")
                     .font(CarbonFont.mono(8, weight: .bold))
@@ -274,11 +286,20 @@ struct MetadataMatchSheetView: View {
 
             Spacer()
 
-            KeyButton(style: .normal, action: { model.metadataMatches = [] }) {
+            KeyButton(style: .normal, action: { model.cancelMatchQueue() }) {
                 Text("CANCEL")
                     .font(CarbonFont.mono(9, weight: .bold))
             }
             .frame(width: 90, height: CarbonLayout.keyHeight)
+
+            if model.matchQueueProgress != nil {
+                KeyButton(style: .normal, action: { model.advanceMatchQueue() }) {
+                    Text("SKIP")
+                        .font(CarbonFont.mono(9, weight: .bold))
+                }
+                .frame(width: 80, height: CarbonLayout.keyHeight)
+                .help("Leave this album unchanged and review the next one")
+            }
 
             KeyButton(style: checked.isEmpty ? .disabled : .selected, action: {
                 model.applyReleaseMatch(match, fields: checked)
