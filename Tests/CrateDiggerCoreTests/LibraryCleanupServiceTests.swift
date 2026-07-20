@@ -86,7 +86,7 @@ final class LibraryCleanupServiceTests: XCTestCase {
             let url = dir.appendingPathComponent("\(album)-\(fmt).\(fmt)")
             try "x".write(to: url, atomically: true, encoding: .utf8)
             let t = AudioTrack(fileURL: url, title: "One More Time", artist: "Daft Punk",
-                               album: album, formatName: fmt, bitrateKbps: 900, sampleRateHz: 44100)
+                               album: album, durationSeconds: 200, formatName: fmt, bitrateKbps: 900, sampleRateHz: 44100)
             return LoadedTrack(track: t, metadata: ConversionMetadata())
         }
         let us = try mk("Discovery", "flac")
@@ -102,6 +102,17 @@ final class LibraryCleanupServiceTests: XCTestCase {
     func testGroupedVersionsNotFlaggedAsDuplicates() throws {
         let (index, _) = try grouped()
         let dupes = LibraryCleanupService(fileManager: .default).findDuplicates(in: index)
+        XCTAssertEqual(dupes.count, 0)
+    }
+
+    /// Broad mode has no album key, so cross-pressing tracks share the same
+    /// artist/title match key. With matching durations (200s for both
+    /// pressings) the duration guard would happily cluster them — only the
+    /// version-group fence (versionAlbumOfTrack) keeps "One More Time" on
+    /// the US pressing from being flagged as a duplicate of the JP pressing.
+    func testVersionGroupFenceHoldsInBroadMode() throws {
+        let (index, _) = try grouped()
+        let dupes = LibraryCleanupService(fileManager: .default).findDuplicates(in: index, mode: .broad)
         XCTAssertEqual(dupes.count, 0)
     }
 
