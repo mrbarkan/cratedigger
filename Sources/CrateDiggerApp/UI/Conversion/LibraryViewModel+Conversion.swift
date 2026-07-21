@@ -133,7 +133,7 @@ extension LibraryViewModel {
             // Persist the user's selection for next launch.
             prefs.saveLastConversionSelection(selection)
 
-            let report = await runConversionQueue(service: service, jobs: finalJobs, preset: preset)
+            let report = await runConversionQueue(service: service, jobs: finalJobs, preset: preset).report
             if let deviceTransfer {
                 // Remember any format/folder tweaks on the device profile, then
                 // restore the user's normal conversion selection.
@@ -554,12 +554,19 @@ extension LibraryViewModel {
         return URL(fileURLWithPath: "/" + commonComponents.dropFirst().joined(separator: "/"))
     }
 
+    struct ConversionQueueOutcome {
+        let report: ConversionReport
+        /// Destination paths of jobs that completed — lets device-sync staging
+        /// record exactly which bakes are real.
+        let succeededDestinationPaths: Set<String>
+    }
+
     @MainActor
     func runConversionQueue(
         service: ConversionService,
         jobs: [ConversionJob],
         preset: ConversionPreset
-    ) async -> ConversionReport {
+    ) async -> ConversionQueueOutcome {
         let total = jobs.count
         oledView = .conversion
         conversionProgress = ConversionProgressSnapshot(
@@ -574,7 +581,7 @@ extension LibraryViewModel {
         activeConversionService = service
         defer { activeConversionService = nil }
 
-        let results: [ConversionExecutionResult] = await withCheckedContinuation { continuation in
+        let (results, succeededPaths): ([ConversionExecutionResult], Set<String>) = await withCheckedContinuation { continuation in
             let task = Task.detached(priority: .userInitiated) {
                 let queued = service.enqueue(jobs, preset: preset)
                 // Parallel workers finish in any order, so name the file that
@@ -597,7 +604,11 @@ extension LibraryViewModel {
                         AppLog.conversion.warning("Job warning: \(warning, privacy: .public)")
                     }
                 }
-                continuation.resume(returning: outcomes)
+                // Which destinations really landed — staging records only these.
+                let succeededIDs = Set(outcomes.filter { $0.status == .completed }.map(\.queuedID))
+                let paths = Set(queued.filter { succeededIDs.contains($0.id) }
+                    .map { $0.job.destinationURL.path })
+                continuation.resume(returning: (outcomes, paths))
             }
             self.conversionTask = task
         }
@@ -639,12 +650,15 @@ extension LibraryViewModel {
             tone = .warning
         }
         let details = formatConversionDetails(jobs: jobs, results: results)
-        return ConversionReport(
-            title: title,
-            statusLine: statusLine,
-            details: details,
-            tone: tone,
-            showsDetailsButton: !details.isEmpty
+        return ConversionQueueOutcome(
+            report: ConversionReport(
+                title: title,
+                statusLine: statusLine,
+                details: details,
+                tone: tone,
+                showsDetailsButton: !details.isEmpty
+            ),
+            succeededDestinationPaths: succeededPaths
         )
     }
 

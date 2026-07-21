@@ -47,6 +47,13 @@ extension LibraryViewModel {
             return
         }
 
+        // Device not mounted → stage for later instead of prompting for a folder.
+        let isMounted = mountedDevices.contains { deviceProfile(for: $0)?.id == profile.id }
+        guard isMounted else {
+            stageForSync(profile: profile, tracks: tracks, presentingFrom: host)
+            return
+        }
+
         switch profile.transferSettings.mode {
         case .copyOriginals:
             runExternalDeviceCopy(profile: profile, tracks: tracks, presentingFrom: host)
@@ -135,7 +142,7 @@ extension LibraryViewModel {
     // MARK: - Mounted root
 
     @MainActor
-    private func resolveMountedRoot(
+    func resolveMountedRoot(
         for profile: inout ExternalDeviceProfile,
         presentingFrom host: NSViewController
     ) async -> URL? {

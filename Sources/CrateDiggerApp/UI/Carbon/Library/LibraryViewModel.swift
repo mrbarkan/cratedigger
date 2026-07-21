@@ -59,6 +59,18 @@ struct ConversionProgressSnapshot: Equatable, Sendable {
     static let idle = ConversionProgressSnapshot(jobsCompleted: 0, jobsTotal: 0, currentFilename: nil, isRunning: false)
 }
 
+/// A live SYNC-to-device run for the DEV OLED pane. Non-nil after a sync starts;
+/// stays non-nil (isRunning=false) as the terminal readout until the next
+/// source change or sync/stage action clears it.
+struct DeviceSyncProgressSnapshot: Equatable, Sendable {
+    var profileName: String
+    var currentRelativePath: String?
+    var completed: Int
+    var total: Int
+    var failed: Int
+    var isRunning: Bool
+}
+
 enum LibrarySource: Hashable, Sendable {
     case localAll
     case localCrate(name: String)
@@ -69,6 +81,9 @@ enum LibrarySource: Hashable, Sendable {
     /// A mounted external device (USB drive, SD card, Rockbox iPod) browsed by
     /// its volume path.
     case device(volumePath: String)
+    /// A saved device profile whose volume is NOT currently mounted — browses
+    /// the cached catalog from its last mount plus any queued-for-sync tracks.
+    case offlineDevice(profileID: UUID)
     /// Radio / Streams. `nil` category == "All Streams"; otherwise filtered to
     /// one source category ("YT Live" / "YT Records").
     case radio(category: RadioCategory?)
@@ -111,6 +126,8 @@ final class LibraryViewModel: ObservableObject {
     /// The OLED view to restore after an add-to-crate import status finishes.
     private var importStatusReturnOLED: OLEDView?
     @Published var conversionProgress: ConversionProgressSnapshot = .idle
+    /// Live SYNC-to-device run (DEV OLED readout). nil when no sync has run.
+    @Published var deviceSyncProgress: DeviceSyncProgressSnapshot?
 
     /// Set while a "send to device (convert)" hand-off owns the CNVRT cockpit: the
     /// device folder is the destination and its tracks are the queue. Cleared when
@@ -602,6 +619,13 @@ final class LibraryViewModel: ObservableObject {
     /// On-disk per-device catalogs so a device opens instantly across launches
     /// (rescan only on RESCAN).
     private let deviceCatalogStore = DeviceCatalogStore()
+    /// Per-profile pre-transfer sync queues + their staging trees.
+    let syncQueueStore = DeviceSyncQueueStore()
+    /// Per-profile queued-track counts for sidebar badges. Refreshed on queue
+    /// mutations — never read the store from view bodies.
+    @Published private(set) var syncQueueCounts: [UUID: Int] = [:]
+    /// Track IDs pending sync for the offline device being browsed (PENDING badges).
+    @Published private(set) var pendingSyncTrackIDs: Set<UUID> = []
     private var playlistIndex: LibraryIndex = .empty
     private var prepCrateIndex: LibraryIndex = .empty
 
@@ -731,6 +755,12 @@ final class LibraryViewModel: ObservableObject {
         scrubLockEnabled = prefs.savedScrubLockEnabled
         if let raw = prefs.savedMiniPlayerArtMode, let mode = MiniPlayerArtMode(rawValue: raw) {
             miniPlayerArtMode = mode
+        }
+        refreshSyncQueueCounts()
+        // Trash guard: staging/queues for profiles that no longer exist.
+        let validProfileIDs = Set(prefs.savedExternalDeviceProfiles.map(\.id))
+        Task.detached(priority: .utility) {
+            DeviceSyncQueueStore().sweepOrphans(validProfileIDs: validProfileIDs)
         }
         // The tour takes priority; when it dismisses it chains into folder
         // setup (and starter-content install) as needed — see
@@ -1055,6 +1085,7 @@ final class LibraryViewModel: ObservableObject {
         // longer resolves in the rebuilt index.
         let sourceChanged = source != currentSource
         currentSource = source
+        if deviceSyncProgress?.isRunning != true { deviceSyncProgress = nil }
         switch source {
         case .localAll:
             var all: [LoadedTrack] = []
@@ -1082,6 +1113,8 @@ final class LibraryViewModel: ObservableObject {
             selectCD(volumePath: path)
         case .device(let path):
             selectDevice(volumePath: path)
+        case .offlineDevice(let profileID):
+            selectOfflineDevice(profileID: profileID)
         case .radio(let category):
             // The browser renders RadioListView from `filteredStreams`, not `index`.
             radioCategoryFilter = category
@@ -1347,10 +1380,20 @@ final class LibraryViewModel: ObservableObject {
         // Drop cached scans for devices that are no longer mounted.
         let mountedPaths = Set(detected.map { $0.volumeURL.path })
         deviceIndexCache = deviceIndexCache.filter { mountedPaths.contains($0.key) }
-        // If the device we're browsing was unplugged, fall back to the library.
+        // If the device we're browsing was unplugged, fall back to its offline
+        // view when we can identify the profile, else to the library.
         if case .device(let path) = currentSource,
            !detected.contains(where: { $0.volumeURL.path == path }) {
-            selectSource(.localAll)
+            if let profile = prefs.savedExternalDeviceProfiles.first(where: { $0.rootDisplayPath == path }) {
+                selectSource(.offlineDevice(profileID: profile.id))
+            } else {
+                selectSource(.localAll)
+            }
+        }
+        // If the offline profile we're browsing just mounted, jump to the live view.
+        if case .offlineDevice(let pid) = currentSource,
+           let dev = detected.first(where: { deviceProfile(for: $0)?.id == pid }) {
+            selectSource(.device(volumePath: dev.volumeURL.path))
         }
     }
 
@@ -1368,6 +1411,32 @@ final class LibraryViewModel: ObservableObject {
     /// known, else configured root path, else name), or nil for an unknown volume.
     func deviceProfile(for device: MountedDevice) -> ExternalDeviceProfile? {
         ExternalDeviceProfile.match(device, in: prefs.savedExternalDeviceProfiles)
+    }
+
+    /// Saved profiles with no mounted volume right now — shown dimmed in Sources.
+    var offlineDeviceProfiles: [ExternalDeviceProfile] {
+        let mountedIDs = Set(mountedDevices.compactMap { deviceProfile(for: $0)?.id })
+        return prefs.savedExternalDeviceProfiles.filter { !mountedIDs.contains($0.id) }
+    }
+
+    /// Same key a mounted scan saves the catalog under (see `MountedDevice.catalogKey`).
+    func catalogKey(for profile: ExternalDeviceProfile) -> String {
+        profile.volumeUUID ?? profile.name
+    }
+
+    func refreshSyncQueueCounts() {
+        var counts: [UUID: Int] = [:]
+        for profile in prefs.savedExternalDeviceProfiles {
+            let n = syncQueueStore.load(profileID: profile.id).count
+            if n > 0 { counts[profile.id] = n }
+        }
+        syncQueueCounts = counts
+    }
+
+    /// Post-sync: force the next browse of this device to re-walk the volume.
+    func invalidateDeviceCatalog(for device: MountedDevice) {
+        deviceIndexCache[device.volumeURL.path] = nil
+        deviceCatalogStore.remove(key: device.catalogKey)
     }
 
     /// Self-heal for profiles saved before volume UUIDs were captured: stamp a
@@ -1430,6 +1499,22 @@ final class LibraryViewModel: ObservableObject {
                 self.adoptDeviceIndex(built)
             }
         }
+    }
+
+    /// Browse an unplugged device: last-known catalog + queued tracks, so you
+    /// can see (and stage) what the device WILL contain.
+    private func selectOfflineDevice(profileID: UUID) {
+        guard let profile = prefs.savedExternalDeviceProfiles.first(where: { $0.id == profileID }) else {
+            index = .empty
+            return
+        }
+        let cached = deviceCatalogStore.load(key: catalogKey(for: profile)) ?? []
+        let entries = syncQueueStore.load(profileID: profileID)
+        let cachedPaths = Set(cached.map { $0.track.fileURL.path })
+        let queued = entries.map(\.track).filter { !cachedPaths.contains($0.track.fileURL.path) }
+        pendingSyncTrackIDs = Set(queued.map { $0.track.id })
+        adoptDeviceIndex(buildIndex(cached + queued))
+        oledView = .devices
     }
 
     private func adoptDeviceIndex(_ built: LibraryIndex) {

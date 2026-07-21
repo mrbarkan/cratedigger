@@ -189,16 +189,44 @@ struct SourcesSidebar: View {
                         }
                     }
 
-                    if !model.mountedDevices.isEmpty {
+                    if !model.mountedDevices.isEmpty || !model.offlineDeviceProfiles.isEmpty {
                         sectionHeader("Devices", trailing: "")
                         ForEach(model.mountedDevices) { device in
+                            VStack(alignment: .leading, spacing: 4) {
+                                sidebarItem(
+                                    icon: deviceIcon(for: device),
+                                    title: device.name,
+                                    count: isSelectedDevice(device.volumeURL.path) ? "\(model.index.allTracks.count)" : "—",
+                                    selected: isSelectedDevice(device.volumeURL.path),
+                                    action: { model.selectSource(.device(volumePath: device.volumeURL.path)) }
+                                )
+                                if let profile = model.deviceProfile(for: device),
+                                   let queued = model.syncQueueCounts[profile.id], queued > 0 {
+                                    Button(action: { model.syncQueuedTransfers(profileID: profile.id) }) {
+                                        Text("SYNC \(queued)")
+                                            .font(CarbonFont.mono(8, weight: .bold))
+                                            .foregroundColor(.white)
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 3)
+                                            .background(theme.orange)
+                                            .cornerRadius(4)
+                                    }
+                                    .buttonStyle(.carbonHover)
+                                    .padding(.leading, 36)
+                                    .padding(.bottom, 6)
+                                    .carbonTip("Copy \(queued) queued track\(queued == 1 ? "" : "s") onto \(device.name)")
+                                }
+                            }
+                        }
+                        ForEach(model.offlineDeviceProfiles) { profile in
                             sidebarItem(
-                                icon: deviceIcon(for: device),
-                                title: device.name,
-                                count: isSelectedDevice(device.volumeURL.path) ? "\(model.index.allTracks.count)" : "—",
-                                selected: isSelectedDevice(device.volumeURL.path),
-                                action: { model.selectSource(.device(volumePath: device.volumeURL.path)) }
+                                icon: offlineDeviceIcon(for: profile),
+                                title: profile.name,
+                                count: model.syncQueueCounts[profile.id].map { "\($0) queued" } ?? "—",
+                                selected: isSelectedOfflineDevice(profile.id),
+                                action: { model.selectSource(.offlineDevice(profileID: profile.id)) }
                             )
+                            .opacity(0.55)
                         }
                     }
 
@@ -287,6 +315,13 @@ struct SourcesSidebar: View {
         return false
     }
 
+    private func isSelectedOfflineDevice(_ id: UUID) -> Bool {
+        if case .offlineDevice(let current) = model.currentSource {
+            return current == id
+        }
+        return false
+    }
+
     private func isSelectedRadio(_ category: RadioCategory?) -> Bool {
         if case .radio(let current) = model.currentSource {
             return current == category
@@ -371,6 +406,15 @@ struct SourcesSidebar: View {
         return DeviceSystemIcons.sidebarImage(
             NSWorkspace.shared.icon(forFile: device.volumeURL.path), points: 16
         )
+    }
+
+    /// Offline profiles have no mounted volume to ask Finder about — use the
+    /// profile's chosen portrait, else a generic drive glyph.
+    private func offlineDeviceIcon(for profile: ExternalDeviceProfile) -> Image {
+        if let nsImage = DeviceSystemIcons.image(for: profile.iconID) {
+            return DeviceSystemIcons.sidebarImage(nsImage, points: 16)
+        }
+        return Image(systemName: "externaldrive")
     }
 
     private func sidebarItem(

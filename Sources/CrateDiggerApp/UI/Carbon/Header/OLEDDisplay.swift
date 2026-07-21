@@ -1332,10 +1332,46 @@ private struct DevicesPane: View {
     private var profiles: [ExternalDeviceProfile] { PreferencesStore.shared.savedExternalDeviceProfiles }
 
     var body: some View {
-        if let c = connected {
+        if let sync = model.deviceSyncProgress {
+            syncBody(sync)
+        } else if let c = connected {
             deviceBody(profile: c.profile, device: c.device)
         } else {
             emptyBody
+        }
+    }
+
+    // MARK: Sync readout (SYNC → DEVICE / SYNC COMPLETE)
+
+    private func syncBody(_ sync: DeviceSyncProgressSnapshot) -> some View {
+        OLEDPaneScaffold {
+            HStack(alignment: .bottom, spacing: 18) {
+                DevGlyph()
+                NPTitles(
+                    title: sync.isRunning
+                        ? "SYNC → \(sync.profileName.uppercased())"
+                        : "SYNC COMPLETE",
+                    sub: sync.isRunning
+                        ? "Copying \(min(sync.completed + 1, sync.total)) of \(sync.total)"
+                        : "\(sync.completed) track\(sync.completed == 1 ? "" : "s")"
+                            + (sync.failed > 0 ? " · \(sync.failed) failed" : "")
+                            + " · \(sync.profileName)",
+                    titleSize: 40
+                )
+            }
+        } readout: {
+            NPClock(now: "\(sync.completed)", tot: "OF \(sync.total)").fixedSize()
+        } ticker: {
+            DSPTicker(
+                prefix: "SYNC",
+                path: AttributedString(sync.currentRelativePath ?? "—"),
+                leadingInset: 62
+            )
+        } cells: {
+            ScanBar(style: .orange(sync.total > 0 ? Double(sync.completed) / Double(sync.total) : 0))
+                .frame(height: 4)
+                .padding(.top, 6)
+                .padding(.bottom, 10)
         }
     }
 
