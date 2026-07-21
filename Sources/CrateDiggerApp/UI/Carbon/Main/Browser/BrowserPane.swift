@@ -267,6 +267,7 @@ private struct TrackColumn: View {
                         isPlaying: model.nowPlayingTrack?.track.id == loaded.track.id,
                         isOffline: model.isOffline(loaded),
                         isMissing: model.isMissing(loaded),
+                        isPendingSync: model.isPendingSync(loaded.track.id),
                         onSelect: {
                             let m = NSEvent.modifierFlags
                             model.focusedColumn = .track

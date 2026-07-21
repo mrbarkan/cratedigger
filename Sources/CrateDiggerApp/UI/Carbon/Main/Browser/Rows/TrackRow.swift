@@ -8,6 +8,8 @@ struct TrackRow: View {
     let isPlaying: Bool
     var isOffline: Bool = false
     var isMissing: Bool = false
+    /// Queued for a device sync but not on the device yet (offline-device browse).
+    var isPendingSync: Bool = false
     let onSelect: () -> Void
     let onActivate: () -> Void
 
@@ -26,6 +28,16 @@ struct TrackRow: View {
                 .foregroundStyle(titleColor)
         } trail: {
             HStack(spacing: 5) {
+                if isPendingSync {
+                    Text("PENDING")
+                        .font(CarbonFont.mono(7, weight: .bold))
+                        .tracking(1.2)
+                        .foregroundStyle(theme.orange)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .overlay(RoundedRectangle(cornerRadius: 3).stroke(theme.orange.opacity(0.6), lineWidth: 0.5))
+                        .help("Queued — copies onto the device at the next SYNC")
+                }
                 if isOffline {
                     Image(systemName: "externaldrive.badge.xmark")
                         .font(.system(size: 9))

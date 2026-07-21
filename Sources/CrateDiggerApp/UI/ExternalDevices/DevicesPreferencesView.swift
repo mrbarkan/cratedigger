@@ -224,6 +224,8 @@ struct DevicesPreferencesView: View {
     private func deleteSelectedProfile() {
         guard let selectedID else { return }
         PreferencesStore.shared.removeExternalDeviceProfile(id: selectedID)
+        // A deleted profile's sync queue + staged bakes are trash — drop them now.
+        DeviceSyncQueueStore().remove(profileID: selectedID)
         self.selectedID = nil
         reload()
     }
