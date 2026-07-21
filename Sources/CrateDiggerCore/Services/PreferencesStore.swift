@@ -23,6 +23,7 @@ public final class PreferencesStore {
         static let customFFmpegPath = "cratedigger.tools.ffmpegPath"
         static let customFFprobePath = "cratedigger.tools.ffprobePath"
         static let oledView = "cratedigger.ui.oledView"
+        static let collapsedSourceSections = "cratedigger.sidebar.collapsedSections"
         static let shuffleEnabled = "cratedigger.playback.shuffle"
         static let repeatMode = "cratedigger.playback.repeatMode"
         static let playbackVolume = "cratedigger.playback.volume"
@@ -291,6 +292,12 @@ public final class PreferencesStore {
     public var savedShuffleEnabled: Bool {
         get { defaults.bool(forKey: Key.shuffleEnabled) }
         set { defaults.set(newValue, forKey: Key.shuffleEnabled) }
+    }
+
+    /// Sources-sidebar section titles the user has collapsed (chevron toggles).
+    public var collapsedSourceSections: [String] {
+        get { defaults.stringArray(forKey: Key.collapsedSourceSections) ?? [] }
+        set { defaults.set(newValue, forKey: Key.collapsedSourceSections) }
     }
 
     public var savedRepeatMode: String? {
