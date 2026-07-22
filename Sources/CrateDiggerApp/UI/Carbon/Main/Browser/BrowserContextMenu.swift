@@ -216,15 +216,23 @@ enum BrowserContextMenu {
         }
     }
 
-    /// "Remove from Sync Queue" — offered on pending items while browsing an
-    /// offline device. Deletes the entries AND their staged bytes.
+    /// Sync-queue actions — offered on pending items while browsing an
+    /// offline device. Re-stage re-bakes with the profile's current
+    /// conversion settings (only shown when staged bytes exist to re-bake);
+    /// Remove deletes the entries AND their staged bytes.
     @ViewBuilder
     static func removeFromSyncQueueButton(for tracks: [LoadedTrack], model: LibraryViewModel) -> some View {
         let pending = tracks.filter { model.isPendingSync($0.track.id) }
         if !pending.isEmpty {
+            let ids = Set(pending.map { $0.track.id })
             Divider()
+            if model.canRestageSyncEntries(trackIDs: ids) {
+                Button("Re-stage with Current Settings (\(pending.count))") {
+                    model.restageWithCurrentSettings(trackIDs: ids)
+                }
+            }
             Button("Remove from Sync Queue (\(pending.count))", role: .destructive) {
-                model.removeFromSyncQueue(trackIDs: Set(pending.map { $0.track.id }))
+                model.removeFromSyncQueue(trackIDs: ids)
             }
         }
     }

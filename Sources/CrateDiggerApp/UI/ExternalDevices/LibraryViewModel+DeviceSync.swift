@@ -110,6 +110,7 @@ extension LibraryViewModel {
                     report: ConversionReport(
                         title: failed == 0 ? "Staged for \(profile.name)" : "Staged with errors",
                         statusLine: "\(newEntries.count) track\(newEntries.count == 1 ? "" : "s") ready to sync"
+                            + " · \(profile.transferSettings.summary)"
                             + (failed > 0 ? " · \(failed) failed" : ""),
                         details: outcome.report.details,
                         tone: failed == 0 ? .success : .warning,
@@ -123,14 +124,44 @@ extension LibraryViewModel {
                 newEntries = plans.compactMap { entry(for: $0, staged: false) }
                 appAlert = .info(
                     title: "Queued for \(profile.name)",
-                    message: "\(newEntries.count) track\(newEntries.count == 1 ? "" : "s") will copy over next time you press SYNC."
+                    message: "\(newEntries.count) track\(newEntries.count == 1 ? "" : "s") will copy over next time you press SYNC — originals as-is, no conversion."
                 )
             }
 
             guard !newEntries.isEmpty else { return }
             syncQueueStore.save(existing + newEntries, profileID: profile.id)
             refreshSyncQueueCounts()
+            // Staging while browsing this offline device (e.g. a re-stage):
+            // rebuild the view so badges and rows reflect the new queue.
+            if case .offlineDevice(let pid) = currentSource, pid == profile.id {
+                selectSource(currentSource)
+            }
         }
+    }
+
+    /// Staged conversions are frozen at stage time — a settings change in
+    /// Preferences ▸ Devices doesn't touch already-baked files. This re-bakes
+    /// the selection with the profile's *current* settings: drop the entries
+    /// (and their staged bytes), then stage the same tracks again.
+    @MainActor
+    func restageWithCurrentSettings(trackIDs: Set<UUID>) {
+        guard case .offlineDevice(let profileID) = currentSource,
+              let profile = prefs.savedExternalDeviceProfiles.first(where: { $0.id == profileID }),
+              let host = presentationHostViewController else { return }
+        let doomed = syncQueueStore.load(profileID: profileID)
+            .filter { trackIDs.contains($0.track.track.id) }
+        guard !doomed.isEmpty else { return }
+        removeFromSyncQueue(trackIDs: trackIDs)
+        stageForSync(profile: profile, tracks: doomed.map(\.track), presentingFrom: host)
+    }
+
+    /// True when any of these queued tracks carries staged (baked) bytes —
+    /// i.e. re-staging with current settings would actually change something.
+    /// Copy-mode queues stage nothing, so re-stage isn't offered there.
+    func canRestageSyncEntries(trackIDs: Set<UUID>) -> Bool {
+        guard case .offlineDevice(let profileID) = currentSource else { return false }
+        return syncQueueStore.load(profileID: profileID)
+            .contains { trackIDs.contains($0.track.track.id) && $0.isStaged }
     }
 
     // MARK: - Sync (device mounted)

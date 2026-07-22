@@ -48,3 +48,20 @@ final class ExternalDeviceProfileIconIDTests: XCTestCase {
     }
 }
 #endif
+
+final class TransferSettingsSummaryTests: XCTestCase {
+    func testLossyConvertShowsFormatAndBitrate() {
+        let s = ExternalDeviceTransferSettings(mode: .convertDuringTransfer, outputFormat: .aac, bitrateKbps: 192)
+        XCTAssertEqual(s.summary, "M4A 192 kbps")
+    }
+
+    func testLosslessConvertOmitsBitrate() {
+        let s = ExternalDeviceTransferSettings(mode: .convertDuringTransfer, outputFormat: .flac, bitrateKbps: 192)
+        XCTAssertEqual(s.summary, "FLAC (lossless)")
+    }
+
+    func testCopyModeSaysNoConversion() {
+        let s = ExternalDeviceTransferSettings(mode: .copyOriginals)
+        XCTAssertEqual(s.summary, "Copy originals (no conversion)")
+    }
+}

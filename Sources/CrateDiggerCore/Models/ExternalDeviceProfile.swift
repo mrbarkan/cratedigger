@@ -67,6 +67,18 @@ public struct ExternalDeviceTransferSettings: Codable, Hashable, Sendable {
         self.templateConfig = templateConfig
     }
 
+    /// One-line human summary of what a transfer does to the files —
+    /// "AAC 192 kbps", "FLAC (lossless)", "Copy originals (no conversion)".
+    /// Shown wherever a queue/stage decision is confirmed, so the user sees
+    /// which settings got baked in.
+    public var summary: String {
+        guard mode == .convertDuringTransfer else { return "Copy originals (no conversion)" }
+        let name = outputFormat.fileExtension.uppercased()
+        if outputFormat.isLossless { return "\(name) (lossless)" }
+        guard let kbps = bitrateKbps else { return name }
+        return "\(name) \(kbps) kbps"
+    }
+
     public var conversionPreset: ConversionPreset? {
         guard mode == .convertDuringTransfer else {
             return nil
