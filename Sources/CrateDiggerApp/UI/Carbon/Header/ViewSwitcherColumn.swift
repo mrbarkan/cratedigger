@@ -30,6 +30,7 @@ struct ViewSwitcherColumn: View {
                 name: "THEME",
                 dotCount: 0,
                 activeIndex: 0,
+                dash: true,
                 tip: "THEME — cycle appearance and installed themes. Manage them in CrateDigger ▸ Appearance."
             ) {
                 cycleTheme()
@@ -116,17 +117,22 @@ struct ViewSwitcherColumn: View {
     }
 }
 
-/// A header settings button: left-aligned name + right-aligned dot indicators.
+/// A header settings button: left-aligned name + right-aligned dot indicators
+/// (or, with `dash`, a dash LED that lights on each press — THEME's cycle has
+/// no fixed option count, so the lamp acknowledges the click instead).
 private struct SwitchButton: View {
     @Environment(\.carbon) private var theme
     let name: String
     let dotCount: Int
     let activeIndex: Int
+    var dash = false
     var tip: String? = nil
     let action: () -> Void
 
+    @State private var dashLit = false
+
     var body: some View {
-        Button(action: action) {
+        Button(action: fire) {
             HStack(spacing: 6) {
                 Text(name)
                     .font(CarbonFont.mono(8.5, weight: .bold))
@@ -145,13 +151,29 @@ private struct SwitchButton: View {
                         }
                     }
                 }
+                if dash {
+                    Capsule(style: .continuous)
+                        .fill(dashLit ? theme.orange : theme.ink4.opacity(0.4))
+                        .frame(width: 14, height: 4)
+                        .shadow(color: dashLit ? theme.orange.opacity(0.7) : .clear, radius: 3)
+                }
             }
             .padding(.horizontal, 10)
             .frame(maxWidth: .infinity)
-            .frame(height: 28)
-            .background(ChromeChassis(theme: theme, cornerRadius: 6))
+            .frame(height: SwitcherButtonMetrics.height)
+            .background(ChromeChassis(theme: theme, cornerRadius: SwitcherButtonMetrics.cornerRadius))
         }
         .buttonStyle(.carbonHover)
         .carbonTip(tip ?? "\(name): tap to change")
+    }
+
+    private func fire() {
+        if dash {
+            dashLit = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
+                withAnimation(.easeOut(duration: 0.4)) { dashLit = false }
+            }
+        }
+        action()
     }
 }

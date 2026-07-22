@@ -118,7 +118,7 @@ private struct DisplayRail: View {
                 ann("SYNC", lit: v == .remoteSync, color: OLEDView.remoteSync.accent(theme))
                 ann("CD", lit: v == .cdRip, color: OLEDView.cdRip.accent(theme))
                 ann("DEV", lit: v == .devices, color: OLEDView.devices.accent(theme))
-                ann("ON AIR", lit: radioLive, color: onAirRed, pulse: true)
+                ann("ON AIR", lit: radioLive, color: onAirRed, pulse: onAirPulse)
             }
 
             Spacer(minLength: 12)
@@ -146,11 +146,22 @@ private struct DisplayRail: View {
         )
     }
 
+    /// ON AIR animation: fast flash while a stream is buffering, slow breathe
+    /// while it's actually on the air, steady when radio is merely selected.
+    private var onAirPulse: AnnPulse {
+        guard radioLive else { return .none }
+        switch model.playbackState {
+        case .loading: return .flash
+        case .playing: return .breathe
+        default:       return .none
+        }
+    }
+
     /// One printed annunciator segment: ghost when inactive, lit (color + glow)
     /// when its view is active. Segments snap — no fade.
-    private func ann(_ label: String, lit: Bool, color: Color, pulse: Bool = false) -> some View {
+    private func ann(_ label: String, lit: Bool, color: Color, pulse: AnnPulse = .none) -> some View {
         HStack(spacing: 5) {
-            AnnDot(lit: lit, color: color, pulse: pulse)
+            AnnDot(lit: lit, color: color)
             Text(label)
                 .font(CarbonFont.mono(8, weight: .bold))
                 .tracking(1.6)
@@ -158,27 +169,48 @@ private struct DisplayRail: View {
                 .shadow(color: lit ? color.opacity(0.55) : .clear, radius: lit ? 7 : 0)
         }
         .fixedSize()
+        .modifier(AnnBlink(mode: lit ? pulse : .none))
     }
 }
 
-/// The annunciator dot — 5px, ghost or lit; the ON-AIR dot pulses.
+/// How an annunciator animates: `.breathe` is the slow on-air pulse, `.flash`
+/// the fast attention blink used while a stream is still connecting.
+private enum AnnPulse { case none, breathe, flash }
+
+/// Opacity animation for a whole annunciator (dot + label). Restarts cleanly
+/// when the mode changes (loading → playing swaps flash for breathe).
+private struct AnnBlink: ViewModifier {
+    let mode: AnnPulse
+    @State private var dim = false
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(dim ? (mode == .flash ? 0.2 : 0.4) : 1.0)
+            .onAppear(perform: restart)
+            .onChange(of: mode) { _ in restart() }
+    }
+
+    private func restart() {
+        var still = Transaction()
+        still.disablesAnimations = true
+        withTransaction(still) { dim = false }
+        guard mode != .none else { return }
+        let period = mode == .flash ? 0.22 : 0.7
+        withAnimation(.easeInOut(duration: period).repeatForever(autoreverses: true)) { dim = true }
+    }
+}
+
+/// The annunciator dot — 5px, ghost or lit. Pulsing happens at the whole-
+/// annunciator level (`AnnBlink`), so the dot itself is static.
 private struct AnnDot: View {
     let lit: Bool
     let color: Color
-    var pulse: Bool = false
-    @State private var pulsing = false
 
     var body: some View {
         Circle()
             .fill(lit ? color : oledFGo(0.09))
             .frame(width: 5, height: 5)
             .shadow(color: lit ? color : .clear, radius: lit ? 5 : 0)
-            .opacity(lit && pulse ? (pulsing ? 1.0 : 0.4) : 1.0)
-            .onAppear { if pulse { startPulse() } }
-    }
-
-    private func startPulse() {
-        withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) { pulsing = true }
     }
 }
 

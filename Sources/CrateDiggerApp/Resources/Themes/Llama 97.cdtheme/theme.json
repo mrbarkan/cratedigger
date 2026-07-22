@@ -1,0 +1,43 @@
+{
+  "id": "llama-97",
+  "name": "Llama '97",
+  "baseAppearance": "dark",
+  "inherits": "carbon",
+  "colors": {
+    "chassis": "#232532",
+    "chassisHi": "#3C4054",
+    "chassisLo": "#14151E",
+    "chassisDeep": "#090A10",
+    "well": "#191B26",
+    "wellDeep": "#0C0D14",
+    "paper": "#121420",
+    "paper2": "#0B0C14",
+    "ink": "#ECF2E9",
+    "ink2": "#BECBBE",
+    "ink3": "#7C8C7E",
+    "ink4": "#515E53",
+    "hair": "#262B38",
+    "orange": "#FFB52E",
+    "orangeHi": "#FFD375",
+    "orangeLo": "#D18E12",
+    "cyan": "#3BE065",
+    "cyanGlow": "#C0FFD0",
+    "metalHi": "#9AA1B4",
+    "metal": "#5C6274",
+    "metalLo": "#2C303F",
+    "metalDeep": "#0B0C12",
+    "backgroundBase": "#0A0B12",
+    "backgroundGradientStart": "#1D2030",
+    "backgroundGradientEnd": "#050609",
+    "oledSurface": "#030503",
+    "oledStrokeInner": "#0C120C",
+    "oledForeground": "#A6FFB0",
+    "oledForegroundMuted": "#A6FFB08C"
+  },
+  "geometry": {
+    "chassisCornerRadius": 6,
+    "wellCornerRadius": 6,
+    "paperCornerRadius": 4,
+    "oledCornerRadius": 6
+  }
+}

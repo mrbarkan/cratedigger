@@ -16,6 +16,13 @@ extension OLEDView {
     }
 }
 
+/// One size for every button in the switcher column — the display strip and
+/// the three settings keys must read as identical physical parts.
+enum SwitcherButtonMetrics {
+    static let height: CGFloat = 28
+    static let cornerRadius: CGFloat = 6
+}
+
 /// The display toggle: a thin strip of light in a hardware button — no text.
 /// Tapping cycles through the visible OLED views; the strip's glow color is the
 /// same accent the OLED uses for the active screen (NOW sun, CNVRT orange,
@@ -39,8 +46,8 @@ struct DisplayModeButton: View {
                 )
                 .padding(.horizontal, 10)
                 .frame(maxWidth: .infinity)
-                .frame(height: 28)
-                .background(ChromeChassis(theme: theme, cornerRadius: 6))
+                .frame(height: SwitcherButtonMetrics.height)
+                .background(ChromeChassis(theme: theme, cornerRadius: SwitcherButtonMetrics.cornerRadius))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.carbonHover)
