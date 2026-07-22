@@ -56,7 +56,8 @@ valid as one that overrides everything.
   "colors": { "orange": "#FF6236", "...": "..." },
   "shadows": { "shadow1": { "color": "#00000085", "radius": 12, "x": 0, "y": 3 } },
   "fonts": { "mono": "JetBrainsMono-Regular" },
-  "geometry": { "chassisCornerRadius": 4, "playButtonSize": 90 }
+  "geometry": { "chassisCornerRadius": 4, "playButtonSize": 90 },
+  "effects": { "oledScanlineOpacity": 0.05 }
 }
 ```
 
@@ -83,14 +84,11 @@ Conversion Patch Bay's dark steel housing, and the vinyl record's grey. These
 stay constant across every theme, the same way a Winamp skin couldn't recolor
 an LED that was drawn into the bitmap.
 
-> **Known limitation:** the OLED display's glass foreground text is drawn
-> through a small set of shared helpers (`oledFG`/`oledFGo` in
-> `OLEDDisplay.swift`) that predate the theme system and default-parameter
-> off a fixed value rather than reading the active theme per call site.
-> Setting `oledForeground`/`oledForegroundMuted`/`onAir` in your theme is
-> supported by the schema and by `CarbonTheme`, but won't yet visibly change
-> the OLED display's ~50 call sites — this is flagged as a follow-up, not a
-> silent no-op you need to work around.
+The OLED tokens recolor the display glass end to end:
+`oledSurface`/`oledStrokeInner` are the panel itself,
+`oledForeground`/`oledForegroundMuted` the phosphor text (a green-phosphor
+terminal or amber VFD look is three color overrides away), and `onAir` the
+radio lamp.
 
 ### `shadows`
 
@@ -126,12 +124,20 @@ so an extreme value (e.g. `"playButtonSize": 999`) is silently capped rather
 than producing a broken window. Omit anything you don't want to change; the
 defaults are CrateDigger's shipped layout.
 
+### `effects`
+
+Display-effect strengths, clamped to safe ranges like `geometry`:
+
+| Key | What it does | Range |
+|---|---|---|
+| `oledScanlineOpacity` | CRT scanline strength on the OLED glass. `0` turns scanlines off; the built-ins use `0.018`. | `0`–`0.15` |
+
 ## `inherits` and partial themes
 
 `inherits` is what makes a 3-color theme possible. Point it at `"linen"`,
 `"carbon"`, or any other installed theme's `id`, and every token you don't
-set is copied from there — colors, shadows, fonts, and geometry all merge
-independently, so you can override just `geometry.playButtonSize` while
+set is copied from there — colors, shadows, fonts, geometry, and effects all
+merge independently, so you can override just `geometry.playButtonSize` while
 inheriting every color from `carbon`.
 
 If `inherits` names a theme that isn't installed (a typo, or a theme that

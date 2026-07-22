@@ -106,3 +106,39 @@ final class RemoteArtworkServiceTests: XCTestCase {
     }
 }
 #endif
+
+final class ArtworkSearchLoosenessTests: XCTestCase {
+    func testStrippedEditionTitleDropsParentheticalAndBracketGroups() {
+        XCTAssertEqual(RemoteArtworkService.strippedEditionTitle("OK Computer (Collector's Edition) [2017 Remaster]"),
+                       "OK Computer")
+        XCTAssertEqual(RemoteArtworkService.strippedEditionTitle("Kid A"), "Kid A")
+        XCTAssertEqual(RemoteArtworkService.strippedEditionTitle("  In Rainbows (Disk 2)  "), "In Rainbows")
+        // A title that is nothing but a parenthetical must not strip to "".
+        XCTAssertEqual(RemoteArtworkService.strippedEditionTitle("(What's the Story) Morning Glory?"),
+                       "Morning Glory?")
+    }
+
+    func testQueryAttemptsGoStrictToLoose() {
+        let attempts = RemoteArtworkService.musicBrainzQueryAttempts(
+            artist: "Radiohead", album: "OK Computer (Collector's Edition)")
+        XCTAssertEqual(attempts, [
+            "artist:\"Radiohead\" AND release:\"OK Computer (Collector's Edition)\"",
+            "artist:\"Radiohead\" AND release:\"OK Computer\"",
+            "artist:(Radiohead) AND release:(OK Computer)"
+        ])
+    }
+
+    func testPlainTitleGetsTwoAttempts() {
+        let attempts = RemoteArtworkService.musicBrainzQueryAttempts(artist: "Radiohead", album: "Kid A")
+        XCTAssertEqual(attempts, [
+            "artist:\"Radiohead\" AND release:\"Kid A\"",
+            "artist:(Radiohead) AND release:(Kid A)"
+        ])
+    }
+
+    func testAlbumOnlyQueryOmitsArtistField() {
+        let attempts = RemoteArtworkService.musicBrainzQueryAttempts(artist: "", album: "Kid A")
+        XCTAssertEqual(attempts.first, "release:\"Kid A\"")
+        XCTAssertFalse(attempts.contains(where: { $0.contains("artist:") }))
+    }
+}

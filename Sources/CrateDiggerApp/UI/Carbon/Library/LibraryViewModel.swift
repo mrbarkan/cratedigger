@@ -2444,16 +2444,14 @@ final class LibraryViewModel: ObservableObject {
     }
 
     /// Role-based filename for an imported image (cover.jpg, back.jpg, …).
+    /// Base names come from `ArtworkRole.suggestedFilenameBase` so every
+    /// import path writes the same on-disk vocabulary.
     nonisolated private static func suggestedArtworkFilename(role: ArtworkRole, index: Int, ext: String) -> String {
+        let base = role.suggestedFilenameBase
         switch role {
-        case .cover:       return index == 0 ? "cover.\(ext)" : "cover_\(index + 1).\(ext)"
-        case .altCover:    return index == 0 ? "cover_alt.\(ext)" : "cover_alt_\(index + 1).\(ext)"
-        case .back:        return index == 0 ? "back.\(ext)" : "back_\(index + 1).\(ext)"
-        case .disc:        return index == 0 ? "disc.\(ext)" : "disc_\(index + 1).\(ext)"
-        case .inlay:       return index == 0 ? "inlay.\(ext)" : "inlay_\(index + 1).\(ext)"
-        case .bookletPage: return String(format: "booklet_%02d.\(ext)", index + 1)
-        case .ignore:      return "ignored_\(index + 1).\(ext)"
-        case .auto:        return "artwork_\(index + 1).\(ext)"
+        case .bookletPage:   return String(format: "\(base)_%02d.\(ext)", index + 1)
+        case .ignore, .auto: return "\(base)_\(index + 1).\(ext)"
+        default:             return index == 0 ? "\(base).\(ext)" : "\(base)_\(index + 1).\(ext)"
         }
     }
 

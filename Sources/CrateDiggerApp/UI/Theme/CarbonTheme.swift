@@ -73,6 +73,10 @@ public struct CarbonTheme: Equatable {
     public let oledForegroundMuted: Color
     public let onAir: Color
 
+    /// CRT scanline strength on the OLED glass (0 = off). Themeable via
+    /// `effects.oledScanlineOpacity`, clamped to 0…0.15.
+    public let oledScanlineOpacity: Double
+
     /// The light-mode selection-row LED core color (`CarbonSelectionSlot`).
     public let selectionLedCore: Color
 
@@ -124,6 +128,7 @@ public extension CarbonTheme {
         oledForeground:      Color(red: 0.961, green: 0.945, blue: 0.902),
         oledForegroundMuted: Color.white.opacity(0.55),
         onAir:               Color(red: 1.0, green: 0.357, blue: 0.29),
+        oledScanlineOpacity: 0.018,
         selectionLedCore: Color(hex: 0xFFD24A),
         selectionInk:    Color(hex: 0xFFFFFF)
     )
@@ -167,6 +172,7 @@ public extension CarbonTheme {
         oledForeground:      Color(red: 0.961, green: 0.945, blue: 0.902),
         oledForegroundMuted: Color.white.opacity(0.55),
         onAir:               Color(red: 1.0, green: 0.357, blue: 0.29),
+        oledScanlineOpacity: 0.018,
         selectionLedCore: Color(hex: 0xFFD24A),
         selectionInk:    Color(hex: 0xFFFFFF)
     )
@@ -265,6 +271,8 @@ public extension CarbonTheme {
         oledForeground = color("oledForeground", resolvedBase.oledForeground)
         oledForegroundMuted = color("oledForegroundMuted", resolvedBase.oledForegroundMuted)
         onAir = color("onAir", resolvedBase.onAir)
+        oledScanlineOpacity = min(max(definition.effects?["oledScanlineOpacity"]
+                                        ?? resolvedBase.oledScanlineOpacity, 0), 0.15)
 
         selectionLedCore = color("selectionLedCore", resolvedBase.selectionLedCore)
         selectionInk = color("selectionInk", resolvedBase.selectionInk)

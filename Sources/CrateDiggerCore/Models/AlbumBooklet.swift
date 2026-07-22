@@ -114,10 +114,12 @@ public struct AlbumBooklet: Codable, Hashable, Sendable {
             if let manifest = manifest, let role = manifest.roles[name], role != .auto {
                 switch role {
                 case .cover: front.append(url)
-                case .altCover: altFront.append(url)
+                case .altCover, .wrapped: altFront.append(url)
                 case .bookletPage: booklet.append(url)
                 case .inlay: inlay.append(url)
                 case .back: back.append(url)
+                case .spine, .sleeve, .sticker, .matrixRunout, .obi, .poster:
+                    generic.append(url)
                 case .disc, .ignore: continue
                 case .auto: break
                 }

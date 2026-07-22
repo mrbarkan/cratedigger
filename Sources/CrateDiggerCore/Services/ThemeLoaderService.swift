@@ -158,7 +158,8 @@ public struct ThemeLoaderService {
             colors: mergeDictionaries(base.colors, override.colors),
             shadows: mergeDictionaries(base.shadows, override.shadows),
             fonts: mergeDictionaries(base.fonts, override.fonts),
-            geometry: mergeDictionaries(base.geometry, override.geometry)
+            geometry: mergeDictionaries(base.geometry, override.geometry),
+            effects: mergeDictionaries(base.effects, override.effects)
         )
     }
 

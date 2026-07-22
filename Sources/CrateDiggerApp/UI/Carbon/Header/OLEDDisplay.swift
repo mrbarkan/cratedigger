@@ -3,19 +3,25 @@ import SwiftUI
 
 // MARK: - Shared OLED palette
 
-/// The OLED foreground family (#F5F1E6) and helpers. Everything on the glass is
-/// drawn from this + the Carbon accents (orange/sun/cyan/indigo/red).
+/// The OLED foreground family (#F5F1E6 by default) and helpers. Everything on
+/// the glass is drawn from this + the Carbon accents (orange/sun/cyan/indigo/red).
 ///
-/// These mirror `CarbonTheme.oledForeground`/`.oledForegroundMuted`/`.onAir`
-/// (same literal values) so 3rd-party themes *can* override the OLED glass via
-/// JSON — but the ~50 call sites in this file default-parameter off these free
-/// globals rather than reading `theme` directly (default parameter values
-/// can't reach `@Environment`), so an override here won't yet propagate to
-/// every pane. Left as a known follow-up rather than a blind file-wide rewrite.
-let oledFG = Color(red: 0.961, green: 0.945, blue: 0.902)
+/// The values live in `ActiveOLEDPalette`, written by `CarbonThemed.body` from
+/// the active theme's `oledForeground`/`oledForegroundMuted`/`onAir` tokens
+/// (same idempotent-global pattern as `ActiveThemeFonts`). The ~50 call sites
+/// in this file default-parameter off these computed globals; default
+/// parameters are evaluated per call and every pane re-renders when the theme
+/// environment changes, so theme overrides propagate live without threading
+/// `theme` through each call.
+enum ActiveOLEDPalette {
+    static var foreground = Color(red: 0.961, green: 0.945, blue: 0.902)
+    static var muted = Color.white.opacity(0.55)
+    static var onAir = Color(red: 1.0, green: 0.357, blue: 0.29)   // #ff5b4a
+}
+var oledFG: Color { ActiveOLEDPalette.foreground }
 func oledFGo(_ opacity: Double) -> Color { oledFG.opacity(opacity) }
-private let oledMuted = Color.white.opacity(0.55)
-private let onAirRed = Color(red: 1.0, green: 0.357, blue: 0.29)   // #ff5b4a
+private var oledMuted: Color { ActiveOLEDPalette.muted }
+private var onAirRed: Color { ActiveOLEDPalette.onAir }
 
 // MARK: - OLED display (one glass, three permanent zones)
 
@@ -66,7 +72,7 @@ struct OLEDDisplay: View {
                     endPoint: .bottomTrailing
                 )
             )
-            .scanlines(opacity: 0.018)
+            .scanlines(opacity: theme.oledScanlineOpacity)
             .shadow(color: Color.black.opacity(0.5), radius: 6, y: 4)
     }
 }

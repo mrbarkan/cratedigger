@@ -60,3 +60,50 @@ final class AlbumArtCatalogTests: XCTestCase {
     }
 }
 #endif
+
+final class AlbumArtCatalogExtendedRolesTests: XCTestCase {
+    private func url(_ name: String) -> URL { URL(fileURLWithPath: "/album/\(name)") }
+
+    func testExtendedKeywordsClassify() {
+        let pages = AlbumArtCatalog.pages(imageURLs: [
+            url("matrix side a.jpg"),
+            url("hype sticker.jpg"),
+            url("obi.jpg"),
+            url("spine.jpg"),
+            url("inner sleeve.jpg"),
+            url("poster.jpg"),
+            url("shrinkwrap front.jpg")
+        ], manifest: nil)
+        let labels = pages.map(\.label)
+        XCTAssertTrue(labels.contains("Matrix / Runout"), "\(labels)")
+        XCTAssertTrue(labels.contains("Sticker"))
+        XCTAssertTrue(labels.contains("Obi"))
+        XCTAssertTrue(labels.contains("Spine"))
+        XCTAssertTrue(labels.contains("Sleeve"))
+        XCTAssertTrue(labels.contains("Poster"))
+        XCTAssertTrue(labels.contains("Wrapped Cover"))
+    }
+
+    /// "sleeve front"/"sleeve back" are cover/back scans; a bare "sleeve" is a sleeve.
+    func testSleeveYieldsToFrontAndBack() {
+        let pages = AlbumArtCatalog.pages(imageURLs: [
+            url("sleeve front.jpg"), url("sleeve back.jpg"), url("sleeve.jpg")
+        ], manifest: nil)
+        XCTAssertEqual(pages.map(\.kind), [.cover, .back, .other])
+        XCTAssertEqual(pages.last?.label, "Sleeve")
+    }
+
+    /// Extended pages close the viewer sequence, after Back.
+    func testExtendedPagesComeAfterBack() {
+        let pages = AlbumArtCatalog.pages(imageURLs: [
+            url("cover.jpg"), url("back.jpg"), url("matrix.jpg"), url("obi.jpg")
+        ], manifest: nil)
+        XCTAssertEqual(pages.map(\.label), ["Cover", "Back", "Matrix / Runout", "Obi"])
+    }
+
+    func testManifestRoleStillWinsForExtendedRoles() {
+        let manifest = ArtworkManifest(roles: ["scan01.jpg": .matrixRunout])
+        let pages = AlbumArtCatalog.pages(imageURLs: [url("scan01.jpg")], manifest: manifest)
+        XCTAssertEqual(pages.map(\.label), ["Matrix / Runout"])
+    }
+}

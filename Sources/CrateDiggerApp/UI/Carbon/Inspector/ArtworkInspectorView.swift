@@ -172,12 +172,9 @@ struct ArtworkInspectorView: View {
                                     isDirty = true
                                 }
                             )) {
-                                Text("Main Cover").tag(ArtworkRole.cover)
-                                Text("Alt Cover").tag(ArtworkRole.altCover)
-                                Text("Back").tag(ArtworkRole.back)
-                                Text("Disc/Vinyl").tag(ArtworkRole.disc)
-                                Text("Inlay / Insert").tag(ArtworkRole.inlay)
-                                Text("Booklet Page").tag(ArtworkRole.bookletPage)
+                                ForEach(ArtworkRole.assignable, id: \.self) { role in
+                                    Text(role.displayName).tag(role)
+                                }
                                 Divider()
                                 Text("Auto").tag(ArtworkRole.auto)
                                 Text("Ignore").tag(ArtworkRole.ignore)

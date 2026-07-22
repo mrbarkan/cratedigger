@@ -50,6 +50,11 @@ public struct ThemeDefinition: Codable, Sendable, Equatable {
     /// the app's layout, only push it to an extreme within reason.
     public var geometry: [String: Double]?
 
+    /// Display-effect overrides (e.g. `"oledScanlineOpacity"`). Values are
+    /// clamped to safe ranges when converted to `CarbonTheme`, same contract
+    /// as `geometry`.
+    public var effects: [String: Double]?
+
     public init(
         id: String,
         name: String,
@@ -60,7 +65,8 @@ public struct ThemeDefinition: Codable, Sendable, Equatable {
         colors: [String: String]? = nil,
         shadows: [String: ShadowDefinition]? = nil,
         fonts: [String: String]? = nil,
-        geometry: [String: Double]? = nil
+        geometry: [String: Double]? = nil,
+        effects: [String: Double]? = nil
     ) {
         self.id = id
         self.name = name
@@ -72,6 +78,7 @@ public struct ThemeDefinition: Codable, Sendable, Equatable {
         self.shadows = shadows
         self.fonts = fonts
         self.geometry = geometry
+        self.effects = effects
     }
 }
 
