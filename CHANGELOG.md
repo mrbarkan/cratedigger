@@ -4,6 +4,18 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 1.1.0 (43) — 2026-07-22
+
+Silent refresh of the 1.1.0 DMG (same release, updated build):
+
+- Staging tracks for an offline device now says which conversion got baked
+  ("12 tracks ready to sync · M4A 192 kbps"); the per-device settings live in
+  Preferences ▸ Devices.
+- New right-click action on queued tracks: **Re-stage with Current Settings**
+  — staged conversions are frozen at stage time, so this re-bakes them after
+  you change the device's format. Copy-mode queues (nothing staged) say so
+  and don't offer it.
+
 ## 1.1.0 (42) — 2026-07-22
 
 ### Added
