@@ -19,6 +19,12 @@ public struct Album: Identifiable, Sendable, Equatable {
     /// For a grouped release, what kind of group it is (drives badge/menu). Nil for
     /// plain albums and member pressings.
     public let groupKind: AlbumGroupKind?
+    /// The identity `LibraryIndex.build` grouped this album under — including the
+    /// version `discriminator` when same-tagged rips were split by source folder.
+    /// Version-group plumbing must use THIS, never re-derive from track tags
+    /// (tag-derived keys can't tell two same-tagged versions apart). Nil only on
+    /// synthesised release albums.
+    public let folderKey: AlbumFolderKey?
 
     public init(
         id: String,
@@ -33,7 +39,8 @@ public struct Album: Identifiable, Sendable, Equatable {
         versions: [Album]? = nil,
         originalYear: Int? = nil,
         editionLabel: String? = nil,
-        groupKind: AlbumGroupKind? = nil
+        groupKind: AlbumGroupKind? = nil,
+        folderKey: AlbumFolderKey? = nil
     ) {
         self.id = id
         self.artistID = artistID
@@ -48,6 +55,7 @@ public struct Album: Identifiable, Sendable, Equatable {
         self.originalYear = originalYear
         self.editionLabel = editionLabel
         self.groupKind = groupKind
+        self.folderKey = folderKey
     }
 
     public var trackCount: Int { tracks.count }
@@ -78,7 +86,7 @@ public struct Album: Identifiable, Sendable, Equatable {
         Album(id: id, artistID: artistID, artistName: artistName, title: title,
               year: year, artworkHash: artworkHash, tracks: tracks, booklet: booklet,
               mediaFormat: mediaFormat, versions: versions, originalYear: originalYear,
-              editionLabel: editionLabel, groupKind: groupKind)
+              editionLabel: editionLabel, groupKind: groupKind, folderKey: folderKey)
     }
 
     /// Number of discs to offer for per-disc artwork: the larger of the discs

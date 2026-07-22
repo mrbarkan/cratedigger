@@ -258,6 +258,30 @@ final class ConversionServiceTests: XCTestCase {
         XCTAssertFalse(pairs.contains(ArgPair(flag: "-metadata", value: "ARTIST=ShouldNotOverrideCanonical")))
     }
 
+    func testTrackAndDiscNumbersSurviveWithoutTotals() throws {
+        // Real-world rips often tag discnumber=2 with no disctotal. The number
+        // must still be written — dropping it collapses every disc to disc 1
+        // and multi-disc albums interleave in the browser.
+        let service = try makeService(artworkPreparer: PassThroughArtworkPreparer())
+        let sourceURL = temporaryDirectory.appendingPathComponent("source.flac")
+        let outputURL = temporaryDirectory.appendingPathComponent("out.m4a")
+
+        let metadata = ConversionMetadata(
+            trackNumber: 7,
+            discNumber: 2
+        )
+
+        let queued = try service.enqueue(
+            [ConversionJob(sourceURL: sourceURL, destinationURL: outputURL, metadata: metadata)],
+            presetID: "ipod_aac_192"
+        ).first!
+        let command = try service.preparedCommand(for: queued)
+        let pairs = argumentPairs(command.arguments)
+
+        XCTAssertTrue(pairs.contains(ArgPair(flag: "-metadata", value: "track=7")))
+        XCTAssertTrue(pairs.contains(ArgPair(flag: "-metadata", value: "disc=2")))
+    }
+
     func testCompatArtworkResizeOptionPassesMaxDimensionToArtworkPreparer() throws {
         let artworkData = try makeImageData()
         let artwork = ArtworkAsset(
@@ -327,8 +351,12 @@ final class ConversionServiceTests: XCTestCase {
         XCTAssertFalse(pairs.contains(ArgPair(flag: "-metadata", value: "title=Track")))
         XCTAssertFalse(pairs.contains(ArgPair(flag: "-metadata", value: "artist=Track Artist")))
         XCTAssertFalse(pairs.contains(ArgPair(flag: "-metadata", value: "album=Album")))
-        XCTAssertFalse(pairs.contains(ArgPair(flag: "-metadata", value: "track=1")))
-        XCTAssertFalse(pairs.contains(ArgPair(flag: "-metadata", value: "disc=1")))
+        // track/disc ARE written even without totals: the values were parsed
+        // FROM the source, so a missing total mirrors the source's own tags —
+        // and ffmpeg's map_metadata does not reliably carry DISCNUMBER into
+        // the M4A disk atom, so relying on pass-through loses disc identity.
+        XCTAssertTrue(pairs.contains(ArgPair(flag: "-metadata", value: "track=1")))
+        XCTAssertTrue(pairs.contains(ArgPair(flag: "-metadata", value: "disc=1")))
         XCTAssertFalse(pairs.contains(ArgPair(flag: "-metadata", value: "date=2008")))
         XCTAssertFalse(pairs.contains(ArgPair(flag: "-metadata", value: "genre=Electronic")))
         XCTAssertFalse(pairs.contains(ArgPair(flag: "-metadata", value: "comment=Test Comment")))

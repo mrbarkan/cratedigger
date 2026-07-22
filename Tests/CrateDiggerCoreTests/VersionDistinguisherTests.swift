@@ -21,6 +21,25 @@ final class VersionDistinguisherTests: XCTestCase {
         )
     }
 
+    func testCommonBaseTitleIsCaseInsensitive() {
+        // "Riot on…" vs "Riot On…" is one title with inconsistent casing — the
+        // base is the whole title, not the prefix up to the first case mismatch.
+        XCTAssertEqual(
+            VersionDistinguisher.commonBaseTitle(["Riot on an Empty Street", "Riot On An Empty Street"]),
+            "Riot on an Empty Street"
+        )
+    }
+
+    func testLabelsFallBackToFormatWhenTitlesDifferOnlyByCase() {
+        let aac = album(title: "Riot on an Empty Street", year: 2004, format: "aac",
+                        bitrate: 262, path: "/tmp/a/x.m4a")
+        let flac = album(title: "Riot On An Empty Street", year: 2004, format: "flac",
+                         path: "/tmp/b/x.flac")
+        let labels = VersionDistinguisher.labels(for: [aac, flac])
+        // A case-only difference is no distinguisher — fall through to format.
+        XCTAssertEqual(labels, [VersionLabel.formatBadge(for: aac), VersionLabel.formatBadge(for: flac)])
+    }
+
     func testCommonBaseTitleFallsBackToShortestWhenNoSharedPrefix() {
         // No meaningful common prefix → shortest title.
         XCTAssertEqual(VersionDistinguisher.commonBaseTitle(["Kid A", "Amnesiac"]), "Kid A")

@@ -2,10 +2,16 @@ import SwiftUI
 
 struct TransportCluster: View {
     @Environment(\.carbon) private var theme
+    @Environment(\.carbonGeometry) private var geometry
     @EnvironmentObject private var model: LibraryViewModel
 
     var body: some View {
         HStack(alignment: .center, spacing: 11) {
+            transportButton(systemName: "scope", label: "Go to Current Song (⌘L)") {
+                model.revealNowPlaying()
+            }
+            .disabled(model.nowPlayingTrack == nil)
+            .opacity(model.nowPlayingTrack == nil ? 0.45 : 1)
             toggleButton(systemName: "shuffle", on: model.shuffleEnabled, label: "Shuffle") {
                 model.toggleShuffle()
             }
@@ -39,7 +45,7 @@ struct TransportCluster: View {
                     .font(.system(size: 19, weight: .semibold))   // same size as the transport icons
                     .foregroundStyle(on ? theme.orange : theme.ink3)
             }
-            .frame(width: CarbonLayout.transportButtonSize, height: CarbonLayout.transportButtonSize)
+            .frame(width: geometry.transportButtonSize, height: geometry.transportButtonSize)
             .shadow(color: on ? theme.orange.opacity(0.4) : .clear, radius: 6)
         }
         .buttonStyle(.carbonHover)
@@ -56,7 +62,7 @@ struct TransportCluster: View {
                     .font(.system(size: 19, weight: .semibold))
                     .foregroundStyle(theme.ink2)
             }
-            .frame(width: CarbonLayout.transportButtonSize, height: CarbonLayout.transportButtonSize)
+            .frame(width: geometry.transportButtonSize, height: geometry.transportButtonSize)
         }
         .buttonStyle(.carbonHover)
         .carbonTip(label)

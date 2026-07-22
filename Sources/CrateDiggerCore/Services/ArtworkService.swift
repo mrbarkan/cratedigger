@@ -119,14 +119,43 @@ public final class ArtworkService: ArtworkPreparing {
         storeData(asset.data, for: asset.hash)
     }
 
-    /// Refill an asset's in-memory `data` from the store/cache by `hash`. Assets
-    /// decoded from a `.cdlib` come back with empty `data` (the bytes live in the
-    /// `ArtworkStore`, not the crate), so conversion/transfer must rehydrate them
-    /// before re-embedding artwork. Returns the asset unchanged when the data is
-    /// already present or the hash isn't cached anywhere.
-    public func hydrated(_ asset: ArtworkAsset) -> ArtworkAsset {
-        guard asset.data.isEmpty, let data = dataForHash(asset.hash) else { return asset }
-        return ArtworkAsset(source: asset.source, hash: asset.hash, dimensions: asset.dimensions, data: data)
+    /// Forget one cover's cached thumbnail — used when its source art is deleted.
+    ///
+    /// Only the on-disk store is pruned. The in-memory NSCaches are keyed
+    /// `hash-WxH` / `hash-tN` and NSCache cannot enumerate its keys, so per-key
+    /// eviction would mean tracking every key by hand — for entries that nothing
+    /// references once the index rebuilds, in a cache that already evicts under
+    /// pressure. Not worth the bookkeeping.
+    public func removeCached(hash: String) {
+        store?.remove(hash)
+    }
+
+    /// Refill an asset's full-resolution `data`. Assets decoded from a `.cdlib`
+    /// come back with empty `data` (the crate stores only the hash), so
+    /// conversion/transfer must rehydrate them before re-embedding artwork.
+    ///
+    /// Bytes come from the full-resolution in-memory cache, or failing that are
+    /// re-read from the track's own file/folder. The on-disk store is
+    /// deliberately NOT consulted: it holds display *thumbnails*, and baking a
+    /// 512px thumbnail into a converted file would be silent quality loss. The
+    /// source file is necessarily online during a conversion, so re-reading it
+    /// costs nothing a conversion wasn't already paying.
+    ///
+    /// Returns the asset unchanged when its data is already present or the
+    /// source no longer resolves any artwork (callers then convert without
+    /// re-embedding, as they did before).
+    public func hydrated(_ asset: ArtworkAsset, trackURL: URL) async -> ArtworkAsset {
+        guard asset.data.isEmpty else { return asset }
+        if let cached = dataCache.object(forKey: asset.hash as NSString) as Data? {
+            return ArtworkAsset(
+                source: asset.source,
+                hash: asset.hash,
+                dimensions: asset.dimensions,
+                data: cached as Data
+            )
+        }
+        guard let resolved = await resolveArtwork(trackURL: trackURL) else { return asset }
+        return resolved
     }
 
     public func generateThumbnail(artworkHash: String, size: CGSize) -> NSImage? {

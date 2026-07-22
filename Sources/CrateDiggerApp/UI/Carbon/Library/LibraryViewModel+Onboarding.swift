@@ -64,15 +64,15 @@ extension LibraryViewModel {
     }
 
     func chooseLocalLibraryFolder() {
-        guard let url = pickFolder(title: "Local Library Folder",
+        guard let url = pickFolder(title: "Music Folder",
                                    message: "Where your albums and tracks live. This can be an external drive.")
         else { return }
         storeBookmark(url) { prefs.managedLibraryFolderBookmark = $0 }
     }
 
     func chooseLibraryFileFolder() {
-        guard let url = pickFolder(title: "Library File Location",
-                                   message: "Where crate index (.cdlib) files are saved. Keep this on a local disk.")
+        guard let url = pickFolder(title: "Crates Index Folder",
+                                   message: "Where crate index (.cdcrate) files are saved. Keep this on a local disk.")
         else { return }
         storeBookmark(url) { prefs.cratesIndexFolderBookmark = $0 }
         refreshAvailableCrates()
@@ -85,11 +85,11 @@ extension LibraryViewModel {
         storeBookmark(url) { prefs.savedOutputDestinationBookmark = $0 }
     }
 
-    /// "I already have a library" — point at a folder that already holds `.cdlib`
-    /// crates and adopt it as the Library File location.
+    /// "I already have a library" — point at a folder that already holds
+    /// `.cdcrate` crates and adopt it as the crates index location.
     func openExistingLibrary() {
         guard let url = pickFolder(title: "Open Existing Library",
-                                   message: "Choose a folder that already contains your crate index (.cdlib) files.")
+                                   message: "Choose a folder that already contains your crate index (.cdcrate) files.")
         else { return }
         storeBookmark(url) { prefs.cratesIndexFolderBookmark = $0 }
         refreshAvailableCrates()

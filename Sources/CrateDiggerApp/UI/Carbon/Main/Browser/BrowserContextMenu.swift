@@ -136,6 +136,9 @@ enum BrowserContextMenu {
                 Button("Compilation") { model.beginGroup(kind: .compilation) }
             }
         }
+        if model.canSplitAlbumFolder(album) {
+            Button("Split Folder…") { model.promptSplitAlbumFolder(album) }
+        }
 
         Divider()
         Button("Edit Tags…") {
@@ -206,8 +209,23 @@ enum BrowserContextMenu {
         case .localAll, .prepCrate:
             Divider()
             Button("Remove from Library…") { model.promptRemoveTrackFromLibrary(loaded) }
+        case .offlineDevice:
+            removeFromSyncQueueButton(for: usesSel ? model.selectedTracksForCrateAdd() : [loaded], model: model)
         default:
             EmptyView()
+        }
+    }
+
+    /// "Remove from Sync Queue" — offered on pending items while browsing an
+    /// offline device. Deletes the entries AND their staged bytes.
+    @ViewBuilder
+    static func removeFromSyncQueueButton(for tracks: [LoadedTrack], model: LibraryViewModel) -> some View {
+        let pending = tracks.filter { model.isPendingSync($0.track.id) }
+        if !pending.isEmpty {
+            Divider()
+            Button("Remove from Sync Queue (\(pending.count))", role: .destructive) {
+                model.removeFromSyncQueue(trackIDs: Set(pending.map { $0.track.id }))
+            }
         }
     }
 
@@ -275,6 +293,8 @@ enum BrowserContextMenu {
         case .localAll, .prepCrate:
             Divider()
             Button("Remove from Library…") { model.promptRemoveAlbumFromLibrary(album) }
+        case .offlineDevice:
+            removeFromSyncQueueButton(for: album.tracks, model: model)
         default:
             EmptyView()
         }

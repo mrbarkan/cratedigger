@@ -60,3 +60,132 @@ final class AlbumArtCatalogTests: XCTestCase {
     }
 }
 #endif
+
+final class AlbumArtCatalogExtendedRolesTests: XCTestCase {
+    private func url(_ name: String) -> URL { URL(fileURLWithPath: "/album/\(name)") }
+
+    func testExtendedKeywordsClassify() {
+        let pages = AlbumArtCatalog.pages(imageURLs: [
+            url("matrix side a.jpg"),
+            url("hype sticker.jpg"),
+            url("obi.jpg"),
+            url("spine.jpg"),
+            url("inner sleeve.jpg"),
+            url("poster.jpg"),
+            url("shrinkwrap front.jpg")
+        ], manifest: nil)
+        let labels = pages.map(\.label)
+        XCTAssertTrue(labels.contains("Matrix / Runout"), "\(labels)")
+        XCTAssertTrue(labels.contains("Sticker"))
+        XCTAssertTrue(labels.contains("Obi"))
+        XCTAssertTrue(labels.contains("Spine"))
+        XCTAssertTrue(labels.contains("Sleeve"))
+        XCTAssertTrue(labels.contains("Poster"))
+        XCTAssertTrue(labels.contains("Wrapped Cover"))
+    }
+
+    /// "sleeve front"/"sleeve back" are cover/back scans; a bare "sleeve" is a sleeve.
+    func testSleeveYieldsToFrontAndBack() {
+        let pages = AlbumArtCatalog.pages(imageURLs: [
+            url("sleeve front.jpg"), url("sleeve back.jpg"), url("sleeve.jpg")
+        ], manifest: nil)
+        XCTAssertEqual(pages.map(\.kind), [.cover, .back, .other])
+        XCTAssertEqual(pages.last?.label, "Sleeve")
+    }
+
+    /// Extended pages close the viewer sequence, after Back.
+    func testExtendedPagesComeAfterBack() {
+        let pages = AlbumArtCatalog.pages(imageURLs: [
+            url("cover.jpg"), url("back.jpg"), url("matrix.jpg"), url("obi.jpg")
+        ], manifest: nil)
+        XCTAssertEqual(pages.map(\.label), ["Cover", "Back", "Matrix / Runout", "Obi"])
+    }
+
+    func testManifestRoleStillWinsForExtendedRoles() {
+        let manifest = ArtworkManifest(roles: ["scan01.jpg": .matrixRunout])
+        let pages = AlbumArtCatalog.pages(imageURLs: [url("scan01.jpg")], manifest: manifest)
+        XCTAssertEqual(pages.map(\.label), ["Matrix / Runout"])
+    }
+}
+
+final class CoverPromotionTests: XCTestCase {
+    private func url(_ name: String) -> URL { URL(fileURLWithPath: "/album/\(name)") }
+
+    /// scan set with no filename hints: the square page wins over the wide
+    /// spread even though the spread sorts first.
+    func testSquarePageBeatsWideSpread() {
+        let sizes: [String: (Int, Int)] = [
+            "01.jpg": (2400, 1200),   // wide spread, sorts first
+            "02.jpg": (1200, 1200),   // square — the actual cover
+            "03.jpg": (2400, 1200)
+        ]
+        let roles = AlbumArtCatalog.autoClassify(
+            imageURLs: [url("01.jpg"), url("02.jpg"), url("03.jpg")],
+            pixelSize: { sizes[$0.lastPathComponent] }
+        )
+        XCTAssertEqual(roles["02.jpg"], .cover)
+        XCTAssertEqual(roles["01.jpg"], .bookletPage)
+    }
+
+    /// All square (CD booklets are square): natural sort order picks page 1,
+    /// which is almost always the front.
+    func testAllSquarePicksFirstByNaturalSort() {
+        let roles = AlbumArtCatalog.autoClassify(
+            imageURLs: [url("page10.jpg"), url("page2.jpg"), url("page1.jpg")],
+            pixelSize: { _ in (1000, 1000) }
+        )
+        XCTAssertEqual(roles["page1.jpg"], .cover)
+    }
+
+    /// A filename that already claims cover suppresses promotion entirely.
+    func testNoPromotionWhenAFilenameClaimsCover() {
+        let roles = AlbumArtCatalog.autoClassify(
+            imageURLs: [url("front.jpg"), url("01.jpg")],
+            pixelSize: { _ in (1000, 1000) }
+        )
+        XCTAssertEqual(roles["front.jpg"], .cover)
+        XCTAssertEqual(roles["01.jpg"], .bookletPage)
+    }
+
+    /// Unreadable dimensions (nil) fall back to natural-sort-first.
+    func testUnreadableDimensionsFallBackToSortOrder() {
+        let roles = AlbumArtCatalog.autoClassify(
+            imageURLs: [url("b.jpg"), url("a.jpg")],
+            pixelSize: { _ in nil }
+        )
+        XCTAssertEqual(roles["a.jpg"], .cover)
+    }
+
+    /// Only non-page roles (e.g. disc labels) → nothing sane to promote.
+    func testNoPromotionCandidateLeavesRolesAlone() {
+        let roles = AlbumArtCatalog.autoClassify(
+            imageURLs: [url("disc1.jpg"), url("back.jpg")],
+            pixelSize: { _ in (1000, 1000) }
+        )
+        XCTAssertFalse(roles.values.contains(.cover))
+    }
+
+    /// The booklet sorter puts the promoted cover at the head of the list,
+    /// where frontCoverURL — the album's face everywhere — reads from.
+    func testBookletSorterLeadsWithPromotedCover() {
+        let sizes: [String: (Int, Int)] = [
+            "img_001.jpg": (2400, 1200),
+            "img_002.jpg": (1200, 1200)
+        ]
+        let sorted = AlbumBooklet.sortAndCategorizeBookletImages(
+            [url("img_001.jpg"), url("img_002.jpg")],
+            pixelSize: { sizes[$0.lastPathComponent] }
+        )
+        XCTAssertEqual(sorted.first?.lastPathComponent, "img_002.jpg")
+        XCTAssertEqual(sorted.map(\.lastPathComponent), ["img_002.jpg", "img_001.jpg"])
+    }
+
+    /// An explicit front (filename or manifest) suppresses the sorter's promotion.
+    func testBookletSorterKeepsExplicitFront() {
+        let sorted = AlbumBooklet.sortAndCategorizeBookletImages(
+            [url("page2.jpg"), url("cover.jpg")],
+            pixelSize: { _ in (1200, 1200) }
+        )
+        XCTAssertEqual(sorted.first?.lastPathComponent, "cover.jpg")
+    }
+}

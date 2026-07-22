@@ -6,7 +6,6 @@ import SwiftUI
 
 enum OLEDView: String, CaseIterable, Codable, Sendable {
     case nowPlaying
-    case vu
     case conversion
     case scan
     case remoteSync
@@ -16,7 +15,6 @@ enum OLEDView: String, CaseIterable, Codable, Sendable {
     var label: String {
         switch self {
         case .nowPlaying: return "Now"
-        case .vu:         return "VU"
         case .conversion: return "Cnvrt"
         case .scan:       return "Scan"
         case .remoteSync: return "Sync"
@@ -59,6 +57,18 @@ struct ConversionProgressSnapshot: Equatable, Sendable {
     static let idle = ConversionProgressSnapshot(jobsCompleted: 0, jobsTotal: 0, currentFilename: nil, isRunning: false)
 }
 
+/// A live SYNC-to-device run for the DEV OLED pane. Non-nil after a sync starts;
+/// stays non-nil (isRunning=false) as the terminal readout until the next
+/// source change or sync/stage action clears it.
+struct DeviceSyncProgressSnapshot: Equatable, Sendable {
+    var profileName: String
+    var currentRelativePath: String?
+    var completed: Int
+    var total: Int
+    var failed: Int
+    var isRunning: Bool
+}
+
 enum LibrarySource: Hashable, Sendable {
     case localAll
     case localCrate(name: String)
@@ -69,6 +79,9 @@ enum LibrarySource: Hashable, Sendable {
     /// A mounted external device (USB drive, SD card, Rockbox iPod) browsed by
     /// its volume path.
     case device(volumePath: String)
+    /// A saved device profile whose volume is NOT currently mounted — browses
+    /// the cached catalog from its last mount plus any queued-for-sync tracks.
+    case offlineDevice(profileID: UUID)
     /// Radio / Streams. `nil` category == "All Streams"; otherwise filtered to
     /// one source category ("YT Live" / "YT Records").
     case radio(category: RadioCategory?)
@@ -111,6 +124,8 @@ final class LibraryViewModel: ObservableObject {
     /// The OLED view to restore after an add-to-crate import status finishes.
     private var importStatusReturnOLED: OLEDView?
     @Published var conversionProgress: ConversionProgressSnapshot = .idle
+    /// Live SYNC-to-device run (DEV OLED readout). nil when no sync has run.
+    @Published var deviceSyncProgress: DeviceSyncProgressSnapshot?
 
     /// Set while a "send to device (convert)" hand-off owns the CNVRT cockpit: the
     /// device folder is the destination and its tracks are the queue. Cleared when
@@ -150,6 +165,10 @@ final class LibraryViewModel: ObservableObject {
     @Published var browserCollapsed: Bool = false
     @Published var inspectorCollapsed: Bool = false
     @Published var showArtworkGallery: Bool = false
+    /// Columns the gallery grid is currently laying out. Published by the view
+    /// (only it knows the pane width) and read by ↑/↓ arrow nav, which has to
+    /// move by a whole row.
+    @Published var galleryColumnsPerRow: Int = 1
 
     /// Tag-editor sheet target — one track (full editor) or many (batch editor).
     /// Presented from `MainShell`, so it works from any row's context menu.
@@ -293,7 +312,40 @@ final class LibraryViewModel: ObservableObject {
     /// of a modal alert; auto-clears after a couple of seconds.
     @Published var oledNotice: String?
     private var oledNoticeClearTask: Task<Void, Never>?
-    @Published private(set) var albumsFetchingArtwork: Set<String> = []
+    // Not private(set): transient UI state — LibraryViewModel+BatchArtwork
+    // marks/clears albums from a different file while a fetch is in flight.
+    @Published var albumsFetchingArtwork: Set<String> = []
+
+    /// Global activity registry driving the header status LED. Anything
+    /// long-running registers a label; the LED lights while any are active
+    /// (or any legacy busy flag below is set).
+    @Published private(set) var activities: [UUID: String] = [:]
+
+    @discardableResult
+    func beginActivity(_ label: String) -> UUID {
+        let id = UUID()
+        activities[id] = label
+        return id
+    }
+
+    func endActivity(_ id: UUID) {
+        activities.removeValue(forKey: id)
+    }
+
+    /// One switch for "is the app doing something" — new registrations OR the
+    /// pre-existing per-feature busy flags, so already-instrumented features
+    /// light the LED with no changes.
+    var isWorking: Bool {
+        !activities.isEmpty
+            || scanProgress.isRunning
+            || conversionProgress.isRunning
+            || isRepairingMetadata
+            || !albumsFetchingArtwork.isEmpty
+    }
+
+    var activityLabels: [String] {
+        Array(activities.values).sorted()
+    }
 
     @Published var playbackVolume: Double = 0.8 {
         didSet {
@@ -448,11 +500,33 @@ final class LibraryViewModel: ObservableObject {
     /// row badge. Recomputed off the main thread by recomputeMissingFiles().
     @Published var missingTrackKeys: Set<String> = []
     @Published var duplicateGroups: [DuplicateGroup] = []
+    @Published var isCleanupScanning = false
+    /// A scan request arrived while one was in flight — run one more pass
+    /// when it lands so mode flips mid-scan are never silently dropped.
+    private var pendingCleanupRescan = false
+    @Published var duplicateScanMode: DuplicateScanMode =
+        DuplicateScanMode(rawValue: PreferencesStore.shared.duplicateScanMode ?? "") ?? .strict {
+        didSet {
+            guard oldValue != duplicateScanMode else { return }
+            PreferencesStore.shared.duplicateScanMode = duplicateScanMode.rawValue
+            scanForCleanup()
+        }
+    }
     /// FIX TAGS (metadata repair) run state — see LibraryViewModel+MetadataRepair.
     @Published var isRepairingMetadata = false
     /// Stored-vs-file tag disagreements from the last repair pass; non-empty
     /// presents the review sheet.
     @Published var metadataRepairConflicts: [MetadataRepairConflictGroup] = []
+    /// Online release matches for the selection, best-first; non-empty presents
+    /// the match review sheet. Nothing is written until the user says so there.
+    @Published var metadataMatches: [ReleaseMatch] = []
+    /// FIX TAGS multi-album queue: `metadataMatches` is the batch under
+    /// review; these are the ones behind it.
+    @Published var pendingMatchBatches: [AlbumMatchBatch] = []
+    @Published var matchQueueProgress: MatchQueueProgress?
+    @Published var currentMatchAlbumLabel: String?
+    /// Albums that came back with no online match — reported once at the end.
+    var matchQueueNoMatchLabels: [String] = []
 
     // MARK: - Radio / Streams state
     @Published var streams: [StreamSource] = []
@@ -498,11 +572,6 @@ final class LibraryViewModel: ObservableObject {
         radioEngine != nil && playbackState != .idle
     }
 
-    /// True while the app is doing background work (scanning a folder/device or
-    /// converting) — drives the pulsing activity light in the header.
-    var isWorking: Bool {
-        scanProgress.isRunning || conversionProgress.isRunning
-    }
     var filteredStreams: [StreamSource] {
         guard let category = radioCategoryFilter else { return streams }
         return streams.filter { category.contains($0) }
@@ -548,6 +617,13 @@ final class LibraryViewModel: ObservableObject {
     /// On-disk per-device catalogs so a device opens instantly across launches
     /// (rescan only on RESCAN).
     private let deviceCatalogStore = DeviceCatalogStore()
+    /// Per-profile pre-transfer sync queues + their staging trees.
+    let syncQueueStore = DeviceSyncQueueStore()
+    /// Per-profile queued-track counts for sidebar badges. Refreshed on queue
+    /// mutations — never read the store from view bodies.
+    @Published private(set) var syncQueueCounts: [UUID: Int] = [:]
+    /// Track IDs pending sync for the offline device being browsed (PENDING badges).
+    @Published private(set) var pendingSyncTrackIDs: Set<UUID> = []
     private var playlistIndex: LibraryIndex = .empty
     private var prepCrateIndex: LibraryIndex = .empty
 
@@ -557,6 +633,8 @@ final class LibraryViewModel: ObservableObject {
     let scanner: LibraryScanService
     let artworkService: ArtworkService
     let remoteArtworkService: RemoteArtworkService
+    /// Online release lookup behind FIX TAGS — see LibraryViewModel+MetadataRepair.
+    let matchService: MetadataMatchService
     let prefs: PreferencesStore
 
     // New services
@@ -596,12 +674,14 @@ final class LibraryViewModel: ObservableObject {
         playback: PlaybackServiceProtocol = PlaybackService(),
         artworkService: ArtworkService = ArtworkService(store: ArtworkStore(directory: ArtworkStore.defaultDirectory)),
         remoteArtworkService: RemoteArtworkService = RemoteArtworkService(),
+        matchService: MetadataMatchService = .live(),
         scanner: LibraryScanService? = nil,
         prefs: PreferencesStore = .shared
     ) {
         self.playback = playback
         self.artworkService = artworkService
         self.remoteArtworkService = remoteArtworkService
+        self.matchService = matchService
         self.prefs = prefs
 
         do {
@@ -673,6 +753,12 @@ final class LibraryViewModel: ObservableObject {
         scrubLockEnabled = prefs.savedScrubLockEnabled
         if let raw = prefs.savedMiniPlayerArtMode, let mode = MiniPlayerArtMode(rawValue: raw) {
             miniPlayerArtMode = mode
+        }
+        refreshSyncQueueCounts()
+        // Trash guard: staging/queues for profiles that no longer exist.
+        let validProfileIDs = Set(prefs.savedExternalDeviceProfiles.map(\.id))
+        Task.detached(priority: .utility) {
+            DeviceSyncQueueStore().sweepOrphans(validProfileIDs: validProfileIDs)
         }
         // The tour takes priority; when it dismisses it chains into folder
         // setup (and starter-content install) as needed — see
@@ -770,6 +856,16 @@ final class LibraryViewModel: ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor in
                 self?.consolidateLibrary()
+            }
+        }
+
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("CrateDiggerMoveIndexFiles"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.moveIndexFiles()
             }
         }
 
@@ -915,13 +1011,47 @@ final class LibraryViewModel: ObservableObject {
         return playbackQueue[i]
     }
 
+    /// Select the playing track's album so the browser and inspector both jump to
+    /// it. No-op when the playing track isn't in the current source's index — the
+    /// queue can outlive a source switch, and silently swapping crates under the
+    /// user is worse than doing nothing.
+    func revealNowPlaying() {
+        guard let playing = nowPlayingTrack else { return }
+        let trackID = playing.track.id
+        // The browsable owner: the album actually present in index.allAlbums. For a
+        // grouped release that's the parent group album (member pressings live only
+        // inside its `.versions`, so a member's id would match no gallery tile and no
+        // list row). album(containing:) returns the member — right for the artwork
+        // callers, wrong for browser selection — so resolve the parent here instead.
+        var owner: Album?
+        outer: for artist in index.artists {
+            for album in artist.albums {
+                if album.tracks.contains(where: { $0.track.id == trackID })
+                    || (album.versions ?? []).contains(where: { $0.tracks.contains { $0.track.id == trackID } }) {
+                    owner = album
+                    break outer
+                }
+            }
+        }
+        guard let album = owner else { return }
+        clearMultiSelection()
+        selectedArtistID = album.artistID
+        selectedAlbumID = album.id
+        selectedTrackID = trackID
+    }
+
     /// The browsed album containing a track (linear scan over the current
     /// index). Shared by the spinning disc and the mini player so both resolve
     /// cover files (booklet/folder art) the same way.
     func album(containing trackID: UUID) -> Album? {
         for artist in index.artists {
-            for album in artist.albums where album.tracks.contains(where: { $0.id == trackID }) {
-                return album
+            for album in artist.albums {
+                if album.tracks.contains(where: { $0.track.id == trackID }) {
+                    return album
+                }
+                for version in album.versions ?? [] where version.tracks.contains(where: { $0.track.id == trackID }) {
+                    return version
+                }
             }
         }
         return nil
@@ -944,7 +1074,9 @@ final class LibraryViewModel: ObservableObject {
     /// and re-scan every album folder on each edit/source switch. Cleared after
     /// in-place artwork edits (see applyImportedArtwork); move/import changes
     /// self-invalidate because the cache is keyed by file/folder path.
-    private let indexDiskCache = LibraryIndexDiskCache()
+    /// Internal, not private: the ART inspector invalidates the folder it just
+    /// wrote a manifest into, the same way applyImportedArtwork does.
+    let indexDiskCache = LibraryIndexDiskCache()
 
     func buildIndex(_ tracks: [LoadedTrack]) -> LibraryIndex {
         LibraryIndex.build(from: tracks, groups: albumGroupStore.all(), diskCache: indexDiskCache)
@@ -961,6 +1093,7 @@ final class LibraryViewModel: ObservableObject {
         // longer resolves in the rebuilt index.
         let sourceChanged = source != currentSource
         currentSource = source
+        if deviceSyncProgress?.isRunning != true { deviceSyncProgress = nil }
         switch source {
         case .localAll:
             var all: [LoadedTrack] = []
@@ -988,6 +1121,8 @@ final class LibraryViewModel: ObservableObject {
             selectCD(volumePath: path)
         case .device(let path):
             selectDevice(volumePath: path)
+        case .offlineDevice(let profileID):
+            selectOfflineDevice(profileID: profileID)
         case .radio(let category):
             // The browser renders RadioListView from `filteredStreams`, not `index`.
             radioCategoryFilter = category
@@ -1253,10 +1388,20 @@ final class LibraryViewModel: ObservableObject {
         // Drop cached scans for devices that are no longer mounted.
         let mountedPaths = Set(detected.map { $0.volumeURL.path })
         deviceIndexCache = deviceIndexCache.filter { mountedPaths.contains($0.key) }
-        // If the device we're browsing was unplugged, fall back to the library.
+        // If the device we're browsing was unplugged, fall back to its offline
+        // view when we can identify the profile, else to the library.
         if case .device(let path) = currentSource,
            !detected.contains(where: { $0.volumeURL.path == path }) {
-            selectSource(.localAll)
+            if let profile = prefs.savedExternalDeviceProfiles.first(where: { $0.rootDisplayPath == path }) {
+                selectSource(.offlineDevice(profileID: profile.id))
+            } else {
+                selectSource(.localAll)
+            }
+        }
+        // If the offline profile we're browsing just mounted, jump to the live view.
+        if case .offlineDevice(let pid) = currentSource,
+           let dev = detected.first(where: { deviceProfile(for: $0)?.id == pid }) {
+            selectSource(.device(volumePath: dev.volumeURL.path))
         }
     }
 
@@ -1274,6 +1419,32 @@ final class LibraryViewModel: ObservableObject {
     /// known, else configured root path, else name), or nil for an unknown volume.
     func deviceProfile(for device: MountedDevice) -> ExternalDeviceProfile? {
         ExternalDeviceProfile.match(device, in: prefs.savedExternalDeviceProfiles)
+    }
+
+    /// Saved profiles with no mounted volume right now — shown dimmed in Sources.
+    var offlineDeviceProfiles: [ExternalDeviceProfile] {
+        let mountedIDs = Set(mountedDevices.compactMap { deviceProfile(for: $0)?.id })
+        return prefs.savedExternalDeviceProfiles.filter { !mountedIDs.contains($0.id) }
+    }
+
+    /// Same key a mounted scan saves the catalog under (see `MountedDevice.catalogKey`).
+    func catalogKey(for profile: ExternalDeviceProfile) -> String {
+        profile.volumeUUID ?? profile.name
+    }
+
+    func refreshSyncQueueCounts() {
+        var counts: [UUID: Int] = [:]
+        for profile in prefs.savedExternalDeviceProfiles {
+            let n = syncQueueStore.load(profileID: profile.id).count
+            if n > 0 { counts[profile.id] = n }
+        }
+        syncQueueCounts = counts
+    }
+
+    /// Post-sync: force the next browse of this device to re-walk the volume.
+    func invalidateDeviceCatalog(for device: MountedDevice) {
+        deviceIndexCache[device.volumeURL.path] = nil
+        deviceCatalogStore.remove(key: device.catalogKey)
     }
 
     /// Self-heal for profiles saved before volume UUIDs were captured: stamp a
@@ -1336,6 +1507,22 @@ final class LibraryViewModel: ObservableObject {
                 self.adoptDeviceIndex(built)
             }
         }
+    }
+
+    /// Browse an unplugged device: last-known catalog + queued tracks, so you
+    /// can see (and stage) what the device WILL contain.
+    private func selectOfflineDevice(profileID: UUID) {
+        guard let profile = prefs.savedExternalDeviceProfiles.first(where: { $0.id == profileID }) else {
+            index = .empty
+            return
+        }
+        let cached = deviceCatalogStore.load(key: catalogKey(for: profile)) ?? []
+        let entries = syncQueueStore.load(profileID: profileID)
+        let cachedPaths = Set(cached.map { $0.track.fileURL.path })
+        let queued = entries.map(\.track).filter { !cachedPaths.contains($0.track.fileURL.path) }
+        pendingSyncTrackIDs = Set(queued.map { $0.track.id })
+        adoptDeviceIndex(buildIndex(cached + queued))
+        oledView = .devices
     }
 
     private func adoptDeviceIndex(_ built: LibraryIndex) {
@@ -1572,14 +1759,48 @@ final class LibraryViewModel: ObservableObject {
     // MARK: - Library Cleanup & Duplicates Actions
 
     func scanForCleanup() {
-        let cleanup = LibraryCleanupService()
-        // Don't flag tracks on a disconnected drive as "dead" — the files aren't
-        // gone, the volume is just unplugged, and purging their references would
-        // wreck an external library that's merely offline.
-        self.deadTracks = cleanup.findDeadTracks(in: localIndex)
-            .filter { offlineVolumeName(for: $0.track.fileURL) == nil }
-        self.duplicateGroups = cleanup.findDuplicates(in: localIndex)
-        recomputeMissingFiles()
+        guard !isCleanupScanning else {
+            pendingCleanupRescan = true
+            return
+        }
+        isCleanupScanning = true
+        let activity = beginActivity("Scanning library for cleanup…")
+        let snapshot = localIndex
+        let mode = duplicateScanMode
+        let ignored = Set(PreferencesStore.shared.duplicateIgnoreSignatures)
+
+        Task.detached(priority: .userInitiated) {
+            let cleanup = LibraryCleanupService()
+            let dead = cleanup.findDeadTracks(in: snapshot)
+            let dups = cleanup.findDuplicates(in: snapshot, mode: mode, ignoring: ignored)
+            await MainActor.run {
+                // Don't flag tracks on a disconnected drive as "dead" — the files
+                // aren't gone, the volume is just unplugged, and purging their
+                // references would wreck an external library that's merely offline.
+                self.deadTracks = dead.filter { self.offlineVolumeName(for: $0.track.fileURL) == nil }
+                // Re-check the ignore list at publish time — a group ignored
+                // while this scan was in flight must not resurface.
+                let ignoredNow = Set(PreferencesStore.shared.duplicateIgnoreSignatures)
+                self.duplicateGroups = dups.filter {
+                    !ignoredNow.contains(LibraryCleanupService.signature(for: $0))
+                }
+                self.recomputeMissingFiles()
+                self.isCleanupScanning = false
+                self.endActivity(activity)
+                if self.pendingCleanupRescan {
+                    self.pendingCleanupRescan = false
+                    self.scanForCleanup()
+                }
+            }
+        }
+    }
+
+    func ignoreDuplicateGroup(_ group: DuplicateGroup) {
+        let sig = LibraryCleanupService.signature(for: group)
+        var sigs = PreferencesStore.shared.duplicateIgnoreSignatures
+        if !sigs.contains(sig) { sigs.append(sig) }
+        PreferencesStore.shared.duplicateIgnoreSignatures = sigs
+        duplicateGroups.removeAll { $0.id == group.id }
     }
 
     func deleteDeadTracks() {
@@ -1594,20 +1815,70 @@ final class LibraryViewModel: ObservableObject {
         }
     }
 
-    func resolveDuplicates() {
-        let cleanup = LibraryCleanupService()
-        var toDelete: [LoadedTrack] = []
+    /// Trash exactly the reviewed selection. Crates that referenced a trashed
+    /// file whose group keeps a better copy are repointed to the kept copy —
+    /// cleanup must not silently shrink a DJ's crates.
+    func resolveDuplicates(selected: [LoadedTrack]) {
+        guard !selected.isEmpty else { return }
+        let selectedPaths = Set(selected.map { $0.track.fileURL.standardizedFileURL.path })
+
+        // Keeper per group = best-ranked survivor (members are best-first).
+        var repoint: [String: LoadedTrack] = [:]
         for group in duplicateGroups {
-            toDelete.append(contentsOf: group.worstTracks)
+            let members = [group.bestTrack] + group.worstTracks
+            let survivors = members.filter {
+                !selectedPaths.contains($0.track.fileURL.standardizedFileURL.path)
+            }
+            guard let keeper = survivors.first else { continue }
+            for member in members
+            where selectedPaths.contains(member.track.fileURL.standardizedFileURL.path) {
+                repoint[member.track.fileURL.standardizedFileURL.path] = keeper
+            }
         }
 
         do {
-            try cleanup.deleteTracks(toDelete, useTrash: true)
-            purgeTracksFromLibraryState(paths: Set(toDelete.map { $0.track.fileURL.standardizedFileURL.path }))
-            duplicateGroups = []
-            appAlert = .error(title: "Duplicates Cleared", message: "Worst versions moved to Trash.")
+            try LibraryCleanupService().deleteTracks(selected, useTrash: true)
+            repointCrateReferences(repoint)
+            purgeTracksFromLibraryState(paths: selectedPaths)
+            scanForCleanup()
+            let repointNote = repoint.isEmpty ? "" : " Crate entries now point at the kept copies."
+            appAlert = .info(title: "Duplicates Cleared",
+                             message: "\(selected.count) file\(selected.count == 1 ? "" : "s") moved to Trash.\(repointNote)")
         } catch {
             appAlert = .error(title: "Clear Failed", message: error.localizedDescription)
+            scanForCleanup()
+        }
+    }
+
+    /// Swap trashed paths for their keepers inside every crate + the prep
+    /// crate, deduping by path (a crate holding both copies must end with one
+    /// keeper entry, not two). Runs BEFORE purge, which then only strips
+    /// references that had no surviving groupmate.
+    private func repointCrateReferences(_ repoint: [String: LoadedTrack]) {
+        guard !repoint.isEmpty else { return }
+
+        func rewrite(_ tracks: [LoadedTrack]) -> [LoadedTrack]? {
+            var seen = Set<String>()
+            var changed = false
+            var result: [LoadedTrack] = []
+            for entry in tracks {
+                let path = entry.track.fileURL.standardizedFileURL.path
+                let mapped = repoint[path] ?? entry
+                if repoint[path] != nil { changed = true }
+                let mappedPath = mapped.track.fileURL.standardizedFileURL.path
+                guard seen.insert(mappedPath).inserted else { changed = true; continue }
+                result.append(mapped)
+            }
+            return changed ? result : nil
+        }
+
+        for crateName in availableCrates {
+            if let rewritten = rewrite(loadCrateTracks(name: crateName)) {
+                saveCrateTracks(rewritten, name: crateName, persistStore: false)
+            }
+        }
+        if let rewritten = rewrite(prepCrateTracks) {
+            prepCrateTracks = rewritten
         }
     }
 
@@ -1852,40 +2123,6 @@ final class LibraryViewModel: ObservableObject {
         albumsFetchingArtwork.contains(album.id)
     }
 
-    func fetchRemoteArtwork(for album: Album) {
-        let albumID = album.id
-        guard !albumsFetchingArtwork.contains(albumID) else { return }
-        albumsFetchingArtwork.insert(albumID)
-
-        let artistName = album.artistName
-        let albumTitle = album.title
-
-        Task { [weak self, remoteArtworkService] in
-            do {
-                let asset = try await remoteArtworkService.fetchArtwork(
-                    artist: artistName,
-                    album: albumTitle
-                )
-                await MainActor.run {
-                    guard let self else { return }
-                    self.albumsFetchingArtwork.remove(albumID)
-                    self.applyFetchedArtwork(asset, toAlbumID: albumID)
-                }
-            } catch {
-                AppLog.library.warning("Remote artwork fetch failed for \(albumTitle): \(String(describing: error))")
-                await MainActor.run {
-                    guard let self else { return }
-                    self.albumsFetchingArtwork.remove(albumID)
-                    self.appAlert = .error(
-                        title: "No artwork found",
-                        message: (error as? LocalizedError)?.errorDescription
-                            ?? "iTunes returned no match. Try a different album, or drop a cover.jpg next to the file."
-                    )
-                }
-            }
-        }
-    }
-
     func applyFetchedArtwork(_ asset: ArtworkAsset, toAlbumID albumID: String) {
         artworkService.ingest(asset)
 
@@ -1910,6 +2147,8 @@ final class LibraryViewModel: ObservableObject {
         images: [(url: URL, role: ArtworkRole, suggestedFilename: String, discNumber: Int?)],
         for album: Album
     ) async {
+        let activity = beginActivity("Importing artwork…")
+        defer { endActivity(activity) }
         guard let representative = album.tracks.first?.track.fileURL else { return }
         let albumFolder = representative.deletingLastPathComponent()
         
@@ -2068,9 +2307,15 @@ final class LibraryViewModel: ObservableObject {
     /// happens quietly in the background.
     func embedCoverIntoTracksInBackground(for album: Album, deviceCompatible: Bool = true) {
         guard let folder = album.tracks.first?.track.fileURL.deletingLastPathComponent() else { return }
-        // Prefer the manifest's .cover-roled file, else cover.jpg.
+        // Prefer the manifest's .cover-roled file, else cover.jpg. `roles` is a
+        // dictionary, so `.first(where:)` picked a different file run to run when
+        // an album had more than one .cover — sort for a stable choice.
         let manifest = ArtworkManifest.load(from: folder)
-        let coverName = manifest?.roles.first(where: { $0.value == .cover })?.key ?? "cover.jpg"
+        let coverName = manifest?.roles
+            .filter { $0.value == .cover }
+            .map(\.key)
+            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+            .first ?? "cover.jpg"
         let coverURL = folder.appendingPathComponent(coverName)
         guard FileManager.default.fileExists(atPath: coverURL.path) else { return }
         let tracks = album.tracks
@@ -2177,17 +2422,36 @@ final class LibraryViewModel: ObservableObject {
         }
     }
 
+    /// Rebuild every browsable index with new folder covers applied, in one pass.
+    /// Lives here (not in +BatchArtwork) so it can write the private(set)
+    /// index/localIndex; the batch fetch builds the map and calls this.
+    func applyFolderCovers(_ assetByTrackID: [UUID: ArtworkAsset]) {
+        guard !assetByTrackID.isEmpty else { return }
+        func applyArtwork(_ loaded: LoadedTrack) -> LoadedTrack {
+            guard let asset = assetByTrackID[loaded.track.id] else { return loaded }
+            var newTrack = loaded.track
+            var newMetadata = loaded.metadata
+            newTrack.artworkSource = .folderImage
+            newTrack.artworkHash = asset.hash
+            newTrack.artworkDimensions = asset.dimensions
+            newMetadata.artwork = asset
+            return LoadedTrack(track: newTrack, metadata: newMetadata, recordMarkers: loaded.recordMarkers)
+        }
+        localIndex = buildIndex(localIndex.allTracks.map(applyArtwork))
+        prepCrateTracks = prepCrateTracks.map(applyArtwork)
+        index = buildIndex(index.allTracks.map(applyArtwork))
+        NotificationCenter.default.post(name: NSNotification.Name("CrateDiggerArtworkImported"), object: nil)
+    }
+
     /// Role-based filename for an imported image (cover.jpg, back.jpg, …).
+    /// Base names come from `ArtworkRole.suggestedFilenameBase` so every
+    /// import path writes the same on-disk vocabulary.
     nonisolated private static func suggestedArtworkFilename(role: ArtworkRole, index: Int, ext: String) -> String {
+        let base = role.suggestedFilenameBase
         switch role {
-        case .cover:       return index == 0 ? "cover.\(ext)" : "cover_\(index + 1).\(ext)"
-        case .altCover:    return index == 0 ? "cover_alt.\(ext)" : "cover_alt_\(index + 1).\(ext)"
-        case .back:        return index == 0 ? "back.\(ext)" : "back_\(index + 1).\(ext)"
-        case .disc:        return index == 0 ? "disc.\(ext)" : "disc_\(index + 1).\(ext)"
-        case .inlay:       return index == 0 ? "inlay.\(ext)" : "inlay_\(index + 1).\(ext)"
-        case .bookletPage: return String(format: "booklet_%02d.\(ext)", index + 1)
-        case .ignore:      return "ignored_\(index + 1).\(ext)"
-        case .auto:        return "artwork_\(index + 1).\(ext)"
+        case .bookletPage:   return String(format: "\(base)_%02d.\(ext)", index + 1)
+        case .ignore, .auto: return "\(base)_\(index + 1).\(ext)"
+        default:             return index == 0 ? "\(base).\(ext)" : "\(base)_\(index + 1).\(ext)"
         }
     }
 
@@ -2446,7 +2710,7 @@ final class LibraryViewModel: ObservableObject {
             panel.canChooseDirectories = true
             panel.canCreateDirectories = true
             panel.allowsMultipleSelection = false
-            panel.title = "Choose default folder to save Crate Index Files (.cdlib)"
+            panel.title = "Choose default folder to save Crate Index Files (.cdcrate)"
             panel.prompt = "Choose"
             panel.message = "Choose a default folder to store your Crate library index files. You can save/copy the actual music files to a separate location (like an external drive) later."
             
@@ -3274,6 +3538,94 @@ final class LibraryViewModel: ObservableObject {
                 } catch {
                     self.appAlert = .error(title: "Save Failed",
                                            message: "Files moved and crates updated, but the new folder couldn't be saved as the library location: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
+    /// Relocate the crate index files (`.cdcrate` membership lists +
+    /// `library.cdtracks`) to a user-chosen folder and re-point the crates-index
+    /// bookmark — the audio files stay where they are. The counterpart to
+    /// `moveLibrary()`, which moves the music and leaves the index alone.
+    func moveIndexFiles() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.title = "Choose new location for Crate Index Files"
+        panel.prompt = "Choose"
+
+        guard panel.runModal() == .OK, let newURL = panel.url else { return }
+        let currentURL = cratesDirectoryURL
+
+        if currentURL.standardizedFileURL.path == newURL.standardizedFileURL.path {
+            appAlert = .error(title: "Same Folder", message: "The chosen folder is already the crates index folder.")
+            return
+        }
+
+        let fm = FileManager.default
+        let indexFiles: [URL]
+        do {
+            indexFiles = try fm.contentsOfDirectory(at: currentURL, includingPropertiesForKeys: nil)
+                .filter { $0.pathExtension == "cdcrate" || $0.pathExtension == "cdtracks" }
+        } catch {
+            appAlert = .error(title: "Move Failed", message: "Could not read the current index folder: \(error.localizedDescription)")
+            return
+        }
+
+        // Refuse up front rather than silently overwrite a folder that already
+        // holds someone's crates — that would be unrecoverable data loss.
+        if indexFiles.contains(where: { fm.fileExists(atPath: newURL.appendingPathComponent($0.lastPathComponent).path) }) {
+            appAlert = .error(title: "Folder Already Has an Index",
+                              message: "The chosen folder already contains crate index files. Pick an empty folder, or use \"Choose…\" in Preferences to switch to it without moving anything.")
+            return
+        }
+
+        scanProgress = ScanProgress(folderName: "Moving index files...", filesProbed: 0,
+                                    totalCandidates: indexFiles.count, isRunning: true)
+
+        // Detached: with embedded artwork a .cdcrate can be big, and a
+        // cross-volume move is copy+delete — keep it off the main actor.
+        Task.detached { [weak self] in
+            let fm = FileManager.default
+            var moved: [URL] = []
+            var failure: Error?
+            for file in indexFiles {
+                do {
+                    try fm.moveItem(at: file, to: newURL.appendingPathComponent(file.lastPathComponent))
+                    moved.append(file)
+                } catch {
+                    failure = error
+                    break
+                }
+            }
+            if failure != nil {
+                // Roll the already-moved files back so the index never ends up
+                // split across two folders.
+                for file in moved {
+                    try? fm.moveItem(at: newURL.appendingPathComponent(file.lastPathComponent), to: file)
+                }
+            }
+
+            let moveFailure = failure
+            let movedCount = moved.count
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.scanProgress = .idle
+                if let moveFailure {
+                    self.appAlert = .error(title: "Move Failed",
+                                           message: "Could not move the index: \(moveFailure.localizedDescription)\nEverything was left in the current folder.")
+                    return
+                }
+                do {
+                    self.prefs.cratesIndexFolderBookmark = try PreferencesStore.makeBookmark(for: newURL)
+                    NotificationCenter.default.post(name: NSNotification.Name("CrateDiggerCratesFolderChanged"), object: newURL)
+                    self.appAlert = .info(title: "Index Moved",
+                                          message: "Moved \(movedCount) index file\(movedCount == 1 ? "" : "s") to: \(newURL.path)")
+                } catch {
+                    self.appAlert = .error(title: "Save Failed",
+                                           message: "Index files moved, but the new folder couldn't be saved as the crates index location: \(error.localizedDescription)")
                 }
             }
         }

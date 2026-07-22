@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import CryptoKit
 import CrateDiggerCore
 
@@ -18,9 +19,22 @@ struct ArtworkGalleryView: View {
     @State private var searchResults: [RemoteArtCandidate] = []
     @State private var searching = false
 
-    private let columns = [
-        GridItem(.adaptive(minimum: 120, maximum: 160), spacing: 18)
-    ]
+    private static let tileSize: CGFloat = 120
+    private static let gridSpacing: CGFloat = 18
+    private static let gridPadding: CGFloat = 18
+
+    /// `.adaptive` resolves its column count at layout time and never reports it,
+    /// but ↑/↓ arrow nav has to move by a whole row — so the grid owns the count
+    /// explicitly rather than re-deriving SwiftUI's arithmetic and hoping it matches.
+    private func columnCount(for width: CGFloat) -> Int {
+        let usable = max(width - Self.gridPadding * 2, Self.tileSize)
+        return max(1, Int((usable + Self.gridSpacing) / (Self.tileSize + Self.gridSpacing)))
+    }
+
+    private func gridColumns(for width: CGFloat) -> [GridItem] {
+        Array(repeating: GridItem(.flexible(), spacing: Self.gridSpacing),
+              count: columnCount(for: width))
+    }
 
     struct RemoteArtCandidate: Identifiable {
         let id = UUID()
@@ -37,21 +51,35 @@ struct ArtworkGalleryView: View {
                 VStack(spacing: 0) {
                     header
 
-                    ScrollViewReader { proxy in
-                        ScrollView(.vertical, showsIndicators: true) {
-                            LazyVGrid(columns: columns, spacing: 18) {
-                                ForEach(allAlbums) { album in
-                                    albumCoverCell(album)
-                                        .id(album.id)
+                    GeometryReader { geo in
+                        ScrollViewReader { proxy in
+                            ScrollView(.vertical, showsIndicators: true) {
+                                LazyVGrid(columns: gridColumns(for: geo.size.width), spacing: Self.gridSpacing) {
+                                    ForEach(allAlbums) { album in
+                                        albumCoverCell(album)
+                                            .id(album.id)
+                                    }
+                                }
+                                .padding(Self.gridPadding)
+                            }
+                            // Bring the selected album (synced with the list browser)
+                            // into view, falling back to the last opened one.
+                            .onAppear {
+                                model.galleryColumnsPerRow = columnCount(for: geo.size.width)
+                                if let id = model.selectedAlbumID ?? lastOpenedID {
+                                    proxy.scrollTo(id, anchor: .center)
                                 }
                             }
-                            .padding(18)
-                        }
-                        // Bring the selected album (synced with the list browser)
-                        // into view, falling back to the last opened one.
-                        .onAppear {
-                            if let id = model.selectedAlbumID ?? lastOpenedID {
-                                proxy.scrollTo(id, anchor: .center)
+                            .onChange(of: geo.size.width) { width in
+                                model.galleryColumnsPerRow = columnCount(for: width)
+                            }
+                            // Follow the selection — arrow nav and Go to Current Song
+                            // both move it off screen otherwise. Mirrors ColumnList.
+                            .onChange(of: model.selectedAlbumID) { target in
+                                guard let target else { return }
+                                withAnimation(.easeOut(duration: 0.16)) {
+                                    proxy.scrollTo(target, anchor: .center)
+                                }
                             }
                         }
                     }
@@ -80,9 +108,13 @@ struct ArtworkGalleryView: View {
     /// Single-click: select the album (highlights the cover here and the row in
     /// the list browser, and drives the inspector's track list) without leaving
     /// the grid.
-    private func selectAlbum(_ album: Album) {
-        model.selectedArtistID = album.artistID
-        model.selectedAlbumID = album.id
+    ///
+    /// Routes through the model's modifier-aware selectAlbum rather than setting
+    /// the anchor directly — the old local version shadowed it, which is why
+    /// ⌘-click and ⇧-click did nothing in the gallery. The tap gesture below
+    /// forwards the live ⌘/⇧ flags in; this function just passes them through.
+    private func selectAlbum(_ album: Album, command: Bool = false, shift: Bool = false) {
+        model.selectAlbum(album, command: command, shift: shift, ordered: allAlbums, flat: true)
     }
 
     private func openDetail(_ album: Album) {
@@ -154,24 +186,28 @@ struct ArtworkGalleryView: View {
     }
 
     private func albumCoverCell(_ album: Album) -> some View {
-        let selected = model.selectedAlbumID == album.id
+        // isAlbumSelected, not selectedAlbumID: the anchor alone ignored
+        // selectedAlbumIDs, so ⌘A and ⌘-click selected albums the gallery
+        // never drew.
+        let selected = model.isAlbumSelected(album.id)
         return VStack(alignment: .leading, spacing: 6) {
             ZStack(alignment: .bottomTrailing) {
                 GalleryAlbumCoverView(album: album, size: 120)
                     .clipShape(RoundedRectangle(cornerRadius: 4))
                     .overlay(
                         RoundedRectangle(cornerRadius: 4)
-                            .stroke(selected ? theme.orange : Color.black.opacity(0.12),
-                                    lineWidth: selected ? 2.5 : 1)
+                            .stroke(Color.black.opacity(0.12), lineWidth: 1)
                     )
-                    .shadow(color: selected ? theme.orange.opacity(0.4) : Color.black.opacity(0.15),
-                            radius: selected ? 6 : 4, y: 2)
+                    .shadow(color: Color.black.opacity(0.15), radius: 4, y: 2)
                     .matchedGeometryEffect(id: album.id, in: artNamespace)
                     .contentShape(Rectangle())
                     // Single click selects (highlights + drives the inspector track
                     // list); double click opens the full album page.
                     .onTapGesture(count: 2) { openDetail(album) }
-                    .onTapGesture(count: 1) { selectAlbum(album) }
+                    .onTapGesture(count: 1) {
+                        let m = NSEvent.modifierFlags
+                        selectAlbum(album, command: m.contains(.command), shift: m.contains(.shift))
+                    }
 
                 // Booklet Indicator Badge (Top Right of Cover)
                 if album.booklet != nil {
@@ -202,7 +238,28 @@ struct ArtworkGalleryView: View {
                     .padding(6)
                     .carbonTip("Search Cover Art Online")
                 }
+
+                // First consumer of albumsFetchingArtwork — batch cover search
+                // marks each album while its match is in flight.
+                if model.isFetchingArtwork(for: album) {
+                    ZStack {
+                        Color.black.opacity(0.45)
+                        ProgressView().controlSize(.small)
+                    }
+                    .frame(width: 120, height: 120)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                    .allowsHitTesting(false)
+                }
             }
+
+            // Selection reads as an underline rather than a frame: the empty
+            // jewel case is 1.13:1 (the spine adds width outside the square lid)
+            // and letterboxes inside the square tile, so a frame on the tile
+            // bounds can never hug it. An underline doesn't have to.
+            RoundedRectangle(cornerRadius: 1.5)
+                .fill(selected ? theme.orange : Color.clear)
+                .frame(height: 3)
+                .shadow(color: selected ? theme.orange.opacity(0.5) : .clear, radius: 4)
 
             Text(album.title)
                 .font(CarbonFont.sans(10.5, weight: .bold))
@@ -229,9 +286,24 @@ struct ArtworkGalleryView: View {
                 searchArtworkOnline(for: album)
             }
         }
+        // Mirrors BrowserContextMenu.album's usesSelection rule: act on the whole
+        // selection when the right-clicked album is part of it, else just this one.
+        let batchTargets = batchCoverTargets(for: album)
+        Button(batchTargets.count > 1 ? "Search & Add Covers (\(batchTargets.count) Albums)" : "Search & Add Cover") {
+            model.searchAndAddCovers(for: batchTargets)
+        }
         if album.booklet != nil {
             Button("Open Booklet") { openBooklet(album) }
         }
+    }
+
+    /// The albums a batch cover action should run on.
+    private func batchCoverTargets(for album: Album) -> [Album] {
+        guard model.selectedAlbumIDs.count > 1, model.selectedAlbumIDs.contains(album.id) else {
+            return [album]
+        }
+        let ids = model.selectedAlbumIDs
+        return allAlbums.filter { ids.contains($0.id) }
     }
 
     // MARK: - Album Page (cover + tracks, in-pane, non-blocking)
@@ -574,7 +646,7 @@ struct ArtworkGalleryView: View {
             }
 
             // Apply the image we just downloaded directly — no second iTunes
-            // round-trip (fetchRemoteArtwork would re-download to do the same thing).
+            // round-trip.
             await MainActor.run {
                 model.applyFetchedArtwork(asset, toAlbumID: album.id)
             }

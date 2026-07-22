@@ -118,11 +118,24 @@ public struct AlbumFolderKey: Hashable, Sendable, Codable {
     public let artistBucket: String
     public let album: String
     public let year: String
+    /// Distinguishes same-tagged albums that live in different source folders —
+    /// two rips/pressings of one release whose tags are identical. nil for the
+    /// primary (or only) copy, so keys persisted before this field existed keep
+    /// matching: synthesized Codable decodes an absent field as nil and omits
+    /// nil on encode. Assigned by `LibraryIndex.build`; tag-derived keys from
+    /// `albumFolderKey(for:)` always carry nil.
+    public let discriminator: String?
 
-    public init(artistBucket: String, album: String, year: String) {
+    public init(artistBucket: String, album: String, year: String, discriminator: String? = nil) {
         self.artistBucket = artistBucket
         self.album = album
         self.year = year
+        self.discriminator = discriminator
+    }
+
+    /// This key with a different discriminator.
+    public func discriminated(_ discriminator: String?) -> AlbumFolderKey {
+        AlbumFolderKey(artistBucket: artistBucket, album: album, year: year, discriminator: discriminator)
     }
 }
 

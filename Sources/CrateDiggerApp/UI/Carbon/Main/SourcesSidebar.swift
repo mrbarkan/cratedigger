@@ -14,12 +14,14 @@ struct SourcesSidebar: View {
     @State private var editTarget: SidebarEditTarget? = nil
     @State private var editText: String = ""
     @FocusState private var editFieldFocused: Bool
+    @State private var collapsedSections: Set<String> = Set(PreferencesStore.shared.collapsedSourceSections)
 
     var body: some View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(spacing: 0) {
                     sectionHeader("Prep Crate", trailing: "")
+                    sectionRows("Prep Crate") {
                     sidebarItem(
                         icon: Image(systemName: "tray.and.arrow.down"),
                         title: "Prep Crate",
@@ -46,6 +48,7 @@ struct SourcesSidebar: View {
                             }
                         }
                     }
+                    }
 
                     HStack {
                         sectionHeader("Local Library", trailing: "")
@@ -60,6 +63,7 @@ struct SourcesSidebar: View {
                         .padding(.top, 10)
                     }
                     
+                    sectionRows("Local Library") {
                     sidebarItem(
                         icon: Image(systemName: "square.stack"),
                         title: "All Records",
@@ -119,8 +123,10 @@ struct SourcesSidebar: View {
                             }
                         }
                     }
-                    
+                    }
+
                     sectionHeader("Remote Library", trailing: "")
+                    sectionRows("Remote Library") {
                     sidebarItem(
                         icon: Image(systemName: "cloud"),
                         title: "Subsonic / Navidrome",
@@ -128,7 +134,8 @@ struct SourcesSidebar: View {
                         selected: model.currentSource == .remote,
                         action: { model.selectSource(.remote) }
                     )
-                    
+                    }
+
                     HStack {
                         sectionHeader("Radio / Streams", trailing: "")
                         Spacer()
@@ -143,6 +150,7 @@ struct SourcesSidebar: View {
                         .carbonTip("Add a YouTube stream source")
                     }
 
+                    sectionRows("Radio / Streams") {
                     sidebarItem(
                         icon: Image(systemName: "dot.radiowaves.left.and.right"),
                         title: "All Streams",
@@ -161,9 +169,11 @@ struct SourcesSidebar: View {
                             action: { model.enterRadio(category: category) }
                         )
                     }
+                    }
 
                     if !model.mountedCDs.isEmpty {
                         sectionHeader("CD Drives", trailing: "")
+                        sectionRows("CD Drives") {
                         ForEach(model.mountedCDs) { cd in
                             VStack(alignment: .leading, spacing: 4) {
                                 sidebarItem(
@@ -187,18 +197,49 @@ struct SourcesSidebar: View {
                                 .padding(.bottom, 6)
                             }
                         }
+                        }
                     }
 
-                    if !model.mountedDevices.isEmpty {
+                    if !model.mountedDevices.isEmpty || !model.offlineDeviceProfiles.isEmpty {
                         sectionHeader("Devices", trailing: "")
+                        sectionRows("Devices") {
                         ForEach(model.mountedDevices) { device in
+                            VStack(alignment: .leading, spacing: 4) {
+                                sidebarItem(
+                                    icon: deviceIcon(for: device),
+                                    title: device.name,
+                                    count: isSelectedDevice(device.volumeURL.path) ? "\(model.index.allTracks.count)" : "—",
+                                    selected: isSelectedDevice(device.volumeURL.path),
+                                    action: { model.selectSource(.device(volumePath: device.volumeURL.path)) }
+                                )
+                                if let profile = model.deviceProfile(for: device),
+                                   let queued = model.syncQueueCounts[profile.id], queued > 0 {
+                                    Button(action: { model.syncQueuedTransfers(profileID: profile.id) }) {
+                                        Text("SYNC \(queued)")
+                                            .font(CarbonFont.mono(8, weight: .bold))
+                                            .foregroundColor(.white)
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 3)
+                                            .background(theme.orange)
+                                            .cornerRadius(4)
+                                    }
+                                    .buttonStyle(.carbonHover)
+                                    .padding(.leading, 36)
+                                    .padding(.bottom, 6)
+                                    .carbonTip("Copy \(queued) queued track\(queued == 1 ? "" : "s") onto \(device.name)")
+                                }
+                            }
+                        }
+                        ForEach(model.offlineDeviceProfiles) { profile in
                             sidebarItem(
-                                icon: deviceIcon(for: device),
-                                title: device.name,
-                                count: isSelectedDevice(device.volumeURL.path) ? "\(model.index.allTracks.count)" : "—",
-                                selected: isSelectedDevice(device.volumeURL.path),
-                                action: { model.selectSource(.device(volumePath: device.volumeURL.path)) }
+                                icon: offlineDeviceIcon(for: profile),
+                                title: profile.name,
+                                count: model.syncQueueCounts[profile.id].map { "\($0) queued" } ?? "—",
+                                selected: isSelectedOfflineDevice(profile.id),
+                                action: { model.selectSource(.offlineDevice(profileID: profile.id)) }
                             )
+                            .opacity(0.55)
+                        }
                         }
                     }
 
@@ -215,6 +256,7 @@ struct SourcesSidebar: View {
                         .padding(.top, 10)
                     }
                     
+                    sectionRows("Playlists") {
                     ForEach(model.playlists) { pl in
                         HStack {
                             playlistLabel(pl)
@@ -243,6 +285,7 @@ struct SourcesSidebar: View {
                                 targetedPlaylist = nil
                             }
                         }
+                    }
                     }
                 }
             }
@@ -283,6 +326,13 @@ struct SourcesSidebar: View {
     private func isSelectedDevice(_ path: String) -> Bool {
         if case .device(let currentPath) = model.currentSource {
             return currentPath == path
+        }
+        return false
+    }
+
+    private func isSelectedOfflineDevice(_ id: UUID) -> Bool {
+        if case .offlineDevice(let current) = model.currentSource {
+            return current == id
         }
         return false
     }
@@ -348,8 +398,24 @@ struct SourcesSidebar: View {
         .frame(width: 300)
     }
 
+    private func isCollapsed(_ title: String) -> Bool { collapsedSections.contains(title) }
+
+    /// A section's rows, hidden while its header is collapsed.
+    @ViewBuilder
+    private func sectionRows<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        if !isCollapsed(title) { content() }
+    }
+
+    private func toggleSection(_ title: String) {
+        if !collapsedSections.insert(title).inserted { collapsedSections.remove(title) }
+        PreferencesStore.shared.collapsedSourceSections = Array(collapsedSections).sorted()
+    }
+
     private func sectionHeader(_ title: String, trailing: String) -> some View {
-        HStack {
+        HStack(spacing: 5) {
+            Image(systemName: "chevron.down")
+                .font(.system(size: 7, weight: .bold))
+                .rotationEffect(.degrees(isCollapsed(title) ? -90 : 0))
             Text(title.uppercased())
             Spacer()
             Text(trailing)
@@ -360,6 +426,10 @@ struct SourcesSidebar: View {
         .padding(.horizontal, 10)
         .padding(.top, 8)
         .padding(.bottom, 3)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            withAnimation(.easeOut(duration: 0.15)) { toggleSection(title) }
+        }
     }
 
     /// Device rows show the real thing: the profile's chosen device portrait
@@ -371,6 +441,15 @@ struct SourcesSidebar: View {
         return DeviceSystemIcons.sidebarImage(
             NSWorkspace.shared.icon(forFile: device.volumeURL.path), points: 16
         )
+    }
+
+    /// Offline profiles have no mounted volume to ask Finder about — use the
+    /// profile's chosen portrait, else a generic drive glyph.
+    private func offlineDeviceIcon(for profile: ExternalDeviceProfile) -> Image {
+        if let nsImage = DeviceSystemIcons.image(for: profile.iconID) {
+            return DeviceSystemIcons.sidebarImage(nsImage, points: 16)
+        }
+        return Image(systemName: "externaldrive")
     }
 
     private func sidebarItem(

@@ -209,9 +209,10 @@ private struct GroupAlbumsSheetView: View {
         }
     }
 
-    /// The left-hand cell identifying a pressing: title + its year (the fields that
-    /// make it a distinct version) over the format badge + source folder, so two
-    /// same-format rips are still tellable apart.
+    /// The left-hand cell identifying a pressing: title + year over the format
+    /// badge, then track count · length, then the source folder (click = reveal
+    /// in Finder) — enough insight to tell two rips apart without leaving the
+    /// sheet.
     private func versionIdentity(_ row: GroupAlbumsSheetController.VersionRow) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(row.album.title)
@@ -237,7 +238,42 @@ private struct GroupAlbumsSheetView: View {
                         .foregroundStyle(theme.ink3)
                 }
             }
+            Text(statsLine(row.album))
+                .font(CarbonFont.mono(9))
+                .foregroundStyle(theme.ink3)
+            if let folder = sourceFolder(row.album) {
+                Button {
+                    NSWorkspace.shared.activateFileViewerSelecting([folder])
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "folder")
+                            .font(.system(size: 8, weight: .semibold))
+                        Text(folder.lastPathComponent)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                    .font(CarbonFont.mono(9))
+                    .foregroundStyle(theme.cyan)
+                }
+                .buttonStyle(.plain)
+                .help("Reveal in Finder — \(folder.path)")
+            }
         }
+    }
+
+    /// "12 tracks · 44:32"
+    private func statsLine(_ album: Album) -> String {
+        let count = album.tracks.count
+        let total = Int(album.tracks.reduce(0) { $0 + $1.track.durationSeconds })
+        let (h, m, s) = (total / 3600, (total % 3600) / 60, total % 60)
+        let length = h > 0 ? String(format: "%d:%02d:%02d", h, m, s)
+                           : String(format: "%d:%02d", m, s)
+        return "\(count) track\(count == 1 ? "" : "s") · \(length)"
+    }
+
+    private func sourceFolder(_ album: Album) -> URL? {
+        guard let url = album.tracks.first?.track.fileURL, url.isFileURL else { return nil }
+        return url.deletingLastPathComponent()
     }
 
     /// Title plus year — the per-pressing identity used as the Primary picker label

@@ -1,3 +1,4 @@
+import AppKit
 import CrateDiggerCore
 import Foundation
 
@@ -284,5 +285,113 @@ extension LibraryViewModel {
             radioEngine = nil
             playSelectedStream()
         }
+    }
+
+    // MARK: - YouTube streaming health check
+
+    /// Playback ▸ Stream Engine ▸ Check YouTube Streaming… — resolves a
+    /// known-stable test video through the same yt-dlp path radio playback
+    /// uses, then reports OK or offers the matching repair (install/update).
+    func checkYouTubeStreaming() {
+        guard let ytdlp = resolvedYtDlpURL() else {
+            presentYtDlpMissing()
+            return
+        }
+        showOLEDNotice("CHECKING YOUTUBE…")
+        Task.detached(priority: .userInitiated) {
+            let verdict = StreamEngineDoctor().checkUp(ytdlpURL: ytdlp)
+            await MainActor.run { self.presentStreamCheckVerdict(verdict, ytdlp: ytdlp) }
+        }
+    }
+
+    private func presentYtDlpMissing() {
+        let brew = Self.locateBrew()
+        let alert = NSAlert()
+        alert.messageText = "yt-dlp Not Found"
+        alert.informativeText = "Radio streams YouTube through yt-dlp; without it CrateDigger falls back to the embedded WebView player."
+            + (brew != nil
+               ? "\n\nHomebrew is installed — CrateDigger can install yt-dlp for you (runs \"brew install yt-dlp\")."
+               : "\n\nInstall Homebrew (brew.sh) and run \"brew install yt-dlp\", or download the binary from github.com/yt-dlp/yt-dlp and point Playback ▸ Stream Engine ▸ Set yt-dlp Path… at it.")
+        if let brew {
+            alert.addButton(withTitle: "Install with Homebrew")
+            alert.addButton(withTitle: "Cancel")
+            if alert.runModal() == .alertFirstButtonReturn {
+                runRepairCommand(executablePath: brew.path,
+                                 arguments: ["install", "yt-dlp"],
+                                 notice: "INSTALLING YT-DLP…",
+                                 label: "brew install yt-dlp")
+            }
+        } else {
+            alert.addButton(withTitle: "Copy Install Command")
+            alert.addButton(withTitle: "Cancel")
+            if alert.runModal() == .alertFirstButtonReturn {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString("brew install yt-dlp", forType: .string)
+                showOLEDNotice("COMMAND COPIED")
+            }
+        }
+    }
+
+    private func presentStreamCheckVerdict(_ verdict: StreamEngineDoctor.Verdict, ytdlp: URL) {
+        switch verdict {
+        case .working(let version):
+            oledNotice = nil
+            appAlert = .info(
+                title: "YouTube Streaming OK",
+                message: "yt-dlp \(version) (\(ytdlp.path)) resolved the test video. Radio is good to go."
+            )
+        case .broken(let version, let detail):
+            oledNotice = nil
+            let realPath = ytdlp.resolvingSymlinksInPath().path
+            let (exe, args) = StreamEngineDoctor.updateInvocation(realToolPath: realPath,
+                                                                 brewPath: Self.locateBrew()?.path)
+            let command = ([exe] + args).joined(separator: " ")
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = "YouTube Streaming Is Broken"
+            alert.informativeText = """
+            yt-dlp \(version) could not resolve the test video:
+
+            \(detail)
+
+            YouTube changes frequently and an outdated yt-dlp is the usual cause. Update it now? (runs "\(command)")
+            """
+            alert.addButton(withTitle: "Update yt-dlp")
+            alert.addButton(withTitle: "Cancel")
+            if alert.runModal() == .alertFirstButtonReturn {
+                runRepairCommand(executablePath: exe, arguments: args,
+                                 notice: "UPDATING YT-DLP…", label: command)
+            }
+        }
+    }
+
+    /// Runs an install/update command off-main, then re-runs the streaming
+    /// check so the user sees end-to-end whether the repair actually worked.
+    private func runRepairCommand(executablePath: String, arguments: [String], notice: String, label: String) {
+        showOLEDNotice(notice)
+        Task.detached(priority: .userInitiated) {
+            // brew can legitimately take a while; 10 min guards a wedged process.
+            let runner = ProcessCommandRunner(timeoutSeconds: 600)
+            let output = try? runner.run(executableURL: URL(fileURLWithPath: executablePath),
+                                         arguments: arguments)
+            await MainActor.run {
+                guard let output, output.terminationStatus == 0 else {
+                    self.oledNotice = nil
+                    let stderr = output?.standardError.trimmingCharacters(in: .whitespacesAndNewlines)
+                    self.appAlert = .error(
+                        title: "Repair Failed",
+                        message: "\"\(label)\" did not complete:\n\(stderr?.suffix(400) ?? "the command failed to launch")\n\nTry running it manually in Terminal."
+                    )
+                    return
+                }
+                self.checkYouTubeStreaming()
+            }
+        }
+    }
+
+    private static func locateBrew() -> URL? {
+        ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]
+            .map { URL(fileURLWithPath: $0) }
+            .first { FileManager.default.isExecutableFile(atPath: $0.path) }
     }
 }

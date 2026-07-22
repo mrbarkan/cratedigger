@@ -3,6 +3,7 @@ import SwiftUI
 
 struct InspectorPane: View {
     @Environment(\.carbon) private var theme
+    @Environment(\.carbonGeometry) private var geometry
     @EnvironmentObject private var model: LibraryViewModel
 
     @State private var showingCleanup = false
@@ -52,6 +53,13 @@ struct InspectorPane: View {
             set: { if !$0 { model.metadataRepairConflicts = [] } }
         )) {
             MetadataRepairSheetView()
+        }
+        // FIX TAGS online match review — same pattern: the matches are the state.
+        .sheet(isPresented: Binding(
+            get: { !model.metadataMatches.isEmpty },
+            set: { if !$0 { model.cancelMatchQueue() } }
+        )) {
+            MetadataMatchSheetView()
         }
     }
 
@@ -216,7 +224,7 @@ struct InspectorPane: View {
                     }
                 }
                 .frame(maxWidth: .infinity)
-                .frame(height: CarbonLayout.keyHeight)
+                .frame(height: geometry.keyHeight)
                 
                 KeyButton(style: .normal, action: {
                     showingCleanup = true
@@ -230,11 +238,12 @@ struct InspectorPane: View {
                     }
                 }
                 .frame(maxWidth: .infinity)
-                .frame(height: CarbonLayout.keyHeight)
+                .frame(height: geometry.keyHeight)
                 
-                // Repurposed the old disabled ORGANIZE placeholder: re-probe
-                // tracks that lost their track number and heal the crate from
-                // the files' own tags (see LibraryViewModel+MetadataRepair).
+                // Select tracks → re-probe them, then look the release up online
+                // and offer the differences for review. With nothing selected it
+                // falls back to a local-only sweep of the source (see
+                // LibraryViewModel+MetadataRepair).
                 KeyButton(style: model.canRepairMetadata && !model.isRepairingMetadata ? .normal : .disabled, action: {
                     model.repairMissingMetadata()
                 }) {
@@ -252,9 +261,9 @@ struct InspectorPane: View {
                     }
                 }
                 .frame(maxWidth: .infinity)
-                .frame(height: CarbonLayout.keyHeight)
+                .frame(height: geometry.keyHeight)
                 .disabled(!model.canRepairMetadata || model.isRepairingMetadata)
-                .carbonTip("Re-check the selected tracks against their files and fill in blank tags (checks the whole source when nothing is selected)")
+                .carbonTip("Look up the selected tracks online (MusicBrainz · iTunes) and choose which tags to correct. With nothing selected, checks the whole source against the files without going online.")
             }
             .padding(.horizontal, 16)
             .padding(.bottom, model.selectedAlbum == nil ? 12 : 8)
@@ -270,7 +279,7 @@ struct InspectorPane: View {
                             .tracking(1.0)
                     }
                     .frame(maxWidth: .infinity)
-                    .frame(height: CarbonLayout.keyHeight)
+                    .frame(height: geometry.keyHeight)
                     .background(theme.orange)
                     .foregroundColor(.white)
                     .clipShape(RoundedRectangle(cornerRadius: 4))

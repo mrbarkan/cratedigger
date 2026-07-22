@@ -1,7 +1,7 @@
 import AppKit
 import CrateDiggerCore
 
-final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, NSMenuDelegate {
     private var mainWindowController: MainWindowController?
     private var aboutWindowController: AboutWindowController?
     private var guideWindowController: GuideWindowController?
@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private var miniPlayerWindowController: MiniPlayerWindowController?
     private let prefs: PreferencesStore = .shared
     private var openRecentMenu: NSMenu?
+    private var appearanceMenu: NSMenu?
     private var recentFolderURLs: [URL] = []
     private var spaceKeyMonitor: Any?
 
@@ -23,6 +24,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         URLCache.shared = URLCache(memoryCapacity: 64 * 1024 * 1024,
                                    diskCapacity: 512 * 1024 * 1024)
 
+        FontRegistrar.registerBundledFonts()
+
+        migrateLegacyArtworkStore()
+
         buildMenu()
 
         let windowController = MainWindowController()
@@ -31,6 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         windowController.restoreLastSession()
 
         installSpaceKeyMonitor()
+        installSnapshotHookIfRequested()
 
         NotificationCenter.default.addObserver(
             self, selector: #selector(showMiniPlayer(_:)),
@@ -66,6 +72,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         if let token = spaceKeyMonitor {
             NSEvent.removeMonitor(token)
             spaceKeyMonitor = nil
+        }
+    }
+
+    /// Before 1.1.0 the artwork cache kept a full-resolution copy of every cover
+    /// it ever saw, which grew to gigabytes on a large library. Squeeze that hoard
+    /// down into the thumbnail cache and delete it — off the main thread, since a
+    /// long-running library can have thousands of blobs to re-encode. Covers stay
+    /// resolvable throughout: the migration only shrinks what's already there.
+    private func migrateLegacyArtworkStore() {
+        Task.detached(priority: .utility) {
+            let store = ArtworkStore(directory: ArtworkStore.defaultDirectory)
+            let reclaimed = store.migrateLegacyFullResolutionStore()
+            guard reclaimed > 0 else { return }
+            let megabytes = Double(reclaimed) / 1_000_000
+            AppLog.library.notice("Migrated legacy artwork store; reclaimed \(megabytes, format: .fixed(precision: 1)) MB")
         }
     }
 
@@ -162,6 +183,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         mainWindowController?.togglePlayPause()
     }
 
+    @objc private func goToCurrentSong(_ sender: Any?) {
+        mainWindowController?.revealNowPlaying()
+    }
+
     @objc private func playNext(_ sender: Any?) {
         mainWindowController?.playNext()
     }
@@ -213,6 +238,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         prefs.customYtDlpPath = url.path
         mainWindowController?.streamEnginePreferenceChanged()
+    }
+
+    @objc private func checkYouTubeStreaming(_ sender: Any?) {
+        MainActor.assumeIsolated {
+            mainWindowController?.model.checkYouTubeStreaming()
+        }
     }
 
     // MARK: - App menu actions
@@ -297,6 +328,59 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         }
     }
 
+    /// Dev-only self-snapshot: with CRATEDIGGER_SNAPSHOT_PATH set, render the
+    /// main window (its own view tree — no screen-recording permission needed)
+    /// to a PNG a few seconds after launch, then again 4 s later. Optional
+    /// CRATEDIGGER_OLED=<rawValue> preselects an OLED view first. Inert
+    /// without the env var; used for autonomous UI verification.
+    private func installSnapshotHookIfRequested() {
+        let env = ProcessInfo.processInfo.environment
+        guard let path = env["CRATEDIGGER_SNAPSHOT_PATH"] else { return }
+        // Just before the final snap — starting playback flips the OLED to NOW
+        // asynchronously, so an early set gets overridden.
+        if let raw = env["CRATEDIGGER_OLED"], let view = OLEDView(rawValue: raw) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 7.0) { [weak self] in
+                self?.mainWindowController?.model.oledView = view
+            }
+        }
+        if env["CRATEDIGGER_AUTOPLAY"] != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
+                guard let model = self?.mainWindowController?.model else { return }
+                model.playbackVolume = 0.8   // meters scale by volume; 0 reads as silence
+                if let first = model.index.allTracks.first { model.playTrack(id: first.track.id) }
+            }
+        }
+        if env["CRATEDIGGER_CHECK_STREAM"] != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+                self?.mainWindowController?.model.checkYouTubeStreaming()
+            }
+        }
+        func snap(_ suffix: String) {
+            let url = URL(fileURLWithPath: path)
+            func fail(_ why: String) {
+                try? why.write(to: url.appendingPathExtension("err.txt"), atomically: true, encoding: .utf8)
+            }
+            guard let window = self.mainWindowController?.window else { return fail("no window") }
+            guard let frameView = window.contentView?.superview ?? window.contentView else { return fail("no frame view") }
+            guard let rep = frameView.bitmapImageRepForCachingDisplay(in: frameView.bounds) else { return fail("no rep for \(frameView.bounds)") }
+            frameView.cacheDisplay(in: frameView.bounds, to: rep)
+            let dest = suffix.isEmpty ? url : url.deletingPathExtension().appendingPathExtension("\(suffix).png")
+            guard let png = rep.representation(using: .png, properties: [:]) else { return fail("no png data") }
+            do { try png.write(to: dest) } catch { fail("write: \(error)") }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) { snap("") }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8.0) { snap("late") }
+        if let dumpPath = env["CRATEDIGGER_DEBUG_DUMP"] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 7.5) { [weak self] in
+                guard let model = self?.mainWindowController?.model else { return }
+                let s = model.currentPlaybackSpectrum().map { String(format: "%.3f", $0) }.joined(separator: " ")
+                let l = model.currentPlaybackLevels()
+                let line = "state=\(model.playbackState) oled=\(model.oledView) levels=(\(l.left), \(l.right)) spectrum=[\(s)]"
+                try? line.write(toFile: dumpPath, atomically: true, encoding: .utf8)
+            }
+        }
+    }
+
     @objc private func sendFeedback(_ sender: Any?) {
         if let url = URL(string: "mailto:opa@mrbarkan.com?subject=CrateDigger%20Feedback") {
             NSWorkspace.shared.open(url)
@@ -315,13 +399,65 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         else { return }
         UserDefaults.standard.set(mode.rawValue, forKey: AppearanceMode.userDefaultsKey)
         NotificationCenter.default.post(name: AppearanceMode.didChangeNotification, object: nil)
+        // Picking an appearance clears any installed-theme override, matching
+        // the header THEME button — otherwise the skin keeps winning and the
+        // menu pick appears to do nothing.
+        prefs.selectedThemeID = nil
         // The checkmark is set in validateMenuItem when the menu next opens.
+    }
+
+    // MARK: - Appearance & Themes menu
+
+    /// Appearance submenu = the three appearances, the installed themes, then
+    /// the folder actions. Rebuilt via `menuNeedsUpdate` each time it opens.
+    private func rebuildAppearanceMenu() {
+        guard let menu = appearanceMenu else { return }
+        menu.removeAllItems()
+        for mode in AppearanceMode.allCases {
+            let item = makeItem(title: mode.menuTitle, action: #selector(setAppearanceMode(_:)))
+            item.representedObject = mode.rawValue
+            menu.addItem(item)
+        }
+        // Menus only ever touch us on the main thread; ThemeRegistry is @MainActor.
+        let manifests = MainActor.assumeIsolated { ThemeRegistry.shared.manifests }
+        if !manifests.isEmpty {
+            menu.addItem(.separator())
+            for manifest in manifests {
+                let item = makeItem(title: manifest.definition.name, action: #selector(selectTheme(_:)))
+                item.representedObject = manifest.id
+                item.state = (manifest.id == prefs.selectedThemeID) ? .on : .off
+                menu.addItem(item)
+            }
+        }
+        menu.addItem(.separator())
+        menu.addItem(makeItem(title: "Refresh Themes", action: #selector(refreshThemes(_:))))
+        menu.addItem(makeItem(title: "Show Themes Folder…", action: #selector(showThemesFolder(_:))))
+    }
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        if menu === appearanceMenu { rebuildAppearanceMenu() }
+    }
+
+    @objc private func selectTheme(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String else { return }
+        prefs.selectedThemeID = id
+    }
+
+    @objc private func refreshThemes(_ sender: Any?) {
+        MainActor.assumeIsolated { ThemeRegistry.shared.refresh() }
+    }
+
+    @objc private func showThemesFolder(_ sender: Any?) {
+        guard let url = MainActor.assumeIsolated({ ThemeRegistry.shared.userThemesDirectory }) else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         switch menuItem.action {
         case #selector(setAppearanceMode(_:)):
-            menuItem.state = (menuItem.representedObject as? String == AppearanceMode.current.rawValue) ? .on : .off
+            // Only checked while no installed theme overrides the appearance.
+            menuItem.state = (prefs.selectedThemeID == nil
+                              && menuItem.representedObject as? String == AppearanceMode.current.rawValue) ? .on : .off
             return true
         case #selector(selectOLEDView(_:)):
             if let raw = menuItem.representedObject as? String,
@@ -350,6 +486,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
              #selector(toggleShuffle(_:)),
              #selector(cycleRepeatMode(_:)):
             return mainWindowController?.hasLoadedTracks ?? false
+        case #selector(goToCurrentSong(_:)):
+            return mainWindowController?.hasNowPlayingTrack ?? false
         case #selector(openRecentItem(_:)):
             return menuItem.tag < recentFolderURLs.count
         default:
@@ -405,16 +543,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         appMenu.addItem(makeItem(title: "Preferences…", action: #selector(showPreferences(_:)), key: ","))
         appMenu.addItem(.separator())
         let appearanceMenuItem = NSMenuItem(title: "Appearance", action: nil, keyEquivalent: "")
-        let appearanceMenu = NSMenu(title: "Appearance")
-        let currentMode = AppearanceMode.current
-        for mode in AppearanceMode.allCases {
-            let item = NSMenuItem(title: mode.menuTitle, action: #selector(setAppearanceMode(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = mode.rawValue
-            item.state = (mode == currentMode) ? .on : .off
-            appearanceMenu.addItem(item)
-        }
-        appearanceMenuItem.submenu = appearanceMenu
+        let appearanceSubmenu = NSMenu(title: "Appearance")
+        appearanceSubmenu.delegate = self   // rebuilt on open so dropped-in themes appear
+        self.appearanceMenu = appearanceSubmenu
+        rebuildAppearanceMenu()
+        appearanceMenuItem.submenu = appearanceSubmenu
         appMenu.addItem(appearanceMenuItem)
         appMenu.addItem(.separator())
         appMenu.addItem(makeItem(title: "Hide CrateDigger", action: #selector(NSApplication.hide(_:)), key: "h", target: NSApp))
@@ -476,7 +609,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         let viewMenuItem = NSMenuItem()
         mainMenu.addItem(viewMenuItem)
         let viewMenu = NSMenu(title: "View")
-        // Match the order shown in the OLED view switcher (VU is hidden in the chrome).
+        // Match the order shown in the OLED view switcher.
         let displayedViews: [(OLEDView, String)] = [
             (.nowPlaying, "1"),
             (.conversion, "2"),
@@ -488,6 +621,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             item.representedObject = view.rawValue
             viewMenu.addItem(item)
         }
+        viewMenu.addItem(.separator())
+        // ⌘L is what Music.app binds "Go to Current Song" to — muscle memory for free.
+        viewMenu.addItem(makeItem(title: "Go to Current Song", action: #selector(goToCurrentSong(_:)), key: "l"))
         viewMenuItem.submenu = viewMenu
 
         // MARK: Playback menu
@@ -539,6 +675,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         }
         engineMenu.addItem(.separator())
         engineMenu.addItem(makeItem(title: "Set yt-dlp Path…", action: #selector(setYtDlpPath(_:))))
+        engineMenu.addItem(makeItem(title: "Check YouTube Streaming…", action: #selector(checkYouTubeStreaming(_:))))
         engineMenuItem.submenu = engineMenu
         playbackMenu.addItem(engineMenuItem)
 

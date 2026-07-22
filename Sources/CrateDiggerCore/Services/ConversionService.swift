@@ -600,16 +600,23 @@ public final class ConversionService {
             writtenNormalizedKeys.insert(Self.normalizedMetadataKey(key))
         }
 
-        if let trackNumber = metadata.trackNumber,
-           let trackTotal = metadata.trackTotal,
-           trackTotal > 0 {
-            add("track", "\(trackNumber)/\(trackTotal)")
+        // Totals are optional garnish — the NUMBER must survive on its own.
+        // (Rips commonly tag discnumber with no disctotal; requiring both used
+        // to silently drop the disc tag, collapsing multi-disc albums.)
+        if let trackNumber = metadata.trackNumber {
+            if let trackTotal = metadata.trackTotal, trackTotal > 0 {
+                add("track", "\(trackNumber)/\(trackTotal)")
+            } else {
+                add("track", "\(trackNumber)")
+            }
         }
 
-        if let discNumber = metadata.discNumber,
-           let discTotal = metadata.discTotal,
-           discTotal > 0 {
-            add("disc", "\(discNumber)/\(discTotal)")
+        if let discNumber = metadata.discNumber {
+            if let discTotal = metadata.discTotal, discTotal > 0 {
+                add("disc", "\(discNumber)/\(discTotal)")
+            } else {
+                add("disc", "\(discNumber)")
+            }
         }
 
         add("album_artist", metadata.albumArtist)

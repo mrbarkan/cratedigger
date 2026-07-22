@@ -61,7 +61,16 @@ public actor RemoteArtworkService {
             return asset
         }
 
-        guard let candidate = try await searchITunes(artist: trimmedArtist, album: trimmedAlbum) else {
+        var found = try await searchITunes(artist: trimmedArtist, album: trimmedAlbum)
+        if found == nil {
+            // Loose retry: "OK Computer (Collector's Edition)" rarely matches
+            // the store listing — the bare title usually does.
+            let stripped = Self.strippedEditionTitle(trimmedAlbum)
+            if stripped != trimmedAlbum, !stripped.isEmpty {
+                found = try await searchITunes(artist: trimmedArtist, album: stripped)
+            }
+        }
+        guard let candidate = found else {
             throw FetchError.noResults
         }
 
@@ -223,6 +232,22 @@ public actor RemoteArtworkService {
         return String(sha256Hex(for: Data(raw.utf8)).prefix(40))
     }
 
+    /// Drops parenthesized/bracketed edition decorations — "OK Computer
+    /// (Collector's Edition) [2017 Remaster]" → "OK Computer" — for the loose
+    /// retry when the exact title finds nothing.
+    static func strippedEditionTitle(_ s: String) -> String {
+        var out = ""
+        var depth = 0
+        for ch in s {
+            switch ch {
+            case "(", "[": depth += 1
+            case ")", "]": depth = max(0, depth - 1)
+            default: if depth == 0 { out.append(ch) }
+            }
+        }
+        return out.split(separator: " ").joined(separator: " ")
+    }
+
     private static func simplify(_ s: String) -> String {
         let stripped = s.applyingTransform(.stripDiacritics, reverse: false) ?? s
         return stripped.lowercased()
@@ -306,6 +331,36 @@ public struct CAABookletImage: Identifiable, Codable, Sendable {
 }
 
 public extension RemoteArtworkService {
+    /// The query ladder for a MusicBrainz release search, strictest first:
+    /// 1. exact quoted phrases, 2. quoted phrases with edition decorations
+    /// stripped from the album, 3. unquoted bag-of-words (Lucene matches the
+    /// tokens anywhere in the field). The service walks down the ladder until
+    /// a rung returns results, so tagged titles that don't byte-match the
+    /// MusicBrainz release name still find their release.
+    static func musicBrainzQueryAttempts(artist: String, album: String) -> [String] {
+        func query(_ artistPart: String, _ albumPart: String, quoted: Bool) -> String {
+            var parts: [String] = []
+            if !artistPart.isEmpty {
+                parts.append(quoted ? "artist:\"\(artistPart)\"" : "artist:(\(artistPart))")
+            }
+            if !albumPart.isEmpty {
+                parts.append(quoted ? "release:\"\(albumPart)\"" : "release:(\(albumPart))")
+            }
+            return parts.joined(separator: " AND ")
+        }
+
+        var attempts = [query(artist, album, quoted: true)]
+        let stripped = strippedEditionTitle(album)
+        if stripped != album, !stripped.isEmpty {
+            attempts.append(query(artist, stripped, quoted: true))
+        }
+        let loose = query(artist, stripped.isEmpty ? album : stripped, quoted: false)
+        if !attempts.contains(loose) {
+            attempts.append(loose)
+        }
+        return attempts
+    }
+
     func searchMusicBrainzReleases(artist: String, album: String) async throws -> [MBReleaseCandidate] {
         let trimmedArtist = artist.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedAlbum = album.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -313,16 +368,15 @@ public extension RemoteArtworkService {
             throw FetchError.missingQuery
         }
 
+        for term in Self.musicBrainzQueryAttempts(artist: trimmedArtist, album: trimmedAlbum) {
+            let releases = try await performMusicBrainzQuery(term)
+            if !releases.isEmpty { return releases }
+        }
+        return []
+    }
+
+    private func performMusicBrainzQuery(_ term: String) async throws -> [MBReleaseCandidate] {
         var components = URLComponents(string: "https://musicbrainz.org/ws/2/release/")!
-        var queryParts: [String] = []
-        if !trimmedArtist.isEmpty {
-            queryParts.append("artist:\"\(trimmedArtist)\"")
-        }
-        if !trimmedAlbum.isEmpty {
-            queryParts.append("release:\"\(trimmedAlbum)\"")
-        }
-        let term = queryParts.joined(separator: " AND ")
-        
         components.queryItems = [
             URLQueryItem(name: "query", value: term),
             URLQueryItem(name: "fmt", value: "json"),

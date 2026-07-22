@@ -10,6 +10,7 @@ struct TagEditTarget: Identifiable {
 
 struct MetadataEditorView: View {
     @Environment(\.carbon) private var theme
+    @Environment(\.carbonGeometry) private var geometry
     @EnvironmentObject private var model: LibraryViewModel
     @Environment(\.dismiss) private var dismiss
 
@@ -161,7 +162,7 @@ struct MetadataEditorView: View {
                     .font(CarbonFont.mono(9.5, weight: .bold))
                     .tracking(1.5)
             }
-            .frame(width: 120, height: CarbonLayout.keyHeight)
+            .frame(width: 120, height: geometry.keyHeight)
         }
         .padding(14)
         .background(theme.chassisHi)

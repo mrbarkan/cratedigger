@@ -24,8 +24,8 @@ private struct GuideContent: View {
                     section("THE THREE FOLDERS", accent: theme.cyan) {
                         Text("Each is independent — set them separately in first-run setup or Preferences.")
                             .font(CarbonFont.sans(11)).foregroundStyle(theme.ink3)
-                        concept("Local Library", "Where your albums & tracks live. Can be an external drive.")
-                        concept("Library File location", "Where crate index (.cdlib) files are saved. Keep it on a local disk.")
+                        concept("Music Folder", "Where your albums & tracks live. Can be an external drive.")
+                        concept("Crates Index", "Where crate index (.cdcrate) files are saved — not your music. Keep it on a local disk.")
                         concept("Default Output", "Where conversions go by default — not necessarily into your library.")
                     }
 
@@ -49,7 +49,7 @@ private struct GuideContent: View {
                     section("BACKING UP & SHARING", accent: theme.cyan) {
                         bullet("File → Library → Back Up Library… — one dated .zip of all your crate indexes.")
                         bullet("Import / Export Library File… — move individual .cdlib crates in or out.")
-                        note("Your audio lives in the Local Library folder — back that up separately (it's just files).")
+                        note("Your audio lives in the Music Folder — back that up separately (it's just files).")
                     }
 
                     section("MINI PLAYER", accent: theme.orange) {

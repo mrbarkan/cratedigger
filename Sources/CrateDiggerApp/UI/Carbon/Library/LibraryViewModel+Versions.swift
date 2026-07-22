@@ -31,10 +31,14 @@ extension LibraryViewModel {
 
     private var versionPlanner: OutputPathPlanner { OutputPathPlanner() }
 
-    /// The stable identity used to reference a pressing inside a group.
+    /// The stable identity used to reference a pressing inside a group. Prefer
+    /// the key the index build assigned (it carries the version discriminator
+    /// that tells two same-tagged rips apart); tag re-derivation is only a
+    /// fallback for albums that predate `folderKey`.
     func versionKey(for album: Album) -> AlbumFolderKey? {
         // A grouped release has no single key; use its primary pressing.
         let source = album.isVersionGroup ? album.versions?.first : album
+        if let key = source?.folderKey { return key }
         guard let track = source?.tracks.first else { return nil }
         return versionPlanner.albumFolderKey(for: track)
     }
@@ -91,16 +95,14 @@ extension LibraryViewModel {
     }
 
     func setPrimaryVersion(_ pressing: Album, in release: Album) {
+        guard let key = versionKey(for: pressing) else { return }
         mutateGroup(of: release) { group in
-            if let track = pressing.tracks.first {
-                group.primaryKey = versionPlanner.albumFolderKey(for: track)
-            }
+            group.primaryKey = key
         }
     }
 
     func setEditionLabel(_ label: String?, for pressing: Album, in release: Album) {
-        guard let track = pressing.tracks.first else { return }
-        let key = versionPlanner.albumFolderKey(for: track)
+        guard let key = versionKey(for: pressing) else { return }
         mutateGroup(of: release) { group in
             if let i = group.members.firstIndex(where: { $0.key == key }) {
                 group.members[i].editionLabel = label?.isEmpty == true ? nil : label
@@ -109,10 +111,110 @@ extension LibraryViewModel {
     }
 
     func removeFromGroup(_ pressing: Album, release: Album) {
-        guard let track = pressing.tracks.first else { return }
-        let key = versionPlanner.albumFolderKey(for: track)
+        guard let key = versionKey(for: pressing) else { return }
         mutateGroup(of: release) { group in
             group.members.removeAll { $0.key == key }
+        }
+    }
+
+    // MARK: - Split mixed folder
+
+    /// True when this album is one on-disk folder holding 2+ codecs — the
+    /// "mixed folder" case Split Folder untangles.
+    func canSplitAlbumFolder(_ album: Album) -> Bool {
+        guard isLocalVersionSource, !album.isVersionGroup else { return false }
+        guard let first = album.tracks.first?.track.fileURL, first.isFileURL else { return false }
+        let folders = Set(album.tracks.map { $0.track.fileURL.deletingLastPathComponent().standardizedFileURL.path })
+        return folders.count == 1 && AlbumFolderSplitter.codecGroups(for: album.tracks).count >= 2
+    }
+
+    /// Ask which codec to move out and what to call the new folder, then split.
+    func promptSplitAlbumFolder(_ album: Album) {
+        let groups = AlbumFolderSplitter.codecGroups(for: album.tracks)
+        guard groups.count >= 2,
+              let sourceFolder = album.tracks.first?.track.fileURL.deletingLastPathComponent() else { return }
+
+        let alert = NSAlert()
+        alert.messageText = "Split “\(sourceFolder.lastPathComponent)”"
+        alert.informativeText = "Move one format into its own folder next to the current one. It becomes a separate version you can then group."
+
+        let popup = NSPopUpButton(frame: NSRect(x: 0, y: 34, width: 280, height: 25))
+        for group in groups {
+            popup.addItem(withTitle: "\(group.codec) — \(group.tracks.count) track\(group.tracks.count == 1 ? "" : "s")")
+        }
+        // The smallest bucket is usually the odd one out — the likeliest split.
+        popup.selectItem(at: groups.count - 1)
+        let nameField = NSTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
+        nameField.stringValue = "\(sourceFolder.lastPathComponent) [\(groups[groups.count - 1].codec)]"
+        nameField.placeholderString = "New folder name"
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 280, height: 64))
+        container.addSubview(popup)
+        container.addSubview(nameField)
+        alert.accessoryView = container
+        alert.addButton(withTitle: "Split")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let chosen = groups[max(0, popup.indexOfSelectedItem)]
+        splitAlbumFolder(album, movingCodec: chosen.codec, folderName: nameField.stringValue)
+    }
+
+    /// Move every `movingCodec` file of `album` into a new sibling folder named
+    /// `folderName`, then rewrite crate references. All-or-nothing: a failure
+    /// mid-batch rolls the already-moved files back so the album never ends up
+    /// half-split.
+    func splitAlbumFolder(_ album: Album, movingCodec: String, folderName: String) {
+        let trimmed = folderName.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else {
+            appAlert = .error(title: "Folder Name Needed", message: "Type a name for the new folder.")
+            return
+        }
+        guard let sourceFolder = album.tracks.first?.track.fileURL.deletingLastPathComponent(),
+              let movers = AlbumFolderSplitter.codecGroups(for: album.tracks)
+                  .first(where: { $0.codec == movingCodec })?.tracks,
+              !movers.isEmpty else { return }
+
+        let destFolder = sourceFolder.deletingLastPathComponent()
+            .appendingPathComponent(trimmed, isDirectory: true)
+        guard destFolder.standardizedFileURL.path != sourceFolder.standardizedFileURL.path else {
+            appAlert = .error(title: "Same Folder", message: "The new folder name matches the current folder.")
+            return
+        }
+
+        let fm = FileManager.default
+        // Never overwrite audio: refuse if any destination file already exists.
+        if movers.contains(where: { fm.fileExists(atPath: destFolder.appendingPathComponent($0.track.fileURL.lastPathComponent).path) }) {
+            appAlert = .error(title: "Files Already There",
+                              message: "“\(trimmed)” already contains files with these names.")
+            return
+        }
+
+        do {
+            try fm.createDirectory(at: destFolder, withIntermediateDirectories: true)
+            var updated: [LoadedTrack] = []
+            var movedPairs: [(from: URL, to: URL)] = []
+            do {
+                for loaded in movers {
+                    let dest = destFolder.appendingPathComponent(loaded.track.fileURL.lastPathComponent)
+                    try fm.moveItem(at: loaded.track.fileURL, to: dest)
+                    movedPairs.append((loaded.track.fileURL, dest))
+                    updated.append(LoadedTrack(track: loaded.track.withFileURL(dest),
+                                               metadata: loaded.metadata,
+                                               recordMarkers: loaded.recordMarkers))
+                }
+            } catch {
+                for pair in movedPairs.reversed() { try? fm.moveItem(at: pair.to, to: pair.from) }
+                try? fm.removeItem(at: destFolder)
+                throw error
+            }
+            // ponytail: a sibling-folder move on the same volume is a rename per
+            // file — synchronous on the main actor is fine at album scale.
+            updateTrackURLsInIndex(updated)
+            selectSource(currentSource)
+            appAlert = .info(title: "Folder Split",
+                             message: "Moved \(updated.count) \(movingCodec) file\(updated.count == 1 ? "" : "s") to “\(trimmed)”. It now shows as its own version — select both and Group to link them.")
+        } catch {
+            appAlert = .error(title: "Split Failed",
+                              message: "Could not split the folder: \(error.localizedDescription)\nEverything was left as it was.")
         }
     }
 
@@ -194,6 +296,9 @@ extension LibraryViewModel {
 
     private func albumForKey(_ key: AlbumFolderKey) -> Album? {
         index.allAlbums.first { album in
+            if let built = (album.isVersionGroup ? album.versions?.first?.folderKey : album.folderKey) {
+                return built == key
+            }
             guard let t = (album.isVersionGroup ? album.versions?.first?.tracks.first : album.tracks.first)
             else { return false }
             return versionPlanner.albumFolderKey(for: t) == key

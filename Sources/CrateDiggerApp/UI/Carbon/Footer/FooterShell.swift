@@ -2,9 +2,10 @@ import SwiftUI
 
 struct FooterShell: View {
     @Environment(\.carbon) private var theme
+    @Environment(\.carbonGeometry) private var geometry
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: CarbonLayout.wellCornerRadius, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: geometry.wellCornerRadius, style: .continuous)
         ZStack {
             shape
                 .fill(theme.chassis) // opaque, not Material — see ChassisLayer

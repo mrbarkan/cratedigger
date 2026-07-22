@@ -9,10 +9,10 @@ enum PatchBaySwitchSize {
     /// Full-text rocker labels (SOURCE, FLAT, TEMPLATE, ALBUM, etc.).
     case medium
 
-    var minWidth: CGFloat {
+    func minWidth(in geometry: CarbonGeometry) -> CGFloat {
         switch self {
-        case .small:  return CarbonLayout.patchBayKeyMinWidthSmall
-        case .medium: return CarbonLayout.patchBayKeyMinWidthMedium
+        case .small:  return geometry.patchBayKeyMinWidthSmall
+        case .medium: return geometry.patchBayKeyMinWidthMedium
         }
     }
 }
@@ -24,6 +24,7 @@ enum PatchBaySwitchSize {
 /// fallback to detect overflow.
 struct PatchBaySwitch: View {
     @Environment(\.carbon) private var theme
+    @Environment(\.carbonGeometry) private var geometry
     let label: String
     var sub: String? = nil
     var on: Bool
@@ -44,8 +45,8 @@ struct PatchBaySwitch: View {
                     .padding(.top, 4)
                     .padding(.trailing, 5)
             }
-            .frame(minWidth: size.minWidth, maxWidth: size.minWidth)
-            .frame(height: CarbonLayout.patchBayKeyHeight)
+            .frame(minWidth: size.minWidth(in: geometry), maxWidth: size.minWidth(in: geometry))
+            .frame(height: geometry.patchBayKeyHeight)
             .opacity(disabled ? 0.45 : 1)
             .shadow(color: on ? theme.orange.opacity(0.30) : .clear, radius: 6, y: 0)
         }
@@ -174,6 +175,7 @@ struct PatchBayRecess: View {
 /// (wraps). Mirrors the header glass chrome so the patch bay stays coherent.
 struct PatchBayCycleButton<Item: Hashable>: View {
     @Environment(\.carbon) private var theme
+    @Environment(\.carbonGeometry) private var geometry
 
     let label: String
     let options: [Item]
@@ -191,7 +193,7 @@ struct PatchBayCycleButton<Item: Hashable>: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity)
-            .frame(height: CarbonLayout.patchBayCycleButtonHeight)
+            .frame(height: geometry.patchBayCycleButtonHeight)
             .background(ChromeChassis(theme: theme, cornerRadius: 7))
         }
         .buttonStyle(.carbonHover)

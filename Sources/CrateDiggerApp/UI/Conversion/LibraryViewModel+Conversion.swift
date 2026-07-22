@@ -30,10 +30,8 @@ extension LibraryViewModel {
 
         // A "send to device" hand-off owns the queue + destination for this run.
         let deviceTransfer = pendingDeviceConversion
-        let sourceTracks = tracksWithHydratedArtwork(
-            deviceTransfer?.tracks ?? tracksForBatchScope(selection.batchScope)
-        )
-        guard !sourceTracks.isEmpty else {
+        let queuedTracks = deviceTransfer?.tracks ?? tracksForBatchScope(selection.batchScope)
+        guard !queuedTracks.isEmpty else {
             appAlert = .info(
                 title: "Nothing to convert",
                 message: "No tracks matched the chosen scope. Load a folder, pick an album, then try again."
@@ -42,6 +40,8 @@ extension LibraryViewModel {
         }
 
         Task { @MainActor in
+            let sourceTracks = await tracksWithHydratedArtwork(queuedTracks)
+
             let destinationRoot: URL
             if let deviceTransfer {
                 destinationRoot = deviceTransfer.destinationRoot
@@ -74,7 +74,7 @@ extension LibraryViewModel {
                 reviewedFolders = reviewed
             }
 
-            let jobs = planConversionJobs(
+            var jobs = planConversionJobs(
                 tracks: sourceTracks,
                 preset: preset,
                 destinationRoot: destinationRoot,
@@ -82,6 +82,36 @@ extension LibraryViewModel {
                 templateConfig: templateConfig,
                 reviewedAlbumFolders: reviewedFolders
             )
+
+            // Version guard: a planned album folder that already holds audio
+            // NOT written by this batch is another pressing of the same
+            // release. Interleaving two rips in one folder corrupts both —
+            // never do it silently. metadataTemplate only: that's the mode
+            // with album folders (and folder-name overrides) to redirect.
+            if selection.folderStructureMode == .metadataTemplate {
+                let conflicts = versionFolderConflicts(jobs: jobs, tracks: sourceTracks)
+                if !conflicts.isEmpty {
+                    switch await presentVersionConflictPrompt(conflicts: conflicts, presentingFrom: host) {
+                    case .cancel:
+                        AppLog.conversion.notice("User cancelled at version-conflict prompt")
+                        return
+                    case .merge:
+                        break   // deliberate merge — the collision prompt below still guards file overwrites
+                    case .versionFolders:
+                        for conflict in conflicts {
+                            reviewedFolders[conflict.key] = nextAvailableVersionFolderName(for: conflict.existingFolder)
+                        }
+                        jobs = planConversionJobs(
+                            tracks: sourceTracks,
+                            preset: preset,
+                            destinationRoot: destinationRoot,
+                            folderMode: selection.folderStructureMode,
+                            templateConfig: templateConfig,
+                            reviewedAlbumFolders: reviewedFolders
+                        )
+                    }
+                }
+            }
 
             guard !jobs.isEmpty else {
                 appAlert = .info(
@@ -133,7 +163,7 @@ extension LibraryViewModel {
             // Persist the user's selection for next launch.
             prefs.saveLastConversionSelection(selection)
 
-            let report = await runConversionQueue(service: service, jobs: finalJobs, preset: preset)
+            let report = await runConversionQueue(service: service, jobs: finalJobs, preset: preset).report
             if let deviceTransfer {
                 // Remember any format/folder tweaks on the device profile, then
                 // restore the user's normal conversion selection.
@@ -164,6 +194,99 @@ extension LibraryViewModel {
         )
         profile.transferSettings = settings
         prefs.upsertExternalDeviceProfile(profile)
+    }
+
+    // MARK: - Version-folder conflicts (second pressing of an existing album)
+
+    struct VersionFolderConflict {
+        let key: AlbumFolderKey
+        let existingFolder: URL
+    }
+
+    private enum VersionConflictResolution { case versionFolders, merge, cancel }
+
+    /// Planned album folders that already contain audio files NOT written by
+    /// this batch — i.e. a different rip of the same release already lives
+    /// there. Keyed by tag-derived AlbumFolderKey so the folder-name override
+    /// (`reviewedAlbumFolders`) can redirect the whole album.
+    private func versionFolderConflicts(
+        jobs: [ConversionJob],
+        tracks: [LoadedTrack]
+    ) -> [VersionFolderConflict] {
+        let fileManager = FileManager.default
+        let planner = OutputPathPlanner()
+        let batchDestinations = Set(jobs.map { $0.destinationURL.standardizedFileURL.path })
+        let keyBySourcePath = Dictionary(
+            tracks.map { ($0.track.fileURL.path, planner.albumFolderKey(for: $0)) },
+            uniquingKeysWith: { first, _ in first }
+        )
+
+        var seenFolders = Set<String>()
+        var conflicts: [VersionFolderConflict] = []
+        for job in jobs {
+            let folder = job.destinationURL.deletingLastPathComponent().standardizedFileURL
+            guard seenFolders.insert(folder.path).inserted,
+                  let key = keyBySourcePath[job.sourceURL.path],
+                  fileManager.fileExists(atPath: folder.path),
+                  let contents = try? fileManager.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
+            else { continue }
+
+            let holdsForeignAudio = contents.contains { url in
+                LibraryScanService.defaultSupportedExtensions.contains(url.pathExtension.lowercased())
+                    && !batchDestinations.contains(url.standardizedFileURL.path)
+            }
+            if holdsForeignAudio {
+                conflicts.append(VersionFolderConflict(key: key, existingFolder: folder))
+            }
+        }
+        return conflicts
+    }
+
+    /// "1997 OK Computer" → "1997 OK Computer [2]", bumping until no folder
+    /// with that name exists beside the original.
+    private func nextAvailableVersionFolderName(for existingFolder: URL) -> String {
+        let base = existingFolder.lastPathComponent
+        let parent = existingFolder.deletingLastPathComponent()
+        var n = 2
+        while FileManager.default.fileExists(atPath: parent.appendingPathComponent("\(base) [\(n)]").path) {
+            n += 1
+        }
+        return "\(base) [\(n)]"
+    }
+
+    @MainActor
+    private func presentVersionConflictPrompt(
+        conflicts: [VersionFolderConflict],
+        presentingFrom host: NSViewController
+    ) async -> VersionConflictResolution {
+        await withCheckedContinuation { continuation in
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = conflicts.count == 1
+                ? "This album already exists in the destination"
+                : "\(conflicts.count) albums already exist in the destination"
+            let names = conflicts.prefix(4).map { $0.existingFolder.lastPathComponent }.joined(separator: "\n")
+            let more = conflicts.count > 4 ? "\n…and \(conflicts.count - 4) more" : ""
+            alert.informativeText = names + more
+                + "\n\nNew Version Folder keeps each rip separate (e.g. “Album [2]”), so the two versions never mix. Merge writes into the existing folder."
+            alert.addButton(withTitle: "New Version Folder")   // .alertFirstButtonReturn
+            alert.addButton(withTitle: "Merge Into Existing")   // .alertSecondButtonReturn
+            alert.addButton(withTitle: "Cancel")                // .alertThirdButtonReturn
+
+            let resolve: (NSApplication.ModalResponse) -> VersionConflictResolution = { response in
+                switch response {
+                case .alertFirstButtonReturn: return .versionFolders
+                case .alertSecondButtonReturn: return .merge
+                default: return .cancel
+                }
+            }
+
+            if let window = host.view.window {
+                alert.beginSheetModal(for: window) { continuation.resume(returning: resolve($0)) }
+            } else {
+                continuation.resume(returning: resolve(alert.runModal()))
+            }
+        }
     }
 
     private enum CollisionResolution { case skip, overwrite, cancel }
@@ -328,19 +451,29 @@ extension LibraryViewModel {
         return URL(fileURLWithPath: path)
     }
 
-    /// Refill embedded-artwork bytes that were dropped when tracks were decoded
-    /// from a `.cdlib` (the crate stores only the hash; the bytes live in the
-    /// `ArtworkStore`). Without this, re-embedding a compatible cover during
-    /// conversion/transfer fails with `couldNotDecodeImage` on empty data and
-    /// silently falls back to copying the source art stream.
+    /// Refill artwork bytes that were dropped when tracks were decoded from a
+    /// `.cdlib` (the crate stores only the hash). Without this, re-embedding a
+    /// compatible cover during conversion/transfer fails with
+    /// `couldNotDecodeImage` on empty data and silently falls back to copying
+    /// the source art stream.
+    ///
+    /// Bytes are re-read from each track's own file/folder when they aren't
+    /// cached in memory — the disk cache holds thumbnails, which must never be
+    /// re-embedded (see `ArtworkService.hydrated`).
     @MainActor
-    func tracksWithHydratedArtwork(_ tracks: [LoadedTrack]) -> [LoadedTrack] {
-        tracks.map { track in
-            guard let art = track.metadata.artwork, art.data.isEmpty else { return track }
+    func tracksWithHydratedArtwork(_ tracks: [LoadedTrack]) async -> [LoadedTrack] {
+        var hydrated: [LoadedTrack] = []
+        hydrated.reserveCapacity(tracks.count)
+        for track in tracks {
+            guard let art = track.metadata.artwork, art.data.isEmpty else {
+                hydrated.append(track)
+                continue
+            }
             var metadata = track.metadata
-            metadata.artwork = artworkService.hydrated(art)
-            return LoadedTrack(track: track.track, metadata: metadata, recordMarkers: track.recordMarkers)
+            metadata.artwork = await artworkService.hydrated(art, trackURL: track.track.fileURL)
+            hydrated.append(LoadedTrack(track: track.track, metadata: metadata, recordMarkers: track.recordMarkers))
         }
+        return hydrated
     }
 
     @MainActor
@@ -544,12 +677,19 @@ extension LibraryViewModel {
         return URL(fileURLWithPath: "/" + commonComponents.dropFirst().joined(separator: "/"))
     }
 
+    struct ConversionQueueOutcome {
+        let report: ConversionReport
+        /// Destination paths of jobs that completed — lets device-sync staging
+        /// record exactly which bakes are real.
+        let succeededDestinationPaths: Set<String>
+    }
+
     @MainActor
     func runConversionQueue(
         service: ConversionService,
         jobs: [ConversionJob],
         preset: ConversionPreset
-    ) async -> ConversionReport {
+    ) async -> ConversionQueueOutcome {
         let total = jobs.count
         oledView = .conversion
         conversionProgress = ConversionProgressSnapshot(
@@ -564,7 +704,7 @@ extension LibraryViewModel {
         activeConversionService = service
         defer { activeConversionService = nil }
 
-        let results: [ConversionExecutionResult] = await withCheckedContinuation { continuation in
+        let (results, succeededPaths): ([ConversionExecutionResult], Set<String>) = await withCheckedContinuation { continuation in
             let task = Task.detached(priority: .userInitiated) {
                 let queued = service.enqueue(jobs, preset: preset)
                 // Parallel workers finish in any order, so name the file that
@@ -587,7 +727,11 @@ extension LibraryViewModel {
                         AppLog.conversion.warning("Job warning: \(warning, privacy: .public)")
                     }
                 }
-                continuation.resume(returning: outcomes)
+                // Which destinations really landed — staging records only these.
+                let succeededIDs = Set(outcomes.filter { $0.status == .completed }.map(\.queuedID))
+                let paths = Set(queued.filter { succeededIDs.contains($0.id) }
+                    .map { $0.job.destinationURL.path })
+                continuation.resume(returning: (outcomes, paths))
             }
             self.conversionTask = task
         }
@@ -629,12 +773,15 @@ extension LibraryViewModel {
             tone = .warning
         }
         let details = formatConversionDetails(jobs: jobs, results: results)
-        return ConversionReport(
-            title: title,
-            statusLine: statusLine,
-            details: details,
-            tone: tone,
-            showsDetailsButton: !details.isEmpty
+        return ConversionQueueOutcome(
+            report: ConversionReport(
+                title: title,
+                statusLine: statusLine,
+                details: details,
+                tone: tone,
+                showsDetailsButton: !details.isEmpty
+            ),
+            succeededDestinationPaths: succeededPaths
         )
     }
 

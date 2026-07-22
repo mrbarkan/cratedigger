@@ -111,6 +111,76 @@ public enum MetadataNormalization {
         return nil
     }
 
+    /// Best-effort title from a filename: strip a leading track number and any
+    /// "Artist - " prefix, then tidy separators. Used only where the file has no
+    /// title tag at all — a guess good enough to *search* with, never something
+    /// written to a file without review.
+    public static func title(fromFilename name: String) -> String? {
+        var text = name.trimmingCharacters(in: .whitespaces)
+
+        // Leading track number: "03 - Song", "1-01. Song", "04_Song".
+        if let match = text.firstMatch(of: #/^\d{1,2}(?:[-.]\d{1,2})?\s*[-._)\s]\s*/#) {
+            text = String(text[match.range.upperBound...])
+        }
+        // "Artist - Song" → "Song". Only the FIRST dash splits, and only when
+        // both sides have substance, so "Song - Part 2" keeps its tail.
+        if let range = text.range(of: " - "), range.lowerBound != text.startIndex {
+            let tail = String(text[range.upperBound...]).trimmingCharacters(in: .whitespaces)
+            if !tail.isEmpty { text = tail }
+        }
+
+        text = text.replacingOccurrences(of: "_", with: " ")
+        text = text.split(separator: " ").joined(separator: " ")
+        return text.isEmpty ? nil : text
+    }
+
+    /// Artist / album / year inferred from an album folder name. Recognizes the
+    /// common rip layouts: "Artist - Album (1997)", "Album (1997)", "Album".
+    /// Every component is optional — an unparseable name yields all `nil` rather
+    /// than a wrong guess.
+    public static func albumFolderComponents(
+        _ folderName: String
+    ) -> (artist: String?, album: String?, year: Int?) {
+        var text = folderName.trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty else { return (nil, nil, nil) }
+
+        // Trailing "(1997)" / "[1997]" — a 4-digit run in the plausible range.
+        var year: Int?
+        if let match = text.firstMatch(of: #/[\(\[](\d{4})[\)\]]\s*$/#),
+           let parsed = Int(match.1), isPlausibleReleaseYear(parsed) {
+            year = parsed
+            text = String(text[text.startIndex..<match.range.lowerBound])
+                .trimmingCharacters(in: .whitespaces)
+        }
+
+        // Leading "1997 - " (year-first layouts).
+        if year == nil, let match = text.firstMatch(of: #/^(\d{4})\s*[-._]\s*/#),
+           let parsed = Int(match.1), isPlausibleReleaseYear(parsed) {
+            year = parsed
+            text = String(text[match.range.upperBound...]).trimmingCharacters(in: .whitespaces)
+        }
+
+        // "Artist - Album": first dash splits, both sides must have substance.
+        if let range = text.range(of: " - ") {
+            let artist = String(text[text.startIndex..<range.lowerBound]).trimmingCharacters(in: .whitespaces)
+            let album = String(text[range.upperBound...]).trimmingCharacters(in: .whitespaces)
+            if !artist.isEmpty, !album.isEmpty {
+                return (artist, album, year)
+            }
+        }
+
+        return (nil, text.isEmpty ? nil : text, year)
+    }
+
+    /// Recorded music starts around 1900 and nothing is released in the future,
+    /// so a "year" outside that window is part of the title — "Blade Runner
+    /// (2049)", "1984", "Blink-182 (1999)". The +1 leaves room for a pressing
+    /// dated to next year at the turn of a year.
+    private static func isPlausibleReleaseYear(_ year: Int) -> Bool {
+        let thisYear = Calendar(identifier: .gregorian).component(.year, from: Date())
+        return (1900...(thisYear + 1)).contains(year)
+    }
+
     private static func customTagPairs(from tags: [String: String]) -> [MetadataTagPair] {
         var results: [MetadataTagPair] = []
         results.reserveCapacity(tags.count)

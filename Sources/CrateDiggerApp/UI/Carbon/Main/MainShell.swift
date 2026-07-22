@@ -3,6 +3,7 @@ import SwiftUI
 
 struct MainShell: View {
     @Environment(\.carbon) private var theme
+    @Environment(\.carbonGeometry) private var geometry
     @EnvironmentObject private var model: LibraryViewModel
 
     private static let collapsedRailWidth: CGFloat = 36
@@ -12,7 +13,7 @@ struct MainShell: View {
         .spring(response: 0.36, dampingFraction: 0.92)
 
     var body: some View {
-        HStack(spacing: CarbonLayout.mainGap) {
+        HStack(spacing: geometry.mainGap) {
             sourcesSection
             browserSection
             inspectorSection
@@ -80,11 +81,11 @@ struct MainShell: View {
             }
         }
         .frame(maxWidth: sourcesMaxWidth, maxHeight: .infinity)
-        .clipShape(RoundedRectangle(cornerRadius: CarbonLayout.wellCornerRadius, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: geometry.wellCornerRadius, style: .continuous))
     }
 
     private var sourcesMaxWidth: CGFloat {
-        model.sourcesCollapsed ? Self.collapsedRailWidth : CarbonLayout.sidebarWidth
+        model.sourcesCollapsed ? Self.collapsedRailWidth : geometry.sidebarWidth
     }
 
     private var sourcesCollapsedSubtitle: String? {
@@ -131,7 +132,7 @@ struct MainShell: View {
             }
         }
         .frame(maxWidth: browserMaxWidth, maxHeight: .infinity)
-        .clipShape(RoundedRectangle(cornerRadius: CarbonLayout.wellCornerRadius, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: geometry.wellCornerRadius, style: .continuous))
     }
 
     /// Browser is at 200pt when condensed AND inspector is full (so inspector
@@ -171,7 +172,7 @@ struct MainShell: View {
             }
         }
         .frame(maxWidth: inspectorMaxWidth, maxHeight: .infinity)
-        .clipShape(RoundedRectangle(cornerRadius: CarbonLayout.wellCornerRadius, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: geometry.wellCornerRadius, style: .continuous))
     }
 
     /// Inspector has three target widths:
@@ -182,7 +183,7 @@ struct MainShell: View {
     private var inspectorMaxWidth: CGFloat {
         if model.inspectorCollapsed { return Self.collapsedRailWidth }
         if model.browserCollapsed   { return .infinity }
-        return CarbonLayout.inspectorWidth
+        return geometry.inspectorWidth
     }
 
     private var inspectorWellTitle: String {

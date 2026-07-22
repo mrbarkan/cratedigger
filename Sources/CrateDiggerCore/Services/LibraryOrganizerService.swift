@@ -202,29 +202,17 @@ public final class LibraryOrganizerService {
                 if !processedPairs.contains(pairKey) {
                     processedPairs.insert(pairKey)
                     copySupportingFiles(from: sourceDir, to: targetDir)
+                    writeAutoManifestIfMissing(in: targetDir)
                     uniqueSourceDirs.insert(sourceDir)
                 }
             }
 
-            // Create new LoadedTrack with updated URL
-            let updatedTrackInfo = AudioTrack(
-                id: track.track.id,
-                fileURL: uniqueTargetURL,
-                title: track.track.title,
-                artist: track.track.artist,
-                album: track.track.album,
-                durationSeconds: track.track.durationSeconds,
-                formatName: track.track.formatName,
-                bitrateKbps: track.track.bitrateKbps,
-                sampleRateHz: track.track.sampleRateHz,
-                year: track.track.year,
-                trackNumber: track.track.trackNumber,
-                artworkSource: track.track.artworkSource,
-                artworkHash: track.track.artworkHash,
-                artworkDimensions: track.track.artworkDimensions
-            )
-            // Preserve Record Divider markers (time-based, so valid after the move).
-            updatedTracks.append(LoadedTrack(track: updatedTrackInfo, metadata: track.metadata,
+            // Repoint at the new location via withFileURL so every tag field
+            // survives — a hand-rolled copy here once dropped disc numbers and
+            // collapsed multi-disc albums into "DISC 1" after a Prep Crate commit.
+            // Record Divider markers are time-based, so they stay valid too.
+            updatedTracks.append(LoadedTrack(track: track.track.withFileURL(uniqueTargetURL),
+                                             metadata: track.metadata,
                                              recordMarkers: track.recordMarkers))
 
             count += 1
@@ -283,6 +271,18 @@ public final class LibraryOrganizerService {
                 }
             }
         }
+    }
+
+    /// Freshly imported albums used to land with every image un-roled (AUTO),
+    /// which let an arbitrary booklet page become the album's face until the
+    /// user sorted the ART grid by hand. Classify once at import — filename
+    /// heuristics plus cover promotion — and persist the result. A manifest
+    /// that traveled with the files (it's a supporting file) is never touched.
+    private func writeAutoManifestIfMissing(in albumDir: URL) {
+        guard ArtworkManifest.load(from: albumDir) == nil else { return }
+        let images = AlbumArtCatalog.gatherImageURLs(in: albumDir, fileManager: fileManager)
+        guard !images.isEmpty else { return }
+        try? ArtworkManifest(roles: AlbumArtCatalog.autoClassify(imageURLs: images)).save(to: albumDir)
     }
 
     private func hasAnyAudioFiles(in dir: URL) -> Bool {

@@ -1,6 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 import CrateDiggerCore
+import CryptoKit
 
 struct ArtworkInspectorView: View {
     @Environment(\.carbon) private var theme
@@ -19,7 +20,24 @@ struct ArtworkInspectorView: View {
     /// The Save button only glows (and is worth pressing) once the user has
     /// actually changed something — found new artwork, or edited a role/format.
     @State private var isDirty = false
-    
+    /// The image awaiting a remove confirmation, if any.
+    @State private var pendingRemoval: URL? = nil
+
+    /// Grid order: role first (Main Cover → … → Ignore), then filename via
+    /// `localizedStandardCompare` so `booklet_2` precedes `booklet_10`.
+    ///
+    /// Kept separate from `imageURLs` on purpose: `imageURLs` keys the
+    /// thumbnail-loading `.task(id:)`, so reordering it on every role change
+    /// would reload every thumbnail in the grid.
+    private var orderedImageURLs: [URL] {
+        imageURLs.sorted { lhs, rhs in
+            let lRole = manifest.roles[lhs.lastPathComponent] ?? .auto
+            let rRole = manifest.roles[rhs.lastPathComponent] ?? .auto
+            if lRole.sortOrder != rRole.sortOrder { return lRole.sortOrder < rRole.sortOrder }
+            return lhs.lastPathComponent.localizedStandardCompare(rhs.lastPathComponent) == .orderedAscending
+        }
+    }
+
     private var mediaFormatLabel: String {
         switch manifest.mediaFormat {
         case .some(.cd):    return "CD"
@@ -83,48 +101,59 @@ struct ArtworkInspectorView: View {
                         .controlSize(.small)
                         .frame(maxWidth: .infinity)
                 } else {
-                    KeyButton(style: isDirty ? .selected : .normal, action: saveChanges) {
+                    // The device-safe setting lives here rather than in a row of
+                    // its own: it is a global preference whose only effect is on
+                    // this button's background embed step, so it belongs with the
+                    // action it modifies, not with the per-album art above.
+                    Menu {
+                        Toggle("Device-safe artwork (600px baseline JPEG)", isOn: $deviceCompatibleArt)
+                    } label: {
                         Text("SAVE")
                             .font(CarbonFont.mono(9, weight: .bold))
+                    } primaryAction: {
+                        saveChanges()
                     }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.visible)
                     .frame(maxWidth: .infinity)
                     .frame(height: 22)
+                    .background(ChromeChassis(theme: theme, cornerRadius: 6))
                     .disabled(!isDirty)
+                    .help("Saves artwork roles and format, and embeds the cover into every track on the album. Device-safe artwork embeds a downscaled baseline JPEG so Rockbox and legacy players can read it.")
                 }
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
 
-            HStack(spacing: 6) {
-                Toggle(isOn: $deviceCompatibleArt) {
-                    Text("Device-safe artwork (600px baseline JPEG)")
-                        .font(CarbonFont.mono(9, weight: .bold))
-                        .foregroundColor(theme.ink2)
-                }
-                .toggleStyle(.checkbox)
-                .help("Embeds a downscaled baseline-JPEG cover so Rockbox and legacy players can read it. Turn off to embed the full-resolution original for modern/desktop players.")
-                Spacer()
-            }
-            .padding(.horizontal, 14)
-            .padding(.bottom, 6)
-
             Divider().background(theme.isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.1))
 
             ScrollView {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 100, maximum: 120), spacing: 14)], spacing: 14) {
-                    ForEach(imageURLs, id: \.self) { url in
+                    ForEach(orderedImageURLs, id: \.self) { url in
                         VStack(spacing: 6) {
                             if let nsImage = thumbnails[url] {
-                                Image(nsImage: nsImage)
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fill)
-                                    .frame(width: 100, height: 100)
-                                    .clipped()
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 4)
-                                            .stroke(theme.isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.1), lineWidth: 1)
-                                    )
-                                    .cornerRadius(4)
+                                ZStack(alignment: .topTrailing) {
+                                    Image(nsImage: nsImage)
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fill)
+                                        .frame(width: 100, height: 100)
+                                        .clipped()
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 4)
+                                                .stroke(theme.isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.1), lineWidth: 1)
+                                        )
+                                        .cornerRadius(4)
+
+                                    Button(action: { pendingRemoval = url }) {
+                                        Image(systemName: "xmark.circle.fill")
+                                            .font(.system(size: 15))
+                                            .foregroundColor(.white)
+                                            .background(Circle().fill(Color.black.opacity(0.65)))
+                                    }
+                                    .buttonStyle(.plain)
+                                    .padding(4)
+                                    .help("Remove this image (moves it to the Trash)")
+                                }
                             } else {
                                 Rectangle()
                                     .fill(Color.gray.opacity(0.2))
@@ -143,14 +172,12 @@ struct ArtworkInspectorView: View {
                                     isDirty = true
                                 }
                             )) {
+                                ForEach(ArtworkRole.assignable, id: \.self) { role in
+                                    Text(role.displayName).tag(role)
+                                }
+                                Divider()
                                 Text("Auto").tag(ArtworkRole.auto)
                                 Text("Ignore").tag(ArtworkRole.ignore)
-                                Text("Main Cover").tag(ArtworkRole.cover)
-                                Text("Alt Cover").tag(ArtworkRole.altCover)
-                                Text("Back").tag(ArtworkRole.back)
-                                Text("Disc/Vinyl").tag(ArtworkRole.disc)
-                                Text("Inlay / Insert").tag(ArtworkRole.inlay)
-                                Text("Booklet Page").tag(ArtworkRole.bookletPage)
                             }
                             .labelsHidden()
                             .pickerStyle(.menu)
@@ -225,6 +252,19 @@ struct ArtworkInspectorView: View {
                 ArtworkSearchSheetView(album: album)
             }
         }
+        .alert(
+            "Remove “\(pendingRemoval?.lastPathComponent ?? "")”?",
+            isPresented: Binding(get: { pendingRemoval != nil }, set: { if !$0 { pendingRemoval = nil } }),
+            presenting: pendingRemoval
+        ) { url in
+            Button("Move to Trash", role: .destructive) {
+                removeArtwork(url)
+                pendingRemoval = nil
+            }
+            Button("Cancel", role: .cancel) { pendingRemoval = nil }
+        } message: { _ in
+            Text("The file moves to the Trash and is removed from this album's artwork.")
+        }
     }
     
     /// Manual upload only makes sense for albums backed by real files on disk.
@@ -274,6 +314,56 @@ struct ArtworkInspectorView: View {
         isDirty = true
     }
 
+    /// Move one artwork file to the Trash and forget it everywhere: the manifest's
+    /// three filename-keyed maps, and the thumbnail cache entry for its bytes.
+    ///
+    /// Trash rather than delete — this can be someone's only scan of a booklet page,
+    /// and there is no undo otherwise.
+    private func removeArtwork(_ url: URL) {
+        guard let album = album, let representative = album.tracks.first?.track.fileURL else { return }
+        let albumFolder = representative.deletingLastPathComponent()
+        let fileName = url.lastPathComponent
+
+        // Hash the bytes before trashing — afterwards they're unreadable, and the
+        // thumbnail cache is keyed by content hash.
+        let hash = (try? Data(contentsOf: url)).map { SHA256.hash(data: $0).compactMap { String(format: "%02x", $0) }.joined() }
+
+        do {
+            try FileManager.default.trashItem(at: url, resultingItemURL: nil)
+        } catch {
+            model.appAlert = .error(
+                title: "Couldn't remove artwork",
+                message: "“\(fileName)” could not be moved to the Trash: \(error.localizedDescription)"
+            )
+            return
+        }
+
+        // Drop the file from every map keyed by filename, else orphans accumulate.
+        manifest.roles[fileName] = nil
+        manifest.discSides?[fileName] = nil
+        manifest.discNumbers?[fileName] = nil
+        if manifest.discSides?.isEmpty == true { manifest.discSides = nil }
+        if manifest.discNumbers?.isEmpty == true { manifest.discNumbers = nil }
+
+        do {
+            try manifest.save(to: albumFolder)
+        } catch {
+            model.appAlert = .error(
+                title: "Artwork removed, but the manifest didn't save",
+                message: "“\(fileName)” is in the Trash, but its role couldn't be cleared: \(error.localizedDescription)"
+            )
+        }
+
+        if let hash { model.artworkService.removeCached(hash: hash) }
+
+        model.indexDiskCache.invalidate(
+            albumFolderPath: albumFolder.path,
+            filePaths: album.tracks.map { $0.track.fileURL.path }
+        )
+        loadManifest()
+        model.refreshLibrary()
+    }
+
     private func loadManifest() {
         guard let album = album, let representative = album.tracks.first?.track.fileURL else {
             imageURLs = []
@@ -306,16 +396,38 @@ struct ArtworkInspectorView: View {
     private func saveChanges() {
         guard let album = album, let representative = album.tracks.first?.track.fileURL else { return }
         isSaving = true
-        
+
         Task {
             let albumFolder = representative.deletingLastPathComponent()
-            
-            // 1. Save the manifest
-            try? manifest.save(to: albumFolder)
-            
+
+            do {
+                try manifest.save(to: albumFolder)
+            } catch {
+                // A read-only or full volume used to report "Artwork saved" and
+                // silently drop the edit. Keep isDirty so the work isn't lost.
+                await MainActor.run {
+                    isSaving = false
+                    model.appAlert = .error(
+                        title: "Couldn't save artwork",
+                        message: "Writing to “\(albumFolder.lastPathComponent)” failed: \(error.localizedDescription)"
+                    )
+                }
+                return
+            }
+
             await MainActor.run {
                 isSaving = false
                 isDirty = false
+                // This folder's manifest just changed on disk. refreshLibrary()
+                // rebuilds the indexes but reads per-folder booklet/mediaFormat
+                // info from the disk cache, so without this the rebuild reuses
+                // stale info for the folder we just edited (a FORMAT change
+                // wouldn't take until a full rescan). applyImportedArtwork does
+                // the same thing for the import path.
+                model.indexDiskCache.invalidate(
+                    albumFolderPath: albumFolder.path,
+                    filePaths: album.tracks.map { $0.track.fileURL.path }
+                )
                 model.refreshLibrary()
                 // Embed a compatible 600px baseline copy of the cover into each
                 // track in the BACKGROUND (keeping the full-res cover.jpg) — so the

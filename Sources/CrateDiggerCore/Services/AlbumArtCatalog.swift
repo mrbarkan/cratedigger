@@ -1,4 +1,5 @@
 import Foundation
+import ImageIO
 
 /// One page in the album artwork navigator. A page is usually one image file, but
 /// a `.tray` page composites a disc image over an inlay/tray-card image (the
@@ -7,6 +8,9 @@ import Foundation
 public struct ArtworkPage: Hashable, Sendable {
     public enum Kind: String, Sendable, Codable {
         case cover, bookletPage, inlay, tray, disc, back
+        /// Any of the extended package roles (spine, sleeve, sticker, matrix,
+        /// obi, poster, wrapped cover) — rendered as a plain zoomable page.
+        case other
     }
 
     public let kind: Kind
@@ -32,28 +36,25 @@ public enum AlbumArtCatalog {
     private static let imageExtensions: Set<String> = ["jpg", "jpeg", "png", "tiff", "webp", "gif", "bmp"]
 
     public static func pages(imageURLs: [URL], manifest: ArtworkManifest?) -> [ArtworkPage] {
-        var covers: [URL] = [], altCovers: [URL] = [], bookletPages: [URL] = [], inlays: [URL] = [], discs: [URL] = [], backs: [URL] = []
-
+        var byRole: [ArtworkRole: [URL]] = [:]
         for url in imageURLs {
-            switch classify(url, manifest: manifest) {
-            case .cover: covers.append(url)
-            case .altCover: altCovers.append(url)
-            case .bookletPage: bookletPages.append(url)
-            case .inlay: inlays.append(url)
-            case .disc: discs.append(url)
-            case .back: backs.append(url)
-            case .ignore: continue
-            }
+            let role = classify(url, manifest: manifest)
+            guard role != .ignore else { continue }
+            byRole[role, default: []].append(url)
         }
 
         let byName: (URL, URL) -> Bool = {
             $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending
         }
-        covers.sort(by: byName); altCovers.sort(by: byName); bookletPages.sort(by: byName)
-        inlays.sort(by: byName); discs.sort(by: byName); backs.sort(by: byName)
+        for role in byRole.keys { byRole[role]?.sort(by: byName) }
+
         // Alt covers are front pages too, but always AFTER the main cover —
         // "cover_alt.jpg" would otherwise filename-sort ahead of "cover.jpg".
-        covers += altCovers
+        let covers = (byRole[.cover] ?? []) + (byRole[.altCover] ?? [])
+        let bookletPages = byRole[.bookletPage] ?? []
+        let inlays = byRole[.inlay] ?? []
+        let discs = byRole[.disc] ?? []
+        let backs = byRole[.back] ?? []
 
         var pages: [ArtworkPage] = []
 
@@ -78,6 +79,15 @@ public enum AlbumArtCatalog {
         }
         for (i, url) in backs.enumerated() {
             pages.append(ArtworkPage(kind: .back, label: label("Back", i, backs.count), imageURL: url))
+        }
+        // The extended package roles close the sequence, in ART-grid order:
+        // spine, sleeve, matrix/runout, sticker, obi, poster, wrapped cover.
+        let extendedRoles: [ArtworkRole] = [.spine, .sleeve, .matrixRunout, .sticker, .obi, .poster, .wrapped]
+        for role in extendedRoles {
+            let urls = byRole[role] ?? []
+            for (i, url) in urls.enumerated() {
+                pages.append(ArtworkPage(kind: .other, label: label(role.displayName, i, urls.count), imageURL: url))
+            }
         }
         return pages
     }
@@ -113,36 +123,85 @@ public enum AlbumArtCatalog {
         count > 1 ? "\(base) \(index + 1)" : base
     }
 
-    private enum Bucket { case cover, altCover, bookletPage, inlay, disc, back, ignore }
+    // MARK: - Auto-classification (cover promotion)
+
+    /// Roles for a folder of images with no manifest: filename heuristics per
+    /// image, then — when nothing claims Cover — the likeliest front is
+    /// promoted so an album never leads with a random booklet page. Written
+    /// into the album folder's manifest on import (`LibraryOrganizerService`),
+    /// so the ART grid shows real roles instead of a wall of AUTO.
+    public static func autoClassify(
+        imageURLs: [URL],
+        pixelSize: (URL) -> (width: Int, height: Int)? = imagePixelSize
+    ) -> [String: ArtworkRole] {
+        var roles: [String: ArtworkRole] = [:]
+        for url in imageURLs {
+            roles[url.lastPathComponent] = classify(url, manifest: nil)
+        }
+        if !roles.values.contains(.cover),
+           let winner = likeliestCover(in: imageURLs.filter { roles[$0.lastPathComponent] == .bookletPage },
+                                       pixelSize: pixelSize) {
+            roles[winner.lastPathComponent] = .cover
+        }
+        return roles
+    }
+
+    /// The best front-cover guess among unlabeled pages: square-ish images
+    /// first (covers are square; booklet spreads are wide), natural filename
+    /// order breaking the tie — scan sets almost always lead with the front.
+    public static func likeliestCover(
+        in urls: [URL],
+        pixelSize: (URL) -> (width: Int, height: Int)? = imagePixelSize
+    ) -> URL? {
+        let sorted = urls.sorted {
+            $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending
+        }
+        let squarish = sorted.first { url in
+            guard let size = pixelSize(url), size.height > 0 else { return false }
+            let ratio = Double(size.width) / Double(size.height)
+            return abs(ratio - 1.0) <= 0.15
+        }
+        return squarish ?? sorted.first
+    }
+
+    /// Header-only pixel-dimensions sniff — no image decode.
+    public static func imagePixelSize(at url: URL) -> (width: Int, height: Int)? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL,
+                                                      [kCGImageSourceShouldCache: false] as CFDictionary),
+              let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = props[kCGImagePropertyPixelWidth] as? Int,
+              let height = props[kCGImagePropertyPixelHeight] as? Int else { return nil }
+        return (width, height)
+    }
 
     /// Manifest role wins; otherwise fall back to the same filename heuristics the
-    /// booklet sorter uses. Order matters: inlay/back are checked before the more
-    /// generic "cover"/"disc" keywords so "back cover" and "inside cover" land
-    /// correctly.
-    private static func classify(_ url: URL, manifest: ArtworkManifest?) -> Bucket {
+    /// booklet sorter uses. Order matters: the specific package parts (inlay,
+    /// matrix, obi, spine…) are checked before the generic "cover"/"disc"
+    /// keywords so "back cover", "matrix disc 1", and "inside cover" land
+    /// correctly; "sleeve" is checked *after* front/back so "sleeve front.jpg"
+    /// reads as a cover scan while a bare "inner sleeve.jpg" stays a sleeve.
+    static func classify(_ url: URL, manifest: ArtworkManifest?) -> ArtworkRole {
         let name = url.lastPathComponent
         if let role = manifest?.roles[name], role != .auto {
-            switch role {
-            case .cover: return .cover
-            case .altCover: return .altCover
-            case .back: return .back
-            case .disc: return .disc
-            case .inlay: return .inlay
-            case .bookletPage: return .bookletPage
-            case .ignore: return .ignore
-            case .auto: break
-            }
+            return role
         }
 
         let n = name.lowercased()
         if n.contains("inlay") || n.contains("inlet") || n.contains("tray") || n.contains("insert") || n.contains("inside") {
             return .inlay
         }
+        if n.contains("matrix") || n.contains("runout") { return .matrixRunout }
+        if n.contains("obi") { return .obi }
+        if n.contains("spine") { return .spine }
+        if n.contains("sticker") || n.contains("hype") { return .sticker }
+        if n.contains("poster") { return .poster }
+        if n.contains("wrap") || n.contains("shrink") || n.contains("seal") { return .wrapped }
         if n.contains("back") || n.contains("rear") { return .back }
         if n.contains("cd") || n.contains("disc") || n.contains("disk") || n.contains("label") || n.contains("media") || n.contains("vinyl") || n.contains("dvd") {
             return .disc
         }
         if n.contains("front") || n.contains("cover") || n == "folder" || n == "external" { return .cover }
+        if n.contains("sleeve") { return .sleeve }
         return .bookletPage
     }
 }

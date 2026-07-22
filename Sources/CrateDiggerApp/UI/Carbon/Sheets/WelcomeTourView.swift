@@ -420,6 +420,7 @@ private struct TourArtConvert: View {
 /// `PlayDomeButton`, just non-interactive).
 private struct TourArtPlay: View {
     @Environment(\.carbon) private var theme
+    @Environment(\.carbonGeometry) private var geometry
     @State private var spinning = false
 
     var body: some View {
@@ -481,8 +482,8 @@ private struct TourArtPlay: View {
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(theme.ink2)
         }
-        .frame(width: CarbonLayout.transportButtonSize * 0.8,
-               height: CarbonLayout.transportButtonSize * 0.8)
+        .frame(width: geometry.transportButtonSize * 0.8,
+               height: geometry.transportButtonSize * 0.8)
     }
 
     /// Mirror of PlayDomeButton's dome, at 80% footer scale.
@@ -515,7 +516,7 @@ private struct TourArtPlay: View {
                 .font(.system(size: 21, weight: .black))
                 .foregroundStyle(Color.white)
         }
-        .frame(width: CarbonLayout.playButtonSize * 0.8,
-               height: CarbonLayout.playButtonSize * 0.8)
+        .frame(width: geometry.playButtonSize * 0.8,
+               height: geometry.playButtonSize * 0.8)
     }
 }

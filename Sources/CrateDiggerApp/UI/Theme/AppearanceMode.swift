@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
 
-public enum AppearanceMode: String, Codable, CaseIterable, Sendable {
+public enum AppearanceMode: String, Codable, CaseIterable, Sendable, Hashable {
     case light
     case dark
     case system

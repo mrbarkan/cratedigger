@@ -50,8 +50,11 @@ public enum VersionDistinguisher {
     private static let edgeSeparators =
         CharacterSet(charactersIn: " ()[]{}-–—:·,/|").union(.whitespacesAndNewlines)
 
+    /// Case-insensitive: "Riot on an Empty Street" / "Riot On An Empty Street"
+    /// is one title with inconsistent casing, not a 5-character prefix. Returns
+    /// the matching span in `a`'s casing.
     private static func longestCommonPrefix(_ a: String, _ b: String) -> String {
-        String(zip(a, b).prefix { $0.0 == $0.1 }.map(\.0))
+        String(zip(a, b).prefix { String($0.0).lowercased() == String($0.1).lowercased() }.map(\.0))
     }
 
     /// The portion of `title` following the common `base`, stripped of wrapping

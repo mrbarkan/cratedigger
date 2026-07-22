@@ -88,22 +88,66 @@ public struct LibraryIndex: Sendable {
 
         let planner = OutputPathPlanner()
 
-        var groupsByKey: [AlbumFolderKey: [LoadedTrack]] = [:]
-        var insertionOrder: [AlbumFolderKey] = []
+        // Group by tag identity AND source folder: two same-tagged rips in
+        // different folders are different pressings, not one album. Disc-like
+        // subfolders (CD1, Disc 2) normalize to their parent so a multi-disc
+        // album stored as subfolders never splits into fake versions.
+        struct BuildKey: Hashable {
+            let tagKey: AlbumFolderKey
+            let folder: String
+        }
+        var groupsByKey: [BuildKey: [LoadedTrack]] = [:]
+        var buildOrder: [BuildKey] = []
         for track in loaded {
-            let key = planner.albumFolderKey(for: track)
+            let key = BuildKey(
+                tagKey: planner.albumFolderKey(for: track),
+                folder: versionSourceFolder(for: track)
+            )
             if groupsByKey[key] == nil {
-                insertionOrder.append(key)
+                buildOrder.append(key)
             }
             groupsByKey[key, default: []].append(track)
+        }
+
+        // Same tag identity across several folders → assign each folder a
+        // discriminator so every pressing is a distinct album. The first folder
+        // (sorted, for determinism across rescans) keeps discriminator nil, so
+        // single-copy libraries — and every AlbumFolderKey persisted before this
+        // existed — keep their classic identity.
+        var foldersByTagKey: [AlbumFolderKey: [String]] = [:]
+        for key in buildOrder {
+            foldersByTagKey[key.tagKey, default: []].append(key.folder)
+        }
+        var discriminatorByBuildKey: [BuildKey: String?] = [:]
+        for (tagKey, folders) in foldersByTagKey {
+            let sorted = folders.sorted()
+            for (position, folder) in sorted.enumerated() {
+                let label: String?
+                if position == 0 {
+                    label = nil
+                } else {
+                    let name = URL(fileURLWithPath: folder).lastPathComponent
+                    label = name.isEmpty ? "v\(position + 1)" : "\(name) · v\(position + 1)"
+                }
+                discriminatorByBuildKey[BuildKey(tagKey: tagKey, folder: folder)] = label
+            }
+        }
+
+        var insertionOrder: [AlbumFolderKey] = []
+        var tracksByFullKey: [AlbumFolderKey: [LoadedTrack]] = [:]
+        for buildKey in buildOrder {
+            let fullKey = buildKey.tagKey.discriminated(discriminatorByBuildKey[buildKey] ?? nil)
+            insertionOrder.append(fullKey)
+            tracksByFullKey[fullKey] = groupsByKey[buildKey]
         }
 
         var albumsByArtistID: [String: [Album]] = [:]
         var artistDisplayName: [String: String] = [:]
         var albumByKey: [AlbumFolderKey: Album] = [:]
+        var albumIDUses: [String: Int] = [:]
 
         for key in insertionOrder {
-            guard let tracks = groupsByKey[key], let representative = tracks.first else { continue }
+            guard let tracks = tracksByFullKey[key], let representative = tracks.first else { continue }
 
             let artistName = key.artistBucket
             let artistID = normalizedID(artistName)
@@ -111,7 +155,17 @@ public struct LibraryIndex: Sendable {
 
             let albumTitle = key.album
             let year = parseYear(key.year)
-            let albumID = "\(artistID)::\(normalizedID(albumTitle))::\(key.year)"
+            var albumID = "\(artistID)::\(normalizedID(albumTitle))::\(key.year)"
+            if let discriminator = key.discriminator {
+                albumID += "::\(normalizedID(discriminator))"
+            }
+            // Two distinct albums must never share an id — titles differing only
+            // by case normalize identically, and SwiftUI ForEach renders a
+            // duplicated id as one real row plus a blank ghost row (and matches
+            // selection against both). Suffix any repeat to keep ids unique.
+            let uses = (albumIDUses[albumID] ?? 0) + 1
+            albumIDUses[albumID] = uses
+            if uses > 1 { albumID += "::\(uses)" }
 
             let sortedTracks = sortTracks(tracks)
             let artworkHash = sortedTracks
@@ -145,7 +199,8 @@ public struct LibraryIndex: Sendable {
                 artworkHash: artworkHash,
                 tracks: sortedTracks,
                 booklet: booklet,
-                mediaFormat: mediaFormat
+                mediaFormat: mediaFormat,
+                folderKey: key
             )
 
             albumByKey[key] = album
@@ -416,6 +471,30 @@ public struct LibraryIndex: Sendable {
 
     private static func isUnknownArtist(_ name: String) -> Bool {
         name.localizedCaseInsensitiveCompare("Unknown Artist") == .orderedSame
+    }
+
+    /// The source folder that defines which *pressing* a track belongs to: its
+    /// parent directory, with disc-like folder names (CD1, Disc 2, DISK03, D1)
+    /// normalized up to THEIR parent so a multi-disc album stored as subfolders
+    /// stays one album. Empty for non-file URLs (remote/streaming tracks are
+    /// never folder-split).
+    static func versionSourceFolder(for track: LoadedTrack) -> String {
+        guard track.track.fileURL.isFileURL else { return "" }
+        var folder = track.track.fileURL.deletingLastPathComponent()
+        if isDiscFolderName(folder.lastPathComponent) {
+            folder = folder.deletingLastPathComponent()
+        }
+        return folder.standardizedFileURL.path
+    }
+
+    /// "CD1", "cd 2", "Disc 3", "DISK-04", "D2" — with or without separator.
+    private static let discFolderPattern = try! NSRegularExpression(
+        pattern: #"^(cd|disc|disk|d)[ ._-]*\d{1,3}$"#, options: [.caseInsensitive]
+    )
+
+    private static func isDiscFolderName(_ name: String) -> Bool {
+        let range = NSRange(name.startIndex..., in: name)
+        return discFolderPattern.firstMatch(in: name, options: [], range: range) != nil
     }
 
     private static func parseYear(_ raw: String) -> Int? {

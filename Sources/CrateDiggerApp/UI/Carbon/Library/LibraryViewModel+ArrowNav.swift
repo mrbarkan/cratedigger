@@ -33,6 +33,18 @@ extension LibraryViewModel {
         // Arrows always carry .function/.numericPad, so those are not "modifiers".
         guard event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty,
               isBrowserKeyContext() else { return false }
+
+        // The gallery is a grid, not columns: ←/→ step one cover, ↑/↓ a whole row.
+        if showArtworkGallery {
+            switch event.keyCode {
+            case 126: moveGallerySelection(by: -galleryColumnsPerRow); return true  // up
+            case 125: moveGallerySelection(by:  galleryColumnsPerRow); return true  // down
+            case 123: moveGallerySelection(by: -1); return true                     // left
+            case 124: moveGallerySelection(by:  1); return true                     // right
+            default:  return false
+            }
+        }
+
         switch event.keyCode {
         case 126: moveBrowserSelection(by: -1); return true   // up
         case 125: moveBrowserSelection(by:  1); return true   // down
@@ -40,6 +52,16 @@ extension LibraryViewModel {
         case 124: moveBrowserFocus(by:  1);     return true   // right
         default:  return false
         }
+    }
+
+    /// Step the gallery selection through `allAlbumsSorted`, clamped at both ends.
+    /// `delta` is ±1 for a cover or ±`galleryColumnsPerRow` for a row.
+    func moveGallerySelection(by delta: Int) {
+        let items = allAlbumsSorted
+        guard !items.isEmpty else { return }
+        let current = selectedAlbumID.flatMap { id in items.firstIndex { $0.id == id } } ?? 0
+        let next = items[min(max(current + delta, 0), items.count - 1)]
+        selectAlbum(next, command: false, shift: false, ordered: items, flat: true)
     }
 
     /// True when the main window is key (not a sheet, the mini-player, or the

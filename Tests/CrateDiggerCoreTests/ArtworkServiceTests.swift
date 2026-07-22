@@ -156,5 +156,20 @@ final class ArtworkServiceTests: XCTestCase {
         XCTAssertEqual(same.hash, asset.hash)
         XCTAssertEqual(same.data, asset.data)
     }
+
+    func testRemoveCachedDropsTheStoredThumbnail() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let store = ArtworkStore(directory: directory)
+        let service = ArtworkService(store: store)
+        store.put(Data("stored-bytes".utf8), for: "cafebabe")
+        XCTAssertTrue(store.contains("cafebabe"))
+
+        service.removeCached(hash: "cafebabe")
+
+        XCTAssertFalse(store.contains("cafebabe"))
+    }
 }
 #endif

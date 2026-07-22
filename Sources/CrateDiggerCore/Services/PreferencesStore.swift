@@ -23,6 +23,7 @@ public final class PreferencesStore {
         static let customFFmpegPath = "cratedigger.tools.ffmpegPath"
         static let customFFprobePath = "cratedigger.tools.ffprobePath"
         static let oledView = "cratedigger.ui.oledView"
+        static let collapsedSourceSections = "cratedigger.sidebar.collapsedSections"
         static let shuffleEnabled = "cratedigger.playback.shuffle"
         static let repeatMode = "cratedigger.playback.repeatMode"
         static let playbackVolume = "cratedigger.playback.volume"
@@ -41,6 +42,8 @@ public final class PreferencesStore {
         static let managedLibraryFolderBookmark = "cratedigger.library.managedFolderBookmark"
         static let copyOnImport = "cratedigger.library.copyOnImport"
         static let deleteOriginalsAfterCopy = "cratedigger.library.deleteOriginalsAfterCopy"
+        static let duplicateScanMode = "cratedigger.cleanup.duplicateScanMode"
+        static let duplicateIgnoreSignatures = "cratedigger.cleanup.duplicateIgnoreSignatures"
         static let organiseByAlbumArtist = "cratedigger.library.organiseByAlbumArtist"
         static let keepLibraryOrganised = "cratedigger.library.keepLibraryOrganised"
         static let cratesIndexFolderBookmark = "cratedigger.library.cratesIndexFolderBookmark"
@@ -62,6 +65,7 @@ public final class PreferencesStore {
         static let streamEngine = "cratedigger.radio.engine"
         static let customYtDlpPath = "cratedigger.tools.ytdlpPath"
         static let albumGroups = "cratedigger.library.albumGroups"
+        static let selectedThemeID = "cratedigger.ui.selectedThemeID"
     }
 
     // MARK: - Window frame
@@ -117,6 +121,18 @@ public final class PreferencesStore {
     public var deleteOriginalsAfterCopy: Bool {
         get { defaults.bool(forKey: Key.deleteOriginalsAfterCopy) }
         set { defaults.set(newValue, forKey: Key.deleteOriginalsAfterCopy) }
+    }
+
+    /// Last-used duplicate scan mode ("strict" / "broad"); nil → strict.
+    public var duplicateScanMode: String? {
+        get { defaults.string(forKey: Key.duplicateScanMode) }
+        set { defaults.set(newValue, forKey: Key.duplicateScanMode) }
+    }
+
+    /// Signatures of duplicate groups the user marked "not a duplicate".
+    public var duplicateIgnoreSignatures: [String] {
+        get { defaults.stringArray(forKey: Key.duplicateIgnoreSignatures) ?? [] }
+        set { defaults.set(newValue, forKey: Key.duplicateIgnoreSignatures) }
     }
 
     public var organiseByAlbumArtist: Bool {
@@ -200,6 +216,29 @@ public final class PreferencesStore {
     /// re-filter without waiting for a mount event.
     public static let deviceProfilesDidChange = Notification.Name("CrateDiggerDeviceProfilesChanged")
 
+    // MARK: - Theming
+
+    /// The active 3rd-party/installed theme's stable id, or `nil` to follow
+    /// the built-in light/dark/system pairing (today's exact behavior — see
+    /// `CarbonThemed`). Picking a specific theme is picking its declared
+    /// appearance too, same as choosing a Winamp skin.
+    public var selectedThemeID: String? {
+        get { defaults.string(forKey: Key.selectedThemeID) }
+        set {
+            if let value = newValue {
+                defaults.set(value, forKey: Key.selectedThemeID)
+            } else {
+                defaults.removeObject(forKey: Key.selectedThemeID)
+            }
+            NotificationCenter.default.post(name: Self.themesDidChange, object: nil)
+        }
+    }
+
+    /// Posted when the selected theme changes, or a manual re-scan of the
+    /// themes folder completes, so `CarbonThemed` and the theme picker
+    /// refresh without polling.
+    public static let themesDidChange = Notification.Name("CrateDiggerThemesChanged")
+
     // MARK: - Last-used conversion selection
 
     public func savedLastConversionSelection<T: Decodable>(as type: T.Type) -> T? {
@@ -253,6 +292,12 @@ public final class PreferencesStore {
     public var savedShuffleEnabled: Bool {
         get { defaults.bool(forKey: Key.shuffleEnabled) }
         set { defaults.set(newValue, forKey: Key.shuffleEnabled) }
+    }
+
+    /// Sources-sidebar section titles the user has collapsed (chevron toggles).
+    public var collapsedSourceSections: [String] {
+        get { defaults.stringArray(forKey: Key.collapsedSourceSections) ?? [] }
+        set { defaults.set(newValue, forKey: Key.collapsedSourceSections) }
     }
 
     public var savedRepeatMode: String? {

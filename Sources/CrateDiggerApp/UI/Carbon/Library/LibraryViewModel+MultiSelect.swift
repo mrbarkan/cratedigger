@@ -95,6 +95,14 @@ extension LibraryViewModel {
     /// same files through `selectedTracksForCrateAdd()`. When a text field is editing,
     /// the field editor handles Select All first, so this isn't reached.
     func selectAllInSource() {
+        // The gallery is a bool that overlays the browser, not a BrowserLayout
+        // case — so without this, ⌘A in gallery mode selected whatever the
+        // hidden list browser was showing (often tracks, which the gallery
+        // cannot draw).
+        if showArtworkGallery {
+            selectAllAlbums()
+            return
+        }
         switch browserLayout {
         case .full, .albumTrack: selectAllAlbums()
         case .track:             selectAllTracks()

@@ -3,12 +3,25 @@ import SwiftUI
 
 // MARK: - Shared OLED palette
 
-/// The OLED foreground family (#F5F1E6) and helpers. Everything on the glass is
-/// drawn from this + the Carbon accents (orange/sun/cyan/indigo/red).
-let oledFG = Color(red: 0.961, green: 0.945, blue: 0.902)
+/// The OLED foreground family (#F5F1E6 by default) and helpers. Everything on
+/// the glass is drawn from this + the Carbon accents (orange/sun/cyan/indigo/red).
+///
+/// The values live in `ActiveOLEDPalette`, written by `CarbonThemed.body` from
+/// the active theme's `oledForeground`/`oledForegroundMuted`/`onAir` tokens
+/// (same idempotent-global pattern as `ActiveThemeFonts`). The ~50 call sites
+/// in this file default-parameter off these computed globals; default
+/// parameters are evaluated per call and every pane re-renders when the theme
+/// environment changes, so theme overrides propagate live without threading
+/// `theme` through each call.
+enum ActiveOLEDPalette {
+    static var foreground = Color(red: 0.961, green: 0.945, blue: 0.902)
+    static var muted = Color.white.opacity(0.55)
+    static var onAir = Color(red: 1.0, green: 0.357, blue: 0.29)   // #ff5b4a
+}
+var oledFG: Color { ActiveOLEDPalette.foreground }
 func oledFGo(_ opacity: Double) -> Color { oledFG.opacity(opacity) }
-private let oledMuted = Color.white.opacity(0.55)
-private let onAirRed = Color(red: 1.0, green: 0.357, blue: 0.29)   // #ff5b4a
+private var oledMuted: Color { ActiveOLEDPalette.muted }
+private var onAirRed: Color { ActiveOLEDPalette.onAir }
 
 // MARK: - OLED display (one glass, three permanent zones)
 
@@ -18,6 +31,7 @@ private let onAirRed = Color(red: 1.0, green: 0.357, blue: 0.29)   // #ff5b4a
 /// Everything on the glass *snaps* between views — no crossfades.
 struct OLEDDisplay: View {
     @Environment(\.carbon) private var theme
+    @Environment(\.carbonGeometry) private var geometry
     @EnvironmentObject private var model: LibraryViewModel
 
     var body: some View {
@@ -32,19 +46,19 @@ struct OLEDDisplay: View {
             .padding(.horizontal, 18)
             .padding(.bottom, 10)
         }
-        .clipShape(RoundedRectangle(cornerRadius: CarbonLayout.oledCornerRadius, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: geometry.oledCornerRadius, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: CarbonLayout.oledCornerRadius, style: .continuous)
+            RoundedRectangle(cornerRadius: geometry.oledCornerRadius, style: .continuous)
                 .strokeBorder(Color.white.opacity(theme.isDark ? 0.08 : 0.22), lineWidth: 1)
         )
         .compositingGroup()
     }
 
     private var background: some View {
-        RoundedRectangle(cornerRadius: CarbonLayout.oledCornerRadius, style: .continuous)
+        RoundedRectangle(cornerRadius: geometry.oledCornerRadius, style: .continuous)
             .fill(theme.oledSurface)
             .overlay(
-                RoundedRectangle(cornerRadius: CarbonLayout.oledCornerRadius, style: .continuous)
+                RoundedRectangle(cornerRadius: geometry.oledCornerRadius, style: .continuous)
                     .strokeBorder(theme.oledStrokeInner, lineWidth: 2)
             )
             .overlay(
@@ -58,12 +72,12 @@ struct OLEDDisplay: View {
                     endPoint: .bottomTrailing
                 )
             )
-            .scanlines(opacity: 0.018)
+            .scanlines(opacity: theme.oledScanlineOpacity)
             .shadow(color: Color.black.opacity(0.5), radius: 6, y: 4)
     }
 }
 
-/// The context zone — the seven panes swap inside a fixed frame. A plain switch
+/// The context zone — the six panes swap inside a fixed frame. A plain switch
 /// with no animation → the glass snaps like a real FL display.
 private struct DisplayContext: View {
     @EnvironmentObject private var model: LibraryViewModel
@@ -72,7 +86,6 @@ private struct DisplayContext: View {
         ZStack {
             switch model.oledView {
             case .nowPlaying:  NowPlayingPane()
-            case .vu:          VUPane(clock: model.playbackClock)
             case .conversion:  ConversionPane()
             case .scan:        ScanPane()
             case .remoteSync:  RemoteSyncPane()
@@ -95,16 +108,17 @@ private struct DisplayRail: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            // Annunciators — every mode permanently printed on the glass.
+            // Annunciators — every mode permanently printed on the glass, each
+            // lit in its own accent (the same color the display-toggle strip
+            // glows — see OLEDView.accent).
             HStack(spacing: 12) {
-                ann("NOW", lit: v == .nowPlaying, color: theme.orange)
-                ann("VU", lit: v == .vu, color: theme.cyan)
-                ann("CNVRT", lit: v == .conversion, color: theme.red)
-                ann("SCAN", lit: v == .scan, color: theme.sun)
-                ann("SYNC", lit: v == .remoteSync, color: theme.indigo)
-                ann("CD", lit: v == .cdRip, color: theme.orange)
-                ann("DEV", lit: v == .devices, color: theme.cyan)
-                ann("ON AIR", lit: radioLive, color: onAirRed, pulse: true)
+                ann("NOW", lit: v == .nowPlaying, color: OLEDView.nowPlaying.accent(theme))
+                ann("CNVRT", lit: v == .conversion, color: OLEDView.conversion.accent(theme))
+                ann("SCAN", lit: v == .scan, color: OLEDView.scan.accent(theme))
+                ann("SYNC", lit: v == .remoteSync, color: OLEDView.remoteSync.accent(theme))
+                ann("CD", lit: v == .cdRip, color: OLEDView.cdRip.accent(theme))
+                ann("DEV", lit: v == .devices, color: OLEDView.devices.accent(theme))
+                ann("ON AIR", lit: radioLive, color: onAirRed, pulse: onAirPulse)
             }
 
             Spacer(minLength: 12)
@@ -132,11 +146,22 @@ private struct DisplayRail: View {
         )
     }
 
+    /// ON AIR animation: fast flash while a stream is buffering, slow breathe
+    /// while it's actually on the air, steady when radio is merely selected.
+    private var onAirPulse: AnnPulse {
+        guard radioLive else { return .none }
+        switch model.playbackState {
+        case .loading: return .flash
+        case .playing: return .breathe
+        default:       return .none
+        }
+    }
+
     /// One printed annunciator segment: ghost when inactive, lit (color + glow)
     /// when its view is active. Segments snap — no fade.
-    private func ann(_ label: String, lit: Bool, color: Color, pulse: Bool = false) -> some View {
+    private func ann(_ label: String, lit: Bool, color: Color, pulse: AnnPulse = .none) -> some View {
         HStack(spacing: 5) {
-            AnnDot(lit: lit, color: color, pulse: pulse)
+            AnnDot(lit: lit, color: color)
             Text(label)
                 .font(CarbonFont.mono(8, weight: .bold))
                 .tracking(1.6)
@@ -144,32 +169,53 @@ private struct DisplayRail: View {
                 .shadow(color: lit ? color.opacity(0.55) : .clear, radius: lit ? 7 : 0)
         }
         .fixedSize()
+        .modifier(AnnBlink(mode: lit ? pulse : .none))
     }
 }
 
-/// The annunciator dot — 5px, ghost or lit; the ON-AIR dot pulses.
+/// How an annunciator animates: `.breathe` is the slow on-air pulse, `.flash`
+/// the fast attention blink used while a stream is still connecting.
+private enum AnnPulse { case none, breathe, flash }
+
+/// Opacity animation for a whole annunciator (dot + label). Restarts cleanly
+/// when the mode changes (loading → playing swaps flash for breathe).
+private struct AnnBlink: ViewModifier {
+    let mode: AnnPulse
+    @State private var dim = false
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(dim ? (mode == .flash ? 0.2 : 0.4) : 1.0)
+            .onAppear(perform: restart)
+            .onChange(of: mode) { _ in restart() }
+    }
+
+    private func restart() {
+        var still = Transaction()
+        still.disablesAnimations = true
+        withTransaction(still) { dim = false }
+        guard mode != .none else { return }
+        let period = mode == .flash ? 0.22 : 0.7
+        withAnimation(.easeInOut(duration: period).repeatForever(autoreverses: true)) { dim = true }
+    }
+}
+
+/// The annunciator dot — 5px, ghost or lit. Pulsing happens at the whole-
+/// annunciator level (`AnnBlink`), so the dot itself is static.
 private struct AnnDot: View {
     let lit: Bool
     let color: Color
-    var pulse: Bool = false
-    @State private var pulsing = false
 
     var body: some View {
         Circle()
             .fill(lit ? color : oledFGo(0.09))
             .frame(width: 5, height: 5)
             .shadow(color: lit ? color : .clear, radius: lit ? 5 : 0)
-            .opacity(lit && pulse ? (pulsing ? 1.0 : 0.4) : 1.0)
-            .onAppear { if pulse { startPulse() } }
-    }
-
-    private func startPulse() {
-        withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) { pulsing = true }
     }
 }
 
 /// The persistent transport strip on the right of the rail: mini now-playing +
-/// progress (auto-hidden on the nowPlaying / vu views) then the always-visible
+/// progress (auto-hidden on the nowPlaying view) then the always-visible
 /// VOL meter + dB.
 private struct RailLive: View {
     @Environment(\.carbon) private var theme
@@ -177,7 +223,7 @@ private struct RailLive: View {
     // Playback time lives on the isolated clock; observe it to keep ticking.
     @ObservedObject var clock: PlaybackClock
 
-    private var showMini: Bool { model.oledView != .nowPlaying && model.oledView != .vu }
+    private var showMini: Bool { model.oledView != .nowPlaying }
 
     var body: some View {
         HStack(spacing: 12) {
@@ -773,155 +819,11 @@ private struct NPSort: View {
     }
 }
 
-// MARK: - VU pane (28-segment stereo meters with peak-hold)
-
-private struct VUPane: View {
-    @EnvironmentObject private var model: LibraryViewModel
-    @Environment(\.carbon) private var theme
-    // Playback time lives on the isolated clock; observe it to keep ticking.
-    @ObservedObject var clock: PlaybackClock
-    @StateObject private var meters = MeterDriver()
-
-    @State private var peakL = 0
-    @State private var peakR = 0
-    @State private var ageL = 0
-    @State private var ageR = 0
-
-    var body: some View {
-        OLEDPaneScaffold {
-            VStack(alignment: .leading, spacing: 8) {
-                VUMeterRow(channel: "L", level: meters.leftLevel, peak: peakL)
-                VUMeterRow(channel: "R", level: meters.rightLevel, peak: peakR)
-                VUScale()
-            }
-        } readout: {
-            VStack(alignment: .trailing, spacing: 4) {
-                NPClock(now: model.displayedCurrentTime.asClockPadded,
-                        tot: "/ " + model.playbackDuration.asClockPadded)
-                Text(trackName)
-                    .font(CarbonFont.mono(9.5, weight: .semibold))
-                    .tracking(1.9).textCase(.uppercase)
-                    .foregroundStyle(oledMuted)
-                    .lineLimit(1)
-            }
-            .fixedSize()
-        } ticker: {
-            EmptyView()
-        } cells: {
-            OLEDCells(cells)
-        }
-        .onAppear {
-            meters.levelsProvider = { [weak model] in model?.currentPlaybackLevels() ?? (left: 0, right: 0) }
-            meters.spectrumProvider = { [weak model] in model?.currentPlaybackSpectrum() ?? [] }
-            syncRunning()
-        }
-        .onChange(of: model.playbackState) { _ in syncRunning() }
-        .onChange(of: meters.leftLevel) { lvl in (peakL, ageL) = Self.peakStep(level: lvl, peak: peakL, age: ageL) }
-        .onChange(of: meters.rightLevel) { lvl in (peakR, ageR) = Self.peakStep(level: lvl, peak: peakR, age: ageR) }
-    }
-
-    private func syncRunning() {
-        if model.playbackState == .playing { meters.start() } else { meters.stop() }
-    }
-
-    /// Peak-hold ballistics matching the mock: raise instantly to the top lit
-    /// segment, then hold ~9 ticks before decaying one segment at a time.
-    private static func peakStep(level: Double, peak: Int, age: Int) -> (peak: Int, age: Int) {
-        let lit = Int((level * Double(VUMeterRow.segments)).rounded())
-        if lit - 1 >= peak { return (lit - 1, 0) }
-        if age + 1 > 9 { return (max(0, peak - 1), 0) }
-        return (peak, age + 1)
-    }
-
-    private var trackName: String {
-        (model.nowPlayingTrack?.track.title ?? model.selectedTrack?.track.title ?? "—").uppercased()
-    }
-
-    private var cells: [OLEDCellData] {
-        LibraryNowPlayingCells.make(model: model)
-    }
-}
-
-private struct VUMeterRow: View {
-    @Environment(\.carbon) private var theme
-    let channel: String
-    let level: Double
-    let peak: Int
-
-    static let segments = 28
-    private static let hot = 25   // > 0 dB (red)
-    private static let mid = 21   // −3..0 dB (sun)
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Text(channel)
-                .font(CarbonFont.mono(9, weight: .bold))
-                .tracking(0.8)
-                .foregroundStyle(oledFGo(0.5))
-                .frame(width: 10, alignment: .leading)
-            HStack(spacing: 2) {
-                let lit = Int((level * Double(Self.segments)).rounded())
-                ForEach(0..<Self.segments, id: \.self) { i in
-                    RoundedRectangle(cornerRadius: 1, style: .continuous)
-                        .fill(color(index: i, lit: lit))
-                        .shadow(color: glow(index: i, lit: lit), radius: i < lit ? 4 : 0)
-                }
-            }
-            .frame(height: 15)
-            Text(dbString)
-                .font(CarbonFont.mono(10, weight: .bold))
-                .foregroundStyle(oledFG)
-                .frame(width: 42, alignment: .trailing)
-        }
-    }
-
-    private func color(index i: Int, lit: Int) -> Color {
-        if i == peak && i >= lit { return oledFGo(0.85) }   // peak-hold segment
-        if i < lit {
-            if i >= Self.hot { return theme.red }
-            if i >= Self.mid { return theme.sun }
-            return theme.cyan
-        }
-        return oledFGo(0.1)
-    }
-
-    private func glow(index i: Int, lit: Int) -> Color {
-        guard i < lit else { return .clear }
-        if i >= Self.hot { return theme.red.opacity(0.6) }
-        if i >= Self.mid { return theme.sun.opacity(0.5) }
-        return theme.cyan.opacity(0.45)
-    }
-
-    private var dbString: String {
-        guard level > 0.0001 else { return "−∞" }
-        let db = 20 * log10(level)
-        return String(format: "%.1f", db)
-    }
-}
-
-private struct VUScale: View {
-    private let marks = ["-40", "-30", "-20", "-12", "-6", "-3", "0", "+3"]
-
-    var body: some View {
-        HStack {
-            ForEach(marks, id: \.self) { m in
-                Text(m)
-                    .font(CarbonFont.mono(7, weight: .semibold))
-                    .tracking(0.6)
-                    .foregroundStyle(oledFGo(0.35))
-                if m != marks.last { Spacer(minLength: 0) }
-            }
-        }
-        .padding(.leading, 20)
-        .padding(.trailing, 52)
-    }
-}
-
-/// Shared builder for the library spec cells (used by NOW PLAYING and VU).
+/// Shared builder for the library spec cells (used by NOW PLAYING).
 private enum LibraryNowPlayingCells {
     @MainActor
     static func make(model: LibraryViewModel) -> [OLEDCellData] {
-        // NOW/VU cells describe the *playing* file only; browser selection
+        // NOW cells describe the *playing* file only; browser selection
         // stays off the glass (the Inspector is where selection lives).
         let track = model.nowPlayingTrack
         let ext = track?.track.fileURL.pathExtension.uppercased() ?? ""
@@ -1324,10 +1226,60 @@ private struct DevicesPane: View {
     private var profiles: [ExternalDeviceProfile] { PreferencesStore.shared.savedExternalDeviceProfiles }
 
     var body: some View {
-        if let c = connected {
+        if let sync = model.deviceSyncProgress {
+            syncBody(sync)
+        } else if let c = connected {
             deviceBody(profile: c.profile, device: c.device)
         } else {
             emptyBody
+        }
+    }
+
+    // MARK: Sync readout (SYNC → DEVICE / SYNC COMPLETE)
+
+    private func syncBody(_ sync: DeviceSyncProgressSnapshot) -> some View {
+        OLEDPaneScaffold {
+            HStack(alignment: .bottom, spacing: 18) {
+                DevGlyph()
+                NPTitles(
+                    title: sync.isRunning
+                        ? "SYNC → \(sync.profileName.uppercased())"
+                        : "SYNC COMPLETE",
+                    sub: sync.isRunning
+                        ? "Copying \(min(sync.completed + 1, sync.total)) of \(sync.total)"
+                        : "\(sync.completed) track\(sync.completed == 1 ? "" : "s")"
+                            + (sync.failed > 0 ? " · \(sync.failed) failed" : "")
+                            + " · \(sync.profileName)",
+                    titleSize: 40
+                )
+            }
+        } readout: {
+            // Bar-beside-the-numbers, 150pt — the same readout shape as SCAN /
+            // CD / capacity, so the pane's geometry never shifts mid-sync.
+            VStack(alignment: .trailing, spacing: 4) {
+                NPClock(now: "\(sync.completed)", tot: "OF \(sync.total)")
+                ScanBar(style: .orange(sync.total > 0 ? Double(sync.completed) / Double(sync.total) : 0))
+                    .frame(width: 150)
+            }
+            .fixedSize()
+        } ticker: {
+            DSPTicker(
+                prefix: "SYNC",
+                path: AttributedString(sync.currentRelativePath ?? "—"),
+                leadingInset: 62
+            )
+        } cells: {
+            // Every pane ends with the OLEDCells rail — it pins the bottom of
+            // the glass so panes never resize as state flips (the old OLED
+            // size-jump bug). Never put anything else in this slot.
+            OLEDCells([
+                OLEDCellData(key: "Queue", value: "\(sync.total)", sub: "Tracks", valueColor: theme.cyan),
+                OLEDCellData(key: "Synced", value: "\(sync.completed)", sub: sync.isRunning ? "Copying" : "Done",
+                             valueColor: theme.orange),
+                OLEDCellData(key: "Failed", value: sync.failed > 0 ? "\(sync.failed)" : "—",
+                             sub: sync.failed > 0 ? "Kept in queue" : "None"),
+                OLEDCellData(key: "Device", value: sync.profileName.uppercased(), sub: "Target")
+            ])
         }
     }
 

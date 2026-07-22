@@ -14,6 +14,17 @@ private enum ArtRoleChoice: Hashable {
     case disc(Int)
     case bookletPage
     case ignore
+    /// Any other assignable role (spine, sleeve, sticker, matrix/runout, obi,
+    /// inlay, poster, wrapped cover) — everything without disc-number handling.
+    case role(ArtworkRole)
+
+    /// The non-disc roles offered in the picker beyond the classic five, in
+    /// ART-grid order.
+    static var extendedChoices: [ArtworkRole] {
+        ArtworkRole.assignable.filter {
+            ![.cover, .altCover, .back, .disc, .bookletPage].contains($0)
+        }
+    }
 
     var role: ArtworkRole {
         switch self {
@@ -23,6 +34,7 @@ private enum ArtRoleChoice: Hashable {
         case .disc: return .disc
         case .bookletPage: return .bookletPage
         case .ignore: return .ignore
+        case .role(let role): return role
         }
     }
 
@@ -35,6 +47,7 @@ private enum ArtRoleChoice: Hashable {
 
 struct ArtworkSearchSheetView: View {
     @Environment(\.carbon) private var theme
+    @Environment(\.carbonGeometry) private var geometry
     @EnvironmentObject private var model: LibraryViewModel
     @Environment(\.dismiss) private var dismiss
 
@@ -789,6 +802,9 @@ struct ArtworkSearchSheetView: View {
                     Text("Disc / CD").tag(ArtRoleChoice.disc(1))
                 }
                 Text("Booklet Page").tag(ArtRoleChoice.bookletPage)
+                ForEach(ArtRoleChoice.extendedChoices, id: \.self) { role in
+                    Text(role.displayName).tag(ArtRoleChoice.role(role))
+                }
                 Text("Ignore").tag(ArtRoleChoice.ignore)
             }
             .labelsHidden()
@@ -799,18 +815,18 @@ struct ArtworkSearchSheetView: View {
         .frame(width: 140)
     }
 
+    /// CAA's own `types` tags drive the preselected role — a Matrix/Runout
+    /// scan arrives as Matrix / Runout, a hype sticker as Sticker, and so on
+    /// (mapping in `ArtworkRole.forCAATypes`).
     private func defaultRole(for types: [String]) -> ArtRoleChoice {
-        let typesLower = types.map { $0.lowercased() }
-        if typesLower.contains("front") {
-            return .cover
-        } else if typesLower.contains("back") {
-            return .back
-        } else if typesLower.contains("medium") {
-            return .disc(1)
-        } else if typesLower.contains("booklet") || typesLower.contains("liner") || typesLower.contains("tray") || typesLower.contains("inlay") {
-            return .bookletPage
-        } else {
-            return .bookletPage
+        switch ArtworkRole.forCAATypes(types) {
+        case .cover: return .cover
+        case .altCover: return .altCover
+        case .back: return .back
+        case .disc: return .disc(1)
+        case .bookletPage: return .bookletPage
+        case .ignore: return .ignore
+        case let other: return .role(other)
         }
     }
 
@@ -883,7 +899,7 @@ struct ArtworkSearchSheetView: View {
                             .font(CarbonFont.mono(9.5, weight: .bold))
                             .tracking(1.5)
                     }
-                    .frame(width: 140, height: CarbonLayout.keyHeight)
+                    .frame(width: 140, height: geometry.keyHeight)
                 }
             }
         }
@@ -976,6 +992,9 @@ struct ArtworkSearchSheetView: View {
             return String(format: "booklet_%02d.\(ext)", index + 1)
         case .ignore:
             return "ignored_\(index + 1).\(ext)"
+        case .role(let role):
+            let base = role.suggestedFilenameBase
+            return index == 0 ? "\(base).\(ext)" : "\(base)_\(index + 1).\(ext)"
         }
     }
 

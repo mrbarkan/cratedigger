@@ -1,3 +1,5 @@
+import AppKit
+import CrateDiggerCore
 import SwiftUI
 
 /// Right-hand header column: the DISPLAY screen tile (OLED mode) plus three
@@ -6,10 +8,9 @@ import SwiftUI
 struct ViewSwitcherColumn: View {
     @Environment(\.carbon) private var theme
     @EnvironmentObject private var model: LibraryViewModel
+    @ObservedObject private var themeRegistry = ThemeRegistry.shared
     @State private var appearance: AppearanceMode = ViewSwitcherColumn.currentAppearance()
-
-    /// Order of the THEME dots: dark · light · auto.
-    private static let themeOrder: [AppearanceMode] = [.dark, .light, .system]
+    @State private var selectedThemeID: String? = PreferencesStore.shared.selectedThemeID
 
     var body: some View {
         VStack(spacing: 8) {
@@ -27,18 +28,19 @@ struct ViewSwitcherColumn: View {
 
             SwitchButton(
                 name: "THEME",
-                dotCount: Self.themeOrder.count,
-                activeIndex: Self.themeOrder.firstIndex(of: appearance) ?? 0,
-                tip: "THEME — cycle the appearance: dark · light · auto."
+                dotCount: 0,
+                activeIndex: 0,
+                dash: true,
+                tip: "THEME — cycle appearance and installed themes. Manage them in CrateDigger ▸ Appearance."
             ) {
                 cycleTheme()
             }
 
             SwitchButton(
                 name: "EQ",
-                dotCount: EQPreset.allCases.count,
-                activeIndex: EQPreset.allCases.firstIndex(of: model.eqPreset) ?? 0,
-                tip: "EQ — choose an equalizer preset."
+                dotCount: EQPreset.allCases.count + 1,   // + the CUSTOM lamp
+                activeIndex: eqActiveIndex,
+                tip: "EQ — cycle equalizer presets. The last LED lights when the curve is custom-edited."
             ) {
                 ClickPlayer.shared.play(.key)
                 model.cycleEQPreset()
@@ -47,16 +49,65 @@ struct ViewSwitcherColumn: View {
         .onReceive(NotificationCenter.default.publisher(for: AppearanceMode.didChangeNotification)) { _ in
             appearance = ViewSwitcherColumn.currentAppearance()
         }
+        .onReceive(NotificationCenter.default.publisher(for: PreferencesStore.themesDidChange)) { _ in
+            selectedThemeID = PreferencesStore.shared.selectedThemeID
+        }
     }
 
+    /// EQ dot row position: the active preset, or the trailing CUSTOM lamp when
+    /// the editor has dragged the curve away from the preset's shape.
+    private var eqActiveIndex: Int {
+        if model.eqGains != model.eqPreset.gainCurve() { return EQPreset.allCases.count }
+        return EQPreset.allCases.firstIndex(of: model.eqPreset) ?? 0
+    }
+
+    /// THEME cycles one flat list — the three appearances, then every installed
+    /// theme: dark → light → system → carbon → … → back to dark.
+    private static let appearanceOrder: [AppearanceMode] = [.dark, .light, .system]
+
+    /// Current position in that flat cycle (drives the dot row too). A selected
+    /// theme that's since been uninstalled falls back to the appearance slot.
+    private var themeCycleIndex: Int {
+        if let id = selectedThemeID,
+           let i = themeRegistry.manifests.firstIndex(where: { $0.id == id }) {
+            return Self.appearanceOrder.count + i
+        }
+        return Self.appearanceOrder.firstIndex(of: appearance) ?? 0
+    }
+
+    /// One press = next option, named on the OLED readout. Re-scans the Themes
+    /// folder first so a freshly dropped theme joins the cycle without a
+    /// separate Refresh.
     private func cycleTheme() {
+        themeRegistry.refresh()
+        let manifests = themeRegistry.manifests
+        let next = (themeCycleIndex + 1) % (Self.appearanceOrder.count + manifests.count)
+        if next < Self.appearanceOrder.count {
+            let mode = Self.appearanceOrder[next]
+            selectAppearance(mode)
+            model.showOLEDNotice(mode.menuTitle.uppercased())
+        } else {
+            let manifest = manifests[next - Self.appearanceOrder.count]
+            selectTheme(manifest.id)
+            model.showOLEDNotice(manifest.definition.name.uppercased())
+        }
+    }
+
+    /// Picking an appearance (dark/light/system) clears any installed-theme
+    /// override — same as picking "off" on a skin switcher.
+    private func selectAppearance(_ mode: AppearanceMode) {
         ClickPlayer.shared.play(.key)
-        let order = Self.themeOrder
-        let idx = order.firstIndex(of: appearance) ?? 0
-        let next = order[(idx + 1) % order.count]
-        appearance = next
-        UserDefaults.standard.set(next.rawValue, forKey: AppearanceMode.userDefaultsKey)
+        appearance = mode
+        UserDefaults.standard.set(mode.rawValue, forKey: AppearanceMode.userDefaultsKey)
         NotificationCenter.default.post(name: AppearanceMode.didChangeNotification, object: nil)
+        PreferencesStore.shared.selectedThemeID = nil
+        selectedThemeID = nil
+    }
+
+    private func selectTheme(_ id: String) {
+        ClickPlayer.shared.play(.key)
+        PreferencesStore.shared.selectedThemeID = id
+        selectedThemeID = id
     }
 
     private static func currentAppearance() -> AppearanceMode {
@@ -66,17 +117,22 @@ struct ViewSwitcherColumn: View {
     }
 }
 
-/// A header settings button: left-aligned name + right-aligned dot indicators.
+/// A header settings button: left-aligned name + right-aligned dot indicators
+/// (or, with `dash`, a dash LED that lights on each press — THEME's cycle has
+/// no fixed option count, so the lamp acknowledges the click instead).
 private struct SwitchButton: View {
     @Environment(\.carbon) private var theme
     let name: String
     let dotCount: Int
     let activeIndex: Int
+    var dash = false
     var tip: String? = nil
     let action: () -> Void
 
+    @State private var dashLit = false
+
     var body: some View {
-        Button(action: action) {
+        Button(action: fire) {
             HStack(spacing: 6) {
                 Text(name)
                     .font(CarbonFont.mono(8.5, weight: .bold))
@@ -85,21 +141,39 @@ private struct SwitchButton: View {
                     .lineLimit(1)
                     .fixedSize()
                 Spacer(minLength: 4)
-                HStack(spacing: 3) {
-                    ForEach(0..<dotCount, id: \.self) { i in
-                        Circle()
-                            .fill(i == activeIndex ? theme.orange : theme.ink4.opacity(0.4))
-                            .frame(width: 5, height: 5)
-                            .shadow(color: i == activeIndex ? theme.orange.opacity(0.7) : .clear, radius: 2.5)
+                if dotCount > 0 {
+                    HStack(spacing: 3) {
+                        ForEach(0..<dotCount, id: \.self) { i in
+                            Circle()
+                                .fill(i == activeIndex ? theme.orange : theme.ink4.opacity(0.4))
+                                .frame(width: 5, height: 5)
+                                .shadow(color: i == activeIndex ? theme.orange.opacity(0.7) : .clear, radius: 2.5)
+                        }
                     }
+                }
+                if dash {
+                    Capsule(style: .continuous)
+                        .fill(dashLit ? theme.orange : theme.ink4.opacity(0.4))
+                        .frame(width: 14, height: 4)
+                        .shadow(color: dashLit ? theme.orange.opacity(0.7) : .clear, radius: 3)
                 }
             }
             .padding(.horizontal, 10)
             .frame(maxWidth: .infinity)
-            .frame(height: 28)
-            .background(ChromeChassis(theme: theme, cornerRadius: 6))
+            .frame(height: SwitcherButtonMetrics.height)
+            .background(ChromeChassis(theme: theme, cornerRadius: SwitcherButtonMetrics.cornerRadius))
         }
         .buttonStyle(.carbonHover)
         .carbonTip(tip ?? "\(name): tap to change")
+    }
+
+    private func fire() {
+        if dash {
+            dashLit = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
+                withAnimation(.easeOut(duration: 0.4)) { dashLit = false }
+            }
+        }
+        action()
     }
 }

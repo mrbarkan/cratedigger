@@ -81,6 +81,36 @@ final class LibraryOrganizerServiceTests: XCTestCase {
         }
     }
 
+    func testOrganizePreservesDiscAndTotals() async throws {
+        try await withTemporaryDirectory(prefix: "OrganizerDiscTest") { tempDir in
+            let sourceDir = tempDir.appendingPathComponent("Original")
+            let destDir = tempDir.appendingPathComponent("Organized")
+            try FileManager.default.createDirectory(at: sourceDir, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: destDir, withIntermediateDirectories: true)
+
+            let trackURL = sourceDir.appendingPathComponent("d2t01.flac")
+            try "music data".write(to: trackURL, atomically: true, encoding: .utf8)
+
+            let loaded = LoadedTrack(
+                track: AudioTrack(fileURL: trackURL, title: "20th Century Towers",
+                                  artist: "Death Cab for Cutie", album: "The Photo Album",
+                                  trackNumber: 1, trackTotal: 3, discNumber: 2, discTotal: 3),
+                metadata: ConversionMetadata(albumArtist: "Death Cab for Cutie", album: "The Photo Album")
+            )
+
+            let organizer = LibraryOrganizerService(fileManager: .default)
+            let result = try await organizer.organize(tracks: [loaded], destinationFolder: destDir, copyOnly: true)
+
+            // The browser groups discs off AudioTrack's own fields — the repointed
+            // copy must keep them or a multi-disc album collapses into "DISC 1".
+            let moved = try XCTUnwrap(result.first?.track)
+            XCTAssertNotEqual(moved.fileURL, trackURL, "file should be relocated")
+            XCTAssertEqual(moved.discNumber, 2)
+            XCTAssertEqual(moved.discTotal, 3)
+            XCTAssertEqual(moved.trackTotal, 3)
+        }
+    }
+
     func testOrganizeCopyAndCollision() async throws {
         try await withTemporaryDirectory(prefix: "OrganizerCopyTest") { tempDir in
             let sourceDir = tempDir.appendingPathComponent("Original")
@@ -225,6 +255,41 @@ final class LibraryOrganizerServiceTests: XCTestCase {
             XCTAssertEqual(result.count, 2)
             XCTAssertEqual(result[0].track.fileURL.path, expected1.path)
             XCTAssertEqual(result[1].track.fileURL.path, expected2.path)
+        }
+    }
+}
+
+extension LibraryOrganizerServiceTests {
+    /// Importing an album with unlabeled artwork writes an auto-classified
+    /// manifest into the destination folder (cover promoted), so the ART grid
+    /// shows real roles instead of AUTO and the right image leads.
+    func testImportWritesAutoManifestForUnlabeledArtwork() async throws {
+        try await withTemporaryDirectory(prefix: "OrganizerManifestTest") { tempDir in
+            let sourceDir = tempDir.appendingPathComponent("Original")
+            let destDir = tempDir.appendingPathComponent("Organized")
+            try FileManager.default.createDirectory(at: sourceDir, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: destDir, withIntermediateDirectories: true)
+
+            let trackURL = sourceDir.appendingPathComponent("01 Song.mp3")
+            try "audio".write(to: trackURL, atomically: true, encoding: .utf8)
+            // A real 1x1 PNG so the dimension sniffer has a header to read.
+            let png = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==")!
+            try png.write(to: sourceDir.appendingPathComponent("scan01.png"))
+
+            let loaded = LoadedTrack(
+                track: AudioTrack(fileURL: trackURL, title: "Song", artist: "A", album: "B"),
+                metadata: ConversionMetadata(title: "Song", artist: "A", album: "B")
+            )
+            let organizer = LibraryOrganizerService(fileManager: .default)
+            _ = try await organizer.organize(tracks: [loaded], destinationFolder: destDir, copyOnly: true)
+
+            let candidates = FileManager.default.enumerator(at: destDir, includingPropertiesForKeys: nil)?
+                .compactMap { $0 as? URL }
+                .filter { $0.lastPathComponent == ArtworkManifest.fileName } ?? []
+            XCTAssertEqual(candidates.count, 1, "expected one auto-written manifest under \(destDir.path), got \(candidates)")
+            let manifest = try XCTUnwrap(ArtworkManifest.load(from: candidates[0].deletingLastPathComponent()))
+            XCTAssertEqual(manifest.roles["scan01.png"], ArtworkRole.cover,
+                           "the only unlabeled square image should be promoted to cover")
         }
     }
 }

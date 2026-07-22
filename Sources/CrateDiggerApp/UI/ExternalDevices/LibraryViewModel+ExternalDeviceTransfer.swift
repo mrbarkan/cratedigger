@@ -35,14 +35,22 @@ extension LibraryViewModel {
             return
         }
 
-        // Rehydrate artwork bytes dropped by the .cdlib round-trip so re-embedding a
-        // device-compatible cover works instead of failing to decode.
-        let tracks = tracksWithHydratedArtwork(rawTracks)
+        // No artwork hydration here: copy-mode transfers move the original files
+        // untouched, and convert-mode hands off to runConversion, which hydrates
+        // its own queue.
+        let tracks = rawTracks
         guard !tracks.isEmpty else {
             appAlert = .info(
                 title: "Nothing to transfer",
                 message: "No tracks matched the chosen scope. Load a library and select an album or track first."
             )
+            return
+        }
+
+        // Device not mounted → stage for later instead of prompting for a folder.
+        let isMounted = mountedDevices.contains { deviceProfile(for: $0)?.id == profile.id }
+        guard isMounted else {
+            stageForSync(profile: profile, tracks: tracks, presentingFrom: host)
             return
         }
 
@@ -134,7 +142,7 @@ extension LibraryViewModel {
     // MARK: - Mounted root
 
     @MainActor
-    private func resolveMountedRoot(
+    func resolveMountedRoot(
         for profile: inout ExternalDeviceProfile,
         presentingFrom host: NSViewController
     ) async -> URL? {
