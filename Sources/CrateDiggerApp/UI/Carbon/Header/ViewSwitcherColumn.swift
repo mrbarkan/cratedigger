@@ -171,30 +171,24 @@ private struct ThemeSwitchButton: View {
             Button("Refresh Themes", action: onRefresh)
             Button("Show Themes Folder…", action: onShowThemesFolder)
         } label: {
-            HStack(spacing: 6) {
-                Text("THEME")
-                    .font(CarbonFont.mono(8.5, weight: .bold))
-                    .tracking(1.3)
-                    .foregroundStyle(theme.ink3)
-                    .lineLimit(1)
-                    .fixedSize()
-                Spacer(minLength: 4)
-                HStack(spacing: 3) {
-                    ForEach(0..<dotCount, id: \.self) { i in
-                        Circle()
-                            .fill(i == activeIndex ? theme.orange : theme.ink4.opacity(0.4))
-                            .frame(width: 5, height: 5)
-                            .shadow(color: i == activeIndex ? theme.orange.opacity(0.7) : .clear, radius: 2.5)
-                    }
-                }
-            }
-            .padding(.horizontal, 10)
-            .frame(maxWidth: .infinity)
-            .frame(height: 28)
-            .background(ChromeChassis(theme: theme, cornerRadius: 6))
+            // Deliberately empty: macOS flattens Menu labels (backgrounds and
+            // frames get dropped — the "THEME became plain text" regression),
+            // so the hardware chrome is drawn by the SwitchButton UNDER this
+            // transparent menu, via the background below.
+            Color.clear.contentShape(Rectangle())
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
+        .frame(height: 28)
+        .background(
+            SwitchButton(
+                name: "THEME",
+                dotCount: dotCount,
+                activeIndex: activeIndex,
+                action: {}
+            )
+            .allowsHitTesting(false)   // clicks belong to the Menu on top
+        )
         .carbonTip("THEME — pick an appearance, or an installed theme.")
     }
 
