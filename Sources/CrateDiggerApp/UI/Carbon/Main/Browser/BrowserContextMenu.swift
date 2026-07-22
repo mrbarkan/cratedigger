@@ -136,6 +136,9 @@ enum BrowserContextMenu {
                 Button("Compilation") { model.beginGroup(kind: .compilation) }
             }
         }
+        if model.canSplitAlbumFolder(album) {
+            Button("Split Folder…") { model.promptSplitAlbumFolder(album) }
+        }
 
         Divider()
         Button("Edit Tags…") {

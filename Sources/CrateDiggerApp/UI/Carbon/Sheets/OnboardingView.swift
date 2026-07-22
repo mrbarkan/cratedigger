@@ -12,13 +12,13 @@ struct OnboardingView: View {
 
             VStack(spacing: 10) {
                 folderRow(
-                    icon: "internaldrive", title: "LOCAL LIBRARY",
+                    icon: "internaldrive", title: "MUSIC FOLDER",
                     desc: "Where your albums & tracks live — can be an external drive.",
                     path: model.localLibraryDisplayPath, isDefault: !model.localLibraryIsSet,
                     choose: { model.chooseLocalLibraryFolder() })
                 folderRow(
-                    icon: "tray.2", title: "LIBRARY FILE LOCATION",
-                    desc: "Where crate index (.cdlib) files are saved.",
+                    icon: "tray.2", title: "CRATES INDEX",
+                    desc: "Where crate index (.cdcrate) files are saved — not your music.",
                     path: model.libraryFileDisplayPath, isDefault: !model.libraryFileIsSet,
                     choose: { model.chooseLibraryFileFolder() })
                 folderRow(

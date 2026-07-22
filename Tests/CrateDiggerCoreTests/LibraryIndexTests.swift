@@ -13,6 +13,35 @@ final class LibraryIndexTests: XCTestCase {
         return LoadedTrack(track: t, metadata: ConversionMetadata())
     }
 
+    func testCaseDifferingAlbumTitlesGetDistinctAlbumIDs() {
+        // Two pressings tagged "Riot on…" vs "Riot On…" in different folders are
+        // distinct albums, but the lowercased id derivation used to collide —
+        // and duplicate ids render as ghost blank rows in SwiftUI ForEach.
+        let a = loaded(album: "Riot on an Empty Street", format: "aac")
+        let b = loaded(album: "Riot On An Empty Street", format: "flac")
+        let index = LibraryIndex.build(from: [a, b])
+
+        let ids = index.allAlbums.map(\.id)
+        XCTAssertEqual(ids.count, 2)
+        XCTAssertEqual(Set(ids).count, 2, "album ids must be unique: \(ids)")
+    }
+
+    func testGroupedCaseDifferingVersionsGetDistinctIDs() {
+        let planner = OutputPathPlanner()
+        let a = loaded(album: "Riot on an Empty Street", format: "aac")
+        let b = loaded(album: "Riot On An Empty Street", format: "flac")
+        let group = AlbumGroup(id: "g1", name: "Riot On An Empty Street", artistID: "daft punk",
+                               originalYear: 2004, primaryKey: planner.albumFolderKey(for: a),
+                               members: [VersionMember(key: planner.albumFolderKey(for: a), editionLabel: nil),
+                                         VersionMember(key: planner.albumFolderKey(for: b), editionLabel: nil)])
+        let index = LibraryIndex.build(from: [a, b], groups: [group])
+
+        let release = index.allAlbums.first
+        XCTAssertEqual(release?.versions?.count, 2)
+        let versionIDs = release?.versions?.map(\.id) ?? []
+        XCTAssertEqual(Set(versionIDs).count, 2, "version ids must be unique: \(versionIDs)")
+    }
+
     func testFoldsGroupedVersionsIntoOneRelease() {
         let planner = OutputPathPlanner()
         let us = loaded(album: "Discovery", format: "flac")

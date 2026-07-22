@@ -128,23 +128,23 @@ private struct GeneralPreferencesView: View {
         Form {
             // One compact section for all three folders — no scrolling. The
             // longer explanations live in hover tooltips (.help).
-            Section("Folders") {
+            Section {
                 FolderSettingRow(
-                    label: "Local Library",
+                    label: "Music Folder",
                     url: libraryURL,
                     exists: libraryExists,
                     placeholder: "Not set",
-                    chooseTitle: "Choose library folder",
+                    chooseTitle: "Choose music folder",
                     onChoose: { url in
                         store(url) { PreferencesStore.shared.managedLibraryFolderBookmark = $0 }
                         NotificationCenter.default.post(
                             name: NSNotification.Name("CrateDiggerLibraryFolderChanged"), object: url)
                     }
                 )
-                .help("Where your music files live — can be an external drive.")
+                .help("The audio files themselves, organised into Artist/Album folders — can be an external drive.")
 
                 FolderSettingRow(
-                    label: "Library Files",
+                    label: "Crates Index",
                     url: cratesURL,
                     exists: cratesExists,
                     placeholder: "Not set (defaults to Application Support)",
@@ -155,7 +155,7 @@ private struct GeneralPreferencesView: View {
                             name: NSNotification.Name("CrateDiggerCratesFolderChanged"), object: url)
                     }
                 )
-                .help("Where crate index files are saved. Keep this on a local disk.")
+                .help("The small .cdcrate database files that record what's in each crate — not your music. Keep this on a local disk so crates load even when drives are unplugged.")
 
                 FolderSettingRow(
                     label: "Default Output",
@@ -172,6 +172,12 @@ private struct GeneralPreferencesView: View {
                     }
                 )
                 .help("Destination for converted files. The first conversion prompts you if this is empty.")
+            } header: {
+                Text("Folders")
+            } footer: {
+                Text("Music Folder holds your audio. Crates Index holds the small database files that track what's in each crate. Default Output is where conversions land. \"Choose…\" only re-points a folder — use the Move buttons below to relocate the files themselves.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
             }
 
             Section("Importing & Organizing") {
@@ -194,14 +200,21 @@ private struct GeneralPreferencesView: View {
                         PreferencesStore.shared.keepLibraryOrganised = newValue
                     }
                 HStack(spacing: 12) {
-                    Button("Move Library…") {
+                    Button("Move Music Files…") {
                         NotificationCenter.default.post(
                             name: NSNotification.Name("CrateDiggerMoveLibrary"), object: nil)
                     }
-                    Button("Consolidate Library…") {
+                    .help("Move every audio file in the Music Folder to a new folder and update all crates to match.")
+                    Button("Consolidate Music Files…") {
                         NotificationCenter.default.post(
                             name: NSNotification.Name("CrateDiggerConsolidateLibrary"), object: nil)
                     }
+                    .help("Copy tracks that live outside the Music Folder into it, so everything is in one place.")
+                    Button("Move Index Files…") {
+                        NotificationCenter.default.post(
+                            name: NSNotification.Name("CrateDiggerMoveIndexFiles"), object: nil)
+                    }
+                    .help("Move the crate index (.cdcrate) files to a new folder — your audio stays where it is.")
                 }
             }
 

@@ -144,6 +144,7 @@ public struct LibraryIndex: Sendable {
         var albumsByArtistID: [String: [Album]] = [:]
         var artistDisplayName: [String: String] = [:]
         var albumByKey: [AlbumFolderKey: Album] = [:]
+        var albumIDUses: [String: Int] = [:]
 
         for key in insertionOrder {
             guard let tracks = tracksByFullKey[key], let representative = tracks.first else { continue }
@@ -158,6 +159,13 @@ public struct LibraryIndex: Sendable {
             if let discriminator = key.discriminator {
                 albumID += "::\(normalizedID(discriminator))"
             }
+            // Two distinct albums must never share an id — titles differing only
+            // by case normalize identically, and SwiftUI ForEach renders a
+            // duplicated id as one real row plus a blank ghost row (and matches
+            // selection against both). Suffix any repeat to keep ids unique.
+            let uses = (albumIDUses[albumID] ?? 0) + 1
+            albumIDUses[albumID] = uses
+            if uses > 1 { albumID += "::\(uses)" }
 
             let sortedTracks = sortTracks(tracks)
             let artworkHash = sortedTracks
