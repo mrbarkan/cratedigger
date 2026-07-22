@@ -1360,7 +1360,14 @@ private struct DevicesPane: View {
                 )
             }
         } readout: {
-            NPClock(now: "\(sync.completed)", tot: "OF \(sync.total)").fixedSize()
+            // Bar-beside-the-numbers, 150pt — the same readout shape as SCAN /
+            // CD / capacity, so the pane's geometry never shifts mid-sync.
+            VStack(alignment: .trailing, spacing: 4) {
+                NPClock(now: "\(sync.completed)", tot: "OF \(sync.total)")
+                ScanBar(style: .orange(sync.total > 0 ? Double(sync.completed) / Double(sync.total) : 0))
+                    .frame(width: 150)
+            }
+            .fixedSize()
         } ticker: {
             DSPTicker(
                 prefix: "SYNC",
@@ -1368,10 +1375,17 @@ private struct DevicesPane: View {
                 leadingInset: 62
             )
         } cells: {
-            ScanBar(style: .orange(sync.total > 0 ? Double(sync.completed) / Double(sync.total) : 0))
-                .frame(height: 4)
-                .padding(.top, 6)
-                .padding(.bottom, 10)
+            // Every pane ends with the OLEDCells rail — it pins the bottom of
+            // the glass so panes never resize as state flips (the old OLED
+            // size-jump bug). Never put anything else in this slot.
+            OLEDCells([
+                OLEDCellData(key: "Queue", value: "\(sync.total)", sub: "Tracks", valueColor: theme.cyan),
+                OLEDCellData(key: "Synced", value: "\(sync.completed)", sub: sync.isRunning ? "Copying" : "Done",
+                             valueColor: theme.orange),
+                OLEDCellData(key: "Failed", value: sync.failed > 0 ? "\(sync.failed)" : "—",
+                             sub: sync.failed > 0 ? "Kept in queue" : "None"),
+                OLEDCellData(key: "Device", value: sync.profileName.uppercased(), sub: "Target")
+            ])
         }
     }
 
