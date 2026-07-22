@@ -74,7 +74,7 @@ extension LibraryViewModel {
                 reviewedFolders = reviewed
             }
 
-            let jobs = planConversionJobs(
+            var jobs = planConversionJobs(
                 tracks: sourceTracks,
                 preset: preset,
                 destinationRoot: destinationRoot,
@@ -82,6 +82,36 @@ extension LibraryViewModel {
                 templateConfig: templateConfig,
                 reviewedAlbumFolders: reviewedFolders
             )
+
+            // Version guard: a planned album folder that already holds audio
+            // NOT written by this batch is another pressing of the same
+            // release. Interleaving two rips in one folder corrupts both —
+            // never do it silently. metadataTemplate only: that's the mode
+            // with album folders (and folder-name overrides) to redirect.
+            if selection.folderStructureMode == .metadataTemplate {
+                let conflicts = versionFolderConflicts(jobs: jobs, tracks: sourceTracks)
+                if !conflicts.isEmpty {
+                    switch await presentVersionConflictPrompt(conflicts: conflicts, presentingFrom: host) {
+                    case .cancel:
+                        AppLog.conversion.notice("User cancelled at version-conflict prompt")
+                        return
+                    case .merge:
+                        break   // deliberate merge — the collision prompt below still guards file overwrites
+                    case .versionFolders:
+                        for conflict in conflicts {
+                            reviewedFolders[conflict.key] = nextAvailableVersionFolderName(for: conflict.existingFolder)
+                        }
+                        jobs = planConversionJobs(
+                            tracks: sourceTracks,
+                            preset: preset,
+                            destinationRoot: destinationRoot,
+                            folderMode: selection.folderStructureMode,
+                            templateConfig: templateConfig,
+                            reviewedAlbumFolders: reviewedFolders
+                        )
+                    }
+                }
+            }
 
             guard !jobs.isEmpty else {
                 appAlert = .info(
@@ -164,6 +194,99 @@ extension LibraryViewModel {
         )
         profile.transferSettings = settings
         prefs.upsertExternalDeviceProfile(profile)
+    }
+
+    // MARK: - Version-folder conflicts (second pressing of an existing album)
+
+    struct VersionFolderConflict {
+        let key: AlbumFolderKey
+        let existingFolder: URL
+    }
+
+    private enum VersionConflictResolution { case versionFolders, merge, cancel }
+
+    /// Planned album folders that already contain audio files NOT written by
+    /// this batch — i.e. a different rip of the same release already lives
+    /// there. Keyed by tag-derived AlbumFolderKey so the folder-name override
+    /// (`reviewedAlbumFolders`) can redirect the whole album.
+    private func versionFolderConflicts(
+        jobs: [ConversionJob],
+        tracks: [LoadedTrack]
+    ) -> [VersionFolderConflict] {
+        let fileManager = FileManager.default
+        let planner = OutputPathPlanner()
+        let batchDestinations = Set(jobs.map { $0.destinationURL.standardizedFileURL.path })
+        let keyBySourcePath = Dictionary(
+            tracks.map { ($0.track.fileURL.path, planner.albumFolderKey(for: $0)) },
+            uniquingKeysWith: { first, _ in first }
+        )
+
+        var seenFolders = Set<String>()
+        var conflicts: [VersionFolderConflict] = []
+        for job in jobs {
+            let folder = job.destinationURL.deletingLastPathComponent().standardizedFileURL
+            guard seenFolders.insert(folder.path).inserted,
+                  let key = keyBySourcePath[job.sourceURL.path],
+                  fileManager.fileExists(atPath: folder.path),
+                  let contents = try? fileManager.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
+            else { continue }
+
+            let holdsForeignAudio = contents.contains { url in
+                LibraryScanService.defaultSupportedExtensions.contains(url.pathExtension.lowercased())
+                    && !batchDestinations.contains(url.standardizedFileURL.path)
+            }
+            if holdsForeignAudio {
+                conflicts.append(VersionFolderConflict(key: key, existingFolder: folder))
+            }
+        }
+        return conflicts
+    }
+
+    /// "1997 OK Computer" → "1997 OK Computer [2]", bumping until no folder
+    /// with that name exists beside the original.
+    private func nextAvailableVersionFolderName(for existingFolder: URL) -> String {
+        let base = existingFolder.lastPathComponent
+        let parent = existingFolder.deletingLastPathComponent()
+        var n = 2
+        while FileManager.default.fileExists(atPath: parent.appendingPathComponent("\(base) [\(n)]").path) {
+            n += 1
+        }
+        return "\(base) [\(n)]"
+    }
+
+    @MainActor
+    private func presentVersionConflictPrompt(
+        conflicts: [VersionFolderConflict],
+        presentingFrom host: NSViewController
+    ) async -> VersionConflictResolution {
+        await withCheckedContinuation { continuation in
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = conflicts.count == 1
+                ? "This album already exists in the destination"
+                : "\(conflicts.count) albums already exist in the destination"
+            let names = conflicts.prefix(4).map { $0.existingFolder.lastPathComponent }.joined(separator: "\n")
+            let more = conflicts.count > 4 ? "\n…and \(conflicts.count - 4) more" : ""
+            alert.informativeText = names + more
+                + "\n\nNew Version Folder keeps each rip separate (e.g. “Album [2]”), so the two versions never mix. Merge writes into the existing folder."
+            alert.addButton(withTitle: "New Version Folder")   // .alertFirstButtonReturn
+            alert.addButton(withTitle: "Merge Into Existing")   // .alertSecondButtonReturn
+            alert.addButton(withTitle: "Cancel")                // .alertThirdButtonReturn
+
+            let resolve: (NSApplication.ModalResponse) -> VersionConflictResolution = { response in
+                switch response {
+                case .alertFirstButtonReturn: return .versionFolders
+                case .alertSecondButtonReturn: return .merge
+                default: return .cancel
+                }
+            }
+
+            if let window = host.view.window {
+                alert.beginSheetModal(for: window) { continuation.resume(returning: resolve($0)) }
+            } else {
+                continuation.resume(returning: resolve(alert.runModal()))
+            }
+        }
     }
 
     private enum CollisionResolution { case skip, overwrite, cancel }

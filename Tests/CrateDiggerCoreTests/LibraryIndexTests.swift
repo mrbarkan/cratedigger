@@ -406,6 +406,54 @@ final class LibraryIndexTests: XCTestCase {
         let booklet = AlbumBooklet(source: .images(sorted))
         XCTAssertEqual(booklet.frontCoverURL?.lastPathComponent, "cover.jpg")
     }
+
+    // MARK: - Same-tag versions split by source folder
+
+    func testSameTagsInDifferentFoldersSplitIntoSeparateAlbums() {
+        let tracks = [
+            makeTrack(file: "/music/Radiohead/1997 OK Computer/01 Airbag.flac",
+                      title: "Airbag", artist: "Radiohead", album: "OK Computer", year: 1997),
+            makeTrack(file: "/music/Radiohead/1997 OK Computer/02 Paranoid Android.flac",
+                      title: "Paranoid Android", artist: "Radiohead", album: "OK Computer", year: 1997),
+            makeTrack(file: "/imports/OK Computer JP Press/01 Airbag.flac",
+                      title: "Airbag", artist: "Radiohead", album: "OK Computer", year: 1997),
+            makeTrack(file: "/imports/OK Computer JP Press/02 Paranoid Android.flac",
+                      title: "Paranoid Android", artist: "Radiohead", album: "OK Computer", year: 1997)
+        ]
+        let index = LibraryIndex.build(from: tracks)
+        let albums = index.artists.flatMap { $0.albums }
+        XCTAssertEqual(albums.count, 2, "two same-tagged rips in different folders must render as two albums")
+        XCTAssertEqual(albums[0].tracks.count, 2)
+        XCTAssertEqual(albums[1].tracks.count, 2)
+        XCTAssertNotEqual(albums[0].id, albums[1].id)
+    }
+
+    func testDiscSubfoldersStayOneAlbum() {
+        let tracks = [
+            makeTrack(file: "/music/Miles/1970 Bitches Brew/CD1/01 Pharaoh's Dance.flac",
+                      title: "Pharaoh's Dance", artist: "Miles Davis", album: "Bitches Brew",
+                      year: 1970, discNumber: 1),
+            makeTrack(file: "/music/Miles/1970 Bitches Brew/CD2/01 Spanish Key.flac",
+                      title: "Spanish Key", artist: "Miles Davis", album: "Bitches Brew",
+                      year: 1970, discNumber: 2),
+            makeTrack(file: "/music/Miles/1970 Bitches Brew/Disc 3/01 Bonus.flac",
+                      title: "Bonus", artist: "Miles Davis", album: "Bitches Brew",
+                      year: 1970, discNumber: 3)
+        ]
+        let index = LibraryIndex.build(from: tracks)
+        let albums = index.artists.flatMap { $0.albums }
+        XCTAssertEqual(albums.count, 1, "disc subfolders (CD1/CD2/Disc 3) must not split an album into versions")
+        XCTAssertEqual(albums[0].tracks.count, 3)
+    }
+
+    func testSameFolderNeverSplits() {
+        let tracks = [
+            makeTrack(file: "/music/A/Album/01 One.mp3", title: "One", artist: "A", album: "Album", year: 2000),
+            makeTrack(file: "/music/A/Album/02 Two.mp3", title: "Two", artist: "A", album: "Album", year: 2000)
+        ]
+        let index = LibraryIndex.build(from: tracks)
+        XCTAssertEqual(index.artists.flatMap { $0.albums }.count, 1)
+    }
 }
 
 private func makeTrack(

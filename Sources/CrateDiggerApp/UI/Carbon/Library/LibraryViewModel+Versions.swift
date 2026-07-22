@@ -31,10 +31,14 @@ extension LibraryViewModel {
 
     private var versionPlanner: OutputPathPlanner { OutputPathPlanner() }
 
-    /// The stable identity used to reference a pressing inside a group.
+    /// The stable identity used to reference a pressing inside a group. Prefer
+    /// the key the index build assigned (it carries the version discriminator
+    /// that tells two same-tagged rips apart); tag re-derivation is only a
+    /// fallback for albums that predate `folderKey`.
     func versionKey(for album: Album) -> AlbumFolderKey? {
         // A grouped release has no single key; use its primary pressing.
         let source = album.isVersionGroup ? album.versions?.first : album
+        if let key = source?.folderKey { return key }
         guard let track = source?.tracks.first else { return nil }
         return versionPlanner.albumFolderKey(for: track)
     }
@@ -91,16 +95,14 @@ extension LibraryViewModel {
     }
 
     func setPrimaryVersion(_ pressing: Album, in release: Album) {
+        guard let key = versionKey(for: pressing) else { return }
         mutateGroup(of: release) { group in
-            if let track = pressing.tracks.first {
-                group.primaryKey = versionPlanner.albumFolderKey(for: track)
-            }
+            group.primaryKey = key
         }
     }
 
     func setEditionLabel(_ label: String?, for pressing: Album, in release: Album) {
-        guard let track = pressing.tracks.first else { return }
-        let key = versionPlanner.albumFolderKey(for: track)
+        guard let key = versionKey(for: pressing) else { return }
         mutateGroup(of: release) { group in
             if let i = group.members.firstIndex(where: { $0.key == key }) {
                 group.members[i].editionLabel = label?.isEmpty == true ? nil : label
@@ -109,8 +111,7 @@ extension LibraryViewModel {
     }
 
     func removeFromGroup(_ pressing: Album, release: Album) {
-        guard let track = pressing.tracks.first else { return }
-        let key = versionPlanner.albumFolderKey(for: track)
+        guard let key = versionKey(for: pressing) else { return }
         mutateGroup(of: release) { group in
             group.members.removeAll { $0.key == key }
         }
@@ -194,6 +195,9 @@ extension LibraryViewModel {
 
     private func albumForKey(_ key: AlbumFolderKey) -> Album? {
         index.allAlbums.first { album in
+            if let built = (album.isVersionGroup ? album.versions?.first?.folderKey : album.folderKey) {
+                return built == key
+            }
             guard let t = (album.isVersionGroup ? album.versions?.first?.tracks.first : album.tracks.first)
             else { return false }
             return versionPlanner.albumFolderKey(for: t) == key
