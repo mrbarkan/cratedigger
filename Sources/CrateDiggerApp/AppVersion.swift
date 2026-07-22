@@ -12,10 +12,10 @@ enum AppVersion {
     /// Mirror of `CFBundleShortVersionString`.
     static let marketing = "1.1.0"
     /// Mirror of `CFBundleVersion`.
-    static let build = "41"
+    static let build = "42"
     /// Release-channel label shown in About ("BETA", "RC", …). Empty for a
     /// final release — at which point the pill reverts to "VERSION x (build)".
-    static let channel = "BETA"
+    static let channel = ""
     /// Human ordinal within the channel ("RC 3"), hand-bumped per release
     /// alongside `build` — the build number is monotonic across the whole
     /// beta/RC run, so it can't double as the ordinal (RC 3 = build 33).
