@@ -28,8 +28,8 @@ struct ViewSwitcherColumn: View {
 
             SwitchButton(
                 name: "THEME",
-                dotCount: Self.appearanceOrder.count + themeRegistry.manifests.count,
-                activeIndex: themeCycleIndex,
+                dotCount: 0,
+                activeIndex: 0,
                 tip: "THEME — cycle appearance and installed themes. Manage them in CrateDigger ▸ Appearance."
             ) {
                 cycleTheme()
@@ -37,9 +37,9 @@ struct ViewSwitcherColumn: View {
 
             SwitchButton(
                 name: "EQ",
-                dotCount: EQPreset.allCases.count,
-                activeIndex: EQPreset.allCases.firstIndex(of: model.eqPreset) ?? 0,
-                tip: "EQ — choose an equalizer preset."
+                dotCount: EQPreset.allCases.count + 1,   // + the CUSTOM lamp
+                activeIndex: eqActiveIndex,
+                tip: "EQ — cycle equalizer presets. The last LED lights when the curve is custom-edited."
             ) {
                 ClickPlayer.shared.play(.key)
                 model.cycleEQPreset()
@@ -51,6 +51,13 @@ struct ViewSwitcherColumn: View {
         .onReceive(NotificationCenter.default.publisher(for: PreferencesStore.themesDidChange)) { _ in
             selectedThemeID = PreferencesStore.shared.selectedThemeID
         }
+    }
+
+    /// EQ dot row position: the active preset, or the trailing CUSTOM lamp when
+    /// the editor has dragged the curve away from the preset's shape.
+    private var eqActiveIndex: Int {
+        if model.eqGains != model.eqPreset.gainCurve() { return EQPreset.allCases.count }
+        return EQPreset.allCases.firstIndex(of: model.eqPreset) ?? 0
     }
 
     /// THEME cycles one flat list — the three appearances, then every installed
@@ -128,12 +135,14 @@ private struct SwitchButton: View {
                     .lineLimit(1)
                     .fixedSize()
                 Spacer(minLength: 4)
-                HStack(spacing: 3) {
-                    ForEach(0..<dotCount, id: \.self) { i in
-                        Circle()
-                            .fill(i == activeIndex ? theme.orange : theme.ink4.opacity(0.4))
-                            .frame(width: 5, height: 5)
-                            .shadow(color: i == activeIndex ? theme.orange.opacity(0.7) : .clear, radius: 2.5)
+                if dotCount > 0 {
+                    HStack(spacing: 3) {
+                        ForEach(0..<dotCount, id: \.self) { i in
+                            Circle()
+                                .fill(i == activeIndex ? theme.orange : theme.ink4.opacity(0.4))
+                                .frame(width: 5, height: 5)
+                                .shadow(color: i == activeIndex ? theme.orange.opacity(0.7) : .clear, radius: 2.5)
+                        }
                     }
                 }
             }

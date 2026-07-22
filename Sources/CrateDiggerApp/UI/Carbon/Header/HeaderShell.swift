@@ -16,10 +16,7 @@ struct HeaderShell: View {
             ViewSwitcherColumn()
                 .frame(width: geometry.viewSwitchWidth)
         }
-        .overlay(alignment: .topTrailing) {
-            StatusLED()
-                .padding(.top, 4)
-                .padding(.trailing, 4)
-        }
+        // The status LED lives at the window's top-right corner now (see
+        // CarbonRootView), mirroring the traffic lights.
     }
 }

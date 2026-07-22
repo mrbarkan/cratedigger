@@ -36,6 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         windowController.restoreLastSession()
 
         installSpaceKeyMonitor()
+        installSnapshotHookIfRequested()
 
         NotificationCenter.default.addObserver(
             self, selector: #selector(showMiniPlayer(_:)),
@@ -318,6 +319,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     @objc private func openHelpPage(_ sender: Any?) {
         if let url = URL(string: "https://cratedigger.mrbarkan.com") {
             NSWorkspace.shared.open(url)
+        }
+    }
+
+    /// Dev-only self-snapshot: with CRATEDIGGER_SNAPSHOT_PATH set, render the
+    /// main window (its own view tree — no screen-recording permission needed)
+    /// to a PNG a few seconds after launch, then again 4 s later. Optional
+    /// CRATEDIGGER_OLED=<rawValue> preselects an OLED view first. Inert
+    /// without the env var; used for autonomous UI verification.
+    private func installSnapshotHookIfRequested() {
+        let env = ProcessInfo.processInfo.environment
+        guard let path = env["CRATEDIGGER_SNAPSHOT_PATH"] else { return }
+        // Just before the final snap — starting playback flips the OLED to NOW
+        // asynchronously, so an early set gets overridden.
+        if let raw = env["CRATEDIGGER_OLED"], let view = OLEDView(rawValue: raw) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 7.0) { [weak self] in
+                self?.mainWindowController?.model.oledView = view
+            }
+        }
+        if env["CRATEDIGGER_AUTOPLAY"] != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
+                guard let model = self?.mainWindowController?.model else { return }
+                model.playbackVolume = 0.8   // meters scale by volume; 0 reads as silence
+                if let first = model.index.allTracks.first { model.playTrack(id: first.track.id) }
+            }
+        }
+        func snap(_ suffix: String) {
+            let url = URL(fileURLWithPath: path)
+            func fail(_ why: String) {
+                try? why.write(to: url.appendingPathExtension("err.txt"), atomically: true, encoding: .utf8)
+            }
+            guard let window = self.mainWindowController?.window else { return fail("no window") }
+            guard let frameView = window.contentView?.superview ?? window.contentView else { return fail("no frame view") }
+            guard let rep = frameView.bitmapImageRepForCachingDisplay(in: frameView.bounds) else { return fail("no rep for \(frameView.bounds)") }
+            frameView.cacheDisplay(in: frameView.bounds, to: rep)
+            let dest = suffix.isEmpty ? url : url.deletingPathExtension().appendingPathExtension("\(suffix).png")
+            guard let png = rep.representation(using: .png, properties: [:]) else { return fail("no png data") }
+            do { try png.write(to: dest) } catch { fail("write: \(error)") }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) { snap("") }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8.0) { snap("late") }
+        if let dumpPath = env["CRATEDIGGER_DEBUG_DUMP"] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 7.5) { [weak self] in
+                guard let model = self?.mainWindowController?.model else { return }
+                let s = model.currentPlaybackSpectrum().map { String(format: "%.3f", $0) }.joined(separator: " ")
+                let l = model.currentPlaybackLevels()
+                let line = "state=\(model.playbackState) oled=\(model.oledView) levels=(\(l.left), \(l.right)) spectrum=[\(s)]"
+                try? line.write(toFile: dumpPath, atomically: true, encoding: .utf8)
+            }
         }
     }
 

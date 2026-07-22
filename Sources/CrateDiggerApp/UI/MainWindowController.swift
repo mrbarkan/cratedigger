@@ -1,5 +1,6 @@
 import AppKit
 import CrateDiggerCore
+import SwiftUI
 
 final class MainWindowController: NSWindowController, NSWindowDelegate {
     private let hostingController = CarbonHostingController()
@@ -29,6 +30,18 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         window.isRestorable = false
 
         super.init(window: window)
+
+        // Activity lamp in the titlebar's trailing corner — the traffic
+        // lights' opposite number. An accessory (not a content overlay) so it
+        // sits in the real titlebar strip at the same height as the buttons.
+        let ledAccessory = NSTitlebarAccessoryViewController()
+        let ledView = NSHostingView(rootView: TitlebarStatusLED(model: hostingController.model))
+        // Accessory layout uses the view's frame at add time — an unset frame
+        // renders as zero-size (invisible LED).
+        ledView.frame = NSRect(x: 0, y: 0, width: 34, height: 24)
+        ledAccessory.view = ledView
+        ledAccessory.layoutAttribute = .trailing
+        window.addTitlebarAccessoryViewController(ledAccessory)
 
         window.delegate = self
         applyAppearancePreference()

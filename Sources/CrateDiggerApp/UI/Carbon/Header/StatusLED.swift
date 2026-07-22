@@ -1,10 +1,11 @@
 import SwiftUI
 
-/// Tiny activity lamp in the header's top-right corner: a dark unlit ember
-/// when idle, solid orange while the app is working. Hover lists what's
-/// running. Deliberately static — no pulse animation; a blinking lamp calls
-/// more attention than background work deserves, and a static view costs
-/// zero GPU while idle (same rule as the Material ban).
+/// Tiny activity lamp: a dark unlit ember when idle, solid orange while the
+/// app is working. Hover lists what's running. Deliberately static — no pulse
+/// animation; a blinking lamp calls more attention than background work
+/// deserves, and a static view costs zero GPU while idle (same rule as the
+/// Material ban). Mounted in the titlebar's trailing corner (see
+/// `TitlebarStatusLED`), the traffic lights' opposite number.
 struct StatusLED: View {
     @Environment(\.carbon) private var theme
     @EnvironmentObject private var model: LibraryViewModel
@@ -25,5 +26,21 @@ struct StatusLED: View {
         guard model.isWorking else { return "Idle" }
         let labels = model.activityLabels
         return labels.isEmpty ? "Working…" : labels.joined(separator: " · ")
+    }
+}
+
+/// Self-themed wrapper for hosting `StatusLED` in an `NSTitlebarAccessory-
+/// ViewController` — outside `CarbonRootView`'s environment, so it carries its
+/// own appearance-mode read and view-model injection.
+struct TitlebarStatusLED: View {
+    @AppStorage(AppearanceMode.userDefaultsKey) private var appearanceModeRaw: String = AppearanceMode.system.rawValue
+    let model: LibraryViewModel
+
+    var body: some View {
+        StatusLED()
+            .padding(.trailing, 14)
+            .padding(.vertical, 6)
+            .environmentObject(model)
+            .carbonThemed(mode: AppearanceMode(rawValue: appearanceModeRaw) ?? .system)
     }
 }

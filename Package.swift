@@ -26,7 +26,10 @@ let package = Package(
                 // Built-in themes, shipped in the same .cdtheme/theme.json
                 // format a 3rd-party theme uses (see ThemeLoaderService) —
                 // dogfoods the format instead of special-casing the defaults.
-                .copy("Resources/Themes")
+                .copy("Resources/Themes"),
+                // Display typeface for the OLED's big names (Major Mono
+                // Display) — registered at launch by FontRegistrar.
+                .copy("Resources/Fonts")
             ]
         ),
         .testTarget(

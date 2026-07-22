@@ -16,7 +16,7 @@ enum OLEDView: String, CaseIterable, Codable, Sendable {
     var label: String {
         switch self {
         case .nowPlaying: return "Now"
-        case .vu:         return "VU"
+        case .vu:         return "RTA"   // the spectrum-analyzer screen (case name kept for persisted prefs)
         case .conversion: return "Cnvrt"
         case .scan:       return "Scan"
         case .remoteSync: return "Sync"
@@ -858,6 +858,16 @@ final class LibraryViewModel: ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor in
                 self?.consolidateLibrary()
+            }
+        }
+
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("CrateDiggerMoveIndexFiles"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.moveIndexFiles()
             }
         }
 
@@ -2704,7 +2714,7 @@ final class LibraryViewModel: ObservableObject {
             panel.canChooseDirectories = true
             panel.canCreateDirectories = true
             panel.allowsMultipleSelection = false
-            panel.title = "Choose default folder to save Crate Index Files (.cdlib)"
+            panel.title = "Choose default folder to save Crate Index Files (.cdcrate)"
             panel.prompt = "Choose"
             panel.message = "Choose a default folder to store your Crate library index files. You can save/copy the actual music files to a separate location (like an external drive) later."
             
@@ -3532,6 +3542,94 @@ final class LibraryViewModel: ObservableObject {
                 } catch {
                     self.appAlert = .error(title: "Save Failed",
                                            message: "Files moved and crates updated, but the new folder couldn't be saved as the library location: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
+    /// Relocate the crate index files (`.cdcrate` membership lists +
+    /// `library.cdtracks`) to a user-chosen folder and re-point the crates-index
+    /// bookmark — the audio files stay where they are. The counterpart to
+    /// `moveLibrary()`, which moves the music and leaves the index alone.
+    func moveIndexFiles() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.title = "Choose new location for Crate Index Files"
+        panel.prompt = "Choose"
+
+        guard panel.runModal() == .OK, let newURL = panel.url else { return }
+        let currentURL = cratesDirectoryURL
+
+        if currentURL.standardizedFileURL.path == newURL.standardizedFileURL.path {
+            appAlert = .error(title: "Same Folder", message: "The chosen folder is already the crates index folder.")
+            return
+        }
+
+        let fm = FileManager.default
+        let indexFiles: [URL]
+        do {
+            indexFiles = try fm.contentsOfDirectory(at: currentURL, includingPropertiesForKeys: nil)
+                .filter { $0.pathExtension == "cdcrate" || $0.pathExtension == "cdtracks" }
+        } catch {
+            appAlert = .error(title: "Move Failed", message: "Could not read the current index folder: \(error.localizedDescription)")
+            return
+        }
+
+        // Refuse up front rather than silently overwrite a folder that already
+        // holds someone's crates — that would be unrecoverable data loss.
+        if indexFiles.contains(where: { fm.fileExists(atPath: newURL.appendingPathComponent($0.lastPathComponent).path) }) {
+            appAlert = .error(title: "Folder Already Has an Index",
+                              message: "The chosen folder already contains crate index files. Pick an empty folder, or use \"Choose…\" in Preferences to switch to it without moving anything.")
+            return
+        }
+
+        scanProgress = ScanProgress(folderName: "Moving index files...", filesProbed: 0,
+                                    totalCandidates: indexFiles.count, isRunning: true)
+
+        // Detached: with embedded artwork a .cdcrate can be big, and a
+        // cross-volume move is copy+delete — keep it off the main actor.
+        Task.detached { [weak self] in
+            let fm = FileManager.default
+            var moved: [URL] = []
+            var failure: Error?
+            for file in indexFiles {
+                do {
+                    try fm.moveItem(at: file, to: newURL.appendingPathComponent(file.lastPathComponent))
+                    moved.append(file)
+                } catch {
+                    failure = error
+                    break
+                }
+            }
+            if failure != nil {
+                // Roll the already-moved files back so the index never ends up
+                // split across two folders.
+                for file in moved {
+                    try? fm.moveItem(at: newURL.appendingPathComponent(file.lastPathComponent), to: file)
+                }
+            }
+
+            let moveFailure = failure
+            let movedCount = moved.count
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.scanProgress = .idle
+                if let moveFailure {
+                    self.appAlert = .error(title: "Move Failed",
+                                           message: "Could not move the index: \(moveFailure.localizedDescription)\nEverything was left in the current folder.")
+                    return
+                }
+                do {
+                    self.prefs.cratesIndexFolderBookmark = try PreferencesStore.makeBookmark(for: newURL)
+                    NotificationCenter.default.post(name: NSNotification.Name("CrateDiggerCratesFolderChanged"), object: newURL)
+                    self.appAlert = .info(title: "Index Moved",
+                                          message: "Moved \(movedCount) index file\(movedCount == 1 ? "" : "s") to: \(newURL.path)")
+                } catch {
+                    self.appAlert = .error(title: "Save Failed",
+                                           message: "Index files moved, but the new folder couldn't be saved as the crates index location: \(error.localizedDescription)")
                 }
             }
         }

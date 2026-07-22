@@ -80,7 +80,7 @@ private struct DisplayContext: View {
         ZStack {
             switch model.oledView {
             case .nowPlaying:  NowPlayingPane()
-            case .vu:          VUPane(clock: model.playbackClock)
+            case .vu:          RTAPane(clock: model.playbackClock)
             case .conversion:  ConversionPane()
             case .scan:        ScanPane()
             case .remoteSync:  RemoteSyncPane()
@@ -103,15 +103,17 @@ private struct DisplayRail: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            // Annunciators — every mode permanently printed on the glass.
+            // Annunciators — every mode permanently printed on the glass, each
+            // lit in its own accent (the same color the display-toggle strip
+            // glows — see OLEDView.accent).
             HStack(spacing: 12) {
-                ann("NOW", lit: v == .nowPlaying, color: theme.orange)
-                ann("VU", lit: v == .vu, color: theme.cyan)
-                ann("CNVRT", lit: v == .conversion, color: theme.red)
-                ann("SCAN", lit: v == .scan, color: theme.sun)
-                ann("SYNC", lit: v == .remoteSync, color: theme.indigo)
-                ann("CD", lit: v == .cdRip, color: theme.orange)
-                ann("DEV", lit: v == .devices, color: theme.cyan)
+                ann("NOW", lit: v == .nowPlaying, color: OLEDView.nowPlaying.accent(theme))
+                ann("RTA", lit: v == .vu, color: OLEDView.vu.accent(theme))
+                ann("CNVRT", lit: v == .conversion, color: OLEDView.conversion.accent(theme))
+                ann("SCAN", lit: v == .scan, color: OLEDView.scan.accent(theme))
+                ann("SYNC", lit: v == .remoteSync, color: OLEDView.remoteSync.accent(theme))
+                ann("CD", lit: v == .cdRip, color: OLEDView.cdRip.accent(theme))
+                ann("DEV", lit: v == .devices, color: OLEDView.devices.accent(theme))
                 ann("ON AIR", lit: radioLive, color: onAirRed, pulse: true)
             }
 
@@ -781,27 +783,43 @@ private struct NPSort: View {
     }
 }
 
-// MARK: - VU pane (28-segment stereo meters with peak-hold)
+// MARK: - RTA pane (12-band spectrum analyzer with per-band peak-hold)
 
-private struct VUPane: View {
+/// The detailed analyzer screen: 12 log-spaced columns (20 Hz – 20 kHz, from
+/// the playback tap's FFT), 14 segments per column with VU-style color zones,
+/// a white peak-hold tick per band, and Hz labels along the base — a classic
+/// hardware RTA on the OLED glass. Replaces the old L/R VU bars.
+private struct RTAPane: View {
     @EnvironmentObject private var model: LibraryViewModel
     @Environment(\.carbon) private var theme
     // Playback time lives on the isolated clock; observe it to keep ticking.
     @ObservedObject var clock: PlaybackClock
     @StateObject private var meters = MeterDriver()
 
-    @State private var peakL = 0
-    @State private var peakR = 0
-    @State private var ageL = 0
-    @State private var ageR = 0
+    static let segments = 14
+    /// Mirrors Core's `SpectrumProcessor.bandCount` (internal to Core).
+    static let bandCount = 12
+    /// Per-band peak-hold segment index (−1 = none) and its age in ticks.
+    @State private var peaks = [Int](repeating: -1, count: RTAPane.bandCount)
+    @State private var peakAges = [Int](repeating: 0, count: RTAPane.bandCount)
 
     var body: some View {
         OLEDPaneScaffold {
-            VStack(alignment: .leading, spacing: 8) {
-                VUMeterRow(channel: "L", level: meters.leftLevel, peak: peakL)
-                VUMeterRow(channel: "R", level: meters.rightLevel, peak: peakR)
-                VUScale()
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(alignment: .bottom, spacing: 4) {
+                    ForEach(0..<RTAPane.bandCount, id: \.self) { band in
+                        RTAColumn(
+                            level: band < meters.bands.count ? meters.bands[band] : 0,
+                            peak: peaks[band]
+                        )
+                    }
+                }
+                .frame(height: 55)
+                RTAHzScale()
             }
+            // Cap the analyzer's width so the cells stay near-square like a
+            // hardware RTA instead of stretching across the whole flex glass.
+            .frame(maxWidth: 430, alignment: .leading)
         } readout: {
             VStack(alignment: .trailing, spacing: 4) {
                 NPClock(now: model.displayedCurrentTime.asClockPadded,
@@ -819,26 +837,34 @@ private struct VUPane: View {
             OLEDCells(cells)
         }
         .onAppear {
+            meters.bandQuantum = 1.0 / Double(Self.segments)
             meters.levelsProvider = { [weak model] in model?.currentPlaybackLevels() ?? (left: 0, right: 0) }
             meters.spectrumProvider = { [weak model] in model?.currentPlaybackSpectrum() ?? [] }
             syncRunning()
         }
         .onChange(of: model.playbackState) { _ in syncRunning() }
-        .onChange(of: meters.leftLevel) { lvl in (peakL, ageL) = Self.peakStep(level: lvl, peak: peakL, age: ageL) }
-        .onChange(of: meters.rightLevel) { lvl in (peakR, ageR) = Self.peakStep(level: lvl, peak: peakR, age: ageR) }
+        .onChange(of: meters.bands) { bands in stepPeaks(bands) }
     }
 
     private func syncRunning() {
         if model.playbackState == .playing { meters.start() } else { meters.stop() }
     }
 
-    /// Peak-hold ballistics matching the mock: raise instantly to the top lit
-    /// segment, then hold ~9 ticks before decaying one segment at a time.
-    private static func peakStep(level: Double, peak: Int, age: Int) -> (peak: Int, age: Int) {
-        let lit = Int((level * Double(VUMeterRow.segments)).rounded())
-        if lit - 1 >= peak { return (lit - 1, 0) }
-        if age + 1 > 9 { return (max(0, peak - 1), 0) }
-        return (peak, age + 1)
+    /// Same peak-hold ballistics as the old VU rows, per band: rise instantly
+    /// to the top lit segment, hold ~9 ticks, then decay one segment at a time.
+    private func stepPeaks(_ bands: [Double]) {
+        for band in 0..<min(bands.count, peaks.count) {
+            let lit = Int((bands[band] * Double(Self.segments)).rounded())
+            if lit - 1 >= peaks[band] {
+                peaks[band] = lit - 1
+                peakAges[band] = 0
+            } else if peakAges[band] + 1 > 9 {
+                peaks[band] = max(-1, peaks[band] - 1)
+                peakAges[band] = 0
+            } else {
+                peakAges[band] += 1
+            }
+        }
     }
 
     private var trackName: String {
@@ -850,47 +876,38 @@ private struct VUPane: View {
     }
 }
 
-private struct VUMeterRow: View {
+/// One RTA band: a bottom-up stack of segments in the VU color zones
+/// (cyan → sun → red toward the top) with a white peak-hold tick.
+private struct RTAColumn: View {
     @Environment(\.carbon) private var theme
-    let channel: String
     let level: Double
     let peak: Int
 
-    static let segments = 28
-    private static let hot = 25   // > 0 dB (red)
-    private static let mid = 21   // −3..0 dB (sun)
+    private static let hot = 12   // top zone (red)
+    private static let mid = 9    // upper-mid zone (sun)
 
     var body: some View {
-        HStack(spacing: 10) {
-            Text(channel)
-                .font(CarbonFont.mono(9, weight: .bold))
-                .tracking(0.8)
-                .foregroundStyle(oledFGo(0.5))
-                .frame(width: 10, alignment: .leading)
-            HStack(spacing: 2) {
-                let lit = Int((level * Double(Self.segments)).rounded())
-                ForEach(0..<Self.segments, id: \.self) { i in
-                    RoundedRectangle(cornerRadius: 1, style: .continuous)
-                        .fill(color(index: i, lit: lit))
-                        .shadow(color: glow(index: i, lit: lit), radius: i < lit ? 4 : 0)
-                }
+        let segments = RTAPane.segments
+        let lit = Int((level * Double(segments)).rounded())
+        VStack(spacing: 1.5) {
+            // Draw top→bottom; segment index counts from the bottom.
+            ForEach((0..<segments).reversed(), id: \.self) { i in
+                RoundedRectangle(cornerRadius: 0.75, style: .continuous)
+                    .fill(color(index: i, lit: lit))
+                    .shadow(color: glow(index: i, lit: lit), radius: i < lit ? 3 : 0)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .frame(height: 15)
-            Text(dbString)
-                .font(CarbonFont.mono(10, weight: .bold))
-                .foregroundStyle(oledFG)
-                .frame(width: 42, alignment: .trailing)
         }
     }
 
     private func color(index i: Int, lit: Int) -> Color {
-        if i == peak && i >= lit { return oledFGo(0.85) }   // peak-hold segment
+        if i == peak && i >= lit { return oledFGo(0.85) }   // peak-hold tick
         if i < lit {
             if i >= Self.hot { return theme.red }
             if i >= Self.mid { return theme.sun }
             return theme.cyan
         }
-        return oledFGo(0.1)
+        return oledFGo(0.08)
     }
 
     private func glow(index i: Int, lit: Int) -> Color {
@@ -899,29 +916,26 @@ private struct VUMeterRow: View {
         if i >= Self.mid { return theme.sun.opacity(0.5) }
         return theme.cyan.opacity(0.45)
     }
-
-    private var dbString: String {
-        guard level > 0.0001 else { return "−∞" }
-        let db = 20 * log10(level)
-        return String(format: "%.1f", db)
-    }
 }
 
-private struct VUScale: View {
-    private let marks = ["-40", "-30", "-20", "-12", "-6", "-3", "0", "+3"]
+/// Center frequency of every other band, printed under the columns.
+private struct RTAHzScale: View {
+    // 12 log bands over 20 Hz – 20 kHz → centers ≈ 27, 48, 85, 150, 270, 480,
+    // 850, 1.5k, 2.7k, 4.8k, 8.5k, 15k. Label alternate bands to keep the
+    // glass readable at 6.5 pt.
+    private static let labels = ["27", "", "85", "", "270", "", "850", "", "2K7", "", "8K5", ""]
 
     var body: some View {
-        HStack {
-            ForEach(marks, id: \.self) { m in
-                Text(m)
-                    .font(CarbonFont.mono(7, weight: .semibold))
-                    .tracking(0.6)
+        HStack(alignment: .center, spacing: 4) {
+            ForEach(Self.labels.indices, id: \.self) { i in
+                Text(Self.labels[i])
+                    .font(CarbonFont.mono(6.5, weight: .semibold))
+                    .tracking(0.4)
                     .foregroundStyle(oledFGo(0.35))
-                if m != marks.last { Spacer(minLength: 0) }
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity)
             }
         }
-        .padding(.leading, 20)
-        .padding(.trailing, 52)
     }
 }
 
