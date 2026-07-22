@@ -1,7 +1,7 @@
 import AppKit
 import CrateDiggerCore
 
-final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, NSMenuDelegate {
     private var mainWindowController: MainWindowController?
     private var aboutWindowController: AboutWindowController?
     private var guideWindowController: GuideWindowController?
@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private var miniPlayerWindowController: MiniPlayerWindowController?
     private let prefs: PreferencesStore = .shared
     private var openRecentMenu: NSMenu?
+    private var appearanceMenu: NSMenu?
     private var recentFolderURLs: [URL] = []
     private var spaceKeyMonitor: Any?
 
@@ -338,13 +339,65 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         else { return }
         UserDefaults.standard.set(mode.rawValue, forKey: AppearanceMode.userDefaultsKey)
         NotificationCenter.default.post(name: AppearanceMode.didChangeNotification, object: nil)
+        // Picking an appearance clears any installed-theme override, matching
+        // the header THEME button — otherwise the skin keeps winning and the
+        // menu pick appears to do nothing.
+        prefs.selectedThemeID = nil
         // The checkmark is set in validateMenuItem when the menu next opens.
+    }
+
+    // MARK: - Appearance & Themes menu
+
+    /// Appearance submenu = the three appearances, the installed themes, then
+    /// the folder actions. Rebuilt via `menuNeedsUpdate` each time it opens.
+    private func rebuildAppearanceMenu() {
+        guard let menu = appearanceMenu else { return }
+        menu.removeAllItems()
+        for mode in AppearanceMode.allCases {
+            let item = makeItem(title: mode.menuTitle, action: #selector(setAppearanceMode(_:)))
+            item.representedObject = mode.rawValue
+            menu.addItem(item)
+        }
+        // Menus only ever touch us on the main thread; ThemeRegistry is @MainActor.
+        let manifests = MainActor.assumeIsolated { ThemeRegistry.shared.manifests }
+        if !manifests.isEmpty {
+            menu.addItem(.separator())
+            for manifest in manifests {
+                let item = makeItem(title: manifest.definition.name, action: #selector(selectTheme(_:)))
+                item.representedObject = manifest.id
+                item.state = (manifest.id == prefs.selectedThemeID) ? .on : .off
+                menu.addItem(item)
+            }
+        }
+        menu.addItem(.separator())
+        menu.addItem(makeItem(title: "Refresh Themes", action: #selector(refreshThemes(_:))))
+        menu.addItem(makeItem(title: "Show Themes Folder…", action: #selector(showThemesFolder(_:))))
+    }
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        if menu === appearanceMenu { rebuildAppearanceMenu() }
+    }
+
+    @objc private func selectTheme(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String else { return }
+        prefs.selectedThemeID = id
+    }
+
+    @objc private func refreshThemes(_ sender: Any?) {
+        MainActor.assumeIsolated { ThemeRegistry.shared.refresh() }
+    }
+
+    @objc private func showThemesFolder(_ sender: Any?) {
+        guard let url = MainActor.assumeIsolated({ ThemeRegistry.shared.userThemesDirectory }) else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         switch menuItem.action {
         case #selector(setAppearanceMode(_:)):
-            menuItem.state = (menuItem.representedObject as? String == AppearanceMode.current.rawValue) ? .on : .off
+            // Only checked while no installed theme overrides the appearance.
+            menuItem.state = (prefs.selectedThemeID == nil
+                              && menuItem.representedObject as? String == AppearanceMode.current.rawValue) ? .on : .off
             return true
         case #selector(selectOLEDView(_:)):
             if let raw = menuItem.representedObject as? String,
@@ -430,16 +483,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         appMenu.addItem(makeItem(title: "Preferences…", action: #selector(showPreferences(_:)), key: ","))
         appMenu.addItem(.separator())
         let appearanceMenuItem = NSMenuItem(title: "Appearance", action: nil, keyEquivalent: "")
-        let appearanceMenu = NSMenu(title: "Appearance")
-        let currentMode = AppearanceMode.current
-        for mode in AppearanceMode.allCases {
-            let item = NSMenuItem(title: mode.menuTitle, action: #selector(setAppearanceMode(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = mode.rawValue
-            item.state = (mode == currentMode) ? .on : .off
-            appearanceMenu.addItem(item)
-        }
-        appearanceMenuItem.submenu = appearanceMenu
+        let appearanceSubmenu = NSMenu(title: "Appearance")
+        appearanceSubmenu.delegate = self   // rebuilt on open so dropped-in themes appear
+        self.appearanceMenu = appearanceSubmenu
+        rebuildAppearanceMenu()
+        appearanceMenuItem.submenu = appearanceSubmenu
         appMenu.addItem(appearanceMenuItem)
         appMenu.addItem(.separator())
         appMenu.addItem(makeItem(title: "Hide CrateDigger", action: #selector(NSApplication.hide(_:)), key: "h", target: NSApp))
