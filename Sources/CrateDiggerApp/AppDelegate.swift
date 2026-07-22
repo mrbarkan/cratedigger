@@ -240,6 +240,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         mainWindowController?.streamEnginePreferenceChanged()
     }
 
+    @objc private func checkYouTubeStreaming(_ sender: Any?) {
+        MainActor.assumeIsolated {
+            mainWindowController?.model.checkYouTubeStreaming()
+        }
+    }
+
     // MARK: - App menu actions
 
     // MARK: - Library Files
@@ -342,6 +348,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                 guard let model = self?.mainWindowController?.model else { return }
                 model.playbackVolume = 0.8   // meters scale by volume; 0 reads as silence
                 if let first = model.index.allTracks.first { model.playTrack(id: first.track.id) }
+            }
+        }
+        if env["CRATEDIGGER_CHECK_STREAM"] != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+                self?.mainWindowController?.model.checkYouTubeStreaming()
             }
         }
         func snap(_ suffix: String) {
@@ -664,6 +675,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         }
         engineMenu.addItem(.separator())
         engineMenu.addItem(makeItem(title: "Set yt-dlp Path…", action: #selector(setYtDlpPath(_:))))
+        engineMenu.addItem(makeItem(title: "Check YouTube Streaming…", action: #selector(checkYouTubeStreaming(_:))))
         engineMenuItem.submenu = engineMenu
         playbackMenu.addItem(engineMenuItem)
 
