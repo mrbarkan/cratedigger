@@ -96,7 +96,17 @@ public struct AlbumBooklet: Codable, Hashable, Sendable {
     /// Categorizes and sorts booklet image URLs based on their filenames to align with standard physical packaging order:
     /// Front Cover -> Booklet Pages -> Generic -> Inlay/Inlet -> Back Cover
     /// Note: Excludes CD/disc label artwork scans.
-    public static func sortAndCategorizeBookletImages(_ urls: [URL], manifest: ArtworkManifest? = nil) -> [URL] {
+    ///
+    /// The first URL of the result is `frontCoverURL` — the album's face in the
+    /// browser, gallery, and spinning record — so when neither the manifest nor
+    /// any filename claims a front, the likeliest cover is *promoted* to the
+    /// head (square-ish first, natural order tiebreak) instead of letting an
+    /// arbitrary booklet page lead. `pixelSize` is injectable for tests.
+    public static func sortAndCategorizeBookletImages(
+        _ urls: [URL],
+        manifest: ArtworkManifest? = nil,
+        pixelSize: (URL) -> (width: Int, height: Int)? = AlbumArtCatalog.imagePixelSize
+    ) -> [URL] {
         var front: [URL] = []
         // Alt covers stay front images but must never outrank the main cover:
         // "cover_alt.jpg" filename-sorts BEFORE "cover.jpg", so a shared bucket
@@ -151,6 +161,15 @@ public struct AlbumBooklet: Codable, Hashable, Sendable {
         inlay.sort(by: sortByFilename)
         back.sort(by: sortByFilename)
         generic.sort(by: sortByFilename)
+
+        // Nothing claimed the front → promote the likeliest cover from the
+        // unlabeled pages so it leads the sequence (and becomes frontCoverURL).
+        if front.isEmpty, altFront.isEmpty,
+           let winner = AlbumArtCatalog.likeliestCover(in: booklet + generic, pixelSize: pixelSize) {
+            booklet.removeAll { $0 == winner }
+            generic.removeAll { $0 == winner }
+            front = [winner]
+        }
 
         return front + altFront + booklet + generic + inlay + back
     }

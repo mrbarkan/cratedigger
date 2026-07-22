@@ -1,4 +1,5 @@
 import Foundation
+import ImageIO
 
 /// One page in the album artwork navigator. A page is usually one image file, but
 /// a `.tray` page composites a disc image over an inlay/tray-card image (the
@@ -120,6 +121,57 @@ public enum AlbumArtCatalog {
 
     private static func label(_ base: String, _ index: Int, _ count: Int) -> String {
         count > 1 ? "\(base) \(index + 1)" : base
+    }
+
+    // MARK: - Auto-classification (cover promotion)
+
+    /// Roles for a folder of images with no manifest: filename heuristics per
+    /// image, then — when nothing claims Cover — the likeliest front is
+    /// promoted so an album never leads with a random booklet page. Written
+    /// into the album folder's manifest on import (`LibraryOrganizerService`),
+    /// so the ART grid shows real roles instead of a wall of AUTO.
+    public static func autoClassify(
+        imageURLs: [URL],
+        pixelSize: (URL) -> (width: Int, height: Int)? = imagePixelSize
+    ) -> [String: ArtworkRole] {
+        var roles: [String: ArtworkRole] = [:]
+        for url in imageURLs {
+            roles[url.lastPathComponent] = classify(url, manifest: nil)
+        }
+        if !roles.values.contains(.cover),
+           let winner = likeliestCover(in: imageURLs.filter { roles[$0.lastPathComponent] == .bookletPage },
+                                       pixelSize: pixelSize) {
+            roles[winner.lastPathComponent] = .cover
+        }
+        return roles
+    }
+
+    /// The best front-cover guess among unlabeled pages: square-ish images
+    /// first (covers are square; booklet spreads are wide), natural filename
+    /// order breaking the tie — scan sets almost always lead with the front.
+    public static func likeliestCover(
+        in urls: [URL],
+        pixelSize: (URL) -> (width: Int, height: Int)? = imagePixelSize
+    ) -> URL? {
+        let sorted = urls.sorted {
+            $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending
+        }
+        let squarish = sorted.first { url in
+            guard let size = pixelSize(url), size.height > 0 else { return false }
+            let ratio = Double(size.width) / Double(size.height)
+            return abs(ratio - 1.0) <= 0.15
+        }
+        return squarish ?? sorted.first
+    }
+
+    /// Header-only pixel-dimensions sniff — no image decode.
+    public static func imagePixelSize(at url: URL) -> (width: Int, height: Int)? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL,
+                                                      [kCGImageSourceShouldCache: false] as CFDictionary),
+              let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = props[kCGImagePropertyPixelWidth] as? Int,
+              let height = props[kCGImagePropertyPixelHeight] as? Int else { return nil }
+        return (width, height)
     }
 
     /// Manifest role wins; otherwise fall back to the same filename heuristics the

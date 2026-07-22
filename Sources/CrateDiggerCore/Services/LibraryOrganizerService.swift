@@ -202,6 +202,7 @@ public final class LibraryOrganizerService {
                 if !processedPairs.contains(pairKey) {
                     processedPairs.insert(pairKey)
                     copySupportingFiles(from: sourceDir, to: targetDir)
+                    writeAutoManifestIfMissing(in: targetDir)
                     uniqueSourceDirs.insert(sourceDir)
                 }
             }
@@ -270,6 +271,18 @@ public final class LibraryOrganizerService {
                 }
             }
         }
+    }
+
+    /// Freshly imported albums used to land with every image un-roled (AUTO),
+    /// which let an arbitrary booklet page become the album's face until the
+    /// user sorted the ART grid by hand. Classify once at import — filename
+    /// heuristics plus cover promotion — and persist the result. A manifest
+    /// that traveled with the files (it's a supporting file) is never touched.
+    private func writeAutoManifestIfMissing(in albumDir: URL) {
+        guard ArtworkManifest.load(from: albumDir) == nil else { return }
+        let images = AlbumArtCatalog.gatherImageURLs(in: albumDir, fileManager: fileManager)
+        guard !images.isEmpty else { return }
+        try? ArtworkManifest(roles: AlbumArtCatalog.autoClassify(imageURLs: images)).save(to: albumDir)
     }
 
     private func hasAnyAudioFiles(in dir: URL) -> Bool {
