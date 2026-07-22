@@ -206,25 +206,12 @@ public final class LibraryOrganizerService {
                 }
             }
 
-            // Create new LoadedTrack with updated URL
-            let updatedTrackInfo = AudioTrack(
-                id: track.track.id,
-                fileURL: uniqueTargetURL,
-                title: track.track.title,
-                artist: track.track.artist,
-                album: track.track.album,
-                durationSeconds: track.track.durationSeconds,
-                formatName: track.track.formatName,
-                bitrateKbps: track.track.bitrateKbps,
-                sampleRateHz: track.track.sampleRateHz,
-                year: track.track.year,
-                trackNumber: track.track.trackNumber,
-                artworkSource: track.track.artworkSource,
-                artworkHash: track.track.artworkHash,
-                artworkDimensions: track.track.artworkDimensions
-            )
-            // Preserve Record Divider markers (time-based, so valid after the move).
-            updatedTracks.append(LoadedTrack(track: updatedTrackInfo, metadata: track.metadata,
+            // Repoint at the new location via withFileURL so every tag field
+            // survives — a hand-rolled copy here once dropped disc numbers and
+            // collapsed multi-disc albums into "DISC 1" after a Prep Crate commit.
+            // Record Divider markers are time-based, so they stay valid too.
+            updatedTracks.append(LoadedTrack(track: track.track.withFileURL(uniqueTargetURL),
+                                             metadata: track.metadata,
                                              recordMarkers: track.recordMarkers))
 
             count += 1

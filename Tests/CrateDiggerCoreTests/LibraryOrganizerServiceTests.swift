@@ -81,6 +81,36 @@ final class LibraryOrganizerServiceTests: XCTestCase {
         }
     }
 
+    func testOrganizePreservesDiscAndTotals() async throws {
+        try await withTemporaryDirectory(prefix: "OrganizerDiscTest") { tempDir in
+            let sourceDir = tempDir.appendingPathComponent("Original")
+            let destDir = tempDir.appendingPathComponent("Organized")
+            try FileManager.default.createDirectory(at: sourceDir, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: destDir, withIntermediateDirectories: true)
+
+            let trackURL = sourceDir.appendingPathComponent("d2t01.flac")
+            try "music data".write(to: trackURL, atomically: true, encoding: .utf8)
+
+            let loaded = LoadedTrack(
+                track: AudioTrack(fileURL: trackURL, title: "20th Century Towers",
+                                  artist: "Death Cab for Cutie", album: "The Photo Album",
+                                  trackNumber: 1, trackTotal: 3, discNumber: 2, discTotal: 3),
+                metadata: ConversionMetadata(albumArtist: "Death Cab for Cutie", album: "The Photo Album")
+            )
+
+            let organizer = LibraryOrganizerService(fileManager: .default)
+            let result = try await organizer.organize(tracks: [loaded], destinationFolder: destDir, copyOnly: true)
+
+            // The browser groups discs off AudioTrack's own fields — the repointed
+            // copy must keep them or a multi-disc album collapses into "DISC 1".
+            let moved = try XCTUnwrap(result.first?.track)
+            XCTAssertNotEqual(moved.fileURL, trackURL, "file should be relocated")
+            XCTAssertEqual(moved.discNumber, 2)
+            XCTAssertEqual(moved.discTotal, 3)
+            XCTAssertEqual(moved.trackTotal, 3)
+        }
+    }
+
     func testOrganizeCopyAndCollision() async throws {
         try await withTemporaryDirectory(prefix: "OrganizerCopyTest") { tempDir in
             let sourceDir = tempDir.appendingPathComponent("Original")
