@@ -6,7 +6,6 @@ import SwiftUI
 
 enum OLEDView: String, CaseIterable, Codable, Sendable {
     case nowPlaying
-    case vu
     case conversion
     case scan
     case remoteSync
@@ -16,7 +15,6 @@ enum OLEDView: String, CaseIterable, Codable, Sendable {
     var label: String {
         switch self {
         case .nowPlaying: return "Now"
-        case .vu:         return "RTA"   // the spectrum-analyzer screen (case name kept for persisted prefs)
         case .conversion: return "Cnvrt"
         case .scan:       return "Scan"
         case .remoteSync: return "Sync"

@@ -1,13 +1,12 @@
 import SwiftUI
 
 /// Every OLED screen owns one accent color, shared by the annunciator on the
-/// glass and the display-toggle light strip so the two always agree. All seven
-/// are distinct — the lamp color alone identifies the screen.
+/// glass and the display-toggle light strip so the two always agree. All are
+/// distinct — the lamp color alone identifies the screen.
 extension OLEDView {
     func accent(_ theme: CarbonTheme) -> Color {
         switch self {
         case .nowPlaying: return theme.sun        // yellow
-        case .vu:         return theme.cyanGlow   // icy teal
         case .conversion: return theme.orange
         case .scan:       return theme.cyan
         case .remoteSync: return theme.indigo
@@ -26,7 +25,7 @@ struct DisplayModeButton: View {
     @Environment(\.carbon) private var theme
     @EnvironmentObject private var model: LibraryViewModel
 
-    private static let cycle: [OLEDView] = [.nowPlaying, .vu, .conversion, .scan, .devices]
+    private static let cycle: [OLEDView] = [.nowPlaying, .conversion, .scan, .devices]
 
     var body: some View {
         Button(action: cycleToNext) {
@@ -60,7 +59,6 @@ struct DisplayModeButton: View {
         case .nowPlaying: return "NOW"
         case .conversion: return "CNVRT"
         case .scan:       return "SCAN"
-        case .vu:         return "RTA"
         case .remoteSync: return "SYNC"
         case .cdRip:      return "CD-RIP"
         case .devices:    return "DEV"

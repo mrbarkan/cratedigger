@@ -598,7 +598,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         let viewMenuItem = NSMenuItem()
         mainMenu.addItem(viewMenuItem)
         let viewMenu = NSMenu(title: "View")
-        // Match the order shown in the OLED view switcher (VU is hidden in the chrome).
+        // Match the order shown in the OLED view switcher.
         let displayedViews: [(OLEDView, String)] = [
             (.nowPlaying, "1"),
             (.conversion, "2"),

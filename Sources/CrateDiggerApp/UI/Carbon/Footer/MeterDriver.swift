@@ -55,9 +55,7 @@ final class MeterDriver: ObservableObject {
     /// Publish at the LEDs' own resolution — the displays are discrete
     /// (6-segment spectrum columns, 18-segment L/R bars), so any finer publish
     /// re-renders identical pixels. A pass now happens only when an LED flips.
-    /// The OLED RTA pane has taller columns, so it raises `bandQuantum` to its
-    /// own segment count on appear; the footer keeps the 1/6 default.
-    var bandQuantum = 1.0 / 6.0
+    private let bandQuantum = 1.0 / 6.0
     private let levelQuantum = 1.0 / 18.0
 
     private func ensureTimer() {
