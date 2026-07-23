@@ -289,14 +289,26 @@ public final class PlaybackService: PlaybackServiceProtocol {
 
     private let engine: PlaybackEngineProtocol
     private var pendingAutoPlay = false
+    private let decoder: DSDPlaybackDecoding?
+    /// Bumped on every load/track change; a decode completion is applied only if
+    /// its generation still matches, so a superseded decode is dropped.
+    private var loadGeneration = 0
+    /// The temp file the current item is playing from (nil for a native file).
+    /// Deleted when replaced so decodes don't accumulate in the temp dir.
+    private var currentTempURL: URL?
 
     public convenience init() {
-        self.init(engine: AVPlayerEngine())
+        self.init(engine: AVPlayerEngine(), decoder: FFmpegDSDDecoder())
     }
 
-    init(engine: PlaybackEngineProtocol) {
+    init(engine: PlaybackEngineProtocol, decoder: DSDPlaybackDecoding? = nil) {
         self.engine = engine
+        self.decoder = decoder
         bindEngineCallbacks()
+    }
+
+    deinit {
+        if let currentTempURL { try? FileManager.default.removeItem(at: currentTempURL) }
     }
 
     public func load(queue: [PlaybackQueueItem], startIndex: Int, autoPlay: Bool) {
@@ -305,6 +317,8 @@ public final class PlaybackService: PlaybackServiceProtocol {
         errorMessage = nil
 
         guard !queue.isEmpty else {
+            loadGeneration += 1
+            replaceTemp(with: nil)
             engine.pause()
             currentIndex = nil
             currentTimeSeconds = 0
@@ -318,7 +332,56 @@ public final class PlaybackService: PlaybackServiceProtocol {
         currentTimeSeconds = 0
         durationSeconds = 0
         state = .loading
-        engine.replaceCurrentItem(url: queue[clampedIndex].url)
+        loadGeneration += 1
+        startItem(url: queue[clampedIndex].url, generation: loadGeneration)
+    }
+
+    /// Hand `url` to the engine, decoding DSD to a temp file first when the URL
+    /// is a format AVFoundation can't play. `generation` guards against a decode
+    /// that finishes after the user has already moved to another track.
+    private func startItem(url: URL, generation: Int) {
+        if let decoder, decoder.canDecode(url) {
+            decoder.decode(url) { [weak self] result in
+                DispatchQueue.main.async {
+                    guard let self, self.loadGeneration == generation else {
+                        // Superseded: drop the result and clean up its temp file.
+                        if case .success(let stale) = result {
+                            try? FileManager.default.removeItem(at: stale)
+                        }
+                        return
+                    }
+                    switch result {
+                    case .success(let tempURL):
+                        self.replaceTemp(with: tempURL)
+                        self.engine.replaceCurrentItem(url: tempURL)
+                    case .failure(let error):
+                        self.onItemFailedFromDecode(error.localizedDescription)
+                    }
+                }
+            }
+        } else {
+            replaceTemp(with: nil)
+            engine.replaceCurrentItem(url: url)
+        }
+    }
+
+    private func replaceTemp(with newTemp: URL?) {
+        if let currentTempURL, currentTempURL != newTemp {
+            try? FileManager.default.removeItem(at: currentTempURL)
+        }
+        currentTempURL = newTemp
+    }
+
+    /// Route a decode failure through the same fallback path AVPlayer failures
+    /// use (skip to the next track, or surface the error).
+    private func onItemFailedFromDecode(_ message: String) {
+        errorMessage = message
+        notify { self.onError?(message) }
+        if let currentIndex, queue.indices.contains(currentIndex + 1) {
+            load(queue: queue, startIndex: currentIndex + 1, autoPlay: pendingAutoPlay)
+            return
+        }
+        state = .failed(message: message)
     }
 
     public func play() {
