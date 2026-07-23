@@ -242,6 +242,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         hostingController.model.startWelcomeTour()
     }
 
+    func importSACDISO() {
+        hostingController.model.beginSACDImport()
+    }
+
     func importLibraryFile() {
         hostingController.model.importLibraryFile()
     }

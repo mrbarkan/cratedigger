@@ -408,11 +408,11 @@ public struct OutputPathPlanner {
 /// Sanitizes a single filesystem path component (strips path separators, collapses
 /// whitespace, falls back when empty). Shared by `OutputPathPlanner` and
 /// `LibraryOrganizerService` so both agree on how names become folders/files.
-enum PathComponentSanitizer {
+public enum PathComponentSanitizer {
     /// Compiled once; sanitize runs ~4x per track on every index rebuild.
     private static let whitespaceRuns = try! NSRegularExpression(pattern: "\\s+")
 
-    static func sanitize(_ rawValue: String, fallback: String) -> String {
+    public static func sanitize(_ rawValue: String, fallback: String) -> String {
         var value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
         if value.isEmpty { return fallback }
 

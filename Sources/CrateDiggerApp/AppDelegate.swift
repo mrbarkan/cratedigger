@@ -250,6 +250,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
 
     // MARK: - Library Files
 
+    @objc private func importSACDISO(_ sender: Any?) {
+        mainWindowController?.importSACDISO()
+    }
+
     @objc private func importLibraryFile(_ sender: Any?) {
         mainWindowController?.importLibraryFile()
     }
@@ -571,6 +575,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         rebuildRecentFoldersCache()
         rebuildOpenRecentMenu()
         fileMenu.addItem(openRecentItem)
+        fileMenu.addItem(.separator())
+
+        fileMenu.addItem(makeItem(title: "Import SACD ISO…", action: #selector(importSACDISO(_:))))
         fileMenu.addItem(.separator())
 
         let libraryMenu = NSMenu(title: "Library")

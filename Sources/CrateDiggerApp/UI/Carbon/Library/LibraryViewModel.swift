@@ -3329,7 +3329,9 @@ final class LibraryViewModel: ObservableObject {
                     }
                     
                     await MainActor.run {
-                        self.appendTracksToCrateFile(updatedTracks, crateName: crateName)
+                        if self.appendTracksToCrateFile(updatedTracks, crateName: crateName) {
+                            self.removeCommittedFromPrepCrate(tracks)
+                        }
                         self.finishImportStatus(count: tracks.count, crateName: crateName)
                     }
                 } catch {
@@ -3341,9 +3343,21 @@ final class LibraryViewModel: ObservableObject {
             }
         } else {
             // Index files in place
-            appendTracksToCrateFile(tracks, crateName: crateName)
+            if appendTracksToCrateFile(tracks, crateName: crateName), treatAsImport {
+                removeCommittedFromPrepCrate(tracks)
+            }
             finishImportStatus(count: tracks.count, crateName: crateName)
         }
+    }
+
+    /// Committing staged tracks files them OUT of the Prep Crate — once an album
+    /// lands in a crate it shouldn't sit in staging inviting a second (duplicate)
+    /// commit. In-memory only: launch restore re-scans the saved dig folders, so
+    /// a relaunch can re-stage them — at which point the organizer's identical-
+    /// content check makes a re-commit harmless.
+    private func removeCommittedFromPrepCrate(_ tracks: [LoadedTrack]) {
+        let committed = Set(tracks.map { $0.track.fileURL.standardizedFileURL.path })
+        prepCrateTracks.removeAll { committed.contains($0.track.fileURL.standardizedFileURL.path) }
     }
 
     /// Switch the OLED to SCAN and show an "adding" status while tracks are added
@@ -3370,11 +3384,14 @@ final class LibraryViewModel: ObservableObject {
         }
     }
 
-    private func appendTracksToCrateFile(_ newTracks: [LoadedTrack], crateName: String) {
+    /// Returns whether the crate save actually landed — callers that clean up
+    /// staging afterwards must not do so on a failed save.
+    @discardableResult
+    private func appendTracksToCrateFile(_ newTracks: [LoadedTrack], crateName: String) -> Bool {
         var existing = loadCrateTracks(name: crateName)
         existing.append(contentsOf: newTracks)
         let merged = LibraryViewModel.deduplicate(tracks: existing)
-        saveCrateTracks(merged, name: crateName)
+        let saved = saveCrateTracks(merged, name: crateName)
 
         // Land in the destination crate and reveal the album we just added, so an
         // add is visible instead of silently mutating a crate off-screen.
@@ -3382,6 +3399,7 @@ final class LibraryViewModel: ObservableObject {
         // first album — so we set our reveal target *after* it.
         selectSource(.localCrate(name: crateName))
         revealAlbum(containingTrackID: newTracks.last?.track.id)
+        return saved
     }
 
     /// Select and scroll-reveal the album containing `trackID` in the current
