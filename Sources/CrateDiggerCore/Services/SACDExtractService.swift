@@ -98,3 +98,132 @@ public enum SACDMetadataParser {
                             year: year, stereoTracks: tracks)
     }
 }
+
+public enum SACDExtractError: Error, LocalizedError {
+    case toolFailed(String)
+    case noMetadata
+    case noOutputProduced
+
+    public var errorDescription: String? {
+        switch self {
+        case .toolFailed(let stderr): return "sacd_extract failed: \(stderr)"
+        case .noMetadata: return "Could not read the SACD's table of contents."
+        case .noOutputProduced: return "sacd_extract completed but produced no DSF files."
+        }
+    }
+}
+
+/// Drives a user-installed sacd_extract binary: reads disc metadata (-P) and
+/// extracts stereo tracks to tagged DSF files, one subprocess run per track so
+/// progress and cancellation land between tracks (the ConversionService model).
+public final class SACDExtractService {
+    private let toolURL: URL
+    private let commandRunner: CommandRunning
+    /// sacd_extract blocks its thread (spawn + wait). Keep it OFF the Swift
+    /// cooperative pool — same rule as FFmpegDSDDecoder.decodeQueue.
+    private static let workQueue = DispatchQueue(label: "com.cratedigger.sacd-extract",
+                                                 qos: .userInitiated)
+    private var isCancelled = false
+
+    public init(toolURL: URL, commandRunner: CommandRunning = ProcessCommandRunner()) {
+        self.toolURL = toolURL
+        self.commandRunner = commandRunner
+    }
+
+    public static func printArguments(iso: URL) -> [String] {
+        ["-P", "-i", iso.path]
+    }
+
+    /// -s DSF output, -2 stereo area, -c DST→DSD decompress, one track per run.
+    public static func extractArguments(iso: URL, trackNumber: Int, outputDir: URL) -> [String] {
+        ["-s", "-2", "-c", "-t", String(trackNumber), "-i", iso.path, "-y", outputDir.path]
+    }
+
+    public func cancel() {
+        Self.workQueue.async { self.isCancelled = true }
+    }
+
+    public func readDiscInfo(iso: URL, completion: @escaping (Result<SACDDiscInfo, Error>) -> Void) {
+        let runner = commandRunner
+        let tool = toolURL
+        Self.workQueue.async {
+            do {
+                let output = try runner.run(executableURL: tool,
+                                            arguments: Self.printArguments(iso: iso))
+                guard output.terminationStatus == 0 else {
+                    return completion(.failure(SACDExtractError.toolFailed(output.standardError)))
+                }
+                guard let disc = SACDMetadataParser.parse(output.standardOutput) else {
+                    return completion(.failure(SACDExtractError.noMetadata))
+                }
+                completion(.success(disc))
+            } catch {
+                completion(.failure(error))
+            }
+        }
+    }
+
+    /// Extracts each requested stereo track into `destination` (flat — the
+    /// tool's "<Album>/Stereo/" nesting is not the caller's concern).
+    /// `onTrackDone(completed, total)` fires after each track; both callbacks
+    /// run on the work queue.
+    public func extractStereoTracks(iso: URL,
+                                    trackNumbers: [Int],
+                                    to destination: URL,
+                                    onTrackDone: @escaping (Int, Int) -> Void,
+                                    completion: @escaping (Result<[URL], Error>) -> Void) {
+        let runner = commandRunner
+        let tool = toolURL
+        Self.workQueue.async { [weak self] in
+            let fm = FileManager.default
+            self?.isCancelled = false
+            // Extract into a private staging dir, then flatten into destination.
+            let staging = fm.temporaryDirectory
+                .appendingPathComponent("cratedigger-sacd-\(UUID().uuidString)", isDirectory: true)
+            defer { try? fm.removeItem(at: staging) }
+            var produced: [URL] = []
+            do {
+                try fm.createDirectory(at: staging, withIntermediateDirectories: true)
+                try fm.createDirectory(at: destination, withIntermediateDirectories: true)
+                for (index, track) in trackNumbers.enumerated() {
+                    if self?.isCancelled == true { break }
+                    let output = try runner.run(
+                        executableURL: tool,
+                        arguments: Self.extractArguments(iso: iso, trackNumber: track,
+                                                         outputDir: staging))
+                    guard output.terminationStatus == 0 else {
+                        throw SACDExtractError.toolFailed(output.standardError)
+                    }
+                    produced.append(contentsOf: try Self.relocateNewDSFs(from: staging,
+                                                                         to: destination,
+                                                                         fileManager: fm))
+                    onTrackDone(index + 1, trackNumbers.count)
+                }
+                guard !produced.isEmpty else { throw SACDExtractError.noOutputProduced }
+                completion(.success(produced))
+            } catch {
+                completion(.failure(error))
+            }
+        }
+    }
+
+    /// Move every .dsf anywhere under `staging` into `destination` (flat).
+    private static func relocateNewDSFs(from staging: URL, to destination: URL,
+                                        fileManager fm: FileManager) throws -> [URL] {
+        var moved: [URL] = []
+        let files = fm.enumerator(at: staging, includingPropertiesForKeys: nil)?
+            .compactMap { $0 as? URL }
+            .filter { $0.pathExtension.lowercased() == "dsf" } ?? []
+        for file in files {
+            let dest = destination.appendingPathComponent(file.lastPathComponent)
+            // Never overwrite an existing rip; re-running an import skips dupes.
+            if fm.fileExists(atPath: dest.path) {
+                try fm.removeItem(at: file)
+            } else {
+                try fm.moveItem(at: file, to: dest)
+                moved.append(dest)
+            }
+        }
+        return moved
+    }
+}

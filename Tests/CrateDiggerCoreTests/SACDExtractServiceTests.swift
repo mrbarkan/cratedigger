@@ -94,4 +94,88 @@ final class SACDMetadataParserTests: XCTestCase {
         XCTAssertNil(SACDMetadataParser.parse("Disc Information:\n\tTitle: X\n"))
     }
 }
+
+/// CommandRunning fake that records invocations and simulates sacd_extract's
+/// on-disk behavior (writes "<Album>/Stereo/NN - Title.dsf" under the -y dir).
+private final class FakeSACDRunner: CommandRunning {
+    var invocations: [[String]] = []
+    var failOnCall: Int?
+    func run(executableURL: URL, arguments: [String]) throws -> CommandOutput {
+        invocations.append(arguments)
+        if let failOn = failOnCall, invocations.count == failOn {
+            return CommandOutput(terminationStatus: 1, standardOutput: "", standardError: "bad sector")
+        }
+        if let tIndex = arguments.firstIndex(of: "-t"), let yIndex = arguments.firstIndex(of: "-y") {
+            let track = arguments[tIndex + 1]
+            let outDir = URL(fileURLWithPath: arguments[yIndex + 1])
+            let stereo = outDir.appendingPathComponent("Album/Stereo", isDirectory: true)
+            try FileManager.default.createDirectory(at: stereo, withIntermediateDirectories: true)
+            try Data("dsf".utf8).write(to: stereo.appendingPathComponent("0\(track) - T\(track).dsf"))
+        }
+        return CommandOutput(terminationStatus: 0, standardOutput: "", standardError: "")
+    }
+}
+
+final class SACDExtractServiceTests: XCTestCase {
+    private let tool = URL(fileURLWithPath: "/usr/local/bin/sacd_extract")
+
+    func testArgumentBuilders() {
+        XCTAssertEqual(SACDExtractService.printArguments(iso: URL(fileURLWithPath: "/a/d.iso")),
+                       ["-P", "-i", "/a/d.iso"])
+        XCTAssertEqual(SACDExtractService.extractArguments(iso: URL(fileURLWithPath: "/a/d.iso"),
+                                                           trackNumber: 4,
+                                                           outputDir: URL(fileURLWithPath: "/out")),
+                       ["-s", "-2", "-c", "-t", "4", "-i", "/a/d.iso", "-y", "/out"])
+    }
+
+    func testExtractRunsPerTrackMovesFilesAndReportsProgress() throws {
+        let dest = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sacd-dest-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dest) }
+        let runner = FakeSACDRunner()
+        let service = SACDExtractService(toolURL: tool, commandRunner: runner)
+
+        let exp = expectation(description: "extract")
+        var progress: [(Int, Int)] = []
+        var extracted: [URL] = []
+        service.extractStereoTracks(iso: URL(fileURLWithPath: "/a/d.iso"),
+                                    trackNumbers: [1, 2],
+                                    to: dest,
+                                    onTrackDone: { progress.append(($0, $1)) }) { result in
+            if case .success(let urls) = result { extracted = urls }
+            exp.fulfill()
+        }
+        wait(for: [exp], timeout: 5)
+
+        XCTAssertEqual(runner.invocations.count, 2)
+        XCTAssertEqual(progress.map { $0.0 }, [1, 2])
+        XCTAssertEqual(progress.map { $0.1 }, [2, 2])
+        XCTAssertEqual(extracted.count, 2)
+        // Files are flattened out of "<Album>/Stereo/" into the destination.
+        XCTAssertEqual(Set(extracted.map { $0.deletingLastPathComponent().path }), [dest.path])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dest.appendingPathComponent("01 - T1.dsf").path))
+    }
+
+    func testExtractFailureSurfacesStderr() throws {
+        let dest = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sacd-dest-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dest) }
+        let runner = FakeSACDRunner()
+        runner.failOnCall = 1
+        let service = SACDExtractService(toolURL: tool, commandRunner: runner)
+
+        let exp = expectation(description: "extract")
+        var failure: Error?
+        service.extractStereoTracks(iso: URL(fileURLWithPath: "/a/d.iso"), trackNumbers: [1],
+                                    to: dest, onTrackDone: { _, _ in }) { result in
+            if case .failure(let error) = result { failure = error }
+            exp.fulfill()
+        }
+        wait(for: [exp], timeout: 5)
+        guard case .some(SACDExtractError.toolFailed(let message)) = failure else {
+            return XCTFail("expected toolFailed, got \(String(describing: failure))")
+        }
+        XCTAssertTrue(message.contains("bad sector"))
+    }
+}
 #endif
