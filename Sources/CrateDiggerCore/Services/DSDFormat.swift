@@ -15,13 +15,18 @@ public enum DSDFormat {
 
     /// "DSD64" / "DSD128" / "DSD256" for the standard rates, generic "DSD" for
     /// any other rate at or above the DSD64 base, `nil` for ordinary PCM rates.
+    /// ffprobe reports DSD streams either as the 1-bit rate (2 822 400 Hz for
+    /// DSD64) or, for the *_planar codecs real DSF files use, as bytes/sec
+    /// (352 800 Hz) — accept both. Callers gate on `isDSDCodec`, so a PCM rate
+    /// like 352.8 kHz DXD never reaches this mapping.
     public static func label(sampleRateHz: Int?) -> String? {
-        guard let rate = sampleRateHz, rate >= base else { return nil }
+        guard let rate = sampleRateHz else { return nil }
+        let byteBase = base / 8
         switch rate {
-        case base: return "DSD64"
-        case base * 2: return "DSD128"
-        case base * 4: return "DSD256"
-        default: return "DSD"
+        case base, byteBase: return "DSD64"
+        case base * 2, byteBase * 2: return "DSD128"
+        case base * 4, byteBase * 4: return "DSD256"
+        default: return rate >= base ? "DSD" : nil
         }
     }
 }

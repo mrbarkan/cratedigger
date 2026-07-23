@@ -19,6 +19,17 @@ final class DSDFormatTests: XCTestCase {
         XCTAssertEqual(DSDFormat.label(sampleRateHz: 3_000_000), "DSD")
     }
 
+    func testFfprobeByteRatesMapToLabels() {
+        // ffprobe reports DSD sample_rate in bytes/sec (bit rate ÷ 8) for the
+        // dsd_*_planar codecs real DSF files use — verified against a real
+        // sacd_extract rip. The label call is gated on isDSDCodec, so a PCM
+        // rate like 352.8 kHz DXD never reaches this mapping.
+        XCTAssertEqual(DSDFormat.label(sampleRateHz: 352_800), "DSD64")
+        XCTAssertEqual(DSDFormat.label(sampleRateHz: 705_600), "DSD128")
+        XCTAssertEqual(DSDFormat.label(sampleRateHz: 1_411_200), "DSD256")
+        XCTAssertNil(DSDFormat.label(sampleRateHz: 192_000))
+    }
+
     func testCodecNameDetection() {
         XCTAssertTrue(DSDFormat.isDSDCodec("dsd_lsbf"))
         XCTAssertTrue(DSDFormat.isDSDCodec("DSD_MSBF_PLANAR"))
