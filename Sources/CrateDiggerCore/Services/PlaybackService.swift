@@ -65,6 +65,17 @@ public protocol PlaybackServiceProtocol: AnyObject {
     func setMasterGain(_ gain: Double)
 }
 
+/// The single linear-amplitude → meter-position map (-48 dBFS → 0, 0 dBFS →
+/// 0.80). MeterDriver calibrates against this exact scale — every engine must
+/// map through it, or the meters read differently per engine.
+enum PlaybackMeterScale {
+    static func position(fromLinear linear: Double) -> Double {
+        guard linear > 0.000_001 else { return 0 }
+        let db = 20 * log10(linear)
+        return min(max((db + 48) / 48 * 0.80, 0), 1)
+    }
+}
+
 protocol PlaybackEngineProtocol: AnyObject {
     var onItemReady: (() -> Void)? { get set }
     var onItemFailed: ((String) -> Void)? { get set }
@@ -214,9 +225,7 @@ final class AVPlayerEngine: PlaybackEngineProtocol {
     /// the ONLY dB mapping in the level path — consumers (MeterDriver) must
     /// take these values as-is or the scale gets compressed twice.
     private func meterPosition(_ linear: Double) -> Double {
-        guard linear > 0.000_001 else { return 0 }
-        let db = 20 * log10(linear)
-        return min(max((db + 48) / 48 * 0.80, 0), 1)
+        PlaybackMeterScale.position(fromLinear: linear)
     }
 
     /// Attach an audio tap so `currentLevels` reflects the real signal. The
