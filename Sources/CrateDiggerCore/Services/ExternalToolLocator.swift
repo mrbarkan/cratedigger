@@ -4,11 +4,15 @@ public enum ExternalTool: String, CaseIterable, Sendable {
     case ffmpeg
     case ffprobe
     case ytdlp
+    /// Bring-your-own like yt-dlp — GPL + SACD-DRM circumvention keep it out
+    /// of the repo and the bundled app.
+    case sacdExtract
 
     public var executableName: String {
         switch self {
         case .ffmpeg, .ffprobe: return rawValue
         case .ytdlp: return "yt-dlp"   // binary name differs from the case name
+        case .sacdExtract: return "sacd_extract"
         }
     }
 
@@ -20,6 +24,8 @@ public enum ExternalTool: String, CaseIterable, Sendable {
             return "CRATEDIGGER_FFPROBE_PATH"
         case .ytdlp:
             return "CRATEDIGGER_YTDLP_PATH"
+        case .sacdExtract:
+            return "CRATEDIGGER_SACD_EXTRACT_PATH"
         }
     }
 }

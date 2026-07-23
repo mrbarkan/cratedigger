@@ -122,4 +122,40 @@ final class LibraryScanServiceTests: XCTestCase {
         }
     }
 }
+
+final class LibraryScanServiceDSDTests: XCTestCase {
+    /// Fake probe that reports a DSD64 audio stream, like ffprobe does for .dsf.
+    private final class DSDProbe: MetadataProbing {
+        func probe(url: URL) throws -> ProbedMetadata {
+            ProbedMetadata(
+                formatName: "dsf",
+                formatBitRateBps: nil,
+                formatTags: ["title": "Test DSD", "artist": "A", "album": "B"],
+                streams: [ProbedStreamMetadata(
+                    index: 0, codecType: "audio", codecName: "dsd_lsbf",
+                    sampleRateHz: 2_822_400, bitRateBps: nil, tags: [:], dispositions: [:])]
+            )
+        }
+    }
+
+    func testDSFExtensionIsSupported() {
+        XCTAssertTrue(LibraryScanService.defaultSupportedExtensions.contains("dsf"))
+        XCTAssertTrue(LibraryScanService.defaultSupportedExtensions.contains("dff"))
+    }
+
+    func testScannedDSFGetsDSDLabel() async throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("dsdscan-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        // Empty stand-in file; the fake probe supplies the metadata.
+        try Data().write(to: dir.appendingPathComponent("01 Track.dsf"))
+
+        let scanner = LibraryScanService(metadataProbe: DSDProbe())
+        let tracks = await scanner.scanFolder(dir)
+
+        XCTAssertEqual(tracks.count, 1)
+        XCTAssertEqual(tracks.first?.track.formatName, "DSD64")
+    }
+}
 #endif

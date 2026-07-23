@@ -156,19 +156,57 @@ final class LibraryOrganizerServiceTests: XCTestCase {
             XCTAssertTrue(FileManager.default.fileExists(atPath: targetURL.path))
             XCTAssertTrue(FileManager.default.fileExists(atPath: trackURL.path)) // Copy: original remains
             
-            // Second run: Copy again (should trigger collision resolution)
-            try await organizer.organize(
+            // Second run: same source, unchanged bytes → already imported. The
+            // organizer must reuse the existing copy, not mint "01 - Song (1)".
+            let rerun = try await organizer.organize(
                 tracks: [loadedTrack],
                 destinationFolder: destDir,
                 copyOnly: true
             )
-            
+
             let collisionURL = destDir
                 .appendingPathComponent("Artist")
                 .appendingPathComponent("[2020] - Album")
                 .appendingPathComponent("01 - Song (1).mp3")
-            
-            XCTAssertTrue(FileManager.default.fileExists(atPath: collisionURL.path))
+
+            XCTAssertFalse(FileManager.default.fileExists(atPath: collisionURL.path),
+                           "re-importing an identical file must not duplicate it")
+            XCTAssertEqual(rerun.first?.track.fileURL.path, targetURL.path,
+                           "the returned track should point at the existing library copy")
+        }
+    }
+
+    func testOrganizeCollisionStillUniquesDifferentContent() async throws {
+        try await withTemporaryDirectory(prefix: "OrganizerRealCollisionTest") { tempDir in
+            let sourceDir = tempDir.appendingPathComponent("Original")
+            let destDir = tempDir.appendingPathComponent("Organized")
+            try FileManager.default.createDirectory(at: sourceDir, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: destDir, withIntermediateDirectories: true)
+
+            // A different recording that plans to the same target name.
+            let occupiedURL = destDir
+                .appendingPathComponent("Artist")
+                .appendingPathComponent("[2020] - Album")
+            try FileManager.default.createDirectory(at: occupiedURL, withIntermediateDirectories: true)
+            try "an entirely different recording".write(
+                to: occupiedURL.appendingPathComponent("01 - Song.mp3"), atomically: true, encoding: .utf8)
+
+            let trackURL = sourceDir.appendingPathComponent("original_file.mp3")
+            try "mp3 data".write(to: trackURL, atomically: true, encoding: .utf8)
+            let loadedTrack = LoadedTrack(
+                track: AudioTrack(fileURL: trackURL, title: "Song", artist: "Artist",
+                                  album: "Album", year: 2020, trackNumber: 1),
+                metadata: ConversionMetadata(title: "Song", artist: "Artist", albumArtist: "Artist",
+                                             album: "Album", trackNumber: 1, year: 2020)
+            )
+
+            let organizer = LibraryOrganizerService(fileManager: .default)
+            let result = try await organizer.organize(tracks: [loadedTrack], destinationFolder: destDir, copyOnly: true)
+
+            let collisionURL = occupiedURL.appendingPathComponent("01 - Song (1).mp3")
+            XCTAssertTrue(FileManager.default.fileExists(atPath: collisionURL.path),
+                          "different content with the same name must still be uniqued, never overwritten or dropped")
+            XCTAssertEqual(result.first?.track.fileURL.path, collisionURL.path)
         }
     }
     

@@ -221,6 +221,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
 
     // MARK: - Stream Engine menu
 
+    @objc private func setDSDOutputMode(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let mode = DSDOutputMode(rawValue: raw) else { return }
+        mainWindowController?.setDSDOutputMode(mode)
+    }
+
     @objc private func setStreamEngine(_ sender: NSMenuItem) {
         guard let raw = sender.representedObject as? String else { return }
         prefs.streamEngine = raw
@@ -249,6 +255,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     // MARK: - App menu actions
 
     // MARK: - Library Files
+
+    @objc private func importSACDISO(_ sender: Any?) {
+        mainWindowController?.importSACDISO()
+    }
 
     @objc private func importLibraryFile(_ sender: Any?) {
         mainWindowController?.importLibraryFile()
@@ -469,6 +479,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         case #selector(setStreamEngine(_:)):
             menuItem.state = (menuItem.representedObject as? String == prefs.streamEngine) ? .on : .off
             return true
+        case #selector(setDSDOutputMode(_:)):
+            let current = mainWindowController?.currentDSDOutputMode() ?? .auto
+            menuItem.state = (menuItem.representedObject as? String == current.rawValue) ? .on : .off
+            return true
         case #selector(revealSelectionInFinder(_:)),
              #selector(convertSelected(_:)),
              #selector(transferToDevice(_:)):
@@ -573,6 +587,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         fileMenu.addItem(openRecentItem)
         fileMenu.addItem(.separator())
 
+        fileMenu.addItem(makeItem(title: "Import SACD ISO…", action: #selector(importSACDISO(_:))))
+        fileMenu.addItem(.separator())
+
         let libraryMenu = NSMenu(title: "Library")
         libraryMenu.addItem(makeItem(title: "Import Library File…", action: #selector(importLibraryFile(_:))))
         libraryMenu.addItem(makeItem(title: "Export Library File…", action: #selector(exportLibraryFile(_:))))
@@ -657,6 +674,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         let repeatItem = makeItem(title: "Cycle Repeat Mode", action: #selector(cycleRepeatMode(_:)), key: "r")
         repeatItem.keyEquivalentModifierMask = [.command, .option]
         playbackMenu.addItem(repeatItem)
+        playbackMenu.addItem(.separator())
+
+        // DSD output picker: bit-perfect DoP to a capable DAC, or PCM decode.
+        let dsdMenuItem = NSMenuItem(title: "DSD Output", action: nil, keyEquivalent: "")
+        let dsdMenu = NSMenu(title: "DSD Output")
+        let dsdModes: [(String, DSDOutputMode)] = [
+            ("Auto (Bit-Perfect if the DAC can)", .auto),
+            ("PCM (Compatible)", .pcm),
+            ("Native (Bit-Perfect DoP)", .native)
+        ]
+        for (title, mode) in dsdModes {
+            let item = makeItem(title: title, action: #selector(setDSDOutputMode(_:)))
+            item.representedObject = mode.rawValue
+            dsdMenu.addItem(item)
+        }
+        dsdMenuItem.submenu = dsdMenu
+        playbackMenu.addItem(dsdMenuItem)
         playbackMenu.addItem(.separator())
 
         // Radio / Streams engine picker (Auto / Native / WebView) + yt-dlp path.

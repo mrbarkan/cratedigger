@@ -377,6 +377,17 @@ final class LibraryViewModel: ObservableObject {
     @Published var cdAnimationSpeed: CDAnimationSpeed = .fast {
         didSet { prefs.cdAnimationSpeed = cdAnimationSpeed }
     }
+    /// How DSD tracks reach the DAC: DoP bit-perfect when possible, or always
+    /// decode to PCM. Persisted; forwarded into Core where routing happens.
+    /// Defaults to .pcm — the DoP path is not yet hardware-verified (XD05
+    /// showed DoP lock but no audio, 2026-07-23); Native stays opt-in until it
+    /// proves out so a capable DAC never gets silent DSD playback by default.
+    @Published var dsdOutputMode: DSDOutputMode = .pcm {
+        didSet {
+            prefs.savedDSDOutputMode = dsdOutputMode.rawValue
+            playback.dsdOutputMode = dsdOutputMode
+        }
+    }
 
     /// EQ preset label (OLED readout + view-switcher EQ button). Cycling one now
     /// applies its real gain curve to the working equalizer.
@@ -726,12 +737,16 @@ final class LibraryViewModel: ObservableObject {
         if let saved = prefs.savedRepeatMode, let mode = RepeatMode(rawValue: saved) {
             repeatMode = mode
         }
+        if let saved = prefs.savedDSDOutputMode, let mode = DSDOutputMode(rawValue: saved) {
+            dsdOutputMode = mode
+        }
         if let savedVolume = prefs.savedPlaybackVolume {
             playbackVolume = min(max(savedVolume, 0), 1)
         }
         // Property observers don't fire during init — forward the restored
         // mode and volume to the playback service explicitly.
         playback.repeatMode = PlaybackRepeatMode(rawValue: repeatMode.rawValue) ?? .off
+        playback.dsdOutputMode = dsdOutputMode
         applyVolumeToEngines()
         cdAnimationSpeed = prefs.cdAnimationSpeed
         if let savedField = prefs.savedTrackSortField, let field = TrackSortField(rawValue: savedField) {
@@ -2473,6 +2488,14 @@ final class LibraryViewModel: ObservableObject {
     // MARK: - Last.fm integration
 
     private func handlePlaybackStateChange(_ state: PlaybackState) {
+        // DSD decode (via ffmpeg) can take a beat before playback starts;
+        // let the user know why the transport is sitting on "loading". The
+        // native (DoP) path doesn't decode — it gets a bit-perfect badge.
+        if state == .loading, let url = nowPlayingTrack?.track.fileURL,
+           FFmpegDSDDecoder.decodableExtensions.contains(url.pathExtension.lowercased()) {
+            showOLEDNotice(playback.isNativeDSDActive ? "DSD ► BIT-PERFECT" : "DECODING DSD…")
+        }
+
         if state == .playing, let nowPlaying = nowPlayingTrack {
             // Track-start timestamp is set on index change; resetting it here
             // too would stamp scrobbles with the last *unpause* time instead.
@@ -3322,7 +3345,9 @@ final class LibraryViewModel: ObservableObject {
                     }
                     
                     await MainActor.run {
-                        self.appendTracksToCrateFile(updatedTracks, crateName: crateName)
+                        if self.appendTracksToCrateFile(updatedTracks, crateName: crateName) {
+                            self.removeCommittedFromPrepCrate(tracks)
+                        }
                         self.finishImportStatus(count: tracks.count, crateName: crateName)
                     }
                 } catch {
@@ -3334,9 +3359,21 @@ final class LibraryViewModel: ObservableObject {
             }
         } else {
             // Index files in place
-            appendTracksToCrateFile(tracks, crateName: crateName)
+            if appendTracksToCrateFile(tracks, crateName: crateName), treatAsImport {
+                removeCommittedFromPrepCrate(tracks)
+            }
             finishImportStatus(count: tracks.count, crateName: crateName)
         }
+    }
+
+    /// Committing staged tracks files them OUT of the Prep Crate — once an album
+    /// lands in a crate it shouldn't sit in staging inviting a second (duplicate)
+    /// commit. In-memory only: launch restore re-scans the saved dig folders, so
+    /// a relaunch can re-stage them — at which point the organizer's identical-
+    /// content check makes a re-commit harmless.
+    private func removeCommittedFromPrepCrate(_ tracks: [LoadedTrack]) {
+        let committed = Set(tracks.map { $0.track.fileURL.standardizedFileURL.path })
+        prepCrateTracks.removeAll { committed.contains($0.track.fileURL.standardizedFileURL.path) }
     }
 
     /// Switch the OLED to SCAN and show an "adding" status while tracks are added
@@ -3363,11 +3400,14 @@ final class LibraryViewModel: ObservableObject {
         }
     }
 
-    private func appendTracksToCrateFile(_ newTracks: [LoadedTrack], crateName: String) {
+    /// Returns whether the crate save actually landed — callers that clean up
+    /// staging afterwards must not do so on a failed save.
+    @discardableResult
+    private func appendTracksToCrateFile(_ newTracks: [LoadedTrack], crateName: String) -> Bool {
         var existing = loadCrateTracks(name: crateName)
         existing.append(contentsOf: newTracks)
         let merged = LibraryViewModel.deduplicate(tracks: existing)
-        saveCrateTracks(merged, name: crateName)
+        let saved = saveCrateTracks(merged, name: crateName)
 
         // Land in the destination crate and reveal the album we just added, so an
         // add is visible instead of silently mutating a crate off-screen.
@@ -3375,6 +3415,7 @@ final class LibraryViewModel: ObservableObject {
         // first album — so we set our reveal target *after* it.
         selectSource(.localCrate(name: crateName))
         revealAlbum(containingTrackID: newTracks.last?.track.id)
+        return saved
     }
 
     /// Select and scroll-reveal the album containing `trackID` in the current

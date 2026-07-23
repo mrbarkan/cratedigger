@@ -87,6 +87,11 @@ final class ExternalToolLocatorTests: XCTestCase {
             XCTAssertNil(locator.resolveOptional(.ffprobe))
         }
     }
+
+    func testSacdExtractToolNamesFollowConvention() {
+        XCTAssertEqual(ExternalTool.sacdExtract.executableName, "sacd_extract")
+        XCTAssertEqual(ExternalTool.sacdExtract.environmentOverrideKey, "CRATEDIGGER_SACD_EXTRACT_PATH")
+    }
 }
 
 private func makeBundle(in directory: URL) throws -> Bundle {

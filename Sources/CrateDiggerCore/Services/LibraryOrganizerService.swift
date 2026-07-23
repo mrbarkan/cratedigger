@@ -147,7 +147,8 @@ public final class LibraryOrganizerService {
             // Handle name collision
             var attempt = 1
             var uniqueTargetURL = targetURL
-            
+            var alreadyImported = false
+
             // Check if source and target are the same path
             if targetURL.standardizedFileURL.path == fileURL.standardizedFileURL.path {
                 count += 1
@@ -155,10 +156,19 @@ public final class LibraryOrganizerService {
                 updatedTracks.append(track)
                 continue
             }
-            
+
             while fileManager.fileExists(atPath: uniqueTargetURL.path) {
                 // If it exists but it's the exact same file, we can break or rename
                 if uniqueTargetURL.standardizedFileURL.path == fileURL.standardizedFileURL.path {
+                    break
+                }
+                // A byte-identical file already sits at this name — it was
+                // imported before. Repoint at the existing copy instead of
+                // minting a " (1)" duplicate. In move mode the source is left
+                // in place rather than deleted: skipping a transfer must never
+                // remove data.
+                if fileManager.contentsEqual(atPath: uniqueTargetURL.path, andPath: fileURL.path) {
+                    alreadyImported = true
                     break
                 }
                 let base = targetURL.deletingPathExtension().lastPathComponent
@@ -167,7 +177,7 @@ public final class LibraryOrganizerService {
                 attempt += 1
             }
 
-            if uniqueTargetURL.standardizedFileURL.path != fileURL.standardizedFileURL.path {
+            if !alreadyImported, uniqueTargetURL.standardizedFileURL.path != fileURL.standardizedFileURL.path {
                 do {
                     if copyOnly {
                         try fileManager.copyItem(at: fileURL, to: uniqueTargetURL)
