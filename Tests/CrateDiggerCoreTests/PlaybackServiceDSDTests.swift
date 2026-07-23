@@ -52,7 +52,7 @@ final class PlaybackServiceDSDTests: XCTestCase {
         XCTAssertEqual(engine.replacedURLs, [decoder.tempURL])
     }
 
-    func testStaleDecodeIsDropped() {
+    func testStaleDecodeIsDropped() async {
         let engine = FakeEngine(); let decoder = ManualDecoder()
         let svc = PlaybackService(engine: engine, decoder: decoder)
         svc.load(queue: [item("/x/a.dsf"), item("/x/b.flac")], startIndex: 0, autoPlay: false)
@@ -60,6 +60,10 @@ final class PlaybackServiceDSDTests: XCTestCase {
         svc.next()                                      // user skips to b.flac
         XCTAssertEqual(engine.replacedURLs, [URL(fileURLWithPath: "/x/b.flac")])
         staleCompletion?(.success(decoder.tempURL))     // a.dsf decode lands late
+        // The completion hops to the main queue — pump it so the stale-drop
+        // guard actually runs before we assert (matching the convention in
+        // testDSDDecodesBeforeReplacingItem).
+        await pumpMainQueue()
         // The late decode must NOT replace the now-current flac.
         XCTAssertEqual(engine.replacedURLs, [URL(fileURLWithPath: "/x/b.flac")])
     }
