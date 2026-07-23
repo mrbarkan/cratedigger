@@ -95,4 +95,97 @@ public final class AudioOutputManager: Sendable {
 
         return deviceList
     }
+
+    // MARK: - Device IDs & sample rates (DoP path)
+
+    public func defaultOutputDeviceID() -> AudioDeviceID? {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        var deviceID = AudioDeviceID(0)
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        let status = AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject),
+                                                &address, 0, nil, &size, &deviceID)
+        return status == noErr && deviceID != 0 ? deviceID : nil
+    }
+
+    /// nil (or unknown) UID means "system default output" — mirroring how a
+    /// nil `audioOutputDeviceUniqueID` behaves on AVPlayer.
+    public func deviceID(forUID uid: String?) -> AudioDeviceID? {
+        guard let uid else { return defaultOutputDeviceID() }
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDevices,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        var size: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject),
+                                             &address, 0, nil, &size) == noErr else {
+            return defaultOutputDeviceID()
+        }
+        var ids = [AudioDeviceID](repeating: 0, count: Int(size) / MemoryLayout<AudioDeviceID>.size)
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject),
+                                         &address, 0, nil, &size, &ids) == noErr else {
+            return defaultOutputDeviceID()
+        }
+        for id in ids {
+            var uidAddress = AudioObjectPropertyAddress(
+                mSelector: kAudioDevicePropertyDeviceUID,
+                mScope: kAudioObjectPropertyScopeGlobal,
+                mElement: kAudioObjectPropertyElementMain)
+            var deviceUID: Unmanaged<CFString>?
+            var uidSize = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+            if AudioObjectGetPropertyData(id, &uidAddress, 0, nil, &uidSize, &deviceUID) == noErr,
+               let value = deviceUID?.takeRetainedValue() as String?, value == uid {
+                return id
+            }
+        }
+        return defaultOutputDeviceID()
+    }
+
+    /// Flattened from AudioValueRange: a discrete rate has min == max; a true
+    /// range contributes both endpoints (good enough for "supports 176.4k?").
+    public func availableSampleRates(deviceID: AudioDeviceID) -> [Double] {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyAvailableNominalSampleRates,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        var size: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(deviceID, &address, 0, nil, &size) == noErr,
+              size > 0 else { return [] }
+        var ranges = [AudioValueRange](repeating: AudioValueRange(),
+                                       count: Int(size) / MemoryLayout<AudioValueRange>.size)
+        guard AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &ranges) == noErr else {
+            return []
+        }
+        var rates: Set<Double> = []
+        for range in ranges {
+            rates.insert(range.mMinimum)
+            rates.insert(range.mMaximum)
+        }
+        return rates.sorted()
+    }
+
+    public func nominalSampleRate(deviceID: AudioDeviceID) -> Double? {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyNominalSampleRate,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        var rate: Double = 0
+        var size = UInt32(MemoryLayout<Double>.size)
+        guard AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &rate) == noErr,
+              rate > 0 else { return nil }
+        return rate
+    }
+
+    @discardableResult
+    public func setNominalSampleRate(_ rate: Double, deviceID: AudioDeviceID) -> Bool {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyNominalSampleRate,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        var value = rate
+        return AudioObjectSetPropertyData(deviceID, &address, 0, nil,
+                                          UInt32(MemoryLayout<Double>.size), &value) == noErr
+    }
 }
