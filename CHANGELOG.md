@@ -4,7 +4,7 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
-## Unreleased
+## 1.1.0 (44) — 2026-07-22
 
 ### Fixed
 - **Scanning could hang the whole app.** Reading tags runs ffprobe, which blocks
