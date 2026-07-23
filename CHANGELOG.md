@@ -4,6 +4,43 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 1.1.1 (45) — 2026-07-23
+
+### Added
+- **DSD playback.** `.dsf` and `.dff` files now scan into the library like any
+  other format, labeled by their real rate (DSD64 / DSD128 / DSD256). Pressing
+  play decodes them on the fly with the bundled ffmpeg — your originals are
+  never touched — so VU meters, the EQ, seeking, and scrobbling all keep
+  working. The OLED shows "DECODING DSD…" while a track spins up.
+- **SACD ISO import.** File ▸ Import SACD ISO… rips a SACD image straight into
+  per-track, fully tagged DSF files, filed as `Artist/[Year] - Album` and landed
+  in the Prep Crate — like ripping a CD. Requires the open-source `sacd_extract`
+  tool (CrateDigger can't bundle it for licensing reasons); the app shows the
+  one-time build recipe if it's missing.
+- **DSD Output menu (experimental).** Playback ▸ DSD Output adds a bit-perfect
+  DoP mode for DSD-capable DACs. It ships opt-in and defaults to the reliable
+  PCM decode path while the native mode is still being verified on hardware.
+
+### Fixed
+- **Adding an album to a crate twice could duplicate its files.** Re-committing
+  tracks that were already imported silently created " (1)" copies on disk.
+  The importer now recognizes byte-identical files and reuses the existing
+  copy, and committing tracks out of the Prep Crate removes them from staging
+  so an accidental second commit can't happen.
+- **Duplicated tracks showed as blank gaps in the browser.** Crates damaged by
+  the double-import bug rendered ghost rows (a 24-track album showing 12 titles
+  and empty space); the library now repairs those entries on load so every
+  track is visible again.
+- **Cleanup missed exact-duplicate files.** Duplicate detection skipped tracks
+  whose duration was unknown; byte-identical copies are now caught by exact
+  file-size match, so the " (1)" duplicates surface in Library Maintenance and
+  can be cleared (crate references repoint to the kept copy automatically).
+- **DSD files showed a codec name instead of their rate.** Real-world DSFs
+  probe with a bytes-per-second sample rate; they now label correctly as
+  DSD64/128/256 instead of "DSD_LSBF_PLANAR".
+
+---
+
 ## 1.1.0 (44) — 2026-07-22
 
 ### Fixed
