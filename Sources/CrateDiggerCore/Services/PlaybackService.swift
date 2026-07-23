@@ -63,6 +63,12 @@ public protocol PlaybackServiceProtocol: AnyObject {
     func setEqualizer(enabled: Bool, gains: [Double])
     /// Linear makeup gain (≥1) so the volume fader can push above unity (0 dB).
     func setMasterGain(_ gain: Double)
+    /// How DSD files reach the output: bit-perfect DoP when possible
+    /// (.auto/.native) or always decode to PCM (.pcm).
+    var dsdOutputMode: DSDOutputMode { get set }
+    /// True while the current track plays through the native (DoP) engine —
+    /// volume/EQ are inert there by design.
+    var isNativeDSDActive: Bool { get }
 }
 
 /// The single linear-amplitude → meter-position map (-48 dBFS → 0, 0 dBFS →
@@ -305,15 +311,38 @@ public final class PlaybackService: PlaybackServiceProtocol {
     /// The temp file the current item is playing from (nil for a native file).
     /// Deleted when replaced so decodes don't accumulate in the temp dir.
     private var currentTempURL: URL?
+    /// Second engine for the bit-perfect DoP path; DSD tracks route here when
+    /// DSDOutputPolicy allows. All transport goes through `activeEngine`.
+    private let nativeDSDEngine: PlaybackEngineProtocol?
+    private let deviceRatesProvider: (String?) -> [Double]
+    private var activeEngine: PlaybackEngineProtocol
+    private var lastOutputDeviceUID: String?
+    /// One PCM fallback per generation when the native engine fails, so a bad
+    /// DoP handshake can't ping-pong.
+    private var nativeFallbackGeneration = -1
+    public var dsdOutputMode: DSDOutputMode = .auto
+    public private(set) var isNativeDSDActive = false
 
     public convenience init() {
-        self.init(engine: AVPlayerEngine(), decoder: FFmpegDSDDecoder())
+        self.init(engine: AVPlayerEngine(), decoder: FFmpegDSDDecoder(),
+                  nativeDSDEngine: DoPPlaybackEngine())
     }
 
-    init(engine: PlaybackEngineProtocol, decoder: DSDPlaybackDecoding? = nil) {
+    init(engine: PlaybackEngineProtocol,
+         decoder: DSDPlaybackDecoding? = nil,
+         nativeDSDEngine: PlaybackEngineProtocol? = nil,
+         deviceRatesProvider: ((String?) -> [Double])? = nil) {
         self.engine = engine
         self.decoder = decoder
-        bindEngineCallbacks()
+        self.nativeDSDEngine = nativeDSDEngine
+        self.activeEngine = engine
+        self.deviceRatesProvider = deviceRatesProvider ?? { uid in
+            let manager = AudioOutputManager()
+            guard let id = manager.deviceID(forUID: uid) else { return [] }
+            return manager.availableSampleRates(deviceID: id)
+        }
+        bindEngineCallbacks(to: engine)
+        if let nativeDSDEngine { bindEngineCallbacks(to: nativeDSDEngine) }
     }
 
     deinit {
@@ -328,7 +357,7 @@ public final class PlaybackService: PlaybackServiceProtocol {
         guard !queue.isEmpty else {
             loadGeneration += 1
             replaceTemp(with: nil)
-            engine.pause()
+            activeEngine.pause()
             currentIndex = nil
             currentTimeSeconds = 0
             durationSeconds = 0
@@ -345,10 +374,40 @@ public final class PlaybackService: PlaybackServiceProtocol {
         startItem(url: queue[clampedIndex].url, generation: loadGeneration)
     }
 
-    /// Hand `url` to the engine, decoding DSD to a temp file first when the URL
-    /// is a format AVFoundation can't play. `generation` guards against a decode
-    /// that finishes after the user has already moved to another track.
+    /// Route `url` to the right engine: a DSF the policy clears for DoP goes to
+    /// the native engine untouched; everything else takes the AVPlayer path
+    /// (decoding DSD to temp PCM first when needed).
     private func startItem(url: URL, generation: Int) {
+        if let native = nativeDSDEngine,
+           url.pathExtension.lowercased() == "dsf",
+           dsdOutputMode != .pcm,
+           nativeFallbackGeneration != generation,
+           let dsfInfo = try? DSFFile.readInfo(url: url),
+           case .native = DSDOutputPolicy.route(mode: dsdOutputMode,
+                                                dsdRateHz: dsfInfo.dsdSampleRateHz,
+                                                channelCount: dsfInfo.channelCount,
+                                                deviceSampleRates: deviceRatesProvider(lastOutputDeviceUID)) {
+            switchActiveEngine(to: native)
+            replaceTemp(with: nil)
+            native.replaceCurrentItem(url: url)
+            return
+        }
+        switchActiveEngine(to: engine)
+        startPCMItem(url: url, generation: generation)
+    }
+
+    private func switchActiveEngine(to newEngine: PlaybackEngineProtocol) {
+        if newEngine !== activeEngine {
+            activeEngine.pause()
+            activeEngine = newEngine
+        }
+        isNativeDSDActive = newEngine === nativeDSDEngine && nativeDSDEngine != nil
+    }
+
+    /// The AVPlayer path: decode DSD to a temp file first when the URL is a
+    /// format AVFoundation can't play. `generation` guards against a decode
+    /// that finishes after the user has already moved to another track.
+    private func startPCMItem(url: URL, generation: Int) {
         if let decoder, decoder.canDecode(url) {
             decoder.decode(url) { [weak self] result in
                 DispatchQueue.main.async {
@@ -407,12 +466,12 @@ public final class PlaybackService: PlaybackServiceProtocol {
         }
 
         pendingAutoPlay = true
-        engine.play()
+        activeEngine.play()
         state = .playing
     }
 
     public func pause() {
-        engine.pause()
+        activeEngine.pause()
         if case .failed = state {
             return
         }
@@ -433,7 +492,7 @@ public final class PlaybackService: PlaybackServiceProtocol {
     public func seek(toSeconds: Double) {
         let upperBound = durationSeconds > 0 ? durationSeconds : toSeconds
         let clamped = max(0, min(toSeconds, upperBound))
-        engine.seek(toSeconds: clamped)
+        activeEngine.seek(toSeconds: clamped)
         currentTimeSeconds = clamped
     }
 
@@ -447,7 +506,7 @@ public final class PlaybackService: PlaybackServiceProtocol {
         let shouldPlay = state == .playing || state == .loading
         let nextIndex = currentIndex + 1
         guard queue.indices.contains(nextIndex) else {
-            engine.pause()
+            activeEngine.pause()
             currentTimeSeconds = durationSeconds
             state = .ended
             return
@@ -478,19 +537,24 @@ public final class PlaybackService: PlaybackServiceProtocol {
     }
 
     public func setVolume(_ volume: Double) {
-        engine.setVolume(volume)
+        // The native engine ignores volume by design (bit-perfect), so this is
+        // safe to forward everywhere; the AV engine is the one that scales.
+        activeEngine.setVolume(volume)
     }
 
     public func setMasterGain(_ gain: Double) {
+        // EQ/makeup gain only exist on the AVPlayer path — never the DoP one.
         engine.setMasterGain(gain)
     }
 
     public func setOutputDeviceUID(_ uid: String?) {
+        lastOutputDeviceUID = uid
         engine.setOutputDeviceUID(uid)
+        nativeDSDEngine?.setOutputDeviceUID(uid)
     }
 
     public func currentSpectrum() -> [Double] {
-        engine.currentSpectrum
+        activeEngine.currentSpectrum
     }
 
     public func setEqualizer(enabled: Bool, gains: [Double]) {
@@ -498,25 +562,38 @@ public final class PlaybackService: PlaybackServiceProtocol {
     }
 
     public func currentLevels() -> (left: Double, right: Double) {
-        engine.currentLevels
+        activeEngine.currentLevels
     }
 
-    private func bindEngineCallbacks() {
-        engine.onItemReady = { [weak self] in
-            guard let self else { return }
-            self.durationSeconds = self.engine.durationSeconds
-            self.currentTimeSeconds = self.engine.currentTimeSeconds
+    /// Bind callbacks per engine; every body starts with an active-engine guard
+    /// so the paused (inactive) engine can never drive playback state.
+    private func bindEngineCallbacks(to boundEngine: PlaybackEngineProtocol) {
+        boundEngine.onItemReady = { [weak self, weak boundEngine] in
+            guard let self, let boundEngine, boundEngine === self.activeEngine else { return }
+            self.durationSeconds = boundEngine.durationSeconds
+            self.currentTimeSeconds = boundEngine.currentTimeSeconds
 
             if self.pendingAutoPlay {
-                self.engine.play()
+                boundEngine.play()
                 self.state = .playing
             } else {
                 self.state = .paused
             }
         }
 
-        engine.onItemFailed = { [weak self] message in
-            guard let self else { return }
+        boundEngine.onItemFailed = { [weak self, weak boundEngine] message in
+            guard let self, let boundEngine, boundEngine === self.activeEngine else { return }
+            // A native (DoP) failure — device refused the rate, bad handshake —
+            // retries the SAME track through the PCM decode path, once per
+            // generation so it can't ping-pong.
+            if boundEngine === self.nativeDSDEngine,
+               self.nativeFallbackGeneration != self.loadGeneration,
+               let currentIndex = self.currentIndex, self.queue.indices.contains(currentIndex) {
+                self.nativeFallbackGeneration = self.loadGeneration
+                self.switchActiveEngine(to: self.engine)
+                self.startPCMItem(url: self.queue[currentIndex].url, generation: self.loadGeneration)
+                return
+            }
             self.errorMessage = message
             self.notify {
                 self.onError?(message)
@@ -530,8 +607,8 @@ public final class PlaybackService: PlaybackServiceProtocol {
             self.state = .failed(message: message)
         }
 
-        engine.onItemEnded = { [weak self] in
-            guard let self else { return }
+        boundEngine.onItemEnded = { [weak self, weak boundEngine] in
+            guard let self, let boundEngine, boundEngine === self.activeEngine else { return }
             if self.repeatMode == .one, let currentIndex {
                 self.load(queue: self.queue, startIndex: currentIndex, autoPlay: true)
                 return
@@ -553,8 +630,8 @@ public final class PlaybackService: PlaybackServiceProtocol {
             self.state = .ended
         }
 
-        engine.onPeriodicTime = { [weak self] current, duration in
-            guard let self else { return }
+        boundEngine.onPeriodicTime = { [weak self, weak boundEngine] current, duration in
+            guard let self, let boundEngine, boundEngine === self.activeEngine else { return }
             self.currentTimeSeconds = max(0, current)
             if duration > 0 {
                 self.durationSeconds = duration
