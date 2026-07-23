@@ -379,7 +379,10 @@ final class LibraryViewModel: ObservableObject {
     }
     /// How DSD tracks reach the DAC: DoP bit-perfect when possible, or always
     /// decode to PCM. Persisted; forwarded into Core where routing happens.
-    @Published var dsdOutputMode: DSDOutputMode = .auto {
+    /// Defaults to .pcm — the DoP path is not yet hardware-verified (XD05
+    /// showed DoP lock but no audio, 2026-07-23); Native stays opt-in until it
+    /// proves out so a capable DAC never gets silent DSD playback by default.
+    @Published var dsdOutputMode: DSDOutputMode = .pcm {
         didSet {
             prefs.savedDSDOutputMode = dsdOutputMode.rawValue
             playback.dsdOutputMode = dsdOutputMode
