@@ -2473,6 +2473,13 @@ final class LibraryViewModel: ObservableObject {
     // MARK: - Last.fm integration
 
     private func handlePlaybackStateChange(_ state: PlaybackState) {
+        // DSD decode (via ffmpeg) can take a beat before playback starts;
+        // let the user know why the transport is sitting on "loading".
+        if state == .loading, let url = nowPlayingTrack?.track.fileURL,
+           FFmpegDSDDecoder.decodableExtensions.contains(url.pathExtension.lowercased()) {
+            showOLEDNotice("DECODING DSD…")
+        }
+
         if state == .playing, let nowPlaying = nowPlayingTrack {
             // Track-start timestamp is set on index change; resetting it here
             // too would stamp scrobbles with the last *unpause* time instead.
