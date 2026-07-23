@@ -34,7 +34,7 @@ public final class LibraryScanService {
     /// The audio types a scan will pick up — shared so drop targets can
     /// classify a dragged payload the same way the scanner will.
     public static let defaultSupportedExtensions: Set<String> =
-        ["mp3", "aac", "m4a", "flac", "wav", "aiff", "ogg", "opus", "caf"]
+        ["mp3", "aac", "m4a", "flac", "wav", "aiff", "ogg", "opus", "caf", "dsf", "dff"]
 
     private let supportedExtensions: Set<String>
 
@@ -261,7 +261,11 @@ public final class LibraryScanService {
         let trackTitle = normalizedString(metadata.title) ?? fileURL.deletingPathExtension().lastPathComponent
         let trackArtist = normalizedString(metadata.artist) ?? ""
         let trackAlbum = normalizedString(metadata.album) ?? ""
-        let inferredFormatName = normalizedString(probedMetadata?.primaryAudioStream?.codecName)?.uppercased()
+        let dsdLabel = DSDFormat.isDSDCodec(probedMetadata?.primaryAudioStream?.codecName)
+            ? DSDFormat.label(sampleRateHz: probedMetadata?.primaryAudioStream?.sampleRateHz)
+            : nil
+        let inferredFormatName = dsdLabel
+            ?? normalizedString(probedMetadata?.primaryAudioStream?.codecName)?.uppercased()
             ?? normalizedString(probedMetadata?.formatName)?
                 .split(separator: ",")
                 .first
