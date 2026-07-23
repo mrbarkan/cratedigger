@@ -1,6 +1,9 @@
 import Foundation
 
-public protocol MetadataProbing {
+/// Sendable because a scan probes files concurrently — one probe per core — and
+/// has always shared a single prober across those tasks. A conformer must be a
+/// stateless executor: no mutable state observed across `probe` calls.
+public protocol MetadataProbing: Sendable {
     func probe(url: URL) throws -> ProbedMetadata
 }
 
@@ -74,7 +77,10 @@ public struct ProbedMetadata: Codable, Hashable, Sendable {
     }
 }
 
-public final class MetadataProbeService: MetadataProbing {
+/// `@unchecked` only because `commandRunner` is an existential the compiler
+/// can't verify; every stored property is a `let`, and running a subprocess
+/// keeps no state between calls.
+public final class MetadataProbeService: MetadataProbing, @unchecked Sendable {
     private let ffprobeExecutableURL: URL
     private let commandRunner: CommandRunning
     public let resolvedTool: ResolvedExternalTool

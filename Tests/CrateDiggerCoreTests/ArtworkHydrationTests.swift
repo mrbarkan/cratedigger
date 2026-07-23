@@ -56,6 +56,31 @@ final class ArtworkHydrationTests: XCTestCase {
         XCTAssertEqual(hydrated.data, bytes)
     }
 
+    /// Regression: every track carries its cover's full-resolution bytes, and an
+    /// album's tracks all resolve the *same* cover. Reading those bytes back
+    /// through the `as Data?` NSData bridge silently copied the whole JPEG each
+    /// time, so memory scaled with tracks instead of covers — a 644-track scan
+    /// retained 299 MB of art for 41 distinct images. Same hash, same buffer.
+    func testCachedCoverBytesAreSharedNotCopiedPerTrack() async throws {
+        func address(_ data: Data) -> UInt {
+            data.withUnsafeBytes { UInt(bitPattern: $0.baseAddress) }
+        }
+
+        let service = ArtworkService()
+        let cover = try imageData(width: 600, height: 600)
+        service.ingest(asset(hash: "album-cover", data: cover))
+
+        // Two tracks of the same album, each rehydrating the shared cover.
+        let first = await service.hydrated(asset(hash: "album-cover", data: Data()), trackURL: trackURL("01.flac"))
+        let second = await service.hydrated(asset(hash: "album-cover", data: Data()), trackURL: trackURL("02.flac"))
+
+        XCTAssertEqual(first.data, cover)
+        XCTAssertEqual(
+            address(first.data), address(second.data),
+            "each track got its own copy of the cover — memory would scale with tracks, not covers"
+        )
+    }
+
     func testHydratedLeavesPresentDataUntouched() async {
         let service = ArtworkService()
         let present = asset(hash: "h", data: Data([1, 2, 3]))

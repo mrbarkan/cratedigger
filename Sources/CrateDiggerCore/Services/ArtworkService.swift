@@ -93,13 +93,11 @@ public final class ArtworkService: ArtworkPreparing {
     /// constructing and re-loading a second AVURLAsset for the same file.
     public func resolveArtwork(trackURL: URL, preloadedMetadata: [AVMetadataItem]?) async -> ArtworkAsset? {
         if let embedded = await embeddedArtwork(for: trackURL, preloadedMetadata: preloadedMetadata) {
-            storeData(embedded.data, for: embedded.hash)
-            return embedded
+            return sharingBytes(embedded, storeData(embedded.data, for: embedded.hash))
         }
 
         if let folder = memoizedFolderArtwork(for: trackURL) {
-            storeData(folder.data, for: folder.hash)
-            return folder
+            return sharingBytes(folder, storeData(folder.data, for: folder.hash))
         }
 
         return nil
@@ -146,13 +144,8 @@ public final class ArtworkService: ArtworkPreparing {
     /// re-embedding, as they did before).
     public func hydrated(_ asset: ArtworkAsset, trackURL: URL) async -> ArtworkAsset {
         guard asset.data.isEmpty else { return asset }
-        if let cached = dataCache.object(forKey: asset.hash as NSString) as Data? {
-            return ArtworkAsset(
-                source: asset.source,
-                hash: asset.hash,
-                dimensions: asset.dimensions,
-                data: cached as Data
-            )
+        if let cached = cachedData(for: asset.hash) {
+            return sharingBytes(asset, cached)
         }
         guard let resolved = await resolveArtwork(trackURL: trackURL) else { return asset }
         return resolved
@@ -462,21 +455,61 @@ public final class ArtworkService: ArtworkPreparing {
         )
     }
 
-    private func storeData(_ data: Data, for hash: String) {
-        guard !data.isEmpty else { return }
-        dataCache.setObject(data as NSData, forKey: hash as NSString, cost: data.count)
+    /// Caches `data` under `hash` and returns the *canonical* buffer for that
+    /// hash — the already-cached instance when there is one.
+    ///
+    /// Every track carries its cover's full-resolution bytes in
+    /// `ArtworkAsset.data`, and an album's tracks each embed the same JPEG. Handing
+    /// each track its own freshly-read copy retained one cover per *track*: a 644-track
+    /// scan held 299 MB of art for 41 distinct covers (9.7 copies each). Returning
+    /// the shared buffer makes the duplicates free — `Data` is copy-on-write.
+    ///
+    /// ponytail: the miss-then-set is deliberately unsynchronized. The scan resolves
+    /// tracks concurrently, so two threads can both miss and both store — but the key
+    /// is a content hash, so the bytes are identical and the loser is just one extra
+    /// copy. A lock here would serialize every artwork read to save nothing.
+    @discardableResult
+    private func storeData(_ data: Data, for hash: String) -> Data {
+        guard !data.isEmpty else { return data }
+        if let existing = dataCache.object(forKey: hash as NSString) {
+            return Data(referencing: existing)
+        }
+        let boxed = NSData(data: data)
+        dataCache.setObject(boxed, forKey: hash as NSString, cost: data.count)
         store?.put(data, for: hash)
+        return Data(referencing: boxed)
+    }
+
+    /// Wrap the cached bytes without copying them.
+    ///
+    /// The cache must hold a *genuine* `NSData` (hence `NSData(data:)` on the way
+    /// in): bridging a Swift `Data` with `as NSData` produces a wrapper that copies
+    /// the whole buffer back out on every single read — measured, so every cover
+    /// lookup was cloning a full-resolution JPEG.
+    private func cachedData(for hash: String) -> Data? {
+        dataCache.object(forKey: hash as NSString).map { Data(referencing: $0) }
+    }
+
+    /// The same asset pointing at `data` instead of its own copy of the bytes.
+    private func sharingBytes(_ asset: ArtworkAsset, _ data: Data) -> ArtworkAsset {
+        ArtworkAsset(
+            source: asset.source,
+            hash: asset.hash,
+            dimensions: asset.dimensions,
+            data: data
+        )
     }
 
     private func dataForHash(_ hash: String) -> Data? {
-        if let cached = dataCache.object(forKey: hash as NSString) as Data? {
+        if let cached = cachedData(for: hash) {
             return cached
         }
         // Fall back to the on-disk store (survives relaunch / offline drives),
         // then warm the in-memory cache for subsequent thumbnail renders.
         guard let data = store?.data(for: hash) else { return nil }
-        dataCache.setObject(data as NSData, forKey: hash as NSString, cost: data.count)
-        return data
+        let boxed = NSData(data: data)
+        dataCache.setObject(boxed, forKey: hash as NSString, cost: data.count)
+        return Data(referencing: boxed)
     }
 
     private static func sha256Hex(for data: Data) -> String {

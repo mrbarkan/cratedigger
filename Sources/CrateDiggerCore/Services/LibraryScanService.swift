@@ -151,7 +151,7 @@ public final class LibraryScanService {
         let commonMetadata = (try? await asset.load(.commonMetadata)) ?? []
         let extendedMetadata = await loadExtendedMetadata(from: asset)
         let allMetadata = commonMetadata + extendedMetadata
-        let probedMetadata = probeMetadata(for: fileURL)
+        let probedMetadata = await probeMetadata(for: fileURL)
 
         let avTitle = coalesce(
             await stringValue(forCommonKeys: ["title"], in: commonMetadata),
@@ -293,11 +293,27 @@ public final class LibraryScanService {
         return LoadedTrack(track: track, metadata: metadata)
     }
 
-    private func probeMetadata(for fileURL: URL) -> ProbedMetadata? {
+    /// ffprobe blocks its thread outright (subprocess spawn + `waitUntilExit` +
+    /// a `DispatchGroup.wait` for the pipe drain). Calling it straight from the
+    /// task group above parked *every* Swift cooperative-pool thread — the pool
+    /// is exactly `activeProcessorCount` wide and the scan issues one probe per
+    /// core — so no `await` anywhere in the app could resume and the whole thing
+    /// beachballed mid-scan. Blocking work belongs on its own queue.
+    private static let probeQueue = DispatchQueue(
+        label: "com.cratedigger.metadata-probe",
+        qos: .userInitiated,
+        attributes: .concurrent
+    )
+
+    private func probeMetadata(for fileURL: URL) async -> ProbedMetadata? {
         guard let metadataProbe else {
             return nil
         }
-        return try? metadataProbe.probe(url: fileURL)
+        return await withCheckedContinuation { continuation in
+            LibraryScanService.probeQueue.async {
+                continuation.resume(returning: try? metadataProbe.probe(url: fileURL))
+            }
+        }
     }
 
     private func loadExtendedMetadata(from asset: AVAsset) async -> [AVMetadataItem] {

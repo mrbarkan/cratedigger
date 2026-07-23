@@ -4,6 +4,20 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## Unreleased
+
+### Fixed
+- **Scanning could hang the whole app.** Reading tags runs ffprobe, which blocks
+  its thread; the scanner ran one per CPU core directly on Swift's concurrency
+  pool, so a large dig (or several folders at once) could park every pool thread
+  and freeze the UI until the scan finished. Probes now run on their own queue —
+  a 644-file scan that took >14 min to unstick now finishes in ~2 s.
+- **Big libraries used far more memory than they needed.** Every track kept its
+  own copy of its album cover, because reading cached artwork back out of the
+  in-memory store silently duplicated the image each time. Covers are now shared
+  across the tracks that use them (~5× less artwork memory on a real library),
+  which also removes a crash on very large multi-folder imports.
+
 ## 1.1.0 (43) — 2026-07-22
 
 Silent refresh of the 1.1.0 DMG (same release, updated build):
