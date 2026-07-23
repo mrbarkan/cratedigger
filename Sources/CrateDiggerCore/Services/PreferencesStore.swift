@@ -26,6 +26,7 @@ public final class PreferencesStore {
         static let collapsedSourceSections = "cratedigger.sidebar.collapsedSections"
         static let shuffleEnabled = "cratedigger.playback.shuffle"
         static let repeatMode = "cratedigger.playback.repeatMode"
+        static let dsdOutputMode = "cratedigger.playback.dsdOutputMode"
         static let playbackVolume = "cratedigger.playback.volume"
         static let lastUpdateCheckDate = "cratedigger.updates.lastCheckDate"
         static let lastNotifiedUpdateTag = "cratedigger.updates.lastNotifiedTag"
@@ -307,6 +308,17 @@ public final class PreferencesStore {
                 defaults.set(value, forKey: Key.repeatMode)
             } else {
                 defaults.removeObject(forKey: Key.repeatMode)
+            }
+        }
+    }
+
+    public var savedDSDOutputMode: String? {
+        get { defaults.string(forKey: Key.dsdOutputMode) }
+        set {
+            if let value = newValue {
+                defaults.set(value, forKey: Key.dsdOutputMode)
+            } else {
+                defaults.removeObject(forKey: Key.dsdOutputMode)
             }
         }
     }

@@ -377,6 +377,14 @@ final class LibraryViewModel: ObservableObject {
     @Published var cdAnimationSpeed: CDAnimationSpeed = .fast {
         didSet { prefs.cdAnimationSpeed = cdAnimationSpeed }
     }
+    /// How DSD tracks reach the DAC: DoP bit-perfect when possible, or always
+    /// decode to PCM. Persisted; forwarded into Core where routing happens.
+    @Published var dsdOutputMode: DSDOutputMode = .auto {
+        didSet {
+            prefs.savedDSDOutputMode = dsdOutputMode.rawValue
+            playback.dsdOutputMode = dsdOutputMode
+        }
+    }
 
     /// EQ preset label (OLED readout + view-switcher EQ button). Cycling one now
     /// applies its real gain curve to the working equalizer.
@@ -726,12 +734,16 @@ final class LibraryViewModel: ObservableObject {
         if let saved = prefs.savedRepeatMode, let mode = RepeatMode(rawValue: saved) {
             repeatMode = mode
         }
+        if let saved = prefs.savedDSDOutputMode, let mode = DSDOutputMode(rawValue: saved) {
+            dsdOutputMode = mode
+        }
         if let savedVolume = prefs.savedPlaybackVolume {
             playbackVolume = min(max(savedVolume, 0), 1)
         }
         // Property observers don't fire during init — forward the restored
         // mode and volume to the playback service explicitly.
         playback.repeatMode = PlaybackRepeatMode(rawValue: repeatMode.rawValue) ?? .off
+        playback.dsdOutputMode = dsdOutputMode
         applyVolumeToEngines()
         cdAnimationSpeed = prefs.cdAnimationSpeed
         if let savedField = prefs.savedTrackSortField, let field = TrackSortField(rawValue: savedField) {
@@ -2474,10 +2486,11 @@ final class LibraryViewModel: ObservableObject {
 
     private func handlePlaybackStateChange(_ state: PlaybackState) {
         // DSD decode (via ffmpeg) can take a beat before playback starts;
-        // let the user know why the transport is sitting on "loading".
+        // let the user know why the transport is sitting on "loading". The
+        // native (DoP) path doesn't decode — it gets a bit-perfect badge.
         if state == .loading, let url = nowPlayingTrack?.track.fileURL,
            FFmpegDSDDecoder.decodableExtensions.contains(url.pathExtension.lowercased()) {
-            showOLEDNotice("DECODING DSD…")
+            showOLEDNotice(playback.isNativeDSDActive ? "DSD ► BIT-PERFECT" : "DECODING DSD…")
         }
 
         if state == .playing, let nowPlaying = nowPlayingTrack {

@@ -246,6 +246,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         hostingController.model.beginSACDImport()
     }
 
+    func setDSDOutputMode(_ mode: DSDOutputMode) {
+        hostingController.model.dsdOutputMode = mode
+    }
+
+    func currentDSDOutputMode() -> DSDOutputMode {
+        hostingController.model.dsdOutputMode
+    }
+
     func importLibraryFile() {
         hostingController.model.importLibraryFile()
     }
