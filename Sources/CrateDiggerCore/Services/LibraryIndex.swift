@@ -86,6 +86,11 @@ public struct LibraryIndex: Sendable {
                              diskCache: LibraryIndexDiskCache? = nil) -> LibraryIndex {
         guard !loaded.isEmpty else { return .empty }
 
+        // Entries sharing a UUID (one file imported twice to different paths)
+        // break ForEach row identity — same ghost-row failure the album-id
+        // uniquing below guards against. Heal before grouping.
+        let loaded = LoadedTrack.healingDuplicateIDs(loaded)
+
         let planner = OutputPathPlanner()
 
         // Group by tag identity AND source folder: two same-tagged rips in

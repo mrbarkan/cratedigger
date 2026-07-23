@@ -99,6 +99,52 @@ final class LibraryCleanupServiceTests: XCTestCase {
         return (LibraryIndex.build(from: [us, jp], groups: [group]), [us, jp])
     }
 
+    /// Two byte-identical copies whose duration was never probed (0s) must
+    /// still be flagged: exact file-size match stands in for the duration
+    /// check. This is the " (1).flac" double-import case.
+    func testUnknownDurationDuplicatesClusterByExactFileSize() throws {
+        try withTemporaryDirectory(prefix: "CleanupUnknownDuration") { tempDir in
+            let original = tempDir.appendingPathComponent("01 - Yi.flac")
+            let copy = tempDir.appendingPathComponent("01 - Yi (1).flac")
+            try "identical flac bytes".write(to: original, atomically: true, encoding: .utf8)
+            try "identical flac bytes".write(to: copy, atomically: true, encoding: .utf8)
+
+            func mk(_ url: URL) -> LoadedTrack {
+                LoadedTrack(track: AudioTrack(fileURL: url, title: "Yi", artist: "Bon Iver",
+                                              album: "i,i", durationSeconds: 0),
+                            metadata: ConversionMetadata())
+            }
+
+            let index = LibraryIndex.build(from: [mk(original), mk(copy)])
+            let dupes = LibraryCleanupService(fileManager: .default).findDuplicates(in: index)
+
+            XCTAssertEqual(dupes.count, 1)
+            XCTAssertEqual(dupes.first?.worstTracks.count, 1)
+        }
+    }
+
+    /// Unknown durations with *different* sizes stay unflagged — size is the
+    /// only verification left, so anything short of an exact match is not
+    /// enough evidence to offer a file for deletion.
+    func testUnknownDurationDifferentSizesStayUnflagged() throws {
+        try withTemporaryDirectory(prefix: "CleanupUnknownDurationSizes") { tempDir in
+            let a = tempDir.appendingPathComponent("01 - Yi.flac")
+            let b = tempDir.appendingPathComponent("01 - Yi (1).flac")
+            try "short bytes".write(to: a, atomically: true, encoding: .utf8)
+            try "noticeably longer different bytes".write(to: b, atomically: true, encoding: .utf8)
+
+            func mk(_ url: URL) -> LoadedTrack {
+                LoadedTrack(track: AudioTrack(fileURL: url, title: "Yi", artist: "Bon Iver",
+                                              album: "i,i", durationSeconds: 0),
+                            metadata: ConversionMetadata())
+            }
+
+            let index = LibraryIndex.build(from: [mk(a), mk(b)])
+            let dupes = LibraryCleanupService(fileManager: .default).findDuplicates(in: index)
+            XCTAssertEqual(dupes.count, 0)
+        }
+    }
+
     func testGroupedVersionsNotFlaggedAsDuplicates() throws {
         let (index, _) = try grouped()
         let dupes = LibraryCleanupService(fileManager: .default).findDuplicates(in: index)
@@ -239,15 +285,6 @@ final class LibraryCleanupServiceTests: XCTestCase {
             XCTAssertEqual(groups[0].worstTracks.count, 1)
             let ids = Set([groups[0].bestTrack.track.id] + groups[0].worstTracks.map { $0.track.id })
             XCTAssertEqual(ids, Set([radio.track.id, close.track.id]))
-        }
-    }
-
-    func testUnknownDurationNeverClusters() throws {
-        try withTemporaryDirectory(prefix: "CleanupNoDuration") { dir in
-            let a = try makeLoaded(dir, file: "a.mp3", title: "Voyager", duration: 0)
-            let b = try makeLoaded(dir, file: "b.mp3", title: "Voyager", duration: 0)
-            let index = LibraryIndex.build(from: [a, b])
-            XCTAssertTrue(LibraryCleanupService().findDuplicates(in: index, mode: .broad).isEmpty)
         }
     }
 

@@ -14,6 +14,30 @@ public struct LoadedTrack: Hashable, Equatable, Codable, Sendable {
         self.recordMarkers = recordMarkers
     }
 
+    /// Repair a track list whose entries share a UUID (one file imported twice
+    /// to different paths): SwiftUI ForEach renders a duplicated id as one real
+    /// row plus a blank ghost row. First occurrence wins; a later entry at a
+    /// *different* path gets a fresh id, a later entry at the *same* path is
+    /// the same track listed twice and is dropped.
+    public static func healingDuplicateIDs(_ tracks: [LoadedTrack]) -> [LoadedTrack] {
+        var firstPathByID: [UUID: String] = [:]
+        var result: [LoadedTrack] = []
+        result.reserveCapacity(tracks.count)
+        for loaded in tracks {
+            let path = loaded.track.fileURL.standardizedFileURL.path
+            guard let seenPath = firstPathByID[loaded.track.id] else {
+                firstPathByID[loaded.track.id] = path
+                result.append(loaded)
+                continue
+            }
+            if seenPath == path { continue }
+            result.append(LoadedTrack(track: loaded.track.withID(UUID()),
+                                      metadata: loaded.metadata,
+                                      recordMarkers: loaded.recordMarkers))
+        }
+        return result
+    }
+
     /// The index of the Record Divider track playing at `seconds` (the last marker
     /// whose start is at or before `seconds`), or `nil` if the track is undivided.
     public func recordTrackIndex(at seconds: Double) -> Int? {

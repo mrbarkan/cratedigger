@@ -134,13 +134,25 @@ public final class LibraryCleanupService {
         }
 
         var duplicateGroups: [DuplicateGroup] = []
+        func appendGroup(_ cluster: [LoadedTrack]) {
+            let sorted = cluster.sorted { isBetterTrack(lhs: $0, rhs: $1, sizeByPath: sizeByPath) }
+            guard let best = sorted.first else { return }
+            let group = DuplicateGroup(bestTrack: best, worstTracks: Array(sorted.dropFirst()))
+            guard !ignoredSignatures.contains(Self.signature(for: group)) else { return }
+            duplicateGroups.append(group)
+        }
         for (_, tracks) in grouped where tracks.count > 1 {
             for cluster in Self.durationClusters(tracks) where cluster.count > 1 {
-                let sorted = cluster.sorted { isBetterTrack(lhs: $0, rhs: $1, sizeByPath: sizeByPath) }
-                guard let best = sorted.first else { continue }
-                let group = DuplicateGroup(bestTrack: best, worstTracks: Array(sorted.dropFirst()))
-                guard !ignoredSignatures.contains(Self.signature(for: group)) else { continue }
-                duplicateGroups.append(group)
+                appendGroup(cluster)
+            }
+            // Unknown durations can't time-verify, but an exact byte-size match
+            // is even stronger evidence than duration — those pairs still
+            // surface (the " (1)" double-import case). Size 0/unreadable never
+            // clusters, same rationale as the duration guard.
+            let unknownDuration = tracks.filter { $0.track.durationSeconds <= 0 }
+            let bySize = Dictionary(grouping: unknownDuration) { sizeByPath[$0.track.fileURL.path] ?? 0 }
+            for (size, cluster) in bySize where size > 0 && cluster.count > 1 {
+                appendGroup(cluster)
             }
         }
         return duplicateGroups.sorted {
