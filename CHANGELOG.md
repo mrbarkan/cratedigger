@@ -4,6 +4,29 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 1.2.2 (50) — 2026-08-05
+
+Fixes for ripping, found by actually ripping a CD.
+
+### Fixed
+- **Converted and ripped files keep their tags.** A ripped CD came out with only
+  its album artist — the title, artist, album, year and genre were all lost.
+  CrateDigger had been relying on those being copied across from the original
+  file, which works when the original has tags, but an audio CD's tracks have
+  none at all. They are now written directly. Any field you have left blank
+  still inherits whatever the original file had.
+- **Rip progress moves while it's ripping.** The display sat at zero for the
+  whole rip and jumped straight to finished. It now counts up track by track and
+  names the one being written.
+
+### Changed
+- **Add artwork a folder at a time.** The artwork panel's ADD button now takes
+  several images at once, or a whole folder of scans, instead of one file per
+  trip through the file picker. Each image is filed by its name — `back.jpg`
+  becomes the back, `booklet_03.tif` a booklet page, `cd1.png` the disc — so a
+  scanned sleeve arrives already sorted rather than piling into Cover. A single
+  unlabelled image still becomes the cover, as before.
+
 ## 1.2.1 (49) — 2026-08-05
 
 CDs now identify themselves before you rip them, plus repairs to the tool
