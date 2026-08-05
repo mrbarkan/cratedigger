@@ -70,11 +70,31 @@ public actor RemoteArtworkService {
                 found = try await searchITunes(artist: trimmedArtist, album: stripped)
             }
         }
-        guard let candidate = found else {
+        // iTunes misses plenty — small labels, non-US releases, a lot of
+        // electronic and international catalogue. Deezer indexes those well and
+        // its search is free, documented and keyless, so it is a cheap second
+        // opinion before giving up. (The MusicBrainz + Cover Art Archive path
+        // below is a separate, release-MBID-driven lookup.)
+        var deezerCandidate: ITunesCandidate?
+        if found == nil {
+            deezerCandidate = try await searchDeezer(artist: trimmedArtist, album: trimmedAlbum)
+            if deezerCandidate == nil {
+                let stripped = Self.strippedEditionTitle(trimmedAlbum)
+                if stripped != trimmedAlbum, !stripped.isEmpty {
+                    deezerCandidate = try await searchDeezer(artist: trimmedArtist, album: stripped)
+                }
+            }
+        }
+
+        guard let candidate = found ?? deezerCandidate else {
             throw FetchError.noResults
         }
 
-        let highRes = upgradeArtworkURL(candidate.artworkURL, to: Self.preferredDimension)
+        // Deezer already hands back a full-size URL; only iTunes URLs carry the
+        // resizable dimension token.
+        let highRes = deezerCandidate == nil
+            ? upgradeArtworkURL(candidate.artworkURL, to: Self.preferredDimension)
+            : candidate.artworkURL
         let data = try await downloadImage(from: highRes)
 
         guard let asset = makeAsset(from: data) else {
@@ -96,7 +116,7 @@ public actor RemoteArtworkService {
         return makeAsset(from: data)
     }
 
-    private struct ITunesCandidate {
+    struct ITunesCandidate {
         let artist: String
         let album: String
         let artworkURL: URL
@@ -154,6 +174,95 @@ public actor RemoteArtworkService {
             scoreFor(lhs, targetArtist: targetArtist, targetAlbum: targetAlbum)
                 < scoreFor(rhs, targetArtist: targetArtist, targetAlbum: targetAlbum)
         }
+    }
+
+    /// Deezer album search. Same shape as `searchITunes` and scored with the
+    /// same distance function, so whichever provider answers, the best match is
+    /// chosen on identical terms.
+    private func searchDeezer(artist: String, album: String) async throws -> ITunesCandidate? {
+        guard let url = Self.deezerSearchURL(artist: artist, album: album) else { return nil }
+        var request = URLRequest(url: url)
+        request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
+        request.cachePolicy = .returnCacheDataElseLoad
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch let urlError as URLError {
+            throw FetchError.networkFailure(urlError)
+        }
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            return nil
+        }
+        return Self.parseDeezer(data, artist: artist, album: album)
+    }
+
+    /// Deezer's advanced query syntax scopes the terms to the right fields —
+    /// a bare term matches tracks and playlists too and drags in noise.
+    static func deezerSearchURL(artist: String, album: String) -> URL? {
+        var terms: [String] = []
+        if !artist.isEmpty { terms.append("artist:\"\(Self.quoteEscaped(artist))\"") }
+        if !album.isEmpty { terms.append("album:\"\(Self.quoteEscaped(album))\"") }
+        guard !terms.isEmpty else { return nil }
+
+        var components = URLComponents(string: "https://api.deezer.com/search/album")!
+        components.queryItems = [
+            URLQueryItem(name: "q", value: terms.joined(separator: " ")),
+            URLQueryItem(name: "limit", value: "10")
+        ]
+        return components.url
+    }
+
+    /// Deezer rejects unescaped quotes inside a quoted term.
+    private static func quoteEscaped(_ value: String) -> String {
+        value.replacingOccurrences(of: "\"", with: "")
+    }
+
+    static func parseDeezer(_ data: Data, artist: String, album: String) -> ITunesCandidate? {
+        struct Envelope: Decodable { let data: [Hit]? }
+        struct Hit: Decodable {
+            struct Artist: Decodable { let name: String? }
+            let title: String?
+            let artist: Artist?
+            /// 1000x1000 — Deezer's largest documented size.
+            let coverXL: String?
+            let coverBig: String?
+            let cover: String?
+
+            private enum CodingKeys: String, CodingKey {
+                case title, artist
+                case coverXL = "cover_xl"
+                case coverBig = "cover_big"
+                case cover
+            }
+        }
+
+        guard let decoded = try? JSONDecoder().decode(Envelope.self, from: data),
+              let hits = decoded.data, !hits.isEmpty else { return nil }
+
+        let candidates: [ITunesCandidate] = hits.compactMap { hit in
+            guard let title = hit.title,
+                  let urlString = hit.coverXL ?? hit.coverBig ?? hit.cover,
+                  !urlString.isEmpty,
+                  let url = URL(string: urlString) else { return nil }
+            return ITunesCandidate(artist: hit.artist?.name ?? "", album: title, artworkURL: url)
+        }
+        guard !candidates.isEmpty else { return nil }
+
+        let targetArtist = Self.simplify(artist)
+        let targetAlbum = Self.simplify(album)
+        return candidates.min {
+            Self.staticScore($0, targetArtist: targetArtist, targetAlbum: targetAlbum)
+                < Self.staticScore($1, targetArtist: targetArtist, targetAlbum: targetAlbum)
+        }
+    }
+
+    /// Same weighting as `scoreFor`, hoisted so parsing can be tested without a
+    /// service instance.
+    static func staticScore(_ candidate: ITunesCandidate, targetArtist: String, targetAlbum: String) -> Int {
+        distance(simplify(candidate.album), targetAlbum) * 2
+            + distance(simplify(candidate.artist), targetArtist)
     }
 
     private func scoreFor(_ candidate: ITunesCandidate, targetArtist: String, targetAlbum: String) -> Int {

@@ -142,3 +142,65 @@ final class ArtworkSearchLoosenessTests: XCTestCase {
         XCTAssertFalse(attempts.contains(where: { $0.contains("artist:") }))
     }
 }
+
+/// Deezer is the fallback provider when iTunes has no match — it covers small
+/// labels and non-US catalogue that the store misses.
+final class DeezerArtworkTests: XCTestCase {
+    func testSearchURLScopesTermsToArtistAndAlbumFields() throws {
+        let url = try XCTUnwrap(RemoteArtworkService.deezerSearchURL(artist: "Boards of Canada",
+                                                                    album: "Geogaddi"))
+        let components = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))
+        XCTAssertEqual(components.host, "api.deezer.com")
+        XCTAssertEqual(components.path, "/search/album")
+        let q = try XCTUnwrap(components.queryItems?.first { $0.name == "q" }?.value)
+        XCTAssertTrue(q.contains("artist:\"Boards of Canada\""))
+        XCTAssertTrue(q.contains("album:\"Geogaddi\""))
+    }
+
+    func testSearchURLIsNilWithNothingToSearchFor() {
+        XCTAssertNil(RemoteArtworkService.deezerSearchURL(artist: "", album: ""))
+    }
+
+    /// An unescaped quote inside a quoted term makes Deezer reject the query.
+    func testSearchURLStripsQuotesFromTerms() throws {
+        let url = try XCTUnwrap(RemoteArtworkService.deezerSearchURL(artist: "Quo\"te", album: "A\"lbum"))
+        let q = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false)?
+            .queryItems?.first { $0.name == "q" }?.value)
+        XCTAssertEqual(q, "artist:\"Quote\" album:\"Album\"")
+    }
+
+    func testParsePrefersTheLargestCoverAndBestMatch() throws {
+        let json = """
+        { "data": [
+            { "title": "Geogaddi (Deluxe)", "artist": { "name": "Boards of Canada" },
+              "cover": "https://e.deezer.com/s.jpg", "cover_big": "https://e.deezer.com/b.jpg",
+              "cover_xl": "https://e.deezer.com/xl-deluxe.jpg" },
+            { "title": "Geogaddi", "artist": { "name": "Boards of Canada" },
+              "cover_xl": "https://e.deezer.com/xl.jpg" }
+        ] }
+        """.data(using: .utf8)!
+
+        let candidate = try XCTUnwrap(
+            RemoteArtworkService.parseDeezer(json, artist: "Boards of Canada", album: "Geogaddi")
+        )
+        XCTAssertEqual(candidate.album, "Geogaddi", "the exact title should win over the deluxe edition")
+        XCTAssertEqual(candidate.artworkURL.absoluteString, "https://e.deezer.com/xl.jpg")
+    }
+
+    func testParseFallsBackThroughCoverSizes() throws {
+        let json = """
+        { "data": [ { "title": "X", "artist": { "name": "Y" }, "cover": "https://e.deezer.com/s.jpg" } ] }
+        """.data(using: .utf8)!
+        let candidate = try XCTUnwrap(RemoteArtworkService.parseDeezer(json, artist: "Y", album: "X"))
+        XCTAssertEqual(candidate.artworkURL.absoluteString, "https://e.deezer.com/s.jpg")
+    }
+
+    func testParseReturnsNilOnEmptyOrMalformedPayloads() {
+        for payload in [#"{"data": []}"#, #"{}"#, "not json", #"{"data":[{"title":"X"}]}"#] {
+            XCTAssertNil(
+                RemoteArtworkService.parseDeezer(payload.data(using: .utf8)!, artist: "Y", album: "X"),
+                "should not produce a candidate from: \(payload)"
+            )
+        }
+    }
+}
