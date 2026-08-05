@@ -4,7 +4,7 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
-## 1.2.1 (48) — 2026-08-05
+## 1.2.1 (49) — 2026-08-05
 
 CDs now identify themselves before you rip them, plus repairs to the tool
 windows introduced in 1.2.0.
@@ -30,8 +30,10 @@ windows introduced in 1.2.0.
   bottom; and Cancel and Close did nothing in any of them. All four now open at
   a sensible size, stay within the screen, have proper minimum and maximum
   sizes, and close when you tell them to.
-- **The EQ button matches its neighbours.** Its indicator lights made it wider
-  than the VIEW and THEME buttons above it.
+- **The header's VIEW / THEME / EQ buttons line up.** They had drifted to three
+  different widths — EQ's row of indicator lights was pushing its button wider
+  than the others. All three are now the same size, with their indicators
+  aligned.
 - **APPLY ALL is more careful.** When fixing tags across several albums at once,
   only confident matches are applied without you seeing them. Anything looser
   stays in the queue for you to review rather than being written to your files
