@@ -401,4 +401,51 @@ extension LibraryViewModel {
         refreshSyncQueueCounts()
         selectSource(.offlineDevice(profileID: profileID))   // rebuild index + badges
     }
+
+    // MARK: - Queue visibility (browsing an offline device)
+
+    /// Summary of what's waiting for the device currently being browsed.
+    /// `.empty` when the source isn't an offline device.
+    var offlineDeviceQueueSummary: DeviceSyncQueueSummary {
+        guard case .offlineDevice(let profileID) = currentSource else { return .empty }
+        let store = syncQueueStore
+        let fm = FileManager.default
+        func size(_ url: URL) -> Int64? {
+            guard fm.fileExists(atPath: url.path) else { return nil }
+            return ((try? fm.attributesOfItem(atPath: url.path))?[.size] as? NSNumber)?.int64Value
+        }
+        return DeviceSyncQueueSummary.make(
+            entries: store.load(profileID: profileID),
+            sizeOfStaged: { size(store.stagedFileURL(for: $0, profileID: profileID)) },
+            sizeOfSource: { size($0.track.track.fileURL) }
+        )
+    }
+
+    /// The profile being browsed offline, for the queue bar's labels.
+    var offlineDeviceProfile: ExternalDeviceProfile? {
+        guard case .offlineDevice(let profileID) = currentSource else { return nil }
+        return prefs.savedExternalDeviceProfiles.first { $0.id == profileID }
+    }
+
+    /// True when that device is plugged in now, so SYNC can actually run.
+    var offlineDeviceIsConnected: Bool {
+        guard let profile = offlineDeviceProfile else { return false }
+        return mountedDevices.contains { deviceProfile(for: $0)?.id == profile.id }
+    }
+
+    /// Drop the whole queue for the device being browsed, staged bytes included.
+    func clearOfflineDeviceQueue() {
+        guard case .offlineDevice(let profileID) = currentSource else { return }
+        syncQueueStore.remove(profileID: profileID)   // JSON + staging tree
+        refreshSyncQueueCounts()
+        selectSource(.offlineDevice(profileID: profileID))
+        showOLEDNotice("QUEUE CLEARED")
+    }
+
+    /// Sync the device being browsed, if it happens to be connected.
+    func syncBrowsedOfflineDevice() {
+        guard let profile = offlineDeviceProfile else { return }
+        syncQueuedTransfers(profileID: profile.id)
+    }
+
 }
