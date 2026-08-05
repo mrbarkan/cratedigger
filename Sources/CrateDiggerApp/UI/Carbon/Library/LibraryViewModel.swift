@@ -1769,7 +1769,7 @@ final class LibraryViewModel: ObservableObject {
     }
 
     /// Tag writes run here: off the main actor, one at a time.
-    private static let tagWriteQueue = DispatchQueue(label: "com.cratedigger.tag-write", qos: .userInitiated)
+    static let tagWriteQueue = DispatchQueue(label: "com.cratedigger.tag-write", qos: .userInitiated)
 
     // MARK: - Library Cleanup & Duplicates Actions
 

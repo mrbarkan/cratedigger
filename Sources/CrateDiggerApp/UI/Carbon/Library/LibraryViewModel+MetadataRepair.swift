@@ -287,33 +287,129 @@ extension LibraryViewModel {
     }
 
     /// Apply a reviewed match: for every track, write just the fields the user
-    /// checked. Goes through the normal tag-write path, so files are rewritten,
-    /// crates re-pointed, and the library re-organised exactly as a hand edit
-    /// would be.
+    /// checked. All of the album's files go through ONE batch write — the old
+    /// per-track `updateTrackMetadata` loop re-encoded the whole track store and
+    /// rebuilt the index once per file, freezing the UI for seconds per APPLY.
     func applyReleaseMatch(_ match: ReleaseMatch, fields: Set<MetadataRepairField>) {
         defer { advanceMatchQueue() }
-        guard !fields.isEmpty else { return }
+        let updates = matchUpdates(for: match, fields: fields, in: tracksByID())
+        guard !updates.isEmpty else { return }
+        updateTracksMetadata(updates)
+        AppLog.library.notice(
+            "Applied \(match.candidate.source.rawValue, privacy: .public) match to \(updates.count) track(s)"
+        )
+    }
 
-        var written = 0
-        for proposal in match.trackProposals {
+    /// APPLY ALL: this album as reviewed, then every remaining queued album with
+    /// its best match and all of its suggested fields — one batch write and one
+    /// index update instead of a sheet round-trip per album.
+    func applyAllReleaseMatches(startingWith match: ReleaseMatch, fields: Set<MetadataRepairField>) {
+        let byID = tracksByID()
+        var updates = matchUpdates(for: match, fields: fields, in: byID)
+        for batch in pendingMatchBatches {
+            guard let best = batch.matches.first else { continue }
+            updates += matchUpdates(for: best, fields: Set(best.changedFields), in: byID)
+        }
+        pendingMatchBatches = []
+        finishMatchQueue()
+        guard !updates.isEmpty else { return }
+        updateTracksMetadata(updates)
+        AppLog.library.notice("Applied queued matches to \(updates.count) track(s)")
+    }
+
+    private func tracksByID() -> [UUID: LoadedTrack] {
+        Dictionary(index.allTracks.map { ($0.track.id, $0) }, uniquingKeysWith: { a, _ in a })
+    }
+
+    /// The (track, merged metadata) pairs a match would write. Re-reads each
+    /// track from the index rather than trusting the snapshot the proposal
+    /// captured — it may have been healed since.
+    private func matchUpdates(
+        for match: ReleaseMatch,
+        fields: Set<MetadataRepairField>,
+        in byID: [UUID: LoadedTrack]
+    ) -> [(track: LoadedTrack, metadata: ConversionMetadata)] {
+        guard !fields.isEmpty else { return [] }
+        return match.trackProposals.compactMap { proposal in
             let chosen = proposal.changedFields.filter { fields.contains($0) }
-            // Re-read the track from the index rather than trusting the snapshot
-            // the proposal captured — it may have been healed since.
-            guard !chosen.isEmpty,
-                  let track = index.allTracks.first(where: { $0.track.id == proposal.trackID })
-            else { continue }
-
+            guard !chosen.isEmpty, let track = byID[proposal.trackID] else { return nil }
             let merged = MetadataRepairPlanner.adopt(chosen, from: proposal.proposed, into: track.metadata)
-            guard merged != track.metadata else { continue }
-            updateTrackMetadata(track, newMetadata: merged)
-            written += 1
+            guard merged != track.metadata else { return nil }
+            return (track, merged)
+        }
+    }
+
+    /// Batch tag write: every ffmpeg rewrite runs on the serial tag-write queue
+    /// with OLED progress, then crates/store/index update ONCE at the end via
+    /// `updateTrackURLsInIndex` — the per-track path pays a full store re-encode
+    /// plus index rebuild per file, which locks the UI at library size.
+    func updateTracksMetadata(_ updates: [(track: LoadedTrack, metadata: ConversionMetadata)]) {
+        guard let editor = metadataEditor, !updates.isEmpty else { return }
+
+        let planned = updates.map { (sourceURL: $0.track.track.fileURL,
+                                     updated: Self.applying($0.metadata, to: $0.track)) }
+        // Keep-organised decision up front so the queue hop below doesn't touch
+        // main-actor state — same rule as the single-track path.
+        let organiseFolder: URL? = prefs.keepLibraryOrganised ? managedLibraryFolderURL : nil
+        let organiseByAlbumArtist = prefs.organiseByAlbumArtist
+        let total = planned.count
+
+        showOLEDNotice(total == 1 ? "SAVING…" : "SAVING… 0/\(total)")
+        LibraryViewModel.tagWriteQueue.async { [weak self] in
+            var written: [LoadedTrack] = []
+            var failures: [String] = []
+            for (i, item) in planned.enumerated() {
+                do {
+                    try editor.writeMetadata(to: item.sourceURL, metadata: item.updated.metadata)
+                    written.append(item.updated)
+                } catch {
+                    failures.append("\(item.sourceURL.lastPathComponent): \(error.localizedDescription)")
+                }
+                if total > 1 {
+                    let done = i + 1
+                    DispatchQueue.main.async { self?.showOLEDNotice("SAVING… \(done)/\(total)") }
+                }
+            }
+            DispatchQueue.main.async {
+                self?.finishBatchTagWrite(written: written, failures: failures,
+                                          organiseFolder: organiseFolder,
+                                          organiseByAlbumArtist: organiseByAlbumArtist)
+            }
+        }
+    }
+
+    private func finishBatchTagWrite(
+        written: [LoadedTrack],
+        failures: [String],
+        organiseFolder: URL?,
+        organiseByAlbumArtist: Bool
+    ) {
+        func wrapUp(_ tracks: [LoadedTrack], _ allFailures: [String]) {
+            if !tracks.isEmpty { updateTrackURLsInIndex(tracks) }
+            showOLEDNotice(allFailures.isEmpty ? "TAGS SAVED" : "SAVED WITH ERRORS")
+            if !allFailures.isEmpty {
+                let shown = allFailures.prefix(8).joined(separator: "\n")
+                appAlert = .error(title: "Some Tags Didn't Save",
+                                  message: allFailures.count > 8 ? shown + "\n…" : shown)
+            }
         }
 
-        guard written > 0 else { return }
-        showOLEDNotice("TAGS MATCHED")
-        AppLog.library.notice(
-            "Applied \(match.candidate.source.rawValue, privacy: .public) match to \(written) track(s)"
-        )
+        // Only files already inside the managed library get re-organised —
+        // mirrors updateTrackMetadata's per-track decision.
+        guard let libURL = organiseFolder else { return wrapUp(written, failures) }
+        let inside = written.filter { $0.track.fileURL.path.hasPrefix(libURL.path) }
+        guard !inside.isEmpty else { return wrapUp(written, failures) }
+        let outside = written.filter { !$0.track.fileURL.path.hasPrefix(libURL.path) }
+
+        Task {
+            let result = await LibraryOrganizerService().organizeReportingFailures(
+                tracks: inside,
+                destinationFolder: libURL,
+                copyOnly: false,
+                organiseByAlbumArtist: organiseByAlbumArtist
+            )
+            await MainActor.run { wrapUp(outside + result.tracks, failures + result.failures) }
+        }
     }
 
     /// Apply the review sheet's decisions: for each group, adopt the chosen

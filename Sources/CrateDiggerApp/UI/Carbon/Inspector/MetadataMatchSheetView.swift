@@ -301,6 +301,15 @@ struct MetadataMatchSheetView: View {
                 }
                 .frame(width: 80, height: CarbonLayout.keyHeight)
                 .help("Leave this album unchanged and review the next one")
+
+                KeyButton(style: .normal, action: {
+                    model.applyAllReleaseMatches(startingWith: match, fields: checked)
+                }) {
+                    Text("APPLY ALL")
+                        .font(CarbonFont.mono(9, weight: .bold))
+                }
+                .frame(width: 110, height: CarbonLayout.keyHeight)
+                .help("Apply this album as reviewed, then every remaining album with its best match and all suggested fields")
             }
 
             KeyButton(style: checked.isEmpty ? .disabled : .selected, action: {
