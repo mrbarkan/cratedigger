@@ -4,6 +4,50 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 1.1.2 (46) — 2026-08-05
+
+A stability and performance release. The headline fix is a crash that could
+take the app down while saving tags.
+
+### Fixed
+- **Crash while saving tags.** Certain tag values — most often ones picked up
+  from an online release match, or read from an ID3 tag that uses a separator
+  byte inside a field — could abort CrateDigger outright the moment it wrote
+  them to a file. Those values are now cleaned up before they reach ffmpeg, and
+  no tag can take the app down this way again. Converting files was open to the
+  same crash and is fixed too.
+- **Repeat All now wraps on the transport buttons.** Pressing Next on the last
+  track of a queue stopped playback instead of looping back to the first;
+  Previous on the first track restarted it instead of jumping to the last.
+  Letting a track play out always wrapped correctly — now the buttons agree.
+- **A broken file no longer starts playback on its own.** If CrateDigger hit a
+  file it couldn't read while you had a queue loaded but paused, it skipped
+  past it *and* started playing. It now skips quietly and stays paused.
+- **Volume survives a DSD handoff.** Changing the volume while a DSD track
+  played bit-perfect didn't reach the regular playback engine, so falling back
+  to PCM could jump to an old level.
+- **Trashed files stay out of your library.** Scanning an external drive walked
+  into its hidden Trash folder and imported audio you'd already deleted.
+- **Device sync no longer loses tracks queued mid-sync.** Staging tracks for a
+  device while a sync was already running could silently drop them from the
+  queue. Syncing also no longer reports "not enough space" for a queue whose
+  files are mostly on the device already.
+
+### Changed
+- **Faster tag matching.** Applying an online match to an album now writes the
+  whole album in one pass instead of once per file, with progress on the OLED.
+  A new APPLY ALL button accepts the current album and every remaining one in
+  the queue in a single go.
+- **Lighter mini player.** The mini player redrew its entire panel — artwork,
+  display, transport and all — several times a second just to advance the time
+  counter. Only the clock readout and progress bar refresh now.
+- **Quieter launch with saved radio stations.** CrateDigger fetched artwork and
+  titles for every station at once on startup, which could spike the CPU. They
+  now load one at a time, and a station that stops responding gives up after 30
+  seconds instead of hanging around for the session.
+- **Faster device syncs.** Long transfers spent an increasing amount of time
+  rewriting their own queue file between tracks.
+
 ## 1.1.1 (45) — 2026-07-23
 
 ### Added
