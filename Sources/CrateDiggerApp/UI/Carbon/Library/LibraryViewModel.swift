@@ -1657,8 +1657,24 @@ final class LibraryViewModel: ObservableObject {
 
                 _ = service.enqueue(jobs, preset: preset)
 
+                // The no-callback overload reports nothing until it returns, so
+                // the OLED sat at 0 for the whole rip and jumped to complete at
+                // the end. Feed each finished job back to the display.
+                let total = jobs.count
+                let names = jobs.map { $0.destinationURL.lastPathComponent }
                 let results = await Task.detached {
-                    return service.runQueuedJobs(maxConcurrentWorkers: 1)
+                    service.runQueuedJobs(maxConcurrentWorkers: 1) { _, done, _ in
+                        // Serial worker, so `done` indexes the job just finished.
+                        let filename = names.indices.contains(done - 1) ? names[done - 1] : nil
+                        Task { @MainActor in
+                            self.conversionProgress = ConversionProgressSnapshot(
+                                jobsCompleted: done,
+                                jobsTotal: total,
+                                currentFilename: filename,
+                                isRunning: done < total
+                            )
+                        }
+                    }
                 }.value
 
                 await MainActor.run {

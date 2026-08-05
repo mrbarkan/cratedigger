@@ -44,6 +44,74 @@ final class ConversionServiceTests: XCTestCase {
         XCTAssertFalse(argumentPairs(command.arguments).contains(ArgPair(flag: "-movflags", value: "use_metadata_tags")))
     }
 
+
+    /// Regression: a CD rip came out with only its album artist.
+    ///
+    /// `-map_metadata 0` copies tags from the source, which writes nothing when
+    /// the source has none — an audio CD's AIFF tracks are untagged. The core
+    /// fields have to be written explicitly or an identified album loses its
+    /// title, artist, album, year and genre on the way out.
+    func testCoreTagsAreWrittenExplicitlyNotLeftToMapMetadata() throws {
+        let service = try makeService(artworkPreparer: PassThroughArtworkPreparer())
+        let metadata = ConversionMetadata(
+            title: "Fat Old Sun",
+            artist: "Pink Floyd",
+            albumArtist: "Pink Floyd",
+            album: "Atom Heart Mother",
+            trackNumber: 4,
+            trackTotal: 5,
+            year: 1970,
+            genre: "Progressive Rock",
+            comment: "ripped from CD"
+        )
+        let queued = try service.enqueue(
+            [ConversionJob(sourceURL: temporaryDirectory.appendingPathComponent("4 Audio Track.aiff"),
+                           destinationURL: temporaryDirectory.appendingPathComponent("out.m4a"),
+                           metadata: metadata)],
+            presetID: "ipod_aac_192"
+        ).first!
+
+        let written = metadataAssignments(in: try service.preparedCommand(for: queued).arguments)
+        XCTAssertEqual(written["title"], "Fat Old Sun")
+        XCTAssertEqual(written["artist"], "Pink Floyd")
+        XCTAssertEqual(written["album"], "Atom Heart Mother")
+        XCTAssertEqual(written["genre"], "Progressive Rock")
+        XCTAssertEqual(written["comment"], "ripped from CD")
+        XCTAssertEqual(written["date"], "1970")
+        XCTAssertEqual(written["album_artist"], "Pink Floyd")
+        XCTAssertEqual(written["track"], "4/5")
+    }
+
+    /// Empty fields must stay unwritten so a normal conversion still inherits
+    /// whatever the source file had via `-map_metadata 0`.
+    func testBlankFieldsAreNotWrittenOverTheSourcesOwnTags() throws {
+        let service = try makeService(artworkPreparer: PassThroughArtworkPreparer())
+        let queued = try service.enqueue(
+            [ConversionJob(sourceURL: temporaryDirectory.appendingPathComponent("a.flac"),
+                           destinationURL: temporaryDirectory.appendingPathComponent("out.m4a"),
+                           metadata: ConversionMetadata(title: "Only A Title"))],
+            presetID: "ipod_aac_192"
+        ).first!
+
+        let written = metadataAssignments(in: try service.preparedCommand(for: queued).arguments)
+        XCTAssertEqual(written["title"], "Only A Title")
+        for absent in ["artist", "album", "genre", "comment", "date", "year"] {
+            XCTAssertNil(written[absent], "\(absent) should be left to the source")
+        }
+    }
+
+    /// `-metadata key=value` pairs, as a dictionary.
+    private func metadataAssignments(in arguments: [String]) -> [String: String] {
+        var result: [String: String] = [:]
+        for (index, argument) in arguments.enumerated() where argument == "-metadata" {
+            guard index + 1 < arguments.count else { continue }
+            let assignment = arguments[index + 1]
+            guard let split = assignment.firstIndex(of: "=") else { continue }
+            result[String(assignment[..<split])] = String(assignment[assignment.index(after: split)...])
+        }
+        return result
+    }
+
     func testCompatReembedPlacesMapMetadataAfterAllInputs() throws {
         let service = try makeService(artworkPreparer: PassThroughArtworkPreparer())
         let sourceURL = temporaryDirectory.appendingPathComponent("source.flac")
@@ -323,7 +391,16 @@ final class ConversionServiceTests: XCTestCase {
         XCTAssertEqual(recorder.recordedMaxDimension, 300)
     }
 
-    func testMetadataPreservationDoesNotOverrideCoreTagsWithPartialValues() throws {
+    /// The rule this pins used to be "never write the core tags, let
+    /// `-map_metadata 0` carry them" — which loses them entirely when the source
+    /// has none, as a CD rip's untagged AIFF does.
+    ///
+    /// The rule now: write what ConversionMetadata actually holds (it *is* the
+    /// app's tag set, and the user may have edited it), and leave anything blank
+    /// unwritten so the source's own value still comes through. That keeps the
+    /// original concern — partial values must not blank out richer source tags —
+    /// without throwing away the populated ones.
+    func testPopulatedCoreTagsAreWrittenAndBlanksFallThroughToTheSource() throws {
         let service = try makeService(artworkPreparer: PassThroughArtworkPreparer())
         let sourceURL = temporaryDirectory.appendingPathComponent("source.flac")
         let outputURL = temporaryDirectory.appendingPathComponent("out.m4a")
@@ -348,18 +425,22 @@ final class ConversionServiceTests: XCTestCase {
         let command = try service.preparedCommand(for: queued)
         let pairs = argumentPairs(command.arguments)
 
-        XCTAssertFalse(pairs.contains(ArgPair(flag: "-metadata", value: "title=Track")))
-        XCTAssertFalse(pairs.contains(ArgPair(flag: "-metadata", value: "artist=Track Artist")))
-        XCTAssertFalse(pairs.contains(ArgPair(flag: "-metadata", value: "album=Album")))
+        XCTAssertTrue(pairs.contains(ArgPair(flag: "-metadata", value: "title=Track")))
+        XCTAssertTrue(pairs.contains(ArgPair(flag: "-metadata", value: "artist=Track Artist")))
+        XCTAssertTrue(pairs.contains(ArgPair(flag: "-metadata", value: "album=Album")))
         // track/disc ARE written even without totals: the values were parsed
         // FROM the source, so a missing total mirrors the source's own tags —
         // and ffmpeg's map_metadata does not reliably carry DISCNUMBER into
         // the M4A disk atom, so relying on pass-through loses disc identity.
         XCTAssertTrue(pairs.contains(ArgPair(flag: "-metadata", value: "track=1")))
         XCTAssertTrue(pairs.contains(ArgPair(flag: "-metadata", value: "disc=1")))
-        XCTAssertFalse(pairs.contains(ArgPair(flag: "-metadata", value: "date=2008")))
-        XCTAssertFalse(pairs.contains(ArgPair(flag: "-metadata", value: "genre=Electronic")))
-        XCTAssertFalse(pairs.contains(ArgPair(flag: "-metadata", value: "comment=Test Comment")))
+        XCTAssertTrue(pairs.contains(ArgPair(flag: "-metadata", value: "date=2008")))
+        XCTAssertTrue(pairs.contains(ArgPair(flag: "-metadata", value: "genre=Electronic")))
+        XCTAssertTrue(pairs.contains(ArgPair(flag: "-metadata", value: "comment=Test Comment")))
+
+        // The other half of the rule, covered by
+        // testBlankFieldsAreNotWrittenOverTheSourcesOwnTags: an unset field is
+        // never emitted, so `-map_metadata 0` still supplies it.
     }
 
     func testGenericAACAutoTagModeDoesNotUseMDTAFlag() throws {

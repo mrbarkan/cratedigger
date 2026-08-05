@@ -619,6 +619,28 @@ public final class ConversionService {
             writtenNormalizedKeys.insert(Self.normalizedMetadataKey(key))
         }
 
+        // The core fields have to be written explicitly, not left to
+        // `-map_metadata 0`. That flag copies whatever the *source* file has,
+        // which is right for a file→file conversion but writes nothing at all
+        // when the source carries no tags — a CD rip being the clean example:
+        // its AIFF tracks are untagged, so an identified album came out with
+        // only `album_artist` (the sole name tag written below) and lost its
+        // title, artist, album, year and genre.
+        //
+        // `add` skips empty values, so a conversion whose ConversionMetadata
+        // leaves a field blank still inherits the source's copy of it.
+        add("title", metadata.title)
+        add("artist", metadata.artist)
+        add("album", metadata.album)
+        add("genre", metadata.genre)
+        add("comment", metadata.comment)
+        if let year = metadata.year {
+            // Containers disagree on which of these they honour; ffmpeg maps
+            // whichever the muxer understands and drops the other.
+            add("date", String(year))
+            add("year", String(year))
+        }
+
         // Totals are optional garnish — the NUMBER must survive on its own.
         // (Rips commonly tag discnumber with no disctotal; requiring both used
         // to silently drop the disc tag, collapsing multi-disc albums.)
