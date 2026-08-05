@@ -201,6 +201,10 @@ extension LibraryViewModel {
             // Free-space preflight on the actual bytes to copy (staged or source).
             let fm = FileManager.default
             let bytesNeeded: Int64 = entries.reduce(0) { sum, entry in
+                // Entries already on the device are skipped by the loop below,
+                // so counting them here false-failed a mostly-synced queue.
+                let destination = mountedRoot.appendingPathComponent(entry.destinationRelativePath)
+                guard !fm.fileExists(atPath: destination.path) else { return sum }
                 let url = entry.isStaged
                     ? syncQueueStore.stagedFileURL(for: entry, profileID: profileID)
                     : entry.track.track.fileURL
@@ -239,8 +243,25 @@ extension LibraryViewModel {
                         let fm = FileManager.default
                         var synced = 0, skipped = 0, failed = 0
                         var lines: [String] = []
-                        var remaining = entries
                         var service: ConversionService?
+
+                        // Checkpointing, rather than a full queue rewrite per
+                        // entry (which re-encoded the whole JSON n times for an
+                        // n-track sync). Re-reading the queue at each checkpoint
+                        // also preserves anything staged *while* this sync runs
+                        // — writing back a pre-loop snapshot silently dropped it.
+                        var doneIDs = Set<UUID>()
+                        let checkpointEvery = 25
+                        func persistQueue() {
+                            guard !doneIDs.isEmpty else { return }
+                            let left = store.load(profileID: profileID)
+                                .filter { !doneIDs.contains($0.id) }
+                            if left.isEmpty {
+                                store.remove(profileID: profileID)
+                            } else {
+                                store.save(left, profileID: profileID)
+                            }
+                        }
 
                         for (i, entry) in entries.enumerated() {
                             let destination = mountedRoot.appendingPathComponent(entry.destinationRelativePath)
@@ -300,8 +321,8 @@ extension LibraryViewModel {
                                 }
                                 // Done (copied or already there): staged bytes are trash now.
                                 store.removeStagedFile(for: entry, profileID: profileID)
-                                remaining.removeAll { $0.id == entry.id }
-                                store.save(remaining, profileID: profileID)
+                                doneIDs.insert(entry.id)
+                                if doneIDs.count % checkpointEvery == 0 { persistQueue() }
                             } catch {
                                 failed += 1
                                 lines.append("[FAILED] \(entry.destinationRelativePath)\n    \(error.localizedDescription)")
@@ -320,7 +341,7 @@ extension LibraryViewModel {
                             }
                         }
 
-                        if remaining.isEmpty { store.remove(profileID: profileID) }
+                        persistQueue()
                         continuation.resume(returning: (synced, skipped, failed, lines))
                     }
                 }
