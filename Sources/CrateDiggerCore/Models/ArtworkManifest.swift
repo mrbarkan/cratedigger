@@ -97,6 +97,38 @@ public extension ArtworkRole {
         }
     }
 
+    /// Guess a role from a filename, using the vocabulary scanned artwork
+    /// actually comes named with ("front.jpg", "cd1.png", "booklet_03.tif").
+    ///
+    /// Deliberately the same keyword set `AlbumBooklet` reads when it sorts an
+    /// album folder for display, so importing a folder of scans and having them
+    /// classified on disk agree. Returns nil when nothing in the name is a
+    /// signal — the caller decides what an unlabelled image should become.
+    static func inferred(fromFilename filename: String) -> ArtworkRole? {
+        let name = (filename as NSString).deletingPathExtension.lowercased()
+        guard !name.isEmpty else { return nil }
+
+        func mentions(_ needles: [String]) -> Bool { needles.contains { name.contains($0) } }
+
+        // Order matters: "back cover" is a back, not a cover, and a disc scan
+        // named "cd1 label" must not be read as a booklet page.
+        if mentions(["matrix", "runout", "deadwax"])           { return .matrixRunout }
+        if mentions(["back", "rear"])                          { return .back }
+        if mentions(["obi"])                                   { return .obi }
+        if mentions(["spine"])                                 { return .spine }
+        if mentions(["sleeve", "inner", "bag"])                { return .sleeve }
+        if mentions(["inlay", "inlet", "tray", "insert"])      { return .inlay }
+        if mentions(["sticker", "hype"])                       { return .sticker }
+        if mentions(["poster"])                                { return .poster }
+        if mentions(["wrap", "shrink", "sealed"])              { return .wrapped }
+        if mentions(["disc", "disk", "label", "vinyl", "dvd"]) { return .disc }
+        if name == "cd" || name.hasPrefix("cd") && name.dropFirst(2).allSatisfy(\.isNumber) { return .disc }
+        if mentions(["booklet", "book", "page", "liner", "notes", "brochure"]) { return .bookletPage }
+        if mentions(["alt"]) && mentions(["cover", "front"])    { return .altCover }
+        if mentions(["front", "cover"]) || name == "folder" || name == "external" { return .cover }
+        return nil
+    }
+
     /// The roles a user can assign to an image, in menu order — everything
     /// except the `.auto`/`.ignore` bookkeeping pair.
     static var assignable: [ArtworkRole] {

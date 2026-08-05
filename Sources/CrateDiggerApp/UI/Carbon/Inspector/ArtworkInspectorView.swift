@@ -80,7 +80,7 @@ struct ArtworkInspectorView: View {
                 // "Library Tools" row pattern in InspectorPane.
                 if canUploadArtwork {
                     KeyButton(style: .normal, action: uploadArtworkFromDisk) {
-                        Text("ADD FILE…")
+                        Text("ADD ART…")
                             .font(CarbonFont.mono(9, weight: .bold))
                     }
                     .frame(maxWidth: .infinity)
@@ -287,28 +287,100 @@ struct ArtworkInspectorView: View {
         album?.tracks.first?.track.fileURL.isFileURL ?? false
     }
 
+    /// Import scanned artwork: any number of images, or whole folders of them.
+    ///
+    /// Scanning a sleeve produces a folder, not a single file, so importing one
+    /// image at a time made the manual path far more tedious than the online
+    /// search it sits next to. Folders are walked, and each image's role is read
+    /// from its filename the same way `AlbumBooklet` reads an album folder — so
+    /// "back.jpg" lands as the back and "booklet_03.tif" as a booklet page,
+    /// rather than everything piling into Cover.
     private func uploadArtworkFromDisk() {
         guard let album = album else { return }
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
-        panel.allowedContentTypes = [.image]
-        panel.title = "Choose cover art"
-        panel.message = "This image becomes the cover and is embedded into every track on the album."
-        panel.prompt = "Use as Cover"
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = [.image, .folder]
+        panel.title = "Add artwork"
+        panel.message = "Pick images or a folder of scans. Roles are read from the filenames — "
+            + "anything unrecognised becomes a booklet page, or the cover if it's the only image."
+        panel.prompt = "Add Artwork"
 
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard panel.runModal() == .OK, !panel.urls.isEmpty else { return }
+        let images = Self.expandToImageFiles(panel.urls)
+        guard !images.isEmpty else {
+            model.appAlert = .error(title: "No Images Found",
+                                    message: "Nothing in that selection was an image CrateDigger can read.")
+            return
+        }
+
+        // One unlabelled image is the case the old single-file button served —
+        // the user picking a cover — so keep that meaning. In a batch, an
+        // unlabelled image is far more likely to be a booklet page.
+        let single = images.count == 1
+        let grouped = Dictionary(grouping: images) { url in
+            ArtworkRole.inferred(fromFilename: url.lastPathComponent) ?? (single ? .cover : .bookletPage)
+        }
+
         isSaving = true
         Task {
-            await model.attachLocalArtwork(fileURLs: [url], role: .cover, for: album)
+            // Cover first, so it wins the embedded-cover slot regardless of the
+            // order the dictionary hands the groups back.
+            for role in grouped.keys.sorted(by: { $0 == .cover && $1 != .cover }) {
+                guard let urls = grouped[role] else { continue }
+                await model.attachLocalArtwork(
+                    fileURLs: urls.sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending },
+                    role: role,
+                    for: album
+                )
+            }
             await MainActor.run {
                 isSaving = false
                 loadManifest()
-                isDirty = true   // a new cover was added
+                isDirty = true
+                model.showOLEDNotice(images.count == 1 ? "ARTWORK ADDED" : "\(images.count) IMAGES ADDED")
             }
         }
     }
+
+    /// Flatten a panel selection into image files, walking any folders. Shallow
+    /// per folder plus one level down, which covers the usual `Scans/` and
+    /// `Scans/Booklet/` shapes without dragging in a whole music library if
+    /// someone points this at one.
+    static func expandToImageFiles(_ urls: [URL]) -> [URL] {
+        let fm = FileManager.default
+        var found: [URL] = []
+        var seen = Set<String>()
+
+        func addFile(_ url: URL) {
+            guard Self.imageExtensions.contains(url.pathExtension.lowercased()) else { return }
+            let key = url.standardizedFileURL.path
+            if seen.insert(key).inserted { found.append(url) }
+        }
+
+        func addDirectory(_ dir: URL, depth: Int) {
+            guard let entries = try? fm.contentsOfDirectory(
+                at: dir, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]
+            ) else { return }
+            for entry in entries {
+                let isDir = (try? entry.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
+                if isDir {
+                    if depth > 0 { addDirectory(entry, depth: depth - 1) }
+                } else {
+                    addFile(entry)
+                }
+            }
+        }
+
+        for url in urls {
+            let isDir = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
+            if isDir { addDirectory(url, depth: 1) } else { addFile(url) }
+        }
+        return found.sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+    }
+
+    static let imageExtensions: Set<String> = ["jpg", "jpeg", "png", "tif", "tiff", "gif", "bmp", "heic", "webp"]
 
     private func setDiscSide(_ fileName: String, _ raw: String) {
         let v = raw.trimmingCharacters(in: .whitespaces).uppercased()
