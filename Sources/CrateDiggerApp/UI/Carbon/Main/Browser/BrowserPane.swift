@@ -6,7 +6,23 @@ struct BrowserPane: View {
     @Environment(\.carbon) private var theme
     @EnvironmentObject private var model: LibraryViewModel
 
+    /// True while browsing a device that isn't plugged in — the only place the
+    /// sync queue is worth a permanent strip.
+    private var isBrowsingOfflineDevice: Bool {
+        if case .offlineDevice = model.currentSource { return true }
+        return false
+    }
+
     var body: some View {
+        VStack(spacing: 0) {
+            if isBrowsingOfflineDevice {
+                DeviceQueueBar()
+            }
+            browserBody
+        }
+    }
+
+    private var browserBody: some View {
         ZStack {
             HStack(spacing: 0) {
                 columns
@@ -103,7 +119,8 @@ private struct ArtistColumn: View {
                                             ascending: $model.artistSortAscending,
                                             allCases: Array(ArtistSortField.allCases)))
                 : nil,
-            scrollTarget: model.selectedArtistID.map(AnyHashable.init)
+            scrollTarget: model.selectedArtistID.map(AnyHashable.init),
+            isFocused: model.effectiveColumn == .artist
         ) {
             ForEach(model.visibleArtists) { artist in
                 ArtistRow(
@@ -150,7 +167,8 @@ private struct AlbumColumn: View {
                                             ascending: $model.albumSortAscending,
                                             allCases: Array(AlbumSortField.allCases)))
                 : nil,
-            scrollTarget: model.selectedAlbumID.map(AnyHashable.init)
+            scrollTarget: model.selectedAlbumID.map(AnyHashable.init),
+            isFocused: model.effectiveColumn == .album
         ) {
             ForEach(albums) { album in
                 if album.isVersionGroup {
@@ -254,7 +272,8 @@ private struct TrackColumn: View {
                                             ascending: $model.trackSortAscending,
                                             allCases: Array(TrackSortField.allCases)))
                 : nil,
-            scrollTarget: model.selectedTrackID.map(AnyHashable.init)
+            scrollTarget: model.selectedTrackID.map(AnyHashable.init),
+            isFocused: model.effectiveColumn == .track
         ) {
             ForEach(trackEntries) { entry in
                 switch entry {

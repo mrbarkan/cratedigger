@@ -22,8 +22,10 @@ extension LibraryViewModel {
         }
     }
 
-    /// `focusedColumn` clamped to a column this layout shows.
-    private var effectiveColumn: BrowserColumn {
+    /// `focusedColumn` clamped to a column this layout shows. Also what the
+    /// browser reads to light the focused column's header — `focusedColumn`
+    /// itself can name a column the current layout doesn't render.
+    var effectiveColumn: BrowserColumn {
         navColumns.contains(focusedColumn) ? focusedColumn : (navColumns.last ?? .track)
     }
 
