@@ -272,6 +272,15 @@ public actor RemoteArtworkService {
         return albumScore + artistScore
     }
 
+    /// Fetch cover art from a URL we already know — a Cover Art Archive image
+    /// for a release identified by disc ID, say, where there is nothing to
+    /// search for. Follows the same download + decode path as a search hit.
+    public func fetchArtwork(from url: URL) async throws -> ArtworkAsset {
+        let data = try await downloadImage(from: url)
+        guard let asset = makeAsset(from: data) else { throw FetchError.invalidImage }
+        return asset
+    }
+
     private func downloadImage(from url: URL) async throws -> Data {
         var request = URLRequest(url: url)
         request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")

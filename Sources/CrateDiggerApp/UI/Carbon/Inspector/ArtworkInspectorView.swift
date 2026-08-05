@@ -448,6 +448,12 @@ struct ArtworkInspectorView: View {
             filePaths: album.tracks.map { $0.track.fileURL.path }
         )
         loadManifest()
+        // Tell anything else showing this album's art to re-read the folder —
+        // an open Artwork Viewer held a page list built when it opened, so a
+        // trashed image stayed on screen.
+        NotificationCenter.default.post(
+            name: NSNotification.Name("CrateDiggerArtworkImported"), object: nil
+        )
         model.refreshLibrary()
     }
 

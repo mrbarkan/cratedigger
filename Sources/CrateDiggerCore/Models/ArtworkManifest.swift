@@ -166,15 +166,39 @@ public struct ArtworkManifest: Codable, Equatable, Sendable {
     /// sets, so the spinning record shows the art for the playing track's disc.
     /// Filename → disc number. Optional ⇒ old manifests still decode.
     public var discNumbers: [String: Int]?
+    /// Optional framing correction per image — how a scan is rotated, zoomed and
+    /// nudged to sit straight in the round disc face. Filename → crop.
+    /// Optional ⇒ old manifests still decode. See `ArtworkCrop`.
+    public var crops: [String: ArtworkCrop]?
 
     public init(mediaFormat: MediaFormat? = nil,
                 roles: [String: ArtworkRole] = [:],
                 discSides: [String: String]? = nil,
-                discNumbers: [String: Int]? = nil) {
+                discNumbers: [String: Int]? = nil,
+                crops: [String: ArtworkCrop]? = nil) {
         self.mediaFormat = mediaFormat
         self.roles = roles
         self.discSides = discSides
         self.discNumbers = discNumbers
+        self.crops = crops
+    }
+
+    /// The stored crop for an image, or the identity when it has none.
+    public func crop(for filename: String) -> ArtworkCrop {
+        crops?[filename] ?? .identity
+    }
+
+    /// Store a crop, dropping it entirely when it corrects nothing so manifests
+    /// don't fill up with no-op entries.
+    public mutating func setCrop(_ crop: ArtworkCrop, for filename: String) {
+        var updated = crops ?? [:]
+        let clamped = crop.clamped
+        if clamped.isIdentity {
+            updated[filename] = nil
+        } else {
+            updated[filename] = clamped
+        }
+        crops = updated.isEmpty ? nil : updated
     }
 
     public static let fileName = ".cratedigger-art.json"

@@ -170,7 +170,7 @@ struct InspectorPane: View {
         case .disc:
             VStack {
                 Spacer()
-                SpinningRecordView(model: model)
+                SpinningRecordView(model: model, adjustable: true)
                     .padding(20)
                 Spacer()
             }
@@ -223,7 +223,7 @@ struct InspectorPane: View {
         case .disc:
             HStack {
                 Spacer()
-                SpinningRecordView(model: model)
+                SpinningRecordView(model: model, adjustable: true)
                     .frame(width: posterSize, height: posterSize)
                 Spacer()
             }

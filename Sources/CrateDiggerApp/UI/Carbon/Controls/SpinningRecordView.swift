@@ -21,6 +21,9 @@ struct CDMaskShape: Shape {
 
 struct SpinningRecordView: View {
     @ObservedObject var model: LibraryViewModel
+    /// Offer the cut editor. Only the inspector's DISC tab does — the mini
+    /// player and the footer show the disc, they don't edit it.
+    var adjustable: Bool = false
     /// Tray semantics: this view is the deck's transport, so it always shows
     /// the *loaded* disc (the now-playing queue's album — which persists
     /// through pause/stop, like a real tray) and never the browsed selection.
@@ -29,12 +32,23 @@ struct SpinningRecordView: View {
     /// while something else was playing, which read as the wrong album playing.
     @StateObject private var animator = RecordAnimator()
     @State private var discImage: NSImage? = nil
+    /// Framing correction for `discImage` — a flatbed scan is never centred or
+    /// square to the platen, so it needs rotating and nudging into the round
+    /// face. See `ArtworkCrop`.
+    @State private var discCrop: ArtworkCrop = .identity
+    /// Filename of the disc image on screen, so the cut editor knows what to save.
+    @State private var discImageFile: String? = nil
     @State private var isVinyl: Bool = false
     /// No track loaded in the queue at all — render the empty tray instead of
     /// a blank disc, so "nothing playing" doesn't look like a blank CD-R.
     @State private var trayEmpty = true
     /// Vinyl side (A, B, …) of the current track, shown statically on the record.
     @State private var currentSide: String? = nil
+    /// Cut editor open. While it is, the disc stops spinning and drags pan the
+    /// scan instead — you cannot line up a label that is turning.
+    @State private var isAdjustingCut = false
+    /// Live crop while dragging; committed to the manifest on release.
+    @State private var draftCrop: ArtworkCrop = .identity
 
     // Pre-rendered CD faces. The 60fps animation only rotates/crossfades these
     // cached bitmaps; the expensive gradients + motion smear are rasterized
@@ -71,7 +85,7 @@ struct SpinningRecordView: View {
                                     .opacity(blurOpacity(for: animator.currentSpeed))
                             }
                         }
-                        .rotationEffect(.degrees(animator.rotationAngle))
+                        .rotationEffect(.degrees(isAdjustingCut ? 0 : animator.rotationAngle))
                         .animation(nil, value: animator.rotationAngle)
 
                         // 2. Static Overlays
@@ -90,6 +104,7 @@ struct SpinningRecordView: View {
             .frame(width: size, height: size)
             .position(x: geo.size.width / 2, y: geo.size.height / 2)
             .clipShape(Circle())
+            .gesture(isAdjustingCut ? cutDragGesture(frameSize: size) : nil)
             .mask(
                 Group {
                     if isVinyl || trayEmpty {
@@ -101,6 +116,7 @@ struct SpinningRecordView: View {
             )
         }
         .aspectRatio(1, contentMode: .fit)
+        .overlay(alignment: .bottom) { cutControls }
         .onAppear {
             updateDiscData()
             animator.start(model: model)
@@ -156,7 +172,10 @@ struct SpinningRecordView: View {
     private func cdFaceContent(size: CGFloat) -> some View {
         ZStack {
             if let cdImg = discImage {
-                Image(nsImage: cdImg).resizable().aspectRatio(contentMode: .fill)
+                Image(nsImage: cdImg)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .modifier(DiscCropModifier(crop: effectiveCrop, frameSize: size))
             } else {
                 blankCDFace
             }
@@ -249,7 +268,10 @@ struct SpinningRecordView: View {
                 // Center Label (rotating)
                 ZStack {
                     if let img = discImage {
-                        Image(nsImage: img).resizable().aspectRatio(contentMode: .fill)
+                        Image(nsImage: img)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .modifier(DiscCropModifier(crop: effectiveCrop, frameSize: labelSize))
                     } else {
                         Circle().fill(Color.orange)
                     }
@@ -361,6 +383,8 @@ struct SpinningRecordView: View {
         currentSide = loaded?.metadata.side
         guard let track = loaded?.track else {
             discImage = nil
+            discCrop = .identity
+            discImageFile = nil
             isVinyl = false
             return
         }
@@ -373,6 +397,8 @@ struct SpinningRecordView: View {
         self.isVinyl = manifest?.mediaFormat == .vinyl
         
         if let manifest = manifest, let discFileName = discImageFilename(in: manifest, forSide: currentSide, forDisc: track.discNumber) {
+            discImageFile = discFileName
+            discCrop = manifest.crop(for: discFileName)
             let candidateSubfolders = ["", "artwork", "Artwork", "scans", "Scans", "covers", "Covers"]
             for sub in candidateSubfolders {
                 let base = sub.isEmpty ? folder : folder.appendingPathComponent(sub)
@@ -534,5 +560,160 @@ final class RecordAnimator: ObservableObject {
             // subscription in start() restarts the timer on the next play.
             haltTimer()
         }
+    }
+}
+
+
+/// Applies an `ArtworkCrop` to a disc image: rotate, zoom, then nudge, inside a
+/// square frame. Order matters — rotating after the offset would swing the image
+/// around the frame's centre rather than its own, so a centred disc would drift.
+struct DiscCropModifier: ViewModifier {
+    let crop: ArtworkCrop
+    let frameSize: CGFloat
+
+    func body(content: Content) -> some View {
+        let offset = crop.pixelOffset(in: Double(frameSize))
+        return content
+            .rotationEffect(.degrees(crop.rotationDegrees))
+            .scaleEffect(crop.scale)
+            .offset(x: CGFloat(offset.x), y: CGFloat(offset.y))
+    }
+}
+
+// MARK: - Cut editor
+
+extension SpinningRecordView {
+
+    /// The crop being shown: the live draft while dragging, the stored one otherwise.
+    var effectiveCrop: ArtworkCrop { isAdjustingCut ? draftCrop : discCrop }
+
+    /// ADJUST button, and the rotate/zoom strip once it is open.
+    @ViewBuilder
+    var cutControls: some View {
+        if adjustable, discImage != nil, discImageFile != nil {
+            VStack(spacing: 6) {
+                if isAdjustingCut { cutStrip }
+                cutToggle
+            }
+            .padding(.bottom, 4)
+        }
+    }
+
+    private var cutToggle: some View {
+        Button(action: {
+            if isAdjustingCut {
+                commitCut()
+            } else {
+                draftCrop = discCrop
+                isAdjustingCut = true
+            }
+        }) {
+            HStack(spacing: 5) {
+                Image(systemName: isAdjustingCut ? "checkmark" : "crop.rotate")
+                    .font(.system(size: 9, weight: .bold))
+                Text(isAdjustingCut ? "DONE" : "ADJUST CUT")
+                    .font(CarbonFont.mono(8.5, weight: .bold))
+                    .tracking(1.2)
+            }
+            .foregroundStyle(isAdjustingCut ? Color.white : Color.primary.opacity(0.75))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(
+                Capsule().fill(isAdjustingCut
+                               ? Color.orange.opacity(0.9)
+                               : Color.black.opacity(0.35))
+            )
+        }
+        .buttonStyle(.plain)
+        .help(isAdjustingCut
+              ? "Save this framing"
+              : "Straighten and centre a scanned disc label")
+    }
+
+    /// Rotation and zoom. Panning is the drag on the disc itself — dragging what
+    /// you are looking at beats two more sliders.
+    private var cutStrip: some View {
+        VStack(spacing: 4) {
+            Text("DRAG THE DISC TO CENTRE IT")
+                .font(CarbonFont.mono(7.5, weight: .bold))
+                .tracking(1.2)
+                .foregroundStyle(Color.primary.opacity(0.5))
+
+            HStack(spacing: 8) {
+                cutSlider(
+                    icon: "rotate.right",
+                    value: Binding(
+                        get: { draftCrop.signedRotation },
+                        set: { draftCrop.rotationDegrees = ArtworkCrop.normalizedRotation($0) }
+                    ),
+                    range: -180...180
+                )
+                cutSlider(
+                    icon: "plus.magnifyingglass",
+                    value: Binding(
+                        get: { draftCrop.scale },
+                        set: { draftCrop.scale = $0 }
+                    ),
+                    range: ArtworkCrop.scaleRange
+                )
+                Button(action: { draftCrop = .identity }) {
+                    Image(systemName: "arrow.uturn.backward")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(Color.primary.opacity(0.7))
+                }
+                .buttonStyle(.plain)
+                .help("Reset the framing")
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Capsule().fill(Color.black.opacity(0.45)))
+    }
+
+    private func cutSlider(icon: String, value: Binding<Double>, range: ClosedRange<Double>) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: 8, weight: .semibold))
+                .foregroundStyle(Color.primary.opacity(0.6))
+            Slider(value: value, in: range)
+                .controlSize(.mini)
+                .frame(width: 78)
+        }
+    }
+
+    /// Pan gesture, live on the disc while the editor is open.
+    func cutDragGesture(frameSize: CGFloat) -> some Gesture {
+        DragGesture()
+            .onChanged { drag in
+                draftCrop = discCrop.nudged(
+                    byX: Double(drag.translation.width),
+                    y: Double(drag.translation.height),
+                    in: Double(frameSize)
+                )
+                // Keep the slider edits made before this drag started.
+                draftCrop.rotationDegrees = ArtworkCrop.normalizedRotation(draftCrop.rotationDegrees)
+            }
+            .onEnded { _ in discCrop = draftCrop }
+    }
+
+    /// Write the framing into the album's manifest and refresh everything showing it.
+    func commitCut() {
+        isAdjustingCut = false
+        discCrop = draftCrop
+        guard let filename = discImageFile,
+              let folder = model.nowPlayingTrack?.track.fileURL.deletingLastPathComponent()
+        else { return }
+
+        var manifest = ArtworkManifest.load(from: folder)
+            ?? ArtworkManifest(mediaFormat: isVinyl ? .vinyl : nil, roles: [:])
+        manifest.setCrop(draftCrop, for: filename)
+        try? manifest.save(to: folder)
+
+        // Same signal an artwork import sends — every view showing this disc
+        // reloads from the manifest.
+        NotificationCenter.default.post(
+            name: NSNotification.Name("CrateDiggerArtworkImported"), object: nil
+        )
+        model.showOLEDNotice(draftCrop.isIdentity ? "CUT RESET" : "CUT SAVED")
     }
 }

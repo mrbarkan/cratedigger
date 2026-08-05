@@ -117,7 +117,7 @@ enum ArtworkViewerPresenter {
         panel?.close(); panel = nil
     }
 
-    private static func buildPages(_ album: Album) -> [ArtworkPage] {
+    static func buildPages(_ album: Album) -> [ArtworkPage] {
         let albumFolder = album.tracks.first?.track.fileURL.deletingLastPathComponent()
         var pages = albumFolder.map { AlbumArtCatalog.pages(in: $0) } ?? []
         // Always guarantee a Cover page: when no cover file is on disk, a synthetic
@@ -151,7 +151,10 @@ private enum ArtZoom: Equatable {
 struct AlbumArtworkNavigator: View {
     @Environment(\.carbon) private var theme
     let album: Album
-    let pages: [ArtworkPage]
+    /// State, not a constant: the window stays open while artwork is edited
+    /// behind it, and a page list frozen at open time kept showing images that
+    /// had since been moved to the Trash.
+    @State private var pages: [ArtworkPage]
     /// Full-screen overlay when false; small always-on-top panel when true.
     let floating: Bool
     let onClose: () -> Void
@@ -174,7 +177,7 @@ struct AlbumArtworkNavigator: View {
     init(album: Album, pages: [ArtworkPage], startIndex: Int = 0, floating: Bool = false,
          onClose: @escaping () -> Void, onFloat: ((Int) -> Void)? = nil, onExpand: ((Int) -> Void)? = nil) {
         self.album = album
-        self.pages = pages
+        _pages = State(initialValue: pages)
         self.floating = floating
         self.onClose = onClose
         self.onFloat = onFloat
@@ -183,6 +186,24 @@ struct AlbumArtworkNavigator: View {
     }
 
     private var current: ArtworkPage? { pages.indices.contains(index) ? pages[index] : nil }
+
+    /// Re-read the album folder after an artwork change. Keeps the viewer on the
+    /// same page where it still exists, and drops decoded images for files that
+    /// have gone so a trashed page can't be served from memory.
+    private func reloadPages() {
+        let rebuilt = ArtworkViewerPresenter.buildPages(album)
+        let currentURL = current?.imageURL
+        pages = rebuilt
+
+        if let currentURL, let stillThere = rebuilt.firstIndex(where: { $0.imageURL == currentURL }) {
+            index = stillThere
+        } else {
+            index = min(index, max(0, rebuilt.count - 1))
+        }
+
+        let live = Set(rebuilt.compactMap { $0.imageURL } + rebuilt.compactMap { $0.overlayURL })
+        images = images.filter { live.contains($0.key) }
+    }
 
     var body: some View {
         Group {
@@ -194,6 +215,11 @@ struct AlbumArtworkNavigator: View {
         .onDisappear { removeKeyMonitor() }
         .task(id: index) { await loadCurrent() }
         .onChange(of: index) { _ in resetView() }
+        // Artwork added, removed or re-cut while this window is open.
+        .onReceive(NotificationCenter.default.publisher(
+            for: NSNotification.Name("CrateDiggerArtworkImported"))) { _ in
+            reloadPages()
+        }
     }
 
     private var fullscreenBody: some View {

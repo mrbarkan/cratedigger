@@ -65,8 +65,29 @@ extension LibraryViewModel {
         cdMatchedRelease = candidate
         cdDetectionState = .identified(candidate)
         cdDiscMatches = []
+        cdCoverArtwork = nil
         rebuildCDIndex(for: info)
         showOLEDNotice("DISC IDENTIFIED")
+        fetchDiscCover(for: candidate, info: info)
+    }
+
+    /// Pull the identified release's cover so the rip can embed it.
+    ///
+    /// Without this a rip produced a perfectly tagged album with a blank cover,
+    /// and the user had to run artwork search afterwards for something we
+    /// already knew — the disc ID resolves to a release, and Cover Art Archive
+    /// serves that release's front by MBID.
+    private func fetchDiscCover(for candidate: ReleaseCandidate, info: AudioCDInfo) {
+        guard let url = candidate.artworkURL else { return }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            guard let asset = try? await self.remoteArtworkService.fetchArtwork(from: url) else { return }
+            // A release with no art in the archive is normal; the rip just
+            // carries no cover, exactly as before.
+            self.artworkService.ingest(asset)
+            self.cdCoverArtwork = asset
+            self.rebuildCDIndex(for: info)
+        }
     }
 
     /// Forget the match and go back to the raw disc.
@@ -74,6 +95,7 @@ extension LibraryViewModel {
         cdMatchedRelease = nil
         cdDetectionState = .idle
         cdDiscMatches = []
+        cdCoverArtwork = nil
         rebuildCDIndex(for: info)
     }
 
@@ -107,7 +129,8 @@ extension LibraryViewModel {
                 trackNumber: track.trackNumber,
                 trackTotal: info.tracks.count,
                 year: cdMatchedRelease?.year,
-                genre: cdMatchedRelease?.genre
+                genre: cdMatchedRelease?.genre,
+                artwork: cdCoverArtwork
             )
             return LoadedTrack(track: audioTrack, metadata: metadata)
         }

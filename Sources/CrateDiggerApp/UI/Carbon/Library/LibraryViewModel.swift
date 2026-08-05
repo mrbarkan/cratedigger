@@ -555,6 +555,8 @@ final class LibraryViewModel: ObservableObject {
     @Published var cdDiscMatches: [ReleaseCandidate] = []
     /// The release adopted for the disc in the drive; nil until identified.
     @Published var cdMatchedRelease: ReleaseCandidate?
+    /// Cover fetched for the identified disc, embedded by the rip.
+    @Published var cdCoverArtwork: ArtworkAsset?
     let discLookup: CDDiscLookup = MusicBrainzDiscClient()
 
     @Published var streamFailure: StreamFailureAdvisor.Diagnosis?
@@ -1603,14 +1605,20 @@ final class LibraryViewModel: ObservableObject {
         oledView = .cdRip
         conversionProgress = ConversionProgressSnapshot(jobsCompleted: 0, jobsTotal: info.tracks.count, currentFilename: nil, isRunning: true)
 
-        let targetPreset = conversionSelection.outputFormat
+        // The rip is an ordinary conversion of the disc's tracks, so it takes
+        // the Patch Bay's settings whole — including the OPTIONS tab's artwork
+        // handling, which the rip's own hand-rolled preset used to ignore.
+        // `channels` stays nil (source layout) rather than forcing stereo: a
+        // quadraphonic or mono disc should rip as it was pressed.
         let preset = ConversionPreset(
             id: "cd_rip",
             name: "CD Rip",
-            outputFormat: targetPreset,
+            outputFormat: conversionSelection.outputFormat,
             bitrateKbps: conversionSelection.bitrate,
             sampleRateHz: conversionSelection.sampleRate,
-            channels: 2
+            channels: nil,
+            artworkMode: conversionSelection.artworkMode,
+            artworkMaxDimension: conversionSelection.artworkMaxDimension
         )
 
         Task {
