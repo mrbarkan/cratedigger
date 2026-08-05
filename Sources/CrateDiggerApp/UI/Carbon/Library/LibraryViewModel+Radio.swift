@@ -62,30 +62,44 @@ extension LibraryViewModel {
 
     /// Fetch real metadata for every stream that doesn't have a thumbnail yet
     /// (newly added, or saved before metadata existed). Called on launch.
+    ///
+    /// Fetches run one after another: each one spawns a yt-dlp process, and the
+    /// old fan-out started them all at once, so a library of saved streams put
+    /// one subprocess per stream on the CPU the moment the app opened.
     func fetchMissingMetadata() {
-        for stream in streams where stream.thumbnailURL == nil {
-            fetchMetadata(for: stream.id)
+        let ids = streams.filter { $0.thumbnailURL == nil }.map(\.id)
+        guard !ids.isEmpty else { return }
+        Task { @MainActor [weak self] in
+            for id in ids {
+                await self?.fetchAndApplyMetadata(for: id)
+            }
         }
     }
 
     /// Fetch real title/channel/thumbnail/live-status for one stream and apply it.
     /// Uses yt-dlp when available (richest), else YouTube oEmbed (no dependency).
     func fetchMetadata(for id: String) {
+        Task { @MainActor [weak self] in await self?.fetchAndApplyMetadata(for: id) }
+    }
+
+    @MainActor
+    private func fetchAndApplyMetadata(for id: String) async {
         guard let stream = streams.first(where: { $0.id == id }) else { return }
         let url = stream.url
         let ytdlp = resolvedYtDlpURL()
-        Task { [weak self] in
-            let meta = ytdlp != nil
-                ? await Self.fetchMetadataViaYtDlp(url: url, ytdlpURL: ytdlp!)
-                : await Self.fetchMetadataViaOEmbed(url: url)
-            guard let meta else { return }
-            await MainActor.run { self?.applyMetadata(meta, to: id) }
-        }
+        let meta = ytdlp != nil
+            ? await Self.fetchMetadataViaYtDlp(url: url, ytdlpURL: ytdlp!)
+            : await Self.fetchMetadataViaOEmbed(url: url)
+        guard let meta else { return }
+        applyMetadata(meta, to: id)
     }
 
     private static func fetchMetadataViaYtDlp(url: String, ytdlpURL: URL) async -> StreamMetadata? {
         await Task.detached {
-            let runner = ProcessCommandRunner()
+            // Bounded like every other yt-dlp/ffprobe caller: an unbounded run
+            // left a wedged yt-dlp (throttled network, captcha wall) holding a
+            // thread and a subprocess for the rest of the session.
+            let runner = ProcessCommandRunner(timeoutSeconds: 30)
             guard let out = try? runner.run(executableURL: ytdlpURL,
                                             arguments: StreamMetadataService.ytdlpArguments(url: url)),
                   out.terminationStatus == 0 else { return nil }
