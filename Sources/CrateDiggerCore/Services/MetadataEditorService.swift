@@ -43,7 +43,9 @@ public final class MetadataEditorService: @unchecked Sendable {
 
         func add(_ key: String, _ value: String?) {
             // In ffmpeg, passing an empty string or null for metadata key deletes it.
-            let val = value ?? ""
+            // Sanitized because a NUL here takes the whole app down (see
+            // MetadataNormalization.sanitizedTagValue).
+            let val = MetadataNormalization.sanitizedTagValue(value ?? "")
             arguments.append(contentsOf: ["-metadata", "\(key)=\(val)"])
         }
 

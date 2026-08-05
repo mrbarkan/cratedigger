@@ -1,6 +1,18 @@
 import Foundation
 
 public enum MetadataNormalization {
+    /// Strip NUL bytes out of a tag value before it becomes a subprocess
+    /// argument. ID3v2 uses NUL to separate multi-value text frames, so one
+    /// routinely survives parsing and ends up inside a title or artist string;
+    /// online release lookups can carry one too. Handing that to `Process`
+    /// raises an *Objective-C* exception from `fileSystemRepresentation`, which
+    /// Swift cannot catch — it aborted the whole app mid tag-write. Dropping the
+    /// byte is always right: a NUL is a delimiter artefact, never real content.
+    public static func sanitizedTagValue(_ value: String) -> String {
+        guard value.utf8.contains(0) else { return value }
+        return String(value.unicodeScalars.filter { $0 != "\u{0}" })
+    }
+
     private static let canonicalKeys: Set<String> = [
         "title",
         "artist",

@@ -49,6 +49,16 @@ public struct ProcessCommandRunner: CommandRunning {
     }
 
     public func run(executableURL: URL, arguments: [String]) throws -> CommandOutput {
+        // `Process` runs fileSystemRepresentation over the launch path AND every
+        // argument. On an embedded NUL that RAISES an Objective-C exception
+        // rather than returning an error — and Swift cannot catch those, so it
+        // aborts the entire app. Tag values reach here verbatim (ID3v2 uses NUL
+        // as a multi-value separator, and online release lookups can carry one),
+        // so refuse the launch with a real Swift error instead of dying.
+        if let offending = ([executableURL.path] + arguments).first(where: { $0.utf8.contains(0) }) {
+            throw ConversionServiceError.unrepresentableArgument(offending)
+        }
+
         let process = Process()
         process.executableURL = executableURL
         process.arguments = arguments
@@ -118,6 +128,9 @@ public struct ProcessCommandRunner: CommandRunning {
 public enum ConversionServiceError: Error {
     case presetNotFound(String)
     case ffmpegExecutableMissing(URL)
+    /// A command-line argument the OS cannot turn into a file system
+    /// representation (in practice: an embedded NUL from a malformed tag).
+    case unrepresentableArgument(String)
 }
 
 extension ConversionServiceError: LocalizedError {
@@ -127,6 +140,9 @@ extension ConversionServiceError: LocalizedError {
             return "The conversion preset '\(id)' could not be found."
         case .ffmpegExecutableMissing(let url):
             return "ffmpeg was not found at \(url.path)."
+        case .unrepresentableArgument(let argument):
+            let shown = argument.replacingOccurrences(of: "\u{0}", with: "\\0")
+            return "A tag value contains a character the system can't pass to ffmpeg: “\(shown)”."
         }
     }
 }
@@ -596,7 +612,10 @@ public final class ConversionService {
             guard let value, !value.isEmpty else {
                 return
             }
-            arguments.append(contentsOf: ["-metadata", "\(key)=\(value)"])
+            // Same NUL hazard as the tag editor — see
+            // MetadataNormalization.sanitizedTagValue.
+            let safe = MetadataNormalization.sanitizedTagValue(value)
+            arguments.append(contentsOf: ["-metadata", "\(key)=\(safe)"])
             writtenNormalizedKeys.insert(Self.normalizedMetadataKey(key))
         }
 
