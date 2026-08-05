@@ -131,11 +131,16 @@ private struct SwitchButton: View {
 
     @State private var dashLit = false
 
-    /// Width the lamp row is allowed to occupy, whatever it contains. Every
-    /// button in the column then demands the same intrinsic width, so all three
-    /// render identically — EQ carries seven lamps against VIEW's two, and at a
-    /// fixed dot size that pushed its button wider than its neighbours.
-    private static let lampBudget: CGFloat = 56
+    // The column is a fixed 110pt (`CarbonLayout.viewSwitchWidth`), so the two
+    // halves of the button get an explicit share each rather than competing for
+    // it. Letting them negotiate produced both failure modes in turn: a lamp row
+    // wide enough to push THEME's button past the column, then a budget small
+    // enough that "VIEW" and "THEME" truncated to "V…" and "T…".
+    //
+    //   8 + 42 (label) + 4 (gap) + 44 (lamps) + 8 = 106, inside 110.
+    private static let labelWidth: CGFloat = 42
+    private static let lampBudget: CGFloat = 44
+    private static let horizontalPadding: CGFloat = 8
 
     /// Lamps shrink to stay inside the budget rather than widening the button.
     private var dotSize: CGFloat {
@@ -146,16 +151,22 @@ private struct SwitchButton: View {
 
     private var dotSpacing: CGFloat { dotCount > 4 ? 2.5 : 3 }
 
+    /// The lamps sit against the trailing edge of their share, so all three
+    /// buttons' indicators line up regardless of what they contain.
+
     var body: some View {
         Button(action: fire) {
-            HStack(spacing: 6) {
+            HStack(spacing: 4) {
                 Text(name)
                     .font(CarbonFont.mono(8.5, weight: .bold))
                     .tracking(1.3)
                     .foregroundStyle(theme.ink3)
                     .lineLimit(1)
-                    .fixedSize()
-                Spacer(minLength: 4)
+                    // Scales down a hair rather than truncating to "T…" if a
+                    // label ever outgrows its share.
+                    .minimumScaleFactor(0.8)
+                    .frame(width: Self.labelWidth, alignment: .leading)
+                Spacer(minLength: 0)
                 if dotCount > 0 {
                     HStack(spacing: dotSpacing) {
                         ForEach(0..<dotCount, id: \.self) { i in
@@ -177,7 +188,7 @@ private struct SwitchButton: View {
                         .frame(width: Self.lampBudget, alignment: .trailing)
                 }
             }
-            .padding(.horizontal, 10)
+            .padding(.horizontal, Self.horizontalPadding)
             .frame(maxWidth: .infinity)
             .frame(height: SwitcherButtonMetrics.height)
             .background(ChromeChassis(theme: theme, cornerRadius: SwitcherButtonMetrics.cornerRadius))
