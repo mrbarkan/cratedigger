@@ -4,6 +4,43 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 1.2.1 (48) — 2026-08-05
+
+CDs now identify themselves before you rip them, plus repairs to the tool
+windows introduced in 1.2.0.
+
+### Added
+- **Audio CDs identify themselves.** Insert a disc and CrateDigger works out
+  what it is — artist, album, year and every track title — *before* you rip a
+  single second. It reads the disc's table of contents, which is unique enough
+  to name the exact pressing, so it works even on discs that arrive with no
+  information at all (the usual case: macOS shows them as "1 Audio Track",
+  "2 Audio Track"…). Where one disc belongs to several releases — an album on
+  its own and the same disc inside a box set — CrateDigger asks which you meant
+  rather than guessing, since it changes the album name. A disc nobody has
+  catalogued yet offers a link to add it.
+- **Rips are filed like everything else.** A rip now follows your folder pattern
+  and naming settings, with the real track titles. Previously every ripped track
+  was called "Track 1", "Track 2"… inside a folder named "Audio CD", tagged with
+  the artist "Audio CD", regardless of your settings.
+
+### Fixed
+- **The tool windows work properly again.** Edit Tags opened almost too small to
+  read; Library Cleanup opened taller than the screen with its buttons off the
+  bottom; and Cancel and Close did nothing in any of them. All four now open at
+  a sensible size, stay within the screen, have proper minimum and maximum
+  sizes, and close when you tell them to.
+- **The EQ button matches its neighbours.** Its indicator lights made it wider
+  than the VIEW and THEME buttons above it.
+- **APPLY ALL is more careful.** When fixing tags across several albums at once,
+  only confident matches are applied without you seeing them. Anything looser
+  stays in the queue for you to review rather than being written to your files
+  unseen.
+
+### Changed
+- Edit Tags, Fix Tags, Match Tags and Library Cleanup share one visual style
+  now, instead of three slightly different ones.
+
 ## 1.2.0 (47) — 2026-08-05
 
 Queue control, a sleep timer, and tool windows you can actually move.
