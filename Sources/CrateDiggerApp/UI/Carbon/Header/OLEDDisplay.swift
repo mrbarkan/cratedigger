@@ -1189,8 +1189,55 @@ private struct CDRipPane: View {
     private var total: Int { model.conversionProgress.jobsTotal }
 
     var body: some View {
+        if model.conversionProgress.isRunning {
+            // A rip is the only thing that ticks, so only it drives a clock.
+            TimelineView(.periodic(from: .now, by: 1)) { _ in
+                rippingBody
+            }
+        } else if let cd = model.currentAudioCD {
+            insertedBody(cd)
+        } else {
+            emptyBody
+        }
+    }
+
+    // MARK: - Disc in the drive, not ripping
+    //
+    // This state didn't exist: the screen was reachable only *during* a rip, so
+    // a disc sitting in the drive showed a zero-width bar and dashes. It is the
+    // more useful of the two — it answers "is this the right pressing?", which
+    // is what decides whether you press RIP.
+
+    private func insertedBody(_ cd: AudioCDInfo) -> some View {
         OLEDPaneScaffold {
-            NPTitles(title: "CD-RIP", sub: "Audio CD · 44.1 kHz · 16-bit PCM · Ripping")
+            NPTitles(title: discTitle(cd), sub: discSubtitle(cd))
+        } readout: {
+            VStack(alignment: .trailing, spacing: 6) {
+                NPClock(now: String(format: "%02d", cd.tracks.count), tot: "TRK")
+                Text(runtime(cd))
+                    .font(CarbonFont.mono(11, weight: .semibold))
+                    .foregroundStyle(oledMuted)
+            }
+            .fixedSize()
+        } ticker: {
+            DSPTicker(prefix: tickerPrefix, path: AttributedString(destinationPath))
+        } cells: {
+            OLEDCells([
+                OLEDCellData(key: "Disc", value: "CDDA", sub: "44.1 kHz · 16-bit"),
+                OLEDCellData(key: "Tracks", value: "\(cd.tracks.count)", sub: "On Disc"),
+                OLEDCellData(key: "Length", value: runtime(cd), sub: "Total"),
+                OLEDCellData(key: "Output", value: outputLabel, sub: outputSub),
+                OLEDCellData(key: "Status", value: statusValue, sub: statusSub,
+                             valueColor: statusColor)
+            ])
+        }
+    }
+
+    // MARK: - Ripping
+
+    private var rippingBody: some View {
+        OLEDPaneScaffold {
+            NPTitles(title: "CD-RIP", sub: rippingSubtitle)
         } readout: {
             VStack(alignment: .trailing, spacing: 6) {
                 NPClock(now: String(format: "%02d", min(done + 1, max(total, 1))),
@@ -1199,17 +1246,138 @@ private struct CDRipPane: View {
             }
             .fixedSize()
         } ticker: {
-            DSPTicker(prefix: String(format: "RIPPING · %02d / %02d", min(done + 1, max(total, 1)), total),
-                      path: AttributedString("~/Music/CrateDigger Library/"))
+            DSPTicker(
+                prefix: String(format: "RIPPING · %02d / %02d", min(done + 1, max(total, 1)), total),
+                path: AttributedString(model.conversionProgress.currentFilename ?? destinationPath)
+            )
         } cells: {
             OLEDCells([
-                OLEDCellData(key: "Disc", value: "CDDA", sub: "Audio CD"),
-                OLEDCellData(key: "Output", value: "FLAC", sub: "Lossless"),
-                OLEDCellData(key: "Speed", value: "8.2×", sub: "Average"),
-                OLEDCellData(key: "Elapsed", value: "—", sub: "This Disc"),
-                OLEDCellData(key: "Remain", value: total > done ? "\(total - done) TRK" : "—", sub: "Remaining")
+                OLEDCellData(key: "Disc", value: "CDDA", sub: "44.1 kHz · 16-bit"),
+                OLEDCellData(key: "Output", value: outputLabel, sub: outputSub),
+                OLEDCellData(key: "Speed", value: speedLabel, sub: "Measured"),
+                OLEDCellData(key: "Elapsed", value: elapsedLabel, sub: "This Disc"),
+                OLEDCellData(key: "Remain", value: total > done ? "\(total - done) TRK" : "—",
+                             sub: "Remaining")
             ])
         }
+    }
+
+    private var emptyBody: some View {
+        OLEDPaneScaffold {
+            NPTitles(title: "NO DISC", sub: "Insert an audio CD to rip it")
+        } readout: {
+            EmptyView()
+        } ticker: {
+            DSPTicker(prefix: "CD", path: AttributedString(destinationPath))
+        } cells: {
+            OLEDCells([
+                OLEDCellData(key: "Disc", value: "—", sub: "None"),
+                OLEDCellData(key: "Tracks", value: "—", sub: "On Disc"),
+                OLEDCellData(key: "Length", value: "—", sub: "Total"),
+                OLEDCellData(key: "Output", value: outputLabel, sub: outputSub),
+                OLEDCellData(key: "Status", value: "IDLE", sub: "Waiting")
+            ])
+        }
+    }
+
+    // MARK: - Copy
+
+    private func discTitle(_ cd: AudioCDInfo) -> String {
+        if let release = model.cdMatchedRelease {
+            return release.title.uppercased()
+        }
+        return cd.hasUsableNames ? cd.name.uppercased() : "AUDIO CD"
+    }
+
+    private func discSubtitle(_ cd: AudioCDInfo) -> String {
+        if let release = model.cdMatchedRelease {
+            var parts = [release.artist]
+            if let year = release.year { parts.append(String(year)) }
+            parts.append("\(cd.tracks.count) tracks")
+            return parts.filter { !$0.isEmpty }.joined(separator: " · ")
+        }
+        switch model.cdDetectionState {
+        case .looking:  return "Identifying disc…"
+        case .choosing: return "\(model.cdDiscMatches.count) releases match — pick one"
+        case .notFound: return "Not in the MusicBrainz database"
+        case .failed:   return "Couldn't identify this disc"
+        default:        return "Audio CD · 44.1 kHz · 16-bit PCM"
+        }
+    }
+
+    private var tickerPrefix: String {
+        model.cdMatchedRelease != nil ? "READY TO RIP ·" : "CD ·"
+    }
+
+    private var statusValue: String {
+        switch model.cdDetectionState {
+        case .identified: return "READY"
+        case .looking:    return "ID…"
+        case .choosing:   return "PICK"
+        case .notFound:   return "NO ID"
+        case .failed:     return "ERR"
+        default:          return "IDLE"
+        }
+    }
+
+    private var statusSub: String {
+        model.cdMatchedRelease != nil ? "Identified" : "Not identified"
+    }
+
+    private var statusColor: Color {
+        switch model.cdDetectionState {
+        case .identified:        return oledFG
+        case .notFound, .failed: return onAirRed
+        default:                 return oledMuted
+        }
+    }
+
+    /// Total runtime straight off the table of contents — no need to read audio.
+    private func runtime(_ cd: AudioCDInfo) -> String {
+        guard let toc = cd.toc else { return "—" }
+        let seconds = Int(toc.trackDurationsInSeconds.reduce(0, +).rounded())
+        return SleepMode.clockLabel(seconds)
+    }
+
+    /// The real output format, not a hardcoded "FLAC".
+    private var outputLabel: String {
+        model.conversionSelection.outputFormat.rawValue.uppercased()
+    }
+
+    private var outputSub: String {
+        let format = model.conversionSelection.outputFormat
+        if !format.isLossless, let bitrate = model.conversionSelection.bitrate {
+            return "\(bitrate) kbps"
+        }
+        return format.isLossless ? "Lossless" : "Lossy"
+    }
+
+    /// The real destination, not a hardcoded "~/Music/CrateDigger Library/".
+    private var destinationPath: String {
+        model.conversionDestinationDisplayPath
+    }
+
+    private var rippingSubtitle: String {
+        if let release = model.cdMatchedRelease {
+            return "\(release.artist) · \(release.title)"
+        }
+        return "Audio CD · 44.1 kHz · 16-bit PCM"
+    }
+
+    private var elapsedLabel: String {
+        let elapsed = Int(model.conversionProgress.elapsed)
+        return elapsed > 0 ? SleepMode.clockLabel(elapsed) : "—"
+    }
+
+    /// Measured, not the old fixed "8.2×": audio actually written divided by
+    /// wall-clock time. Blank until there is enough of both to mean anything.
+    private var speedLabel: String {
+        let elapsed = model.conversionProgress.elapsed
+        guard elapsed > 2, done > 0, let cd = model.currentAudioCD, let toc = cd.toc else { return "—" }
+        let durations = toc.trackDurationsInSeconds
+        let audioWritten = durations.prefix(done).reduce(0, +)
+        guard audioWritten > 0 else { return "—" }
+        return String(format: "%.1f×", audioWritten / elapsed)
     }
 
     private var progress: Double {

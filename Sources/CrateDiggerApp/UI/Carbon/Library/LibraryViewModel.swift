@@ -53,8 +53,13 @@ struct ConversionProgressSnapshot: Equatable, Sendable {
     var jobsTotal: Int
     var currentFilename: String?
     var isRunning: Bool
+    /// When the run began, so elapsed time and speed can be *measured* rather
+    /// than displayed as a made-up constant. Nil for progress that never started.
+    var startedAt: Date?
 
     static let idle = ConversionProgressSnapshot(jobsCompleted: 0, jobsTotal: 0, currentFilename: nil, isRunning: false)
+
+    var elapsed: TimeInterval { startedAt.map { Date().timeIntervalSince($0) } ?? 0 }
 }
 
 /// A live SYNC-to-device run for the DEV OLED pane. Non-nil after a sync starts;
@@ -1590,6 +1595,10 @@ final class LibraryViewModel: ObservableObject {
         // LibraryViewModel+CDDetect.
         cdIndex = buildIndex(cdTracks(for: cd))
         index = cdIndex
+        // The CD screen was only ever reachable *during* a rip, so a disc
+        // sitting in the drive showed nothing. Selecting one is exactly when
+        // its readout is useful.
+        if !conversionProgress.isRunning { oledView = .cdRip }
         // Selecting a disc is the moment to identify it: everything downstream
         // (browser, inspector, and the rip's tags and filenames) reads better
         // once it is, and the lookup is one throttled request.
@@ -1603,7 +1612,10 @@ final class LibraryViewModel: ObservableObject {
         }
 
         oledView = .cdRip
-        conversionProgress = ConversionProgressSnapshot(jobsCompleted: 0, jobsTotal: info.tracks.count, currentFilename: nil, isRunning: true)
+        conversionProgress = ConversionProgressSnapshot(
+            jobsCompleted: 0, jobsTotal: info.tracks.count,
+            currentFilename: nil, isRunning: true, startedAt: Date()
+        )
 
         // The rip is an ordinary conversion of the disc's tracks, so it takes
         // the Patch Bay's settings whole — including the OPTIONS tab's artwork
@@ -1679,7 +1691,8 @@ final class LibraryViewModel: ObservableObject {
                                 jobsCompleted: done,
                                 jobsTotal: total,
                                 currentFilename: filename,
-                                isRunning: done < total
+                                isRunning: done < total,
+                                startedAt: self.conversionProgress.startedAt
                             )
                         }
                     }
