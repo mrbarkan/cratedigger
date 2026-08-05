@@ -26,3 +26,7 @@ scripts/.lastfm.env
 
 # Claude Code local session state (permissions, worktrees).
 .claude/
+
+# Agent tooling scratch (session diffs, task reports, local tokens). Never
+# source — and .superpowers/brainstorm/.last-token is a credential.
+.superpowers/
