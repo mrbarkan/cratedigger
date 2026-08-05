@@ -283,13 +283,18 @@ public final class PlaybackService: PlaybackServiceProtocol {
             }
         }
     }
+    /// Both guard on a real change: the periodic observer re-assigns duration
+    /// every tick, and an unguarded `didSet` fires on assignment, not on change
+    /// — which doubled the published updates driving the OLED and seek rail.
     public private(set) var currentTimeSeconds: Double = 0 {
         didSet {
+            guard currentTimeSeconds != oldValue else { return }
             notifyTimeChange()
         }
     }
     public private(set) var durationSeconds: Double = 0 {
         didSet {
+            guard durationSeconds != oldValue else { return }
             notifyTimeChange()
         }
     }
@@ -506,6 +511,12 @@ public final class PlaybackService: PlaybackServiceProtocol {
         let shouldPlay = state == .playing || state == .loading
         let nextIndex = currentIndex + 1
         guard queue.indices.contains(nextIndex) else {
+            // Repeat All wraps on the button too, not just when a track plays
+            // out — the two paths must agree or ⏭ silently stops the music.
+            if repeatMode == .all {
+                load(queue: queue, startIndex: 0, autoPlay: shouldPlay)
+                return
+            }
             activeEngine.pause()
             currentTimeSeconds = durationSeconds
             state = .ended
@@ -531,6 +542,9 @@ public final class PlaybackService: PlaybackServiceProtocol {
         let previousIndex = currentIndex - 1
         if queue.indices.contains(previousIndex) {
             load(queue: queue, startIndex: previousIndex, autoPlay: shouldPlay)
+        } else if repeatMode == .all, !queue.isEmpty {
+            // Mirror of `next()`: Repeat All wraps backwards off the head too.
+            load(queue: queue, startIndex: queue.count - 1, autoPlay: shouldPlay)
         } else {
             seek(toSeconds: 0)
         }
@@ -539,7 +553,10 @@ public final class PlaybackService: PlaybackServiceProtocol {
     public func setVolume(_ volume: Double) {
         // The native engine ignores volume by design (bit-perfect), so this is
         // safe to forward everywhere; the AV engine is the one that scales.
-        activeEngine.setVolume(volume)
+        // Both must hear it: forwarding only to the active engine left the AV
+        // engine at a stale level after a DoP → PCM fallback.
+        engine.setVolume(volume)
+        nativeDSDEngine?.setVolume(volume)
     }
 
     public func setMasterGain(_ gain: Double) {
@@ -600,7 +617,11 @@ public final class PlaybackService: PlaybackServiceProtocol {
             }
 
             if let currentIndex, self.queue.indices.contains(currentIndex + 1) {
-                self.load(queue: self.queue, startIndex: currentIndex + 1, autoPlay: true)
+                // Skip past the bad file, but don't start playing on the user's
+                // behalf — `pendingAutoPlay` is false when they never pressed
+                // play (same rule the decode-failure path already follows).
+                self.load(queue: self.queue, startIndex: currentIndex + 1,
+                          autoPlay: self.pendingAutoPlay)
                 return
             }
 

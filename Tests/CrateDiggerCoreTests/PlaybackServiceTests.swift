@@ -194,6 +194,114 @@ final class PlaybackServiceTests: XCTestCase {
         await pumpMainQueue()
         XCTAssertEqual(service.state, .playing)
     }
+
+    /// Pressing Next on the last track under Repeat All must wrap, exactly like
+    /// letting that track play out does.
+    func testRepeatAllWrapsFromLastToFirstOnManualNext() async {
+        let engine = MockPlaybackEngine()
+        let service = PlaybackService(engine: engine)
+        let queue = [
+            PlaybackQueueItem(url: URL(fileURLWithPath: "/tmp/a.flac"), title: "A", artist: "", album: "", durationSeconds: 100),
+            PlaybackQueueItem(url: URL(fileURLWithPath: "/tmp/b.flac"), title: "B", artist: "", album: "", durationSeconds: 120)
+        ]
+
+        service.repeatMode = .all
+        service.load(queue: queue, startIndex: 1, autoPlay: true)
+        engine.simulateReady()
+        await pumpMainQueue()
+
+        service.next()
+        XCTAssertEqual(service.currentIndex, 0)
+        XCTAssertEqual(service.state, .loading)
+        XCTAssertEqual(engine.replacedURLs.last, queue[0].url)
+    }
+
+    /// Repeat Off keeps the old behaviour: Next on the last track ends the queue.
+    func testRepeatOffStillEndsOnManualNextAtQueueEnd() async {
+        let engine = MockPlaybackEngine()
+        let service = PlaybackService(engine: engine)
+        let queue = [
+            PlaybackQueueItem(url: URL(fileURLWithPath: "/tmp/a.flac"), title: "A", artist: "", album: "", durationSeconds: 100)
+        ]
+
+        service.load(queue: queue, startIndex: 0, autoPlay: true)
+        engine.simulateReady()
+        await pumpMainQueue()
+
+        service.next()
+        XCTAssertEqual(service.state, .ended)
+    }
+
+    /// Pressing Previous at the head of the queue under Repeat All wraps to the
+    /// last track (past the 3s "restart this track" window).
+    func testRepeatAllWrapsFromFirstToLastOnManualPrevious() async {
+        let engine = MockPlaybackEngine()
+        let service = PlaybackService(engine: engine)
+        let queue = [
+            PlaybackQueueItem(url: URL(fileURLWithPath: "/tmp/a.flac"), title: "A", artist: "", album: "", durationSeconds: 100),
+            PlaybackQueueItem(url: URL(fileURLWithPath: "/tmp/b.flac"), title: "B", artist: "", album: "", durationSeconds: 120)
+        ]
+
+        service.repeatMode = .all
+        service.load(queue: queue, startIndex: 0, autoPlay: true)
+        engine.simulateReady()
+        await pumpMainQueue()
+
+        service.previous()
+        XCTAssertEqual(service.currentIndex, 1)
+        XCTAssertEqual(engine.replacedURLs.last, queue[1].url)
+    }
+
+    /// Repeat Off keeps the old behaviour: Previous at the head restarts track 1.
+    func testRepeatOffPreviousAtQueueHeadRestartsTrack() async {
+        let engine = MockPlaybackEngine()
+        let service = PlaybackService(engine: engine)
+        let queue = [
+            PlaybackQueueItem(url: URL(fileURLWithPath: "/tmp/a.flac"), title: "A", artist: "", album: "", durationSeconds: 100),
+            PlaybackQueueItem(url: URL(fileURLWithPath: "/tmp/b.flac"), title: "B", artist: "", album: "", durationSeconds: 120)
+        ]
+
+        service.load(queue: queue, startIndex: 0, autoPlay: true)
+        engine.simulateReady()
+        await pumpMainQueue()
+
+        service.previous()
+        XCTAssertEqual(service.currentIndex, 0)
+        XCTAssertEqual(engine.lastSeek, 0)
+    }
+
+    /// A file that fails to load while the user has NOT pressed play must skip
+    /// on without starting playback by itself.
+    func testFailureWhilePausedSkipsOnWithoutStartingPlayback() async {
+        let engine = MockPlaybackEngine()
+        let service = PlaybackService(engine: engine)
+        let queue = [
+            PlaybackQueueItem(url: URL(fileURLWithPath: "/tmp/bad.flac"), title: "Bad", artist: "", album: "", durationSeconds: 10),
+            PlaybackQueueItem(url: URL(fileURLWithPath: "/tmp/good.flac"), title: "Good", artist: "", album: "", durationSeconds: 20)
+        ]
+
+        service.load(queue: queue, startIndex: 0, autoPlay: false)
+        engine.simulateFailure("Corrupt file")
+        await pumpMainQueue()
+        engine.simulateReady()
+        await pumpMainQueue()
+
+        XCTAssertEqual(service.currentIndex, 1)
+        XCTAssertEqual(service.state, .paused)
+        XCTAssertEqual(engine.playCalls, 0)
+    }
+
+    /// Volume set while the native (DoP) engine is active must still reach the
+    /// AVPlayer engine, or a fallback to PCM plays at a stale level.
+    func testVolumeReachesBothEnginesRegardlessOfWhichIsActive() async {
+        let engine = MockPlaybackEngine()
+        let native = MockPlaybackEngine()
+        let service = PlaybackService(engine: engine, nativeDSDEngine: native)
+
+        service.setVolume(0.25)
+        XCTAssertEqual(engine.volume, 0.25)
+        XCTAssertEqual(native.volume, 0.25)
+    }
 }
 
 private final class MockPlaybackEngine: PlaybackEngineProtocol {
