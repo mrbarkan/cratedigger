@@ -11,6 +11,14 @@ struct RadioListView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
+            // A failed stream explains itself here rather than in an alert the
+            // user can only dismiss.
+            if let diagnosis = model.streamFailure {
+                RadioFixPanel(diagnosis: diagnosis)
+            }
+            if model.showingStreamSuggestions {
+                StreamSuggestionsView()
+            }
             if model.filteredStreams.isEmpty {
                 emptyState
             } else {
@@ -53,6 +61,19 @@ struct RadioListView: View {
             Text("\(model.filteredStreams.count) SOURCE\(model.filteredStreams.count == 1 ? "" : "S")")
                 .font(CarbonFont.mono(8.5))
                 .foregroundStyle(theme.ink3)
+            Button(action: { model.showingStreamSuggestions.toggle() }) {
+                HStack(spacing: 4) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 8, weight: .bold))
+                    Text("BROWSE")
+                        .font(CarbonFont.mono(8, weight: .bold))
+                        .tracking(1)
+                }
+                .foregroundStyle(model.showingStreamSuggestions ? theme.orange : theme.ink3)
+            }
+            .buttonStyle(.carbonHover)
+            .carbonTip("Suggested stations you can add in one tap")
+
             Button(action: { model.showingAddStreamSheet = true }) {
                 HStack(spacing: 4) {
                     Image(systemName: "plus")
@@ -86,6 +107,16 @@ struct RadioListView: View {
                 .font(CarbonFont.mono(9))
                 .foregroundStyle(theme.ink4)
                 .multilineTextAlignment(.center)
+            Button(action: { model.showingStreamSuggestions = true }) {
+                Text("BROWSE STATIONS")
+                    .font(CarbonFont.mono(9, weight: .bold))
+                    .tracking(1.5)
+                    .foregroundStyle(theme.orange)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 6)
+            }
+            .buttonStyle(.carbonHover)
+
             Button(action: { model.showingAddStreamSheet = true }) {
                 Text("ADD URL")
                     .font(CarbonFont.mono(9, weight: .bold))
