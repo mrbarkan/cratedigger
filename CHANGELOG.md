@@ -4,7 +4,7 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
-## 1.2.3 (51) — 2026-08-05
+## 1.2.31 (52) — 2026-08-05
 
 Finishing the CD path: ripped albums arrive with their cover, and the CD screen
 tells you what's in the drive.
