@@ -309,7 +309,8 @@ struct MetadataMatchSheetView: View {
                         .font(CarbonFont.mono(9, weight: .bold))
                 }
                 .frame(width: 110, height: CarbonLayout.keyHeight)
-                .help("Apply this album as reviewed, then every remaining album with its best match and all suggested fields")
+                .help("Apply this album as reviewed, then every remaining album whose best match is a confident one. "
+                      + "Anything looser stays here for you to review.")
             }
 
             KeyButton(style: checked.isEmpty ? .disabled : .selected, action: {

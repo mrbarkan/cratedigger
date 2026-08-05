@@ -14,6 +14,16 @@ public struct MetadataMatchService: Sendable {
     /// instead of a plausible-looking wrong album.
     public static let minimumScore = 0.62
 
+    /// The bar a match must clear to be written **without a human looking at
+    /// it** (APPLY ALL across the queue).
+    ///
+    /// `minimumScore` answers "is this worth showing?", which is a much lower
+    /// question than "is this safe to write to disk unseen?". Applying tags is
+    /// destructive — it rewrites the file — so a match good enough to offer is
+    /// not automatically good enough to apply blind. Anything under this stays
+    /// in the queue for review rather than being silently skipped.
+    public static let unattendedApplyScore = 0.85
+
     /// How many of each source's results get a track-list lookup. Every extra
     /// one costs a request (and a second of MusicBrainz throttle), and results
     /// past the third are rarely the answer.

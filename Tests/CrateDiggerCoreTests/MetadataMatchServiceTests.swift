@@ -325,3 +325,29 @@ final class MetadataMatchServiceTests: XCTestCase {
         XCTAssertEqual(groups[0].count, 2)
     }
 }
+
+/// The bar for writing a match to disk without anyone looking at it.
+final class UnattendedApplyThresholdTests: XCTestCase {
+    /// "Worth showing" and "safe to write unseen" are different questions, and
+    /// APPLY ALL asks the second one.
+    func testUnattendedBarIsStricterThanTheOfferBar() {
+        XCTAssertGreaterThan(MetadataMatchService.unattendedApplyScore,
+                             MetadataMatchService.minimumScore,
+                             "a match good enough to offer is not automatically good enough to apply blind")
+    }
+
+    func testBothThresholdsAreValidScores() {
+        for score in [MetadataMatchService.minimumScore, MetadataMatchService.unattendedApplyScore] {
+            XCTAssertGreaterThan(score, 0)
+            XCTAssertLessThanOrEqual(score, 1.0)
+        }
+    }
+
+    /// A match sitting between the two bars is exactly the case the gate exists
+    /// for: offered to the user, but never applied on their behalf.
+    func testScoreBetweenBarsIsOfferedButNotAutoApplied() {
+        let borderline = (MetadataMatchService.minimumScore + MetadataMatchService.unattendedApplyScore) / 2
+        XCTAssertGreaterThanOrEqual(borderline, MetadataMatchService.minimumScore, "still offered")
+        XCTAssertLessThan(borderline, MetadataMatchService.unattendedApplyScore, "but not applied unseen")
+    }
+}

@@ -300,21 +300,52 @@ extension LibraryViewModel {
         )
     }
 
-    /// APPLY ALL: this album as reviewed, then every remaining queued album with
-    /// its best match and all of its suggested fields — one batch write and one
-    /// index update instead of a sheet round-trip per album.
+    /// APPLY ALL: this album as reviewed, then every remaining queued album
+    /// whose best match is confident enough to write unseen — one batch write
+    /// and one index update instead of a sheet round-trip per album.
+    ///
+    /// Confidence is the whole point of the gate. Every offered match already
+    /// cleared `minimumScore`, but that only means "worth showing"; this writes
+    /// to files nobody has looked at, so it holds out for
+    /// `unattendedApplyScore`. Albums under the bar are **kept in the queue**
+    /// and reviewed as normal — skipping them silently would leave the user
+    /// believing the whole run was applied.
     func applyAllReleaseMatches(startingWith match: ReleaseMatch, fields: Set<MetadataRepairField>) {
         let byID = tracksByID()
         var updates = matchUpdates(for: match, fields: fields, in: byID)
+
+        var deferred: [AlbumMatchBatch] = []
+        var appliedAlbums = updates.isEmpty ? 0 : 1
         for batch in pendingMatchBatches {
             guard let best = batch.matches.first else { continue }
-            updates += matchUpdates(for: best, fields: Set(best.changedFields), in: byID)
+            guard best.score >= MetadataMatchService.unattendedApplyScore else {
+                deferred.append(batch)
+                continue
+            }
+            let batchUpdates = matchUpdates(for: best, fields: Set(best.changedFields), in: byID)
+            guard !batchUpdates.isEmpty else { continue }
+            updates += batchUpdates
+            appliedAlbums += 1
         }
-        pendingMatchBatches = []
-        finishMatchQueue()
+
+        pendingMatchBatches = deferred
+        if deferred.isEmpty {
+            finishMatchQueue()
+        } else {
+            // Carry on reviewing the ones that need a human.
+            advanceMatchQueue()
+            appAlert = .info(
+                title: "Applied \(appliedAlbums) Album\(appliedAlbums == 1 ? "" : "s")",
+                message: "\(deferred.count) album\(deferred.count == 1 ? "" : "s") "
+                    + "matched too loosely to apply unseen — review \(deferred.count == 1 ? "it" : "them") here."
+            )
+        }
+
         guard !updates.isEmpty else { return }
         updateTracksMetadata(updates)
-        AppLog.library.notice("Applied queued matches to \(updates.count) track(s)")
+        AppLog.library.notice(
+            "Applied queued matches to \(updates.count) track(s) across \(appliedAlbums) album(s), \(deferred.count) held for review"
+        )
     }
 
     private func tracksByID() -> [UUID: LoadedTrack] {
