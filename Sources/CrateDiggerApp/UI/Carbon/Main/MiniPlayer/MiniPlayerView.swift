@@ -43,9 +43,12 @@ struct MiniPlayerView: View {
 
 private struct MiniPlayerBody: View {
     @ObservedObject var model: LibraryViewModel
-    /// Observed so the OLED time/seek rail keep ticking — playback time lives
-    /// on the isolated clock, not the view model.
-    @ObservedObject var clock: PlaybackClock
+    /// Deliberately NOT observed here. The clock ticks ~5×/s, and observing it
+    /// at this level re-evaluated the whole panel on every tick — repainting the
+    /// 246px art frame, its shadow, the OLED and all five transport buttons just
+    /// to move a seconds counter. Only the two leaf views that actually show
+    /// time observe it (`MiniPlayerTimeReadout`, `MiniPlayerSeekRail`).
+    let clock: PlaybackClock
     let onExpand: () -> Void
     @Environment(\.carbon) private var theme
 
@@ -221,10 +224,7 @@ private struct MiniPlayerBody: View {
                             .foregroundStyle(theme.oledForeground.opacity(0.52))
                             .lineLimit(1)
                         Spacer(minLength: 6)
-                        Text("\(timeString(model.displayedCurrentTime)) / \(timeString(model.playbackDuration))")
-                            .font(CarbonFont.mono(9, weight: .semibold))
-                            .foregroundStyle(theme.orange)
-                            .fixedSize()
+                        MiniPlayerTimeReadout(model: model, clock: clock)
                     }
                 }
                 .padding(.horizontal, 12)
@@ -249,45 +249,7 @@ private struct MiniPlayerBody: View {
     // MARK: - Seek
 
     private var seekRail: some View {
-        GeometryReader { proxy in
-            let w = max(proxy.size.width, 1)
-            let p = model.playbackDuration > 0
-                ? min(max(model.displayedCurrentTime / model.playbackDuration, 0), 1) : 0
-            ZStack(alignment: .leading) {
-                Capsule().fill(Color.black.opacity(0.42)).frame(height: 6)
-                    .overlay(Capsule().stroke(Color.white.opacity(0.07), lineWidth: 0.6))
-                // Full-width cyan→orange ramp revealed by the lit mask — the
-                // gradient's endpoints stay fixed (like the OLED/footer bars)
-                // instead of stretching with playback progress.
-                Capsule()
-                    .fill(LinearGradient(colors: [theme.cyan, theme.orange], startPoint: .leading, endPoint: .trailing))
-                    .frame(height: 6)
-                    .mask(
-                        Capsule()
-                            .frame(width: max(6, w * p))
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    )
-                    .shadow(color: theme.cyan.opacity(0.4), radius: 5)
-                Circle()
-                    .fill(RadialGradient(colors: [.white, Color(white: 0.82)],
-                                         center: .init(x: 0.4, y: 0.3), startRadius: 0, endRadius: 7))
-                    .frame(width: 13, height: 13)
-                    .shadow(color: .black.opacity(0.6), radius: 2)
-                    .offset(x: min(max(w * p - 6.5, 0), w - 13))
-            }
-            .frame(maxHeight: .infinity, alignment: .center)
-            .contentShape(Rectangle())
-            .background(WindowDragGuard())
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { g in model.scrubbingFraction = min(max(g.location.x / w, 0), 1) }
-                    .onEnded { g in
-                        ClickPlayer.shared.play(.tick)
-                        model.commitScrubSeek(toFraction: min(max(g.location.x / w, 0), 1))
-                    }
-            )
-        }
-        .frame(height: 13)
+        MiniPlayerSeekRail(model: model, clock: clock, theme: theme)
     }
 
     // MARK: - Transport
@@ -349,11 +311,76 @@ private struct MiniPlayerBody: View {
         }
         .buttonStyle(.carbonHover)
     }
+}
 
-    // MARK: - Formatting
+// MARK: - Clock-driven leaves
+
+/// The elapsed/total readout. Split out of `MiniPlayerBody` so a clock tick
+/// repaints ~40pt of text instead of the entire player panel.
+private struct MiniPlayerTimeReadout: View {
+    @ObservedObject var model: LibraryViewModel
+    @ObservedObject var clock: PlaybackClock
+    @Environment(\.carbon) private var theme
+
+    var body: some View {
+        Text("\(timeString(model.displayedCurrentTime)) / \(timeString(model.playbackDuration))")
+            .font(CarbonFont.mono(9, weight: .semibold))
+            .foregroundStyle(theme.orange)
+            .fixedSize()
+    }
 
     private func timeString(_ seconds: Double) -> String {
         let t = Int(max(0, seconds))
         return String(format: "%d:%02d", t / 60, t % 60)
+    }
+}
+
+/// The progress/scrub rail. Also split out: its lit mask and thumb offset are
+/// the only other things that need to move on every clock tick.
+private struct MiniPlayerSeekRail: View {
+    @ObservedObject var model: LibraryViewModel
+    @ObservedObject var clock: PlaybackClock
+    let theme: CarbonTheme
+
+    var body: some View {
+        GeometryReader { proxy in
+            let w = max(proxy.size.width, 1)
+            let p = model.playbackDuration > 0
+                ? min(max(model.displayedCurrentTime / model.playbackDuration, 0), 1) : 0
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.black.opacity(0.42)).frame(height: 6)
+                    .overlay(Capsule().stroke(Color.white.opacity(0.07), lineWidth: 0.6))
+                // Full-width cyan→orange ramp revealed by the lit mask — the
+                // gradient's endpoints stay fixed (like the OLED/footer bars)
+                // instead of stretching with playback progress.
+                Capsule()
+                    .fill(LinearGradient(colors: [theme.cyan, theme.orange], startPoint: .leading, endPoint: .trailing))
+                    .frame(height: 6)
+                    .mask(
+                        Capsule()
+                            .frame(width: max(6, w * p))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    )
+                    .shadow(color: theme.cyan.opacity(0.4), radius: 5)
+                Circle()
+                    .fill(RadialGradient(colors: [.white, Color(white: 0.82)],
+                                         center: .init(x: 0.4, y: 0.3), startRadius: 0, endRadius: 7))
+                    .frame(width: 13, height: 13)
+                    .shadow(color: .black.opacity(0.6), radius: 2)
+                    .offset(x: min(max(w * p - 6.5, 0), w - 13))
+            }
+            .frame(maxHeight: .infinity, alignment: .center)
+            .contentShape(Rectangle())
+            .background(WindowDragGuard())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { g in model.scrubbingFraction = min(max(g.location.x / w, 0), 1) }
+                    .onEnded { g in
+                        ClickPlayer.shared.play(.tick)
+                        model.commitScrubSeek(toFraction: min(max(g.location.x / w, 0), 1))
+                    }
+            )
+        }
+        .frame(height: 13)
     }
 }

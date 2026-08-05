@@ -430,8 +430,15 @@ struct SpinningRecordView: View {
 @MainActor
 final class RecordAnimator: ObservableObject {
     @Published var rotationAngle: Double = 0.0
-    @Published var currentSpeed: Double = 0.0
-    
+    /// Published only when it crosses a `speedQuantum` step. It drives nothing
+    /// but the motion-smear crossfade opacity, so publishing the raw value each
+    /// frame doubled this animator's invalidations for a blend nobody can see
+    /// change at that resolution. Same trick as MeterDriver's LED quantizing.
+    @Published private(set) var currentSpeed: Double = 0.0
+    /// The un-quantized speed the ballistics actually integrate.
+    private var rawSpeed: Double = 0.0
+    private let speedQuantum = 0.05
+
     var isVinyl: Bool = false
     
     private weak var model: LibraryViewModel?
@@ -499,20 +506,25 @@ final class RecordAnimator: ObservableObject {
         }
         
         let factor = dt / 0.016
-        
-        if currentSpeed < targetSpeed {
-            currentSpeed += (targetSpeed - currentSpeed) * min(1.0, factor * 0.25)
-            if abs(targetSpeed - currentSpeed) < 0.05 { currentSpeed = targetSpeed }
-        } else if currentSpeed > targetSpeed {
-            currentSpeed += (targetSpeed - currentSpeed) * min(1.0, factor * 0.035)
-            if abs(currentSpeed - targetSpeed) < 0.05 { currentSpeed = targetSpeed }
+
+        if rawSpeed < targetSpeed {
+            rawSpeed += (targetSpeed - rawSpeed) * min(1.0, factor * 0.25)
+            if abs(targetSpeed - rawSpeed) < 0.05 { rawSpeed = targetSpeed }
+        } else if rawSpeed > targetSpeed {
+            rawSpeed += (targetSpeed - rawSpeed) * min(1.0, factor * 0.035)
+            if abs(rawSpeed - targetSpeed) < 0.05 { rawSpeed = targetSpeed }
         }
-        
-        if currentSpeed > 0 {
+
+        // Publish the smear opacity only when it steps — steady spin then costs
+        // one invalidation per frame (the angle) instead of two.
+        let quantized = (rawSpeed / speedQuantum).rounded() * speedQuantum
+        if quantized != currentSpeed { currentSpeed = quantized }
+
+        if rawSpeed > 0 {
             // Hard-cap the per-rendered-frame advance well under 180° so a
             // dropped frame can never read as backwards rotation (wagon-wheel
             // effect). Better to briefly spin a touch slow than to reverse.
-            let delta = min(currentSpeed * factor, 120.0)
+            let delta = min(rawSpeed * factor, 120.0)
             rotationAngle += delta
             if rotationAngle >= 360 {
                 rotationAngle = rotationAngle.truncatingRemainder(dividingBy: 360)
