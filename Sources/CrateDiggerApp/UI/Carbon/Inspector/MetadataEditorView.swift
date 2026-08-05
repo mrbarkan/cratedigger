@@ -131,7 +131,7 @@ struct MetadataEditorView: View {
 
             footer
         }
-        .frame(width: 480, height: 500)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)   // fills its panel; the window enforces the size limits
         .background(theme.chassis)
     }
 

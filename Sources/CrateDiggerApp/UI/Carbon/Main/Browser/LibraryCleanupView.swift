@@ -24,7 +24,7 @@ struct LibraryCleanupView: View {
                 duplicatesTab
             }
         }
-        .frame(width: 680, height: 500)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)   // fills its panel; the window enforces the size limits
         .background(theme.chassis)
         .onAppear {
             model.scanForCleanup()

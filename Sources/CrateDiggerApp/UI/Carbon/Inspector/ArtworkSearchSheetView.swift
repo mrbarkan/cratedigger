@@ -115,7 +115,7 @@ struct ArtworkSearchSheetView: View {
             
             footer
         }
-        .frame(width: 680, height: 550)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)   // fills its panel; the window enforces the size limits
         .background(theme.chassis)
         .onAppear {
             executeSearch()

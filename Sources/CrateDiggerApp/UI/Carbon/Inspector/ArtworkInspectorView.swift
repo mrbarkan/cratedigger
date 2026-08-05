@@ -243,13 +243,27 @@ struct ArtworkInspectorView: View {
             }
             self.thumbnails = loaded
         }
-        .sheet(isPresented: $showingSearch, onDismiss: {
-            let before = imageURLs.count
-            loadManifest()
-            if imageURLs.count > before { isDirty = true }   // new artwork found
-        }) {
+        // Artwork search is a browsing task — it wants room, and it wants to sit
+        // next to the album it is filling in. The old sheet's onDismiss work
+        // moves into the binding's setter, which is what a close writes to now.
+        .carbonPanel(
+            isPresented: Binding(
+                get: { showingSearch },
+                set: { presented in
+                    showingSearch = presented
+                    guard !presented else { return }
+                    let before = imageURLs.count
+                    loadManifest()
+                    if imageURLs.count > before { isDirty = true }   // new artwork found
+                }
+            ),
+            title: "Search Album Artwork",
+            minSize: NSSize(width: 620, height: 460),
+            initialSize: NSSize(width: 860, height: 660),
+            autosaveName: "cratedigger.panel.artworkSearch"
+        ) {
             if let album = album {
-                ArtworkSearchSheetView(album: album)
+                ArtworkSearchSheetView(album: album).environmentObject(model)
             }
         }
         .alert(

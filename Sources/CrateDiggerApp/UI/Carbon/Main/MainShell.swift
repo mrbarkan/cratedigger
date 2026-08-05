@@ -36,8 +36,21 @@ struct MainShell: View {
                onDismiss: { model.welcomeTourDidDismiss() }) {
             WelcomeTourView()
         }
-        .sheet(item: $model.tagEditTarget) { target in
-            MetadataEditorView(tracks: target.tracks)
+        // Edit Tags is a working panel: movable and resizable so it can sit
+        // beside the browser instead of covering it.
+        .carbonPanel(
+            isPresented: Binding(
+                get: { model.tagEditTarget != nil },
+                set: { if !$0 { model.tagEditTarget = nil } }
+            ),
+            title: "Edit Tags",
+            minSize: NSSize(width: 520, height: 420),
+            initialSize: NSSize(width: 640, height: 620),
+            autosaveName: "cratedigger.panel.editTags"
+        ) {
+            if let target = model.tagEditTarget {
+                MetadataEditorView(tracks: target.tracks).environmentObject(model)
+            }
         }
         .sheet(isPresented: $model.showingEQEditor) {
             EqualizerEditorView()
