@@ -104,8 +104,14 @@ public final class LibraryScanService {
             }
         } else {
             // Directories are walked with a *deep* enumerator — every subfolder,
-            // however nested, is read.
-            guard let enumerator = fileManager.enumerator(at: folderURL, includingPropertiesForKeys: nil) else {
+            // however nested, is read. Hidden ones are not: without this the
+            // walk descended into `.Trashes` on external volumes and imported
+            // files the user had already thrown away.
+            guard let enumerator = fileManager.enumerator(
+                at: folderURL,
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles]
+            ) else {
                 return []
             }
             while let object = enumerator.nextObject() {
