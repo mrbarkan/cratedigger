@@ -195,6 +195,111 @@ final class PlaybackServiceTests: XCTestCase {
         XCTAssertEqual(service.state, .playing)
     }
 
+    // MARK: - Queue editing (Play Next / Play Last)
+
+    private func item(_ name: String) -> PlaybackQueueItem {
+        PlaybackQueueItem(url: URL(fileURLWithPath: "/tmp/\(name).flac"),
+                          title: name, artist: "", album: "", durationSeconds: 60)
+    }
+
+    private func loadedService(_ names: [String], startIndex: Int = 0) async -> (PlaybackService, MockPlaybackEngine) {
+        let engine = MockPlaybackEngine()
+        let service = PlaybackService(engine: engine)
+        service.load(queue: names.map(item), startIndex: startIndex, autoPlay: true)
+        engine.simulateReady()
+        await pumpMainQueue()
+        return (service, engine)
+    }
+
+    func testPlayNextInsertsAfterTheCurrentTrack() async {
+        let (service, engine) = await loadedService(["A", "B", "C"], startIndex: 1)
+        let before = engine.replacedURLs.count
+
+        service.insertNext([item("X")])
+
+        XCTAssertEqual(service.queue.map(\.title), ["A", "B", "X", "C"])
+        XCTAssertEqual(service.currentIndex, 1, "the playing track must not move")
+        XCTAssertEqual(engine.replacedURLs.count, before, "queueing must not touch the engine")
+        XCTAssertEqual(service.state, .playing)
+    }
+
+    func testPlayLastAppendsToTheEnd() async {
+        let (service, _) = await loadedService(["A", "B"], startIndex: 0)
+        service.appendLast([item("Y"), item("Z")])
+        XCTAssertEqual(service.queue.map(\.title), ["A", "B", "Y", "Z"])
+        XCTAssertEqual(service.currentIndex, 0)
+    }
+
+    /// With nothing playing there is no "next", so it lands at the front.
+    func testPlayNextWithEmptyQueueSeedsTheQueue() {
+        let service = PlaybackService(engine: MockPlaybackEngine())
+        service.insertNext([item("A")])
+        XCTAssertEqual(service.queue.map(\.title), ["A"])
+    }
+
+    func testUpNextIsEverythingAfterTheCurrentTrack() async {
+        let (service, _) = await loadedService(["A", "B", "C"], startIndex: 1)
+        XCTAssertEqual(service.upNext.map(\.title), ["C"])
+        service.insertNext([item("X")])
+        XCTAssertEqual(service.upNext.map(\.title), ["X", "C"])
+    }
+
+    func testQueuedTrackPlaysNextWhenTheCurrentOneEnds() async {
+        let (service, engine) = await loadedService(["A", "B"], startIndex: 0)
+        service.insertNext([item("X")])
+        engine.simulateEnd()
+        XCTAssertEqual(service.currentIndex, 1)
+        XCTAssertEqual(engine.replacedURLs.last, URL(fileURLWithPath: "/tmp/X.flac"))
+    }
+
+    func testRemoveFromQueueKeepsCurrentIndexOnTheSameTrack() async {
+        let (service, _) = await loadedService(["A", "B", "C", "D"], startIndex: 2)
+        let removed = service.removeFromQueue(at: IndexSet([0, 1]))
+        XCTAssertEqual(removed, IndexSet([0, 1]))
+        XCTAssertEqual(service.queue.map(\.title), ["C", "D"])
+        XCTAssertEqual(service.currentIndex, 0, "still pointing at C")
+    }
+
+    func testRemoveFromQueueRefusesToRemoveThePlayingTrack() async {
+        let (service, _) = await loadedService(["A", "B", "C"], startIndex: 1)
+        let removed = service.removeFromQueue(at: IndexSet([1, 2]))
+        XCTAssertEqual(removed, IndexSet([2]))
+        XCTAssertEqual(service.queue.map(\.title), ["A", "B"])
+        XCTAssertEqual(service.currentIndex, 1)
+    }
+
+    /// Re-pointing the index after a queue edit must NOT read as a track change,
+    /// or the playing track's scrobble progress resets every time you queue.
+    func testQueueEditDoesNotReportATrackChange() async {
+        let (service, _) = await loadedService(["A", "B", "C"], startIndex: 2)
+        var indexChanges = 0
+        service.onCurrentIndexChange = { _ in indexChanges += 1 }
+
+        service.removeFromQueue(at: IndexSet([0]))
+        await pumpMainQueue()
+
+        XCTAssertEqual(service.currentIndex, 1)
+        XCTAssertEqual(indexChanges, 0, "same track, only a different position")
+    }
+
+    func testMoveInQueueKeepsCurrentIndexOnTheSameTrack() async {
+        let (service, _) = await loadedService(["A", "B", "C", "D"], startIndex: 2)
+        service.moveInQueue(from: 0, to: 4)          // A to the end
+        XCTAssertEqual(service.queue.map(\.title), ["B", "C", "D", "A"])
+        XCTAssertEqual(service.currentIndex, 1, "still C")
+
+        service.moveInQueue(from: 3, to: 0)          // A back to the front
+        XCTAssertEqual(service.queue.map(\.title), ["A", "B", "C", "D"])
+        XCTAssertEqual(service.currentIndex, 2, "still C")
+    }
+
+    func testMoveInQueueRefusesToMoveThePlayingTrack() async {
+        let (service, _) = await loadedService(["A", "B", "C"], startIndex: 1)
+        service.moveInQueue(from: 1, to: 0)
+        XCTAssertEqual(service.queue.map(\.title), ["A", "B", "C"])
+        XCTAssertEqual(service.currentIndex, 1)
+    }
+
     /// Pressing Next on the last track under Repeat All must wrap, exactly like
     /// letting that track play out does.
     func testRepeatAllWrapsFromLastToFirstOnManualNext() async {

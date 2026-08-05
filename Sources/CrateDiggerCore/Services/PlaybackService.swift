@@ -47,6 +47,18 @@ public protocol PlaybackServiceProtocol: AnyObject {
     var onError: ((String) -> Void)? { get set }
 
     func load(queue: [PlaybackQueueItem], startIndex: Int, autoPlay: Bool)
+    /// Insert directly after the playing track, without disturbing playback.
+    /// Returns the positions the items landed at.
+    @discardableResult func insertNext(_ items: [PlaybackQueueItem]) -> Range<Int>
+    /// Append to the end of the queue, without disturbing playback.
+    @discardableResult func appendLast(_ items: [PlaybackQueueItem]) -> Range<Int>
+    /// Drop queued items by position. The playing track is never removed; pass
+    /// its index and it is ignored. Returns the indices actually removed.
+    @discardableResult func removeFromQueue(at offsets: IndexSet) -> IndexSet
+    /// Move a queued item. Refuses to move, or to land on, the playing track.
+    func moveInQueue(from source: Int, to destination: Int)
+    /// Everything after the playing track, in play order.
+    var upNext: ArraySlice<PlaybackQueueItem> { get }
     func play()
     func pause()
     func togglePlayPause()
@@ -278,11 +290,15 @@ public final class PlaybackService: PlaybackServiceProtocol {
     }
     public private(set) var currentIndex: Int? {
         didSet {
+            // Suppressed while the index is only being re-pointed at the same
+            // track after a queue edit — see `reindexCurrent(to:)`.
+            guard !suppressIndexNotification else { return }
             notify {
                 self.onCurrentIndexChange?(self.currentIndex)
             }
         }
     }
+    private var suppressIndexNotification = false
     /// Both guard on a real change: the periodic observer re-assigns duration
     /// every tick, and an unguarded `didSet` fires on assignment, not on change
     /// — which doubled the published updates driving the OLED and seek rail.
@@ -455,6 +471,80 @@ public final class PlaybackService: PlaybackServiceProtocol {
             return
         }
         state = .failed(message: message)
+    }
+
+    // MARK: - Queue editing
+    //
+    // All of these mutate `queue` around the playing track without touching the
+    // engine: the currently loaded item keeps playing, and `currentIndex` is
+    // adjusted so it still points at it. Nothing here can restart or interrupt
+    // audio — that is the whole contract of Play Next / Play Last.
+
+    @discardableResult
+    public func insertNext(_ items: [PlaybackQueueItem]) -> Range<Int> {
+        guard !items.isEmpty else { return 0..<0 }
+        // With nothing playing there is no "next" — the front of the queue is.
+        let at = currentIndex.map { $0 + 1 } ?? 0
+        queue.insert(contentsOf: items, at: min(at, queue.count))
+        return at..<(at + items.count)
+    }
+
+    @discardableResult
+    public func appendLast(_ items: [PlaybackQueueItem]) -> Range<Int> {
+        guard !items.isEmpty else { return 0..<0 }
+        let at = queue.count
+        queue.append(contentsOf: items)
+        return at..<(at + items.count)
+    }
+
+    @discardableResult
+    public func removeFromQueue(at offsets: IndexSet) -> IndexSet {
+        // Removing the playing track would mean stopping or skipping — neither
+        // is what "remove from queue" means, so it is silently kept.
+        let removable = IndexSet(offsets.filter { $0 >= 0 && $0 < queue.count && $0 != currentIndex })
+        guard !removable.isEmpty else { return [] }
+
+        if let current = currentIndex {
+            // Every removal before the playing track shifts it left by one.
+            let removedBefore = removable.count(in: 0..<current)
+            if removedBefore > 0 { reindexCurrent(to: current - removedBefore) }
+        }
+        for index in removable.sorted(by: >) { queue.remove(at: index) }
+        return removable
+    }
+
+    public func moveInQueue(from source: Int, to destination: Int) {
+        guard queue.indices.contains(source), source != currentIndex else { return }
+        let clamped = min(max(destination, 0), queue.count)
+
+        let item = queue.remove(at: source)
+        // Removing shifted everything after `source` left by one.
+        let target = min(clamped > source ? clamped - 1 : clamped, queue.count)
+        queue.insert(item, at: target)
+
+        // Keep currentIndex pointing at the same track across the reshuffle.
+        if let current = currentIndex {
+            var updated = current
+            if source < current { updated -= 1 }
+            if target <= updated { updated += 1 }
+            reindexCurrent(to: updated)
+        }
+    }
+
+    /// Move `currentIndex` because the queue around it changed, NOT because the
+    /// track changed. Suppresses `onCurrentIndexChange` — subscribers treat that
+    /// as "a new track started" and reset scrobble progress, which would wipe
+    /// the playing track's listened time every time you queued something.
+    private func reindexCurrent(to newIndex: Int) {
+        guard newIndex != currentIndex else { return }
+        suppressIndexNotification = true
+        currentIndex = newIndex
+        suppressIndexNotification = false
+    }
+
+    public var upNext: ArraySlice<PlaybackQueueItem> {
+        guard let current = currentIndex else { return queue[...] }
+        return queue[min(current + 1, queue.count)...]
     }
 
     public func play() {

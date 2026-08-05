@@ -10,6 +10,18 @@ import CrateDiggerCore
 @MainActor
 enum BrowserContextMenu {
 
+    /// Play Next / Play Last for any selection. Shared by the artist, album and
+    /// track menus so queueing behaves identically wherever you right-click.
+    @ViewBuilder
+    static func queueButtons(for tracks: [LoadedTrack], model: LibraryViewModel) -> some View {
+        let targets = tracks
+        let suffix = targets.count > 1 ? " (\(targets.count))" : ""
+        Button("Play Next" + suffix) { model.playNext(targets) }
+            .disabled(targets.isEmpty)
+        Button("Play Last" + suffix) { model.playLast(targets) }
+            .disabled(targets.isEmpty)
+    }
+
     /// Menu for a single artist. "Add to Crate" becomes "Add N Artists to Crate"
     /// when the clicked artist is part of a multi-artist selection, mirroring the
     /// album/track menus. Always offers Select All, so it's never an empty popup.
@@ -32,6 +44,14 @@ enum BrowserContextMenu {
                             model: model)
         }
         Button("Select All") { model.selectAllArtists() }
+
+        Divider()
+        queueButtons(
+            for: model.selectedArtistIDs.count > 1 && model.selectedArtistIDs.contains(artist.id)
+                ? model.selectedTracksForCrateAdd()
+                : artist.albums.flatMap { $0.tracks },
+            model: model
+        )
 
         Divider()
         Button("Edit Tags…") {
@@ -109,7 +129,14 @@ enum BrowserContextMenu {
             if let first = album.tracks.first { model.playTrack(id: first.track.id) }
         }
         .disabled(album.tracks.isEmpty)
+        queueButtons(
+            for: model.selectedAlbumIDs.count > 1 && model.selectedAlbumIDs.contains(album.id)
+                ? model.selectedTracksForCrateAdd()
+                : album.tracks,
+            model: model
+        )
 
+        Divider()
         if !model.availableCrates.isEmpty {
             let usesSelection = model.selectedAlbumIDs.count > 1 && model.selectedAlbumIDs.contains(album.id)
             Menu(usesSelection ? "Add \(model.selectedAlbumIDs.count) Albums to Crate" : "Add to Crate") {
@@ -160,6 +187,9 @@ enum BrowserContextMenu {
     /// Select All, and keeps the Record-Divider / Refresh actions.
     @ViewBuilder
     static func track(_ loaded: LoadedTrack, model: LibraryViewModel) -> some View {
+        queueButtons(for: model.queueTargets(forClicked: [loaded]), model: model)
+
+        Divider()
         Button("Refresh Tags") { model.refreshTrackTags(loaded) }
 
         if !model.availableCrates.isEmpty {
