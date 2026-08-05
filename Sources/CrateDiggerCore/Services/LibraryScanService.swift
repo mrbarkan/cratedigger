@@ -236,7 +236,14 @@ public final class LibraryScanService {
         )
         let avCompilation = await boolValue(forIdentifierContains: ["compilation", "cpil", "tcmp"], in: allMetadata)
 
-        let durationSeconds = await duration(from: asset)
+        // AVFoundation is the fast path but it reports 0 for a fair number of
+        // real files (VBR MP3s with no Xing header, some FLAC/AIFF writers) —
+        // which is what left tracks showing a dash instead of a time. ffprobe
+        // has already run for this file, so its duration costs nothing extra.
+        var durationSeconds = await duration(from: asset)
+        if durationSeconds <= 0, let probed = probedMetadata?.resolvedDurationSeconds {
+            durationSeconds = probed
+        }
         // Pass the metadata this function already loaded so ArtworkService
         // doesn't build and re-load a second AVURLAsset for the same file.
         var artwork = await artworkService.resolveArtwork(trackURL: fileURL, preloadedMetadata: allMetadata)

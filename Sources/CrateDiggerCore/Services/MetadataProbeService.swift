@@ -32,6 +32,7 @@ public struct ProbedStreamMetadata: Codable, Hashable, Sendable {
     public let codecName: String?
     public let sampleRateHz: Int?
     public let bitRateBps: Int?
+    public let durationSeconds: Double?
     public let tags: [String: String]
     public let dispositions: [String: Int]
 
@@ -41,6 +42,7 @@ public struct ProbedStreamMetadata: Codable, Hashable, Sendable {
         codecName: String? = nil,
         sampleRateHz: Int? = nil,
         bitRateBps: Int? = nil,
+        durationSeconds: Double? = nil,
         tags: [String: String],
         dispositions: [String: Int]
     ) {
@@ -49,6 +51,7 @@ public struct ProbedStreamMetadata: Codable, Hashable, Sendable {
         self.codecName = codecName
         self.sampleRateHz = sampleRateHz
         self.bitRateBps = bitRateBps
+        self.durationSeconds = durationSeconds
         self.tags = tags
         self.dispositions = dispositions
     }
@@ -57,19 +60,33 @@ public struct ProbedStreamMetadata: Codable, Hashable, Sendable {
 public struct ProbedMetadata: Codable, Hashable, Sendable {
     public let formatName: String?
     public let formatBitRateBps: Int?
+    public let formatDurationSeconds: Double?
     public let formatTags: [String: String]
     public let streams: [ProbedStreamMetadata]
 
     public init(
         formatName: String? = nil,
         formatBitRateBps: Int? = nil,
+        formatDurationSeconds: Double? = nil,
         formatTags: [String: String],
         streams: [ProbedStreamMetadata]
     ) {
         self.formatName = formatName
         self.formatBitRateBps = formatBitRateBps
+        self.formatDurationSeconds = formatDurationSeconds
         self.formatTags = formatTags
         self.streams = streams
+    }
+
+    /// Playable length in seconds, container value first then the audio stream's
+    /// own. Used when AVFoundation reports no duration — which it does for a
+    /// number of real files (some VBR MP3s without an Xing header, certain
+    /// FLAC/AIFF writers) and which is why the track list showed a dash.
+    public var resolvedDurationSeconds: Double? {
+        for candidate in [formatDurationSeconds, primaryAudioStream?.durationSeconds] {
+            if let candidate, candidate.isFinite, candidate > 0 { return candidate }
+        }
+        return nil
     }
 
     public var primaryAudioStream: ProbedStreamMetadata? {
@@ -127,6 +144,7 @@ public final class MetadataProbeService: MetadataProbing, @unchecked Sendable {
             return ProbedMetadata(
                 formatName: decoded.format?.formatName,
                 formatBitRateBps: decoded.format?.bitRate.flatMap(Self.parseInt),
+                formatDurationSeconds: decoded.format?.duration.flatMap(Self.parseDouble),
                 formatTags: decoded.format?.tags ?? [:],
                 streams: decoded.streams.map {
                     ProbedStreamMetadata(
@@ -135,6 +153,7 @@ public final class MetadataProbeService: MetadataProbing, @unchecked Sendable {
                         codecName: $0.codecName,
                         sampleRateHz: $0.sampleRate.flatMap(Self.parseInt),
                         bitRateBps: $0.bitRate.flatMap(Self.parseInt),
+                        durationSeconds: $0.duration.flatMap(Self.parseDouble),
                         tags: $0.tags ?? [:],
                         dispositions: $0.disposition ?? [:]
                     )
@@ -143,6 +162,16 @@ public final class MetadataProbeService: MetadataProbing, @unchecked Sendable {
         } catch {
             throw MetadataProbeError.decodingFailed(error.localizedDescription)
         }
+    }
+
+    /// ffprobe reports duration as a decimal string of seconds ("245.373062"),
+    /// and "N/A" when the container doesn't carry one.
+    private static func parseDouble(_ value: String) -> Double? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let parsed = Double(trimmed), parsed.isFinite, parsed > 0 else {
+            return nil
+        }
+        return parsed
     }
 
     private static func parseInt(_ value: String) -> Int? {
@@ -162,11 +191,13 @@ private struct FFprobePayload: Decodable {
 private struct FFprobeFormat: Decodable {
     let formatName: String?
     let bitRate: String?
+    let duration: String?
     let tags: [String: String]?
 
     private enum CodingKeys: String, CodingKey {
         case formatName = "format_name"
         case bitRate = "bit_rate"
+        case duration
         case tags
     }
 }
@@ -177,6 +208,7 @@ private struct FFprobeStream: Decodable {
     let codecName: String?
     let sampleRate: String?
     let bitRate: String?
+    let duration: String?
     let tags: [String: String]?
     let disposition: [String: Int]?
 
@@ -186,6 +218,7 @@ private struct FFprobeStream: Decodable {
         case codecName = "codec_name"
         case sampleRate = "sample_rate"
         case bitRate = "bit_rate"
+        case duration
         case tags
         case disposition
     }
