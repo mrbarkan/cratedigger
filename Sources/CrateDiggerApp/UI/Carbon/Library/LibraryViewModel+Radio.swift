@@ -192,13 +192,26 @@ extension LibraryViewModel {
     }
 
     /// Stops radio playback and the uptime ticker, and resets shared playback state.
+    /// Tear the stream down completely. `radioEngine` being non-nil is what
+    /// `isStreamActive` keys off, and that drives the OLED's ON AIR lamp and
+    /// stream name — so releasing the engine is the whole point, not a detail.
+    ///
+    /// This used to reset state only `if isRadioMode`, and never released the
+    /// engine. A stream that failed while you were browsing Radio therefore
+    /// left ON AIR lit and its name on the display for the rest of the session:
+    /// navigating to a crate made `isRadioMode` false, so playing a local track
+    /// called this, stopped the engine, and then skipped the cleanup.
     func stopRadio() {
         radioEngine?.stop()
+        // Releasing the engine is enough — ensureRadioEngine() rebuilds when the
+        // stored kind no longer has a live engine behind it.
+        radioEngine = nil
         stopRadioUptimeTicker()
-        if isRadioMode {
-            radioPublish(state: .idle)
-            radioPublish(currentTime: 0, duration: 0)
-        }
+        radioUptimeSeconds = 0
+        // Unconditional: the state being stale is exactly the bug, and the only
+        // caller that isn't followed by new playback is an explicit stop.
+        radioPublish(state: .idle)
+        radioPublish(currentTime: 0, duration: 0)
     }
 
     /// Lazily builds the engine for the current `streamEngine` preference, wiring
@@ -223,7 +236,12 @@ extension LibraryViewModel {
             case .paused:  self.radioPublish(state: .paused)
             case .failed(let message):
                 self.radioPublish(state: .failed(message: message))
-                self.appAlert = .error(title: "Stream Problem", message: message)
+                // Keep the diagnosis on the model so the radio list can offer a
+                // FIX panel, rather than an alert the user dismisses and forgets.
+                self.streamFailure = StreamFailureAdvisor.diagnose(
+                    detail: message,
+                    ytdlpInstalled: self.resolvedYtDlpURL() != nil
+                )
             }
         }
         engine.onTimeChange = { [weak self] current, duration in
@@ -408,4 +426,60 @@ extension LibraryViewModel {
             .map { URL(fileURLWithPath: $0) }
             .first { FileManager.default.isExecutableFile(atPath: $0.path) }
     }
+
+    // MARK: - Failure remedies (the FIX panel)
+
+    /// Re-run the last stream after a repair, or just clear the banner.
+    func retryFailedStream() {
+        streamFailure = nil
+        guard selectedStream != nil else { return }
+        playSelectedStream()
+    }
+
+    func dismissStreamFailure() { streamFailure = nil }
+
+    /// Carry out a remedy the advisor offered.
+    func applyStreamRemedy(_ remedy: StreamFailureAdvisor.Remedy) {
+        switch remedy {
+        case .installYtDlp:
+            presentYtDlpMissing()
+        case .updateYtDlp:
+            guard let ytdlp = resolvedYtDlpURL() else { presentYtDlpMissing(); return }
+            let realPath = ytdlp.resolvingSymlinksInPath().path
+            let (exe, args) = StreamEngineDoctor.updateInvocation(
+                realToolPath: realPath, brewPath: Self.locateBrew()?.path
+            )
+            streamFailure = nil
+            runRepairCommand(executablePath: exe, arguments: args,
+                             notice: "UPDATING YT-DLP…", label: ([exe] + args).joined(separator: " "))
+        case .useWebViewEngine:
+            prefs.streamEngine = "webview"
+            streamEnginePreferenceChanged()
+            streamFailure = nil
+            showOLEDNotice("WEBVIEW PLAYER")
+            if selectedStream != nil { playSelectedStream() }
+        case .waitAndRetry:
+            retryFailedStream()
+        case .tryAnotherSource:
+            streamFailure = nil
+            showingStreamSuggestions = true
+        case .fixURL:
+            streamFailure = nil
+            showingAddStreamSheet = true
+        }
+    }
+
+    /// Add a curated station and jump to it.
+    func addSuggestedStream(_ suggestion: StreamSuggestion) {
+        showingStreamSuggestions = false
+        addStream(fromURL: suggestion.url)
+    }
+
+    /// Suggestions that aren't already saved, for the category being browsed.
+    func availableSuggestions(for category: RadioCategory?) -> [StreamSuggestion] {
+        let savedURLs = Set(streams.map { $0.url })
+        let pool = category.map { StreamSuggestion.catalog(for: $0) } ?? StreamSuggestion.catalog
+        return pool.filter { !savedURLs.contains($0.url) }
+    }
+
 }
