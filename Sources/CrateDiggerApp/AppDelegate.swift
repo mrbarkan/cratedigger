@@ -215,6 +215,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         mainWindowController?.toggleShuffle()
     }
 
+    /// The sleep options the menu offers, in order.
+    static let sleepMenuModes: [SleepMode] =
+        [.off] + SleepMode.presetMinutes.map { .after(minutes: $0) } + [.endOfTrack, .endOfQueue]
+
+    /// `representedObject` has to be a plain value, so modes travel as a string.
+    static func sleepTag(for mode: SleepMode) -> String {
+        switch mode {
+        case .off:                return "off"
+        case .after(let minutes): return "after:\(minutes)"
+        case .endOfTrack:         return "endOfTrack"
+        case .endOfQueue:         return "endOfQueue"
+        }
+    }
+
+    static func sleepMode(fromTag tag: String) -> SleepMode? {
+        switch tag {
+        case "off":         return .off
+        case "endOfTrack":  return .endOfTrack
+        case "endOfQueue":  return .endOfQueue
+        default:
+            guard tag.hasPrefix("after:"), let minutes = Int(tag.dropFirst(6)) else { return nil }
+            return .after(minutes: minutes)
+        }
+    }
+
+    @objc private func setSleepMode(_ sender: Any?) {
+        guard let tag = (sender as? NSMenuItem)?.representedObject as? String,
+              let mode = Self.sleepMode(fromTag: tag) else { return }
+        mainWindowController?.setSleepMode(mode)
+    }
+
+    @objc private func queuePlayNext(_ sender: Any?) {
+        mainWindowController?.queueSelectionNext()
+    }
+
+    @objc private func queuePlayLast(_ sender: Any?) {
+        mainWindowController?.queueSelectionLast()
+    }
+
+    @objc private func clearUpNext(_ sender: Any?) {
+        mainWindowController?.clearUpNext()
+    }
+
     @objc private func cycleRepeatMode(_ sender: Any?) {
         mainWindowController?.cycleRepeatMode()
     }
@@ -464,6 +507,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         switch menuItem.action {
+        case #selector(setSleepMode(_:)):
+            if let tag = menuItem.representedObject as? String,
+               let mode = Self.sleepMode(fromTag: tag) {
+                menuItem.state = (mainWindowController?.currentSleepMode() == mode) ? .on : .off
+            }
+            return true
+        case #selector(queuePlayNext(_:)), #selector(queuePlayLast(_:)):
+            return mainWindowController?.canQueueSelection() == true
+        case #selector(clearUpNext(_:)):
+            return mainWindowController?.hasUpNext() == true
         case #selector(setAppearanceMode(_:)):
             // Only checked while no installed theme overrides the appearance.
             menuItem.state = (prefs.selectedThemeID == nil
@@ -674,6 +727,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         let repeatItem = makeItem(title: "Cycle Repeat Mode", action: #selector(cycleRepeatMode(_:)), key: "r")
         repeatItem.keyEquivalentModifierMask = [.command, .option]
         playbackMenu.addItem(repeatItem)
+        playbackMenu.addItem(.separator())
+
+        // Queue: acts on the browser selection, same as the context menu.
+        let playNextItem = makeItem(title: "Play Next", action: #selector(queuePlayNext(_:)), key: "n")
+        playNextItem.keyEquivalentModifierMask = [.command, .control]
+        playbackMenu.addItem(playNextItem)
+        let playLastItem = makeItem(title: "Play Last", action: #selector(queuePlayLast(_:)), key: "l")
+        playLastItem.keyEquivalentModifierMask = [.command, .control]
+        playbackMenu.addItem(playLastItem)
+        playbackMenu.addItem(makeItem(title: "Clear Up Next", action: #selector(clearUpNext(_:))))
+        playbackMenu.addItem(.separator())
+
+        // Sleep timer. Fixed intervals plus the two playback boundaries.
+        let sleepMenuItem = NSMenuItem(title: "Sleep Timer", action: nil, keyEquivalent: "")
+        let sleepMenu = NSMenu(title: "Sleep Timer")
+        for mode in Self.sleepMenuModes {
+            let item = makeItem(title: mode.menuTitle, action: #selector(setSleepMode(_:)))
+            item.representedObject = Self.sleepTag(for: mode)
+            sleepMenu.addItem(item)
+            if case .off = mode { sleepMenu.addItem(.separator()) }
+        }
+        sleepMenuItem.submenu = sleepMenu
+        playbackMenu.addItem(sleepMenuItem)
         playbackMenu.addItem(.separator())
 
         // DSD output picker: bit-perfect DoP to a capable DAC, or PCM decode.

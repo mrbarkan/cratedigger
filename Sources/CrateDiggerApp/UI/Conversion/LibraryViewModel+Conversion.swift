@@ -547,7 +547,7 @@ extension LibraryViewModel {
             constantBitrate: false,
             deviceProfile: .generic,
             tagMode: .auto,
-            artworkMode: selection.artworkMaxDimension == nil ? .preserve : .compatReembed,
+            artworkMode: selection.artworkMode,
             artworkMaxDimension: selection.artworkMaxDimension
         )
     }
@@ -824,4 +824,29 @@ extension LibraryViewModel {
     var isConversionRunning: Bool {
         conversionProgress.isRunning
     }
+
+    /// The relative output path the current settings would write for one track,
+    /// resolved through the same planner the conversion uses so the queue view
+    /// shows the real destination rather than a guess. Nil when the format can't
+    /// be resolved yet.
+    func plannedOutputName(for track: LoadedTrack) -> String? {
+        let selection = conversionSelection
+        let templateConfig = FolderTemplateConfig(
+            preset: selection.templatePreset,
+            tokenOrder: selection.tokenOrder,
+            separators: selection.separators
+        )
+        let planner = OutputPathPlanner()
+        let ext = selection.outputFormat.fileExtension
+        let base = track.track.fileURL.deletingPathExtension().lastPathComponent
+
+        switch selection.folderStructureMode {
+        case .metadataTemplate:
+            let folder = planner.buildOutputSubpath(for: track, templateConfig: templateConfig)
+            return folder.isEmpty ? "\(base).\(ext)" : "\(folder)/\(base).\(ext)"
+        case .flat, .sourceRelative:
+            return "\(base).\(ext)"
+        }
+    }
+
 }

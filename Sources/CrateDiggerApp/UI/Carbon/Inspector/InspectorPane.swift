@@ -16,6 +16,7 @@ struct InspectorPane: View {
         case info = "INFO"
         case art = "ART"
         case disc = "DISC"
+        case queue = "QUEUE"
     }
 
     /// The DISC tab (spinning record) only makes sense for local files — it's
@@ -43,23 +44,43 @@ struct InspectorPane: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .animation(.easeInOut(duration: 0.22), value: model.oledView)
-        .sheet(isPresented: $showingCleanup) {
-            LibraryCleanupView()
+        // These three are tools you work *in*, so they get movable, resizable
+        // panels rather than sheets pinned to the window. Bindings are unchanged.
+        .carbonPanel(
+            isPresented: $showingCleanup,
+            title: "Library Cleanup",
+            minSize: NSSize(width: 560, height: 420),
+            initialSize: NSSize(width: 720, height: 560),
+            autosaveName: "cratedigger.panel.cleanup"
+        ) {
+            LibraryCleanupView().environmentObject(model)
         }
         // FIX TAGS conflict review — driven by the conflicts themselves so a
-        // repair pass with no disagreements never flashes an empty sheet.
-        .sheet(isPresented: Binding(
-            get: { !model.metadataRepairConflicts.isEmpty },
-            set: { if !$0 { model.metadataRepairConflicts = [] } }
-        )) {
-            MetadataRepairSheetView()
+        // repair pass with no disagreements never flashes an empty panel.
+        .carbonPanel(
+            isPresented: Binding(
+                get: { !model.metadataRepairConflicts.isEmpty },
+                set: { if !$0 { model.metadataRepairConflicts = [] } }
+            ),
+            title: "Fix Tags",
+            minSize: NSSize(width: 560, height: 400),
+            initialSize: NSSize(width: 720, height: 560),
+            autosaveName: "cratedigger.panel.fixTags"
+        ) {
+            MetadataRepairSheetView().environmentObject(model)
         }
         // FIX TAGS online match review — same pattern: the matches are the state.
-        .sheet(isPresented: Binding(
-            get: { !model.metadataMatches.isEmpty },
-            set: { if !$0 { model.cancelMatchQueue() } }
-        )) {
-            MetadataMatchSheetView()
+        .carbonPanel(
+            isPresented: Binding(
+                get: { !model.metadataMatches.isEmpty },
+                set: { if !$0 { model.cancelMatchQueue() } }
+            ),
+            title: "Match Tags Online",
+            minSize: NSSize(width: 620, height: 460),
+            initialSize: NSSize(width: 820, height: 620),
+            autosaveName: "cratedigger.panel.matchTags"
+        ) {
+            MetadataMatchSheetView().environmentObject(model)
         }
     }
 
@@ -68,6 +89,7 @@ struct InspectorPane: View {
             tabButton(.info)
             tabButton(.art)
             tabButton(.disc)
+            tabButton(.queue)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
@@ -150,6 +172,10 @@ struct InspectorPane: View {
                 Spacer()
             }
             .frame(height: height)
+
+        case .queue:
+            QueueInspectorView()
+                .frame(height: height)
         }
     }
 
@@ -199,6 +225,11 @@ struct InspectorPane: View {
                 Spacer()
             }
             .padding(14)
+
+        // A list either way — the extra width has nothing to add to it.
+        case .queue:
+            QueueInspectorView()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 

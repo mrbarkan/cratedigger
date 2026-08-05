@@ -24,6 +24,10 @@ struct ConversionOptionsSelection: Codable {
     var outputFormat: OutputFormat
     var bitrate: Int?
     var sampleRate: Int?
+    /// How album art is carried into the output. Previously inferred from
+    /// whether `artworkMaxDimension` was set, which made "keep the original art
+    /// but cap its size" and "drop the art" impossible to express.
+    var artworkMode: ArtworkMode = .preserve
     var artworkMaxDimension: Int?
     var folderStructureMode: FolderStructureMode
     var applyMode: TemplateApplyMode
@@ -45,6 +49,9 @@ extension ConversionOptionsSelection {
         bitrate = try c.decodeIfPresent(Int.self, forKey: .bitrate)
         sampleRate = try c.decodeIfPresent(Int.self, forKey: .sampleRate)
         artworkMaxDimension = try c.decodeIfPresent(Int.self, forKey: .artworkMaxDimension)
+        // Selections saved before the mode existed encoded it in the dimension.
+        artworkMode = try c.decodeIfPresent(ArtworkMode.self, forKey: .artworkMode)
+            ?? (artworkMaxDimension == nil ? .preserve : .compatReembed)
         folderStructureMode = try c.decode(FolderStructureMode.self, forKey: .folderStructureMode)
         applyMode = try c.decode(TemplateApplyMode.self, forKey: .applyMode)
         templatePreset = try c.decode(TemplatePreset.self, forKey: .templatePreset)

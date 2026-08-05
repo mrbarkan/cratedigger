@@ -294,6 +294,33 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         hostingController.model.cycleRepeatMode()
     }
 
+    // MARK: - Queue + sleep (menu-bar entry points)
+
+    func queueSelectionNext() {
+        hostingController.model.playNext(hostingController.model.selectedTracksForCrateAdd())
+    }
+
+    func queueSelectionLast() {
+        hostingController.model.playLast(hostingController.model.selectedTracksForCrateAdd())
+    }
+
+    func clearUpNext() {
+        hostingController.model.clearUpNext()
+    }
+
+    func canQueueSelection() -> Bool {
+        let model = hostingController.model
+        return model.canQueueTracks && !model.selectedTracksForCrateAdd().isEmpty
+    }
+
+    func hasUpNext() -> Bool { hostingController.model.hasUpNext }
+
+    func setSleepMode(_ mode: SleepMode) {
+        hostingController.model.setSleepMode(mode)
+    }
+
+    func currentSleepMode() -> SleepMode { hostingController.model.sleepMode }
+
     /// The user changed the Stream Engine preference (or yt-dlp path) via the menu.
     func streamEnginePreferenceChanged() {
         hostingController.model.streamEnginePreferenceChanged()

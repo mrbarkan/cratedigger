@@ -19,24 +19,27 @@ struct ConvertPatchBay: View {
     /// discrete "more below" fade appears only when a row is scrolled out of sight.
     @State private var patchContentHeight: CGFloat = 0
 
+    /// Which face of the patch bay is showing. Mirrors the inspector's tab
+    /// switcher so the two panes are operated the same way.
+    private enum PatchTab: String, CaseIterable {
+        case queue = "QUEUE"
+        case settings = "SETTINGS"
+        case options = "OPTIONS"
+    }
+
+    @State private var activeTab: PatchTab = .settings
+
     var body: some View {
-        // The settings rows scroll; the arm block (queue readout + Cancel /
+        // The tab contents scroll; the arm block (queue readout + Cancel /
         // Convert) is pinned below the scroller so the two critical buttons
         // are always on screen — on short panels they used to scroll out of
         // view with no indicator hinting they existed.
         VStack(spacing: 0) {
+            tabSwitcher
             GeometryReader { viewport in
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(spacing: geometry.patchBayRowGap) {
-                        if !model.browserCollapsed { roomHint }
-                        scopeRow
-                        formatRow
-                        bitrateRow
-                        sampleRow
-                        layoutRow
-                        patternRow
-                        destRow
-                        optsRow
+                        tabContent
                     }
                     .padding(EdgeInsets(top: 14, leading: 14, bottom: 10, trailing: 14))
                     .frame(maxWidth: .infinity, alignment: .top)
@@ -58,6 +61,97 @@ struct ConvertPatchBay: View {
                 .padding(EdgeInsets(top: 6, leading: 14, bottom: 14, trailing: 14))
         }
         .background(panelBackground)
+    }
+
+    private var tabSwitcher: some View {
+        HStack(spacing: 8) {
+            ForEach(PatchTab.allCases, id: \.self) { tab in
+                KeyButton(style: activeTab == tab ? .selected : .normal,
+                          action: { activeTab = tab }) {
+                    Text(tab.rawValue)
+                        .font(CarbonFont.mono(9, weight: .bold))
+                        .tracking(1.5)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 22)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.top, 12)
+        .padding(.bottom, 8)
+    }
+
+    @ViewBuilder
+    private var tabContent: some View {
+        switch activeTab {
+        case .queue:
+            ConversionQueueView()
+                .frame(minHeight: 220)
+        case .settings:
+            scopeRow
+            formatRow
+            bitrateRow
+            sampleRow
+            layoutRow
+            patternRow
+            destRow
+        case .options:
+            artworkRow
+            artworkSizeRow
+            optsRow
+        }
+    }
+
+    /// How album art travels into the output. This used to be inferred from
+    /// whether a max dimension was set, so "keep the original art, just cap it"
+    /// and "strip the art" were both unreachable.
+    private var artworkRow: some View {
+        cvRow("Art") {
+            PatchBayBank(
+                label: "Art",
+                options: ArtworkMode.allCases,
+                selection: $model.conversionSelection.artworkMode,
+                size: .medium,
+                displayText: artworkModeLabel
+            )
+        }
+    }
+
+    private var artworkSizeRow: some View {
+        cvRow("Art Size") {
+            PatchBayBank(
+                label: "Art Size",
+                options: Self.artworkDimensions,
+                selection: artworkDimensionBinding,
+                size: .medium,
+                displayText: artworkDimensionLabel
+            )
+            .disabled(model.conversionSelection.artworkMode == .none)
+            .opacity(model.conversionSelection.artworkMode == .none ? 0.5 : 1)
+        }
+    }
+
+    /// 0 stands for "original" — the bank needs a non-optional value.
+    private static let artworkDimensions = [0, 500, 800, 1000, 1400]
+
+    private var artworkDimensionBinding: Binding<Int> {
+        Binding(
+            get: { model.conversionSelection.artworkMaxDimension ?? 0 },
+            set: { model.conversionSelection.artworkMaxDimension = $0 == 0 ? nil : $0 }
+        )
+    }
+
+    private func artworkModeLabel(_ mode: ArtworkMode) -> String {
+        switch mode {
+        case .preserve:      return "Keep"
+        case .compatReembed: return "Re-embed"
+        case .none:          return "Strip"
+        }
+    }
+
+    private func artworkDimensionLabel(_ dimension: Int) -> String {
+        dimension == 0 ? "Original" : "\(dimension)px"
     }
 
     /// A discrete "there's more below" cue: the last visible rows fade into the
@@ -98,47 +192,6 @@ struct ConvertPatchBay: View {
             // Horizontal scan-line texture (1px every 28px)
             Scanlines(opacity: theme.isDark ? 0.012 : 0.04, spacing: 28)
         }
-    }
-
-    // MARK: - Room hint
-
-    /// The patch bay is usable at the default inspector width, but it's cramped.
-    /// Rather than auto-collapsing the browser on every CNVRT switch (a slow,
-    /// GPU-heavy relayout), we leave it compact and offer a one-tap way in. Shown
-    /// only while the browser is open — once collapsed there's nothing to gain.
-    private var roomHint: some View {
-        Button(action: {
-            withAnimation(.easeInOut(duration: 0.25)) { model.browserCollapsed = true }
-        }) {
-            HStack(spacing: 8) {
-                Image(systemName: "arrow.left.and.right")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(theme.cyan)
-                Text("Collapse the browser for a roomier patch bay")
-                    .font(CarbonFont.mono(9, weight: .medium))
-                    .foregroundStyle(theme.ink3)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                Spacer(minLength: 6)
-                Text("EXPAND")
-                    .font(CarbonFont.mono(8.5, weight: .bold))
-                    .tracking(1.6)
-                    .foregroundStyle(theme.cyan)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .frame(maxWidth: .infinity)
-            .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(theme.cyan.opacity(theme.isDark ? 0.10 : 0.08))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .stroke(theme.cyan.opacity(0.30), lineWidth: 0.8)
-            )
-        }
-        .buttonStyle(.carbonHover)
-        .carbonTip("Collapse the browser pane to widen the conversion panel")
     }
 
     // MARK: - Rows

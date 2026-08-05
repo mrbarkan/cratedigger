@@ -546,6 +546,11 @@ final class LibraryViewModel: ObservableObject {
     @Published var selectedStreamID: String?
     /// Drives the Add-Stream sheet (shared by the sidebar "+" and the radio list "ADD URL").
     @Published var showingAddStreamSheet: Bool = false
+    /// Diagnosis of the last stream failure, driving the radio FIX panel.
+    /// Nil once repaired or dismissed. See `StreamFailureAdvisor`.
+    @Published var streamFailure: StreamFailureAdvisor.Diagnosis?
+    /// Shows the curated station picker.
+    @Published var showingStreamSuggestions: Bool = false
     /// Uptime ticker for a live stream (seconds); formatted HH:MM:SS in the OLED.
     @Published var radioUptimeSeconds: Int = 0
     /// Short label for the active stream engine, shown in the OLED ("AUTO"/"NATIVE"/"WEB").
@@ -668,7 +673,21 @@ final class LibraryViewModel: ObservableObject {
 
     // MARK: - Private
 
-    private var playbackQueue: [LoadedTrack] = []
+    /// The `LoadedTrack` mirror of `playback.queue`, index-for-index. Every edit
+    /// must move both together — see `LibraryViewModel+Queue`.
+    @Published var playbackQueue: [LoadedTrack] = []
+
+    // MARK: - Sleep timer
+    /// Armed sleep mode; `.off` when idle. See `LibraryViewModel+Sleep`.
+    @Published var sleepMode: SleepMode = .off
+    /// Countdown text for timed modes, or the boundary name for the
+    /// event-driven ones. Nil when no timer is armed.
+    @Published var sleepRemainingLabel: String?
+    var sleepStartedAt: Date = .distantPast
+    /// The track an `endOfTrack` timer was armed against, so it stops after
+    /// *that* track rather than whichever one happens to be playing next.
+    var sleepAnchorTrackID: UUID?
+    var sleepTimer: Timer?
     private var scanTask: Task<Void, Never>?
     /// Bumped when a new scan starts so progress callbacks from a superseded
     /// scan can't clobber the OLED with stale numbers.
@@ -2488,6 +2507,10 @@ final class LibraryViewModel: ObservableObject {
     // MARK: - Last.fm integration
 
     private func handlePlaybackStateChange(_ state: PlaybackState) {
+        // The queue running dry is the boundary an "after this album/playlist"
+        // sleep timer waits for.
+        if state == .ended { noteSleepQueueEnded() }
+
         // DSD decode (via ffmpeg) can take a beat before playback starts;
         // let the user know why the transport is sitting on "loading". The
         // native (DoP) path doesn't decode — it gets a bit-perfect badge.
@@ -2591,6 +2614,9 @@ final class LibraryViewModel: ObservableObject {
                 self.lastScrobbleTickTime = nil
                 self.playbackStartTimestamp = Int(Date().timeIntervalSince1970)
                 self.refreshNowPlayingInfo()
+                // An end-of-track sleep timer resolves here — the track it was
+                // armed against has been replaced.
+                self.noteSleepTrackChanged()
             }
         }
         playback.onTimeChange = { [weak self] current, duration in

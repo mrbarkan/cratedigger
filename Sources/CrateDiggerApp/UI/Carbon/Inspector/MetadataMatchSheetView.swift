@@ -39,7 +39,7 @@ struct MetadataMatchSheetView: View {
                 footer(match)
             }
         }
-        .frame(width: 660, height: 520)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)   // fills its panel; the window enforces the size limits
         .onAppear { seedChecks() }
         .onChange(of: candidateIndex) { _ in seedChecks() }
         // Keyed on queue position, not the album label — two consecutive
