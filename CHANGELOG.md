@@ -4,6 +4,38 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 1.2.3 (51) — 2026-08-05
+
+Finishing the CD path: ripped albums arrive with their cover, and the CD screen
+tells you what's in the drive.
+
+### Added
+- **Ripped albums come with their cover.** Once a disc is identified,
+  CrateDigger fetches that release's artwork and embeds it as it rips — no
+  separate trip through artwork search afterwards.
+- **Adjust the cut on a scanned disc.** A CD laid on a scanner is never quite
+  centred or straight, so its label sat crooked and off-centre on the spinning
+  disc. The DISC tab has an ADJUST CUT mode: the disc holds still, you drag it
+  into place, and sliders handle rotation and zoom. Your scan is never altered —
+  the framing is remembered alongside the album and can be redone or reset at
+  any time.
+- **The CD screen shows the disc in the drive.** Previously it only appeared
+  while a rip was running, so an inserted disc showed nothing. It now names the
+  identified release with its year, track count and total running time — the
+  check you want before pressing RIP — and says plainly when a disc isn't in the
+  database.
+
+### Fixed
+- **Deleting artwork updates the Artwork Viewer.** An image removed in the
+  inspector stayed on screen in an already-open viewer.
+- **The CD screen tells the truth while ripping.** It reported the output format
+  as FLAC whatever you had chosen, a rip speed that was never measured, and a
+  fixed library path instead of your actual destination. All three are real now,
+  alongside a measured elapsed time.
+- **Rips follow your conversion options.** The artwork handling on the OPTIONS
+  tab never reached a rip, and every rip was forced to stereo — a mono or
+  quadraphonic disc now rips as it was pressed.
+
 ## 1.2.2 (50) — 2026-08-05
 
 Fixes for ripping, found by actually ripping a CD.
