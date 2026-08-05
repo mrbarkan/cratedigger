@@ -18,6 +18,9 @@ struct BrowserPane: View {
             if isBrowsingOfflineDevice {
                 DeviceQueueBar()
             }
+            if let cd = model.currentAudioCD {
+                DiscIdentityBar(info: cd)
+            }
             browserBody
         }
     }

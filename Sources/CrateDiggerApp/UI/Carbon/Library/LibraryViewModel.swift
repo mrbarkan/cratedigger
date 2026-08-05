@@ -548,6 +548,15 @@ final class LibraryViewModel: ObservableObject {
     @Published var showingAddStreamSheet: Bool = false
     /// Diagnosis of the last stream failure, driving the radio FIX panel.
     /// Nil once repaired or dismissed. See `StreamFailureAdvisor`.
+    // MARK: - Audio CD identification (see LibraryViewModel+CDDetect)
+    /// Where disc identification has got to for the mounted CD.
+    @Published var cdDetectionState: CDDetectionState = .idle
+    /// Pressings sharing this disc's TOC, when there's more than one to choose from.
+    @Published var cdDiscMatches: [ReleaseCandidate] = []
+    /// The release adopted for the disc in the drive; nil until identified.
+    @Published var cdMatchedRelease: ReleaseCandidate?
+    let discLookup: CDDiscLookup = MusicBrainzDiscClient()
+
     @Published var streamFailure: StreamFailureAdvisor.Diagnosis?
     /// Shows the curated station picker.
     @Published var showingStreamSuggestions: Bool = false
@@ -1574,26 +1583,15 @@ final class LibraryViewModel: ObservableObject {
 
     private func selectCD(volumePath: String) {
         guard let cd = mountedCDs.first(where: { $0.volumeURL.path == volumePath }) else { return }
-        let tracks = cd.tracks.map { track -> LoadedTrack in
-            let audioTrack = AudioTrack(
-                fileURL: track.fileURL,
-                title: track.title,
-                artist: "Audio CD",
-                album: cd.name,
-                durationSeconds: 0, // AVURLAsset will compute it
-                formatName: "AIFF",
-                trackNumber: track.trackNumber
-            )
-            let metadata = ConversionMetadata(
-                title: track.title,
-                artist: "Audio CD",
-                album: cd.name,
-                trackNumber: track.trackNumber
-            )
-            return LoadedTrack(track: audioTrack, metadata: metadata)
-        }
-        cdIndex = buildIndex(tracks)
+        // Tags come from the identified release when the disc has been looked
+        // up, and fall back to what macOS gave us when it hasn't — see
+        // LibraryViewModel+CDDetect.
+        cdIndex = buildIndex(cdTracks(for: cd))
         index = cdIndex
+        // Selecting a disc is the moment to identify it: everything downstream
+        // (browser, inspector, and the rip's tags and filenames) reads better
+        // once it is, and the lookup is one throttled request.
+        detectAudioCD(cd)
     }
 
     func ripCD(info: AudioCDInfo) {
@@ -1620,16 +1618,41 @@ final class LibraryViewModel: ObservableObject {
                 let service = try ConversionService(presets: [preset])
                 var jobs: [ConversionJob] = []
 
-                for track in info.tracks {
-                    let filename = "Track \(track.trackNumber).\(preset.outputExtension)"
-                    let targetURL = dest.appendingPathComponent(info.name).appendingPathComponent(filename)
-                    let metadata = ConversionMetadata(
-                        title: track.title,
-                        artist: "Audio CD",
-                        album: info.name,
-                        trackNumber: track.trackNumber
+                // Tags and destinations come from the identified release when
+                // the disc was looked up. This used to hardcode artist "Audio
+                // CD", name every file "Track N", and drop the lot in a folder
+                // named after the volume — which for an unidentified disc is
+                // literally "Audio CD" — bypassing the output planner entirely.
+                let loadedTracks = await MainActor.run { self.cdTracks(for: info) }
+                let planner = OutputPathPlanner()
+                let templateConfig = await MainActor.run {
+                    FolderTemplateConfig(
+                        preset: self.conversionSelection.templatePreset,
+                        tokenOrder: self.conversionSelection.tokenOrder,
+                        separators: self.conversionSelection.separators
                     )
-                    jobs.append(ConversionJob(sourceURL: track.fileURL, destinationURL: targetURL, metadata: metadata))
+                }
+                let folderMode = await MainActor.run { self.conversionSelection.folderStructureMode }
+                var reserved: Set<String> = []
+
+                for loaded in loadedTracks {
+                    let plan = planner.planDestination(
+                        for: loaded,
+                        preset: preset,
+                        destinationRoot: dest,
+                        // A CD has no source tree to mirror, so sourceRelative
+                        // has nothing to be relative to.
+                        sourceRoot: nil,
+                        folderMode: folderMode,
+                        templateConfig: templateConfig,
+                        reservedDestinationPaths: reserved
+                    )
+                    reserved.insert(plan.destinationURL.standardizedFileURL.resolvingSymlinksInPath().path)
+                    jobs.append(ConversionJob(
+                        sourceURL: loaded.track.fileURL,
+                        destinationURL: plan.destinationURL,
+                        metadata: loaded.metadata
+                    ))
                 }
 
                 _ = service.enqueue(jobs, preset: preset)

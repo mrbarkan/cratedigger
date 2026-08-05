@@ -35,7 +35,13 @@ let package = Package(
         .testTarget(
             name: "CrateDiggerCoreTests",
             dependencies: ["CrateDiggerCore"],
-            path: "Tests/CrateDiggerCoreTests"
+            path: "Tests/CrateDiggerCoreTests",
+            resources: [
+                // Real captures used as golden inputs — e.g. the `.TOC.plist`
+                // macOS wrote for an actual audio CD, so the disc-ID hashing is
+                // pinned against a disc MusicBrainz genuinely resolves.
+                .copy("Fixtures")
+            ]
         ),
         .testTarget(
             name: "CrateDiggerAppTests",

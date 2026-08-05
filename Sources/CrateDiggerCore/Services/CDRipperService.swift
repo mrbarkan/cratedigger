@@ -18,11 +18,23 @@ public struct AudioCDInfo: Sendable, Identifiable, Hashable {
     public let volumeURL: URL
     public let name: String
     public let tracks: [CDTrack]
+    /// The disc's table of contents, when macOS wrote one. This is what lets a
+    /// CD with no tags at all be identified exactly — see `CompactDiscTOC`.
+    public let toc: CompactDiscTOC?
 
-    public init(volumeURL: URL, name: String, tracks: [CDTrack]) {
+    public init(volumeURL: URL, name: String, tracks: [CDTrack], toc: CompactDiscTOC? = nil) {
         self.volumeURL = volumeURL
         self.name = name
         self.tracks = tracks
+        self.toc = toc
+    }
+
+    /// True when the volume carries no real metadata — macOS names the tracks
+    /// "1 Audio Track" and the volume "Audio CD" when its own lookup found
+    /// nothing, which is the common case and exactly when the disc ID matters.
+    public var hasUsableNames: Bool {
+        guard name.caseInsensitiveCompare("Audio CD") != .orderedSame else { return false }
+        return !tracks.allSatisfy { $0.title.localizedCaseInsensitiveContains("audio track") }
     }
 }
 
@@ -58,7 +70,12 @@ public final class CDRipperService {
             }.sorted { $0.trackNumber < $1.trackNumber }
 
             let volumeName = (try? url.resourceValues(forKeys: [.volumeNameKey]))?.volumeName ?? url.lastPathComponent
-            cds.append(AudioCDInfo(volumeURL: url, name: volumeName, tracks: tracks))
+            cds.append(AudioCDInfo(
+                volumeURL: url,
+                name: volumeName,
+                tracks: tracks,
+                toc: CompactDiscTOC.read(volumeURL: url, fileManager: fileManager)
+            ))
         }
         return cds
     }
