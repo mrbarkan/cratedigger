@@ -4,6 +4,61 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 1.2.0 (47) — 2026-08-05
+
+Queue control, a sleep timer, and tool windows you can actually move.
+
+### Added
+- **Play Next and Play Last.** Right-click any artist, album or track — or use
+  ⌘⌃N / ⌘⌃L — to queue it behind whatever is playing, without interrupting it.
+  A new QUEUE tab in the inspector lists what's coming up, and lets you reorder
+  it, drop individual tracks, or clear the lot.
+- **Sleep timer.** Playback ▸ Sleep Timer: 15, 30, 45, 60 or 90 minutes, or
+  "After This Track" / "After This Album / Playlist" to stop on a musical
+  boundary instead of mid-song. Timed modes show a countdown.
+- **A conversion queue you can see.** The Patch Bay now has QUEUE, SETTINGS and
+  OPTIONS tabs. QUEUE lists exactly which tracks a conversion will process and
+  the filename each one will be written as, with live progress while it runs.
+- **Real album-art options for conversion.** OPTIONS lets you keep the original
+  art, re-embed a compatible copy, or strip it — and cap its size independently.
+  Previously the choice was inferred, so "keep the art but make it smaller" and
+  "remove the art" were both impossible to ask for.
+- **A queue view for disconnected devices.** Browsing a device that isn't
+  plugged in now shows what's waiting for it: how many tracks, how large the
+  transfer will be, how much is staged on this Mac, and whether any queued track
+  has lost its source file. Sync or clear the queue from the same strip.
+- **Radio: a Fix button that knows what broke.** When a stream fails,
+  CrateDigger now explains why and offers the repair that fits — updating yt-dlp
+  when YouTube has changed under it, waiting out a rate limit, or picking a
+  different station when the video is simply private or gone. The raw log is one
+  click away.
+- **Suggested stations.** Radio now ships a browsable list of long-running
+  stations you can add in a single tap, instead of starting from an empty URL
+  field.
+- **More album art found automatically.** Artwork search now also consults
+  Deezer when the iTunes Store has nothing, which fills in a lot of small-label,
+  non-US and electronic releases.
+
+### Changed
+- **Edit Tags, Fix Tags, Library Cleanup and Search Album Artwork are now
+  windows, not sheets.** They can be moved, resized, and left open beside the
+  browser, and each remembers where you put it.
+- The Patch Bay's "collapse the browser for a roomier panel" prompt is gone.
+  Collapsing panes still works from the chassis controls.
+
+### Fixed
+- **Tracks with no duration now show one.** Some files — commonly variable
+  bitrate MP3s, and certain FLAC and AIFF encoders — reported no length, leaving
+  a dash where the time should be. CrateDigger now falls back to a second source
+  for the duration. Existing libraries pick this up on the next dig or Refresh
+  Tags.
+- **A failed radio stream no longer stays "on air".** After a stream failed to
+  start, the display kept showing ON AIR and the station name even once you'd
+  moved on and played something from your library.
+- **Keyboard navigation is visible again.** Moving between browser columns with
+  the arrow keys now lights the column you're steering, and dims the selection
+  in the columns you aren't.
+
 ## 1.1.2 (46) — 2026-08-05
 
 A stability and performance release. The headline fix is a crash that could
