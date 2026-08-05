@@ -29,8 +29,6 @@ struct MetadataMatchSheetView: View {
         VStack(spacing: 0) {
             header
 
-            Divider()
-
             if let match {
                 releaseCard(match)
                 Divider()
@@ -39,7 +37,8 @@ struct MetadataMatchSheetView: View {
                 footer(match)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)   // fills its panel; the window enforces the size limits
+        .frame(minWidth: 0, idealWidth: 820, maxWidth: .infinity,
+               minHeight: 0, idealHeight: 620, maxHeight: .infinity)
         .onAppear { seedChecks() }
         .onChange(of: candidateIndex) { _ in seedChecks() }
         // Keyed on queue position, not the album label — two consecutive
@@ -53,12 +52,8 @@ struct MetadataMatchSheetView: View {
     // MARK: - Header
 
     private var header: some View {
-        HStack {
-            Text("MATCHING TAGS")
-                .font(CarbonFont.mono(10, weight: .bold))
-                .tracking(1.6)
-                .foregroundStyle(theme.ink2)
-            Spacer()
+        // Was smaller, dimmer and unbacked next to the other panels' headers.
+        CarbonPanelHeader("Matching Tags") {
             if let progress = model.matchQueueProgress {
                 Text("ALBUM \(progress.current) OF \(progress.total)\(model.currentMatchAlbumLabel.map { " · \($0.uppercased())" } ?? "")")
                     .font(CarbonFont.mono(8, weight: .bold))
@@ -74,8 +69,6 @@ struct MetadataMatchSheetView: View {
                     .foregroundStyle(theme.ink4)
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
     }
 
     // MARK: - Release card

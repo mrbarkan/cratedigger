@@ -131,6 +131,21 @@ private struct SwitchButton: View {
 
     @State private var dashLit = false
 
+    /// Width the lamp row is allowed to occupy, whatever it contains. Every
+    /// button in the column then demands the same intrinsic width, so all three
+    /// render identically — EQ carries seven lamps against VIEW's two, and at a
+    /// fixed dot size that pushed its button wider than its neighbours.
+    private static let lampBudget: CGFloat = 56
+
+    /// Lamps shrink to stay inside the budget rather than widening the button.
+    private var dotSize: CGFloat {
+        guard dotCount > 0 else { return 5 }
+        let spacingTotal = dotSpacing * CGFloat(max(0, dotCount - 1))
+        return min(5, max(3, (Self.lampBudget - spacingTotal) / CGFloat(dotCount)))
+    }
+
+    private var dotSpacing: CGFloat { dotCount > 4 ? 2.5 : 3 }
+
     var body: some View {
         Button(action: fire) {
             HStack(spacing: 6) {
@@ -142,20 +157,24 @@ private struct SwitchButton: View {
                     .fixedSize()
                 Spacer(minLength: 4)
                 if dotCount > 0 {
-                    HStack(spacing: 3) {
+                    HStack(spacing: dotSpacing) {
                         ForEach(0..<dotCount, id: \.self) { i in
                             Circle()
                                 .fill(i == activeIndex ? theme.orange : theme.ink4.opacity(0.4))
-                                .frame(width: 5, height: 5)
+                                .frame(width: dotSize, height: dotSize)
                                 .shadow(color: i == activeIndex ? theme.orange.opacity(0.7) : .clear, radius: 2.5)
                         }
                     }
+                    .frame(width: Self.lampBudget, alignment: .trailing)
                 }
                 if dash {
                     Capsule(style: .continuous)
                         .fill(dashLit ? theme.orange : theme.ink4.opacity(0.4))
                         .frame(width: 14, height: 4)
                         .shadow(color: dashLit ? theme.orange.opacity(0.7) : .clear, radius: 3)
+                        // Same budget as the lamp rows, so THEME's trailing edge
+                        // lines up with VIEW's and EQ's.
+                        .frame(width: Self.lampBudget, alignment: .trailing)
                 }
             }
             .padding(.horizontal, 10)

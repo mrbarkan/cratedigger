@@ -46,6 +46,7 @@ struct MainShell: View {
             title: "Edit Tags",
             minSize: NSSize(width: 520, height: 420),
             initialSize: NSSize(width: 640, height: 620),
+            maxSize: NSSize(width: 900,  height: 1000),
             autosaveName: "cratedigger.panel.editTags"
         ) {
             if let target = model.tagEditTarget {

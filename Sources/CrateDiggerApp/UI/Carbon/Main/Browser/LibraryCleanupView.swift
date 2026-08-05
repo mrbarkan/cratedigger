@@ -4,7 +4,6 @@ import CrateDiggerCore
 struct LibraryCleanupView: View {
     @Environment(\.carbon) private var theme
     @Environment(\.carbonGeometry) private var geometry
-    @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var model: LibraryViewModel
 
     @State private var activeTab = 0
@@ -24,7 +23,8 @@ struct LibraryCleanupView: View {
                 duplicatesTab
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)   // fills its panel; the window enforces the size limits
+        .frame(minWidth: 0, idealWidth: 720, maxWidth: .infinity,
+               minHeight: 0, idealHeight: 560, maxHeight: .infinity)
         .background(theme.chassis)
         .onAppear {
             model.scanForCleanup()
@@ -32,28 +32,11 @@ struct LibraryCleanupView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 10) {
-            Text("Library Maintenance Wells".uppercased())
-                .font(CarbonFont.mono(11, weight: .bold))
-                .tracking(2)
-                .foregroundStyle(theme.ink)
-            Spacer()
-            Button("Re-Scan") {
-                model.scanForCleanup()
-            }
-            Button(action: { dismiss() }) {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 16))
-                    .foregroundStyle(theme.ink3)
-            }
-            .buttonStyle(.carbonHover)
-            .keyboardShortcut(.cancelAction)   // Esc also closes
-            .help("Close")
+        // The close affordance is gone: this is a window now, so the traffic
+        // lights already do it, and a second ✕ inside the panel read as clutter.
+        CarbonPanelHeader("Library Maintenance Wells") {
+            CarbonPanelButton(title: "Re-Scan", width: 92) { model.scanForCleanup() }
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 12)
-        .background(theme.chassisHi)
-        .overlay(Rectangle().fill(Color.black.opacity(0.12)).frame(height: 1), alignment: .bottom)
     }
 
     private var tabSwitcher: some View {

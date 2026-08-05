@@ -50,6 +50,12 @@ struct ArtworkSearchSheetView: View {
     @Environment(\.carbonGeometry) private var geometry
     @EnvironmentObject private var model: LibraryViewModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.carbonPanelDismiss) private var panelDismiss
+
+    /// `\.dismiss` does nothing inside a hosted window; route through the panel.
+    private func closePanel() {
+        if let panelDismiss { panelDismiss() } else { dismiss() }
+    }
 
     let album: Album
 
@@ -115,7 +121,8 @@ struct ArtworkSearchSheetView: View {
             
             footer
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)   // fills its panel; the window enforces the size limits
+        .frame(minWidth: 0, idealWidth: 860, maxWidth: .infinity,
+               minHeight: 0, idealHeight: 660, maxHeight: .infinity)
         .background(theme.chassis)
         .onAppear {
             executeSearch()
@@ -883,7 +890,7 @@ struct ArtworkSearchSheetView: View {
             Spacer()
             
             Button("Cancel") {
-                dismiss()
+                closePanel()
             }
             .buttonStyle(.bordered)
             
@@ -1025,7 +1032,7 @@ struct ArtworkSearchSheetView: View {
             await model.downloadAndImportArtwork(images: downloads, for: album)
             await MainActor.run {
                 self.isDownloading = false
-                dismiss()
+                closePanel()
             }
         }
     }

@@ -65,7 +65,8 @@ struct MetadataRepairSheetView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)   // fills its panel; the window enforces the size limits
+        .frame(minWidth: 0, idealWidth: 720, maxWidth: .infinity,
+               minHeight: 0, idealHeight: 560, maxHeight: .infinity)
     }
 
     private func groupCard(_ group: MetadataRepairConflictGroup) -> some View {

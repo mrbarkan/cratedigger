@@ -260,6 +260,7 @@ struct ArtworkInspectorView: View {
             title: "Search Album Artwork",
             minSize: NSSize(width: 620, height: 460),
             initialSize: NSSize(width: 860, height: 660),
+            maxSize: NSSize(width: 1400, height: 1000),
             autosaveName: "cratedigger.panel.artworkSearch"
         ) {
             if let album = album {

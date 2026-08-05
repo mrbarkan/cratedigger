@@ -13,6 +13,7 @@ struct MetadataEditorView: View {
     @Environment(\.carbonGeometry) private var geometry
     @EnvironmentObject private var model: LibraryViewModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.carbonPanelDismiss) private var panelDismiss
 
     let tracks: [LoadedTrack]
 
@@ -131,42 +132,31 @@ struct MetadataEditorView: View {
 
             footer
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)   // fills its panel; the window enforces the size limits
+        .frame(minWidth: 0, idealWidth: 640, maxWidth: .infinity,
+               minHeight: 0, idealHeight: 620, maxHeight: .infinity)
         .background(theme.chassis)
     }
 
     private var header: some View {
-        HStack {
-            Text((isBatch ? "Edit \(tracks.count) Tracks" : "Edit Track Tags").uppercased())
-                .font(CarbonFont.mono(11, weight: .bold))
-                .tracking(2)
-                .foregroundStyle(theme.ink)
-            Spacer()
-        }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 14)
-        .background(theme.chassisHi)
-        .overlay(Rectangle().fill(Color.black.opacity(0.12)).frame(height: 1), alignment: .bottom)
+        CarbonPanelHeader(isBatch ? "Edit \(tracks.count) Tracks" : "Edit Track Tags")
     }
 
     private var footer: some View {
-        HStack {
-            Spacer()
-            Button("Cancel") {
-                dismiss()
-            }
-            .buttonStyle(.bordered)
-
-            KeyButton(style: .selected, action: save) {
-                Text("SAVE CHANGES")
-                    .font(CarbonFont.mono(9.5, weight: .bold))
-                    .tracking(1.5)
-            }
-            .frame(width: 120, height: geometry.keyHeight)
+        // Cancel was a stock `.bordered` button sitting inside a skeuomorphic
+        // panel; both buttons are Carbon keys now.
+        CarbonPanelFooter {
+            Text(isBatch ? "\(tracks.count) tracks" : "")
+                .font(CarbonFont.mono(9))
+                .foregroundStyle(theme.ink4)
+        } trailing: {
+            CarbonPanelButton(title: "Cancel") { closePanel() }
+            CarbonPanelButton(title: "Save Changes", style: .selected, width: 130, action: save)
         }
-        .padding(14)
-        .background(theme.chassisHi)
-        .overlay(Rectangle().fill(Color.black.opacity(0.12)).frame(height: 1), alignment: .top)
+    }
+
+    /// Close the enclosing panel — `\.dismiss` is inert in a hosted window.
+    private func closePanel() {
+        if let panelDismiss { panelDismiss() } else { dismiss() }
     }
 
     /// A labelled text field. In batch mode, fields whose tracks disagree show a
@@ -214,7 +204,7 @@ struct MetadataEditorView: View {
 
     private func save() {
         isBatch ? saveBatch() : saveSingle()
-        dismiss()
+        closePanel()
     }
 
     private func saveSingle() {
