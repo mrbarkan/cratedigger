@@ -32,9 +32,20 @@ public final class TrackStore {
     /// text only (no artwork bytes) and written once regardless of crate count.
     /// Throws so callers can surface a full disk / unmounted volume instead of
     /// silently dropping the user's edits.
+    ///
+    /// The output is canonical, so an unchanged library re-serializes to
+    /// byte-identical bytes. Two things are needed for that, because Swift seeds
+    /// its hashing per process: records go out in sorted path order rather than
+    /// `byPath.values` order, and `.sortedKeys` fixes the key order *within* each
+    /// record (synthesized `Codable` writes into a dictionary-backed container,
+    /// so even the field order drifted between launches). Without both, the whole
+    /// file read as changed to Time Machine / Dropbox / git on every save even
+    /// when nothing had been edited, which delta-based backup can never dedup.
     public func save() throws {
-        let tracks = Array(byPath.values)
-        let data = try JSONEncoder().encode(tracks)
+        let tracks = byPath.sorted { $0.key < $1.key }.map(\.value)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        let data = try encoder.encode(tracks)
         try data.write(to: fileURL, options: .atomic)
     }
 

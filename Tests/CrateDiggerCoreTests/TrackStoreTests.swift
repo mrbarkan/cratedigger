@@ -64,6 +64,44 @@ final class TrackStoreTests: XCTestCase {
         }
     }
 
+    /// The store is written in sorted path order, so an unchanged library
+    /// re-serializes to byte-identical output instead of being reshuffled by
+    /// whatever order the dictionary happened to hash into this launch. Without
+    /// it, delta-based backup and sync see the whole index as changed on every
+    /// save. 60 tracks makes an accidentally-sorted dictionary order vanishingly
+    /// unlikely.
+    func testSaveWritesSortedPathOrderSoUnchangedLibrariesReserializeIdentically() throws {
+        try withTemporaryDirectory(prefix: "trackstore") { dir in
+            // Build the tracks once and reuse the instances: AudioTrack carries a
+            // freshly generated `id`, so rebuilding them would differ regardless
+            // of ordering and prove nothing.
+            let paths = (0..<60).map { "/m/\(UUID().uuidString)-\($0).flac" }
+            let tracks = paths.enumerated().map { track($1, title: "T\($0)") }
+
+            let url = dir.appendingPathComponent("library.cdtracks")
+            let store = TrackStore(fileURL: url)
+            for entry in tracks { store.upsert(entry) }
+            try store.save()
+
+            let written = try JSONDecoder().decode([LoadedTrack].self, from: Data(contentsOf: url))
+            let writtenPaths = written.map { TrackStore.key(for: $0.track.fileURL) }
+            XCTAssertEqual(writtenPaths, writtenPaths.sorted(), "store must persist in sorted path order")
+            XCTAssertEqual(Set(writtenPaths), Set(paths), "sorting must not drop or add tracks")
+
+            // The same tracks inserted in a different order must produce the exact
+            // same bytes — that is the property backups and delta sync rely on.
+            let shuffledURL = dir.appendingPathComponent("shuffled.cdtracks")
+            let shuffledStore = TrackStore(fileURL: shuffledURL)
+            for entry in tracks.shuffled() { shuffledStore.upsert(entry) }
+            try shuffledStore.save()
+
+            XCTAssertEqual(
+                try Data(contentsOf: url), try Data(contentsOf: shuffledURL),
+                "same library inserted in a different order must serialize identically"
+            )
+        }
+    }
+
     func testRemove() {
         try? withTemporaryDirectory(prefix: "trackstore") { dir in
             let store = TrackStore(fileURL: dir.appendingPathComponent("library.cdtracks"))
