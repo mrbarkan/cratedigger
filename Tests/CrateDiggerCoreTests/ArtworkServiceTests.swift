@@ -83,6 +83,44 @@ final class ArtworkServiceTests: XCTestCase {
         XCTAssertEqual(compatible.data.prefix(2), Data([0xFF, 0xD8]))
     }
 
+    /// Regression: the resize used to be gated on `NSImage.size`, which is in
+    /// *points*. Artwork tagged at a non-72 DPI reports a point size far smaller
+    /// than its pixel size (1200x1200 px at 300 DPI reads as 288x288 pt), so the
+    /// "is it already small enough?" check said yes and skipped the downscale —
+    /// a device asking for 600 px covers got the full 1200 px original embedded.
+    func testPrepareCompatibleArtworkCapsPixelsNotPointsForHighDPIArtwork() throws {
+        let highDPIData = try makeJPEGData(pixels: 1200, dpi: 300)
+
+        // Precondition: this is genuinely a points-vs-pixels case.
+        let sourceImage = try XCTUnwrap(NSImage(data: highDPIData))
+        XCTAssertLessThan(
+            sourceImage.size.width, 600,
+            "fixture no longer reproduces the points/pixels divergence"
+        )
+
+        let asset = ArtworkAsset(
+            source: .embedded,
+            hash: "high-dpi",
+            dimensions: ArtworkDimensions(width: 1200, height: 1200),
+            data: highDPIData
+        )
+
+        let compatible = try ArtworkService().prepareCompatibleArtwork(
+            asset: asset, profile: .generic, maxDimension: 600
+        )
+
+        let resultImage = try XCTUnwrap(NSImage(data: compatible.data))
+        let resultCGImage = try XCTUnwrap(
+            resultImage.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        )
+        XCTAssertLessThanOrEqual(resultCGImage.width, 600)
+        XCTAssertLessThanOrEqual(resultCGImage.height, 600)
+
+        // The recorded dimensions must be the real pixel size, not the point size.
+        XCTAssertEqual(compatible.dimensions.width, resultCGImage.width)
+        XCTAssertEqual(compatible.dimensions.height, resultCGImage.height)
+    }
+
     func testFolderArtworkIsMemoizedPerFolder() async throws {
         try await withTemporaryDirectory(prefix: "CrateDiggerArtworkTests") { temporaryDirectory in
             let coverData = try makeImageData(size: NSSize(width: 400, height: 400), fileType: .jpeg)

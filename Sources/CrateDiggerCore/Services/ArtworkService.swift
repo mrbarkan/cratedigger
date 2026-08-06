@@ -3,6 +3,7 @@ import AVFoundation
 import CryptoKit
 import Foundation
 import ImageIO
+import UniformTypeIdentifiers
 
 public protocol ArtworkPreparing {
     func prepareCompatibleArtwork(asset: ArtworkAsset, profile: DeviceProfile) throws -> ArtworkAsset
@@ -207,12 +208,11 @@ public final class ArtworkService: ArtworkPreparing {
             return cached.asset
         }
 
-        guard let image = NSImage(data: asset.data) else {
+        guard let image = NSImage(data: asset.data),
+              let resized = resizedCGImage(from: image, maxDimension: CGFloat(resizedDimension ?? 600))
+        else {
             throw ArtworkServiceError.couldNotDecodeImage
         }
-
-        let targetDimension = CGFloat(resizedDimension ?? 600)
-        let resized = resize(image: image, maxDimension: targetDimension)
 
         let chosenData: Data?
         if profile == .ipodLegacySafe {
@@ -233,19 +233,14 @@ public final class ArtworkService: ArtworkPreparing {
             chosenData = jpegData(from: resized, compression: 0.92)
         }
 
-        guard let compatibleData = chosenData,
-              let validatedImage = NSImage(data: compatibleData)
-        else {
+        guard let compatibleData = chosenData else {
             throw ArtworkServiceError.couldNotEncodeCompatibleJPEG
         }
 
         let compatible = ArtworkAsset(
             source: asset.source,
             hash: Self.sha256Hex(for: compatibleData),
-            dimensions: ArtworkDimensions(
-                width: Int(validatedImage.size.width.rounded()),
-                height: Int(validatedImage.size.height.rounded())
-            ),
+            dimensions: ArtworkDimensions(width: resized.width, height: resized.height),
             data: compatibleData
         )
 
@@ -422,37 +417,66 @@ public final class ArtworkService: ArtworkPreparing {
         return output
     }
 
-    private func resize(image: NSImage, maxDimension: CGFloat) -> NSImage {
-        let sourceSize = image.size
-        guard sourceSize.width > maxDimension || sourceSize.height > maxDimension else {
-            return image
-        }
-
-        let scale = min(maxDimension / sourceSize.width, maxDimension / sourceSize.height)
-        let resizedSize = CGSize(width: sourceSize.width * scale, height: sourceSize.height * scale)
-        let output = NSImage(size: resizedSize)
-
-        output.lockFocus()
-        defer { output.unlockFocus() }
-
-        image.draw(in: NSRect(origin: .zero, size: resizedSize))
-        return output
-    }
-
-    private func jpegData(from image: NSImage, compression: CGFloat) -> Data? {
-        guard let tiffData = image.tiffRepresentation,
-              let bitmap = NSBitmapImageRep(data: tiffData)
-        else {
+    /// Downscales to `maxDimension` measured in **pixels**.
+    ///
+    /// This used to size off `NSImage.size`, which is in *points* — for artwork
+    /// carrying a non-72 DPI tag the two diverge badly (a 1200x1200 px cover at
+    /// 300 DPI reports 288x288 pt). The points check then read "already small
+    /// enough" and skipped the resize, so a device asking for 600 px covers got
+    /// the full-size original embedded instead, and `ArtworkAsset.dimensions`
+    /// recorded the point size rather than the real pixel size.
+    ///
+    /// Working in `CGImage` throughout also keeps this off `NSImage.lockFocus()`,
+    /// which wants a main-thread-bound graphics context — `prepareCompatibleArtwork`
+    /// runs concurrently on `ConversionService`'s background `OperationQueue`.
+    private func resizedCGImage(from image: NSImage, maxDimension: CGFloat) -> CGImage? {
+        guard let source = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
             return nil
         }
 
-        return bitmap.representation(
-            using: .jpeg,
-            properties: [
-                .compressionFactor: compression,
-                .progressive: false
-            ]
-        )
+        let sourceWidth = CGFloat(source.width)
+        let sourceHeight = CGFloat(source.height)
+        guard sourceWidth > 0, sourceHeight > 0 else {
+            return nil
+        }
+        guard sourceWidth > maxDimension || sourceHeight > maxDimension else {
+            return source
+        }
+
+        let scale = min(maxDimension / sourceWidth, maxDimension / sourceHeight)
+        let targetWidth = max(1, Int((sourceWidth * scale).rounded()))
+        let targetHeight = max(1, Int((sourceHeight * scale).rounded()))
+
+        guard let context = CGContext(
+            data: nil,
+            width: targetWidth,
+            height: targetHeight,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+        ) else {
+            return nil
+        }
+        context.interpolationQuality = .high
+        context.draw(source, in: CGRect(x: 0, y: 0, width: targetWidth, height: targetHeight))
+        return context.makeImage()
+    }
+
+    private func jpegData(from image: CGImage, compression: CGFloat) -> Data? {
+        let mutableData = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(
+            mutableData, UTType.jpeg.identifier as CFString, 1, nil
+        ) else {
+            return nil
+        }
+
+        let properties: [CFString: Any] = [kCGImageDestinationLossyCompressionQuality: compression]
+        CGImageDestinationAddImage(destination, image, properties as CFDictionary)
+        guard CGImageDestinationFinalize(destination) else {
+            return nil
+        }
+        return mutableData as Data
     }
 
     /// Caches `data` under `hash` and returns the *canonical* buffer for that

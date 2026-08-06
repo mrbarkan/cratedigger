@@ -1,5 +1,7 @@
 import AppKit
 import Foundation
+import ImageIO
+import UniformTypeIdentifiers
 
 @testable import CrateDiggerCore
 
@@ -69,6 +71,46 @@ func makeImageData(
     }
 
     return data
+}
+
+/// A square JPEG of `pixels` x `pixels` tagged at `dpi`. At a non-72 DPI the
+/// decoded `NSImage.size` (points) diverges from the pixel dimensions, which is
+/// what artwork downscaling has to measure against.
+func makeJPEGData(pixels: Int, dpi: Int) throws -> Data {
+    guard let context = CGContext(
+        data: nil,
+        width: pixels,
+        height: pixels,
+        bitsPerComponent: 8,
+        bytesPerRow: 0,
+        space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+    ) else {
+        throw NSError(domain: "CrateDiggerCoreTests", code: 3)
+    }
+
+    context.setFillColor(CGColor(red: 0.08, green: 0.35, blue: 0.72, alpha: 1))
+    context.fill(CGRect(x: 0, y: 0, width: pixels, height: pixels))
+
+    let output = NSMutableData()
+    guard let cgImage = context.makeImage(),
+          let destination = CGImageDestinationCreateWithData(
+              output, UTType.jpeg.identifier as CFString, 1, nil
+          )
+    else {
+        throw NSError(domain: "CrateDiggerCoreTests", code: 4)
+    }
+
+    CGImageDestinationAddImage(destination, cgImage, [
+        kCGImageDestinationLossyCompressionQuality: 0.9,
+        kCGImagePropertyDPIWidth: dpi,
+        kCGImagePropertyDPIHeight: dpi
+    ] as CFDictionary)
+
+    guard CGImageDestinationFinalize(destination) else {
+        throw NSError(domain: "CrateDiggerCoreTests", code: 5)
+    }
+    return output as Data
 }
 
 func pumpMainQueue() async {
