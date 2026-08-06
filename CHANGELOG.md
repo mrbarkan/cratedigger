@@ -4,6 +4,17 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 1.2.32 (53) — 2026-08-05
+
+### Fixed
+- **Cover art sent to a device is actually resized now.** A device profile that
+  asks for smaller covers (the Rockbox iPod preset caps them at 600 px) was
+  being ignored for any artwork tagged at a print DPI — a 1200 px cover marked
+  300 DPI measured as 288 pt, looked "small enough" to the resize check, and got
+  embedded at full size. Those covers are now capped by real pixel dimensions,
+  so transfers carry art at the size the device asked for instead of the
+  original, and the size shown in the inspector matches the file.
+
 ## 1.2.31 (52) — 2026-08-05
 
 Finishing the CD path: ripped albums arrive with their cover, and the CD screen
