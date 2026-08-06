@@ -4,6 +4,29 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 1.2.33 (54) — 2026-08-05
+
+Housekeeping for the library index — the file that remembers every track you've
+scanned.
+
+### Changed
+- **Saving the library no longer rewrites it when nothing changed.** Saving a
+  crate re-filed every track it held, so adding one album to a big crate rewrote
+  the entire index. Only real changes cause a write now, which on a large
+  library is the difference between a visible pause and nothing at all.
+- **The index is written in a stable order.** It used to come out shuffled every
+  time the app restarted, so backup software saw the whole file as new on every
+  save even when nothing had been edited. An unchanged library now writes
+  identical bytes, so Time Machine and cloud sync have almost nothing to copy.
+  Your next save rewrites it once as it settles into the new order.
+
+### Fixed
+- **A damaged library index is no longer overwritten.** If the index existed but
+  couldn't be read — cut short by a crash, a full disk, an ejected drive —
+  CrateDigger started up empty and the next save replaced the whole library with
+  whatever had been added since. It now stops and tells you, leaving the file
+  alone so it can be restored.
+
 ## 1.2.32 (53) — 2026-08-05
 
 ### Fixed
