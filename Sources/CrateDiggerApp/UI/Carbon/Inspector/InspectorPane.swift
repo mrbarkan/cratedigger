@@ -7,17 +7,14 @@ struct InspectorPane: View {
     @EnvironmentObject private var model: LibraryViewModel
 
     @State private var showingCleanup = false
-    @State private var activeTab: InspectorTab = .info
     /// One-time tip (dismissable) pointing at the ART tab's online art search,
     /// shown under OPEN ARTWORK when the album has no booklet to open.
     @AppStorage("cratedigger.tip.artTabSearch.hidden") private var hideArtTip = false
 
-    private enum InspectorTab: String, CaseIterable {
-        case info = "INFO"
-        case art = "ART"
-        case disc = "DISC"
-        case queue = "QUEUE"
-    }
+    /// The visible tab. Lives on the model rather than in local `@State` so
+    /// anything outside the view tree can drive it — the dev shot list walks
+    /// the inspector through its tabs to capture the website screenshots.
+    private var activeTab: InspectorTab { model.inspectorTab }
 
     /// The DISC tab (spinning record) only makes sense for local files — it's
     /// disabled while browsing Radio / Streams.
@@ -107,7 +104,7 @@ struct InspectorPane: View {
     private func tabButton(_ tab: InspectorTab) -> some View {
         KeyButton(
             style: activeTab == tab ? .selected : .normal,
-            action: { activeTab = tab }
+            action: { model.inspectorTab = tab }
         ) {
             Text(tab.rawValue)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -135,7 +132,7 @@ struct InspectorPane: View {
         }
         // Entering Radio / Streams while on the DISC tab falls back to INFO.
         .onChange(of: model.isRadioMode) { isRadio in
-            if isRadio && activeTab == .disc { activeTab = .info }
+            if isRadio && activeTab == .disc { model.inspectorTab = .info }
         }
     }
 
@@ -432,3 +429,12 @@ struct InspectorPane: View {
 
 }
 
+
+/// The inspector's tab set. Top-level (not nested/private) so `LibraryViewModel`
+/// can hold the selection.
+enum InspectorTab: String, CaseIterable {
+    case info = "INFO"
+    case art = "ART"
+    case disc = "DISC"
+    case queue = "QUEUE"
+}

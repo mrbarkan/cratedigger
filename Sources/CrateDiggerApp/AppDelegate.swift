@@ -423,6 +423,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) { snap("") }
         DispatchQueue.main.asyncAfter(deadline: .now() + 8.0) { snap("late") }
+        if env["CRATEDIGGER_SHOT_LIST"] != nil {
+            runMarketingShotList(into: URL(fileURLWithPath: path).deletingLastPathComponent())
+        }
         if let dumpPath = env["CRATEDIGGER_DEBUG_DUMP"] {
             DispatchQueue.main.asyncAfter(deadline: .now() + 7.5) { [weak self] in
                 guard let model = self?.mainWindowController?.model else { return }
@@ -431,6 +434,78 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                 let line = "state=\(model.playbackState) oled=\(model.oledView) levels=(\(l.left), \(l.right)) spectrum=[\(s)]"
                 try? line.write(toFile: dumpPath, atomically: true, encoding: .utf8)
             }
+        }
+    }
+
+    /// Dev-only: walk the app through the states the website shows and write one
+    /// PNG per state into `folder`, named exactly like `website/assets`. Driven by
+    /// `CRATEDIGGER_SHOT_LIST=1` alongside `CRATEDIGGER_SNAPSHOT_PATH`.
+    ///
+    /// It has to run in the *real* app (Xcode ⌘R or the packaged build) because a
+    /// bare `.build` binary can't resolve the security-scoped bookmarks for your
+    /// crate folders, and a screenshot of an empty library is worth nothing. The
+    /// long gaps are deliberate: scanning, artwork resolution and the OLED
+    /// transitions all settle asynchronously.
+    private func runMarketingShotList(into folder: URL) {
+        // (seconds after launch, file name, state to set up)
+        let shots: [(TimeInterval, String, @MainActor (LibraryViewModel) -> Void)] = [
+            (10, "screenshot_dark", { model in
+                Self.setAppearance(.dark)
+                model.selectSource(.localAll)
+                model.oledView = .nowPlaying
+                model.playbackVolume = 0.8
+                if let first = model.index.allTracks.first { model.playTrack(id: first.track.id) }
+            }),
+            (14, "screenshot_light", { _ in Self.setAppearance(.light) }),
+            (18, "screenshot_conversion", { model in model.oledView = .conversion }),
+            (22, "screenshot_crates", { model in
+                model.oledView = .nowPlaying
+                model.selectSource(.prepCrate)
+            }),
+            (26, "screenshot_radio", { model in model.selectSource(.radio(category: .youtubeLive)) }),
+            (30, "screenshot_artwork", { model in
+                model.selectSource(.localAll)
+                model.inspectorTab = .art
+            })
+        ]
+
+        for (at, name, setUp) in shots {
+            // Set the state up, then let it settle for a beat before capturing.
+            DispatchQueue.main.asyncAfter(deadline: .now() + at) { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let model = self?.mainWindowController?.model else { return }
+                    setUp(model)
+                }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + at + 2.5) { [weak self] in
+                self?.captureWindow(to: folder.appendingPathComponent("\(name).png"))
+            }
+        }
+        NSLog("[shot list] capturing 6 screenshots into \(folder.path); leave the app alone for ~35s")
+    }
+
+    private static func setAppearance(_ mode: AppearanceMode) {
+        UserDefaults.standard.set(mode.rawValue, forKey: AppearanceMode.userDefaultsKey)
+        NotificationCenter.default.post(name: AppearanceMode.didChangeNotification, object: nil)
+    }
+
+    /// Renders the main window's own view tree to a PNG — no screen-recording
+    /// permission, and nothing else on screen can get into the frame.
+    @discardableResult
+    private func captureWindow(to url: URL) -> Bool {
+        guard let window = mainWindowController?.window,
+              let frameView = window.contentView?.superview ?? window.contentView,
+              let rep = frameView.bitmapImageRepForCachingDisplay(in: frameView.bounds)
+        else { return false }
+        frameView.cacheDisplay(in: frameView.bounds, to: rep)
+        guard let png = rep.representation(using: .png, properties: [:]) else { return false }
+        do {
+            try png.write(to: url)
+            NSLog("[shot list] wrote \(url.lastPathComponent)")
+            return true
+        } catch {
+            NSLog("[shot list] failed to write \(url.lastPathComponent): \(error)")
+            return false
         }
     }
 

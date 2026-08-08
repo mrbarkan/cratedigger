@@ -170,6 +170,10 @@ final class LibraryViewModel: ObservableObject {
     @Published var browserCollapsed: Bool = false
     @Published var inspectorCollapsed: Bool = false
     @Published var showArtworkGallery: Bool = false
+
+    /// Which inspector tab is showing. Model state rather than view `@State` so
+    /// it can be driven from outside the view tree (menus, the dev shot list).
+    @Published var inspectorTab: InspectorTab = .info
     /// Columns the gallery grid is currently laying out. Published by the view
     /// (only it knows the pane width) and read by ↑/↓ arrow nav, which has to
     /// move by a whole row.
