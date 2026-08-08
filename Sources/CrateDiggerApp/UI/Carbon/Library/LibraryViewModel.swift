@@ -1189,8 +1189,10 @@ final class LibraryViewModel: ObservableObject {
             selectedArtistID = index.artists.first?.id
             selectedAlbumID = index.artists.first?.albums.first?.id
             selectedTrackID = index.artists.first?.albums.first?.tracks.first?.track.id
-            selectedAlbumIDs = []
-            selectedTrackIDs = []
+            // All three sets, not just albums/tracks: artist ids are stable
+            // across crates, so a leftover `selectedArtistIDs` kept lighting up
+            // rows in the new source that the user never clicked.
+            clearMultiSelection()
         }
 
         refreshCrateCounts()
