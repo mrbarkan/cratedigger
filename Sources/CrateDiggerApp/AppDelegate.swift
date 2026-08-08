@@ -447,26 +447,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     /// long gaps are deliberate: scanning, artwork resolution and the OLED
     /// transitions all settle asynchronously.
     private func runMarketingShotList(into folder: URL) {
-        // (seconds after launch, file name, state to set up)
+        // (seconds after launch, file name, state to set up). The gaps are wide
+        // because scanning, artwork and AVPlayer all settle asynchronously — a
+        // hero shot taken too early just says NOTHING PLAYING.
         let shots: [(TimeInterval, String, @MainActor (LibraryViewModel) -> Void)] = [
-            (10, "screenshot_dark", { model in
+            (8, "", { model in
                 Self.setAppearance(.dark)
                 model.selectSource(.localAll)
                 model.oledView = .nowPlaying
                 model.playbackVolume = 0.8
-                if let first = model.index.allTracks.first { model.playTrack(id: first.track.id) }
             }),
-            (14, "screenshot_light", { _ in Self.setAppearance(.light) }),
-            (18, "screenshot_conversion", { model in model.oledView = .conversion }),
-            (22, "screenshot_crates", { model in
+            (12, "", { model in
+                // Has to be a track of the *selected* album: playTrack looks the
+                // id up in `currentAlbumQueue()` and silently returns otherwise.
+                if let first = model.selectedAlbum?.tracks.first { model.playTrack(id: first.track.id) }
+            }),
+            (18, "screenshot_dark", { _ in }),
+            (21, "screenshot_light", { _ in Self.setAppearance(.light) }),
+            (25, "screenshot_conversion", { model in model.oledView = .conversion }),
+            (29, "screenshot_crates", { model in
                 model.oledView = .nowPlaying
                 model.selectSource(.prepCrate)
             }),
-            (26, "screenshot_radio", { model in model.selectSource(.radio(category: .youtubeLive)) }),
-            (30, "screenshot_artwork", { model in
+            (33, "screenshot_radio", { model in
+                // Whichever category actually has stations — an empty one shoots
+                // the "No streams yet" placeholder.
+                let category = model.streamCategories.first ?? .youtubeRecords
+                model.selectSource(.radio(category: category))
+            }),
+            (37, "screenshot_artwork", { model in
                 model.selectSource(.localAll)
+                model.showArtworkGallery = true   // a wall of covers reads better than one
                 model.inspectorTab = .art
-            })
+            }),
+            (41, "", { model in model.showArtworkGallery = false })   // leave the app as we found it
         ]
 
         for (at, name, setUp) in shots {
@@ -477,11 +491,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                     setUp(model)
                 }
             }
+            guard !name.isEmpty else { continue }   // setup-only step
             DispatchQueue.main.asyncAfter(deadline: .now() + at + 2.5) { [weak self] in
                 self?.captureWindow(to: folder.appendingPathComponent("\(name).png"))
             }
         }
-        NSLog("[shot list] capturing 6 screenshots into \(folder.path); leave the app alone for ~35s")
+        NSLog("[shot list] capturing 6 screenshots into \(folder.path); leave the app alone for ~45s")
     }
 
     private static func setAppearance(_ mode: AppearanceMode) {
