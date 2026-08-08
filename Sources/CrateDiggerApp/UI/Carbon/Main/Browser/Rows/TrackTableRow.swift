@@ -16,6 +16,12 @@ struct TrackTableRow: View {
     let isPlaying: Bool
     var isOffline: Bool = false
     var isMissing: Bool = false
+    /// Playlist position, shown in place of the track-number tag when the table
+    /// is listing a playlist in its own order.
+    var positionNumber: Int? = nil
+    /// Set only while a playlist is in its own order: accepts a dropped
+    /// selection and moves it in ahead of this row.
+    var onReorderDrop: (([String]) -> Void)? = nil
     let onSelect: () -> Void
     let onActivate: () -> Void
 
@@ -42,6 +48,7 @@ struct TrackTableRow: View {
         // Dim tracks that aren't playable right now — offline drive or missing file.
         .opacity((isOffline || isMissing) && !selected ? 0.55 : 1)
         .draggable(dragPayload ?? "track::" + loaded.track.id.uuidString)
+        .modifier(ReorderDropTarget(onDrop: onReorderDrop))
     }
 
     @ViewBuilder
@@ -57,7 +64,7 @@ struct TrackTableRow: View {
                     .help(isMissing ? "File is missing — locate it in Library Maintenance"
                                     : "On a disconnected drive")
             }
-            Text(column.value(for: loaded))
+            Text(cellText(column))
                 .font(isTitle
                       ? CarbonFont.sans(12.5, weight: isPlaying ? .semibold : .medium)
                       : CarbonFont.mono(10))
@@ -69,6 +76,13 @@ struct TrackTableRow: View {
                alignment: column.isTrailingAligned ? .trailing : .leading)
         .frame(width: isTitle ? nil : widths[column] ?? column.defaultWidth,
                alignment: column.isTrailingAligned ? .trailing : .leading)
+    }
+
+    /// Playlist position wins over the track-number tag: in a playlist "3" means
+    /// third in the list, not track 3 of its album.
+    private func cellText(_ column: TrackColumn) -> String {
+        if column == .trackNumber, let positionNumber { return String(positionNumber) }
+        return column.value(for: loaded)
     }
 
     @ViewBuilder
@@ -94,4 +108,30 @@ struct TrackTableRow: View {
 enum TrackTableMetrics {
     static let columnSpacing: CGFloat = 10
     static let horizontalPadding: CGFloat = 10
+}
+
+/// The insertion affordance for playlist reordering: a lit rule along the row's
+/// top edge while a drag hovers, so you can see where the drop will land.
+private struct ReorderDropTarget: ViewModifier {
+    @Environment(\.carbon) private var theme
+    let onDrop: (([String]) -> Void)?
+    @State private var targeted = false
+
+    func body(content: Content) -> some View {
+        if let onDrop {
+            content
+                .overlay(alignment: .top) {
+                    Rectangle()
+                        .fill(theme.orange)
+                        .frame(height: 2)
+                        .opacity(targeted ? 1 : 0)
+                }
+                .dropDestination(for: String.self) { items, _ in
+                    onDrop(items)
+                    return true
+                } isTargeted: { targeted = $0 }
+        } else {
+            content
+        }
+    }
 }

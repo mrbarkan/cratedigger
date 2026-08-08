@@ -58,6 +58,7 @@ public final class PreferencesStore {
         static let showSortControls = "cratedigger.browser.showSortControls"
         static let browserLayout = "cratedigger.browser.layout"
         static let trackColumns = "cratedigger.browser.trackColumns"
+        static let playlistBrowserLayout = "cratedigger.browser.playlistLayout"
         static let scrubLock = "cratedigger.transport.scrubLock"
         static let miniPlayerArtMode = "cratedigger.miniplayer.artMode"
         static let hasCompletedFirstRunSetup = "cratedigger.onboarding.completed"
@@ -373,6 +374,20 @@ public final class PreferencesStore {
     public var savedTrackColumns: [String] {
         get { defaults.array(forKey: Key.trackColumns) as? [String] ?? [] }
         set { defaults.set(newValue, forKey: Key.trackColumns) }
+    }
+
+    /// Browser layout remembered for playlist sources, separately from the
+    /// library's. A playlist is an ordered list, so Artist · Album · Track is the
+    /// wrong shape for it — but if you override that, the override sticks.
+    public var savedPlaylistBrowserLayout: String? {
+        get { defaults.string(forKey: Key.playlistBrowserLayout) }
+        set {
+            if let newValue {
+                defaults.set(newValue, forKey: Key.playlistBrowserLayout)
+            } else {
+                defaults.removeObject(forKey: Key.playlistBrowserLayout)
+            }
+        }
     }
 
     public var savedBrowserLayout: String? {

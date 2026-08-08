@@ -403,6 +403,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                 if let first = model.index.allTracks.first { model.playTrack(id: first.track.id) }
             }
         }
+        // Dev-only: land on a source the UI can't otherwise be pointed at from
+        // the command line, so a snapshot can show it. "playlist:<name>" only —
+        // everything else is reachable by launching and clicking.
+        if let raw = env["CRATEDIGGER_SOURCE"], raw.hasPrefix("playlist:") {
+            let name = String(raw.dropFirst("playlist:".count))
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) { [weak self] in
+                self?.mainWindowController?.model.selectSource(.playlist(name: name))
+            }
+        }
         if env["CRATEDIGGER_CHECK_STREAM"] != nil {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
                 self?.mainWindowController?.model.checkYouTubeStreaming()

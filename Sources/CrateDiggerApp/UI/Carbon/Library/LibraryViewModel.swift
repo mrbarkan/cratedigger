@@ -469,8 +469,47 @@ final class LibraryViewModel: ObservableObject {
     }
 
     /// How the browser arranges its columns (3-pane / Album·Track / flat Track).
+    ///
+    /// Remembered per source *kind*, not per source: a playlist is an ordered
+    /// list and wants the flat table, the library wants its panes, and neither
+    /// choice should stamp on the other. Anything finer than that is a settings
+    /// screen nobody visits.
     @Published var browserLayout: BrowserLayout = .full {
-        didSet { prefs.savedBrowserLayout = browserLayout.rawValue }
+        didSet {
+            if isPlaylistSource {
+                prefs.savedPlaylistBrowserLayout = browserLayout.rawValue
+            } else {
+                prefs.savedBrowserLayout = browserLayout.rawValue
+            }
+        }
+    }
+
+    var isPlaylistSource: Bool {
+        if case .playlist = currentSource { return true }
+        return false
+    }
+
+    /// The layout a source of this kind should open with.
+    private func rememberedLayout(for source: LibrarySource) -> BrowserLayout {
+        if case .playlist = source {
+            // Playlists default to the table even on a fresh install.
+            return prefs.savedPlaylistBrowserLayout.flatMap(BrowserLayout.init(rawValue:)) ?? .track
+        }
+        return prefs.savedBrowserLayout.flatMap(BrowserLayout.init(rawValue:)) ?? .full
+    }
+
+    /// The playlist's tracks in the order the M3U lists them — the order *is* the
+    /// content, and `buildIndex` groups by artist/album, which loses it.
+    @Published private(set) var playlistTracks: [LoadedTrack] = []
+
+    /// True once a column header has been used to sort a playlist. Sorting is a
+    /// view of the playlist, not a change to it, so reordering is off until you
+    /// click # to come back to the playlist's own order.
+    @Published var playlistSorted = false
+
+    /// What the flat Track table lists.
+    var flatTracks: [LoadedTrack] {
+        (isPlaylistSource && !playlistSorted) ? playlistTracks : flatTracksSorted
     }
 
     /// Columns shown in the flat Track browser, in display order.
@@ -1204,6 +1243,8 @@ final class LibraryViewModel: ObservableObject {
         }
 
         if sourceChanged {
+            browserLayout = rememberedLayout(for: source)
+            playlistSorted = false
             selectedArtistID = index.artists.first?.id
             selectedAlbumID = index.artists.first?.albums.first?.id
             selectedTrackID = index.artists.first?.albums.first?.tracks.first?.track.id
@@ -1753,6 +1794,33 @@ final class LibraryViewModel: ObservableObject {
         selectSource(.localAll)
     }
 
+    /// Move the dragged tracks so they sit just before `destination`, and write
+    /// the new order back to the M3U. Only meaningful while the playlist is in
+    /// its own order — a sorted view is a lens on the playlist, not the playlist.
+    func movePlaylistTracks(dragItems: [String], before destination: LoadedTrack?) {
+        guard case .playlist(let name) = currentSource, !playlistSorted,
+              var playlist = playlists.first(where: { $0.name == name })
+        else { return }
+
+        let moving = tracksForDragItems(dragItems).map(\.track.fileURL)
+        guard !moving.isEmpty else { return }
+
+        let reordered = Playlist.reordered(playlist.trackURLs,
+                                           moving: moving,
+                                           before: destination?.track.fileURL)
+        guard reordered != playlist.trackURLs else { return }
+
+        playlist.trackURLs = reordered
+        do {
+            try playlistService.savePlaylist(playlist)
+        } catch {
+            appAlert = .error(title: "Couldn't Reorder Playlist", message: error.localizedDescription)
+            return
+        }
+        playlists = playlistService.listPlaylists()
+        selectPlaylist(name: name)
+    }
+
     private func selectPlaylist(name: String) {
         guard let pl = playlists.first(where: { $0.name == name }) else { return }
         
@@ -1765,6 +1833,7 @@ final class LibraryViewModel: ObservableObject {
             return LoadedTrack(track: audioTrack, metadata: ConversionMetadata(title: audioTrack.title))
         }
 
+        playlistTracks = tracks
         playlistIndex = buildIndex(tracks)
         index = playlistIndex
     }

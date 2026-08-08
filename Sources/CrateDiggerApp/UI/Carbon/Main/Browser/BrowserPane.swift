@@ -264,7 +264,13 @@ private struct TrackPane: View {
     var flat: Bool = false
 
     private var sourceTracks: [LoadedTrack] {
-        flat ? model.flatTracksSorted : model.visibleTracks
+        flat ? model.flatTracks : model.visibleTracks
+    }
+
+    /// A playlist shown in its own order can be rearranged by dragging; a sorted
+    /// view of it can't, because the order on screen isn't the playlist's.
+    private var isReorderable: Bool {
+        flat && model.isPlaylistSource && !model.playlistSorted
     }
 
     var body: some View {
@@ -303,6 +309,12 @@ private struct TrackPane: View {
                             isPlaying: model.nowPlayingTrack?.track.id == loaded.track.id,
                             isOffline: model.isOffline(loaded),
                             isMissing: model.isMissing(loaded),
+                            positionNumber: isReorderable
+                                ? (sourceTracks.firstIndex { $0.track.id == loaded.track.id }.map { $0 + 1 })
+                                : nil,
+                            onReorderDrop: isReorderable
+                                ? { items in model.movePlaylistTracks(dragItems: items, before: loaded) }
+                                : nil,
                             onSelect: {
                                 let m = NSEvent.modifierFlags
                                 model.focusedColumn = .track

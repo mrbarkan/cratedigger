@@ -30,20 +30,36 @@ struct TrackTableHeader: View {
         .contextMenu { columnMenu }
     }
 
+    /// In a playlist the leading column is the playlist's own order, so its
+    /// header is the way back to it rather than a sort by the track-number tag.
+    private var showsPlaylistOrderColumn: Bool { model.isPlaylistSource }
+
     @ViewBuilder
     private func header(_ column: TrackColumn) -> some View {
         let isTitle = column == .title
-        let isSorted = column.sortField != nil && model.trackSortField == column.sortField
+        let isPlaylistOrder = showsPlaylistOrderColumn && column == .trackNumber
+        let isSorted = isPlaylistOrder
+            ? !model.playlistSorted
+            : (column.sortField != nil && model.trackSortField == column.sortField && !(showsPlaylistOrderColumn && !model.playlistSorted))
 
         Group {
-            if let field = column.sortField {
+            if isPlaylistOrder {
+                Button { model.playlistSorted = false } label: {
+                    label(column, isSorted: isSorted, showsDirection: false)
+                }
+                .buttonStyle(.carbonHover)
+                .carbonTip("Back to the playlist's own order — drag rows to rearrange it")
+            } else if let field = column.sortField {
                 Button {
-                    if model.trackSortField == field {
+                    if model.trackSortField == field, !(showsPlaylistOrderColumn && !model.playlistSorted) {
                         model.trackSortAscending.toggle()
                     } else {
                         model.trackSortField = field
                         model.trackSortAscending = true
                     }
+                    // Sorting a playlist is a view of it, not a change to it —
+                    // reordering switches off until you come back to # order.
+                    if showsPlaylistOrderColumn { model.playlistSorted = true }
                 } label: {
                     label(column, isSorted: isSorted)
                 }
@@ -58,7 +74,7 @@ struct TrackTableHeader: View {
                alignment: column.isTrailingAligned ? .trailing : .leading)
     }
 
-    private func label(_ column: TrackColumn, isSorted: Bool) -> some View {
+    private func label(_ column: TrackColumn, isSorted: Bool, showsDirection: Bool = true) -> some View {
         HStack(spacing: 3) {
             if column.isTrailingAligned { Spacer(minLength: 0) }
             Text(column.title.uppercased())
@@ -66,7 +82,7 @@ struct TrackTableHeader: View {
                 .tracking(1.2)
                 .foregroundStyle(isSorted ? theme.orange : theme.ink3)
                 .lineLimit(1)
-            if isSorted {
+            if isSorted, showsDirection {
                 Image(systemName: model.trackSortAscending ? "arrowtriangle.up.fill" : "arrowtriangle.down.fill")
                     .font(.system(size: 6))
                     .foregroundStyle(theme.orange)

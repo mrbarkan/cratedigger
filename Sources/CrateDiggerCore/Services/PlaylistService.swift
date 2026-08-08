@@ -101,3 +101,32 @@ public final class PlaylistService {
         try content.write(to: url, atomically: true, encoding: .utf8)
     }
 }
+
+public extension Playlist {
+    /// A playlist's order *is* its content, so reordering has to be exact.
+    ///
+    /// Returns `urls` with every entry in `moving` lifted out and reinserted
+    /// immediately before `destination`, keeping the moved entries in the order
+    /// they appeared. A nil `destination` (or one that is itself being moved)
+    /// appends them at the end.
+    static func reordered(_ urls: [URL], moving: [URL], before destination: URL?) -> [URL] {
+        let movingSet = Set(moving.map(\.standardizedFileURL))
+        guard !movingSet.isEmpty else { return urls }
+
+        // Keep the list's own order for the moved run, not the order they were
+        // clicked in — a drag of rows 3, 7, 5 lands as 3, 5, 7.
+        let lifted = urls.filter { movingSet.contains($0.standardizedFileURL) }
+        let remaining = urls.filter { !movingSet.contains($0.standardizedFileURL) }
+
+        guard let destination,
+              !movingSet.contains(destination.standardizedFileURL),
+              let insertAt = remaining.firstIndex(where: {
+                  $0.standardizedFileURL == destination.standardizedFileURL
+              })
+        else { return remaining + lifted }
+
+        var result = remaining
+        result.insert(contentsOf: lifted, at: insertAt)
+        return result
+    }
+}
