@@ -42,17 +42,17 @@ struct BrowserPane: View {
     private var columns: some View {
         switch model.browserLayout {
         case .full:
-            ArtistColumn().frame(maxWidth: .infinity)
+            ArtistPane().frame(maxWidth: .infinity)
             divider
-            AlbumColumn().frame(maxWidth: .infinity)
+            AlbumPane().frame(maxWidth: .infinity)
             divider
-            TrackColumn().frame(maxWidth: .infinity)
+            TrackPane().frame(maxWidth: .infinity)
         case .albumTrack:
-            AlbumColumn(flat: true).frame(maxWidth: .infinity)
+            AlbumPane(flat: true).frame(maxWidth: .infinity)
             divider
-            TrackColumn().frame(maxWidth: .infinity)
+            TrackPane().frame(maxWidth: .infinity)
         case .track:
-            TrackColumn(flat: true).frame(maxWidth: .infinity)
+            TrackPane(flat: true).frame(maxWidth: .infinity)
         }
     }
 
@@ -108,7 +108,7 @@ private struct BrowserEmptyState: View {
     }
 }
 
-private struct ArtistColumn: View {
+private struct ArtistPane: View {
     @EnvironmentObject private var model: LibraryViewModel
 
     var body: some View {
@@ -152,7 +152,7 @@ private struct ArtistColumn: View {
     }
 }
 
-private struct AlbumColumn: View {
+private struct AlbumPane: View {
     @EnvironmentObject private var model: LibraryViewModel
     /// When true, list every album across all artists (the "Album · Track" layout).
     var flat: Bool = false
@@ -257,7 +257,7 @@ private struct AlbumColumn: View {
     }
 }
 
-private struct TrackColumn: View {
+private struct TrackPane: View {
     @EnvironmentObject private var model: LibraryViewModel
     /// When true, list every track in the source flat (the "Track" layout) — no
     /// album scoping and no disc-header separators.
@@ -271,10 +271,15 @@ private struct TrackColumn: View {
         ColumnList(
             title: "Track",
             trailing: trackTrailing,
-            headerAccessory: model.showSortControls
+            headerAccessory: (model.showSortControls && !flat)
                 ? AnyView(ColumnSortControl(field: $model.trackSortField,
                                             ascending: $model.trackSortAscending,
                                             allCases: Array(TrackSortField.allCases)))
+                : nil,
+            // Sortable column headers replace the pane's sort control in the
+            // flat layout — clicking the header you want is the whole point.
+            subheader: flat
+                ? AnyView(TrackTableHeader(columns: model.trackColumns, widths: [:]))
                 : nil,
             scrollTarget: model.selectedTrackID.map(AnyHashable.init),
             isFocused: model.effectiveColumn == .track
@@ -284,6 +289,31 @@ private struct TrackColumn: View {
                 case let .discHeader(disc, count):
                     DiscHeaderRow(disc: disc, count: count)
                 case let .track(loaded):
+                    // The flat list is a table you scan across the whole library,
+                    // so it renders the columns the user chose. The hierarchical
+                    // layouts keep the compact row — the panes to their left
+                    // already say which artist and album this is.
+                    if flat {
+                        TrackTableRow(
+                            loaded: loaded,
+                            columns: model.trackColumns,
+                            widths: [:],
+                            selected: model.isTrackSelected(loaded.track.id),
+                            dragPayload: model.dragPayload(forTrack: loaded),
+                            isPlaying: model.nowPlayingTrack?.track.id == loaded.track.id,
+                            isOffline: model.isOffline(loaded),
+                            isMissing: model.isMissing(loaded),
+                            onSelect: {
+                                let m = NSEvent.modifierFlags
+                                model.focusedColumn = .track
+                                model.selectTrack(loaded, command: m.contains(.command), shift: m.contains(.shift),
+                                                  ordered: sourceTracks)
+                            },
+                            onActivate: { model.playTrack(id: loaded.track.id) }
+                        )
+                        .id(loaded.track.id)
+                        .contextMenu { BrowserContextMenu.track(loaded, model: model) }
+                    } else {
                     TrackRow(
                         loaded: loaded,
                         selected: model.isTrackSelected(loaded.track.id),
@@ -302,6 +332,7 @@ private struct TrackColumn: View {
                     )
                     .id(loaded.track.id)
                     .contextMenu { BrowserContextMenu.track(loaded, model: model) }
+                    }
                 case let .recordTrack(parent, marker, number):
                     RecordSubTrackRow(
                         marker: marker,

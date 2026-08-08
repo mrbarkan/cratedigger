@@ -19,6 +19,10 @@ struct ColumnList<Content: View>: View {
     let title: String
     let trailing: String
     let headerAccessory: AnyView?
+    /// A second, non-scrolling header strip under the title bar — the flat Track
+    /// layout's sortable column headers. Inside the scroll view they'd scroll
+    /// away with the rows, which is exactly what a column header must not do.
+    var subheader: AnyView? = nil
     /// When set, the list scrolls this id into view whenever it changes — keyboard
     /// navigation passes the selected row's id so a moved selection stays visible.
     var scrollTarget: AnyHashable?
@@ -32,6 +36,7 @@ struct ColumnList<Content: View>: View {
         title: String,
         trailing: String,
         headerAccessory: AnyView? = nil,
+        subheader: AnyView? = nil,
         scrollTarget: AnyHashable? = nil,
         isFocused: Bool = false,
         @ViewBuilder content: @escaping () -> Content
@@ -39,6 +44,7 @@ struct ColumnList<Content: View>: View {
         self.title = title
         self.trailing = trailing
         self.headerAccessory = headerAccessory
+        self.subheader = subheader
         self.scrollTarget = scrollTarget
         self.isFocused = isFocused
         self.content = content
@@ -82,6 +88,10 @@ struct ColumnList<Content: View>: View {
                 alignment: .bottom
             )
             .animation(.easeOut(duration: 0.12), value: isFocused)
+
+            if let subheader {
+                subheader
+            }
 
             ScrollViewReader { proxy in
                 ScrollView {

@@ -57,6 +57,7 @@ public final class PreferencesStore {
         static let albumSortAscending = "cratedigger.browser.albumSortAscending"
         static let showSortControls = "cratedigger.browser.showSortControls"
         static let browserLayout = "cratedigger.browser.layout"
+        static let trackColumns = "cratedigger.browser.trackColumns"
         static let scrubLock = "cratedigger.transport.scrubLock"
         static let miniPlayerArtMode = "cratedigger.miniplayer.artMode"
         static let hasCompletedFirstRunSetup = "cratedigger.onboarding.completed"
@@ -365,6 +366,13 @@ public final class PreferencesStore {
     public var savedCrateOrder: [String] {
         get { defaults.array(forKey: Key.crateOrder) as? [String] ?? [] }
         set { defaults.set(newValue, forKey: Key.crateOrder) }
+    }
+
+    /// Columns shown in the flat Track browser, in display order. Empty until the
+    /// user picks; `TrackColumn.selection(fromSaved:)` supplies the default.
+    public var savedTrackColumns: [String] {
+        get { defaults.array(forKey: Key.trackColumns) as? [String] ?? [] }
+        set { defaults.set(newValue, forKey: Key.trackColumns) }
     }
 
     public var savedBrowserLayout: String? {

@@ -473,6 +473,20 @@ final class LibraryViewModel: ObservableObject {
         didSet { prefs.savedBrowserLayout = browserLayout.rawValue }
     }
 
+    /// Columns shown in the flat Track browser, in display order.
+    @Published var trackColumns: [TrackColumn] = TrackColumn.selection(fromSaved: PreferencesStore.shared.savedTrackColumns) {
+        didSet { prefs.savedTrackColumns = trackColumns.map(\.rawValue) }
+    }
+
+    /// Show or hide a column, keeping the canonical order rather than appending
+    /// re-enabled columns to the end.
+    func toggleTrackColumn(_ column: TrackColumn) {
+        guard column != TrackColumn.required else { return }
+        var next = Set(trackColumns)
+        if next.contains(column) { next.remove(column) } else { next.insert(column) }
+        trackColumns = TrackColumn.allCases.filter { next.contains($0) }
+    }
+
     /// Which browser column the keyboard arrows act on: ↑/↓ move the selection in
     /// it, ←/→ switch columns. Set when a row is clicked; see `LibraryViewModel+ArrowNav`.
     @Published var focusedColumn: BrowserColumn = .track
