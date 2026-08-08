@@ -40,7 +40,10 @@ final class YtDlpStreamEngine: RadioPlaybackEngine {
         let resolver = self.resolver
         resolveTask = Task { [weak self] in
             do {
-                let resolved = try await Task.detached { try resolver.resolve(stream) }.value
+                // Off the cooperative pool, not just off the current task:
+                // `resolve` blocks a thread outright for the length of a yt-dlp
+                // run, and Task.detached would still park a pool thread.
+                let resolved = try await BlockingWork.run { try resolver.resolve(stream) }
                 if Task.isCancelled { return }
                 await MainActor.run {
                     guard let self else { return }
@@ -96,8 +99,17 @@ final class YtDlpStreamEngine: RadioPlaybackEngine {
         case .emptyOutput:               return "yt-dlp returned no playable stream."
         case .badURL:                    return "yt-dlp returned an unreadable URL."
         case .commandFailed(_, let err):
-            let firstLine = err.split(separator: "\n").first.map(String.init) ?? "yt-dlp failed."
-            return firstLine
+            // yt-dlp puts warnings before the real failure, so report the ERROR
+            // line rather than whatever came out first.
+            let lines = err.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
+            let reason = lines.first(where: { $0.contains("ERROR:") }) ?? lines.first ?? "yt-dlp failed."
+            // A dead video says so plainly; anything else is usually YouTube
+            // having changed under an ageing yt-dlp.
+            let isDeadSource = reason.contains("not available")
+                || reason.contains("Private video")
+                || reason.contains("removed")
+                || reason.contains("processing this video")
+            return isDeadSource ? reason : reason + "  (yt-dlp may be out of date — Radio ▸ Check YouTube Streaming)"
         }
     }
 }

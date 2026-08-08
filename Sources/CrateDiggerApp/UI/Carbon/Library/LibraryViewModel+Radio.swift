@@ -95,7 +95,8 @@ extension LibraryViewModel {
     }
 
     private static func fetchMetadataViaYtDlp(url: String, ytdlpURL: URL) async -> StreamMetadata? {
-        await Task.detached {
+        // Off the cooperative pool — yt-dlp blocks its thread outright.
+        let result = try? await BlockingWork.run { () -> StreamMetadata? in
             // Bounded like every other yt-dlp/ffprobe caller: an unbounded run
             // left a wedged yt-dlp (throttled network, captcha wall) holding a
             // thread and a subprocess for the rest of the session.
@@ -104,7 +105,8 @@ extension LibraryViewModel {
                                             arguments: StreamMetadataService.ytdlpArguments(url: url)),
                   out.terminationStatus == 0 else { return nil }
             return StreamMetadataService.parseYtDlp(out.standardOutput)
-        }.value
+        }
+        return result ?? nil
     }
 
     private static func fetchMetadataViaOEmbed(url: String) async -> StreamMetadata? {
@@ -330,8 +332,8 @@ extension LibraryViewModel {
             return
         }
         showOLEDNotice("CHECKING YOUTUBE…")
-        Task.detached(priority: .userInitiated) {
-            let verdict = StreamEngineDoctor().checkUp(ytdlpURL: ytdlp)
+        Task {
+            guard let verdict = try? await BlockingWork.run({ StreamEngineDoctor().checkUp(ytdlpURL: ytdlp) }) else { return }
             await MainActor.run { self.presentStreamCheckVerdict(verdict, ytdlp: ytdlp) }
         }
     }
@@ -401,11 +403,12 @@ extension LibraryViewModel {
     /// check so the user sees end-to-end whether the repair actually worked.
     private func runRepairCommand(executablePath: String, arguments: [String], notice: String, label: String) {
         showOLEDNotice(notice)
-        Task.detached(priority: .userInitiated) {
+        Task {
             // brew can legitimately take a while; 10 min guards a wedged process.
-            let runner = ProcessCommandRunner(timeoutSeconds: 600)
-            let output = try? runner.run(executableURL: URL(fileURLWithPath: executablePath),
-                                         arguments: arguments)
+            let output = try? await BlockingWork.run {
+                try? ProcessCommandRunner(timeoutSeconds: 600)
+                    .run(executableURL: URL(fileURLWithPath: executablePath), arguments: arguments)
+            } ?? nil
             await MainActor.run {
                 guard let output, output.terminationStatus == 0 else {
                     self.oledNotice = nil
