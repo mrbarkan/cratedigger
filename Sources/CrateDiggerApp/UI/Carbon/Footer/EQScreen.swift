@@ -46,51 +46,6 @@ struct EQScreen: View {
     }
 
     private var lcd: some View {
-        let bands = model.eqGains.map(segmentHeight)
-        return HStack(spacing: 1.5) {
-            ForEach(bands.indices, id: \.self) { col in
-                VStack(spacing: 1.5) {
-                    ForEach(0..<segments, id: \.self) { rowFromTop in
-                        let seg = segments - rowFromTop      // 6 (top) ... 1 (bottom)
-                        let lit = seg <= bands[col]
-                        let isPeak = seg == bands[col]
-                        RoundedRectangle(cornerRadius: 0.5, style: .continuous)
-                            .fill(segmentColor(lit: lit, peak: isPeak))
-                            .shadow(
-                                color: lit ? Color(hex: 0xFF7A1F).opacity(isPeak ? 0.9 : 0.6) : .clear,
-                                radius: isPeak ? 3 : 2
-                            )
-                    }
-                }
-            }
-        }
-        .padding(.horizontal, 5)
-        .padding(.vertical, 3)
-        .background(
-            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                .fill(
-                    RadialGradient(
-                        colors: [Color(hex: 0x2C1502), Color(hex: 0x170A01), Color(hex: 0x0D0500)],
-                        center: .center,
-                        startRadius: 2,
-                        endRadius: 90
-                    )
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 4, style: .continuous)
-                        .stroke(Color.black.opacity(0.65), lineWidth: 1)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 4, style: .continuous)
-                        .stroke(Color(hex: 0xFF7A1F).opacity(0.10), lineWidth: 0.5)
-                        .blur(radius: 0.5)
-                )
-        )
-    }
-
-    private func segmentColor(lit: Bool, peak: Bool) -> Color {
-        if peak { return Color(hex: 0xFFD7A0) }
-        if lit { return Color(hex: 0xFF7A1F) }
-        return Color(hex: 0xFF6A1A, opacity: 0.09)
+        SegmentGrid(columns: model.eqGains.map(segmentHeight), segments: segments)
     }
 }

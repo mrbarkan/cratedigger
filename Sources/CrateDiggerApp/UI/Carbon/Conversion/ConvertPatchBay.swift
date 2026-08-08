@@ -69,8 +69,6 @@ struct ConvertPatchBay: View {
                 KeyButton(style: activeTab == tab ? .selected : .normal,
                           action: { activeTab = tab }) {
                     Text(tab.rawValue)
-                        .font(CarbonFont.mono(9, weight: .bold))
-                        .tracking(1.5)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
                 .frame(maxWidth: .infinity)

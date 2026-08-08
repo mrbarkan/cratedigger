@@ -89,8 +89,6 @@ private struct BrowserEmptyState: View {
                     Image(systemName: "folder.fill.badge.plus")
                         .font(.system(size: 12, weight: .bold))
                     Text("OPEN FOLDER…")
-                        .font(CarbonFont.mono(10, weight: .bold))
-                        .tracking(2)
                 }
                 .padding(.horizontal, 16)
             }

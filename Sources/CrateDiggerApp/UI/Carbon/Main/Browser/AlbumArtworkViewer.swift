@@ -466,8 +466,22 @@ struct AlbumArtworkNavigator: View {
                 iconPill("arrow.up.left.and.arrow.down.right") { onExpand?(index) }   // dock back to full-screen
                 iconPill("xmark") { onClose() }
             }
-            .padding(.horizontal, 14)
         }
+        // Matte glass: the floating panel has no scrim of its own, so white
+        // glyphs were sitting straight on light artwork. An opaque-enough dark
+        // slab (no Material — those are live blurs and cost idle GPU) gives the
+        // controls their own surface to read against, on any art.
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.black.opacity(0.78))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.14), lineWidth: 1)
+                )
+        )
+        .padding(.horizontal, 10)
     }
 
     private func iconPill(_ systemName: String, action: @escaping () -> Void) -> some View {

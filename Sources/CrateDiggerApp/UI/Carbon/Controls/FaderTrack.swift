@@ -15,6 +15,11 @@ struct FaderDetent {
 struct FaderTrack: View {
     @Environment(\.carbon) private var theme
     let progress: Double
+    /// Solid rail colour (POSITION). Left nil, the rail wears the cyan→orange
+    /// ramp (VOLUME), *revealed* through a mask rather than squeezed into the
+    /// filled width — so a given colour always sits at the same point on the
+    /// travel, like a printed scale.
+    var fillColor: Color? = nil
     var detents: [FaderDetent] = []
     /// Live absolute fraction while dragging.
     var onScrub: (Double) -> Void
@@ -37,17 +42,26 @@ struct FaderTrack: View {
                     .overlay(Capsule().stroke(Color.white.opacity(theme.isDark ? 0.08 : 0.45), lineWidth: 0.6))
                     .frame(height: 7)
 
-                // Cyan→orange fill up to the cap.
-                Capsule()
-                    .fill(
-                        LinearGradient(
-                            colors: [theme.cyan.opacity(0.92), theme.orange.opacity(0.88)],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
-                    .frame(width: max(2, w * p), height: 7)
-                    .shadow(color: theme.cyan.opacity(theme.isDark ? 0.26 : 0.18), radius: 5)
+                // Fill up to the cap.
+                Group {
+                    if let fillColor {
+                        Capsule().fill(fillColor.opacity(0.9))
+                    } else {
+                        Capsule()
+                            .fill(
+                                LinearGradient(
+                                    colors: [theme.cyan.opacity(0.92), theme.orange.opacity(0.88)],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                    }
+                }
+                .frame(width: w, height: 7)
+                .mask(alignment: .leading) {
+                    Capsule().frame(width: max(2, w * p), height: 7)
+                }
+                .shadow(color: (fillColor ?? theme.cyan).opacity(theme.isDark ? 0.26 : 0.18), radius: 5)
 
                 // Vertical metal cap.
                 cap.offset(x: min(max(w * p - 5.5, 0), w - 11))

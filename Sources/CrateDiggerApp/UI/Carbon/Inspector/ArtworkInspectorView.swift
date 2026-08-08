@@ -78,22 +78,24 @@ struct ArtworkInspectorView: View {
 
                 // Action buttons fill the remaining width evenly, matching the
                 // "Library Tools" row pattern in InspectorPane.
+                // Short single words so all three read at the same size in the
+                // same width — the full sentence lives in the tooltip.
                 if canUploadArtwork {
                     KeyButton(style: .normal, action: uploadArtworkFromDisk) {
-                        Text("ADD ART…")
-                            .font(CarbonFont.mono(9, weight: .bold))
+                        Text("ADD")
                     }
                     .frame(maxWidth: .infinity)
                     .frame(height: 22)
+                    .carbonTip("Add artwork from a file on disk")
                 }
 
                 if album != nil {
                     KeyButton(style: .normal, action: { showingSearch = true }) {
-                        Text("SEARCH ONLINE")
-                            .font(CarbonFont.mono(9, weight: .bold))
+                        Text("SEARCH")
                     }
                     .frame(maxWidth: .infinity)
                     .frame(height: 22)
+                    .carbonTip("Search for this album's artwork online")
                 }
 
                 if isSaving {

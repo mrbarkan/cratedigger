@@ -40,77 +40,11 @@ struct LEDMeterPair: View {
         .accessibilityLabel("Audio spectrum")
     }
 
-    // Canvas, not 72 diffed shape views: a meter pass is one draw-command emit,
-    // so per-frame cost no longer scales with how busy the music is.
     private var lcd: some View {
-        Canvas { context, size in
-            let cols = bands.count
-            guard cols > 0 else { return }
-            let gap = 1.5
-            let cellW = (size.width - CGFloat(cols - 1) * gap) / CGFloat(cols)
-            let cellH = (size.height - CGFloat(segments - 1) * gap) / CGFloat(segments)
-
-            var unlit = Path()
-            var litBody = Path()
-            var peak = Path()
-            for col in 0..<cols {
-                let lit = Int((min(max(bands[col], 0), 1) * Double(segments)).rounded())
-                for rowFromTop in 0..<segments {
-                    let seg = segments - rowFromTop      // 6 (top) ... 1 (bottom)
-                    let rect = CGRect(
-                        x: CGFloat(col) * (cellW + gap),
-                        y: CGFloat(rowFromTop) * (cellH + gap),
-                        width: cellW, height: cellH
-                    )
-                    let cell = Path(roundedRect: rect, cornerRadius: 0.5, style: .continuous)
-                    if seg == lit, lit > 0 {
-                        peak.addPath(cell)
-                    } else if seg <= lit {
-                        litBody.addPath(cell)
-                    } else {
-                        unlit.addPath(cell)
-                    }
-                }
-            }
-
-            context.fill(unlit, with: .color(segmentColor(lit: false, peak: false)))
-            context.drawLayer { layer in
-                layer.addFilter(.shadow(color: Color(hex: 0xFF7A1F).opacity(0.6), radius: 2))
-                layer.fill(litBody, with: .color(segmentColor(lit: true, peak: false)))
-            }
-            context.drawLayer { layer in
-                layer.addFilter(.shadow(color: Color(hex: 0xFF7A1F).opacity(0.9), radius: 3))
-                layer.fill(peak, with: .color(segmentColor(lit: true, peak: true)))
-            }
-        }
-        .padding(.horizontal, 5)
-        .padding(.vertical, 3)
-        .background(
-            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                .fill(
-                    RadialGradient(
-                        colors: [Color(hex: 0x2C1502), Color(hex: 0x170A01), Color(hex: 0x0D0500)],
-                        center: .center,
-                        startRadius: 2,
-                        endRadius: 90
-                    )
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 4, style: .continuous)
-                        .stroke(Color.black.opacity(0.65), lineWidth: 1)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 4, style: .continuous)
-                        .stroke(Color(hex: 0xFF7A1F).opacity(0.10), lineWidth: 0.5)
-                        .blur(radius: 0.5)
-                )
+        SegmentGrid(
+            columns: bands.map { Int((min(max($0, 0), 1) * Double(segments)).rounded()) },
+            segments: segments
         )
-    }
-
-    private func segmentColor(lit: Bool, peak: Bool) -> Color {
-        if peak { return Color(hex: 0xFFD7A0) }
-        if lit { return Color(hex: 0xFF7A1F) }
-        return Color(hex: 0xFF6A1A, opacity: 0.09)
     }
 }
 
@@ -161,19 +95,7 @@ struct HorizontalLEDMeter: View {
         }
         .padding(.horizontal, 5)
         .padding(.vertical, 4)
-        .background(
-            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                .fill(
-                    RadialGradient(
-                        colors: [Color(hex: 0x2C1502), Color(hex: 0x170A01), Color(hex: 0x0D0500)],
-                        center: .center, startRadius: 2, endRadius: 90
-                    )
-                )
-                .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .stroke(Color.black.opacity(0.65), lineWidth: 1))
-                .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .stroke(Color(hex: 0xFF7A1F).opacity(0.10), lineWidth: 0.5).blur(radius: 0.5))
-        )
+        .background(LCDScreen.well(theme))
     }
 
     // Canvas for the same reason as LEDMeterPair.lcd: one draw per pass
@@ -183,7 +105,7 @@ struct HorizontalLEDMeter: View {
         return HStack(spacing: 5) {
             Text(label)
                 .font(CarbonFont.mono(6.5, weight: .bold))
-                .foregroundStyle(Color(hex: 0xFF7A1F).opacity(0.85))
+                .foregroundStyle(theme.cyan.opacity(0.85))
                 .frame(width: 6, alignment: .leading)
             Canvas { context, size in
                 let gap = 1.5
@@ -201,22 +123,20 @@ struct HorizontalLEDMeter: View {
                         unlit.addPath(cell)
                     }
                 }
-                context.fill(unlit, with: .color(segmentColor(lit: false, peak: false)))
+                // Horizontal bars ramp left→right, exactly like the VOLUME fader.
+                context.fill(unlit, with: LCDScreen.shading(LCDScreen.ramp(theme, opacity: 0.10),
+                                                            size: size, vertical: false))
                 context.drawLayer { layer in
-                    layer.addFilter(.shadow(color: Color(hex: 0xFF7A1F).opacity(0.6), radius: 2))
-                    layer.fill(litBody, with: .color(segmentColor(lit: true, peak: false)))
+                    layer.addFilter(.shadow(color: theme.orange.opacity(0.5), radius: 2))
+                    layer.fill(litBody, with: LCDScreen.shading(LCDScreen.ramp(theme),
+                                                                size: size, vertical: false))
                 }
                 context.drawLayer { layer in
-                    layer.addFilter(.shadow(color: Color(hex: 0xFF7A1F).opacity(0.9), radius: 3))
-                    layer.fill(peak, with: .color(segmentColor(lit: true, peak: true)))
+                    layer.addFilter(.shadow(color: theme.orange.opacity(0.8), radius: 3))
+                    layer.fill(peak, with: LCDScreen.shading(LCDScreen.peakRamp(theme),
+                                                             size: size, vertical: false))
                 }
             }
         }
-    }
-
-    private func segmentColor(lit: Bool, peak: Bool) -> Color {
-        if peak { return Color(hex: 0xFFD7A0) }
-        if lit { return Color(hex: 0xFF7A1F) }
-        return Color(hex: 0xFF6A1A, opacity: 0.09)
     }
 }

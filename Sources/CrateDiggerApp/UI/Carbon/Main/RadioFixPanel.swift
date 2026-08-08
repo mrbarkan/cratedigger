@@ -48,8 +48,6 @@ struct RadioFixPanel: View {
                     KeyButton(style: index == 0 ? .selected : .normal,
                               action: { model.applyStreamRemedy(remedy) }) {
                         Text(remedy.actionTitle.uppercased())
-                            .font(CarbonFont.mono(8.5, weight: .bold))
-                            .tracking(0.8)
                             .lineLimit(1)
                             .padding(.horizontal, 8)
                     }

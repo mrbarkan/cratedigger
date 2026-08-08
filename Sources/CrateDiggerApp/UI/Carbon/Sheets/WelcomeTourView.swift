@@ -476,11 +476,8 @@ private struct TourArtPlay: View {
 
     /// Mirror of TransportCluster.transportButton, at 80% footer scale.
     private func chromeKey(_ symbol: String) -> some View {
-        ZStack {
-            ChromeChassis(theme: theme, cornerRadius: 10)
-            Image(systemName: symbol)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(theme.ink2)
+        SiliconeCap(shape: RoundedRectangle(cornerRadius: 12, style: .continuous)) {
+            Image(systemName: symbol).font(.system(size: 15, weight: .semibold))
         }
         .frame(width: geometry.transportButtonSize * 0.8,
                height: geometry.transportButtonSize * 0.8)
@@ -488,33 +485,8 @@ private struct TourArtPlay: View {
 
     /// Mirror of PlayDomeButton's dome, at 80% footer scale.
     private var playDome: some View {
-        ZStack {
-            Circle()
-                .fill(
-                    LinearGradient(
-                        colors: [theme.orangeHi, theme.orange, theme.orangeLo],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .overlay(
-                    Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [Color.white.opacity(0.34), Color.clear],
-                                startPoint: .top,
-                                endPoint: .center
-                            )
-                        )
-                        .padding(1)
-                )
-                .overlay(Circle().stroke(Color.white.opacity(0.42), lineWidth: 0.8))
-                .shadow(color: Color.black.opacity(theme.isDark ? 0.58 : 0.24), radius: 9, y: 5)
-                .shadow(color: theme.orange.opacity(0.35), radius: 10)
-
-            Image(systemName: "play.fill")
-                .font(.system(size: 21, weight: .black))
-                .foregroundStyle(Color.white)
+        SiliconeCap(shape: Circle(), lit: true) {
+            Image(systemName: "play.fill").font(.system(size: 21, weight: .black))
         }
         .frame(width: geometry.playButtonSize * 0.8,
                height: geometry.playButtonSize * 0.8)

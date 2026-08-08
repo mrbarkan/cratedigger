@@ -314,7 +314,7 @@ private struct RailSettings: View {
             .foregroundStyle(theme.orange)
             .shadow(color: theme.orange.opacity(0.4), radius: 6)
             .lineLimit(1)
-            .frame(width: width, alignment: .leading)
+            .frame(width: width)   // centred in its fixed slot, so LIST/GALLERY don't sit off to one side
     }
 
     private var viewValue: String { model.showArtworkGallery ? "GALLERY" : "LIST" }

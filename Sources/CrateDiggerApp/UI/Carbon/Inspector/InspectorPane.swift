@@ -110,8 +110,6 @@ struct InspectorPane: View {
             action: { activeTab = tab }
         ) {
             Text(tab.rawValue)
-                .font(CarbonFont.mono(9, weight: .bold))
-                .tracking(1.5)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(maxWidth: .infinity)
@@ -168,13 +166,9 @@ struct InspectorPane: View {
                 .frame(height: height)
 
         case .disc:
-            VStack {
-                Spacer()
-                SpinningRecordView(model: model, adjustable: true)
-                    .padding(20)
-                Spacer()
-            }
-            .frame(height: height)
+            SpinningRecordView(model: model, adjustable: true)
+                .padding(20)
+                .frame(height: height)
 
         case .queue:
             QueueInspectorView()
@@ -221,13 +215,10 @@ struct InspectorPane: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
         case .disc:
-            HStack {
-                Spacer()
-                SpinningRecordView(model: model, adjustable: true)
-                    .frame(width: posterSize, height: posterSize)
-                Spacer()
-            }
-            .padding(14)
+            SpinningRecordView(model: model, adjustable: true)
+                .frame(maxWidth: posterSize)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(14)
 
         // A list either way — the extra width has nothing to add to it.
         case .queue:
@@ -253,8 +244,6 @@ struct InspectorPane: View {
                         Image(systemName: "tag.fill")
                             .font(.system(size: 9))
                         Text("EDIT TAGS")
-                            .font(CarbonFont.mono(9, weight: .bold))
-                            .tracking(1.0)
                     }
                 }
                 .frame(maxWidth: .infinity)
@@ -267,8 +256,6 @@ struct InspectorPane: View {
                         Image(systemName: "sparkles")
                             .font(.system(size: 9))
                         Text("CLEANUP")
-                            .font(CarbonFont.mono(9, weight: .bold))
-                            .tracking(1.0)
                     }
                 }
                 .frame(maxWidth: .infinity)

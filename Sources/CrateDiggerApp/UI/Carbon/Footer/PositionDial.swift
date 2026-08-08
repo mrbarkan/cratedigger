@@ -43,6 +43,7 @@ struct PositionDial: View {
 
             FaderTrack(
                 progress: progress,
+                fillColor: theme.orange,                 // one accent, no ramp — VOLUME owns the gradient
                 detents: [FaderDetent(fraction: 0.5)],   // center detent
                 onScrub: { model.scrubbingFraction = $0 },
                 onCommit: { f in

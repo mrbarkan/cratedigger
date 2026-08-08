@@ -85,8 +85,6 @@ struct CarbonPanelButton: View {
     var body: some View {
         KeyButton(style: style, action: action) {
             Text(title.uppercased())
-                .font(CarbonFont.mono(9.5, weight: .bold))
-                .tracking(1.5)
                 .lineLimit(1)
         }
         .frame(width: width, height: geometry.keyHeight)

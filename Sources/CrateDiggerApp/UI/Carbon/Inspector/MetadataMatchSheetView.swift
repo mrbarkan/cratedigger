@@ -270,7 +270,6 @@ struct MetadataMatchSheetView: View {
         HStack(spacing: 8) {
             KeyButton(style: .normal, action: { toggleSelectAll(match) }) {
                 Text(allChecked(match) ? "CLEAR ALL" : "SELECT ALL")
-                    .font(CarbonFont.mono(9, weight: .bold))
             }
             .frame(width: 110, height: CarbonLayout.keyHeight)
 
@@ -283,14 +282,12 @@ struct MetadataMatchSheetView: View {
 
             KeyButton(style: .normal, action: { model.cancelMatchQueue() }) {
                 Text("CANCEL")
-                    .font(CarbonFont.mono(9, weight: .bold))
             }
             .frame(width: 90, height: CarbonLayout.keyHeight)
 
             if model.matchQueueProgress != nil {
                 KeyButton(style: .normal, action: { model.advanceMatchQueue() }) {
                     Text("SKIP")
-                        .font(CarbonFont.mono(9, weight: .bold))
                 }
                 .frame(width: 80, height: CarbonLayout.keyHeight)
                 .help("Leave this album unchanged and review the next one")
@@ -299,7 +296,6 @@ struct MetadataMatchSheetView: View {
                     model.applyAllReleaseMatches(startingWith: match, fields: checked)
                 }) {
                     Text("APPLY ALL")
-                        .font(CarbonFont.mono(9, weight: .bold))
                 }
                 .frame(width: 110, height: CarbonLayout.keyHeight)
                 .help("Apply this album as reviewed, then every remaining album whose best match is a confident one. "
@@ -310,7 +306,6 @@ struct MetadataMatchSheetView: View {
                 model.applyReleaseMatch(match, fields: checked)
             }) {
                 Text("APPLY")
-                    .font(CarbonFont.mono(9, weight: .bold))
             }
             .frame(width: 110, height: CarbonLayout.keyHeight)
             .disabled(checked.isEmpty)

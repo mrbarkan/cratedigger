@@ -121,8 +121,6 @@ struct LibraryCleanupView: View {
                         model.deleteDeadTracks()
                     }) {
                         Text("REMOVE ALL")
-                            .font(CarbonFont.mono(9, weight: .bold))
-                            .tracking(1.4)
                     }
                     .frame(width: 120, height: geometry.keyHeight)
                 }
@@ -176,8 +174,6 @@ struct LibraryCleanupView: View {
                     Spacer()
                     KeyButton(style: checkedPaths.isEmpty ? .disabled : .selected, action: trashSelected) {
                         Text("TRASH SELECTED (\(checkedPaths.count))")
-                            .font(CarbonFont.mono(9, weight: .bold))
-                            .tracking(1.2)
                     }
                     .frame(width: 200, height: geometry.keyHeight)
                     .disabled(checkedPaths.isEmpty)

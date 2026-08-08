@@ -58,8 +58,6 @@ struct DeviceQueueBar: View {
                 KeyButton(style: model.offlineDeviceIsConnected ? .selected : .disabled,
                           action: { model.syncBrowsedOfflineDevice() }) {
                     Text(model.offlineDeviceIsConnected ? "SYNC NOW" : "NOT CONNECTED")
-                        .font(CarbonFont.mono(8.5, weight: .bold))
-                        .tracking(1)
                         .padding(.horizontal, 8)
                 }
                 .frame(height: 22)
@@ -70,8 +68,6 @@ struct DeviceQueueBar: View {
 
                 KeyButton(style: .normal, action: { model.clearOfflineDeviceQueue() }) {
                     Text("CLEAR")
-                        .font(CarbonFont.mono(8.5, weight: .bold))
-                        .tracking(1)
                         .padding(.horizontal, 8)
                 }
                 .frame(height: 22)

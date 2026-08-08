@@ -29,15 +29,19 @@ enum MiniPlayerArtMode: String, CaseIterable {
     }
 }
 
-/// The floating mini player — a compact Carbon glass strip that mirrors the full
-/// app's playback (shares the same `LibraryViewModel`). Always dark glass.
+/// The floating mini player — a compact Carbon strip that mirrors the full
+/// app's playback (shares the same `LibraryViewModel`).
 struct MiniPlayerView: View {
+    /// Follows the global Light/Dark choice, like `ThemedSheetWrapper`. It used
+    /// to be pinned to `.dark`, which left it dark glass while the rest of the
+    /// app was in the light theme.
+    @AppStorage(AppearanceMode.userDefaultsKey) private var rawMode: String = AppearanceMode.system.rawValue
     @ObservedObject var model: LibraryViewModel
     let onExpand: () -> Void
 
     var body: some View {
         MiniPlayerBody(model: model, clock: model.playbackClock, onExpand: onExpand)
-            .carbonThemed(mode: .dark)
+            .carbonThemed(mode: AppearanceMode(rawValue: rawMode) ?? .system)
     }
 }
 
@@ -270,18 +274,14 @@ private struct MiniPlayerBody: View {
         model.repeatMode == .one ? "repeat.1" : "repeat"
     }
 
+    // Same silicone caps as the footer transport, scaled down for the strip.
+
     private var dome: some View {
         Button(action: { ClickPlayer.shared.play(.key); model.togglePlayPause() }) {
-            Image(systemName: model.playbackState == .playing ? "pause.fill" : "play.fill")
-                .font(.system(size: 17, weight: .bold))
-                .foregroundStyle(.white)
-                .frame(width: 50, height: 50)
-                .background(
-                    Circle().fill(LinearGradient(colors: [theme.orangeHi, theme.orange, theme.orangeLo],
-                                                 startPoint: .topLeading, endPoint: .bottomTrailing))
-                )
-                .overlay(Circle().strokeBorder(Color.white.opacity(0.42), lineWidth: 0.8))
-                .shadow(color: theme.orange.opacity(0.55), radius: 12)
+            SiliconeCap(shape: Circle(), lit: model.playbackState == .playing) {
+                Image(systemName: "playpause.fill").font(.system(size: 17, weight: .bold))
+            }
+            .frame(width: 50, height: 50)
         }
         .buttonStyle(.carbonHover)
         .carbonTip("Play / Pause")
@@ -289,27 +289,23 @@ private struct MiniPlayerBody: View {
 
     private func transportButton(system: String, size: CGFloat, action: @escaping () -> Void) -> some View {
         Button(action: { ClickPlayer.shared.play(.key); action() }) {
-            Image(systemName: system)
-                .font(.system(size: size, weight: .semibold))
-                .foregroundStyle(theme.ink2)
-                .frame(width: 36, height: 36)
-                .background(ChromeChassis(theme: theme, cornerRadius: 10))
+            cap(system: system, size: size, lit: false)
         }
         .buttonStyle(.carbonHover)
     }
 
     private func toggleButton(system: String, on: Bool, action: @escaping () -> Void) -> some View {
         Button(action: { ClickPlayer.shared.play(.key); action() }) {
-            Image(systemName: system)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(on ? theme.orange : theme.ink4)
-                .frame(width: 36, height: 36)
-                .background(ChromeChassis(theme: theme, cornerRadius: 10))
-                .overlay(on
-                    ? RoundedRectangle(cornerRadius: 10).strokeBorder(theme.orange.opacity(0.5), lineWidth: 0.7)
-                    : nil)
+            cap(system: system, size: 13, lit: on)
         }
         .buttonStyle(.carbonHover)
+    }
+
+    private func cap(system: String, size: CGFloat, lit: Bool) -> some View {
+        SiliconeCap(shape: RoundedRectangle(cornerRadius: 10, style: .continuous), lit: lit) {
+            Image(systemName: system).font(.system(size: size, weight: .semibold))
+        }
+        .frame(width: 36, height: 36)
     }
 }
 

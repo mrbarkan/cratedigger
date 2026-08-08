@@ -8,12 +8,21 @@ enum KeyButtonStyle: Equatable {
     case disabled
 }
 
+/// The flat interface key: every non-transport button in the app (tabs, sheet
+/// actions, toolbar keys). Deliberately **not** the silicone transport cap —
+/// these are software controls, so they stay flat: one solid fill, a hairline
+/// edge, no gradient, bevel or shadow.
+///
+/// It also owns the label's type. Callers pass bare `Text`/`Image` and get the
+/// house face, size and tracking, so keys can't drift apart sheet by sheet.
 struct KeyButton<Label: View>: View {
     @Environment(\.carbon) private var theme
     var style: KeyButtonStyle = .normal
     var clickVariant: ClickPlayer.Variant = .key
     var action: () -> Void = {}
     @ViewBuilder var label: () -> Label
+
+    private static var shape: RoundedRectangle { RoundedRectangle(cornerRadius: 6, style: .continuous) }
 
     var body: some View {
         Button(action: {
@@ -24,8 +33,14 @@ struct KeyButton<Label: View>: View {
             ZStack {
                 background
                 label()
+                    .font(CarbonFont.mono(9, weight: .bold))
+                    .tracking(1.2)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)   // long titles shrink rather than wrap
                     .foregroundStyle(textColor)
+                    .padding(.horizontal, 8)
             }
+            .contentShape(Self.shape)
         }
         .buttonStyle(.carbonHover)
         .opacity(style == .disabled ? 0.42 : 1)
@@ -34,68 +49,18 @@ struct KeyButton<Label: View>: View {
 
     @ViewBuilder
     private var background: some View {
-        let shape = RoundedRectangle(cornerRadius: 7, style: .continuous)
+        let shape = Self.shape
         switch style {
         case .normal, .disabled:
-            shape
-                .fill(theme.metal) // opaque, not Material — see ChassisLayer
-                .overlay(
-                    shape.fill(
-                        LinearGradient(
-                            colors: [
-                                theme.metalHi.opacity(theme.isDark ? 0.34 : 0.68),
-                                theme.metal.opacity(theme.isDark ? 0.28 : 0.44),
-                                theme.metalLo.opacity(theme.isDark ? 0.38 : 0.32)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                )
-                .overlay(
-                    shape.strokeBorder(Color.white.opacity(theme.isDark ? 0.14 : 0.66), lineWidth: 0.7)
-                )
-                .shadow(color: Color.black.opacity(theme.isDark ? 0.42 : 0.12), radius: 4, y: 2)
+            shape.fill(theme.metal)   // opaque, not Material — see ChassisLayer
+                 .overlay(shape.strokeBorder(theme.hair, lineWidth: 1))
 
-        case .selected:
-            shape
-                .fill(
-                    LinearGradient(
-                        colors: [theme.orangeHi, theme.orange, theme.orangeLo],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .overlay(
-                    shape.stroke(Color.white.opacity(0.34), lineWidth: 0.7)
-                )
-                .shadow(color: theme.orange.opacity(0.35), radius: 12, y: 0)
+        case .selected, .glowingFilled:
+            shape.fill(theme.orange)
 
         case .glowingOrange:
-            shape
-                .fill(
-                    LinearGradient(
-                        colors: [theme.wellDeep, theme.metalDeep],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-                .overlay(
-                    shape.stroke(theme.orange.opacity(0.55), lineWidth: 0.7)
-                )
-                .shadow(color: theme.orange.opacity(0.35), radius: 10)
-
-        case .glowingFilled:
-            shape
-                .fill(
-                    LinearGradient(
-                        colors: [theme.orangeHi, theme.orange, theme.orangeLo],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .overlay(shape.stroke(Color.white.opacity(0.30), lineWidth: 0.7))
-                .shadow(color: theme.orange.opacity(0.55), radius: 12)
+            shape.fill(theme.orange.opacity(0.12))
+                 .overlay(shape.strokeBorder(theme.orange.opacity(0.6), lineWidth: 1))
         }
     }
 
@@ -104,7 +69,7 @@ struct KeyButton<Label: View>: View {
         case .normal:        return theme.ink2
         case .selected:      return theme.selectionInk
         case .glowingOrange: return theme.orange
-        case .glowingFilled: return Color(white: 0.07)
+        case .glowingFilled: return theme.selectionInk
         case .disabled:      return theme.ink3
         }
     }

@@ -110,16 +110,12 @@ struct ConversionOptionsSheetView: View {
             Spacer()
             KeyButton(style: .normal, action: { onDecision(nil) }) {
                 Text("CANCEL")
-                    .font(CarbonFont.mono(10, weight: .bold))
-                    .tracking(2)
             }
             .frame(width: 124, height: 38)
             .keyboardShortcut(.cancelAction)
 
             KeyButton(style: .glowingOrange, action: { onDecision(buildSelection()) }) {
                 Text("CONTINUE")
-                    .font(CarbonFont.mono(10, weight: .bold))
-                    .tracking(2)
             }
             .frame(width: 144, height: 38)
             .keyboardShortcut(.defaultAction)

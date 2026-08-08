@@ -100,18 +100,9 @@ private struct LibButton: View {
             .frame(maxWidth: style == .wide ? .infinity : nil,
                    alignment: .leading)
             .frame(height: height)
-            .background(
-                ZStack {
-                    ChromeChassis(theme: theme, cornerRadius: 6)
-                    if highlighted {
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(theme.orange.opacity(0.14))
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .stroke(theme.orange.opacity(0.55), lineWidth: 1)
-                    }
-                }
-            )
-            .shadow(color: highlighted ? theme.orange.opacity(0.35) : .clear, radius: 5)
+            // Highlight lights the *label*, not the chassis — the button reads
+            // as ready without the whole key turning into a lamp.
+            .background(ChromeChassis(theme: theme, cornerRadius: 6))
         }
         .buttonStyle(.carbonHover)
         .carbonTip(tip ?? title.capitalized)

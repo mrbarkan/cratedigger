@@ -56,13 +56,13 @@ struct DiscIdentityBar: View {
         switch model.cdDetectionState {
         case .identified:
             KeyButton(style: .normal, action: { model.detectAudioCD(info, force: true) }) {
-                Text("RE-IDENTIFY").font(CarbonFont.mono(8.5, weight: .bold)).tracking(1)
+                Text("RE-IDENTIFY")
                     .padding(.horizontal, 8)
             }
             .frame(height: 22)
             .carbonTip("Look the disc up again")
             KeyButton(style: .normal, action: { model.clearDiscMatch(for: info) }) {
-                Text("CLEAR").font(CarbonFont.mono(8.5, weight: .bold)).tracking(1)
+                Text("CLEAR")
                     .padding(.horizontal, 8)
             }
             .frame(height: 22)
@@ -71,7 +71,7 @@ struct DiscIdentityBar: View {
         case .notFound(let toc):
             // A miss should still leave somewhere to go — this disc can be added.
             KeyButton(style: .normal, action: { model.submitDiscToMusicBrainz(toc) }) {
-                Text("ADD TO MUSICBRAINZ").font(CarbonFont.mono(8.5, weight: .bold)).tracking(1)
+                Text("ADD TO MUSICBRAINZ")
                     .padding(.horizontal, 8)
             }
             .frame(height: 22)
@@ -79,7 +79,7 @@ struct DiscIdentityBar: View {
 
         case .failed, .idle:
             KeyButton(style: .selected, action: { model.detectAudioCD(info, force: true) }) {
-                Text("IDENTIFY DISC").font(CarbonFont.mono(8.5, weight: .bold)).tracking(1)
+                Text("IDENTIFY DISC")
                     .padding(.horizontal, 8)
             }
             .frame(height: 22)

@@ -39,7 +39,7 @@ struct QueueInspectorView: View {
                 .foregroundStyle(theme.ink4)
             KeyButton(style: model.hasUpNext ? .normal : .disabled,
                       action: { model.clearUpNext() }) {
-                Text("CLEAR").font(CarbonFont.mono(8.5, weight: .bold))
+                Text("CLEAR")
             }
             .frame(width: 54, height: 20)
             .disabled(!model.hasUpNext)

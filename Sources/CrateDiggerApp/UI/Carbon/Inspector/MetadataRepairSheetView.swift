@@ -43,7 +43,6 @@ struct MetadataRepairSheetView: View {
             HStack(spacing: 8) {
                 KeyButton(style: .normal, action: toggleSelectAll) {
                     Text(allSelected ? "CLEAR ALL" : "SELECT ALL")
-                        .font(CarbonFont.mono(9, weight: .bold))
                 }
                 .frame(width: 110, height: CarbonLayout.keyHeight)
 
@@ -51,13 +50,11 @@ struct MetadataRepairSheetView: View {
 
                 KeyButton(style: .normal, action: { model.metadataRepairConflicts = [] }) {
                     Text("CANCEL")
-                        .font(CarbonFont.mono(9, weight: .bold))
                 }
                 .frame(width: 90, height: CarbonLayout.keyHeight)
 
                 KeyButton(style: .selected, action: apply) {
                     Text("APPLY SELECTED")
-                        .font(CarbonFont.mono(9, weight: .bold))
                 }
                 .frame(width: 140, height: CarbonLayout.keyHeight)
                 .disabled(chosen.values.allSatisfy(\.isEmpty))

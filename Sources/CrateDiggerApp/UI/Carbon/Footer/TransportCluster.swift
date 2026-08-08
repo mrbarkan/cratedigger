@@ -1,7 +1,6 @@
 import SwiftUI
 
 struct TransportCluster: View {
-    @Environment(\.carbon) private var theme
     @Environment(\.carbonGeometry) private var geometry
     @EnvironmentObject private var model: LibraryViewModel
 
@@ -32,21 +31,11 @@ struct TransportCluster: View {
         model.repeatMode == .one ? "repeat.1" : "repeat"
     }
 
-    /// Shuffle / repeat toggle (CrateDigger v6 `.tb.tog`) — orange icon + glow when on.
+    /// Shuffle / repeat toggle — the same silicone cap as the plain transport
+    /// keys, with the LED behind it lit while the mode is on.
     private func toggleButton(systemName: String, on: Bool, label: String, action: @escaping () -> Void) -> some View {
         Button(action: { ClickPlayer.shared.play(.key); action() }) {
-            ZStack {
-                ChromeChassis(theme: theme, cornerRadius: 12)
-                if on {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .strokeBorder(theme.orange.opacity(0.5), lineWidth: 1)
-                }
-                Image(systemName: systemName)
-                    .font(.system(size: 19, weight: .semibold))   // same size as the transport icons
-                    .foregroundStyle(on ? theme.orange : theme.ink3)
-            }
-            .frame(width: geometry.transportButtonSize, height: geometry.transportButtonSize)
-            .shadow(color: on ? theme.orange.opacity(0.4) : .clear, radius: 6)
+            cap(systemName: systemName, lit: on)
         }
         .buttonStyle(.carbonHover)
         .carbonTip(label)
@@ -55,17 +44,18 @@ struct TransportCluster: View {
 
     private func transportButton(systemName: String, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            ZStack {
-                ChromeChassis(theme: theme, cornerRadius: 12)
-
-                Image(systemName: systemName)
-                    .font(.system(size: 19, weight: .semibold))
-                    .foregroundStyle(theme.ink2)
-            }
-            .frame(width: geometry.transportButtonSize, height: geometry.transportButtonSize)
+            cap(systemName: systemName, lit: false)
         }
         .buttonStyle(.carbonHover)
         .carbonTip(label)
         .accessibilityLabel(label)
+    }
+
+    private func cap(systemName: String, lit: Bool) -> some View {
+        SiliconeCap(shape: RoundedRectangle(cornerRadius: 12, style: .continuous), lit: lit) {
+            Image(systemName: systemName)
+                .font(.system(size: 19, weight: .semibold))   // same size as the dome's ⏯
+        }
+        .frame(width: geometry.transportButtonSize, height: geometry.transportButtonSize)
     }
 }
