@@ -5,6 +5,8 @@ struct ArtistRow: View {
     @Environment(\.carbon) private var theme
     let artist: Artist
     let selected: Bool
+    /// Built by the view model so a drag inside a multi-selection carries all of it.
+    var dragPayload: String? = nil
     let isPlayingHere: Bool
     let onSelect: () -> Void
     let onPrimaryAction: () -> Void
@@ -27,6 +29,6 @@ struct ArtistRow: View {
                 .font(CarbonFont.mono(9.5))
                 .foregroundStyle(theme.rowMetaColor(selected: selected))
         }
-        .draggable("artist::" + artist.id)
+        .draggable(dragPayload ?? "artist::" + artist.id)
     }
 }

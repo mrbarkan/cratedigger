@@ -127,6 +127,7 @@ private struct ArtistColumn: View {
                 ArtistRow(
                     artist: artist,
                     selected: model.isArtistSelected(artist.id),
+                    dragPayload: model.dragPayload(forArtist: artist),
                     isPlayingHere: isPlayingArtist(artist),
                     onSelect: {
                         let m = NSEvent.modifierFlags
@@ -190,6 +191,7 @@ private struct AlbumColumn: View {
         AlbumRow(
             album: album,
             selected: model.isAlbumSelected(album.id),
+            dragPayload: model.dragPayload(forAlbum: album),
             isPlayingHere: isPlayingAlbum(album),
             onSelect: {
                 let m = NSEvent.modifierFlags
@@ -215,6 +217,7 @@ private struct AlbumColumn: View {
         AlbumRow(
             album: release,
             selected: model.isAlbumSelected(release.id),
+            dragPayload: model.dragPayload(forAlbum: release),
             isPlayingHere: isPlayingAlbum(release),
             onSelect: {
                 let m = NSEvent.modifierFlags
@@ -284,6 +287,7 @@ private struct TrackColumn: View {
                     TrackRow(
                         loaded: loaded,
                         selected: model.isTrackSelected(loaded.track.id),
+                        dragPayload: model.dragPayload(forTrack: loaded),
                         isPlaying: model.nowPlayingTrack?.track.id == loaded.track.id,
                         isOffline: model.isOffline(loaded),
                         isMissing: model.isMissing(loaded),

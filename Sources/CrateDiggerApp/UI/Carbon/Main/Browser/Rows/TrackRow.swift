@@ -5,6 +5,8 @@ struct TrackRow: View {
     @Environment(\.carbon) private var theme
     let loaded: LoadedTrack
     let selected: Bool
+    /// Built by the view model so a drag inside a multi-selection carries all of it.
+    var dragPayload: String? = nil
     let isPlaying: Bool
     var isOffline: Bool = false
     var isMissing: Bool = false
@@ -56,7 +58,7 @@ struct TrackRow: View {
         }
         // Dim tracks that aren't playable right now — offline drive or missing file.
         .opacity((isOffline || isMissing) && !selected ? 0.55 : 1)
-        .draggable("track::" + loaded.track.id.uuidString)
+        .draggable(dragPayload ?? "track::" + loaded.track.id.uuidString)
     }
 
     private var numberLabel: String {

@@ -3056,13 +3056,56 @@ final class LibraryViewModel: ObservableObject {
 
     // MARK: - Drag & Drop Handling
 
+    /// The payload a row hands to the drag session.
+    ///
+    /// SwiftUI's `.draggable` is per-view and knows nothing about the browser's
+    /// selection, so dragging with five tracks selected used to carry only the
+    /// row under the pointer. When the dragged row *is* part of a multi-selection,
+    /// the whole selection travels with it — Finder's behaviour, and what every
+    /// other library app does.
+    func dragPayload(forTrack loaded: LoadedTrack) -> String {
+        guard selectedTrackIDs.count > 1, selectedTrackIDs.contains(loaded.track.id) else {
+            return "track::" + loaded.track.id.uuidString
+        }
+        return "tracks::" + selectedTrackIDs.map(\.uuidString).joined(separator: ",")
+    }
+
+    func dragPayload(forAlbum album: Album) -> String {
+        guard selectedAlbumIDs.count > 1, selectedAlbumIDs.contains(album.id) else {
+            return "album::" + album.id
+        }
+        return "albums::" + selectedAlbumIDs.joined(separator: "\u{1}")   // ids can contain commas
+    }
+
+    func dragPayload(forArtist artist: Artist) -> String {
+        guard selectedArtistIDs.count > 1, selectedArtistIDs.contains(artist.id) else {
+            return "artist::" + artist.id
+        }
+        return "artists::" + selectedArtistIDs.joined(separator: "\u{1}")
+    }
+
     /// Resolve drag payloads to tracks. Each item is "track::<uuid>",
-    /// "album::<id>", or "artist::<id>". Album/artist drops expand to all their
-    /// tracks (in index order).
+    /// "album::<id>", or "artist::<id>" — or the plural form carrying a whole
+    /// multi-selection. Album/artist drops expand to all their tracks (in index
+    /// order).
     func tracksForDragItems(_ items: [String]) -> [LoadedTrack] {
         var tracks: [LoadedTrack] = []
         for item in items {
-            if item.hasPrefix("track::") {
+            if item.hasPrefix("tracks::") {
+                let ids = String(item.dropFirst("tracks::".count)).split(separator: ",")
+                let wanted = Set(ids.compactMap { UUID(uuidString: String($0)) })
+                // Index order, not selection order: a dropped batch should land
+                // in the order it was shown, not the order it was clicked.
+                tracks.append(contentsOf: index.allTracks.filter { wanted.contains($0.track.id) })
+            } else if item.hasPrefix("albums::") {
+                let ids = Set(String(item.dropFirst("albums::".count)).split(separator: "\u{1}").map(String.init))
+                tracks.append(contentsOf: index.artists.flatMap(\.albums)
+                    .filter { ids.contains($0.id) }.flatMap(\.tracks))
+            } else if item.hasPrefix("artists::") {
+                let ids = Set(String(item.dropFirst("artists::".count)).split(separator: "\u{1}").map(String.init))
+                tracks.append(contentsOf: index.artists.filter { ids.contains($0.id) }
+                    .flatMap { $0.albums.flatMap(\.tracks) })
+            } else if item.hasPrefix("track::") {
                 let uuidString = String(item.dropFirst("track::".count))
                 if let uuid = UUID(uuidString: uuidString),
                    let track = index.allTracks.first(where: { $0.track.id == uuid }) {

@@ -5,6 +5,8 @@ struct AlbumRow: View {
     @Environment(\.carbon) private var theme
     let album: Album
     let selected: Bool
+    /// Built by the view model so a drag inside a multi-selection carries all of it.
+    var dragPayload: String? = nil
     let isPlayingHere: Bool
     let onSelect: () -> Void
 
@@ -55,7 +57,7 @@ struct AlbumRow: View {
                     .foregroundStyle(theme.rowMetaColor(selected: selected))
             }
         }
-        .draggable("album::" + album.id)
+        .draggable(dragPayload ?? "album::" + album.id)
     }
 
     private var yearLabel: String {
