@@ -389,9 +389,12 @@ extension LibraryViewModel {
         LibraryViewModel.tagWriteQueue.async { [weak self] in
             var written: [LoadedTrack] = []
             var failures: [String] = []
+            var droppedArtwork = 0
             for (i, item) in planned.enumerated() {
                 do {
-                    try editor.writeMetadata(to: item.sourceURL, metadata: item.updated.metadata)
+                    if try editor.writeMetadata(to: item.sourceURL, metadata: item.updated.metadata) {
+                        droppedArtwork += 1
+                    }
                     written.append(item.updated)
                 } catch {
                     failures.append("\(item.sourceURL.lastPathComponent): \(error.localizedDescription)")
@@ -403,6 +406,7 @@ extension LibraryViewModel {
             }
             DispatchQueue.main.async {
                 self?.finishBatchTagWrite(written: written, failures: failures,
+                                          droppedArtwork: droppedArtwork,
                                           organiseFolder: organiseFolder,
                                           organiseByAlbumArtist: organiseByAlbumArtist)
             }
@@ -412,6 +416,7 @@ extension LibraryViewModel {
     private func finishBatchTagWrite(
         written: [LoadedTrack],
         failures: [String],
+        droppedArtwork: Int = 0,
         organiseFolder: URL?,
         organiseByAlbumArtist: Bool
     ) {
@@ -419,9 +424,17 @@ extension LibraryViewModel {
             if !tracks.isEmpty { updateTrackURLsInIndex(tracks) }
             showOLEDNotice(allFailures.isEmpty ? "TAGS SAVED" : "SAVED WITH ERRORS")
             if !allFailures.isEmpty {
-                let shown = allFailures.prefix(8).joined(separator: "\n")
-                appAlert = .error(title: "Some Tags Didn't Save",
-                                  message: allFailures.count > 8 ? shown + "\n…" : shown)
+                var shown = allFailures.prefix(8).joined(separator: "\n")
+                if allFailures.count > 8 { shown += "\n…and \(allFailures.count - 8) more" }
+                appAlert = .error(title: "Some Tags Didn't Save", message: shown)
+            } else if droppedArtwork > 0 {
+                // Never change a file this way in silence: the cover was already
+                // unreadable, but it *was* removed, so say so.
+                appAlert = .error(
+                    title: "Tags Saved",
+                    message: droppedArtwork == 1
+                        ? "One file had a damaged embedded cover that no player could read. Its tags were saved and the broken cover removed — re-add artwork from the ART tab."
+                        : "\(droppedArtwork) files had damaged embedded covers that no player could read. Their tags were saved and the broken covers removed — re-add artwork from the ART tab.")
             }
         }
 

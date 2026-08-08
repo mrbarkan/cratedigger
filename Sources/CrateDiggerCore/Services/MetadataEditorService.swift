@@ -26,7 +26,27 @@ public final class MetadataEditorService: @unchecked Sendable {
         }
     }
 
-    public func writeMetadata(to fileURL: URL, metadata: ConversionMetadata) throws {
+    /// Writes `metadata` into the file in place.
+    ///
+    /// Returns `true` if the file's embedded cover had to be dropped to save the
+    /// tags at all — callers should say so rather than change the file quietly.
+    @discardableResult
+    public func writeMetadata(to fileURL: URL, metadata: ConversionMetadata) throws -> Bool {
+        do {
+            try writeMetadata(to: fileURL, metadata: metadata, keepEmbeddedArtwork: true)
+            return false
+        } catch {
+            // A file whose embedded cover is malformed — JPEG bytes stored under
+            // the PNG codec is the common one — can't be remuxed with its picture
+            // stream, and the whole tag write fails. The cover is already broken,
+            // so rewriting the tags without it beats refusing to save at all.
+            AppLog.library.warning("Tag write failed with embedded artwork; retrying without it: \(fileURL.lastPathComponent, privacy: .public)")
+            try writeMetadata(to: fileURL, metadata: metadata, keepEmbeddedArtwork: false)
+            return true
+        }
+    }
+
+    private func writeMetadata(to fileURL: URL, metadata: ConversionMetadata, keepEmbeddedArtwork: Bool) throws {
         let tempURL = fileURL.deletingLastPathComponent()
             .appendingPathComponent("cratedigger-edit-\(UUID().uuidString)")
             .appendingPathExtension(fileURL.pathExtension)
@@ -38,7 +58,12 @@ public final class MetadataEditorService: @unchecked Sendable {
             "-i", fileURL.path
         ]
 
-        // If format is MP4/M4A, ffmpeg sometimes needs special tags, but standard metadata keys work well.
+        // Map explicitly. Left to itself ffmpeg picks the "best" video stream
+        // first, which puts an MP3's attached cover ahead of the audio and the
+        // muxer rejects the result ("dimensions not set"). `0:v?` is optional, so
+        // files with no cover still work. Dispositions come across with -c copy.
+        arguments.append(contentsOf: ["-map", "0:a"])
+        if keepEmbeddedArtwork { arguments.append(contentsOf: ["-map", "0:v?"]) }
         arguments.append(contentsOf: ["-c", "copy", "-map_metadata", "0"])
 
         func add(_ key: String, _ value: String?) {
@@ -94,8 +119,8 @@ public final class MetadataEditorService: @unchecked Sendable {
         guard output.terminationStatus == 0 else {
             // Clean up temp file if created
             try? fileManager.removeItem(at: tempURL)
-            let message = output.standardError.isEmpty ? output.standardOutput : output.standardError
-            throw NSError(domain: "MetadataEditorService", code: Int(output.terminationStatus), userInfo: [NSLocalizedDescriptionKey: "ffmpeg failed: \(message)"])
+            throw NSError(domain: "MetadataEditorService", code: Int(output.terminationStatus),
+                          userInfo: [NSLocalizedDescriptionKey: Self.failureReason(output)])
         }
 
         // Replace original file with temporary file
@@ -130,11 +155,35 @@ public final class MetadataEditorService: @unchecked Sendable {
         let output = try commandRunner.run(executableURL: ffmpegExecutableURL, arguments: arguments)
         guard output.terminationStatus == 0 else {
             try? fileManager.removeItem(at: tempURL)
-            let message = output.standardError.isEmpty ? output.standardOutput : output.standardError
-            throw NSError(domain: "MetadataEditorService", code: Int(output.terminationStatus), userInfo: [NSLocalizedDescriptionKey: "ffmpeg failed to embed artwork: \(message)"])
+            throw NSError(domain: "MetadataEditorService", code: Int(output.terminationStatus),
+                          userInfo: [NSLocalizedDescriptionKey: "Couldn't embed the artwork — " + Self.failureReason(output)])
         }
 
         var resultingURL: NSURL?
         try fileManager.replaceItem(at: fileURL, withItemAt: tempURL, backupItemName: nil, options: [], resultingItemURL: &resultingURL)
+    }
+
+    /// One readable sentence out of an ffmpeg failure.
+    ///
+    /// ffmpeg dumps its full per-stream analysis before it fails — hundreds of
+    /// lines. Handing that straight to `NSLocalizedDescriptionKey` put the entire
+    /// log into an alert, one copy per failed file, and the sheet ran off the
+    /// bottom of the screen. Keep the line that actually says what went wrong.
+    static func failureReason(_ output: CommandOutput) -> String {
+        let log = output.standardError.isEmpty ? output.standardOutput : output.standardError
+        let lines = log
+            .split(separator: "\n", omittingEmptySubsequences: true)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+
+        // "Conversion failed!" is ffmpeg's epitaph, never its diagnosis.
+        let markers = ["Error", "error", "Invalid", "Could not", "Unable", "Permission denied",
+                       "No such file", "Failed", "failed"]
+        let reason = lines.last { line in
+            line != "Conversion failed!" && markers.contains(where: { line.contains($0) })
+        } ?? lines.last
+
+        guard let reason, !reason.isEmpty else { return "ffmpeg failed with no output." }
+        return reason.count > 200 ? String(reason.prefix(200)) + "…" : reason
     }
 }
