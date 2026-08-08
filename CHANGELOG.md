@@ -4,6 +4,35 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 1.3.1 (56) — 2026-08-08
+
+Fixes from the first day of 1.3.0, plus a browser that can finally show you a
+playlist as a playlist.
+
+### Added
+- **The Track view is a table.** Pick your columns — track no, title, time,
+  artist, album artist, album, genre, year, format, bitrate, sample rate, disc —
+  by right-clicking the header bar. Click a header to sort, click again to
+  reverse. Your choice is remembered.
+- **Playlists open as a list, in their order.** They were being shown as
+  Artist · Album · Track, which says nothing useful about a playlist, and the
+  M3U's order was thrown away on load. The leading column is now the playlist
+  position, and **you can drag rows to rearrange them** — the file is rewritten
+  as you go. Sorting by a column is a view of the playlist rather than a change
+  to it, so the # header takes you back to its own order.
+
+### Fixed
+- **Dragging several tracks dragged only one.** A multi-selection now travels
+  intact, albums and artists too.
+- **Fixing tags gave up on files with a damaged embedded cover.** A cover stored
+  under the wrong image format — common enough to hit a whole album at once —
+  made the tag write fail and the file kept its old tags. Those files now save,
+  with the unreadable cover removed and a note telling you which ones so you can
+  re-add artwork from the ART tab.
+- **A failed tag write no longer fills the screen.** The error dialog was
+  printing FFmpeg's entire analysis of every file that failed. It says what went
+  wrong now, in one line.
+
 ## 1.3.0 (55) — 2026-08-08
 
 A pass over the hardware: the transport now looks and feels like moulded
