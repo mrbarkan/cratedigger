@@ -4,7 +4,7 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
-## 1.2.34 (55) — 2026-08-08
+## 1.3.0 (55) — 2026-08-08
 
 A pass over the hardware: the transport now looks and feels like moulded
 silicone, the interface keys went flat, and the DISC cut editor works.
