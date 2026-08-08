@@ -19,9 +19,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.2.33</string>
+	<string>1.2.34</string>
 	<key>CFBundleVersion</key>
-	<string>54</string>
+	<string>55</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.music</string>
 	<key>LSApplicationSupportsSecureRestorableState</key>

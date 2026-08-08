@@ -4,6 +4,50 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 1.2.34 (55) — 2026-08-08
+
+A pass over the hardware: the transport now looks and feels like moulded
+silicone, the interface keys went flat, and the DISC cut editor works.
+
+### Added
+- **Artwork search shows the real size of every image.** Tiles that used to
+  claim "HD" on the strength of a metadata hint now report the original's
+  actual pixels — HD above 1000px, the exact dimensions otherwise, and always
+  in the tooltip. The Cover Art Archive advertises a 1200px tier even for 600px
+  scans, so the old badge was routinely wrong.
+
+### Changed
+- **The transport is silicone.** Play/pause and the seven keys around it are
+  moulded caps with the symbol printed under the surface — matte, no highlight
+  ring. Playing lights an LED behind the cap that blooms from the middle, at
+  about a third of the old glow. The mini player uses the same caps.
+- **Interface buttons went flat** — one fill, a hairline edge, no gradient or
+  shadow — and every key in the app now draws its label at the same size and
+  tracking.
+- **The EQ, spectrum and VU meters run the VOLUME fader's colours**, so the
+  whole footer lights from one palette and follows the theme's accents.
+- **VOLUME reveals a fixed colour ramp** as you slide instead of squeezing the
+  gradient into the filled part, so a given colour always means the same level.
+  POSITION is a single accent.
+- **ADD TO CRATE lights its label** instead of turning the whole key into a lamp.
+- The floating artwork viewer's controls sit on a matte slab, so they no longer
+  disappear against light artwork.
+
+### Fixed
+- **The DISC cut editor responded to nothing.** Dragging the disc moved the
+  whole window, and neither the drag nor the rotate/zoom sliders changed what
+  was on screen. All three causes are fixed; the ADJUST CUT button also moved
+  down out of the artwork and appears on hover.
+- **The expand button in artwork search selected the image instead of previewing
+  it.**
+- **The browser highlighted rows you hadn't clicked** after switching sources — a
+  multi-artist selection from the previous crate was never cleared.
+- **The mini player stayed dark in the light theme.**
+- **Radio could wedge under load.** Every yt-dlp call blocked a thread in the
+  pool the whole app schedules on. Failures now also report yt-dlp's real
+  reason instead of a generic message.
+- Artwork toolbar buttons no longer truncate to "ADD ART…" / "SEARCH O…".
+
 ## 1.2.33 (54) — 2026-08-05
 
 Housekeeping for the library index — the file that remembers every track you've
