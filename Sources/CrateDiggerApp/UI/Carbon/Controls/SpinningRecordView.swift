@@ -49,6 +49,11 @@ struct SpinningRecordView: View {
     @State private var isAdjustingCut = false
     /// Live crop while dragging; committed to the manifest on release.
     @State private var draftCrop: ArtworkCrop = .identity
+    /// Framing as it stood when the current pan began; nil when not panning.
+    @State private var dragBaseCrop: ArtworkCrop? = nil
+    /// Pointer is over the pane — the cut controls stay hidden until then, so
+    /// they don't sit on the artwork the rest of the time.
+    @State private var hovering = false
 
     // Pre-rendered CD faces. The 60fps animation only rotates/crossfades these
     // cached bitmaps; the expensive gradients + motion smear are rasterized
@@ -76,13 +81,23 @@ struct SpinningRecordView: View {
                         // just a textured quad being rotated + an opacity
                         // crossfade, so it can hold 60fps without pegging the CPU.
                         ZStack {
-                            cdFaceImage(sharpFace, size: size)
+                            if isAdjustingCut {
+                                // Live view while framing. The cached faces bake
+                                // `effectiveCrop` in at render time and only
+                                // rebuild on `faceToken`, so a drag or a slider
+                                // moved the state and nothing on screen — the
+                                // editor looked dead. The disc is stopped during
+                                // adjustment, so there is no cache to earn here.
+                                cdFaceContent(size: size)
+                            } else {
+                                cdFaceImage(sharpFace, size: size)
 
-                            // Motion blur: a pre-smeared copy faded in by speed.
-                            // No per-frame blur or offscreen rasterization.
-                            if animator.currentSpeed > 0 {
-                                cdFaceImage(blurredFace, size: size)
-                                    .opacity(blurOpacity(for: animator.currentSpeed))
+                                // Motion blur: a pre-smeared copy faded in by speed.
+                                // No per-frame blur or offscreen rasterization.
+                                if animator.currentSpeed > 0 {
+                                    cdFaceImage(blurredFace, size: size)
+                                        .opacity(blurOpacity(for: animator.currentSpeed))
+                                }
                             }
                         }
                         .rotationEffect(.degrees(isAdjustingCut ? 0 : animator.rotationAngle))
@@ -99,6 +114,11 @@ struct SpinningRecordView: View {
                     }
                     .onAppear { renderCDFaces() }
                     .onChange(of: faceToken) { _ in renderCDFaces() }
+                    // Leaving the editor bakes the committed framing back into
+                    // the cached faces the spinning disc uses.
+                    .onChange(of: isAdjustingCut) { editing in
+                        if !editing { renderCDFaces() }
+                    }
                 }
             }
             .frame(width: size, height: size)
@@ -116,7 +136,18 @@ struct SpinningRecordView: View {
             )
         }
         .aspectRatio(1, contentMode: .fit)
+        // When the disc is editable it takes the whole pane and centres itself,
+        // so the cut controls can hang off the bottom of the *pane* rather than
+        // sitting on the label. Non-adjustable uses (mini player) stay square.
+        .frame(maxWidth: fillsPane, maxHeight: fillsPane)
+        // The window is movable by its background, and a plain SwiftUI layer
+        // reports `mouseDownCanMoveWindow = true` — so AppKit claimed every drag
+        // here before SwiftUI saw it: dragging the disc moved the whole window
+        // and the cut sliders never received a thing. Same guard the faders use.
+        // Only when adjustable: in the mini player the disc *is* a drag handle.
+        .background { if adjustable { WindowDragGuard() } }
         .overlay(alignment: .bottom) { cutControls }
+        .onHover { hovering = $0 }
         .onAppear {
             updateDiscData()
             animator.start(model: model)
@@ -587,15 +618,23 @@ extension SpinningRecordView {
     /// The crop being shown: the live draft while dragging, the stored one otherwise.
     var effectiveCrop: ArtworkCrop { isAdjustingCut ? draftCrop : discCrop }
 
-    /// ADJUST button, and the rotate/zoom strip once it is open.
+    /// `.infinity` when the disc should fill its pane, nil to stay square.
+    var fillsPane: CGFloat? { adjustable ? .infinity : nil }
+
+    /// ADJUST button, and the rotate/zoom strip once it is open. Fades in on
+    /// hover; stays up while the editor is open so it can't vanish mid-edit.
     @ViewBuilder
     var cutControls: some View {
         if adjustable, discImage != nil, discImageFile != nil {
+            let shown = hovering || isAdjustingCut
             VStack(spacing: 6) {
                 if isAdjustingCut { cutStrip }
                 cutToggle
             }
-            .padding(.bottom, 4)
+            .padding(.bottom, 10)
+            .opacity(shown ? 1 : 0)
+            .allowsHitTesting(shown)
+            .animation(.easeInOut(duration: 0.15), value: shown)
         }
     }
 
@@ -685,15 +724,22 @@ extension SpinningRecordView {
     func cutDragGesture(frameSize: CGFloat) -> some Gesture {
         DragGesture()
             .onChanged { drag in
-                draftCrop = discCrop.nudged(
+                // `translation` is cumulative from where the drag began, so the
+                // pan has to apply to the framing as it stood at that moment —
+                // not to `discCrop`, which is only written on drag *end* and so
+                // would silently throw away any slider edit made since.
+                let base = dragBaseCrop ?? draftCrop
+                if dragBaseCrop == nil { dragBaseCrop = base }
+                draftCrop = base.nudged(
                     byX: Double(drag.translation.width),
                     y: Double(drag.translation.height),
                     in: Double(frameSize)
                 )
-                // Keep the slider edits made before this drag started.
-                draftCrop.rotationDegrees = ArtworkCrop.normalizedRotation(draftCrop.rotationDegrees)
             }
-            .onEnded { _ in discCrop = draftCrop }
+            .onEnded { _ in
+                dragBaseCrop = nil
+                discCrop = draftCrop
+            }
     }
 
     /// Write the framing into the album's manifest and refresh everything showing it.
