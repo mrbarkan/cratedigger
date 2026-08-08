@@ -1,5 +1,6 @@
 #if canImport(XCTest)
 import Foundation
+import AppKit
 import XCTest
 @testable import CrateDiggerCore
 
@@ -97,6 +98,27 @@ final class RemoteArtworkServiceTests: XCTestCase {
         XCTAssertEqual(MockURLProtocol.requestCount, 1)
     }
 
+    /// The HD badge used to trust Cover Art Archive's "1200" thumbnail tier,
+    /// which CAA lists even for 600px originals. `probeDimensions` reads the
+    /// real size out of the image header, so it must work on a *truncated*
+    /// file — that's all a 64 KB range request returns.
+    func testProbeDimensionsReadsSizeFromATruncatedHeader() async throws {
+        let bitmap = try XCTUnwrap(NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: 1425, pixelsHigh: 900,
+            bitsPerSample: 8, samplesPerPixel: 3, hasAlpha: false, isPlanar: false,
+            colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+        let jpeg = try XCTUnwrap(bitmap.representation(using: .jpeg, properties: [:]))
+
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("probe-\(UUID().uuidString).jpg")
+        try jpeg.prefix(65536).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let size = await RemoteArtworkService().probeDimensions(of: url)
+        XCTAssertEqual(size?.width, 1425)
+        XCTAssertEqual(size?.height, 900)
+    }
+
     func testServerErrorIsNotCached() async {
         respond(status: 503, data: nil)
         _ = await service.coverArtImageCount(releaseMBID: "mbid-flaky")
@@ -105,7 +127,6 @@ final class RemoteArtworkServiceTests: XCTestCase {
         XCTAssertEqual(count, 1, "a 503 must not be remembered as 'no images'")
     }
 }
-#endif
 
 final class ArtworkSearchLoosenessTests: XCTestCase {
     func testStrippedEditionTitleDropsParentheticalAndBracketGroups() {
@@ -204,3 +225,4 @@ final class DeezerArtworkTests: XCTestCase {
         }
     }
 }
+#endif

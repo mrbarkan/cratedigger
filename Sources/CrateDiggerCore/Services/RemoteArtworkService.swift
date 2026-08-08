@@ -1,6 +1,7 @@
 import AppKit
 import CryptoKit
 import Foundation
+import ImageIO
 
 public actor RemoteArtworkService {
     public enum FetchError: Error, LocalizedError {
@@ -34,6 +35,10 @@ public actor RemoteArtworkService {
     /// re-requests the same small JSON — cache it once per session so neither
     /// path refetches (404 "no images" results included).
     private var caaImagesByRelease: [String: [CAABookletImage]] = [:]
+
+    /// Image URL → true pixel size, from `probeDimensions`. Same reasoning as
+    /// the list cache: reopening the sheet shouldn't re-probe every image.
+    private var dimensionsByURL: [URL: ArtworkDimensions] = [:]
 
     public init(session: URLSession? = nil) {
         if let session {
@@ -432,19 +437,15 @@ public struct CAABookletImage: Identifiable, Codable, Sendable {
     public let comment: String
     public let front: Bool
     public let back: Bool
-    /// A 1200px tier is available from Cover Art Archive — a coarse "this one has
-    /// a high-resolution original" hint (CAA doesn't return pixel dimensions here).
-    public let hasHiRes: Bool
 
     public init(imageURL: URL, thumbnailURL: URL, types: [String], comment: String,
-                front: Bool, back: Bool, hasHiRes: Bool = false) {
+                front: Bool, back: Bool) {
         self.imageURL = imageURL
         self.thumbnailURL = thumbnailURL
         self.types = types
         self.comment = comment
         self.front = front
         self.back = back
-        self.hasHiRes = hasHiRes
     }
 }
 
@@ -617,13 +618,11 @@ public extension RemoteArtworkService {
             let small: String?
             let size250: String?
             let size500: String?
-            let size1200: String?
-            
+
             enum CodingKeys: String, CodingKey {
                 case large, small
                 case size250 = "250"
                 case size500 = "500"
-                case size1200 = "1200"
             }
         }
         
@@ -645,12 +644,39 @@ public extension RemoteArtworkService {
                 types: img.types ?? [],
                 comment: img.comment ?? "",
                 front: img.front ?? false,
-                back: img.back ?? false,
-                hasHiRes: img.thumbnails?.size1200 != nil
+                back: img.back ?? false
             )
         }
         caaImagesByRelease[releaseMBID] = images
         return images
+    }
+
+    /// True pixel size of a remote image, read from its header alone.
+    ///
+    /// Cover Art Archive lists a "1200" thumbnail tier for every image it has
+    /// re-derived, *including* ones whose original is 600px — so the JSON can't
+    /// be used as a resolution hint. Range-request the first 64 KB instead and
+    /// let ImageIO parse the JPEG SOF / PNG IHDR marker, which lives up front.
+    /// Returns nil if the server ignores the range or the header doesn't parse;
+    /// callers just show no size rather than a wrong one.
+    func probeDimensions(of url: URL) async -> ArtworkDimensions? {
+        if let cached = dimensionsByURL[url] { return cached }
+
+        var request = URLRequest(url: url)
+        request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue("bytes=0-65535", forHTTPHeaderField: "Range")
+        guard let (data, _) = try? await session.data(for: request), !data.isEmpty else { return nil }
+
+        let source = CGImageSourceCreateIncremental(nil)
+        CGImageSourceUpdateData(source, data as CFData, false)
+        guard let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = props[kCGImagePropertyPixelWidth] as? Int,
+              let height = props[kCGImagePropertyPixelHeight] as? Int,
+              width > 0, height > 0 else { return nil }
+
+        let dimensions = ArtworkDimensions(width: width, height: height)
+        dimensionsByURL[url] = dimensions
+        return dimensions
     }
 }
 

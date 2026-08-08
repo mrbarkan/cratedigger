@@ -73,6 +73,8 @@ struct ArtworkSearchSheetView: View {
     @State private var selectedReleaseID: String? = nil
     @State private var selectedReleaseTitle: String = ""
     @State private var caaImages: [CAABookletImage] = []
+    /// Image id → the original's true pixel size, filled in as probes land.
+    @State private var imageDimensions: [String: ArtworkDimensions] = [:]
     @State private var artError: String? = nil
 
     // Image Selection state
@@ -220,7 +222,6 @@ struct ArtworkSearchSheetView: View {
                         Image(systemName: "chevron.left")
                             .font(.system(size: 8, weight: .bold))
                         Text("BACK TO RELEASES")
-                            .font(CarbonFont.mono(9, weight: .bold))
                     }
                 }
                 .frame(width: 130, height: 18)
@@ -263,7 +264,6 @@ struct ArtworkSearchSheetView: View {
             
             KeyButton(style: .selected, action: executeSearch) {
                 Text("SEARCH")
-                    .font(CarbonFont.mono(9.5, weight: .bold))
             }
             .frame(width: 80, height: 22)
         }
@@ -588,7 +588,6 @@ struct ArtworkSearchSheetView: View {
                 loadReleaseArtwork(release)
             }) {
                 Text("GET ARTWORK")
-                    .font(CarbonFont.mono(8.5, weight: .bold))
             }
             .frame(width: 96, height: 22)
         }
@@ -698,7 +697,7 @@ struct ArtworkSearchSheetView: View {
     private func artworkCell(_ img: CAABookletImage) -> some View {
         let isSelected = selectedImages.contains(img.id)
         return VStack(spacing: 6) {
-            ZStack(alignment: .topLeading) {
+            Button(action: { handleImageTap(img) }) {
                 AsyncImage(url: img.thumbnailURL) { phase in
                     switch phase {
                     case .success(let image):
@@ -730,50 +729,52 @@ struct ArtworkSearchSheetView: View {
                 )
                 .shadow(color: Color.black.opacity(0.1), radius: 3, y: 1)
                 .overlay(alignment: .bottomTrailing) {
-                    if img.hasHiRes {
-                        Text("HD")
+                    if let size = imageDimensions[img.id] {
+                        let isHiRes = min(size.width, size.height) >= 1000
+                        Text(isHiRes ? "HD" : "\(size.width)×\(size.height)")
                             .font(CarbonFont.mono(7.5, weight: .bold))
                             .tracking(0.5)
                             .foregroundColor(.white)
                             .padding(.horizontal, 4)
                             .padding(.vertical, 1.5)
-                            .background(Capsule().fill(theme.cyan))
+                            .background(Capsule().fill(isHiRes ? theme.cyan : Color.black.opacity(0.55)))
                             .padding(5)
-                            .carbonTip("A 1200px+ original is available")
+                            .carbonTip("Original is \(size.width)×\(size.height) pixels")
                     }
                 }
-                .onTapGesture {
-                    handleImageTap(img)
-                }
-
-                Button(action: {
-                    handleImageTap(img)
-                }) {
+            }
+            .buttonStyle(.plain)
+            // The two corner icons are *overlays* on the select button, each with
+            // its hit region clipped to the circle you can see. They used to be
+            // ZStack siblings, one of them stretched to a full 130×130 frame — so
+            // a click in the corner resolved against the tile's own tap target
+            // instead of the icon, and expand only ever toggled selection.
+            .overlay(alignment: .topLeading) {
+                Button(action: { handleImageTap(img) }) {
                     Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                         .font(.system(size: 16))
                         .foregroundColor(isSelected ? theme.orange : .white)
                         .background(Circle().fill(Color.black.opacity(0.4)))
                         .clipShape(Circle())
+                        .contentShape(Circle())
                 }
                 .buttonStyle(.carbonHover)
                 .padding(6)
-
-                // Expand-to-preview is a ZStack sibling (NOT inside the image's
-                // .onTapGesture subtree, which otherwise steals the click and only
-                // toggles selection). Positioned top-right to mirror the checkmark.
+            }
+            .overlay(alignment: .topTrailing) {
                 Button(action: { previewImage = img }) {
                     Image(systemName: "arrow.up.left.and.arrow.down.right")
                         .font(.system(size: 10, weight: .bold))
                         .foregroundColor(.white)
                         .padding(5)
                         .background(Circle().fill(Color.black.opacity(0.45)))
+                        .contentShape(Circle())
                 }
                 .buttonStyle(.carbonHover)
                 .padding(6)
-                .frame(width: 130, height: 130, alignment: .topTrailing)
                 .carbonTip("Preview full size")
             }
-            
+
             // Classification badge
             if !img.types.isEmpty {
                 Text(img.types.joined(separator: ", ").uppercased())
@@ -903,8 +904,6 @@ struct ArtworkSearchSheetView: View {
                 } else {
                     KeyButton(style: downloads.isEmpty ? .disabled : .selected, action: executeDownload) {
                         Text("IMPORT \(downloads.count) IMAGES")
-                            .font(CarbonFont.mono(9.5, weight: .bold))
-                            .tracking(1.5)
                     }
                     .frame(width: 140, height: geometry.keyHeight)
                 }
@@ -956,20 +955,31 @@ struct ArtworkSearchSheetView: View {
         selectedReleaseTitle = release.title + (release.disambiguation.map { " (\($0))" } ?? "")
         loadingArt = true
         caaImages = []
+        imageDimensions = [:]
         artError = nil
         selectedImages = []
         imageRoles = [:]
-        
+
         Task {
             do {
-                let images = try await model.remoteArtworkService.fetchCoverArtArchiveImages(
-                    releaseMBID: release.id
-                )
+                let service = model.remoteArtworkService
+                let images = try await service.fetchCoverArtArchiveImages(releaseMBID: release.id)
                 await MainActor.run {
                     self.caaImages = images
                     self.loadingArt = false
                     if images.isEmpty {
                         self.artError = "No images are available in the Cover Art Archive for this release."
+                    }
+                }
+                // Header-only probes, in parallel — the grid fills its size
+                // badges in as they land.
+                await withTaskGroup(of: (String, ArtworkDimensions?).self) { group in
+                    for img in images {
+                        group.addTask { (img.id, await service.probeDimensions(of: img.imageURL)) }
+                    }
+                    for await (id, dimensions) in group {
+                        guard let dimensions else { continue }
+                        await MainActor.run { self.imageDimensions[id] = dimensions }
                     }
                 }
             } catch {
