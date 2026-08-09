@@ -1283,8 +1283,9 @@ final class LibraryViewModel: ObservableObject {
         // An explicit import jumps the OLED to Scan. Skip on launch restore so
         // we don't override the user's saved view every time the app opens.
         if !isRestore { oledView = .scan }
-        playback.load(queue: [], startIndex: 0, autoPlay: false)
-        playbackQueue = []
+        // Playback is NOT touched: a dig merges into the Prep Crate, it doesn't
+        // replace the library, and the queue holds tracks (not index positions),
+        // so whatever is spinning keeps spinning while the scan runs.
 
         scanTask = Task { [weak self] in
             guard let self else { return }
@@ -2837,15 +2838,12 @@ final class LibraryViewModel: ObservableObject {
                     )
                     return
                 }
-                self.ingestArtwork(from: collected)
-                self.prepCrateTracks = LibraryViewModel.deduplicate(
-                    tracks: self.prepCrateTracks + collected
-                )
+                let staged = self.stageIntoPrepCrate(collected)
                 self.selectSource(.prepCrate)
                 self.scanProgress = ScanProgress(
                     folderName: nil,
-                    filesProbed: collected.count,
-                    totalCandidates: collected.count,
+                    filesProbed: staged,
+                    totalCandidates: staged,
                     isRunning: false
                 )
                 self.scanForCleanup()
@@ -2859,21 +2857,38 @@ final class LibraryViewModel: ObservableObject {
             return
         }
 
-        // Newly loaded folders MERGE into the Prep Crate — like a Finder drop,
-        // a dig never replaces what's already staged. "Clear Prep Crate" is the
-        // explicit way to empty it.
-        ingestArtwork(from: tracks)
-        prepCrateTracks = LibraryViewModel.deduplicate(tracks: prepCrateTracks + tracks)
+        let staged = stageIntoPrepCrate(tracks)
         selectSource(.prepCrate)
-        
+
         // Show a brief success alert in OLED display
         scanProgress = ScanProgress(
             folderName: nil,
-            filesProbed: tracks.count,
-            totalCandidates: tracks.count,
+            filesProbed: staged,
+            totalCandidates: staged,
             isRunning: false
         )
         scanForCleanup()
+    }
+
+    /// The one way scanned tracks enter the Prep Crate — a dig, a launch restore
+    /// or a Finder drop. Merges (never replaces; "Clear Prep Crate" is the explicit
+    /// empty) and skips anything already filed in a crate: staging holds the
+    /// records you haven't put away yet, so re-digging a folder — which is exactly
+    /// what launch restore does — must not hand back the albums you already filed.
+    /// Returns how many tracks actually landed.
+    ///
+    /// ponytail: matched by file path. With copy-on-import the filed copy sits at
+    /// a new path, so an original left behind can still re-stage; committing it
+    /// again is harmless (the organiser skips identical content).
+    @discardableResult
+    private func stageIntoPrepCrate(_ tracks: [LoadedTrack]) -> Int {
+        var filed = Set<String>()
+        for crate in availableCrates { filed.formUnion(crateMembership(name: crate)) }
+        let unfiled = tracks.filter { !filed.contains(TrackStore.key(for: $0.track.fileURL)) }
+        ingestArtwork(from: unfiled)
+        let before = prepCrateTracks.count
+        prepCrateTracks = LibraryViewModel.deduplicate(tracks: prepCrateTracks + unfiled)
+        return prepCrateTracks.count - before
     }
 
     /// Empty the Prep Crate — including the saved dig-folder bookmarks, or
@@ -3217,7 +3232,8 @@ final class LibraryViewModel: ObservableObject {
         // from All Records) is a reference-only move: the files are already indexed,
         // so a WAV you converted or an SFX you're auditioning isn't duplicated.
         let fromPrepCrate = { if case .prepCrate = currentSource { return true } else { return false } }()
-        importTracksIntoCrate(tracksToAdd, crateName: crateName, treatAsImport: fromPrepCrate)
+        importTracksIntoCrate(tracksToAdd, crateName: crateName,
+                              treatAsImport: fromPrepCrate, fromPrepCrate: fromPrepCrate)
     }
 
     /// Append dragged tracks/albums/artists to an M3U playlist, skipping paths
@@ -3525,7 +3541,8 @@ final class LibraryViewModel: ObservableObject {
                 self.scanProgress = .idle
                 // Files dropped from Finder are genuinely new to the app, so this is
                 // a real import — honor copy-on-import.
-                self.importTracksIntoCrate(deduplicated, crateName: crateName, treatAsImport: true)
+                self.importTracksIntoCrate(deduplicated, crateName: crateName,
+                                           treatAsImport: true, fromPrepCrate: false)
             }
         }
     }
@@ -3533,7 +3550,11 @@ final class LibraryViewModel: ObservableObject {
     /// - Parameter treatAsImport: whether these tracks are *entering* the library
     ///   (Prep-Crate commit or a fresh Finder drop). Only then does copy-on-import
     ///   apply; reference-only crate moves pass `false` so nothing is duplicated.
-    private func importTracksIntoCrate(_ tracks: [LoadedTrack], crateName: String, treatAsImport: Bool) {
+    /// - Parameter fromPrepCrate: whether these tracks are being filed *out of*
+    ///   staging — which decides both the staging cleanup and where we land after.
+    ///   A Finder drop straight onto a crate is an import but not a prep commit.
+    private func importTracksIntoCrate(_ tracks: [LoadedTrack], crateName: String,
+                                       treatAsImport: Bool, fromPrepCrate: Bool) {
         beginImportStatus(count: tracks.count, crateName: crateName)
         let copyEnabled = prefs.copyOnImport && treatAsImport
         let libraryFolderURL = managedLibraryFolderURL
@@ -3563,9 +3584,11 @@ final class LibraryViewModel: ObservableObject {
                     }
                     
                     await MainActor.run {
-                        if self.appendTracksToCrateFile(updatedTracks, crateName: crateName) {
+                        if self.appendTracksToCrateFile(updatedTracks, crateName: crateName), fromPrepCrate {
                             self.removeCommittedFromPrepCrate(tracks)
                         }
+                        self.revealAfterCommit(updatedTracks, crateName: crateName,
+                                               fromPrepCrate: fromPrepCrate)
                         self.finishImportStatus(count: tracks.count, crateName: crateName)
                     }
                 } catch {
@@ -3577,18 +3600,19 @@ final class LibraryViewModel: ObservableObject {
             }
         } else {
             // Index files in place
-            if appendTracksToCrateFile(tracks, crateName: crateName), treatAsImport {
+            if appendTracksToCrateFile(tracks, crateName: crateName), fromPrepCrate {
                 removeCommittedFromPrepCrate(tracks)
             }
+            revealAfterCommit(tracks, crateName: crateName, fromPrepCrate: fromPrepCrate)
             finishImportStatus(count: tracks.count, crateName: crateName)
         }
     }
 
     /// Committing staged tracks files them OUT of the Prep Crate — once an album
     /// lands in a crate it shouldn't sit in staging inviting a second (duplicate)
-    /// commit. In-memory only: launch restore re-scans the saved dig folders, so
-    /// a relaunch can re-stage them — at which point the organizer's identical-
-    /// content check makes a re-commit harmless.
+    /// commit. In-memory only, but it sticks across launches: `stageIntoPrepCrate`
+    /// skips anything a crate already holds, so the restore rescan can't re-stage
+    /// what you filed.
     private func removeCommittedFromPrepCrate(_ tracks: [LoadedTrack]) {
         let committed = Set(tracks.map { $0.track.fileURL.standardizedFileURL.path })
         prepCrateTracks.removeAll { committed.contains($0.track.fileURL.standardizedFileURL.path) }
@@ -3625,15 +3649,24 @@ final class LibraryViewModel: ObservableObject {
         var existing = loadCrateTracks(name: crateName)
         existing.append(contentsOf: newTracks)
         let merged = LibraryViewModel.deduplicate(tracks: existing)
-        let saved = saveCrateTracks(merged, name: crateName)
+        return saveCrateTracks(merged, name: crateName)
+    }
 
-        // Land in the destination crate and reveal the album we just added, so an
-        // add is visible instead of silently mutating a crate off-screen.
+    /// Where to land after a commit. Filing a backlog out of the Prep Crate is a
+    /// repeated action — jumping to the destination after every album means
+    /// navigating back for the next one — so we stay put while anything is still
+    /// staged, and only follow the records into the crate once staging is empty.
+    /// Any other add still lands in the destination and reveals the album, so it
+    /// isn't a silent off-screen mutation.
+    private func revealAfterCommit(_ tracks: [LoadedTrack], crateName: String, fromPrepCrate: Bool) {
+        if fromPrepCrate, !prepCrateTracks.isEmpty {
+            selectSource(.prepCrate)
+            return
+        }
         // selectSource rebuilds `index` from the crate and resets selection to the
         // first album — so we set our reveal target *after* it.
         selectSource(.localCrate(name: crateName))
-        revealAlbum(containingTrackID: newTracks.last?.track.id)
-        return saved
+        revealAlbum(containingTrackID: tracks.last?.track.id)
     }
 
     /// Select and scroll-reveal the album containing `trackID` in the current
