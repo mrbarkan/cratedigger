@@ -12,7 +12,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     init() {
         let styleMask: NSWindow.StyleMask = [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView]
-        let window = NSWindow(
+        let window = CarbonWindow(
             contentRect: NSRect(origin: .zero, size: WindowFramePlanner.targetSize),
             styleMask: styleMask,
             backing: .buffered,
