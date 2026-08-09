@@ -86,7 +86,7 @@ extension LibraryViewModel {
         // the whole run on a big crate. Strong self is fine: the view model is
         // app-lifetime and @MainActor (Sendable); it's only touched via
         // MainActor.run.
-        Task.detached(priority: .userInitiated) {
+        metadataRepairTask = Task.detached(priority: .userInitiated) {
             typealias ProbeResult = (track: LoadedTrack, outcome: MetadataRepairOutcome, probed: ConversionMetadata)?
             var repaired: [LoadedTrack] = []
             var conflictGroups: [MetadataRepairConflictGroup] = []
@@ -122,6 +122,10 @@ extension LibraryViewModel {
                 // without contending with playback; tune if a huge crate crawls.
                 var inFlight = 0
                 for track in candidates {
+                    // Cancelling stops handing out work; the ≤6 probes already in
+                    // flight finish (each is a single ffprobe read) and the group
+                    // drains below, so nothing is left dangling.
+                    if Task.isCancelled { break }
                     if inFlight >= 6, let done = await group.next() {
                         inFlight -= 1
                         await collect(done)
@@ -149,6 +153,18 @@ extension LibraryViewModel {
                 for await done in group {
                     await collect(done)
                 }
+            }
+
+            // Cancelled mid-read: keep the tags healed so far (they're already
+            // correct — throwing them away would waste the wait), and stop.
+            if Task.isCancelled {
+                let healed = repaired
+                let checked = completed
+                await MainActor.run {
+                    if !healed.isEmpty { self.updateTrackURLsInIndex(healed) }
+                    self.finishMetadataRepairCancelled(healedCount: healed.count, checked: checked)
+                }
+                return
             }
 
             let finalRepaired = repaired
@@ -184,6 +200,30 @@ extension LibraryViewModel {
         }
     }
 
+    /// Stop an in-flight FIX TAGS run. Cooperative, like the conversion queue:
+    /// the probe loop stops handing out files (the ≤6 reads already in flight
+    /// finish) and the online loop stops between albums, so it ends within about
+    /// one file or one lookup rather than instantly.
+    func cancelMetadataRepair() {
+        guard isRepairingMetadata else { return }
+        metadataRepairTask?.cancel()
+        showOLEDNotice("STOPPING…")
+    }
+
+    /// Common exit for a cancelled run: clear the run state and account for what
+    /// it managed to do before stopping, so a cancel never looks like a crash.
+    @MainActor
+    func finishMetadataRepairCancelled(healedCount: Int, checked: Int) {
+        isRepairingMetadata = false
+        metadataRepairTask = nil
+        showOLEDNotice("TAG CHECK STOPPED")
+        var message = "Stopped after checking \(checked) track\(checked == 1 ? "" : "s")."
+        if healedCount > 0 {
+            message += " The \(healedCount) track\(healedCount == 1 ? "" : "s") already healed from the files were kept."
+        }
+        appAlert = .info(title: "Tag Check Stopped", message: message)
+    }
+
     /// The online half of FIX TAGS: partition the selection into albums (the
     /// old code collapsed everything into ONE release query — a multi-album
     /// selection got shoehorned into the majority album), look each album up,
@@ -208,6 +248,12 @@ extension LibraryViewModel {
         defer { endActivity(activity) }
 
         for (i, group) in groups.enumerated() {
+            // One lookup per album behind a ~1s throttle — a long selection is a
+            // long wait, so honour a cancel between albums too.
+            if Task.isCancelled {
+                finishMetadataRepairCancelled(healedCount: 0, checked: tracks.count)
+                return
+            }
             showOLEDNotice(groups.count == 1
                            ? "MATCHING TAGS…"
                            : "MATCHING TAGS… \(i + 1)/\(groups.count)")

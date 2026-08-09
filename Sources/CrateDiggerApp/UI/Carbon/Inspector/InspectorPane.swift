@@ -262,8 +262,15 @@ struct InspectorPane: View {
                 // and offer the differences for review. With nothing selected it
                 // falls back to a local-only sweep of the source (see
                 // LibraryViewModel+MetadataRepair).
-                KeyButton(style: model.canRepairMetadata && !model.isRepairingMetadata ? .normal : .disabled, action: {
-                    model.repairMissingMetadata()
+                // While a run is in flight the key becomes its own stop button —
+                // a whole-library selection is thousands of file reads, and the
+                // press that started it is where you look to end it.
+                KeyButton(style: model.canRepairMetadata ? .normal : .disabled, action: {
+                    if model.isRepairingMetadata {
+                        model.cancelMetadataRepair()
+                    } else {
+                        model.repairMissingMetadata()
+                    }
                 }) {
                     HStack(spacing: 4) {
                         if model.isRepairingMetadata {
@@ -273,14 +280,14 @@ struct InspectorPane: View {
                             Image(systemName: "bandage.fill")
                                 .font(.system(size: 9))
                         }
-                        Text("FIX TAGS")
+                        Text(model.isRepairingMetadata ? "STOP" : "FIX TAGS")
                             .font(CarbonFont.mono(9, weight: .bold))
                             .tracking(1.0)
                     }
                 }
                 .frame(maxWidth: .infinity)
                 .frame(height: geometry.keyHeight)
-                .disabled(!model.canRepairMetadata || model.isRepairingMetadata)
+                .disabled(!model.canRepairMetadata)
                 .carbonTip("Look up the selected tracks online (MusicBrainz · iTunes) and choose which tags to correct. With nothing selected, checks the whole source against the files without going online.")
             }
             .padding(.horizontal, 16)

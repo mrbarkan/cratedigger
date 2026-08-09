@@ -587,6 +587,9 @@ final class LibraryViewModel: ObservableObject {
     }
     /// FIX TAGS (metadata repair) run state — see LibraryViewModel+MetadataRepair.
     @Published var isRepairingMetadata = false
+    /// The in-flight FIX TAGS run, so it can be cancelled — a whole-library
+    /// selection is thousands of ffprobe reads and there was no way out.
+    var metadataRepairTask: Task<Void, Never>?
     /// Stored-vs-file tag disagreements from the last repair pass; non-empty
     /// presents the review sheet.
     @Published var metadataRepairConflicts: [MetadataRepairConflictGroup] = []
