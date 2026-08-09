@@ -4,6 +4,42 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 1.3.2 (57) — 2026-08-09
+
+Housekeeping for the filing workflow: staging that remembers what you filed,
+grouping that stops asking questions it can answer itself, and a way out of a
+tag check you didn't mean to start.
+
+### Added
+- **Media format icons.** Tag an album as CD, Vinyl, Cassette or Digital and the
+  medium shows as an icon beside its name in the browser — including on each
+  pressing under a grouped release, which is where a vinyl rip and a CD remaster
+  most need telling apart. Right-click an album → **Media**, or use the FORMAT
+  pill in the artwork inspector. Untagged albums look exactly as before.
+- **Stop a tag check.** FIX TAGS on a large selection is thousands of file
+  reads; the button now turns into **STOP** while it runs. Tags already healed
+  from the files are kept.
+- **Double-click the header to zoom.** The top strip of the window now behaves
+  like a title bar, honouring your Desktop & Dock setting for what a double-click
+  should do.
+
+### Changed
+- **Grouping versions no longer asks for a primary.** It picks the best copy
+  (lossless first, then sample rate and bitrate, earliest year breaking ties).
+  "Set as Primary" on a pressing still moves it.
+- **Filing from the Prep Crate keeps you in the Prep Crate.** Adding an album to
+  a crate used to jump you to that crate, which meant navigating back for every
+  album in a backlog. It now follows the records only once staging is empty.
+
+### Fixed
+- **Digging a crate no longer stops the music.** A dig cleared the playback
+  queue before scanning; it merges into the Prep Crate, so there was never
+  anything to clear.
+- **The Prep Crate no longer refills with albums you already filed.** Staging
+  was rebuilt on launch by rescanning your dig folders, handing back everything
+  you'd put away. It now skips anything a crate already holds — on launch, and
+  on a re-dig of the same folder.
+
 ## 1.3.1 (56) — 2026-08-08
 
 Fixes from the first day of 1.3.0, plus a browser that can finally show you a
