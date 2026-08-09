@@ -166,6 +166,9 @@ enum BrowserContextMenu {
         if model.canSplitAlbumFolder(album) {
             Button("Split Folder…") { model.promptSplitAlbumFolder(album) }
         }
+        if !album.isVersionGroup {
+            mediaFormatMenu(for: album, model: model)
+        }
 
         Divider()
         Button("Edit Tags…") {
@@ -299,8 +302,26 @@ enum BrowserContextMenu {
         }
         Button("Set as Primary") { model.setPrimaryVersion(version, in: release) }
         Button("Edit Edition Label…") { model.promptEditionLabel(for: version, in: release) }
+        mediaFormatMenu(for: version, model: model)
         Divider()
         Button("Remove from Group") { model.removeFromGroup(version, release: release) }
+    }
+
+    /// "Media ▸ CD / Vinyl / Cassette / Digital" — tags the pressing's medium,
+    /// which shows as an icon beside the album name. Auto = untagged.
+    @ViewBuilder
+    static func mediaFormatMenu(for album: Album, model: LibraryViewModel) -> some View {
+        Menu(album.mediaFormat.map { "Media: \($0.rawValue)" } ?? "Media") {
+            Button("Auto") { model.setMediaFormat(nil, for: album) }
+            Divider()
+            ForEach(MediaFormat.allCases, id: \.self) { format in
+                Button {
+                    model.setMediaFormat(format, for: album)
+                } label: {
+                    Label(format.rawValue, systemImage: format.symbolName)
+                }
+            }
+        }
     }
 
     /// "Move to Crate" submenu — only shown while viewing a specific crate (you can

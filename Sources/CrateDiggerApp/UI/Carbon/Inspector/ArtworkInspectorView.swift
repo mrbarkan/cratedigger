@@ -39,11 +39,7 @@ struct ArtworkInspectorView: View {
     }
 
     private var mediaFormatLabel: String {
-        switch manifest.mediaFormat {
-        case .some(.cd):    return "CD"
-        case .some(.vinyl): return "VINYL"
-        default:            return "AUTO"
-        }
+        manifest.mediaFormat?.rawValue.uppercased() ?? "AUTO"
     }
 
     var body: some View {
@@ -54,8 +50,14 @@ struct ArtworkInspectorView: View {
                 // stranded from its value when the inspector is narrow.
                 Menu {
                     Button("Auto") { manifest.mediaFormat = nil; isDirty = true }
-                    Button("CD") { manifest.mediaFormat = .cd; isDirty = true }
-                    Button("Vinyl") { manifest.mediaFormat = .vinyl; isDirty = true }
+                    ForEach(MediaFormat.allCases, id: \.self) { format in
+                        Button {
+                            manifest.mediaFormat = format
+                            isDirty = true
+                        } label: {
+                            Label(format.rawValue, systemImage: format.symbolName)
+                        }
+                    }
                 } label: {
                     HStack(spacing: 6) {
                         Text("FORMAT")

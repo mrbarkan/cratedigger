@@ -3,8 +3,10 @@ import CrateDiggerCore
 import SwiftUI
 
 /// Confirm/edit sheet for an album version group: set the release name, the
-/// original release year (used for sorting), pick the primary pressing, and edit
-/// each pressing's edition label. Pre-filled so it's usually glance-and-confirm.
+/// original release year (used for sorting), and edit each pressing's edition
+/// label. Pre-filled so it's usually glance-and-confirm. The primary pressing is
+/// chosen for you (best copy — see `VersionDistinguisher.suggestedPrimaryIndex`)
+/// and only overridden from the version row's "Set as Primary".
 ///
 /// Presented via `MainWindowController.presentGroupAlbumsSheet()` which is
 /// triggered by a `NSNotification.Name.crateDiggerPresentGroupAlbumsSheet` post.
@@ -73,11 +75,12 @@ private struct GroupAlbumsSheetView: View {
 
     @State private var name: String
     @State private var yearText: String
-    @State private var primaryKey: AlbumFolderKey
     @State private var editionLabels: [String]
 
     private let rows: [GroupAlbumsSheetController.VersionRow]
     private let kind: AlbumGroupKind
+    /// Carried straight through: chosen by the caller, never edited here.
+    private let primaryKey: AlbumFolderKey
 
     init(
         kind: AlbumGroupKind,
@@ -89,10 +92,10 @@ private struct GroupAlbumsSheetView: View {
     ) {
         self.kind = kind
         self.rows = rows
+        self.primaryKey = initialPrimaryKey
         self.onDecision = onDecision
         _name = State(initialValue: initialName)
         _yearText = State(initialValue: initialYear)
-        _primaryKey = State(initialValue: initialPrimaryKey)
         _editionLabels = State(initialValue: rows.map(\.editionLabel))
     }
 
@@ -121,12 +124,6 @@ private struct GroupAlbumsSheetView: View {
                 .padding(.bottom, 16)
 
             versionsSection
-                .padding(.bottom, 16)
-
-            Divider()
-                .padding(.bottom, 16)
-
-            primaryRow
                 .padding(.bottom, 20)
 
             actionBar
@@ -274,35 +271,6 @@ private struct GroupAlbumsSheetView: View {
     private func sourceFolder(_ album: Album) -> URL? {
         guard let url = album.tracks.first?.track.fileURL, url.isFileURL else { return nil }
         return url.deletingLastPathComponent()
-    }
-
-    /// Title plus year — the per-pressing identity used as the Primary picker label
-    /// when no edition label is set (always distinct between two grouped versions,
-    /// since identical artist/title/year would be one album).
-    private func identityTitle(_ album: Album) -> String {
-        if let year = album.year { return "\(album.title) · \(year)" }
-        return album.title
-    }
-
-    // MARK: Primary picker
-
-    private var primaryRow: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("PRIMARY VERSION")
-                .font(CarbonFont.mono(8.5, weight: .bold))
-                .tracking(1.6)
-                .foregroundStyle(theme.ink3)
-
-            Picker("Primary", selection: $primaryKey) {
-                ForEach(rows.indices, id: \.self) { i in
-                    let row = rows[i]
-                    let label = editionLabels[i].isEmpty ? identityTitle(row.album) : editionLabels[i]
-                    Text(label).tag(row.key)
-                }
-            }
-            .labelsHidden()
-            .frame(maxWidth: 300)
-        }
     }
 
     // MARK: Action bar

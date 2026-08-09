@@ -71,5 +71,21 @@ final class VersionDistinguisherTests: XCTestCase {
         let labels = VersionDistinguisher.labels(for: [a, b])
         XCTAssertEqual(labels, ["Discovery US", "Discovery JP"])
     }
+
+    func testSuggestedPrimaryPrefersLosslessThenResolution() {
+        let mp3 = album(title: "The Dark Side of the Moon", year: 1973, format: "mp3",
+                        bitrate: 320, path: "/Music/DSOTM MP3/01.mp3")
+        let cd = album(title: "The Dark Side of the Moon", year: 2009, path: "/Music/DSOTM CD/01.flac")
+        let hires = album(title: "The Dark Side of the Moon", year: 2011, sampleRate: 96000,
+                          path: "/Music/DSOTM Vinyl/01.flac")
+        XCTAssertEqual(VersionDistinguisher.suggestedPrimaryIndex([mp3, cd, hires]), 2)
+        XCTAssertEqual(VersionDistinguisher.suggestedPrimaryIndex([mp3, cd]), 1)
+    }
+
+    func testSuggestedPrimaryBreaksTiesOnEarliestYear() {
+        let remaster = album(title: "Discovery", year: 2014, path: "/Music/Discovery 2014/01.flac")
+        let original = album(title: "Discovery", year: 2001, path: "/Music/Discovery/01.flac")
+        XCTAssertEqual(VersionDistinguisher.suggestedPrimaryIndex([remaster, original]), 1)
+    }
 }
 #endif

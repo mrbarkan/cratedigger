@@ -1,11 +1,13 @@
+import CrateDiggerCore
 import SwiftUI
 
 /// One pressing under an expanded release row: an indented row showing the
-/// auto format badge and the user's edition label.
+/// medium icon (when tagged), the auto format badge and the user's edition label.
 struct VersionSubRow: View {
     @Environment(\.carbon) private var theme
     let badge: String
     let edition: String?
+    var mediaFormat: MediaFormat? = nil
     let selected: Bool
     let onSelect: () -> Void
 
@@ -13,6 +15,12 @@ struct VersionSubRow: View {
         Button(action: onSelect) {
             HStack(spacing: 8) {
                 Spacer().frame(width: 18)
+                if let mediaFormat {
+                    Image(systemName: mediaFormat.symbolName)
+                        .font(.system(size: 9.5, weight: .medium))
+                        .foregroundStyle(selected ? theme.slotInk.opacity(0.8) : theme.ink3)
+                        .help(mediaFormat.rawValue)
+                }
                 Text(badge)
                     .font(CarbonFont.mono(9.5, weight: .semibold))
                     .foregroundStyle(selected ? theme.slotInk : theme.ink2)

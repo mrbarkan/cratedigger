@@ -6,12 +6,18 @@ import Foundation
 public enum VersionLabel {
     private static let lossless: Set<String> = ["flac", "alac", "wav", "aiff", "pcm", "ape"]
 
+    /// Whether a codec name (as `AudioTrack.formatName` reports it) is lossless.
+    public static func isLossless(_ formatName: String?) -> Bool {
+        guard let formatName else { return false }
+        return lossless.contains(formatName.lowercased())
+    }
+
     public static func formatBadge(for album: Album) -> String {
         let track = album.tracks.first?.track
         guard let rawFormat = track?.formatName, !rawFormat.isEmpty else { return "—" }
 
         let codec = rawFormat.uppercased()
-        let isLossless = lossless.contains(rawFormat.lowercased())
+        let isLossless = isLossless(rawFormat)
 
         var parts: [String] = [codec]
         if isLossless {

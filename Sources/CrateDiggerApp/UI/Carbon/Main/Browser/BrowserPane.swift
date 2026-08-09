@@ -242,6 +242,7 @@ private struct AlbumPane: View {
         VersionSubRow(
             badge: VersionLabel.formatBadge(for: version),
             edition: version.editionLabel,
+            mediaFormat: version.mediaFormat,
             selected: model.selectedAlbumID == version.id,
             onSelect: { model.focusedColumn = .album; model.selectedAlbumID = version.id }
         )

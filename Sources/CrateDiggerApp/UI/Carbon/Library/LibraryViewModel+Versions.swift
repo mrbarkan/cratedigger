@@ -218,6 +218,30 @@ extension LibraryViewModel {
         }
     }
 
+    // MARK: - Media format
+
+    /// Tag which medium this pressing came off (CD, Vinyl, Cassette, Digital), so
+    /// the browser can badge it. Stored in the album folder's `ArtworkManifest`,
+    /// the same place the Artwork inspector's FORMAT pill writes it; `nil` = Auto.
+    func setMediaFormat(_ format: MediaFormat?, for album: Album) {
+        guard let folder = album.tracks.first?.track.fileURL.deletingLastPathComponent(),
+              folder.isFileURL else { return }
+        var manifest = ArtworkManifest.load(from: folder) ?? ArtworkManifest()
+        manifest.mediaFormat = format
+        do {
+            try manifest.save(to: folder)
+        } catch {
+            appAlert = .error(title: "Couldn't Save Format",
+                              message: "Writing to “\(folder.lastPathComponent)” failed: \(error.localizedDescription)")
+            return
+        }
+        // refreshLibrary() reads per-folder booklet/mediaFormat from the disk
+        // cache, so the edited folder has to be dropped or the change won't show.
+        indexDiskCache.invalidate(albumFolderPath: folder.path,
+                                  filePaths: album.tracks.map { $0.track.fileURL.path })
+        refreshLibrary()
+    }
+
     // MARK: - Edition label prompt
 
     func promptEditionLabel(for pressing: Album, in release: Album) {
@@ -254,8 +278,11 @@ extension LibraryViewModel {
         // A compilation's title is usually the shared album name; version/box use the base title.
         let suggestedName = VersionDistinguisher.commonBaseTitle(rows.map { $0.album.title })
         let suggestedYear = albums.compactMap(\.year).min()
+        // The sheet doesn't ask which pressing is primary — the best copy is, and
+        // "Set as Primary" on a version row moves it.
+        let primary = VersionDistinguisher.suggestedPrimaryIndex(rows.map(\.album))
         presentGroupSheet(id: UUID().uuidString, kind: kind, name: suggestedName, year: suggestedYear,
-                          rows: rows, primaryKey: rows[0].key)
+                          rows: rows, primaryKey: rows[primary].key)
     }
 
     /// Re-open the sheet to edit an existing release.

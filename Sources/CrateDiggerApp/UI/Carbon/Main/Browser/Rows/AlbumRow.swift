@@ -37,9 +37,19 @@ struct AlbumRow: View {
                     .foregroundStyle(theme.rowLeadColor(selected: selected, isPlaying: isPlayingHere))
             }
         } title: {
-            Text(album.title)
-                .font(CarbonFont.sans(12.5, weight: .medium))
-                .foregroundStyle(theme.rowTitleColor(selected: selected))
+            HStack(spacing: 5) {
+                // Only shown once the medium has been tagged — untagged albums
+                // keep the plain title, no placeholder icon.
+                if let media = album.mediaFormat {
+                    Image(systemName: media.symbolName)
+                        .font(.system(size: 9.5, weight: .medium))
+                        .foregroundStyle(selected ? theme.selectionInk.opacity(0.8) : theme.ink3)
+                        .help(media.rawValue)
+                }
+                Text(album.title)
+                    .font(CarbonFont.sans(12.5, weight: .medium))
+                    .foregroundStyle(theme.rowTitleColor(selected: selected))
+            }
         } trail: {
             if let badge {
                 Text(badge)

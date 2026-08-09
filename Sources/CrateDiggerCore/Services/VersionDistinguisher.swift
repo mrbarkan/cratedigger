@@ -44,7 +44,28 @@ public enum VersionDistinguisher {
         }
     }
 
+    /// Which pressing to make the release's primary — the one whose track list,
+    /// cover and playback the collapsed release row shows. Best copy wins:
+    /// lossless first, then sample rate, then bitrate, earliest year breaking ties.
+    /// The Group sheet doesn't ask; "Set as Primary" on a version row overrides it.
+    public static func suggestedPrimaryIndex(_ albums: [Album]) -> Int {
+        var best = 0
+        for i in albums.indices.dropFirst() where fidelity(albums[i]) > fidelity(albums[best]) {
+            best = i
+        }
+        return best
+    }
+
     // MARK: - Private
+
+    /// Sortable fidelity key for a pressing; higher is better.
+    private static func fidelity(_ album: Album) -> (Int, Int, Int, Int) {
+        let track = album.tracks.first?.track
+        return (VersionLabel.isLossless(track?.formatName) ? 1 : 0,
+                track?.sampleRateHz ?? 0,
+                track?.bitrateKbps ?? 0,
+                -(album.year ?? 9999))
+    }
 
     /// Separators/brackets to strip from the edges of a base title or a tail.
     private static let edgeSeparators =
