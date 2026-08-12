@@ -54,7 +54,7 @@ public struct CarbonThemed: ViewModifier {
         // idempotent write of a plain global (see `ActiveThemeFonts`) derived
         // purely from `selectedThemeID`, consulted by `CarbonFont` — there's
         // no per-call-site path to reach a theme's font overrides otherwise.
-        ActiveThemeFonts.overrides = registry.manifest(for: selectedThemeID)?.definition.fonts ?? [:]
+        ActiveThemeFonts.overrides = registry.activeDefinition(for: selectedThemeID)?.fonts ?? [:]
         // Same pattern for the OLED glass foreground family — consulted by the
         // `oledFG`/`oledFGo`/`oledMuted` globals in OLEDDisplay.swift.
         ActiveOLEDPalette.foreground = theme.oledForeground

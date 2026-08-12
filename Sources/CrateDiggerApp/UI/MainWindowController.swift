@@ -234,6 +234,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         hostingController.model.oledView
     }
 
+    func openThemeEditor() {
+        hostingController.model.showingThemeEditor = true
+    }
+
     func togglePlayPause() {
         hostingController.model.togglePlayPause()
     }

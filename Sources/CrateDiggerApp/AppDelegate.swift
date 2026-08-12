@@ -582,8 +582,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             }
         }
         menu.addItem(.separator())
+        menu.addItem(makeItem(title: "Theme Editor…", action: #selector(openThemeEditor(_:))))
         menu.addItem(makeItem(title: "Refresh Themes", action: #selector(refreshThemes(_:))))
         menu.addItem(makeItem(title: "Show Themes Folder…", action: #selector(showThemesFolder(_:))))
+    }
+
+    @objc private func openThemeEditor(_ sender: Any?) {
+        mainWindowController?.openThemeEditor()
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {

@@ -1,0 +1,578 @@
+import AppKit
+import CrateDiggerCore
+import SwiftUI
+
+/// The theme editor. Every control writes straight into
+/// `ThemeRegistry.shared.draft`, which the whole app renders from while it's
+/// open — so there is no preview pane here, deliberately. The preview is the
+/// application behind this panel, which is the only preview that can't lie
+/// about how a theme actually looks.
+///
+/// That also explains the panel form: it floats and can be moved out of the
+/// way, so you can watch the header, browser and transport all change at once.
+/// Docking it into the inspector column would hide a third of the thing being
+/// themed.
+struct ThemeEditorView: View {
+    @Environment(\.carbon) private var theme
+    @Environment(\.carbonGeometry) private var geometry
+    @Environment(\.carbonPanelDismiss) private var dismiss
+    @ObservedObject private var registry = ThemeRegistry.shared
+
+    @State private var filter = ""
+    @State private var saveError: String?
+
+    private var draft: ThemeDefinition? { registry.draft }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            identityBar
+            Divider().overlay(theme.hair)
+
+            if draft == nil {
+                emptyState
+            } else {
+                tokenList
+                Divider().overlay(theme.hair)
+                actionBar
+            }
+        }
+        .background(theme.chassis)
+        .onAppear {
+            // Opening with nothing loaded starts you on whatever you're
+            // looking at, rather than a blank theme you'd have to build up.
+            if registry.draft == nil { beginEditingActiveTheme() }
+        }
+    }
+
+    // MARK: - Identity
+
+    private var identityBar: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 8) {
+                sectionLabel("Theme")
+                Spacer(minLength: 0)
+                loadMenu
+            }
+
+            if let draft {
+                HStack(spacing: 8) {
+                    TextField("Theme name", text: Binding(
+                        get: { draft.name },
+                        set: { registry.draft?.name = $0 }
+                    ))
+                    .textFieldStyle(.plain)
+                    .font(CarbonFont.sans(13, weight: .semibold))
+                    .foregroundStyle(theme.ink)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(RoundedRectangle(cornerRadius: 5).fill(theme.paper))
+                    .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(theme.hair))
+
+                    // A theme declares light or dark; it drives window chrome
+                    // and which built-in fills tokens the theme doesn't set.
+                    ForEach([ThemeDefinition.BaseAppearance.light, .dark], id: \.rawValue) { base in
+                        KeyButton(
+                            style: draft.baseAppearance == base ? .selected : .normal,
+                            action: { registry.draft?.baseAppearance = base }
+                        ) {
+                            Text(base == .light ? "LIGHT" : "DARK")
+                        }
+                        .frame(width: 58, height: geometry.keyHeight)
+                    }
+                }
+
+                HStack(spacing: 6) {
+                    Text("ID")
+                        .font(CarbonFont.mono(8, weight: .bold))
+                        .tracking(1.4)
+                        .foregroundStyle(theme.ink4)
+                    Text(draft.id)
+                        .font(CarbonFont.mono(9))
+                        .foregroundStyle(theme.ink3)
+                    if let parent = draft.inherits {
+                        Text("· inherits \(parent)")
+                            .font(CarbonFont.mono(9))
+                            .foregroundStyle(theme.ink4)
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+
+            HStack(spacing: 8) {
+                Image(systemName: "line.3.horizontal.decrease.circle")
+                    .font(.system(size: 11))
+                    .foregroundStyle(theme.ink4)
+                TextField("Filter tokens", text: $filter)
+                    .textFieldStyle(.plain)
+                    .font(CarbonFont.mono(10))
+                    .foregroundStyle(theme.ink2)
+                if !filter.isEmpty {
+                    Button(action: { filter = "" }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 10))
+                            .foregroundStyle(theme.ink4)
+                    }
+                    .buttonStyle(.carbonHover)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(RoundedRectangle(cornerRadius: 5).fill(theme.well))
+            .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(theme.hair))
+        }
+        .padding(12)
+    }
+
+    private var loadMenu: some View {
+        Menu {
+            ForEach(registry.manifests) { manifest in
+                Button(manifest.definition.name) { registry.beginEditing(manifest) }
+            }
+            if registry.manifests.isEmpty {
+                Text("No themes installed")
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "square.on.square").font(.system(size: 9))
+                Text("LOAD").font(CarbonFont.mono(9, weight: .bold)).tracking(1.2)
+            }
+            .foregroundStyle(theme.ink2)
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .carbonTip("Open an installed theme. Built-ins open as an editable copy — the originals ship with the app and stay put.")
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 10) {
+            Spacer()
+            Text("No theme loaded")
+                .font(CarbonFont.sans(13, weight: .semibold))
+                .foregroundStyle(theme.ink3)
+            KeyButton(action: beginEditingActiveTheme) { Text("EDIT CURRENT THEME") }
+                .frame(width: 180, height: geometry.keyHeight)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // MARK: - Tokens
+
+    private var tokenList: some View {
+        ScrollView(.vertical) {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(visibleColorGroups) { group in
+                    sectionLabel(group.name)
+                        .padding(.top, 12)
+                        .padding(.bottom, 4)
+                    ForEach(group.tokens, id: \.key) { token in
+                        ThemeSwatchRow(token: token)
+                    }
+                }
+
+                ForEach(visibleGeometryGroups) { group in
+                    sectionLabel(group.name)
+                        .padding(.top, 16)
+                        .padding(.bottom, 6)
+                    // Two dials per row: at the panel's working width that
+                    // leaves each one big enough to drag precisely.
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 14) {
+                        ForEach(group.tokens) { token in
+                            CarbonDial(
+                                label: token.label,
+                                range: token.range,
+                                value: Binding(
+                                    get: { CGFloat(registry.draft?.geometry?[token.key] ?? 0) },
+                                    set: { registry.draft?.geometry?[token.key] = Double($0) }
+                                )
+                            )
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+
+                if showFonts {
+                    sectionLabel("Fonts")
+                        .padding(.top, 16)
+                        .padding(.bottom, 4)
+                    ForEach(ThemeTokenCatalog.fontRoles, id: \.key) { role in
+                        fontRow(key: role.key, label: role.label, fallback: role.fallback)
+                    }
+                }
+
+                if visibleColorGroups.isEmpty && visibleGeometryGroups.isEmpty && !showFonts {
+                    Text("No tokens match “\(filter)”")
+                        .font(CarbonFont.mono(10))
+                        .foregroundStyle(theme.ink4)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.vertical, 24)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.bottom, 16)
+        }
+    }
+
+    // MARK: - Fonts
+
+    private func fontRow(key: String, label: String, fallback: String) -> some View {
+        let current = draft?.fonts?[key]
+        return HStack(spacing: 8) {
+            Text(label.uppercased())
+                .font(CarbonFont.mono(9, weight: .bold))
+                .tracking(1.2)
+                .foregroundStyle(theme.ink3)
+                .frame(width: 74, alignment: .leading)
+
+            // Rendered in the face it names, so the row is its own specimen.
+            Text(current ?? fallback)
+                .font(.custom(current ?? fallback, size: 12))
+                .foregroundStyle(current == nil ? theme.ink4 : theme.ink)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            KeyButton(action: { importFont(for: key) }) { Text("IMPORT") }
+                .frame(width: 66, height: 22)
+
+            KeyButton(
+                style: current == nil ? .disabled : .normal,
+                action: { registry.draft?.fonts?[key] = nil }
+            ) {
+                Text("RESET")
+            }
+            .frame(width: 60, height: 22)
+        }
+        .padding(.vertical, 4)
+    }
+
+    /// Copies the chosen face into the theme's own `Fonts/` folder and records
+    /// its PostScript name. Registering immediately is what makes the preview
+    /// live — `CarbonFont` resolves through `ActiveThemeFonts` on the next
+    /// redraw, so the app re-letters itself as soon as the panel closes.
+    private func importFont(for role: String) {
+        guard let draft, let authoring = registry.authoring else {
+            saveError = "No writable Themes folder — can't import fonts."
+            return
+        }
+
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.init(filenameExtension: "ttf"), .init(filenameExtension: "otf")].compactMap { $0 }
+        panel.allowsMultipleSelection = false
+        panel.message = "Choose a font to bundle with “\(draft.name)”"
+        guard panel.runModal() == .OK, let source = panel.url else { return }
+
+        do {
+            let installed = try authoring.importFont(from: source, into: draft.id)
+            FontRegistrar.registerFonts(at: [installed])
+            guard let postScriptName = ThemeTokenCatalog.postScriptName(of: installed) else {
+                saveError = "Couldn't read a PostScript name from \(source.lastPathComponent)."
+                return
+            }
+            registry.draft?.fonts?[role] = postScriptName
+        } catch {
+            saveError = "Couldn't import the font: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: - Actions
+
+    private var actionBar: some View {
+        VStack(spacing: 6) {
+            if let saveError {
+                Text(saveError)
+                    .font(CarbonFont.mono(9))
+                    .foregroundStyle(theme.red)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            HStack(spacing: 8) {
+                KeyButton(action: revealInFinder) { Text("REVEAL") }
+                    .frame(width: 74, height: geometry.keyHeight)
+                    .carbonTip("Show the Themes folder in Finder — themes are plain files you can zip and share.")
+
+                Spacer(minLength: 0)
+
+                KeyButton(action: {
+                    registry.discardDraft()
+                    dismiss?()
+                }) {
+                    Text("DISCARD")
+                }
+                .frame(width: 84, height: geometry.keyHeight)
+
+                KeyButton(style: .glowingFilled, action: save) { Text("SAVE") }
+                    .frame(width: 84, height: geometry.keyHeight)
+                    .carbonTip("Write the theme to your Themes folder and switch to it.")
+            }
+        }
+        .padding(12)
+    }
+
+    private func save() {
+        do {
+            try registry.saveDraft()
+            saveError = nil
+            dismiss?()
+        } catch {
+            saveError = "Couldn't save: \(error.localizedDescription)"
+        }
+    }
+
+    private func revealInFinder() {
+        guard let url = registry.userThemesDirectory else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
+    private func beginEditingActiveTheme() {
+        let selected = PreferencesStore.shared.selectedThemeID
+        if let manifest = registry.manifest(for: selected) {
+            registry.beginEditing(manifest)
+        } else if let fallback = registry.manifests.first(where: {
+            // No theme selected — fork whichever built-in matches the
+            // appearance currently on screen, so editing starts from what the
+            // user is actually looking at.
+            $0.definition.baseAppearance == (theme.isDark ? .dark : .light)
+        }) {
+            registry.beginEditing(fallback)
+        }
+    }
+
+    // MARK: - Filtering
+
+    private var query: String {
+        filter.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    private func matches(_ key: String, _ label: String, _ group: String) -> Bool {
+        guard !query.isEmpty else { return true }
+        return key.lowercased().contains(query)
+            || label.lowercased().contains(query)
+            || group.lowercased().contains(query)
+    }
+
+    private var visibleColorGroups: [ThemeTokenCatalog.ColorGroup] {
+        ThemeTokenCatalog.colorGroups.compactMap { group in
+            let tokens = group.tokens.filter { matches($0.key, $0.label, group.name) }
+            return tokens.isEmpty ? nil : ThemeTokenCatalog.ColorGroup(name: group.name, tokens: tokens)
+        }
+    }
+
+    private var visibleGeometryGroups: [ThemeTokenCatalog.GeometryGroup] {
+        ThemeTokenCatalog.geometryGroups.compactMap { group in
+            let tokens = group.tokens.filter { matches($0.key, $0.label, group.name) }
+            return tokens.isEmpty ? nil : ThemeTokenCatalog.GeometryGroup(name: group.name, tokens: tokens)
+        }
+    }
+
+    private var showFonts: Bool {
+        query.isEmpty || ThemeTokenCatalog.fontRoles.contains {
+            matches($0.key, $0.label, "fonts")
+        }
+    }
+
+    private func sectionLabel(_ text: String) -> some View {
+        Text(text.uppercased())
+            .font(CarbonFont.mono(9, weight: .bold))
+            .tracking(1.8)
+            .foregroundStyle(theme.ink3)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+// MARK: - Swatch row
+
+/// One color token: native picker on the left, hex on the right. Both edit the
+/// same value; the hex field is there because that's how a theme is actually
+/// specified and shared, and eyedropping a value you then have to read back out
+/// of a file is worse than typing it.
+private struct ThemeSwatchRow: View {
+    @Environment(\.carbon) private var theme
+    @ObservedObject private var registry = ThemeRegistry.shared
+    let token: ThemeTokenCatalog.ColorToken
+
+    private var hex: String {
+        registry.draft?.colors?[token.key] ?? ""
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            // The system picker, not a hand-rolled one: it brings the
+            // eyedropper, palettes and recents for free.
+            ColorPicker("", selection: Binding(
+                get: { Color(hexString: hex) ?? .black },
+                set: { registry.draft?.colors?[token.key] = $0.themeHexString }
+            ), supportsOpacity: true)
+            .labelsHidden()
+            .frame(width: 40)
+
+            Text(token.label)
+                .font(CarbonFont.sans(11))
+                .foregroundStyle(theme.ink2)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            HexField(
+                value: Binding(
+                    get: { hex },
+                    set: { registry.draft?.colors?[token.key] = $0 }
+                )
+            )
+            .frame(width: 92)
+        }
+        .padding(.vertical, 3)
+        .help(token.key)
+    }
+}
+
+/// A hex entry that only ever writes a value the theme parser accepts.
+///
+/// Committing on every keystroke would push "#F", "#FF", "#FFA"… into the live
+/// theme and flash the whole app through garbage on the way to a real color, so
+/// edits stay local until they parse and are committed on Return or focus loss.
+/// Text that never parses snaps back rather than silently writing a token the
+/// loader will drop later.
+private struct HexField: View {
+    @Environment(\.carbon) private var theme
+    @Binding var value: String
+
+    @State private var text: String = ""
+    @FocusState private var focused: Bool
+
+    private var parses: Bool { Color(hexString: text) != nil }
+
+    var body: some View {
+        TextField("#RRGGBB", text: $text)
+            .textFieldStyle(.plain)
+            .font(CarbonFont.mono(10))
+            .foregroundStyle(parses ? theme.ink2 : theme.red)
+            .focused($focused)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 4)
+            .background(RoundedRectangle(cornerRadius: 4).fill(theme.paper))
+            .overlay(
+                RoundedRectangle(cornerRadius: 4)
+                    .strokeBorder(parses ? theme.hair : theme.red.opacity(0.7))
+            )
+            .onSubmit(commit)
+            .onChange(of: focused) { isFocused in
+                if !isFocused { commit() }
+            }
+            .onAppear { text = value }
+            // Keeps the field honest when the value changes from elsewhere —
+            // the color picker on the same row, or loading another theme.
+            .onChange(of: value) { newValue in
+                if !focused { text = newValue }
+            }
+    }
+
+    private func commit() {
+        if parses {
+            // Normalize on the way in, so the file gets one canonical form.
+            value = text.hasPrefix("#") ? text.uppercased() : "#" + text.uppercased()
+            text = value
+        } else {
+            text = value
+        }
+    }
+}
+
+// MARK: - Dial
+
+/// A rotary control for geometry values: drag vertically to change it,
+/// double-click to snap back to the shipped default for that token.
+///
+/// Vertical drag rather than true rotary tracking: circular tracking round a
+/// small knob is fiddly and inverts awkwardly as the pointer crosses the
+/// center, which is why hardware editors settled on drag-up/drag-down too.
+private struct CarbonDial: View {
+    @Environment(\.carbon) private var theme
+    let label: String
+    let range: ClosedRange<CGFloat>
+    @Binding var value: CGFloat
+
+    /// Points of vertical travel to sweep the whole range. Long enough that a
+    /// pane width lands on the pixel you meant, short enough to cross a corner
+    /// radius in one gesture.
+    private static let travel: CGFloat = 180
+    private static let sweep: Double = 280   // degrees, centered on straight up
+
+    @State private var dragStart: CGFloat?
+
+    private var fraction: Double {
+        let span = range.upperBound - range.lowerBound
+        guard span > 0 else { return 0 }
+        return Double((value.clamped(to: range) - range.lowerBound) / span)
+    }
+
+    private var angle: Angle {
+        .degrees(-Self.sweep / 2 + fraction * Self.sweep)
+    }
+
+    var body: some View {
+        VStack(spacing: 4) {
+            ZStack {
+                Circle()
+                    .fill(theme.metal)
+                    .overlay(Circle().strokeBorder(theme.hair, lineWidth: 1))
+
+                // Travel arc — shows where in the range you are without
+                // needing to read the number.
+                Circle()
+                    .trim(from: 0, to: fraction * (Self.sweep / 360))
+                    .stroke(theme.orange, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                    .rotationEffect(.degrees(-90 - Self.sweep / 2))
+                    .padding(-4)
+
+                // Pointer
+                Capsule()
+                    .fill(theme.ink)
+                    .frame(width: 2, height: 11)
+                    .offset(y: -7)
+                    .rotationEffect(angle)
+            }
+            .frame(width: 34, height: 34)
+            .contentShape(Circle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { drag in
+                        let start = dragStart ?? value
+                        if dragStart == nil { dragStart = value }
+                        let span = range.upperBound - range.lowerBound
+                        // Up increases, matching every hardware knob.
+                        let delta = -drag.translation.height / Self.travel * span
+                        value = (start + delta).clamped(to: range).rounded()
+                    }
+                    .onEnded { _ in dragStart = nil }
+            )
+            .onTapGesture(count: 2) { value = defaultValue }
+
+            Text(label.uppercased())
+                .font(CarbonFont.mono(7.5, weight: .bold))
+                .tracking(0.8)
+                .foregroundStyle(theme.ink4)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+
+            Text("\(Int(value))")
+                .font(CarbonFont.mono(9, weight: .semibold))
+                .foregroundStyle(theme.ink2)
+        }
+        .frame(maxWidth: .infinity)
+        .help("\(label) — drag to change, double-click to reset")
+    }
+
+    /// The shipped value for this token, so a double-click undoes an
+    /// experiment rather than parking on an arbitrary midpoint.
+    private var defaultValue: CGFloat {
+        guard let token = ThemeTokenCatalog.allGeometryTokens.first(where: { $0.label == label }) else {
+            return value
+        }
+        return CarbonGeometry.standard[keyPath: token.read]
+    }
+}
+
+private extension CGFloat {
+    func clamped(to range: ClosedRange<CGFloat>) -> CGFloat {
+        Swift.min(Swift.max(self, range.lowerBound), range.upperBound)
+    }
+}

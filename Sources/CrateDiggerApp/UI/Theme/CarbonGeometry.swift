@@ -105,7 +105,10 @@ public struct CarbonGeometry: Equatable {
     /// enough for real restyling (a much chunkier or much sleeker transport
     /// cluster) without letting a hostile or careless theme collapse
     /// `MainShell`'s three-pane layout or produce a zero/negative frame.
-    private enum Bounds {
+    /// Internal rather than private so the theme editor's dials travel exactly
+    /// the range the clamp allows — a dial that let you drag past the clamp
+    /// would sit at a value the app then silently ignores.
+    enum Bounds {
         static let cornerRadius: ClosedRange<CGFloat> = 0...40
         static let inset: ClosedRange<CGFloat> = 0...32
         static let gap: ClosedRange<CGFloat> = 0...32

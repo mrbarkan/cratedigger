@@ -174,6 +174,10 @@ final class LibraryViewModel: ObservableObject {
     /// Which inspector tab is showing. Model state rather than view `@State` so
     /// it can be driven from outside the view tree (menus, the dev shot list).
     @Published var inspectorTab: InspectorTab = .info
+
+    /// The theme editor panel. On the model for the same reason — it's opened
+    /// from the Appearance menu, which has no view to hold `@State`.
+    @Published var showingThemeEditor: Bool = false
     /// Columns the gallery grid is currently laying out. Published by the view
     /// (only it knows the pane width) and read by ↑/↓ arrow nav, which has to
     /// move by a whole row.

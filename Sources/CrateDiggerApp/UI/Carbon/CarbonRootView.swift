@@ -1,3 +1,4 @@
+import AppKit
 import CrateDiggerCore
 import SwiftUI
 
@@ -42,6 +43,19 @@ struct CarbonRootView: View {
         // rows) sit deeper in the hierarchy and keep taking precedence.
         .onDrop(of: [.fileURL], delegate: PrepCrateDropDelegate(hint: $dropHint, model: model))
         .overlay(PrepCrateDropOverlay(hint: dropHint).carbonThemed(mode: mode))
+        // Hosted at the root rather than in the inspector: the editor previews
+        // by re-rendering the whole app, so it has to outlive any one pane's
+        // visibility (collapsing the inspector mid-edit must not kill it).
+        .carbonPanel(
+            isPresented: $model.showingThemeEditor,
+            title: "Theme Editor",
+            minSize: NSSize(width: 420, height: 480),
+            initialSize: NSSize(width: 460, height: 700),
+            maxSize: NSSize(width: 640, height: 1200),
+            autosaveName: "cratedigger.panel.themeEditor"
+        ) {
+            ThemeEditorView().environmentObject(model)
+        }
         .sheet(
             item: Binding(
                 get: { model.appAlert },
