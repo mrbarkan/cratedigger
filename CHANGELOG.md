@@ -4,6 +4,23 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 1.3.3 (58) — 2026-08-11
+
+A small fix pass on the DEV screen and the switcher keys.
+
+### Fixed
+- **Connected players report their real free space.** A mounted iPod (or any
+  FAT32/exFAT player) read as "0.0 GB FREE · 100% USED" — macOS reports no
+  capacity for those volumes through the key the app was asking for. Free space
+  now falls back to the plain volume reading, which also makes the "not enough
+  room" warning before a conversion or a device sync accurate on those players.
+- **The OLED keeps its size on the DEV screen.** Selecting a device grew the
+  glass past the header; the screen is now fixed hardware for every view, and
+  the device readout was trimmed to sit inside it.
+- **The display key matches the other keys.** The strip above VIEW / THEME / EQ
+  rendered 14pt narrower than them — the column had been silently clamped to a
+  width the three keys below it overflowed.
+
 ## 1.3.2 (57) — 2026-08-09
 
 Housekeeping for the filing workflow: staging that remembers what you filed,
