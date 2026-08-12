@@ -74,17 +74,139 @@ extension LibraryViewModel {
                 // rather than dumped flat into the music folder. The user can tweak
                 // inline before hitting Go; the pre-device selection is restored
                 // after the run.
-                conversionSelectionBeforeDevice = conversionSelection
-                conversionSelection = seededConversionSelection(from: resolved.transferSettings)
+                let alreadyQueued = pendingDeviceConversion.flatMap {
+                    $0.profileID == resolved.id && $0.destinationRoot == destinationRoot ? $0.tracks : nil
+                }
+                // Seed the cockpit only on the first hand-off — a second one would
+                // save the already-device-seeded selection as "before device" and
+                // lose the user's own settings when the run restores them.
+                if alreadyQueued == nil {
+                    conversionSelectionBeforeDevice = conversionSelection
+                    conversionSelection = seededConversionSelection(from: resolved.transferSettings)
+                    // Folder-art devices get a cover.jpg beside the tracks
+                    // instead, so nothing goes inside the files.
+                    if resolved.usesFolderCoverArt { conversionSelection.artworkMode = .none }
+                }
 
+                // Sending a second selection to the same device adds to the queue.
+                // Replacing it silently threw away everything picked so far, which
+                // is the whole point of filling the cockpit before pressing Go.
+                let queued = alreadyQueued ?? []
+                let known = Set(queued.map(\.track.fileURL.path))
                 pendingDeviceConversion = PendingDeviceConversion(
                     profileID: resolved.id,
                     deviceName: resolved.name,
                     destinationRoot: destinationRoot,
-                    tracks: tracks
+                    tracks: queued + tracks.filter { !known.contains($0.track.fileURL.path) }
                 )
                 oledView = .conversion
             }
+        }
+    }
+
+    // MARK: - Folder cover art (cover.jpg sidecars)
+
+    /// Write one `cover.jpg` per album folder this transfer wrote into, for
+    /// devices that read folder art instead of embedded pictures. Returns the
+    /// number of covers written (0 for every other device, so callers can wire
+    /// this in unconditionally).
+    ///
+    /// `landings` is one entry per written file: the folder it landed in and
+    /// the artwork of the track that produced it. Hydration is the caller's
+    /// job for paths that don't already carry the bytes — see
+    /// `writeFolderCoverArt(profileID:tracks:root:relativePath:)`.
+    @MainActor
+    @discardableResult
+    func writeFolderCoverArt(profileID: UUID?, landings: [(folder: URL, artwork: ArtworkAsset?)]) async -> Int {
+        guard let profileID,
+              let profile = prefs.savedExternalDeviceProfiles.first(where: { $0.id == profileID }),
+              profile.usesFolderCoverArt
+        else { return 0 }
+
+        var covers: [URL: ArtworkAsset] = [:]
+        for landing in landings {
+            guard let artwork = landing.artwork, !artwork.data.isEmpty else { continue }
+            if covers[landing.folder] == nil { covers[landing.folder] = artwork }   // an album has one cover
+        }
+        guard !covers.isEmpty else { return 0 }
+        let written = FolderCoverArtWriter(preparer: artworkService).write(covers)
+        AppLog.conversion.notice("Wrote \(written) cover.jpg sidecar(s) for \(profile.name, privacy: .public)")
+        return written
+    }
+
+    /// Same, for the copy and sync paths: they hold tracks + destination paths
+    /// rather than conversion jobs, and their artwork is usually still just a
+    /// hash, so hydrate before writing.
+    @MainActor
+    @discardableResult
+    func writeFolderCoverArt(profileID: UUID, folderTracks: [(folder: URL, track: LoadedTrack)]) async -> Int {
+        guard let profile = prefs.savedExternalDeviceProfiles.first(where: { $0.id == profileID }),
+              profile.usesFolderCoverArt, !folderTracks.isEmpty
+        else { return 0 }
+        // One hydration for the batch, then match art back by source path —
+        // zipping by index would misalign the moment a track drops out.
+        let hydrated = await tracksWithHydratedArtwork(folderTracks.map(\.track))
+        let artByPath = Dictionary(
+            hydrated.compactMap { track in track.metadata.artwork.map { ($0, track.track.fileURL.path) } }
+                .map { ($1, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        return await writeFolderCoverArt(
+            profileID: profileID,
+            landings: folderTracks.map { ($0.folder, artByPath[$0.track.track.fileURL.path]) }
+        )
+    }
+
+    // MARK: - FIX ART (repair a device that's already full)
+
+    /// The mounted device being browsed, with its profile — the target for FIX ART.
+    var browsedMountedDevice: (profile: ExternalDeviceProfile, device: MountedDevice)? {
+        guard case .device(let volumePath) = currentSource,
+              let device = mountedDevices.first(where: { $0.volumeURL.path == volumePath }),
+              let profile = deviceProfile(for: device)
+        else { return nil }
+        return (profile, device)
+    }
+
+    var canFixDeviceAlbumArt: Bool { browsedMountedDevice != nil && !isFixingDeviceArt }
+
+    /// Write a `cover.jpg` beside every album already on the device, taken from
+    /// the tracks sitting there. Repairs everything transferred before folder
+    /// art existed, without touching the audio files.
+    @MainActor
+    func fixDeviceAlbumArt() {
+        guard let (profile, device) = browsedMountedDevice, !isFixingDeviceArt else { return }
+        isFixingDeviceArt = true
+        oledView = .devices
+        showOLEDNotice("FIXING ART")
+        let root = ExternalDeviceTransferPlanner().destinationRoot(for: profile, mountedAt: device.volumeURL)
+        let deviceName = profile.name
+
+        Task { @MainActor in
+            // All of it off the main actor: the walk is a deep read of a USB
+            // volume and each cover is a decode + JPEG encode. Its own
+            // ArtworkService — nothing is shared with the app's, so nothing
+            // crosses actors.
+            let outcome = await Task.detached(priority: .userInitiated) { () -> (albums: Int, covers: Int) in
+                let artwork = ArtworkService()
+                let files = FolderCoverArtWriter.representativeAudioFiles(under: root)
+                var covers: [URL: ArtworkAsset] = [:]
+                for (folder, file) in files {
+                    if let asset = await artwork.resolveArtwork(trackURL: file) {
+                        covers[folder] = asset
+                    }
+                }
+                return (files.count, FolderCoverArtWriter(preparer: artwork).write(covers))
+            }.value
+
+            isFixingDeviceArt = false
+            AppLog.conversion.notice("FIX ART wrote \(outcome.covers) of \(outcome.albums) covers")
+            appAlert = .error(
+                title: outcome.covers > 0 ? "Album art fixed" : "No covers written",
+                message: outcome.covers > 0
+                    ? "Wrote cover.jpg into \(outcome.covers) of \(outcome.albums) album folder\(outcome.albums == 1 ? "" : "s") on \(deviceName)."
+                    : "Found \(outcome.albums) album folder\(outcome.albums == 1 ? "" : "s") on \(deviceName), but none of their tracks carry artwork to copy out."
+            )
         }
     }
 
@@ -135,6 +257,17 @@ extension LibraryViewModel {
             }
 
             let report = await runCopyTransferQueue(plans: plans, deviceName: resolved.name)
+            let trackBySourcePath = Dictionary(
+                sourceTracks.map { ($0.track.fileURL.path, $0) },
+                uniquingKeysWith: { first, _ in first }
+            )
+            await writeFolderCoverArt(
+                profileID: resolved.id,
+                folderTracks: plans.compactMap { plan in
+                    trackBySourcePath[plan.sourceURL.path]
+                        .map { (plan.destinationURL.deletingLastPathComponent(), $0) }
+                }
+            )
             presentSummary(report: report, presentingFrom: host)
         }
     }

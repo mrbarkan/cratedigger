@@ -164,6 +164,12 @@ extension LibraryViewModel {
             prefs.saveLastConversionSelection(selection)
 
             let report = await runConversionQueue(service: service, jobs: finalJobs, preset: preset).report
+            // `jobs`, not `finalJobs`: a batch where the user chose Skip still
+            // wants a cover beside the tracks that were already there.
+            let covers = await writeFolderCoverArt(
+                profileID: deviceTransfer?.profileID,
+                landings: jobs.map { ($0.destinationURL.deletingLastPathComponent(), $0.metadata?.artwork) }
+            )
             if let deviceTransfer {
                 // Remember any format/folder tweaks on the device profile, then
                 // restore the user's normal conversion selection.
@@ -171,7 +177,7 @@ extension LibraryViewModel {
             }
             clearPendingDeviceConversion()
             presentSummary(
-                report: deviceTransfer.map { deviceReport(report, deviceName: $0.deviceName) } ?? report,
+                report: deviceTransfer.map { deviceReport(report, deviceName: $0.deviceName, covers: covers) } ?? report,
                 presentingFrom: host
             )
         }
@@ -330,10 +336,11 @@ extension LibraryViewModel {
 
     /// Reword a conversion summary as a device transfer ("… written" → "… sent to
     /// <device>") when the run was a send-to-device hand-off.
-    private func deviceReport(_ report: ConversionReport, deviceName: String) -> ConversionReport {
+    private func deviceReport(_ report: ConversionReport, deviceName: String, covers: Int = 0) -> ConversionReport {
         ConversionReport(
             title: report.tone == .success ? "Sent to \(deviceName)" : report.title,
-            statusLine: report.statusLine.replacingOccurrences(of: "written", with: "sent to \(deviceName)"),
+            statusLine: report.statusLine.replacingOccurrences(of: "written", with: "sent to \(deviceName)")
+                + (covers > 0 ? " · \(covers) cover.jpg" : ""),
             details: report.details,
             tone: report.tone,
             showsDetailsButton: report.showsDetailsButton

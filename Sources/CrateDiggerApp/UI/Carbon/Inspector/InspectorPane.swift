@@ -246,17 +246,41 @@ struct InspectorPane: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: geometry.keyHeight)
                 
-                KeyButton(style: .normal, action: {
-                    showingCleanup = true
-                }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "sparkles")
-                            .font(.system(size: 9))
-                        Text("CLEANUP")
+                // On a mounted device this slot becomes FIX ART: CLEANUP
+                // reorganizes the *library*, which is meaningless while you're
+                // looking at what's on a player, and repairing that player's
+                // covers is the thing you actually reach for there.
+                if model.browsedMountedDevice != nil {
+                    KeyButton(style: model.canFixDeviceAlbumArt ? .normal : .disabled, action: {
+                        model.fixDeviceAlbumArt()
+                    }) {
+                        HStack(spacing: 4) {
+                            if model.isFixingDeviceArt {
+                                ProgressView().controlSize(.mini)
+                            } else {
+                                Image(systemName: "photo.on.rectangle.angled")
+                                    .font(.system(size: 9))
+                            }
+                            Text(model.isFixingDeviceArt ? "FIXING…" : "FIX ART")
+                        }
                     }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: geometry.keyHeight)
+                    .disabled(!model.canFixDeviceAlbumArt)
+                    .carbonTip("Write a cover.jpg beside every album on this device, taken from the tracks already on it. Players that read folder art (Rockbox) pick it up; the audio files aren't touched.")
+                } else {
+                    KeyButton(style: .normal, action: {
+                        showingCleanup = true
+                    }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 9))
+                            Text("CLEANUP")
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: geometry.keyHeight)
                 }
-                .frame(maxWidth: .infinity)
-                .frame(height: geometry.keyHeight)
                 
                 // Select tracks → re-probe them, then look the release up online
                 // and offer the differences for review. With nothing selected it

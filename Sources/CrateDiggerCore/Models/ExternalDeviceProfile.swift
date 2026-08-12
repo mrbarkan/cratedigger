@@ -80,6 +80,13 @@ public struct ExternalDeviceTransferSettings: Codable, Hashable, Sendable {
     }
 
     public var conversionPreset: ConversionPreset? {
+        conversionPreset(embeddingArtwork: true)
+    }
+
+    /// `embeddingArtwork: false` strips the picture from the written files —
+    /// used by devices that read a `cover.jpg` sidecar instead (see
+    /// `ExternalDeviceProfile.usesFolderCoverArt`).
+    public func conversionPreset(embeddingArtwork: Bool) -> ConversionPreset? {
         guard mode == .convertDuringTransfer else {
             return nil
         }
@@ -95,7 +102,7 @@ public struct ExternalDeviceTransferSettings: Codable, Hashable, Sendable {
             constantBitrate: outputFormat == .mp3 && deviceProfile == .ipodLegacySafe,
             deviceProfile: deviceProfile,
             tagMode: Self.defaultTagMode(for: outputFormat, deviceProfile: deviceProfile),
-            artworkMode: artworkMaxDimension == nil ? .preserve : .compatReembed,
+            artworkMode: embeddingArtwork ? (artworkMaxDimension == nil ? .preserve : .compatReembed) : .none,
             artworkMaxDimension: artworkMaxDimension
         )
     }
@@ -237,6 +244,17 @@ public struct ExternalDeviceProfile: Identifiable, Codable, Hashable, Sendable {
             )
         )
     }
+
+    /// Ship the cover as a `cover.jpg` beside the tracks and leave it out of the
+    /// files, rather than embedding it in each one.
+    ///
+    /// Rockbox reads folder art first and renders a large *embedded* cover in
+    /// greyscale once its decoder has to scale the image down to the theme's art
+    /// size — a 500 px cover on a 146 px theme comes out grey. A small sidecar
+    /// avoids both problems, and every other player that reads folder art picks
+    /// it up too. Tied to the device kind: it's what a Rockbox iPod wants, so
+    /// choosing that kind is the switch.
+    public var usesFolderCoverArt: Bool { kind == .rockboxIPod }
 
     /// The saved profile a mounted `device` belongs to, or nil for an unknown
     /// volume. A stored `volumeUUID` is authoritative when both the profile and the

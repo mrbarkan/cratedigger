@@ -587,6 +587,8 @@ final class LibraryViewModel: ObservableObject {
     }
     /// FIX TAGS (metadata repair) run state — see LibraryViewModel+MetadataRepair.
     @Published var isRepairingMetadata = false
+    /// FIX ART sweep over a mounted device (see `fixDeviceAlbumArt`).
+    @Published var isFixingDeviceArt = false
     /// The in-flight FIX TAGS run, so it can be cancelled — a whole-library
     /// selection is thousands of ffprobe reads and there was no way out.
     var metadataRepairTask: Task<Void, Never>?

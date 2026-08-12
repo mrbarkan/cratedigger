@@ -15,9 +15,6 @@ struct ConversionQueueView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            if model.conversionProgress.isRunning {
-                progressStrip
-            }
             if model.conversionQueueTracks.isEmpty {
                 empty
             } else {
@@ -58,40 +55,6 @@ struct ConversionQueueView: View {
         return seconds > 0
             ? "\(tracks.count) \(noun) · \(SleepMode.clockLabel(Int(seconds)))"
             : "\(tracks.count) \(noun)"
-    }
-
-    // MARK: - Live progress
-
-    private var progressStrip: some View {
-        let progress = model.conversionProgress
-        let fraction = progress.jobsTotal > 0
-            ? Double(progress.jobsCompleted) / Double(progress.jobsTotal) : 0
-        return VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(progress.currentFilename ?? "Converting…")
-                    .font(CarbonFont.mono(9))
-                    .foregroundStyle(theme.ink2)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Spacer(minLength: 6)
-                Text("\(progress.jobsCompleted)/\(progress.jobsTotal)")
-                    .font(CarbonFont.mono(9, weight: .bold))
-                    .foregroundStyle(theme.cyan)
-            }
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Color.black.opacity(0.35)).frame(height: 4)
-                    Capsule()
-                        .fill(LinearGradient(colors: [theme.cyan, theme.orange],
-                                             startPoint: .leading, endPoint: .trailing))
-                        .frame(width: max(4, geo.size.width * fraction), height: 4)
-                }
-            }
-            .frame(height: 4)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(theme.isDark ? Color.black.opacity(0.25) : Color.black.opacity(0.03))
     }
 
     // MARK: - List

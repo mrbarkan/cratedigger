@@ -99,7 +99,10 @@ extension LibraryViewModel {
                     )
                     return
                 }
-                let preset = profile.transferSettings.conversionPreset ?? .genericAAC
+                // Folder-art devices carry the cover as a cover.jpg sidecar the
+                // sync writes onto the device, so the baked files hold none.
+                let preset = profile.transferSettings
+                    .conversionPreset(embeddingArtwork: !profile.usesFolderCoverArt) ?? .genericAAC
                 let jobs = plans.compactMap(\.conversionJob)
                 let outcome = await runConversionQueue(service: service, jobs: jobs, preset: preset)
                 newEntries = plans
@@ -231,7 +234,8 @@ extension LibraryViewModel {
             )
 
             let profileName = profile.name
-            let preset = profile.transferSettings.conversionPreset
+            let preset = profile.transferSettings
+                .conversionPreset(embeddingArtwork: !profile.usesFolderCoverArt)
             let ffmpegURL = customFFmpegExecutableURL()
             let total = entries.count
 
@@ -349,6 +353,13 @@ extension LibraryViewModel {
                 profileName: profileName, currentRelativePath: nil,
                 completed: outcome.synced + outcome.skipped, total: total,
                 failed: outcome.failed, isRunning: false
+            )
+            await writeFolderCoverArt(
+                profileID: profileID,
+                folderTracks: entries.map {
+                    (mountedRoot.appendingPathComponent($0.destinationRelativePath)
+                        .deletingLastPathComponent(), $0.track)
+                }
             )
             refreshSyncQueueCounts()
             invalidateDeviceCatalog(for: device)

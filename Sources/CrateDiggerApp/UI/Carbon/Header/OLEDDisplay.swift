@@ -873,7 +873,60 @@ private struct ConversionPane: View {
     @EnvironmentObject private var model: LibraryViewModel
     @Environment(\.carbon) private var theme
 
+    private var done: Int { model.conversionProgress.jobsCompleted }
+    private var total: Int { model.conversionProgress.jobsTotal }
+
     var body: some View {
+        if model.conversionProgress.isRunning {
+            runningBody
+        } else {
+            previewBody
+        }
+    }
+
+    // MARK: - Running (convert or send-to-device)
+    //
+    // The glass narrates the run — the Patch Bay's queue list stays a list of
+    // what's in scope, with no progress bar of its own to keep in sync.
+
+    private var runningBody: some View {
+        OLEDPaneScaffold {
+            NPTitles(title: runningTitle, sub: runningSub, titleSize: 40)
+        } readout: {
+            VStack(alignment: .trailing, spacing: 6) {
+                NPClock(now: String(format: "%02d", min(done + 1, max(total, 1))),
+                        tot: "/ \(String(format: "%02d", total))")
+                ScanBar(style: .orange(runningProgress)).frame(width: 150)
+            }
+            .fixedSize()
+        } ticker: {
+            DSPTicker(
+                prefix: String(format: "%@ · %02d / %02d",
+                               model.pendingDeviceConversion == nil ? "WRITING" : "SENDING",
+                               min(done + 1, max(total, 1)), total),
+                path: AttributedString(model.conversionProgress.currentFilename ?? "—")
+            )
+        } cells: {
+            OLEDCells(cells)
+        }
+    }
+
+    private var runningTitle: String {
+        model.pendingDeviceConversion?.deviceName.uppercased() ?? "CONVERT"
+    }
+
+    /// No count here — the readout and the ticker already carry it.
+    private var runningSub: String {
+        let kind = model.isLosslessSelectedFormat ? "Lossless" : "Lossy"
+        let verb = model.pendingDeviceConversion == nil ? "Converting" : "Sending"
+        return "\(verb) · \(targetFormatPrimary) · \(kind)"
+    }
+
+    private var runningProgress: Double {
+        total > 0 ? Double(done) / Double(total) : 0
+    }
+
+    private var previewBody: some View {
         OLEDPaneScaffold {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .bottom, spacing: 14) {
@@ -1591,7 +1644,9 @@ private struct DevicesPane: View {
         let transfer = s.mode == .copyOriginals ? ("COPY", "Originals") : ("CONVERT", "During Copy")
         let fmt = s.outputFormat.fileExtension.uppercased()
         let fmtSub = s.outputFormat.isLossless ? "Lossless" : "\(s.bitrateKbps ?? 192) kbps"
-        let artwork: (String, String) = s.artworkMaxDimension.map { ("\($0) px", "Re-embed") } ?? ("KEEP", "Preserve")
+        let artwork: (String, String) = profile.usesFolderCoverArt
+            ? ("\(FolderCoverArtWriter.defaultMaxDimension) px", "cover.jpg")
+            : (s.artworkMaxDimension.map { ("\($0) px", "Re-embed") } ?? ("KEEP", "Preserve"))
         return [
             OLEDCellData(key: "Kind", value: kindCell(profile.kind).0, sub: kindCell(profile.kind).1, valueColor: theme.cyan),
             OLEDCellData(key: "Transfer", value: transfer.0, sub: transfer.1),
