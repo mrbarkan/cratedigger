@@ -6,6 +6,11 @@ struct AlbumPoster: View {
     @Environment(\.carbon) private var theme
     @EnvironmentObject private var model: LibraryViewModel
     let album: Album?
+    /// Decode resolution. The default suits the small 120–140pt posters; the
+    /// wide inspector asks for more so its big cover isn't a stretched thumb.
+    /// The thumbnail cache is keyed by this value and cost-bounded, so asking
+    /// for a second size costs one more decode, not a leak.
+    var maxPixel: Int = 480
     @State private var localThumbnail: NSImage?
 
     var body: some View {
@@ -38,14 +43,15 @@ struct AlbumPoster: View {
     }
 
     private var loadKey: String {
-        album?.booklet?.frontCoverURL?.path ?? album?.artworkHash ?? album?.id ?? "empty"
+        (album?.booklet?.frontCoverURL?.path ?? album?.artworkHash ?? album?.id ?? "empty")
+            + "-\(maxPixel)"
     }
 
     private func loadThumbnailImage() async {
         if let coverURL = album?.booklet?.frontCoverURL {
-            localThumbnail = await loadThumbnail(url: coverURL, maxPixelSize: 480)
+            localThumbnail = await loadThumbnail(url: coverURL, maxPixelSize: maxPixel)
         } else if let hash = album?.artworkHash {
-            localThumbnail = await model.artworkService.thumbnailAsync(artworkHash: hash, maxPixel: 480)
+            localThumbnail = await model.artworkService.thumbnailAsync(artworkHash: hash, maxPixel: maxPixel)
         } else {
             localThumbnail = nil
         }

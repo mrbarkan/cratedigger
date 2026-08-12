@@ -29,6 +29,12 @@ struct InspectorPane: View {
     /// the inspector well width when the browser is collapsed: ~580pt+.
     private static let wideLayoutThreshold: CGFloat = 520
 
+    /// Widest the Library Tools cluster is allowed to get, padding included.
+    /// Keys stretched to a 700pt column read as slabs, not buttons; past this
+    /// the cluster keeps its size and centres in the column instead. Below it
+    /// (the default 348pt inspector) nothing changes.
+    private static let toolsMaxWidth: CGFloat = 452
+
     var body: some View {
         ZStack {
             if model.oledView == .conversion {
@@ -185,7 +191,12 @@ struct InspectorPane: View {
             if model.isRadioMode, let stream = model.selectedStream {
                 RadioInfoView(stream: stream)
             } else {
-                HStack(alignment: .top, spacing: 18) {
+                // The cover grows with the pane instead of sitting at thumbnail
+                // size: ~38% of the width, floored so it still reads as a sleeve
+                // just past the threshold and capped so the metadata column
+                // never drops below its usual (narrow-inspector) measure.
+                let coverSize = min(max(width * 0.38, 200), 380)
+                HStack(alignment: .top, spacing: 24) {
                     ScrollView(.vertical, showsIndicators: false) {
                         VStack(alignment: .leading, spacing: 0) {
                             captionBlock
@@ -198,8 +209,8 @@ struct InspectorPane: View {
                     .frame(maxWidth: .infinity)
 
                     VStack(spacing: 0) {
-                        AlbumPoster(album: model.selectedAlbum)
-                            .frame(width: 140, height: 140)
+                        AlbumPoster(album: model.selectedAlbum, maxPixel: 900)
+                            .frame(width: coverSize, height: coverSize)
                         Spacer(minLength: 0)
                     }
                     .padding(.top, 14)
@@ -358,6 +369,8 @@ struct InspectorPane: View {
                 }
             }
         }
+        .frame(maxWidth: Self.toolsMaxWidth)
+        .frame(maxWidth: .infinity)
         .overlay(
             Rectangle()
                 .fill(theme.isDark ? Color.white.opacity(0.06) : Color.black.opacity(0.08))
