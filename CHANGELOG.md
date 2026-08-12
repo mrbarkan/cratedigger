@@ -4,6 +4,36 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 1.4.0 (59) — 2026-08-12
+
+Album art that Rockbox players can actually draw, and a device queue you can
+fill in more than one go.
+
+### Added
+- **Folder cover art for Rockbox iPods.** Those players read a cover file in
+  the album folder before they look inside the track, and they render a large
+  embedded cover in greyscale once they have to scale it down to the theme's
+  art size — which is why covers arrived in black and white. Transfers to a
+  Rockbox iPod now leave the picture out of the files and write a 400 px
+  `cover.jpg` beside them instead. Applies to every route onto the device:
+  converting to a mounted player, copying originals, and the offline queue's
+  SYNC.
+- **FIX ART.** Select a connected device and press FIX ART in the inspector to
+  write those covers for everything *already* on it — the art is read back out
+  of the tracks on the device, so a player filled before this existed is fixed
+  without re-sending a thing. The audio files aren't touched.
+
+### Changed
+- **A transfer narrates itself on the OLED.** The CNVRT screen now shows the
+  running count, a progress bar, and the file being written (titled with the
+  device name when it's a transfer). The progress bar inside the Patch Bay's
+  queue list is gone — that pane is a list of what's in scope again.
+
+### Fixed
+- **Sending a second batch to a device adds to the queue.** Picking albums in
+  one crate, sending them, then picking more in another crate replaced the
+  queue instead of adding to it, so the first batch was silently dropped.
+
 ## 1.3.3 (58) — 2026-08-11
 
 A small fix pass on the DEV screen and the switcher keys.
