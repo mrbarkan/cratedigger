@@ -89,7 +89,7 @@ public struct CarbonGeometry: Equatable {
         self.oledCornerRadius = Self.Bounds.cornerRadius.clamp(oledCornerRadius)
         self.oledPaddingH = Self.Bounds.inset.clamp(oledPaddingH)
         self.oledPaddingV = Self.Bounds.inset.clamp(oledPaddingV)
-        self.viewSwitchWidth = Self.Bounds.smallControl.clamp(viewSwitchWidth)
+        self.viewSwitchWidth = Self.Bounds.switcherWidth.clamp(viewSwitchWidth)
         self.brandWidth = Self.Bounds.paneWidth.clamp(brandWidth)
         self.transportButtonSize = Self.Bounds.button.clamp(transportButtonSize)
         self.playButtonSize = Self.Bounds.button.clamp(playButtonSize)
@@ -113,6 +113,11 @@ public struct CarbonGeometry: Equatable {
         static let paneWidth: ClosedRange<CGFloat> = 120...480
         static let smallControl: ClosedRange<CGFloat> = 16...96
         static let button: ClosedRange<CGFloat> = 32...120
+        /// The VIEW/THEME/EQ column. Its lower bound is the switcher button's
+        /// own minimum (label + lamp budgets + padding) — clamping below that
+        /// let the three keys overflow the column while the DISPLAY strip, which
+        /// has no minimum, obeyed it, so the strip rendered 14pt narrower.
+        static let switcherWidth: ClosedRange<CGFloat> = 110...240
     }
 }
 

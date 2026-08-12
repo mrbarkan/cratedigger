@@ -421,10 +421,7 @@ extension LibraryViewModel {
         }
         guard totalSourceBytes > 0 else { return nil }
 
-        let values = try? destinationRoot.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey, .volumeAvailableCapacityKey])
-        let available = (values?.volumeAvailableCapacityForImportantUsage)
-            ?? Int64(values?.volumeAvailableCapacity ?? 0)
-        guard available > 0 else { return nil }
+        guard let available = destinationRoot.volumeFreeBytes, available > 0 else { return nil }
 
         let estimatedNeed = Int64(Double(totalSourceBytes) * estimateFactor)
         guard available < estimatedNeed else { return nil }

@@ -35,23 +35,28 @@ struct OLEDDisplay: View {
     @EnvironmentObject private var model: LibraryViewModel
 
     var body: some View {
-        ZStack {
-            background
-            VStack(spacing: 0) {
-                DisplayRail()
-                DisplayContext()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-            .padding(.top, 8)
-            .padding(.horizontal, 18)
-            .padding(.bottom, 10)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: geometry.oledCornerRadius, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: geometry.oledCornerRadius, style: .continuous)
-                .strokeBorder(Color.white.opacity(theme.isDark ? 0.08 : 0.22), lineWidth: 1)
-        )
-        .compositingGroup()
+        // The glass is the *background*, with the panes overlaid on it — not a
+        // ZStack, which would size itself to whichever pane is tallest and let
+        // a roomy pane (DEV) stretch the screen out of the header. An overlay
+        // takes the glass's frame, so content that doesn't fit clips like a
+        // real display instead of resizing the hardware.
+        background
+            .overlay(
+                VStack(spacing: 0) {
+                    DisplayRail()
+                    DisplayContext()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+                .padding(.top, 8)
+                .padding(.horizontal, 18)
+                .padding(.bottom, 10)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: geometry.oledCornerRadius, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: geometry.oledCornerRadius, style: .continuous)
+                    .strokeBorder(Color.white.opacity(theme.isDark ? 0.08 : 0.22), lineWidth: 1)
+            )
+            .compositingGroup()
     }
 
     private var background: some View {
@@ -1527,8 +1532,11 @@ private struct DevicesPane: View {
             let freeGB = Double(cap.free) / 1_000_000_000
             let totalGB = Double(cap.total) / 1_000_000_000
             let usedFrac = 1 - Double(cap.free) / Double(cap.total)
-            VStack(alignment: .trailing, spacing: 6) {
-                NPClock(now: String(format: "%.1f", freeGB), tot: "GB FREE")
+            // Three rows where every other pane's readout is one, so the big
+            // number runs smaller here — the glass has a fixed height and this
+            // stack has to fit it alongside the ticker.
+            VStack(alignment: .trailing, spacing: 4) {
+                NPClock(now: String(format: "%.1f", freeGB), tot: "GB FREE", nowSize: 26)
                 Text("OF \(Int(totalGB.rounded())) GB · \(Int((usedFrac * 100).rounded()))% USED")
                     .font(CarbonFont.mono(9.5, weight: .semibold))
                     .tracking(1.9).textCase(.uppercase)
@@ -1541,11 +1549,11 @@ private struct DevicesPane: View {
     }
 
     private func capacity(of device: MountedDevice) -> (free: Int64, total: Int64)? {
-        guard let v = try? device.volumeURL.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey, .volumeTotalCapacityKey]),
-              let free = v.volumeAvailableCapacityForImportantUsage,
-              let total = v.volumeTotalCapacity, total > 0
+        guard let free = device.volumeURL.volumeFreeBytes,
+              let total = (try? device.volumeURL.resourceValues(forKeys: [.volumeTotalCapacityKey]))?.volumeTotalCapacity,
+              total > 0
         else { return nil }
-        return (Int64(free), Int64(total))
+        return (free, Int64(total))
     }
 
     // MARK: Ticker (music dir + template)
@@ -1643,8 +1651,8 @@ private struct DevGlyph: View {
         // other pane — the glass has fixed geometry and must never grow when
         // panes swap. (The old repeatForever connector pulse is gone too: an
         // infinite CA animation keeps WindowServer compositing at ~12% GPU.)
-        .scaleEffect(0.79)
-        .frame(width: 35, height: 64)
+        .scaleEffect(0.70)
+        .frame(width: 31, height: 56)
     }
 }
 
@@ -1659,9 +1667,6 @@ enum OLEDByte {
     }
 
     static func freeSpace(forPath path: String) -> String? {
-        let url = URL(fileURLWithPath: path)
-        guard let values = try? url.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]),
-              let bytes = values.volumeAvailableCapacityForImportantUsage else { return nil }
-        return string(Int64(bytes))
+        URL(fileURLWithPath: path).volumeFreeBytes.map(string)
     }
 }

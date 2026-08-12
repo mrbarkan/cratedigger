@@ -211,8 +211,7 @@ extension LibraryViewModel {
                 let size = ((try? fm.attributesOfItem(atPath: url.path))?[.size] as? NSNumber)?.int64Value ?? 0
                 return sum + size
             }
-            let free = ((try? mountedRoot.resourceValues(forKeys: [.volumeAvailableCapacityKey]))?
-                .volumeAvailableCapacity).map(Int64.init) ?? .max
+            let free = mountedRoot.volumeFreeBytes ?? .max
             guard bytesNeeded < free else {
                 appAlert = .error(
                     title: "Not enough space on \(profile.name)",
