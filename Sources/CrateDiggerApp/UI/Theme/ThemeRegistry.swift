@@ -274,6 +274,30 @@ public final class ThemeRegistry: ObservableObject {
         self.draft = draft
     }
 
+    /// Copies the layer being edited onto the other one, so the second
+    /// appearance starts from the first instead of from a stock built-in.
+    ///
+    /// Most light/dark pairs are not opposites — they share an accent, a
+    /// phosphor color, a set of shadows, and differ in a handful of surfaces.
+    /// Building the second look by tweaking a copy of the first is far less
+    /// work than rebuilding it from Linen or Carbon.
+    ///
+    /// The *resolved* colors are written, not the layer's sparse overrides:
+    /// what gets copied is what you can see, including everything inherited
+    /// from the shared token set.
+    public func copyDraftLayer(to destination: ThemeDefinition.BaseAppearance) {
+        guard var draft, draft.isAdaptive, destination != draftEditingAppearance else { return }
+
+        let source = draft.resolved(for: draftEditingAppearance)
+        var target = draft.variant(for: destination) ?? ThemeVariant()
+        target.colors = source.colors
+        target.shadows = source.shadows
+        target.effects = source.effects
+
+        if destination == .light { draft.light = target } else { draft.dark = target }
+        self.draft = draft
+    }
+
     /// Forks the open draft into a new theme, in place, so "start from this
     /// one" doesn't mean saving, closing, and re-opening a copy.
     public func duplicateDraft() {

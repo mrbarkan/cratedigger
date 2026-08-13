@@ -333,6 +333,81 @@ final class ThemeDraftSaveTests: XCTestCase {
         XCTAssertEqual(registry.draftColor("orange"), "#00FF00")
     }
 
+    // MARK: - Copying one layer onto the other
+
+    func testCopyingALayerMakesTheOtherMatch() throws {
+        registry.beginEditing(try manifest("base-theme"))
+        registry.setDraftAdaptive(true)
+
+        registry.draftEditingAppearance = .light
+        registry.setDraftColor("orange", "#00FF00")
+        registry.setDraftColor("ink", "#010203")
+        registry.copyDraftLayer(to: .dark)
+
+        registry.draftEditingAppearance = .dark
+        XCTAssertEqual(registry.draftColor("orange"), "#00FF00")
+        XCTAssertEqual(registry.draftColor("ink"), "#010203")
+    }
+
+    /// Copying must not disturb the layer it copied from.
+    func testCopyingALayerLeavesTheSourceIntact() throws {
+        registry.beginEditing(try manifest("base-theme"))
+        registry.setDraftAdaptive(true)
+        registry.draftEditingAppearance = .light
+        registry.setDraftColor("orange", "#00FF00")
+
+        registry.copyDraftLayer(to: .dark)
+
+        XCTAssertEqual(registry.draftEditingAppearance, .light)
+        XCTAssertEqual(registry.draftColor("orange"), "#00FF00")
+    }
+
+    /// It copies what you can *see* — resolved values, including tokens the
+    /// layer never overrode and inherits from the shared set.
+    func testCopyingCarriesSharedTokensNotJustOverrides() throws {
+        registry.beginEditing(try manifest("base-theme"))
+        let sharedInk = registry.draftColor("ink")
+        registry.setDraftAdaptive(true)
+
+        // Light starts repainted from the light built-in; copy it onto dark.
+        registry.draftEditingAppearance = .light
+        let lightInk = registry.draftColor("ink")
+        XCTAssertNotEqual(lightInk, sharedInk)
+        registry.copyDraftLayer(to: .dark)
+
+        registry.draftEditingAppearance = .dark
+        XCTAssertEqual(registry.draftColor("ink"), lightInk)
+    }
+
+    func testCopiedLayerSurvivesSave() throws {
+        let previousSelection = PreferencesStore.shared.selectedThemeID
+        defer { PreferencesStore.shared.selectedThemeID = previousSelection }
+
+        registry.beginEditing(try manifest("base-theme"))
+        registry.setDraftAdaptive(true)
+        registry.draftEditingAppearance = .light
+        registry.setDraftColor("orange", "#00FF00")
+        registry.copyDraftLayer(to: .dark)
+        try registry.saveDraft()
+
+        let light = try XCTUnwrap(registry.resolvedTheme(for: "base-theme", appearance: .light))
+        let dark = try XCTUnwrap(registry.resolvedTheme(for: "base-theme", appearance: .dark))
+        XCTAssertEqual(light.theme.orange, dark.theme.orange)
+        // Still two distinct appearances, just with a shared accent.
+        XCTAssertFalse(light.theme.isDark)
+        XCTAssertTrue(dark.theme.isDark)
+    }
+
+    /// Nothing to copy between when the theme has only one appearance.
+    func testCopyingIsANoOpOnASingleAppearanceTheme() throws {
+        registry.beginEditing(try manifest("base-theme"))
+        let before = registry.draft
+
+        registry.copyDraftLayer(to: .light)
+
+        XCTAssertEqual(registry.draft, before)
+    }
+
     // MARK: - Duplicate
 
     func testDuplicateForksTheDraftWithoutTouchingTheOriginal() throws {

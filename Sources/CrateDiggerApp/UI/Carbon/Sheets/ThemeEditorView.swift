@@ -20,6 +20,9 @@ struct ThemeEditorView: View {
 
     @State private var filter = ""
     @State private var saveError: String?
+    /// Which layer a pending "copy to" click is armed against — see
+    /// `copyLayerButton`. `nil` means nothing is armed.
+    @State private var armedCopyTarget: ThemeDefinition.BaseAppearance?
 
     private var draft: ThemeDefinition? { registry.draft }
 
@@ -171,8 +174,46 @@ struct ThemeEditorView: View {
                     }
                 }
                 .carbonTip("Colors you change now apply to this version only. The app previews the version you're editing.")
+
+                copyLayerButton
             }
         }
+        .onChange(of: registry.draftEditingAppearance) { _ in
+            // Switching layers cancels a pending overwrite — the target has
+            // just changed meaning, so the armed click no longer means what it
+            // did when it was armed.
+            armedCopyTarget = nil
+        }
+    }
+
+    /// Seeds the other appearance from this one. Two steps rather than one:
+    /// it replaces that layer wholesale and there's no undo, so a mis-click
+    /// while reaching for the EDITING keys above it would silently destroy the
+    /// other half of the theme.
+    private var copyLayerButton: some View {
+        let source = registry.draftEditingAppearance
+        let target: ThemeDefinition.BaseAppearance = source == .light ? .dark : .light
+        let targetName = target == .light ? "LIGHT" : "DARK"
+        let armed = armedCopyTarget == target
+
+        return KeyButton(
+            style: armed ? .glowingOrange : .normal,
+            action: {
+                if armed {
+                    registry.copyDraftLayer(to: target)
+                    armedCopyTarget = nil
+                } else {
+                    armedCopyTarget = target
+                }
+            }
+        ) {
+            Text(armed ? "REPLACE \(targetName)?" : "COPY TO \(targetName)")
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 20)
+        .carbonTip(armed
+                   ? "Click again to replace the \(targetName.lowercased()) version with what you see now."
+                   : "Start the \(targetName.lowercased()) version from this one, then tweak it. Replaces whatever that version currently has.")
     }
 
     private var loadMenu: some View {
