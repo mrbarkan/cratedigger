@@ -403,6 +403,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                 self?.mainWindowController?.model.showingThemePicker = true
             }
         }
+        // Value is an optional token filter ("fonts", "corner"), so a capture
+        // can bring one section of the editor into view.
+        if let raw = env["CRATEDIGGER_THEME_EDITOR"] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) { [weak self] in
+                guard let model = self?.mainWindowController?.model else { return }
+                if raw != "1" { model.themeEditorInitialFilter = raw }
+                model.showingThemeEditor = true
+            }
+        }
         if env["CRATEDIGGER_AUTOPLAY"] != nil {
             DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
                 guard let model = self?.mainWindowController?.model else { return }
@@ -424,18 +433,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                 self?.mainWindowController?.model.checkYouTubeStreaming()
             }
         }
+        func write(_ window: NSWindow, to dest: URL, fail: (String) -> Void) {
+            guard let frameView = window.contentView?.superview ?? window.contentView else { return fail("no frame view") }
+            guard let rep = frameView.bitmapImageRepForCachingDisplay(in: frameView.bounds) else { return fail("no rep for \(frameView.bounds)") }
+            frameView.cacheDisplay(in: frameView.bounds, to: rep)
+            guard let png = rep.representation(using: .png, properties: [:]) else { return fail("no png data") }
+            do { try png.write(to: dest) } catch { fail("write: \(error)") }
+        }
+
         func snap(_ suffix: String) {
             let url = URL(fileURLWithPath: path)
             func fail(_ why: String) {
                 try? why.write(to: url.appendingPathExtension("err.txt"), atomically: true, encoding: .utf8)
             }
             guard let window = self.mainWindowController?.window else { return fail("no window") }
-            guard let frameView = window.contentView?.superview ?? window.contentView else { return fail("no frame view") }
-            guard let rep = frameView.bitmapImageRepForCachingDisplay(in: frameView.bounds) else { return fail("no rep for \(frameView.bounds)") }
-            frameView.cacheDisplay(in: frameView.bounds, to: rep)
             let dest = suffix.isEmpty ? url : url.deletingPathExtension().appendingPathExtension("\(suffix).png")
-            guard let png = rep.representation(using: .png, properties: [:]) else { return fail("no png data") }
-            do { try png.write(to: dest) } catch { fail("write: \(error)") }
+            write(window, to: dest, fail: fail)
+
+            // Tool panels (theme editor, cleanup, tag review) are separate
+            // NSWindows, so the main-window capture never contained them and
+            // every panel change shipped unseen. Each titled panel gets its own
+            // file, named after the panel.
+            for panel in NSApp.windows where panel !== window && panel.isVisible && !panel.title.isEmpty {
+                let slug = panel.title.lowercased().replacingOccurrences(of: " ", with: "-")
+                write(panel, to: url.deletingPathExtension()
+                    .appendingPathExtension("\(slug)\(suffix.isEmpty ? "" : ".\(suffix)").png"), fail: fail)
+            }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) { snap("") }
         DispatchQueue.main.asyncAfter(deadline: .now() + 8.0) { snap("late") }

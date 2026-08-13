@@ -17,6 +17,7 @@ struct ThemeEditorView: View {
     @Environment(\.carbonGeometry) private var geometry
     @Environment(\.carbonPanelDismiss) private var dismiss
     @ObservedObject private var registry = ThemeRegistry.shared
+    @EnvironmentObject private var model: LibraryViewModel
 
     @State private var filter = ""
     @State private var saveError: String?
@@ -51,6 +52,10 @@ struct ThemeEditorView: View {
             // Opening with nothing loaded starts you on whatever you're
             // looking at, rather than a blank theme you'd have to build up.
             if registry.draft == nil { beginEditingActiveTheme() }
+            if let preset = model.themeEditorInitialFilter {
+                filter = preset
+                model.themeEditorInitialFilter = nil
+            }
         }
     }
 
@@ -312,7 +317,7 @@ struct ThemeEditorView: View {
         let activeFace = current?.regular ?? fallback
         let family = ThemeTokenCatalog.familyName(ofPostScriptName: activeFace)
 
-        return VStack(alignment: .leading, spacing: 4) {
+        return VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 5) {
                 Text(label.uppercased())
                     .font(CarbonFont.mono(9, weight: .bold))
@@ -324,7 +329,7 @@ struct ThemeEditorView: View {
                 Spacer(minLength: 4)
 
                 KeyButton(action: { importFont(for: key) }) { Text("FILE") }
-                    .frame(width: 42, height: 20)
+                    .frame(width: 42, height: 19)
                     .carbonTip("Bundle a font file inside the theme so it travels with the .cdtheme when you share it.")
 
                 KeyButton(
@@ -333,35 +338,85 @@ struct ThemeEditorView: View {
                 ) {
                     Text("RESET")
                 }
-                .frame(width: 48, height: 20)
+                .frame(width: 48, height: 19)
             }
 
-            HStack(spacing: 5) {
+            // Family takes the room; style is narrower and fixed, so the two
+            // rows below each other line up across all three roles.
+            HStack(spacing: 6) {
                 systemFontMenu(for: key, current: family)
+                    .frame(maxWidth: .infinity)
                 variantMenu(for: key, family: family, current: current, fallback: fallback)
+                    .frame(width: 104)
             }
 
-            weightSummary(current)
+            weightSummary(current, family: family)
         }
-        .padding(.vertical, 6)
+        .padding(.vertical, 7)
         .help(note)
     }
 
-    /// What the theme will actually draw at each weight. Worth showing: picking
-    /// a family silently maps four weights, and a one-weight family maps none —
-    /// without this you can't tell which you got.
+    /// What the theme will actually draw at each weight.
+    ///
+    /// A role picked before per-weight mapping existed names one face, and the
+    /// family may well ship four — saying only "single weight" reads as a
+    /// defect rather than as something one click fixes, so the count and the
+    /// remedy are both spelled out.
     @ViewBuilder
-    private func weightSummary(_ font: ThemeFont?) -> some View {
+    private func weightSummary(_ font: ThemeFont?, family: String?) -> some View {
         if let font {
             let named = ThemeFontWeight.allCases.filter { font.face(for: $0) != nil }
-            Text(named.count > 1
-                 ? "Weights: " + named.map(\.rawValue).joined(separator: " · ")
-                 : "Single weight — bold and medium are synthesised")
-                .font(CarbonFont.mono(7.5))
-                .foregroundStyle(theme.ink4)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
+            let available = family.map { ThemeTokenCatalog.availableWeightCount(inFamily: $0) } ?? named.count
+
+            if named.count < available {
+                Text("Using \(named.count) of \(available) weights — re-pick the family to map them all")
+                    .font(CarbonFont.mono(7.5))
+                    .foregroundStyle(theme.sun)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if named.count > 1 {
+                Text(named.map(\.rawValue).joined(separator: " · "))
+                    .font(CarbonFont.mono(7.5))
+                    .foregroundStyle(theme.ink4)
+                    .lineLimit(1)
+            } else {
+                Text("One weight — heavier text is synthesised")
+                    .font(CarbonFont.mono(7.5))
+                    .foregroundStyle(theme.ink4)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
         }
+    }
+
+    /// A menu dressed as a field: boxed, left-aligned, filling its slot. Bare
+    /// borderless menus floated in the middle of their frames and nothing in
+    /// the Fonts section lined up with anything else.
+    private func menuField<Content: View>(
+        _ title: String,
+        enabled: Bool = true,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        Menu(content: content) {
+            HStack(spacing: 4) {
+                Text(title)
+                    .font(CarbonFont.mono(8.5, weight: .bold))
+                    .tracking(0.8)
+                    .foregroundStyle(enabled ? theme.ink2 : theme.ink4)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer(minLength: 0)
+            }
+        }
+        .menuStyle(.borderlessButton)
+        // Stretch the menu itself, not the finished field: applying this after
+        // the background just centres a content-sized box in a wider slot,
+        // which is what left the three font rows ragged down the left edge.
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 4)
+        .background(RoundedRectangle(cornerRadius: 5).fill(theme.paper))
+        .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(theme.hair))
+        .disabled(!enabled)
     }
 
     /// Picks the variant *within* the chosen family — Light, Condensed, Italic
@@ -378,20 +433,11 @@ struct ThemeEditorView: View {
         let activeName = current?.regular ?? fallback
         let activeStyle = faces.first { $0.postScriptName == activeName }?.styleName ?? "Regular"
 
-        Menu {
+        menuField(activeStyle, enabled: faces.count > 1) {
             ForEach(faces) { face in
                 Button(face.styleName) { selectVariant(face, family: family, for: role) }
             }
-        } label: {
-            Text(activeStyle.uppercased())
-                .font(CarbonFont.mono(8.5, weight: .bold))
-                .tracking(1.0)
-                .foregroundStyle(faces.count > 1 ? theme.ink2 : theme.ink4)
-                .lineLimit(1)
         }
-        .menuStyle(.borderlessButton)
-        .frame(maxWidth: .infinity)
-        .disabled(faces.count < 2)
         .help(faces.count < 2
               ? "This family ships a single style."
               : "Choose the weight or style used as this role's base.")
@@ -424,20 +470,11 @@ struct ThemeEditorView: View {
     /// the choice inside the editor instead of opening a second floating
     /// window over an already-crowded screen.
     private func systemFontMenu(for role: String, current: String?) -> some View {
-        Menu {
+        menuField(current ?? "CHOOSE FONT") {
             ForEach(ThemeTokenCatalog.systemFontFamilies, id: \.self) { family in
                 Button(family) { selectSystemFont(family: family, for: role) }
             }
-        } label: {
-            Text(current ?? "SYSTEM")
-                .font(CarbonFont.mono(8.5, weight: .bold))
-                .tracking(1.0)
-                .foregroundStyle(theme.ink2)
-                .lineLimit(1)
-                .truncationMode(.middle)
         }
-        .menuStyle(.borderlessButton)
-        .frame(maxWidth: .infinity)
         .help("Use a font installed on this Mac. Nothing is copied — the theme records the name.")
     }
 
@@ -722,15 +759,19 @@ private struct ThemeSwatchRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 9) {
             // The system picker, not a hand-rolled one: it brings the
             // eyedropper, palettes and recents for free.
+            //
+            // Its swatch has a fixed intrinsic width of about 44pt; squeezing
+            // the frame below that doesn't shrink the control, it just lets it
+            // overflow into the label beside it.
             ColorPicker("", selection: Binding(
                 get: { Color(hexString: hex) ?? .black },
                 set: { registry.setDraftColor(token.key, $0.themeHexString) }
             ), supportsOpacity: true)
             .labelsHidden()
-            .frame(width: 36)
+            .fixedSize()
 
             Text(token.label)
                 .font(CarbonFont.sans(11))

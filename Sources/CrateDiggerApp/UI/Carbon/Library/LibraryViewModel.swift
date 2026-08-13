@@ -179,6 +179,11 @@ final class LibraryViewModel: ObservableObject {
     /// from the Appearance menu, which has no view to hold `@State`.
     @Published var showingThemeEditor: Bool = false
 
+    /// Pre-fills the theme editor's token filter when it opens. Only the dev
+    /// snapshot hook sets it — the editor's sections are far taller than the
+    /// panel, and this is the only way to bring one into view for a capture.
+    var themeEditorInitialFilter: String?
+
     /// Swaps the inspector for the theme picker, the way `oledView ==
     /// .conversion` swaps it for the Patch Bay. Driven by the header THEME key.
     @Published var showingThemePicker: Bool = false

@@ -305,9 +305,20 @@ enum ThemeTokenCatalog {
         var id: String { postScriptName }
     }
 
+    /// Main-thread-only memo. `availableMembers` walks the font registry, and
+    /// the editor asks for the same handful of families on every redraw.
+    private static var faceCache: [String: [FontFace]] = [:]
+
     /// Every face in a family, ordered light → heavy with italics after their
     /// upright counterparts, so the menu reads the way a type specimen does.
     static func faces(inFamily family: String) -> [FontFace] {
+        if let cached = faceCache[family] { return cached }
+        let resolved = uncachedFaces(inFamily: family)
+        faceCache[family] = resolved
+        return resolved
+    }
+
+    private static func uncachedFaces(inFamily family: String) -> [FontFace] {
         guard let members = NSFontManager.shared.availableMembers(ofFontFamily: family) else { return [] }
 
         return members.compactMap { member -> FontFace? in
@@ -371,6 +382,18 @@ enum ThemeTokenCatalog {
     /// currently selected.
     static func familyName(ofPostScriptName name: String) -> String? {
         NSFont(name: name, size: 12)?.familyName
+    }
+
+    /// How many of the interface's weights a role currently names.
+    static func namedWeightCount(_ font: ThemeFont) -> Int {
+        ThemeFontWeight.allCases.filter { font.face(for: $0) != nil }.count
+    }
+
+    /// How many the family could supply. Compared against the above, this is
+    /// what tells a theme picked before per-weight mapping existed — a bare
+    /// `"sans": "SFPro-Regular"` — that it's leaving three real faces unused.
+    static func availableWeightCount(inFamily family: String) -> Int {
+        themeFont(forFamily: family).map(namedWeightCount) ?? 1
     }
 
     /// The PostScript name CoreText will know a font file by after
