@@ -1,0 +1,207 @@
+import AppKit
+import CrateDiggerCore
+import SwiftUI
+
+/// The THEME key's destination: appearance + installed skins, shown in the
+/// inspector the way CNVRT shows the Patch Bay.
+///
+/// It replaced a blind cycle. Cycling was fine with two built-ins, but once a
+/// theme could be authored in-app the list stopped being short or memorable —
+/// you were pressing a key repeatedly to hunt for a skin you couldn't see
+/// coming. A list you pick from directly is the same number of clicks at worst
+/// and none of the guessing.
+struct ThemePickerPane: View {
+    @Environment(\.carbon) private var theme
+    @Environment(\.carbonGeometry) private var geometry
+    @EnvironmentObject private var model: LibraryViewModel
+    @ObservedObject private var registry = ThemeRegistry.shared
+
+    @State private var appearance: AppearanceMode = AppearanceMode.current
+    @State private var selectedThemeID: String? = PreferencesStore.shared.selectedThemeID
+
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+
+            ScrollView(.vertical) {
+                VStack(alignment: .leading, spacing: 0) {
+                    sectionLabel("Appearance")
+                    HStack(spacing: 6) {
+                        ForEach(AppearanceMode.allCases, id: \.rawValue) { mode in
+                            KeyButton(
+                                style: (selectedThemeID == nil && appearance == mode) ? .selected : .normal,
+                                action: { selectAppearance(mode) }
+                            ) {
+                                Text(mode.menuTitle.uppercased())
+                            }
+                            .frame(maxWidth: .infinity)
+                            .frame(height: geometry.keyHeight)
+                        }
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 4)
+
+                    sectionLabel("Themes")
+                    if registry.manifests.isEmpty {
+                        Text("No themes installed.")
+                            .font(CarbonFont.mono(9))
+                            .foregroundStyle(theme.ink4)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                    } else {
+                        ForEach(registry.manifests) { manifest in
+                            themeRow(manifest)
+                        }
+                    }
+
+                    actions
+                }
+                .padding(.bottom, 16)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .onReceive(NotificationCenter.default.publisher(for: PreferencesStore.themesDidChange)) { _ in
+            selectedThemeID = PreferencesStore.shared.selectedThemeID
+        }
+        .onReceive(NotificationCenter.default.publisher(for: AppearanceMode.didChangeNotification)) { _ in
+            appearance = AppearanceMode.current
+        }
+    }
+
+    private var header: some View {
+        HStack(spacing: 8) {
+            Text("THEME")
+                .font(CarbonFont.mono(9.5, weight: .bold))
+                .tracking(1.8)
+                .foregroundStyle(theme.ink2)
+            Spacer(minLength: 0)
+            Button(action: { model.showingThemePicker = false }) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(theme.ink3)
+            }
+            .buttonStyle(.carbonHover)
+            .carbonTip("Close and go back to the inspector")
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .overlay(
+            Rectangle()
+                .fill(theme.isDark ? Color.white.opacity(0.06) : Color.black.opacity(0.08))
+                .frame(height: 1),
+            alignment: .bottom
+        )
+    }
+
+    private func themeRow(_ manifest: ThemeManifest) -> some View {
+        let isSelected = manifest.id == selectedThemeID
+        let isBuiltIn = { if case .builtIn = manifest.origin { return true } else { return false } }()
+
+        return Button(action: { selectTheme(manifest.id) }) {
+            HStack(spacing: 9) {
+                // A dot of the theme's own accent, so the list previews itself.
+                Circle()
+                    .fill(accent(of: manifest))
+                    .frame(width: 9, height: 9)
+                    .shadow(color: accent(of: manifest).opacity(0.7), radius: isSelected ? 3 : 0)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(manifest.definition.name)
+                        .font(CarbonFont.sans(11, weight: isSelected ? .bold : .regular))
+                        .foregroundStyle(isSelected ? theme.ink : theme.ink2)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                    Text(isBuiltIn ? "Built-in" : "Installed")
+                        .font(CarbonFont.mono(8))
+                        .foregroundStyle(theme.ink4)
+                }
+
+                Spacer(minLength: 4)
+
+                KeyButton(action: { edit(manifest) }) { Text("EDIT") }
+                    .frame(width: 50, height: 20)
+                    .carbonTip(isBuiltIn
+                               ? "Open an editable copy of \(manifest.definition.name)"
+                               : "Edit \(manifest.definition.name)")
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 6)
+            .background(isSelected ? theme.orange.opacity(0.12) : Color.clear)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.carbonHover)
+    }
+
+    private var actions: some View {
+        HStack(spacing: 8) {
+            KeyButton(action: {
+                registry.refresh()
+                selectedThemeID = PreferencesStore.shared.selectedThemeID
+            }) {
+                Text("REFRESH")
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: geometry.keyHeight)
+            .carbonTip("Re-scan the Themes folder for skins dropped in while the app was running")
+
+            KeyButton(action: revealInFinder) { Text("FOLDER") }
+                .frame(maxWidth: .infinity)
+                .frame(height: geometry.keyHeight)
+                .carbonTip("Show the Themes folder in Finder")
+
+            KeyButton(style: .glowingFilled, action: { model.showingThemeEditor = true }) {
+                Text("EDITOR")
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: geometry.keyHeight)
+            .carbonTip("Open the theme editor on the current theme")
+        }
+        .padding(.horizontal, 14)
+        .padding(.top, 12)
+    }
+
+    /// The accent a theme renders with, resolved the same way the app resolves
+    /// it — so the dot is the real color, not the file's raw token (which a
+    /// theme inheriting its accent wouldn't even have).
+    private func accent(of manifest: ThemeManifest) -> Color {
+        let base: CarbonTheme = manifest.definition.baseAppearance == .dark ? .carbon : .linen
+        return CarbonTheme(definition: manifest.definition, resolvedBase: base).orange
+    }
+
+    private func edit(_ manifest: ThemeManifest) {
+        registry.beginEditing(manifest)
+        model.showingThemeEditor = true
+    }
+
+    /// Picking an appearance clears any installed-theme override — same
+    /// contract as the Appearance menu, otherwise the skin keeps winning and
+    /// the press appears to do nothing.
+    private func selectAppearance(_ mode: AppearanceMode) {
+        appearance = mode
+        UserDefaults.standard.set(mode.rawValue, forKey: AppearanceMode.userDefaultsKey)
+        NotificationCenter.default.post(name: AppearanceMode.didChangeNotification, object: nil)
+        PreferencesStore.shared.selectedThemeID = nil
+        selectedThemeID = nil
+    }
+
+    private func selectTheme(_ id: String) {
+        PreferencesStore.shared.selectedThemeID = id
+        selectedThemeID = id
+    }
+
+    private func revealInFinder() {
+        guard let url = registry.userThemesDirectory else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
+    private func sectionLabel(_ text: String) -> some View {
+        Text(text.uppercased())
+            .font(CarbonFont.mono(9, weight: .bold))
+            .tracking(1.8)
+            .foregroundStyle(theme.ink3)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 14)
+            .padding(.top, 14)
+            .padding(.bottom, 6)
+    }
+}

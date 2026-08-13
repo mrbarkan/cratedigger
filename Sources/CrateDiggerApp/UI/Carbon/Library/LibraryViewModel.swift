@@ -178,6 +178,10 @@ final class LibraryViewModel: ObservableObject {
     /// The theme editor panel. On the model for the same reason — it's opened
     /// from the Appearance menu, which has no view to hold `@State`.
     @Published var showingThemeEditor: Bool = false
+
+    /// Swaps the inspector for the theme picker, the way `oledView ==
+    /// .conversion` swaps it for the Patch Bay. Driven by the header THEME key.
+    @Published var showingThemePicker: Bool = false
     /// Columns the gallery grid is currently laying out. Published by the view
     /// (only it knows the pane width) and read by ↑/↓ arrow nav, which has to
     /// move by a whole row.

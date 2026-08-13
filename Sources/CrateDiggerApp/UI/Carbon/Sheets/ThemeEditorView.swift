@@ -32,6 +32,13 @@ struct ThemeEditorView: View {
                 emptyState
             } else {
                 tokenList
+                // Pinned rather than inline: you're judging a color or a
+                // typeface from whatever row you happen to be scrolled to, so
+                // the preview has to still be on screen when you get there.
+                Divider().overlay(theme.hair)
+                ThemeSurfaceSimulator()
+                    .padding(.horizontal, 12)
+                    .padding(.top, 10)
                 Divider().overlay(theme.hair)
                 actionBar
             }
@@ -191,8 +198,6 @@ struct ThemeEditorView: View {
                     ForEach(ThemeTokenCatalog.fontRoles, id: \.key) { role in
                         fontRow(key: role.key, label: role.label, fallback: role.fallback)
                     }
-                    ThemeSurfaceSimulator()
-                        .padding(.top, 6)
                 }
 
                 if visibleColorGroups.isEmpty && visibleGeometryGroups.isEmpty && !showFonts {
@@ -482,22 +487,20 @@ private struct ThemeSurfaceSimulator: View {
 
             Rectangle().fill(theme.hair).frame(height: 1)
 
-            ForEach([("FORMAT", "FLAC"), ("BITRATE", "846 kbps")], id: \.0) { row in
-                HStack(spacing: 8) {
-                    Text(row.0)
-                        .font(CarbonFont.mono(8.5))
-                        .foregroundStyle(theme.ink3)
-                        .frame(width: 62, alignment: .leading)
-                    Text(row.1)
-                        .font(CarbonFont.sans(10))
-                        .foregroundStyle(theme.ink2)
-                    Spacer(minLength: 0)
-                }
+            HStack(spacing: 8) {
+                Text("FORMAT")
+                    .font(CarbonFont.mono(8.5))
+                    .foregroundStyle(theme.ink3)
+                Text("FLAC · 846 kbps")
+                    .font(CarbonFont.sans(10))
+                    .foregroundStyle(theme.ink2)
+                Spacer(minLength: 0)
             }
 
             Text("The quick brown fox jumps over the lazy dog.")
                 .font(CarbonFont.sans(11))
                 .foregroundStyle(theme.ink2)
+                .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(10)

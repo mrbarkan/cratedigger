@@ -34,6 +34,9 @@ struct InspectorPane: View {
             if model.oledView == .conversion {
                 ConvertPatchBay()
                     .transition(.opacity)
+            } else if model.showingThemePicker {
+                ThemePickerPane()
+                    .transition(.opacity)
             } else {
                 inspectorContent
                     .transition(.opacity)
@@ -41,6 +44,7 @@ struct InspectorPane: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .animation(.easeInOut(duration: 0.22), value: model.oledView)
+        .animation(.easeInOut(duration: 0.22), value: model.showingThemePicker)
         // These three are tools you work *in*, so they get movable, resizable
         // panels rather than sheets pinned to the window. Bindings are unchanged.
         .carbonPanel(

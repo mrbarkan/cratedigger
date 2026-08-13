@@ -9,9 +9,17 @@ struct BrandBlock: View {
         // far right), then a 4-row full-width library-button column.
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
+                // The brand column is a fixed width, but a theme can set any
+                // interface face — a wider one wrapped "CrateDigger" onto two
+                // lines and pushed the cog and pip out of the row. Scaling down
+                // is the right failure: the name stays whole and the row keeps
+                // its height. Same contract `KeyButton` already applies to
+                // every other themed label.
                 Text("CrateDigger")
                     .font(CarbonFont.sans(14, weight: .semibold))
                     .foregroundStyle(theme.ink)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
                 Spacer(minLength: 0)
                 LibButton(style: .pip, title: "", systemImage: "gearshape",
                           tip: "Settings") {
@@ -93,6 +101,8 @@ private struct LibButton: View {
                     Text(title)
                         .font(CarbonFont.mono(8, weight: .bold))
                         .tracking(1.4)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
                 }
             }
             .foregroundStyle(highlighted ? theme.orange : theme.ink2)

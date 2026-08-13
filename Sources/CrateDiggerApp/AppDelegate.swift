@@ -396,6 +396,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                 self?.mainWindowController?.model.oledView = view
             }
         }
+        // The theme picker replaces the inspector, and nothing else can drive it
+        // without clicking the header (which needs accessibility permission).
+        if env["CRATEDIGGER_THEME_PICKER"] != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 7.0) { [weak self] in
+                self?.mainWindowController?.model.showingThemePicker = true
+            }
+        }
         if env["CRATEDIGGER_AUTOPLAY"] != nil {
             DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
                 guard let model = self?.mainWindowController?.model else { return }
@@ -713,14 +720,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         appMenu.addItem(.separator())
         appMenu.addItem(makeItem(title: "Preferences…", action: #selector(showPreferences(_:)), key: ","))
         appMenu.addItem(.separator())
-        let appearanceMenuItem = NSMenuItem(title: "Appearance", action: nil, keyEquivalent: "")
-        let appearanceSubmenu = NSMenu(title: "Appearance")
-        appearanceSubmenu.delegate = self   // rebuilt on open so dropped-in themes appear
-        self.appearanceMenu = appearanceSubmenu
-        rebuildAppearanceMenu()
-        appearanceMenuItem.submenu = appearanceSubmenu
-        appMenu.addItem(appearanceMenuItem)
-        appMenu.addItem(.separator())
         appMenu.addItem(makeItem(title: "Hide CrateDigger", action: #selector(NSApplication.hide(_:)), key: "h", target: NSApp))
         let hideOthers = makeItem(title: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), key: "h", target: NSApp)
         hideOthers.keyEquivalentModifierMask = [.command, .option]
@@ -894,6 +893,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         playbackMenu.addItem(engineMenuItem)
 
         playbackMenuItem.submenu = playbackMenu
+
+        // MARK: Appearance menu
+        // Top level, right after Playback, rather than buried in the app menu:
+        // skins are a headline feature now that they're authorable in-app, and
+        // nobody looks under CrateDigger ▸ for them.
+        let appearanceMenuItem = NSMenuItem(title: "Appearance", action: nil, keyEquivalent: "")
+        mainMenu.addItem(appearanceMenuItem)
+        let appearanceSubmenu = NSMenu(title: "Appearance")
+        appearanceSubmenu.delegate = self   // rebuilt on open so dropped-in themes appear
+        self.appearanceMenu = appearanceSubmenu
+        rebuildAppearanceMenu()
+        appearanceMenuItem.submenu = appearanceSubmenu
 
         // MARK: Window menu
         let windowMenuItem = NSMenuItem()

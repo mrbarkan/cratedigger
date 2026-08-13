@@ -47,7 +47,18 @@ struct CarbonRootView: View {
         // by re-rendering the whole app, so it has to outlive any one pane's
         // visibility (collapsing the inspector mid-edit must not kill it).
         .carbonPanel(
-            isPresented: $model.showingThemeEditor,
+            // Custom setter so *every* close route drops the draft — including
+            // the window's red button, which bypasses DISCARD/SAVE. A draft
+            // left behind keeps outranking `selectedThemeID`, which made the
+            // THEME key look broken: it was switching themes correctly, but
+            // the stale draft kept rendering over the top of them.
+            isPresented: Binding(
+                get: { model.showingThemeEditor },
+                set: { isPresented in
+                    model.showingThemeEditor = isPresented
+                    if !isPresented { ThemeRegistry.shared.discardDraft() }
+                }
+            ),
             title: "Theme Editor",
             // Deliberately narrow: the editor previews by letting you watch the
             // app behind it, so a panel wide enough to cover the browser
