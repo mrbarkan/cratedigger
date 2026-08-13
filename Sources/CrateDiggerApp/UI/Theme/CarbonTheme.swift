@@ -85,6 +85,20 @@ public struct CarbonTheme: Equatable {
     /// readable over the accent gradients.
     public let selectionInk: Color
 
+    /// Identifies the active theme's font-role overrides.
+    ///
+    /// Fonts reach the UI through the `ActiveThemeFonts` global rather than the
+    /// environment (`CarbonTypography` explains why: hundreds of static
+    /// `CarbonFont.mono(_:)` call sites). But writing a global invalidates
+    /// nothing, so swapping a typeface used to change the screen only where
+    /// something happened to redraw for another reason — in the editor, that
+    /// looked like font changes simply not applying.
+    ///
+    /// Carrying the signature here makes a font change a *theme* change, which
+    /// every `@Environment(\.carbon)` reader already reacts to. It's compared,
+    /// never displayed.
+    public var fontsSignature: String = ""
+
     public var isDark: Bool { mode == .carbon }
 }
 
@@ -276,6 +290,13 @@ public extension CarbonTheme {
 
         selectionLedCore = color("selectionLedCore", resolvedBase.selectionLedCore)
         selectionInk = color("selectionInk", resolvedBase.selectionInk)
+
+        // Sorted so the same overrides always produce the same signature and
+        // an unrelated edit never spuriously invalidates the whole tree.
+        fontsSignature = (definition.fonts ?? [:])
+            .sorted { $0.key < $1.key }
+            .map { "\($0.key)=\($0.value)" }
+            .joined(separator: ",")
     }
 }
 

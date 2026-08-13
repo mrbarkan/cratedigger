@@ -49,9 +49,12 @@ struct CarbonRootView: View {
         .carbonPanel(
             isPresented: $model.showingThemeEditor,
             title: "Theme Editor",
-            minSize: NSSize(width: 420, height: 480),
-            initialSize: NSSize(width: 460, height: 700),
-            maxSize: NSSize(width: 640, height: 1200),
+            // Deliberately narrow: the editor previews by letting you watch the
+            // app behind it, so a panel wide enough to cover the browser
+            // defeats its own purpose on a laptop screen.
+            minSize: NSSize(width: 296, height: 420),
+            initialSize: NSSize(width: 320, height: 600),
+            maxSize: NSSize(width: 520, height: 1400),
             autosaveName: "cratedigger.panel.themeEditor"
         ) {
             ThemeEditorView().environmentObject(model)

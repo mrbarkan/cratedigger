@@ -55,18 +55,27 @@ struct ThemeEditorView: View {
             }
 
             if let draft {
-                HStack(spacing: 8) {
-                    TextField("Theme name", text: Binding(
-                        get: { draft.name },
-                        set: { registry.draft?.name = $0 }
-                    ))
-                    .textFieldStyle(.plain)
-                    .font(CarbonFont.sans(13, weight: .semibold))
-                    .foregroundStyle(theme.ink)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-                    .background(RoundedRectangle(cornerRadius: 5).fill(theme.paper))
-                    .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(theme.hair))
+                TextField("Theme name", text: Binding(
+                    get: { draft.name },
+                    set: { registry.draft?.name = $0 }
+                ))
+                .textFieldStyle(.plain)
+                .font(CarbonFont.sans(13, weight: .semibold))
+                .foregroundStyle(theme.ink)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(RoundedRectangle(cornerRadius: 5).fill(theme.paper))
+                .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(theme.hair))
+
+                HStack(spacing: 6) {
+                    Text(draft.id)
+                        .font(CarbonFont.mono(8.5))
+                        .foregroundStyle(theme.ink4)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .help(draft.inherits.map { "Inherits \($0)" } ?? "Root theme")
+
+                    Spacer(minLength: 4)
 
                     // A theme declares light or dark; it drives window chrome
                     // and which built-in fills tokens the theme doesn't set.
@@ -77,24 +86,8 @@ struct ThemeEditorView: View {
                         ) {
                             Text(base == .light ? "LIGHT" : "DARK")
                         }
-                        .frame(width: 58, height: geometry.keyHeight)
+                        .frame(width: 50, height: 22)
                     }
-                }
-
-                HStack(spacing: 6) {
-                    Text("ID")
-                        .font(CarbonFont.mono(8, weight: .bold))
-                        .tracking(1.4)
-                        .foregroundStyle(theme.ink4)
-                    Text(draft.id)
-                        .font(CarbonFont.mono(9))
-                        .foregroundStyle(theme.ink3)
-                    if let parent = draft.inherits {
-                        Text("· inherits \(parent)")
-                            .font(CarbonFont.mono(9))
-                            .foregroundStyle(theme.ink4)
-                    }
-                    Spacer(minLength: 0)
                 }
             }
 
@@ -217,33 +210,48 @@ struct ThemeEditorView: View {
 
     private func fontRow(key: String, label: String, fallback: String) -> some View {
         let current = draft?.fonts?[key]
-        return HStack(spacing: 8) {
-            Text(label.uppercased())
-                .font(CarbonFont.mono(9, weight: .bold))
-                .tracking(1.2)
-                .foregroundStyle(theme.ink3)
-                .frame(width: 74, alignment: .leading)
+        let face = current ?? fallback
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Text(label.uppercased())
+                    .font(CarbonFont.mono(9, weight: .bold))
+                    .tracking(1.2)
+                    .foregroundStyle(theme.ink3)
 
-            // Rendered in the face it names, so the row is its own specimen.
-            Text(current ?? fallback)
-                .font(.custom(current ?? fallback, size: 12))
-                .foregroundStyle(current == nil ? theme.ink4 : theme.ink)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                Spacer(minLength: 4)
 
-            KeyButton(action: { importFont(for: key) }) { Text("IMPORT") }
-                .frame(width: 66, height: 22)
+                KeyButton(action: { importFont(for: key) }) { Text("IMPORT") }
+                    .frame(width: 60, height: 20)
 
-            KeyButton(
-                style: current == nil ? .disabled : .normal,
-                action: { registry.draft?.fonts?[key] = nil }
-            ) {
-                Text("RESET")
+                KeyButton(
+                    style: current == nil ? .disabled : .normal,
+                    action: { registry.draft?.fonts?[key] = nil }
+                ) {
+                    Text("RESET")
+                }
+                .frame(width: 54, height: 20)
             }
-            .frame(width: 60, height: 22)
+
+            // A specimen, not a label: set in the face it names and given the
+            // full width, so importing a font shows you the letterforms rather
+            // than just a changed string.
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Aa Bb Cc 0123")
+                    .font(.custom(face, size: 15))
+                    .foregroundStyle(theme.ink)
+                Text(face)
+                    .font(CarbonFont.mono(8))
+                    .foregroundStyle(current == nil ? theme.ink4 : theme.ink3)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(RoundedRectangle(cornerRadius: 5).fill(theme.well))
+            .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(theme.hair))
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 5)
     }
 
     /// Copies the chosen face into the theme's own `Fonts/` folder and records
@@ -287,7 +295,7 @@ struct ThemeEditorView: View {
             }
             HStack(spacing: 8) {
                 KeyButton(action: revealInFinder) { Text("REVEAL") }
-                    .frame(width: 74, height: geometry.keyHeight)
+                    .frame(width: 64, height: geometry.keyHeight)
                     .carbonTip("Show the Themes folder in Finder — themes are plain files you can zip and share.")
 
                 Spacer(minLength: 0)
@@ -298,10 +306,10 @@ struct ThemeEditorView: View {
                 }) {
                     Text("DISCARD")
                 }
-                .frame(width: 84, height: geometry.keyHeight)
+                .frame(width: 74, height: geometry.keyHeight)
 
                 KeyButton(style: .glowingFilled, action: save) { Text("SAVE") }
-                    .frame(width: 84, height: geometry.keyHeight)
+                    .frame(width: 74, height: geometry.keyHeight)
                     .carbonTip("Write the theme to your Themes folder and switch to it.")
             }
         }
@@ -395,7 +403,7 @@ private struct ThemeSwatchRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             // The system picker, not a hand-rolled one: it brings the
             // eyedropper, palettes and recents for free.
             ColorPicker("", selection: Binding(
@@ -403,12 +411,13 @@ private struct ThemeSwatchRow: View {
                 set: { registry.draft?.colors?[token.key] = $0.themeHexString }
             ), supportsOpacity: true)
             .labelsHidden()
-            .frame(width: 40)
+            .frame(width: 36)
 
             Text(token.label)
                 .font(CarbonFont.sans(11))
                 .foregroundStyle(theme.ink2)
                 .lineLimit(1)
+                .minimumScaleFactor(0.85)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             HexField(
@@ -417,9 +426,9 @@ private struct ThemeSwatchRow: View {
                     set: { registry.draft?.colors?[token.key] = $0 }
                 )
             )
-            .frame(width: 92)
+            .frame(width: 78)
         }
-        .padding(.vertical, 3)
+        .padding(.vertical, 2)
         .help(token.key)
     }
 }
@@ -532,6 +541,10 @@ private struct CarbonDial: View {
             }
             .frame(width: 34, height: 34)
             .contentShape(Circle())
+            // The panel is `isMovableByWindowBackground`, so without this the
+            // window swallows the drag and the knob never moves — the same
+            // guard `FaderTrack` needs for the volume rail.
+            .background(WindowDragGuard())
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { drag in
