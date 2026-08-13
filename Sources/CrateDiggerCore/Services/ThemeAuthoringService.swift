@@ -57,15 +57,38 @@ public struct ThemeAuthoringService {
     /// `base` is the *resolved* definition the theme inherits from; `nil`
     /// (nothing inherited) returns the definition untouched.
     public static func minimized(_ definition: ThemeDefinition, against base: ThemeDefinition?) -> ThemeDefinition {
-        guard let base else { return definition }
-
         var result = definition
+
+        // Appearance layers are pruned against this theme's *own* shared
+        // tokens, not the inherited parent: a light/dark pair mostly agrees
+        // with itself, so what belongs in a layer is only what that appearance
+        // actually changes. Done before the parent pass so the shared set is
+        // still complete while the layers are measured against it.
+        result.light = pruneVariant(definition.light, against: definition)
+        result.dark = pruneVariant(definition.dark, against: definition)
+
+        guard let base else { return result }
+
         result.colors = prune(definition.colors, base.colors, equal: colorsMatch)
         result.shadows = prune(definition.shadows, base.shadows, equal: ==)
         result.fonts = prune(definition.fonts, base.fonts, equal: ==)
         result.geometry = prune(definition.geometry, base.geometry, equal: ==)
         result.effects = prune(definition.effects, base.effects, equal: ==)
         return result
+    }
+
+    /// Keeps a layer present-but-empty rather than dropping it to `nil` when it
+    /// matches the shared set exactly: `light`/`dark` being non-nil is what
+    /// marks a theme adaptive (`ThemeDefinition.isAdaptive`), so pruning an
+    /// identical layer away would quietly turn a light/dark theme back into a
+    /// single-appearance one.
+    private static func pruneVariant(_ variant: ThemeVariant?, against definition: ThemeDefinition) -> ThemeVariant? {
+        guard let variant else { return nil }
+        return ThemeVariant(
+            colors: prune(variant.colors, definition.colors, equal: colorsMatch),
+            shadows: prune(variant.shadows, definition.shadows, equal: ==),
+            effects: prune(variant.effects, definition.effects, equal: ==)
+        )
     }
 
     private static func prune<Value>(

@@ -37,18 +37,30 @@ public struct CarbonThemed: ViewModifier {
 
         let fallbackTheme: CarbonTheme = (resolvedSystemScheme == .dark) ? .carbon : .linen
         let selectedThemeID = PreferencesStore.shared.selectedThemeID
-        let activeOverride = registry.resolvedTheme(for: selectedThemeID)
+        let requestedAppearance: ThemeDefinition.BaseAppearance =
+            (resolvedSystemScheme == .dark) ? .dark : .light
+        let activeOverride = registry.resolvedTheme(for: selectedThemeID, appearance: requestedAppearance)
+        let isAdaptive = registry.activeDefinition(for: selectedThemeID)?.isAdaptive ?? false
 
         let theme = activeOverride?.theme ?? fallbackTheme
         let geometry = activeOverride?.geometry ?? .standard
 
-        // A specific installed theme *is* the appearance decision (picking a
-        // skin is the whole decision, same as Winamp) — its declared
-        // baseAppearance drives preferredColorScheme instead of `mode`. With
-        // no theme selected, this is byte-for-byte today's behavior.
-        let preferredScheme: ColorScheme? = activeOverride != nil
-            ? (theme.isDark ? .dark : .light)
-            : (mode == .system ? nil : resolvedSystemScheme)
+        // A single-appearance theme *is* the appearance decision (picking a
+        // skin is the whole decision, same as Winamp), so its declared
+        // baseAppearance drives preferredColorScheme instead of `mode`.
+        //
+        // An adaptive theme is the opposite: it ships both looks precisely so
+        // it can follow the user's Light/Dark/System choice, so it defers to
+        // `mode` the same way no-theme-selected does.
+        // While a draft is open the window should match the layer being
+        // edited, not the system, so switching to the Light layer shows light
+        // chrome immediately.
+        let preferredScheme: ColorScheme?
+        if activeOverride != nil && (!isAdaptive || registry.draft != nil) {
+            preferredScheme = theme.isDark ? .dark : .light
+        } else {
+            preferredScheme = (mode == .system) ? nil : resolvedSystemScheme
+        }
 
         // Side effect in `body` is intentional and safe here: it's an
         // idempotent write of a plain global (see `ActiveThemeFonts`) derived

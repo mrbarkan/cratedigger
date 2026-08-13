@@ -159,6 +159,21 @@ public struct ThemeLoaderService {
             shadows: mergeDictionaries(base.shadows, override.shadows),
             fonts: mergeDictionaries(base.fonts, override.fonts),
             geometry: mergeDictionaries(base.geometry, override.geometry),
+            effects: mergeDictionaries(base.effects, override.effects),
+            // Inheriting an adaptive theme must inherit its adaptiveness —
+            // otherwise a one-line child of a light/dark theme would silently
+            // collapse to a single appearance.
+            light: mergeVariants(base.light, override.light),
+            dark: mergeVariants(base.dark, override.dark)
+        )
+    }
+
+    private static func mergeVariants(_ base: ThemeVariant?, _ override: ThemeVariant?) -> ThemeVariant? {
+        guard let override else { return base }
+        guard let base else { return override }
+        return ThemeVariant(
+            colors: mergeDictionaries(base.colors, override.colors),
+            shadows: mergeDictionaries(base.shadows, override.shadows),
             effects: mergeDictionaries(base.effects, override.effects)
         )
     }

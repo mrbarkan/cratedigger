@@ -58,6 +58,11 @@ struct ThemeEditorView: View {
             HStack(spacing: 8) {
                 sectionLabel("Theme")
                 Spacer(minLength: 0)
+                if draft != nil {
+                    KeyButton(action: { registry.duplicateDraft() }) { Text("DUPLICATE") }
+                        .frame(width: 74, height: 20)
+                        .carbonTip("Fork this theme into a new one, keeping everything you've changed. The original is left alone.")
+                }
                 loadMenu
             }
 
@@ -81,22 +86,10 @@ struct ThemeEditorView: View {
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .help(draft.inherits.map { "Inherits \($0)" } ?? "Root theme")
-
                     Spacer(minLength: 4)
-
-                    // A theme declares light or dark; it drives window chrome
-                    // and which built-in fills tokens the theme doesn't set.
-                    ForEach([ThemeDefinition.BaseAppearance.light, .dark], id: \.rawValue) { base in
-                        KeyButton(
-                            style: draft.baseAppearance == base ? .selected : .normal,
-                            action: { registry.setDraftBaseAppearance(base) }
-                        ) {
-                            Text(base == .light ? "LIGHT" : "DARK")
-                        }
-                        .frame(width: 50, height: 22)
-                        .carbonTip("Make this a \(base == .light ? "light" : "dark") theme. Colors you haven't edited are repainted to match; your own edits are kept.")
-                    }
                 }
+
+                appearanceControl(draft)
             }
 
             HStack(spacing: 8) {
@@ -122,6 +115,64 @@ struct ThemeEditorView: View {
             .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(theme.hair))
         }
         .padding(12)
+    }
+
+    /// Whether the theme is light, dark, or carries both — and when it carries
+    /// both, which layer you're editing.
+    ///
+    /// BOTH is what stops a skin having to ship as a "— Light"/"— Dark" pair:
+    /// the theme keeps one shared palette plus whatever each appearance
+    /// changes, and follows the user's Light/Dark/System setting.
+    @ViewBuilder
+    private func appearanceControl(_ draft: ThemeDefinition) -> some View {
+        VStack(spacing: 5) {
+            HStack(spacing: 6) {
+                ForEach([ThemeDefinition.BaseAppearance.light, .dark], id: \.rawValue) { base in
+                    KeyButton(
+                        style: (!draft.isAdaptive && draft.baseAppearance == base) ? .selected : .normal,
+                        action: {
+                            registry.setDraftAdaptive(false)
+                            registry.setDraftBaseAppearance(base)
+                        }
+                    ) {
+                        Text(base == .light ? "LIGHT" : "DARK")
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 22)
+                    .carbonTip("A \(base == .light ? "light" : "dark")-only theme. Colors you haven't edited are repainted to match; your own edits are kept.")
+                }
+
+                KeyButton(
+                    style: draft.isAdaptive ? .selected : .normal,
+                    action: { registry.setDraftAdaptive(true) }
+                ) {
+                    Text("BOTH")
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 22)
+                .carbonTip("One theme with a light and a dark version, following the system setting — instead of two separate themes.")
+            }
+
+            if draft.isAdaptive {
+                HStack(spacing: 6) {
+                    Text("EDITING")
+                        .font(CarbonFont.mono(8, weight: .bold))
+                        .tracking(1.2)
+                        .foregroundStyle(theme.ink4)
+                    ForEach([ThemeDefinition.BaseAppearance.light, .dark], id: \.rawValue) { base in
+                        KeyButton(
+                            style: registry.draftEditingAppearance == base ? .glowingFilled : .normal,
+                            action: { registry.draftEditingAppearance = base }
+                        ) {
+                            Text(base == .light ? "LIGHT" : "DARK")
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 20)
+                    }
+                }
+                .carbonTip("Colors you change now apply to this version only. The app previews the version you're editing.")
+            }
+        }
     }
 
     private var loadMenu: some View {
@@ -554,8 +605,10 @@ private struct ThemeSwatchRow: View {
     @ObservedObject private var registry = ThemeRegistry.shared
     let token: ThemeTokenCatalog.ColorToken
 
+    /// Reads through the registry so an adaptive theme shows the layer being
+    /// edited rather than the shared token underneath it.
     private var hex: String {
-        registry.draft?.colors?[token.key] ?? ""
+        registry.draftColor(token.key) ?? ""
     }
 
     var body: some View {
@@ -564,7 +617,7 @@ private struct ThemeSwatchRow: View {
             // eyedropper, palettes and recents for free.
             ColorPicker("", selection: Binding(
                 get: { Color(hexString: hex) ?? .black },
-                set: { registry.draft?.colors?[token.key] = $0.themeHexString }
+                set: { registry.setDraftColor(token.key, $0.themeHexString) }
             ), supportsOpacity: true)
             .labelsHidden()
             .frame(width: 36)
@@ -579,7 +632,7 @@ private struct ThemeSwatchRow: View {
             HexField(
                 value: Binding(
                     get: { hex },
-                    set: { registry.draft?.colors?[token.key] = $0 }
+                    set: { registry.setDraftColor(token.key, $0) }
                 )
             )
             .frame(width: 78)

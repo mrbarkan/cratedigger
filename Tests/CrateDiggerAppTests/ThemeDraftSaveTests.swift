@@ -261,6 +261,111 @@ final class ThemeDraftSaveTests: XCTestCase {
         XCTAssertEqual(registry.draft?.colors?["orange"], "#00FF00")
     }
 
+    // MARK: - Adaptive (light + dark in one theme)
+
+    /// Switching a dark theme to BOTH must produce a usable light version
+    /// immediately, without disturbing the dark one.
+    func testGoingAdaptiveBuildsTheOppositeLayer() throws {
+        registry.beginEditing(try manifest("base-theme"))
+        let darkInk = registry.draftColor("ink")
+
+        registry.setDraftAdaptive(true)
+
+        XCTAssertTrue(try XCTUnwrap(registry.draft).isAdaptive)
+        XCTAssertEqual(registry.draftEditingAppearance, .dark)
+        XCTAssertEqual(registry.draftColor("ink"), darkInk, "the original appearance is untouched")
+
+        registry.draftEditingAppearance = .light
+        XCTAssertEqual(registry.draftColor("ink"), CarbonTheme.linen.ink.themeHexString)
+    }
+
+    /// The whole point of layers: a color changed in Light must not change Dark.
+    func testEditingOneLayerLeavesTheOtherAlone() throws {
+        registry.beginEditing(try manifest("base-theme"))
+        registry.setDraftAdaptive(true)
+
+        registry.draftEditingAppearance = .light
+        registry.setDraftColor("orange", "#00FF00")
+
+        XCTAssertEqual(registry.draftColor("orange"), "#00FF00")
+        registry.draftEditingAppearance = .dark
+        XCTAssertNotEqual(registry.draftColor("orange"), "#00FF00")
+    }
+
+    func testAdaptiveThemeSurvivesSaveAndRendersBothWays() throws {
+        let previousSelection = PreferencesStore.shared.selectedThemeID
+        defer { PreferencesStore.shared.selectedThemeID = previousSelection }
+
+        registry.beginEditing(try manifest("base-theme"))
+        registry.setDraftAdaptive(true)
+        registry.draftEditingAppearance = .light
+        registry.setDraftColor("orange", "#00FF00")
+        try registry.saveDraft()
+
+        let reloaded = try manifest("base-theme").definition
+        XCTAssertTrue(reloaded.isAdaptive)
+
+        // One theme, two looks — chosen by the appearance asked for.
+        let light = try XCTUnwrap(registry.resolvedTheme(for: "base-theme", appearance: .light))
+        let dark = try XCTUnwrap(registry.resolvedTheme(for: "base-theme", appearance: .dark))
+        XCTAssertFalse(light.theme.isDark)
+        XCTAssertTrue(dark.theme.isDark)
+        XCTAssertNotEqual(light.theme.orange, dark.theme.orange)
+    }
+
+    /// A single-appearance theme must keep ignoring the requested appearance,
+    /// or every existing skin would start following the system.
+    func testNonAdaptiveThemeStillForcesItsOwnAppearance() throws {
+        let light = try XCTUnwrap(registry.resolvedTheme(for: "base-theme", appearance: .light))
+        XCTAssertTrue(light.theme.isDark, "a dark-only theme stays dark even when light is requested")
+    }
+
+    func testCollapsingBackToOneAppearanceKeepsWhatWasOnScreen() throws {
+        registry.beginEditing(try manifest("base-theme"))
+        registry.setDraftAdaptive(true)
+        registry.draftEditingAppearance = .light
+        registry.setDraftColor("orange", "#00FF00")
+
+        registry.setDraftAdaptive(false)
+
+        XCTAssertFalse(try XCTUnwrap(registry.draft).isAdaptive)
+        XCTAssertEqual(registry.draft?.baseAppearance, .light)
+        XCTAssertEqual(registry.draftColor("orange"), "#00FF00")
+    }
+
+    // MARK: - Duplicate
+
+    func testDuplicateForksTheDraftWithoutTouchingTheOriginal() throws {
+        let previousSelection = PreferencesStore.shared.selectedThemeID
+        defer { PreferencesStore.shared.selectedThemeID = previousSelection }
+
+        registry.beginEditing(try manifest("base-theme"))
+        registry.setDraftColor("orange", "#00FF00")
+        registry.duplicateDraft()
+
+        XCTAssertNotEqual(registry.draft?.id, "base-theme")
+        XCTAssertEqual(registry.draft?.name, "Base Theme Copy")
+        XCTAssertEqual(registry.draftColor("orange"), "#00FF00", "edits carry into the copy")
+
+        try registry.saveDraft()
+
+        // Original untouched, copy added alongside it.
+        XCTAssertNotEqual(try manifest("base-theme").definition.colors?["orange"], "#00FF00")
+        XCTAssertEqual(registry.manifests.count, 2)
+    }
+
+    func testDuplicateNeverCollidesWithAnExistingID() throws {
+        registry.beginEditing(try manifest("base-theme"))
+        registry.duplicateDraft()
+        let firstID = try XCTUnwrap(registry.draft?.id)
+        try registry.saveDraft()
+
+        registry.beginEditing(try manifest("base-theme"))
+        registry.duplicateDraft()
+
+        XCTAssertNotEqual(registry.draft?.id, firstID)
+    }
+
     /// A color edit and a font edit in the same session must both land.
     func testColorAndFontEditsSaveTogether() throws {
         registry.beginEditing(try manifest("base-theme"))

@@ -55,6 +55,18 @@ public struct ThemeDefinition: Codable, Sendable, Equatable {
     /// as `geometry`.
     public var effects: [String: Double]?
 
+    /// Optional per-appearance layers. A theme that supplies **both** is
+    /// *adaptive*: it follows the user's Light/Dark/System setting instead of
+    /// forcing the one appearance it was authored in, so a single theme covers
+    /// both rather than shipping as a "— Light"/"— Dark" pair.
+    ///
+    /// Each layer holds only what differs from the shared tokens above, so the
+    /// common palette is still written once. A theme with neither (or only one)
+    /// behaves exactly as before — this is purely additive, and every theme
+    /// authored before it keeps loading unchanged.
+    public var light: ThemeVariant?
+    public var dark: ThemeVariant?
+
     public init(
         id: String,
         name: String,
@@ -66,8 +78,12 @@ public struct ThemeDefinition: Codable, Sendable, Equatable {
         shadows: [String: ShadowDefinition]? = nil,
         fonts: [String: String]? = nil,
         geometry: [String: Double]? = nil,
-        effects: [String: Double]? = nil
+        effects: [String: Double]? = nil,
+        light: ThemeVariant? = nil,
+        dark: ThemeVariant? = nil
     ) {
+        self.light = light
+        self.dark = dark
         self.id = id
         self.name = name
         self.author = author
@@ -79,6 +95,65 @@ public struct ThemeDefinition: Codable, Sendable, Equatable {
         self.fonts = fonts
         self.geometry = geometry
         self.effects = effects
+    }
+}
+
+/// One appearance's layer of a theme — only the tokens that differ from the
+/// theme's shared set when that appearance is active.
+///
+/// Deliberately narrower than `ThemeDefinition`: geometry and fonts don't
+/// change between light and dark (a corner radius isn't lighter at night), so
+/// allowing them here would invite themes that shift layout as the system
+/// appearance changes.
+public struct ThemeVariant: Codable, Sendable, Equatable {
+    public var colors: [String: String]?
+    public var shadows: [String: ShadowDefinition]?
+    public var effects: [String: Double]?
+
+    public init(
+        colors: [String: String]? = nil,
+        shadows: [String: ShadowDefinition]? = nil,
+        effects: [String: Double]? = nil
+    ) {
+        self.colors = colors
+        self.shadows = shadows
+        self.effects = effects
+    }
+
+    public var isEmpty: Bool {
+        (colors?.isEmpty ?? true) && (shadows?.isEmpty ?? true) && (effects?.isEmpty ?? true)
+    }
+}
+
+public extension ThemeDefinition {
+    /// A theme that carries both layers follows the user's Light/Dark/System
+    /// setting; one that doesn't still forces its own `baseAppearance`, exactly
+    /// as every theme did before variants existed.
+    var isAdaptive: Bool { light != nil && dark != nil }
+
+    func variant(for appearance: BaseAppearance) -> ThemeVariant? {
+        appearance == .light ? light : dark
+    }
+
+    /// Flattens this theme for one appearance: the shared tokens with that
+    /// appearance's layer laid over them. Rendering always goes through here,
+    /// so `CarbonTheme` never has to know variants exist.
+    func resolved(for appearance: BaseAppearance) -> ThemeDefinition {
+        guard let variant = variant(for: appearance) else { return self }
+
+        var result = self
+        // A theme rendering its light layer *is* light, whatever it declares.
+        result.baseAppearance = appearance
+        result.colors = ThemeDefinition.overlay(colors, variant.colors)
+        result.shadows = ThemeDefinition.overlay(shadows, variant.shadows)
+        result.effects = ThemeDefinition.overlay(effects, variant.effects)
+        return result
+    }
+
+    internal static func overlay<Value>(_ base: [String: Value]?, _ over: [String: Value]?) -> [String: Value]? {
+        guard let over else { return base }
+        guard let base else { return over }
+        return base.merging(over) { _, new in new }
     }
 }
 

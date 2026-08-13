@@ -98,22 +98,49 @@ public final class ThemeRegistry: ObservableObject {
     /// or `nil` if no id is given or it doesn't match an installed theme —
     /// callers fall back to the built-in light/dark pairing in that case.
     /// An open draft takes precedence over the selection entirely.
-    public func resolvedTheme(for selectedThemeID: String?) -> (theme: CarbonTheme, geometry: CarbonGeometry)? {
+    /// `appearance` is the Light/Dark the *user* has asked for. An adaptive
+    /// theme (one carrying both layers) honours it; a single-appearance theme
+    /// ignores it and forces its own, exactly as before. Pass `nil` when you
+    /// only want geometry or don't have an appearance to hand — geometry never
+    /// varies between layers.
+    public func resolvedTheme(
+        for selectedThemeID: String?,
+        appearance: ThemeDefinition.BaseAppearance? = nil
+    ) -> (theme: CarbonTheme, geometry: CarbonGeometry)? {
         if let draft {
-            return (theme: rendered(draft), geometry: CarbonGeometry(definition: draft))
+            // While editing, preview the layer being worked on rather than the
+            // one the system happens to be in — otherwise editing an adaptive
+            // theme's Light layer at night shows you the Dark one.
+            let flattened = flatten(draft, for: draft.isAdaptive ? draftEditingAppearance : appearance)
+            return (theme: rendered(flattened), geometry: CarbonGeometry(definition: flattened))
         }
 
         guard let manifest = manifest(for: selectedThemeID) else { return nil }
-        if let cached = resolvedCache[manifest.id] {
+
+        let definition = flatten(manifest.definition, for: appearance)
+        // Cached per (theme, appearance): an adaptive theme renders differently
+        // in each, so keying on id alone would serve the wrong one back.
+        let cacheKey = "\(manifest.id)#\(definition.baseAppearance.rawValue)"
+        if let cached = resolvedCache[cacheKey] {
             return cached
         }
 
         let resolved = (
-            theme: rendered(manifest.definition),
-            geometry: CarbonGeometry(definition: manifest.definition)
+            theme: rendered(definition),
+            geometry: CarbonGeometry(definition: definition)
         )
-        resolvedCache[manifest.id] = resolved
+        resolvedCache[cacheKey] = resolved
         return resolved
+    }
+
+    /// Picks the layer to render: the requested appearance when the theme
+    /// supports both, otherwise the theme's own declared one.
+    private func flatten(
+        _ definition: ThemeDefinition,
+        for appearance: ThemeDefinition.BaseAppearance?
+    ) -> ThemeDefinition {
+        let target = (definition.isAdaptive ? appearance : nil) ?? definition.baseAppearance
+        return definition.resolved(for: target)
     }
 
     private func rendered(_ definition: ThemeDefinition) -> CarbonTheme {
@@ -157,6 +184,7 @@ public final class ThemeRegistry: ObservableObject {
         case .userInstalled:
             draft = seeded(manifest.definition)
             draftSeed = draft
+            draftEditingAppearance = manifest.definition.baseAppearance
         case .builtIn:
             var fork = manifest.definition
             fork.id = ThemeAuthoringService.slug(
@@ -171,7 +199,93 @@ public final class ThemeRegistry: ObservableObject {
             fork.inherits = manifest.definition.id
             draft = seeded(fork)
             draftSeed = draft
+            draftEditingAppearance = manifest.definition.baseAppearance
         }
+    }
+
+    /// Which layer of an adaptive draft the editor is currently writing to.
+    /// Meaningless for a single-appearance theme, where every edit goes to the
+    /// shared token set.
+    @Published public var draftEditingAppearance: ThemeDefinition.BaseAppearance = .dark
+
+    /// The value a swatch should show: the active layer's override if it has
+    /// one, otherwise the shared token. Centralised here so no view has to know
+    /// whether the draft is adaptive.
+    public func draftColor(_ key: String) -> String? {
+        guard let draft else { return nil }
+        if draft.isAdaptive {
+            return draft.variant(for: draftEditingAppearance)?.colors?[key] ?? draft.colors?[key]
+        }
+        return draft.colors?[key]
+    }
+
+    /// Writes into the layer being edited when the draft is adaptive, so
+    /// changing a color in Light mode doesn't also change it in Dark.
+    public func setDraftColor(_ key: String, _ hex: String) {
+        guard var draft else { return }
+        if draft.isAdaptive {
+            var variant = draft.variant(for: draftEditingAppearance) ?? ThemeVariant()
+            var colors = variant.colors ?? [:]
+            colors[key] = hex
+            variant.colors = colors
+            if draftEditingAppearance == .light { draft.light = variant } else { draft.dark = variant }
+        } else {
+            var colors = draft.colors ?? [:]
+            colors[key] = hex
+            draft.colors = colors
+        }
+        self.draft = draft
+    }
+
+    /// Turns a single-appearance draft into one carrying both looks, or
+    /// collapses it back to whichever layer is being edited.
+    ///
+    /// Going adaptive, the appearance the theme was already authored in needs
+    /// no overrides — the shared tokens *are* it — while the opposite layer
+    /// starts from that side's built-in wherever the author hasn't chosen a
+    /// color, so the theme is usable in both from the moment it's switched on.
+    public func setDraftAdaptive(_ adaptive: Bool) {
+        guard var draft else { return }
+
+        if adaptive {
+            guard !draft.isAdaptive else { return }
+            let current = draft.baseAppearance
+            let other: ThemeDefinition.BaseAppearance = current == .light ? .dark : .light
+            let otherLayer = ThemeVariant(colors: repaintedColors(of: draft, from: current, to: other))
+
+            if current == .light {
+                draft.light = ThemeVariant()
+                draft.dark = otherLayer
+            } else {
+                draft.dark = ThemeVariant()
+                draft.light = otherLayer
+            }
+            draftEditingAppearance = current
+        } else {
+            guard draft.isAdaptive else { return }
+            // Keep what's on screen: flatten the layer being edited into the
+            // shared set and drop both layers.
+            let keep = draftEditingAppearance
+            draft = draft.resolved(for: keep)
+            draft.light = nil
+            draft.dark = nil
+        }
+
+        self.draft = draft
+    }
+
+    /// Forks the open draft into a new theme, in place, so "start from this
+    /// one" doesn't mean saving, closing, and re-opening a copy.
+    public func duplicateDraft() {
+        guard var draft else { return }
+        let name = "\(draft.name) Copy"
+        draft.id = ThemeAuthoringService.slug(from: name, taken: Set(manifests.map(\.id)))
+        draft.name = name
+        // The copy is the current author's, not the original's.
+        draft.author = nil
+        draft.version = nil
+        self.draft = draft
+        draftSeed = draft
     }
 
     /// Applies a LIGHT/DARK change so it actually shows.
@@ -186,28 +300,52 @@ public final class ThemeRegistry: ObservableObject {
     /// restores that theme's own palette rather than the generic built-in, so
     /// the switch is reversible instead of quietly destroying the design.
     public func setDraftBaseAppearance(_ newValue: ThemeDefinition.BaseAppearance) {
-        guard var draft, draft.baseAppearance != newValue else { return }
-        let seed = draftSeed
+        guard var draft else { return }
 
-        let previousBuiltIn: CarbonTheme = draft.baseAppearance == .dark ? .carbon : .linen
-        let nextBuiltIn: CarbonTheme = newValue == .dark ? .carbon : .linen
+        // On an adaptive draft the keys mean "show me this layer" — both looks
+        // are being kept, so there's nothing to repaint.
+        guard !draft.isAdaptive else {
+            draftEditingAppearance = newValue
+            return
+        }
+        guard draft.baseAppearance != newValue else { return }
 
         var colors = draft.colors ?? [:]
-        for token in ThemeTokenCatalog.allColorTokens {
-            let seedValue = seed?.colors?[token.key]
-            let untouched = colors[token.key].map { current in
-                seedValue.map { ThemeAuthoringService.colorsMatch(current, $0) } == true
-                    || ThemeAuthoringService.colorsMatch(current, previousBuiltIn[keyPath: token.read].themeHexString)
-            } ?? true
-            guard untouched else { continue }
-
-            let restored = (newValue == seed?.baseAppearance) ? seedValue : nil
-            colors[token.key] = restored ?? nextBuiltIn[keyPath: token.read].themeHexString
+        for (key, value) in repaintedColors(of: draft, from: draft.baseAppearance, to: newValue) {
+            colors[key] = value
         }
 
         draft.colors = colors
         draft.baseAppearance = newValue
         self.draft = draft
+    }
+
+    /// The tokens that should change when a draft moves between appearances:
+    /// the ones the author hasn't touched, mapped onto the destination's
+    /// built-in. Returning to the appearance the draft was opened at restores
+    /// that theme's own palette instead of the generic built-in, which is what
+    /// makes the switch reversible rather than quietly destructive.
+    private func repaintedColors(
+        of draft: ThemeDefinition,
+        from previous: ThemeDefinition.BaseAppearance,
+        to next: ThemeDefinition.BaseAppearance
+    ) -> [String: String] {
+        let previousBuiltIn: CarbonTheme = previous == .dark ? .carbon : .linen
+        let nextBuiltIn: CarbonTheme = next == .dark ? .carbon : .linen
+
+        var repainted: [String: String] = [:]
+        for token in ThemeTokenCatalog.allColorTokens {
+            let seedValue = draftSeed?.colors?[token.key]
+            let untouched = draft.colors?[token.key].map { current in
+                seedValue.map { ThemeAuthoringService.colorsMatch(current, $0) } == true
+                    || ThemeAuthoringService.colorsMatch(current, previousBuiltIn[keyPath: token.read].themeHexString)
+            } ?? true
+            guard untouched else { continue }
+
+            let restored = (next == draftSeed?.baseAppearance) ? seedValue : nil
+            repainted[token.key] = restored ?? nextBuiltIn[keyPath: token.read].themeHexString
+        }
+        return repainted
     }
 
     /// Fills in every token the editor can show, reading each one from the
