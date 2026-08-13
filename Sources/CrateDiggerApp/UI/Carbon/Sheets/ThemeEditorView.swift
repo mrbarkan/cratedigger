@@ -179,8 +179,7 @@ struct ThemeEditorView: View {
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 14) {
                         ForEach(group.tokens) { token in
                             CarbonDial(
-                                label: token.label,
-                                range: token.range,
+                                token: token,
                                 value: Binding(
                                     get: { CGFloat(registry.draft?.geometry?[token.key] ?? 0) },
                                     set: { registry.draft?.geometry?[token.key] = Double($0) }
@@ -196,7 +195,7 @@ struct ThemeEditorView: View {
                         .padding(.top, 16)
                         .padding(.bottom, 4)
                     ForEach(ThemeTokenCatalog.fontRoles, id: \.key) { role in
-                        fontRow(key: role.key, label: role.label, fallback: role.fallback)
+                        fontRow(key: role.key, label: role.label, note: role.note, fallback: role.fallback)
                     }
                 }
 
@@ -215,26 +214,31 @@ struct ThemeEditorView: View {
 
     // MARK: - Fonts
 
-    private func fontRow(key: String, label: String, fallback: String) -> some View {
+    private func fontRow(key: String, label: String, note: String, fallback: String) -> some View {
         let current = draft?.fonts?[key]
-        return VStack(alignment: .leading, spacing: 2) {
+        return VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 5) {
-                Text(label.uppercased())
-                    .font(CarbonFont.mono(9, weight: .bold))
-                    .tracking(1.2)
-                    .foregroundStyle(theme.ink3)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(label.uppercased())
+                        .font(CarbonFont.mono(9, weight: .bold))
+                        .tracking(1.2)
+                        .foregroundStyle(theme.ink3)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                    Text(current ?? "\(fallback) (default)")
+                        .font(CarbonFont.mono(8))
+                        .foregroundStyle(current == nil ? theme.ink4 : theme.ink3)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
 
                 Spacer(minLength: 4)
 
-                KeyButton(action: { chooseSystemFont(for: key, current: current ?? fallback) }) {
-                    Text("CHOOSE")
-                }
-                .frame(width: 60, height: 20)
-                .carbonTip("Pick any font installed on this Mac. Nothing is copied — the theme just records the name.")
+                systemFontMenu(for: key)
 
                 KeyButton(action: { importFont(for: key) }) { Text("FILE") }
-                    .frame(width: 44, height: 20)
-                    .carbonTip("Bundle a font file inside the theme, so it travels with the .cdtheme when you share it.")
+                    .frame(width: 42, height: 20)
+                    .carbonTip("Bundle a font file inside the theme so it travels with the .cdtheme when you share it.")
 
                 KeyButton(
                     style: current == nil ? .disabled : .normal,
@@ -242,34 +246,52 @@ struct ThemeEditorView: View {
                 ) {
                     Text("RESET")
                 }
-                .frame(width: 50, height: 20)
+                .frame(width: 48, height: 20)
             }
-
-            Text(current ?? "\(fallback) (default)")
-                .font(CarbonFont.mono(8.5))
-                .foregroundStyle(current == nil ? theme.ink4 : theme.ink3)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.vertical, 5)
+        .help(note)
     }
 
-    /// Opens the standard macOS font panel. Browsing it fires repeatedly, so
-    /// each keystroke through the family list lands in the draft and the
-    /// simulator below re-letters as you arrow around — which is the point of
-    /// using the system picker rather than a file dialog.
+    /// The installed-font list, in the editor rather than in `NSFontPanel`.
     ///
+    /// The system font panel reports its selection through the responder chain
+    /// (`changeFont:`), and a SwiftUI view hosted in a plain `NSWindow` puts
+    /// nothing on that chain that implements it — so the panel opened, you
+    /// picked a face, and nothing was ever delivered. That was the "font isn't
+    /// saving" bug: the save path was fine, the pick never arrived.
+    ///
+    /// This reads the same registry `NSFontPanel` does, so it's still "every
+    /// font on this Mac" — it just hands the result back directly, and keeps
+    /// the choice inside the editor instead of opening a second floating
+    /// window over an already-crowded screen.
+    private func systemFontMenu(for role: String) -> some View {
+        Menu {
+            ForEach(ThemeTokenCatalog.systemFontFamilies, id: \.self) { family in
+                Button(family) { selectSystemFont(family: family, for: role) }
+            }
+        } label: {
+            Text("SYSTEM")
+                .font(CarbonFont.mono(9, weight: .bold))
+                .tracking(1.2)
+                .foregroundStyle(theme.ink2)
+        }
+        .menuStyle(.borderlessButton)
+        .frame(width: 62)
+        .help("Use a font installed on this Mac. Nothing is copied — the theme records the name.")
+    }
+
     /// A system font is recorded by name only, never copied: it's already on
     /// this Mac. If the theme travels to a Mac without it, `Font.custom` falls
     /// back to the system face (see `ThemeDefinition.fonts`), which is why FILE
     /// still exists for themes you intend to share.
-    private func chooseSystemFont(for role: String, current: String) {
-        FontPanelBridge.shared.present(
-            current: NSFont(name: current, size: 15) ?? .systemFont(ofSize: 15)
-        ) { picked in
-            registry.draft?.fonts?[role] = picked.fontName
+    private func selectSystemFont(family: String, for role: String) {
+        guard let postScriptName = ThemeTokenCatalog.regularPostScriptName(inFamily: family) else {
+            saveError = "Couldn't resolve a usable face in “\(family)”."
+            return
         }
+        saveError = nil
+        registry.draft?.fonts?[role] = postScriptName
     }
 
     /// Copies the chosen face into the theme's own `Fonts/` folder and records
@@ -369,30 +391,30 @@ struct ThemeEditorView: View {
         filter.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
-    private func matches(_ key: String, _ label: String, _ group: String) -> Bool {
+    /// Notes are searchable too, so "shadow", "sidebar" or "hover" find the
+    /// right control even when the label doesn't use that word.
+    private func matches(_ fields: String...) -> Bool {
         guard !query.isEmpty else { return true }
-        return key.lowercased().contains(query)
-            || label.lowercased().contains(query)
-            || group.lowercased().contains(query)
+        return fields.contains { $0.lowercased().contains(query) }
     }
 
     private var visibleColorGroups: [ThemeTokenCatalog.ColorGroup] {
         ThemeTokenCatalog.colorGroups.compactMap { group in
-            let tokens = group.tokens.filter { matches($0.key, $0.label, group.name) }
+            let tokens = group.tokens.filter { matches($0.key, $0.label, $0.note, group.name) }
             return tokens.isEmpty ? nil : ThemeTokenCatalog.ColorGroup(name: group.name, tokens: tokens)
         }
     }
 
     private var visibleGeometryGroups: [ThemeTokenCatalog.GeometryGroup] {
         ThemeTokenCatalog.geometryGroups.compactMap { group in
-            let tokens = group.tokens.filter { matches($0.key, $0.label, group.name) }
+            let tokens = group.tokens.filter { matches($0.key, $0.label, $0.note, group.name) }
             return tokens.isEmpty ? nil : ThemeTokenCatalog.GeometryGroup(name: group.name, tokens: tokens)
         }
     }
 
     private var showFonts: Bool {
         query.isEmpty || ThemeTokenCatalog.fontRoles.contains {
-            matches($0.key, $0.label, "fonts")
+            matches($0.key, $0.label, $0.note, "fonts", "typeface")
         }
     }
 
@@ -516,43 +538,6 @@ private struct ThemeSurfaceSimulator: View {
     }
 }
 
-// MARK: - System font panel
-
-/// Bridges SwiftUI to `NSFontPanel`, which reports its selection through the
-/// responder chain (`changeFont:`) rather than a completion handler.
-///
-/// A single long-lived instance rather than one per row: `NSFontManager.target`
-/// is a weak, app-global hookup, so a short-lived coordinator would be
-/// deallocated out from under the open panel — and there is only ever one font
-/// panel on screen to own.
-@MainActor
-private final class FontPanelBridge: NSObject {
-    static let shared = FontPanelBridge()
-
-    private var onPick: ((NSFont) -> Void)?
-    private var current: NSFont = .systemFont(ofSize: 15)
-
-    func present(current: NSFont, onPick: @escaping (NSFont) -> Void) {
-        self.current = current
-        self.onPick = onPick
-
-        let manager = NSFontManager.shared
-        manager.target = self
-        manager.action = #selector(changeFontFromPanel(_:))
-        manager.setSelectedFont(current, isMultiple: false)
-        NSFontPanel.shared.orderFront(nil)
-    }
-
-    /// Sent continuously while the user browses, not just on dismissal — which
-    /// is what makes arrowing through the family list preview live.
-    @objc private func changeFontFromPanel(_ sender: Any?) {
-        guard let manager = sender as? NSFontManager else { return }
-        let picked = manager.convert(current)
-        current = picked
-        onPick?(picked)
-    }
-}
-
 // MARK: - Swatch row
 
 /// One color token: native picker on the left, hex on the right. Both edit the
@@ -595,7 +580,9 @@ private struct ThemeSwatchRow: View {
             .frame(width: 78)
         }
         .padding(.vertical, 2)
-        .help(token.key)
+        // The note says where the color shows up; the raw token name is kept
+        // on the end because that's what you'd search for in a theme file.
+        .help("\(token.note)\n\nToken: \(token.key)")
     }
 }
 
@@ -661,9 +648,11 @@ private struct HexField: View {
 /// center, which is why hardware editors settled on drag-up/drag-down too.
 private struct CarbonDial: View {
     @Environment(\.carbon) private var theme
-    let label: String
-    let range: ClosedRange<CGFloat>
+    let token: ThemeTokenCatalog.GeometryToken
     @Binding var value: CGFloat
+
+    private var label: String { token.label }
+    private var range: ClosedRange<CGFloat> { token.range }
 
     /// Points of vertical travel to sweep the whole range. Long enough that a
     /// pane width lands on the pixel you meant, short enough to cross a corner
@@ -737,16 +726,13 @@ private struct CarbonDial: View {
                 .foregroundStyle(theme.ink2)
         }
         .frame(maxWidth: .infinity)
-        .help("\(label) — drag to change, double-click to reset")
+        .help("\(token.note)\n\nDrag to change, double-click to reset.\nToken: \(token.key)")
     }
 
     /// The shipped value for this token, so a double-click undoes an
     /// experiment rather than parking on an arbitrary midpoint.
     private var defaultValue: CGFloat {
-        guard let token = ThemeTokenCatalog.allGeometryTokens.first(where: { $0.label == label }) else {
-            return value
-        }
-        return CarbonGeometry.standard[keyPath: token.read]
+        CarbonGeometry.standard[keyPath: token.read]
     }
 }
 
