@@ -191,6 +191,8 @@ struct ThemeEditorView: View {
                     ForEach(ThemeTokenCatalog.fontRoles, id: \.key) { role in
                         fontRow(key: role.key, label: role.label, fallback: role.fallback)
                     }
+                    ThemeSurfaceSimulator()
+                        .padding(.top, 6)
                 }
 
                 if visibleColorGroups.isEmpty && visibleGeometryGroups.isEmpty && !showFonts {
@@ -210,9 +212,8 @@ struct ThemeEditorView: View {
 
     private func fontRow(key: String, label: String, fallback: String) -> some View {
         let current = draft?.fonts?[key]
-        let face = current ?? fallback
-        return VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
+        return VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 5) {
                 Text(label.uppercased())
                     .font(CarbonFont.mono(9, weight: .bold))
                     .tracking(1.2)
@@ -220,8 +221,15 @@ struct ThemeEditorView: View {
 
                 Spacer(minLength: 4)
 
-                KeyButton(action: { importFont(for: key) }) { Text("IMPORT") }
-                    .frame(width: 60, height: 20)
+                KeyButton(action: { chooseSystemFont(for: key, current: current ?? fallback) }) {
+                    Text("CHOOSE")
+                }
+                .frame(width: 60, height: 20)
+                .carbonTip("Pick any font installed on this Mac. Nothing is copied — the theme just records the name.")
+
+                KeyButton(action: { importFont(for: key) }) { Text("FILE") }
+                    .frame(width: 44, height: 20)
+                    .carbonTip("Bundle a font file inside the theme, so it travels with the .cdtheme when you share it.")
 
                 KeyButton(
                     style: current == nil ? .disabled : .normal,
@@ -229,29 +237,34 @@ struct ThemeEditorView: View {
                 ) {
                     Text("RESET")
                 }
-                .frame(width: 54, height: 20)
+                .frame(width: 50, height: 20)
             }
 
-            // A specimen, not a label: set in the face it names and given the
-            // full width, so importing a font shows you the letterforms rather
-            // than just a changed string.
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Aa Bb Cc 0123")
-                    .font(.custom(face, size: 15))
-                    .foregroundStyle(theme.ink)
-                Text(face)
-                    .font(CarbonFont.mono(8))
-                    .foregroundStyle(current == nil ? theme.ink4 : theme.ink3)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
-            .background(RoundedRectangle(cornerRadius: 5).fill(theme.well))
-            .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(theme.hair))
+            Text(current ?? "\(fallback) (default)")
+                .font(CarbonFont.mono(8.5))
+                .foregroundStyle(current == nil ? theme.ink4 : theme.ink3)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.vertical, 5)
+    }
+
+    /// Opens the standard macOS font panel. Browsing it fires repeatedly, so
+    /// each keystroke through the family list lands in the draft and the
+    /// simulator below re-letters as you arrow around — which is the point of
+    /// using the system picker rather than a file dialog.
+    ///
+    /// A system font is recorded by name only, never copied: it's already on
+    /// this Mac. If the theme travels to a Mac without it, `Font.custom` falls
+    /// back to the system face (see `ThemeDefinition.fonts`), which is why FILE
+    /// still exists for themes you intend to share.
+    private func chooseSystemFont(for role: String, current: String) {
+        FontPanelBridge.shared.present(
+            current: NSFont(name: current, size: 15) ?? .systemFont(ofSize: 15)
+        ) { picked in
+            registry.draft?.fonts?[role] = picked.fontName
+        }
     }
 
     /// Copies the chosen face into the theme's own `Fonts/` folder and records
@@ -384,6 +397,156 @@ struct ThemeEditorView: View {
             .tracking(1.8)
             .foregroundStyle(theme.ink3)
             .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+// MARK: - Surface simulator
+
+/// Miniatures of the two surfaces type actually lands on: the OLED glass and a
+/// paper panel. Both are built from the same tokens and the same `CarbonFont`
+/// roles the real views use, so what you see here is what the header and
+/// inspector will do — the display face on glass, the interface face on paper,
+/// mono for the readouts.
+///
+/// It exists because the interface itself is a poor place to judge a typeface:
+/// the OLED is across the window from this panel, the inspector may be
+/// collapsed, and neither shows you both faces side by side at a readable size.
+private struct ThemeSurfaceSimulator: View {
+    @Environment(\.carbon) private var theme
+    @Environment(\.carbonGeometry) private var geometry
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Preview")
+                .font(CarbonFont.mono(8.5, weight: .bold))
+                .tracking(1.6)
+                .foregroundStyle(theme.ink4)
+
+            oledSlab
+            paperCard
+        }
+    }
+
+    /// The header display: `display` face for the title, `mono` for the status
+    /// strip, on `oledSurface` with the theme's own scanline strength.
+    private var oledSlab: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text("MOON SAFARI")
+                .font(CarbonFont.display(19))
+                .foregroundStyle(theme.oledForeground)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+
+            HStack(spacing: 6) {
+                Text("NOW PLAYING")
+                    .font(CarbonFont.mono(8, weight: .bold))
+                    .tracking(1.2)
+                    .foregroundStyle(theme.onAir)
+                Text("AIR · 1998")
+                    .font(CarbonFont.mono(8))
+                    .foregroundStyle(theme.oledForegroundMuted)
+                Spacer(minLength: 0)
+                Text("3:42")
+                    .font(CarbonFont.mono(8, weight: .bold))
+                    .foregroundStyle(theme.oledForegroundMuted)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: geometry.oledCornerRadius, style: .continuous)
+                .fill(theme.oledSurface)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: geometry.oledCornerRadius, style: .continuous)
+                .strokeBorder(theme.oledStrokeInner, lineWidth: 1)
+        )
+        .scanlines(opacity: theme.oledScanlineOpacity)
+        .clipShape(RoundedRectangle(cornerRadius: geometry.oledCornerRadius, style: .continuous))
+    }
+
+    /// The inspector panel: `sans` for titles and body, `mono` for the spec
+    /// rows — the same pairing `SpecRows` uses.
+    private var paperCard: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Moon Safari")
+                .font(CarbonFont.sans(15, weight: .heavy))
+                .foregroundStyle(theme.ink)
+                .lineLimit(1)
+
+            Text("AIR · 1998")
+                .font(CarbonFont.mono(9, weight: .semibold))
+                .tracking(1.4)
+                .foregroundStyle(theme.ink2)
+
+            Rectangle().fill(theme.hair).frame(height: 1)
+
+            ForEach([("FORMAT", "FLAC"), ("BITRATE", "846 kbps")], id: \.0) { row in
+                HStack(spacing: 8) {
+                    Text(row.0)
+                        .font(CarbonFont.mono(8.5))
+                        .foregroundStyle(theme.ink3)
+                        .frame(width: 62, alignment: .leading)
+                    Text(row.1)
+                        .font(CarbonFont.sans(10))
+                        .foregroundStyle(theme.ink2)
+                    Spacer(minLength: 0)
+                }
+            }
+
+            Text("The quick brown fox jumps over the lazy dog.")
+                .font(CarbonFont.sans(11))
+                .foregroundStyle(theme.ink2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: geometry.paperCornerRadius, style: .continuous)
+                .fill(theme.paper)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: geometry.paperCornerRadius, style: .continuous)
+                .strokeBorder(theme.hair, lineWidth: 1)
+        )
+    }
+}
+
+// MARK: - System font panel
+
+/// Bridges SwiftUI to `NSFontPanel`, which reports its selection through the
+/// responder chain (`changeFont:`) rather than a completion handler.
+///
+/// A single long-lived instance rather than one per row: `NSFontManager.target`
+/// is a weak, app-global hookup, so a short-lived coordinator would be
+/// deallocated out from under the open panel — and there is only ever one font
+/// panel on screen to own.
+@MainActor
+private final class FontPanelBridge: NSObject {
+    static let shared = FontPanelBridge()
+
+    private var onPick: ((NSFont) -> Void)?
+    private var current: NSFont = .systemFont(ofSize: 15)
+
+    func present(current: NSFont, onPick: @escaping (NSFont) -> Void) {
+        self.current = current
+        self.onPick = onPick
+
+        let manager = NSFontManager.shared
+        manager.target = self
+        manager.action = #selector(changeFontFromPanel(_:))
+        manager.setSelectedFont(current, isMultiple: false)
+        NSFontPanel.shared.orderFront(nil)
+    }
+
+    /// Sent continuously while the user browses, not just on dismissal — which
+    /// is what makes arrowing through the family list preview live.
+    @objc private func changeFontFromPanel(_ sender: Any?) {
+        guard let manager = sender as? NSFontManager else { return }
+        let picked = manager.convert(current)
+        current = picked
+        onPick?(picked)
     }
 }
 
