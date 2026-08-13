@@ -238,6 +238,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         hostingController.model.showingThemeEditor = true
     }
 
+    func showWhatsNew() {
+        hostingController.model.startWhatsNew()
+    }
+
     func togglePlayPause() {
         hostingController.model.togglePlayPause()
     }

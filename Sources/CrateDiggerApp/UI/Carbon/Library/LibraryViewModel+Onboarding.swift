@@ -145,6 +145,27 @@ extension LibraryViewModel {
         }
     }
 
+    // MARK: - Release notes
+
+    /// Shows the release notes once per version, to people who have used a
+    /// previous one. Called at launch; silently does nothing otherwise.
+    func showWhatsNewIfNeeded() {
+        guard prefs.shouldShowWhatsNew(for: AppVersion.marketing) else { return }
+        showingWhatsNew = true
+    }
+
+    /// Replay from Help ▸ What's New. Doesn't consult the version — asking for
+    /// it is the whole intent.
+    func startWhatsNew() {
+        showingWhatsNew = true
+    }
+
+    /// Marked seen on dismissal rather than on presentation, so quitting
+    /// mid-read doesn't burn the one showing.
+    func whatsNewDidDismiss() {
+        prefs.lastWhatsNewVersion = AppVersion.marketing
+    }
+
     // MARK: - Starter content
 
     /// The bundled starter album ("The CrateDigger Manual"): the StarterCrate

@@ -63,6 +63,7 @@ public final class PreferencesStore {
         static let miniPlayerArtMode = "cratedigger.miniplayer.artMode"
         static let hasCompletedFirstRunSetup = "cratedigger.onboarding.completed"
         static let hasSeenWelcomeTour = "cratedigger.onboarding.tourSeen"
+        static let lastWhatsNewVersion = "cratedigger.onboarding.whatsNewVersion"
         static let starterContentInstalled = "cratedigger.onboarding.starterInstalled"
         static let streamSources = "cratedigger.radio.streamSources"
         static let streamEngine = "cratedigger.radio.engine"
@@ -443,6 +444,23 @@ public final class PreferencesStore {
     public var hasSeenWelcomeTour: Bool {
         get { defaults.bool(forKey: Key.hasSeenWelcomeTour) }
         set { defaults.set(newValue, forKey: Key.hasSeenWelcomeTour) }
+    }
+
+    /// The app version whose release notes have already been shown, so they
+    /// appear once per update rather than every launch. `nil` on a fresh
+    /// install — see `shouldShowWhatsNew(for:)` for why that isn't a reason to
+    /// show them.
+    public var lastWhatsNewVersion: String? {
+        get { defaults.string(forKey: Key.lastWhatsNewVersion) }
+        set { defaults.set(newValue, forKey: Key.lastWhatsNewVersion) }
+    }
+
+    /// True only for someone who has used a previous version. A first-time user
+    /// gets the welcome tour; following it with "what's new since a release you
+    /// never ran" would be noise.
+    public func shouldShowWhatsNew(for version: String) -> Bool {
+        guard hasSeenWelcomeTour else { return false }
+        return lastWhatsNewVersion != version
     }
 
     /// Whether the bundled starter album has been copied into the library, so

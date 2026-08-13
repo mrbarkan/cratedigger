@@ -36,6 +36,10 @@ struct MainShell: View {
                onDismiss: { model.welcomeTourDidDismiss() }) {
             WelcomeTourView()
         }
+        .sheet(isPresented: $model.showingWhatsNew,
+               onDismiss: { model.whatsNewDidDismiss() }) {
+            WhatsNewView()
+        }
         // Edit Tags is a working panel: movable and resizable so it can sit
         // beside the browser instead of covering it.
         .carbonPanel(

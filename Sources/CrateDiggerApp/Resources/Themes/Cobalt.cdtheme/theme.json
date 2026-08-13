@@ -1,0 +1,104 @@
+{
+  "id": "cobalt",
+  "name": "Cobalt",
+  "author": "CrateDigger",
+  "version": "1.0",
+
+  "baseAppearance": "dark",
+
+  "colors": {
+    "orange": "#3D7BFF",
+    "orangeHi": "#7FA8FF",
+    "orangeLo": "#2456C4",
+    "sun": "#F0B429",
+    "sunHi": "#FFD873",
+    "sunLo": "#C08A15",
+    "cyan": "#34C6D3",
+    "cyanGlow": "#B6F0F6",
+    "red": "#E05260",
+    "indigo": "#6B7BE8",
+
+    "oledSurface": "#04060B",
+    "oledStrokeInner": "#0B1220",
+    "oledForeground": "#DEEAFF",
+    "oledForegroundMuted": "#DEEAFFB3",
+    "onAir": "#3D7BFF",
+
+    "selectionLedCore": "#3D7BFF",
+    "selectionInk": "#FFFFFF"
+  },
+
+  "dark": {
+    "colors": {
+      "chassis": "#18212F",
+      "chassisHi": "#31405A",
+      "chassisLo": "#0C1119",
+      "chassisDeep": "#04060A",
+
+      "well": "#0E1520",
+      "wellDeep": "#060911",
+      "paper": "#101826",
+      "paper2": "#0A101A",
+
+      "ink": "#F2F6FD",
+      "ink2": "#C7D4EA",
+      "ink3": "#8494B0",
+      "ink4": "#56647E",
+      "hair": "#26334A",
+
+      "metalHi": "#5C6E8E",
+      "metal": "#33415A",
+      "metalLo": "#171E2B",
+      "metalDeep": "#04060A",
+
+      "backgroundBase": "#04060A",
+      "backgroundGradientStart": "#1B2537",
+      "backgroundGradientEnd": "#020306"
+    }
+  },
+
+  "light": {
+    "colors": {
+      "chassis": "#F2F5FA",
+      "chassisHi": "#FFFFFF",
+      "chassisLo": "#D6DEEA",
+      "chassisDeep": "#98A6BC",
+
+      "well": "#E7EDF6",
+      "wellDeep": "#C6D1E2",
+      "paper": "#FAFCFF",
+      "paper2": "#EDF2F9",
+
+      "ink": "#0F1723",
+      "ink2": "#2E3A4C",
+      "ink3": "#63718A",
+      "ink4": "#96A2B5",
+      "hair": "#C8D2E1",
+
+      "metalHi": "#FFFFFF",
+      "metal": "#DCE4F0",
+      "metalLo": "#A9B5C8",
+      "metalDeep": "#5E6B80",
+
+      "backgroundBase": "#D8E2F0",
+      "backgroundGradientStart": "#F1F6FC",
+      "backgroundGradientEnd": "#C3D2E6"
+    }
+  },
+
+  "geometry": {
+    "chassisCornerRadius": 14,
+    "wellCornerRadius": 14,
+    "paperCornerRadius": 10,
+    "oledCornerRadius": 18
+  },
+
+  "fonts": {
+    "sans": {
+      "regular": "Inter-Regular",
+      "medium": "Inter-Medium",
+      "semibold": "Inter-SemiBold",
+      "bold": "Inter-Bold"
+    }
+  }
+}

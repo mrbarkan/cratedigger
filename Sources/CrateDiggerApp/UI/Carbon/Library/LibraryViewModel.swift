@@ -187,6 +187,9 @@ final class LibraryViewModel: ObservableObject {
     /// Swaps the inspector for the theme picker, the way `oledView ==
     /// .conversion` swaps it for the Patch Bay. Driven by the header THEME key.
     @Published var showingThemePicker: Bool = false
+
+    /// Release notes, shown once per version and replayable from Help.
+    @Published var showingWhatsNew: Bool = false
     /// Columns the gallery grid is currently laying out. Published by the view
     /// (only it knows the pane width) and read by ↑/↓ arrow nav, which has to
     /// move by a whole row.
@@ -893,6 +896,10 @@ final class LibraryViewModel: ObservableObject {
             showingWelcomeTour = true
         } else if !prefs.hasCompletedFirstRunSetup {
             showingOnboarding = true
+        } else {
+            // Last in the chain: only an existing, already-set-up user sees
+            // release notes, and only once per version.
+            showWhatsNewIfNeeded()
         }
 
         if var restored = prefs.savedLastConversionSelection(as: ConversionOptionsSelection.self) {

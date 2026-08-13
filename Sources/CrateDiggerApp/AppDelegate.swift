@@ -357,6 +357,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    @objc private func showWhatsNew(_ sender: Any?) {
+        mainWindowController?.showWhatsNew()
+        mainWindowController?.window?.makeKeyAndOrderFront(self)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
     @objc private func showGuide(_ sender: Any?) {
         if guideWindowController == nil {
             guideWindowController = GuideWindowController()
@@ -412,6 +418,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                 model.showingThemeEditor = true
             }
         }
+        if env["CRATEDIGGER_WHATS_NEW"] != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) { [weak self] in
+                self?.mainWindowController?.model.startWhatsNew()
+            }
+        }
         if env["CRATEDIGGER_AUTOPLAY"] != nil {
             DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
                 guard let model = self?.mainWindowController?.model else { return }
@@ -450,12 +461,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             let dest = suffix.isEmpty ? url : url.deletingPathExtension().appendingPathExtension("\(suffix).png")
             write(window, to: dest, fail: fail)
 
-            // Tool panels (theme editor, cleanup, tag review) are separate
-            // NSWindows, so the main-window capture never contained them and
-            // every panel change shipped unseen. Each titled panel gets its own
-            // file, named after the panel.
-            for panel in NSApp.windows where panel !== window && panel.isVisible && !panel.title.isEmpty {
-                let slug = panel.title.lowercased().replacingOccurrences(of: " ", with: "-")
+            // Tool panels and sheets are separate NSWindows, so the main-window
+            // capture never contained them and every panel change shipped
+            // unseen. Each gets its own file, named after its title — sheets
+            // have none, so they're numbered instead.
+            var untitled = 0
+            for panel in NSApp.windows where panel !== window && panel.isVisible {
+                let slug: String
+                if panel.title.isEmpty {
+                    untitled += 1
+                    slug = "sheet\(untitled)"
+                } else {
+                    slug = panel.title.lowercased().replacingOccurrences(of: " ", with: "-")
+                }
                 write(panel, to: url.deletingPathExtension()
                     .appendingPathExtension("\(slug)\(suffix.isEmpty ? "" : ".\(suffix)").png"), fail: fail)
             }
@@ -948,6 +966,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         let helpMenu = NSMenu(title: "Help")
         helpMenu.addItem(makeItem(title: "CrateDigger Guide", action: #selector(showGuide(_:))))
         helpMenu.addItem(makeItem(title: "Welcome Tour", action: #selector(showWelcomeTour(_:))))
+        helpMenu.addItem(makeItem(title: "What's New", action: #selector(showWhatsNew(_:))))
         helpMenu.addItem(.separator())
         helpMenu.addItem(makeItem(title: "CrateDigger Help", action: #selector(openHelpPage(_:)), key: "?"))
         helpMenu.addItem(makeItem(title: "Send Feedback…", action: #selector(sendFeedback(_:))))
