@@ -309,25 +309,19 @@ struct ThemeEditorView: View {
 
     private func fontRow(key: String, label: String, note: String, fallback: String) -> some View {
         let current = draft?.fonts?[key]
-        return VStack(alignment: .leading, spacing: 3) {
+        let activeFace = current?.regular ?? fallback
+        let family = ThemeTokenCatalog.familyName(ofPostScriptName: activeFace)
+
+        return VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 5) {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(label.uppercased())
-                        .font(CarbonFont.mono(9, weight: .bold))
-                        .tracking(1.2)
-                        .foregroundStyle(theme.ink3)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                    Text(current ?? "\(fallback) (default)")
-                        .font(CarbonFont.mono(8))
-                        .foregroundStyle(current == nil ? theme.ink4 : theme.ink3)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
+                Text(label.uppercased())
+                    .font(CarbonFont.mono(9, weight: .bold))
+                    .tracking(1.2)
+                    .foregroundStyle(theme.ink3)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
 
                 Spacer(minLength: 4)
-
-                systemFontMenu(for: key)
 
                 KeyButton(action: { importFont(for: key) }) { Text("FILE") }
                     .frame(width: 42, height: 20)
@@ -341,9 +335,80 @@ struct ThemeEditorView: View {
                 }
                 .frame(width: 48, height: 20)
             }
+
+            HStack(spacing: 5) {
+                systemFontMenu(for: key, current: family)
+                variantMenu(for: key, family: family, current: current, fallback: fallback)
+            }
+
+            weightSummary(current)
         }
-        .padding(.vertical, 5)
+        .padding(.vertical, 6)
         .help(note)
+    }
+
+    /// What the theme will actually draw at each weight. Worth showing: picking
+    /// a family silently maps four weights, and a one-weight family maps none —
+    /// without this you can't tell which you got.
+    @ViewBuilder
+    private func weightSummary(_ font: ThemeFont?) -> some View {
+        if let font {
+            let named = ThemeFontWeight.allCases.filter { font.face(for: $0) != nil }
+            Text(named.count > 1
+                 ? "Weights: " + named.map(\.rawValue).joined(separator: " · ")
+                 : "Single weight — bold and medium are synthesised")
+                .font(CarbonFont.mono(7.5))
+                .foregroundStyle(theme.ink4)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+    }
+
+    /// Picks the variant *within* the chosen family — Light, Condensed, Italic
+    /// — and pins it as the role's base face. The heavier weights stay mapped
+    /// from the same family, so a Thin base still gets a real bold for headings.
+    @ViewBuilder
+    private func variantMenu(
+        for role: String,
+        family: String?,
+        current: ThemeFont?,
+        fallback: String
+    ) -> some View {
+        let faces = family.map { ThemeTokenCatalog.faces(inFamily: $0) } ?? []
+        let activeName = current?.regular ?? fallback
+        let activeStyle = faces.first { $0.postScriptName == activeName }?.styleName ?? "Regular"
+
+        Menu {
+            ForEach(faces) { face in
+                Button(face.styleName) { selectVariant(face, family: family, for: role) }
+            }
+        } label: {
+            Text(activeStyle.uppercased())
+                .font(CarbonFont.mono(8.5, weight: .bold))
+                .tracking(1.0)
+                .foregroundStyle(faces.count > 1 ? theme.ink2 : theme.ink4)
+                .lineLimit(1)
+        }
+        .menuStyle(.borderlessButton)
+        .frame(maxWidth: .infinity)
+        .disabled(faces.count < 2)
+        .help(faces.count < 2
+              ? "This family ships a single style."
+              : "Choose the weight or style used as this role's base.")
+    }
+
+    private func selectVariant(
+        _ face: ThemeTokenCatalog.FontFace,
+        family: String?,
+        for role: String
+    ) {
+        guard let family,
+              let font = ThemeTokenCatalog.themeFont(forFamily: family, base: face.postScriptName)
+        else {
+            registry.draft?.fonts?[role] = ThemeFont(regular: face.postScriptName)
+            return
+        }
+        registry.draft?.fonts?[role] = font
     }
 
     /// The installed-font list, in the editor rather than in `NSFontPanel`.
@@ -358,19 +423,21 @@ struct ThemeEditorView: View {
     /// font on this Mac" — it just hands the result back directly, and keeps
     /// the choice inside the editor instead of opening a second floating
     /// window over an already-crowded screen.
-    private func systemFontMenu(for role: String) -> some View {
+    private func systemFontMenu(for role: String, current: String?) -> some View {
         Menu {
             ForEach(ThemeTokenCatalog.systemFontFamilies, id: \.self) { family in
                 Button(family) { selectSystemFont(family: family, for: role) }
             }
         } label: {
-            Text("SYSTEM")
-                .font(CarbonFont.mono(9, weight: .bold))
-                .tracking(1.2)
+            Text(current ?? "SYSTEM")
+                .font(CarbonFont.mono(8.5, weight: .bold))
+                .tracking(1.0)
                 .foregroundStyle(theme.ink2)
+                .lineLimit(1)
+                .truncationMode(.middle)
         }
         .menuStyle(.borderlessButton)
-        .frame(width: 62)
+        .frame(maxWidth: .infinity)
         .help("Use a font installed on this Mac. Nothing is copied — the theme records the name.")
     }
 
@@ -379,12 +446,12 @@ struct ThemeEditorView: View {
     /// back to the system face (see `ThemeDefinition.fonts`), which is why FILE
     /// still exists for themes you intend to share.
     private func selectSystemFont(family: String, for role: String) {
-        guard let postScriptName = ThemeTokenCatalog.regularPostScriptName(inFamily: family) else {
+        guard let font = ThemeTokenCatalog.themeFont(forFamily: family) else {
             saveError = "Couldn't resolve a usable face in “\(family)”."
             return
         }
         saveError = nil
-        registry.draft?.fonts?[role] = postScriptName
+        registry.draft?.fonts?[role] = font
     }
 
     /// Copies the chosen face into the theme's own `Fonts/` folder and records
@@ -414,7 +481,9 @@ struct ThemeEditorView: View {
                 saveError = "Couldn't read a PostScript name from \(source.lastPathComponent)."
                 return
             }
-            registry.draft?.fonts?[role] = postScriptName
+            // A bundled file is one face; its family's other weights aren't
+            // necessarily installed, so don't map any.
+            registry.draft?.fonts?[role] = ThemeFont(regular: postScriptName)
         } catch {
             saveError = "Couldn't import the font: \(error.localizedDescription)"
         }

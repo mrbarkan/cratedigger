@@ -71,12 +71,12 @@ final class ThemeDraftSaveTests: XCTestCase {
     /// The reported bug: choose a font, save, and it should still be there.
     func testFontChoiceSurvivesSave() throws {
         registry.beginEditing(try manifest("base-theme"))
-        registry.draft?.fonts?["sans"] = "Helvetica-Bold"
+        registry.draft?.fonts?["sans"] = ThemeFont(regular: "Helvetica-Bold")
 
         try saveCurrentDraft()
 
         let reloaded = try manifest("base-theme")
-        XCTAssertEqual(reloaded.definition.fonts?["sans"], "Helvetica-Bold")
+        XCTAssertEqual(reloaded.definition.fonts?["sans"]?.regular, "Helvetica-Bold")
     }
 
     /// Forking a theme must carry the font too — this is the path the editor
@@ -87,19 +87,19 @@ final class ThemeDraftSaveTests: XCTestCase {
 
         registry.beginEditing(builtIn)
         let forkID = try XCTUnwrap(registry.draft?.id)
-        registry.draft?.fonts?["mono"] = "Menlo-Regular"
+        registry.draft?.fonts?["mono"] = ThemeFont(regular: "Menlo-Regular")
 
         try saveCurrentDraft()
 
         let reloaded = try manifest(forkID)
-        XCTAssertEqual(reloaded.definition.fonts?["mono"], "Menlo-Regular")
+        XCTAssertEqual(reloaded.definition.fonts?["mono"]?.regular, "Menlo-Regular")
     }
 
     /// A font change must reach the rendered theme, not just the file —
     /// `fontsSignature` is what makes the UI re-letter at all.
     func testRenderedThemeCarriesTheFontSignature() throws {
         registry.beginEditing(try manifest("base-theme"))
-        registry.draft?.fonts?["sans"] = "Helvetica-Bold"
+        registry.draft?.fonts?["sans"] = ThemeFont(regular: "Helvetica-Bold")
 
         let resolved = try XCTUnwrap(registry.resolvedTheme(for: nil))
         XCTAssertTrue(resolved.theme.fontsSignature.contains("Helvetica-Bold"))
@@ -109,7 +109,7 @@ final class ThemeDraftSaveTests: XCTestCase {
     /// file, not persist an empty entry.
     func testResettingAFontRemovesItFromTheSavedTheme() throws {
         registry.beginEditing(try manifest("base-theme"))
-        registry.draft?.fonts?["sans"] = "Helvetica-Bold"
+        registry.draft?.fonts?["sans"] = ThemeFont(regular: "Helvetica-Bold")
         try saveCurrentDraft()
 
         registry.beginEditing(try manifest("base-theme"))
@@ -123,13 +123,50 @@ final class ThemeDraftSaveTests: XCTestCase {
     /// "Helvetica" must not yield "Helvetica-BoldOblique", and must yield
     /// something `Font.custom` can actually resolve.
     func testFamilyResolvesToItsRegularFace() throws {
-        let resolved = try XCTUnwrap(ThemeTokenCatalog.regularPostScriptName(inFamily: "Helvetica"))
-        XCTAssertNotNil(NSFont(name: resolved, size: 12), "recorded name must resolve as a real font")
+        let font = try XCTUnwrap(ThemeTokenCatalog.themeFont(forFamily: "Helvetica"))
+        XCTAssertNotNil(NSFont(name: font.regular, size: 12), "recorded name must resolve as a real font")
 
-        let lowered = resolved.lowercased()
+        let lowered = font.regular.lowercased()
         XCTAssertFalse(lowered.contains("oblique"))
         XCTAssertFalse(lowered.contains("italic"))
         XCTAssertFalse(lowered.contains("bold"))
+    }
+
+    /// Picking a family should map the interface's weights onto that family's
+    /// real faces, so headings get a drawn bold rather than a smeared regular.
+    func testFamilyMapsItsRealWeights() throws {
+        let font = try XCTUnwrap(ThemeTokenCatalog.themeFont(forFamily: "Helvetica"))
+        let bold = try XCTUnwrap(font.face(for: .bold))
+
+        XCTAssertNotEqual(bold, font.regular)
+        XCTAssertTrue(bold.lowercased().contains("bold"))
+        XCTAssertNotNil(NSFont(name: bold, size: 12))
+    }
+
+    /// A family with a single weight must not claim faces it doesn't have —
+    /// naming one would pin every heading to the base face and disable the
+    /// synthetic weight that keeps it legible.
+    func testSingleWeightFamilyNamesOnlyItsRegularFace() throws {
+        let single = ThemeTokenCatalog.systemFontFamilies.first {
+            ThemeTokenCatalog.faces(inFamily: $0).filter { !$0.isItalic }.count == 1
+        }
+        guard let single else { return }   // no such family installed; nothing to assert
+
+        let font = try XCTUnwrap(ThemeTokenCatalog.themeFont(forFamily: single))
+        XCTAssertNil(font.face(for: .bold))
+        XCTAssertNil(font.face(for: .medium))
+    }
+
+    /// Choosing a variant pins it as the base while the heavier weights stay
+    /// mapped, so a Thin base still gets a real bold for headings.
+    func testChoosingAVariantKeepsItAsTheBase() throws {
+        let faces = ThemeTokenCatalog.faces(inFamily: "Helvetica")
+        let oblique = try XCTUnwrap(faces.first { $0.isItalic })
+
+        let font = try XCTUnwrap(
+            ThemeTokenCatalog.themeFont(forFamily: "Helvetica", base: oblique.postScriptName)
+        )
+        XCTAssertEqual(font.regular, oblique.postScriptName)
     }
 
     func testEveryInstalledFamilyResolvesOrIsSkipped() throws {
@@ -138,8 +175,7 @@ final class ThemeDraftSaveTests: XCTestCase {
         let families = ThemeTokenCatalog.systemFontFamilies
         XCTAssertFalse(families.isEmpty)
         for family in families.prefix(40) {
-            let resolved = ThemeTokenCatalog.regularPostScriptName(inFamily: family)
-            XCTAssertNotNil(resolved, "no usable face resolved for \(family)")
+            XCTAssertNotNil(ThemeTokenCatalog.themeFont(forFamily: family), "no usable face resolved for \(family)")
         }
     }
 
@@ -151,7 +187,7 @@ final class ThemeDraftSaveTests: XCTestCase {
         defer { PreferencesStore.shared.selectedThemeID = previousSelection }
 
         registry.beginEditing(try manifest("base-theme"))
-        registry.draft?.fonts?["display"] = "SFProDisplay-Regular"
+        registry.draft?.fonts?["display"] = ThemeFont(regular: "SFProDisplay-Regular")
 
         let savedID = try registry.saveDraft()
         XCTAssertEqual(savedID, "base-theme")
@@ -162,11 +198,11 @@ final class ThemeDraftSaveTests: XCTestCase {
             .appendingPathComponent("base-theme.cdtheme")
             .appendingPathComponent("theme.json")
         let decoded = try JSONDecoder().decode(ThemeDefinition.self, from: Data(contentsOf: onDisk))
-        XCTAssertEqual(decoded.fonts?["display"], "SFProDisplay-Regular")
+        XCTAssertEqual(decoded.fonts?["display"]?.regular, "SFProDisplay-Regular")
 
         XCTAssertNil(registry.draft, "a successful save should close out the draft")
         XCTAssertEqual(
-            registry.manifest(for: "base-theme")?.definition.fonts?["display"],
+            registry.manifest(for: "base-theme")?.definition.fonts?["display"]?.regular,
             "SFProDisplay-Regular"
         )
     }
@@ -193,7 +229,7 @@ final class ThemeDraftSaveTests: XCTestCase {
 
         registry.refresh()
         registry.beginEditing(try manifest("apple-music"))
-        registry.draft?.fonts?["display"] = "SFProDisplay-Regular"
+        registry.draft?.fonts?["display"] = ThemeFont(regular: "SFProDisplay-Regular")
         try registry.saveDraft()
 
         // The original file carries the edit...
@@ -201,7 +237,7 @@ final class ThemeDraftSaveTests: XCTestCase {
             ThemeDefinition.self,
             from: Data(contentsOf: prettyManifest)
         )
-        XCTAssertEqual(rewritten.fonts?["display"], "SFProDisplay-Regular")
+        XCTAssertEqual(rewritten.fonts?["display"]?.regular, "SFProDisplay-Regular")
 
         // ...and no shadow copy was created to compete with it.
         XCTAssertFalse(
@@ -211,7 +247,7 @@ final class ThemeDraftSaveTests: XCTestCase {
 
         // Which means the loader still surfaces exactly one, with the edit.
         XCTAssertEqual(registry.manifests.filter { $0.id == "apple-music" }.count, 1)
-        XCTAssertEqual(try manifest("apple-music").definition.fonts?["display"], "SFProDisplay-Regular")
+        XCTAssertEqual(try manifest("apple-music").definition.fonts?["display"]?.regular, "SFProDisplay-Regular")
         XCTAssertTrue(registry.loadWarnings.isEmpty, "a clean folder should produce no duplicate-id warnings")
     }
 
@@ -445,12 +481,12 @@ final class ThemeDraftSaveTests: XCTestCase {
     func testColorAndFontEditsSaveTogether() throws {
         registry.beginEditing(try manifest("base-theme"))
         registry.draft?.colors?["orange"] = "#00FF00"
-        registry.draft?.fonts?["display"] = "Courier"
+        registry.draft?.fonts?["display"] = ThemeFont(regular: "Courier")
 
         try saveCurrentDraft()
 
         let reloaded = try manifest("base-theme").definition
         XCTAssertEqual(reloaded.colors?["orange"], "#00FF00")
-        XCTAssertEqual(reloaded.fonts?["display"], "Courier")
+        XCTAssertEqual(reloaded.fonts?["display"]?.regular, "Courier")
     }
 }

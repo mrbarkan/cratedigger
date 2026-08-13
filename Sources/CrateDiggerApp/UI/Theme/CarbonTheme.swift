@@ -293,9 +293,18 @@ public extension CarbonTheme {
 
         // Sorted so the same overrides always produce the same signature and
         // an unrelated edit never spuriously invalidates the whole tree.
+        // Spelled out rather than interpolating the struct: every named face
+        // has to be in here, since changing only a role's bold face still has
+        // to invalidate the tree.
         fontsSignature = (definition.fonts ?? [:])
             .sorted { $0.key < $1.key }
-            .map { "\($0.key)=\($0.value)" }
+            .map { role, font in
+                let faces = ThemeFontWeight.allCases.compactMap { weight -> String? in
+                    guard let face = font.face(for: weight) else { return nil }
+                    return "\(weight.rawValue):\(face)"
+                }
+                return "\(role)=\(faces.joined(separator: "/"))"
+            }
             .joined(separator: ",")
     }
 }

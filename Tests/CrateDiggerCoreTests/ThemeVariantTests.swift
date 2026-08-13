@@ -146,4 +146,54 @@ final class ThemeVariantTests: XCTestCase {
         XCTAssertNil(decoded.light)
         XCTAssertEqual(decoded.colors?["ink"], "#FFFFFF")
     }
+
+    // MARK: - Font weights
+
+    /// The shorthand every theme used before per-weight faces existed.
+    func testFontDecodesFromABareString() throws {
+        let json = """
+        { "id": "old", "name": "Old", "baseAppearance": "dark", "fonts": { "sans": "Helvetica" } }
+        """
+        let decoded = try JSONDecoder().decode(ThemeDefinition.self, from: Data(json.utf8))
+
+        XCTAssertEqual(decoded.fonts?["sans"], ThemeFont(regular: "Helvetica"))
+    }
+
+    func testFontDecodesPerWeightFaces() throws {
+        let json = """
+        {
+          "id": "x", "name": "X", "baseAppearance": "dark",
+          "fonts": { "mono": { "regular": "Menlo-Regular", "bold": "Menlo-Bold" } }
+        }
+        """
+        let decoded = try JSONDecoder().decode(ThemeDefinition.self, from: Data(json.utf8))
+
+        XCTAssertEqual(decoded.fonts?["mono"]?.regular, "Menlo-Regular")
+        XCTAssertEqual(decoded.fonts?["mono"]?.face(for: .bold), "Menlo-Bold")
+        XCTAssertNil(decoded.fonts?["mono"]?.face(for: .medium))
+    }
+
+    /// A single-face role stays a bare string on the way out, so adding weight
+    /// support doesn't bloat every existing theme file on its next save.
+    func testSingleFaceFontEncodesAsABareString() throws {
+        let encoded = try JSONEncoder().encode(ThemeFont(regular: "Helvetica"))
+        XCTAssertEqual(String(decoding: encoded, as: UTF8.self), "\"Helvetica\"")
+    }
+
+    func testMultiWeightFontEncodesAsAnObject() throws {
+        let font = ThemeFont(regular: "Menlo-Regular", bold: "Menlo-Bold")
+        let encoded = try JSONEncoder().encode(font)
+        XCTAssertEqual(try JSONDecoder().decode(ThemeFont.self, from: encoded), font)
+        XCTAssertTrue(String(decoding: encoded, as: UTF8.self).contains("regular"))
+    }
+
+    /// An unnamed middle weight resolves upward to a heavier real face rather
+    /// than dropping back to the base — asking for semibold on a family that
+    /// ships regular and bold should look bold, not smeared.
+    func testMissingWeightResolvesToTheNearestHeavierFace() {
+        let font = ThemeFont(regular: "Menlo-Regular", bold: "Menlo-Bold")
+        XCTAssertEqual(font.resolvedFace(for: .semibold), "Menlo-Bold")
+        XCTAssertEqual(font.resolvedFace(for: .regular), "Menlo-Regular")
+        XCTAssertNil(font.face(for: .semibold), "resolution must not invent a named face")
+    }
 }

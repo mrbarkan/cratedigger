@@ -38,11 +38,13 @@ public struct ThemeDefinition: Codable, Sendable, Equatable {
     /// `"shadow1"`/`"shadow2"` overrides.
     public var shadows: [String: ShadowDefinition]?
 
-    /// Font overrides keyed by semantic role (`"mono"`, `"sans"`, `"display"`),
-    /// value is a PostScript font name. A name that isn't registered falls
-    /// back to the system font automatically (`Font.custom` behavior) — an
-    /// author never needs to ship fonts for this to be safe.
-    public var fonts: [String: String]?
+    /// Font overrides keyed by semantic role (`"mono"`, `"sans"`, `"display"`).
+    ///
+    /// A value is either a single PostScript name or a per-weight set — see
+    /// `ThemeFont`. A name that isn't registered falls back to the system font
+    /// automatically (`Font.custom` behavior), so an author never needs to ship
+    /// fonts for this to be safe.
+    public var fonts: [String: ThemeFont]?
 
     /// Geometry overrides keyed by `CarbonLayout`'s field names (e.g.
     /// `"chassisCornerRadius"`, `"playButtonSize"`). Values are clamped to
@@ -76,7 +78,7 @@ public struct ThemeDefinition: Codable, Sendable, Equatable {
         inherits: String? = nil,
         colors: [String: String]? = nil,
         shadows: [String: ShadowDefinition]? = nil,
-        fonts: [String: String]? = nil,
+        fonts: [String: ThemeFont]? = nil,
         geometry: [String: Double]? = nil,
         effects: [String: Double]? = nil,
         light: ThemeVariant? = nil,
@@ -95,6 +97,105 @@ public struct ThemeDefinition: Codable, Sendable, Equatable {
         self.fonts = fonts
         self.geometry = geometry
         self.effects = effects
+    }
+}
+
+/// The weights the interface actually asks for. Anything heavier or lighter a
+/// caller requests is served by the nearest of these.
+public enum ThemeFontWeight: String, Codable, Sendable, CaseIterable {
+    case regular
+    case medium
+    case semibold
+    case bold
+}
+
+/// A font role's faces.
+///
+/// Real families ship a separate file per weight, and a theme that names only
+/// one of them leaves the interface to *synthesise* bold and medium by
+/// smearing a single face — which looks wrong and is what AppKit complains
+/// about with "Unable to update Font Descriptor's weight". Naming the real
+/// faces lets every weight render as drawn.
+///
+/// Encodes as a bare string when only `regular` is set, so the simple case
+/// stays simple in a hand-authored file:
+///
+/// ```json
+/// "fonts": {
+///   "sans": "Helvetica",
+///   "mono": { "regular": "Menlo-Regular", "bold": "Menlo-Bold" }
+/// }
+/// ```
+public struct ThemeFont: Codable, Sendable, Equatable {
+    /// The base face. Required — it's what every unspecified weight falls back to.
+    public var regular: String
+    public var medium: String?
+    public var semibold: String?
+    public var bold: String?
+
+    public init(regular: String, medium: String? = nil, semibold: String? = nil, bold: String? = nil) {
+        self.regular = regular
+        self.medium = medium
+        self.semibold = semibold
+        self.bold = bold
+    }
+
+    /// The face drawn for `weight`, or `nil` when the theme doesn't name one —
+    /// callers use that distinction to decide whether to apply a synthetic
+    /// weight on top (needed for a single-face theme, wrong for a real one).
+    public func face(for weight: ThemeFontWeight) -> String? {
+        switch weight {
+        case .regular:  return regular
+        case .medium:   return medium
+        case .semibold: return semibold
+        case .bold:     return bold
+        }
+    }
+
+    /// The face to actually draw with, always resolving to something.
+    public func resolvedFace(for weight: ThemeFontWeight) -> String {
+        // A missing middle weight prefers a heavier named face over the base:
+        // asking for semibold on a family that ships only regular and bold
+        // looks better bold than smeared.
+        switch weight {
+        case .regular:  return regular
+        case .medium:   return medium ?? semibold ?? bold ?? regular
+        case .semibold: return semibold ?? bold ?? medium ?? regular
+        case .bold:     return bold ?? semibold ?? medium ?? regular
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case regular, medium, semibold, bold
+    }
+
+    public init(from decoder: Decoder) throws {
+        // `"sans": "Helvetica"` — the shorthand every theme written before
+        // per-weight faces existed uses.
+        if let single = try? decoder.singleValueContainer().decode(String.self) {
+            self.init(regular: single)
+            return
+        }
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            regular: try container.decode(String.self, forKey: .regular),
+            medium: try container.decodeIfPresent(String.self, forKey: .medium),
+            semibold: try container.decodeIfPresent(String.self, forKey: .semibold),
+            bold: try container.decodeIfPresent(String.self, forKey: .bold)
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        guard medium != nil || semibold != nil || bold != nil else {
+            var container = encoder.singleValueContainer()
+            try container.encode(regular)
+            return
+        }
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(regular, forKey: .regular)
+        try container.encodeIfPresent(medium, forKey: .medium)
+        try container.encodeIfPresent(semibold, forKey: .semibold)
+        try container.encodeIfPresent(bold, forKey: .bold)
     }
 }
 

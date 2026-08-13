@@ -1,3 +1,4 @@
+import CrateDiggerCore
 import SwiftUI
 
 /// Font-name overrides from the currently active theme's `fonts` dictionary
@@ -10,7 +11,35 @@ import SwiftUI
 /// the main thread, same as every other UI-only global in this file. Empty =
 /// every role uses `CarbonFont`'s shipped defaults, i.e. today's exact behavior.
 public enum ActiveThemeFonts {
-    public static var overrides: [String: String] = [:]
+    public static var overrides: [String: ThemeFont] = [:]
+}
+
+extension Font.Weight {
+    /// Collapses SwiftUI's nine weights onto the four a theme names. Anything
+    /// lighter than medium reads as the base face; anything heavier than bold
+    /// reads as bold, because that's the heaviest face a family is asked for.
+    var themeWeight: ThemeFontWeight {
+        switch self {
+        case .bold, .heavy, .black: return .bold
+        case .semibold:             return .semibold
+        case .medium:               return .medium
+        default:                    return .regular
+        }
+    }
+}
+
+private extension ThemeFont {
+    /// The face to draw, plus whether SwiftUI still has to fake the weight.
+    ///
+    /// When the theme names a real face for this weight, applying `.weight()`
+    /// on top would double-apply it — that mismatch is what AppKit reports as
+    /// "Unable to update Font Descriptor's weight".
+    func drawing(_ weight: Font.Weight) -> (face: String, synthesize: Font.Weight) {
+        let themeWeight = weight.themeWeight
+        return face(for: themeWeight) != nil
+            ? (resolvedFace(for: themeWeight), .regular)
+            : (resolvedFace(for: themeWeight), weight)
+    }
 }
 
 public enum CarbonFont {
@@ -29,37 +58,37 @@ public enum CarbonFont {
 
     public static func mono(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
         if let override = ActiveThemeFonts.overrides["mono"] {
-            return Font.custom(override, size: size, relativeTo: .body).weight(weight)
+            let drawing = override.drawing(weight)
+            return Font.custom(drawing.face, size: size, relativeTo: .body).weight(drawing.synthesize)
         }
-        let postscript: String
+        // Same rule as the override path: when a real face for this weight is
+        // being used, don't ask SwiftUI to apply the weight again on top of it.
+        // Only the fallthrough — light/thin, which JetBrains Mono doesn't ship
+        // here — still needs synthesising.
         switch weight {
-        case .bold, .heavy, .black: postscript = monoBold
-        case .semibold:             postscript = monoSemibold
-        case .medium:               postscript = monoMedium
-        default:                    postscript = monoFamily
+        case .bold, .heavy, .black: return Font.custom(monoBold, size: size, relativeTo: .body)
+        case .semibold:             return Font.custom(monoSemibold, size: size, relativeTo: .body)
+        case .medium:               return Font.custom(monoMedium, size: size, relativeTo: .body)
+        default:                    return Font.custom(monoFamily, size: size, relativeTo: .body).weight(weight)
         }
-        return Font.custom(postscript, size: size, relativeTo: .body)
-            .weight(weight)
     }
 
     public static func sans(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
         if let override = ActiveThemeFonts.overrides["sans"] {
-            return Font.custom(override, size: size, relativeTo: .body).weight(weight)
+            let drawing = override.drawing(weight)
+            return Font.custom(drawing.face, size: size, relativeTo: .body).weight(drawing.synthesize)
         }
-        let postscript: String
         switch weight {
-        case .black, .heavy:       postscript = sansExtraBold
-        case .bold:                postscript = sansBold
-        case .semibold:            postscript = sansSemibold
-        case .medium:              postscript = sansMedium
-        default:                   postscript = sansFamily
+        case .black, .heavy: return Font.custom(sansExtraBold, size: size, relativeTo: .body)
+        case .bold:          return Font.custom(sansBold, size: size, relativeTo: .body)
+        case .semibold:      return Font.custom(sansSemibold, size: size, relativeTo: .body)
+        case .medium:        return Font.custom(sansMedium, size: size, relativeTo: .body)
+        default:             return Font.custom(sansFamily, size: size, relativeTo: .body).weight(weight)
         }
-        return Font.custom(postscript, size: size, relativeTo: .body)
-            .weight(weight)
     }
 
     public static func display(_ size: CGFloat) -> Font {
-        let postscript = ActiveThemeFonts.overrides["display"] ?? displayFamily
+        let postscript = ActiveThemeFonts.overrides["display"]?.regular ?? displayFamily
         return Font.custom(postscript, size: size, relativeTo: .title)
     }
 }

@@ -293,30 +293,84 @@ enum ThemeTokenCatalog {
         .availableFontFamilies
         .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
 
-    /// The PostScript name of a family's most ordinary face — that's what
-    /// `fonts` must record, since `Font.custom` resolves by PostScript name and
-    /// not by family. Picking "Helvetica" has to yield `Helvetica`, not
-    /// `Helvetica-BoldOblique`, so members are scored by distance from regular
-    /// weight with italics pushed to the back.
-    static func regularPostScriptName(inFamily family: String) -> String? {
-        guard let members = NSFontManager.shared.availableMembers(ofFontFamily: family) else { return nil }
+    /// One selectable face within a family — what the VARIANT menu lists.
+    struct FontFace: Identifiable, Hashable {
+        /// PostScript name; what a theme records.
+        let postScriptName: String
+        /// AppKit's style name for it: "Regular", "Bold Italic", "Condensed Light".
+        let styleName: String
+        /// AppKit's 0–15 weight scale.
+        let weight: Int
+        let isItalic: Bool
+        var id: String { postScriptName }
+    }
 
-        var best: (name: String, score: Int)?
-        for member in members {
+    /// Every face in a family, ordered light → heavy with italics after their
+    /// upright counterparts, so the menu reads the way a type specimen does.
+    static func faces(inFamily family: String) -> [FontFace] {
+        guard let members = NSFontManager.shared.availableMembers(ofFontFamily: family) else { return [] }
+
+        return members.compactMap { member -> FontFace? in
             guard member.count >= 4,
                   let name = member[0] as? String,
+                  let style = member[1] as? String,
                   let weight = member[2] as? Int,
                   let traits = member[3] as? UInt
-            else { continue }
-
-            let isItalic = traits & UInt(NSFontTraitMask.italicFontMask.rawValue) != 0
-            // 5 is AppKit's "regular" on its 0–15 weight scale.
-            let score = abs(weight - 5) + (isItalic ? 100 : 0)
-            if best == nil || score < best!.score {
-                best = (name, score)
-            }
+            else { return nil }
+            return FontFace(
+                postScriptName: name,
+                styleName: style,
+                weight: weight,
+                isItalic: traits & UInt(NSFontTraitMask.italicFontMask.rawValue) != 0
+            )
         }
-        return best?.name
+        .sorted { lhs, rhs in
+            if lhs.isItalic != rhs.isItalic { return !lhs.isItalic }
+            return lhs.weight < rhs.weight
+        }
+    }
+
+    /// The face closest to an AppKit weight target, italics excluded — a theme
+    /// picks its weights from the upright faces.
+    private static func face(in faces: [FontFace], nearest target: Int) -> FontFace? {
+        faces.filter { !$0.isItalic }
+            .min { abs($0.weight - target) < abs($1.weight - target) }
+    }
+
+    /// Builds a role's full weight set from a family, mapping each of the
+    /// interface's weights onto the family's real faces. This is why picking a
+    /// family is enough on its own: bold headings get the family's actual bold
+    /// rather than a smeared regular.
+    ///
+    /// AppKit's scale runs 0–15; 5 is regular/book, 6 medium, 8 semibold,
+    /// 9 bold. A face is only recorded when the family genuinely has something
+    /// near that weight, so a single-weight family stays a single-weight theme.
+    static func themeFont(forFamily family: String, base: String? = nil) -> ThemeFont? {
+        let faces = faces(inFamily: family)
+        guard !faces.isEmpty else { return nil }
+        guard let regular = base ?? face(in: faces, nearest: 5)?.postScriptName else { return nil }
+
+        func named(_ target: Int) -> String? {
+            guard let match = face(in: faces, nearest: target) else { return nil }
+            // Don't record a weight the family can't really provide — that
+            // would pin every heading to the base face and disable the
+            // synthetic fallback that currently makes it legible.
+            guard abs(match.weight - target) <= 1, match.postScriptName != regular else { return nil }
+            return match.postScriptName
+        }
+
+        return ThemeFont(
+            regular: regular,
+            medium: named(6),
+            semibold: named(8),
+            bold: named(9)
+        )
+    }
+
+    /// The family a recorded PostScript name belongs to, for showing what's
+    /// currently selected.
+    static func familyName(ofPostScriptName name: String) -> String? {
+        NSFont(name: name, size: 12)?.familyName
     }
 
     /// The PostScript name CoreText will know a font file by after
