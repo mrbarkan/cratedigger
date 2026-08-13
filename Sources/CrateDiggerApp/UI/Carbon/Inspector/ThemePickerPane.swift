@@ -54,6 +54,7 @@ struct ThemePickerPane: View {
                         }
                     }
 
+                    warnings
                     actions
                 }
                 .padding(.bottom, 16)
@@ -130,6 +131,48 @@ struct ThemePickerPane: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.carbonHover)
+    }
+
+    /// The loader has always collected these — a malformed file, a duplicate
+    /// id — but nothing ever showed them, so a theme could be skipped without
+    /// a word. That's how a saved edit went missing: two files claiming one id,
+    /// one of them silently dropped.
+    @ViewBuilder
+    private var warnings: some View {
+        if !registry.loadWarnings.isEmpty {
+            VStack(alignment: .leading, spacing: 5) {
+                sectionLabel("Skipped Files")
+                ForEach(Array(registry.loadWarnings.enumerated()), id: \.offset) { _, warning in
+                    HStack(alignment: .top, spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 9))
+                            .foregroundStyle(theme.sun)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(Self.fileLabel(for: warning.sourceURL))
+                                .font(CarbonFont.mono(8.5, weight: .bold))
+                                .foregroundStyle(theme.ink2)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Text(warning.message)
+                                .font(CarbonFont.mono(8))
+                                .foregroundStyle(theme.ink4)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 14)
+                }
+            }
+        }
+    }
+
+    /// Every bundle's manifest is called `theme.json`, so naming the file tells
+    /// you nothing about which theme is at fault — the enclosing `.cdtheme`
+    /// folder is the thing you'd actually go and find in Finder.
+    static func fileLabel(for url: URL) -> String {
+        url.lastPathComponent == "theme.json"
+            ? url.deletingLastPathComponent().lastPathComponent
+            : url.lastPathComponent
     }
 
     private var actions: some View {

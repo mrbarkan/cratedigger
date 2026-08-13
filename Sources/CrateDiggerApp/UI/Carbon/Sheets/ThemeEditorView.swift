@@ -311,7 +311,11 @@ struct ThemeEditorView: View {
         guard panel.runModal() == .OK, let source = panel.url else { return }
 
         do {
-            let installed = try authoring.importFont(from: source, into: draft.id)
+            let installed = try authoring.importFont(
+                from: source,
+                into: draft.id,
+                replacing: registry.sourceURL(for: draft.id)
+            )
             FontRegistrar.registerFonts(at: [installed])
             guard let postScriptName = ThemeTokenCatalog.postScriptName(of: installed) else {
                 saveError = "Couldn't read a PostScript name from \(source.lastPathComponent)."

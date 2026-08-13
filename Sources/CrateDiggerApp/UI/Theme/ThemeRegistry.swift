@@ -126,9 +126,19 @@ public final class ThemeRegistry: ObservableObject {
     /// True when the draft is an editable, user-installed theme (so Save
     /// overwrites it in place) rather than a fork not yet written to disk.
     public func isUserInstalled(_ themeID: String) -> Bool {
-        guard let manifest = manifest(for: themeID) else { return false }
-        if case .userInstalled = manifest.origin { return true }
-        return false
+        sourceURL(for: themeID) != nil
+    }
+
+    /// The file an installed theme was loaded from, so saving rewrites *it*
+    /// rather than a path guessed from the theme's id. A theme's folder is
+    /// named freely — `Apple Music.cdtheme` can declare `"id": "apple-music"` —
+    /// and writing to the id-derived path instead produces a second file with a
+    /// duplicate id, which the loader resolves by silently dropping one of them.
+    public func sourceURL(for themeID: String) -> URL? {
+        guard let manifest = manifest(for: themeID),
+              case .userInstalled(let url) = manifest.origin
+        else { return nil }
+        return url
     }
 
     /// Opens `manifest` for editing. A built-in is **forked** — it lives in
@@ -198,7 +208,10 @@ public final class ThemeRegistry: ObservableObject {
         // Only record what differs from the parent, so the file reads as the
         // author's intent rather than a dump of every token.
         let parent = manifest(for: draft.inherits)?.definition
-        try authoring.save(ThemeAuthoringService.minimized(draft, against: parent))
+        try authoring.save(
+            ThemeAuthoringService.minimized(draft, against: parent),
+            replacing: sourceURL(for: draft.id)
+        )
 
         let id = draft.id
         self.draft = nil

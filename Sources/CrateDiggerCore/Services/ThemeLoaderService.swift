@@ -173,7 +173,16 @@ public struct ThemeLoaderService {
 
     private func bundledThemeFileURLs() -> [URL] {
         var found: [URL] = []
+        // The candidate list can name the same folder twice — `resourceURL` and
+        // `bundleURL` are the same directory for a bare executable, so the
+        // sibling-bundle scan runs over it once for each. Without this every
+        // bundled theme was discovered twice and reported itself as a duplicate
+        // id, which was pure noise in the load warnings.
+        var seenDirectories: Set<String> = []
         for directory in bundledThemesDirectoryCandidates() {
+            guard seenDirectories.insert(directory.standardizedFileURL.resolvingSymlinksInPath().path).inserted else {
+                continue
+            }
             found.append(contentsOf: themeFileURLs(in: directory))
         }
         return found

@@ -143,6 +143,78 @@ final class ThemeDraftSaveTests: XCTestCase {
         }
     }
 
+    /// Exercises the real `saveDraft()` rather than a replica of it — the
+    /// earlier tests here rebuilt its logic to dodge the `selectedThemeID`
+    /// write, which meant the shipping method itself was never run.
+    func testSaveDraftWritesFontsToDisk() throws {
+        let previousSelection = PreferencesStore.shared.selectedThemeID
+        defer { PreferencesStore.shared.selectedThemeID = previousSelection }
+
+        registry.beginEditing(try manifest("base-theme"))
+        registry.draft?.fonts?["display"] = "SFProDisplay-Regular"
+
+        let savedID = try registry.saveDraft()
+        XCTAssertEqual(savedID, "base-theme")
+
+        // Read the file itself: whatever the in-memory registry believes, the
+        // JSON on disk is what survives a relaunch.
+        let onDisk = themesDirectory
+            .appendingPathComponent("base-theme.cdtheme")
+            .appendingPathComponent("theme.json")
+        let decoded = try JSONDecoder().decode(ThemeDefinition.self, from: Data(contentsOf: onDisk))
+        XCTAssertEqual(decoded.fonts?["display"], "SFProDisplay-Regular")
+
+        XCTAssertNil(registry.draft, "a successful save should close out the draft")
+        XCTAssertEqual(
+            registry.manifest(for: "base-theme")?.definition.fonts?["display"],
+            "SFProDisplay-Regular"
+        )
+    }
+
+    /// The real-world failure: a hand-authored theme whose *folder* is named
+    /// for its display name while its `id` is a slug. Saving must rewrite that
+    /// file, not create `<id>.cdtheme` beside it — two files sharing an id make
+    /// the loader drop one, and it drops whichever sorts later, so the edit
+    /// disappears despite having been written successfully.
+    func testSavingAThemeWhoseFolderNameDiffersFromItsIDRewritesTheOriginal() throws {
+        let previousSelection = PreferencesStore.shared.selectedThemeID
+        defer { PreferencesStore.shared.selectedThemeID = previousSelection }
+
+        // "Apple Music.cdtheme" containing { "id": "apple-music" }.
+        let prettyFolder = themesDirectory.appendingPathComponent("Apple Music.cdtheme", isDirectory: true)
+        try FileManager.default.createDirectory(at: prettyFolder, withIntermediateDirectories: true)
+        let prettyManifest = prettyFolder.appendingPathComponent("theme.json")
+        try JSONEncoder().encode(ThemeDefinition(
+            id: "apple-music",
+            name: "Apple Music",
+            baseAppearance: .dark,
+            colors: ["chassis": "#222222"]
+        )).write(to: prettyManifest)
+
+        registry.refresh()
+        registry.beginEditing(try manifest("apple-music"))
+        registry.draft?.fonts?["display"] = "SFProDisplay-Regular"
+        try registry.saveDraft()
+
+        // The original file carries the edit...
+        let rewritten = try JSONDecoder().decode(
+            ThemeDefinition.self,
+            from: Data(contentsOf: prettyManifest)
+        )
+        XCTAssertEqual(rewritten.fonts?["display"], "SFProDisplay-Regular")
+
+        // ...and no shadow copy was created to compete with it.
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: themesDirectory.appendingPathComponent("apple-music.cdtheme").path),
+            "saving must not create a second file sharing this theme's id"
+        )
+
+        // Which means the loader still surfaces exactly one, with the edit.
+        XCTAssertEqual(registry.manifests.filter { $0.id == "apple-music" }.count, 1)
+        XCTAssertEqual(try manifest("apple-music").definition.fonts?["display"], "SFProDisplay-Regular")
+        XCTAssertTrue(registry.loadWarnings.isEmpty, "a clean folder should produce no duplicate-id warnings")
+    }
+
     /// A color edit and a font edit in the same session must both land.
     func testColorAndFontEditsSaveTogether() throws {
         registry.beginEditing(try manifest("base-theme"))

@@ -98,34 +98,70 @@ public struct ThemeAuthoringService {
 
     // MARK: - Layout
 
-    /// `<Themes>/<id>.cdtheme` — the folder form, always, even when the theme
-    /// carries no fonts. Authoring one shape rather than two means importing a
-    /// font later never has to migrate a bare `.json` into a bundle.
+    /// `<Themes>/<id>.cdtheme` — the folder form for a *new* theme, always,
+    /// even when it carries no fonts. Authoring one shape rather than two means
+    /// importing a font later never has to migrate a bare `.json` into a bundle.
     public func bundleURL(for themeID: String) -> URL {
         themesDirectory
             .appendingPathComponent("\(themeID).cdtheme", isDirectory: true)
     }
 
-    public func fontsDirectory(for themeID: String) -> URL {
-        bundleURL(for: themeID).appendingPathComponent("Fonts", isDirectory: true)
+    /// Where a theme's `theme.json` belongs.
+    ///
+    /// Editing an existing theme must rewrite **the file it came from**, not a
+    /// path derived from its id. A theme's folder name is free-form — a hand-
+    /// authored `Apple Music.cdtheme` can perfectly well declare
+    /// `"id": "apple-music"` — so deriving the destination from the id creates
+    /// a *second* file with the same id. The loader then resolves that clash by
+    /// keeping whichever sorts first and dropping the other, which is how an
+    /// edit could be written to disk and still vanish.
+    public func manifestURL(for definition: ThemeDefinition, replacing sourceURL: URL? = nil) -> URL {
+        sourceURL ?? bundleURL(for: definition.id).appendingPathComponent("theme.json")
+    }
+
+    /// A theme's bundled-font folder, resolved against the same source.
+    ///
+    /// Returns `nil` for a bare `<slug>.json` theme: `Fonts/` is only ever read
+    /// from inside a `.cdtheme` bundle (see `fontURLs(for:)`), so there is
+    /// nowhere to put a font that the loader would find again.
+    public func fontsDirectory(for themeID: String, replacing sourceURL: URL? = nil) -> URL? {
+        guard let sourceURL else {
+            return bundleURL(for: themeID).appendingPathComponent("Fonts", isDirectory: true)
+        }
+        let directory = sourceURL.deletingLastPathComponent()
+        guard directory.pathExtension.lowercased() == "cdtheme" else { return nil }
+        return directory.appendingPathComponent("Fonts", isDirectory: true)
     }
 
     // MARK: - I/O
 
-    /// Writes `<id>.cdtheme/theme.json`, creating the bundle if needed, and
-    /// returns the bundle folder. Keys are sorted and the JSON pretty-printed
-    /// so an authored theme stays hand-editable and diffs cleanly — these
-    /// files are meant to be shared and read, not just consumed.
+    /// Writes the theme's `theme.json`, creating the bundle if needed, and
+    /// returns the file written. Pass `replacing:` with the manifest URL the
+    /// theme was loaded from when editing an existing theme — see
+    /// `manifestURL(for:replacing:)` for why that matters.
+    ///
+    /// Keys are sorted and the JSON pretty-printed so an authored theme stays
+    /// hand-editable and diffs cleanly — these files are meant to be shared and
+    /// read, not just consumed.
     @discardableResult
-    public func save(_ definition: ThemeDefinition) throws -> URL {
-        let bundle = bundleURL(for: definition.id)
-        try fileManager.createDirectory(at: bundle, withIntermediateDirectories: true)
+    public func save(_ definition: ThemeDefinition, replacing sourceURL: URL? = nil) throws -> URL {
+        let destination = manifestURL(for: definition, replacing: sourceURL)
+        try fileManager.createDirectory(
+            at: destination.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
 
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(definition)
-        try data.write(to: bundle.appendingPathComponent("theme.json"), options: .atomic)
-        return bundle
+        try data.write(to: destination, options: .atomic)
+        return destination
+    }
+
+    public struct FontImportUnsupported: LocalizedError {
+        public var errorDescription: String? {
+            "This theme is a single .json file, which can't carry fonts. Use a system font, or re-save it as a .cdtheme bundle first."
+        }
     }
 
     /// Copies a `.ttf`/`.otf` into the theme's `Fonts/` folder so the theme
@@ -133,8 +169,10 @@ public struct ThemeAuthoringService {
     /// travels with it, which is the whole point of the bundle form.
     /// Returns the destination URL for the caller to register with CoreText.
     @discardableResult
-    public func importFont(from source: URL, into themeID: String) throws -> URL {
-        let fontsDirectory = fontsDirectory(for: themeID)
+    public func importFont(from source: URL, into themeID: String, replacing sourceURL: URL? = nil) throws -> URL {
+        guard let fontsDirectory = fontsDirectory(for: themeID, replacing: sourceURL) else {
+            throw FontImportUnsupported()
+        }
         try fileManager.createDirectory(at: fontsDirectory, withIntermediateDirectories: true)
 
         let destination = fontsDirectory.appendingPathComponent(source.lastPathComponent)
