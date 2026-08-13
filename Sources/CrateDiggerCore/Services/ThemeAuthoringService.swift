@@ -84,7 +84,7 @@ public struct ThemeAuthoringService {
     /// `"#ff0000"` and `"FF0000"` are the same color to the parser, so they're
     /// the same token here too — otherwise a round-trip through the editor
     /// would re-record every color it merely re-formatted.
-    static func colorsMatch(_ lhs: String, _ rhs: String) -> Bool {
+    public static func colorsMatch(_ lhs: String, _ rhs: String) -> Bool {
         normalizedHex(lhs) == normalizedHex(rhs)
     }
 

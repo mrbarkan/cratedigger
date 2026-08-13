@@ -89,11 +89,12 @@ struct ThemeEditorView: View {
                     ForEach([ThemeDefinition.BaseAppearance.light, .dark], id: \.rawValue) { base in
                         KeyButton(
                             style: draft.baseAppearance == base ? .selected : .normal,
-                            action: { registry.draft?.baseAppearance = base }
+                            action: { registry.setDraftBaseAppearance(base) }
                         ) {
                             Text(base == .light ? "LIGHT" : "DARK")
                         }
                         .frame(width: 50, height: 22)
+                        .carbonTip("Make this a \(base == .light ? "light" : "dark") theme. Colors you haven't edited are repainted to match; your own edits are kept.")
                     }
                 }
             }

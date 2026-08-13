@@ -29,6 +29,12 @@ public final class ThemeRegistry: ObservableObject {
     /// every keystroke and dial tick, so a cache would only ever miss.
     @Published public var draft: ThemeDefinition?
 
+    /// The draft exactly as it was seeded, so "has the author touched this
+    /// token?" is answerable. Only `setDraftBaseAppearance` needs it, but it
+    /// can't be derived after the fact — once a token is edited there's nothing
+    /// left to compare against.
+    private var draftSeed: ThemeDefinition?
+
     private let loader: ThemeLoaderService
     private var resolvedCache: [String: (theme: CarbonTheme, geometry: CarbonGeometry)] = [:]
     private var selectionObserver: NSObjectProtocol?
@@ -150,6 +156,7 @@ public final class ThemeRegistry: ObservableObject {
         switch manifest.origin {
         case .userInstalled:
             draft = seeded(manifest.definition)
+            draftSeed = draft
         case .builtIn:
             var fork = manifest.definition
             fork.id = ThemeAuthoringService.slug(
@@ -163,7 +170,44 @@ public final class ThemeRegistry: ObservableObject {
             // only the tokens actually changed (see `minimized(_:against:)`).
             fork.inherits = manifest.definition.id
             draft = seeded(fork)
+            draftSeed = draft
         }
+    }
+
+    /// Applies a LIGHT/DARK change so it actually shows.
+    ///
+    /// `baseAppearance` is only a *declaration* in the file format — it decides
+    /// window chrome and which built-in supplies omitted tokens. But a draft is
+    /// seeded with every token filled in, so nothing is omitted, and flipping
+    /// the flag on its own repainted precisely nothing. The key looked dead.
+    ///
+    /// So the flip repaints the tokens the author hasn't touched, and leaves
+    /// the ones they have. Returning to the appearance the theme was opened at
+    /// restores that theme's own palette rather than the generic built-in, so
+    /// the switch is reversible instead of quietly destroying the design.
+    public func setDraftBaseAppearance(_ newValue: ThemeDefinition.BaseAppearance) {
+        guard var draft, draft.baseAppearance != newValue else { return }
+        let seed = draftSeed
+
+        let previousBuiltIn: CarbonTheme = draft.baseAppearance == .dark ? .carbon : .linen
+        let nextBuiltIn: CarbonTheme = newValue == .dark ? .carbon : .linen
+
+        var colors = draft.colors ?? [:]
+        for token in ThemeTokenCatalog.allColorTokens {
+            let seedValue = seed?.colors?[token.key]
+            let untouched = colors[token.key].map { current in
+                seedValue.map { ThemeAuthoringService.colorsMatch(current, $0) } == true
+                    || ThemeAuthoringService.colorsMatch(current, previousBuiltIn[keyPath: token.read].themeHexString)
+            } ?? true
+            guard untouched else { continue }
+
+            let restored = (newValue == seed?.baseAppearance) ? seedValue : nil
+            colors[token.key] = restored ?? nextBuiltIn[keyPath: token.read].themeHexString
+        }
+
+        draft.colors = colors
+        draft.baseAppearance = newValue
+        self.draft = draft
     }
 
     /// Fills in every token the editor can show, reading each one from the
@@ -215,6 +259,7 @@ public final class ThemeRegistry: ObservableObject {
 
         let id = draft.id
         self.draft = nil
+        draftSeed = nil
         refresh()
         PreferencesStore.shared.selectedThemeID = id
         return id
@@ -224,5 +269,6 @@ public final class ThemeRegistry: ObservableObject {
     /// theme on the next frame.
     public func discardDraft() {
         draft = nil
+        draftSeed = nil
     }
 }

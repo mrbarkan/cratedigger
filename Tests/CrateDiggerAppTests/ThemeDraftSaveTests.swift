@@ -215,6 +215,52 @@ final class ThemeDraftSaveTests: XCTestCase {
         XCTAssertTrue(registry.loadWarnings.isEmpty, "a clean folder should produce no duplicate-id warnings")
     }
 
+    /// The LIGHT/DARK keys write `baseAppearance`, which decides window chrome
+    /// and which built-in fills tokens the theme omits.
+    func testBaseAppearanceFlipSurvivesSave() throws {
+        let previousSelection = PreferencesStore.shared.selectedThemeID
+        defer { PreferencesStore.shared.selectedThemeID = previousSelection }
+
+        registry.beginEditing(try manifest("base-theme"))
+        XCTAssertEqual(registry.draft?.baseAppearance, .dark)
+
+        registry.draft?.baseAppearance = .light
+        try registry.saveDraft()
+
+        XCTAssertEqual(try manifest("base-theme").definition.baseAppearance, .light)
+        XCTAssertFalse(try XCTUnwrap(registry.resolvedTheme(for: "base-theme")).theme.isDark)
+    }
+
+    /// Flipping to light must actually produce a light theme. Seeding fills
+    /// every token from the *old* rendering, so without re-seeding the flip
+    /// changes a flag and nothing else — the palette stays dark and the key
+    /// looks broken.
+    func testBaseAppearanceFlipRepaintsUntouchedColors() throws {
+        registry.beginEditing(try manifest("base-theme"))
+        let darkInk = registry.draft?.colors?["ink"]
+
+        registry.setDraftBaseAppearance(.light)
+
+        XCTAssertNotEqual(registry.draft?.colors?["ink"], darkInk,
+                          "untouched tokens should follow the new base appearance")
+        XCTAssertEqual(registry.draft?.colors?["ink"], CarbonTheme.linen.ink.themeHexString)
+
+        // Reversible: going back restores the theme's own palette rather than
+        // dumping it into the generic dark built-in.
+        registry.setDraftBaseAppearance(.dark)
+        XCTAssertEqual(registry.draft?.colors?["ink"], darkInk)
+    }
+
+    /// ...but an edit you actually made must survive the flip.
+    func testBaseAppearanceFlipKeepsEditedColors() throws {
+        registry.beginEditing(try manifest("base-theme"))
+        registry.draft?.colors?["orange"] = "#00FF00"
+
+        registry.setDraftBaseAppearance(.light)
+
+        XCTAssertEqual(registry.draft?.colors?["orange"], "#00FF00")
+    }
+
     /// A color edit and a font edit in the same session must both land.
     func testColorAndFontEditsSaveTogether() throws {
         registry.beginEditing(try manifest("base-theme"))
