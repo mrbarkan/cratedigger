@@ -4,7 +4,7 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
-## 1.5.0 (60) — 2026-08-13
+## 1.5.0 (61) — 2026-08-13
 
 Make it look like yours. CrateDigger's skins were always plain JSON files you
 could hand-edit; now there's an editor for them, and a theme can carry its own

@@ -21,7 +21,7 @@
 	<key>CFBundleShortVersionString</key>
 	<string>1.5.0</string>
 	<key>CFBundleVersion</key>
-	<string>60</string>
+	<string>61</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.music</string>
 	<key>LSApplicationSupportsSecureRestorableState</key>
