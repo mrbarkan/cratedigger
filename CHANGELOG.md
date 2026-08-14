@@ -4,6 +4,58 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 1.5.0 (60) — 2026-08-13
+
+Make it look like yours. CrateDigger's skins were always plain JSON files you
+could hand-edit; now there's an editor for them, and a theme can carry its own
+light and dark versions instead of shipping as a pair.
+
+### Added
+
+- **Theme Editor.** Press THEME in the header for the theme browser, then EDITOR
+  to start changing one. Every colour, corner radius and typeface is a control,
+  and the app repaints as you work — the preview is the application behind the
+  panel, not a mock-up of it.
+- **One theme, light and dark.** A theme set to BOTH carries both looks and
+  follows your system setting. Each version stores only what it changes, so the
+  shared palette is still written once. COPY TO LIGHT/DARK starts one version
+  from the other.
+- **Fonts, with real weights.** Choose any font on your Mac for the interface,
+  the readouts or the display, and pick which style is the base. The family's
+  actual weights are mapped, so bold headings use a drawn bold rather than a
+  smeared regular. A font file can also be bundled inside a theme so it travels
+  with it.
+- **Cobalt**, a fourth built-in theme — and a worked example of the format:
+  shared accents, separate light and dark layers, custom corner radii and a
+  mapped font family.
+- **DUPLICATE** forks the theme you're editing, so "start from this one" doesn't
+  mean saving, closing and reopening a copy.
+- **What's New**, shown once after an update and replayable from Help.
+- **Appearance** is now a top-level menu, beside Playback.
+
+### Changed
+
+- The THEME key opens the theme browser in the inspector — the way CNVRT opens
+  the Patch Bay — instead of cycling blindly through an ever-growing list.
+- Every editable token is named for what it paints ("Top Highlight", "Screen
+  Glass") with a note saying where it appears, and the notes are searchable.
+- Themes that are skipped at load — a malformed file, a duplicate id — are now
+  listed instead of being dropped in silence.
+
+### Fixed
+
+- Editing an installed theme rewrote a *new* file derived from its id rather
+  than the file it came from. Where a theme's folder was named differently from
+  its id, the two collided and the edit was discarded on reload.
+- A theme that overrode only fonts didn't re-letter the interface until
+  something else happened to redraw.
+- Choosing a font from the system panel never reached the theme.
+- LIGHT/DARK changed a flag and nothing visible.
+- A wide themed font could wrap the app name in the header and push the
+  toolbar buttons out of the row.
+- Built-in themes were each loaded twice on some launches, reporting themselves
+  as duplicates.
+
 ## 1.4.0 (59) — 2026-08-12
 
 Album art that Rockbox players can actually draw, and a device queue you can
