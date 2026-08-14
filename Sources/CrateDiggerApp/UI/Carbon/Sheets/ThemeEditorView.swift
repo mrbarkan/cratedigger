@@ -930,18 +930,45 @@ private struct CarbonDial: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
 
-            Text("\(Int(value))")
-                .font(CarbonFont.mono(9, weight: .semibold))
-                .foregroundStyle(theme.ink2)
+            HStack(spacing: 5) {
+                Text("\(Int(value))")
+                    .font(CarbonFont.mono(9, weight: .semibold))
+                    .foregroundStyle(theme.ink2)
+
+                // Double-click resets too, but nothing advertises that. The dot
+                // lights only when the dial has been moved, so it doubles as
+                // the marker for "this one differs from the shipped default".
+                Button(action: { value = defaultValue }) {
+                    Circle()
+                        .fill(isModified ? theme.orange : theme.ink4.opacity(0.3))
+                        .frame(width: 6, height: 6)
+                        .shadow(color: isModified ? theme.orange.opacity(0.7) : .clear, radius: 2.5)
+                        // Hit target well beyond the dot: 6pt is a fine lamp
+                        // and an unusable button.
+                        .frame(width: 15, height: 15)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.carbonHover)
+                .disabled(!isModified)
+                .help(isModified
+                      ? "Reset \(label) to \(Int(defaultValue))"
+                      : "\(label) is at its default")
+            }
         }
         .frame(maxWidth: .infinity)
         .help("\(token.note)\n\nDrag to change, double-click to reset.\nToken: \(token.key)")
     }
 
-    /// The shipped value for this token, so a double-click undoes an
-    /// experiment rather than parking on an arbitrary midpoint.
+    /// The shipped value for this token, so a reset undoes an experiment
+    /// rather than parking on an arbitrary midpoint.
     private var defaultValue: CGFloat {
         CarbonGeometry.standard[keyPath: token.read]
+    }
+
+    /// Compared with a half-point tolerance: the dial only ever lands on whole
+    /// numbers, so anything closer than that is the default.
+    private var isModified: Bool {
+        abs(value - defaultValue) >= 0.5
     }
 }
 
