@@ -18,6 +18,8 @@ struct ThemePickerPane: View {
 
     @State private var appearance: AppearanceMode = AppearanceMode.current
     @State private var selectedThemeID: String? = PreferencesStore.shared.selectedThemeID
+    /// The theme a pending delete is armed against; `nil` when none is.
+    @State private var armedDeleteID: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -29,7 +31,7 @@ struct ThemePickerPane: View {
                     HStack(spacing: 6) {
                         ForEach(AppearanceMode.allCases, id: \.rawValue) { mode in
                             KeyButton(
-                                style: (selectedThemeID == nil && appearance == mode) ? .selected : .normal,
+                                style: appearance == mode ? .selected : .normal,
                                 action: { selectAppearance(mode) }
                             ) {
                                 Text(mode.menuTitle.uppercased())
@@ -40,6 +42,8 @@ struct ThemePickerPane: View {
                     }
                     .padding(.horizontal, 14)
                     .padding(.bottom, 4)
+
+                    appearanceNote
 
                     sectionLabel("Themes")
                     if registry.manifests.isEmpty {
@@ -66,6 +70,21 @@ struct ThemePickerPane: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: AppearanceMode.didChangeNotification)) { _ in
             appearance = AppearanceMode.current
+        }
+    }
+
+    /// Appearance now applies *to* the selected theme rather than replacing it,
+    /// which only means something for a theme carrying both looks. Saying so
+    /// beats three keys that silently do nothing on a single-appearance theme.
+    @ViewBuilder
+    private var appearanceNote: some View {
+        if let current = registry.manifest(for: selectedThemeID), !current.definition.isAdaptive {
+            Text("\(current.definition.name) is \(current.definition.baseAppearance == .dark ? "dark" : "light")-only — Appearance applies to themes that carry both.")
+                .font(CarbonFont.mono(8))
+                .foregroundStyle(theme.ink4)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 14)
+                .padding(.bottom, 2)
         }
     }
 
@@ -112,9 +131,19 @@ struct ThemePickerPane: View {
                         .foregroundStyle(isSelected ? theme.ink : theme.ink2)
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
-                    Text(isBuiltIn ? "Built-in" : "Installed")
-                        .font(CarbonFont.mono(8))
-                        .foregroundStyle(theme.ink4)
+                    HStack(spacing: 5) {
+                        Text(isBuiltIn ? "DEFAULT" : "Installed")
+                            .font(CarbonFont.mono(8, weight: isBuiltIn ? .bold : .regular))
+                            .tracking(isBuiltIn ? 1.0 : 0)
+                            .foregroundStyle(isBuiltIn ? theme.ink3 : theme.ink4)
+                        if manifest.definition.isAdaptive {
+                            // Worth calling out: it's the difference between a
+                            // theme that follows Appearance and one that doesn't.
+                            Text("· LIGHT + DARK")
+                                .font(CarbonFont.mono(8))
+                                .foregroundStyle(theme.ink4)
+                        }
+                    }
                 }
 
                 Spacer(minLength: 4)
@@ -124,6 +153,12 @@ struct ThemePickerPane: View {
                     .carbonTip(isBuiltIn
                                ? "Open an editable copy of \(manifest.definition.name)"
                                : "Edit \(manifest.definition.name)")
+
+                // Defaults ship inside the app: there's nothing of yours to
+                // delete, and they'd reappear on the next scan regardless.
+                if !isBuiltIn {
+                    deleteButton(for: manifest)
+                }
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 6)
@@ -175,6 +210,31 @@ struct ThemePickerPane: View {
             : url.lastPathComponent
     }
 
+    /// Two clicks, like the editor's layer copy: this removes the theme's files
+    /// and there's no undo. Arming one disarms any other, so a stray click on
+    /// the row below can't delete the wrong theme.
+    private func deleteButton(for manifest: ThemeManifest) -> some View {
+        let armed = armedDeleteID == manifest.id
+        return KeyButton(
+            style: armed ? .glowingOrange : .normal,
+            action: {
+                if armed {
+                    registry.deleteTheme(manifest)
+                    armedDeleteID = nil
+                    selectedThemeID = PreferencesStore.shared.selectedThemeID
+                } else {
+                    armedDeleteID = manifest.id
+                }
+            }
+        ) {
+            Text(armed ? "SURE?" : "✕")
+        }
+        .frame(width: armed ? 54 : 28, height: 20)
+        .carbonTip(armed
+                   ? "Click again to delete \(manifest.definition.name) from your Themes folder."
+                   : "Delete \(manifest.definition.name)")
+    }
+
     private var actions: some View {
         HStack(spacing: 8) {
             KeyButton(action: {
@@ -216,15 +276,18 @@ struct ThemePickerPane: View {
         model.showingThemeEditor = true
     }
 
-    /// Picking an appearance clears any installed-theme override — same
-    /// contract as the Appearance menu, otherwise the skin keeps winning and
-    /// the press appears to do nothing.
+    /// Sets light/dark/system *for the theme you're using*, keeping it
+    /// selected.
+    ///
+    /// It used to clear the selection, because back when a theme was one fixed
+    /// appearance, picking light or dark could only mean "stop using this
+    /// skin". Now that a theme can carry both, appearance is a property of the
+    /// theme you're on — so the selection stays put and the adaptive theme
+    /// follows along.
     private func selectAppearance(_ mode: AppearanceMode) {
         appearance = mode
         UserDefaults.standard.set(mode.rawValue, forKey: AppearanceMode.userDefaultsKey)
         NotificationCenter.default.post(name: AppearanceMode.didChangeNotification, object: nil)
-        PreferencesStore.shared.selectedThemeID = nil
-        selectedThemeID = nil
     }
 
     private func selectTheme(_ id: String) {

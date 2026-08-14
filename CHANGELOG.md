@@ -32,11 +32,16 @@ light and dark versions instead of shipping as a pair.
   mean saving, closing and reopening a copy.
 - **What's New**, shown once after an update and replayable from Help.
 - **Appearance** is now a top-level menu, beside Playback.
+- Installed themes can be **deleted** from the theme browser. The four that ship
+  with the app are marked DEFAULT and can't be removed.
 
 ### Changed
 
 - The THEME key opens the theme browser in the inspector — the way CNVRT opens
   the Patch Bay — instead of cycling blindly through an ever-growing list.
+- Light / Dark / System now applies **to the theme you're using**, which stays
+  selected, rather than switching the theme off. The themes that ship with the
+  app are listed first and marked DEFAULT.
 - Every editable token is named for what it paints ("Top Highlight", "Screen
   Glass") with a note saying where it appears, and the notes are searchable.
 - Themes that are skipped at load — a malformed file, a duplicate id — are now
@@ -55,6 +60,9 @@ light and dark versions instead of shipping as a pair.
   toolbar buttons out of the row.
 - Built-in themes were each loaded twice on some launches, reporting themselves
   as duplicates.
+- The themes that ship with the app were missing entirely when CrateDigger was
+  run from Xcode, because only one of the two places a bundled resource can
+  live was being searched.
 
 ## 1.4.0 (59) — 2026-08-12
 

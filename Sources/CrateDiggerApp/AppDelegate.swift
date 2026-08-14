@@ -599,10 +599,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         else { return }
         UserDefaults.standard.set(mode.rawValue, forKey: AppearanceMode.userDefaultsKey)
         NotificationCenter.default.post(name: AppearanceMode.didChangeNotification, object: nil)
-        // Picking an appearance clears any installed-theme override, matching
-        // the header THEME button — otherwise the skin keeps winning and the
-        // menu pick appears to do nothing.
-        prefs.selectedThemeID = nil
+        // The selected theme is deliberately left alone: appearance is now a
+        // property *of* the theme you're using — a theme carrying both looks
+        // follows this, and one that doesn't keeps its own. Matches the THEME
+        // picker in the inspector.
         // The checkmark is set in validateMenuItem when the menu next opens.
     }
 
@@ -670,9 +670,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         case #selector(clearUpNext(_:)):
             return mainWindowController?.hasUpNext() == true
         case #selector(setAppearanceMode(_:)):
-            // Only checked while no installed theme overrides the appearance.
-            menuItem.state = (prefs.selectedThemeID == nil
-                              && menuItem.representedObject as? String == AppearanceMode.current.rawValue) ? .on : .off
+            menuItem.state = (menuItem.representedObject as? String == AppearanceMode.current.rawValue) ? .on : .off
             return true
         case #selector(selectOLEDView(_:)):
             if let raw = menuItem.representedObject as? String,

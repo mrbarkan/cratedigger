@@ -20,17 +20,35 @@ public struct ThemeLoadResult: Sendable {
 /// broken") is always a normal, recoverable state, unlike a missing ffmpeg.
 public struct ThemeLoaderService {
     private let fileManager: FileManager
-    private let bundle: Bundle
+    private let bundles: [Bundle]
     private let userThemesDirectoryOverride: URL?
 
+    /// `bundles` is a list because where a resource lands depends on how the
+    /// app was launched: a packaged `.app` keeps themes in `Bundle.main`'s
+    /// Resources, while a `swift run` or an Xcode run keeps them in the SPM
+    /// resource bundle only that target can name (`Bundle.module`). Searching
+    /// just one meant every built-in theme silently vanished under the other —
+    /// the same reason `FontRegistrar` scans both.
     public init(
         fileManager: FileManager = .default,
-        bundle: Bundle = .main,
+        bundles: [Bundle] = [.main],
         userThemesDirectoryOverride: URL? = nil
     ) {
         self.fileManager = fileManager
-        self.bundle = bundle
+        self.bundles = bundles
         self.userThemesDirectoryOverride = userThemesDirectoryOverride
+    }
+
+    public init(
+        fileManager: FileManager = .default,
+        bundle: Bundle,
+        userThemesDirectoryOverride: URL? = nil
+    ) {
+        self.init(
+            fileManager: fileManager,
+            bundles: [bundle],
+            userThemesDirectoryOverride: userThemesDirectoryOverride
+        )
     }
 
     /// `~/Library/Application Support/CrateDigger/Themes` — where a user drops
@@ -212,11 +230,13 @@ public struct ThemeLoaderService {
     private func bundledThemesDirectoryCandidates() -> [URL] {
         var candidates: [URL] = []
 
-        if let resourceURL = bundle.resourceURL {
-            candidates.append(resourceURL.appendingPathComponent("Themes", isDirectory: true))
-            candidates.append(contentsOf: siblingResourceBundleThemeDirectories(in: resourceURL))
+        for bundle in bundles {
+            if let resourceURL = bundle.resourceURL {
+                candidates.append(resourceURL.appendingPathComponent("Themes", isDirectory: true))
+                candidates.append(contentsOf: siblingResourceBundleThemeDirectories(in: resourceURL))
+            }
+            candidates.append(contentsOf: siblingResourceBundleThemeDirectories(in: bundle.bundleURL))
         }
-        candidates.append(contentsOf: siblingResourceBundleThemeDirectories(in: bundle.bundleURL))
 
         return candidates
     }

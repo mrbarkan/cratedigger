@@ -39,8 +39,13 @@ public final class ThemeRegistry: ObservableObject {
     private var resolvedCache: [String: (theme: CarbonTheme, geometry: CarbonGeometry)] = [:]
     private var selectionObserver: NSObjectProtocol?
 
-    public init(loader: ThemeLoaderService = ThemeLoaderService()) {
-        self.loader = loader
+    /// Defaults to searching both the app bundle and this target's SPM resource
+    /// bundle — which of the two holds the built-in themes depends entirely on
+    /// how the app was launched.
+    public init(loader: ThemeLoaderService? = nil) {
+        // Not a default argument: `Bundle.module` is internal to this target
+        // and can't appear in a public signature.
+        self.loader = loader ?? ThemeLoaderService(bundles: [.main, .module])
         refresh()
 
         // `selectedThemeID` changing is the common case (picking a theme in
@@ -70,7 +75,16 @@ public final class ThemeRegistry: ObservableObject {
     /// while the app is running ("Refresh" in the picker).
     public func refresh() {
         let result = loader.discoverThemes()
-        manifests = result.themes
+        // Defaults first, then your own, each alphabetical. Discovery order put
+        // them first by accident of scanning the app bundle before the user
+        // folder; sorting says so on purpose, and keeps the list stable when a
+        // theme is installed or removed.
+        manifests = result.themes.sorted { lhs, rhs in
+            let lhsBuiltIn = lhs.origin == .builtIn
+            let rhsBuiltIn = rhs.origin == .builtIn
+            if lhsBuiltIn != rhsBuiltIn { return lhsBuiltIn }
+            return lhs.definition.name.localizedCaseInsensitiveCompare(rhs.definition.name) == .orderedAscending
+        }
         loadWarnings = result.warnings
         resolvedCache.removeAll()
 
@@ -425,6 +439,25 @@ public final class ThemeRegistry: ObservableObject {
         refresh()
         PreferencesStore.shared.selectedThemeID = id
         return id
+    }
+
+    /// Deletes an installed theme's files. Built-ins are refused: they live in
+    /// the app bundle, aren't ours to remove, and would reappear on the next
+    /// scan anyway.
+    ///
+    /// Deleting the theme in use falls back to the plain appearance rather than
+    /// leaving `selectedThemeID` pointing at something that no longer exists.
+    @discardableResult
+    public func deleteTheme(_ manifest: ThemeManifest) -> Bool {
+        guard manifest.origin != .builtIn, let authoring else { return false }
+        try? authoring.delete(themeID: manifest.id)
+
+        if PreferencesStore.shared.selectedThemeID == manifest.id {
+            PreferencesStore.shared.selectedThemeID = nil
+        }
+        if draft?.id == manifest.id { discardDraft() }
+        refresh()
+        return true
     }
 
     /// Drops the draft without saving; the app snaps back to the selected
