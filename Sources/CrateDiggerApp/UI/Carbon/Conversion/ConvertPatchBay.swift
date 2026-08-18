@@ -88,6 +88,7 @@ struct ConvertPatchBay: View {
                 .frame(minHeight: 220)
         case .settings:
             scopeRow
+            presetChipRow
             formatRow
             bitrateRow
             sampleRow
@@ -194,16 +195,66 @@ struct ConvertPatchBay: View {
 
     // MARK: - Rows
 
+    /// On a device route the queue is the hand-off list, so a live Scope bank
+    /// would be a control that changes nothing — it reads as the queue's source
+    /// while the queue quietly ignores it. Swap it for what's actually true.
+    @ViewBuilder
     private var scopeRow: some View {
-        cvRow("Scope") {
-            PatchBayBank(
-                label: "Scope",
-                options: ConversionBatchScope.allCases,
-                selection: $model.conversionSelection.batchScope,
-                size: .medium,
-                displayText: scopeLabel,
-                subText: scopeSub
-            )
+        if let device = model.pendingDeviceConversion {
+            cvRow("Queue") {
+                HStack(spacing: 8) {
+                    Text("\(model.conversionQueueTracks.count) TRK")
+                        .font(CarbonFont.mono(12, weight: .bold))
+                        .tracking(1.2)
+                        .foregroundStyle(theme.ink)
+                    Text("SENT FROM THE BROWSER")
+                        .font(CarbonFont.mono(8, weight: .bold))
+                        .tracking(1.3)
+                        .foregroundStyle(theme.ink4)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                    Spacer(minLength: 0)
+                }
+                .help("Queued for \(device.deviceName). Send more from the browser to add to this queue.")
+            }
+        } else {
+            cvRow("Scope") {
+                PatchBayBank(
+                    label: "Scope",
+                    options: ConversionBatchScope.allCases,
+                    selection: $model.conversionSelection.batchScope,
+                    size: .medium,
+                    displayText: scopeLabel,
+                    subText: scopeSub
+                )
+            }
+        }
+    }
+
+    /// The format rows below belong to the device while a route is set — they
+    /// were seeded from its profile and are saved back to it. Without this the
+    /// swap was invisible, and looked like the app forgetting your settings.
+    @ViewBuilder
+    private var presetChipRow: some View {
+        if let device = model.pendingDeviceConversion {
+            HStack(spacing: 7) {
+                Circle()
+                    .fill(theme.orange)
+                    .frame(width: 6, height: 6)
+                    .shadow(color: theme.orange.opacity(0.7), radius: 3)
+                Text("\(device.deviceName.uppercased()) PRESET")
+                    .font(CarbonFont.mono(8.5, weight: .bold))
+                    .tracking(1.6)
+                    .foregroundStyle(theme.orange)
+                Text("· EDITS SAVE TO THIS DEVICE")
+                    .font(CarbonFont.mono(8, weight: .bold))
+                    .tracking(1.3)
+                    .foregroundStyle(theme.ink4)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 2)
         }
     }
 
@@ -313,6 +364,7 @@ struct ConvertPatchBay: View {
                     .tracking(2.2)
                     .foregroundStyle(theme.ink3)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.75)
                 Spacer(minLength: 8)
                 HStack(spacing: 4) {
                     Circle().fill(armReadyColor).frame(width: 6, height: 6)
@@ -323,6 +375,22 @@ struct ConvertPatchBay: View {
                 }
             }
             .padding(.horizontal, 4)
+
+            // Where it's going, and the one number that decides whether it fits.
+            // Both were only discoverable from the destination strip two tabs
+            // away — and the free space not at all until the preflight failed.
+            if let route = deviceRouteLine {
+                HStack(spacing: 0) {
+                    Text(route)
+                        .font(CarbonFont.mono(9, weight: .bold))
+                        .tracking(2.0)
+                        .foregroundStyle(theme.orange)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 4)
+            }
 
             HStack(spacing: 10) {
                 ArmCancelButton {
@@ -340,7 +408,8 @@ struct ConvertPatchBay: View {
                 .frame(maxWidth: .infinity)
 
                 ArmGoButton(
-                    enabled: armEnabled
+                    enabled: armEnabled,
+                    label: goLabel
                 ) {
                     if armEnabled {
                         model.triggerConversionFromPatchBay()
@@ -372,7 +441,28 @@ struct ConvertPatchBay: View {
         let count = model.conversionQueueTracks.count
         let bytes = formatBytes(model.conversionEstimatedOutputBytes)
         let dur = formatHHMMSS(model.conversionQueueDurationSeconds)
-        return "QUEUE · \(count) TRK · \(bytes) · \(dur)"
+        // Named, because the QUEUE tab now lists device queues beside this one
+        // and the key below must not look like it runs those too — those are
+        // pre-converted from their own PRE-CONVERT keys.
+        let label = model.pendingDeviceConversion == nil ? "CRATE QUEUE" : "DEVICE QUEUE"
+        return "\(label) · \(count) TRK · \(bytes) · \(dur)"
+    }
+
+    /// `nil` on the folder route — the destination strip already says it, and a
+    /// second line for "your usual output folder" is noise.
+    private var deviceRouteLine: String? {
+        guard let device = model.pendingDeviceConversion else { return nil }
+        let name = device.deviceName.uppercased()
+        guard let free = device.destinationRoot.volumeFreeBytes else {
+            return "→ \(name) · NOT CONNECTED"
+        }
+        return "→ \(name) · \(formatBytes(free)) FREE"
+    }
+
+    /// The key says what the press does. Same gesture, same lamp — a different
+    /// word, because "CONVERT" was the only thing on screen for a send.
+    private var goLabel: String {
+        model.pendingDeviceConversion.map { "SEND TO \($0.deviceName.uppercased())" } ?? "CONVERT"
     }
 
     // MARK: - Row scaffolding
@@ -440,17 +530,17 @@ struct ConvertPatchBay: View {
 
     private func scopeLabel(_ scope: ConversionBatchScope) -> String {
         switch scope {
-        case .selectedTracks:  return "SEL"
-        case .currentAlbum:    return "ALBUM"
-        case .allLoadedTracks: return "ALL"
+        case .queue:     return "QUEUE"
+        case .prep:      return "PREP"
+        case .selection: return "SEL"
         }
     }
 
     private func scopeSub(_ scope: ConversionBatchScope) -> String? {
         switch scope {
-        case .selectedTracks:  return shortCount(model.visibleTracks.count)
-        case .currentAlbum:    return shortCount(model.selectedAlbum?.trackCount ?? 0)
-        case .allLoadedTracks: return shortCount(model.index.allTracks.count)
+        case .queue:     return shortCount(model.convertQueue.count)
+        case .prep:      return shortCount(model.prepCrateTracks.count)
+        case .selection: return shortCount(model.selectedTracksForCrateAdd().count)
         }
     }
 
@@ -642,6 +732,8 @@ private struct ArmCancelButton: View {
 private struct ArmGoButton: View {
     @Environment(\.carbon) private var theme
     let enabled: Bool
+    /// CONVERT, or SEND TO <DEVICE> when the run is routed at one.
+    var label: String = "CONVERT"
     let action: () -> Void
 
     @State private var holdProgress: Double = 0
@@ -699,8 +791,8 @@ private struct ArmGoButton: View {
                 holdProgress = (pressing && enabled) ? 1 : 0
             }
         }
-        .accessibilityLabel(Text("Convert"))
-        .accessibilityHint(Text("Press and hold to start converting"))
+        .accessibilityLabel(Text(label))
+        .accessibilityHint(Text("Press and hold to start"))
     }
 
     @ViewBuilder
@@ -708,9 +800,11 @@ private struct ArmGoButton: View {
         HStack(spacing: 10) {
             playGlyph
             VStack(spacing: 2) {
-                Text("CONVERT")
+                Text(label)
                     .font(CarbonFont.mono(14, weight: .black))
                     .tracking(3.2)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
                 Text("PRESS & HOLD")
                     .font(CarbonFont.mono(8.5, weight: .bold))
                     .tracking(3.2)
@@ -727,9 +821,11 @@ private struct ArmGoButton: View {
     private var compactContent: some View {
         HStack(spacing: 10) {
             playGlyph
-            Text("CONVERT")
+            Text(label)
                 .font(CarbonFont.mono(13, weight: .black))
                 .tracking(2.6)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
                 .foregroundStyle(Color(hex: 0x1A1209))
                 .frame(maxWidth: .infinity)
         }

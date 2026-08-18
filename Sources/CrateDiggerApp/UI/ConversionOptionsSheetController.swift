@@ -2,20 +2,49 @@ import AppKit
 import CrateDiggerCore
 import SwiftUI
 
+/// What the conversion acts on — always something you can point at, never the
+/// whole library.
+///
+/// It used to include "All Loaded Tracks", which made the queue a live
+/// projection of the current source: thousands of tracks appeared in the Patch
+/// Bay that nobody had put there, and one press of CONVERT would have acted on
+/// all of them. The three that remain are all deliberate: a queue you filled, a
+/// staging crate you filled, or what you have selected right now.
+///
+/// Raw values are fresh so a selection saved under the old cases can't be
+/// mistaken for one of these; anything unrecognised decodes to `.queue`, which
+/// is empty until you add to it.
 enum ConversionBatchScope: Int, Codable, CaseIterable {
-    case selectedTracks
-    case currentAlbum
-    case allLoadedTracks
+    /// Tracks explicitly added with "Add to Convert Queue".
+    case queue = 10
+    /// The Prep Crate — the staging area newly scanned folders land in.
+    case prep = 11
+    /// Whatever is selected in the browser right now.
+    case selection = 12
 
     var title: String {
         switch self {
-        case .selectedTracks:
-            return "Selected Tracks"
-        case .currentAlbum:
-            return "Current Album"
-        case .allLoadedTracks:
-            return "All Loaded Tracks"
+        case .queue:     return "Convert Queue"
+        case .prep:      return "Prep Crate"
+        case .selection: return "Selection"
         }
+    }
+
+    /// One word where the full title would truncate — the Patch Bay's queue
+    /// header shares its line with a count, a duration and a key.
+    var shortTitle: String {
+        switch self {
+        case .queue:     return "Queue"
+        case .prep:      return "Prep"
+        case .selection: return "Selection"
+        }
+    }
+
+    public init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(Int.self)
+        // A retired case must not silently become a big one — fall back to the
+        // scope that converts nothing until the user picks.
+        self = ConversionBatchScope(rawValue: raw) ?? .queue
     }
 }
 

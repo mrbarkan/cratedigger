@@ -8,6 +8,8 @@ struct AlbumRow: View {
     /// Built by the view model so a drag inside a multi-selection carries all of it.
     var dragPayload: String? = nil
     let isPlayingHere: Bool
+    /// Something under this album is queued for a device — see DeviceQueueBar.
+    var pendingSync: Bool = false
     let onSelect: () -> Void
 
     // Optional params for version-group rows (nil = plain album row).
@@ -23,18 +25,21 @@ struct AlbumRow: View {
         ) {
             if let onDisclose, let disclosed {
                 // Disclosure chevron replaces the bullet for release rows.
+                // A grouped release needs its chevron, so the queue shows as a
+                // tint on it rather than displacing the only way to open the row.
                 Button(action: onDisclose) {
                     Image(systemName: disclosed ? "chevron.down" : "chevron.right")
                         .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(selected ? theme.selectionInk : theme.ink3)
+                        .foregroundStyle(pendingSync && !selected
+                                         ? theme.orange
+                                         : (selected ? theme.selectionInk : theme.ink3))
                         .frame(width: 16, alignment: .center)
                 }
                 .buttonStyle(.carbonHover)
                 .frame(width: 16, alignment: .center)
+                .carbonTip(pendingSync ? RowLeadMark.tip : "")
             } else {
-                Text(isPlayingHere ? "▸" : "·")
-                    .font(CarbonFont.mono(9.5, weight: .medium))
-                    .foregroundStyle(theme.rowLeadColor(selected: selected, isPlaying: isPlayingHere))
+                RowLeadMark(isPlaying: isPlayingHere, pendingSync: pendingSync, selected: selected)
             }
         } title: {
             HStack(spacing: 5) {

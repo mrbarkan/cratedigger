@@ -190,7 +190,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             return
         }
 
-        let tracks = model.tracksForBatchScope(.currentAlbum)
+        let tracks = model.selectedAlbum?.tracks ?? []
         guard !tracks.isEmpty else {
             model.appAlert = .info(
                 title: "Nothing to transfer",
@@ -217,7 +217,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     @objc private func pickDeviceForTransfer(_ sender: NSMenuItem) {
         guard let profileID = sender.representedObject as? UUID else { return }
         let model = hostingController.model
-        model.transferToDevice(profileID: profileID, tracks: model.tracksForBatchScope(.currentAlbum))
+        model.transferToDevice(profileID: profileID, tracks: model.selectedAlbum?.tracks ?? [])
     }
 
     func cancelConversion() {

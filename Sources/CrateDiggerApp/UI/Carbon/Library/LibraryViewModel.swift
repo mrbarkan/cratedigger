@@ -105,7 +105,10 @@ final class LibraryViewModel: ObservableObject {
     // MARK: - Published state
 
     @Published private(set) var index: LibraryIndex = .empty {
-        didSet { recomputeSortedCollections() }
+        didSet {
+            recomputeSortedCollections()
+            recomputePendingSyncMarks()
+        }
     }
     @Published var selectedArtistID: String?
     @Published var selectedAlbumID: String?
@@ -142,9 +145,13 @@ final class LibraryViewModel: ObservableObject {
     /// so files land in the device's folder pattern instead of dumped flat.
     var conversionSelectionBeforeDevice: ConversionOptionsSelection?
 
-    /// Exit a device convert hand-off: drop the pending transfer and restore the
-    /// user's normal conversion selection.
+    /// Exit a device convert hand-off: keep whatever the user tuned *on the
+    /// device* (the panel says those rows belong to it), drop the route, and
+    /// restore their own conversion selection.
     func clearPendingDeviceConversion() {
+        if let pending = pendingDeviceConversion {
+            persistSelectionToDevice(conversionSelection, profileID: pending.profileID)
+        }
         pendingDeviceConversion = nil
         if let restore = conversionSelectionBeforeDevice {
             conversionSelectionBeforeDevice = nil
@@ -152,8 +159,21 @@ final class LibraryViewModel: ObservableObject {
         }
     }
 
+    /// A finished send leaves the panel pointed at the same device with an empty
+    /// queue — filling a device album by album shouldn't mean re-choosing it
+    /// every time. CANCEL is what unroutes.
+    func emptyPendingDeviceQueue() {
+        guard let pending = pendingDeviceConversion else { return }
+        pendingDeviceConversion = PendingDeviceConversion(
+            profileID: pending.profileID,
+            deviceName: pending.deviceName,
+            destinationRoot: pending.destinationRoot,
+            tracks: []
+        )
+    }
+
     @Published var conversionSelection: ConversionOptionsSelection = ConversionOptionsSelection(
-        batchScope: .selectedTracks,
+        batchScope: .queue,
         outputFormat: .aac,
         bitrate: 192,
         sampleRate: 44_100,
@@ -163,7 +183,14 @@ final class LibraryViewModel: ObservableObject {
         templatePreset: .artistYearAlbum,
         tokenOrder: TemplatePreset.artistYearAlbum.defaultTokenOrder
     ) {
-        didSet { prefs.saveLastConversionSelection(conversionSelection) }
+        didSet {
+            // On a device route these rows are the *device's* settings, seeded
+            // from its profile and written back to it — saving them here as
+            // "your last selection" is what used to leave the iPod's format
+            // sitting in the cockpit long after the transfer was over.
+            guard pendingDeviceConversion == nil else { return }
+            prefs.saveLastConversionSelection(conversionSelection)
+        }
     }
 
     @Published var sourcesCollapsed: Bool = false
@@ -550,6 +577,10 @@ final class LibraryViewModel: ObservableObject {
     @Published var currentSource: LibrarySource = .localAll
     @Published var availableCrates: [String] = []
     @Published var prepCrateTracks: [LoadedTrack] = []
+    /// Tracks explicitly lined up for conversion ("Add to Convert Queue").
+    /// Deliberately not persisted: a queue that survives a relaunch is a queue
+    /// you forgot you built, which is the trap the old library-wide scope set.
+    @Published var convertQueue: [LoadedTrack] = []
     /// The reserved, auto-created crate — can't be renamed or deleted.
     static let personalCrateName = "Personal Crate"
 
@@ -732,8 +763,21 @@ final class LibraryViewModel: ObservableObject {
     /// Per-profile queued-track counts for sidebar badges. Refreshed on queue
     /// mutations — never read the store from view bodies.
     @Published private(set) var syncQueueCounts: [UUID: Int] = [:]
-    /// Track IDs pending sync for the offline device being browsed (PENDING badges).
-    @Published private(set) var pendingSyncTrackIDs: Set<UUID> = []
+    /// Source paths queued for *any* device, so PENDING badges and the album
+    /// dot read true wherever you are — a queue you can't see is a queue you
+    /// forget. Keyed by path, not track ID: a re-dig mints fresh UUIDs for the
+    /// same files and would silently drop every badge.
+    @Published private(set) var pendingSyncPaths: Set<String> = []
+    /// What each device's queue adds up to, for the strip. Sized here rather
+    /// than in the view — see `refreshSyncQueueCounts`.
+    @Published private(set) var syncQueueSummaries: [UUID: DeviceSyncQueueSummary] = [:]
+    /// Album and artist IDs with something queued, derived from `pendingSyncPaths`
+    /// whenever the index or a queue changes. Precomputed because the dot is asked
+    /// for on every row of every render, and answering it per row means walking
+    /// that row's whole track list — the artist column alone would re-scan the
+    /// library each frame.
+    @Published private(set) var pendingSyncAlbumIDs: Set<String> = []
+    @Published private(set) var pendingSyncArtistIDs: Set<String> = []
     private var playlistIndex: LibraryIndex = .empty
     private var prepCrateIndex: LibraryIndex = .empty
 
@@ -1569,13 +1613,86 @@ final class LibraryViewModel: ObservableObject {
         profile.volumeUUID ?? profile.name
     }
 
+    /// Re-read every device queue: sidebar counts, the pending-path set the
+    /// badges read, and the per-device summary the strip shows. Sizing stats the
+    /// files, so it happens here on queue mutations — never in a view body,
+    /// which is what the strip would otherwise do on every browser render.
     func refreshSyncQueueCounts() {
         var counts: [UUID: Int] = [:]
+        var paths: Set<String> = []
+        var summaries: [UUID: DeviceSyncQueueSummary] = [:]
+        let fm = FileManager.default
+        func size(_ url: URL) -> Int64? {
+            ((try? fm.attributesOfItem(atPath: url.path))?[.size] as? NSNumber)?.int64Value
+        }
         for profile in prefs.savedExternalDeviceProfiles {
-            let n = syncQueueStore.load(profileID: profile.id).count
-            if n > 0 { counts[profile.id] = n }
+            let entries = syncQueueStore.load(profileID: profile.id)
+            guard !entries.isEmpty else { continue }
+            counts[profile.id] = entries.count
+            paths.formUnion(entries.map { $0.track.track.fileURL.path })
+            summaries[profile.id] = DeviceSyncQueueSummary.make(
+                entries: entries,
+                unstagedWillConvert: profile.transferSettings.mode == .convertDuringTransfer,
+                sizeOfStaged: { size(self.syncQueueStore.stagedFileURL(for: $0, profileID: profile.id)) },
+                sizeOfSource: { size($0.track.track.fileURL) }
+            )
         }
         syncQueueCounts = counts
+        pendingSyncPaths = paths
+        syncQueueSummaries = summaries
+        recomputePendingSyncMarks()
+    }
+
+    /// Roll the queued file paths up to the album and artist rows that contain
+    /// them. Bails immediately on the common case of nothing queued, so a user
+    /// with no devices never pays for it.
+    private func recomputePendingSyncMarks() {
+        guard !pendingSyncPaths.isEmpty else {
+            if !pendingSyncAlbumIDs.isEmpty { pendingSyncAlbumIDs = [] }
+            if !pendingSyncArtistIDs.isEmpty { pendingSyncArtistIDs = [] }
+            return
+        }
+        var albums: Set<String> = []
+        var artists: Set<String> = []
+        for artist in index.artists {
+            var artistHit = false
+            for album in artist.albums {
+                // A version group holds its tracks in `versions`; mark the
+                // matching version *and* the group row that hides it.
+                let pool = album.isVersionGroup ? (album.versions ?? []) : [album]
+                var groupHit = false
+                for version in pool
+                where version.tracks.contains(where: { pendingSyncPaths.contains($0.track.fileURL.path) }) {
+                    albums.insert(version.id)
+                    groupHit = true
+                }
+                if groupHit {
+                    albums.insert(album.id)
+                    artistHit = true
+                }
+            }
+            if artistHit { artists.insert(artist.id) }
+        }
+        pendingSyncAlbumIDs = albums
+        pendingSyncArtistIDs = artists
+    }
+
+    /// Dev-only (`CRATEDIGGER_SYNC_QUEUE`): pretend these tracks are queued for
+    /// a device, in memory only. The browser strip and the album dots otherwise
+    /// need an iPod plugged in to appear at all, and writing a real queue to
+    /// snapshot one would clobber whatever the user actually has waiting.
+    func installPreviewSyncQueue(profileID: UUID, tracks: [LoadedTrack]) {
+        pendingSyncPaths = Set(tracks.map { $0.track.fileURL.path })
+        syncQueueCounts[profileID] = tracks.count
+        syncQueueSummaries[profileID] = DeviceSyncQueueSummary(
+            stagedCount: 0,
+            copyCount: tracks.count,
+            stagedBytes: 0,
+            transferBytes: 331_000_000,
+            missingSourceCount: 0,
+            unstagedWillConvert: true
+        )
+        recomputePendingSyncMarks()
     }
 
     /// Post-sync: force the next browse of this device to re-walk the volume.
@@ -1657,7 +1774,6 @@ final class LibraryViewModel: ObservableObject {
         let entries = syncQueueStore.load(profileID: profileID)
         let cachedPaths = Set(cached.map { $0.track.fileURL.path })
         let queued = entries.map(\.track).filter { !cachedPaths.contains($0.track.fileURL.path) }
-        pendingSyncTrackIDs = Set(queued.map { $0.track.id })
         adoptDeviceIndex(buildIndex(cached + queued))
         oledView = .devices
     }
@@ -2266,8 +2382,16 @@ final class LibraryViewModel: ObservableObject {
 
     var conversionDestinationDisplayPath: String {
         if let pending = pendingDeviceConversion {
-            return "▶ \(pending.deviceName): " + Self.tildeShortened(pending.destinationRoot.path) + "/"
+            return "▶ \(pending.deviceName): " + conversionDestinationPathOnly
         }
+        return conversionDestinationPathOnly
+    }
+
+    /// The destination path with no route prefix — for the OLED, which names the
+    /// device on its own line. The glass used to print a hardcoded
+    /// `~/Music/CrateDigger Library/` here, so it was wrong for anyone with their
+    /// own output folder and wrong for every device transfer.
+    var conversionDestinationPathOnly: String {
         guard let url = currentConversionDestinationURL else {
             return "~/Music/CrateDigger Library/"
         }

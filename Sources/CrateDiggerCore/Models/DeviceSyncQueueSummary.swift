@@ -19,22 +19,30 @@ public struct DeviceSyncQueueSummary: Equatable, Sendable {
     public let transferBytes: Int64
     /// Queued entries whose source file has gone missing — they will fail.
     public let missingSourceCount: Int
+    /// True for a convert-mode device: the entries that aren't baked yet get
+    /// converted rather than copied, so their share of `transferBytes` is the
+    /// *source* size and reads high until they're baked.
+    public let unstagedWillConvert: Bool
 
     public var totalCount: Int { stagedCount + copyCount }
     public var isEmpty: Bool { totalCount == 0 }
+    /// Entries a convert-mode device still has to bake — what CONVERT NOW acts on.
+    public var pendingConversionCount: Int { unstagedWillConvert ? copyCount : 0 }
 
     public init(
         stagedCount: Int,
         copyCount: Int,
         stagedBytes: Int64,
         transferBytes: Int64,
-        missingSourceCount: Int
+        missingSourceCount: Int,
+        unstagedWillConvert: Bool = false
     ) {
         self.stagedCount = stagedCount
         self.copyCount = copyCount
         self.stagedBytes = stagedBytes
         self.transferBytes = transferBytes
         self.missingSourceCount = missingSourceCount
+        self.unstagedWillConvert = unstagedWillConvert
     }
 
     public static let empty = DeviceSyncQueueSummary(
@@ -45,6 +53,7 @@ public struct DeviceSyncQueueSummary: Equatable, Sendable {
     /// isn't there — injected so this stays testable without touching disk.
     public static func make(
         entries: [DeviceSyncQueueEntry],
+        unstagedWillConvert: Bool = false,
         sizeOfStaged: (DeviceSyncQueueEntry) -> Int64?,
         sizeOfSource: (DeviceSyncQueueEntry) -> Int64?
     ) -> DeviceSyncQueueSummary {
@@ -77,15 +86,19 @@ public struct DeviceSyncQueueSummary: Equatable, Sendable {
             copyCount: copyCount,
             stagedBytes: stagedBytes,
             transferBytes: transferBytes,
-            missingSourceCount: missing
+            missingSourceCount: missing,
+            unstagedWillConvert: unstagedWillConvert
         )
     }
 
-    /// "12 tracks · 480 MB" — the one-line form for the queue bar.
+    /// "12 tracks · 480 MB" — the one-line form for the queue bar. Sizes that
+    /// still have a conversion ahead of them are marked approximate rather than
+    /// quietly quoting the (larger) source size as the transfer size.
     public var headline: String {
         guard !isEmpty else { return "Nothing queued" }
         let noun = totalCount == 1 ? "track" : "tracks"
-        return "\(totalCount) \(noun) · \(Self.byteLabel(transferBytes))"
+        let approx = pendingConversionCount > 0 ? "~" : ""
+        return "\(totalCount) \(noun) · \(approx)\(Self.byteLabel(transferBytes))"
     }
 
     /// The qualifier under the headline, when there is something worth saying.
@@ -93,11 +106,13 @@ public struct DeviceSyncQueueSummary: Equatable, Sendable {
         guard !isEmpty else { return nil }
         var parts: [String] = []
         if stagedCount > 0 && copyCount > 0 {
-            parts.append("\(stagedCount) converted, \(copyCount) as-is")
+            parts.append(unstagedWillConvert
+                         ? "\(stagedCount) converted, \(copyCount) not yet"
+                         : "\(stagedCount) converted, \(copyCount) as-is")
         } else if stagedCount > 0 {
             parts.append("converted, ready to copy")
         } else {
-            parts.append("copied from the originals")
+            parts.append(unstagedWillConvert ? "converts when you sync" : "copied from the originals")
         }
         if stagedBytes > 0 {
             parts.append("\(Self.byteLabel(stagedBytes)) staged on this Mac")

@@ -6,17 +6,13 @@ struct BrowserPane: View {
     @Environment(\.carbon) private var theme
     @EnvironmentObject private var model: LibraryViewModel
 
-    /// True while browsing a device that isn't plugged in — the only place the
-    /// sync queue is worth a permanent strip.
-    private var isBrowsingOfflineDevice: Bool {
-        if case .offlineDevice = model.currentSource { return true }
-        return false
-    }
-
     var body: some View {
         VStack(spacing: 0) {
-            if isBrowsingOfflineDevice {
-                DeviceQueueBar()
+            // A device's own screen only: over a crate it was a bar about
+            // somewhere you weren't. The orange dots carry the queue into the
+            // rest of the browser instead.
+            if let profile = model.browsedDeviceProfile {
+                DeviceQueueBar(profile: profile)
             }
             if let cd = model.currentAudioCD {
                 DiscIdentityBar(info: cd)
@@ -129,6 +125,7 @@ private struct ArtistPane: View {
                     selected: model.isArtistSelected(artist.id),
                     dragPayload: model.dragPayload(forArtist: artist),
                     isPlayingHere: isPlayingArtist(artist),
+                    pendingSync: model.hasPendingSync(artist),
                     onSelect: {
                         let m = NSEvent.modifierFlags
                         model.focusedColumn = .artist
@@ -193,6 +190,7 @@ private struct AlbumPane: View {
             selected: model.isAlbumSelected(album.id),
             dragPayload: model.dragPayload(forAlbum: album),
             isPlayingHere: isPlayingAlbum(album),
+            pendingSync: model.hasPendingSync(album),
             onSelect: {
                 let m = NSEvent.modifierFlags
                 model.focusedColumn = .album
@@ -219,6 +217,7 @@ private struct AlbumPane: View {
             selected: model.isAlbumSelected(release.id),
             dragPayload: model.dragPayload(forAlbum: release),
             isPlayingHere: isPlayingAlbum(release),
+            pendingSync: model.hasPendingSync(release),
             onSelect: {
                 let m = NSEvent.modifierFlags
                 model.focusedColumn = .album
@@ -334,7 +333,7 @@ private struct TrackPane: View {
                         isPlaying: model.nowPlayingTrack?.track.id == loaded.track.id,
                         isOffline: model.isOffline(loaded),
                         isMissing: model.isMissing(loaded),
-                        isPendingSync: model.isPendingSync(loaded.track.id),
+                        isPendingSync: model.isPendingSync(loaded),
                         onSelect: {
                             let m = NSEvent.modifierFlags
                             model.focusedColumn = .track

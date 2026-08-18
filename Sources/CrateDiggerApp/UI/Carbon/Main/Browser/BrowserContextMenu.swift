@@ -20,6 +20,11 @@ enum BrowserContextMenu {
             .disabled(targets.isEmpty)
         Button("Play Last" + suffix) { model.playLast(targets) }
             .disabled(targets.isEmpty)
+        // The only way to fill the convert queue. Before this the Patch Bay
+        // converted whatever the scope happened to resolve to, which could be
+        // the whole library without anyone choosing it.
+        Button("Add to Convert Queue" + suffix) { model.addToConvertQueue(targets) }
+            .disabled(targets.isEmpty)
     }
 
     /// Menu for a single artist. "Add to Crate" becomes "Add N Artists to Crate"
@@ -250,17 +255,17 @@ enum BrowserContextMenu {
     }
 
     /// Sync-queue actions — offered on pending items while browsing an
-    /// offline device. Re-stage re-bakes with the profile's current
-    /// conversion settings (only shown when staged bytes exist to re-bake);
+    /// offline device. Re-convert throws away a bake so it is remade at the
+    /// profile's current settings (only shown when baked bytes exist);
     /// Remove deletes the entries AND their staged bytes.
     @ViewBuilder
     static func removeFromSyncQueueButton(for tracks: [LoadedTrack], model: LibraryViewModel) -> some View {
-        let pending = tracks.filter { model.isPendingSync($0.track.id) }
+        let pending = tracks.filter { model.isPendingSync($0) }
         if !pending.isEmpty {
             let ids = Set(pending.map { $0.track.id })
             Divider()
             if model.canRestageSyncEntries(trackIDs: ids) {
-                Button("Re-stage with Current Settings (\(pending.count))") {
+                Button("Re-convert with Current Settings (\(pending.count))") {
                     model.restageWithCurrentSettings(trackIDs: ids)
                 }
             }

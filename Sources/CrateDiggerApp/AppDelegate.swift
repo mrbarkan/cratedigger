@@ -439,6 +439,61 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                 self?.mainWindowController?.model.selectSource(.playlist(name: name))
             }
         }
+        // A device route otherwise needs an iPod physically plugged in, which put
+        // the routed CNVRT cockpit out of reach of a snapshot. This makes the same
+        // in-memory hand-off the browser's "Send to device" makes — nothing is
+        // written until the key is pressed.
+        if env["CRATEDIGGER_DEVICE_ROUTE"] != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 7.5) { [weak self] in
+                guard let model = self?.mainWindowController?.model,
+                      let profile = PreferencesStore.shared.savedExternalDeviceProfiles.first
+                else { return }
+                model.pendingDeviceConversion = PendingDeviceConversion(
+                    profileID: profile.id,
+                    deviceName: profile.name,
+                    destinationRoot: URL(fileURLWithPath: profile.rootDisplayPath ?? "/Volumes/\(profile.name)"),
+                    tracks: Array(Self.previewTracks(from: model).prefix(11))
+                )
+                model.oledView = .conversion
+            }
+        }
+        // The device strip and the album dots need a queue, which needs an iPod
+        // on the other end of a USB cable. This fakes one in memory — nothing is
+        // written, so the real queue is untouched.
+        // "stage" runs the real queueing path (and writes a real queue file);
+        // anything else fakes one in memory and writes nothing.
+        if let raw = env["CRATEDIGGER_SYNC_QUEUE"] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) { [weak self] in
+                guard let model = self?.mainWindowController?.model,
+                      let profile = PreferencesStore.shared.savedExternalDeviceProfiles.first
+                else { return }
+                // One whole album, so an album row carries the dot.
+                let album = model.index.artists.flatMap(\.albums).first
+                let tracks = album?.tracks ?? Array(Self.previewTracks(from: model).prefix(11))
+                if raw == "stage" {
+                    model.stageForSync(profile: profile, tracks: tracks)
+                    model.appAlert = nil   // the confirmation would cover the shot
+                } else {
+                    model.installPreviewSyncQueue(profileID: profile.id, tracks: tracks)
+                }
+            }
+        }
+        // The artwork navigator only opens from a click in the browser, so its two
+        // presentations were unverifiable from the command line. "float" pops the
+        // floating panel, anything else the full-screen viewer.
+        if let raw = env["CRATEDIGGER_ARTWORK"] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { [weak self] in
+                guard let model = self?.mainWindowController?.model,
+                      let album = model.index.artists.flatMap(\.albums)
+                        .first(where: { $0.tracks.contains { $0.track.artworkHash != nil } })
+                        ?? model.index.artists.first?.albums.first
+                else { return }
+                guard raw == "float",
+                      let resolved = ThemeRegistry.shared.resolvedTheme(for: PreferencesStore.shared.selectedThemeID)
+                else { return model.artworkViewerAlbum = album }
+                ArtworkViewerPresenter.float(album: album, theme: resolved.theme, model: model, index: 0)
+            }
+        }
         if env["CRATEDIGGER_CHECK_STREAM"] != nil {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
                 self?.mainWindowController?.model.checkYouTubeStreaming()
@@ -492,6 +547,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                 try? line.write(toFile: dumpPath, atomically: true, encoding: .utf8)
             }
         }
+    }
+
+    /// The album on screen if there is one, else whatever is loaded — so the
+    /// routed-cockpit snapshot has a queue in it either way.
+    @MainActor
+    private static func previewTracks(from model: LibraryViewModel) -> [LoadedTrack] {
+        let album = model.selectedAlbum?.tracks ?? []
+        return album.isEmpty ? model.index.allTracks : album
     }
 
     /// Dev-only: walk the app through the states the website shows and write one

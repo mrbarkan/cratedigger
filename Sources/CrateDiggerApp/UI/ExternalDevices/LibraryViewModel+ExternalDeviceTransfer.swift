@@ -50,7 +50,7 @@ extension LibraryViewModel {
         // Device not mounted → stage for later instead of prompting for a folder.
         let isMounted = mountedDevices.contains { deviceProfile(for: $0)?.id == profile.id }
         guard isMounted else {
-            stageForSync(profile: profile, tracks: tracks, presentingFrom: host)
+            stageForSync(profile: profile, tracks: tracks)
             return
         }
 
@@ -74,31 +74,44 @@ extension LibraryViewModel {
                 // rather than dumped flat into the music folder. The user can tweak
                 // inline before hitting Go; the pre-device selection is restored
                 // after the run.
-                let alreadyQueued = pendingDeviceConversion.flatMap {
+                let routedBefore = pendingDeviceConversion
+                let alreadyQueued = routedBefore.flatMap {
                     $0.profileID == resolved.id && $0.destinationRoot == destinationRoot ? $0.tracks : nil
                 }
-                // Seed the cockpit only on the first hand-off — a second one would
-                // save the already-device-seeded selection as "before device" and
-                // lose the user's own settings when the run restores them.
-                if alreadyQueued == nil {
-                    conversionSelectionBeforeDevice = conversionSelection
-                    conversionSelection = seededConversionSelection(from: resolved.transferSettings)
-                    // Folder-art devices get a cover.jpg beside the tracks
-                    // instead, so nothing goes inside the files.
-                    if resolved.usesFolderCoverArt { conversionSelection.artworkMode = .none }
-                }
-
                 // Sending a second selection to the same device adds to the queue.
                 // Replacing it silently threw away everything picked so far, which
                 // is the whole point of filling the cockpit before pressing Go.
                 let queued = alreadyQueued ?? []
                 let known = Set(queued.map(\.track.fileURL.path))
+                // Route *before* seeding: `conversionSelection` only saves itself
+                // as the user's own last selection while no device is routed, so
+                // seeding first would persist the iPod's format as theirs.
                 pendingDeviceConversion = PendingDeviceConversion(
                     profileID: resolved.id,
                     deviceName: resolved.name,
                     destinationRoot: destinationRoot,
                     tracks: queued + tracks.filter { !known.contains($0.track.fileURL.path) }
                 )
+
+                // Seed the cockpit only on the first hand-off — a second one would
+                // save the already-device-seeded selection as "before device" and
+                // lose the user's own settings when the run restores them.
+                if alreadyQueued == nil {
+                    // Re-routing straight from one device to another: the old
+                    // device keeps what was tuned for it, and "before device"
+                    // must still mean the user's own settings, not the previous
+                    // device's.
+                    if let previous = routedBefore, previous.profileID != resolved.id {
+                        persistSelectionToDevice(conversionSelection, profileID: previous.profileID)
+                    }
+                    if conversionSelectionBeforeDevice == nil {
+                        conversionSelectionBeforeDevice = conversionSelection
+                    }
+                    conversionSelection = seededConversionSelection(from: resolved.transferSettings)
+                    // Folder-art devices get a cover.jpg beside the tracks
+                    // instead, so nothing goes inside the files.
+                    if resolved.usesFolderCoverArt { conversionSelection.artworkMode = .none }
+                }
                 oledView = .conversion
             }
         }

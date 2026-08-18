@@ -160,8 +160,11 @@ extension LibraryViewModel {
                 }
             }
 
-            // Persist the user's selection for next launch.
-            prefs.saveLastConversionSelection(selection)
+            // Persist the user's selection for next launch — but a device run's
+            // settings belong to the device, not to the next folder conversion.
+            if deviceTransfer == nil {
+                prefs.saveLastConversionSelection(selection)
+            }
 
             let report = await runConversionQueue(service: service, jobs: finalJobs, preset: preset).report
             // `jobs`, not `finalJobs`: a batch where the user chose Skip still
@@ -171,11 +174,11 @@ extension LibraryViewModel {
                 landings: jobs.map { ($0.destinationURL.deletingLastPathComponent(), $0.metadata?.artwork) }
             )
             if let deviceTransfer {
-                // Remember any format/folder tweaks on the device profile, then
-                // restore the user's normal conversion selection.
+                // Remember any format/folder tweaks on the device profile and
+                // stay routed to it — the next album you send needs no setup.
                 persistSelectionToDevice(selection, profileID: deviceTransfer.profileID)
+                emptyPendingDeviceQueue()
             }
-            clearPendingDeviceConversion()
             presentSummary(
                 report: deviceTransfer.map { deviceReport(report, deviceName: $0.deviceName, covers: covers) } ?? report,
                 presentingFrom: host
@@ -184,8 +187,10 @@ extension LibraryViewModel {
     }
 
     /// Write the format + folder layout the user just used back onto the device
-    /// profile, so the next transfer to it defaults to the same pattern.
-    private func persistSelectionToDevice(_ selection: ConversionOptionsSelection, profileID: UUID) {
+    /// profile, so the next transfer to it defaults to the same pattern. Called
+    /// on both exits from a device route — a completed send and a cancel — since
+    /// the panel tells the user those rows belong to the device.
+    func persistSelectionToDevice(_ selection: ConversionOptionsSelection, profileID: UUID) {
         guard var profile = prefs.savedExternalDeviceProfiles.first(where: { $0.id == profileID }) else { return }
         var settings = profile.transferSettings
         settings.outputFormat = selection.outputFormat
@@ -483,16 +488,32 @@ extension LibraryViewModel {
     @MainActor
     func tracksForBatchScope(_ scope: ConversionBatchScope) -> [LoadedTrack] {
         switch scope {
-        case .selectedTracks:
-            // V1 semantics: "selected tracks" = the currently selected album's
-            // tracks. Multi-track selection isn't a UI concept yet; this is the
-            // most useful default a user will reach for from the Cnvrt key.
-            return visibleTracks
-        case .currentAlbum:
-            return selectedAlbum?.tracks ?? []
-        case .allLoadedTracks:
-            return index.allTracks
+        case .queue:     return convertQueue
+        case .prep:      return prepCrateTracks
+        case .selection: return selectedTracksForCrateAdd()
         }
+    }
+
+    /// Add to the convert queue, skipping anything already in it, and point the
+    /// cockpit at the queue so the addition is visible where it landed.
+    @MainActor
+    func addToConvertQueue(_ tracks: [LoadedTrack]) {
+        let known = Set(convertQueue.map { $0.track.fileURL.path })
+        let fresh = tracks.filter { !known.contains($0.track.fileURL.path) }
+        guard !fresh.isEmpty else {
+            showOLEDNotice("ALREADY QUEUED")
+            return
+        }
+        convertQueue += fresh
+        conversionSelection.batchScope = .queue
+        showOLEDNotice("QUEUED \(convertQueue.count) TRK")
+    }
+
+    @MainActor
+    func clearConvertQueue() {
+        guard !convertQueue.isEmpty else { return }
+        convertQueue = []
+        showOLEDNotice("QUEUE CLEARED")
     }
 
     @MainActor

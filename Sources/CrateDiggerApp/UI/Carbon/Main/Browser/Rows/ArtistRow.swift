@@ -8,6 +8,8 @@ struct ArtistRow: View {
     /// Built by the view model so a drag inside a multi-selection carries all of it.
     var dragPayload: String? = nil
     let isPlayingHere: Bool
+    /// Something under this artist is queued for a device — see DeviceQueueBar.
+    var pendingSync: Bool = false
     let onSelect: () -> Void
     let onPrimaryAction: () -> Void
 
@@ -17,9 +19,7 @@ struct ArtistRow: View {
             onSelect: onSelect,
             onActivate: onPrimaryAction
         ) {
-            Text(isPlayingHere ? "▸" : "·")
-                .font(CarbonFont.mono(9.5, weight: .medium))
-                .foregroundStyle(theme.rowLeadColor(selected: selected, isPlaying: isPlayingHere))
+            RowLeadMark(isPlaying: isPlayingHere, pendingSync: pendingSync, selected: selected)
         } title: {
             Text(artist.name)
                 .font(CarbonFont.sans(12.5, weight: .medium))
