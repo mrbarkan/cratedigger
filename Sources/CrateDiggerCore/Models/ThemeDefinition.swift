@@ -103,6 +103,11 @@ public struct ThemeDefinition: Codable, Sendable, Equatable {
 /// The weights the interface actually asks for. Anything heavier or lighter a
 /// caller requests is served by the nearest of these.
 public enum ThemeFontWeight: String, Codable, Sendable, CaseIterable {
+    /// Lighter than the base face. The OLED headlines are drawn thin, and
+    /// without a slot for it a theme could only ever synthesise that by
+    /// smearing its regular face — the one weight the display role most wants
+    /// to name for real.
+    case light
     case regular
     case medium
     case semibold
@@ -129,12 +134,20 @@ public enum ThemeFontWeight: String, Codable, Sendable, CaseIterable {
 public struct ThemeFont: Codable, Sendable, Equatable {
     /// The base face. Required — it's what every unspecified weight falls back to.
     public var regular: String
+    public var light: String?
     public var medium: String?
     public var semibold: String?
     public var bold: String?
 
-    public init(regular: String, medium: String? = nil, semibold: String? = nil, bold: String? = nil) {
+    public init(
+        regular: String,
+        light: String? = nil,
+        medium: String? = nil,
+        semibold: String? = nil,
+        bold: String? = nil
+    ) {
         self.regular = regular
+        self.light = light
         self.medium = medium
         self.semibold = semibold
         self.bold = bold
@@ -145,6 +158,7 @@ public struct ThemeFont: Codable, Sendable, Equatable {
     /// weight on top (needed for a single-face theme, wrong for a real one).
     public func face(for weight: ThemeFontWeight) -> String? {
         switch weight {
+        case .light:    return light
         case .regular:  return regular
         case .medium:   return medium
         case .semibold: return semibold
@@ -158,6 +172,9 @@ public struct ThemeFont: Codable, Sendable, Equatable {
         // asking for semibold on a family that ships only regular and bold
         // looks better bold than smeared.
         switch weight {
+        // Lighter than the base only ever falls *up* to it: standing in a bold
+        // for a missing light would invert the hierarchy the caller asked for.
+        case .light:    return light ?? regular
         case .regular:  return regular
         case .medium:   return medium ?? semibold ?? bold ?? regular
         case .semibold: return semibold ?? bold ?? medium ?? regular
@@ -165,8 +182,22 @@ public struct ThemeFont: Codable, Sendable, Equatable {
         }
     }
 
+    /// Names the face for one weight, or clears it with `nil` so the weight
+    /// falls back through `resolvedFace(for:)` again. Clearing `regular` is
+    /// meaningless — it's the base everything else falls back to — so a `nil`
+    /// there is ignored rather than silently emptying the role.
+    public mutating func setFace(_ postScriptName: String?, for weight: ThemeFontWeight) {
+        switch weight {
+        case .light:    light = postScriptName
+        case .regular:  if let postScriptName { regular = postScriptName }
+        case .medium:   medium = postScriptName
+        case .semibold: semibold = postScriptName
+        case .bold:     bold = postScriptName
+        }
+    }
+
     private enum CodingKeys: String, CodingKey {
-        case regular, medium, semibold, bold
+        case regular, light, medium, semibold, bold
     }
 
     public init(from decoder: Decoder) throws {
@@ -179,6 +210,7 @@ public struct ThemeFont: Codable, Sendable, Equatable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.init(
             regular: try container.decode(String.self, forKey: .regular),
+            light: try container.decodeIfPresent(String.self, forKey: .light),
             medium: try container.decodeIfPresent(String.self, forKey: .medium),
             semibold: try container.decodeIfPresent(String.self, forKey: .semibold),
             bold: try container.decodeIfPresent(String.self, forKey: .bold)
@@ -186,13 +218,14 @@ public struct ThemeFont: Codable, Sendable, Equatable {
     }
 
     public func encode(to encoder: Encoder) throws {
-        guard medium != nil || semibold != nil || bold != nil else {
+        guard light != nil || medium != nil || semibold != nil || bold != nil else {
             var container = encoder.singleValueContainer()
             try container.encode(regular)
             return
         }
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(regular, forKey: .regular)
+        try container.encodeIfPresent(light, forKey: .light)
         try container.encodeIfPresent(medium, forKey: .medium)
         try container.encodeIfPresent(semibold, forKey: .semibold)
         try container.encodeIfPresent(bold, forKey: .bold)

@@ -30,7 +30,7 @@ public final class FloatingArtworkPanel: NSPanel {
         isOpaque = false
         backgroundColor = .clear
         hasShadow = false
-        minSize = NSSize(width: 220, height: 260)
+        minSize = NSSize(width: 320, height: 260)   // the control bar's natural width
         standardWindowButton(.closeButton)?.isHidden = true
         standardWindowButton(.miniaturizeButton)?.isHidden = true
         standardWindowButton(.zoomButton)?.isHidden = true
@@ -401,7 +401,7 @@ struct AlbumArtworkNavigator: View {
                 pillButton(label: "FWD", icon: "chevron.right") { step(1) }
                     .disabled(pages.count <= 1)
 
-                zoomMenu
+                zoomMenu()
 
                 pillButton(label: "FOCUS", highlighted: focusMode) { focusMode.toggle() }
 
@@ -411,25 +411,30 @@ struct AlbumArtworkNavigator: View {
         }
     }
 
-    private var zoomMenu: some View {
+    /// `compact` sizes it to match `iconPill` for the floating panel's bar.
+    private func zoomMenu(compact: Bool = false) -> some View {
         Menu {
             Button("Fit to Screen") { setZoom(.fit) }
             Button("50%") { setZoom(.scale(0.5)) }
             Button("100%") { setZoom(.scale(1.0)) }
             Button("1:1 (drag to pan)") { setZoom(.scale(1.0)) }
         } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass").font(.system(size: 10, weight: .bold))
+            HStack(spacing: 5) {
+                Image(systemName: "magnifyingglass").font(.system(size: compact ? 9 : 10, weight: .bold))
                 Text(zoom.label).font(CarbonFont.mono(9.5, weight: .bold)).tracking(1.5)
             }
             .foregroundStyle(.white.opacity(0.85))
-            .padding(.horizontal, 16)
-            .padding(.vertical, 9)
-            .background(Capsule().fill(Color.white.opacity(0.10)))
+            .padding(.horizontal, compact ? 10 : 16)
+            .frame(height: compact ? 28 : nil)
+            .padding(.vertical, compact ? 0 : 9)
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
+        // Outside the Menu: a background *inside* a menu label is dropped when
+        // AppKit re-hosts it, which left the zoom control as bare glyphs next to
+        // the pill-shaped buttons.
+        .background(Capsule().fill(Color.white.opacity(0.10)))
     }
 
     private func pillButton(label: String, icon: String? = nil, highlighted: Bool = false, action: @escaping () -> Void) -> some View {
@@ -449,39 +454,45 @@ struct AlbumArtworkNavigator: View {
 
     // MARK: - Floating panel controls (compact, pinned at the bottom)
 
+    /// One bar, centred under the art: the page label sits *between* its arrows so
+    /// they read as a stepper, then zoom / expand / close behind a hairline. The bar
+    /// hugs its contents — the old full-width slab with a hole in the middle read as
+    /// a second window pasted under the picture.
+    ///
+    /// It keeps its own dark surface (no Material — those are live blurs and cost
+    /// idle GPU): the panel is chromeless, so white glyphs would otherwise sit
+    /// straight on light artwork.
     private var floatingControls: some View {
-        VStack(spacing: 6) {
-            if let role = current?.label {
-                Text(role.uppercased())
-                    .font(CarbonFont.mono(9, weight: .bold))
-                    .tracking(1.6)
-                    .foregroundStyle(theme.orange)
-                    .lineLimit(1)
-            }
-            HStack(spacing: 8) {
-                iconPill("chevron.left") { step(-1) }.disabled(pages.count <= 1)
-                zoomMenu
-                iconPill("chevron.right") { step(1) }.disabled(pages.count <= 1)
-                Spacer(minLength: 4)
-                iconPill("arrow.up.left.and.arrow.down.right") { onExpand?(index) }   // dock back to full-screen
-                iconPill("xmark") { onClose() }
-            }
+        HStack(spacing: 6) {
+            iconPill("chevron.left") { step(-1) }.disabled(pages.count <= 1)
+
+            Text(current?.label.uppercased() ?? "—")
+                .font(CarbonFont.mono(9, weight: .bold))
+                .tracking(1.5)
+                .foregroundStyle(theme.orange)
+                .lineLimit(1)
+                .frame(minWidth: 62)          // steady width so paging doesn't shuffle the row
+                .multilineTextAlignment(.center)
+
+            iconPill("chevron.right") { step(1) }.disabled(pages.count <= 1)
+
+            Rectangle()
+                .fill(Color.white.opacity(0.16))
+                .frame(width: 1, height: 18)
+                .padding(.horizontal, 2)
+
+            zoomMenu(compact: true)
+            iconPill("arrow.up.left.and.arrow.down.right") { onExpand?(index) }   // dock back to full-screen
+            iconPill("xmark") { onClose() }
         }
-        // Matte glass: the floating panel has no scrim of its own, so white
-        // glyphs were sitting straight on light artwork. An opaque-enough dark
-        // slab (no Material — those are live blurs and cost idle GPU) gives the
-        // controls their own surface to read against, on any art.
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.black.opacity(0.78))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.14), lineWidth: 1)
-                )
+            Capsule(style: .continuous)
+                .fill(Color.black.opacity(0.72))
+                .overlay(Capsule(style: .continuous).strokeBorder(Color.white.opacity(0.14), lineWidth: 1))
         )
-        .padding(.horizontal, 10)
+        .fixedSize()
     }
 
     private func iconPill(_ systemName: String, action: @escaping () -> Void) -> some View {

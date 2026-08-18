@@ -15,15 +15,16 @@ public enum ActiveThemeFonts {
 }
 
 extension Font.Weight {
-    /// Collapses SwiftUI's nine weights onto the four a theme names. Anything
-    /// lighter than medium reads as the base face; anything heavier than bold
-    /// reads as bold, because that's the heaviest face a family is asked for.
+    /// Collapses SwiftUI's nine weights onto the five a theme names. Anything
+    /// heavier than bold reads as bold, because that's the heaviest face a
+    /// family is asked for; ultraLight/thin/light all share the light slot.
     var themeWeight: ThemeFontWeight {
         switch self {
-        case .bold, .heavy, .black: return .bold
-        case .semibold:             return .semibold
-        case .medium:               return .medium
-        default:                    return .regular
+        case .bold, .heavy, .black:        return .bold
+        case .semibold:                    return .semibold
+        case .medium:                      return .medium
+        case .ultraLight, .thin, .light:   return .light
+        default:                           return .regular
         }
     }
 }
@@ -87,8 +88,17 @@ public enum CarbonFont {
         }
     }
 
-    public static func display(_ size: CGFloat) -> Font {
-        let postscript = ActiveThemeFonts.overrides["display"]?.regular ?? displayFamily
-        return Font.custom(postscript, size: size, relativeTo: .title)
+    /// The display role honours weights like the others. It used to draw the
+    /// role's `regular` face and nothing else, which made a theme's other
+    /// display faces dead keys and left the OLED headlines — the one place
+    /// that asks for `.thin` — synthesising it on top of whatever face was
+    /// named. The shipped MajorMonoDisplay is single-face, so the unthemed
+    /// path still synthesises.
+    public static func display(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
+        if let override = ActiveThemeFonts.overrides["display"] {
+            let drawing = override.drawing(weight)
+            return Font.custom(drawing.face, size: size, relativeTo: .title).weight(drawing.synthesize)
+        }
+        return Font.custom(displayFamily, size: size, relativeTo: .title).weight(weight)
     }
 }

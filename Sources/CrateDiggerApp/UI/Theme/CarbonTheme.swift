@@ -1,3 +1,4 @@
+import AppKit
 import CrateDiggerCore
 import SwiftUI
 
@@ -65,6 +66,13 @@ public struct CarbonTheme: Equatable {
 
     public let oledSurface: Color
     public let oledStrokeInner: Color
+
+    /// The depth wash raked across the glass, under everything drawn on it —
+    /// a translucent color, so its alpha is the strength. It was a fixed
+    /// `black 28%`, which reads as depth on a black screen and as a dirty grey
+    /// smear on a pale one, with no token to turn it down; a light glass now
+    /// defaults to a much softer wash (see `init(definition:resolvedBase:)`).
+    public let oledSurfaceShade: Color
 
     /// The OLED glass's warm phosphor foreground + its "ON AIR" accent.
     /// Both built-ins ship identical values (the display reads as one fixed
@@ -139,6 +147,7 @@ public extension CarbonTheme {
         backgroundGradientEnd:   Color(hex: 0xC7D8DF),
         oledSurface:     Color(hex: 0x0A0A0A),
         oledStrokeInner: Color(hex: 0x1A1A1A),
+        oledSurfaceShade: Color.black.opacity(0.28),
         oledForeground:      Color(red: 0.961, green: 0.945, blue: 0.902),
         oledForegroundMuted: Color.white.opacity(0.55),
         onAir:               Color(red: 1.0, green: 0.357, blue: 0.29),
@@ -183,6 +192,7 @@ public extension CarbonTheme {
         backgroundGradientEnd:   Color(hex: 0x030406),
         oledSurface:     Color(hex: 0x050504),
         oledStrokeInner: Color(hex: 0x0E0E0C),
+        oledSurfaceShade: Color.black.opacity(0.28),
         oledForeground:      Color(red: 0.961, green: 0.945, blue: 0.902),
         oledForegroundMuted: Color.white.opacity(0.55),
         onAir:               Color(red: 1.0, green: 0.357, blue: 0.29),
@@ -204,6 +214,14 @@ public extension Color {
     /// (leading `#` optional, case-insensitive). `nil` for anything else so
     /// callers can fall back to a known-good default rather than crash on a
     /// malformed 3rd-party theme.
+    /// Perceived brightness, 0 (black) … 1 (white). Used to pick a default for
+    /// an effect layered *on* a themed surface, where the surface's own color
+    /// decides what reads correctly — see `oledSurfaceShade`.
+    var themeLuminance: Double {
+        guard let srgb = NSColor(self).usingColorSpace(.sRGB) else { return 0 }
+        return Double(0.299 * srgb.redComponent + 0.587 * srgb.greenComponent + 0.114 * srgb.blueComponent)
+    }
+
     init?(hexString: String) {
         var value = hexString.trimmingCharacters(in: .whitespacesAndNewlines)
         if value.hasPrefix("#") { value.removeFirst() }
@@ -282,6 +300,14 @@ public extension CarbonTheme {
 
         oledSurface = color("oledSurface", resolvedBase.oledSurface)
         oledStrokeInner = color("oledStrokeInner", resolvedBase.oledStrokeInner)
+        // The built-in shade is tuned for a black screen. A theme that puts a
+        // pale glass in the header (Apple Music's light layer) would inherit a
+        // 28% black rake across it, so the default follows the glass instead of
+        // the base theme — a theme can still name any color/alpha it likes.
+        oledSurfaceShade = color("oledSurfaceShade",
+                                 oledSurface.themeLuminance > 0.5
+                                     ? Color.black.opacity(0.06)
+                                     : resolvedBase.oledSurfaceShade)
         oledForeground = color("oledForeground", resolvedBase.oledForeground)
         oledForegroundMuted = color("oledForegroundMuted", resolvedBase.oledForegroundMuted)
         onAir = color("onAir", resolvedBase.onAir)

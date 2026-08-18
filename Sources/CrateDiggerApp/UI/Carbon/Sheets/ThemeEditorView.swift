@@ -24,6 +24,10 @@ struct ThemeEditorView: View {
     /// Which layer a pending "copy to" click is armed against — see
     /// `copyLayerButton`. `nil` means nothing is armed.
     @State private var armedCopyTarget: ThemeDefinition.BaseAppearance?
+    /// Font roles whose per-weight rows are open. Collapsed by default: the
+    /// family pick already maps every weight, and three roles × four faces
+    /// permanently on screen would bury the rest of the panel.
+    @State private var expandedWeightRoles: Set<String> = []
 
     private var draft: ThemeDefinition? { registry.draft }
 
@@ -350,41 +354,130 @@ struct ThemeEditorView: View {
                     .frame(width: 104)
             }
 
-            weightSummary(current, family: family)
+            HStack(spacing: 6) {
+                weightsDisclosure(for: key, family: family)
+                weightSummary(current, family: family)
+            }
+
+            if expandedWeightRoles.contains(key) {
+                weightRows(for: key, family: family, current: current, fallback: fallback)
+            }
         }
         .padding(.vertical, 7)
         .help(note)
     }
 
-    /// What the theme will actually draw at each weight.
-    ///
-    /// A role picked before per-weight mapping existed names one face, and the
-    /// family may well ship four — saying only "single weight" reads as a
-    /// defect rather than as something one click fixes, so the count and the
-    /// remedy are both spelled out.
+    /// Picking a family maps every weight it can supply, which is the right
+    /// one-click answer nine times out of ten. This opens the other tenth:
+    /// the family's *own* faces, italics included, assigned by hand — the
+    /// nearest-weight search behind the automatic mapping searches upright
+    /// faces only, so a Condensed or Italic base otherwise gets heavier
+    /// weights from a different style axis than the one that was chosen.
+    private func weightsDisclosure(for role: String, family: String?) -> some View {
+        let expanded = expandedWeightRoles.contains(role)
+        let faceCount = family.map { ThemeTokenCatalog.faces(inFamily: $0).count } ?? 0
+
+        return Button {
+            if expanded { expandedWeightRoles.remove(role) } else { expandedWeightRoles.insert(role) }
+        } label: {
+            HStack(spacing: 3) {
+                Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                    .font(.system(size: 7, weight: .bold))
+                Text("WEIGHTS")
+                    .font(CarbonFont.mono(7.5, weight: .bold))
+                    .tracking(1.1)
+            }
+            .foregroundStyle(theme.ink3)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.carbonHover)
+        .disabled(faceCount < 2)
+        .carbonTip(faceCount < 2
+                   ? "This family ships a single face — nothing to map."
+                   : "Assign each weight a face from this family by hand.")
+    }
+
+    /// One row per weight the interface asks for, minus `regular` — that's the
+    /// base, and it's the VARIANT menu above.
+    private func weightRows(for role: String, family: String?, current: ThemeFont?, fallback: String) -> some View {
+        let faces = family.map { ThemeTokenCatalog.faces(inFamily: $0) } ?? []
+
+        return VStack(spacing: 3) {
+            ForEach(ThemeFontWeight.allCases.filter { $0 != .regular }, id: \.rawValue) { weight in
+                HStack(spacing: 6) {
+                    Text(weight.rawValue.uppercased())
+                        .font(CarbonFont.mono(7.5, weight: .bold))
+                        .tracking(1.1)
+                        .foregroundStyle(theme.ink4)
+                        .frame(width: 62, alignment: .leading)
+
+                    weightMenu(for: role, weight: weight, faces: faces, current: current, fallback: fallback)
+                }
+            }
+        }
+        .padding(.leading, 2)
+        .padding(.top, 2)
+    }
+
+    private func weightMenu(
+        for role: String,
+        weight: ThemeFontWeight,
+        faces: [ThemeTokenCatalog.FontFace],
+        current: ThemeFont?,
+        fallback: String
+    ) -> some View {
+        let named = current?.face(for: weight)
+        let title = named.flatMap { name in faces.first { $0.postScriptName == name }?.styleName ?? name }
+            ?? "Auto"
+
+        return menuField(title, enabled: faces.count > 1) {
+            Button("Auto") { setFace(nil, weight: weight, role: role, current: current, fallback: fallback) }
+            Divider()
+            ForEach(faces) { face in
+                Button(face.styleName) {
+                    setFace(face.postScriptName, weight: weight, role: role, current: current, fallback: fallback)
+                }
+            }
+        }
+        .help(named == nil
+              ? "Auto — falls back to the nearest face this role names."
+              : "Drawn in \(named ?? "") wherever the interface asks for \(weight.rawValue).")
+    }
+
+    private func setFace(
+        _ postScriptName: String?,
+        weight: ThemeFontWeight,
+        role: String,
+        current: ThemeFont?,
+        fallback: String
+    ) {
+        var font = current ?? ThemeFont(regular: fallback)
+        font.setFace(postScriptName, for: weight)
+        registry.draft?.fonts?[role] = font
+    }
+
+    /// What the theme will actually draw at each weight, beside the WEIGHTS
+    /// toggle. A role naming fewer faces than its family ships isn't broken —
+    /// the unnamed ones are synthesised — but it is worth pointing at, since
+    /// opening the rows is what fixes it.
     @ViewBuilder
     private func weightSummary(_ font: ThemeFont?, family: String?) -> some View {
         if let font {
             let named = ThemeFontWeight.allCases.filter { font.face(for: $0) != nil }
             let available = family.map { ThemeTokenCatalog.availableWeightCount(inFamily: $0) } ?? named.count
 
-            if named.count < available {
-                Text("Using \(named.count) of \(available) weights — re-pick the family to map them all")
-                    .font(CarbonFont.mono(7.5))
-                    .foregroundStyle(theme.sun)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else if named.count > 1 {
-                Text(named.map(\.rawValue).joined(separator: " · "))
-                    .font(CarbonFont.mono(7.5))
-                    .foregroundStyle(theme.ink4)
-                    .lineLimit(1)
-            } else {
-                Text("One weight — heavier text is synthesised")
-                    .font(CarbonFont.mono(7.5))
-                    .foregroundStyle(theme.ink4)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-            }
+            // Amber only for the one case that's actually a defect — a role
+            // pinned to a single face, where every heading is a smear of it.
+            // Anything else is a fact about the mapping, not a warning: an
+            // unmapped weight is a deliberate Auto away in the rows below.
+            Text(named.count == 1
+                 ? "one face · every weight synthesised"
+                 : "\(named.count) of \(available) mapped")
+                .font(CarbonFont.mono(7.5))
+                .foregroundStyle(named.count == 1 ? theme.sun : theme.ink4)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+                .frame(maxWidth: .infinity, alignment: .trailing)
         }
     }
 

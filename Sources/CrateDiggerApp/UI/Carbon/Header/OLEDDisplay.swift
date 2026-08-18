@@ -41,7 +41,11 @@ struct OLEDDisplay: View {
         // takes the glass's frame, so content that doesn't fit clips like a
         // real display instead of resizing the hardware.
         background
-            .overlay(
+            // Top-aligned: a pane whose natural height beats the glass (a theme
+            // whose fonts have taller line boxes, or a dialled-down header) must
+            // clip at the bottom like a real display — centred, the overflow
+            // shoved the annunciator rail off the top edge instead.
+            .overlay(alignment: .top) {
                 VStack(spacing: 0) {
                     DisplayRail()
                     DisplayContext()
@@ -49,8 +53,8 @@ struct OLEDDisplay: View {
                 }
                 .padding(.top, 8)
                 .padding(.horizontal, 18)
-                .padding(.bottom, 10)
-            )
+                .padding(.bottom, 4)
+            }
             .clipShape(RoundedRectangle(cornerRadius: geometry.oledCornerRadius, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: geometry.oledCornerRadius, style: .continuous)
@@ -71,7 +75,7 @@ struct OLEDDisplay: View {
                     colors: [
                         Color.white.opacity(theme.isDark ? 0.04 : 0.08),
                         Color.clear,
-                        Color.black.opacity(0.28)
+                        theme.oledSurfaceShade
                     ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
@@ -386,7 +390,7 @@ private struct OLEDPaneScaffold<Headline: View, Readout: View, Ticker: View, Cel
             ticker()
             cells()
         }
-        .padding(.top, 10)
+        .padding(.top, 6)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
@@ -404,8 +408,7 @@ private struct NPTitles: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .font(CarbonFont.display(titleSize))
-                .fontWeight(.thin)
+                .font(CarbonFont.display(titleSize, weight: .thin))
                 .italic(titleItalic)
                 .tracking(-0.4)
                 .foregroundStyle(titleColor)
@@ -433,8 +436,7 @@ private struct NPClock: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(now)
-                .font(CarbonFont.display(nowSize))
-                .fontWeight(.thin)
+                .font(CarbonFont.display(nowSize, weight: .thin))
                 .foregroundStyle(nowColor)
                 .shadow(color: theme.orange.opacity(nowColor == oledFG ? 0.28 : 0), radius: 7)
             if !tot.isEmpty {
@@ -478,7 +480,7 @@ private struct OLEDCells<Trailing: View>: View {
             }
             trailing()
         }
-        .padding(.top, 8)
+        .padding(.top, 6)
         .overlay(Rectangle().fill(oledFGo(0.12)).frame(height: 1), alignment: .top)
     }
 
@@ -536,7 +538,7 @@ private struct DSPTicker: View {
             }
         }
         .padding(.leading, leadingInset)
-        .padding(.bottom, 8)
+        .padding(.bottom, 4)
     }
 }
 
@@ -738,7 +740,7 @@ private struct RadioNowPlaying: View {
                 HStack(spacing: 8) {
                     Circle().fill(onAirRed).frame(width: 9, height: 9)
                         .shadow(color: onAirRed.opacity(0.7), radius: 4)
-                    Text("ON AIR").font(CarbonFont.display(30)).fontWeight(.thin).foregroundStyle(oledFG)
+                    Text("ON AIR").font(CarbonFont.display(30, weight: .thin)).foregroundStyle(oledFG)
                 }
                 Text("UPTIME \(uptimeString)")
                     .font(CarbonFont.mono(10, weight: .semibold)).tracking(1.4)
@@ -961,8 +963,7 @@ private struct ConversionPane: View {
 
     private func formatBlock(_ text: String, dim: Bool) -> some View {
         Text(text)
-            .font(CarbonFont.display(40))
-            .fontWeight(.thin)
+            .font(CarbonFont.display(40, weight: .thin))
             .foregroundStyle(dim ? oledFGo(0.55) : oledFG)
             .lineLimit(1)
     }
@@ -985,8 +986,13 @@ private struct ConversionPane: View {
         case .aac, .alac: container = "M4A"
         default: container = model.conversionSelection.outputFormat.fileExtension.uppercased()
         }
-        if count == 0 { return "Queue Idle · \(container) · \(kind)" }
-        return "Queue Armed · \(count) Tracks · \(container) · \(kind)"
+        // A routed run says where it's going here, in the line under the
+        // formats — the glass used to name the device only once the transfer
+        // was already running, which is after the decision.
+        let state = model.pendingDeviceConversion.map { "To \($0.deviceName)" }
+            ?? (count == 0 ? "Queue Idle" : "Queue Armed")
+        if count == 0 { return "\(state) · \(container) · \(kind)" }
+        return "\(state) · \(count) Tracks · \(container) · \(kind)"
     }
 
     private var estimateNow: String {
@@ -1008,10 +1014,12 @@ private struct ConversionPane: View {
 
     private var scopeValue: String { "\(model.conversionQueueTracks.count) TRK" }
     private var scopeSub: String {
+        // On a route the batch scope isn't what filled the queue — the browser did.
+        if model.pendingDeviceConversion != nil { return "Device Queue" }
         switch model.conversionSelection.batchScope {
-        case .selectedTracks:  return "Selected"
-        case .currentAlbum:    return "Album"
-        case .allLoadedTracks: return "All Loaded"
+        case .queue:     return "Convert Queue"
+        case .prep:      return "Prep Crate"
+        case .selection: return "Selection"
         }
     }
 
@@ -1058,12 +1066,13 @@ private struct ConversionPane: View {
 
     private var tickerPrefix: String {
         let count = model.conversionQueueTracks.count
-        return count == 0 ? "PREVIEW · —" : String(format: "PREVIEW · 01 / %02d", count)
+        let label = model.pendingDeviceConversion == nil ? "PREVIEW" : "SENDING TO"
+        return count == 0 ? "\(label) · —" : String(format: "%@ · 01 / %02d", label, count)
     }
 
     private var tickerPath: AttributedString {
         var out = AttributedString("")
-        var head = AttributedString("~/Music/CrateDigger Library/")
+        var head = AttributedString(model.conversionDestinationPathOnly)
         head.foregroundColor = theme.orange
         out.append(head)
         if let preview = model.conversionQueueTracks.first {
@@ -1101,7 +1110,7 @@ private struct ScanPane: View {
             VStack(alignment: .trailing, spacing: 6) {
                 HStack(alignment: .firstTextBaseline, spacing: 2) {
                     Text(percentValue)
-                        .font(CarbonFont.display(34)).fontWeight(.thin).foregroundStyle(oledFG)
+                        .font(CarbonFont.display(34, weight: .thin)).foregroundStyle(oledFG)
                     Text("%")
                         .font(CarbonFont.mono(12, weight: .semibold)).foregroundStyle(oledFGo(0.4))
                 }

@@ -143,6 +143,9 @@ enum ThemeTokenCatalog {
             ColorToken(key: "oledSurface", label: "Screen Glass",
                        note: "The dark glass of the big display in the header.",
                        read: \.oledSurface),
+            ColorToken(key: "oledSurfaceShade", label: "Screen Shade",
+                       note: "Depth wash raked across the glass, under the text. Translucent — its opacity is the strength, so drop the alpha for a pale screen.",
+                       read: \.oledSurfaceShade),
             ColorToken(key: "oledStrokeInner", label: "Screen Bezel",
                        note: "Inner rim around the display glass.",
                        read: \.oledStrokeInner),
@@ -372,6 +375,7 @@ enum ThemeTokenCatalog {
 
         return ThemeFont(
             regular: regular,
+            light: named(3),
             medium: named(6),
             semibold: named(8),
             bold: named(9)
