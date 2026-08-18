@@ -30,3 +30,6 @@ scripts/.lastfm.env
 # Agent tooling scratch (session diffs, task reports, local tokens). Never
 # source — and .superpowers/brainstorm/.last-token is a credential.
 .superpowers/
+
+# Coverage artifact dropped by a raw `swift test` run in the repo root.
+default.profraw

@@ -4,6 +4,64 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 1.5.1 (62) — 2026-08-18
+
+Sending music to a device used to happen in three places at once, and the CNVRT
+queue filled itself with tracks nobody chose. Both are now one thing you can
+point at: a queue you fill deliberately, shown where you are looking.
+
+### Added
+
+- **Device strip.** Browsing a device now opens with a line across the top of the
+  browser saying what is waiting for it, how big it is, and whether the device is
+  plugged in — with SETTINGS, SYNC NOW and CLEAR right there.
+- **Queued tracks are marked in the browser.** Artists and albums holding
+  something bound for a device carry an orange dot in place of their bullet, so
+  you can see what is spoken for while you dig.
+- **Convert Queue.** Right-click anything and choose *Add to Convert Queue* to
+  line it up. The Patch Bay's QUEUE tab lists it under CRATE QUEUE, with its own
+  CLEAR.
+- **Device queues in the Patch Bay.** The QUEUE tab shows every device queue
+  above the crate queue, each with a PRE-CONVERT key that bakes it at the
+  device's current settings so the eventual sync is a plain copy.
+- **Every weight of every typeface.** The Theme Editor's font rows expand to map
+  a real face to each weight — light, medium, semibold and bold — instead of
+  synthesising them from one face. The OLED headline honours them too.
+- **Screen Shade.** The dark wash over the OLED glass is now a theme colour
+  rather than a fixed value, so light themes stop looking muddy.
+- **Faster YouTube playback.** Progressive YouTube audio is fetched in bounded
+  byte ranges instead of one open-ended request, which YouTube throttles by
+  roughly 500x. A stream that would not start now starts.
+
+### Changed
+
+- **Queuing for a disconnected device no longer converts anything.** It records
+  what you picked and stops. Convert it when you want, at settings you can still
+  change, with PRE-CONVERT — or leave it and let SYNC convert on the way over.
+- **Scope is Queue, Prep or Selection.** "All Loaded Tracks" is gone: no setting
+  now means "everything", so the queue can no longer fill itself with a whole
+  library you did not choose.
+- **Sending to a device holds its route.** Finishing a send keeps the device and
+  empties the queue, so filling one album by album no longer means re-choosing
+  it. Format changes made while a device is routed save to that device instead of
+  overwriting your own defaults.
+- **The floating artwork viewer** carries one control bar instead of scattered
+  buttons.
+- *Re-stage with Current Settings* is now *Re-convert with Current Settings*, and
+  keeps the entry in place rather than removing and re-adding it.
+
+### Fixed
+
+- Selecting CNVRT pushed the OLED's annunciator rail off the top of the glass.
+- The OLED printed a hardcoded output path, which was wrong for anyone with their
+  own output folder and wrong for every device transfer.
+- Queue badges were keyed by track ID, so re-digging a folder silently cleared
+  every one of them. They follow the file now.
+- The zoom control in the floating artwork viewer lost its background.
+- A long pre-convert could discard tracks queued while it was running.
+- A YouTube stream that 403s on a just-resolved URL re-resolves once instead of
+  going straight to the error panel.
+
 ## 1.5.0 (61) — 2026-08-13
 
 Make it look like yours. CrateDigger's skins were always plain JSON files you
