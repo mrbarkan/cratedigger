@@ -141,6 +141,9 @@ final class AVPlayerEngine: PlaybackEngineProtocol {
 
     private let player = AVPlayer()
     private let levelTap = AudioLevelTap()
+    /// Kept alive for the current item — `AVAssetResourceLoader` holds its
+    /// delegate weakly, and a released loader silently stalls playback.
+    private var chunkedLoader: ChunkedStreamLoader?
     private var timeObserverToken: Any?
     private var statusObservation: NSKeyValueObservation?
     private var itemEndObserver: NSObjectProtocol?
@@ -167,7 +170,7 @@ final class AVPlayerEngine: PlaybackEngineProtocol {
             self.itemEndObserver = nil
         }
 
-        let item = AVPlayerItem(url: url)
+        let item = makeItem(url: url)
         attachLevelMetering(to: item)
         player.replaceCurrentItem(with: item)
 
@@ -192,6 +195,21 @@ final class AVPlayerEngine: PlaybackEngineProtocol {
         ) { [weak self] _ in
             self?.onItemEnded?()
         }
+    }
+
+    /// A URL wrapped by `ChunkedStreamLoader` needs an `AVURLAsset` with the
+    /// loader attached; everything else takes the plain path. The loader is
+    /// held here because `resourceLoader` does not retain its delegate.
+    private func makeItem(url: URL) -> AVPlayerItem {
+        guard ChunkedStreamLoader.isWrapped(url) else {
+            chunkedLoader = nil
+            return AVPlayerItem(url: url)
+        }
+        let loader = ChunkedStreamLoader()
+        let asset = AVURLAsset(url: url)
+        asset.resourceLoader.setDelegate(loader, queue: loader.queue)
+        chunkedLoader = loader
+        return AVPlayerItem(asset: asset)
     }
 
     func play() {

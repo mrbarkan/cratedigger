@@ -15,6 +15,10 @@ final class YtDlpStreamEngine: RadioPlaybackEngine {
     private let player: PlaybackServiceProtocol
     private var resolveTask: Task<Void, Never>?
     private var volume: Double = 0.8
+    /// The stream currently loaded, and whether it has already burned its one
+    /// re-resolve. Both are reset by `play` and cleared by `stop`.
+    private var currentStream: StreamSource?
+    private var hasReresolved = false
 
     init(resolver: StreamResolver, player: PlaybackServiceProtocol = PlaybackService()) {
         self.resolver = resolver
@@ -30,11 +34,31 @@ final class YtDlpStreamEngine: RadioPlaybackEngine {
             Task { @MainActor in self?.onTimeChange?(current, duration) }
         }
         player.onError = { [weak self] message in
-            Task { @MainActor in self?.onStateChange?(.failed(message)) }
+            Task { @MainActor in self?.handlePlaybackFailure(message) }
         }
     }
 
+    /// googlevideo intermittently 403s a URL that resolved cleanly moments
+    /// earlier. A fresh URL clears it where retrying the same one does not
+    /// (`ChunkedStreamLoader` already retries at the request level), so trade
+    /// one more yt-dlp run for the stream instead of showing the FIX panel.
+    /// Once per `play` — a second failure is real and must surface.
+    private func handlePlaybackFailure(_ message: String) {
+        guard let stream = currentStream, !hasReresolved else {
+            onStateChange?(.failed(message))
+            return
+        }
+        hasReresolved = true
+        resolveAndLoad(stream)
+    }
+
     func play(_ stream: StreamSource) {
+        currentStream = stream
+        hasReresolved = false
+        resolveAndLoad(stream)
+    }
+
+    private func resolveAndLoad(_ stream: StreamSource) {
         onStateChange?(.loading)
         resolveTask?.cancel()
         let resolver = self.resolver
@@ -48,7 +72,11 @@ final class YtDlpStreamEngine: RadioPlaybackEngine {
                 await MainActor.run {
                     guard let self else { return }
                     let item = PlaybackQueueItem(
-                        url: resolved.playbackURL,
+                        // Progressive YouTube audio is throttled ~500x on the
+                        // open-ended range request AVPlayer would issue, so it
+                        // goes through the chunking loader. HLS passes straight
+                        // through — see ChunkedStreamLoader.
+                        url: ChunkedStreamLoader.wrapIfProgressive(resolved.playbackURL),
                         title: stream.title,
                         artist: stream.channel,
                         album: "YouTube",
@@ -70,6 +98,9 @@ final class YtDlpStreamEngine: RadioPlaybackEngine {
     func stop() {
         resolveTask?.cancel()
         resolveTask = nil
+        // Forget the stream, or a late failure callback would re-resolve and
+        // start playing something the user has already stopped.
+        currentStream = nil
         player.load(queue: [], startIndex: 0, autoPlay: false)
         onStateChange?(.idle)
     }
