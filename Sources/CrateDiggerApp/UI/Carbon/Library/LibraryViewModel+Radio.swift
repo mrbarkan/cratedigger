@@ -401,7 +401,12 @@ extension LibraryViewModel {
 
     /// Runs an install/update command off-main, then re-runs the streaming
     /// check so the user sees end-to-end whether the repair actually worked.
-    private func runRepairCommand(executablePath: String, arguments: [String], notice: String, label: String) {
+    /// `onSuccess` runs after a zero-exit command, *instead of* jumping straight
+    /// to a health check — an exit code says the command ran, not that it did
+    /// anything, and some repairs have to verify their own work.
+    private func runRepairCommand(executablePath: String, arguments: [String],
+                                  notice: String, label: String,
+                                  onSuccess: (() -> Void)? = nil) {
         showOLEDNotice(notice)
         Task {
             // brew can legitimately take a while; 10 min guards a wedged process.
@@ -419,7 +424,97 @@ extension LibraryViewModel {
                     )
                     return
                 }
+                if let onSuccess {
+                    self.oledNotice = nil
+                    onSuccess()
+                } else {
+                    self.checkYouTubeStreaming()
+                }
+            }
+        }
+    }
+
+    /// yt-dlp's version string, or nil if it can't be asked.
+    ///
+    /// Off the main thread without exception: yt-dlp's standalone macOS build
+    /// unpacks itself on every launch and takes ~6s just to print `--version`,
+    /// which run inline would be a six-second frozen window.
+    private func installedYtDlpVersion() async -> String? {
+        guard let ytdlp = resolvedYtDlpURL() else { return nil }
+        let output = try? await BlockingWork.run {
+            try? ProcessCommandRunner(timeoutSeconds: 60)
+                .run(executableURL: ytdlp, arguments: ["--version"])
+        }
+        return (output ?? nil)?.standardOutput.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// After an update command exits 0, check the version actually moved. When it
+    /// hasn't — the package manager's formula is behind, which for Homebrew is
+    /// routine — say so plainly and offer the one route that isn't hostage to it.
+    private func confirmYtDlpMoved(from before: String?) {
+        showOLEDNotice("CHECKING VERSION…")
+        Task { @MainActor in
+            let after = await self.installedYtDlpVersion()
+            self.oledNotice = nil
+            guard !StreamEngineDoctor.versionChanged(from: before, to: after) else {
                 self.checkYouTubeStreaming()
+                return
+            }
+            self.offerStandaloneYtDlp(currentVersion: after)
+        }
+    }
+
+    /// The package manager is behind. Say so, and offer the direct download.
+    private func offerStandaloneYtDlp(currentVersion: String?) {
+        let after = currentVersion
+        let alert = NSAlert()
+        alert.messageText = "yt-dlp Is Already the Newest Your Package Manager Has"
+        alert.informativeText = """
+            The update ran, but yt-dlp is still \(after ?? "the same version").             Homebrew's formula often trails yt-dlp's own releases by weeks, and             YouTube breaks extractors faster than that.
+
+            CrateDigger can download yt-dlp's latest release directly and use             that copy instead. Your Homebrew install is left alone.
+            """
+        alert.addButton(withTitle: "Download Latest")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        installStandaloneYtDlp()
+    }
+
+
+    /// Fetch yt-dlp's own macOS build into Application Support and point the
+    /// custom-path preference at it, so it outranks whatever the package manager
+    /// has. Nothing else on the system is touched.
+    private func installStandaloneYtDlp() {
+        showOLEDNotice("DOWNLOADING YT-DLP…")
+        let destination = StreamEngineDoctor.standaloneDestination()
+        Task { @MainActor in
+            do {
+                let (temporary, response) = try await URLSession.shared
+                    .download(from: StreamEngineDoctor.standaloneDownloadURL)
+                guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+                    throw NSError(domain: "CrateDigger.YtDlpInstall", code: 1, userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "The download server returned HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0)."
+                    ])
+                }
+                let fm = FileManager.default
+                try fm.createDirectory(at: destination.deletingLastPathComponent(),
+                                       withIntermediateDirectories: true)
+                if fm.fileExists(atPath: destination.path) { try fm.removeItem(at: destination) }
+                try fm.moveItem(at: temporary, to: destination)
+                try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: destination.path)
+
+                prefs.customYtDlpPath = destination.path
+                oledNotice = nil
+                AppLog.library.notice("Installed standalone yt-dlp at \(destination.path, privacy: .public)")
+                checkYouTubeStreaming()
+            } catch {
+                oledNotice = nil
+                appAlert = .error(
+                    title: "Couldn't Download yt-dlp",
+                    message: "\(error.localizedDescription)\n\nYou can install it yourself from "
+                        + "github.com/yt-dlp/yt-dlp and point Playback ▸ Stream Engine ▸ Set yt-dlp Path… at it."
+                )
             }
         }
     }
@@ -453,8 +548,13 @@ extension LibraryViewModel {
                 realToolPath: realPath, brewPath: Self.locateBrew()?.path
             )
             streamFailure = nil
-            runRepairCommand(executablePath: exe, arguments: args,
-                             notice: "UPDATING YT-DLP…", label: ([exe] + args).joined(separator: " "))
+            Task { @MainActor in
+                let before = await self.installedYtDlpVersion()
+                self.runRepairCommand(
+                    executablePath: exe, arguments: args,
+                    notice: "UPDATING YT-DLP…", label: ([exe] + args).joined(separator: " ")
+                ) { [weak self] in self?.confirmYtDlpMoved(from: before) }
+            }
         case .useWebViewEngine:
             prefs.streamEngine = "webview"
             streamEnginePreferenceChanged()

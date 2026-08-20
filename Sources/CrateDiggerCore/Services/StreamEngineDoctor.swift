@@ -50,6 +50,39 @@ public struct StreamEngineDoctor: @unchecked Sendable {
         }
     }
 
+    // MARK: - Updating
+
+    /// yt-dlp's own notarised macOS build, always the newest release. The escape
+    /// hatch when a package manager is behind: Homebrew's formula routinely lags
+    /// yt-dlp by weeks, and YouTube breaks extractors faster than that.
+    public static let standaloneDownloadURL = URL(
+        string: "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos"
+    )!
+
+    /// Where a directly-downloaded yt-dlp lives — beside the app's other state,
+    /// so no package manager owns it and nothing else can overwrite it.
+    public static func standaloneDestination(
+        applicationSupport: URL? = FileManager.default
+            .urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+    ) -> URL {
+        (applicationSupport ?? URL(fileURLWithPath: NSTemporaryDirectory()))
+            .appendingPathComponent("CrateDigger", isDirectory: true)
+            .appendingPathComponent("bin", isDirectory: true)
+            .appendingPathComponent("yt-dlp")
+    }
+
+    /// Did the update actually change anything?
+    ///
+    /// `brew upgrade yt-dlp` exits 0 whether it upgraded or found nothing to do,
+    /// so exit status alone reported success while leaving a six-week-old binary
+    /// in place — the user pressed the button, was congratulated, and streaming
+    /// stayed broken. Only a moved version number counts.
+    public static func versionChanged(from before: String?, to after: String?) -> Bool {
+        guard let after, !after.isEmpty, after != "unknown" else { return false }
+        guard let before, !before.isEmpty, before != "unknown" else { return true }
+        return before != after
+    }
+
     /// The command that updates the yt-dlp at `realToolPath` (symlinks already
     /// resolved by the caller). A Homebrew keg must be updated by brew — the
     /// binary's own `-U` refuses to touch package-manager installs; anything

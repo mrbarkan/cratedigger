@@ -72,4 +72,48 @@ final class StreamEngineDoctorTests: XCTestCase {
         XCTAssertEqual(exe, "/opt/homebrew/Cellar/yt-dlp/2026.6.9/bin/yt-dlp")
         XCTAssertEqual(args, ["-U"])
     }
+
+    // MARK: - Update verification
+
+    /// The bug this guards: `brew upgrade yt-dlp` exits 0 with nothing to do
+    /// when the formula is already the newest brew has, so the app declared
+    /// success over a six-week-old binary and streaming stayed broken.
+    func testAnUnchangedVersionIsNotAnUpdate() {
+        XCTAssertFalse(StreamEngineDoctor.versionChanged(from: "2026.07.04", to: "2026.07.04"))
+    }
+
+    func testAMovedVersionIsAnUpdate() {
+        XCTAssertTrue(StreamEngineDoctor.versionChanged(from: "2026.07.04", to: "2026.08.19"))
+    }
+
+    /// If we couldn't read the version beforehand, a readable one afterwards is
+    /// the best evidence available — treat it as progress rather than failing
+    /// the user into a download they may not need.
+    func testAnUnknownStartingPointCountsAsUpdatedOnceReadable() {
+        XCTAssertTrue(StreamEngineDoctor.versionChanged(from: nil, to: "2026.08.19"))
+        XCTAssertTrue(StreamEngineDoctor.versionChanged(from: "unknown", to: "2026.08.19"))
+    }
+
+    /// An unreadable result afterwards proves nothing, so it must not be sold
+    /// as a successful update.
+    func testAnUnreadableResultIsNeverAnUpdate() {
+        for after in [nil, "", "unknown"] {
+            XCTAssertFalse(StreamEngineDoctor.versionChanged(from: "2026.07.04", to: after),
+                           "after=\(after ?? "nil")")
+        }
+    }
+
+    func testStandaloneDestinationLivesUnderTheAppsOwnFolder() {
+        let base = URL(fileURLWithPath: "/tmp/AppSupport")
+        let destination = StreamEngineDoctor.standaloneDestination(applicationSupport: base)
+        XCTAssertEqual(destination.path, "/tmp/AppSupport/CrateDigger/bin/yt-dlp")
+    }
+
+    /// Pinning the URL: "latest" has to stay latest, or this whole escape hatch
+    /// silently becomes another stale install.
+    func testStandaloneDownloadIsTheLatestRelease() {
+        let url = StreamEngineDoctor.standaloneDownloadURL.absoluteString
+        XCTAssertTrue(url.contains("/releases/latest/download/"), url)
+        XCTAssertTrue(url.hasSuffix("yt-dlp_macos"), url)
+    }
 }
