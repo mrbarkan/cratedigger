@@ -221,6 +221,21 @@ public final class ChunkedStreamLoader: NSObject, AVAssetResourceLoaderDelegate 
         }
     }
 
+    /// What a failing status means in this one context, so the FIX panel can
+    /// say something better than "bad response". 403 here is nearly always an
+    /// extractor whose URLs YouTube no longer honours.
+    static func message(forStatus code: Int) -> String {
+        switch code {
+        case 403:
+            return "Stream server returned HTTP 403 — the media URL was rejected."
+                + " This usually means yt-dlp is out of date."
+        case 404, 410:
+            return "Stream server returned HTTP \(code) — the media URL has expired."
+        default:
+            return "Stream server returned HTTP \(code)."
+        }
+    }
+
     private enum FetchResult {
         case success(HTTPURLResponse?, Data)
         case failure(Error)
@@ -273,11 +288,21 @@ public final class ChunkedStreamLoader: NSObject, AVAssetResourceLoaderDelegate 
                 // Feeding a 403/404 body to AVFoundation corrupts the stream and
                 // surfaces as an opaque "Operation Stopped" rather than the
                 // real cause, so fail loudly here instead.
+                //
+                // NSError, not URLError: a URLError renders its own canned
+                // description ("There was a bad response from the server") and
+                // drops the NSLocalizedDescriptionKey handed to it, so the
+                // status code never reached the FIX panel — a 403 from an
+                // expired extractor was indistinguishable from any other
+                // network fault.
                 let http = response as? HTTPURLResponse
                 guard let http, (200...299).contains(http.statusCode) else {
-                    giveUpOrRetry(URLError(.badServerResponse,
-                                           userInfo: [NSLocalizedDescriptionKey:
-                                            "Stream server returned HTTP \(http?.statusCode ?? 0)."]))
+                    let code = http?.statusCode ?? 0
+                    giveUpOrRetry(NSError(
+                        domain: "CrateDigger.ChunkedStreamLoader",
+                        code: code,
+                        userInfo: [NSLocalizedDescriptionKey: Self.message(forStatus: code)]
+                    ))
                     return
                 }
                 completion(.success(http, data ?? Data()))

@@ -85,7 +85,10 @@ public enum StreamFailureAdvisor {
             )
         }
         if mentions(["nsig extraction failed", "unable to extract", "signature extraction failed",
-                     "player response", "failed to extract any player response", "http error 403"]) {
+                     "player response", "failed to extract any player response",
+                     // yt-dlp's stderr says "HTTP Error 403"; ChunkedStreamLoader
+                     // reports the status it saw as "HTTP 403".
+                     "http error 403", "http 403"]) {
             return Diagnosis(
                 summary: "yt-dlp can’t read YouTube’s player right now — this is what a YouTube-side change looks like, and an update almost always fixes it.",
                 remedies: [.updateYtDlp, .useWebViewEngine],
