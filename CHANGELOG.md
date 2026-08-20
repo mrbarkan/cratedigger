@@ -4,6 +4,34 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 1.5.2 (63) — 2026-08-19
+
+Radio repairs. YouTube changed something, an out-of-date yt-dlp couldn't keep
+up, and the three things that should have told you so were all broken: the
+error said nothing useful, the update button reported success without updating,
+and the failure notice pushed the transport controls off the bottom of the
+screen.
+
+### Fixed
+
+- **The window no longer resizes itself to fit its contents.** Anything tall in
+  the browser — the radio FIX panel was the one you'd hit — grew the window past
+  the bottom of the display and took the transport footer with it. Measured at
+  892pt before the panel and 1249pt after; the window now keeps the size you
+  gave it.
+- **Stream errors name the actual problem.** A failing chunk reported "there was
+  a bad response from the server" no matter what happened, because the HTTP
+  status was attached to an error type that discards it. A 403 now says it's a
+  403 and that yt-dlp is the likely cause, and the FIX panel offers the remedy
+  that matches instead of a generic list.
+- **The UPDATE YT-DLP button tells the truth.** `brew upgrade yt-dlp` exits
+  successfully whether or not it upgraded anything, so when Homebrew's formula
+  was weeks behind — which is routine — the app congratulated you and nothing
+  changed. It now checks the version actually moved, and when it hasn't, offers
+  to download yt-dlp's own latest release and use that copy instead. Your
+  package-managed install is left alone, and Playback ▸ Stream Engine ▸ Set
+  yt-dlp Path… switches back.
+
 ## 1.5.1 (62) — 2026-08-18
 
 Sending music to a device used to happen in three places at once, and the CNVRT
