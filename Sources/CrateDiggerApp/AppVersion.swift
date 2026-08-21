@@ -10,9 +10,9 @@ import Foundation
 /// are only the fallback the About pill uses when no bundle plist is present.
 enum AppVersion {
     /// Mirror of `CFBundleShortVersionString`.
-    static let marketing = "1.5.2"
+    static let marketing = "1.5.3"
     /// Mirror of `CFBundleVersion`.
-    static let build = "63"
+    static let build = "64"
     /// Release-channel label shown in About ("BETA", "RC", …). Empty for a
     /// final release — at which point the pill reverts to "VERSION x (build)".
     static let channel = ""

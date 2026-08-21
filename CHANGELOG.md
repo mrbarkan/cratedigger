@@ -4,6 +4,50 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 1.5.3 (64) — 2026-08-21
+
+The theme editor learned what a screen is. Seven one-click looks for the
+display — green LCD, amber, VFD, LED, backlit, iPod, e-paper — plus two
+switches that describe the hardware rather than the paint: a true single-colour
+panel, and a console with no cast shadows. Carbon and Linen are one theme now,
+and the header rail carries what's playing instead of readouts you could
+already see.
+
+### Added
+
+- **Screen presets in the theme editor.** LCD GREEN, AMBER, VFD CYAN, RED LED,
+  BACKLIT, IPOD and PAPER each set the display's six colours, its scanline
+  strength and the face its titles are set in, in one click. IPOD is two
+  panels: reflective grey-green in Light, blue-white backlit in Dark. A preset
+  paints both versions of a light/dark theme — the glass is hardware, and
+  hardware doesn't change when the room lights do.
+- **MONOCHROME switch.** Real LCD, VFD and LED panels emit one colour. With
+  this on, everything drawn on the glass — lit annunciators, meters, warnings,
+  the ON AIR lamp — is the screen's own phosphor at whatever brightness it had,
+  and the theme's accents stay on the chassis. Themeable directly as
+  `effects.oledMonochrome`.
+- **FLAT switch.** Drops every cast shadow in the interface — panels, keys, the
+  display glass, album covers — while the bevels, gradients and glows stay. The
+  same console, printed rather than moulded. Themeable as `effects.flat`.
+
+### Changed
+
+- **Carbon and Linen are one theme.** Carbon now carries both a light and a
+  dark layer and follows your Light/Dark/System setting, instead of shipping as
+  two themes you had to switch between. A preference still pointing at Linen
+  moves to Carbon on launch; picking "light" is now the app's appearance
+  setting.
+- **Llama '97 redrawn.** Dark is the player everyone remembers — black
+  playlist, phosphor-green track text, grey-blue bevelled chrome, blue
+  selection, square corners — and it now ships with the monochrome panel on.
+  Light is the same console in muted purple with white type on black glass.
+- **The header rail carries playback, not settings.** The dB readout and the
+  LIST / LIGHT / FLAT readouts are gone — they repeated three buttons sitting a
+  few inches to their right. The volume meter is pinned to the right edge, and
+  the track title and position bar stretch into the space that frees up. On the
+  now-playing screen, where the title and clocks are already set in 44pt above,
+  the rail keeps just the bare position bar.
+
 ## 1.5.2 (63) — 2026-08-19
 
 Radio repairs. YouTube changed something, an out-of-date yt-dlp couldn't keep
