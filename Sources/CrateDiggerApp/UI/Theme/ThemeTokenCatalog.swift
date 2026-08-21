@@ -139,7 +139,7 @@ enum ThemeTokenCatalog {
                        note: "Bottom of the backdrop gradient.",
                        read: \.backgroundGradientEnd),
         ]),
-        ColorGroup(name: "Display Screen", tokens: [
+        ColorGroup(name: screenGroupName, tokens: [
             ColorToken(key: "oledSurface", label: "Screen Glass",
                        note: "The dark glass of the big display in the header.",
                        read: \.oledSurface),
@@ -171,6 +171,160 @@ enum ThemeTokenCatalog {
 
     /// Flat list, for search and for seeding a draft with every token.
     static let allColorTokens: [ColorToken] = colorGroups.flatMap(\.tokens)
+
+    // MARK: - Screen presets
+
+    /// The group the presets below rewrite, named once so the editor can spot
+    /// it without matching a string that's only written down here.
+    static let screenGroupName = "Display Screen"
+
+    /// A one-click look for the header display: the whole Display Screen color
+    /// group, its scanline strength, and the family its titles are set in.
+    ///
+    /// A preset is a starting point, not a mode — it writes the same tokens the
+    /// swatches below it do, so anything it sets can be tweaked afterwards.
+    struct ScreenPreset: Identifiable {
+        let name: String
+        /// Shown on hover — what the screen is imitating.
+        let note: String
+        /// Keyed by the `screenGroupName` token keys above.
+        let colors: [String: String]
+        /// What the same panel does in Light appearance, when that's a
+        /// different piece of hardware rather than the same one re-tinted — an
+        /// iPod with its backlight off. `nil` (the usual case) means the glass
+        /// looks identical whichever way the app is set: a green CRT is a green
+        /// CRT at noon.
+        var lightColors: [String: String]?
+        /// `effects.oledScanlineOpacity` — a CRT rakes, an LED panel doesn't.
+        let scanline: Double
+        /// `effects.oledMonochrome`. Every preset here models real
+        /// single-emitter hardware, so every one sets it — the switch below the
+        /// row is how you get the accents back.
+        var monochrome: Bool = true
+        /// A font *family*, mapped onto real faces at apply time. Every one
+        /// here ships with macOS or with the app, and a family that somehow
+        /// isn't installed leaves the current face alone rather than pinning a
+        /// name nothing can draw.
+        let fontFamily: String
+        var id: String { name }
+
+        /// Whether the two appearances get different glass — the tip says so,
+        /// since it's the one preset whose result you can't fully see at once.
+        var isAppearanceAware: Bool { lightColors != nil }
+
+        func colors(for appearance: ThemeDefinition.BaseAppearance) -> [String: String] {
+            appearance == .light ? (lightColors ?? colors) : colors
+        }
+    }
+
+    static let screenPresets: [ScreenPreset] = [
+        ScreenPreset(
+            name: "LCD GREEN",
+            note: "Monochrome green phosphor on dark glass — the classic terminal readout.",
+            colors: [
+                "oledSurface": "#04120A",
+                "oledSurfaceShade": "#00190E8C",
+                "oledStrokeInner": "#0E3320",
+                "oledForeground": "#6BFF7B",
+                "oledForegroundMuted": "#6BFF7BA6",
+                "onAir": "#6BFF7B",
+            ],
+            scanline: 0.06,
+            fontFamily: "Menlo"
+        ),
+        ScreenPreset(
+            name: "AMBER",
+            note: "The same monochrome tube lit amber — warmer, and easier to read for long stretches.",
+            colors: [
+                "oledSurface": "#120A03",
+                "oledSurfaceShade": "#1A0C008C",
+                "oledStrokeInner": "#3A2109",
+                "oledForeground": "#FFB63C",
+                "oledForegroundMuted": "#FFB63CA6",
+                "onAir": "#FFB63C",
+            ],
+            scanline: 0.06,
+            fontFamily: "Menlo"
+        ),
+        ScreenPreset(
+            name: "VFD CYAN",
+            note: "Vacuum-fluorescent teal, like a tape deck or amp: bright segments, no scanlines.",
+            colors: [
+                "oledSurface": "#02080C",
+                "oledSurfaceShade": "#001A2299",
+                "oledStrokeInner": "#0B2A33",
+                "oledForeground": "#7FEBFF",
+                "oledForegroundMuted": "#7FEBFFA6",
+                "onAir": "#7FEBFF",
+            ],
+            scanline: 0.015,
+            fontFamily: "Major Mono Display"
+        ),
+        ScreenPreset(
+            name: "RED LED",
+            note: "Segmented red LED on near-black — the clock-radio look.",
+            colors: [
+                "oledSurface": "#0A0202",
+                "oledSurfaceShade": "#1A00008C",
+                "oledStrokeInner": "#2A0B08",
+                "oledForeground": "#FF4A32",
+                "oledForegroundMuted": "#FF4A32A6",
+                "onAir": "#FF3B2F",
+            ],
+            scanline: 0.02,
+            fontFamily: "Major Mono Display"
+        ),
+        ScreenPreset(
+            name: "BACKLIT",
+            note: "A lit blue-green panel with dark type, like a backlit calculator — the one preset that reads dark-on-light.",
+            colors: [
+                "oledSurface": "#86D6CE",
+                "oledSurfaceShade": "#0B2A2E29",
+                "oledStrokeInner": "#4C8C87",
+                "oledForeground": "#0C2B26",
+                "oledForegroundMuted": "#0C2B26B3",
+                "onAir": "#0C2B26",
+            ],
+            scanline: 0.03,
+            fontFamily: "Andale Mono"
+        ),
+        ScreenPreset(
+            name: "IPOD",
+            note: "The click-wheel iPod's grayscale panel — reflective grey-green in Light, blue-white backlit in Dark, dark pixels either way.",
+            colors: [
+                "oledSurface": "#8FC6D6",
+                "oledSurfaceShade": "#0E1A1F1F",
+                "oledStrokeInner": "#4E7A88",
+                "oledForeground": "#0E1A1C",
+                "oledForegroundMuted": "#0E1A1CA6",
+                "onAir": "#12262B",
+            ],
+            lightColors: [
+                "oledSurface": "#C3CBBE",
+                "oledSurfaceShade": "#1E241E1F",
+                "oledStrokeInner": "#8C9488",
+                "oledForeground": "#1B211B",
+                "oledForegroundMuted": "#1B211BA6",
+                "onAir": "#2A3328",
+            ],
+            scanline: 0.02,
+            fontFamily: "Helvetica Neue"
+        ),
+        ScreenPreset(
+            name: "PAPER",
+            note: "Reflective e-paper: near-white glass, black type, no glow. Suits a light theme.",
+            colors: [
+                "oledSurface": "#EDEAE1",
+                "oledSurfaceShade": "#00000014",
+                "oledStrokeInner": "#C6C0B2",
+                "oledForeground": "#1B1A16",
+                "oledForegroundMuted": "#1B1A16A6",
+                "onAir": "#B4432E",
+            ],
+            scanline: 0,
+            fontFamily: "Courier New"
+        ),
+    ]
 
     // MARK: - Geometry
 

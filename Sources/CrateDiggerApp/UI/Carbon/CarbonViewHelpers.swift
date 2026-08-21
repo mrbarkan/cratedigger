@@ -119,6 +119,39 @@ func loadThumbnail(url: URL, maxPixelSize: Int) async -> NSImage? {
     return NSImage(cgImage: cgImage, size: .zero)
 }
 
+/// A *depth* shadow: the cast shadow that says one surface sits above another.
+///
+/// Every panel, key, dome and album cover in the interface draws its through
+/// here rather than calling `.shadow` directly, so a theme can switch the whole
+/// lot off (`effects.flat`) and get a printed-looking console instead of a
+/// moulded one. Emission — a lit annunciator, a phosphor halo, an LED glow —
+/// is not depth and keeps its own `.shadow`: a flat theme still lights up.
+///
+/// Same argument labels as `.shadow(color:radius:x:y:)`, so a call site only
+/// changes name.
+extension View {
+    func depthShadow(color: Color, radius: CGFloat, x: CGFloat = 0, y: CGFloat = 0) -> some View {
+        modifier(DepthShadow(color: color, radius: radius, x: x, y: y))
+    }
+}
+
+private struct DepthShadow: ViewModifier {
+    @Environment(\.carbon) private var theme
+    let color: Color
+    let radius: CGFloat
+    let x: CGFloat
+    let y: CGFloat
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if theme.castsShadows {
+            content.shadow(color: color, radius: radius, x: x, y: y)
+        } else {
+            content
+        }
+    }
+}
+
 extension CarbonTheme {
     /// Ink for text sitting on a selection slot (`CarbonSelectionSlot`): white on
     /// the dark-mode indigo fill; the primary dark ink on the light-mode orange

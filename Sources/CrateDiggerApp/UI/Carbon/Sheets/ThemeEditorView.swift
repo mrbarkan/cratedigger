@@ -267,9 +267,19 @@ struct ThemeEditorView: View {
                     sectionLabel(group.name)
                         .padding(.top, 12)
                         .padding(.bottom, 4)
+                    if group.name == ThemeTokenCatalog.screenGroupName {
+                        screenPresetRow
+                    }
                     ForEach(group.tokens, id: \.key) { token in
                         ThemeSwatchRow(token: token)
                     }
+                }
+
+                if showDepth {
+                    sectionLabel("Depth")
+                        .padding(.top, 16)
+                        .padding(.bottom, 6)
+                    flatSwitch
                 }
 
                 ForEach(visibleGeometryGroups) { group in
@@ -301,7 +311,7 @@ struct ThemeEditorView: View {
                     }
                 }
 
-                if visibleColorGroups.isEmpty && visibleGeometryGroups.isEmpty && !showFonts {
+                if visibleColorGroups.isEmpty && visibleGeometryGroups.isEmpty && !showFonts && !showDepth {
                     Text("No tokens match “\(filter)”")
                         .font(CarbonFont.mono(10))
                         .foregroundStyle(theme.ink4)
@@ -312,6 +322,112 @@ struct ThemeEditorView: View {
             .padding(.horizontal, 12)
             .padding(.bottom, 16)
         }
+    }
+
+    /// One-click screen looks, above the swatches they write into. The screen
+    /// is the one surface with a genre — LCD, VFD, LED, paper — and matching
+    /// its glass, its type and its scanline by hand is six swatches and a font
+    /// pick before you can see whether the idea was any good.
+    ///
+    /// There's no undo: a preset overwrites those tokens outright, and getting
+    /// the old ones back means re-loading the theme.
+    private var screenPresetRow: some View {
+        VStack(spacing: 6) {
+            LazyVGrid(
+                columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 3),
+                spacing: 6
+            ) {
+                ForEach(ThemeTokenCatalog.screenPresets) { preset in
+                    KeyButton(action: { apply(preset) }) { Text(preset.name) }
+                        .frame(height: 20)
+                        .carbonTip(preset.note + (preset.isAppearanceAware && draft?.isAdaptive == true
+                                                  ? " Sets both versions at once."
+                                                  : ""))
+                }
+            }
+            monochromeSwitch
+        }
+        .padding(.bottom, 6)
+    }
+
+    /// Whether the display is a single-emitter panel. Real LCD, VFD and LED
+    /// hardware only makes one colour, so with this on everything drawn on the
+    /// glass — lit annunciators, meters, warnings, the ON AIR lamp — is the
+    /// screen's own foreground at whatever brightness it had, and the theme's
+    /// accents stay on the chassis where they belong.
+    private var monochromeSwitch: some View {
+        let on = theme.oledMonochrome
+        return KeyButton(
+            style: on ? .selected : .normal,
+            action: { setMonochrome(!on) }
+        ) {
+            Text(on ? "MONOCHROME · ON" : "MONOCHROME · OFF")
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 20)
+        .carbonTip(on
+                   ? "One colour on the glass, like real LCD or VFD hardware. Click to let the theme's accents onto the display again."
+                   : "Accent colours are drawn on the display. Click for a true single-colour panel — everything in the screen's own phosphor.")
+    }
+
+    private func setMonochrome(_ isOn: Bool) {
+        var effects = registry.draft?.effects ?? [:]
+        effects["oledMonochrome"] = isOn ? 1 : 0
+        registry.draft?.effects = effects
+    }
+
+    /// A preset paints *both* versions of an adaptive theme, not just the one
+    /// open in the editor: the display is a piece of hardware, and hardware
+    /// doesn't change when the room lights do. The one preset that does differ
+    /// between them — an iPod, backlight off or on — carries the pair itself.
+    ///
+    /// The scanline and the display face are shared tokens either way; a
+    /// typeface isn't lighter at night.
+    private func apply(_ preset: ThemeTokenCatalog.ScreenPreset) {
+        if registry.draft?.isAdaptive == true {
+            registry.setDraftColors(preset.colors(for: .dark), appearance: .dark)
+            registry.setDraftColors(preset.colors(for: .light), appearance: .light)
+        } else if let appearance = registry.draft?.baseAppearance {
+            registry.setDraftColors(preset.colors(for: appearance), appearance: nil)
+        }
+
+        var effects = registry.draft?.effects ?? [:]
+        effects["oledScanlineOpacity"] = preset.scanline
+        effects["oledMonochrome"] = preset.monochrome ? 1 : 0
+        registry.draft?.effects = effects
+
+        // Nothing is written when the family isn't installed: leaving the
+        // current face beats pinning the role to a name that can't be drawn.
+        if let font = ThemeTokenCatalog.themeFont(forFamily: preset.fontFamily) {
+            var fonts = registry.draft?.fonts ?? [:]
+            fonts["display"] = font
+            registry.draft?.fonts = fonts
+        }
+    }
+
+    /// Whether the chassis casts shadows at all. Off, every panel, key and
+    /// cover loses its cast shadow while its bevels and gradients stay — the
+    /// same hardware, printed rather than moulded. Glows are emission, not
+    /// depth, so the display keeps lighting up.
+    private var flatSwitch: some View {
+        let flat = !theme.castsShadows
+        return KeyButton(
+            style: flat ? .selected : .normal,
+            action: { setFlat(!flat) }
+        ) {
+            Text(flat ? "FLAT · ON" : "FLAT · OFF")
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 20)
+        .carbonTip(flat
+                   ? "No cast shadows anywhere. Click to give the panels their depth back."
+                   : "Panels, keys and covers cast shadows. Click to drop every one of them and keep only the bevels.")
+    }
+
+    private func setFlat(_ isOn: Bool) {
+        var effects = registry.draft?.effects ?? [:]
+        effects["flat"] = isOn ? 1 : 0
+        registry.draft?.effects = effects
     }
 
     // MARK: - Fonts
@@ -708,6 +824,10 @@ struct ThemeEditorView: View {
         }
     }
 
+    private var showDepth: Bool {
+        matches("flat", "shadow", "depth", "shadows", "surfaces")
+    }
+
     private var showFonts: Bool {
         query.isEmpty || ThemeTokenCatalog.fontRoles.contains {
             matches($0.key, $0.label, $0.note, "fonts", "typeface")
@@ -738,6 +858,11 @@ private struct ThemeSurfaceSimulator: View {
     @Environment(\.carbon) private var theme
     @Environment(\.carbonGeometry) private var geometry
 
+    /// The slab below is a display, so it reads the same substituted palette
+    /// the real one does — otherwise the preview keeps an accent the header
+    /// has already given up.
+    private var glass: CarbonTheme { theme.oledMonochrome ? theme.monochromeGlass : theme }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Preview")
@@ -764,7 +889,7 @@ private struct ThemeSurfaceSimulator: View {
                 Text("NOW PLAYING")
                     .font(CarbonFont.mono(8, weight: .bold))
                     .tracking(1.2)
-                    .foregroundStyle(theme.onAir)
+                    .foregroundStyle(glass.onAir)
                 Text("AIR · 1998")
                     .font(CarbonFont.mono(8))
                     .foregroundStyle(theme.oledForegroundMuted)

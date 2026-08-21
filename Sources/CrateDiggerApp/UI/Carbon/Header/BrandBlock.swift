@@ -141,7 +141,7 @@ struct BrandMark: View {
                     Circle()
                         .strokeBorder(Color.black.opacity(theme.isDark ? 0.4 : 0.12), lineWidth: 0.5)
                 )
-                .shadow(color: Color.black.opacity(theme.isDark ? 0.5 : 0.12), radius: 2, y: 2)
+                .depthShadow(color: Color.black.opacity(theme.isDark ? 0.5 : 0.12), radius: 2, y: 2)
 
             Circle()
                 .fill(theme.isDark ? Color(hex: 0x050504) : theme.ink)

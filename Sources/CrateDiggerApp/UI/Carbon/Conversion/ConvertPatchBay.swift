@@ -633,7 +633,7 @@ private struct DestStrip: View {
                         RoundedRectangle(cornerRadius: 3, style: .continuous)
                             .stroke(Color.white.opacity(theme.isDark ? 0.10 : 0.45), lineWidth: 1)
                     )
-                    .shadow(color: Color.black.opacity(0.4), radius: 1, y: 1)
+                    .depthShadow(color: Color.black.opacity(0.4), radius: 1, y: 1)
             }
             .buttonStyle(.carbonHover)
         }
@@ -655,7 +655,7 @@ private struct DestStrip: View {
             RoundedRectangle(cornerRadius: 4, style: .continuous)
                 .stroke(Color.black.opacity(theme.isDark ? 0.9 : 0.5), lineWidth: 1)
         )
-        .shadow(color: Color.black.opacity(theme.isDark ? 0.6 : 0.2), radius: 1, y: 1)
+        .depthShadow(color: Color.black.opacity(theme.isDark ? 0.6 : 0.2), radius: 1, y: 1)
     }
 
     private var formattedPath: AttributedString {
@@ -720,7 +720,7 @@ private struct ArmCancelButton: View {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .stroke(Color.white.opacity(theme.isDark ? 0.08 : 0.45), lineWidth: 1)
                 )
-                .shadow(color: Color.black.opacity(theme.isDark ? 0.5 : 0.2), radius: 4, y: 2)
+                .depthShadow(color: Color.black.opacity(theme.isDark ? 0.5 : 0.2), radius: 4, y: 2)
         }
         .buttonStyle(.carbonHover)
         .accessibilityLabel(Text("Cancel"))
@@ -775,7 +775,7 @@ private struct ArmGoButton: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .shadow(color: enabled ? theme.orange.opacity(0.45) : .clear, radius: 14, y: 0)
-        .shadow(color: Color.black.opacity(0.5), radius: 4, y: 2)
+        .depthShadow(color: Color.black.opacity(0.5), radius: 4, y: 2)
         .opacity(enabled ? 1 : 0.55)
         .contentShape(Rectangle())
         // A plain onLongPressGesture survives the enclosing ScrollView, unlike a
@@ -840,7 +840,7 @@ private struct ArmGoButton: View {
                 .foregroundStyle(theme.orangeHi)
         }
         .frame(width: 22, height: 22)
-        .shadow(color: Color.black.opacity(0.4), radius: 1, y: 1)
+        .depthShadow(color: Color.black.opacity(0.4), radius: 1, y: 1)
     }
 
     @ViewBuilder

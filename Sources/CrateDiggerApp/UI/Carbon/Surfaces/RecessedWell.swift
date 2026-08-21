@@ -47,7 +47,7 @@ struct RecessedWell<Content: View>: View {
                         .offset(y: 1)
                         .mask(shape)
                 )
-                .shadow(color: Color.black.opacity(theme.isDark ? 0.46 : 0.14), radius: 18, y: 8)
+                .depthShadow(color: Color.black.opacity(theme.isDark ? 0.46 : 0.14), radius: 18, y: 8)
                 // (No white top-glow drop shadow — it bled past the rounded corner
                 // into the square-clipped bounds as a light notch. The masked inset
                 // highlight above supplies the sheen, fully inside the shape.)

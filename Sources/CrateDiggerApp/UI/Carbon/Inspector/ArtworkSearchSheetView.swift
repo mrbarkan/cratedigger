@@ -185,7 +185,7 @@ struct ArtworkSearchSheetView: View {
                 }
                 .frame(maxWidth: 460, maxHeight: 400)
                 .cornerRadius(8)
-                .shadow(color: .black.opacity(0.6), radius: 18, y: 8)
+                .depthShadow(color: .black.opacity(0.6), radius: 18, y: 8)
 
                 if !img.comment.isEmpty {
                     Text(img.comment)
@@ -727,7 +727,7 @@ struct ArtworkSearchSheetView: View {
                     RoundedRectangle(cornerRadius: 4)
                         .stroke(isSelected ? theme.orange : (theme.isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.1)), lineWidth: isSelected ? 2 : 1)
                 )
-                .shadow(color: Color.black.opacity(0.1), radius: 3, y: 1)
+                .depthShadow(color: Color.black.opacity(0.1), radius: 3, y: 1)
                 .overlay(alignment: .bottomTrailing) {
                     if let size = imageDimensions[img.id] {
                         let isHiRes = min(size.width, size.height) >= 1000

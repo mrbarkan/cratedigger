@@ -113,6 +113,6 @@ struct ChromeChassis: View {
                         )
                     )
             )
-            .shadow(color: Color.black.opacity(theme.isDark ? 0.48 : 0.14), radius: 5, y: 2)
+            .depthShadow(color: Color.black.opacity(theme.isDark ? 0.48 : 0.14), radius: 5, y: 2)
     }
 }

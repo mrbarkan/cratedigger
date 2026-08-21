@@ -163,7 +163,7 @@ private struct EQFader: View {
                     .overlay(RoundedRectangle(cornerRadius: 3).stroke(Color.black.opacity(0.4), lineWidth: 1))
                     .overlay(Rectangle().fill((enabled ? theme.orange : theme.ink4).opacity(0.9)).frame(height: 1.5))
                     .frame(width: 24, height: 12)
-                    .shadow(color: Color.black.opacity(0.4), radius: 2, y: 1)
+                    .depthShadow(color: Color.black.opacity(0.4), radius: 2, y: 1)
                     .position(x: geo.size.width / 2, y: handleY)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

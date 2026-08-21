@@ -61,7 +61,7 @@ struct ChassisLayer<Content: View>: View {
                         endPoint: .bottom
                     )
                 )
-                .shadow(color: theme.shadow2.color, radius: theme.shadow2.radius, x: theme.shadow2.x, y: theme.shadow2.y)
+                .depthShadow(color: theme.shadow2.color, radius: theme.shadow2.radius, x: theme.shadow2.x, y: theme.shadow2.y)
 
             content()
                 .padding(.horizontal, geometry.chassisInsetH)

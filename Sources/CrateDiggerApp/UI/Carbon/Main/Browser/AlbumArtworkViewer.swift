@@ -321,7 +321,7 @@ struct AlbumArtworkNavigator: View {
                 .resizable()
                 .aspectRatio(contentMode: .fit)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .shadow(color: .black.opacity(0.5), radius: 22, y: 10)
+                .depthShadow(color: .black.opacity(0.5), radius: 22, y: 10)
                 .onTapGesture {}   // consume so a tap on the art doesn't dismiss
 
         case .scale(let scale):
@@ -365,7 +365,7 @@ struct AlbumArtworkNavigator: View {
                             .frame(width: disc * 0.14, height: disc * 0.14)
                             .overlay(Circle().stroke(Color.white.opacity(0.12), lineWidth: 1))
                     )
-                    .shadow(color: .black.opacity(0.5), radius: 18, y: 10)
+                    .depthShadow(color: .black.opacity(0.5), radius: 18, y: 10)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

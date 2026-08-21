@@ -92,7 +92,7 @@ struct RadioInfoView: View {
                     Image(systemName: "play.fill")
                         .font(.system(size: 15, weight: .bold))
                         .foregroundStyle(.white.opacity(0.92))
-                        .shadow(color: .black.opacity(0.4), radius: 2)
+                        .depthShadow(color: .black.opacity(0.4), radius: 2)
                 )
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .overlay(RoundedRectangle(cornerRadius: 8).stroke(.white.opacity(0.15), lineWidth: 1))

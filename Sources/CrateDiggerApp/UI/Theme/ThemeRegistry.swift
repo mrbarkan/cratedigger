@@ -91,6 +91,21 @@ public final class ThemeRegistry: ObservableObject {
         for manifest in result.themes {
             FontRegistrar.registerFonts(at: loader.fontURLs(for: manifest))
         }
+
+        migrateRetiredSelection()
+    }
+
+    /// Linen stopped being its own theme and became Carbon's light layer, so a
+    /// preference still pointing at it would resolve to nothing and leave the
+    /// picker showing no selection. Carbon renders that same light palette
+    /// whenever the app is in Light (or a light System) appearance.
+    private func migrateRetiredSelection() {
+        let preferences = PreferencesStore.shared
+        guard preferences.selectedThemeID == "linen",
+              manifest(for: "linen") == nil,
+              manifest(for: "carbon") != nil
+        else { return }
+        preferences.selectedThemeID = "carbon"
     }
 
     /// The installed manifest matching `id`, or `nil` if unset/not installed.
@@ -236,17 +251,26 @@ public final class ThemeRegistry: ObservableObject {
     /// Writes into the layer being edited when the draft is adaptive, so
     /// changing a color in Light mode doesn't also change it in Dark.
     public func setDraftColor(_ key: String, _ hex: String) {
-        guard var draft else { return }
-        if draft.isAdaptive {
-            var variant = draft.variant(for: draftEditingAppearance) ?? ThemeVariant()
-            var colors = variant.colors ?? [:]
-            colors[key] = hex
-            variant.colors = colors
-            if draftEditingAppearance == .light { draft.light = variant } else { draft.dark = variant }
+        setDraftColors([key: hex], appearance: draft?.isAdaptive == true ? draftEditingAppearance : nil)
+    }
+
+    /// Writes a whole set of colors in one publish, into `appearance`'s layer —
+    /// or into the shared tokens when `appearance` is `nil` or the draft isn't
+    /// adaptive.
+    ///
+    /// Naming the layer (rather than always using `draftEditingAppearance`) is
+    /// what lets one action set both looks at once: a screen preset that's a
+    /// different piece of hardware in Light than in Dark has to write the pair,
+    /// not whichever half you happen to have open.
+    public func setDraftColors(_ colors: [String: String], appearance: ThemeDefinition.BaseAppearance?) {
+        guard var draft, !colors.isEmpty else { return }
+
+        if let appearance, draft.isAdaptive {
+            var variant = draft.variant(for: appearance) ?? ThemeVariant()
+            variant.colors = (variant.colors ?? [:]).merging(colors) { _, new in new }
+            if appearance == .light { draft.light = variant } else { draft.dark = variant }
         } else {
-            var colors = draft.colors ?? [:]
-            colors[key] = hex
-            draft.colors = colors
+            draft.colors = (draft.colors ?? [:]).merging(colors) { _, new in new }
         }
         self.draft = draft
     }

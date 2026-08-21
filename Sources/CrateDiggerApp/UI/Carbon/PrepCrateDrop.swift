@@ -127,6 +127,6 @@ struct PrepCrateDropOverlay: View {
                 .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [7, 5]))
                 .foregroundStyle(accent.opacity(0.8))
         )
-        .shadow(color: .black.opacity(0.5), radius: 24, y: 10)
+        .depthShadow(color: .black.opacity(0.5), radius: 24, y: 10)
     }
 }

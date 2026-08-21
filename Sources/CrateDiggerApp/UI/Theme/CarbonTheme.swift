@@ -41,16 +41,18 @@ public struct CarbonTheme: Equatable {
     public let ink4: Color
     public let hair: Color
 
-    public let orange: Color
-    public let orangeHi: Color
-    public let orangeLo: Color
-    public let sun: Color
-    public let sunHi: Color
-    public let sunLo: Color
-    public let cyan: Color
-    public let cyanGlow: Color
-    public let red: Color
-    public let indigo: Color
+    // `var` rather than `let` only so `monochromeGlass` can build a variant of
+    // an existing theme; nothing mutates a live one.
+    public var orange: Color
+    public var orangeHi: Color
+    public var orangeLo: Color
+    public var sun: Color
+    public var sunHi: Color
+    public var sunLo: Color
+    public var cyan: Color
+    public var cyanGlow: Color
+    public var red: Color
+    public var indigo: Color
 
     public let metalHi: Color
     public let metal: Color
@@ -79,14 +81,28 @@ public struct CarbonTheme: Equatable {
     /// physical screen regardless of light/dark) but a theme can override them.
     public let oledForeground: Color
     public let oledForegroundMuted: Color
-    public let onAir: Color
+    public var onAir: Color
 
     /// CRT scanline strength on the OLED glass (0 = off). Themeable via
     /// `effects.oledScanlineOpacity`, clamped to 0…0.15.
     public let oledScanlineOpacity: Double
 
+    /// Whether the chassis casts shadows. `false` (`effects.flat` = `1`) drops
+    /// every depth shadow — panels, keys, the glass, artwork — and leaves the
+    /// bevels, gradients and emission glows alone, so the interface reads as
+    /// printed rather than moulded. See `View.depthShadow`.
+    public let castsShadows: Bool
+
+    /// Whether the display is a single-phosphor panel: everything on the glass
+    /// is drawn in `oledForeground`, at whatever intensity it had, instead of
+    /// the accents the rest of the interface uses. Themeable via
+    /// `effects.oledMonochrome` (`1` on, `0` off) — real LCD/VFD/LED hardware
+    /// only ever emits one colour, and every screen preset but the default
+    /// models that hardware.
+    public let oledMonochrome: Bool
+
     /// The light-mode selection-row LED core color (`CarbonSelectionSlot`).
-    public let selectionLedCore: Color
+    public var selectionLedCore: Color
 
     /// Foreground (text/icon) color when laid over a selected row background.
     /// Centralized so row views and the sources sidebar keep selected text
@@ -152,6 +168,8 @@ public extension CarbonTheme {
         oledForegroundMuted: Color.white.opacity(0.55),
         onAir:               Color(red: 1.0, green: 0.357, blue: 0.29),
         oledScanlineOpacity: 0.018,
+        castsShadows: true,
+        oledMonochrome: false,
         selectionLedCore: Color(hex: 0xFFD24A),
         selectionInk:    Color(hex: 0xFFFFFF)
     )
@@ -197,6 +215,8 @@ public extension CarbonTheme {
         oledForegroundMuted: Color.white.opacity(0.55),
         onAir:               Color(red: 1.0, green: 0.357, blue: 0.29),
         oledScanlineOpacity: 0.018,
+        castsShadows: true,
+        oledMonochrome: false,
         selectionLedCore: Color(hex: 0xFFD24A),
         selectionInk:    Color(hex: 0xFFFFFF)
     )
@@ -313,6 +333,10 @@ public extension CarbonTheme {
         onAir = color("onAir", resolvedBase.onAir)
         oledScanlineOpacity = min(max(definition.effects?["oledScanlineOpacity"]
                                         ?? resolvedBase.oledScanlineOpacity, 0), 0.15)
+        oledMonochrome = (definition.effects?["oledMonochrome"]
+                            ?? (resolvedBase.oledMonochrome ? 1 : 0)) > 0.5
+        castsShadows = (definition.effects?["flat"]
+                            ?? (resolvedBase.castsShadows ? 0 : 1)) < 0.5
 
         selectionLedCore = color("selectionLedCore", resolvedBase.selectionLedCore)
         selectionInk = color("selectionInk", resolvedBase.selectionInk)
@@ -340,5 +364,29 @@ private extension ShadowSpec {
         let base = Color(hexString: definition.color) ?? fallback.color
         let resolvedColor = definition.opacity.map { base.opacity($0) } ?? base
         self.init(color: resolvedColor, radius: definition.radius, x: definition.x, y: definition.y)
+    }
+}
+
+public extension CarbonTheme {
+    /// The same theme with every accent collapsed onto the display's own
+    /// phosphor — what a single-colour LCD, VFD or LED panel does to anything
+    /// drawn on it. `OLEDDisplay` hands this to the glass's subtree (and
+    /// nowhere else) when `oledMonochrome` is on.
+    ///
+    /// What's left to tell things apart is intensity rather than hue, which is
+    /// how the glass already draws its unlit states — a dark annunciator is the
+    /// same phosphor at 16%.
+    var monochromeGlass: CarbonTheme {
+        var copy = self
+        for accent: WritableKeyPath<CarbonTheme, Color> in [
+            \.orange, \.orangeHi, \.orangeLo,
+            \.sun, \.sunHi, \.sunLo,
+            \.cyan, \.cyanGlow,
+            \.red, \.indigo,
+            \.onAir, \.selectionLedCore,
+        ] {
+            copy[keyPath: accent] = oledForeground
+        }
+        return copy
     }
 }

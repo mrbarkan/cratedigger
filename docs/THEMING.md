@@ -49,9 +49,9 @@ valid as one that overrides everything.
                                    // (picking a theme is picking its appearance,
                                    // same as picking a Winamp skin)
 
-  "inherits": "carbon",           // "linen", "carbon", or another installed
-                                   // theme's id — every token you don't set
-                                   // below is filled in from this theme
+  "inherits": "carbon",           // "carbon" (or another installed theme's
+                                   // id) — every token you don't set below is
+                                   // filled in from this theme
 
   "colors": { "orange": "#FF6236", "...": "..." },
   "shadows": { "shadow1": { "color": "#00000085", "radius": 12, "x": 0, "y": 3 } },
@@ -131,12 +131,14 @@ Display-effect strengths, clamped to safe ranges like `geometry`:
 | Key | What it does | Range |
 |---|---|---|
 | `oledScanlineOpacity` | CRT scanline strength on the OLED glass. `0` turns scanlines off; the built-ins use `0.018`. | `0`–`0.15` |
+| `flat` | Drops every cast shadow in the interface — panels, keys, the display glass, album covers. Bevels, gradients and glows stay, so the console reads as printed rather than moulded. | `0` off, `1` on |
+| `oledMonochrome` | Makes the display a single-emitter panel: everything drawn on the glass — lit annunciators, meters, the ON AIR lamp — is `oledForeground` at whatever brightness it had, instead of the theme's accents. The chassis is untouched. | `0` off, `1` on |
 
 ## `inherits` and partial themes
 
-`inherits` is what makes a 3-color theme possible. Point it at `"linen"`,
-`"carbon"`, or any other installed theme's `id`, and every token you don't
-set is copied from there — colors, shadows, fonts, geometry, and effects all
+`inherits` is what makes a 3-color theme possible. Point it at `"carbon"` or
+any other installed theme's `id`, and every token you don't set is copied
+from there — colors, shadows, fonts, geometry, and effects all
 merge independently, so you can override just `geometry.playButtonSize` while
 inheriting every color from `carbon`.
 
@@ -169,6 +171,12 @@ those three colors.
 
 ## Built-in themes as reference
 
-CrateDigger's own **Linen** and **Carbon** themes ship in this exact format
-under `Sources/CrateDiggerApp/Resources/Themes/` — open either `theme.json`
-as a full worked example of every color token in use.
+CrateDigger's own themes ship in this exact format under
+`Sources/CrateDiggerApp/Resources/Themes/` — open any `theme.json` as a full
+worked example of every color token in use. **Carbon** is the one to copy for
+a light/dark pair: its shared block holds what both looks agree on, and the
+`light`/`dark` layers hold only what each one changes.
+
+Note that inheriting an adaptive theme inherits its *layers* too, so a `light`
+or `dark` block in the parent overrides a shared token you set in the child.
+Set such a token in your own layers (or drop `inherits`) when that bites.

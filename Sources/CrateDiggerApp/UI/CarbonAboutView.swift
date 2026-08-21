@@ -50,7 +50,7 @@ private struct AboutFaceplate: View {
                 Image(nsImage: NSApplication.shared.applicationIconImage)
                     .resizable()
                     .frame(width: 150, height: 150)
-                    .shadow(color: .black.opacity(0.5), radius: 14, y: 7)
+                    .depthShadow(color: .black.opacity(0.5), radius: 14, y: 7)
                 Text("CARBON CHASSIS")
                     .font(CarbonFont.mono(10, weight: .semibold))
                     .tracking(2.2)

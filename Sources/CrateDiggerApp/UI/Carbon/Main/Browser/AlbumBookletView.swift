@@ -450,21 +450,21 @@ struct AlbumBookletView: View {
                 case .cover(let idx):
                     // Front Cover (Centered single page)
                     BookletPageView(image: viewModel.image(for: idx))
-                        .shadow(color: Color.black.opacity(0.4), radius: 10, x: 0, y: 6)
+                        .depthShadow(color: Color.black.opacity(0.4), radius: 10, x: 0, y: 6)
                         .frame(maxWidth: 580, maxHeight: 580)
                         .id("cover-\(idx)")
 
                 case .back(let idx):
                     // Back Cover (Centered single page)
                     BookletPageView(image: viewModel.image(for: idx))
-                        .shadow(color: Color.black.opacity(0.4), radius: 10, x: 0, y: 6)
+                        .depthShadow(color: Color.black.opacity(0.4), radius: 10, x: 0, y: 6)
                         .frame(maxWidth: 580, maxHeight: 580)
                         .id("back-\(idx)")
 
                 case .wideSpread(let idx):
                     // Wide pre-joined landscape spread. Raw view without crease gradients.
                     BookletPageView(image: viewModel.image(for: idx))
-                        .shadow(color: Color.black.opacity(0.45), radius: 12, x: 0, y: 8)
+                        .depthShadow(color: Color.black.opacity(0.45), radius: 12, x: 0, y: 8)
                         .frame(maxWidth: 1100, maxHeight: 600)
                         .id("wide-\(idx)")
 
@@ -486,7 +486,7 @@ struct AlbumBookletView: View {
                                 .aspectRatio(1.0, contentMode: .fit)
                         }
                     }
-                    .shadow(color: Color.black.opacity(0.45), radius: 12, x: 0, y: 8)
+                    .depthShadow(color: Color.black.opacity(0.45), radius: 12, x: 0, y: 8)
                     .frame(maxWidth: 1100, maxHeight: 600)
                     .id("spread-\(leftIdx)")
                 }
@@ -502,7 +502,7 @@ struct AlbumBookletView: View {
         Group {
             if viewModel.pageCount > 0 {
                 BookletPageView(image: viewModel.image(for: viewModel.currentSpreadIndex))
-                    .shadow(color: Color.black.opacity(0.4), radius: 10, x: 0, y: 6)
+                    .depthShadow(color: Color.black.opacity(0.4), radius: 10, x: 0, y: 6)
                     .frame(maxWidth: 580, maxHeight: 580)
                     .id("single-\(viewModel.currentSpreadIndex)")
             } else {

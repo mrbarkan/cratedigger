@@ -94,7 +94,7 @@ struct FaderTrack: View {
                     .stroke(Color.white.opacity(0.55), lineWidth: 0.6)
             )
             .overlay(gripLine)
-            .shadow(color: Color.black.opacity(0.55), radius: 3, y: 3)
+            .depthShadow(color: Color.black.opacity(0.55), radius: 3, y: 3)
     }
 
     /// Vertical grip: a dark hairline with a light edge to its right.

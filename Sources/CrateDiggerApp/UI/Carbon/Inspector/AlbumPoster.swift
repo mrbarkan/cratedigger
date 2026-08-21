@@ -29,7 +29,7 @@ struct AlbumPoster: View {
             RoundedRectangle(cornerRadius: 3, style: .continuous)
                 .stroke(Color.black.opacity(theme.isDark ? 0.6 : 0.18), lineWidth: 1)
         )
-        .shadow(color: Color.black.opacity(theme.isDark ? 0.5 : 0.35), radius: 8, y: 6)
+        .depthShadow(color: Color.black.opacity(theme.isDark ? 0.5 : 0.35), radius: 8, y: 6)
         // Decode off the main thread (folder cover via ImageIO, embedded art via
         // ArtworkService.thumbnailAsync) so switching albums never blocks the
         // inspector on a synchronous full-res render. Keys on the live art so it

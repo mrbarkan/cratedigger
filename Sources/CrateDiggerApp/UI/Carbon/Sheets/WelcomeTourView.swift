@@ -195,7 +195,7 @@ private struct TourArtWelcome: View {
             .opacity(0.5)
 
             BrandMark(size: 84)
-                .shadow(color: Color.black.opacity(theme.isDark ? 0.5 : 0.2), radius: 10, y: 5)
+                .depthShadow(color: Color.black.opacity(theme.isDark ? 0.5 : 0.2), radius: 10, y: 5)
         }
     }
 

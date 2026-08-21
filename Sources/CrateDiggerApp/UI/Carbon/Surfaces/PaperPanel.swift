@@ -46,7 +46,7 @@ struct PaperPanel<Content: View>: View {
                         .offset(y: -1)
                         .mask(shape)
                 )
-                .shadow(color: Color.black.opacity(theme.isDark ? 0.50 : 0.13), radius: 18, y: 8)
+                .depthShadow(color: Color.black.opacity(theme.isDark ? 0.50 : 0.13), radius: 18, y: 8)
                 // (No white top-glow drop shadow: as an *outer* shadow it bled
                 // past the rounded corner into the square-clipped bounding box,
                 // leaving a light notch. The masked inset highlight above already

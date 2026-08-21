@@ -165,7 +165,7 @@ struct PatchBayRecess: View {
                 )
         }
         .compositingGroup()
-        .shadow(color: Color.black.opacity(theme.isDark ? 0.44 : 0.16), radius: 3, y: 1)
+        .depthShadow(color: Color.black.opacity(theme.isDark ? 0.44 : 0.16), radius: 3, y: 1)
     }
 }
 
@@ -234,7 +234,7 @@ struct PatchBayCycleButton<Item: Hashable>: View {
                     RoundedRectangle(cornerRadius: 3, style: .continuous)
                         .strokeBorder(Color.black.opacity(0.6), lineWidth: 0.5)
                 )
-                .shadow(color: Color.black.opacity(0.5), radius: 1, y: 1)
+                .depthShadow(color: Color.black.opacity(0.5), radius: 1, y: 1)
             Text(currentText)
                 .font(CarbonFont.mono(11, weight: .bold))
                 .tracking(2)
@@ -353,7 +353,7 @@ struct PatchBayPaddle: View {
                         Circle().stroke(Color.white.opacity(theme.isDark ? 0.2 : 0.5), lineWidth: 0.5)
                     )
                     .padding(2)
-                    .shadow(color: Color.black.opacity(0.6), radius: 1, y: 1)
+                    .depthShadow(color: Color.black.opacity(0.6), radius: 1, y: 1)
             }
             .frame(width: 30, height: 16)
         }

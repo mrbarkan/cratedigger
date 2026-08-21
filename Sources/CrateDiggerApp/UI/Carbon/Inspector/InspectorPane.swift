@@ -336,7 +336,7 @@ struct InspectorPane: View {
                     .background(theme.orange)
                     .foregroundColor(.white)
                     .clipShape(RoundedRectangle(cornerRadius: 4))
-                    .shadow(color: .black.opacity(0.2), radius: 3, y: 1)
+                    .depthShadow(color: .black.opacity(0.2), radius: 3, y: 1)
                 }
                 .buttonStyle(.carbonHover)
                 .carbonTip(hasBooklet ? "Open this album's digital booklet" : "View the album cover")

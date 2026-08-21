@@ -51,7 +51,7 @@ struct SiliconeCap<S: Shape, Imprint: View>: View {
                                              startPoint: .top, endPoint: .center))
                         .padding(1)
                 }
-                .shadow(color: Color.black.opacity(theme.isDark ? 0.5 : 0.22), radius: 7, y: 4)
+                .depthShadow(color: Color.black.opacity(theme.isDark ? 0.5 : 0.22), radius: 7, y: 4)
                 .shadow(color: theme.orange.opacity(lit ? 0.22 : 0), radius: 11)
         }
     }

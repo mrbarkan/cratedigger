@@ -154,7 +154,7 @@ private struct MiniPlayerBody: View {
         .frame(width: 246, height: 246)
         .clipShape(shape)
         .overlay(shape.strokeBorder(Color.black.opacity(0.6), lineWidth: 1))
-        .shadow(color: .black.opacity(0.5), radius: 12, y: 6)
+        .depthShadow(color: .black.opacity(0.5), radius: 12, y: 6)
     }
 
     @ViewBuilder
@@ -362,7 +362,7 @@ private struct MiniPlayerSeekRail: View {
                     .fill(RadialGradient(colors: [.white, Color(white: 0.82)],
                                          center: .init(x: 0.4, y: 0.3), startRadius: 0, endRadius: 7))
                     .frame(width: 13, height: 13)
-                    .shadow(color: .black.opacity(0.6), radius: 2)
+                    .depthShadow(color: .black.opacity(0.6), radius: 2)
                     .offset(x: min(max(w * p - 6.5, 0), w - 13))
             }
             .frame(maxHeight: .infinity, alignment: .center)

@@ -198,7 +198,7 @@ struct ArtworkGalleryView: View {
                         RoundedRectangle(cornerRadius: 4)
                             .stroke(Color.black.opacity(0.12), lineWidth: 1)
                     )
-                    .shadow(color: Color.black.opacity(0.15), radius: 4, y: 2)
+                    .depthShadow(color: Color.black.opacity(0.15), radius: 4, y: 2)
                     .matchedGeometryEffect(id: album.id, in: artNamespace)
                     .contentShape(Rectangle())
                     // Single click selects (highlights + drives the inspector track
@@ -371,7 +371,7 @@ struct ArtworkGalleryView: View {
         let cover = GalleryAlbumCoverView(album: album, size: size, contentMode: .fit)
             .cornerRadius(6)
             .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.black.opacity(0.15), lineWidth: 1))
-            .shadow(color: .black.opacity(0.25), radius: 8, y: 4)
+            .depthShadow(color: .black.opacity(0.25), radius: 8, y: 4)
             .matchedGeometryEffect(id: album.id, in: artNamespace)
 
         if album.booklet != nil {
@@ -434,7 +434,7 @@ struct ArtworkGalleryView: View {
                 RoundedRectangle(cornerRadius: 4)
                     .stroke(Color.black.opacity(filled ? 0 : 0.18), lineWidth: 1)
             )
-            .shadow(color: .black.opacity(filled ? 0.2 : 0), radius: 3, y: 1)
+            .depthShadow(color: .black.opacity(filled ? 0.2 : 0), radius: 3, y: 1)
         }
         .buttonStyle(.carbonHover)
     }
