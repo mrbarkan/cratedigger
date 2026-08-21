@@ -1,43 +1,128 @@
 {
   "id": "llama-97",
   "name": "Llama '97",
+  "author": "CrateDigger",
+  "version": "2.0",
+
   "baseAppearance": "dark",
-  "inherits": "carbon",
+
+  "//": "A tribute to the 1997 skin everyone remembers: green-on-black readouts, grey bevelled chrome, square corners. Dark is the player itself, green on black; light is the same console in muted purple, its screen switched to white type.",
+
   "colors": {
-    "chassis": "#232532",
-    "chassisHi": "#3C4054",
-    "chassisLo": "#14151E",
-    "chassisDeep": "#090A10",
-    "well": "#191B26",
-    "wellDeep": "#0C0D14",
-    "paper": "#121420",
-    "paper2": "#0B0C14",
-    "ink": "#ECF2E9",
-    "ink2": "#BECBBE",
-    "ink3": "#7C8C7E",
-    "ink4": "#515E53",
-    "hair": "#262B38",
-    "orange": "#FFB52E",
-    "orangeHi": "#FFD375",
-    "orangeLo": "#D18E12",
-    "cyan": "#3BE065",
-    "cyanGlow": "#C0FFD0",
-    "metalHi": "#9AA1B4",
-    "metal": "#5C6274",
-    "metalLo": "#2C303F",
-    "metalDeep": "#0B0C12",
-    "backgroundBase": "#0A0B12",
-    "backgroundGradientStart": "#1D2030",
-    "backgroundGradientEnd": "#050609",
-    "oledSurface": "#030503",
-    "oledStrokeInner": "#0C120C",
-    "oledForeground": "#A6FFB0",
-    "oledForegroundMuted": "#A6FFB08C"
+    "oledSurface": "#000000",
+    "oledStrokeInner": "#0B140B",
+    "oledSurfaceShade": "#00000099",
+    "onAir": "#FF4032",
+
+    "selectionInk": "#FFFFFF"
   },
+
+  "dark": {
+    "colors": {
+      "chassis": "#2A2D3C",
+      "chassisHi": "#4A4F66",
+      "chassisLo": "#161821",
+      "chassisDeep": "#080910",
+
+      "well": "#181A24",
+      "wellDeep": "#0A0B10",
+      "paper": "#000000",
+      "paper2": "#050805",
+
+      "ink": "#12F012",
+      "ink2": "#0FC80F",
+      "ink3": "#7A8C7A",
+      "ink4": "#4C5A4C",
+      "hair": "#1E2A1E",
+
+      "orange": "#2B4ACF",
+      "orangeHi": "#5E78F0",
+      "orangeLo": "#1A2F92",
+      "sun": "#FFE45C",
+      "sunHi": "#FFF3A8",
+      "sunLo": "#C9A82A",
+      "cyan": "#00E23C",
+      "cyanGlow": "#B6FFC4",
+      "red": "#FF4032",
+      "indigo": "#6E7CE0",
+
+      "metalHi": "#9AA1B4",
+      "metal": "#5C6274",
+      "metalLo": "#2C303F",
+      "metalDeep": "#0B0C12",
+
+      "backgroundBase": "#0A0B12",
+      "backgroundGradientStart": "#1D2030",
+      "backgroundGradientEnd": "#050609",
+
+      "selectionLedCore": "#00FF3C",
+
+      "oledForeground": "#00FF00",
+      "oledForegroundMuted": "#00FF0099"
+    },
+    "shadows": {
+      "shadow1": { "color": "#00000099", "radius": 8, "x": 0, "y": 2 },
+      "shadow2": { "color": "#000000C4", "radius": 40, "x": 0, "y": 18 }
+    }
+  },
+
+  "light": {
+    "colors": {
+      "chassis": "#E3E1E9",
+      "chassisHi": "#FFFFFF",
+      "chassisLo": "#C1BDCD",
+      "chassisDeep": "#8D8A9C",
+
+      "well": "#D8D5E1",
+      "wellDeep": "#B4B0C2",
+      "paper": "#FAF9FC",
+      "paper2": "#EFEDF4",
+
+      "ink": "#1B1826",
+      "ink2": "#3B3750",
+      "ink3": "#6A6580",
+      "ink4": "#9995AA",
+      "hair": "#CBC7D6",
+
+      "orange": "#6E58C0",
+      "orangeHi": "#9082DC",
+      "orangeLo": "#4A3690",
+      "sun": "#B08A20",
+      "sunHi": "#D8B44C",
+      "sunLo": "#8A6A10",
+      "cyan": "#3E7A52",
+      "cyanGlow": "#BEDEC6",
+      "red": "#A83A30",
+      "indigo": "#4A4590",
+
+      "metalHi": "#FFFFFF",
+      "metal": "#DEDBE7",
+      "metalLo": "#ADA9BE",
+      "metalDeep": "#6D6980",
+
+      "backgroundBase": "#BDB8CC",
+      "backgroundGradientStart": "#E2DFEA",
+      "backgroundGradientEnd": "#A5A0B8",
+
+      "selectionLedCore": "#6E58C0",
+
+      "oledForeground": "#F2F2F4",
+      "oledForegroundMuted": "#F2F2F4A6"
+    },
+    "shadows": {
+      "shadow1": { "color": "#251F3A1F", "radius": 6, "x": 0, "y": 2 },
+      "shadow2": { "color": "#251F3A3D", "radius": 32, "x": 0, "y": 14 }
+    }
+  },
+
+  "effects": {
+    "oledMonochrome": 1
+  },
+
   "geometry": {
-    "chassisCornerRadius": 6,
-    "wellCornerRadius": 6,
-    "paperCornerRadius": 4,
-    "oledCornerRadius": 6
+    "chassisCornerRadius": 3,
+    "wellCornerRadius": 3,
+    "paperCornerRadius": 2,
+    "oledCornerRadius": 2
   }
 }
