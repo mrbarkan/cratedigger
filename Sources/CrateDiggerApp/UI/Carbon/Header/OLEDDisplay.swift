@@ -34,6 +34,12 @@ struct OLEDDisplay: View {
     @Environment(\.carbonGeometry) private var geometry
     @EnvironmentObject private var model: LibraryViewModel
 
+    /// What the display's contents render against: the theme as-is, or its
+    /// single-phosphor version when the theme asks for a monochrome panel.
+    private var glassTheme: CarbonTheme {
+        theme.oledMonochrome ? theme.monochromeGlass : theme
+    }
+
     var body: some View {
         // The glass is the *background*, with the panes overlaid on it — not a
         // ZStack, which would size itself to whichever pane is tallest and let
@@ -54,6 +60,13 @@ struct OLEDDisplay: View {
                 .padding(.top, 8)
                 .padding(.horizontal, 18)
                 .padding(.bottom, 4)
+                // Real LCD, VFD and LED panels emit one colour, so a
+                // monochrome theme hands the glass — and only the glass — a
+                // palette whose accents *are* the phosphor. Doing it here
+                // rather than at each of the ~46 accent reads below means the
+                // panes never have to know, and it stays a colour change
+                // rather than a filter over the finished screen.
+                .environment(\.carbon, glassTheme)
             }
             .clipShape(RoundedRectangle(cornerRadius: geometry.oledCornerRadius, style: .continuous))
             .overlay(
@@ -82,7 +95,7 @@ struct OLEDDisplay: View {
                 )
             )
             .scanlines(opacity: theme.oledScanlineOpacity)
-            .shadow(color: Color.black.opacity(0.5), radius: 6, y: 4)
+            .depthShadow(color: Color.black.opacity(0.5), radius: 6, y: 4)
     }
 }
 
@@ -127,10 +140,8 @@ private struct DisplayRail: View {
                 ann("SYNC", lit: v == .remoteSync, color: OLEDView.remoteSync.accent(theme))
                 ann("CD", lit: v == .cdRip, color: OLEDView.cdRip.accent(theme))
                 ann("DEV", lit: v == .devices, color: OLEDView.devices.accent(theme))
-                ann("ON AIR", lit: radioLive, color: onAirRed, pulse: onAirPulse)
+                ann("ON AIR", lit: radioLive, color: theme.onAir, pulse: onAirPulse)
             }
-
-            Spacer(minLength: 12)
 
             // Transient system notice (tag saves etc.) — snaps in on the rail
             // instead of interrupting the user with a modal alert.
@@ -142,11 +153,15 @@ private struct DisplayRail: View {
                     .shadow(color: theme.sun.opacity(0.55), radius: 6)
                     .lineLimit(1)
                     .fixedSize()
-                    .padding(.trailing, 14)
+                    .padding(.leading, 14)
             }
 
+            // No Spacer: the transport strip takes the whole remainder of the
+            // rail itself, so the title and the position bar grow into the gap
+            // instead of leaving one.
             RailLive(clock: model.playbackClock)
-            RailSettings()
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .padding(.leading, 14)
         }
         .padding(.bottom, 7)
         .overlay(
@@ -223,9 +238,14 @@ private struct AnnDot: View {
     }
 }
 
-/// The persistent transport strip on the right of the rail: mini now-playing +
-/// progress (auto-hidden on the nowPlaying view) then the always-visible
-/// VOL meter + dB.
+/// The persistent transport strip: what's playing and how far in, then the VOL
+/// meter pinned to the right edge of the glass.
+///
+/// It carries only what the rest of the screen isn't already saying. On the
+/// nowPlaying view the title and the clocks are set an inch above in 44pt, so
+/// the strip keeps the bare progress bar and drops both — on every other view
+/// this rail is the *only* place playback is visible, so the title and the
+/// clocks come back.
 private struct RailLive: View {
     @Environment(\.carbon) private var theme
     @EnvironmentObject private var model: LibraryViewModel
@@ -244,26 +264,29 @@ private struct RailLive: View {
                     .shadow(color: theme.orange.opacity(0.4), radius: 6)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .frame(maxWidth: 150, alignment: .leading)
-                    .fixedSize(horizontal: true, vertical: false)
+                    // Takes whatever the bar and the meter don't: a long title
+                    // is what the spare width on this rail is *for*.
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            }
 
-                HStack(spacing: 6) {
+            // The clocks belong to the bar, not to the rail — one group so
+            // they stay tight against it however wide it stretches.
+            HStack(spacing: 6) {
+                if showMini {
                     Text(model.displayedCurrentTime.asClockPadded)
                         .font(CarbonFont.mono(9, weight: .bold))
                         .foregroundStyle(oledFG)
-                    Capsule().fill(oledFGo(0.14))
-                        .frame(width: 62, height: 3)
-                        .overlay(alignment: .leading) {
-                            Capsule().fill(theme.orange)
-                                .frame(width: 62 * progress, height: 3)
-                                .shadow(color: theme.orange.opacity(0.6), radius: 4)
-                        }
+                }
+
+                progressBar
+
+                if showMini {
                     Text(model.playbackDuration.asClockPadded)
                         .font(CarbonFont.mono(9, weight: .bold))
                         .foregroundStyle(oledFGo(0.4))
                 }
-                .fixedSize()
             }
+            .frame(minWidth: 62, maxWidth: showMini ? 240 : 340)
 
             HStack(spacing: 6) {
                 Text("VOL")
@@ -272,13 +295,23 @@ private struct RailLive: View {
                     .foregroundStyle(oledFGo(0.3))
                 RailVolBars(volume: model.playbackVolume)
                     .frame(width: 52, height: 9)
-                Text(oledVolumeDB(model.playbackVolume))
-                    .font(CarbonFont.mono(9, weight: .bold))
-                    .foregroundStyle(oledFG)
-                    .frame(width: 48, alignment: .trailing)   // fixed: fits "−60 dB"
             }
             .fixedSize()
         }
+    }
+
+    /// Width comes from the layout rather than a constant, so the bar is the
+    /// thing that stretches as the window widens.
+    private var progressBar: some View {
+        Capsule().fill(oledFGo(0.14))
+            .frame(height: 3)
+            .overlay(alignment: .leading) {
+                GeometryReader { proxy in
+                    Capsule().fill(theme.orange)
+                        .frame(width: proxy.size.width * progress)
+                        .shadow(color: theme.orange.opacity(0.6), radius: 4)
+                }
+            }
     }
 
     private var trackTitle: String {
@@ -288,52 +321,6 @@ private struct RailLive: View {
     private var progress: CGFloat {
         guard model.playbackDuration > 0 else { return 0 }
         return CGFloat(min(max(model.displayedCurrentTime / model.playbackDuration, 0), 1))
-    }
-}
-
-/// The VIEW / THEME / EQ readouts on the rail — values only, no labels.
-private struct RailSettings: View {
-    @Environment(\.carbon) private var theme
-    @EnvironmentObject private var model: LibraryViewModel
-    // Observe the stored appearance *preference* so the THEME readout refreshes on
-    // any change — including LIGHT→AUTO, where the resolved appearance (and thus
-    // the injected `theme`) is unchanged, so nothing else would trigger a redraw.
-    @AppStorage(AppearanceMode.userDefaultsKey) private var appearanceRaw = AppearanceMode.system.rawValue
-
-    var body: some View {
-        // Fixed-width slots so the values never shift as their text changes
-        // (VIEW ≤ GALLERY, THEME ≤ LIGHT, EQ ≤ TREBLE).
-        HStack(spacing: 14) {
-            value(viewValue, width: 54)
-            value(themeValue, width: 40)
-            value(model.eqPreset.label, width: 46)
-        }
-        .padding(.leading, 14)
-        .overlay(
-            Rectangle().fill(oledFGo(0.12)).frame(width: 1),
-            alignment: .leading
-        )
-        .fixedSize()
-    }
-
-    private func value(_ text: String, width: CGFloat) -> some View {
-        Text(text)
-            .font(CarbonFont.mono(9.5, weight: .bold))
-            .tracking(0.9)
-            .foregroundStyle(theme.orange)
-            .shadow(color: theme.orange.opacity(0.4), radius: 6)
-            .lineLimit(1)
-            .frame(width: width)   // centred in its fixed slot, so LIST/GALLERY don't sit off to one side
-    }
-
-    private var viewValue: String { model.showArtworkGallery ? "GALLERY" : "LIST" }
-
-    private var themeValue: String {
-        switch AppearanceMode(rawValue: appearanceRaw) ?? .system {
-        case .light:  return "LIGHT"
-        case .dark:   return "DARK"
-        case .system: return "AUTO"
-        }
     }
 }
 
@@ -362,11 +349,6 @@ private struct RailVolBars: View {
             }
         }
     }
-}
-
-/// dB readout for the fader position, per the shared volume law (unity ~92%).
-func oledVolumeDB(_ position: Double) -> String {
-    VolumeCurve.label(forPosition: position)
 }
 
 // MARK: - Pane scaffold + shared parts
