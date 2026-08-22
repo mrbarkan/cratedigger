@@ -163,13 +163,19 @@ an enterprise policy.
 
 Owner checklist at `github.com/mrbarkan/cratedigger/settings/security_analysis`:
 
-- [ ] **Secret scanning**: currently **disabled** (checked 2026-08-22 — it is
-      *not* on by default here). Enable it, plus **push protection**.
-- [ ] **Private vulnerability reporting**: enable (SECURITY.md points at it).
-- [ ] **Dependabot alerts** + **security updates**: enable.
-- [ ] **Code scanning**: do *not* click "default setup" — it would conflict
-      with the custom workflow (GitHub blocks SARIF uploads from Actions
-      while default setup owns a language). Advanced setup = our workflow.
+All ticked on 2026-08-22 (secret scanning was **off**, not default-on as
+originally assumed):
+
+- [x] **Secret scanning** (as "Secret Protection") + **push protection**.
+- [x] **Private vulnerability reporting** (SECURITY.md points at it).
+- [x] **Dependabot alerts** + **security updates**. Enabling alerts required
+      turning on the **dependency graph** first.
+- [x] **Code scanning**: left on advanced setup (our workflow); "default
+      setup" untouched — it would block SARIF uploads from Actions.
+
+Deliberately left off: Dependabot **version updates** (GitHub switches it on
+by itself once `dependabot.yml` lands on `main`), grouped security updates,
+malware alerts, and secret-scanning validity checks / non-provider patterns.
 
 ## Explicitly out of scope
 
