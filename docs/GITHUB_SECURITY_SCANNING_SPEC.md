@@ -48,7 +48,7 @@ Two jobs, one per language, so the cheap one never waits on the macOS queue:
 
 | Job | Runner | Language | Build |
 |-----|--------|----------|-------|
-| `analyze-swift` | `macos-15` | `swift` | `build-mode: manual` + `swift build` |
+| `analyze-swift` | `macos-26` | `swift` | `build-mode: manual` + `swift build` |
 | `analyze-actions` | `ubuntu-latest` | `actions` | none (interpreted) |
 
 **Triggers:**
@@ -62,68 +62,18 @@ Two jobs, one per language, so the cheap one never waits on the macOS queue:
   Pick an arbitrary minute, not `0 0`, to avoid the top-of-hour stampede.
 - `workflow_dispatch` for manual runs.
 
-**Skeleton (the implementer should start from this, not from GitHub's
-generic template):**
-
-```yaml
-name: CodeQL
-
-on:
-  push:
-    branches: [main]
-    paths: ["Sources/**", "Tests/**", "Package.swift", ".github/workflows/**"]
-  pull_request:
-    branches: [main]
-    paths: ["Sources/**", "Tests/**", "Package.swift", ".github/workflows/**"]
-  schedule:
-    - cron: "26 8 * * 1"
-  workflow_dispatch:
-
-permissions:
-  contents: read
-
-jobs:
-  analyze-swift:
-    runs-on: macos-15
-    timeout-minutes: 60
-    permissions:
-      contents: read
-      security-events: write
-    steps:
-      - uses: actions/checkout@v4
-      - uses: github/codeql-action/init@v3
-        with:
-          languages: swift
-          build-mode: manual
-      - name: Build
-        run: swift build
-      - uses: github/codeql-action/analyze@v3
-        with:
-          category: "/language:swift"
-
-  analyze-actions:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      contents: read
-      security-events: write
-      actions: read
-    steps:
-      - uses: actions/checkout@v4
-      - uses: github/codeql-action/init@v3
-        with:
-          languages: actions
-      - uses: github/codeql-action/analyze@v3
-        with:
-          category: "/language:actions"
-```
+The workflow as built lives at `.github/workflows/codeql.yml` — read that
+rather than a skeleton here; the draft in this spec's first revision pinned
+`macos-15`, `codeql-action@v3`, and `checkout@v4`, all since superseded.
 
 **Notes for the implementer:**
 
-- `macos-15` ships an Xcode new enough for tools-version 5.9 / macOS 13
-  target; no `xcode-select` pinning needed unless the build breaks — if it
-  does, pin via `sudo xcode-select -s /Applications/Xcode_<ver>.app` rather
-  than downgrading the runner image.
+- **Runner image matters.** `macos-15` was the first guess and it fails:
+  its SDK still declares `MTAudioProcessingTapCreate` with an `Unmanaged`
+  out-pointer, so `AudioLevelTap.swift` will not compile (the audited
+  signature arrived in the macOS 26 SDK). Use `macos-26` — Xcode 26.6 /
+  SDK 26.5, which matches the development machine. Keep the runner in step
+  with local Xcode rather than bending the source to an old SDK.
 - Keep `build-mode: manual` + plain `swift build` (debug). Release config
   buys nothing for extraction and roughly doubles build time.
 - The two `category` values keep the SARIF uploads distinct; don't drop

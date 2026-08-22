@@ -20,9 +20,13 @@ jobs:
   # Swift needs a real compile for the extractor to observe, so this one costs
   # macOS minutes (free on a public repo). Plain debug `swift build` is enough:
   # no tests, no packaging, no ffmpeg/yt-dlp.
+  #
+  # macos-26 (Xcode 26.6 / SDK 26.5), not macos-15: the older SDK's
+  # MTAudioProcessingTapCreate still takes an `Unmanaged` out-pointer, so
+  # AudioLevelTap.swift does not compile there.
   analyze-swift:
     name: Analyze Swift
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 60
     permissions:
       contents: read
