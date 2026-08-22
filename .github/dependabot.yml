@@ -1,0 +1,8 @@
+version: 2
+updates:
+  # Only the `actions/*` pins need bumping — Package.swift has no third-party
+  # dependencies, and an empty `swift` ecosystem entry just warns.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
