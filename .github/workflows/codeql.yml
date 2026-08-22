@@ -1,0 +1,59 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+    paths: ["Sources/**", "Tests/**", "Package.swift", ".github/workflows/**"]
+  pull_request:
+    branches: [main]
+    paths: ["Sources/**", "Tests/**", "Package.swift", ".github/workflows/**"]
+  schedule:
+    # Weekly sweep with no path filter, so new queries still see the whole
+    # codebase in quiet weeks. Off-the-hour minute avoids the cron stampede.
+    - cron: "26 8 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # Swift needs a real compile for the extractor to observe, so this one costs
+  # macOS minutes (free on a public repo). Plain debug `swift build` is enough:
+  # no tests, no packaging, no ffmpeg/yt-dlp.
+  analyze-swift:
+    name: Analyze Swift
+    runs-on: macos-15
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: swift
+          build-mode: manual
+      - name: Build
+        run: swift build
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:swift"
+
+  # The workflow YAML itself (injection, permissions). Interpreted, so it runs
+  # cheap on Linux and never waits behind the macOS queue.
+  analyze-actions:
+    name: Analyze Actions
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: actions
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:actions"

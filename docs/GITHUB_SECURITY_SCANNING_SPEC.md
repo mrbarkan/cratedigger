@@ -1,6 +1,6 @@
 # Spec: GitHub CodeQL & Security Scanning for CrateDigger
 
-**Status:** Proposed — not yet implemented.
+**Status:** Files implemented (§1–3). Repo settings (§4) still to be ticked by the owner.
 **Branch:** `claude/github-ql-sec-compliance-06jjjc`
 **Repo:** `mrbarkan/cratedigger` (public)
 
@@ -163,8 +163,8 @@ an enterprise policy.
 
 Owner checklist at `github.com/mrbarkan/cratedigger/settings/security_analysis`:
 
-- [ ] **Secret scanning**: verify enabled (default-on for public repos) and
-      enable **push protection**.
+- [ ] **Secret scanning**: currently **disabled** (checked 2026-08-22 — it is
+      *not* on by default here). Enable it, plus **push protection**.
 - [ ] **Private vulnerability reporting**: enable (SECURITY.md points at it).
 - [ ] **Dependabot alerts** + **security updates**: enable.
 - [ ] **Code scanning**: do *not* click "default setup" — it would conflict
