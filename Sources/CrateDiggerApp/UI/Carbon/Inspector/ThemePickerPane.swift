@@ -20,6 +20,9 @@ struct ThemePickerPane: View {
     @State private var selectedThemeID: String? = PreferencesStore.shared.selectedThemeID
     /// The theme a pending delete is armed against; `nil` when none is.
     @State private var armedDeleteID: String?
+    /// Why the last attempt to repair a skipped file failed, shown under the
+    /// list. A repair that works needs no message — the warning disappears.
+    @State private var repairError: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -155,8 +158,11 @@ struct ThemePickerPane: View {
                                : "Edit \(manifest.definition.name)")
 
                 // Defaults ship inside the app: there's nothing of yours to
-                // delete, and they'd reappear on the next scan regardless.
+                // share or delete, they'd reappear on the next scan anyway,
+                // and a copy landing on another Mac would collide with the
+                // built-in already there.
                 if !isBuiltIn {
+                    exportButton(for: manifest)
                     deleteButton(for: manifest)
                 }
             }
@@ -172,32 +178,102 @@ struct ThemePickerPane: View {
     /// id — but nothing ever showed them, so a theme could be skipped without
     /// a word. That's how a saved edit went missing: two files claiming one id,
     /// one of them silently dropped.
+    ///
+    /// Showing them was only half the job: a warning you can't act on is a
+    /// scolding. Each row now carries what can actually be done about *this*
+    /// file — repair the id, look at it, or throw it away — because "duplicate
+    /// theme id" is otherwise an instruction to go and edit JSON by hand.
     @ViewBuilder
     private var warnings: some View {
         if !registry.loadWarnings.isEmpty {
             VStack(alignment: .leading, spacing: 5) {
                 sectionLabel("Skipped Files")
-                ForEach(Array(registry.loadWarnings.enumerated()), id: \.offset) { _, warning in
-                    HStack(alignment: .top, spacing: 6) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: 9))
-                            .foregroundStyle(theme.sun)
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(Self.fileLabel(for: warning.sourceURL))
-                                .font(CarbonFont.mono(8.5, weight: .bold))
-                                .foregroundStyle(theme.ink2)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                            Text(warning.message)
-                                .font(CarbonFont.mono(8))
-                                .foregroundStyle(theme.ink4)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        Spacer(minLength: 0)
-                    }
+                Text("In your Themes folder but not loaded.")
+                    .font(CarbonFont.mono(8))
+                    .foregroundStyle(theme.ink4)
                     .padding(.horizontal, 14)
+                    .padding(.bottom, 2)
+
+                ForEach(Array(registry.loadWarnings.enumerated()), id: \.offset) { _, warning in
+                    warningRow(warning)
+                }
+
+                if let repairError {
+                    Text(repairError)
+                        .font(CarbonFont.mono(8))
+                        .foregroundStyle(theme.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 14)
                 }
             }
+        }
+    }
+
+    private func warningRow(_ warning: ThemeLoadWarning) -> some View {
+        let isOurs = registry.isInUserThemesFolder(warning.sourceURL)
+
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .top, spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 9))
+                    .foregroundStyle(theme.sun)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(Self.fileLabel(for: warning.sourceURL))
+                        .font(CarbonFont.mono(8.5, weight: .bold))
+                        .foregroundStyle(theme.ink2)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Text(warning.message)
+                        .font(CarbonFont.mono(8))
+                        .foregroundStyle(theme.ink4)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
+
+            HStack(spacing: 6) {
+                // Only the identity cases are machine-fixable: the theme is
+                // fine, it just can't be told apart from another one. Malformed
+                // JSON needs its author and a text editor.
+                if warning.kind == .identity, isOurs {
+                    KeyButton(style: .glowingFilled, action: { repairIdentity(warning) }) { Text("FIX ID") }
+                        .frame(width: 58, height: 19)
+                        .carbonTip("Give this file an id of its own so it loads alongside the other one.")
+                }
+
+                KeyButton(action: {
+                    NSWorkspace.shared.activateFileViewerSelecting([warning.sourceURL])
+                }) {
+                    Text("SHOW")
+                }
+                .frame(width: 52, height: 19)
+                .carbonTip("Show this file in Finder.")
+
+                if isOurs {
+                    // Trash, not delete: this is somebody's file, and the whole
+                    // reason it's listed is that we can't read it well enough
+                    // to be sure what it is.
+                    KeyButton(action: { _ = registry.trashSkippedFile(at: warning.sourceURL) }) {
+                        Text("TRASH")
+                    }
+                    .frame(width: 56, height: 19)
+                    .carbonTip("Move it to the Trash — recoverable from there if you change your mind.")
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(.leading, 15)
+        }
+        .padding(.horizontal, 14)
+        .padding(.bottom, 4)
+    }
+
+    private func repairIdentity(_ warning: ThemeLoadWarning) {
+        do {
+            try registry.repairIdentity(at: warning.sourceURL)
+            repairError = nil
+        } catch {
+            repairError = error.localizedDescription
         }
     }
 
@@ -208,6 +284,38 @@ struct ThemePickerPane: View {
         url.lastPathComponent == "theme.json"
             ? url.deletingLastPathComponent().lastPathComponent
             : url.lastPathComponent
+    }
+
+    /// Packs a theme into one zipped `.cdtheme` to hand to someone else —
+    /// palette, geometry, fonts and all. An icon rather than a key: the row
+    /// already carries EDIT and delete, and a third word of text squeezes the
+    /// theme's own name down to nothing.
+    private func exportButton(for manifest: ThemeManifest) -> some View {
+        KeyButton(action: { export(manifest) }) {
+            Image(systemName: "square.and.arrow.up")
+                .font(.system(size: 9, weight: .semibold))
+        }
+        .frame(width: 28, height: 20)
+        .carbonTip("Export \(manifest.definition.name) as a file you can send — they drop it in their Themes folder.")
+    }
+
+    /// The save panel plus the one thing the recipient needs to be told, which
+    /// is where the file goes. Everything a theme needs is inside the zip, so
+    /// there is nothing else to explain.
+    private func export(_ manifest: ThemeManifest) {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = ThemeAuthoringService.exportFilename(for: manifest.definition)
+        panel.message = "Save \(manifest.definition.name) as a shareable theme. Unzip it into a Themes folder to install."
+        guard panel.runModal() == .OK, let destination = panel.url else { return }
+
+        do {
+            try registry.exportTheme(manifest, to: destination)
+        } catch {
+            model.appAlert = .error(
+                title: "Couldn't Export Theme",
+                message: error.localizedDescription
+            )
+        }
     }
 
     /// Two clicks, like the editor's layer copy: this removes the theme's files

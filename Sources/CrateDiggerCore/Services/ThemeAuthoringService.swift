@@ -207,6 +207,112 @@ public struct ThemeAuthoringService {
         return destination
     }
 
+    // MARK: - Repair
+
+    public struct ThemeRepairUnsupported: LocalizedError {
+        public var errorDescription: String? {
+            "This file can't be read as a theme, so there's no id to repair. Open it in a text editor to see what's wrong."
+        }
+    }
+
+    /// Gives a skipped file an `id` of its own and writes it back, returning
+    /// the new id.
+    ///
+    /// The one case the loader skips that a machine can actually fix: two files
+    /// claiming one id, or a file claiming none. Both mean the theme is on disk
+    /// and perfectly renderable — it just can't be told apart from something
+    /// else, and the whole repair is a unique string. Everything else it skips
+    /// is malformed JSON, which is the author's to fix.
+    ///
+    /// Deliberately *not* touching `name`: the duplicate is usually a copied
+    /// bundle the author meant to keep, and renaming it as well would hide
+    /// which one they were looking at.
+    @discardableResult
+    public func reassignID(at url: URL, taken: Set<String>) throws -> String {
+        guard let data = try? Data(contentsOf: url),
+              var definition = try? JSONDecoder().decode(ThemeDefinition.self, from: data)
+        else { throw ThemeRepairUnsupported() }
+
+        definition.id = Self.slug(from: definition.name, taken: taken)
+        // Rewrites the file where it lies: a hand-authored bundle's folder name
+        // is the author's, and moving it to an id-derived path would be a
+        // second surprise on top of the one they came here to fix.
+        try save(definition, replacing: url)
+        return definition.id
+    }
+
+    // MARK: - Export
+
+    /// Packs a theme into a single file to hand to someone else.
+    ///
+    /// Always a zipped `.cdtheme`, whether or not the theme carries fonts, so
+    /// there is one thing to send and one instruction to give with it: unzip
+    /// it into your Themes folder.
+    ///
+    /// Built fresh rather than copying the theme's own folder, because what's
+    /// on disk is *minimized* — a file that says "inherits carbon, plus these
+    /// nine tokens". That's the right thing to store and the wrong thing to
+    /// send, since the parent may be a theme only the author has. Pass the
+    /// resolved definition and the export is self-contained; bundled fonts are
+    /// copied in beside it so the typography travels too.
+    ///
+    /// Zipping is `NSFileCoordinator`'s `.forUploading`, the system's own
+    /// directory-to-archive path — what Finder's "Compress" uses, and no
+    /// archiver dependency.
+    public func export(_ definition: ThemeDefinition, fonts fontsDirectory: URL?, to destination: URL) throws {
+        let staging = fileManager.temporaryDirectory
+            .appendingPathComponent("CrateDiggerThemeExport-\(UUID().uuidString)", isDirectory: true)
+        defer { try? fileManager.removeItem(at: staging) }
+
+        let bundle = staging.appendingPathComponent("\(Self.slug(from: definition.name)).cdtheme", isDirectory: true)
+        try fileManager.createDirectory(at: bundle, withIntermediateDirectories: true)
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        try encoder.encode(definition).write(to: bundle.appendingPathComponent("theme.json"), options: .atomic)
+
+        if let fontsDirectory, fileManager.fileExists(atPath: fontsDirectory.path) {
+            try fileManager.copyItem(at: fontsDirectory, to: bundle.appendingPathComponent("Fonts", isDirectory: true))
+        }
+
+        try Self.zip(bundle, to: destination, fileManager: fileManager)
+    }
+
+    /// The name to offer in the save panel: the theme's display name, so the
+    /// recipient sees "Llama 97.cdtheme.zip" rather than a slug.
+    public static func exportFilename(for definition: ThemeDefinition) -> String {
+        let cleaned = definition.name
+            .components(separatedBy: CharacterSet(charactersIn: "/:"))
+            .joined(separator: "-")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return "\(cleaned.isEmpty ? slug(from: definition.name) : cleaned).cdtheme.zip"
+    }
+
+    private static func zip(_ directory: URL, to destination: URL, fileManager: FileManager) throws {
+        var coordinatorError: NSError?
+        var copyError: Error?
+
+        NSFileCoordinator().coordinate(
+            readingItemAt: directory,
+            options: [.forUploading],
+            error: &coordinatorError
+        ) { archive in
+            // The archive only exists for the duration of this block, so the
+            // copy has to happen inside it.
+            do {
+                if fileManager.fileExists(atPath: destination.path) {
+                    try fileManager.removeItem(at: destination)
+                }
+                try fileManager.copyItem(at: archive, to: destination)
+            } catch {
+                copyError = error
+            }
+        }
+
+        if let coordinatorError { throw coordinatorError }
+        if let copyError { throw copyError }
+    }
+
     /// Removes an authored theme's whole bundle. Only ever called for
     /// user-installed themes — a built-in lives in the app bundle and isn't
     /// ours to delete.

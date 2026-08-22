@@ -35,6 +35,25 @@ public struct CarbonTheme: Equatable {
     public let paper: Color
     public let paper2: Color
 
+    /// The inspector's own panel colour. `nil` — every built-in — means it
+    /// shares `paper` with the browser and the sidebar, which is how the
+    /// hardware has always looked. A theme naming it gets a third pane it can
+    /// set apart (a darker slab beside a bright list, say) without dragging
+    /// the track list along with it.
+    ///
+    /// Optional rather than defaulted so "unset" stays distinguishable from
+    /// "deliberately the same as paper" — see `inspectorSurface`.
+    public var inspectorPaper: Color?
+
+    /// The tint on every other row. `nil` (the default, and both built-ins)
+    /// means no stripe at all: the Carbon rows are separated by a hairline,
+    /// and zebra striping on top of that reads as noise.
+    ///
+    /// Named `rowAlt` rather than reusing `paper2` because `paper2` never
+    /// striped anything — it's the shaded corner of a panel gradient, which is
+    /// exactly the confusion this token exists to end.
+    public var rowAlt: Color?
+
     public let ink: Color
     public let ink2: Color
     public let ink3: Color
@@ -124,6 +143,17 @@ public struct CarbonTheme: Equatable {
     public var fontsSignature: String = ""
 
     public var isDark: Bool { mode == .carbon }
+
+    /// What the inspector panel actually paints with — the override if the
+    /// theme names one, `paper` otherwise. Views read this; the editor seeds
+    /// its swatch from it, so an untouched token shows the colour on screen
+    /// rather than an empty well.
+    public var inspectorSurface: Color { inspectorPaper ?? paper }
+
+    /// The swatch value for `rowAlt` when the theme hasn't set one. Rows read
+    /// the optional directly — an unset stripe draws nothing, rather than
+    /// painting `paper` over `paper` on every row in the library.
+    public var rowStripe: Color { rowAlt ?? paper }
 }
 
 public extension CarbonTheme {
@@ -288,6 +318,12 @@ public extension CarbonTheme {
 
         paper = color("paper", resolvedBase.paper)
         paper2 = color("paper2", resolvedBase.paper2)
+        // Both stay optional through the resolve: unset has to survive, or
+        // every theme would inherit a stripe and a second inspector colour it
+        // never asked for.
+        inspectorPaper = definition.colors?["inspectorPaper"].flatMap { Color(hexString: $0) }
+            ?? resolvedBase.inspectorPaper
+        rowAlt = definition.colors?["rowAlt"].flatMap { Color(hexString: $0) } ?? resolvedBase.rowAlt
 
         ink = color("ink", resolvedBase.ink)
         ink2 = color("ink2", resolvedBase.ink2)

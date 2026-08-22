@@ -112,6 +112,36 @@ struct ColumnList<Content: View>: View {
     }
 }
 
+/// Zebra striping for browser rows.
+///
+/// Applied by the list at each call site rather than from inside the row views,
+/// because a row doesn't know where it sits and threading an index through five
+/// of them to paint one rectangle is a lot of plumbing for a rectangle.
+///
+/// Draws nothing unless the theme names `rowAlt`: Carbon separates rows with a
+/// hairline, and stripes on top of that read as noise. It sits under the
+/// selection slot, so a selected stripe still looks selected.
+extension View {
+    func rowStripe(_ index: Int) -> some View {
+        modifier(RowStripe(index: index))
+    }
+}
+
+private struct RowStripe: ViewModifier {
+    @Environment(\.carbon) private var theme
+    let index: Int
+
+    func body(content: Content) -> some View {
+        content.background {
+            // Odd rows, so the list starts on the list's own background and the
+            // stripe reads as the exception rather than the rule.
+            if let stripe = theme.rowAlt, !index.isMultiple(of: 2) {
+                stripe
+            }
+        }
+    }
+}
+
 struct ColumnRow<Lead: View, Title: View, Trail: View>: View {
     @Environment(\.carbon) private var theme
     /// Whether this row's column owns the keyboard. A selected row in an

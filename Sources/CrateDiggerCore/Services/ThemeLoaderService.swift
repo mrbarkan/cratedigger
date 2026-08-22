@@ -96,13 +96,18 @@ public struct ThemeLoaderService {
         var accepted: [(definition: ThemeDefinition, origin: ThemeManifest.Origin, sourceURL: URL)] = []
         for candidate in candidates {
             guard !candidate.definition.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                warnings.append(ThemeLoadWarning(sourceURL: candidate.sourceURL, message: "Theme is missing an \"id\" — ignoring."))
+                warnings.append(ThemeLoadWarning(
+                    sourceURL: candidate.sourceURL,
+                    message: "Theme is missing an \"id\" — ignoring.",
+                    kind: .identity
+                ))
                 continue
             }
             guard seenIDs.insert(candidate.definition.id).inserted else {
                 warnings.append(ThemeLoadWarning(
                     sourceURL: candidate.sourceURL,
-                    message: "Duplicate theme id \"\(candidate.definition.id)\" — ignoring this file."
+                    message: "Duplicate theme id \"\(candidate.definition.id)\" — ignoring this file.",
+                    kind: .identity
                 ))
                 continue
             }
@@ -137,7 +142,8 @@ public struct ThemeLoaderService {
             if visited.contains(parentID) {
                 warnings.append(ThemeLoadWarning(
                     sourceURL: sourceURL,
-                    message: "Theme \"\(definition.id)\" has a circular \"inherits\" chain at \"\(parentID)\" — stopping inheritance there."
+                    message: "Theme \"\(definition.id)\" has a circular \"inherits\" chain at \"\(parentID)\" — stopping inheritance there.",
+                    kind: .inheritance
                 ))
                 break
             }

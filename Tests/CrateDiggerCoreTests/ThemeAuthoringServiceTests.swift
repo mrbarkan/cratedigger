@@ -190,6 +190,76 @@ final class ThemeAuthoringServiceTests: XCTestCase {
         XCTAssertNoThrow(try service.delete(themeID: "midnight"))
     }
 
+    // MARK: - Repair
+
+    func testReassignIDGivesASkippedFileAnIDOfItsOwn() throws {
+        let saved = try service.save(definition(id: "carbon-copy", name: "Carbon Copy"))
+
+        let repaired = try service.reassignID(at: saved, taken: ["carbon-copy"])
+
+        XCTAssertEqual(repaired, "carbon-copy-2")
+        let reloaded = try JSONDecoder().decode(ThemeDefinition.self, from: Data(contentsOf: saved))
+        XCTAssertEqual(reloaded.id, "carbon-copy-2")
+        // The file is rewritten where it lies, and the name is the author's.
+        XCTAssertEqual(reloaded.name, "Carbon Copy")
+    }
+
+    func testReassignIDRefusesAFileThatIsNotATheme() throws {
+        let junk = themesDirectory.appendingPathComponent("broken.json")
+        try Data("{ not json".utf8).write(to: junk)
+
+        XCTAssertThrowsError(try service.reassignID(at: junk, taken: []))
+    }
+
+    // MARK: - Export
+
+    /// The export has to be self-contained: what's on disk is minimized against
+    /// a parent the recipient may not have, so the archive carries the resolved
+    /// tokens and any bundled font.
+    func testExportWritesAZipCarryingTheResolvedThemeAndItsFonts() throws {
+        let fonts = themesDirectory.appendingPathComponent("SourceFonts", isDirectory: true)
+        try FileManager.default.createDirectory(at: fonts, withIntermediateDirectories: true)
+        try Data("not really a font".utf8).write(to: fonts.appendingPathComponent("Test.ttf"))
+
+        let destination = themesDirectory.appendingPathComponent("Export.cdtheme.zip")
+        try service.export(
+            definition(id: "midnight", name: "Midnight", colors: ["chassis": "#101010"]),
+            fonts: fonts,
+            to: destination
+        )
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: destination.path))
+        let size = try FileManager.default.attributesOfItem(atPath: destination.path)[.size] as? Int ?? 0
+        XCTAssertGreaterThan(size, 0)
+        // A zip, not the bare JSON someone copied to the wrong extension.
+        let magic = try FileHandle(forReadingFrom: destination).read(upToCount: 2)
+        XCTAssertEqual(magic, Data("PK".utf8))
+    }
+
+    func testExportOverwritesAnExistingFileAtTheDestination() throws {
+        let destination = themesDirectory.appendingPathComponent("Export.cdtheme.zip")
+        try Data("stale".utf8).write(to: destination)
+
+        try service.export(definition(id: "midnight", name: "Midnight"), fonts: nil, to: destination)
+
+        let written = try Data(contentsOf: destination)
+        XCTAssertNotEqual(written, Data("stale".utf8))
+        XCTAssertEqual(written.prefix(2), Data("PK".utf8))
+    }
+
+    func testExportFilenameUsesTheThemesDisplayName() {
+        XCTAssertEqual(
+            ThemeAuthoringService.exportFilename(for: definition(id: "llama-97", name: "Llama '97")),
+            "Llama '97.cdtheme.zip"
+        )
+        // A name with a path separator in it would otherwise write somewhere
+        // the user didn't pick.
+        XCTAssertEqual(
+            ThemeAuthoringService.exportFilename(for: definition(id: "x", name: "Light/Dark")),
+            "Light-Dark.cdtheme.zip"
+        )
+    }
+
     // MARK: - Helpers
 
     private func definition(

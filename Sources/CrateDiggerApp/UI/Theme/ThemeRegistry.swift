@@ -203,6 +203,68 @@ public final class ThemeRegistry: ObservableObject {
         return url
     }
 
+    public struct ThemesFolderUnavailable: LocalizedError {
+        public var errorDescription: String? {
+            "No writable Themes folder — check ~/Library/Application Support/CrateDigger."
+        }
+    }
+
+    // MARK: - Sharing
+
+    /// Writes a shareable copy of an installed theme to `destination`.
+    ///
+    /// Exports the **resolved** definition, not the file on disk: what's stored
+    /// is minimized against whatever the theme inherits, which is right for a
+    /// file that lives next to its parent and wrong for one being sent to
+    /// someone who may not have it. Bundled fonts ride along.
+    public func exportTheme(_ manifest: ThemeManifest, to destination: URL) throws {
+        guard let authoring else { throw ThemesFolderUnavailable() }
+        let fontsDirectory = loader.fontURLs(for: manifest).first?.deletingLastPathComponent()
+        try authoring.export(manifest.definition, fonts: fontsDirectory, to: destination)
+    }
+
+    // MARK: - Skipped files
+
+    /// Gives a skipped file a unique id and re-scans, so a theme dropped in
+    /// twice (or copied from a friend who happened to pick the same id) can be
+    /// rescued from the picker instead of a text editor. Returns the new id.
+    @discardableResult
+    public func repairIdentity(at url: URL) throws -> String {
+        guard let authoring else { throw ThemesFolderUnavailable() }
+        let id = try authoring.reassignID(at: url, taken: Set(manifests.map(\.id)))
+        refresh()
+        return id
+    }
+
+    /// Moves a skipped file to the Trash and re-scans.
+    ///
+    /// Trash rather than delete — these are files somebody made, and the whole
+    /// reason they're listed is that we can't read them well enough to be sure
+    /// what they are. Refuses anything outside the user's Themes folder, so a
+    /// warning about a bundled theme can never delete part of the app.
+    @discardableResult
+    public func trashSkippedFile(at url: URL) -> Bool {
+        guard isInUserThemesFolder(url) else { return false }
+
+        // A `.cdtheme` is a folder: trashing its `theme.json` alone would leave
+        // a bundle behind that no longer contains a theme.
+        let target = url.lastPathComponent == "theme.json"
+            && url.deletingLastPathComponent().pathExtension.lowercased() == "cdtheme"
+            ? url.deletingLastPathComponent()
+            : url
+
+        guard (try? FileManager.default.trashItem(at: target, resultingItemURL: nil)) != nil else { return false }
+        refresh()
+        return true
+    }
+
+    /// Whether a skipped file is one of the user's (and so ours to repair or
+    /// throw away) rather than something inside the app bundle.
+    public func isInUserThemesFolder(_ url: URL) -> Bool {
+        guard let root = userThemesDirectory else { return false }
+        return url.standardizedFileURL.path.hasPrefix(root.standardizedFileURL.path)
+    }
+
     /// Opens `manifest` for editing. A built-in is **forked** — it lives in
     /// the app bundle where we can't write, and reusing its id would collide
     /// with the bundled copy on next launch (the loader drops duplicate ids).

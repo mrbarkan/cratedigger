@@ -330,11 +330,29 @@ public struct ThemeManifest: Identifiable, Sendable, Equatable {
 /// A non-fatal problem encountered while discovering/parsing themes. Loading
 /// always continues past these — a single bad file never breaks the rest.
 public struct ThemeLoadWarning: Sendable, Equatable {
+    /// Why the file was skipped — which in practice means "what can be done
+    /// about it", since that is all the picker uses this for. A warning
+    /// nothing can act on is just a scolding.
+    public enum Kind: String, Sendable {
+        /// The JSON didn't decode. Only its author can fix that, in a text
+        /// editor, so all we can offer is to show them the file.
+        case unreadable
+        /// It decoded, but its `id` is missing or already claimed by a theme
+        /// that loaded first. Repairable in place: give this file an id of its
+        /// own and it loads on the next scan.
+        case identity
+        /// The theme loaded; its `inherits` chain didn't resolve. It renders,
+        /// just without everything it meant to borrow.
+        case inheritance
+    }
+
     public var sourceURL: URL
     public var message: String
+    public var kind: Kind
 
-    public init(sourceURL: URL, message: String) {
+    public init(sourceURL: URL, message: String, kind: Kind = .unreadable) {
         self.sourceURL = sourceURL
         self.message = message
+        self.kind = kind
     }
 }

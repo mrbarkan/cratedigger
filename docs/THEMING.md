@@ -29,7 +29,15 @@ immediately — no restart. **Show Themes Folder…** in the same menu opens the
 folder in Finder.
 
 A `.cdtheme` folder is the shareable unit: zip it up and send it to someone,
-same as a Winamp skin file.
+same as a Winamp skin file. The share button next to any installed theme in the
+**THEME** pane does that for you — it writes a `<Name>.cdtheme.zip` carrying the
+theme's *resolved* tokens (so it doesn't matter whether the recipient has the
+theme yours inherits from) and any fonts bundled with it. The recipient unzips
+it into their own Themes folder.
+
+If two themes claim the same `id`, the second one is skipped — it shows up under
+**Skipped Files** in the THEME pane with a **FIX ID** button that gives it an id
+of its own.
 
 ## The `theme.json` schema
 
@@ -70,13 +78,22 @@ Hex strings, `"#RRGGBB"` or `"#RRGGBBAA"` (leading `#` optional). These match
 |---|---|
 | Chassis (outer case) | `chassis`, `chassisHi`, `chassisLo`, `chassisDeep` |
 | Well (recessed panels) | `well`, `wellDeep` |
-| Paper (inset content panels) | `paper`, `paper2` |
+| Paper (inset content panels) | `paper`, `paper2`, `inspectorPaper`, `rowAlt` |
 | Text/ink | `ink`, `ink2`, `ink3`, `ink4`, `hair` |
 | Accents | `orange`, `orangeHi`, `orangeLo`, `sun`, `sunHi`, `sunLo`, `cyan`, `cyanGlow`, `red`, `indigo` |
 | Metal (knob/chrome bevels) | `metalHi`, `metal`, `metalLo`, `metalDeep` |
 | Background wash | `backgroundBase`, `backgroundGradientStart`, `backgroundGradientEnd` |
 | OLED display | `oledSurface`, `oledStrokeInner`, `oledForeground`, `oledForegroundMuted`, `onAir` |
 | Selection | `selectionLedCore`, `selectionInk` |
+
+`paper` is the panel inside each well — sidebar, track list, inspector — and
+`paper2` is the shaded far corner of that panel's gradient, *not* a row colour.
+Two tokens are optional and unset in both built-ins:
+
+- `inspectorPaper` gives the inspector pane its own surface; without it the
+  inspector matches `paper`.
+- `rowAlt` tints every other row of the Artist/Album/Track lists. Omit it and
+  there is no striping at all — the built-ins separate rows with a hairline.
 
 A few colors are intentionally **not** themeable — they represent fixed
 hardware materials rather than a "finish": the amber VU-meter LEDs, the

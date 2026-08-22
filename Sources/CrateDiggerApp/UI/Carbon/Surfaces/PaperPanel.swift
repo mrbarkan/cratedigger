@@ -6,18 +6,24 @@ struct PaperPanel<Content: View>: View {
     /// `nil` uses the active theme's `paperCornerRadius`; pass a value to
     /// override it for this instance regardless of theme.
     var cornerRadius: CGFloat? = nil
+    /// `nil` uses the theme's `paper`; pass a colour to give one panel its own
+    /// surface (the inspector's `inspectorPaper`). The shading, bevel and
+    /// shadow are unchanged either way — it's the same moulding, a different
+    /// stock.
+    var surface: Color? = nil
     @ViewBuilder var content: () -> Content
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius ?? geometry.paperCornerRadius, style: .continuous)
+        let paper = surface ?? theme.paper
         ZStack {
             shape
-                .fill(theme.paper) // opaque, not Material — see ChassisLayer
+                .fill(paper) // opaque, not Material — see ChassisLayer
                 .overlay(
                     shape.fill(
                         LinearGradient(
                             colors: [
-                                theme.paper.opacity(theme.isDark ? 0.62 : 0.78),
+                                paper.opacity(theme.isDark ? 0.62 : 0.78),
                                 theme.paper2.opacity(theme.isDark ? 0.54 : 0.68)
                             ],
                             startPoint: .topLeading,

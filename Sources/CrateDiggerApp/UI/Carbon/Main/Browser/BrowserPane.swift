@@ -119,7 +119,7 @@ private struct ArtistPane: View {
             scrollTarget: model.selectedArtistID.map(AnyHashable.init),
             isFocused: model.effectiveColumn == .artist
         ) {
-            ForEach(model.visibleArtists) { artist in
+            ForEach(Array(model.visibleArtists.enumerated()), id: \.element.id) { position, artist in
                 ArtistRow(
                     artist: artist,
                     selected: model.isArtistSelected(artist.id),
@@ -136,6 +136,7 @@ private struct ArtistPane: View {
                         model.selectArtist(artist, command: false, shift: false, ordered: model.visibleArtists)
                     }
                 )
+                .rowStripe(position)
                 .contextMenu { BrowserContextMenu.artist(artist, model: model) }
             }
         }
@@ -169,16 +170,21 @@ private struct AlbumPane: View {
             scrollTarget: model.selectedAlbumID.map(AnyHashable.init),
             isFocused: model.effectiveColumn == .album
         ) {
-            ForEach(albums) { album in
+            ForEach(Array(albums.enumerated()), id: \.element.id) { position, album in
                 if album.isVersionGroup {
                     releaseRow(album)
+                        .rowStripe(position)
                     if expandedReleaseIDs.contains(album.id) {
+                        // Version sub-rows stay unstriped: they're already
+                        // indented under their release, and striping them
+                        // would break the parent list's rhythm.
                         ForEach(album.versions ?? []) { version in
                             versionRow(version, in: album)
                         }
                     }
                 } else {
                     plainRow(album)
+                        .rowStripe(position)
                 }
             }
         }
@@ -290,7 +296,7 @@ private struct TrackPane: View {
             scrollTarget: model.selectedTrackID.map(AnyHashable.init),
             isFocused: model.effectiveColumn == .track
         ) {
-            ForEach(trackEntries) { entry in
+            ForEach(Array(trackEntries.enumerated()), id: \.element.id) { position, entry in
                 switch entry {
                 case let .discHeader(disc, count):
                     DiscHeaderRow(disc: disc, count: count)
@@ -324,6 +330,7 @@ private struct TrackPane: View {
                             onActivate: { model.playTrack(id: loaded.track.id) }
                         )
                         .id(loaded.track.id)
+                        .rowStripe(position)
                         .contextMenu { BrowserContextMenu.track(loaded, model: model) }
                     } else {
                     TrackRow(
@@ -343,6 +350,7 @@ private struct TrackPane: View {
                         onActivate: { model.playTrack(id: loaded.track.id) }
                     )
                     .id(loaded.track.id)
+                    .rowStripe(position)
                     .contextMenu { BrowserContextMenu.track(loaded, model: model) }
                     }
                 case let .recordTrack(parent, marker, number):

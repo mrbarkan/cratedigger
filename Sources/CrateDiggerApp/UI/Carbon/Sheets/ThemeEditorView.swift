@@ -461,6 +461,14 @@ struct ThemeEditorView: View {
                 .frame(width: 48, height: 19)
             }
 
+            // Same reasoning as the swatch rows: three role names can't carry
+            // "which text does this actually set" on their own.
+            Text(note)
+                .font(CarbonFont.mono(7.5))
+                .foregroundStyle(theme.ink3)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+
             // Family takes the room; style is narrower and fixed, so the two
             // rows below each other line up across all three roles.
             HStack(spacing: 6) {
@@ -748,7 +756,7 @@ struct ThemeEditorView: View {
             HStack(spacing: 8) {
                 KeyButton(action: revealInFinder) { Text("REVEAL") }
                     .frame(width: 64, height: geometry.keyHeight)
-                    .carbonTip("Show the Themes folder in Finder — themes are plain files you can zip and share.")
+                    .carbonTip("Show the Themes folder in Finder. To send a theme to someone, save it and use the share button beside it in THEME.")
 
                 Spacer(minLength: 0)
 
@@ -949,8 +957,11 @@ private struct ThemeSurfaceSimulator: View {
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
+            // The card stands in for the inspector, so it takes the
+            // inspector's own surface — which is `paper` until a theme gives
+            // that pane a colour of its own.
             RoundedRectangle(cornerRadius: geometry.paperCornerRadius, style: .continuous)
-                .fill(theme.paper)
+                .fill(theme.inspectorSurface)
         )
         .overlay(
             RoundedRectangle(cornerRadius: geometry.paperCornerRadius, style: .continuous)
@@ -991,12 +1002,25 @@ private struct ThemeSwatchRow: View {
             .labelsHidden()
             .fixedSize()
 
-            Text(token.label)
-                .font(CarbonFont.sans(11))
-                .foregroundStyle(theme.ink2)
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            // Label *and* what it paints. The note used to live only in the
+            // tooltip, which meant knowing what a swatch did required hovering
+            // it first — fine for the three you remember, useless for the rest.
+            VStack(alignment: .leading, spacing: 1) {
+                Text(token.label)
+                    .font(CarbonFont.sans(11))
+                    .foregroundStyle(theme.ink2)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                Text(token.note)
+                    // ink3, not ink4: this is the line that says what the
+                    // swatch does, and at 7.5pt the faintest tone in the theme
+                    // is a line you skip rather than read.
+                    .font(CarbonFont.mono(7.5))
+                    .foregroundStyle(theme.ink3)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             HexField(
                 value: Binding(

@@ -183,7 +183,8 @@ struct MainShell: View {
                 wellShell(
                     title: inspectorWellTitle,
                     trailing: inspectorWellTrailing,
-                    trailingControl: AnyView(collapseChevron(action: { model.toggleInspectorCollapsed() }))
+                    trailingControl: AnyView(collapseChevron(action: { model.toggleInspectorCollapsed() })),
+                    surface: theme.inspectorPaper
                 ) {
                     InspectorPane()
                 }
@@ -270,6 +271,9 @@ struct MainShell: View {
         title: String,
         trailing: String,
         trailingControl: AnyView? = nil,
+        /// `nil` (Sources, Browser) uses the theme's `paper`; the inspector
+        /// passes its own token so a theme can set that pane apart.
+        surface: Color? = nil,
         @ViewBuilder content: @escaping () -> Inner
     ) -> some View {
         RecessedWell {
@@ -291,7 +295,7 @@ struct MainShell: View {
                 }
                 .padding(.horizontal, 4)
 
-                PaperPanel {
+                PaperPanel(surface: surface) {
                     content()
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 }
