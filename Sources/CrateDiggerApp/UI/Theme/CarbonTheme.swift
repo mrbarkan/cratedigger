@@ -83,8 +83,10 @@ public struct CarbonTheme: Equatable {
     public let oledForegroundMuted: Color
     public var onAir: Color
 
-    /// CRT scanline strength on the OLED glass (0 = off). Themeable via
-    /// `effects.oledScanlineOpacity`, clamped to 0…0.15.
+    /// CRT scanline strength on the OLED glass. Both built-ins ship 0 — the
+    /// glass is a modern panel, not a tube — and the CRT-flavoured screen
+    /// presets rake it. Themeable via `effects.oledScanlineOpacity`, clamped to
+    /// 0…`ThemeTokenCatalog.scanlineMax`.
     public let oledScanlineOpacity: Double
 
     /// Whether the chassis casts shadows. `false` (`effects.flat` = `1`) drops
@@ -167,7 +169,7 @@ public extension CarbonTheme {
         oledForeground:      Color(red: 0.961, green: 0.945, blue: 0.902),
         oledForegroundMuted: Color.white.opacity(0.55),
         onAir:               Color(red: 1.0, green: 0.357, blue: 0.29),
-        oledScanlineOpacity: 0.018,
+        oledScanlineOpacity: 0,
         castsShadows: true,
         oledMonochrome: false,
         selectionLedCore: Color(hex: 0xFFD24A),
@@ -214,7 +216,7 @@ public extension CarbonTheme {
         oledForeground:      Color(red: 0.961, green: 0.945, blue: 0.902),
         oledForegroundMuted: Color.white.opacity(0.55),
         onAir:               Color(red: 1.0, green: 0.357, blue: 0.29),
-        oledScanlineOpacity: 0.018,
+        oledScanlineOpacity: 0,
         castsShadows: true,
         oledMonochrome: false,
         selectionLedCore: Color(hex: 0xFFD24A),
@@ -332,7 +334,8 @@ public extension CarbonTheme {
         oledForegroundMuted = color("oledForegroundMuted", resolvedBase.oledForegroundMuted)
         onAir = color("onAir", resolvedBase.onAir)
         oledScanlineOpacity = min(max(definition.effects?["oledScanlineOpacity"]
-                                        ?? resolvedBase.oledScanlineOpacity, 0), 0.15)
+                                        ?? resolvedBase.oledScanlineOpacity, 0),
+                                  ThemeTokenCatalog.scanlineMax)
         oledMonochrome = (definition.effects?["oledMonochrome"]
                             ?? (resolvedBase.oledMonochrome ? 1 : 0)) > 0.5
         castsShadows = (definition.effects?["flat"]

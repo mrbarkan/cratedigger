@@ -346,8 +346,49 @@ struct ThemeEditorView: View {
                 }
             }
             monochromeSwitch
+            scanlineRow
         }
         .padding(.bottom, 6)
+    }
+
+    /// The CRT rake over the glass. It's the effect people either love or
+    /// can't stand, so it gets a switch of its own as well as the dial — a
+    /// preset that ships lines shouldn't be the only way to change them.
+    /// Off is `oledScanlineOpacity` = 0; on restores the shipped strength.
+    private var scanlineRow: some View {
+        let value = theme.oledScanlineOpacity
+        let on = value > 0
+        return HStack(spacing: 6) {
+            KeyButton(
+                style: on ? .selected : .normal,
+                action: { setScanline(on ? 0 : ThemeTokenCatalog.scanlineOn) }
+            ) {
+                Text(on ? "SCAN LINES · ON" : "SCAN LINES · OFF")
+            }
+            .frame(width: 132, height: 20)
+            .carbonTip(on
+                       ? "Horizontal scan lines rake the display, like a CRT. Click for clean glass."
+                       : "Clean glass. Click to rake the display with CRT scan lines.")
+
+            Slider(
+                value: Binding(get: { value }, set: { setScanline($0) }),
+                in: 0...ThemeTokenCatalog.scanlineMax
+            )
+            .controlSize(.small)
+            .disabled(!on)
+            .help("Scan-line intensity · token: oledScanlineOpacity")
+
+            Text(String(format: "%.3f", value))
+                .font(CarbonFont.mono(8, weight: .semibold))
+                .foregroundStyle(theme.ink4)
+                .frame(width: 30, alignment: .trailing)
+        }
+    }
+
+    private func setScanline(_ value: Double) {
+        var effects = registry.draft?.effects ?? [:]
+        effects["oledScanlineOpacity"] = min(max(value, 0), ThemeTokenCatalog.scanlineMax)
+        registry.draft?.effects = effects
     }
 
     /// Whether the display is a single-emitter panel. Real LCD, VFD and LED

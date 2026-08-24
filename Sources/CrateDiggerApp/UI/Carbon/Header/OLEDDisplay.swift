@@ -441,27 +441,38 @@ private struct OLEDCellData: Identifiable {
 }
 
 /// The 5-cell data rail (np-cells) — equal-width cells with hairline separators,
-/// pinned to the bottom of every pane; an optional trailing view (the SORT
-/// readout) rides at the end behind its own separator.
-private struct OLEDCells<Trailing: View>: View {
+/// pinned to the bottom of every pane.
+///
+/// The rail is *fixed hardware*: always five columns at a fixed height, so the
+/// hairlines land on the same pixels whatever pane is on the glass. A pane with
+/// less to say (SYNC has three facts, a device sync four) leaves the spare
+/// columns blank rather than re-spacing the rail, and the fixed height stops a
+/// long value's `minimumScaleFactor` from shrinking the row under the lines.
+private struct OLEDCells: View {
     let cells: [OLEDCellData]
-    @ViewBuilder var trailing: () -> Trailing
 
-    init(_ cells: [OLEDCellData], @ViewBuilder trailing: @escaping () -> Trailing = { EmptyView() }) {
+    init(_ cells: [OLEDCellData]) {
         self.cells = cells
-        self.trailing = trailing
     }
+
+    /// Column count and rail height are the panel's geometry, not the content's.
+    private static let columns = 5
+    private static let railHeight: CGFloat = 42
 
     var body: some View {
         HStack(spacing: 0) {
-            ForEach(Array(cells.enumerated()), id: \.offset) { i, c in
+            ForEach(0..<max(Self.columns, cells.count), id: \.self) { i in
                 if i > 0 {
                     Rectangle().fill(oledFGo(0.12)).frame(width: 1).padding(.vertical, 1)
                 }
-                cell(c, leading: i > 0)
+                if i < cells.count {
+                    cell(cells[i], leading: i > 0)
+                } else {
+                    Color.clear.frame(maxWidth: .infinity)
+                }
             }
-            trailing()
         }
+        .frame(height: Self.railHeight, alignment: .top)
         .padding(.top, 6)
         .overlay(Rectangle().fill(oledFGo(0.12)).frame(height: 1), alignment: .top)
     }
@@ -650,11 +661,7 @@ private struct LibraryNowPlaying: View {
         } ticker: {
             EmptyView()
         } cells: {
-            OLEDCells(libraryCells) {
-                NPSort(rows: sortRows).padding(.leading, 12)
-                    .overlay(Rectangle().fill(oledFGo(0.12)).frame(width: 1), alignment: .leading)
-                    .fixedSize()
-            }
+            OLEDCells(libraryCells)
         }
         // A fresh nudge each time playback winds down.
         .onChange(of: isIdle) { nowIdle in
@@ -663,17 +670,6 @@ private struct LibraryNowPlaying: View {
     }
 
     private var libraryCells: [OLEDCellData] { LibraryNowPlayingCells.make(model: model) }
-
-    private var sortRows: [NPSortRow] {
-        let artist = NPSortRow(key: "ART", field: model.artistSortField.displayName, ascending: model.artistSortAscending)
-        let album = NPSortRow(key: "ALB", field: model.albumSortField.displayName, ascending: model.albumSortAscending)
-        let track = NPSortRow(key: "TRK", field: model.trackSortField.displayName, ascending: model.trackSortAscending)
-        switch model.browserLayout {
-        case .full:       return [artist, album, track]
-        case .albumTrack: return [album, track]
-        case .track:      return [track]
-        }
-    }
 
     private var displayTrackTitle: String {
         if isIdle { return idleMessage.uppercased() }
@@ -769,44 +765,6 @@ private struct RadioNowPlaying: View {
     }
 }
 
-// MARK: - SORT readout (horizontal, read-only browser sort state)
-
-private struct NPSortRow: Identifiable {
-    let key: String
-    let field: String
-    let ascending: Bool
-    var id: String { key }
-}
-
-private struct NPSort: View {
-    @Environment(\.carbon) private var theme
-    let rows: [NPSortRow]
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 9) {
-            Text("SORT")
-                .font(CarbonFont.mono(6.5, weight: .bold))
-                .tracking(1.3)
-                .foregroundStyle(oledFGo(0.3))
-            ForEach(rows) { row in
-                HStack(spacing: 4) {
-                    Text(row.key)
-                        .font(CarbonFont.mono(7, weight: .semibold))
-                        .tracking(1.0)
-                        .foregroundStyle(oledFGo(0.4))
-                    Text(row.field.uppercased())
-                        .font(CarbonFont.mono(9, weight: .bold))
-                        .tracking(0.4)
-                        .foregroundStyle(theme.orange)
-                        .shadow(color: theme.orange.opacity(0.4), radius: 6)
-                    Text(row.ascending ? "↑" : "↓")
-                        .font(CarbonFont.mono(8, weight: .bold))
-                        .foregroundStyle(theme.orange.opacity(0.85))
-                }
-            }
-        }
-    }
-}
 
 /// Shared builder for the library spec cells (used by NOW PLAYING).
 private enum LibraryNowPlayingCells {

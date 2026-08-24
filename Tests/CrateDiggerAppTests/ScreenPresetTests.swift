@@ -56,18 +56,38 @@ final class ScreenPresetTests: XCTestCase {
         }
     }
 
-    /// Every preset models real single-emitter hardware, so every one turns the
-    /// monochrome panel on — and the effect it writes has to be the value
-    /// `CarbonTheme` reads back, or the switch in the editor would sit at OFF
-    /// right after a preset was clicked.
-    func testEveryPresetTurnsTheGlassMonochrome() {
-        XCTAssertTrue(ThemeTokenCatalog.screenPresets.allSatisfy(\.monochrome))
+    /// Every preset but CARBON models real single-emitter hardware, so every
+    /// one of those turns the monochrome panel on — and the effect it writes
+    /// has to be the value `CarbonTheme` reads back, or the switch in the
+    /// editor would sit at OFF right after a preset was clicked. CARBON is the
+    /// stock colour panel, so it's the one that turns it off.
+    func testEveryHardwarePresetTurnsTheGlassMonochrome() {
+        let colour = ThemeTokenCatalog.screenPresets.filter { !$0.monochrome }
+        XCTAssertEqual(colour.map(\.name), ["CARBON"])
 
         let definition = ThemeDefinition(
             id: "t", name: "T", baseAppearance: .dark,
             effects: ["oledMonochrome": 1]
         )
         XCTAssertTrue(CarbonTheme(definition: definition, resolvedBase: .carbon).oledMonochrome)
+    }
+
+    /// CARBON is the reset: clicking it has to land on exactly the glass the
+    /// app ships, rake included (there isn't one). Restated hexes would drift
+    /// the first time a built-in colour changed, so the preset reads them off
+    /// `CarbonTheme.carbon` — this pins that it still matches.
+    func testTheCarbonPresetRestoresTheShippedGlass() throws {
+        let preset = try XCTUnwrap(ThemeTokenCatalog.screenPresets.first { $0.name == "CARBON" })
+        XCTAssertEqual(preset.scanline, CarbonTheme.carbon.oledScanlineOpacity)
+        XCTAssertFalse(preset.monochrome)
+
+        let tokens = ThemeTokenCatalog.colorGroups
+            .first { $0.name == ThemeTokenCatalog.screenGroupName }?.tokens ?? []
+        for token in tokens {
+            XCTAssertEqual(preset.colors(for: .dark)[token.key],
+                           CarbonTheme.carbon[keyPath: token.read].themeHexString,
+                           "CARBON.\(token.key) no longer matches the shipped glass")
+        }
     }
 
     /// The point of the switch: nothing coloured survives on the glass.

@@ -20,6 +20,26 @@ import SwiftUI
 /// actually on screen.
 enum ThemeTokenCatalog {
 
+    /// Ceiling for `effects.oledScanlineOpacity`. Past this the rake stops
+    /// reading as a screen and starts reading as a blind. `CarbonTheme` clamps
+    /// to it and the editor's slider runs to it — one number, not two.
+    static let scanlineMax: Double = 0.15
+
+    /// What the editor's SCAN LINES switch lights up to. The shipped glass has
+    /// no rake at all, so "on" needs a strength of its own — a rake you can see
+    /// straight away and then dial back.
+    static let scanlineOn: Double = 0.03
+
+    /// The shipped Carbon glass as hex, read off the built-in theme through the
+    /// same key paths the swatches use. The CARBON preset is a reset, so it
+    /// must not restate colours that could drift from what the app ships.
+    static var carbonScreenColors: [String: String] {
+        let tokens = colorGroups.first { $0.name == screenGroupName }?.tokens ?? []
+        return Dictionary(uniqueKeysWithValues: tokens.map {
+            ($0.key, CarbonTheme.carbon[keyPath: $0.read].themeHexString)
+        })
+    }
+
     // MARK: - Colors
 
     struct ColorToken {
@@ -197,9 +217,9 @@ enum ThemeTokenCatalog {
         var lightColors: [String: String]?
         /// `effects.oledScanlineOpacity` — a CRT rakes, an LED panel doesn't.
         let scanline: Double
-        /// `effects.oledMonochrome`. Every preset here models real
-        /// single-emitter hardware, so every one sets it — the switch below the
-        /// row is how you get the accents back.
+        /// `effects.oledMonochrome`. Most presets here model single-emitter
+        /// hardware and set it; the one modern colour panel (OLED WHITE) turns
+        /// it off. The switch below the row overrides either way.
         var monochrome: Bool = true
         /// A font *family*, mapped onto real faces at apply time. Every one
         /// here ships with macOS or with the app, and a family that somehow
@@ -218,6 +238,14 @@ enum ThemeTokenCatalog {
     }
 
     static let screenPresets: [ScreenPreset] = [
+        ScreenPreset(
+            name: "CARBON",
+            note: "The app's own glass: a modern colour OLED — near-black panel, warm-white type, full accents, no rake. This one is the reset; it puts the screen back exactly as CrateDigger ships it.",
+            colors: carbonScreenColors,
+            scanline: 0,
+            monochrome: false,
+            fontFamily: "Major Mono Display"
+        ),
         ScreenPreset(
             name: "LCD GREEN",
             note: "Monochrome green phosphor on dark glass — the classic terminal readout.",
@@ -273,6 +301,20 @@ enum ThemeTokenCatalog {
             ],
             scanline: 0.02,
             fontFamily: "Major Mono Display"
+        ),
+        ScreenPreset(
+            name: "OLED BLUE",
+            note: "The classic player OLED — pale blue pixels on true black, no rake. Lit pixels only, so the glass is genuinely off where nothing is drawn.",
+            colors: [
+                "oledSurface": "#000000",
+                "oledSurfaceShade": "#00060C99",
+                "oledStrokeInner": "#0B1E2A",
+                "oledForeground": "#7FD4FF",
+                "oledForegroundMuted": "#7FD4FFA6",
+                "onAir": "#7FD4FF",
+            ],
+            scanline: 0,
+            fontFamily: "Monaco"
         ),
         ScreenPreset(
             name: "BACKLIT",
