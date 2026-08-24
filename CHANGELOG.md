@@ -4,6 +4,45 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 1.5.4 (65) — 2026-08-24
+
+Housekeeping for the display. The glass ships clean now — no scan lines unless
+you ask for them — and the rake got a switch and a dial of its own. The data
+rail along the bottom is fixed hardware: five columns at one height, in the
+same place on every screen. Two new screen presets, one of which is the way
+back to stock.
+
+### Added
+
+- **CARBON screen preset.** The first button in the Display Screen row, and the
+  reset: one click puts the glass back exactly as CrateDigger ships it — the
+  near-black panel, warm-white type, full accent colours and the shipped
+  display face. It reads its colours off the built-in theme, so it can't drift
+  from what the app actually paints.
+- **OLED BLUE screen preset.** The classic music-player OLED: pale blue pixels
+  on true black, no rake. Where nothing is drawn, the glass is genuinely off.
+- **SCAN LINES switch.** The CRT rake over the display now has its own switch
+  and an intensity slider in the theme editor, next to MONOCHROME, writing
+  `effects.oledScanlineOpacity` — so it's dialable by hand instead of arriving
+  only as part of a preset.
+
+### Changed
+
+- **The shipped glass no longer rakes.** Both built-in themes now default to no
+  scan lines; the CRT-flavoured presets (LCD GREEN, AMBER, RED LED) still bring
+  their own. Type 0.018 into the slider for the old faint rake.
+- **The SORT readout is off the display.** The browser's sort state was printed
+  in the corner of the NOW screen, where it duplicated the column headers you
+  were already looking at.
+
+### Fixed
+
+- **The bottom data rail stops resizing between screens.** Its hairlines used
+  to move with the number of facts a screen had — three on SYNC, four mid-sync,
+  five elsewhere — and a long value could shrink the row under them. It is now
+  five fixed columns at a fixed height everywhere, so nothing shifts as the
+  glass switches views.
+
 ## 1.5.3 (64) — 2026-08-21
 
 The theme editor learned what a screen is. Seven one-click looks for the
