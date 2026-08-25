@@ -20,15 +20,76 @@ import SwiftUI
 /// actually on screen.
 enum ThemeTokenCatalog {
 
-    /// Ceiling for `effects.oledScanlineOpacity`. Past this the rake stops
-    /// reading as a screen and starts reading as a blind. `CarbonTheme` clamps
-    /// to it and the editor's slider runs to it — one number, not two.
-    static let scanlineMax: Double = 0.15
+    // MARK: - Overlay effects
 
-    /// What the editor's SCAN LINES switch lights up to. The shipped glass has
-    /// no rake at all, so "on" needs a strength of its own — a rake you can see
-    /// straight away and then dial back.
-    static let scanlineOn: Double = 0.03
+    /// One dial-able overlay effect: a number in `effects[key]` that some
+    /// overlay reads. Same shape as `GeometryToken`, for the same reason — the
+    /// `read` key path is the value the renderer actually uses, so the control
+    /// can't drift from what's on screen.
+    ///
+    /// They split by *what they're on*. An interface effect sits on the
+    /// console — grain and vignette are properties of the object and its
+    /// photograph. A display effect sits on the glass, where a rake, a
+    /// reflection and a dot screen belong to the screen and nothing else.
+    struct EffectDial: Identifiable {
+        enum Surface: String {
+            case interface
+            case display
+        }
+
+        let key: String
+        let label: String
+        /// Shown on hover — what the effect is imitating.
+        let note: String
+        /// Ceiling. Past it the effect stops reading as hardware and starts
+        /// reading as a filter. `CarbonTheme` clamps to it and the editor's
+        /// slider runs to it — one number, not two.
+        let max: Double
+        /// What the switch lights up to. Every effect ships off, so "on" needs
+        /// a strength of its own: a slider that lands on 0 looks broken.
+        let on: Double
+        let surface: Surface
+        let read: KeyPath<CarbonTheme, Double>
+        var id: String { key }
+    }
+
+    static let effectDials: [EffectDial] = [
+        EffectDial(
+            key: "grain", label: "Grain",
+            note: "Film grain over the whole console — the fine noise a photographed surface has and a rendered one doesn't.",
+            max: 0.6, on: 0.2, surface: .interface, read: \.grainAmount
+        ),
+        EffectDial(
+            key: "vignette", label: "Vignette",
+            note: "Darkens the corners the way a lens does, so the interface reads as a photograph of the hardware rather than a drawing of it.",
+            max: 0.6, on: 0.25, surface: .interface, read: \.vignetteAmount
+        ),
+        EffectDial(
+            key: "oledScanlineOpacity", label: "Scan Lines",
+            note: "The CRT rake: a hairline every 3pt across the display glass.",
+            max: 0.15, on: 0.03, surface: .display, read: \.oledScanlineOpacity
+        ),
+        EffectDial(
+            key: "oledGlare", label: "Glare",
+            note: "A reflection sweeping the display glass from the top-left, as if something in the room were lighting it.",
+            max: 0.5, on: 0.16, surface: .display, read: \.oledGlareAmount
+        ),
+        EffectDial(
+            key: "oledHalftone", label: "Halftone",
+            note: "A print dot screen over the glass. It bites into lit pixels and leaves dark glass alone, so the type breaks into dots like a scanned photo of a screen.",
+            max: 0.5, on: 0.2, surface: .display, read: \.oledHalftoneAmount
+        ),
+    ]
+
+    static func effectDials(on surface: EffectDial.Surface) -> [EffectDial] {
+        effectDials.filter { $0.surface == surface }
+    }
+
+    /// The ceiling for one effect key, for `CarbonTheme`'s clamp. An unknown
+    /// key can't be dialled from the editor, so it just passes 0…1.
+    static func effectMax(_ key: String) -> Double {
+        effectDials.first { $0.key == key }?.max ?? 1
+    }
 
     /// The shipped Carbon glass as hex, read off the built-in theme through the
     /// same key paths the swatches use. The CARBON preset is a reset, so it
@@ -304,17 +365,17 @@ enum ThemeTokenCatalog {
         ),
         ScreenPreset(
             name: "OLED BLUE",
-            note: "The classic player OLED — pale blue pixels on true black, no rake. Lit pixels only, so the glass is genuinely off where nothing is drawn.",
+            note: "The classic clip-on player's OLED: bright aqua pixels on true black, no rake. Lit pixels only, so the glass is genuinely off where nothing is drawn. (The real panel had a second, yellow-green emitter for its status strip; this keeps the one phosphor.)",
             colors: [
                 "oledSurface": "#000000",
-                "oledSurfaceShade": "#00060C99",
-                "oledStrokeInner": "#0B1E2A",
-                "oledForeground": "#7FD4FF",
-                "oledForegroundMuted": "#7FD4FFA6",
-                "onAir": "#7FD4FF",
+                "oledSurfaceShade": "#00080C99",
+                "oledStrokeInner": "#0A222A",
+                "oledForeground": "#81F0FC",
+                "oledForegroundMuted": "#81F0FCA6",
+                "onAir": "#81F0FC",
             ],
             scanline: 0,
-            fontFamily: "Monaco"
+            fontFamily: "Verdana"
         ),
         ScreenPreset(
             name: "BACKLIT",

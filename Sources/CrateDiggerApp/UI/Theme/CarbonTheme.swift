@@ -86,8 +86,20 @@ public struct CarbonTheme: Equatable {
     /// CRT scanline strength on the OLED glass. Both built-ins ship 0 — the
     /// glass is a modern panel, not a tube — and the CRT-flavoured screen
     /// presets rake it. Themeable via `effects.oledScanlineOpacity`, clamped to
-    /// 0…`ThemeTokenCatalog.scanlineMax`.
+    /// that dial's ceiling.
     public let oledScanlineOpacity: Double
+
+    /// The overlay effects, all off in both built-ins and all dialled from
+    /// `ThemeTokenCatalog.effectDials` — the catalog is what names them, sets
+    /// their ceilings and says which surface each belongs to.
+    ///
+    /// `var` with a default rather than plain `let`: it keeps them out of the
+    /// two built-in theme literals, which would otherwise gain a line apiece
+    /// for a value that is always 0.
+    public var grainAmount: Double = 0
+    public var vignetteAmount: Double = 0
+    public var oledGlareAmount: Double = 0
+    public var oledHalftoneAmount: Double = 0
 
     /// Whether the chassis casts shadows. `false` (`effects.flat` = `1`) drops
     /// every depth shadow — panels, keys, the glass, artwork — and leaves the
@@ -333,9 +345,16 @@ public extension CarbonTheme {
         oledForeground = color("oledForeground", resolvedBase.oledForeground)
         oledForegroundMuted = color("oledForegroundMuted", resolvedBase.oledForegroundMuted)
         onAir = color("onAir", resolvedBase.onAir)
-        oledScanlineOpacity = min(max(definition.effects?["oledScanlineOpacity"]
-                                        ?? resolvedBase.oledScanlineOpacity, 0),
-                                  ThemeTokenCatalog.scanlineMax)
+        // Every overlay effect clamps to its dial's ceiling, so a theme can't
+        // ask for a value the renderer would quietly trim away.
+        func effect(_ key: String, _ fallback: Double) -> Double {
+            min(max(definition.effects?[key] ?? fallback, 0), ThemeTokenCatalog.effectMax(key))
+        }
+        oledScanlineOpacity = effect("oledScanlineOpacity", resolvedBase.oledScanlineOpacity)
+        grainAmount = effect("grain", resolvedBase.grainAmount)
+        vignetteAmount = effect("vignette", resolvedBase.vignetteAmount)
+        oledGlareAmount = effect("oledGlare", resolvedBase.oledGlareAmount)
+        oledHalftoneAmount = effect("oledHalftone", resolvedBase.oledHalftoneAmount)
         oledMonochrome = (definition.effects?["oledMonochrome"]
                             ?? (resolvedBase.oledMonochrome ? 1 : 0)) > 0.5
         castsShadows = (definition.effects?["flat"]

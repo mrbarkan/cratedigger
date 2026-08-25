@@ -68,6 +68,14 @@ struct OLEDDisplay: View {
                 // rather than a filter over the finished screen.
                 .environment(\.carbon, glassTheme)
             }
+            // The display effects go *over* the finished screen, not under it:
+            // a rake, a dot screen and a reflection are on the glass, so they
+            // fall across the lit type as much as the dark panel between it.
+            // (The rake used to sit under the panes, where it could only ever
+            // texture the background.) All three are no-ops at 0.
+            .scanlines(opacity: theme.oledScanlineOpacity)
+            .carbonHalftone(theme.oledHalftoneAmount)
+            .carbonGlare(theme.oledGlareAmount)
             .clipShape(RoundedRectangle(cornerRadius: geometry.oledCornerRadius, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: geometry.oledCornerRadius, style: .continuous)
@@ -94,7 +102,6 @@ struct OLEDDisplay: View {
                     endPoint: .bottomTrailing
                 )
             )
-            .scanlines(opacity: theme.oledScanlineOpacity)
             .depthShadow(color: Color.black.opacity(0.5), radius: 6, y: 4)
     }
 }

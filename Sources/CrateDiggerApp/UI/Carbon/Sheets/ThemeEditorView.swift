@@ -275,11 +275,14 @@ struct ThemeEditorView: View {
                     }
                 }
 
-                if showDepth {
-                    sectionLabel("Depth")
+                if showInterface {
+                    sectionLabel("Interface")
                         .padding(.top, 16)
                         .padding(.bottom, 6)
-                    flatSwitch
+                    VStack(spacing: 6) {
+                        flatSwitch
+                        ForEach(ThemeTokenCatalog.effectDials(on: .interface)) { effectRow($0) }
+                    }
                 }
 
                 ForEach(visibleGeometryGroups) { group in
@@ -311,7 +314,7 @@ struct ThemeEditorView: View {
                     }
                 }
 
-                if visibleColorGroups.isEmpty && visibleGeometryGroups.isEmpty && !showFonts && !showDepth {
+                if visibleColorGroups.isEmpty && visibleGeometryGroups.isEmpty && !showFonts && !showInterface {
                     Text("No tokens match “\(filter)”")
                         .font(CarbonFont.mono(10))
                         .foregroundStyle(theme.ink4)
@@ -346,37 +349,39 @@ struct ThemeEditorView: View {
                 }
             }
             monochromeSwitch
-            scanlineRow
+            ForEach(ThemeTokenCatalog.effectDials(on: .display)) { effectRow($0) }
         }
         .padding(.bottom, 6)
     }
 
-    /// The CRT rake over the glass. It's the effect people either love or
-    /// can't stand, so it gets a switch of its own as well as the dial — a
-    /// preset that ships lines shouldn't be the only way to change them.
-    /// Off is `oledScanlineOpacity` = 0; on restores the shipped strength.
-    private var scanlineRow: some View {
-        let value = theme.oledScanlineOpacity
+    /// One overlay effect: a switch that lights it to a usable strength, and a
+    /// slider for the exact value. Both write the same `effects` key, and the
+    /// value shown is read back through the dial's key path — the number the
+    /// renderer uses, not a copy of it.
+    ///
+    /// The switch exists because every effect ships off: a lone slider sitting
+    /// at zero reads as broken, and finding the strength where an effect starts
+    /// to show shouldn't be the first thing you have to do.
+    private func effectRow(_ dial: ThemeTokenCatalog.EffectDial) -> some View {
+        let value = theme[keyPath: dial.read]
         let on = value > 0
         return HStack(spacing: 6) {
             KeyButton(
                 style: on ? .selected : .normal,
-                action: { setScanline(on ? 0 : ThemeTokenCatalog.scanlineOn) }
+                action: { setEffect(dial, on ? 0 : dial.on) }
             ) {
-                Text(on ? "SCAN LINES · ON" : "SCAN LINES · OFF")
+                Text("\(dial.label.uppercased()) · \(on ? "ON" : "OFF")")
             }
             .frame(width: 132, height: 20)
-            .carbonTip(on
-                       ? "Horizontal scan lines rake the display, like a CRT. Click for clean glass."
-                       : "Clean glass. Click to rake the display with CRT scan lines.")
+            .carbonTip(dial.note)
 
             Slider(
-                value: Binding(get: { value }, set: { setScanline($0) }),
-                in: 0...ThemeTokenCatalog.scanlineMax
+                value: Binding(get: { value }, set: { setEffect(dial, $0) }),
+                in: 0...dial.max
             )
             .controlSize(.small)
             .disabled(!on)
-            .help("Scan-line intensity · token: oledScanlineOpacity")
+            .help("\(dial.label) intensity · token: effects.\(dial.key)")
 
             Text(String(format: "%.3f", value))
                 .font(CarbonFont.mono(8, weight: .semibold))
@@ -385,9 +390,9 @@ struct ThemeEditorView: View {
         }
     }
 
-    private func setScanline(_ value: Double) {
+    private func setEffect(_ dial: ThemeTokenCatalog.EffectDial, _ value: Double) {
         var effects = registry.draft?.effects ?? [:]
-        effects["oledScanlineOpacity"] = min(max(value, 0), ThemeTokenCatalog.scanlineMax)
+        effects[dial.key] = min(max(value, 0), dial.max)
         registry.draft?.effects = effects
     }
 
@@ -865,8 +870,13 @@ struct ThemeEditorView: View {
         }
     }
 
-    private var showDepth: Bool {
-        matches("flat", "shadow", "depth", "shadows", "surfaces")
+    /// The console's own effects, shadows included — everything that happens
+    /// to the hardware rather than to the screen in it.
+    private var showInterface: Bool {
+        matches("flat", "shadow", "depth", "shadows", "surfaces", "interface")
+            || ThemeTokenCatalog.effectDials(on: .interface).contains {
+                matches($0.key, $0.label, $0.note, "interface")
+            }
     }
 
     private var showFonts: Bool {
@@ -951,7 +961,11 @@ private struct ThemeSurfaceSimulator: View {
             RoundedRectangle(cornerRadius: geometry.oledCornerRadius, style: .continuous)
                 .strokeBorder(theme.oledStrokeInner, lineWidth: 1)
         )
+        // The same three effects the real glass gets, so the preview answers
+        // "what will the display look like" rather than "what colour is it".
         .scanlines(opacity: theme.oledScanlineOpacity)
+        .carbonHalftone(theme.oledHalftoneAmount)
+        .carbonGlare(theme.oledGlareAmount)
         .clipShape(RoundedRectangle(cornerRadius: geometry.oledCornerRadius, style: .continuous))
     }
 
