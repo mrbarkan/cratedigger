@@ -12,11 +12,10 @@ struct ChassisLayer<Content: View>: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         // The interface effects land here and nowhere else: this is the one
-        // view every pixel of the app is inside, so grain and vignette are a
-        // property of the whole console rather than something each surface has
-        // to remember to apply. Both are no-ops at 0 — see `carbonGrain`.
+        // view every pixel of the app is inside, so grain is a property of the
+        // whole console rather than something each surface has to remember to
+        // apply. A no-op at 0 — see `carbonGrain`.
         .carbonGrain(theme.grainAmount)
-        .carbonVignette(theme.vignetteAmount)
         .ignoresSafeArea()
     }
 

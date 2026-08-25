@@ -51,20 +51,16 @@ struct CarbonSelectionSlot: View {
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-        // A cool cyan LED over an indigo spread in dark mode; a warm orange LED +
-        // orange spread in light mode (reads better on a light panel and matches
-        // the app's warm accent). Either way the fill is that LED's light: brightest
-        // at the leading edge, falling off toward the trailing edge. Dark fades to
-        // the true background (clear); light keeps a floor so the white selection
-        // text stays legible across the whole row.
-        // Dark: cyan LED over an indigo spread. Light: a bright near-yellow LED
-        // whose warm orange spread falls off across the row — the LED reads as the
-        // light source, the fill as its cast light. Both fade fully to the
-        // background; the selection text uses `slotInk` so it stays legible where
-        // the fill fades out (white in dark, dark ink in light).
-        let ledCore = theme.isDark ? theme.cyanGlow : theme.selectionLedCore
-        let ledGlow = theme.isDark ? theme.cyan : theme.orange
-        let spread  = theme.isDark ? theme.indigo : theme.orange
+        // Selection is lit by its *own* three tokens, not by the accents. The
+        // shape is the same either way — an LED at the leading edge and its
+        // light falling off across the row — and each theme says what colour
+        // that light is: the built-in dark console keeps its cool cyan-on-
+        // indigo, light keeps the warm lamp and orange spread. Reading `cyan`
+        // and `orange` here made every selected row in the app move whenever
+        // the accent was retinted.
+        let ledCore = theme.selectionLedCore
+        let ledGlow = theme.selectionGlow
+        let spread  = theme.selectionSpread
         let ledFill = LinearGradient(
             colors: [
                 spread.opacity(theme.isDark ? 0.90 : 0.85),

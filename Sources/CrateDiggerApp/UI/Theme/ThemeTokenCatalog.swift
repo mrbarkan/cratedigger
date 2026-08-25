@@ -60,11 +60,6 @@ enum ThemeTokenCatalog {
             max: 0.6, on: 0.2, surface: .interface, read: \.grainAmount
         ),
         EffectDial(
-            key: "vignette", label: "Vignette",
-            note: "Darkens the corners the way a lens does, so the interface reads as a photograph of the hardware rather than a drawing of it.",
-            max: 0.6, on: 0.25, surface: .interface, read: \.vignetteAmount
-        ),
-        EffectDial(
             key: "oledScanlineOpacity", label: "Scan Lines",
             note: "The CRT rake: a hairline every 3pt across the display glass.",
             max: 0.15, on: 0.03, surface: .display, read: \.oledScanlineOpacity
@@ -242,8 +237,14 @@ enum ThemeTokenCatalog {
         ]),
         ColorGroup(name: "Selected Rows", tokens: [
             ColorToken(key: "selectionLedCore", label: "Selection Lamp",
-                       note: "The small lit dot marking the selected row in light themes.",
+                       note: "The small lit dot at the leading edge of the selected row.",
                        read: \.selectionLedCore),
+            ColorToken(key: "selectionGlow", label: "Selection Halo",
+                       note: "The glow around that lamp. Selection's own colour — retinting the accents leaves it alone.",
+                       read: \.selectionGlow),
+            ColorToken(key: "selectionSpread", label: "Selection Wash",
+                       note: "The light the lamp casts across the row, fading out toward the trailing edge.",
+                       read: \.selectionSpread),
             ColorToken(key: "selectionInk", label: "Selected Text",
                        note: "Text color over a selected row — keep it readable on the accent.",
                        read: \.selectionInk),

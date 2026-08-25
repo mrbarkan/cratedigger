@@ -97,7 +97,6 @@ public struct CarbonTheme: Equatable {
     /// two built-in theme literals, which would otherwise gain a line apiece
     /// for a value that is always 0.
     public var grainAmount: Double = 0
-    public var vignetteAmount: Double = 0
     public var oledGlareAmount: Double = 0
     public var oledHalftoneAmount: Double = 0
 
@@ -115,8 +114,20 @@ public struct CarbonTheme: Equatable {
     /// models that hardware.
     public let oledMonochrome: Bool
 
-    /// The light-mode selection-row LED core color (`CarbonSelectionSlot`).
+    /// The selection-row LED core color (`CarbonSelectionSlot`).
     public var selectionLedCore: Color
+
+    /// The rest of the selected row's light: the halo around its LED, and the
+    /// spread that falls off across the row.
+    ///
+    /// These are selection's own tokens, not the accents. The slot used to
+    /// read `cyan`/`indigo`/`orange` directly, which welded "what a selected
+    /// row looks like" to "what the app's accent is" — retint the accent and
+    /// every selected row in the browser and sidebar moved with it, whether or
+    /// not that was the idea. Both default to the accents each built-in used
+    /// before, so nothing shipped changes appearance.
+    public var selectionGlow: Color = Color(hex: 0x45C7BD)
+    public var selectionSpread: Color = Color(hex: 0x7282E8)
 
     /// Foreground (text/icon) color when laid over a selected row background.
     /// Centralized so row views and the sources sidebar keep selected text
@@ -185,6 +196,8 @@ public extension CarbonTheme {
         castsShadows: true,
         oledMonochrome: false,
         selectionLedCore: Color(hex: 0xFFD24A),
+        selectionGlow:   Color(hex: 0xFF6236),
+        selectionSpread: Color(hex: 0xFF6236),
         selectionInk:    Color(hex: 0xFFFFFF)
     )
 
@@ -231,7 +244,9 @@ public extension CarbonTheme {
         oledScanlineOpacity: 0,
         castsShadows: true,
         oledMonochrome: false,
-        selectionLedCore: Color(hex: 0xFFD24A),
+        selectionLedCore: Color(hex: 0xBEF4EF),
+        selectionGlow:   Color(hex: 0x45C7BD),
+        selectionSpread: Color(hex: 0x7282E8),
         selectionInk:    Color(hex: 0xFFFFFF)
     )
 }
@@ -352,7 +367,6 @@ public extension CarbonTheme {
         }
         oledScanlineOpacity = effect("oledScanlineOpacity", resolvedBase.oledScanlineOpacity)
         grainAmount = effect("grain", resolvedBase.grainAmount)
-        vignetteAmount = effect("vignette", resolvedBase.vignetteAmount)
         oledGlareAmount = effect("oledGlare", resolvedBase.oledGlareAmount)
         oledHalftoneAmount = effect("oledHalftone", resolvedBase.oledHalftoneAmount)
         oledMonochrome = (definition.effects?["oledMonochrome"]
@@ -361,6 +375,8 @@ public extension CarbonTheme {
                             ?? (resolvedBase.castsShadows ? 0 : 1)) < 0.5
 
         selectionLedCore = color("selectionLedCore", resolvedBase.selectionLedCore)
+        selectionGlow = color("selectionGlow", resolvedBase.selectionGlow)
+        selectionSpread = color("selectionSpread", resolvedBase.selectionSpread)
         selectionInk = color("selectionInk", resolvedBase.selectionInk)
 
         // Sorted so the same overrides always produce the same signature and
@@ -405,7 +421,7 @@ public extension CarbonTheme {
             \.sun, \.sunHi, \.sunLo,
             \.cyan, \.cyanGlow,
             \.red, \.indigo,
-            \.onAir, \.selectionLedCore,
+            \.onAir, \.selectionLedCore, \.selectionGlow, \.selectionSpread,
         ] {
             copy[keyPath: accent] = oledForeground
         }

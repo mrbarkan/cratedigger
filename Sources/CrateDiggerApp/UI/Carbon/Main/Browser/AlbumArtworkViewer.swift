@@ -224,6 +224,15 @@ struct AlbumArtworkNavigator: View {
 
     private var fullscreenBody: some View {
         ZStack {
+            // Left as a plain scrim on purpose. The ask was frosted glass
+            // here too, and it needs the *app behind this window* blurred —
+            // which means an NSVisualEffectView in `.behindWindow` mode, since
+            // the viewer is its own window and `.withinWindow` has nothing to
+            // sample. Both were tried; neither can be checked with the
+            // self-snapshot hook (it renders the layer tree, not WindowServer's
+            // compositing), and a blurred *artwork* plate here covers the app
+            // rather than frosting it. Shipping a look nobody has seen is worse
+            // than shipping the one that works.
             Color.black.opacity(focusMode ? 0.94 : 0.55)
                 .ignoresSafeArea()
                 .contentShape(Rectangle())
@@ -254,20 +263,59 @@ struct AlbumArtworkNavigator: View {
                 .padding(.bottom, 12)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // A glass plate under the art, lit by the record itself: the current
+        // page blown up and blurred, dimmed back, with a soft rim.
+        //
+        // The blur is of a *still image*, not of what's behind the window —
+        // this panel floats above everything and can sit open for hours, and a
+        // backdrop blur would re-sample the desktop every frame for as long as
+        // it does. Blurring the art costs one render per page turn and, being
+        // the record's own colours, reads warmer than frosted grey anyway.
+        .background(floatingGlass)
         .contentShape(Rectangle())
-        // A fine frame around the floating panel: near-black at rest, lit cyan when
-        // the pointer is over it, so it reads as a live, grabbable window.
+        // The rim was a cyan neon outline that lit on hover. A grabbable window
+        // doesn't need to glow — the glass reads as an object, so the rim just
+        // firms up under the pointer.
         .overlay(
             RoundedRectangle(cornerRadius: 11, style: .continuous)
                 .strokeBorder(
-                    floatingHovering ? theme.cyan : Color.black.opacity(0.6),
-                    lineWidth: floatingHovering ? 1.5 : 1
+                    Color.white.opacity(floatingHovering ? 0.30 : 0.14),
+                    lineWidth: 1
                 )
-                .shadow(color: floatingHovering ? theme.cyan.opacity(0.6) : .clear, radius: 6)
                 .padding(1)
                 .animation(.easeInOut(duration: 0.18), value: floatingHovering)
         )
         .onHover { floatingHovering = $0 }
+    }
+
+    /// The floating panel's plate.
+    private var floatingGlass: some View {
+        frostedGlass(scrim: 0.82)
+            .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+    }
+
+    /// Frosted glass lit by the record: the current page blown up and blurred
+    /// behind a scrim, with a top-lit sheen so it reads as a surface rather
+    /// than a tint. Falls back to the flat scrim before the page has decoded,
+    /// so neither the panel nor the backdrop is ever transparent.
+    @ViewBuilder
+    private func frostedGlass(scrim: Double) -> some View {
+        ZStack {
+            Color.black.opacity(scrim)
+            if let image = current?.imageURL.flatMap({ images[$0] }) {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .blur(radius: 44, opaque: true)
+                    .opacity(0.5)
+                    .allowsHitTesting(false)
+            }
+            LinearGradient(
+                colors: [Color.white.opacity(0.10), .clear, Color.black.opacity(0.25)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        }
     }
 
     // MARK: - Artwork viewport (fills all remaining space)

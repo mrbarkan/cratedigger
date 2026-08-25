@@ -74,7 +74,7 @@ struct OLEDDisplay: View {
             // (The rake used to sit under the panes, where it could only ever
             // texture the background.) All three are no-ops at 0.
             .scanlines(opacity: theme.oledScanlineOpacity)
-            .carbonHalftone(theme.oledHalftoneAmount)
+            .carbonHalftone(theme.oledHalftoneAmount, on: theme.oledSurface)
             .carbonGlare(theme.oledGlareAmount)
             .clipShape(RoundedRectangle(cornerRadius: geometry.oledCornerRadius, style: .continuous))
             .overlay(

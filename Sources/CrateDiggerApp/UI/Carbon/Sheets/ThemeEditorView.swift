@@ -964,7 +964,7 @@ private struct ThemeSurfaceSimulator: View {
         // The same three effects the real glass gets, so the preview answers
         // "what will the display look like" rather than "what colour is it".
         .scanlines(opacity: theme.oledScanlineOpacity)
-        .carbonHalftone(theme.oledHalftoneAmount)
+        .carbonHalftone(theme.oledHalftoneAmount, on: theme.oledSurface)
         .carbonGlare(theme.oledGlareAmount)
         .clipShape(RoundedRectangle(cornerRadius: geometry.oledCornerRadius, style: .continuous))
     }

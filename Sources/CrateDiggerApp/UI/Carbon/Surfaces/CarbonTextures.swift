@@ -36,10 +36,20 @@ enum CarbonTexture {
     /// exactly what `carbonGrain` subtracts back.
     static let grainStrength: Double = 0.5
 
-    /// A print dot screen: one dot per 6pt cell. Drawn in `.multiply`, so it
-    /// bites into lit pixels and leaves unlit glass alone — a dark screen
-    /// stays dark, the type breaks into dots.
-    static let halftone: NSImage = dotTile(cell: 6, radius: 1.7)
+    /// A print dot screen: one dot per 6pt cell, in both polarities.
+    ///
+    /// Ink is only ink against a pale ground. On dark glass with lit type the
+    /// dots have to be *dark* and multiply, so they bite into the type; on a
+    /// pale panel with dark type — an iPod or calculator screen, which several
+    /// presets and plenty of user themes are — that same dark dot dims the
+    /// background and leaves the type alone, which looks like nothing
+    /// happened. `carbonHalftone` picks by the glass, not by preference.
+    /// A 3pt cell. Coarser screens were tried and measured: at an 8pt cell the
+    /// dots are wider than the strokes of 7.5–13pt readout type, so nearly
+    /// every stroke falls in a gap and a rail of labels barely moves (-3% of
+    /// lit luminance). A dot screen has to be finer than the type it prints.
+    static let halftoneDark: NSImage = dotTile(cell: 3, radius: 1.05, white: false)
+    static let halftoneLight: NSImage = dotTile(cell: 3, radius: 1.05, white: true)
 
     // MARK: - Tiles
 
@@ -59,7 +69,7 @@ enum CarbonTexture {
         return image(from: bytes, pixels: pixels, bytesPerRow: bytesPerRow, points: side)
     }
 
-    private static func dotTile(cell: Int, radius: CGFloat) -> NSImage {
+    private static func dotTile(cell: Int, radius: CGFloat, white: Bool) -> NSImage {
         let scale = 2
         let pixels = cell * scale
         let bytesPerRow = pixels * 4
@@ -78,7 +88,13 @@ enum CarbonTexture {
                 // soft rim instead of a staircase.
                 let coverage = min(max(r - (dx * dx + dy * dy).squareRoot() + 0.5, 0), 1)
                 let i = y * bytesPerRow + x * 4
-                bytes[i + 3] = UInt8(coverage * 255)   // black at `coverage` alpha
+                let alpha = UInt8(coverage * 255)
+                if white {
+                    bytes[i] = alpha
+                    bytes[i + 1] = alpha
+                    bytes[i + 2] = alpha
+                }
+                bytes[i + 3] = alpha
             }
         }
         return image(from: bytes, pixels: pixels, bytesPerRow: bytesPerRow, points: cell)
@@ -128,6 +144,7 @@ extension View {
             compositingGroup()
                 .overlay(
                     Image(nsImage: CarbonTexture.grain)
+                        .interpolation(.none)
                         .resizable(resizingMode: .tile)
                         .blendMode(.plusLighter)
                         .opacity(amount)
@@ -144,45 +161,15 @@ extension View {
         }
     }
 
-    /// Lens-style corner falloff (interface effect: `effects.vignette`).
-    /// An `EllipticalGradient` rather than a `RadialGradient` in a
-    /// `GeometryReader`: it already sizes itself to the view, so the window
-    /// can resize without a layout pass computing radii.
-    @ViewBuilder
-    func carbonVignette(_ amount: Double) -> some View {
-        if amount > 0 {
-            overlay(
-                // The radius fractions matter more than the colours here. Left
-                // at their defaults the gradient ends at the *edge midpoints*,
-                // which puts every corner — a large slice of a wide window —
-                // past the last stop and at full strength: not a vignette, a
-                // dimmer. Ending at 0.78 pushes the ellipse out past the edges,
-                // so the corners land near the dark end and the edges stay
-                // barely touched.
-                EllipticalGradient(
-                    stops: [
-                        .init(color: .clear, location: 0),
-                        .init(color: .black.opacity(amount * 0.35), location: 0.6),
-                        .init(color: .black.opacity(amount), location: 1)
-                    ],
-                    center: .center,
-                    startRadiusFraction: 0.4,
-                    endRadiusFraction: 0.78
-                )
-                .allowsHitTesting(false)
-            )
-        } else {
-            self
-        }
-    }
-
     /// A diagonal reflection across glass (display effect: `effects.oledGlare`).
     /// Screen blend so it *adds* light like a real reflection rather than
-    /// washing the panel out.
+    /// washing the panel out — and grouped with what it blends against, for
+    /// the reason spelled out in `carbonHalftone`.
     @ViewBuilder
     func carbonGlare(_ amount: Double) -> some View {
         if amount > 0 {
-            overlay(
+            ZStack {
+                self
                 LinearGradient(
                     stops: [
                         .init(color: .white.opacity(amount), location: 0),
@@ -195,26 +182,42 @@ extension View {
                 )
                 .blendMode(.screen)
                 .allowsHitTesting(false)
-            )
+            }
+            .compositingGroup()
         } else {
             self
         }
     }
 
     /// Print dot screen (display effect: `effects.oledHalftone`).
+    ///
+    /// `panel` is the glass this lands on. Its luminance picks the ink: dark
+    /// dots multiplied into a lit screen, light dots added onto a pale one.
+    /// Passing the colour rather than a flag keeps the decision in one place —
+    /// every caller would otherwise have to remember the same luminance test.
     @ViewBuilder
-    func carbonHalftone(_ amount: Double) -> some View {
+    func carbonHalftone(_ amount: Double, on panel: Color) -> some View {
         if amount > 0 {
-            compositingGroup()
-                .overlay(
-                    Image(nsImage: CarbonTexture.halftone)
-                        .resizable(resizingMode: .tile)
-                        .blendMode(.multiply)
-                        .opacity(amount)
-                        .allowsHitTesting(false)
-                )
+            let pale = panel.themeLuminance > 0.5
+            // The blend has to be *inside* a group that also holds what it
+            // blends with. `self.compositingGroup().overlay(dots.blendMode())`
+            // reads the same and isn't: the dots end up blending against
+            // whatever the enclosing context happens to be, and on the OLED —
+            // clipped, and inside the display's own compositing group — that
+            // resolved to no visible change at all.
+            ZStack {
+                self
+                Image(nsImage: pale ? CarbonTexture.halftoneLight : CarbonTexture.halftoneDark)
+                    .interpolation(.none)
+                    .resizable(resizingMode: .tile)
+                    .blendMode(pale ? .plusLighter : .multiply)
+                    .opacity(amount)
+                    .allowsHitTesting(false)
+            }
+            .compositingGroup()
         } else {
             self
         }
     }
 }
+
