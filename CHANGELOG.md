@@ -4,6 +4,47 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 1.5.5 (66) — 2026-08-24
+
+Effects. The console and the display can now be textured — film grain and a
+lens vignette on the hardware, a reflection and a print dot-screen on the
+glass — each with a switch and a dial in the theme editor, and each shipping
+off. The theme editor's effects are split the way they're felt: what happens
+to the interface, and what happens to the screen in it.
+
+### Added
+
+- **Interface effects: GRAIN and VIGNETTE.** Grain lays film noise over the
+  whole console; vignette darkens the corners the way a lens does. Both sit in
+  a new INTERFACE section of the theme editor alongside FLAT, and both are
+  themeable directly as `effects.grain` and `effects.vignette`.
+- **Display effects: GLARE and HALFTONE.** Glare sweeps a reflection across the
+  display glass; halftone lays a print dot-screen over it, breaking the lit
+  type into dots like a scanned photo of a screen. `effects.oledGlare` and
+  `effects.oledHalftone`, next to SCAN LINES and MONOCHROME.
+- **Every effect has a switch and a slider.** Each one ships off, so the switch
+  lights it to a strength you can actually see and the slider takes it from
+  there. The value shown is read back from the renderer, not a copy of it.
+
+### Changed
+
+- **OLED BLUE matches the hardware it's named after.** Its phosphor was a pale
+  sky blue; sampled off a photo of the real panel it's a far more saturated
+  aqua (`#81F0FC`), and its type is a proportional screen sans rather than a
+  monospace. The real panel's yellow-green status strip is a second emitter and
+  isn't modelled — the preset stays one phosphor.
+- **The theme editor's DEPTH section is now INTERFACE.** It holds the console's
+  effects, shadows included; the display's own effects stay under DISPLAY
+  SCREEN with the screen presets.
+
+### Fixed
+
+- **Scan lines fall across the type, not behind it.** The rake was applied to
+  the glass *under* the panes, where it could only ever texture the background
+  between the letters. All three display effects now composite over the
+  finished screen, which is where a rake, a reflection and a dot screen
+  actually sit.
+
 ## 1.5.4 (65) — 2026-08-24
 
 Housekeeping for the display. The glass ships clean now — no scan lines unless
