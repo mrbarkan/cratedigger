@@ -4,6 +4,38 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 1.5.5 (67) — 2026-08-24
+
+Halftone actually prints now, selection stops following the accent, and the
+floating artwork panel sits on glass instead of behind a neon outline.
+
+### Fixed
+
+- **HALFTONE did nothing on the display.** Two faults, both measured: the dot
+  screen's blend wasn't grouped with what it blended against, so on the OLED it
+  resolved to no change at all, and the dots were coarser than the type they
+  print — an 8pt cell against 7.5–13pt readouts left nearly every stroke in a
+  gap. The screen is finer now and bites: lit type drops 12% at 0.3 where it
+  moved 3% before. GLARE had the same grouping fault and is fixed with it.
+- **Halftone on a pale screen.** The dots were always dark ink, which only
+  works on a lit panel: on an iPod- or calculator-style glass with dark type it
+  dimmed the background and left the type alone. The ink is now chosen from the
+  glass — dark dots on a lit screen, light dots on a pale one.
+
+### Changed
+
+- **Selected rows have their own colours.** The browser and sidebar selection
+  read the accent tokens directly, so retinting a theme's accent moved every
+  selected row with it. Selection now has `selectionGlow` and `selectionWash`
+  of its own, next to the existing lamp and text tokens, defaulting to exactly
+  what each built-in used before.
+- **The floating artwork panel sits on glass.** A frosted plate lit by the
+  record — the cover blown up and blurred behind a scrim — instead of a
+  transparent surround ringed by a cyan outline that lit on hover. The rim just
+  firms up under the pointer now.
+- **VIGNETTE is gone.** It was a corner-darkening dial that earned nothing the
+  theme's own colours couldn't do. One less thing in the INTERFACE section.
+
 ## 1.5.5 (66) — 2026-08-24
 
 Effects. The console and the display can now be textured — film grain and a
