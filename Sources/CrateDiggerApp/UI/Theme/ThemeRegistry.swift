@@ -43,9 +43,9 @@ public final class ThemeRegistry: ObservableObject {
     /// bundle — which of the two holds the built-in themes depends entirely on
     /// how the app was launched.
     public init(loader: ThemeLoaderService? = nil) {
-        // Not a default argument: `Bundle.module` is internal to this target
-        // and can't appear in a public signature.
-        self.loader = loader ?? ThemeLoaderService(bundles: [.main, .module])
+        // Not a default argument: `Bundle.crateDiggerResources` is internal to
+        // this target and can't appear in a public signature.
+        self.loader = loader ?? ThemeLoaderService(bundles: Bundle.crateDiggerSearchBundles)
         refresh()
 
         // `selectedThemeID` changing is the common case (picking a theme in

@@ -3,13 +3,13 @@ import Foundation
 
 public enum FontRegistrar {
     /// Register every TTF/OTF found under Fonts/ in the app bundle AND the SPM
-    /// resource bundle (`Bundle.module` — where `.copy("Resources/Fonts")`
-    /// lands for both `swift run` and the packaged .app). Safe to call when no
-    /// fonts are found — `Font.custom` in CarbonTypography silently falls back
-    /// to the system equivalents.
+    /// resource bundle (where `.copy("Resources/Fonts")` lands for both
+    /// `swift run` and the packaged .app — see `Bundle.crateDiggerResources`).
+    /// Safe to call when no fonts are found — `Font.custom` in
+    /// CarbonTypography silently falls back to the system equivalents.
     public static func registerBundledFonts() {
         var urls: [URL] = []
-        for bundle in [Bundle.main, Bundle.module] {
+        for bundle in Bundle.crateDiggerSearchBundles {
             urls += bundle.urls(forResourcesWithExtension: "ttf", subdirectory: "Fonts") ?? []
             urls += bundle.urls(forResourcesWithExtension: "otf", subdirectory: "Fonts") ?? []
         }

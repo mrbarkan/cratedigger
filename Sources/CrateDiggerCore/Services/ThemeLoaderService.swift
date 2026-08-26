@@ -26,7 +26,7 @@ public struct ThemeLoaderService {
     /// `bundles` is a list because where a resource lands depends on how the
     /// app was launched: a packaged `.app` keeps themes in `Bundle.main`'s
     /// Resources, while a `swift run` or an Xcode run keeps them in the SPM
-    /// resource bundle only that target can name (`Bundle.module`). Searching
+    /// resource bundle sitting next to the binary. Searching
     /// just one meant every built-in theme silently vanished under the other —
     /// the same reason `FontRegistrar` scans both.
     public init(
