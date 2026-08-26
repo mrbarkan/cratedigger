@@ -56,7 +56,12 @@ struct CarbonRootView: View {
                 get: { model.showingThemeEditor },
                 set: { isPresented in
                     model.showingThemeEditor = isPresented
-                    if !isPresented { ThemeRegistry.shared.discardDraft() }
+                    guard !isPresented else { return }
+                    ThemeRegistry.shared.discardDraft()
+                    // The system color panel is app-global and outlives the
+                    // swatch that opened it, so closing the editor leaves an
+                    // orphaned picker floating over the app.
+                    if NSColorPanel.sharedColorPanelExists { NSColorPanel.shared.close() }
                 }
             ),
             title: "Theme Editor",

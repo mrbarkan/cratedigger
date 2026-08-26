@@ -27,7 +27,22 @@ public final class ThemeRegistry: ObservableObject {
     ///
     /// Deliberately not cached (unlike installed themes): a draft changes on
     /// every keystroke and dial tick, so a cache would only ever miss.
-    @Published public var draft: ThemeDefinition?
+    @Published public var draft: ThemeDefinition? {
+        willSet { recordUndoStep(replacing: newValue) }
+    }
+
+    /// How many steps UNDO can still take back. Published so the key can grey
+    /// itself out; the snapshots themselves are nobody else's business.
+    @Published public private(set) var undoDepth = 0
+
+    /// Previous drafts, oldest first. A `ThemeDefinition` is a value type and
+    /// a small one, so "undo" is just keeping the last few copies rather than
+    /// recording an inverse for every kind of edit the panel can make.
+    private var undoStack: [ThemeDefinition] = []
+    private var lastUndoStepAt = Date.distantPast
+    /// Set while `undoDraftStep` writes, so restoring a snapshot doesn't push
+    /// one of its own and make UNDO toggle between two states forever.
+    private var isUndoing = false
 
     /// The draft exactly as it was seeded, so "has the author touched this
     /// token?" is answerable. Only `setDraftBaseAppearance` needs it, but it
@@ -209,6 +224,8 @@ public final class ThemeRegistry: ObservableObject {
     /// A user theme opens in place, keeping its id so the selection and any
     /// `inherits` chains pointing at it survive the edit.
     public func beginEditing(_ manifest: ThemeManifest) {
+        // A different theme is a different edit history.
+        clearUndo()
         switch manifest.origin {
         case .userInstalled:
             draft = seeded(manifest.definition)
@@ -460,6 +477,7 @@ public final class ThemeRegistry: ObservableObject {
         let id = draft.id
         self.draft = nil
         draftSeed = nil
+        clearUndo()
         refresh()
         PreferencesStore.shared.selectedThemeID = id
         return id
@@ -489,5 +507,48 @@ public final class ThemeRegistry: ObservableObject {
     public func discardDraft() {
         draft = nil
         draftSeed = nil
+        clearUndo()
     }
+
+    // MARK: - Undo
+
+    /// Steps back to the draft as it was before the last change — any change,
+    /// since every control in the editor writes through `draft`.
+    public func undoDraftStep() {
+        guard let previous = undoStack.popLast() else { return }
+        isUndoing = true
+        draft = previous
+        isUndoing = false
+        // A restore ends the current burst, so the next edit always starts a
+        // step of its own rather than coalescing into the one just undone.
+        lastUndoStepAt = .distantPast
+        undoDepth = undoStack.count
+    }
+
+    /// Snapshots the outgoing draft, unless it belongs to the burst already
+    /// recorded. A slider drag or a name typed into the field arrives as
+    /// dozens of writes; without coalescing they'd fill all ten slots with
+    /// pixels of the same gesture and UNDO would never reach the edit before
+    /// it.
+    private func recordUndoStep(replacing newValue: ThemeDefinition?) {
+        guard !isUndoing, let current = draft, newValue != nil else { return }
+        let now = Date()
+        defer { lastUndoStepAt = now }
+        guard now.timeIntervalSince(lastUndoStepAt) > Self.undoCoalesceWindow else { return }
+
+        undoStack.append(current)
+        if undoStack.count > Self.undoDepthLimit { undoStack.removeFirst() }
+        undoDepth = undoStack.count
+    }
+
+    private func clearUndo() {
+        undoStack.removeAll()
+        undoDepth = 0
+        lastUndoStepAt = .distantPast
+    }
+
+    static let undoDepthLimit = 10
+    /// Seconds of quiet that separate one undoable change from the next. A
+    /// `var` only so tests can widen or close it instead of sleeping through it.
+    static var undoCoalesceWindow: TimeInterval = 0.5
 }

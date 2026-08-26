@@ -196,7 +196,7 @@ struct ThemeEditorView: View {
     }
 
     /// Seeds the other appearance from this one. Two steps rather than one:
-    /// it replaces that layer wholesale and there's no undo, so a mis-click
+    /// it replaces that layer wholesale, so a mis-click
     /// while reaching for the EDITING keys above it would silently destroy the
     /// other half of the theme.
     private var copyLayerButton: some View {
@@ -332,8 +332,8 @@ struct ThemeEditorView: View {
     /// its glass, its type and its scanline by hand is six swatches and a font
     /// pick before you can see whether the idea was any good.
     ///
-    /// There's no undo: a preset overwrites those tokens outright, and getting
-    /// the old ones back means re-loading the theme.
+    /// A preset overwrites those tokens outright — UNDO in the action bar is
+    /// the way back, not re-loading the theme.
     private var screenPresetRow: some View {
         VStack(spacing: 6) {
             LazyVGrid(
@@ -795,6 +795,17 @@ struct ThemeEditorView: View {
                 KeyButton(action: revealInFinder) { Text("REVEAL") }
                     .frame(width: 64, height: geometry.keyHeight)
                     .carbonTip("Show the Themes folder in Finder — themes are plain files you can zip and share.")
+
+                KeyButton(
+                    style: registry.undoDepth == 0 ? .disabled : .normal,
+                    action: { registry.undoDraftStep() }
+                ) {
+                    Text("UNDO")
+                }
+                .frame(width: 58, height: geometry.keyHeight)
+                .carbonTip(registry.undoDepth == 0
+                           ? "Nothing to undo yet."
+                           : "Step back through the last \(registry.undoDepth) change\(registry.undoDepth == 1 ? "" : "s"). Keeps ten.")
 
                 Spacer(minLength: 0)
 

@@ -132,32 +132,50 @@ enum CarbonTexture {
 /// effect has to cost exactly nothing.
 extension View {
 
-    /// Film grain over the whole surface (interface effect: `effects.grain`).
+    /// Texture grain over the surface (interface effect: `effects.grain`).
     ///
     /// Two layers, and both are needed: `.plusLighter` adds each grain's alpha
     /// absolutely, then a flat `.plusDarker` veil subtracts the *average* of
     /// that back off. Without the veil the grain only ever brightens, and a
     /// dark console picks up a visible fog long before the texture reads.
+    ///
+    /// Both layers are masked around anything that called `grainFree()` — the
+    /// display glass. Grain is the tooth of the console's own material, and a
+    /// screen sitting behind glass doesn't have it; textured along with the
+    /// chassis, the display reads as a sticker printed on the front panel.
     @ViewBuilder
     func carbonGrain(_ amount: Double) -> some View {
         if amount > 0 {
             compositingGroup()
-                .overlay(
-                    Image(nsImage: CarbonTexture.grain)
-                        .interpolation(.none)
-                        .resizable(resizingMode: .tile)
-                        .blendMode(.plusLighter)
-                        .opacity(amount)
-                        .allowsHitTesting(false)
-                )
-                .overlay(
-                    Color.black
-                        .opacity(amount * CarbonTexture.grainStrength / 2)
-                        .blendMode(.plusDarker)
-                        .allowsHitTesting(false)
-                )
+                .overlayPreferenceValue(GrainFreeKey.self) { holes in
+                    GeometryReader { proxy in
+                        let mask = GrainMask(holes: holes.map { (proxy[$0.bounds], $0.cornerRadius) })
+                        ZStack {
+                            Image(nsImage: CarbonTexture.grain)
+                                .interpolation(.none)
+                                .resizable(resizingMode: .tile)
+                                .mask(mask)
+                                .blendMode(.plusLighter)
+                                .opacity(amount)
+                            Color.black
+                                .mask(mask)
+                                .opacity(amount * CarbonTexture.grainStrength / 2)
+                                .blendMode(.plusDarker)
+                        }
+                    }
+                    .allowsHitTesting(false)
+                }
         } else {
             self
+        }
+    }
+
+    /// Keeps the interface grain off this view — see `carbonGrain`. The rect is
+    /// reported to whichever `carbonGrain` is above it, so the caller doesn't
+    /// have to know where in the tree that is.
+    func grainFree(cornerRadius: CGFloat) -> some View {
+        anchorPreference(key: GrainFreeKey.self, value: .bounds) {
+            [GrainFreeRegion(bounds: $0, cornerRadius: cornerRadius)]
         }
     }
 
@@ -221,3 +239,42 @@ extension View {
     }
 }
 
+
+// MARK: - Grain holes
+
+/// One region the interface grain skips, in the coordinate space of the view
+/// that draws the grain.
+struct GrainFreeRegion: Equatable {
+    let bounds: Anchor<CGRect>
+    let cornerRadius: CGFloat
+}
+
+struct GrainFreeKey: PreferenceKey {
+    static let defaultValue: [GrainFreeRegion] = []
+    static func reduce(value: inout [GrainFreeRegion], nextValue: () -> [GrainFreeRegion]) {
+        value.append(contentsOf: nextValue())
+    }
+}
+
+/// Opaque everywhere except the reported regions, which are punched clear so
+/// the grain layers above them draw nothing at all.
+private struct GrainMask: View {
+    let holes: [(rect: CGRect, cornerRadius: CGFloat)]
+
+    var body: some View {
+        Rectangle()
+            .fill(Color.black)
+            .overlay(
+                ZStack {
+                    ForEach(Array(holes.enumerated()), id: \.offset) { _, hole in
+                        RoundedRectangle(cornerRadius: hole.cornerRadius, style: .continuous)
+                            .fill(Color.black)
+                            .frame(width: hole.rect.width, height: hole.rect.height)
+                            .position(x: hole.rect.midX, y: hole.rect.midY)
+                            .blendMode(.destinationOut)
+                    }
+                }
+            )
+            .compositingGroup()
+    }
+}

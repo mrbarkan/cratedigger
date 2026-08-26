@@ -82,6 +82,9 @@ struct OLEDDisplay: View {
                     .strokeBorder(Color.white.opacity(theme.isDark ? 0.08 : 0.22), lineWidth: 1)
             )
             .compositingGroup()
+            // The console's grain stops at the bezel: the glass is a separate
+            // material with its own effects above (rake, dot screen, glare).
+            .grainFree(cornerRadius: geometry.oledCornerRadius)
     }
 
     private var background: some View {

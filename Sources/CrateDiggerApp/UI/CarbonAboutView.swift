@@ -172,6 +172,8 @@ private struct AboutFaceplate: View {
         }
         .buttonStyle(.carbonHover)
         .animation(.easeInOut(duration: 0.15), value: versionCopied)
+        // Glass, like the header display — the console's grain stops at it.
+        .grainFree(cornerRadius: 8)
     }
 
     private func copyVersion() {

@@ -28,9 +28,9 @@ enum ThemeTokenCatalog {
     /// can't drift from what's on screen.
     ///
     /// They split by *what they're on*. An interface effect sits on the
-    /// console — grain and vignette are properties of the object and its
-    /// photograph. A display effect sits on the glass, where a rake, a
-    /// reflection and a dot screen belong to the screen and nothing else.
+    /// console's own surface — texture grain is a property of the material.
+    /// A display effect sits on the glass, where a rake, a reflection and a
+    /// dot screen belong to the screen and nothing else.
     struct EffectDial: Identifiable {
         enum Surface: String {
             case interface
@@ -55,8 +55,8 @@ enum ThemeTokenCatalog {
 
     static let effectDials: [EffectDial] = [
         EffectDial(
-            key: "grain", label: "Grain",
-            note: "Film grain over the whole console — the fine noise a photographed surface has and a rendered one doesn't.",
+            key: "grain", label: "Texture Grain",
+            note: "Fine grain over the console — the tooth a real surface has and a rendered one doesn't. Never over the display: that's glass, behind its own sheet.",
             max: 0.6, on: 0.2, surface: .interface, read: \.grainAmount
         ),
         EffectDial(
