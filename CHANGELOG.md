@@ -4,6 +4,40 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 1.5.7 (69) — 2026-08-26
+
+CrateDigger installs its own updates now. The theme editor gained an undo, and
+the VU meters finally move when you're listening to radio.
+
+### Added
+
+- **Updates install themselves.** "Check for Updates…" downloads the new
+  version, verifies it was signed by us, installs it and relaunches — no more
+  fetching a DMG and dragging the app across by hand. It also checks quietly
+  once a day, and prereleases stay on their own channel, so a stable install is
+  never offered a release candidate.
+- **Undo in the theme editor.** UNDO steps back through your last ten changes —
+  any change, including the screen presets and the COPY TO LIGHT/DARK that
+  previously had no way back. A slider drag or a typed name counts as one step,
+  not fifty.
+
+### Changed
+
+- **Texture grain stays on the console.** Grain used to fall across the display
+  too, which made the screen look like a sticker printed on the front panel. It
+  now stops at the bezel, leaving the glass to its own scan lines, halftone and
+  glare. The dial is called Texture Grain.
+
+### Fixed
+
+- **The VU meters work on radio.** They were reading levels from the library
+  player, which radio pauses when a stream starts, so they sat flat through
+  every broadcast. They now follow whatever is actually making sound. Live
+  streams are the exception and rest at zero: their audio arrives in a form
+  macOS won't let the app measure.
+- **Closing the theme editor closes the color picker.** The system picker used
+  to stay floating over the app with nothing left to write to.
+
 ## 1.5.6 (68) — 2026-08-26
 
 Emergency fix: 1.5.5 wouldn't open. Nothing else changed.
