@@ -2343,14 +2343,18 @@ final class LibraryViewModel: ObservableObject {
         playbackVolume = clamped
     }
 
-    /// Latest real 0...1 VU levels (L/R) from the playback engine's audio tap.
-    /// The footer meter polls this while playing.
+    /// Latest real 0...1 VU levels (L/R) from whichever engine is actually
+    /// making sound — the radio engine while a stream is active, else the
+    /// library player. The footer meter and the VU screen poll this while
+    /// playing, and radio runs on its own `PlaybackService`: reading the
+    /// library one during a stream is reading a player that's paused, which
+    /// is why the meters sat flat through every broadcast.
     func currentPlaybackLevels() -> (left: Double, right: Double) {
-        playback.currentLevels()
+        isStreamActive ? (radioEngine?.currentLevels() ?? (0, 0)) : playback.currentLevels()
     }
 
     func currentPlaybackSpectrum() -> [Double] {
-        playback.currentSpectrum()
+        isStreamActive ? (radioEngine?.currentSpectrum() ?? []) : playback.currentSpectrum()
     }
 
     // MARK: - Conversion entry

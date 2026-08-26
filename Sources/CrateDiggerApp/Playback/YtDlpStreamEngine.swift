@@ -112,6 +112,8 @@ final class YtDlpStreamEngine: RadioPlaybackEngine {
 
     func seek(toSeconds seconds: Double) { player.seek(toSeconds: seconds) }
     func setOutputDeviceUID(_ uid: String?) { player.setOutputDeviceUID(uid) }
+    func currentLevels() -> (left: Double, right: Double) { player.currentLevels() }
+    func currentSpectrum() -> [Double] { player.currentSpectrum() }
 
     private func map(_ state: PlaybackState) {
         switch state {

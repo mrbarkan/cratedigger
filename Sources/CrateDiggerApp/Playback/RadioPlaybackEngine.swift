@@ -30,8 +30,16 @@ protocol RadioPlaybackEngine: AnyObject {
     /// Route audio to a CoreAudio output device. Honored by the native engine;
     /// no-op for the WebView engine (it can't control routing).
     func setOutputDeviceUID(_ uid: String?)
+    /// Real 0...1 VU levels (L/R) and spectrum bands for the meters, from
+    /// whichever engine is making the sound. The native engine forwards its
+    /// `PlaybackService` tap; the WebView engine plays inside WKWebView where
+    /// there is nothing to tap, so it reports silence and the meter rests.
+    func currentLevels() -> (left: Double, right: Double)
+    func currentSpectrum() -> [Double]
 }
 
 extension RadioPlaybackEngine {
     func setOutputDeviceUID(_ uid: String?) {}
+    func currentLevels() -> (left: Double, right: Double) { (0, 0) }
+    func currentSpectrum() -> [Double] { [] }
 }
