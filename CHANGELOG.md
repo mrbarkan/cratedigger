@@ -4,6 +4,19 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 1.5.6 (68) — 2026-08-26
+
+Emergency fix: 1.5.5 wouldn't open. Nothing else changed.
+
+### Fixed
+
+- **1.5.5 quit the moment you opened it.** The packaged app went looking for
+  its bundled fonts and themes in a folder that only exists on the machine that
+  built it, and killed itself when they weren't there — every Mac, every
+  launch. It now finds them where they actually ship, and falls back to the
+  system fonts and no built-in themes rather than quitting if they ever go
+  missing.
+
 ## 1.5.5 (67) — 2026-08-24
 
 Halftone actually prints now, selection stops following the accent, and the
