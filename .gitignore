@@ -4,7 +4,6 @@
 # SwiftPM
 .build/
 .swiftpm/
-Package.resolved
 *.xcodeproj/xcuserdata/
 *.xcodeproj/project.xcworkspace/xcuserdata/
 

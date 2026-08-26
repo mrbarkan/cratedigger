@@ -179,6 +179,31 @@ sign_adhoc() {
   codesign --force --sign - --timestamp=none "${target}"
 }
 
+# Sparkle ships pre-signed by the Sparkle project, so a Developer ID build has
+# to re-sign every piece of it with this app's identity — Gatekeeper rejects
+# nested code signed by another team. Inside out, deepest first, and the XPC
+# services keep their own entitlements: they are sandboxed helpers, and
+# re-signing without --preserve-metadata strips that, after which the updater
+# can't download anything.
+sign_sparkle_framework() {
+  local framework="$1"
+  local versioned="${framework}/Versions/B"
+
+  # The ad-hoc branch signs the whole bundle with --deep afterwards.
+  [[ -n "${SIGN_IDENTITY}" ]] || return 0
+
+  local xpc
+  for xpc in "${versioned}/XPCServices/"*.xpc; do
+    [[ -e "${xpc}" ]] || continue
+    codesign --force --options runtime --timestamp \
+      --preserve-metadata=entitlements \
+      --sign "${SIGN_IDENTITY}" "${xpc}"
+  done
+  codesign --force --options runtime --timestamp --sign "${SIGN_IDENTITY}" "${versioned}/Updater.app"
+  codesign --force --options runtime --timestamp --sign "${SIGN_IDENTITY}" "${versioned}/Autoupdate"
+  codesign --force --options runtime --timestamp --sign "${SIGN_IDENTITY}" "${framework}"
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --ffmpeg)
@@ -245,6 +270,18 @@ if [[ -n "${SIGN_IDENTITY}" && ! -f "${ENTITLEMENTS_SOURCE}" ]]; then
   exit 1
 fi
 
+# A shipped build whose update key is still the placeholder can never install
+# an update — Sparkle rejects every download as unsigned. Catch it here rather
+# than after the release is out.
+if [[ -n "${SIGN_IDENTITY}" ]]; then
+  SPARKLE_KEY="$(/usr/libexec/PlistBuddy -c "Print :SUPublicEDKey" "${INFO_PLIST_SOURCE}" 2>/dev/null || echo "")"
+  if [[ -z "${SPARKLE_KEY}" || "${SPARKLE_KEY}" == "REPLACE_WITH_SPARKLE_PUBLIC_KEY" ]]; then
+    echo "error: SUPublicEDKey in ${INFO_PLIST_SOURCE} is still the placeholder." >&2
+    echo "Run '.build/artifacts/sparkle/Sparkle/bin/generate_keys' once and paste the public key it prints — see README 'In-app updates'." >&2
+    exit 1
+  fi
+fi
+
 FFMPEG_PATH="$(resolve_tool "${FFMPEG_PATH}" "ffmpeg")"
 FFPROBE_PATH="$(resolve_tool "${FFPROBE_PATH}" "ffprobe")"
 if [[ -n "${SIGN_IDENTITY}" ]]; then
@@ -289,6 +326,19 @@ while IFS= read -r resource_bundle; do
   echo "Bundled resources: $(basename "${resource_bundle}")"
 done < <(find "${RELEASE_DIR}" -maxdepth 1 -type d -name '*.bundle')
 
+# Sparkle.framework — SwiftPM knows how to link it but not how to put it in a
+# .app, so it's copied here and found at runtime through the @executable_path
+# rpath set in Package.swift. ditto, not cp: a framework is a tree of symlinks.
+SPARKLE_FRAMEWORK="$(find "${BUILD_PATH}/artifacts" "${ROOT_DIR}/.build/artifacts" \
+  -type d -name 'Sparkle.framework' -path '*macos-arm64*' 2>/dev/null | head -n 1)"
+if [[ -z "${SPARKLE_FRAMEWORK}" ]]; then
+  echo "error: could not find Sparkle.framework — run 'swift package resolve' and retry." >&2
+  exit 1
+fi
+mkdir -p "${APP_BUNDLE}/Contents/Frameworks"
+/usr/bin/ditto "${SPARKLE_FRAMEWORK}" "${APP_BUNDLE}/Contents/Frameworks/Sparkle.framework"
+echo "Bundled updater: Sparkle.framework"
+
 # Embed Last.fm API credentials into the bundled Info.plist when provided.
 # These are kept out of source control; supply them via scripts/.lastfm.env or
 # the CRATEDIGGER_LASTFM_API_KEY / _SECRET env vars. Without them, the app
@@ -315,6 +365,7 @@ if [[ -n "${SIGN_IDENTITY}" ]]; then
   # Sign nested binaries first (inside-out), then the app bundle.
   sign_distribution "${APP_BUNDLE}/Contents/Resources/ffmpeg" "no"
   sign_distribution "${APP_BUNDLE}/Contents/Resources/ffprobe" "no"
+  sign_sparkle_framework "${APP_BUNDLE}/Contents/Frameworks/Sparkle.framework"
   sign_distribution "${APP_BUNDLE}/Contents/MacOS/CrateDiggerApp" "yes"
   sign_distribution "${APP_BUNDLE}" "yes"
   codesign --verify --deep --strict --verbose=2 "${APP_BUNDLE}"

@@ -38,6 +38,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         installSpaceKeyMonitor()
         installSnapshotHookIfRequested()
 
+        // Touching the singleton starts Sparkle, including its once-a-day
+        // background check. No-op in an unpackaged build.
+        _ = SoftwareUpdater.shared
+
         NotificationCenter.default.addObserver(
             self, selector: #selector(showMiniPlayer(_:)),
             name: NSNotification.Name("CrateDiggerShowMiniPlayer"), object: nil)
@@ -339,7 +343,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     }
 
     @objc private func checkForUpdates(_ sender: Any?) {
-        mainWindowController?.checkForUpdates()
+        MainActor.assumeIsolated {
+            SoftwareUpdater.shared.checkForUpdates()
+        }
     }
 
     @objc private func showAbout(_ sender: Any?) {
@@ -756,6 +762,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                 && !(mainWindowController?.isConversionRunning ?? false)
         case #selector(cancelConversion(_:)):
             return mainWindowController?.isConversionRunning ?? false
+        case #selector(checkForUpdates(_:)):
+            // Off in a development build, which has no update feed — see
+            // `SoftwareUpdater`.
+            return MainActor.assumeIsolated { SoftwareUpdater.shared.canCheckForUpdates }
         case #selector(togglePlayPause(_:)),
              #selector(playNext(_:)),
              #selector(playPrevious(_:)),

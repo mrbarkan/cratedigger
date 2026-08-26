@@ -40,6 +40,19 @@
 	<string>Copyright © 2026 Mr. Barkan. MIT-licensed.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<!-- Sparkle: in-app updates. SUPublicEDKey is the public half of the
+	     EdDSA key that signs each release; the private half lives only in the
+	     maintainer's Keychain. Replacing this key invalidates every update
+	     already published, so it changes only if the private key is lost.
+	     See docs/RELEASING_UPDATES.md. -->
+	<key>SUFeedURL</key>
+	<string>https://cratedigger.mrbarkan.com/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>Y95K8qPB+GjLM3ssC6l1jOFZqpETG3aVC3D1btrbmd8=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
 	<key>NSRemovableVolumesUsageDescription</key>
 	<string>CrateDigger needs access to removable volumes (USB drives, SD cards) to scan music folders and write converted files when you point a conversion at one.</string>
 </dict>

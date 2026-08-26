@@ -10,6 +10,12 @@ let package = Package(
         .library(name: "CrateDiggerCore", targets: ["CrateDiggerCore"]),
         .executable(name: "CrateDiggerApp", targets: ["CrateDiggerApp"])
     ],
+    dependencies: [
+        // In-app updates. The only third-party dependency in the app: a safe
+        // self-updater is signature verification, a privileged install and a
+        // relaunch, and Sparkle is the one everybody's Mac already trusts.
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.4")
+    ],
     targets: [
         .target(
             name: "CrateDiggerCore",
@@ -17,7 +23,10 @@ let package = Package(
         ),
         .executableTarget(
             name: "CrateDiggerApp",
-            dependencies: ["CrateDiggerCore"],
+            dependencies: [
+                "CrateDiggerCore",
+                .product(name: "Sparkle", package: "Sparkle")
+            ],
             path: "Sources/CrateDiggerApp",
             resources: [
                 // Starter album installed into the library on first run
@@ -30,6 +39,12 @@ let package = Package(
                 // Display typeface for the OLED's big names (Major Mono
                 // Display) — registered at launch by FontRegistrar.
                 .copy("Resources/Fonts")
+            ],
+            linkerSettings: [
+                // Sparkle.framework is embedded in Contents/Frameworks by
+                // scripts/package-app.sh; SwiftPM only knows how to link it,
+                // not where it lives inside a .app.
+                .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])
             ]
         ),
         .testTarget(

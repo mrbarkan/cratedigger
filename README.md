@@ -164,6 +164,45 @@ disabled so the bundled `ffmpeg`/`ffprobe` binaries can run).
 
 For the full release gate, see [docs/BETA_RELEASE_CHECKLIST.md](docs/BETA_RELEASE_CHECKLIST.md).
 
+### In-app updates (Sparkle)
+
+The shipped app updates itself: it reads an appcast from
+`https://cratedigger.mrbarkan.com/appcast.xml` (served by GitHub Pages from
+`website/`), verifies the EdDSA signature on the DMG, installs it and relaunches.
+"Check for Updates…" in the app menu does it on demand; otherwise it checks once
+a day in the background. A `swift build` run has no feed and no key, so the
+updater is never created there and the menu item stays greyed out.
+
+**One-time setup.** Generate the signing key. The private half goes into your
+login Keychain and never leaves it; the tool prints the public half:
+
+```bash
+swift package resolve
+.build/artifacts/sparkle/Sparkle/bin/generate_keys
+```
+
+Paste the printed public key into `SUPublicEDKey` in
+`Packaging/CrateDiggerApp/Info.plist`, replacing `REPLACE_WITH_SPARKLE_PUBLIC_KEY`.
+Back the private key up somewhere safe: **losing it means no already-installed
+copy can ever be updated again** — every future release would have to be
+installed by hand. `scripts/package-app.sh` refuses to sign a distribution build
+while the placeholder is still there.
+
+**Each release**, after the notarized DMG exists and before pushing:
+
+```bash
+scripts/update-appcast.sh                    # newest dist/CrateDigger-*.dmg
+scripts/update-appcast.sh --channel rc       # ...if it's a prerelease
+```
+
+That signs the DMG into `website/appcast.xml`, with release notes lifted from
+the matching `CHANGELOG.md` section. Upload the same DMG to the GitHub release
+(the feed points at that download URL and the signature covers those exact
+bytes — re-packaging afterwards invalidates it), then commit and push
+`website/appcast.xml`; Pages redeploys the feed on push. `--channel rc` keeps a
+prerelease off everyone else's Mac: only builds whose `AppVersion.channel` says
+`RC` are offered it.
+
 ### Last.fm scrobbling (optional)
 
 Last.fm requires an *application* API key + shared secret. These are **not**

@@ -91,6 +91,17 @@ Splits one continuous recording (e.g. a whole vinyl side captured as a single fi
 4. Preflight before running: destination writability probe + free-disk-space estimate (`validateBatchPreflight`).
 5. **Cancellation is cooperative**: `cancel()` sets a flag checked *between* job dispatches; the in-flight ffmpeg process is **not** killed (documented limitation in `ConversionService`).
 
+### In-app updates (Sparkle)
+
+The app's **only** third-party dependency. `SoftwareUpdater` (`Updates/`) wraps
+`SPUStandardUpdaterController`: the menu item and the daily background check
+both go through it, and it does nothing at all unless `Bundle.main` carries
+`SUFeedURL` — so a `swift build` run has no updater and the menu item greys out.
+The feed is `website/appcast.xml` (GitHub Pages), regenerated per release by
+`scripts/update-appcast.sh`; `scripts/package-app.sh` embeds and re-signs
+`Sparkle.framework` into `Contents/Frameworks` (SwiftPM links it but can't put
+it in a `.app`). Setup and release steps are in README, "In-app updates".
+
 ### External tools (ffmpeg / ffprobe)
 
 `ExternalToolLocator` resolves binaries (`ToolKind`: `ffmpeg`, `ffprobe`, `ytdlp`) in this priority: **bundled** (`Bundle.main` Resources) → explicit override → env var (`CRATEDIGGER_FFMPEG_PATH` / `CRATEDIGGER_FFPROBE_PATH`) → system PATH (`/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin`, then `$PATH`). `ffprobe` powers richer metadata via `MetadataProbeService`; if it's missing the app degrades gracefully to **AVFoundation-only** metadata, and conversion surfaces a "install ffmpeg" alert. The packaged `.app` bundles both binaries (entitlements disable library validation so they can run).
