@@ -191,6 +191,7 @@ extension LibraryViewModel {
         let engine = ensureRadioEngine()
         engine.play(stream)
         engine.setVolume(VolumeCurve.playerVolume(forPosition: playbackVolume))
+        streamMeterTap.start()
     }
 
     /// Stops radio playback and the uptime ticker, and resets shared playback state.
@@ -204,6 +205,7 @@ extension LibraryViewModel {
     /// navigating to a crate made `isRadioMode` false, so playing a local track
     /// called this, stopped the engine, and then skipped the cleanup.
     func stopRadio() {
+        streamMeterTap.stop()
         radioEngine?.stop()
         // Releasing the engine is enough — ensureRadioEngine() rebuilds when the
         // stored kind no longer has a live engine behind it.

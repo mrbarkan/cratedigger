@@ -746,6 +746,9 @@ final class LibraryViewModel: ObservableObject {
     var radioUptimeTimer: Timer?
     /// Active playback engine while a stream is playing (WebView or native). nil when idle.
     var radioEngine: RadioPlaybackEngine?
+    /// Meters for stream playback — see `currentPlaybackLevels()`. Runs only
+    /// while a stream is playing; `stopRadio()` tears the CoreAudio tap down.
+    let streamMeterTap = ProcessOutputLevelTap()
 
     // Cache indexes for fast switching
     private(set) var localIndex: LibraryIndex = .empty
@@ -2343,18 +2346,20 @@ final class LibraryViewModel: ObservableObject {
         playbackVolume = clamped
     }
 
-    /// Latest real 0...1 VU levels (L/R) from whichever engine is actually
-    /// making sound — the radio engine while a stream is active, else the
-    /// library player. The footer meter and the VU screen poll this while
-    /// playing, and radio runs on its own `PlaybackService`: reading the
-    /// library one during a stream is reading a player that's paused, which
-    /// is why the meters sat flat through every broadcast.
+    /// Latest real 0...1 VU levels (L/R) for the footer meter and VU screen,
+    /// from whichever tap can actually see the audio.
+    ///
+    /// Local files are tapped per player-item (`AudioLevelTap`). Streams can't
+    /// be: every YouTube stream resolves to HLS, and an HLS asset exposes no
+    /// `AVAssetTrack`, so `AVPlayerItem.audioMix` is silently dropped and the
+    /// item tap never runs. `streamMeterTap` measures our process's output at
+    /// the CoreAudio layer instead, which sees HLS and the WebView engine alike.
     func currentPlaybackLevels() -> (left: Double, right: Double) {
-        isStreamActive ? (radioEngine?.currentLevels() ?? (0, 0)) : playback.currentLevels()
+        isStreamActive ? streamMeterTap.currentLevels() : playback.currentLevels()
     }
 
     func currentPlaybackSpectrum() -> [Double] {
-        isStreamActive ? (radioEngine?.currentSpectrum() ?? []) : playback.currentSpectrum()
+        isStreamActive ? streamMeterTap.currentBands() : playback.currentSpectrum()
     }
 
     // MARK: - Conversion entry
