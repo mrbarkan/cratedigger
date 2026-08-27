@@ -4,6 +4,54 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 1.5.9 (71) — 2026-08-27
+
+Go to Current Song takes you back to the record you're hearing — from any crate.
+The theme editor gained a pin and its own colour for every lamp on the display.
+
+### Added
+
+- **A pin on the theme editor.** The editor's whole point is watching the app
+  restyle behind it, which stopped working the moment you clicked the browser
+  and the panel dropped behind the window. It now floats above the app by
+  default; the pin in its top-right corner drops it back into the pile.
+- **Every display lamp has its own colour.** NOW, CNVRT, SCAN, SYNC, CD and DEV
+  — the annunciators on the glass and the strip in the DISPLAY button — are now
+  six separate tokens in the theme editor instead of borrowed accents, so you
+  can tell the screens apart without retinting half the interface. Leave one
+  unset and it follows the accent it always did: nothing you've themed changes.
+- **Alternate row striping in the browser.** A new Alternate Rows token stripes
+  the Artist, Album and Track columns. It ships transparent, so the lists look
+  exactly as they did until you give it a colour.
+- **A yt-dlp path in Settings.** Advanced now has a yt-dlp row alongside ffmpeg
+  and ffprobe, so a custom install can be pointed at without the environment
+  variable. Radio is the only thing that uses it.
+- **Collapsing Local Library keeps the crate you're playing.** The chevron folds
+  the rest away and leaves the one you're listening to on screen.
+
+### Changed
+
+- **Clearer names in the theme editor.** The token labelled "Alternate Rows"
+  never painted alternate rows — it shades the bottom of a panel, and is now
+  called Panel Shade. The accent tokens say outright which of them light the VU
+  meters, the EQ panel, the POSITION bar and the VOLUME fader.
+- **The Devices settings pane is laid out properly.** The divider runs the full
+  height, add and remove sit in a bar under the list where macOS puts them, and
+  Save and Remove are pinned below the form instead of scrolling off the bottom
+  of the window with the last section.
+
+### Fixed
+
+- **Go to Current Song works.** The button asked the browser to scroll to the
+  playing album and then immediately scrolled it back to where you were, so
+  nothing moved. Pressing it now centres the record you're hearing, whether or
+  not it was already selected, and expands the browser if the conversion cockpit
+  had collapsed it.
+- **Go to Current Song crosses crates.** Playing out of one crate and browsing
+  another, the button did nothing at all: it only ever looked in the crate on
+  screen. It now switches back to the crate the queue came from and reveals the
+  track there.
+
 ## 1.5.8 (70) — 2026-08-27
 
 The VU meters really do move on radio this time — including live streams, which
