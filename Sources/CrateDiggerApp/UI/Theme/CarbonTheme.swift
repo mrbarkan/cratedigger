@@ -35,6 +35,11 @@ public struct CarbonTheme: Equatable {
     public let paper: Color
     public let paper2: Color
 
+    /// Every other row in the browser's three columns. Transparent in both
+    /// built-ins — the lists don't stripe unless a theme asks them to — so it
+    /// carries a default rather than a line in each theme literal.
+    public var rowAlt: Color = .clear
+
     public let ink: Color
     public let ink2: Color
     public let ink3: Color
@@ -82,6 +87,30 @@ public struct CarbonTheme: Equatable {
     public let oledForeground: Color
     public let oledForegroundMuted: Color
     public var onAir: Color
+
+    /// The display lamps, one per OLED screen: the annunciator printed on the
+    /// glass (NOW, CNVRT, SCAN, SYNC, CD, DEV) and the strip in the DISPLAY
+    /// button, which are always the same colour — see `OLEDView.accent`.
+    ///
+    /// Each is its own token so a theme can tell the screens apart without
+    /// retinting the accents the rest of the app uses. Unset (both built-ins,
+    /// and any theme that doesn't name one) each falls back to the accent that
+    /// lamp has always borrowed, so nothing shipped changes appearance. ON AIR
+    /// keeps its own `onAir` token — it lives on the glass with the screen
+    /// presets, not in the cycle.
+    public var lampNowOverride: Color?
+    public var lampConvertOverride: Color?
+    public var lampScanOverride: Color?
+    public var lampSyncOverride: Color?
+    public var lampCDOverride: Color?
+    public var lampDevicesOverride: Color?
+
+    public var lampNow: Color { lampNowOverride ?? sun }
+    public var lampConvert: Color { lampConvertOverride ?? orange }
+    public var lampScan: Color { lampScanOverride ?? cyan }
+    public var lampSync: Color { lampSyncOverride ?? indigo }
+    public var lampCD: Color { lampCDOverride ?? red }
+    public var lampDevices: Color { lampDevicesOverride ?? orangeHi }
 
     /// CRT scanline strength on the OLED glass. Both built-ins ship 0 — the
     /// glass is a modern panel, not a tube — and the CRT-flavoured screen
@@ -317,6 +346,7 @@ public extension CarbonTheme {
 
         paper = color("paper", resolvedBase.paper)
         paper2 = color("paper2", resolvedBase.paper2)
+        rowAlt = color("rowAlt", resolvedBase.rowAlt)
 
         ink = color("ink", resolvedBase.ink)
         ink2 = color("ink2", resolvedBase.ink2)
@@ -360,6 +390,17 @@ public extension CarbonTheme {
         oledForeground = color("oledForeground", resolvedBase.oledForeground)
         oledForegroundMuted = color("oledForegroundMuted", resolvedBase.oledForegroundMuted)
         onAir = color("onAir", resolvedBase.onAir)
+        // Unset stays unset: the lamp then tracks whatever accent it falls back
+        // to, so retinting `sun` still moves NOW unless the theme pinned it.
+        func optionalColor(_ key: String, _ inherited: Color?) -> Color? {
+            definition.colors?[key].flatMap { Color(hexString: $0) } ?? inherited
+        }
+        lampNowOverride = optionalColor("lampNow", resolvedBase.lampNowOverride)
+        lampConvertOverride = optionalColor("lampConvert", resolvedBase.lampConvertOverride)
+        lampScanOverride = optionalColor("lampScan", resolvedBase.lampScanOverride)
+        lampSyncOverride = optionalColor("lampSync", resolvedBase.lampSyncOverride)
+        lampCDOverride = optionalColor("lampCD", resolvedBase.lampCDOverride)
+        lampDevicesOverride = optionalColor("lampDevices", resolvedBase.lampDevicesOverride)
         // Every overlay effect clamps to its dial's ceiling, so a theme can't
         // ask for a value the renderer would quietly trim away.
         func effect(_ key: String, _ fallback: Double) -> Double {
@@ -424,6 +465,14 @@ public extension CarbonTheme {
             \.onAir, \.selectionLedCore, \.selectionGlow, \.selectionSpread,
         ] {
             copy[keyPath: accent] = oledForeground
+        }
+        // A pinned lamp outranks the accent it falls back to, so clearing the
+        // pins is what actually collapses the annunciators onto the phosphor.
+        for lamp: WritableKeyPath<CarbonTheme, Color?> in [
+            \.lampNowOverride, \.lampConvertOverride, \.lampScanOverride,
+            \.lampSyncOverride, \.lampCDOverride, \.lampDevicesOverride,
+        ] {
+            copy[keyPath: lamp] = nil
         }
         return copy
     }

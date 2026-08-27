@@ -28,6 +28,10 @@ struct ThemeEditorView: View {
     /// family pick already maps every weight, and three roles × four faces
     /// permanently on screen would bury the rest of the panel.
     @State private var expandedWeightRoles: Set<String> = []
+    /// Whether the panel floats above everything. On by default: the preview is
+    /// the app behind it, so clicking the browser to see a row restyle must not
+    /// bury the controls you're dragging.
+    @State private var pinnedOnTop = true
 
     private var draft: ThemeDefinition? { registry.draft }
 
@@ -76,6 +80,7 @@ struct ThemeEditorView: View {
                         .carbonTip("Fork this theme into a new one, keeping everything you've changed. The original is left alone.")
                 }
                 loadMenu
+                pinButton
             }
 
             if let draft {
@@ -223,6 +228,22 @@ struct ThemeEditorView: View {
         .carbonTip(armed
                    ? "Click again to replace the \(targetName.lowercased()) version with what you see now."
                    : "Start the \(targetName.lowercased()) version from this one, then tweak it. Replaces whatever that version currently has.")
+    }
+
+    /// Keeps the panel above the app while you work in it — and lets you drop
+    /// it back into the pile when it's in the way of what you're theming.
+    private var pinButton: some View {
+        Button(action: { pinnedOnTop.toggle() }) {
+            Image(systemName: pinnedOnTop ? "pin.fill" : "pin.slash")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(pinnedOnTop ? theme.orange : theme.ink4)
+                .frame(width: 20, height: 20)
+        }
+        .buttonStyle(.carbonHover)
+        .background(WindowLevelSetter(floating: pinnedOnTop))
+        .carbonTip(pinnedOnTop
+                   ? "Pinned — the editor stays above the app while you click around in it. Click to unpin."
+                   : "Unpinned — the editor goes behind the app when you click into it. Click to keep it on top.")
     }
 
     private var loadMenu: some View {
@@ -1259,5 +1280,20 @@ private struct CarbonDial: View {
 private extension CGFloat {
     func clamped(to range: ClosedRange<CGFloat>) -> CGFloat {
         Swift.min(Swift.max(self, range.lowerBound), range.upperBound)
+    }
+}
+
+/// Sets the enclosing window's level. SwiftUI has no window-level API, and the
+/// panel is a plain `NSWindow` (`carbonPanel`), so the one line of AppKit gets
+/// bridged here rather than plumbed through the panel's whole call chain.
+private struct WindowLevelSetter: NSViewRepresentable {
+    var floating: Bool
+
+    func makeNSView(context: Context) -> NSView { NSView() }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        let level: NSWindow.Level = floating ? .floating : .normal
+        // The view has no window yet on the first update pass.
+        DispatchQueue.main.async { view.window?.level = level }
     }
 }

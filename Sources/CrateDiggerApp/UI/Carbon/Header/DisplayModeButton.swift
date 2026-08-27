@@ -1,17 +1,21 @@
 import SwiftUI
 
-/// Every OLED screen owns one accent color, shared by the annunciator on the
+/// Every OLED screen owns one lamp color, shared by the annunciator on the
 /// glass and the display-toggle light strip so the two always agree. All are
 /// distinct — the lamp color alone identifies the screen.
+///
+/// Each is a theme token of its own (`lampNow`, `lampConvert`, …) that falls
+/// back to the accent it has always borrowed, so a theme can recolor one lamp
+/// without dragging every other use of that accent along with it.
 extension OLEDView {
     func accent(_ theme: CarbonTheme) -> Color {
         switch self {
-        case .nowPlaying: return theme.sun        // yellow
-        case .conversion: return theme.orange
-        case .scan:       return theme.cyan
-        case .remoteSync: return theme.indigo
-        case .cdRip:      return theme.red
-        case .devices:    return theme.orangeHi   // salmon
+        case .nowPlaying: return theme.lampNow        // yellow
+        case .conversion: return theme.lampConvert
+        case .scan:       return theme.lampScan
+        case .remoteSync: return theme.lampSync
+        case .cdRip:      return theme.lampCD
+        case .devices:    return theme.lampDevices    // salmon
         }
     }
 }
