@@ -4,6 +4,20 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 1.5.8 (70) — 2026-08-27
+
+The VU meters really do move on radio this time — including live streams, which
+1.5.7 said were impossible.
+
+### Fixed
+
+- **The VU meters work on every stream, live ones included.** 1.5.7 pointed the
+  meters at the radio player, but they still sat flat: every YouTube stream —
+  not just live ones — arrives as HLS, and macOS won't hand out the audio from
+  an HLS player. CrateDigger now measures its own output at the audio-hardware
+  level instead, so the needles follow whatever you're listening to. Requires
+  macOS 14.4 or later; on older systems the meters rest at zero as before.
+
 ## 1.5.7 (69) — 2026-08-26
 
 CrateDigger installs its own updates now. The theme editor gained an undo, and
