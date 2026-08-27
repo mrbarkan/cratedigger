@@ -44,16 +44,24 @@ final class ArtworkHydrationTests: XCTestCase {
         directory.appendingPathComponent(name)
     }
 
-    func testHydratedRefillsEmptyDataFromCacheByHash() async {
+    func testHydratedRefillsEmptyDataFromCacheByHash() async throws {
         // Mirrors the .cdlib round-trip: the asset keeps its hash but loses its
-        // bytes; hydration must find them again by hash.
+        // bytes; hydration must find them again.
+        //
+        // The bytes are a real cover in the album folder, not four invented
+        // ones, because `ingest` fills an NSCache — which the system evicts
+        // whenever it likes, that being the whole reason ~96 MB of covers live
+        // in one. With the cover on disk, both routes hydration documents (the
+        // cache, or re-reading the source) return the same bytes, instead of
+        // this passing only while the cache happens to be warm.
         let service = ArtworkService()
-        let bytes = Data([0xFF, 0xD8, 0xFF, 0xE0])
-        service.ingest(asset(hash: "cover-hash", data: bytes))
+        let cover = try imageData(width: 64, height: 64)
+        try cover.write(to: directory.appendingPathComponent("cover.jpg"))
+        service.ingest(asset(hash: "cover-hash", data: cover))
 
         let stripped = asset(hash: "cover-hash", data: Data())
         let hydrated = await service.hydrated(stripped, trackURL: trackURL())
-        XCTAssertEqual(hydrated.data, bytes)
+        XCTAssertEqual(hydrated.data, cover)
     }
 
     /// Regression: every track carries its cover's full-resolution bytes, and an
@@ -68,6 +76,9 @@ final class ArtworkHydrationTests: XCTestCase {
 
         let service = ArtworkService()
         let cover = try imageData(width: 600, height: 600)
+        // On disk as well as ingested, so an evicted cache costs this test its
+        // sharing assertion rather than turning it into "both came back empty".
+        try cover.write(to: directory.appendingPathComponent("cover.jpg"))
         service.ingest(asset(hash: "album-cover", data: cover))
 
         // Two tracks of the same album, each rehydrating the shared cover.
@@ -79,6 +90,20 @@ final class ArtworkHydrationTests: XCTestCase {
             address(first.data), address(second.data),
             "each track got its own copy of the cover — memory would scale with tracks, not covers"
         )
+    }
+
+    /// The eviction case, made deterministic: nothing is ever ingested, so the
+    /// in-memory cache is as empty as the system can leave it. Hydration must
+    /// still produce bytes — the flake this pins was a whole family of artwork
+    /// tests asserting that an NSCache had held on to what they put in it.
+    func testHydratedFallsBackToTheSourceWhenTheCacheHasNothing() async throws {
+        let service = ArtworkService()
+        let cover = try imageData(width: 64, height: 64)
+        try cover.write(to: directory.appendingPathComponent("cover.jpg"))
+
+        let stripped = asset(hash: "never-ingested", data: Data())
+        let hydrated = await service.hydrated(stripped, trackURL: trackURL())
+        XCTAssertEqual(hydrated.data, cover, "hydration must not depend on the cache holding the bytes")
     }
 
     func testHydratedLeavesPresentDataUntouched() async {

@@ -53,7 +53,11 @@ final class ArtworkServiceTests: XCTestCase {
             let coverData = try makeImageData(size: NSSize(width: 1200, height: 800), fileType: .png)
             try coverData.write(to: coverURL, options: .atomic)
 
-            let service = ArtworkService()
+            // With a store, as the app builds it: `generateThumbnail` reads the
+            // source bytes back out of an NSCache the system may evict at any
+            // moment, and falls back to the on-disk store on a miss. Without
+            // one there is no fallback, and this asserts on a coin flip.
+            let service = ArtworkService(store: ArtworkStore(directory: temporaryDirectory.appendingPathComponent("Thumbnails")))
             let artwork = await service.resolveArtwork(trackURL: trackURL)
             XCTAssertNotNil(artwork)
 
@@ -61,6 +65,27 @@ final class ArtworkServiceTests: XCTestCase {
             XCTAssertNotNil(thumbnail)
             XCTAssertEqual(Int(thumbnail?.size.width ?? 0), 48)
             XCTAssertEqual(Int(thumbnail?.size.height ?? 0), 48)
+        }
+    }
+
+    /// The eviction case, made deterministic: a second service over the same
+    /// store starts with an empty NSCache, which is what the system leaves
+    /// behind when it evicts. The thumbnail has to come off disk.
+    func testGenerateThumbnailFallsBackToTheStoreWhenTheCacheIsCold() async throws {
+        try await withTemporaryDirectory(prefix: "CrateDiggerArtworkColdCache") { temporaryDirectory in
+            let trackURL = temporaryDirectory.appendingPathComponent("track.flac")
+            FileManager.default.createFile(atPath: trackURL.path, contents: Data("test".utf8))
+            let coverData = try makeImageData(size: NSSize(width: 1200, height: 800), fileType: .png)
+            try coverData.write(to: temporaryDirectory.appendingPathComponent("cover.png"), options: .atomic)
+
+            let store = ArtworkStore(directory: temporaryDirectory.appendingPathComponent("Thumbnails"))
+            let resolved = await ArtworkService(store: store).resolveArtwork(trackURL: trackURL)
+            let artwork = try XCTUnwrap(resolved)
+
+            let cold = ArtworkService(store: store)
+            let thumbnail = cold.generateThumbnail(artworkHash: artwork.hash, size: CGSize(width: 48, height: 48))
+            XCTAssertNotNil(thumbnail, "a cold cache must fall back to the store, not yield nil")
+            XCTAssertEqual(Int(thumbnail?.size.width ?? 0), 48)
         }
     }
 

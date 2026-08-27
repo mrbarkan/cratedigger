@@ -174,8 +174,11 @@ final class RealisticScenariosTests: XCTestCase {
     // MARK: - Scenario 3: Artwork Resolution & Extraction
     func testScenario3_ArtworkResolutionAndExtraction() async throws {
         try await withTemporaryDirectory(prefix: "Scenario3") { tempDir in
-            let artworkService = ArtworkService()
-            
+            // A store, as the app builds one: the thumbnail below reads its
+            // source bytes back out of an NSCache, which the system may evict
+            // at any moment, and falls back to the store on a miss.
+            let artworkService = ArtworkService(store: ArtworkStore(directory: tempDir.appendingPathComponent("Thumbnails")))
+
             let trackURL = tempDir.appendingPathComponent("track.mp3")
             try "dummy mp3".write(to: trackURL, atomically: true, encoding: .utf8)
             
