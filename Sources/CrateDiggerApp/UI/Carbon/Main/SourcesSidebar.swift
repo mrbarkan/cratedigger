@@ -71,8 +71,12 @@ struct SourcesSidebar: View {
                         selected: model.currentSource == .localAll,
                         action: { model.selectSource(.localAll) }
                     )
+                    }
 
-                    ForEach(model.availableCrates, id: \.self) { crateName in
+                    // Outside sectionRows on purpose: collapsing Local Library
+                    // folds the crates away *except* the one you're listening
+                    // to, so the record playing never disappears from the list.
+                    ForEach(visibleCrates, id: \.self) { crateName in
                         HStack {
                             crateLabel(crateName)
                         }
@@ -122,7 +126,6 @@ struct SourcesSidebar: View {
                                 targetedCrate = nil
                             }
                         }
-                    }
                     }
 
                     sectionHeader("Remote Library", trailing: "")
@@ -399,6 +402,13 @@ struct SourcesSidebar: View {
     }
 
     private func isCollapsed(_ title: String) -> Bool { collapsedSections.contains(title) }
+
+    /// Every crate, or — when Local Library is collapsed — just the one the
+    /// current queue is playing from.
+    private var visibleCrates: [String] {
+        guard isCollapsed("Local Library") else { return model.availableCrates }
+        return model.playingCrateName.map { [$0] } ?? []
+    }
 
     /// A section's rows, hidden while its header is collapsed.
     @ViewBuilder
