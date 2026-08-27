@@ -111,8 +111,36 @@ if ! grep -F "${DMG_NAME}" "${STAGING_DIR}/appcast.xml" | grep -q 'sparkle:edSig
   exit 1
 fi
 
+# --download-url-prefix is applied to EVERY entry, not just the new one, so a
+# plain run rewrites older releases' DMG URLs to point inside this release's
+# tag — a 404 for anyone the newest entry doesn't apply to. Each asset already
+# names its own version, so re-derive the tag per URL and put the old ones back.
+python3 - "${STAGING_DIR}/appcast.xml" <<'PYFIX'
+import re, sys
+
+path = sys.argv[1]
+xml = open(path).read()
+base = "https://github.com/mrbarkan/cratedigger/releases/download/"
+
+def retag(match):
+    tag, asset = match.group(1), match.group(2)
+    # Full DMGs are named CrateDigger-<version>.dmg and belong to v<version>.
+    # Deltas (CrateDigger<to>-<from>.delta) ship with the release they upgrade
+    # TO, which is always the tag they were just written with — leave those.
+    version = re.fullmatch(r"CrateDigger-(.+)\.dmg", asset)
+    return base + ("v" + version.group(1) if version else tag) + "/" + asset
+
+fixed = re.sub(re.escape(base) + r"(v[^/\"]+)/([^\"]+)", retag, xml)
+if fixed != xml:
+    open(path, "w").write(fixed)
+    print("repointed older enclosures at their own release tags")
+PYFIX
+
 cp "${STAGING_DIR}/appcast.xml" "${APPCAST}"
 echo "Wrote ${APPCAST}"
 echo
 echo "Next: upload ${DMG_NAME} to the ${TAG} release, then commit and push"
 echo "website/appcast.xml — Pages redeploys the feed on push."
+echo
+echo "If the feed carries a <sparkle:deltas> entry, upload that .delta from"
+echo "${STAGING_DIR} to the ${TAG} release too — its URL points there."
