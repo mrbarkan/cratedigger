@@ -79,6 +79,7 @@ extension LibraryViewModel {
         guard !tracks.isEmpty else { return }
         if presentIfFileMissing(tracks[min(index, tracks.count - 1)]) { return }
         oledView = .nowPlaying
+        playingSource = currentSource
         playbackQueue = tracks
         playback.load(queue: tracks.map(Self.queueItem), startIndex: index, autoPlay: true)
     }

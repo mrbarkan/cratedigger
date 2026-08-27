@@ -114,6 +114,12 @@ final class LibraryViewModel: ObservableObject {
     @Published var selectedAlbumID: String?
     @Published var selectedTrackID: UUID?
 
+    /// Bumped whenever something asks the browser to re-centre its selection.
+    /// The columns scroll on this as well as on the selected id: "Go to Current
+    /// Song" pressed while the playing album is *already* selected changes no
+    /// id, fires no `onChange`, and used to look like a dead button.
+    @Published private(set) var revealTick = 0
+
     /// Multi-selection sets for batch actions (⌘/⇧-click, ⌘A). The three are kept
     /// mutually exclusive — you're selecting artists *or* albums *or* tracks — while
     /// `selectedArtistID` / `selectedAlbumID` / `selectedTrackID` stay the "anchor"
@@ -1190,33 +1196,56 @@ final class LibraryViewModel: ObservableObject {
         return playbackQueue[i]
     }
 
+    /// The source the current queue was started from — not necessarily the one
+    /// being browsed, since browsing never interrupts playback. Written by every
+    /// path that loads a queue (`playTrack`, `startQueue`); read by the sidebar
+    /// and by "Go to Current Song".
+    @Published var playingSource: LibrarySource?
+
+    /// The crate the current queue came from, while something is actually
+    /// playing out of it. `nil` for All Records, a playlist, a stream, a CD.
+    var playingCrateName: String? {
+        guard nowPlayingTrack != nil, case let .localCrate(name) = playingSource else { return nil }
+        return name
+    }
+
     /// Select the playing track's album so the browser and inspector both jump to
     /// it. No-op when the playing track isn't in the current source's index — the
     /// queue can outlive a source switch, and silently swapping crates under the
     /// user is worse than doing nothing.
     func revealNowPlaying() {
         guard let playing = nowPlayingTrack else { return }
-        let trackID = playing.track.id
-        // The browsable owner: the album actually present in index.allAlbums. For a
-        // grouped release that's the parent group album (member pressings live only
-        // inside its `.versions`, so a member's id would match no gallery tile and no
-        // list row). album(containing:) returns the member — right for the artwork
-        // callers, wrong for browser selection — so resolve the parent here instead.
-        var owner: Album?
-        outer: for artist in index.artists {
+        clearMultiSelection()
+        // Collapsed, the browser has nowhere to show the reveal — the CNVRT
+        // cockpit collapses it for you, so ⌘L there hit nothing at all.
+        browserCollapsed = false
+        // The queue outlives a source switch, so the playing track usually isn't
+        // in the crate you've wandered off to. Go back to the one it came from:
+        // pressing this *is* the user asking to be taken there, and the no-op
+        // this replaces was guarding against swapping crates behind their back,
+        // which an explicit button press is not.
+        if browsableAlbum(containing: playing.track.id) == nil,
+           let origin = playingSource, origin != currentSource {
+            selectSource(origin)
+        }
+        revealAlbum(containingTrackID: playing.track.id)
+    }
+
+    /// The album a track is *browsed* under: the one actually present in
+    /// `index.allAlbums`. For a grouped release that's the parent group album —
+    /// member pressings live only inside its `.versions`, so a member's id
+    /// matches no gallery tile and no list row. `album(containing:)` returns the
+    /// member, which is right for the artwork callers and wrong for selection.
+    private func browsableAlbum(containing trackID: UUID) -> Album? {
+        for artist in index.artists {
             for album in artist.albums {
                 if album.tracks.contains(where: { $0.track.id == trackID })
                     || (album.versions ?? []).contains(where: { $0.tracks.contains { $0.track.id == trackID } }) {
-                    owner = album
-                    break outer
+                    return album
                 }
             }
         }
-        guard let album = owner else { return }
-        clearMultiSelection()
-        selectedArtistID = album.artistID
-        selectedAlbumID = album.id
-        selectedTrackID = trackID
+        return nil
     }
 
     /// The browsed album containing a track (linear scan over the current
@@ -2260,6 +2289,9 @@ final class LibraryViewModel: ObservableObject {
     func playTrack(id: UUID) {
         // Library playback and stream playback are mutually exclusive.
         stopRadio()
+        // Remember where the queue came from: the sidebar keeps that crate on
+        // screen when Local Library is collapsed.
+        playingSource = currentSource
         let queue = currentAlbumQueue()
         guard let startIndex = queue.firstIndex(where: { $0.track.id == id }) else { return }
         // Fail fast with an actionable prompt if the file is missing/offline,
@@ -3832,23 +3864,11 @@ final class LibraryViewModel: ObservableObject {
     /// center the row; `selectedArtistID` keeps the Album column on the right
     /// artist in the full three-column layout. No-op if the track isn't found.
     private func revealAlbum(containingTrackID trackID: UUID?) {
-        guard let trackID else { return }
-        for artist in index.artists {
-            for album in artist.albums {
-                if album.tracks.contains(where: { $0.track.id == trackID }) {
-                    selectedArtistID = album.artistID
-                    selectedAlbumID = album.id
-                    selectedTrackID = trackID
-                    return
-                }
-                for version in album.versions ?? [] where version.tracks.contains(where: { $0.track.id == trackID }) {
-                    selectedArtistID = version.artistID
-                    selectedAlbumID = version.id
-                    selectedTrackID = trackID
-                    return
-                }
-            }
-        }
+        guard let trackID, let album = browsableAlbum(containing: trackID) else { return }
+        selectedArtistID = album.artistID
+        selectedAlbumID = album.id
+        selectedTrackID = trackID
+        revealTick &+= 1
     }
 
     func updateTrackURLInIndex(oldURL: URL, newTrack: LoadedTrack) {
@@ -4140,3 +4160,5 @@ final class LibraryViewModel: ObservableObject {
         }
     }
 }
+
+

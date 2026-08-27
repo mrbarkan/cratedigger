@@ -14,6 +14,13 @@ extension EnvironmentValues {
     }
 }
 
+/// What the column scrolls to, and how many times it has been asked. Bundling
+/// them means one `onChange` delivers both as fresh values.
+struct ScrollRequest: Equatable {
+    let target: AnyHashable?
+    let tick: Int
+}
+
 struct ColumnList<Content: View>: View {
     @Environment(\.carbon) private var theme
     let title: String
@@ -26,6 +33,10 @@ struct ColumnList<Content: View>: View {
     /// When set, the list scrolls this id into view whenever it changes — keyboard
     /// navigation passes the selected row's id so a moved selection stays visible.
     var scrollTarget: AnyHashable?
+    /// A counter the caller bumps to demand a scroll even when `scrollTarget`
+    /// hasn't changed — "Go to Current Song" on an album that is already
+    /// selected but scrolled off screen.
+    var revealTick: Int = 0
     /// True when the arrow keys currently act on this column. Drives the header
     /// accent + rail below; rows separately mute their selection when this is
     /// false, the way an unfocused NSTableView greys its selected row.
@@ -38,6 +49,7 @@ struct ColumnList<Content: View>: View {
         headerAccessory: AnyView? = nil,
         subheader: AnyView? = nil,
         scrollTarget: AnyHashable? = nil,
+        revealTick: Int = 0,
         isFocused: Bool = false,
         @ViewBuilder content: @escaping () -> Content
     ) {
@@ -46,6 +58,7 @@ struct ColumnList<Content: View>: View {
         self.headerAccessory = headerAccessory
         self.subheader = subheader
         self.scrollTarget = scrollTarget
+        self.revealTick = revealTick
         self.isFocused = isFocused
         self.content = content
     }
@@ -99,8 +112,13 @@ struct ColumnList<Content: View>: View {
                         content()
                     }
                 }
-                .onChange(of: scrollTarget) { target in
-                    guard let target else { return }
+                // One onChange over both, never two. An `onChange` closure
+                // captures the view as it was when the body last ran, so a
+                // second closure reading `scrollTarget` gets the *previous*
+                // selection — which scrolled the column straight back to the
+                // album you were browsing, half a frame after the reveal.
+                .onChange(of: ScrollRequest(target: scrollTarget, tick: revealTick)) { request in
+                    guard let target = request.target else { return }
                     withAnimation(.easeOut(duration: 0.16)) {
                         proxy.scrollTo(target, anchor: .center)
                     }
@@ -109,6 +127,14 @@ struct ColumnList<Content: View>: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .environment(\.browserColumnFocused, isFocused)
+    }
+}
+
+extension View {
+    /// The browser's zebra stripe. `theme.rowAlt` is fully transparent in both
+    /// built-ins, so this paints nothing until a theme sets the token.
+    func browserStripe(_ row: Int, _ theme: CarbonTheme) -> some View {
+        background(row.isMultiple(of: 2) ? Color.clear : theme.rowAlt)
     }
 }
 

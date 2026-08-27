@@ -81,6 +81,14 @@ struct ArtworkGalleryView: View {
                                     proxy.scrollTo(target, anchor: .center)
                                 }
                             }
+                            // Same id, asked for again: the album was already
+                            // selected, just scrolled away.
+                            .onChange(of: model.revealTick) { _ in
+                                guard let target = model.selectedAlbumID else { return }
+                                withAnimation(.easeOut(duration: 0.16)) {
+                                    proxy.scrollTo(target, anchor: .center)
+                                }
+                            }
                         }
                     }
                 }

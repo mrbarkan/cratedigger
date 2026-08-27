@@ -106,6 +106,7 @@ private struct BrowserEmptyState: View {
 
 private struct ArtistPane: View {
     @EnvironmentObject private var model: LibraryViewModel
+    @Environment(\.carbon) private var theme
 
     var body: some View {
         ColumnList(
@@ -117,9 +118,10 @@ private struct ArtistPane: View {
                                             allCases: Array(ArtistSortField.allCases)))
                 : nil,
             scrollTarget: model.selectedArtistID.map(AnyHashable.init),
+            revealTick: model.revealTick,
             isFocused: model.effectiveColumn == .artist
         ) {
-            ForEach(model.visibleArtists) { artist in
+            ForEach(Array(model.visibleArtists.enumerated()), id: \.element.id) { row, artist in
                 ArtistRow(
                     artist: artist,
                     selected: model.isArtistSelected(artist.id),
@@ -137,6 +139,7 @@ private struct ArtistPane: View {
                     }
                 )
                 .contextMenu { BrowserContextMenu.artist(artist, model: model) }
+                .browserStripe(row, theme)
             }
         }
     }
@@ -151,6 +154,7 @@ private struct ArtistPane: View {
 
 private struct AlbumPane: View {
     @EnvironmentObject private var model: LibraryViewModel
+    @Environment(\.carbon) private var theme
     /// When true, list every album across all artists (the "Album · Track" layout).
     var flat: Bool = false
     @State private var expandedReleaseIDs: Set<String> = []
@@ -167,11 +171,13 @@ private struct AlbumPane: View {
                                             allCases: Array(AlbumSortField.allCases)))
                 : nil,
             scrollTarget: model.selectedAlbumID.map(AnyHashable.init),
+            revealTick: model.revealTick,
             isFocused: model.effectiveColumn == .album
         ) {
-            ForEach(albums) { album in
+            ForEach(Array(albums.enumerated()), id: \.element.id) { row, album in
                 if album.isVersionGroup {
                     releaseRow(album)
+                        .browserStripe(row, theme)
                     if expandedReleaseIDs.contains(album.id) {
                         ForEach(album.versions ?? []) { version in
                             versionRow(version, in: album)
@@ -179,6 +185,7 @@ private struct AlbumPane: View {
                     }
                 } else {
                     plainRow(album)
+                        .browserStripe(row, theme)
                 }
             }
         }
@@ -259,6 +266,7 @@ private struct AlbumPane: View {
 
 private struct TrackPane: View {
     @EnvironmentObject private var model: LibraryViewModel
+    @Environment(\.carbon) private var theme
     /// When true, list every track in the source flat (the "Track" layout) — no
     /// album scoping and no disc-header separators.
     var flat: Bool = false
@@ -288,12 +296,14 @@ private struct TrackPane: View {
                 ? AnyView(TrackTableHeader(columns: model.trackColumns, widths: [:]))
                 : nil,
             scrollTarget: model.selectedTrackID.map(AnyHashable.init),
+            revealTick: model.revealTick,
             isFocused: model.effectiveColumn == .track
         ) {
-            ForEach(trackEntries) { entry in
+            ForEach(Array(trackEntries.enumerated()), id: \.element.id) { row, entry in
                 switch entry {
                 case let .discHeader(disc, count):
                     DiscHeaderRow(disc: disc, count: count)
+                        .browserStripe(row, theme)
                 case let .track(loaded):
                     // The flat list is a table you scan across the whole library,
                     // so it renders the columns the user chose. The hierarchical
@@ -325,6 +335,7 @@ private struct TrackPane: View {
                         )
                         .id(loaded.track.id)
                         .contextMenu { BrowserContextMenu.track(loaded, model: model) }
+                        .browserStripe(row, theme)
                     } else {
                     TrackRow(
                         loaded: loaded,
@@ -344,6 +355,7 @@ private struct TrackPane: View {
                     )
                     .id(loaded.track.id)
                     .contextMenu { BrowserContextMenu.track(loaded, model: model) }
+                    .browserStripe(row, theme)
                     }
                 case let .recordTrack(parent, marker, number):
                     RecordSubTrackRow(
@@ -353,6 +365,7 @@ private struct TrackPane: View {
                             && model.currentRecordTrackIndex == number - 1,
                         onActivate: { model.playRecordTrack(parent: parent, markerIndex: number - 1) }
                     )
+                    .browserStripe(row, theme)
                 }
             }
         }
