@@ -686,6 +686,7 @@ private struct LastFMSettingsSection: View {
 private struct AdvancedPreferencesView: View {
     @State private var ffmpegPath: String = ""
     @State private var ffprobePath: String = ""
+    @State private var ytdlpPath: String = ""
     @State private var showResetConfirmation = false
 
     var body: some View {
@@ -707,6 +708,17 @@ private struct AdvancedPreferencesView: View {
                         Button("Browse…") { browseFor(.ffprobe) }
                     }
                 }
+                LabeledContent("yt-dlp path") {
+                    HStack {
+                        TextField("Auto-detect", text: $ytdlpPath, onCommit: persistYtDlp)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(maxWidth: .infinity)
+                        Button("Browse…") { browseFor(.ytdlp) }
+                    }
+                }
+                Text("yt-dlp powers Radio / Streams only — without it the rest of the app is unaffected.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Text("Leave blank to use the bundled binaries (or system PATH for development builds). Restart the app after changing.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -740,11 +752,13 @@ private struct AdvancedPreferencesView: View {
     private enum ToolPath {
         case ffmpeg
         case ffprobe
+        case ytdlp
     }
 
     private func refresh() {
         ffmpegPath = PreferencesStore.shared.customFFmpegPath ?? ""
         ffprobePath = PreferencesStore.shared.customFFprobePath ?? ""
+        ytdlpPath = PreferencesStore.shared.customYtDlpPath ?? ""
     }
 
     private func persistFFmpeg() {
@@ -753,6 +767,10 @@ private struct AdvancedPreferencesView: View {
 
     private func persistFFprobe() {
         PreferencesStore.shared.customFFprobePath = ffprobePath.isEmpty ? nil : ffprobePath
+    }
+
+    private func persistYtDlp() {
+        PreferencesStore.shared.customYtDlpPath = ytdlpPath.isEmpty ? nil : ytdlpPath
     }
 
     private func browseFor(_ tool: ToolPath) {
@@ -770,6 +788,9 @@ private struct AdvancedPreferencesView: View {
         case .ffprobe:
             ffprobePath = url.path
             persistFFprobe()
+        case .ytdlp:
+            ytdlpPath = url.path
+            persistYtDlp()
         }
     }
 

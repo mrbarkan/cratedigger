@@ -10,9 +10,11 @@ struct DevicesPreferencesView: View {
     @State private var showSavedConfirmation = false
 
     var body: some View {
-        HStack(alignment: .top, spacing: 16) {
+        // spacing 0 and no .top alignment: the divider has to run the full
+        // height of the pane, and the two columns supply their own insets.
+        HStack(spacing: 0) {
             sidebar
-                .frame(width: 190)
+                .frame(width: 200)
             Divider()
             editor
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -27,29 +29,24 @@ struct DevicesPreferencesView: View {
         }
     }
 
+    /// Title, the list filling everything between, then the add/remove bar
+    /// pinned to the bottom — where macOS puts a list's own editing controls.
     private var sidebar: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("Devices")
-                    .font(.headline)
-                Spacer()
-                Button {
-                    deleteConfirmationShown = true
-                } label: {
-                    Image(systemName: "minus")
-                }
-                .buttonStyle(.borderless)
-                .disabled(selectedID == nil)
-                .help("Remove selected device profile")
-                addDeviceMenu
-            }
+        VStack(spacing: 0) {
+            Text("Devices")
+                .font(.headline)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 14)
+                .padding(.top, 16)
+                .padding(.bottom, 8)
 
             if profiles.isEmpty {
                 Text("No device profiles yet.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 8)
+                    .padding(.horizontal, 14)
+                Spacer(minLength: 0)
             } else {
                 List(profiles, id: \.id, selection: $selectedID) { profile in
                     VStack(alignment: .leading, spacing: 2) {
@@ -62,10 +59,28 @@ struct DevicesPreferencesView: View {
                     }
                     .tag(profile.id)
                 }
+                .frame(maxHeight: .infinity)
                 .onChange(of: selectedID) { newValue in
                     loadDraft(for: newValue)
                 }
             }
+
+            Divider()
+            HStack(spacing: 2) {
+                addDeviceMenu
+                Button {
+                    deleteConfirmationShown = true
+                } label: {
+                    Image(systemName: "minus")
+                        .frame(width: 18, height: 16)
+                }
+                .buttonStyle(.borderless)
+                .disabled(selectedID == nil)
+                .help("Remove selected device profile")
+                Spacer()
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
         }
     }
 
@@ -91,8 +106,11 @@ struct DevicesPreferencesView: View {
             }
         } label: {
             Image(systemName: "plus")
+                .frame(width: 18, height: 16)
         }
-        .menuStyle(.button)
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
         .help("Add device profile")
     }
 
@@ -107,7 +125,12 @@ struct DevicesPreferencesView: View {
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(24)
         } else {
+            // Actions live under the form, not inside it: in the form they
+            // scrolled off the bottom of the pane with the last section, so
+            // Save was only reachable by scrolling.
+            VStack(spacing: 0) {
             Form {
                 Section("Device") {
                     TextField("Name", text: $draft.name)
@@ -161,25 +184,30 @@ struct DevicesPreferencesView: View {
                     }
                 }
 
-                HStack {
-                    Button("Remove", role: .destructive) {
-                        deleteConfirmationShown = true
-                    }
-                    Spacer()
-                    if showSavedConfirmation {
-                        Label("Settings Saved", systemImage: "checkmark.circle.fill")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.green)
-                            .transition(.opacity)
-                    }
-                    Button("Save") {
-                        saveDraft()
-                    }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
             }
             .formStyle(.grouped)
+
+            Divider()
+            HStack {
+                Button("Remove", role: .destructive) {
+                    deleteConfirmationShown = true
+                }
+                Spacer()
+                if showSavedConfirmation {
+                    Label("Settings Saved", systemImage: "checkmark.circle.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.green)
+                        .transition(.opacity)
+                }
+                Button("Save") {
+                    saveDraft()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+            }
         }
     }
 
