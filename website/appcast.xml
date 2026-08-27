@@ -3,6 +3,69 @@
     <channel>
         <title>CrateDigger</title>
         <item>
+            <title>1.5.9</title>
+            <pubDate>Thu, 27 Aug 2026 18:17:40 -0300</pubDate>
+            <link>https://cratedigger.mrbarkan.com/</link>
+            <sparkle:fullReleaseNotesLink>https://github.com/mrbarkan/cratedigger/releases</sparkle:fullReleaseNotesLink>
+            <sparkle:version>71</sparkle:version>
+            <sparkle:shortVersionString>1.5.9</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description sparkle:format="markdown"><![CDATA[
+Go to Current Song takes you back to the record you're hearing — from any crate.
+The theme editor gained a pin and its own colour for every lamp on the display.
+
+### Added
+
+- **A pin on the theme editor.** The editor's whole point is watching the app
+  restyle behind it, which stopped working the moment you clicked the browser
+  and the panel dropped behind the window. It now floats above the app by
+  default; the pin in its top-right corner drops it back into the pile.
+- **Every display lamp has its own colour.** NOW, CNVRT, SCAN, SYNC, CD and DEV
+  — the annunciators on the glass and the strip in the DISPLAY button — are now
+  six separate tokens in the theme editor instead of borrowed accents, so you
+  can tell the screens apart without retinting half the interface. Leave one
+  unset and it follows the accent it always did: nothing you've themed changes.
+- **Alternate row striping in the browser.** A new Alternate Rows token stripes
+  the Artist, Album and Track columns. It ships transparent, so the lists look
+  exactly as they did until you give it a colour.
+- **A yt-dlp path in Settings.** Advanced now has a yt-dlp row alongside ffmpeg
+  and ffprobe, so a custom install can be pointed at without the environment
+  variable. Radio is the only thing that uses it.
+- **Collapsing Local Library keeps the crate you're playing.** The chevron folds
+  the rest away and leaves the one you're listening to on screen.
+
+### Changed
+
+- **Clearer names in the theme editor.** The token labelled "Alternate Rows"
+  never painted alternate rows — it shades the bottom of a panel, and is now
+  called Panel Shade. The accent tokens say outright which of them light the VU
+  meters, the EQ panel, the POSITION bar and the VOLUME fader.
+- **The Devices settings pane is laid out properly.** The divider runs the full
+  height, add and remove sit in a bar under the list where macOS puts them, and
+  Save and Remove are pinned below the form instead of scrolling off the bottom
+  of the window with the last section.
+
+### Fixed
+
+- **Go to Current Song works.** The button asked the browser to scroll to the
+  playing album and then immediately scrolled it back to where you were, so
+  nothing moved. Pressing it now centres the record you're hearing, whether or
+  not it was already selected, and expands the browser if the conversion cockpit
+  had collapsed it.
+- **Go to Current Song crosses crates.** Playing out of one crate and browsing
+  another, the button did nothing at all: it only ever looked in the crate on
+  screen. It now switches back to the crate the queue came from and reveals the
+  track there.
+
+]]></description>
+            <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v1.5.9/CrateDigger-1.5.9.dmg" length="65777124" type="application/octet-stream" sparkle:edSignature="oxfoOqvjCII06Oy44wElLUK0LqE0u/WU9zBliaqXBXdHg8p8ZiuIWl8zyM4P0pip99Uilmz2E2Y+yj592TI7BA=="/>
+            <sparkle:deltas>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v1.5.9/CrateDigger71-70.delta" sparkle:deltaFrom="70" length="1220446" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="Tm6uy8MpAvO3Zk9y1l+iOEMtMwBW3PHDg1lJeUOmNhYpT9yPxiFxIydhI/1RS1fnwKIs33ItFcMRRACLZgohDw=="/>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v1.5.9/CrateDigger71-69.delta" sparkle:deltaFrom="69" length="1284782" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="3JAX72rWhAsUNGO6s52BTBAy7fNwr5wgmA7UwKrm6VkcHXMhCYYfAgfv6XVMabQaaEhyN0Sin5qqegnwmWv8Bw=="/>
+            </sparkle:deltas>
+        </item>
+        <item>
             <title>1.5.8</title>
             <pubDate>Thu, 27 Aug 2026 12:01:43 -0300</pubDate>
             <link>https://cratedigger.mrbarkan.com/</link>
