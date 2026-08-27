@@ -3,6 +3,34 @@
     <channel>
         <title>CrateDigger</title>
         <item>
+            <title>1.5.8</title>
+            <pubDate>Thu, 27 Aug 2026 12:01:43 -0300</pubDate>
+            <link>https://cratedigger.mrbarkan.com/</link>
+            <sparkle:fullReleaseNotesLink>https://github.com/mrbarkan/cratedigger/releases</sparkle:fullReleaseNotesLink>
+            <sparkle:version>70</sparkle:version>
+            <sparkle:shortVersionString>1.5.8</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description sparkle:format="markdown"><![CDATA[
+The VU meters really do move on radio this time — including live streams, which
+1.5.7 said were impossible.
+
+### Fixed
+
+- **The VU meters work on every stream, live ones included.** 1.5.7 pointed the
+  meters at the radio player, but they still sat flat: every YouTube stream —
+  not just live ones — arrives as HLS, and macOS won't hand out the audio from
+  an HLS player. CrateDigger now measures its own output at the audio-hardware
+  level instead, so the needles follow whatever you're listening to. Requires
+  macOS 14.4 or later; on older systems the meters rest at zero as before.
+
+]]></description>
+            <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v1.5.8/CrateDigger-1.5.8.dmg" length="65826310" type="application/octet-stream" sparkle:edSignature="pPZMxtqEMN6BobJ+x3ox8oa4CjZSI8JIGzzF3ozmbEXzV5YtPgtHCEOL0AqD9NAoocZfAKGPJ2b2Qg9R7XFWDA=="/>
+            <sparkle:deltas>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v1.5.8/CrateDigger70-69.delta" sparkle:deltaFrom="69" length="622874" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="zjWr4KHyEt1YfVSSUiwYyEDhO6E6s/fNGSyas/4QhGLrevEcPskW6suYFv+PwjbW4LNAKhD+oh7rEarNsi8ZAg=="/>
+            </sparkle:deltas>
+        </item>
+        <item>
             <title>1.5.7</title>
             <pubDate>Wed, 26 Aug 2026 17:08:52 -0300</pubDate>
             <link>https://cratedigger.mrbarkan.com/</link>
