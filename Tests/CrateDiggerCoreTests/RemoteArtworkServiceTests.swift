@@ -134,6 +134,71 @@ final class RemoteArtworkServiceTests: XCTestCase {
         """.utf8)
     }
 
+    private func discogsSearchJSON(_ hits: [(Int, String, String)]) -> Data {
+        let body = hits.map { #"{"id": \#($0.0), "title": "\#($0.1)", "year": "\#($0.2)"}"# }
+            .joined(separator: ",")
+        return Data("{\"results\": [\(body)]}".utf8)
+    }
+
+    /// A reissue's sleeve often isn't the one on the shelf, so a year match
+    /// outranks Discogs' own ordering.
+    func testSearchPrefersTheMatchingYearOverTheFirstHit() {
+        let data = discogsSearchJSON([
+            (8110401, "Beach House - Teen Dream", "2016"),
+            (2111843, "Beach House - Teen Dream", "2010"),
+        ])
+        XCTAssertEqual(
+            RemoteArtworkService.pickDiscogsSearchHit(data, preferredYear: 2010, expectedTitle: "Teen Dream"),
+            "2111843"
+        )
+    }
+
+    func testSearchFallsBackToDiscogsOwnRankingWithoutAYear() {
+        let data = discogsSearchJSON([
+            (8110401, "Beach House - Teen Dream", "2016"),
+            (2111843, "Beach House - Teen Dream", "2010"),
+        ])
+        XCTAssertEqual(
+            RemoteArtworkService.pickDiscogsSearchHit(data, preferredYear: nil, expectedTitle: "Teen Dream"),
+            "8110401"
+        )
+    }
+
+    /// The loose artist+title rung must not hand someone else's scans to an
+    /// album folder. Discogs titles read "Artist - Title", so the album has to
+    /// appear in there.
+    func testSearchRejectsAHitThatIsNotTheAlbum() {
+        let data = discogsSearchJSON([(999, "Various - Now That's What I Call Music", "2010")])
+        XCTAssertNil(
+            RemoteArtworkService.pickDiscogsSearchHit(data, preferredYear: nil, expectedTitle: "Teen Dream")
+        )
+    }
+
+    /// Punctuation and case differ constantly between the two databases.
+    func testSearchMatchesAcrossPunctuationAndCase() {
+        let data = discogsSearchJSON([(4242, "Bon Iver - 22, A Million", "2016")])
+        XCTAssertEqual(
+            RemoteArtworkService.pickDiscogsSearchHit(data, preferredYear: nil, expectedTitle: "22 a million"),
+            "4242"
+        )
+    }
+
+    /// A barcode already identifies the physical object, so no title check.
+    func testBarcodeSearchTakesTheHitWithoutATitleCheck() {
+        let data = discogsSearchJSON([(777, "Something Entirely Different", "1997")])
+        XCTAssertEqual(
+            RemoteArtworkService.pickDiscogsSearchHit(data, preferredYear: nil, expectedTitle: nil),
+            "777"
+        )
+    }
+
+    func testEmptySearchResultsResolveToNothing() {
+        XCTAssertNil(RemoteArtworkService.pickDiscogsSearchHit(Data(#"{"results": []}"#.utf8),
+                                                              preferredYear: nil, expectedTitle: nil))
+        XCTAssertNil(RemoteArtworkService.pickDiscogsSearchHit(Data("not json".utf8),
+                                                              preferredYear: nil, expectedTitle: nil))
+    }
+
     func testParsesTheDiscogsReleaseIDFromMusicBrainzRelations() {
         let id = RemoteArtworkService.parseDiscogsReleaseID(
             mbRelationsJSON("https://www.discogs.com/release/1722")

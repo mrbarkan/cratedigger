@@ -982,30 +982,53 @@ struct ArtworkSearchSheetView: View {
                 let service = model.remoteArtworkService
                 // Settings can change the token between lookups.
                 await service.setDiscogsToken(PreferencesStore.shared.discogsToken)
-                let images = try await service.fetchReleaseImages(releaseMBID: release.id)
+
+                // Two stages, not one call. Finding a release on Discogs can
+                // take several seconds (a MusicBrainz relation lookup, then a
+                // search, then the release itself), and the archive's images
+                // are usually one fast request away — so they go on screen
+                // straight away rather than behind the slower source.
+                let archive = try await service.fetchCoverArtArchiveImages(releaseMBID: release.id)
                 await MainActor.run {
-                    self.caaImages = images
+                    self.caaImages = archive
                     self.loadingArt = false
-                    if images.isEmpty {
+                }
+                await probeDimensions(for: archive, using: service)
+
+                // The whole candidate, not just its id: its barcode and year are
+                // what find this pressing on Discogs when MusicBrainz hasn't
+                // linked the two. A Discogs miss is not an error — the archive's
+                // images still stand on their own.
+                let known = Set(archive.map(\.id))
+                let discogs = await service.discogsImages(for: release, artist: artistQuery)
+                    .filter { !known.contains($0.id) }
+                await MainActor.run {
+                    guard self.selectedReleaseID == release.id else { return }   // moved on already
+                    self.caaImages.append(contentsOf: discogs)
+                    if self.caaImages.isEmpty {
                         self.artError = "Neither the Cover Art Archive nor Discogs has images for this release."
                     }
                 }
-                // Header-only probes, in parallel — the grid fills its size
-                // badges in as they land.
-                await withTaskGroup(of: (String, ArtworkDimensions?).self) { group in
-                    for img in images {
-                        group.addTask { (img.id, await service.probeDimensions(of: img.imageURL)) }
-                    }
-                    for await (id, dimensions) in group {
-                        guard let dimensions else { continue }
-                        await MainActor.run { self.imageDimensions[id] = dimensions }
-                    }
-                }
+                await probeDimensions(for: discogs, using: service)
             } catch {
                 await MainActor.run {
                     self.loadingArt = false
                     self.artError = error.localizedDescription
                 }
+            }
+        }
+    }
+
+    /// Header-only probes, in parallel — the grid fills its size badges in as
+    /// they land.
+    private func probeDimensions(for images: [RemoteArtworkImage], using service: RemoteArtworkService) async {
+        await withTaskGroup(of: (String, ArtworkDimensions?).self) { group in
+            for img in images {
+                group.addTask { (img.id, await service.probeDimensions(of: img.imageURL)) }
+            }
+            for await (id, dimensions) in group {
+                guard let dimensions else { continue }
+                await MainActor.run { self.imageDimensions[id] = dimensions }
             }
         }
     }

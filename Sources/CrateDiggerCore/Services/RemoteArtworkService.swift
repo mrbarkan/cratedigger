@@ -45,6 +45,9 @@ public actor RemoteArtworkService {
     /// token, so re-opening the sheet must not spend any of them again.
     private var discogsIDByRelease: [String: String?] = [:]
     private var discogsImagesByRelease: [String: [RemoteArtworkImage]] = [:]
+    /// Discogs search query → the release id it resolved to. Keyed by the query
+    /// itself so the barcode and title rungs cache independently.
+    private var discogsIDBySearch: [String: String?] = [:]
 
     /// Optional Discogs personal access token. Blank is fine — the public API
     /// serves release images unauthenticated, just at a lower rate limit.
@@ -752,24 +755,71 @@ public extension RemoteArtworkService {
 /// has done before. Either way Discogs requires a descriptive User-Agent.
 public extension RemoteArtworkService {
 
-    /// Every candidate image for a release: the Cover Art Archive's typed
-    /// images first (they carry real Front/Back/Booklet roles), then whatever
-    /// scans Discogs has that the archive doesn't.
+    /// Find this release on Discogs, cheapest and most certain first:
     ///
-    /// Discogs failing is never an error — the archive's images still stand on
-    /// their own, and a rate-limited or offline second source must not empty
-    /// the grid.
-    func fetchReleaseImages(releaseMBID: String) async throws -> [RemoteArtworkImage] {
-        let archive = try await fetchCoverArtArchiveImages(releaseMBID: releaseMBID)
-        let discogs = await discogsImages(forReleaseMBID: releaseMBID)
-        let known = Set(archive.map(\.id))
-        return archive + discogs.filter { !known.contains($0.id) }
+    /// 1. the `discogs` relation MusicBrainz stores for the release — exact, and
+    ///    free, because it rides along with a lookup already being made;
+    /// 2. its barcode — the same number is printed on the same physical object,
+    ///    so a hit is the same pressing;
+    /// 3. artist + title, with the title checked against the result, for the
+    ///    releases MusicBrainz has neither linked nor barcoded.
+    ///
+    /// Rung 1 covers pressings well (4 of 4 sampled pressings of one album were
+    /// linked) but misses digital-era releases entirely, which is what 2 and 3
+    /// are for. Each rung costs one request only when the one above it missed.
+    func discogsImages(for release: MBReleaseCandidate, artist: String) async -> [RemoteArtworkImage] {
+        let year = release.date.flatMap { Int($0.prefix(4)) }
+
+        var releaseID = await discogsReleaseID(forReleaseMBID: release.id)
+        if releaseID == nil, let barcode = release.barcode?.trimmingCharacters(in: .whitespaces), !barcode.isEmpty {
+            releaseID = await searchDiscogs(
+                parameters: [URLQueryItem(name: "barcode", value: barcode)],
+                preferredYear: year,
+                expectedTitle: nil   // a barcode already identifies the object
+            )
+        }
+        if releaseID == nil, !release.title.isEmpty {
+            releaseID = await searchDiscogs(
+                parameters: [
+                    URLQueryItem(name: "artist", value: artist),
+                    URLQueryItem(name: "release_title", value: release.title)
+                ],
+                preferredYear: year,
+                expectedTitle: release.title
+            )
+        }
+        guard let releaseID else { return [] }
+        return await discogsImages(releaseID: releaseID)
     }
 
-    /// The Discogs scans for a MusicBrainz release, or none when MusicBrainz
-    /// doesn't link the two.
-    func discogsImages(forReleaseMBID mbid: String) async -> [RemoteArtworkImage] {
-        guard let releaseID = await discogsReleaseID(forReleaseMBID: mbid) else { return [] }
+    /// One Discogs search, cached by its query. Returns the id of the best
+    /// matching release, or none.
+    func searchDiscogs(parameters: [URLQueryItem], preferredYear: Int?, expectedTitle: String?) async -> String? {
+        var components = URLComponents(string: "https://api.discogs.com/database/search")!
+        components.queryItems = parameters + [URLQueryItem(name: "type", value: "release")]
+        guard let url = components.url else { return nil }
+        let cacheKey = url.absoluteString
+        if let cached = discogsIDBySearch[cacheKey] { return cached }
+
+        var request = URLRequest(url: url)
+        request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
+        if let discogsToken {
+            request.setValue("Discogs token=\(discogsToken)", forHTTPHeaderField: "Authorization")
+        }
+        guard let (data, response) = try? await session.data(for: request),
+              let http = response as? HTTPURLResponse,
+              (200..<300).contains(http.statusCode)
+        else {
+            return nil   // not cached: rate-limited or offline deserves a retry
+        }
+
+        let found = Self.pickDiscogsSearchHit(data, preferredYear: preferredYear, expectedTitle: expectedTitle)
+        discogsIDBySearch[cacheKey] = found
+        return found
+    }
+
+    /// The scans on one Discogs release.
+    func discogsImages(releaseID: String) async -> [RemoteArtworkImage] {
         if let cached = discogsImagesByRelease[releaseID] { return cached }
         guard let url = URL(string: "https://api.discogs.com/releases/\(releaseID)") else { return [] }
 
@@ -836,6 +886,42 @@ public extension RemoteArtworkService {
             if !trailing.isEmpty { return String(trailing) }
         }
         return nil
+    }
+
+    /// Choose the best release from a Discogs search.
+    ///
+    /// `expectedTitle` guards the loose artist+title rung: Discogs formats its
+    /// result titles as "Artist - Title", so the album must actually appear in
+    /// there before its scans are written into someone's album folder. The
+    /// barcode rung passes `nil` — the number already identifies the object.
+    ///
+    /// Among acceptable hits the release year wins, since a reissue's sleeve
+    /// often isn't the one on the shelf; failing that the first hit stands,
+    /// Discogs already having ranked them.
+    static func pickDiscogsSearchHit(_ data: Data, preferredYear: Int?, expectedTitle: String?) -> String? {
+        struct Response: Decodable {
+            struct Hit: Decodable {
+                let id: Int?
+                let title: String?
+                let year: String?
+            }
+            let results: [Hit]?
+        }
+        guard let decoded = try? JSONDecoder().decode(Response.self, from: data) else { return nil }
+
+        let wanted = expectedTitle.map(simplify)
+        let acceptable = (decoded.results ?? []).filter { hit in
+            guard hit.id != nil else { return false }
+            guard let wanted, !wanted.isEmpty else { return true }
+            return simplify(hit.title ?? "").contains(wanted)
+        }
+        guard !acceptable.isEmpty else { return nil }
+
+        if let preferredYear,
+           let sameYear = acceptable.first(where: { Int($0.year ?? "") == preferredYear }) {
+            return sameYear.id.map(String.init)
+        }
+        return acceptable.first?.id.map(String.init)
     }
 
     /// Map a Discogs release payload onto artwork candidates.
