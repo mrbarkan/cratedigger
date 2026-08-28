@@ -4,6 +4,62 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 1.5.10 (72) — 2026-08-28
+
+Discogs, where the scans of the physical object live. Back sleeves, inners,
+labels and obi strips, for the shelf of vinyl and cassettes that the front
+cover alone never described.
+
+### Added
+
+- **Physical-release scans from Discogs.** The artwork sheet offered iTunes and
+  Deezer fronts plus whatever the Cover Art Archive held, which for most
+  releases is a front and little else. Discogs carries the deep scans: back
+  sleeves, spines, labels, inners, inserts, obi strips. They arrive with a
+  DISCOGS badge so it is clear what came from where, and a Discogs failure is
+  never raised as an error, since the archive's images still stand on their
+  own.
+- **Three ways to find the release, cheapest first.** The `discogs` link
+  MusicBrainz already carries, else the barcode, which is the same number
+  printed on the same physical object, else artist and title with the album
+  checked against the result before anyone's folder gets someone else's scans.
+  Each rung costs a request only when the rung above it missed. Measured on
+  releases that previously had one image each: Paracosm went to 3, 22, A
+  Million to 10, Teen Dream to 21.
+- **An optional Discogs token.** Settings, Integrations. Blank stays fully
+  working; a token raises the rate limit from 25 requests a minute to 60.
+- **Release notes worth reading.** What's New had not been rewritten since
+  1.5.0, so nine releases of upgraders saw the same five theme editor notes. It
+  now covers what actually shipped, and folds theming into one standing summary
+  instead of five entries.
+
+### Changed
+
+- **The artwork sheet loads in two stages.** Walking the Discogs ladder takes
+  several seconds. The archive's images now go on screen at about 1.5 seconds
+  and the Discogs scans append behind them, rather than everything waiting on
+  the slower source.
+- **The website says what the app does.** It offered no way to download
+  CrateDigger, and described crates as `.cdlib` files two storage formats ago.
+  There is now a download route, accurate crate and artwork copy, and a public
+  roadmap for 2.0 at cratedigger.mrbarkan.com/roadmap.html.
+
+### Fixed
+
+- **A slow MusicBrainz no longer reads as a failed search.** Artwork search
+  reported "Network error: The request timed out" on queries that were merely
+  still running. MusicBrainz search is far slower than anything else here, the
+  same query answering in 0.8s and 5.2s within one session, so it gets 25
+  seconds of its own instead of the 12 that suit iTunes and Deezer.
+- **One slow rung no longer discards the whole search.** The search walks
+  progressively looser queries, and any rung throwing threw all of them away.
+  The strict quoted rung fails most often, which is exactly the case an oddly
+  tagged album depends on falling through. Only a search where every rung
+  failed is a failed search now.
+- **The artist and album fields line up.** They were sized independently from
+  their own contents, which could render the artist column shorter and lower
+  than the album column.
+
 ## 1.5.9 (71) — 2026-08-27
 
 Go to Current Song takes you back to the record you're hearing — from any crate.
