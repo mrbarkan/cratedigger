@@ -1,8 +1,8 @@
 import CrateDiggerCore
 import SwiftUI
 
-/// Release notes as a sheet: what changed, and — for the theme editor — enough
-/// of how it works that nobody has to go looking for it.
+/// Release notes as a sheet: what changed, plus a standing summary of theming
+/// with enough of how it works that nobody has to go looking for it.
 ///
 /// Deliberately a list rather than a paged walkthrough like `WelcomeTourView`.
 /// The tour teaches a model you don't have yet, so it earns its illustrations
@@ -83,8 +83,8 @@ struct WhatsNewView: View {
             KeyButton(action: { model.showingWhatsNew = false }) { Text("CLOSE") }
                 .frame(width: 96, height: geometry.keyHeight)
 
-            // The whole point of the release: put people one click from it
-            // rather than describing where the menu item lives.
+            // Theming is the one item here people act on immediately, so it
+            // gets a door rather than directions to the menu item.
             KeyButton(style: .glowingFilled, action: {
                 model.showingWhatsNew = false
                 model.showingThemePicker = true
@@ -116,53 +116,64 @@ struct WhatsNewItem: Identifiable {
     /// Edit this list each release. Shown in order.
     static let current: [WhatsNewItem] = [
         WhatsNewItem(
+            symbol: "photo.on.rectangle.angled",
+            title: "Deep scans from Discogs",
+            body: """
+            Artwork search now reaches Discogs, where the scans of physical \
+            pressings live: gatefolds, inner sleeves, obi strips, label \
+            close-ups, the back of the sleeve with the runout etched into it. \
+            CrateDigger finds the release three ways in turn, by the link \
+            MusicBrainz already holds, then by barcode, then by artist and \
+            title. No account needed.
+            """
+        ),
+        WhatsNewItem(
+            symbol: "arrow.down.circle",
+            title: "It updates itself",
+            body: """
+            Check for Updates now downloads the new version, verifies we signed \
+            it, installs it and relaunches. No more fetching a disk image and \
+            dragging the app across by hand. It also looks once a day without \
+            being asked, and a stable install is never offered a release \
+            candidate.
+            """
+        ),
+        WhatsNewItem(
+            symbol: "waveform",
+            title: "The meters follow radio",
+            body: """
+            The VU needles used to sit flat through every broadcast, because \
+            they were reading the library player that radio had just paused. \
+            They now measure the app's own output, so they move for anything \
+            you are listening to, live streams included. Needs macOS 14.4 or \
+            later.
+            """
+        ),
+        WhatsNewItem(
+            symbol: "scope",
+            title: "Go to Current Song",
+            body: """
+            Dig three crates deep and lose your place, then press it to land \
+            back on the record you are hearing. It crosses crates: if the queue \
+            came from somewhere other than the crate on screen, it switches \
+            back to that one and reveals the track there.
+            """
+        ),
+        WhatsNewItem(
             symbol: "paintpalette",
-            title: "Theme Editor",
+            title: "Everything about theming, in one place",
             body: """
-            Press THEME in the header to open the theme browser in the \
-            inspector, then EDITOR to start changing one. Every colour, corner \
-            radius and typeface is a control, and the app repaints as you go — \
-            what you see behind the panel is the theme.
-            """
-        ),
-        WhatsNewItem(
-            symbol: "circle.lefthalf.filled",
-            title: "One theme, light and dark",
-            body: """
-            Set a theme to BOTH and it carries a light and a dark version and \
-            follows your system setting, instead of shipping as two separate \
-            themes. COPY TO LIGHT/DARK starts one version from the other so \
-            you're tweaking rather than rebuilding.
-            """
-        ),
-        WhatsNewItem(
-            symbol: "textformat",
-            title: "Fonts, with real weights",
-            body: """
-            Pick any font installed on your Mac for the interface, the readouts \
-            or the display, and choose which style is the base. The family's \
-            actual weights are mapped, so bold headings use a drawn bold rather \
-            than a smeared regular. Fonts can also be bundled inside a theme so \
-            it travels with them.
-            """
-        ),
-        WhatsNewItem(
-            symbol: "square.and.arrow.up",
-            title: "Themes are files you can share",
-            body: """
-            A theme is a small JSON file in a .cdtheme folder. Save yours, \
-            REVEAL it in Finder, zip it, send it on — and drop someone else's \
-            into the same folder to install it. Appearance in the menu bar \
-            lists everything installed.
-            """
-        ),
-        WhatsNewItem(
-            symbol: "swatchpalette",
-            title: "Cobalt",
-            body: """
-            A new built-in theme, and a worked example of the format: shared \
-            accents, separate light and dark layers, custom corner radii and a \
-            mapped font family. Duplicate it in the editor to start your own.
+            Press THEME in the header for the theme browser, then EDITOR to \
+            start changing one. Every colour, corner radius and typeface is a \
+            control, and the app repaints as you work, so the preview is the \
+            application behind the panel rather than a picture of it. One theme \
+            carries both a light and a dark version and follows your system \
+            setting. Any font on your Mac can letter the interface, with the \
+            family's real weights mapped rather than smeared. Seven one-click \
+            presets restyle the glass alone, from green LCD to e-paper, and \
+            each of the six lamps on the display takes its own colour. UNDO \
+            steps back through your last ten changes. A finished theme is a \
+            small .cdtheme folder you can zip and send to anyone.
             """
         ),
     ]
