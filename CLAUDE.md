@@ -22,6 +22,27 @@ scripts/package-app.sh           # assemble dist/CrateDigger.app (bundles ffmpeg
 - To launch and verify a change in the running app, build then run the binary directly (the local permission allowlist already covers `swift build`, running the debug binary, and `pkill -f CrateDiggerApp`).
 - Release/distribution (Developer ID signing + notarization + DMG) and the full beta gate are documented in `README.md` and `docs/BETA_RELEASE_CHECKLIST.md`.
 
+## Two release lines (read before committing anything)
+
+- **`main` is the stable line**, currently 1.5.x, and it is what the public
+  downloads and what every installed copy auto-updates from. Only ship
+  bug fixes here.
+- **`v2` is the beta line** and is where all work up to 2.0 goes. Everything
+  from here ships as a GitHub **prerelease** so `/releases/latest` (and the
+  website's Download button) stay on stable.
+
+Isolation is at the **feed**, not the channel: `v2`'s `SUFeedURL` points at
+`website/appcast-beta.xml`, which no shipped 1.5.x app knows about, so
+`website/appcast.xml` is frozen for the whole 2.0 cycle. Never repoint
+`SUFeedURL` on `v2` — that single line is what keeps betas off other people's
+Macs.
+
+The one thing that does cross over: GitHub Pages only serves `website/` from
+`main`, so publishing a beta feed means copying *just*
+`website/appcast-beta.xml` onto `main` (`git checkout v2 -- <that file>`).
+Never carry anything else across. The `press-the-record` skill scripts both
+paths — use it rather than releasing by hand.
+
 ## Two-target architecture
 
 `Package.swift` defines two targets — keep the boundary clean:
