@@ -17,10 +17,13 @@ SITE_URL="https://cratedigger.mrbarkan.com/"
 RELEASES_URL="https://github.com/mrbarkan/cratedigger/releases"
 CHANNEL=""
 DMG_PATH=""
+APPCAST_OVERRIDE=""
+TAG_OVERRIDE=""
 
 usage() {
   cat <<'EOF'
 Usage: scripts/update-appcast.sh [--dmg PATH] [--channel rc]
+                                 [--appcast PATH] [--tag TAG]
 
 Adds a release to website/appcast.xml and signs it. With no --dmg, uses the
 newest dist/CrateDigger-*.dmg.
@@ -29,6 +32,12 @@ newest dist/CrateDigger-*.dmg.
   --channel NAME    Publish on a Sparkle channel instead of to everyone.
                     Use 'rc' for prereleases — only builds whose
                     AppVersion.channel says so will be offered them.
+  --appcast PATH    The feed to write (default: website/appcast.xml). The v2
+                    beta line writes website/appcast-beta.xml instead, so the
+                    stable feed cannot be touched by a beta release.
+  --tag TAG         The git tag whose release holds the DMG (default: derived
+                    from the DMG name, e.g. v1.5.10). Prerelease tags carry the
+                    build as the prerelease number, so pass it: v2.0.0-beta.73.
   --help, -h        Show this help
 
 The DMG must already be the one you are uploading to the GitHub release: the
@@ -41,6 +50,8 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --dmg) DMG_PATH="${2:?missing path for --dmg}"; shift 2 ;;
     --channel) CHANNEL="${2:?missing name for --channel}"; shift 2 ;;
+    --appcast) APPCAST_OVERRIDE="${2:?missing path for --appcast}"; shift 2 ;;
+    --tag) TAG_OVERRIDE="${2:?missing tag for --tag}"; shift 2 ;;
     --help|-h) usage; exit 0 ;;
     *) echo "error: unknown argument: $1" >&2; usage; exit 1 ;;
   esac
@@ -60,10 +71,14 @@ if [[ -z "${DMG_PATH}" || ! -f "${DMG_PATH}" ]]; then
   exit 1
 fi
 
+if [[ -n "${APPCAST_OVERRIDE}" ]]; then
+  APPCAST="${APPCAST_OVERRIDE}"
+fi
+
 DMG_NAME="$(basename "${DMG_PATH}")"
 VERSION="${DMG_NAME#CrateDigger-}"
 VERSION="${VERSION%.dmg}"
-TAG="v${VERSION}"
+TAG="${TAG_OVERRIDE:-v${VERSION}}"
 
 mkdir -p "${STAGING_DIR}"
 # The committed feed is the source of truth for what's already published:
@@ -115,18 +130,22 @@ fi
 # plain run rewrites older releases' DMG URLs to point inside this release's
 # tag — a 404 for anyone the newest entry doesn't apply to. Each asset already
 # names its own version, so re-derive the tag per URL and put the old ones back.
-python3 - "${STAGING_DIR}/appcast.xml" <<'PYFIX'
+python3 - "${STAGING_DIR}/appcast.xml" "${TAG}" "${DMG_NAME}" <<'PYFIX'
 import re, sys
 
-path = sys.argv[1]
+path, this_tag, this_dmg = sys.argv[1], sys.argv[2], sys.argv[3]
 xml = open(path).read()
 base = "https://github.com/mrbarkan/cratedigger/releases/download/"
 
 def retag(match):
     tag, asset = match.group(1), match.group(2)
-    # Full DMGs are named CrateDigger-<version>.dmg and belong to v<version>.
-    # Deltas (CrateDigger<to>-<from>.delta) ship with the release they upgrade
-    # TO, which is always the tag they were just written with — leave those.
+    # This release's own assets are already tagged correctly, and on a
+    # prerelease the tag (v2.0.0-beta.73) can't be derived from the DMG name.
+    if asset == this_dmg:
+        return base + this_tag + "/" + asset
+    # Older full DMGs are named CrateDigger-<version>.dmg and belong to
+    # v<version>. Deltas (CrateDigger<to>-<from>.delta) ship with the release
+    # they upgrade TO, which is the tag just written — leave those.
     version = re.fullmatch(r"CrateDigger-(.+)\.dmg", asset)
     return base + ("v" + version.group(1) if version else tag) + "/" + asset
 
