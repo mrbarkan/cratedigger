@@ -236,36 +236,40 @@ struct ArtworkSearchSheetView: View {
     // Search bar
     private var searchBar: some View {
         HStack(alignment: .bottom, spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("ARTIST")
-                    .font(CarbonFont.mono(8, weight: .bold))
-                    .foregroundStyle(theme.ink3)
-                TextField("Artist", text: $artistQuery)
-                    .textFieldStyle(.plain)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(theme.isDark ? Color.white.opacity(0.04) : Color.black.opacity(0.03))
-                    .cornerRadius(4)
-                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(theme.ink4.opacity(0.25), lineWidth: 0.8))
-            }
-            
-            VStack(alignment: .leading, spacing: 3) {
-                Text("ALBUM")
-                    .font(CarbonFont.mono(8, weight: .bold))
-                    .foregroundStyle(theme.ink3)
-                TextField("Album", text: $albumQuery)
-                    .textFieldStyle(.plain)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(theme.isDark ? Color.white.opacity(0.04) : Color.black.opacity(0.03))
-                    .cornerRadius(4)
-                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(theme.ink4.opacity(0.25), lineWidth: 0.8))
-            }
-            
+            queryField("ARTIST", placeholder: "Artist", text: $artistQuery)
+            queryField("ALBUM", placeholder: "Album", text: $albumQuery)
+
             KeyButton(style: .selected, action: executeSearch) {
                 Text("SEARCH")
             }
             .frame(width: 80, height: 22)
+        }
+    }
+
+    /// One query field, built once for both columns.
+    ///
+    /// The font and the field's height are pinned rather than intrinsic. These
+    /// were two copies of the same block sizing themselves from their own
+    /// contents, which is how the row ended up with the artist field sitting
+    /// lower and shorter than the album field: anything that changes one
+    /// string's line box — a glyph that falls back to another face, a themed
+    /// typeface with different metrics — silently moved one column and not the
+    /// other. A fixed line box can't drift, whatever is typed into it.
+    private func queryField(_ label: String, placeholder: String, text: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label)
+                .font(CarbonFont.mono(8, weight: .bold))
+                .foregroundStyle(theme.ink3)
+            TextField(placeholder, text: text)
+                .textFieldStyle(.plain)
+                .font(CarbonFont.sans(12))
+                .lineLimit(1)
+                .frame(height: 16)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(theme.isDark ? Color.white.opacity(0.04) : Color.black.opacity(0.03))
+                .cornerRadius(4)
+                .overlay(RoundedRectangle(cornerRadius: 4).stroke(theme.ink4.opacity(0.25), lineWidth: 0.8))
         }
     }
 

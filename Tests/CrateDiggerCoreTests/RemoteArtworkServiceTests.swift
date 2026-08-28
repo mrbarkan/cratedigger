@@ -71,6 +71,46 @@ final class RemoteArtworkServiceTests: XCTestCase {
         }
     }
 
+    // MARK: - MusicBrainz search resilience
+
+    /// The search walks a ladder of progressively looser queries. The strict
+    /// first rung is the one most likely to fail, so a timeout there must not
+    /// take the looser rungs down with it — that turned a slow MusicBrainz into
+    /// "Network error: the request timed out" for searches that would have
+    /// succeeded on the next attempt.
+    func testASlowFirstQueryDoesNotSinkTheWholeSearch() async throws {
+        var attempt = 0
+        MockURLProtocol.requestHandler = { request in
+            attempt += 1
+            if attempt == 1 { throw URLError(.timedOut) }
+            let body = Data("""
+            {"releases": [{"id": "mbid-2", "title": "Paracosm", "date": "2013"}]}
+            """.utf8)
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, body)
+        }
+
+        let releases = try await service.searchMusicBrainzReleases(artist: "Washed Out", album: "Paracosm")
+        XCTAssertEqual(releases.map(\.id), ["mbid-2"])
+        XCTAssertGreaterThan(attempt, 1, "the ladder must have carried on past the failed rung")
+    }
+
+    /// Every rung failing is a real failure, and must still reach the user.
+    func testASearchWhereEveryQueryFailsStillThrows() async {
+        MockURLProtocol.requestHandler = { _ in throw URLError(.timedOut) }
+        do {
+            _ = try await service.searchMusicBrainzReleases(artist: "Washed Out", album: "Paracosm")
+            XCTFail("expected the failure to surface")
+        } catch {
+            XCTAssertTrue(error is RemoteArtworkService.FetchError)
+        }
+    }
+
+    /// MusicBrainz search is far slower than the other endpoints here; the
+    /// session-wide 12s was timing out queries that were merely still running.
+    func testMusicBrainzGetsALongerTimeoutThanTheSessionDefault() {
+        XCTAssertGreaterThan(RemoteArtworkService.musicBrainzTimeout, 12)
+    }
+
     // MARK: - Discogs
 
     /// Shapes copied from live responses: a MusicBrainz release's url-relations

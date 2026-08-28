@@ -26,6 +26,9 @@ public actor RemoteArtworkService {
 
     private static let userAgent = "CrateDigger/1.0 (https://cratedigger.mrbarkan.com)"
     private static let preferredDimension = 1200
+    /// Per-request ceiling for MusicBrainz search, which is far slower than the
+    /// other endpoints this service talks to.
+    static let musicBrainzTimeout: TimeInterval = 25
 
     private let session: URLSession
     private let cacheDirectory: URL?
@@ -526,10 +529,21 @@ public extension RemoteArtworkService {
             throw FetchError.missingQuery
         }
 
+        // One rung failing must not end the search. The strict quoted query is
+        // the one most likely to return nothing, so the looser rungs below it
+        // are exactly the ones a user with an oddly-tagged album depends on —
+        // and a timeout on the first attempt used to throw all of them away.
+        // Only a search where every rung failed is a failed search.
+        var lastFailure: Error?
         for term in Self.musicBrainzQueryAttempts(artist: trimmedArtist, album: trimmedAlbum) {
-            let releases = try await performMusicBrainzQuery(term)
-            if !releases.isEmpty { return releases }
+            do {
+                let releases = try await performMusicBrainzQuery(term)
+                if !releases.isEmpty { return releases }
+            } catch {
+                lastFailure = error
+            }
         }
+        if let lastFailure { throw lastFailure }
         return []
     }
 
@@ -545,6 +559,12 @@ public extension RemoteArtworkService {
         var request = URLRequest(url: url)
         request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
         request.cachePolicy = .returnCacheDataElseLoad
+        // MusicBrainz's search server is genuinely slow — a plain artist+album
+        // query measured over 5s on a good connection, and it goes well past
+        // the session's 12s default under load. A cover search is worth waiting
+        // for; timing it out at 12s reported "the request timed out" for a
+        // query that was simply still running.
+        request.timeoutInterval = Self.musicBrainzTimeout
 
         let data: Data
         let response: URLResponse
