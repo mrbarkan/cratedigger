@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CrateDigger 2.0 Roadmap: Search, Smart Crates, and a Library That Knows You</title>
+  <meta name="description" content="The plan for CrateDigger 2.0: library search, smart crates that fill themselves, a single library health panel, listening history, and audio fingerprinting for untitled rips.">
+  <link rel="canonical" href="https://cratedigger.mrbarkan.com/roadmap.html">
+
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="CrateDigger 2.0 Roadmap">
+  <meta property="og:description" content="1.x made your library beautiful. 2.0 makes it livable. Search, smart crates, library health, and listening history.">
+  <meta property="og:url" content="https://cratedigger.mrbarkan.com/roadmap.html">
+  <meta property="og:image" content="https://cratedigger.mrbarkan.com/assets/app_icon.png">
+  <meta property="og:site_name" content="CrateDigger">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="CrateDigger 2.0 Roadmap">
+  <meta name="twitter:description" content="1.x made your library beautiful. 2.0 makes it livable. Search, smart crates, library health, and listening history.">
+  <meta name="twitter:image" content="https://cratedigger.mrbarkan.com/assets/app_icon.png">
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    "headline": "CrateDigger 2.0 Roadmap",
+    "datePublished": "2026-08-28",
+    "dateModified": "2026-08-28",
+    "author": { "@type": "Organization", "name": "CrateDigger" },
+    "publisher": {
+      "@type": "Organization",
+      "name": "CrateDigger",
+      "logo": { "@type": "ImageObject", "url": "https://cratedigger.mrbarkan.com/assets/app_icon.png" }
+    },
+    "image": "https://cratedigger.mrbarkan.com/assets/app_icon.png",
+    "mainEntityOfPage": "https://cratedigger.mrbarkan.com/roadmap.html"
+  }
+  </script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://cratedigger.mrbarkan.com/" },
+      { "@type": "ListItem", "position": 2, "name": "Roadmap", "item": "https://cratedigger.mrbarkan.com/roadmap.html" }
+    ]
+  }
+  </script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="index.css">
+</head>
+<body data-theme="dark">
+
+  <div class="backdrop"></div>
+
+  <header class="navbar">
+    <div class="nav-container">
+      <div class="logo">
+        <span class="logo-led"></span>
+        <span class="logo-text">CrateDigger</span>
+        <span class="logo-sub">CD-01</span>
+      </div>
+      <nav class="nav-links">
+        <a href="index.html#demo">Interactive UI</a>
+        <a href="index.html#features">Features</a>
+        <a href="index.html#comparison">Compare</a>
+        <a href="index.html#specs">Specs</a>
+        <a href="roadmap.html">Roadmap</a>
+        <a href="blog/index.html">Blog</a>
+        <a href="https://github.com/mrbarkan/cratedigger" class="btn btn-secondary">GitHub</a>
+        <a href="https://github.com/mrbarkan/cratedigger/releases/latest" class="btn btn-primary">Download</a>
+      </nav>
+    </div>
+  </header>
+
+  <section class="article-section">
+    <div class="article-container">
+      <div class="breadcrumb">
+        <a href="index.html">Home</a> / Roadmap
+      </div>
+
+      <div class="article-header">
+        <span class="article-eyebrow">Roadmap</span>
+        <h1 class="article-title">CrateDigger 2.0: your library, finally livable</h1>
+        <div class="article-meta">Planning · August 28, 2026 · Current release v1.5.9</div>
+      </div>
+
+      <div class="article-body">
+        <p>
+          Version 1.x was about making your library beautiful. Scan it, convert it, tag it, dress it in real cover scans, split the vinyl rips, push it to the iPod. That work is done, and it works well.
+        </p>
+        <p>
+          But there is an honest gap in the app today. CrateDigger is a workshop. You open it when you have a job to do, you do the job, and you close it. What it cannot yet be is the app you open on a Tuesday night because you want to hear something. Version 2.0 is about closing that gap.
+        </p>
+
+        <h2>Three things stand in the way</h2>
+        <p>
+          <strong>You cannot search your own library.</strong> There is no search field in the browser. Not in the sources list, not over artists, not over tracks. On a small crate you scroll. On a real collection you give up. This is the single most surprising gap in the app and it is the first thing 2.0 fixes.
+        </p>
+        <p>
+          <strong>Nothing records that you played anything.</strong> Last.fm gets the scrobble and CrateDigger keeps nothing for itself. There is no play count, no last played date, no date added, no rating. Every question that starts with "what have I actually been listening to" is unanswerable, and so is every crate rule that would depend on it.
+        </p>
+        <p>
+          <strong>Crates never fill themselves.</strong> A crate is a list of file paths, which is exactly the right design for what a crate is. It also means every crate you will ever own has to be assembled by hand, one record at a time, forever.
+        </p>
+
+        <h2>Phase 0: the foundations</h2>
+        <p>
+          Unglamorous, and everything else depends on it. Listening data moves into the shared track store: play count, skip count, last played, date added, rating. It is a small change to the model and it unlocks a disproportionate amount of what follows.
+        </p>
+        <p>
+          At the same time, browser state (selection, sort, and the filtering that Phase 1 introduces) moves out of the view model and into the tested core library. That view model is the largest file in the project and it currently owns almost everything. Every feature below gets cheaper once it stops being the place where all behaviour lives.
+        </p>
+
+        <h2>Phase 1: find anything</h2>
+        <p>
+          One field, one keystroke to reach it, results as you type. It searches artist, album, track title, file path and format across the crate you are in, with a mode that widens to every crate you own. The index it searches is already built and already in memory, so this should feel instant rather than merely fast.
+        </p>
+        <p>
+          Sortable browser columns land here too. And because the console deserves it, SEARCH becomes a view on the OLED display, the way CNVRT and SCAN already are. A tuner sweeping for a station is the right metaphor and the hardware already has the shape for it.
+        </p>
+
+        <h2>Phase 2: crates that fill themselves</h2>
+        <p>
+          A smart crate is a rule set instead of a list of paths. It sits in the same sidebar, in the same place, behaving the same way, so there is no second concept to learn. It just stays current on its own.
+        </p>
+        <p>
+          Rules run over what CrateDigger already knows about every file: format, bitrate, sample rate, year, genre, album artist, whether it has artwork, whether it looks like a duplicate. Phase 0 adds the interesting half of the list: never played, most played, added this month, rated four stars and up.
+        </p>
+        <p>
+          This is the most natural feature in the whole plan, because it extends the crate idea rather than bolting a new one alongside it.
+        </p>
+
+        <h2>Phase 3: library health, in one place</h2>
+        <p>
+          CrateDigger can already find your duplicates, repair broken tags, relink files that moved out from under it, and fill in missing covers in batch. Almost nobody knows that, because each capability lives behind a different menu item in a different corner of the app.
+        </p>
+        <p>
+          Phase 3 gathers them into one panel that opens with a straight answer: 41 albums with no cover, 18 tracks whose files have moved, 62 probable duplicates, 9 albums with no year. Every row is a smart crate. Click it, see exactly what it means, fix it in batch. This is mostly surfacing work rather than new engines, which is what makes it worth doing early.
+        </p>
+
+        <h2>Phase 4: the listening room</h2>
+        <p>
+          A queue you can actually edit: drag to reorder, play this next, see what is coming. Resume where you left off when you reopen the app. And a stats view on the glass, built on Phase 0 data, showing your most played records of the month and the year. Cheap to build, genuinely fun, and precisely the sort of thing an OLED panel on a piece of imaginary hardware should be doing.
+        </p>
+
+        <h2>Two bets worth making</h2>
+        <p>
+          <strong>Audio fingerprinting for untitled rips.</strong> Split a vinyl side with Record Divider and you are left holding eight files with no titles. Fingerprinting is what finishes that job: identify the recording by its audio, then fill the tags. The tool that does it, fpcalc, drops into the same locator that already finds ffmpeg and yt-dlp, so the plumbing is largely written. Best value for effort on this page, and nothing else here does what it does.
+        </p>
+        <p>
+          <strong>Loudness normalisation.</strong> A shelf of records ripped across twenty years plays back at twenty different volumes. FFmpeg already ships the analysis, so this is mostly a question of where the numbers get stored and how the player applies them. The Patch Bay even has the switch for it already, which is a fair sign of where this was always heading.
+        </p>
+
+        <h2>What is deliberately not in 2.0</h2>
+        <p>
+          <strong>An iOS companion, or any kind of cloud sync.</strong> That is a second product wearing the same name, and it would consume the entire release on its own.
+        </p>
+        <p>
+          <strong>DJ performance features.</strong> Beat detection, key detection, waveform decks. The name tempts you toward it, but that is Rekordbox, and Rekordbox is very good at being Rekordbox. CrateDigger is for the crate, not the booth.
+        </p>
+
+        <h2>No dates</h2>
+        <p>
+          Phases are ordered by what unblocks what, not by calendar. 1.x shipped nineteen releases in seven weeks by shipping what was ready, and that is not going to change now.
+        </p>
+        <p>
+          If something here is wrong, or something you need is missing, the issue tracker is open and this plan is not carved into anything. The best argument wins.
+        </p>
+      </div>
+
+      <div class="article-cta">
+        <p>CrateDigger is free and open source under the MIT license.</p>
+        <a href="https://github.com/mrbarkan/cratedigger/issues" class="btn btn-primary">Weigh in on GitHub</a>
+      </div>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="container footer-container">
+      <p class="copyright">&copy; 2026 CrateDigger. All rights reserved. macOS, SwiftUI, and AppKit are trademarks of Apple Inc.</p>
+      <div class="footer-meta">
+        <a href="roadmap.html">Roadmap</a>
+        <a href="blog/index.html">Blog</a>
+        <a href="https://www.patreon.com/mrbarkan">Support &hearts;</a>
+        <a href="https://github.com/mrbarkan/cratedigger/blob/main/docs/THEMING.md">Theming Guide</a>
+        <span>Current Release: v1.5.9</span>
+        <span class="footer-led"></span>
+      </div>
+    </div>
+  </footer>
+
+</body>
+</html>
