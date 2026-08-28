@@ -73,6 +73,12 @@ fi
 
 if [[ -n "${APPCAST_OVERRIDE}" ]]; then
   APPCAST="${APPCAST_OVERRIDE}"
+  # Each feed gets its own staging directory. generate_appcast writes an entry
+  # for every DMG it finds, so a shared one would put the stable releases into
+  # the beta feed (and its deltas into the beta release, where they are not
+  # uploaded). Keeping them apart also gives the beta line its own DMG history,
+  # which is what a beta-to-beta delta is computed from.
+  STAGING_DIR="${ROOT_DIR}/dist/updates-$(basename "${APPCAST}" .xml | sed 's/^appcast-//')"
 fi
 
 DMG_NAME="$(basename "${DMG_PATH}")"
@@ -159,7 +165,7 @@ cp "${STAGING_DIR}/appcast.xml" "${APPCAST}"
 echo "Wrote ${APPCAST}"
 echo
 echo "Next: upload ${DMG_NAME} to the ${TAG} release, then commit and push"
-echo "website/appcast.xml — Pages redeploys the feed on push."
+echo "${APPCAST#"${ROOT_DIR}/"} — Pages redeploys the feed on push."
 echo
 echo "If the feed carries a <sparkle:deltas> entry, upload that .delta from"
 echo "${STAGING_DIR} to the ${TAG} release too — its URL points there."
