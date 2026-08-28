@@ -1,10 +1,11 @@
 # CrateDigger
 
-> CrateDigger is a free, open-source (MIT) native macOS music utility for managing offline music libraries: scanning, tagging, batch FFmpeg conversion, artwork, and a skeuomorphic hardware-inspired interface.
+> CrateDigger is a free, open-source (MIT) native macOS app (Apple silicon, macOS 13+) for managing offline music libraries: scanning, tagging, batch FFmpeg conversion, artwork lookup (iTunes, Deezer, MusicBrainz / Cover Art Archive), vinyl-side splitting, CD ripping, Subsonic/Navidrome, YouTube radio, transfers to iPods and other players, and a fully themeable skeuomorphic hardware interface. Downloads are signed, notarized DMGs that self-update.
 
 ## Pages
 
 - [Home](https://cratedigger.mrbarkan.com/): Overview, feature spotlights, open-source info, download.
+- [Download](https://github.com/mrbarkan/cratedigger/releases/latest): Latest signed DMG release.
 - [Blog](https://cratedigger.mrbarkan.com/blog/index.html): Guides, comparisons, and release notes.
 - [Introducing CrateDigger 0.9](https://cratedigger.mrbarkan.com/blog/introducing-cratedigger-0-9.html): Launch announcement and feature rundown.
 - [Swinsian vs. CrateDigger vs. Foobar2000](https://cratedigger.mrbarkan.com/blog/swinsian-vs-cratedigger-vs-foobar2000.html): Comparison of native macOS music library managers.

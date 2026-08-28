@@ -75,6 +75,7 @@
         <a href="#specs">Specs</a>
         <a href="blog/index.html">Blog</a>
         <a href="https://github.com/mrbarkan/cratedigger" class="btn btn-secondary">GitHub</a>
+        <a href="https://github.com/mrbarkan/cratedigger/releases/latest" class="btn btn-primary">Download</a>
       </nav>
     </div>
   </header>
@@ -93,7 +94,11 @@
         <div class="signup-card">
           <h3 class="signup-title">Free &amp; Open Source</h3>
           <p class="signup-desc">The full source code lives on GitHub under the MIT license. And yes, it was vibe coded — but with intent and attention to detail, by a music hoarder, a fan of album artwork, and not so much a fan of streaming services.</p>
-          <a href="https://github.com/mrbarkan/cratedigger" class="btn btn-primary">View the Code on GitHub</a>
+          <div class="signup-form">
+            <a href="https://github.com/mrbarkan/cratedigger/releases/latest" class="btn btn-primary">Download for macOS</a>
+            <a href="https://github.com/mrbarkan/cratedigger" class="btn btn-secondary">View the Code</a>
+          </div>
+          <p class="signup-note">Signed &amp; notarized <code>.dmg</code> · Apple silicon · macOS 13+ · Installs its own updates from here on.</p>
         </div>
       </div>
       <div class="hero-image-wrapper">
@@ -181,7 +186,7 @@
               <h4>Double-Tier Crates Index</h4>
             </div>
             <p class="tooltip-body">
-              Organize offline tracks into portable, lightweight crates (saved as pretty-printed JSON arrays in your local folders). The <strong>Prep Crate</strong> functions as a secure staging zone for scanning new files, ensuring you tag and review imports before copying them to your primary crates. Supports Subsonic/Navidrome libraries, CD audio ripping, and local playlist files.
+              Organize offline tracks into portable, lightweight crates — a <code>.cdcrate</code> file is a plain JSON list of file paths, with the tags kept once in a shared store beside it, so a crate stays tiny no matter how large your library grows. The <strong>Prep Crate</strong> is the staging zone for newly scanned files, so you tag and review imports before they join your saved crates. Supports Subsonic/Navidrome libraries, CD audio ripping, mounted players, and local playlist files.
             </p>
           </div>
 
@@ -192,7 +197,7 @@
               <h4>Active Tag & Artwork Inspector</h4>
             </div>
             <p class="tooltip-body">
-              Inspect nested audio tags and metadata details instantly. Resolves embedded artwork dynamically, searches local directories for cover assets, and pulls high-resolution covers from iTunes integration. Toggles between raw metadata fields and file-level info in secondary wells.
+              Inspect nested audio tags and metadata details instantly. Resolves embedded artwork dynamically, searches local directories for cover assets, and pulls high-resolution covers from iTunes, Deezer, and — once you pick a MusicBrainz release — the Cover Art Archive's typed front, back, and booklet scans. Toggles between raw metadata fields and file-level info in secondary wells.
             </p>
           </div>
 
@@ -245,9 +250,9 @@
             Newly scanned folders land in the Prep Crate first — a staging area for tagging and review — instead of dumping straight into your permanent collection.
           </p>
           <ul class="spotlight-list">
-            <li>Crates are portable, human-readable <code>.cdlib</code> JSON files</li>
+            <li>Crates are portable, human-readable <code>.cdcrate</code> JSON files</li>
             <li>Review and tag imports before they touch your main crates</li>
-            <li>Switch instantly between local, remote, CD, and playlist sources</li>
+            <li>Switch instantly between local, remote, CD, device, and playlist sources</li>
             <li>No proprietary database — your library folders stay yours</li>
           </ul>
         </div>
@@ -280,13 +285,13 @@
           <span class="spotlight-eyebrow">Artwork</span>
           <h3 class="spotlight-title">See your covers the way they deserve to be seen.</h3>
           <p class="spotlight-text">
-            The artwork inspector resolves embedded art, folder images, and remote iTunes covers into one hash-keyed store, then lets you browse it full-size.
+            The artwork inspector resolves embedded art, folder images, and remote covers into one hash-keyed store, then lets you browse it full-size in a floating window while you keep editing tags.
           </p>
           <ul class="spotlight-list">
-            <li>Full-size album artwork viewer, not just a thumbnail</li>
-            <li>Falls back from embedded art → folder image → remote lookup</li>
+            <li>Falls back from embedded art → folder image → iTunes → Deezer</li>
+            <li>Pick a MusicBrainz release for typed Cover Art Archive scans — front, back, spine, obi, booklet pages</li>
             <li>Supports album booklets — scanned inserts and liner-note PDFs</li>
-            <li>One shared artwork cache, so covers load instantly across crates</li>
+            <li>One shared artwork store keyed by hash, so covers load instantly across every crate</li>
           </ul>
         </div>
       </div>
@@ -315,7 +320,7 @@
           <div class="feature-icon font-icon">🔌</div>
           <h3 class="feature-card-title">External Device Transfer</h3>
           <p class="feature-card-text">
-            Push tracks straight to an iPod, USB drive, or phone with ⌘⇧T. CrateDigger detects connected devices and lets you browse and transfer without leaving your library.
+            Push tracks straight to an iPod, USB drive, or phone with ⌘⇧T. Rockbox players get a <code>cover.jpg</code> written beside the album so art draws in colour, and FIX ART repairs a player you filled years ago without re-sending a file.
           </p>
         </div>
 
@@ -337,9 +342,25 @@
 
         <div class="feature-card">
           <div class="feature-icon font-icon">⚡</div>
-          <h3 class="feature-card-title">Tactile Hardware Feel — Now Themeable</h3>
+          <h3 class="feature-card-title">Build Your Own Console</h3>
           <p class="feature-card-text">
-            No standard flat menus or sterile interfaces. The interface mimics physical audio chassis panels, complete with knobs, dials, and OLED displays — and as of 1.1.0 the whole skin is yours to change: drop a <code>.cdtheme</code> file in and recolor everything down to the OLED phosphor and scanlines, Winamp-skin style. <a href="https://github.com/mrbarkan/cratedigger/blob/main/docs/THEMING.md">Read the theming guide</a>.
+            Press THEME, then EDITOR: every colour, corner radius, and typeface is a control, and the app repaints behind the panel as you drag — the preview <em>is</em> the application. One theme carries its own light and dark versions, fonts travel bundled inside it, and UNDO steps back ten changes. Four themes ship; the rest is yours. <a href="https://github.com/mrbarkan/cratedigger/blob/main/docs/THEMING.md">Read the theming guide</a>.
+          </p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon font-icon">⬇️</div>
+          <h3 class="feature-card-title">It Updates Itself</h3>
+          <p class="feature-card-text">
+            No more fetching a DMG and dragging the app across by hand. CrateDigger checks quietly once a day, verifies the new build was signed by us, installs it, and relaunches. Release candidates stay on their own channel, so a stable install is never handed a beta.
+          </p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon font-icon">🗂️</div>
+          <h3 class="feature-card-title">Move &amp; Consolidate</h3>
+          <p class="feature-card-text">
+            Point your Music Folder somewhere new and CrateDigger moves every file and repoints every crate that referenced them. Consolidate pulls strays from all over your disk into one place; the folder tree can keep itself organised by album artist as you edit tags.
           </p>
         </div>
 
@@ -385,7 +406,7 @@
             </tr>
             <tr>
               <td class="feat-name">Tactile Hardware Interface</td>
-              <td class="highlight feat-yes">✓ Yes (Carbon/Linen Themes)</td>
+              <td class="highlight feat-yes">✓ Yes (+ full in-app theme editor)</td>
               <td class="feat-no">✗ No (Modern flat list style)</td>
               <td class="feat-no">✗ No (Windows-classic sheet grids)</td>
               <td class="feat-no">✗ No (Responsive grid layout)</td>
@@ -409,7 +430,7 @@
             </tr>
             <tr>
               <td class="feat-name">JSON Portable Libraries</td>
-              <td class="highlight feat-yes">✓ Yes (Lightweight .cdlib files)</td>
+              <td class="highlight feat-yes">✓ Yes (Lightweight .cdcrate files)</td>
               <td class="feat-no">✗ No (Locked in binary SQLite/XML db)</td>
               <td class="feat-no">✗ No (Proprietary database binary)</td>
               <td class="feat-no">✗ No (SQL databases on server host)</td>
@@ -441,11 +462,11 @@
           </div>
           <div class="spec-item">
             <h5>OS Platform</h5>
-            <p>Built exclusively for macOS 13+ (Ventura, Sonoma, Sequoia, Tahoe). Programmed using native Swift 5.10, AppKit bridging, and SwiftUI components.</p>
+            <p>Built exclusively for macOS 13+ (Ventura, Sonoma, Sequoia, Tahoe) on Apple silicon. Native Swift, AppKit bridging, and SwiftUI components. Ships as a signed, notarized DMG that updates itself over a signed appcast.</p>
           </div>
           <div class="spec-item">
             <h5>Storage & Formats</h5>
-            <p>Decodes FLAC, ALAC, WAV, MP3, AAC, AIFF, OGG, and M4A. Persists libraries via secure security-scoped bookmarks and lightweight <code>.cdlib</code> files.</p>
+            <p>Decodes FLAC, ALAC, WAV, MP3, AAC, AIFF, OGG, and M4A. Persists libraries via secure security-scoped bookmarks, lightweight <code>.cdcrate</code> path lists, one shared track store, and a hash-keyed artwork store — no index file ever carries image bytes.</p>
           </div>
           <div class="spec-item">
             <h5>Hardware Safety</h5>
