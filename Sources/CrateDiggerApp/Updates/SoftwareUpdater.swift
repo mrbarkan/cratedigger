@@ -53,11 +53,17 @@ final class SoftwareUpdater {
 
 /// Keeps prerelease builds on prerelease updates and everyone else on stable.
 ///
-/// An RC build declares `AppVersion.channel = "RC"`, which matches the
-/// `<sparkle:channel>rc</sparkle:channel>` the release script writes onto
-/// prerelease appcast items. A final release allows no channel at all, so it
-/// is only ever offered stable releases — the same rule the GitHub feed check
-/// used before Sparkle replaced it.
+/// A prerelease build declares a channel (`AppVersion.channel = "RC"`), which
+/// matches the `<sparkle:channel>rc</sparkle:channel>` the release script
+/// writes onto prerelease appcast items. A final release allows no channel at
+/// all, so it is only ever offered stable releases — the same rule the GitHub
+/// feed check used before Sparkle replaced it.
+///
+/// **The v2 beta line does not rely on this.** It is isolated one level up, at
+/// the feed: this branch's `SUFeedURL` points at `appcast-beta.xml`, which no
+/// shipped 1.5.x app has ever heard of, so a beta release cannot reach a
+/// stable user even if its channel tag were wrong. The declared BETA channel
+/// is what labels the About pill and builds the `v2.0.0-beta.<build>` tag.
 private final class ChannelDelegate: NSObject, SPUUpdaterDelegate {
     func allowedChannels(for updater: SPUUpdater) -> Set<String> {
         AppVersion.channel.isEmpty ? [] : [AppVersion.channel.lowercased()]

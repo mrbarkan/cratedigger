@@ -19,7 +19,7 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.5.10</string>
+	<string>2.0.0</string>
 	<key>CFBundleVersion</key>
 	<string>72</string>
 	<key>LSApplicationCategoryType</key>
@@ -45,7 +45,7 @@
 	<key>SUEnableAutomaticChecks</key>
 	<true/>
 	<key>SUFeedURL</key>
-	<string>https://cratedigger.mrbarkan.com/appcast.xml</string>
+	<string>https://cratedigger.mrbarkan.com/appcast-beta.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>Y95K8qPB+GjLM3ssC6l1jOFZqpETG3aVC3D1btrbmd8=</string>
 	<key>SUScheduledCheckInterval</key>
