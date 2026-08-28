@@ -4,6 +4,26 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 2.0.0 (73) — 2026-08-28 — BETA 1
+
+The first build of the 2.0 line. Unfinished by definition: this is where
+everything up to 2.0 is built, and it is offered to nobody who has not asked
+for it.
+
+### Added
+
+- **Receive beta updates.** Settings, Advanced. Off unless you turn it on, and
+  turning it on is the only way a stable install is ever offered one of these
+  builds. It selects a separate feed rather than tagging the stable one, so
+  leaving it alone means a mistake in a beta cannot reach you. Turn it off to
+  go back to finished releases.
+
+### Notes for testers
+
+Betas can lose data. Point CrateDigger at a copy of your library, not the only
+copy, and keep a stable install to fall back to. 2.0's plan is at
+cratedigger.mrbarkan.com/roadmap.html.
+
 ## 1.5.10 (72) — 2026-08-28
 
 Discogs, where the scans of the physical object live. Back sleeves, inners,
