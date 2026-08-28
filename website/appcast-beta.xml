@@ -1,0 +1,37 @@
+<?xml version="1.0" standalone="yes"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
+        <title>CrateDigger</title>
+        <item>
+            <title>2.0.0</title>
+            <pubDate>Fri, 28 Aug 2026 18:09:51 -0300</pubDate>
+            <link>https://cratedigger.mrbarkan.com/</link>
+            <sparkle:fullReleaseNotesLink>https://github.com/mrbarkan/cratedigger/releases</sparkle:fullReleaseNotesLink>
+            <sparkle:version>73</sparkle:version>
+            <sparkle:shortVersionString>2.0.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description sparkle:format="markdown"><![CDATA[
+The first build of the 2.0 line. Unfinished by definition: this is where
+everything up to 2.0 is built, and it is offered to nobody who has not asked
+for it.
+
+### Added
+
+- **Receive beta updates.** Settings, Advanced. Off unless you turn it on, and
+  turning it on is the only way a stable install is ever offered one of these
+  builds. It selects a separate feed rather than tagging the stable one, so
+  leaving it alone means a mistake in a beta cannot reach you. Turn it off to
+  go back to finished releases.
+
+### Notes for testers
+
+Betas can lose data. Point CrateDigger at a copy of your library, not the only
+copy, and keep a stable install to fall back to. 2.0's plan is at
+cratedigger.mrbarkan.com/roadmap.html.
+
+]]></description>
+            <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.0.0-beta.73/CrateDigger-2.0.0.dmg" length="65899238" type="application/octet-stream" sparkle:edSignature="Z8B8CnmHYqJbkuSbx2o9HpsTRBR35iguk2dkny8vt1ooJCphZbZhhMbXyW8m6q20bu9AcYS+8HFQm65CgCSYAQ=="/>
+        </item>
+    </channel>
+</rss>
