@@ -493,8 +493,41 @@ private struct IntegrationsPreferencesView: View {
         Form {
             SubsonicSettingsSection()
             LastFMSettingsSection()
+            DiscogsSettingsSection()
         }
         .formStyle(.grouped)
+    }
+}
+
+/// Artwork lookups query Discogs for scans of the physical release alongside
+/// the Cover Art Archive. It works with no token at all — this section exists
+/// for the two cases where one helps: heavy use (25 requests a minute becomes
+/// 60), and Discogs deciding to put image URLs back behind authentication.
+private struct DiscogsSettingsSection: View {
+    @State private var token = PreferencesStore.shared.discogsToken ?? ""
+
+    var body: some View {
+        Section("Discogs Artwork") {
+            SecureField("Personal access token", text: $token)
+                .onSubmit(persist)
+            HStack {
+                Text(token.isEmpty ? "Using the public API — 25 lookups a minute." : "Token set — 60 lookups a minute.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Save") { persist() }
+                Button("Get a Token…") {
+                    NSWorkspace.shared.open(URL(string: "https://www.discogs.com/settings/developers")!)
+                }
+            }
+            Text("Optional. Discogs holds back covers, labels and inserts that the Cover Art Archive usually doesn't; they appear in the artwork search marked DISCOGS.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func persist() {
+        PreferencesStore.shared.discogsToken = token.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 

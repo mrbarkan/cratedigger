@@ -34,13 +34,25 @@ public actor RemoteArtworkService {
     /// probes counts per visible row while the user browses, and GET ARTWORK
     /// re-requests the same small JSON — cache it once per session so neither
     /// path refetches (404 "no images" results included).
-    private var caaImagesByRelease: [String: [CAABookletImage]] = [:]
+    private var caaImagesByRelease: [String: [RemoteArtworkImage]] = [:]
+
+    /// Release MBID → the Discogs release id MusicBrainz links it to (`nil`
+    /// cached as "looked, found nothing"), and Discogs release id → its scans.
+    /// Both are per-session: Discogs allows 25 requests a minute without a
+    /// token, so re-opening the sheet must not spend any of them again.
+    private var discogsIDByRelease: [String: String?] = [:]
+    private var discogsImagesByRelease: [String: [RemoteArtworkImage]] = [:]
+
+    /// Optional Discogs personal access token. Blank is fine — the public API
+    /// serves release images unauthenticated, just at a lower rate limit.
+    private var discogsToken: String?
 
     /// Image URL → true pixel size, from `probeDimensions`. Same reasoning as
     /// the list cache: reopening the sheet shouldn't re-probe every image.
     private var dimensionsByURL: [URL: ArtworkDimensions] = [:]
 
-    public init(session: URLSession? = nil) {
+    public init(session: URLSession? = nil, discogsToken: String? = nil) {
+        self.discogsToken = discogsToken.flatMap { $0.isEmpty ? nil : $0 }
         if let session {
             self.session = session
         } else {
@@ -51,6 +63,13 @@ public actor RemoteArtworkService {
             self.session = URLSession(configuration: config)
         }
         self.cacheDirectory = Self.makeCacheDirectory()
+    }
+
+    /// Settings can change the token while the app is running; the sheet pushes
+    /// the current value in before a lookup rather than the actor caching a
+    /// value read once at launch.
+    public func setDiscogsToken(_ token: String?) {
+        discogsToken = token.flatMap { $0.isEmpty ? nil : $0 }
     }
 
     public func fetchArtwork(artist: String, album: String) async throws -> ArtworkAsset {
@@ -429,7 +448,25 @@ public struct MBReleaseCandidate: Identifiable, Codable, Sendable {
     }
 }
 
-public struct CAABookletImage: Identifiable, Codable, Sendable {
+/// Where a candidate image came from. The Cover Art Archive types its images
+/// (Front/Back/Booklet/Medium); Discogs only marks one primary and the rest
+/// secondary, but carries far more scans of physical releases — sleeves,
+/// labels, inserts, obi strips — which is why both are offered side by side.
+public enum RemoteArtworkSource: String, Codable, Sendable {
+    case coverArtArchive
+    case discogs
+
+    /// Badge text on the artwork grid, so it's obvious which database a scan
+    /// came from before you commit it to the album folder.
+    public var badge: String {
+        switch self {
+        case .coverArtArchive: return "CAA"
+        case .discogs: return "DISCOGS"
+        }
+    }
+}
+
+public struct RemoteArtworkImage: Identifiable, Codable, Sendable {
     public var id: String { imageURL.absoluteString }
     public let imageURL: URL
     public let thumbnailURL: URL
@@ -437,15 +474,17 @@ public struct CAABookletImage: Identifiable, Codable, Sendable {
     public let comment: String
     public let front: Bool
     public let back: Bool
+    public let source: RemoteArtworkSource
 
     public init(imageURL: URL, thumbnailURL: URL, types: [String], comment: String,
-                front: Bool, back: Bool) {
+                front: Bool, back: Bool, source: RemoteArtworkSource = .coverArtArchive) {
         self.imageURL = imageURL
         self.thumbnailURL = thumbnailURL
         self.types = types
         self.comment = comment
         self.front = front
         self.back = back
+        self.source = source
     }
 }
 
@@ -568,7 +607,7 @@ public extension RemoteArtworkService {
         (try? await fetchCoverArtArchiveImages(releaseMBID: releaseMBID))?.count
     }
 
-    func fetchCoverArtArchiveImages(releaseMBID: String) async throws -> [CAABookletImage] {
+    func fetchCoverArtArchiveImages(releaseMBID: String) async throws -> [RemoteArtworkImage] {
         if let cached = caaImagesByRelease[releaseMBID] {
             return cached
         }
@@ -633,12 +672,12 @@ public extension RemoteArtworkService {
         }
 
         let envelope = try JSONDecoder().decode(CAAEnvelope.self, from: data)
-        let images = envelope.images.compactMap { img -> CAABookletImage? in
+        let images = envelope.images.compactMap { img -> RemoteArtworkImage? in
             guard let imageURL = https(img.image) else { return nil }
             let thumbStr = img.thumbnails?.size250 ?? img.thumbnails?.size500 ?? img.thumbnails?.small ?? img.thumbnails?.large ?? img.image
             guard let thumbURL = https(thumbStr) else { return nil }
             
-            return CAABookletImage(
+            return RemoteArtworkImage(
                 imageURL: imageURL,
                 thumbnailURL: thumbURL,
                 types: img.types ?? [],
@@ -680,3 +719,133 @@ public extension RemoteArtworkService {
     }
 }
 
+// MARK: - Discogs
+
+/// Discogs holds the deepest catalogue of *physical* release scans — back
+/// sleeves, spines, labels, inners, inserts, obi strips — where the Cover Art
+/// Archive is mostly fronts. Reaching it costs nothing extra to search: a
+/// MusicBrainz release already carries a `discogs` URL relation, and the
+/// artwork sheet has resolved that release MBID by the time it asks for images.
+///
+/// Unauthenticated works today (25 requests a minute); a personal access token
+/// raises that to 60 and insures against Discogs re-gating image URLs, which it
+/// has done before. Either way Discogs requires a descriptive User-Agent.
+public extension RemoteArtworkService {
+
+    /// Every candidate image for a release: the Cover Art Archive's typed
+    /// images first (they carry real Front/Back/Booklet roles), then whatever
+    /// scans Discogs has that the archive doesn't.
+    ///
+    /// Discogs failing is never an error — the archive's images still stand on
+    /// their own, and a rate-limited or offline second source must not empty
+    /// the grid.
+    func fetchReleaseImages(releaseMBID: String) async throws -> [RemoteArtworkImage] {
+        let archive = try await fetchCoverArtArchiveImages(releaseMBID: releaseMBID)
+        let discogs = await discogsImages(forReleaseMBID: releaseMBID)
+        let known = Set(archive.map(\.id))
+        return archive + discogs.filter { !known.contains($0.id) }
+    }
+
+    /// The Discogs scans for a MusicBrainz release, or none when MusicBrainz
+    /// doesn't link the two.
+    func discogsImages(forReleaseMBID mbid: String) async -> [RemoteArtworkImage] {
+        guard let releaseID = await discogsReleaseID(forReleaseMBID: mbid) else { return [] }
+        if let cached = discogsImagesByRelease[releaseID] { return cached }
+        guard let url = URL(string: "https://api.discogs.com/releases/\(releaseID)") else { return [] }
+
+        var request = URLRequest(url: url)
+        request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
+        if let discogsToken {
+            request.setValue("Discogs token=\(discogsToken)", forHTTPHeaderField: "Authorization")
+        }
+        guard let (data, response) = try? await session.data(for: request),
+              let http = response as? HTTPURLResponse,
+              (200..<300).contains(http.statusCode)
+        else {
+            return []   // rate-limited, offline, or a release that has gone away
+        }
+
+        let images = Self.parseDiscogsImages(data)
+        discogsImagesByRelease[releaseID] = images
+        return images
+    }
+
+    /// The Discogs release id MusicBrainz links this release to. Cached
+    /// including the misses: a release with no Discogs link must not re-ask
+    /// MusicBrainz every time the sheet opens.
+    func discogsReleaseID(forReleaseMBID mbid: String) async -> String? {
+        if let cached = discogsIDByRelease[mbid] { return cached }
+        guard let url = URL(string: "https://musicbrainz.org/ws/2/release/\(mbid)?inc=url-rels&fmt=json") else {
+            return nil
+        }
+        var request = URLRequest(url: url)
+        request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
+        guard let (data, response) = try? await session.data(for: request),
+              let http = response as? HTTPURLResponse,
+              (200..<300).contains(http.statusCode)
+        else {
+            return nil   // not cached: a network blip should be retried, unlike a real "no link"
+        }
+
+        let found = Self.parseDiscogsReleaseID(data)
+        discogsIDByRelease[mbid] = found
+        return found
+    }
+}
+
+public extension RemoteArtworkService {
+
+    /// Pull the Discogs release id out of a MusicBrainz release's url-relations.
+    /// Only `/release/<id>` counts — a relation to a Discogs *master* addresses
+    /// a group of pressings, whose images are not this release's.
+    static func parseDiscogsReleaseID(_ data: Data) -> String? {
+        struct Response: Decodable {
+            struct Relation: Decodable {
+                struct Target: Decodable { let resource: String? }
+                let type: String?
+                let url: Target?
+            }
+            let relations: [Relation]?
+        }
+        guard let decoded = try? JSONDecoder().decode(Response.self, from: data) else { return nil }
+        for relation in decoded.relations ?? [] where relation.type?.lowercased() == "discogs" {
+            guard let resource = relation.url?.resource,
+                  let range = resource.range(of: "/release/")
+            else { continue }
+            let trailing = resource[range.upperBound...].prefix { $0.isNumber }
+            if !trailing.isEmpty { return String(trailing) }
+        }
+        return nil
+    }
+
+    /// Map a Discogs release payload onto artwork candidates.
+    ///
+    /// Discogs marks exactly one image `primary` and everything else
+    /// `secondary` — it doesn't say which secondary is the back and which is a
+    /// label. So only the front is claimed here; the rest arrive unroled and
+    /// the sheet's role picker (which the user drives anyway) assigns them.
+    static func parseDiscogsImages(_ data: Data) -> [RemoteArtworkImage] {
+        struct Response: Decodable {
+            struct Image: Decodable {
+                let type: String?
+                let uri: String?
+                let uri150: String?
+            }
+            let images: [Image]?
+        }
+        guard let decoded = try? JSONDecoder().decode(Response.self, from: data) else { return [] }
+        return (decoded.images ?? []).compactMap { image in
+            guard let uri = image.uri, let full = URL(string: uri) else { return nil }
+            let isPrimary = image.type?.lowercased() == "primary"
+            return RemoteArtworkImage(
+                imageURL: full,
+                thumbnailURL: image.uri150.flatMap { URL(string: $0) } ?? full,
+                types: isPrimary ? ["Front"] : [],
+                comment: "",
+                front: isPrimary,
+                back: false,
+                source: .discogs
+            )
+        }
+    }
+}

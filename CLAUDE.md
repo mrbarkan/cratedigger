@@ -112,7 +112,7 @@ it in a `.app`). Setup and release steps are in README, "In-app updates".
 
 ### Artwork
 
-`ArtworkService` (Core) is a **SHA-256-hash-keyed** in-memory store (`dataByHash`) + thumbnail `NSCache`. `resolveArtwork` prefers embedded art → folder image (e.g. `cover.jpg`) → remote. Tracks reference art by `artworkHash`, not by carrying image bytes. `RemoteArtworkService` fetches from iTunes; assets fetched outside the scan pipeline must be `ingest`ed so thumbnails resolve. Album folders can carry an `ArtworkManifest` (role mapping) and `AlbumBooklet` (scanned images/PDFs).
+`ArtworkService` (Core) is a **SHA-256-hash-keyed** in-memory store (`dataByHash`) + thumbnail `NSCache`. `resolveArtwork` prefers embedded art → folder image (e.g. `cover.jpg`) → remote. Tracks reference art by `artworkHash`, not by carrying image bytes. `RemoteArtworkService` fetches remotely from four sources: iTunes then Deezer for a single front cover, and — once a MusicBrainz release is picked in the artwork sheet — the Cover Art Archive (typed Front/Back/Booklet images) plus Discogs, reached through the `discogs` URL relation MusicBrainz carries for that release (`fetchReleaseImages` merges the last two). Discogs needs no credentials; `PreferencesStore.discogsToken` is optional and only raises the rate limit. Assets fetched outside the scan pipeline must be `ingest`ed so thumbnails resolve. Album folders can carry an `ArtworkManifest` (role mapping) and `AlbumBooklet` (scanned images/PDFs).
 
 ### Cross-cutting events & persistence
 

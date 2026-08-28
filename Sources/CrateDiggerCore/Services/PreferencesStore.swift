@@ -66,6 +66,7 @@ public final class PreferencesStore {
         static let streamSources = "cratedigger.radio.streamSources"
         static let streamEngine = "cratedigger.radio.engine"
         static let customYtDlpPath = "cratedigger.tools.ytdlpPath"
+        static let discogsToken = "cratedigger.artwork.discogsToken"
         static let albumGroups = "cratedigger.library.albumGroups"
         static let selectedThemeID = "cratedigger.ui.selectedThemeID"
     }
@@ -633,6 +634,22 @@ public final class PreferencesStore {
     public var streamEngine: String {
         get { defaults.string(forKey: Key.streamEngine) ?? "auto" }
         set { defaults.set(newValue, forKey: Key.streamEngine) }
+    }
+
+    /// Optional Discogs personal access token for artwork lookups. Blank is a
+    /// supported state — the public API serves release images without one, at a
+    /// lower rate limit (25 req/min against 60). A token also keeps the feature
+    /// working if Discogs goes back to gating image URLs behind auth, which it
+    /// has done before.
+    public var discogsToken: String? {
+        get { defaults.string(forKey: Key.discogsToken) }
+        set {
+            if let value = newValue, !value.isEmpty {
+                defaults.set(value, forKey: Key.discogsToken)
+            } else {
+                defaults.removeObject(forKey: Key.discogsToken)
+            }
+        }
     }
 
     /// User-chosen path to a yt-dlp binary (bring-your-own). nil/empty clears it.

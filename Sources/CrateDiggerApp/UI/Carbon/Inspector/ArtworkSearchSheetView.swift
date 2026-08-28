@@ -72,7 +72,7 @@ struct ArtworkSearchSheetView: View {
     @State private var loadingArt = false
     @State private var selectedReleaseID: String? = nil
     @State private var selectedReleaseTitle: String = ""
-    @State private var caaImages: [CAABookletImage] = []
+    @State private var caaImages: [RemoteArtworkImage] = []
     /// Image id → the original's true pixel size, filled in as probes land.
     @State private var imageDimensions: [String: ArtworkDimensions] = [:]
     @State private var artError: String? = nil
@@ -85,7 +85,7 @@ struct ArtworkSearchSheetView: View {
     @State private var isDownloading = false
 
     // Full-size preview shown over the grid (does not affect selection).
-    @State private var previewImage: CAABookletImage? = nil
+    @State private var previewImage: RemoteArtworkImage? = nil
 
     // Result filtering / sorting / grouping (the release list).
     @State private var mediaFilter: String? = nil
@@ -164,7 +164,7 @@ struct ArtworkSearchSheetView: View {
         .animation(.easeInOut(duration: 0.15), value: previewImage?.id)
     }
 
-    private func imagePreviewOverlay(_ img: CAABookletImage) -> some View {
+    private func imagePreviewOverlay(_ img: RemoteArtworkImage) -> some View {
         ZStack {
             Color.black.opacity(0.82)
                 .ignoresSafeArea()
@@ -694,7 +694,7 @@ struct ArtworkSearchSheetView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func artworkCell(_ img: CAABookletImage) -> some View {
+    private func artworkCell(_ img: RemoteArtworkImage) -> some View {
         let isSelected = selectedImages.contains(img.id)
         return VStack(spacing: 6) {
             Button(action: { handleImageTap(img) }) {
@@ -728,6 +728,19 @@ struct ArtworkSearchSheetView: View {
                         .stroke(isSelected ? theme.orange : (theme.isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.1)), lineWidth: isSelected ? 2 : 1)
                 )
                 .depthShadow(color: Color.black.opacity(0.1), radius: 3, y: 1)
+                .overlay(alignment: .topLeading) {
+                    if img.source == .discogs {
+                        Text(img.source.badge)
+                            .font(CarbonFont.mono(7, weight: .bold))
+                            .tracking(0.5)
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1.5)
+                            .background(Capsule().fill(theme.indigo.opacity(0.9)))
+                            .padding(5)
+                            .carbonTip("Scan from Discogs. It holds far more of a physical release — back, labels, inserts — but doesn't say which is which, so pick the role yourself.")
+                    }
+                }
                 .overlay(alignment: .bottomTrailing) {
                     if let size = imageDimensions[img.id] {
                         let isHiRes = min(size.width, size.height) >= 1000
@@ -838,7 +851,7 @@ struct ArtworkSearchSheetView: View {
         }
     }
 
-    private func toggleImageSelection(_ img: CAABookletImage) {
+    private func toggleImageSelection(_ img: RemoteArtworkImage) {
         if selectedImages.contains(img.id) {
             selectedImages.remove(img.id)
         } else {
@@ -847,7 +860,7 @@ struct ArtworkSearchSheetView: View {
     }
 
     /// Add one image to the selection and seed its default role.
-    private func selectSingle(_ img: CAABookletImage) {
+    private func selectSingle(_ img: RemoteArtworkImage) {
         selectedImages.insert(img.id)
         if imageRoles[img.id] == nil {
             imageRoles[img.id] = defaultRole(for: img.types)
@@ -856,7 +869,7 @@ struct ArtworkSearchSheetView: View {
 
     /// Plain click toggles one image and moves the ⇧-anchor there; ⇧-click adds
     /// the contiguous range from the anchor to the clicked cell (grid order).
-    private func handleImageTap(_ img: CAABookletImage) {
+    private func handleImageTap(_ img: RemoteArtworkImage) {
         if NSEvent.modifierFlags.contains(.shift),
            let anchor = selectionAnchorID,
            let a = caaImages.firstIndex(where: { $0.id == anchor }),
@@ -963,12 +976,14 @@ struct ArtworkSearchSheetView: View {
         Task {
             do {
                 let service = model.remoteArtworkService
-                let images = try await service.fetchCoverArtArchiveImages(releaseMBID: release.id)
+                // Settings can change the token between lookups.
+                await service.setDiscogsToken(PreferencesStore.shared.discogsToken)
+                let images = try await service.fetchReleaseImages(releaseMBID: release.id)
                 await MainActor.run {
                     self.caaImages = images
                     self.loadingArt = false
                     if images.isEmpty {
-                        self.artError = "No images are available in the Cover Art Archive for this release."
+                        self.artError = "Neither the Cover Art Archive nor Discogs has images for this release."
                     }
                 }
                 // Header-only probes, in parallel — the grid fills its size
@@ -991,7 +1006,7 @@ struct ArtworkSearchSheetView: View {
         }
     }
 
-    private func getSuggestedFilename(for image: CAABookletImage, index: Int, choice: ArtRoleChoice) -> String {
+    private func getSuggestedFilename(for image: RemoteArtworkImage, index: Int, choice: ArtRoleChoice) -> String {
         let ext = image.imageURL.pathExtension.isEmpty ? "jpg" : image.imageURL.pathExtension.lowercased()
         switch choice {
         case .cover:

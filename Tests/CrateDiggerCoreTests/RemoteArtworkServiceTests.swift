@@ -71,6 +71,85 @@ final class RemoteArtworkServiceTests: XCTestCase {
         }
     }
 
+    // MARK: - Discogs
+
+    /// Shapes copied from live responses: a MusicBrainz release's url-relations
+    /// and a Discogs release payload.
+    private func mbRelationsJSON(_ resource: String, type: String = "discogs") -> Data {
+        Data("""
+        {"title": "A Release", "relations": [
+            {"type": "amazon asin", "url": {"resource": "https://www.amazon.com/gp/product/B00001IVAI"}},
+            {"type": "\(type)", "url": {"resource": "\(resource)"}}
+        ]}
+        """.utf8)
+    }
+
+    private func discogsReleaseJSON() -> Data {
+        Data("""
+        {"title": "A Release", "images": [
+            {"type": "primary", "uri": "https://i.discogs.com/full-front.jpeg", "uri150": "https://i.discogs.com/t150-front.jpeg", "width": 600, "height": 600},
+            {"type": "secondary", "uri": "https://i.discogs.com/full-back.jpeg", "uri150": "https://i.discogs.com/t150-back.jpeg", "width": 600, "height": 509},
+            {"type": "secondary", "uri": "https://i.discogs.com/full-label.jpeg", "uri150": "https://i.discogs.com/t150-label.jpeg", "width": 600, "height": 600}
+        ]}
+        """.utf8)
+    }
+
+    func testParsesTheDiscogsReleaseIDFromMusicBrainzRelations() {
+        let id = RemoteArtworkService.parseDiscogsReleaseID(
+            mbRelationsJSON("https://www.discogs.com/release/1722")
+        )
+        XCTAssertEqual(id, "1722")
+    }
+
+    /// A master groups every pressing of an album; its images are not this
+    /// release's, so the relation must be ignored rather than followed.
+    func testIgnoresADiscogsMasterRelation() {
+        let id = RemoteArtworkService.parseDiscogsReleaseID(
+            mbRelationsJSON("https://www.discogs.com/master/12345")
+        )
+        XCTAssertNil(id)
+    }
+
+    func testIgnoresRelationsToOtherSites() {
+        let id = RemoteArtworkService.parseDiscogsReleaseID(
+            mbRelationsJSON("https://rateyourmusic.com/release/album/x", type: "other databases")
+        )
+        XCTAssertNil(id)
+    }
+
+    /// Trailing slugs and query strings are common in stored relations.
+    func testParsesADiscogsURLWithTrailingPath() {
+        let id = RemoteArtworkService.parseDiscogsReleaseID(
+            mbRelationsJSON("https://www.discogs.com/release/1722-Various-For-Beginner-Piano")
+        )
+        XCTAssertEqual(id, "1722")
+    }
+
+    func testDiscogsImagesMarkOnlyThePrimaryAsFront() {
+        let images = RemoteArtworkService.parseDiscogsImages(discogsReleaseJSON())
+        XCTAssertEqual(images.count, 3)
+        XCTAssertEqual(images.filter(\.front).count, 1, "Discogs marks exactly one primary")
+        XCTAssertEqual(images.first?.types, ["Front"])
+        // Discogs never says which secondary is the back, so nothing may claim it.
+        XCTAssertTrue(images.dropFirst().allSatisfy { $0.types.isEmpty && !$0.back })
+        XCTAssertTrue(images.allSatisfy { $0.source == .discogs })
+        XCTAssertEqual(images[1].thumbnailURL.absoluteString, "https://i.discogs.com/t150-back.jpeg")
+    }
+
+    func testDiscogsImagesSurviveAMissingThumbnail() {
+        let data = Data("""
+        {"images": [{"type": "primary", "uri": "https://i.discogs.com/only-full.jpeg"}]}
+        """.utf8)
+        let images = RemoteArtworkService.parseDiscogsImages(data)
+        XCTAssertEqual(images.count, 1)
+        XCTAssertEqual(images[0].thumbnailURL, images[0].imageURL, "falls back to the full image")
+    }
+
+    func testDiscogsGarbageIsNoImagesNotACrash() {
+        XCTAssertTrue(RemoteArtworkService.parseDiscogsImages(Data("not json".utf8)).isEmpty)
+        XCTAssertNil(RemoteArtworkService.parseDiscogsReleaseID(Data("not json".utf8)))
+    }
+
     func testCoverArtImageCountDecodesList() async {
         respond(status: 200, data: caaJSON(imageCount: 3))
         let count = await service.coverArtImageCount(releaseMBID: "mbid-1")
