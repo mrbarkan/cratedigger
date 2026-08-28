@@ -67,6 +67,7 @@ public final class PreferencesStore {
         static let streamEngine = "cratedigger.radio.engine"
         static let customYtDlpPath = "cratedigger.tools.ytdlpPath"
         static let discogsToken = "cratedigger.artwork.discogsToken"
+        static let betaUpdates = "cratedigger.updates.betaChannel"
         static let albumGroups = "cratedigger.library.albumGroups"
         static let selectedThemeID = "cratedigger.ui.selectedThemeID"
     }
@@ -641,6 +642,19 @@ public final class PreferencesStore {
     /// lower rate limit (25 req/min against 60). A token also keeps the feature
     /// working if Discogs goes back to gating image URLs behind auth, which it
     /// has done before.
+    /// Opt in to prerelease updates. Off unless the person deliberately turns
+    /// it on, which is the whole point: a beta is never pushed to someone who
+    /// did not ask for it.
+    ///
+    /// It selects a *feed*, not a flag on the stable one. `SoftwareUpdater`
+    /// hands Sparkle the beta appcast when this is on, so the file every
+    /// stable copy reads is never the file a beta is published into, and a
+    /// mistake in a beta release cannot reach someone who left this off.
+    public var betaUpdatesEnabled: Bool {
+        get { defaults.bool(forKey: Key.betaUpdates) }
+        set { defaults.set(newValue, forKey: Key.betaUpdates) }
+    }
+
     public var discogsToken: String? {
         get { defaults.string(forKey: Key.discogsToken) }
         set {

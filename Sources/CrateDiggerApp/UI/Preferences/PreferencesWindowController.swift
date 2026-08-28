@@ -720,6 +720,7 @@ private struct AdvancedPreferencesView: View {
     @State private var ffmpegPath: String = ""
     @State private var ffprobePath: String = ""
     @State private var ytdlpPath: String = ""
+    @State private var betaUpdates = false
     @State private var showResetConfirmation = false
 
     var body: some View {
@@ -753,6 +754,18 @@ private struct AdvancedPreferencesView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Text("Leave blank to use the bundled binaries (or system PATH for development builds). Restart the app after changing.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Updates") {
+                Toggle("Receive beta updates", isOn: $betaUpdates)
+                    .onChange(of: betaUpdates) { newValue in
+                        PreferencesStore.shared.betaUpdatesEnabled = newValue
+                    }
+                Text(betaUpdates
+                     ? "Check for Updates now offers 2.0 betas, which are unfinished and can lose data. Turn this off to go back to stable releases."
+                     : "Off, so you are only ever offered finished releases. Turn it on to try 2.0 before it ships.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -792,6 +805,7 @@ private struct AdvancedPreferencesView: View {
         ffmpegPath = PreferencesStore.shared.customFFmpegPath ?? ""
         ffprobePath = PreferencesStore.shared.customFFprobePath ?? ""
         ytdlpPath = PreferencesStore.shared.customYtDlpPath ?? ""
+        betaUpdates = PreferencesStore.shared.betaUpdatesEnabled
     }
 
     private func persistFFmpeg() {
