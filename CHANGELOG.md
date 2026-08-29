@@ -4,11 +4,16 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
-## 2.0.0 (73) — 2026-08-28 — BETA 1
+## 2.0.0 (74) — 2026-08-29 — BETA 2
 
-The first build of the 2.0 line. Unfinished by definition: this is where
-everything up to 2.0 is built, and it is offered to nobody who has not asked
-for it.
+Everything in the 2.0 line so far, newest work first. Unfinished by
+definition: this is where 2.0 is built, and it is offered to nobody who has
+not asked for it.
+
+Beta 2 is mostly foundations. CrateDigger now keeps a record of what you
+listen to, which is the thing every smart crate and every listening stat in
+the rest of 2.0 will be built on, and the browser's selection and sorting
+moved into the tested core of the app.
 
 ### Added
 
@@ -29,6 +34,13 @@ for it.
   builds. It selects a separate feed rather than tagging the stable one, so
   leaving it alone means a mistake in a beta cannot reach you. Turn it off to
   go back to finished releases.
+
+### Changed
+
+- **Notices are centered on the display.** Messages like "MATCHING TAGS" used to
+  sit hard against the annunciators on the left and shove the transport strip
+  sideways every time one appeared. They now sit in the middle of the glass and
+  no longer move anything else.
 
 ### Notes for testers
 
