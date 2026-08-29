@@ -1,11 +1,6 @@
 import AppKit
 import CrateDiggerCore
 
-/// Which browser column the keyboard arrows act on.
-enum BrowserColumn: Sendable {
-    case artist, album, track
-}
-
 /// Keyboard navigation of the browser: bare ↑/↓ move the selection within the
 /// focused column, ←/→ switch columns. Space stays play/pause and ⌘-arrows stay
 /// transport/volume (handled by the existing shortcut monitor / menu). Driven from
