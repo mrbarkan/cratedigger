@@ -85,7 +85,7 @@
       <div class="article-header">
         <span class="article-eyebrow">Roadmap</span>
         <h1 class="article-title">CrateDigger 2.0: your library, finally livable</h1>
-        <div class="article-meta">Planning · August 28, 2026 · Current release v1.5.10</div>
+        <div class="article-meta">Updated August 29, 2026 · Stable v1.5.10 · Beta 2.0.0 beta 2</div>
       </div>
 
       <div class="article-body">
@@ -94,6 +94,14 @@
         </p>
         <p>
           But there is an honest gap in the app today. CrateDigger is a workshop. You open it when you have a job to do, you do the job, and you close it. What it cannot yet be is the app you open on a Tuesday night because you want to hear something. Version 2.0 is about closing that gap.
+        </p>
+
+        <h2>Where this is now</h2>
+        <p>
+          2.0 is being built in the open, one beta a week. <strong>Phase 0 has shipped</strong>, in 2.0.0 beta 2: CrateDigger now records play counts, skips, when you last heard a record, when it was added, and a one to five star rating, and the browser's selection and sorting moved into the tested core of the app. None of it is visible in the browser yet. It is the foundation the phases below stand on.
+        </p>
+        <p>
+          Betas are for people who want to watch this happen and can put up with rough edges. They are separate from the stable release in every way that matters: they carry their own update feed, so a mistake in a beta has no route to anyone running 1.5.x. To get them, turn on Settings, Advanced, Receive beta updates, or <a href="https://github.com/mrbarkan/cratedigger/releases">download the latest beta directly</a>. Point CrateDigger at a copy of your library rather than the only copy, and keep a stable install to fall back to.
         </p>
 
         <h2>Three things stand in the way</h2>
@@ -107,12 +115,15 @@
           <strong>Crates never fill themselves.</strong> A crate is a list of file paths, which is exactly the right design for what a crate is. It also means every crate you will ever own has to be assembled by hand, one record at a time, forever.
         </p>
 
-        <h2>Phase 0: the foundations</h2>
+        <h2>Phase 0: the foundations <span class="badge">SHIPPED</span></h2>
         <p>
-          Unglamorous, and everything else depends on it. Listening data moves into the shared track store: play count, skip count, last played, date added, rating. It is a small change to the model and it unlocks a disproportionate amount of what follows.
+          Unglamorous, and everything else depends on it. CrateDigger now keeps play count, skip count, last played, date added and a rating for every track. It is a small change to the model and it unlocks a disproportionate amount of what follows.
         </p>
         <p>
-          At the same time, browser state (selection, sort, and the filtering that Phase 1 introduces) moves out of the view model and into the tested core library. That view model is the largest file in the project and it currently owns almost everything. Every feature below gets cheaper once it stops being the place where all behaviour lives.
+          At the same time, browser state (selection, sort, and the filtering that Phase 1 will add) moved out of the view model and into the tested core library. That view model is the largest file in the project and it owned almost everything. Every feature below got cheaper once it stopped being the place where all behaviour lives.
+        </p>
+        <p>
+          Both landed in 2.0.0 beta 2. One decision is worth naming, because it is the difference between this data surviving and not: the listening history lives in its own file beside your crates, not inside the track index. The index gets rebuilt whenever a file is rescanned, retagged or moved, and anything stored in it would have been one forgotten line away from being silently wiped. Play counts cannot be recovered from anywhere, so they got their own file, and every path that renames or moves a track carries them across.
         </p>
 
         <h2>Phase 1: find anything</h2>
@@ -149,7 +160,7 @@
 
         <h2>Two bets worth making</h2>
         <p>
-          <strong>Audio fingerprinting for untitled rips.</strong> Split a vinyl side with Record Divider and you are left holding eight files with no titles. Fingerprinting is what finishes that job: identify the recording by its audio, then fill the tags. The tool that does it, fpcalc, drops into the same locator that already finds ffmpeg and yt-dlp, so the plumbing is largely written. Best value for effort on this page, and nothing else here does what it does.
+          <strong>Audio fingerprinting for untitled rips.</strong> <span class="badge">SHIPPED</span> Split a vinyl side with Record Divider and you are left holding eight files with no titles. Fingerprinting is what finishes that job: identify the recording by its audio, then fill the tags. This landed in 2.0.0 beta 2 as Deep Scan, in the Fix Tags window: press it when the record Fix Tags proposes looks wrong, or take the offer when nothing matched by name. It identifies each track by what it sounds like and pairs it to the right position on the record, which is exactly the case where reading the tags cannot help.
         </p>
         <p>
           <strong>Loudness normalisation.</strong> A shelf of records ripped across twenty years plays back at twenty different volumes. FFmpeg already ships the analysis, so this is mostly a question of where the numbers get stored and how the player applies them. The Patch Bay even has the switch for it already, which is a fair sign of where this was always heading.
@@ -173,8 +184,9 @@
       </div>
 
       <div class="article-cta">
-        <p>CrateDigger is free and open source under the MIT license.</p>
+        <p>CrateDigger is free and open source under the MIT license. A new 2.0 beta goes out every week.</p>
         <a href="https://github.com/mrbarkan/cratedigger/issues" class="btn btn-primary">Weigh in on GitHub</a>
+        <a href="https://github.com/mrbarkan/cratedigger/releases" class="btn btn-secondary">Get the latest beta</a>
       </div>
     </div>
   </section>
