@@ -2909,9 +2909,8 @@ final class LibraryViewModel: ObservableObject {
             return
         }
 
-        // Last.fm guidelines: scrobble if played at least 4 minutes (240s) or half the duration, whichever is shorter, and played for at least 30s.
-        let triggerTime = min(duration / 2.0, 240.0)
-        if listenedSeconds >= triggerTime && listenedSeconds >= 30.0 {
+        // Same rule as the play counter — see PlayThreshold.
+        if PlayThreshold.isPlayed(elapsed: listenedSeconds, duration: duration) {
             lastScrobbledTrackID = nowPlaying.track.id
             let artist = nowPlaying.track.artist
             let trackName = nowPlaying.track.title
