@@ -15,12 +15,15 @@ scripts/test.sh                  # run the XCTest suite (preferred — see note 
 scripts/test.sh --filter OutputPathPlannerTests           # run one test class
 scripts/test.sh --filter OutputPathPlannerTests/testFoo   # run one test method
 scripts/package-app.sh           # assemble dist/CrateDigger.app (bundles ffmpeg/ffprobe/fpcalc, ad-hoc signed)
+scripts/shot.sh                  # screenshot the running app window (launches it if needed)
+scripts/shot.sh out.png 1167 243 # click window-relative (x,y) first, then shoot
 ```
 
 - **Run `scripts/test.sh`, not bare `swift test`.** It forces `--enable-xctest --disable-swift-testing`, points at a full Xcode install, and uses a repo-local module cache (`.build/tests`). XCTest needs a *full* Xcode developer dir (not just Command Line Tools); the script prints clear remediation if the license isn't accepted or `PlatformPath` lookup fails.
 - Tests live in `Tests/CrateDiggerCoreTests` (most coverage — the core library is the testable layer) and `Tests/CrateDiggerAppTests` (a dozen files: theming, screen presets, `WindowFramePlanner`, `UpdateFeed`, yt-dlp retry). ~900 tests total.
 - **SwiftUI views and `LibraryViewModel` are still untested**, and that is where bugs concentrate: the 2.0 Phase 0 whole-branch review found all three of its cross-task defects in view-model glue, not in Core. Anything that is a *decidable value* — which track was playing, which files belong to a folder, whether leaving a track counts as a skip — belongs in Core with a test, even when the surrounding wiring stays untested.
 - To launch and verify a change in the running app, build then run the binary directly (the local permission allowlist already covers `swift build`, running the debug binary, and `pkill -f CrateDiggerApp`).
+- **Verify UI changes by looking at them: `scripts/shot.sh`.** It launches the app if needed, captures the window region only (never the whole desktop) and prints the path. Pass `x y` after the output path to click first, so a shot can be taken of a state that needs navigating to (the Inspector's ART tab is around `1167 243`). Coordinates are window-relative points; the capture is 2x, so halve a pixel position measured in the PNG. Clicking goes through `scripts/uiclick.swift`, which posts real HID events: System Events `click at` reports success against SwiftUI controls without actually pressing them. Needs Screen Recording and Accessibility permission for the terminal running it.
 - Release/distribution (Developer ID signing + notarization + DMG) and the full beta gate are documented in `README.md` and `docs/BETA_RELEASE_CHECKLIST.md`.
 
 ## Two release lines (read before committing anything)
