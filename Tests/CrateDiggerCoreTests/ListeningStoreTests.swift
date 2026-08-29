@@ -85,6 +85,7 @@ final class ListeningStorePersistenceTests: XCTestCase {
 
     private let trackA = URL(fileURLWithPath: "/Music/A/01.flac")
     private let trackB = URL(fileURLWithPath: "/Music/B/02.flac")
+    private let trackC = URL(fileURLWithPath: "/Music/C/03.flac")
 
     func testAPlaySurvivesAReload() throws {
         let store = ListeningStore(fileURL: fileURL)
@@ -188,6 +189,34 @@ final class ListeningStorePersistenceTests: XCTestCase {
         XCTAssertEqual(merged.rating, 4, "the moving row's rating must not be dropped on a tie")
         XCTAssertEqual(merged.skipCount, 1, "the destination row's skip must not be dropped on a tie")
         XCTAssertEqual(merged.dateAdded, earlier, "dateAdded must take the earlier of the two rows")
+    }
+
+    func testRepointPairsHandlesASwapRegardlessOfInsertionOrder() throws {
+        let x = ListeningStore.key(for: trackA)
+        let y = ListeningStore.key(for: trackB)
+        let z = ListeningStore.key(for: trackC)
+
+        func runSwap(pairs: [String: String]) -> ListeningStore {
+            let store = ListeningStore(fileURL: fileURL)
+            store.recordPlay(path: x, at: now)
+            store.recordPlay(path: x, at: now)
+            store.recordPlay(path: x, at: now)
+            store.recordPlay(path: z, at: now)
+            store.repoint(pairs: pairs)
+            return store
+        }
+
+        // A moves X -> Y, B moves Z -> X: B's destination is A's source, so a
+        // naive single-pair loop can orphan A's history or merge B into it
+        // depending on which pair happens to run first.
+        let store1 = runSwap(pairs: [x: y, z: x])
+        XCTAssertEqual(store1.stats(path: y)?.playCount, 3, "A's history must land at Y")
+        XCTAssertEqual(store1.stats(path: x)?.playCount, 1, "B's history must land at X, not be swallowed by A's move")
+
+        // Same pairs, opposite insertion order: the result must not depend on it.
+        let store2 = runSwap(pairs: [z: x, x: y])
+        XCTAssertEqual(store2.stats(path: y)?.playCount, 3)
+        XCTAssertEqual(store2.stats(path: x)?.playCount, 1)
     }
 
     func testRemoveDropsARowForgotten() throws {

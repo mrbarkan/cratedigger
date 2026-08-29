@@ -139,6 +139,25 @@ public final class ListeningStore {
         byPath[newPath] = Self.merge(moving, existing)
     }
 
+    /// Carry many tracks' history to their new paths at once.
+    ///
+    /// Order-independent, which a loop of single `repoint` calls is not: when one
+    /// track's destination is another track's source (a swap, or a rotation), the
+    /// order the pairs happen to be visited in decides who ends up with whose
+    /// history. So every source is lifted out first, then merged in.
+    public func repoint(pairs: [String: String]) {
+        let moving = pairs.compactMap { old, new -> (String, ListeningStats)? in
+            guard old != new, let stats = byPath[old] else { return nil }
+            return (new, stats)
+        }
+        guard !moving.isEmpty else { return }
+        for (old, new) in pairs where old != new { byPath.removeValue(forKey: old) }
+        for (new, stats) in moving {
+            byPath[new] = byPath[new].map { Self.merge(stats, $0) } ?? stats
+        }
+        isDirty = true
+    }
+
     /// Combine two rows for the same track, keeping the value that loses no
     /// information from either side rather than discarding a whole record.
     private static func merge(_ a: ListeningStats, _ b: ListeningStats) -> ListeningStats {

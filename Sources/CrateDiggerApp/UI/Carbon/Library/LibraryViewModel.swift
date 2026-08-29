@@ -3955,6 +3955,10 @@ final class LibraryViewModel: ObservableObject {
         // The same moves, kept as pairs. staleKeys alone cannot say which old
         // path belongs to which track, and a whole relocated folder produces
         // many at once.
+        // ponytail: only walks saved crates, so a track that lives only in the
+        // Prep Crate gets no listening repoint here. Pre-existing gap (the
+        // track store's own stale-key cleanup above has it too); upgrade path
+        // is to walk prepCrateTracks in the same pass.
         var movedKeys: [String: String] = [:]
         for crateName in availableCrates {
             var tracks = loadCrateTracks(name: crateName)
@@ -3981,11 +3985,12 @@ final class LibraryViewModel: ObservableObject {
         persistTrackStore()
 
         // Carry listening history across the same moves, so a relocated folder
-        // keeps its play counts. One save for the whole batch.
-        let plays = currentListeningStore()
-        for (oldKey, newKey) in movedKeys where !liveKeys.contains(oldKey) {
-            plays.repoint(from: oldKey, to: newKey)
-        }
+        // keeps its play counts. One save for the whole batch. Order-independent
+        // repoint: liveKeys is deliberately not used as a filter here (unlike
+        // the track-store cleanup above) because repoint is a merge, not a
+        // delete, and filtering by liveKeys can cross-wire history on a swap
+        // (one track's new path is another track's old path).
+        currentListeningStore().repoint(pairs: movedKeys)
         persistListeningStore()
         selectSource(currentSource)
     }
