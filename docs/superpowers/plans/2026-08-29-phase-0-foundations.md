@@ -18,6 +18,7 @@
 - **The Last.fm scrobble threshold must not change.** Task 1 is a pure extraction: four minutes or half the duration, whichever is shorter, and never under thirty seconds, measured on *accumulated listened time*, not playhead position.
 - **No em dashes or en dashes in user-facing copy.** Menu titles, tooltips, alert text. Code comments are exempt and the codebase uses them freely.
 - **Mark deliberate simplifications with a `ponytail:` comment** naming the ceiling and the upgrade path, matching the convention already in `LibraryCleanupService.swift:90`.
+- **Every line number in this plan is advisory, measured at commit `41c4ce7`.** Earlier tasks insert lines, so later tasks' numbers drift. Locate every edit site by the quoted code, which this plan always supplies, and use the line number only as a hint about where to look.
 - **`LibraryViewModel` is 4175 lines.** Do not add behaviour to it. Every new piece of logic in this plan lands in Core; the view model only forwards.
 
 ---
@@ -547,7 +548,11 @@ public final class ListeningStore {
 
     private func load() {
         guard let data = try? Data(contentsOf: fileURL) else { return }
-        guard let decoded = try? JSONDecoder().decode([String: ListeningStats].self, from: data) else {
+        let decoder = JSONDecoder()
+        // Must match `save()`. A default decoder reads dates as numeric
+        // intervals and would fail on every ISO string this store writes.
+        decoder.dateDecodingStrategy = .iso8601
+        guard let decoded = try? decoder.decode([String: ListeningStats].self, from: data) else {
             isUnreadable = true
             return
         }
