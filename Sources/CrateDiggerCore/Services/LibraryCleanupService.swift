@@ -88,8 +88,9 @@ public final class LibraryCleanupService {
     }
 
     // ponytail: metadata + duration matching only. If re-encodes with rewritten
-    // tags still slip through, the upgrade path is chromaprint fingerprints via
-    // the bundled ffmpeg (-f chromaprint), cached by path+mtime.
+    // tags still slip through, the upgrade path is AudioFingerprintService
+    // (fpcalc), cached by path+mtime. Not the bundled ffmpeg: it is built
+    // without libchromaprint, so `-f chromaprint` does not exist there.
     public func findDuplicates(
         in index: LibraryIndex,
         mode: DuplicateScanMode = .strict,

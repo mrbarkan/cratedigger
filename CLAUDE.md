@@ -112,6 +112,44 @@ Splits one continuous recording (e.g. a whole vinyl side captured as a single fi
 4. Preflight before running: destination writability probe + free-disk-space estimate (`validateBatchPreflight`).
 5. **Cancellation is cooperative**: `cancel()` sets a flag checked *between* job dispatches; the in-flight ffmpeg process is **not** killed (documented limitation in `ConversionService`).
 
+### FIX TAGS and DEEP SCAN (metadata matching)
+
+Two lookup paths behind one button, both ending in the same review sheet
+(`MetadataMatchSheetView`, driven by `LibraryViewModel+MetadataRepair`).
+
+- **FIX TAGS** (the default) is text matching: `MetadataMatchService` fans out
+  over `ReleaseMetadataProvider` (MusicBrainz + iTunes), `ReleaseScorer` ranks
+  the candidates and turns the winner into per-track `TrackTagProposal`s.
+- **DEEP SCAN** (`FingerprintMatchService`, `LibraryViewModel+DeepScan`) is
+  audio matching, for when the tags are blank or wrong and text search has
+  nothing to search with. `AudioFingerprintService` runs **fpcalc**,
+  `AcoustIDClient` turns each fingerprint into MusicBrainz recordings, the
+  album's files **vote** on which release they all appear on, and
+  `MusicBrainzReleaseClient.release(id:)` fetches the winner. The score is the
+  vote share, not text similarity — the point is that it never read the tags.
+  Candidates are re-badged `ReleaseSource.acoustID` so the sheet says how the
+  release was found.
+- **Never automatic.** Fingerprinting decodes every file, so DEEP SCAN runs
+  only when the user presses for it: the sheet's DEEP SCAN key, or the action
+  button on the "no match" alert.
+- Track pairing goes through `ReleaseScorer.proposals(from:for:recordingIDs:)`.
+  The `recordingIDs` pass is DEEP SCAN's: an untagged file has no number and no
+  title, so every other pass is guessing, but its fingerprint names the
+  recording outright. Empty map = the old behaviour exactly.
+- **AcoustID needs an *application* key**, in `AcoustIDClient.applicationKey`.
+  Registered once at acoustid.org/new-application, listed afterwards under
+  acoustid.org/my-applications. It is **not** the account API key from
+  acoustid.org/api-key, which signs fingerprint *submissions*; the two are
+  both ten mixed-case characters and are easy to confuse. Sending the account
+  key returns error code 4, "invalid API key", with nothing else wrong. If the
+  constant is ever left as `AcoustIDClient.placeholderKey`, DEEP SCAN refuses up
+  front rather than decoding audio for a doomed request.
+- **The `+` in `meta=recordings+releaseids` must stay unescaped.** AcoustID
+  separates meta values with a space and a form body decodes `+` to one.
+  Percent-encode it to `%2B` and the parameter is silently ignored: results come
+  back carrying scores and nothing else, which reads as an unrecognised
+  recording rather than a malformed request. Cost an hour once already.
+
 ### In-app updates (Sparkle)
 
 The app's **only** third-party dependency. `SoftwareUpdater` (`Updates/`) wraps
@@ -125,7 +163,7 @@ it in a `.app`). Setup and release steps are in README, "In-app updates".
 
 ### External tools (ffmpeg / ffprobe)
 
-`ExternalToolLocator` resolves binaries (`ToolKind`: `ffmpeg`, `ffprobe`, `ytdlp`) in this priority: **bundled** (`Bundle.main` Resources) → explicit override → env var (`CRATEDIGGER_FFMPEG_PATH` / `CRATEDIGGER_FFPROBE_PATH`) → system PATH (`/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin`, then `$PATH`). `ffprobe` powers richer metadata via `MetadataProbeService`; if it's missing the app degrades gracefully to **AVFoundation-only** metadata, and conversion surfaces a "install ffmpeg" alert. The packaged `.app` bundles both binaries (entitlements disable library validation so they can run).
+`ExternalToolLocator` resolves binaries (`ExternalTool`: `ffmpeg`, `ffprobe`, `ytdlp`, `fpcalc`, `sacdExtract`) in this priority: **bundled** (`Bundle.main` Resources) → explicit override → env var (`CRATEDIGGER_FFMPEG_PATH` / `CRATEDIGGER_FFPROBE_PATH` / `CRATEDIGGER_FPCALC_PATH`) → system PATH (`/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin`, then `$PATH`). `ffprobe` powers richer metadata via `MetadataProbeService`; if it's missing the app degrades gracefully to **AVFoundation-only** metadata, and conversion surfaces a "install ffmpeg" alert. The packaged `.app` bundles both binaries (entitlements disable library validation so they can run).
 
 ### Playback
 

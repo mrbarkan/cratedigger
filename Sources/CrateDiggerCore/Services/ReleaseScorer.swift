@@ -170,18 +170,46 @@ public enum ReleaseScorer {
     /// Pair each selected track with a track on the release, then describe what
     /// accepting the release would change.
     ///
-    /// Pairing prefers, in order: the track's own number, the closest title (with
-    /// runtime as the tie-breaker), and finally selection order. Each release
-    /// track is claimed at most once, so two files that look alike can't both
-    /// become track 1.
-    public static func proposals(from candidate: ReleaseCandidate, for tracks: [LoadedTrack]) -> [TrackTagProposal] {
+    /// Pairing prefers, in order: the recording the audio was fingerprinted as
+    /// (DEEP SCAN only), the track's own number, the closest title (with runtime
+    /// as the tie-breaker), and finally selection order. Each release track is
+    /// claimed at most once, so two files that look alike can't both become
+    /// track 1.
+    ///
+    /// `recordingIDs` maps a track's id to the MusicBrainz recording MBIDs
+    /// AcoustID identified its audio as. It is empty for an ordinary text
+    /// match, which leaves the behaviour below exactly as it was.
+    public static func proposals(
+        from candidate: ReleaseCandidate,
+        for tracks: [LoadedTrack],
+        recordingIDs: [UUID: Set<String>] = [:]
+    ) -> [TrackTagProposal] {
         var available = candidate.tracks
         var pairings: [(index: Int, releaseTrack: ReleaseTrack?)] = []
+
+        // Pass 0: the recording the audio actually is. This is the whole reason
+        // DEEP SCAN can be trusted on an untagged rip: with no number and no
+        // title to match on, every later pass is guessing, but a fingerprint
+        // names the recording outright, so the slot is known rather than
+        // inferred.
+        var numbered: [Int] = []
+        for (index, track) in tracks.enumerated() {
+            guard let identified = recordingIDs[track.track.id], !identified.isEmpty,
+                  let slot = available.firstIndex(where: { releaseTrack in
+                      releaseTrack.recordingID.map(identified.contains) ?? false
+                  })
+            else {
+                numbered.append(index)
+                continue
+            }
+            pairings.append((index, available.remove(at: slot)))
+        }
 
         // Pass 1: explicit track numbers — the strongest signal, so let them
         // claim their slots before fuzzier matching gets a look in.
         var unmatched: [Int] = []
-        for (index, track) in tracks.enumerated() {
+        for index in numbered {
+            let track = tracks[index]
             guard let number = track.metadata.trackNumber ?? track.track.trackNumber,
                   let slot = available.firstIndex(where: {
                       $0.position == number && $0.discNumber == (track.metadata.discNumber ?? 1)

@@ -16,6 +16,8 @@ struct MetadataRepairConflictGroup: Identifiable {
 struct AlbumMatchBatch: Identifiable {
     let id = UUID()
     let albumLabel: String
+    /// The album's tracks, kept so DEEP SCAN can fingerprint them later.
+    let tracks: [LoadedTrack]
     let matches: [ReleaseMatch]
 }
 
@@ -244,6 +246,7 @@ extension LibraryViewModel {
         // the wait visible rather than mysterious.
         var batches: [AlbumMatchBatch] = []
         var noMatch: [String] = []
+        var noMatchGroups: [[LoadedTrack]] = []
         let activity = beginActivity("Matching tags online…")
         defer { endActivity(activity) }
 
@@ -261,20 +264,24 @@ extension LibraryViewModel {
             let matches = await matchService.match(for: group)
             if matches.isEmpty {
                 noMatch.append(label)
+                noMatchGroups.append(group)
             } else {
-                batches.append(AlbumMatchBatch(albumLabel: label, matches: matches))
+                batches.append(AlbumMatchBatch(albumLabel: label, tracks: group, matches: matches))
             }
         }
         isRepairingMetadata = false
 
         if let first = batches.first {
             matchQueueNoMatchLabels = noMatch
+            matchQueueNoMatchGroups = noMatchGroups
             matchQueueProgress = groups.count > 1
                 ? MatchQueueProgress(current: 1, total: batches.count)
                 : nil
             pendingMatchBatches = Array(batches.dropFirst())
             currentMatchAlbumLabel = first.albumLabel
+            currentMatchTracks = first.tracks
             metadataMatches = first.matches
+            matchRevision += 1
             showOLEDNotice("MATCH FOUND")
             return
         }
@@ -284,13 +291,20 @@ extension LibraryViewModel {
             return
         }
 
-        var lines = ["No online release matched \(tracks.count == 1 ? "this track" : "these \(tracks.count) tracks")."]
-        lines.append("Check the artist and album tags — they're what the lookup searches with.")
+        var lines = ["No online release matched \(tracks.count == 1 ? "this track" : "these \(tracks.count) tracks") by name."]
+        lines.append("Deep Scan identifies them by their audio instead, which is the way through when the tags are blank or wrong.")
         if unreadable > 0 { lines.append("\(unreadable) file\(unreadable == 1 ? "" : "s") couldn't be read.") }
-        appAlert = .info(title: "No Match Found", message: lines.joined(separator: " "))
+        matchQueueNoMatchGroups = noMatchGroups
+        appAlert = .actionable(
+            title: "No Match Found",
+            message: lines.joined(separator: " "),
+            actionTitle: "Deep Scan"
+        ) { [weak self] in
+            self?.deepScanUnmatchedAlbums()
+        }
     }
 
-    private static func albumLabel(for group: [LoadedTrack]) -> String {
+    static func albumLabel(for group: [LoadedTrack]) -> String {
         let album = group.first?.metadata.album ?? group.first?.track.album
         let trimmed = album?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty ? "Unknown Album" : trimmed
@@ -301,7 +315,9 @@ extension LibraryViewModel {
         if let next = pendingMatchBatches.first {
             pendingMatchBatches.removeFirst()
             currentMatchAlbumLabel = next.albumLabel
+            currentMatchTracks = next.tracks
             metadataMatches = next.matches
+            matchRevision += 1
             if var progress = matchQueueProgress {
                 progress.current += 1
                 matchQueueProgress = progress
@@ -321,14 +337,23 @@ extension LibraryViewModel {
     private func finishMatchQueue() {
         metadataMatches = []
         currentMatchAlbumLabel = nil
+        currentMatchTracks = []
         matchQueueProgress = nil
         let skipped = matchQueueNoMatchLabels
         matchQueueNoMatchLabels = []
-        if !skipped.isEmpty {
-            appAlert = .info(
-                title: "Some Albums Didn't Match",
-                message: "No online release matched: \(skipped.joined(separator: ", ")). Check their artist and album tags."
-            )
+        guard !skipped.isEmpty else {
+            // Nothing to offer a deep scan for; don't leave a stale album's
+            // tracks behind for the next run's alert to pick up.
+            matchQueueNoMatchGroups = []
+            return
+        }
+        appAlert = .actionable(
+            title: "Some Albums Didn't Match",
+            message: "No online release matched by name: \(skipped.joined(separator: ", ")). "
+                + "Deep Scan identifies them by their audio instead.",
+            actionTitle: "Deep Scan"
+        ) { [weak self] in
+            self?.deepScanUnmatchedAlbums()
         }
     }
 

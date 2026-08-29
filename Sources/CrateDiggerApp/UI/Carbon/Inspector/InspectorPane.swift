@@ -316,7 +316,7 @@ struct InspectorPane: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: geometry.keyHeight)
                 .disabled(!model.canRepairMetadata)
-                .carbonTip("Look up the selected tracks online (MusicBrainz · iTunes) and choose which tags to correct. With nothing selected, checks the whole source against the files without going online.")
+                .carbonTip("Look up the selected tracks online (MusicBrainz · iTunes) and choose which tags to correct. If the names don't match anything, Deep Scan identifies them by their audio instead. With nothing selected, checks the whole source against the files without going online.")
             }
             .padding(.horizontal, 16)
             .padding(.bottom, model.selectedAlbum == nil ? 12 : 8)

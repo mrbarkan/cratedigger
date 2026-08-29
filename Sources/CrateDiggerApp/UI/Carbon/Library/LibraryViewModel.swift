@@ -656,8 +656,19 @@ final class LibraryViewModel: ObservableObject {
     @Published var pendingMatchBatches: [AlbumMatchBatch] = []
     @Published var matchQueueProgress: MatchQueueProgress?
     @Published var currentMatchAlbumLabel: String?
+    /// The tracks behind the batch under review, so DEEP SCAN has something to
+    /// fingerprint when the user says the match looks wrong.
+    var currentMatchTracks: [LoadedTrack] = []
+    /// Bumped whenever `metadataMatches` is replaced in place — DEEP SCAN
+    /// merging its findings into the open sheet. The sheet watches it to reset
+    /// its candidate pager and checkboxes; the queue position can't do that job
+    /// because a deep scan doesn't move the queue.
+    @Published var matchRevision = 0
     /// Albums that came back with no online match — reported once at the end.
     var matchQueueNoMatchLabels: [String] = []
+    /// The same albums kept whole, so the "didn't match" alert can offer to
+    /// listen to them instead of only naming them.
+    var matchQueueNoMatchGroups: [[LoadedTrack]] = []
 
     // MARK: - Radio / Streams state
     @Published var streams: [StreamSource] = []

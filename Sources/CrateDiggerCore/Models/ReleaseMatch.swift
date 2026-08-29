@@ -1,13 +1,22 @@
 import Foundation
 
-/// Where a release candidate came from. Both sources are free and need no
-/// account or API key; the badge is shown in the review sheet so the user can
-/// judge a proposal by its origin.
+/// Where a release candidate came from. Every source is free and needs no user
+/// account; the badge is shown in the review sheet so the user can judge a
+/// proposal by its origin.
+///
+/// `acoustID` is the odd one out: the release data itself still comes from
+/// MusicBrainz, but the badge says how the release was *found*, and "we
+/// listened to it" is a very different claim from "we searched your tags".
 public enum ReleaseSource: String, Codable, Sendable, CaseIterable {
     case musicBrainz = "MusicBrainz"
     case iTunes = "iTunes"
+    case acoustID = "AcoustID"
 
     public var label: String { rawValue }
+
+    /// True when the candidate was identified from the audio rather than the
+    /// tags, which is what makes its score trustworthy on an untagged file.
+    public var isAudioMatch: Bool { self == .acoustID }
 }
 
 /// One track of the selection, reduced to what a lookup can actually use.
@@ -55,19 +64,26 @@ public struct ReleaseTrack: Equatable, Sendable {
     public var title: String
     public var artist: String?
     public var durationSeconds: Double?
+    /// MusicBrainz recording MBID, when the source reports one. DEEP SCAN pairs
+    /// files to slots by this: a fingerprint names the recording outright, so
+    /// an untagged file lands on the right track instead of being guessed into
+    /// position.
+    public var recordingID: String?
 
     public init(
         position: Int,
         discNumber: Int = 1,
         title: String,
         artist: String? = nil,
-        durationSeconds: Double? = nil
+        durationSeconds: Double? = nil,
+        recordingID: String? = nil
     ) {
         self.position = position
         self.discNumber = discNumber
         self.title = title
         self.artist = artist
         self.durationSeconds = durationSeconds
+        self.recordingID = recordingID
     }
 }
 

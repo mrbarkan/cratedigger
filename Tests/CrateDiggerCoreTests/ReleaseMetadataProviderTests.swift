@@ -141,6 +141,65 @@ final class ReleaseMetadataProviderTests: XCTestCase {
         XCTAssertTrue(candidates[0].tracks.isEmpty)
     }
 
+    // MARK: - MusicBrainz by ID (DEEP SCAN's second hop)
+
+    /// A release detail fetched straight by MBID: no search preceded it, so the
+    /// header fields have to come out of this response alone.
+    private let musicBrainzByID = """
+    {
+        "id":"mbid-technique",
+        "title":"Technique",
+        "date":"1989-01-30",
+        "artist-credit":[{"name":"New Order"}],
+        "media":[{"position":1,"tracks":[
+            {"position":1,"title":"Fine Time","length":292000,
+             "recording":{"id":"rec-fine-time"}},
+            {"position":2,"title":"All the Way","length":203000,
+             "recording":{"id":"rec-all-the-way"}}
+        ]}]
+    }
+    """
+
+    func testMusicBrainzFetchesAReleaseByIDWithItsRecordingIDs() async throws {
+        respond(["/release/mbid-technique": musicBrainzByID])
+
+        let release = try await XCTUnwrapAsync(
+            try await MusicBrainzReleaseClient(session: session).release(id: "mbid-technique")
+        )
+
+        XCTAssertEqual(release.title, "Technique")
+        XCTAssertEqual(release.artist, "New Order")
+        XCTAssertEqual(release.year, 1989)
+        XCTAssertEqual(release.totalTracks, 2)
+        XCTAssertEqual(release.tracks.count, 2)
+        // Without these, DEEP SCAN cannot pair an untagged file to its track.
+        XCTAssertEqual(release.tracks[0].recordingID, "rec-fine-time")
+        XCTAssertEqual(release.tracks[1].recordingID, "rec-all-the-way")
+    }
+
+    func testMusicBrainzByIDReturnsNilWhenTheReleaseHasNoTitle() async throws {
+        respond(["/release/mbid-gone": "{}"])
+        let release = try await MusicBrainzReleaseClient(session: session).release(id: "mbid-gone")
+        XCTAssertNil(release)
+    }
+
+    func testMusicBrainzByIDPropagatesABadStatus() async {
+        MockURLProtocol.handler = { request in
+            (HTTPURLResponse(url: request.url!, statusCode: 503, httpVersion: nil, headerFields: nil)!, Data("{}".utf8))
+        }
+        do {
+            _ = try await MusicBrainzReleaseClient(session: session).release(id: "mbid-technique")
+            XCTFail("expected a throw")
+        } catch {
+            // Expected: DEEP SCAN treats it as "this candidate didn't load".
+        }
+    }
+
+    /// XCTUnwrap can't be applied to an async expression directly.
+    private func XCTUnwrapAsync<T>(_ value: T?, file: StaticString = #filePath, line: UInt = #line) throws -> T {
+        try XCTUnwrap(value, file: file, line: line)
+    }
+
     func testMusicBrainzEmptyResultsAreNotAnError() async throws {
         respond(["/release/?": "{\"releases\":[]}"])
         let candidates = try await MusicBrainzReleaseClient(session: session)

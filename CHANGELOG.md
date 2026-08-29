@@ -12,6 +12,13 @@ for it.
 
 ### Added
 
+- **Deep Scan: fix tags by listening to the record.** Fix Tags searches with the
+  tags a file already has, which is no help at all on a rip with no tags or with
+  somebody else's. Deep Scan fingerprints the audio instead, asks AcoustID what
+  it is, and offers the answer through the same review sheet, with the tracks
+  paired to the record by recording rather than guessed into order. It never
+  runs on its own: press DEEP SCAN in the match window when the proposed record
+  looks wrong, or take the offer in the alert when nothing matched by name.
 - **Receive beta updates.** Settings, Advanced. Off unless you turn it on, and
   turning it on is the only way a stable install is ever offered one of these
   builds. It selects a separate feed rather than tagging the stable one, so

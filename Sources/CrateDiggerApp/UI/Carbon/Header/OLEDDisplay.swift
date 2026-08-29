@@ -153,19 +153,6 @@ private struct DisplayRail: View {
                 ann("ON AIR", lit: radioLive, color: theme.onAir, pulse: onAirPulse)
             }
 
-            // Transient system notice (tag saves etc.) — snaps in on the rail
-            // instead of interrupting the user with a modal alert.
-            if let notice = model.oledNotice {
-                Text(notice)
-                    .font(CarbonFont.mono(9, weight: .bold))
-                    .tracking(1.8)
-                    .foregroundStyle(theme.sun)
-                    .shadow(color: theme.sun.opacity(0.55), radius: 6)
-                    .lineLimit(1)
-                    .fixedSize()
-                    .padding(.leading, 14)
-            }
-
             // No Spacer: the transport strip takes the whole remainder of the
             // rail itself, so the title and the position bar grow into the gap
             // instead of leaving one.
@@ -174,6 +161,26 @@ private struct DisplayRail: View {
                 .padding(.leading, 14)
         }
         .padding(.bottom, 7)
+        // Transient system notice (tag saves etc.) — snaps in on the rail
+        // instead of interrupting the user with a modal alert.
+        //
+        // An overlay rather than a member of the HStack: in the flow it pushed
+        // the transport strip sideways every time a notice came and went, and
+        // it read as a third thing crammed after the annunciators rather than
+        // as the display talking to you. Centred on the glass it is the one
+        // thing the panel is saying, which is what a notice is.
+        .overlay(alignment: .center) {
+            if let notice = model.oledNotice {
+                Text(notice)
+                    .font(CarbonFont.mono(9, weight: .bold))
+                    .tracking(1.8)
+                    .foregroundStyle(theme.sun)
+                    .shadow(color: theme.sun.opacity(0.55), radius: 6)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .padding(.bottom, 7)
+            }
+        }
         .overlay(
             Rectangle().fill(oledFGo(0.09)).frame(height: 1),
             alignment: .bottom
@@ -264,9 +271,14 @@ private struct RailLive: View {
 
     private var showMini: Bool { model.oledView != .nowPlaying }
 
+    /// The centred notice owns the middle of the rail while it's up, and the
+    /// mini title is the only element long enough to run under it. Yield rather
+    /// than overlap; the title is back a couple of seconds later.
+    private var showTitle: Bool { showMini && model.oledNotice == nil }
+
     var body: some View {
         HStack(spacing: 12) {
-            if showMini {
+            if showTitle {
                 Text(trackTitle)
                     .font(CarbonFont.mono(9, weight: .bold))
                     .tracking(1.08)
@@ -277,6 +289,10 @@ private struct RailLive: View {
                     // Takes whatever the bar and the meter don't: a long title
                     // is what the spare width on this rail is *for*.
                     .frame(maxWidth: .infinity, alignment: .trailing)
+            } else if showMini {
+                // Hold the gap open so the bar and clocks don't slide across
+                // and back as a notice comes and goes.
+                Spacer(minLength: 0)
             }
 
             // The clocks belong to the bar, not to the rail — one group so
