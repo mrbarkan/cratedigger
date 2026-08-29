@@ -191,32 +191,33 @@ final class ListeningStorePersistenceTests: XCTestCase {
         XCTAssertEqual(merged.dateAdded, earlier, "dateAdded must take the earlier of the two rows")
     }
 
-    func testRepointPairsHandlesASwapRegardlessOfInsertionOrder() throws {
+    private func freshFileURL() -> URL {
+        folder.appendingPathComponent("cdplays-\(UUID().uuidString).json")
+    }
+
+    func testRepointingManyPairsIsIndependentOfTheOrderTheyArrive() throws {
         let x = ListeningStore.key(for: trackA)
         let y = ListeningStore.key(for: trackB)
         let z = ListeningStore.key(for: trackC)
 
-        func runSwap(pairs: [String: String]) -> ListeningStore {
-            let store = ListeningStore(fileURL: fileURL)
+        // A swap: A moves X to Y while B moves Z to X. Whichever pair is applied
+        // first must not decide who keeps which history. A `[String: String]`
+        // literal can't test this — dictionary enumeration order depends on hash
+        // buckets, not on how the literal was written, so two differently-written
+        // literals with the same keys iterate identically. `orderedPairs` is the
+        // only entry point that can actually be driven in two different orders.
+        for ordering in [[(x, y), (z, x)], [(z, x), (x, y)]] {
+            let store = ListeningStore(fileURL: freshFileURL())
             store.recordPlay(path: x, at: now)
             store.recordPlay(path: x, at: now)
             store.recordPlay(path: x, at: now)
             store.recordPlay(path: z, at: now)
-            store.repoint(pairs: pairs)
-            return store
+
+            store.repoint(orderedPairs: ordering)
+
+            XCTAssertEqual(store.stats(path: y)?.playCount, 3, "A's history follows A")
+            XCTAssertEqual(store.stats(path: x)?.playCount, 1, "B's history follows B")
         }
-
-        // A moves X -> Y, B moves Z -> X: B's destination is A's source, so a
-        // naive single-pair loop can orphan A's history or merge B into it
-        // depending on which pair happens to run first.
-        let store1 = runSwap(pairs: [x: y, z: x])
-        XCTAssertEqual(store1.stats(path: y)?.playCount, 3, "A's history must land at Y")
-        XCTAssertEqual(store1.stats(path: x)?.playCount, 1, "B's history must land at X, not be swallowed by A's move")
-
-        // Same pairs, opposite insertion order: the result must not depend on it.
-        let store2 = runSwap(pairs: [z: x, x: y])
-        XCTAssertEqual(store2.stats(path: y)?.playCount, 3)
-        XCTAssertEqual(store2.stats(path: x)?.playCount, 1)
     }
 
     func testRemoveDropsARowForgotten() throws {

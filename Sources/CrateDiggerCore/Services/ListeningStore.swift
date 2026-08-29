@@ -139,19 +139,31 @@ public final class ListeningStore {
         byPath[newPath] = Self.merge(moving, existing)
     }
 
-    /// Carry many tracks' history to their new paths at once.
-    ///
-    /// Order-independent, which a loop of single `repoint` calls is not: when one
-    /// track's destination is another track's source (a swap, or a rotation), the
-    /// order the pairs happen to be visited in decides who ends up with whose
-    /// history. So every source is lifted out first, then merged in.
+    /// Carry many tracks' history to their new paths at once. See the ordered
+    /// overload for why the phases are separated.
     public func repoint(pairs: [String: String]) {
-        let moving = pairs.compactMap { old, new -> (String, ListeningStats)? in
+        repoint(orderedPairs: pairs.map { ($0.key, $0.value) })
+    }
+
+    /// The real implementation, taking an explicit order.
+    ///
+    /// Order-independent by construction: every source is read, then every
+    /// source is removed, then every destination is written. A loop of single
+    /// `repoint(from:to:)` calls is not, because when one track's destination is
+    /// another's source (a swap, or a rotation) whichever runs first decides who
+    /// ends up with whose history.
+    ///
+    /// Internal rather than private so tests can supply an order and prove the
+    /// independence, which a `[String: String]` caller cannot: a dictionary
+    /// enumerates by hash bucket, so two literals with the same keys iterate
+    /// identically and could not tell a correct implementation from a broken one.
+    func repoint(orderedPairs: [(String, String)]) {
+        let moving = orderedPairs.compactMap { old, new -> (String, ListeningStats)? in
             guard old != new, let stats = byPath[old] else { return nil }
             return (new, stats)
         }
         guard !moving.isEmpty else { return }
-        for (old, new) in pairs where old != new { byPath.removeValue(forKey: old) }
+        for (old, new) in orderedPairs where old != new { byPath.removeValue(forKey: old) }
         for (new, stats) in moving {
             byPath[new] = byPath[new].map { Self.merge(stats, $0) } ?? stats
         }
