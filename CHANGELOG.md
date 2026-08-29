@@ -4,19 +4,54 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
-## 2.0.0 (74) — 2026-08-29 — BETA 2
+## 2.0.0 (75) — 2026-08-29 — BETA 3
 
 Everything in the 2.0 line so far, newest work first. Unfinished by
 definition: this is where 2.0 is built, and it is offered to nobody who has
 not asked for it.
 
-Beta 2 is mostly foundations. CrateDigger now keeps a record of what you
-listen to, which is the thing every smart crate and every listening stat in
-the rest of 2.0 will be built on, and the browser's selection and sorting
-moved into the tested core of the app.
+Beta 3 is about artwork and the panels you work in. Artwork you find is now
+staged and only written when you say so, the ART tab finally shows the picture
+that lives inside your audio files, and the conversion panel lost its costume.
+
+Beta 2 was mostly foundations: CrateDigger keeping a record of what you listen
+to, and the browser's selection and sorting moving into the tested core of the
+app.
 
 ### Added
 
+- **Artwork waits for you now.** Anything you import from the search window, or
+  pick off your own disk, is held aside instead of landing in your album folder.
+  You look at it, set roles, drop what you do not want, and press SAVE. Removing
+  a file you already had is a mark rather than a deletion, so it is reversible
+  right up until the moment you save. Leaving the ART tab with work pending
+  keeps the work and tells you it is waiting.
+- **See the artwork inside your files.** The ART tab shows the picture embedded
+  in the audio itself, with its pixel size, alongside the images in the folder.
+  It can be removed: saving rewrites the tracks to drop the picture, and it says
+  how many files that is before you agree to it. The audio is copied rather than
+  re encoded, so nothing is lost but the picture.
+- **Your scans and the internet in one window.** FIND ART replaces the two keys
+  that used to do half the job each. Images you choose from disk land in the same
+  grid as the online results, with their role read from the filename, and go
+  through the same review and the same import.
+- **Import AutoEQ.** Paste or drop a parametric EQ config from squig.link,
+  AutoEQ, oratory1990, Wavelet or Poweramp, and CrateDigger fits it onto the
+  twelve faders. It draws both curves, the one the file asks for and the one
+  twelve bands can actually produce, so you can see how close the fit is before
+  you take it. Save it straight into one of your own slots.
+- **Three EQ slots of your own.** Store a curve, name it, load it back. Right
+  click a slot to save the current curve into it, rename it, or clear it.
+- **Choose which EQs the header key cycles.** Every preset in the equalizer now
+  carries a lamp. Lit ones are what the EQ key steps through, so a rotation of
+  three presets is three presses instead of seven.
+- **Find every album with poor artwork.** Library Cleanup has an Artwork tab
+  that sweeps your whole library for albums with no cover or a cover too small
+  to look at, lists them worst first, and fetches better ones in one run. It
+  never replaces a cover with a smaller one.
+- **A field you pick in the inspector.** The row under the cover shows Genre by
+  default. Click it to show Bitrate, Sample, Added or Plays instead, and it
+  remembers.
 - **CrateDigger remembers what you play.** Play counts, skips, when you last
   heard something, when it was added, and a one to five star rating on every
   track. Rate from the inspector or with Command-Option-0 through
@@ -37,10 +72,36 @@ moved into the tested core of the app.
 
 ### Changed
 
+- **A much bigger cover.** The inspector's cover now takes whatever height the
+  text below it leaves, and follows the window as you resize it. The tabs and
+  the library tools moved out onto the chassis around the panel, the rows that
+  repeated what the display above already said are gone, and a long album title
+  sits on one line until you click it.
+- **The Patch Bay is now Conversion.** A patch bay is where you plug cables
+  between things; this picks a format and a folder layout, so it says so. Its
+  keys lost their glow and their rows of lamps for a readout with a hairline
+  scale, the folder modes read MIRROR, FLAT, TAGS and CUSTOM instead of one word
+  that meant nothing, and the pattern editor only appears when you are using it.
+  The destination is a single line you click.
+- **Artwork search shows where each image came from.** Cover Art Archive,
+  Discogs and your own disk each get a badge and a filter, every image shows its
+  true pixel size, and releases can be ordered by the cover they actually carry.
+  Discogs scans announce themselves while they load rather than appearing
+  unannounced, and can be switched off entirely. The release you imported from
+  is remembered, so reopening the search lands on it.
 - **Notices are centered on the display.** Messages like "MATCHING TAGS" used to
   sit hard against the annunciators on the left and shove the transport strip
   sideways every time one appeared. They now sit in the middle of the glass and
   no longer move anything else.
+
+### Fixed
+
+- **A thumbnail is no longer blown up to fill the screen.** Opening artwork used
+  the small picture inside your files even when the folder held real scans. It
+  uses those now, and falls back to the embedded one only when there is nothing
+  else, at its own size rather than stretched.
+- **The equalizer reads 0 at the centre.** A fader sitting at zero used to show
+  +0, or sometimes -0.
 
 ### Notes for testers
 
