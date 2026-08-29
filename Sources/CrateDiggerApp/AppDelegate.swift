@@ -741,6 +741,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             return true
         case #selector(queuePlayNext(_:)), #selector(queuePlayLast(_:)):
             return mainWindowController?.canQueueSelection() == true
+        case #selector(setRating(_:)):
+            return !(mainWindowController?.model.resolvedSelectionTracks().isEmpty ?? true)
         case #selector(clearUpNext(_:)):
             return mainWindowController?.hasUpNext() == true
         case #selector(setAppearanceMode(_:)):

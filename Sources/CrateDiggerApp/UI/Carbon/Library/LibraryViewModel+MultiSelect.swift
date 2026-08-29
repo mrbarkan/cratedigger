@@ -157,11 +157,14 @@ extension LibraryViewModel {
         return selectedAlbum?.tracks ?? []
     }
 
-    /// Tracks the Inspector's EDIT TAGS should edit: any genuine multi-selection
-    /// (several tracks / albums / artists) resolves to all of its tracks; a single
-    /// selection stays the single anchor track (so one-track editing is unchanged,
-    /// not promoted to the whole album).
-    func tracksForInspectorTagEdit() -> [LoadedTrack] {
+    /// The shared definition of "what does the selection mean": any genuine
+    /// multi-selection (several tracks / albums / artists) resolves to all of
+    /// its tracks; a single selection stays the single anchor track (so
+    /// one-track editing/rating is unchanged, not promoted to the whole
+    /// album). Every selection-scoped action (tag editing, rating, ...)
+    /// should route through this so they never disagree about what "the
+    /// selection" is.
+    func resolvedSelectionTracks() -> [LoadedTrack] {
         if selectedTrackIDs.count > 1 || selectedAlbumIDs.count > 1 || selectedArtistIDs.count > 1 {
             return selectedTracksForCrateAdd()
         }

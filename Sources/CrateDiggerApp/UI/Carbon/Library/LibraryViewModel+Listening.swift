@@ -100,7 +100,7 @@ extension LibraryViewModel {
     /// selected track agrees, otherwise 0, because showing one track's three
     /// stars for a mixed selection would be a lie the user then overwrites.
     var ratingForSelection: Int {
-        let tracks = tracksToRate()
+        let tracks = resolvedSelectionTracks()
         guard let first = tracks.first else { return 0 }
         let store = currentListeningStore()
         let firstRating = store.stats(path: ListeningStore.key(for: first.track.fileURL))?.rating ?? 0
@@ -113,7 +113,7 @@ extension LibraryViewModel {
 
     /// Rate everything selected. 0 clears.
     func rateSelection(_ rating: Int) {
-        let tracks = tracksToRate()
+        let tracks = resolvedSelectionTracks()
         guard !tracks.isEmpty else { return }
         let store = currentListeningStore()
         for track in tracks {
@@ -124,15 +124,5 @@ extension LibraryViewModel {
         showOLEDNotice(rating == 0
                        ? "RATING CLEARED"
                        : "RATED \(rating) STAR\(rating == 1 ? "" : "S")")
-    }
-
-    /// A real multi-selection rates all of it; otherwise the anchor track.
-    /// Mirrors `tracksForInspectorTagEdit()` so rating and tag editing never
-    /// disagree about what "the selection" means.
-    private func tracksToRate() -> [LoadedTrack] {
-        if selectedTrackIDs.count > 1 || selectedAlbumIDs.count > 1 || selectedArtistIDs.count > 1 {
-            return selectedTracksForCrateAdd()
-        }
-        return selectedTrack.map { [$0] } ?? []
     }
 }

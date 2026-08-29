@@ -9,9 +9,9 @@ struct RatingStars: View {
 
     @State private var hovered: Int = 0
 
-    private var rating: Int { model.ratingForSelection }
-
     var body: some View {
+        let rating = model.ratingForSelection
+
         HStack(spacing: 4) {
             Text("RATING")
                 .font(CarbonFont.mono(8, weight: .bold))
@@ -21,15 +21,17 @@ struct RatingStars: View {
             Spacer(minLength: 8)
 
             ForEach(1...5, id: \.self) { star in
-                Image(systemName: star <= (hovered > 0 ? hovered : rating) ? "star.fill" : "star")
-                    .font(.system(size: 11))
-                    .foregroundStyle(star <= (hovered > 0 ? hovered : rating) ? theme.orange : theme.ink4)
-                    .onHover { inside in hovered = inside ? star : 0 }
-                    .onTapGesture {
-                        // Tapping the star you are already on clears the rating.
-                        model.rateSelection(rating == star ? 0 : star)
-                    }
-                    .accessibilityLabel("\(star) star\(star == 1 ? "" : "s")")
+                Button {
+                    // Tapping the star you are already on clears the rating.
+                    model.rateSelection(rating == star ? 0 : star)
+                } label: {
+                    Image(systemName: star <= (hovered > 0 ? hovered : rating) ? "star.fill" : "star")
+                        .font(.system(size: 11))
+                        .foregroundStyle(star <= (hovered > 0 ? hovered : rating) ? theme.orange : theme.ink4)
+                }
+                .buttonStyle(.plain)
+                .onHover { inside in hovered = inside ? star : 0 }
+                .accessibilityLabel("\(star) star\(star == 1 ? "" : "s")")
             }
         }
         .padding(.horizontal, 14)
