@@ -30,5 +30,38 @@ final class PlayThresholdTests: XCTestCase {
         XCTAssertFalse(PlayThreshold.isPlayed(elapsed: -5, duration: 200))
         XCTAssertFalse(PlayThreshold.isPlayed(elapsed: 100, duration: 0))
     }
+
+    // MARK: - Skips
+
+    /// The regression this rule exists for: a 20s skit can never be a play, so
+    /// "not played" as a stand-in for "skipped" gave it a skip every single time
+    /// it ran to its end.
+    func testShortTrackHeardToTheEndIsNotASkip() {
+        XCTAssertFalse(PlayThreshold.isSkipped(elapsed: 20, duration: 20))
+        // Tick accumulation lands just short of the real duration.
+        XCTAssertFalse(PlayThreshold.isSkipped(elapsed: 19.4, duration: 20))
+        XCTAssertFalse(PlayThreshold.isPlayed(elapsed: 20, duration: 20),
+                       "and it is still not a play — the two rules are independent")
+    }
+
+    func testShortTrackAbandonedEarlyIsASkip() {
+        XCTAssertTrue(PlayThreshold.isSkipped(elapsed: 3, duration: 20))
+        XCTAssertTrue(PlayThreshold.isSkipped(elapsed: 15.9, duration: 20))
+    }
+
+    func testLongTrackAbandonedEarlyIsASkip() {
+        XCTAssertTrue(PlayThreshold.isSkipped(elapsed: 10, duration: 300))
+    }
+
+    func testLongTrackHeardOutIsNotASkip() {
+        XCTAssertFalse(PlayThreshold.isSkipped(elapsed: 240, duration: 300))
+        XCTAssertFalse(PlayThreshold.isSkipped(elapsed: 300, duration: 300))
+    }
+
+    func testZeroAndNegativeInputsAreNotSkips() {
+        XCTAssertFalse(PlayThreshold.isSkipped(elapsed: 0, duration: 200))
+        XCTAssertFalse(PlayThreshold.isSkipped(elapsed: -5, duration: 200))
+        XCTAssertFalse(PlayThreshold.isSkipped(elapsed: 100, duration: 0))
+    }
 }
 #endif

@@ -154,6 +154,17 @@ makes rating real: a five-star control in the inspector and ⌘1–⌘5 in the
 Playback menu (⌘0 clears). Multi-selection rates the whole selection. That is
 the whole of the rating UI in this phase; anything more waits for Phase 3.
 
+**Correction (shipped):** the shortcuts are Command-Option-0 through
+Command-Option-5, not the ⌘0-⌘5 above. Plain ⌘1 to ⌘4 already belong to the
+View menu's OLED display switcher, so the design's choice would have stolen
+four existing shortcuts. See commit `1c07f36`.
+
+**Correction (shipped):** rating is gated on a real selection
+(`LibraryViewModel.hasRatableSelection`) in both the menu and the inspector
+stars. `resolvedSelectionTracks()` falls back to the first visible track, which
+would have let one keystroke write a rating into an unbacked store with nothing
+actually selected.
+
 ### A6. Keeping the key correct
 
 Stats are keyed by path, so anything that changes a track's path must repoint

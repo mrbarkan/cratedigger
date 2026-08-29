@@ -10,7 +10,11 @@ struct RatingStars: View {
     @State private var hovered: Int = 0
 
     var body: some View {
-        let rating = model.ratingForSelection
+        // Nothing really selected: the stars stay drawn so the row does not jump,
+        // but they are inert. Rating writes straight into a store with no undo,
+        // so it must not act on the browser's fallback "first visible track".
+        let enabled = model.hasRatableSelection
+        let rating = enabled ? model.ratingForSelection : 0
 
         HStack(spacing: 4) {
             Text("RATING")
@@ -30,12 +34,16 @@ struct RatingStars: View {
                         .foregroundStyle(star <= (hovered > 0 ? hovered : rating) ? theme.orange : theme.ink4)
                 }
                 .buttonStyle(.plain)
-                .onHover { inside in hovered = inside ? star : 0 }
+                .disabled(!enabled)
+                .onHover { inside in hovered = (inside && enabled) ? star : 0 }
                 .accessibilityLabel("\(star) star\(star == 1 ? "" : "s")")
             }
         }
+        .opacity(enabled ? 1 : 0.4)
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
-        .help("Rate the selected tracks. Click the same star again to clear.")
+        .help(enabled
+              ? "Rate the selected tracks. Click the same star again to clear."
+              : "Select a track to rate it.")
     }
 }

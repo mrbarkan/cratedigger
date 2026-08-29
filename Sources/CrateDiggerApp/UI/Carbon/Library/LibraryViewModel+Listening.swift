@@ -24,6 +24,12 @@ extension LibraryViewModel {
     /// Persist, surfacing failures rather than dropping history while the UI
     /// claims nothing happened. Unlike the track store there is no rescan that
     /// can rebuild this, so a failure is worth an alert.
+    ///
+    /// Alerted once per store, then logged: the failure mode is permanent (an
+    /// unreadable file never becomes writable mid-session) and this is called on
+    /// every counted play and every skip, so alerting each time turned one
+    /// corrupt file into a modal per track. The latch clears when the store is
+    /// rebuilt in `resetListeningStoreCache()`.
     @discardableResult
     func persistListeningStore() -> Bool {
         do {
@@ -31,6 +37,8 @@ extension LibraryViewModel {
             return true
         } catch {
             AppLog.library.error("Failed to save listening history: \(error.localizedDescription)")
+            guard !listeningSaveFailureAlerted else { return false }
+            listeningSaveFailureAlerted = true
             appAlert = .error(
                 title: "Listening History Not Saved",
                 message: "Could not write your play counts and ratings: \(error.localizedDescription)"
@@ -59,40 +67,54 @@ extension LibraryViewModel {
     func resetListeningStoreCache() {
         listeningStore = nil
         listeningStoreFolder = nil
+        listeningSaveFailureAlerted = false
     }
 
     /// Count a play once the same threshold that triggers a scrobble is met.
     ///
-    /// Guarded by `countedPlayTrackID` rather than by the scrobble guard,
-    /// because the two must not be coupled: a user with no Last.fm account still
-    /// gets play counts, and the scrobble guard is cleared by network paths this
-    /// has no business knowing about.
+    /// Guarded by `countedPlayKey` rather than by the scrobble guard, because
+    /// the two must not be coupled: a user with no Last.fm account still gets
+    /// play counts, and the scrobble guard is cleared by network paths this has
+    /// no business knowing about.
+    ///
+    /// Attributed via `listeningTrack`, not `nowPlayingTrack`: a time tick
+    /// can land inside the window where a queue has been replaced but the index
+    /// has not moved yet, and `nowPlayingTrack` names the wrong record there.
     func recordPlayIfThresholdMet(elapsed: Double, duration: Double) {
         guard !isRadioMode else { return }
-        guard let nowPlaying = nowPlayingTrack else { return }
-        guard countedPlayTrackID != nowPlaying.track.id else { return }
+        guard let playing = listeningTrack else { return }
+        guard countedPlayKey != playing.key else { return }
         guard PlayThreshold.isPlayed(elapsed: elapsed, duration: duration) else { return }
 
-        countedPlayTrackID = nowPlaying.track.id
-        currentListeningStore().recordPlay(path: ListeningStore.key(for: nowPlaying.track.fileURL))
+        countedPlayKey = playing.key
+        currentListeningStore().recordPlay(path: playing.key)
         // ponytail: saved on every counted play. At one write per several
         // minutes of listening that is nothing; if a shuffle-heavy session ever
         // shows up in a profile, batch it behind a timer.
         persistListeningStore()
     }
 
-    /// The track being left counts as skipped if it never reached the play
-    /// threshold. Called from the index-change callback, before the per-track
-    /// counters are reset for the incoming track.
+    /// The track being left counts as skipped if it was abandoned part-way.
+    /// Called from the index-change callback, before the per-track counters are
+    /// reset for the incoming track.
+    ///
+    /// Reads `listeningTrack` rather than `nowPlayingTrack` for the reason
+    /// that property documents: on a queue replacement `nowPlayingTrack` is
+    /// already the new queue indexed by the old position, so deriving the
+    /// outgoing track from it wrote the skip against an unrelated record.
     func recordSkipForOutgoingTrack() {
         guard !isRadioMode else { return }
-        guard let outgoing = nowPlayingTrack else { return }
-        guard countedPlayTrackID != outgoing.track.id else { return }
+        guard let outgoing = listeningTrack else { return }
+        listeningTrack = nil
+        guard countedPlayKey != outgoing.key else { return }
         // Nothing at all was heard: an auto-advance into a track that failed to
         // open is not a skip, it is a non-event.
         guard listenedSeconds > 0 else { return }
+        // Hearing a short track out is not a skip, even though it can never
+        // reach the play threshold — see PlayThreshold.isSkipped.
+        guard PlayThreshold.isSkipped(elapsed: listenedSeconds, duration: outgoing.duration) else { return }
 
-        currentListeningStore().recordSkip(path: ListeningStore.key(for: outgoing.track.fileURL))
+        currentListeningStore().recordSkip(path: outgoing.key)
         // ponytail: saved on every skip. Rapid skipping (holding next through a
         // folder) is higher-frequency than play counting; if a skip-heavy session
         // shows up in a profile, batch it behind a timer.
@@ -114,8 +136,25 @@ extension LibraryViewModel {
         return firstRating
     }
 
+    /// Whether there is a real selection to rate.
+    ///
+    /// `resolvedSelectionTracks()` falls back through `selectedTrack` to
+    /// `visibleTracks.first`, which is right for its other callers (they all end
+    /// in a sheet you can cancel) but not for rating: ⌘⌥3 is one keystroke and
+    /// writes straight into a store with no undo and no backup, so it must not
+    /// land on whatever happens to be top of the list, or on a stale local track
+    /// while the user is browsing Radio.
+    var hasRatableSelection: Bool {
+        guard !isRadioMode else { return false }
+        if selectedTrackIDs.count > 1 || selectedAlbumIDs.count > 1 || selectedArtistIDs.count > 1 {
+            return true
+        }
+        return selectedTrackID != nil
+    }
+
     /// Rate everything selected. 0 clears.
     func rateSelection(_ rating: Int) {
+        guard hasRatableSelection else { return }
         let tracks = resolvedSelectionTracks()
         guard !tracks.isEmpty else { return }
         let store = currentListeningStore()

@@ -875,10 +875,27 @@ final class LibraryViewModel: ObservableObject {
 
     // Last.fm tracking
     private var lastScrobbledTrackID: UUID?
+    /// The track playback is currently settled on, as the listening store sees
+    /// it: its store key plus its own duration.
+    ///
+    /// Held rather than recomputed from `nowPlayingTrack`, which is
+    /// `playbackQueue[playbackCurrentIndex]` and is NOT stable across a queue
+    /// replacement: `playTrack`/`startQueue` assign the new `playbackQueue`
+    /// synchronously, while the index-change callback that updates
+    /// `playbackCurrentIndex` runs a hop later, so in between `nowPlayingTrack`
+    /// resolves to `newQueue[oldIndex]` — an unrelated track. Written in the
+    /// index-change callback once the index has been updated. The duration
+    /// travels with the key so the skip rule cannot be applied against the
+    /// *incoming* track's length, which `playbackDuration` may already hold.
+    /// Not `private`: `LibraryViewModel+Listening.swift` is the only reader.
+    var listeningTrack: (key: String, duration: Double)?
+
     /// The track whose play has already been counted, so a long track cannot
     /// count twice. Kept separate from `lastScrobbledTrackID` because play
-    /// counts must work with no Last.fm account.
-    var countedPlayTrackID: UUID?
+    /// counts must work with no Last.fm account. Keyed the same way as
+    /// `listeningTrack` so the play guard and the skip guard compare the same
+    /// identity.
+    var countedPlayKey: String?
     private var playbackStartTimestamp: Int = 0
     /// Actual listened time, accumulated from time-change deltas — the playhead
     /// position alone would scrobble instantly after a seek to 60%.
@@ -2270,6 +2287,15 @@ final class LibraryViewModel: ObservableObject {
         do {
             try LibraryCleanupService().deleteTracks(selected, useTrash: true)
             repointCrateReferences(repoint)
+            // The same repoint the crates get, for the listening history: the
+            // copy being trashed may be the one with all the plays, and the
+            // purge below removes exactly these paths. `repoint` merges field by
+            // field, so the keeper ends up with the higher counts and the older
+            // dateAdded. A trashed file with no surviving keeper is absent from
+            // this map and correctly loses its history in the purge.
+            currentListeningStore().repoint(
+                pairs: repoint.mapValues { ListeningStore.key(for: $0.track.fileURL) }
+            )
             purgeTracksFromLibraryState(paths: selectedPaths)
             scanForCleanup()
             let repointNote = repoint.isEmpty ? "" : " Crate entries now point at the kept copies."
@@ -3032,7 +3058,12 @@ final class LibraryViewModel: ObservableObject {
                 self.lastScrobbledTrackID = nil
                 self.listenedSeconds = 0
                 self.lastScrobbleTickTime = nil
-                self.countedPlayTrackID = nil
+                self.countedPlayKey = nil
+                // Only now, with the index updated, does `nowPlayingTrack` name
+                // the incoming track — see `listeningTrack`.
+                self.listeningTrack = self.nowPlayingTrack.map {
+                    (ListeningStore.key(for: $0.track.fileURL), $0.track.durationSeconds)
+                }
                 self.playbackStartTimestamp = Int(Date().timeIntervalSince1970)
                 self.refreshNowPlayingInfo()
                 // An end-of-track sleep timer resolves here — the track it was
@@ -3326,6 +3357,11 @@ final class LibraryViewModel: ObservableObject {
     /// store on purpose — see ListeningStore.
     var listeningStore: ListeningStore?
     var listeningStoreFolder: URL?
+    /// One alert per store, not one per write. `ListeningStore.save()` throws
+    /// permanently once the file is unreadable, and this store is written on
+    /// every counted play and every skip, so an unlatched alert means a modal
+    /// per track while the user holds Next through a folder.
+    var listeningSaveFailureAlerted = false
 
     private func currentTrackStore() -> TrackStore {
         let folder = cratesDirectoryURL
@@ -4166,8 +4202,14 @@ final class LibraryViewModel: ObservableObject {
         let fm = FileManager.default
         let indexFiles: [URL]
         do {
+            // This extension list is the whole function. Anything missing from it
+            // is left behind AND cleared from the collision check below, and the
+            // folder-changed notification this posts then rebuilds a fresh empty
+            // store over the top of the loss. `cdplays` in particular has no
+            // backup and nothing that can rebuild it — add new index files here.
             indexFiles = try fm.contentsOfDirectory(at: currentURL, includingPropertiesForKeys: nil)
-                .filter { $0.pathExtension == "cdcrate" || $0.pathExtension == "cdtracks" }
+                .filter { $0.pathExtension == "cdcrate" || $0.pathExtension == "cdtracks"
+                    || $0.pathExtension == "cdplays" }
         } catch {
             appAlert = .error(title: "Move Failed", message: "Could not read the current index folder: \(error.localizedDescription)")
             return
