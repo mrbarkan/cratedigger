@@ -7,6 +7,11 @@ import Foundation
 /// describe the recording and are rebuilt whenever a file is rescanned,
 /// retagged or relinked. This is the part that would be irreplaceable if a
 /// rebuild dropped it. See `ListeningStore`.
+///
+/// WARNING: This struct is persisted to disk as the irreplaceable half of the
+/// listening history. Any new field must either be Optional or provide a decoder
+/// default, because a missing field during decode would fail the entire history
+/// load. There is no migration mechanism here.
 public struct ListeningStats: Codable, Sendable, Equatable {
     public var playCount: Int
     public var skipCount: Int
@@ -34,6 +39,24 @@ public struct ListeningStats: Codable, Sendable, Equatable {
         self.lastPlayed = lastPlayed
         self.dateAdded = dateAdded
         self.rating = min(max(rating, 0), 5)
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.playCount = try container.decode(Int.self, forKey: .playCount)
+        self.skipCount = try container.decode(Int.self, forKey: .skipCount)
+        self.lastPlayed = try container.decodeIfPresent(Date.self, forKey: .lastPlayed)
+        self.dateAdded = try container.decode(Date.self, forKey: .dateAdded)
+        let decodedRating = try container.decode(Int.self, forKey: .rating)
+        self.rating = min(max(decodedRating, 0), 5)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case playCount
+        case skipCount
+        case lastPlayed
+        case dateAdded
+        case rating
     }
 
     /// Whether the user has expressed an opinion, as distinct from a low one.

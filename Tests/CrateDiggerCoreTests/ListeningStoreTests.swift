@@ -52,5 +52,17 @@ final class ListeningStatsTests: XCTestCase {
         let data = try JSONEncoder().encode(stats)
         XCTAssertEqual(try JSONDecoder().decode(ListeningStats.self, from: data), stats)
     }
+
+    func testDecodingClampsOutOfRangeRatings() throws {
+        // Rating above 5 should be clamped to 5
+        let aboveRangeJSON = #"{"playCount": 0, "skipCount": 0, "lastPlayed": null, "dateAdded": 1700000000.0, "rating": 9}"#
+        let statsAbove = try JSONDecoder().decode(ListeningStats.self, from: aboveRangeJSON.data(using: .utf8)!)
+        XCTAssertEqual(statsAbove.rating, 5, "rating 9 should be clamped to 5 on decode")
+
+        // Rating below 0 should be clamped to 0
+        let belowRangeJSON = #"{"playCount": 0, "skipCount": 0, "lastPlayed": null, "dateAdded": 1700000000.0, "rating": -3}"#
+        let statsBelow = try JSONDecoder().decode(ListeningStats.self, from: belowRangeJSON.data(using: .utf8)!)
+        XCTAssertEqual(statsBelow.rating, 0, "rating -3 should be clamped to 0 on decode")
+    }
 }
 #endif
