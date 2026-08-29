@@ -104,6 +104,17 @@ final class ListeningStorePersistenceTests: XCTestCase {
         try store.save()
         let first = try Data(contentsOf: fileURL)
 
+        // Written out of insertion order (B then A), so this only holds if
+        // .sortedKeys is actually doing something: without it, same-process
+        // Dictionary iteration order happens to be stable and this assertion
+        // would pass by accident. Match on the filename rather than the full
+        // path: JSONEncoder escapes "/" as "\/", so the raw path string is
+        // never a literal substring of the encoded text.
+        let text = try XCTUnwrap(String(data: first, encoding: .utf8))
+        let aRange = try XCTUnwrap(text.range(of: trackA.lastPathComponent))
+        let bRange = try XCTUnwrap(text.range(of: trackB.lastPathComponent))
+        XCTAssertLessThan(aRange.lowerBound, bRange.lowerBound, "sortedKeys must place the A path before the B path")
+
         // Reload and save again with no edits: backup dedup depends on this.
         let reopened = ListeningStore(fileURL: fileURL)
         reopened.setRating(3, path: ListeningStore.key(for: trackA))
@@ -153,6 +164,30 @@ final class ListeningStorePersistenceTests: XCTestCase {
 
         // Two plays beat one: a move must never lose history to a stale row.
         XCTAssertEqual(store.stats(path: new)?.playCount, 2)
+    }
+
+    func testRepointOnATieMergesRatingAndSkipInsteadOfDroppingOne() throws {
+        let store = ListeningStore(fileURL: fileURL)
+        let old = ListeningStore.key(for: trackA)
+        let new = ListeningStore.key(for: trackB)
+        let earlier = Date(timeIntervalSince1970: 1_600_000_000)
+        let later = Date(timeIntervalSince1970: 1_650_000_000)
+
+        // Moving row: rated, never played, added earlier.
+        store.statsOrCreate(path: old, now: earlier)
+        store.setRating(4, path: old)
+
+        // Destination row: skipped once, never played, added later.
+        store.statsOrCreate(path: new, now: later)
+        store.recordSkip(path: new)
+
+        store.repoint(from: old, to: new)
+
+        let merged = try XCTUnwrap(store.stats(path: new))
+        XCTAssertEqual(merged.playCount, 0)
+        XCTAssertEqual(merged.rating, 4, "the moving row's rating must not be dropped on a tie")
+        XCTAssertEqual(merged.skipCount, 1, "the destination row's skip must not be dropped on a tie")
+        XCTAssertEqual(merged.dateAdded, earlier, "dateAdded must take the earlier of the two rows")
     }
 
     func testRemoveDropsARowForgotten() throws {

@@ -123,9 +123,12 @@ public final class ListeningStore {
     // MARK: - Housekeeping
 
     /// Carry a track's history to its new path after a rename, move or
-    /// consolidate. If the destination already has a row, the one with more
-    /// plays wins: a move must never lose history to a stale row left behind by
-    /// an earlier scan of the same file.
+    /// consolidate. If the destination already has a row, the two are merged
+    /// field by field rather than one being chosen over the other: a move must
+    /// never lose history to a stale row left behind by an earlier scan of the
+    /// same file, and on a tie (both unplayed, the common case for a file moved
+    /// before it was ever played) picking one whole record would silently drop
+    /// the other's rating or skip count.
     public func repoint(from oldPath: String, to newPath: String) {
         guard oldPath != newPath, let moving = byPath.removeValue(forKey: oldPath) else { return }
         isDirty = true
@@ -133,7 +136,23 @@ public final class ListeningStore {
             byPath[newPath] = moving
             return
         }
-        byPath[newPath] = moving.playCount >= existing.playCount ? moving : existing
+        byPath[newPath] = Self.merge(moving, existing)
+    }
+
+    /// Combine two rows for the same track, keeping the value that loses no
+    /// information from either side rather than discarding a whole record.
+    private static func merge(_ a: ListeningStats, _ b: ListeningStats) -> ListeningStats {
+        var merged = ListeningStats(
+            playCount: max(a.playCount, b.playCount),
+            skipCount: max(a.skipCount, b.skipCount),
+            lastPlayed: [a.lastPlayed, b.lastPlayed].compactMap { $0 }.max(),
+            // The track entered the library when the first of these rows was
+            // created, not the second.
+            dateAdded: min(a.dateAdded, b.dateAdded)
+        )
+        // 0 means unrated, so a real rating must never lose to an unrated row.
+        merged.rating = a.rating != 0 ? a.rating : b.rating
+        return merged
     }
 
     /// Forget a track's history, for when it leaves the library for good.
