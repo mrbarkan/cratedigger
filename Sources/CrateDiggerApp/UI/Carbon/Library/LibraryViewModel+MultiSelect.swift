@@ -13,14 +13,17 @@ extension LibraryViewModel {
 
     func clearMultiSelection() { browser.clearMultiSelection() }
 
+    /// Delegates to `BrowserState.selectArtist` — the rules live there.
     func selectArtist(_ artist: Artist, command: Bool, shift: Bool, ordered: [Artist]) {
         browser.selectArtist(artist, command: command, shift: shift, ordered: ordered)
     }
 
+    /// Delegates to `BrowserState.selectAlbum` — the rules live there.
     func selectAlbum(_ album: Album, command: Bool, shift: Bool, ordered: [Album], flat: Bool) {
         browser.selectAlbum(album, command: command, shift: shift, ordered: ordered, flat: flat)
     }
 
+    /// Delegates to `BrowserState.selectTrack` — the rules live there.
     func selectTrack(_ loaded: LoadedTrack, command: Bool, shift: Bool, ordered: [LoadedTrack]) {
         browser.selectTrack(loaded, command: command, shift: shift, ordered: ordered)
     }

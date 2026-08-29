@@ -113,6 +113,7 @@ final class LibraryViewModel: ObservableObject {
     /// Selection, ordering and (from Phase 1) filtering, as one tested Core
     /// value type. The properties below forward onto it so the ~190 call sites
     /// that read `selectedTrackIDs` or `trackSortField` did not have to move.
+    /// The anchors and the three mutually-exclusive multi-selection sets are defined in `BrowserState` in Core.
     @Published var browser = BrowserState()
 
     var selectedArtistID: String? {

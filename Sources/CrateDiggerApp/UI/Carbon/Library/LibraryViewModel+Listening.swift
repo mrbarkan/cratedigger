@@ -93,6 +93,9 @@ extension LibraryViewModel {
         guard listenedSeconds > 0 else { return }
 
         currentListeningStore().recordSkip(path: ListeningStore.key(for: outgoing.track.fileURL))
+        // ponytail: saved on every skip. Rapid skipping (holding next through a
+        // folder) is higher-frequency than play counting; if a skip-heavy session
+        // shows up in a profile, batch it behind a timer.
         persistListeningStore()
     }
 
