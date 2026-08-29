@@ -823,10 +823,16 @@ final class LibraryViewModel: ObservableObject {
 
     // Last.fm tracking
     private var lastScrobbledTrackID: UUID?
+    /// The track whose play has already been counted, so a long track cannot
+    /// count twice. Kept separate from `lastScrobbledTrackID` because play
+    /// counts must work with no Last.fm account.
+    var countedPlayTrackID: UUID?
     private var playbackStartTimestamp: Int = 0
     /// Actual listened time, accumulated from time-change deltas — the playhead
     /// position alone would scrobble instantly after a seek to 60%.
-    private var listenedSeconds: Double = 0
+    /// Not `private`: `LibraryViewModel+Listening.swift` reads it to decide
+    /// whether the outgoing track counts as a skip.
+    var listenedSeconds: Double = 0
     private var lastScrobbleTickTime: Double?
 
     // MARK: - Private
@@ -2903,6 +2909,10 @@ final class LibraryViewModel: ObservableObject {
         }
         lastScrobbleTickTime = current
 
+        // Play counts are ours and do not depend on a Last.fm account, so this
+        // runs before the session-key guard below returns.
+        recordPlayIfThresholdMet(elapsed: listenedSeconds, duration: duration)
+
         guard let sessionKey = prefs.lastFmSessionKey, !sessionKey.isEmpty,
               let nowPlaying = nowPlayingTrack,
               lastScrobbledTrackID != nowPlaying.track.id else {
@@ -2956,12 +2966,16 @@ final class LibraryViewModel: ObservableObject {
         playback.onCurrentIndexChange = { [weak self] index in
             Task { @MainActor in
                 guard let self else { return }
+                // Before the index moves: the track we are leaving is skipped if
+                // it never reached the play threshold.
+                self.recordSkipForOutgoingTrack()
                 self.playbackCurrentIndex = index
                 // New track (or repeat-one replay): reset the scrobble state so
                 // a re-played track scrobbles again and listened time restarts.
                 self.lastScrobbledTrackID = nil
                 self.listenedSeconds = 0
                 self.lastScrobbleTickTime = nil
+                self.countedPlayTrackID = nil
                 self.playbackStartTimestamp = Int(Date().timeIntervalSince1970)
                 self.refreshNowPlayingInfo()
                 // An end-of-track sleep timer resolves here — the track it was
@@ -3086,6 +3100,14 @@ final class LibraryViewModel: ObservableObject {
         for crate in availableCrates { filed.formUnion(crateMembership(name: crate)) }
         let unfiled = tracks.filter { !filed.contains(TrackStore.key(for: $0.track.fileURL)) }
         ingestArtwork(from: unfiled)
+        // First sighting of these files in this library: stamp dateAdded now,
+        // because "added" means added here, not the file's creation date.
+        let store = currentListeningStore()
+        let now = Date()
+        for track in unfiled {
+            store.statsOrCreate(path: ListeningStore.key(for: track.track.fileURL), now: now)
+        }
+        persistListeningStore()
         let before = prepCrateTracks.count
         prepCrateTracks = LibraryViewModel.deduplicate(tracks: prepCrateTracks + unfiled)
         return prepCrateTracks.count - before

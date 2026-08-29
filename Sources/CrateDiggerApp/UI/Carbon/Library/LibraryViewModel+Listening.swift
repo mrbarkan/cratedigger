@@ -60,4 +60,39 @@ extension LibraryViewModel {
         listeningStore = nil
         listeningStoreFolder = nil
     }
+
+    /// Count a play once the same threshold that triggers a scrobble is met.
+    ///
+    /// Guarded by `countedPlayTrackID` rather than by the scrobble guard,
+    /// because the two must not be coupled: a user with no Last.fm account still
+    /// gets play counts, and the scrobble guard is cleared by network paths this
+    /// has no business knowing about.
+    func recordPlayIfThresholdMet(elapsed: Double, duration: Double) {
+        guard !isRadioMode else { return }
+        guard let nowPlaying = nowPlayingTrack else { return }
+        guard countedPlayTrackID != nowPlaying.track.id else { return }
+        guard PlayThreshold.isPlayed(elapsed: elapsed, duration: duration) else { return }
+
+        countedPlayTrackID = nowPlaying.track.id
+        currentListeningStore().recordPlay(path: ListeningStore.key(for: nowPlaying.track.fileURL))
+        // ponytail: saved on every counted play. At one write per several
+        // minutes of listening that is nothing; if a shuffle-heavy session ever
+        // shows up in a profile, batch it behind a timer.
+        persistListeningStore()
+    }
+
+    /// The track being left counts as skipped if it never reached the play
+    /// threshold. Called from the index-change callback, before the per-track
+    /// counters are reset for the incoming track.
+    func recordSkipForOutgoingTrack() {
+        guard !isRadioMode else { return }
+        guard let outgoing = nowPlayingTrack else { return }
+        guard countedPlayTrackID != outgoing.track.id else { return }
+        // Nothing at all was heard: an auto-advance into a track that failed to
+        // open is not a skip, it is a non-event.
+        guard listenedSeconds > 0 else { return }
+
+        currentListeningStore().recordSkip(path: ListeningStore.key(for: outgoing.track.fileURL))
+        persistListeningStore()
+    }
 }
