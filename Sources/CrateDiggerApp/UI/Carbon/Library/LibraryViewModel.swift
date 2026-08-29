@@ -3149,7 +3149,13 @@ final class LibraryViewModel: ObservableObject {
         // so stale/renamed/removed crates can't survive. Rare, non-hot path.
         crateTracksCache.removeAll()
         trackStore = nil   // rebuilt lazily for the (possibly new) folder
+        resetListeningStoreCache()
         migrateLegacyCratesIfNeeded()
+        // First run against a library older than the plays file: give every
+        // known track a dateAdded. The track store's own paths are the source,
+        // so this does not wait for the index to be built. No-op after the
+        // first time, because the guard is "the plays file is empty".
+        backfillListeningStoreIfNeeded(knownPaths: currentTrackStore().allPaths)
         let fm = FileManager.default
         let cratesDir = cratesDirectoryURL
         do {
@@ -3236,6 +3242,11 @@ final class LibraryViewModel: ObservableObject {
     /// changes. Crates only store membership (paths), not track copies.
     private var trackStore: TrackStore?
     private var trackStoreFolder: URL?
+
+    /// Listening history for the current crates folder. Separate from the track
+    /// store on purpose — see ListeningStore.
+    var listeningStore: ListeningStore?
+    var listeningStoreFolder: URL?
 
     private func currentTrackStore() -> TrackStore {
         let folder = cratesDirectoryURL
