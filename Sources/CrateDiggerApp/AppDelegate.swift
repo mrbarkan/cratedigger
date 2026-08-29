@@ -949,13 +949,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         playbackMenu.addItem(.separator())
         let ratingMenuItem = NSMenuItem(title: "Rating", action: nil, keyEquivalent: "")
         let ratingMenu = NSMenu(title: "Rating")
-        ratingMenu.addItem(makeItem(title: "Clear Rating", action: #selector(setRating(_:)), key: "0"))
+        let clearItem = makeItem(title: "Clear Rating", action: #selector(setRating(_:)), key: "0")
+        clearItem.keyEquivalentModifierMask = [.command, .option]
+        ratingMenu.addItem(clearItem)
         for stars in 1...5 {
             let item = makeItem(
                 title: stars == 1 ? "1 Star" : "\(stars) Stars",
                 action: #selector(setRating(_:)),
                 key: String(stars)
             )
+            item.keyEquivalentModifierMask = [.command, .option]
             item.tag = stars
             ratingMenu.addItem(item)
         }

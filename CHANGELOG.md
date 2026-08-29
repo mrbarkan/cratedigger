@@ -14,9 +14,9 @@ for it.
 
 - **CrateDigger remembers what you play.** Play counts, skips, when you last
   heard something, when it was added, and a one to five star rating on every
-  track. Rate from the inspector or with Command-1 through Command-5. None of
-  it is visible in the browser yet; it is the foundation the smart crates and
-  the listening stats are built on.
+  track. Rate from the inspector or with Command-Option-0 through
+  Command-Option-5. None of it is visible in the browser yet; it is the
+  foundation the smart crates and the listening stats are built on.
 - **Deep Scan: fix tags by listening to the record.** Fix Tags searches with the
   tags a file already has, which is no help at all on a rip with no tags or with
   somebody else's. Deep Scan fingerprints the audio instead, asks AcoustID what
