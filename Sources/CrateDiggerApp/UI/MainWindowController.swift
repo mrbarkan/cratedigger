@@ -321,6 +321,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         hostingController.model.setSleepMode(mode)
     }
 
+    func rateSelection(_ rating: Int) {
+        hostingController.model.rateSelection(rating)
+    }
+
     func currentSleepMode() -> SleepMode { hostingController.model.sleepMode }
 
     /// The user changed the Stream Engine preference (or yt-dlp path) via the menu.

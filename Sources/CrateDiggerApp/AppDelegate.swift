@@ -250,6 +250,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         mainWindowController?.setSleepMode(mode)
     }
 
+    @objc private func setRating(_ sender: Any?) {
+        guard let item = sender as? NSMenuItem else { return }
+        mainWindowController?.rateSelection(item.tag)
+    }
+
     @objc private func queuePlayNext(_ sender: Any?) {
         mainWindowController?.queueSelectionNext()
     }
@@ -939,6 +944,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         let shuffleItem = makeItem(title: "Toggle Shuffle", action: #selector(toggleShuffle(_:)), key: "s")
         shuffleItem.keyEquivalentModifierMask = [.command, .option]
         playbackMenu.addItem(shuffleItem)
+        playbackMenu.addItem(.separator())
+        let ratingMenuItem = NSMenuItem(title: "Rating", action: nil, keyEquivalent: "")
+        let ratingMenu = NSMenu(title: "Rating")
+        ratingMenu.addItem(makeItem(title: "Clear Rating", action: #selector(setRating(_:)), key: "0"))
+        for stars in 1...5 {
+            let item = makeItem(
+                title: stars == 1 ? "1 Star" : "\(stars) Stars",
+                action: #selector(setRating(_:)),
+                key: String(stars)
+            )
+            item.tag = stars
+            ratingMenu.addItem(item)
+        }
+        ratingMenuItem.submenu = ratingMenu
+        playbackMenu.addItem(ratingMenuItem)
         let repeatItem = makeItem(title: "Cycle Repeat Mode", action: #selector(cycleRepeatMode(_:)), key: "r")
         repeatItem.keyEquivalentModifierMask = [.command, .option]
         playbackMenu.addItem(repeatItem)

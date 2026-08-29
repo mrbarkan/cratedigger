@@ -155,6 +155,7 @@ struct InspectorPane: View {
                             .padding(.vertical, 14)
                         captionBlock
                         SpecRows(album: model.selectedAlbum)
+                        RatingStars()
                         TagChips(album: model.selectedAlbum)
                         utilitiesBlock
                         trackListBlock
@@ -194,6 +195,7 @@ struct InspectorPane: View {
                         VStack(alignment: .leading, spacing: 0) {
                             captionBlock
                             SpecRows(album: model.selectedAlbum)
+                            RatingStars()
                             TagChips(album: model.selectedAlbum)
                             utilitiesBlock
                             trackListBlock

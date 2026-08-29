@@ -95,4 +95,44 @@ extension LibraryViewModel {
         currentListeningStore().recordSkip(path: ListeningStore.key(for: outgoing.track.fileURL))
         persistListeningStore()
     }
+
+    /// The rating shown for the current selection: the shared value when every
+    /// selected track agrees, otherwise 0, because showing one track's three
+    /// stars for a mixed selection would be a lie the user then overwrites.
+    var ratingForSelection: Int {
+        let tracks = tracksToRate()
+        guard let first = tracks.first else { return 0 }
+        let store = currentListeningStore()
+        let firstRating = store.stats(path: ListeningStore.key(for: first.track.fileURL))?.rating ?? 0
+        for track in tracks.dropFirst() {
+            let rating = store.stats(path: ListeningStore.key(for: track.track.fileURL))?.rating ?? 0
+            if rating != firstRating { return 0 }
+        }
+        return firstRating
+    }
+
+    /// Rate everything selected. 0 clears.
+    func rateSelection(_ rating: Int) {
+        let tracks = tracksToRate()
+        guard !tracks.isEmpty else { return }
+        let store = currentListeningStore()
+        for track in tracks {
+            store.setRating(rating, path: ListeningStore.key(for: track.track.fileURL))
+        }
+        persistListeningStore()
+        objectWillChange.send()
+        showOLEDNotice(rating == 0
+                       ? "RATING CLEARED"
+                       : "RATED \(rating) STAR\(rating == 1 ? "" : "S")")
+    }
+
+    /// A real multi-selection rates all of it; otherwise the anchor track.
+    /// Mirrors `tracksForInspectorTagEdit()` so rating and tag editing never
+    /// disagree about what "the selection" means.
+    private func tracksToRate() -> [LoadedTrack] {
+        if selectedTrackIDs.count > 1 || selectedAlbumIDs.count > 1 || selectedArtistIDs.count > 1 {
+            return selectedTracksForCrateAdd()
+        }
+        return selectedTrack.map { [$0] } ?? []
+    }
 }
