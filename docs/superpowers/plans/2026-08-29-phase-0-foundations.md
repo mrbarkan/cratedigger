@@ -1061,19 +1061,66 @@ Replace with:
         for key in staleKeys.subtracting(liveKeys) { store.remove(path: key) }
         persistTrackStore()
 
-        // Carry listening history across the same moves, by id, so a relocated
-        // folder keeps its play counts. One save for the whole batch.
+        // Carry listening history across the same moves, so a relocated folder
+        // keeps its play counts. One save for the whole batch.
         let plays = currentListeningStore()
-        for newTrack in newTracks {
-            let newKey = TrackStore.key(for: newTrack.track.fileURL)
-            guard let oldKey = staleKeys.first(where: { $0 != newKey && plays.stats(path: $0) != nil }),
-                  !liveKeys.contains(oldKey) else { continue }
+        for (oldKey, newKey) in movedKeys where !liveKeys.contains(oldKey) {
             plays.repoint(from: oldKey, to: newKey)
         }
         persistListeningStore()
 ```
 
-Note: `staleKeys` is a `Set<String>` of the pre-move keys collected earlier in the same function. The `!liveKeys.contains(oldKey)` guard stops a key that is still live for another track from being consumed.
+`movedKeys` does not exist yet — you add it in the step below. It must be a real
+per-track old-to-new mapping. Do NOT try to derive it by searching `staleKeys`
+for "some key that is not this track's": `staleKeys` is a flat set covering every
+moved track, so on the common case (a whole folder relocated at once) that search
+hands each track an arbitrary other track's history.
+
+- [ ] **Step 2b: Record which key moved where**
+
+The repoint above needs a genuine old-to-new mapping, built in the loop that
+already knows both halves. In the same function, find:
+
+```swift
+        let store = currentTrackStore()
+        var staleKeys = Set<String>()
+```
+
+and add a second collection beside it:
+
+```swift
+        let store = currentTrackStore()
+        var staleKeys = Set<String>()
+        // The same moves, kept as pairs. staleKeys alone cannot say which old
+        // path belongs to which track, and a whole relocated folder produces
+        // many at once.
+        var movedKeys: [String: String] = [:]
+```
+
+Then, in the per-track loop inside the crate walk, find:
+
+```swift
+                    let oldKey = TrackStore.key(for: tracks[i].track.fileURL)
+                    if oldKey != TrackStore.key(for: replacement.track.fileURL) {
+                        staleKeys.insert(oldKey)
+                    }
+```
+
+and replace with:
+
+```swift
+                    let oldKey = TrackStore.key(for: tracks[i].track.fileURL)
+                    let newKey = TrackStore.key(for: replacement.track.fileURL)
+                    if oldKey != newKey {
+                        staleKeys.insert(oldKey)
+                        movedKeys[oldKey] = newKey
+                    }
+```
+
+ponytail: a track that lives only in the Prep Crate and never in a saved crate
+is not covered, because this walk only visits saved crates. That gap is
+pre-existing — the track store's own stale-key cleanup has it too — and the
+upgrade path is to walk `prepCrateTracks` in the same pass.
 
 - [ ] **Step 3: Forget history when a track leaves the library**
 
