@@ -143,19 +143,31 @@ path, this_tag, this_dmg = sys.argv[1], sys.argv[2], sys.argv[3]
 xml = open(path).read()
 base = "https://github.com/mrbarkan/cratedigger/releases/download/"
 
-def retag(match):
-    tag, asset = match.group(1), match.group(2)
-    # This release's own assets are already tagged correctly, and on a
-    # prerelease the tag (v2.0.0-beta.73) can't be derived from the DMG name.
-    if asset == this_dmg:
-        return base + this_tag + "/" + asset
-    # Older full DMGs are named CrateDigger-<version>.dmg and belong to
-    # v<version>. Deltas (CrateDigger<to>-<from>.delta) ship with the release
-    # they upgrade TO, which is the tag just written — leave those.
-    version = re.fullmatch(r"CrateDigger-(.+)\.dmg", asset)
-    return base + ("v" + version.group(1) if version else tag) + "/" + asset
+# On the beta line every build ships the SAME filename (CrateDigger-2.0.0.dmg),
+# because the marketing version does not move between betas. So the owning tag
+# cannot be derived from the asset name -- doing that stamped every older entry
+# with the newest tag, handing build N-1 a URL that serves build N's bytes while
+# still carrying build N-1's length and signature, which Sparkle rejects.
+# Derive it from the item's own sparkle:version instead, which IS unique.
+prerelease = re.fullmatch(r"v(?P<short>[^-]+)-(?P<channel>[a-z]+)\.(?P<build>\d+)", this_tag)
+channel = prerelease.group("channel") if prerelease else None
 
-fixed = re.sub(re.escape(base) + r"(v[^/\"]+)/([^\"]+)", retag, xml)
+def owning_tag(item):
+    build = re.search(r"<sparkle:version>([^<]+)</sparkle:version>", item)
+    short = re.search(r"<sparkle:shortVersionString>([^<]+)</sparkle:shortVersionString>", item)
+    if not short:
+        return this_tag
+    if channel and build:
+        return "v%s-%s.%s" % (short.group(1), channel, build.group(1))
+    return "v" + short.group(1)
+
+def fix_item(match):
+    item = match.group(0)
+    return re.sub(re.escape(base) + r"v[^/\"]+/", base + owning_tag(item) + "/", item)
+
+# Per <item>, not per URL: a delta inside an item upgrades TO that item's
+# version and ships with that release, so it takes the same tag.
+fixed = re.sub(r"<item>.*?</item>", fix_item, xml, flags=re.S)
 if fixed != xml:
     open(path, "w").write(fixed)
     print("repointed older enclosures at their own release tags")
