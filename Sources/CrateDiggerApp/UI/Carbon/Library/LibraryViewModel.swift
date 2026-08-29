@@ -110,23 +110,41 @@ final class LibraryViewModel: ObservableObject {
             recomputePendingSyncMarks()
         }
     }
-    @Published var selectedArtistID: String?
-    @Published var selectedAlbumID: String?
-    @Published var selectedTrackID: UUID?
+    /// Selection, ordering and (from Phase 1) filtering, as one tested Core
+    /// value type. The properties below forward onto it so the ~190 call sites
+    /// that read `selectedTrackIDs` or `trackSortField` did not have to move.
+    @Published var browser = BrowserState()
+
+    var selectedArtistID: String? {
+        get { browser.selectedArtistID }
+        set { browser.selectedArtistID = newValue }
+    }
+    var selectedAlbumID: String? {
+        get { browser.selectedAlbumID }
+        set { browser.selectedAlbumID = newValue }
+    }
+    var selectedTrackID: UUID? {
+        get { browser.selectedTrackID }
+        set { browser.selectedTrackID = newValue }
+    }
+    var selectedArtistIDs: Set<String> {
+        get { browser.selectedArtistIDs }
+        set { browser.selectedArtistIDs = newValue }
+    }
+    var selectedAlbumIDs: Set<String> {
+        get { browser.selectedAlbumIDs }
+        set { browser.selectedAlbumIDs = newValue }
+    }
+    var selectedTrackIDs: Set<UUID> {
+        get { browser.selectedTrackIDs }
+        set { browser.selectedTrackIDs = newValue }
+    }
 
     /// Bumped whenever something asks the browser to re-centre its selection.
     /// The columns scroll on this as well as on the selected id: "Go to Current
     /// Song" pressed while the playing album is *already* selected changes no
     /// id, fires no `onChange`, and used to look like a dead button.
     @Published private(set) var revealTick = 0
-
-    /// Multi-selection sets for batch actions (⌘/⇧-click, ⌘A). The three are kept
-    /// mutually exclusive — you're selecting artists *or* albums *or* tracks — while
-    /// `selectedArtistID` / `selectedAlbumID` / `selectedTrackID` stay the "anchor"
-    /// (last-clicked) that drives the Inspector and the ⇧-click range origin.
-    @Published var selectedArtistIDs: Set<String> = []
-    @Published var selectedAlbumIDs: Set<String> = []
-    @Published var selectedTrackIDs: Set<UUID> = []
 
     @Published var oledView: OLEDView = .nowPlaying {
         didSet {
@@ -494,23 +512,53 @@ final class LibraryViewModel: ObservableObject {
     }
 
     /// How the Track column orders the currently shown album.
-    @Published var trackSortField: TrackSortField = .trackNumber {
-        didSet { prefs.savedTrackSortField = trackSortField.rawValue; recomputeSortedCollections() }
+    var trackSortField: TrackSortField {
+        get { browser.trackSort.field }
+        set {
+            browser.trackSort.field = newValue
+            prefs.savedTrackSortField = newValue.rawValue
+            recomputeSortedCollections()
+        }
     }
-    @Published var trackSortAscending: Bool = true {
-        didSet { prefs.savedTrackSortAscending = trackSortAscending; recomputeSortedCollections() }
+    var trackSortAscending: Bool {
+        get { browser.trackSort.ascending }
+        set {
+            browser.trackSort.ascending = newValue
+            prefs.savedTrackSortAscending = newValue
+            recomputeSortedCollections()
+        }
     }
-    @Published var artistSortField: ArtistSortField = .name {
-        didSet { prefs.savedArtistSortField = artistSortField.rawValue; recomputeSortedCollections() }
+    var artistSortField: ArtistSortField {
+        get { browser.artistSort.field }
+        set {
+            browser.artistSort.field = newValue
+            prefs.savedArtistSortField = newValue.rawValue
+            recomputeSortedCollections()
+        }
     }
-    @Published var artistSortAscending: Bool = true {
-        didSet { prefs.savedArtistSortAscending = artistSortAscending; recomputeSortedCollections() }
+    var artistSortAscending: Bool {
+        get { browser.artistSort.ascending }
+        set {
+            browser.artistSort.ascending = newValue
+            prefs.savedArtistSortAscending = newValue
+            recomputeSortedCollections()
+        }
     }
-    @Published var albumSortField: AlbumSortField = .year {
-        didSet { prefs.savedAlbumSortField = albumSortField.rawValue; recomputeSortedCollections() }
+    var albumSortField: AlbumSortField {
+        get { browser.albumSort.field }
+        set {
+            browser.albumSort.field = newValue
+            prefs.savedAlbumSortField = newValue.rawValue
+            recomputeSortedCollections()
+        }
     }
-    @Published var albumSortAscending: Bool = true {
-        didSet { prefs.savedAlbumSortAscending = albumSortAscending; recomputeSortedCollections() }
+    var albumSortAscending: Bool {
+        get { browser.albumSort.ascending }
+        set {
+            browser.albumSort.ascending = newValue
+            prefs.savedAlbumSortAscending = newValue
+            recomputeSortedCollections()
+        }
     }
     /// Whether the per-column sort menus are shown in the browser headers.
     @Published var showSortControls: Bool = true {
@@ -577,7 +625,10 @@ final class LibraryViewModel: ObservableObject {
 
     /// Which browser column the keyboard arrows act on: ↑/↓ move the selection in
     /// it, ←/→ switch columns. Set when a row is clicked; see `LibraryViewModel+ArrowNav`.
-    @Published var focusedColumn: BrowserColumn = .track
+    var focusedColumn: BrowserColumn {
+        get { browser.focusedColumn }
+        set { browser.focusedColumn = newValue }
+    }
 
     // MARK: - New Sources & Playlists State
     @Published var currentSource: LibrarySource = .localAll
@@ -932,18 +983,23 @@ final class LibraryViewModel: ObservableObject {
         playback.dsdOutputMode = dsdOutputMode
         applyVolumeToEngines()
         cdAnimationSpeed = prefs.cdAnimationSpeed
+        // Direct to `browser`, not through the forwarding setters: those call
+        // recomputeSortedCollections(), and during init there is no index to
+        // recompute against. The stored properties this replaced had didSet
+        // observers, which do not fire in init either, so this preserves the
+        // existing behaviour exactly.
         if let savedField = prefs.savedTrackSortField, let field = TrackSortField(rawValue: savedField) {
-            trackSortField = field
+            browser.trackSort.field = field
         }
-        trackSortAscending = prefs.savedTrackSortAscending
+        browser.trackSort.ascending = prefs.savedTrackSortAscending
         if let savedField = prefs.savedArtistSortField, let field = ArtistSortField(rawValue: savedField) {
-            artistSortField = field
+            browser.artistSort.field = field
         }
-        artistSortAscending = prefs.savedArtistSortAscending
+        browser.artistSort.ascending = prefs.savedArtistSortAscending
         if let savedField = prefs.savedAlbumSortField, let field = AlbumSortField(rawValue: savedField) {
-            albumSortField = field
+            browser.albumSort.field = field
         }
-        albumSortAscending = prefs.savedAlbumSortAscending
+        browser.albumSort.ascending = prefs.savedAlbumSortAscending
         showSortControls = prefs.savedShowSortControls
         if let savedLayout = prefs.savedBrowserLayout, let layout = BrowserLayout(rawValue: savedLayout) {
             browserLayout = layout

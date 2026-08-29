@@ -1,5 +1,5 @@
-import AppKit
 import CrateDiggerCore
+import Foundation
 
 /// Multi-selection in the browser (⌘/⇧-click, ⌘A) and the batch Add-to-Crate
 /// resolver. Artist, album, and track selections are kept mutually exclusive —
@@ -7,82 +7,22 @@ import CrateDiggerCore
 @MainActor
 extension LibraryViewModel {
 
-    func isArtistSelected(_ id: String) -> Bool {
-        selectedArtistIDs.contains(id) || selectedArtistID == id
-    }
+    func isArtistSelected(_ id: String) -> Bool { browser.isArtistSelected(id) }
+    func isAlbumSelected(_ id: String) -> Bool { browser.isAlbumSelected(id) }
+    func isTrackSelected(_ id: UUID) -> Bool { browser.isTrackSelected(id) }
 
-    func isAlbumSelected(_ id: String) -> Bool {
-        selectedAlbumIDs.contains(id) || selectedAlbumID == id
-    }
+    func clearMultiSelection() { browser.clearMultiSelection() }
 
-    func isTrackSelected(_ id: UUID) -> Bool {
-        selectedTrackIDs.contains(id) || selectedTrackID == id
-    }
-
-    func clearMultiSelection() {
-        selectedArtistIDs = []
-        selectedAlbumIDs = []
-        selectedTrackIDs = []
-    }
-
-    /// Artist-column click with modifier keys. Clears the album/track sets, updates
-    /// the anchor, and drills into the artist so the Album/Track columns follow.
-    /// - Parameter ordered: the artists in their current display order (for ⇧-range).
     func selectArtist(_ artist: Artist, command: Bool, shift: Bool, ordered: [Artist]) {
-        let id = artist.id
-        selectedAlbumIDs = []
-        selectedTrackIDs = []
-        if command {
-            if selectedArtistIDs.contains(id) { selectedArtistIDs.remove(id) } else { selectedArtistIDs.insert(id) }
-        } else if shift, let anchor = selectedArtistID,
-                  let a = ordered.firstIndex(where: { $0.id == anchor }),
-                  let b = ordered.firstIndex(where: { $0.id == id }) {
-            selectedArtistIDs = Set(ordered[min(a, b)...max(a, b)].map(\.id))
-        } else {
-            selectedArtistIDs = [id]
-        }
-        selectedArtistID = id
-        selectedAlbumID = artist.albums.first?.id
-        selectedTrackID = artist.albums.first?.tracks.first?.track.id
+        browser.selectArtist(artist, command: command, shift: shift, ordered: ordered)
     }
 
-    /// Album-column click with modifier keys. Clears the artist/track sets, updates
-    /// the anchor, and drills into the album so the Track column follows the last click.
-    /// - Parameter ordered: the albums in their current display order (for ⇧-range).
     func selectAlbum(_ album: Album, command: Bool, shift: Bool, ordered: [Album], flat: Bool) {
-        let id = album.id
-        selectedArtistIDs = []
-        selectedTrackIDs = []
-        if command {
-            if selectedAlbumIDs.contains(id) { selectedAlbumIDs.remove(id) } else { selectedAlbumIDs.insert(id) }
-        } else if shift, let anchor = selectedAlbumID,
-                  let a = ordered.firstIndex(where: { $0.id == anchor }),
-                  let b = ordered.firstIndex(where: { $0.id == id }) {
-            selectedAlbumIDs = Set(ordered[min(a, b)...max(a, b)].map(\.id))
-        } else {
-            selectedAlbumIDs = [id]
-        }
-        if flat { selectedArtistID = album.artistID }
-        selectedAlbumID = id
-        selectedTrackID = album.tracks.first?.track.id
+        browser.selectAlbum(album, command: command, shift: shift, ordered: ordered, flat: flat)
     }
 
-    /// Track-column click with modifier keys. Clears the artist/album sets and
-    /// updates the anchor.
     func selectTrack(_ loaded: LoadedTrack, command: Bool, shift: Bool, ordered: [LoadedTrack]) {
-        let id = loaded.track.id
-        selectedArtistIDs = []
-        selectedAlbumIDs = []
-        if command {
-            if selectedTrackIDs.contains(id) { selectedTrackIDs.remove(id) } else { selectedTrackIDs.insert(id) }
-        } else if shift, let anchor = selectedTrackID,
-                  let a = ordered.firstIndex(where: { $0.track.id == anchor }),
-                  let b = ordered.firstIndex(where: { $0.track.id == id }) {
-            selectedTrackIDs = Set(ordered[min(a, b)...max(a, b)].map { $0.track.id })
-        } else {
-            selectedTrackIDs = [id]
-        }
-        selectedTrackID = id
+        browser.selectTrack(loaded, command: command, shift: shift, ordered: ordered)
     }
 
     /// ⌘A — select everything in the current source (the "batch-add everything"
@@ -110,33 +50,13 @@ extension LibraryViewModel {
     }
 
     /// Select every artist in the current source (the Artist column's "Select All").
-    func selectAllArtists() {
-        let artists = index.artists
-        guard !artists.isEmpty else { return }
-        selectedAlbumIDs = []
-        selectedTrackIDs = []
-        selectedArtistIDs = Set(artists.map(\.id))
-        if selectedArtistID == nil { selectedArtistID = artists.first?.id }
-    }
+    func selectAllArtists() { browser.selectAllArtists(index.artists) }
 
     /// Select every album in the current source (the Album column's "Select All").
-    func selectAllAlbums() {
-        let albums = index.allAlbums
-        guard !albums.isEmpty else { return }
-        selectedArtistIDs = []
-        selectedTrackIDs = []
-        selectedAlbumIDs = Set(albums.map(\.id))
-        if selectedAlbumID == nil { selectedAlbumID = albums.first?.id }
-    }
+    func selectAllAlbums() { browser.selectAllAlbums(index.allAlbums) }
 
     /// Select every track in the current source (the Track column's "Select All").
-    func selectAllTracks() {
-        guard !index.allTracks.isEmpty else { return }
-        selectedArtistIDs = []
-        selectedAlbumIDs = []
-        selectedTrackIDs = Set(index.allTracks.map { $0.track.id })
-        if selectedTrackID == nil { selectedTrackID = index.allTracks.first?.track.id }
-    }
+    func selectAllTracks() { browser.selectAllTracks(index.allTracks) }
 
     /// The tracks an Add-to-Crate action resolves to: the selected tracks, else the
     /// selected albums' tracks, else the selected artists' tracks, else (fallback)
