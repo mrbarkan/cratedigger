@@ -7,7 +7,6 @@ struct MainShell: View {
     @EnvironmentObject private var model: LibraryViewModel
 
     private static let collapsedRailWidth: CGFloat = 36
-    private static let condensedBrowserWidth: CGFloat = 200
 
     private static let collapseAnimation: Animation =
         .spring(response: 0.36, dampingFraction: 0.92)
@@ -113,9 +112,9 @@ struct MainShell: View {
 
     // MARK: - Browser
     //
-    // Browser has two states: condensed (compact track-list context column,
-    // fixed 200pt) and full (Artist/Album/Track 3-pane, flex). When the
-    // inspector is also collapsed the browser flexes — see flex math below.
+    // Browser has two states: condensed (compact track-list context column)
+    // and full (Artist/Album/Track 3-pane). Both flex — it is the only
+    // section that absorbs the chassis width.
 
     private var browserSection: some View {
         Group {
@@ -153,16 +152,9 @@ struct MainShell: View {
         .clipShape(RoundedRectangle(cornerRadius: geometry.wellCornerRadius, style: .continuous))
     }
 
-    /// Browser is at 200pt when condensed AND inspector is full (so inspector
-    /// can flex). When BOTH are condensed/collapsed, the invariant in the
-    /// view-model prevents this — but as a defense in depth, browser flexes
-    /// to absorb leftover space if it would otherwise leave dead chassis.
-    private var browserMaxWidth: CGFloat {
-        if model.browserCollapsed && !model.inspectorCollapsed {
-            return Self.condensedBrowserWidth
-        }
-        return .infinity
-    }
+    /// The browser always flexes: the inspector is a fixed-width column, so
+    /// the browser is what absorbs the chassis width, condensed or not.
+    private var browserMaxWidth: CGFloat { .infinity }
 
     private var browserCollapsedTrailing: String {
         let n = model.visibleTracks.count
@@ -183,7 +175,9 @@ struct MainShell: View {
                 wellShell(
                     title: inspectorWellTitle,
                     trailing: inspectorWellTrailing,
-                    trailingControl: AnyView(collapseChevron(action: { model.toggleInspectorCollapsed() }))
+                    trailingControl: AnyView(collapseChevron(action: { model.toggleInspectorCollapsed() })),
+                    above: showsInspectorChrome ? AnyView(InspectorTabBar()) : nil,
+                    below: showsInspectorChrome ? AnyView(InspectorToolsBar()) : nil
                 ) {
                     InspectorPane()
                 }
@@ -193,20 +187,21 @@ struct MainShell: View {
         .clipShape(RoundedRectangle(cornerRadius: geometry.wellCornerRadius, style: .continuous))
     }
 
-    /// Inspector has three target widths:
-    /// - collapsed rail (36pt fixed)
-    /// - default narrow (380pt fixed) — when browser is full
-    /// - flex (`.infinity`) — when browser is collapsed/condensed, so the
-    ///   inspector takes the freed chassis width
+    /// Collapsed rail (36pt) or the fixed column width. Never flexes — a
+    /// metadata column stretched across a wide window reads as empty chassis.
     private var inspectorMaxWidth: CGFloat {
-        if model.inspectorCollapsed { return Self.collapsedRailWidth }
-        if model.browserCollapsed   { return .infinity }
-        return geometry.inspectorWidth
+        model.inspectorCollapsed ? Self.collapsedRailWidth : geometry.inspectorWidth
+    }
+
+    /// The patch bay and the theme picker take over the whole well, so the
+    /// inspector's own tabs and tools step aside for them.
+    private var showsInspectorChrome: Bool {
+        model.oledView != .conversion && !model.showingThemePicker
     }
 
     private var inspectorWellTitle: String {
         if model.oledView == .conversion {
-            return "Conversion · Patch Bay"
+            return "Conversion · Setup"
         }
         return "Inspector"
     }
@@ -266,10 +261,14 @@ struct MainShell: View {
 
     // MARK: - Well shell builder
 
+    /// `above` / `below` mount controls on the chassis, outside the paper
+    /// panel — the inspector's tab row and library tools.
     private func wellShell<Inner: View>(
         title: String,
         trailing: String,
         trailingControl: AnyView? = nil,
+        above: AnyView? = nil,
+        below: AnyView? = nil,
         @ViewBuilder content: @escaping () -> Inner
     ) -> some View {
         RecessedWell {
@@ -291,11 +290,19 @@ struct MainShell: View {
                 }
                 .padding(.horizontal, 4)
 
+                if let above {
+                    above.padding(.horizontal, 2)
+                }
+
                 PaperPanel {
                     content()
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                if let below {
+                    below.padding(.horizontal, 2)
+                }
             }
         }
         .frame(maxHeight: .infinity)

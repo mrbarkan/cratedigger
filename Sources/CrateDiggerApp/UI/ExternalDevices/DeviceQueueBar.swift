@@ -92,7 +92,7 @@ struct DeviceQueueBar: View {
         }
         if let detail = summary.detail {
             return summary.pendingConversionCount > 0
-                ? "\(detail) at \(profile.transferSettings.summary) — Settings opens the Patch Bay to pre-convert or change it"
+                ? "\(detail) at \(profile.transferSettings.summary) — Settings opens Conversion to pre-convert or change it"
                 : detail
         }
         return "Send tracks here with Transfer to Device; they wait until you press SYNC."
@@ -124,15 +124,15 @@ struct DeviceQueueBar: View {
                 Text("OPEN CNVRT")
             }
             .frame(width: 104, height: 22)
-            .carbonTip("Show the Patch Bay holding this send")
+            .carbonTip("Show the conversion holding this send")
         } else if !summary.isEmpty {
             // Everything about *how* this queue converts belongs in one place,
-            // and that place is the Patch Bay — including pre-converting it.
+            // and that place is the conversion panel — including pre-converting it.
             KeyButton(style: .normal, action: { model.oledView = .conversion }) {
                 Text("SETTINGS")
             }
             .frame(width: 88, height: 22)
-            .carbonTip("Open the Patch Bay: format, folder layout, and PRE-CONVERT for this queue")
+            .carbonTip("Open Conversion: format, folder layout, and PRE-CONVERT for this queue")
 
             KeyButton(style: isConnected ? .selected : .disabled,
                       action: { model.syncQueuedTransfers(profileID: profile.id) }) {

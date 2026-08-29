@@ -76,6 +76,15 @@ struct ArtworkSearchSheetView: View {
     /// Image id → the original's true pixel size, filled in as probes land.
     @State private var imageDimensions: [String: ArtworkDimensions] = [:]
     @State private var artError: String? = nil
+    /// Stage two of the image load. Discogs takes a MusicBrainz relation lookup,
+    /// then a search, then the release — seconds, not milliseconds — so the grid
+    /// says it's still coming instead of sprouting tiles unannounced.
+    @State private var loadingDiscogs = false
+    /// Session filter over the loaded images.
+    @State private var sourceFilter: RemoteArtworkSource? = nil
+    /// Off skips the Discogs stage entirely — no wait, no tiles. Persisted,
+    /// because it's a taste about sources, not about this one album.
+    @AppStorage("cratedigger.artwork.includeDiscogs") private var includeDiscogs = true
 
     // Image Selection state
     @State private var selectedImages: Set<String> = [] // imageURL string
@@ -97,6 +106,15 @@ struct ArtworkSearchSheetView: View {
     /// visible. Missing key = probe not finished; value nil = probe failed
     /// (network), shown as nothing rather than a false "no images".
     @State private var imageCounts: [String: Int?] = [:]
+    /// Front-cover size per release, probed like the counts. Nil value = probed
+    /// and it has no front, so the row can say so rather than stay blank.
+    @State private var coverSizes: [String: ArtworkDimensions?] = [:]
+    /// Order releases by the art they carry rather than by MusicBrainz's
+    /// relevance — the reason you are in this sheet at all.
+    @State private var sortByArt = false
+    /// The release this album's artwork already came from, read from the
+    /// manifest when the sheet opens.
+    @State private var rememberedReleaseID: String?
 
     init(album: Album) {
         self.album = album
@@ -108,7 +126,7 @@ struct ArtworkSearchSheetView: View {
         VStack(spacing: 0) {
             header
             
-            if selectedReleaseID == nil {
+            if !showsGrid {
                 searchBar
                     .padding(.horizontal, 18)
                     .padding(.vertical, 12)
@@ -127,6 +145,10 @@ struct ArtworkSearchSheetView: View {
                minHeight: 0, idealHeight: 660, maxHeight: .infinity)
         .background(theme.chassis)
         .onAppear {
+            rememberedReleaseID = album.tracks.first
+                .map { $0.track.fileURL.deletingLastPathComponent() }
+                .flatMap { ArtworkManifest.load(from: $0) }?
+                .releaseMBID
             executeSearch()
         }
         .overlay {
@@ -138,11 +160,11 @@ struct ArtworkSearchSheetView: View {
                     VStack(spacing: 14) {
                         ProgressView()
                             .controlSize(.large)
-                        Text("IMPORTING ARTWORK...")
+                        Text("FETCHING ARTWORK...")
                             .font(CarbonFont.mono(10, weight: .bold))
                             .tracking(1.5)
                             .foregroundColor(.white)
-                        Text("Optimizing images and updating audio tags")
+                        Text("They'll wait in the ART tab until you save")
                             .font(CarbonFont.sans(11, weight: .regular))
                             .foregroundColor(.white.opacity(0.7))
                     }
@@ -170,7 +192,7 @@ struct ArtworkSearchSheetView: View {
                 .ignoresSafeArea()
                 .onTapGesture { previewImage = nil }
 
-            VStack(spacing: 12) {
+            VStack(spacing: 14) {
                 AsyncImage(url: img.imageURL) { phase in
                     switch phase {
                     case .success(let image):
@@ -183,20 +205,38 @@ struct ArtworkSearchSheetView: View {
                         ProgressView().controlSize(.large)
                     }
                 }
-                .frame(maxWidth: 460, maxHeight: 400)
-                .cornerRadius(8)
-                .depthShadow(color: .black.opacity(0.6), radius: 18, y: 8)
+                .frame(maxWidth: 560, maxHeight: 480)
+                .cornerRadius(6)
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(0.14), lineWidth: 1))
+                .depthShadow(color: .black.opacity(0.6), radius: 22, y: 10)
 
-                if !img.comment.isEmpty {
-                    Text(img.comment)
-                        .font(CarbonFont.sans(11, weight: .regular))
-                        .foregroundColor(.white.opacity(0.8))
-                        .lineLimit(2)
-                        .multilineTextAlignment(.center)
+                // Source, true pixel size and whatever the archive called it —
+                // everything you need to judge a scan, on one line.
+                HStack(spacing: 8) {
+                    Text(img.source.badge.uppercased())
+                        .font(CarbonFont.mono(8, weight: .bold))
+                        .tracking(1.2)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(img.source == .discogs ? theme.indigo : theme.cyan))
+                    if let size = imageDimensions[img.id] {
+                        Text("\(size.width) × \(size.height)")
+                            .font(CarbonFont.mono(9, weight: .semibold))
+                            .foregroundColor(.white.opacity(0.75))
+                    }
+                    if !img.comment.isEmpty {
+                        Text(img.comment)
+                            .font(CarbonFont.sans(11))
+                            .foregroundColor(.white.opacity(0.7))
+                            .lineLimit(1)
+                    }
                 }
 
-                Button("Close") { previewImage = nil }
-                    .buttonStyle(.bordered)
+                KeyButton(style: .normal, action: { previewImage = nil }) {
+                    Text("CLOSE")
+                }
+                .frame(width: 90, height: 22)
             }
             .padding(30)
         }
@@ -204,14 +244,25 @@ struct ArtworkSearchSheetView: View {
 
     // Header
     private var header: some View {
-        HStack {
-            Text("Search Album Artwork".uppercased())
-                .font(CarbonFont.mono(11, weight: .bold))
-                .tracking(2)
-                .foregroundStyle(theme.ink)
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(theme.orange)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Search Album Artwork".uppercased())
+                    .font(CarbonFont.mono(11, weight: .bold))
+                    .tracking(2)
+                    .foregroundStyle(theme.ink)
+                Text(selectedReleaseID == nil
+                     ? "MusicBrainz releases · Cover Art Archive · Discogs · your own scans"
+                     : (selectedReleaseTitle.isEmpty ? "Files from disk" : selectedReleaseTitle))
+                    .font(CarbonFont.sans(11))
+                    .foregroundStyle(theme.ink3)
+                    .lineLimit(1)
+            }
             Spacer()
             
-            if selectedReleaseID != nil {
+            if showsGrid {
                 KeyButton(style: .normal, action: {
                     self.selectedReleaseID = nil
                     self.caaImages = []
@@ -243,6 +294,19 @@ struct ArtworkSearchSheetView: View {
                 Text("SEARCH")
             }
             .frame(width: 80, height: 22)
+
+            KeyButton(style: .normal, action: addFilesFromDisk) {
+                HStack(spacing: 4) {
+                    Image(systemName: "folder").font(.system(size: 9))
+                    Text("FILES")
+                }
+            }
+            .frame(width: 80, height: 22)
+            .carbonTip("Add your own scans. They land in the same grid as the online results, with their role read from the filename.")
+
+            toggleChip("DISCOGS", isOn: includeDiscogs) { includeDiscogs.toggle() }
+                .padding(.bottom, 1)
+                .carbonTip("Include Discogs scans of the pressing you pick. They cover far more of a physical release — back, labels, inserts — but the lookup takes a few seconds. Off skips it entirely.")
         }
     }
 
@@ -273,10 +337,45 @@ struct ArtworkSearchSheetView: View {
         }
     }
 
+    /// One presentation for every "nothing to show yet" state in this sheet —
+    /// searching, empty, failed. They were five hand-rolled stacks that had
+    /// already drifted apart in size and tone.
+    private func statusPanel(icon: String? = nil,
+                             spinner: Bool = false,
+                             tint: Color? = nil,
+                             title: String,
+                             detail: String) -> some View {
+        VStack(spacing: 10) {
+            if spinner {
+                ProgressView().controlSize(.small)
+            } else if let icon {
+                Image(systemName: icon)
+                    .font(.system(size: 26, weight: .light))
+                    .foregroundStyle(tint ?? theme.ink4)
+            }
+            Text(title.uppercased())
+                .font(CarbonFont.mono(10, weight: .bold))
+                .tracking(1.8)
+                .foregroundStyle(theme.ink2)
+            Text(detail)
+                .font(CarbonFont.sans(11))
+                .foregroundStyle(theme.ink3)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 340)
+        }
+        .padding(28)
+    }
+
     // Content
+    /// Local files are album-scoped, not release-scoped, so they can put the
+    /// grid on screen with no release picked at all.
+    private var hasLocalImages: Bool { caaImages.contains { $0.source == .localFile } }
+
+    private var showsGrid: Bool { selectedReleaseID != nil || hasLocalImages }
+
     @ViewBuilder
     private var contentArea: some View {
-        if selectedReleaseID != nil {
+        if showsGrid {
             artworkGridSection
         } else {
             releaseListSection
@@ -288,30 +387,14 @@ struct ArtworkSearchSheetView: View {
     private var releaseListSection: some View {
         ZStack {
             if searching {
-                VStack(spacing: 12) {
-                    ProgressView()
-                    Text("Searching MusicBrainz releases...")
-                        .font(CarbonFont.mono(10, weight: .semibold))
-                        .foregroundStyle(theme.ink3)
-                }
+                statusPanel(spinner: true, title: "Searching MusicBrainz",
+                            detail: "Looking for releases that match this album.")
             } else if let error = searchError {
-                VStack(spacing: 12) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 24))
-                        .foregroundColor(theme.orange)
-                    Text(error)
-                        .font(CarbonFont.mono(10, weight: .semibold))
-                        .foregroundStyle(theme.ink2)
-                }
+                statusPanel(icon: "exclamationmark.triangle.fill", tint: theme.orange,
+                            title: "No results", detail: error)
             } else if mbReleases.isEmpty {
-                VStack(spacing: 12) {
-                    Image(systemName: "music.note.list")
-                        .font(.system(size: 24))
-                        .foregroundColor(theme.ink4)
-                    Text("Enter search terms to find releases on MusicBrainz.")
-                        .font(CarbonFont.mono(10, weight: .semibold))
-                        .foregroundStyle(theme.ink3)
-                }
+                statusPanel(icon: "music.note.list", title: "Nothing searched yet",
+                            detail: "Enter an artist and album above, then press SEARCH.")
             } else {
                 VStack(spacing: 0) {
                     filterBar
@@ -347,7 +430,18 @@ struct ArtworkSearchSheetView: View {
             filterMenu(label: "MEDIA", selection: $mediaFilter, options: distinctFormats)
             filterMenu(label: "COUNTRY", selection: $countryFilter, options: distinctCountries)
             Spacer()
-            toggleChip("SORT BY YEAR", isOn: sortByYear) { sortByYear.toggle() }
+            toggleChip("SORT BY YEAR", isOn: sortByYear) {
+                sortByYear.toggle()
+                if sortByYear { sortByArt = false }
+            }
+            toggleChip("BEST ART", isOn: sortByArt) {
+                sortByArt.toggle()
+                if sortByArt {
+                    sortByYear = false
+                    probeAllCovers()
+                }
+            }
+            .carbonTip("Order releases by the front cover they actually carry, biggest first.")
             toggleChip("GROUP", isOn: groupByRelease) { groupByRelease.toggle() }
         }
         .padding(.horizontal, 18)
@@ -391,6 +485,16 @@ struct ArtworkSearchSheetView: View {
         .fixedSize()
         .disabled(options.isEmpty)
         .opacity(options.isEmpty ? 0.4 : 1)
+    }
+
+    /// Best art first: releases whose front cover measured largest, then those
+    /// with the most images, then the unprobed. Probing is lazy per row, so
+    /// this improves as rows scroll into view.
+    private func byArtQuality(_ lhs: MBReleaseCandidate, _ rhs: MBReleaseCandidate) -> Bool {
+        let left = (coverSizes[lhs.id] ?? nil)?.longEdge ?? 0
+        let right = (coverSizes[rhs.id] ?? nil)?.longEdge ?? 0
+        if left != right { return left > right }
+        return ((imageCounts[lhs.id] ?? nil) ?? 0) > ((imageCounts[rhs.id] ?? nil) ?? 0)
     }
 
     private func toggleChip(_ title: String, isOn: Bool, action: @escaping () -> Void) -> some View {
@@ -437,7 +541,9 @@ struct ArtworkSearchSheetView: View {
         var releases = mbReleases
         if let media = mediaFilter { releases = releases.filter { $0.format == media } }
         if let country = countryFilter { releases = releases.filter { $0.country == country } }
-        if sortByYear {
+        if sortByArt {
+            releases.sort(by: byArtQuality)
+        } else if sortByYear {
             releases.sort { (yearValue($0) ?? Int.max) < (yearValue($1) ?? Int.max) }
         }
         return releases
@@ -586,6 +692,18 @@ struct ArtworkSearchSheetView: View {
             
             Spacer()
 
+            if release.id == rememberedReleaseID {
+                Text("USED")
+                    .font(CarbonFont.mono(7.5, weight: .bold))
+                    .tracking(0.8)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1.5)
+                    .background(Capsule().fill(theme.cyan))
+                    .carbonTip("This album's artwork already came from this release.")
+            }
+
+            coverSizeBadge(release)
             imageCountBadge(release)
 
             KeyButton(style: .normal, action: {
@@ -604,6 +722,46 @@ struct ArtworkSearchSheetView: View {
             guard !imageCounts.keys.contains(release.id) else { return }
             let count = await model.remoteArtworkService.coverArtImageCount(releaseMBID: release.id)
             imageCounts[release.id] = count
+            await probeCover(release.id)
+        }
+    }
+
+    /// The front cover's true pixel size, straight off the archive's `/front`
+    /// redirect — a header read, not a download, so a whole result set costs
+    /// about as much as the count probes already do.
+    private func probeCover(_ releaseID: String) async {
+        guard !coverSizes.keys.contains(releaseID),
+              let url = URL(string: "https://coverartarchive.org/release/\(releaseID)/front")
+        else { return }
+        let size = await model.remoteArtworkService.probeDimensions(of: url)
+        coverSizes[releaseID] = size
+    }
+
+    /// Sorting by art needs every row measured, not just the visible ones.
+    private func probeAllCovers() {
+        let pending = displayedReleases.map(\.id).filter { !coverSizes.keys.contains($0) }
+        guard !pending.isEmpty else { return }
+        Task {
+            await withTaskGroup(of: Void.self) { group in
+                for id in pending { group.addTask { await probeCover(id) } }
+            }
+        }
+    }
+
+    /// The front cover's size, once known. "HD" reads faster than the numbers
+    /// when you're scanning a list for the one worth opening.
+    @ViewBuilder
+    private func coverSizeBadge(_ release: MBReleaseCandidate) -> some View {
+        if let probed = coverSizes[release.id], let size = probed {
+            let isHiRes = size.longEdge >= 1000
+            Text(isHiRes ? "HD" : "\(size.longEdge)px")
+                .font(CarbonFont.mono(7.5, weight: .bold))
+                .tracking(0.5)
+                .foregroundColor(.white)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 1.5)
+                .background(Capsule().fill(isHiRes ? theme.cyan : theme.ink3))
+                .carbonTip("Front cover is \(size.width)×\(size.height) pixels")
         }
     }
 
@@ -637,56 +795,21 @@ struct ArtworkSearchSheetView: View {
     private var artworkGridSection: some View {
         ZStack {
             if loadingArt {
-                VStack(spacing: 12) {
-                    ProgressView()
-                    Text("Fetching artwork list from Cover Art Archive...")
-                        .font(CarbonFont.mono(10, weight: .semibold))
-                        .foregroundStyle(theme.ink3)
-                }
+                statusPanel(spinner: true, title: "Fetching scans",
+                            detail: "Reading this release from the Cover Art Archive.")
             } else if let error = artError {
-                VStack(spacing: 12) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 24))
-                        .foregroundColor(theme.orange)
-                    Text(error)
-                        .font(CarbonFont.mono(10, weight: .semibold))
-                        .foregroundStyle(theme.ink2)
-                }
+                statusPanel(icon: "exclamationmark.triangle.fill", tint: theme.orange,
+                            title: "Nothing found", detail: error)
             } else if caaImages.isEmpty {
-                VStack(spacing: 12) {
-                    Image(systemName: "photo.on.rectangle")
-                        .font(.system(size: 24))
-                        .foregroundColor(theme.ink4)
-                    Text("No artwork scans found for this release.")
-                        .font(CarbonFont.mono(10, weight: .semibold))
-                        .foregroundStyle(theme.ink3)
-                }
+                statusPanel(icon: "photo.on.rectangle", title: "No scans",
+                            detail: "This release has no artwork on the Cover Art Archive.")
             } else {
                 VStack(spacing: 0) {
-                    HStack(spacing: 10) {
-                        Text(selectedReleaseTitle.uppercased())
-                            .font(CarbonFont.mono(9, weight: .bold))
-                            .foregroundStyle(theme.ink3)
-                            .lineLimit(1)
-                        Spacer(minLength: 8)
-                        selectionButton("SELECT ALL") { selectAllImages() }
-                        selectionButton("NONE") {
-                            selectedImages = []
-                            selectionAnchorID = nil
-                        }
-                        Text("\(selectedImages.count)/\(caaImages.count)")
-                            .font(CarbonFont.mono(8.5, weight: .semibold))
-                            .foregroundStyle(theme.ink4)
-                            .help("Tip: ⇧-click to select a range")
-                    }
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 8)
-                    .background(theme.chassisHi.opacity(0.3))
-                    .overlay(Rectangle().fill(Color.black.opacity(0.08)).frame(height: 1), alignment: .bottom)
-                    
+                    gridToolbar
+
                     ScrollView {
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 140, maximum: 180), spacing: 16)], spacing: 16) {
-                            ForEach(caaImages) { img in
+                            ForEach(displayedImages) { img in
                                 artworkCell(img)
                             }
                         }
@@ -696,6 +819,74 @@ struct ArtworkSearchSheetView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// Source chips, the Discogs stage, and the selection controls. Discogs
+    /// results land in this same grid rather than a place of their own — they
+    /// are more scans of the pressing you already picked, not a second search.
+    private var gridToolbar: some View {
+        HStack(spacing: 8) {
+            sourceChip(nil, label: "ALL", count: caaImages.count)
+            ForEach(availableSources, id: \.self) { source in
+                sourceChip(source, label: source.badge.uppercased(),
+                           count: caaImages.filter { $0.source == source }.count)
+            }
+
+            if loadingDiscogs {
+                HStack(spacing: 5) {
+                    ProgressView().controlSize(.mini)
+                    Text("DISCOGS…")
+                        .font(CarbonFont.mono(8, weight: .bold))
+                        .tracking(1)
+                        .foregroundStyle(theme.ink4)
+                }
+                .carbonTip("Looking this pressing up on Discogs — its scans will join the grid.")
+            }
+
+            KeyButton(style: .normal, action: addFilesFromDisk) {
+                HStack(spacing: 4) {
+                    Image(systemName: "folder").font(.system(size: 9))
+                    Text("FILES")
+                }
+            }
+            .frame(width: 74, height: 20)
+            .carbonTip("Add your own scans to this grid")
+
+            Spacer(minLength: 8)
+
+            selectionButton("SELECT ALL") { selectAllImages() }
+            selectionButton("NONE") {
+                selectedImages = []
+                selectionAnchorID = nil
+            }
+            Text("\(selectedImages.count)/\(caaImages.count)")
+                .font(CarbonFont.mono(8.5, weight: .semibold))
+                .foregroundStyle(theme.ink4)
+                .help("Tip: ⇧-click to select a range")
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 8)
+        .background(theme.chassisHi.opacity(0.3))
+        .overlay(Rectangle().fill(Color.black.opacity(0.08)).frame(height: 1), alignment: .bottom)
+    }
+
+    private func sourceChip(_ source: RemoteArtworkSource?, label: String, count: Int) -> some View {
+        toggleChip("\(label) \(count)", isOn: sourceFilter == source) {
+            sourceFilter = (sourceFilter == source) ? nil : source
+        }
+        .disabled(count == 0 && source != nil)
+        .opacity(count == 0 && source != nil ? 0.4 : 1)
+    }
+
+    private var availableSources: [RemoteArtworkSource] {
+        var seen: [RemoteArtworkSource] = []
+        for image in caaImages where !seen.contains(image.source) { seen.append(image.source) }
+        return seen
+    }
+
+    private var displayedImages: [RemoteArtworkImage] {
+        guard let sourceFilter else { return caaImages }
+        return caaImages.filter { $0.source == sourceFilter }
     }
 
     private func artworkCell(_ img: RemoteArtworkImage) -> some View {
@@ -732,7 +923,7 @@ struct ArtworkSearchSheetView: View {
                         .stroke(isSelected ? theme.orange : (theme.isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.1)), lineWidth: isSelected ? 2 : 1)
                 )
                 .depthShadow(color: Color.black.opacity(0.1), radius: 3, y: 1)
-                .overlay(alignment: .topLeading) {
+                .overlay(alignment: .bottomLeading) {
                     if img.source == .discogs {
                         Text(img.source.badge)
                             .font(CarbonFont.mono(7, weight: .bold))
@@ -907,12 +1098,12 @@ struct ArtworkSearchSheetView: View {
         HStack {
             Spacer()
             
-            Button("Cancel") {
-                closePanel()
+            KeyButton(style: .normal, action: { closePanel() }) {
+                Text("CANCEL")
             }
-            .buttonStyle(.bordered)
+            .frame(width: 90, height: geometry.keyHeight)
             
-            if selectedReleaseID != nil {
+            if showsGrid {
                 let downloads = compileDownloads()
                 if isDownloading {
                     ProgressView()
@@ -920,7 +1111,7 @@ struct ArtworkSearchSheetView: View {
                         .padding(.horizontal, 10)
                 } else {
                     KeyButton(style: downloads.isEmpty ? .disabled : .selected, action: executeDownload) {
-                        Text("IMPORT \(downloads.count) IMAGES")
+                        Text("STAGE \(downloads.count) IMAGE\(downloads.count == 1 ? "" : "S")")
                     }
                     .frame(width: 140, height: geometry.keyHeight)
                 }
@@ -929,6 +1120,77 @@ struct ArtworkSearchSheetView: View {
         .padding(14)
         .background(theme.chassisHi)
         .overlay(Rectangle().fill(Color.black.opacity(0.12)).frame(height: 1), alignment: .top)
+    }
+
+    // MARK: - Files from disk
+    //
+    // The disk path used to be its own key that imported straight to the album
+    // folder with no review. Now it feeds the same grid the online results do:
+    // one window, one role picker, one IMPORT — and you see what you're about
+    // to write before it's written.
+
+    private func addFilesFromDisk() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = [.image, .folder]
+        panel.title = "Add artwork"
+        panel.message = "Pick images or a folder of scans. Roles are read from the filenames — "
+            + "anything unrecognised becomes a booklet page, or the cover if it's the only image."
+        panel.prompt = "Add Artwork"
+
+        guard panel.runModal() == .OK, !panel.urls.isEmpty else { return }
+        let files = ArtworkInspectorView.expandToImageFiles(panel.urls)
+        guard !files.isEmpty else {
+            model.appAlert = .error(title: "No Images Found",
+                                    message: "Nothing in that selection was an image CrateDigger can read.")
+            return
+        }
+        adopt(files)
+    }
+
+    /// Turn picked files into grid candidates: pre-selected (you already chose
+    /// them in the panel), with the role their filename implies.
+    private func adopt(_ files: [URL]) {
+        // One unlabelled image is someone picking a cover; in a batch it's far
+        // more likely to be a booklet page. Same rule the old key used.
+        let single = files.count == 1
+        let existing = Set(caaImages.map(\.id))
+
+        for url in files.sorted(by: { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }) {
+            let image = RemoteArtworkImage(
+                imageURL: url,
+                thumbnailURL: url,
+                types: [],
+                comment: url.lastPathComponent,
+                front: false,
+                back: false,
+                source: .localFile
+            )
+            guard !existing.contains(image.id) else { continue }
+
+            let role = ArtworkRole.inferred(fromFilename: url.lastPathComponent) ?? (single ? .cover : .bookletPage)
+            imageRoles[image.id] = choice(for: role)
+            selectedImages.insert(image.id)
+            imageDimensions[image.id] = ArtworkQuality.pixelSize(ofImageAt: url)
+            // Disk files go first: they're what you just asked for.
+            caaImages.insert(image, at: caaImages.filter { $0.source == .localFile }.count)
+        }
+    }
+
+    /// The picker choice standing for a role, so an inferred `.disc` still
+    /// lands on the album's first disc rather than a bare role.
+    private func choice(for role: ArtworkRole) -> ArtRoleChoice {
+        switch role {
+        case .cover:       return .cover
+        case .altCover:    return .altCover
+        case .back:        return .back
+        case .disc:        return .disc(1)
+        case .bookletPage: return .bookletPage
+        case .ignore:      return .ignore
+        default:           return .role(role)
+        }
     }
 
     // Actions
@@ -957,6 +1219,13 @@ struct ArtworkSearchSheetView: View {
                     if results.isEmpty {
                         self.searchError = "No releases found on MusicBrainz. Try adjusting artist or album name."
                     }
+                    // Straight back to the pressing this album's art came from,
+                    // if it's still in the results. BACK TO RELEASES is one key
+                    // away when it isn't the one you want this time.
+                    if let remembered = self.rememberedReleaseID,
+                       let match = results.first(where: { $0.id == remembered }) {
+                        self.loadReleaseArtwork(match)
+                    }
                 }
             } catch {
                 await MainActor.run {
@@ -971,11 +1240,13 @@ struct ArtworkSearchSheetView: View {
         selectedReleaseID = release.id
         selectedReleaseTitle = release.title + (release.disambiguation.map { " (\($0))" } ?? "")
         loadingArt = true
+        loadingDiscogs = includeDiscogs
         caaImages = []
         imageDimensions = [:]
         artError = nil
         selectedImages = []
         imageRoles = [:]
+        sourceFilter = nil
 
         Task {
             do {
@@ -999,11 +1270,21 @@ struct ArtworkSearchSheetView: View {
                 // what find this pressing on Discogs when MusicBrainz hasn't
                 // linked the two. A Discogs miss is not an error — the archive's
                 // images still stand on their own.
+                guard includeDiscogs else {
+                    await MainActor.run {
+                        if self.caaImages.isEmpty {
+                            self.artError = "The Cover Art Archive has no images for this release."
+                        }
+                    }
+                    return
+                }
+
                 let known = Set(archive.map(\.id))
                 let discogs = await service.discogsImages(for: release, artist: artistQuery)
                     .filter { !known.contains($0.id) }
                 await MainActor.run {
                     guard self.selectedReleaseID == release.id else { return }   // moved on already
+                    self.loadingDiscogs = false
                     self.caaImages.append(contentsOf: discogs)
                     if self.caaImages.isEmpty {
                         self.artError = "Neither the Cover Art Archive nor Discogs has images for this release."
@@ -1013,6 +1294,7 @@ struct ArtworkSearchSheetView: View {
             } catch {
                 await MainActor.run {
                     self.loadingArt = false
+                    self.loadingDiscogs = false
                     self.artError = error.localizedDescription
                 }
             }
@@ -1079,9 +1361,12 @@ struct ArtworkSearchSheetView: View {
         guard !downloads.isEmpty else { return }
         
         isDownloading = true
-        
+
         Task {
-            await model.downloadAndImportArtwork(images: downloads, for: album)
+            // Staged, not imported: the ART tab is where you look at these and
+            // decide, and its SAVE is what puts them in the album folder.
+            await model.stageArtwork(images: downloads, for: album,
+                                     releaseMBID: selectedReleaseID)
             await MainActor.run {
                 self.isDownloading = false
                 closePanel()

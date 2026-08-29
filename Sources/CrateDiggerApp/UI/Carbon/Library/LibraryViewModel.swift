@@ -466,9 +466,22 @@ final class LibraryViewModel: ObservableObject {
         }
     }
 
-    /// EQ preset label (OLED readout + view-switcher EQ button). Cycling one now
-    /// applies its real gain curve to the working equalizer.
-    @Published var eqPreset: EQPreset = .flat
+    /// Where the EQ currently sits: a built-in preset or a user slot. The
+    /// header key, the editor's highlight and the OLED readout all read this.
+    @Published var eqSlot: EQSlot = .preset(.flat)
+
+    /// The built-in preset half of `eqSlot`, forwarded so the older call sites
+    /// (and the EQ screen's shape) keep working unchanged.
+    var eqPreset: EQPreset {
+        get { if case .preset(let preset) = eqSlot { return preset }; return .flat }
+        set { eqSlot = .preset(newValue) }
+    }
+
+    /// Slot ids the header EQ key steps through. Editing it writes straight
+    /// through to preferences — there is no separate save.
+    @Published var eqCycleIDs: [String] = PreferencesStore.shared.eqCycleSelection {
+        didSet { prefs.eqCycleSelection = eqCycleIDs }
+    }
 
     /// Working equalizer state — 12 per-band gains in dB + master enable. Drives
     /// the footer EQ panel display *and* real audio (via the playback tap).
@@ -476,17 +489,81 @@ final class LibraryViewModel: ObservableObject {
     @Published var eqGains: [Double] = Array(repeating: 0, count: EqualizerProcessor.bandCount) {
         didSet { eqDidChange() }
     }
+    /// Albums the artwork audit flagged, newest scan wins. Display only — the
+    /// repair pass re-measures, so this can go stale without doing harm.
+    @Published var artworkAudit: [ArtworkAuditRow] = []
+    @Published var isAuditingArtwork = false
+    /// The albums behind `artworkAudit`, kept so "Fix All" doesn't have to look
+    /// them up again (a version-group member isn't addressable by id).
+    var artworkAuditAlbums: [Album] = []
+
     /// Presents the graphic-EQ editor sheet (opened by clicking the footer EQ panel).
     @Published var showingEQEditor = false
 
-    /// The footer EQ button: cycle to the next preset, apply its curve, and turn
-    /// the EQ on so it's audible (the flat preset is transparent anyway).
-    func cycleEQPreset() {
-        let all = EQPreset.allCases
-        let idx = all.firstIndex(of: eqPreset) ?? 0
-        eqPreset = all[(idx + 1) % all.count]
-        eqGains = eqPreset.gainCurve()
+    /// The slots the header EQ key actually steps through: the user's chosen
+    /// set, minus any user slot that was never saved into. An empty selection
+    /// falls back to every built-in preset rather than leaving a dead key.
+    var eqCycleSlots: [EQSlot] {
+        let chosen = eqCycleIDs.compactMap(EQSlot.init(id:)).filter(isEQSlotUsable)
+        return chosen.isEmpty ? EQPreset.allCases.map(EQSlot.preset) : chosen
+    }
+
+    /// A user slot with nothing saved in it has no curve to apply.
+    func isEQSlotUsable(_ slot: EQSlot) -> Bool {
+        guard case .user(let index) = slot else { return true }
+        let slots = prefs.customEQPresets
+        return index < slots.count && !slots[index].isEmpty
+    }
+
+    func isEQSlotInCycle(_ slot: EQSlot) -> Bool {
+        eqCycleIDs.isEmpty ? !slot.isUser : eqCycleIDs.contains(slot.id)
+    }
+
+    /// Toggling the first lamp materialises the implicit "all built-ins"
+    /// default into a real list, so the click removes one entry instead of
+    /// silently starting from nothing.
+    func toggleEQCycle(_ slot: EQSlot) {
+        var ids = eqCycleIDs.isEmpty ? EQPreset.allCases.map(\.rawValue) : eqCycleIDs
+        if let index = ids.firstIndex(of: slot.id) {
+            ids.remove(at: index)
+        } else {
+            ids.append(slot.id)
+        }
+        // Keep display order so the header lamps read left-to-right.
+        eqCycleIDs = EQSlot.all.map(\.id).filter(ids.contains)
+    }
+
+    /// The curve a slot stands for, or nil for an empty user slot.
+    func eqCurve(for slot: EQSlot) -> [Double]? {
+        switch slot {
+        case .preset(let preset): return preset.gainCurve()
+        case .user(let index):
+            let slots = prefs.customEQPresets
+            guard index < slots.count, !slots[index].isEmpty else { return nil }
+            return slots[index].gains
+        }
+    }
+
+    /// Load a slot's curve and switch the EQ on so it's audible.
+    func applyEQSlot(_ slot: EQSlot) {
+        switch slot {
+        case .preset(let preset):
+            eqSlot = slot
+            eqGains = preset.gainCurve()
+        case .user(let index):
+            let slots = prefs.customEQPresets
+            guard index < slots.count, !slots[index].isEmpty else { return }
+            eqSlot = slot
+            eqGains = slots[index].gains
+        }
         eqEnabled = true
+    }
+
+    /// The header EQ button: step to the next slot in the cycle.
+    func cycleEQPreset() {
+        let cycle = eqCycleSlots
+        let index = cycle.firstIndex(of: eqSlot) ?? -1
+        applyEQSlot(cycle[(index + 1) % cycle.count])
     }
 
     private func eqDidChange() {
@@ -1865,13 +1942,23 @@ final class LibraryViewModel: ObservableObject {
             return
         }
         index = .empty
-        scanProgress = ScanProgress(folderName: device.name, filesProbed: 0, totalCandidates: nil, isRunning: true)
+        scanGeneration += 1
+        let generation = scanGeneration
+        let deviceName = device.name
+        scanProgress = ScanProgress(folderName: deviceName, filesProbed: 0, totalCandidates: nil, isRunning: true)
         oledView = .scan
         let root = device.volumeURL
         scanTask?.cancel()
         scanTask = Task { [weak self] in
             guard let self else { return }
-            let scanned = await self.scanner.scanFolder(root)
+            let scanned = await self.scanner.scanFolder(
+                root,
+                onProgress: self.scanProgressReporter(
+                    generation: generation,
+                    folderName: deviceName,
+                    baseProbed: 0
+                )
+            )
             if Task.isCancelled { return }
             // Persist the catalog off-main so a big iPod doesn't hitch the UI.
             Task.detached(priority: .utility) { DeviceCatalogStore().save(scanned, key: key) }
@@ -2617,161 +2704,55 @@ final class LibraryViewModel: ObservableObject {
         index = buildIndex(updatedTracks)
     }
 
-    func downloadAndImportArtwork(
+    /// Fetch chosen artwork into this album's *staging* folder. Nothing in the
+    /// library changes: the ART tab shows what's waiting, and SAVE there is
+    /// what writes it. Returns how many images landed.
+    @discardableResult
+    func stageArtwork(
         images: [(url: URL, role: ArtworkRole, suggestedFilename: String, discNumber: Int?)],
-        for album: Album
-    ) async {
-        let activity = beginActivity("Importing artwork…")
+        for album: Album,
+        releaseMBID: String? = nil
+    ) async -> Int {
+        let activity = beginActivity("Fetching artwork…")
         defer { endActivity(activity) }
-        guard let representative = album.tracks.first?.track.fileURL else { return }
-        let albumFolder = representative.deletingLastPathComponent()
-        
-        let result = await Task.detached(priority: .userInitiated) { () -> (manifest: ArtworkManifest, ingestedAssets: [ArtworkAsset], coverFilename: String?, coverAsset: ArtworkAsset?) in
-            var manifest = ArtworkManifest.load(from: albumFolder) ?? ArtworkManifest(mediaFormat: album.mediaFormat, roles: [:])
-            var ingestedAssets: [ArtworkAsset] = []
-            var coverFilename: String? = nil
-            var newCoverAsset: ArtworkAsset? = nil
-            
-            // Parallel downloads
-            typealias DownloadResult = (item: (url: URL, role: ArtworkRole, suggestedFilename: String, discNumber: Int?), data: Data)
-            var downloadedData: [DownloadResult] = []
-            
-            do {
-                try await withThrowingTaskGroup(of: DownloadResult.self) { group in
-                    for item in images {
-                        group.addTask {
-                            let (data, _) = try await URLSession.shared.data(from: item.url)
-                            return (item, data)
-                        }
-                    }
-                    for try await res in group {
-                        downloadedData.append(res)
-                    }
-                }
-            } catch {
-                AppLog.library.warning("Error downloading artwork in parallel: \(error.localizedDescription)")
-            }
-            
-            for res in downloadedData {
-                let item = res.item
-                let data = res.data
-                do {
-                    guard let image = NSImage(data: data) else { continue }
-                    
-                    let fileURL = albumFolder.appendingPathComponent(item.suggestedFilename)
-                    try data.write(to: fileURL, options: .atomic)
-                    
-                    let filename = fileURL.lastPathComponent
-                    manifest.roles[filename] = item.role
-                    if item.role == .disc, let disc = item.discNumber {
-                        var discs = manifest.discNumbers ?? [:]
-                        discs[filename] = disc
-                        manifest.discNumbers = discs
-                    }
-
-                    let digest = SHA256.hash(data: data)
-                    let hashHex = digest.compactMap { String(format: "%02x", $0) }.joined()
-                    
-                    let asset = ArtworkAsset(
-                        source: .remote,
-                        hash: hashHex,
-                        dimensions: ArtworkDimensions(width: Int(image.size.width), height: Int(image.size.height)),
-                        data: data
-                    )
-                    ingestedAssets.append(asset)
-                    
-                    if item.role == .cover {
-                        newCoverAsset = asset
-                        coverFilename = filename
-                    }
-                } catch {
-                    AppLog.library.warning("Failed to save or parse artwork: \(error.localizedDescription)")
-                }
-            }
-            
-            // The cover is written to the album folder as cover.jpg (above), which
-            // is what CrateDigger displays everywhere, so we deliberately do NOT
-            // rewrite every track file to embed it — that's hundreds of MB of I/O
-            // on a lossless album for no in-app benefit. Conversion/transfer still
-            // bake artwork into their *output* files when you export.
-
-            // Save manifest
-            if !ingestedAssets.isEmpty {
-                try? manifest.save(to: albumFolder)
-            }
-            
-            return (manifest, ingestedAssets, coverFilename, newCoverAsset)
-        }.value
-
-        // Back on MainActor: ingest to cache, rebuild indexes, notify, alert.
-        applyImportedArtwork(
-            ingestedAssets: result.ingestedAssets,
-            coverAsset: result.coverAsset,
-            for: album
-        )
-    }
-
-    /// Attach image files chosen from disk to `album`. The files are copied into
-    /// the album folder with role-based names; a `.cover` becomes the folder
-    /// cover.jpg. Mirrors `downloadAndImportArtwork` but reads from the local disk.
-    func attachLocalArtwork(
-        fileURLs: [URL],
-        role: ArtworkRole = .cover,
-        for album: Album
-    ) async {
-        guard let representative = album.tracks.first?.track.fileURL else { return }
+        guard let representative = album.tracks.first?.track.fileURL else { return 0 }
         let albumFolder = representative.deletingLastPathComponent()
 
-        let result = await Task.detached(priority: .userInitiated) { () -> (ingestedAssets: [ArtworkAsset], coverAsset: ArtworkAsset?) in
-            var manifest = ArtworkManifest.load(from: albumFolder) ?? ArtworkManifest(mediaFormat: album.mediaFormat, roles: [:])
-            var ingestedAssets: [ArtworkAsset] = []
-            var newCoverAsset: ArtworkAsset?
+        var info = ArtworkStaging.info(forAlbumFolder: albumFolder)
+        if let releaseMBID { info.releaseMBID = releaseMBID }
 
-            for (offset, source) in fileURLs.enumerated() {
-                do {
-                    let data = try Data(contentsOf: source)
-                    guard let image = NSImage(data: data) else { continue }
+        let existing = Set(ArtworkStaging.stagedFiles(forAlbumFolder: albumFolder).map(\.lastPathComponent))
+        let staged: [(name: String, role: ArtworkRole, disc: Int?)] = await Task.detached(priority: .userInitiated) {
+            guard let stagingFolder = try? ArtworkStaging.makeFolder(forAlbumFolder: albumFolder) else { return [] }
+            var claimed = existing
+            var landed: [(name: String, role: ArtworkRole, disc: Int?)] = []
 
-                    let ext = source.pathExtension.isEmpty ? "jpg" : source.pathExtension.lowercased()
-                    let filename = Self.suggestedArtworkFilename(role: role, index: offset, ext: ext)
-                    let fileURL = albumFolder.appendingPathComponent(filename)
-                    try data.write(to: fileURL, options: .atomic)
-
-                    manifest.roles[filename] = role
-
-                    let digest = SHA256.hash(data: data)
-                    let hashHex = digest.compactMap { String(format: "%02x", $0) }.joined()
-                    let asset = ArtworkAsset(
-                        source: .embedded,
-                        hash: hashHex,
-                        dimensions: ArtworkDimensions(width: Int(image.size.width), height: Int(image.size.height)),
-                        data: data
-                    )
-                    ingestedAssets.append(asset)
-
-                    if role == .cover, newCoverAsset == nil {
-                        newCoverAsset = asset
-                    }
-                } catch {
-                    AppLog.library.warning("Failed to import local artwork: \(error.localizedDescription)")
+            for item in images {
+                // A file the user picked is read straight off disk; URLSession
+                // is for the ones that came over the wire.
+                let data: Data?
+                if item.url.isFileURL {
+                    data = try? Data(contentsOf: item.url)
+                } else {
+                    data = try? await URLSession.shared.data(from: item.url).0
                 }
+                guard let data, !data.isEmpty else { continue }
+
+                let name = ArtworkCommitPlanner.uniqueName(for: item.suggestedFilename, avoiding: claimed)
+                claimed.insert(name)
+                guard (try? data.write(to: stagingFolder.appendingPathComponent(name), options: .atomic)) != nil
+                else { continue }
+                landed.append((name, item.role, item.discNumber))
             }
-
-            // No per-track embedding — the folder cover.jpg drives display; see
-            // downloadAndImportArtwork.
-
-            if !ingestedAssets.isEmpty {
-                try? manifest.save(to: albumFolder)
-            }
-
-            return (ingestedAssets, newCoverAsset)
+            return landed
         }.value
 
-        applyImportedArtwork(
-            ingestedAssets: result.ingestedAssets,
-            coverAsset: result.coverAsset,
-            for: album
-        )
+        for file in staged {
+            info.roles[file.name] = file.role
+            if file.role == .disc, let disc = file.disc { info.discNumbers[file.name] = disc }
+        }
+        ArtworkStaging.saveInfo(info, forAlbumFolder: albumFolder)
+        return staged.count
     }
 
     /// Embed a small (≤600px, baseline/non-progressive JPEG) copy of the album's
@@ -2896,6 +2877,47 @@ final class LibraryViewModel: ObservableObject {
         }
     }
 
+    /// Rebuild every browsable index with new folder covers applied, in one pass.
+    /// Lives here (not in +BatchArtwork) so it can write the private(set)
+    /// index/localIndex; the batch fetch builds the map and calls this.
+
+    /// Strip the embedded picture out of every track on an album.
+    ///
+    /// Runs in the background like the embed pass and for the same reason: it
+    /// is a full rewrite per file. `-c copy` means no re-encode, so the audio
+    /// is bit-identical — but the pictures themselves are gone afterwards,
+    /// which is why the ART tab confirms before staging this.
+    func stripEmbeddedArtworkInBackground(for album: Album) {
+        let tracks = album.tracks
+        let title = album.title
+        Task.detached(priority: .utility) {
+            var failed = 0
+            await withTaskGroup(of: Bool.self) { group in
+                var inFlight = 0
+                for track in tracks {
+                    if inFlight >= 4, let ok = await group.next() { inFlight -= 1; if !ok { failed += 1 } }
+                    let fileURL = track.track.fileURL
+                    group.addTask {
+                        do { try MetadataEditorService().stripArtwork(from: fileURL); return true }
+                        catch { return false }
+                    }
+                    inFlight += 1
+                }
+                for await ok in group where !ok { failed += 1 }
+            }
+            let unwritable = failed
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                if unwritable > 0 {
+                    self.appAlert = .error(
+                        title: "Some tracks kept their cover",
+                        message: "\(unwritable) file\(unwritable == 1 ? "" : "s") on “\(title)” couldn't be rewritten. The rest had their embedded artwork removed."
+                    )
+                }
+                self.refreshLibrary()
+            }
+        }
+    }
     /// Rebuild every browsable index with new folder covers applied, in one pass.
     /// Lives here (not in +BatchArtwork) so it can write the private(set)
     /// index/localIndex; the batch fetch builds the map and calls this.
@@ -3261,6 +3283,9 @@ final class LibraryViewModel: ObservableObject {
         trackStore = nil   // rebuilt lazily for the (possibly new) folder
         resetListeningStoreCache()
         migrateLegacyCratesIfNeeded()
+        // Pending artwork is cached, not owned: drop sessions whose album has
+        // gone away and ones nobody has come back to in a month.
+        ArtworkStaging.sweep()
         // First run against a library older than the plays file: give every
         // known track a dateAdded. The track store's own paths are the source,
         // so this does not wait for the index to be built. No-op after the
@@ -3856,13 +3881,22 @@ final class LibraryViewModel: ObservableObject {
 
     func addURLsToCrate(_ urls: [URL], crateName: String) {
         // Scan files dropped from Finder
+        scanGeneration += 1
+        let generation = scanGeneration
         scanProgress = ScanProgress(folderName: "Scanning dropped files...", filesProbed: 0, totalCandidates: nil, isRunning: true)
-        
+
         Task { [weak self] in
             guard let self else { return }
             var collected: [LoadedTrack] = []
             for url in urls {
-                let scanned = await self.scanner.scanFolder(url)
+                let scanned = await self.scanner.scanFolder(
+                    url,
+                    onProgress: self.scanProgressReporter(
+                        generation: generation,
+                        folderName: "Scanning dropped files...",
+                        baseProbed: collected.count
+                    )
+                )
                 collected.append(contentsOf: scanned)
             }
             

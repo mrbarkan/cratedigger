@@ -413,6 +413,29 @@ public final class PreferencesStore {
         set { defaults.set(newValue, forKey: "cratedigger.eq.gains") }
     }
 
+    /// The three user EQ slots. Always returns `CustomEQPreset.slotCount`
+    /// entries, so the editor can index them without bounds checks.
+    public var customEQPresets: [CustomEQPreset] {
+        get {
+            guard let data = defaults.data(forKey: "cratedigger.eq.custom"),
+                  let stored = try? JSONDecoder().decode([CustomEQPreset].self, from: data)
+            else { return CustomEQPreset.emptySlots }
+            let defaults = CustomEQPreset.emptySlots
+            return (0..<CustomEQPreset.slotCount).map { i in
+                i < stored.count ? stored[i] : defaults[i]
+            }
+        }
+        set { defaults.set(try? JSONEncoder().encode(newValue), forKey: "cratedigger.eq.custom") }
+    }
+
+    /// Which EQ slots the header EQ key cycles through, as slot ids. Empty
+    /// means "every built-in preset" — the behaviour before the key was
+    /// selectable, and the right fallback if the list is ever emptied.
+    public var eqCycleSelection: [String] {
+        get { defaults.stringArray(forKey: "cratedigger.eq.cycle") ?? [] }
+        set { defaults.set(newValue, forKey: "cratedigger.eq.cycle") }
+    }
+
     public var savedMiniPlayerArtMode: String? {
         get { defaults.string(forKey: Key.miniPlayerArtMode) }
         set {

@@ -13,7 +13,9 @@ public final class EqualizerProcessor {
     public static let bandCount = 12
 
     private static let sampleRate = 44_100.0
-    private static let q = 1.41                  // ~⅔-octave peaking bands
+    /// ~⅔-octave peaking bands. Public because anything fitting a curve onto
+    /// these bands (AutoEQ import) has to model the same filter shape.
+    public static let bandQ = 1.41
     private static let maxChannels = 8
     private static let delayLen = 2 * bandCount + 2
 
@@ -117,7 +119,7 @@ public final class EqualizerProcessor {
             let A = pow(10.0, g / 40.0)
             let w0 = 2 * Double.pi * centerFrequencies[b] / sampleRate
             let cw = cos(w0)
-            let alpha = sin(w0) / (2 * q)
+            let alpha = sin(w0) / (2 * bandQ)
             let a0 = 1 + alpha / A
             let base = b * 5
             out[base + 0] = (1 + alpha * A) / a0   // b0

@@ -119,13 +119,12 @@ enum ArtworkViewerPresenter {
 
     static func buildPages(_ album: Album) -> [ArtworkPage] {
         let albumFolder = album.tracks.first?.track.fileURL.deletingLastPathComponent()
-        var pages = albumFolder.map { AlbumArtCatalog.pages(in: $0) } ?? []
-        // Always guarantee a Cover page: when no cover file is on disk, a synthetic
-        // one renders the album's embedded/resolved artwork via AlbumPoster.
-        if !pages.contains(where: { $0.kind == .cover }) {
-            pages.insert(ArtworkPage(kind: .cover, label: "Cover", imageURL: nil), at: 0)
-        }
-        return pages
+        let pages = albumFolder.map { AlbumArtCatalog.pages(in: $0) } ?? []
+        // The embedded tag image is a *thumbnail* — typically 300–600 px, which
+        // this viewer would have to upscale into mush. It stands in only when
+        // the folder has nothing at all; any real file on disk beats it.
+        guard pages.isEmpty else { return pages }
+        return [ArtworkPage(kind: .cover, label: "Cover", imageURL: nil)]
     }
 }
 
@@ -347,10 +346,12 @@ struct AlbumArtworkNavigator: View {
                     .onTapGesture {}   // consume; don't dismiss on the art itself
             default:
                 if page.imageURL == nil {
-                    // Synthetic cover backed by the album's embedded/resolved art.
+                    // Synthetic cover backed by the album's embedded art, capped
+                    // at its own pixel size: filling the viewport with a 300 px
+                    // thumbnail is exactly the wall of pixels to avoid.
+                    let side = min(min(viewport.width, viewport.height), embeddedArtSide)
                     AlbumPoster(album: album)
-                        .frame(width: min(viewport.width, viewport.height),
-                               height: min(viewport.width, viewport.height))
+                        .frame(width: side, height: side)
                         .onTapGesture {}
                 } else if let image = page.imageURL.flatMap({ images[$0] }) {
                     zoomableImage(image, viewport: viewport)
@@ -359,6 +360,16 @@ struct AlbumArtworkNavigator: View {
                 }
             }
         }
+    }
+
+    /// The longest edge of the album's embedded artwork, in points. Unknown
+    /// dimensions fall back to a conservative 600.
+    private var embeddedArtSide: CGFloat {
+        let native = album.tracks
+            .compactMap(\.track.artworkDimensions)
+            .map { max($0.width, $0.height) }
+            .max()
+        return CGFloat(native ?? 600)
     }
 
     @ViewBuilder

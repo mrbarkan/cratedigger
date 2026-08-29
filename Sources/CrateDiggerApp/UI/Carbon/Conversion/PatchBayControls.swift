@@ -36,19 +36,14 @@ struct PatchBaySwitch: View {
 
     var body: some View {
         Button(action: action) {
-            ZStack(alignment: .topTrailing) {
-                content
-                    .background(background)
-                    .overlay(border)
-
-                LedDot(on: on)
-                    .padding(.top, 4)
-                    .padding(.trailing, 5)
-            }
-            .frame(minWidth: size.minWidth(in: geometry), maxWidth: size.minWidth(in: geometry))
-            .frame(height: geometry.patchBayKeyHeight)
-            .opacity(disabled ? 0.45 : 1)
-            .shadow(color: on ? theme.orange.opacity(0.30) : .clear, radius: 6, y: 0)
+            // No corner lamp and no glow: the lit fill already says which one
+            // is selected, and saying it three times was most of the funk.
+            content
+                .background(background)
+                .overlay(border)
+                .frame(minWidth: size.minWidth(in: geometry), maxWidth: size.minWidth(in: geometry))
+                .frame(height: geometry.patchBayKeyHeight)
+                .opacity(disabled ? 0.45 : 1)
         }
         .buttonStyle(.carbonHover)
         .disabled(disabled)
@@ -65,7 +60,7 @@ struct PatchBaySwitch: View {
                 .tracking(1.4)
                 .foregroundStyle(on ? theme.selectionInk : theme.ink2)
                 .lineLimit(1)
-                .minimumScaleFactor(0.85)
+                .minimumScaleFactor(0.72)
             if let sub {
                 Text(sub)
                     .font(CarbonFont.mono(7.5, weight: .semibold))
@@ -74,35 +69,19 @@ struct PatchBaySwitch: View {
                     .lineLimit(1)
             }
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, 5)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     @ViewBuilder
     private var background: some View {
-        let shape = RoundedRectangle(cornerRadius: 3, style: .continuous)
-        if on {
-            shape.fill(
-                LinearGradient(
-                    colors: [theme.orange, theme.orangeLo],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            )
-        } else {
-            shape.fill(
-                LinearGradient(
-                    colors: [theme.metalHi, theme.metal, theme.metalLo],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            )
-        }
+        let shape = RoundedRectangle(cornerRadius: 4, style: .continuous)
+        shape.fill(on ? theme.orange : theme.metal)
     }
 
     @ViewBuilder
     private var border: some View {
-        let shape = RoundedRectangle(cornerRadius: 3, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: 4, style: .continuous)
         if on {
             shape.stroke(theme.orange.opacity(0.45), lineWidth: 1)
         } else {
@@ -186,20 +165,58 @@ struct PatchBayCycleButton<Item: Hashable>: View {
 
     var body: some View {
         Button(action: advance) {
-            VStack(spacing: 4) {
-                screen
-                ledStrip
+            VStack(spacing: 0) {
+                HStack(spacing: 6) {
+                    Text(currentText)
+                        .font(CarbonFont.mono(11, weight: .bold))
+                        .tracking(1.2)
+                        .foregroundStyle(theme.orange)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                    Spacer(minLength: 0)
+                    // Says "there is another one" without a second control.
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 7, weight: .bold))
+                        .foregroundStyle(theme.orange.opacity(0.55))
+                }
+                .padding(.horizontal, 9)
+                .frame(maxHeight: .infinity)
+
+                positionRail
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
             .frame(maxWidth: .infinity)
             .frame(height: geometry.patchBayCycleButtonHeight)
-            .background(ChromeChassis(theme: theme, cornerRadius: 7))
+            .background(displayFace)
         }
         .buttonStyle(.carbonHover)
         .accessibilityLabel(Text("\(label): \(currentText)"))
         .accessibilityHint(Text("Tap to advance"))
         .accessibilityValue(Text(currentText))
+    }
+
+    /// A hardware display reads black whatever the room light, so the screen
+    /// stays dark in both themes and the orange readout stays legible.
+    private var displayFace: some View {
+        let shape = RoundedRectangle(cornerRadius: 5, style: .continuous)
+        return shape
+            .fill(LinearGradient(colors: [Color(hex: 0x1A1F25), Color(hex: 0x0B0E12)],
+                                 startPoint: .top, endPoint: .bottom))
+            .overlay(shape.strokeBorder(Color.white.opacity(0.07), lineWidth: 0.5))
+            .depthShadow(color: Color.black.opacity(0.45), radius: 2, y: 1)
+    }
+
+    /// Where you are in the cycle, as a hairline scale along the bottom edge
+    /// rather than a row of lamps — same information, none of the fairground.
+    private var positionRail: some View {
+        HStack(spacing: 1.5) {
+            ForEach(options, id: \.self) { item in
+                Rectangle()
+                    .fill(item == selection ? theme.orange : Color.white.opacity(0.10))
+                    .frame(height: 1.5)
+            }
+        }
+        .padding(.horizontal, 9)
+        .padding(.bottom, 6)
     }
 
     private func advance() {
@@ -216,54 +233,6 @@ struct PatchBayCycleButton<Item: Hashable>: View {
         return options.first.map(displayText) ?? "—"
     }
 
-    @ViewBuilder
-    private var screen: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 3, style: .continuous)
-                .fill(
-                    // A hardware display reads black regardless of room light —
-                    // keep the screen dark in both themes so the orange readout
-                    // stays legible (theme.wellDeep was light-grey in linen).
-                    LinearGradient(
-                        colors: [Color(hex: 0x1C2228), Color(hex: 0x0A0E12)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 3, style: .continuous)
-                        .strokeBorder(Color.black.opacity(0.6), lineWidth: 0.5)
-                )
-                .depthShadow(color: Color.black.opacity(0.5), radius: 1, y: 1)
-            Text(currentText)
-                .font(CarbonFont.mono(11, weight: .bold))
-                .tracking(2)
-                .foregroundStyle(theme.orange)
-                .shadow(color: theme.orange.opacity(0.7), radius: 3)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-                .padding(.horizontal, 8)
-        }
-        .frame(height: 20)
-    }
-
-    @ViewBuilder
-    private var ledStrip: some View {
-        HStack(spacing: 4) {
-            ForEach(options, id: \.self) { item in
-                Circle()
-                    .fill(item == selection ? theme.orange : Color.black.opacity(0.35))
-                    .frame(width: 4, height: 4)
-                    .overlay(
-                        Circle().stroke(Color.white.opacity(0.06), lineWidth: 0.5)
-                    )
-                    .shadow(
-                        color: item == selection ? theme.orange.opacity(0.7) : .clear,
-                        radius: 2
-                    )
-            }
-        }
-    }
 }
 
 // MARK: - Bank: full-row at intrinsic widths, falls through to cycle

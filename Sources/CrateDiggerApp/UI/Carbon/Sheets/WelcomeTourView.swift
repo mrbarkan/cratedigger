@@ -163,8 +163,8 @@ private struct TourPage {
         TourPage(
             art: .convert,
             eyebrow: "STEP 3 · CONVERT",
-            title: "Convert on the Patch Bay",
-            body: "Select tracks and press Convert (⇧⌘C) to open the Patch Bay. FFmpeg re-encodes to the format you choose and writes clean, collision-safe files into your Default Output folder.",
+            title: "Convert anything",
+            body: "Select tracks and press Convert (⇧⌘C) to open Conversion. FFmpeg re-encodes to the format you choose and writes clean, collision-safe files into your Default Output folder.",
             accentKey: .orange),
         TourPage(
             art: .play,

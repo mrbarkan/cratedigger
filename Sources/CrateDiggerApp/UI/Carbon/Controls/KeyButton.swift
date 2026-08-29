@@ -52,8 +52,7 @@ struct KeyButton<Label: View>: View {
         let shape = Self.shape
         switch style {
         case .normal, .disabled:
-            shape.fill(theme.metal)   // opaque, not Material — see ChassisLayer
-                 .overlay(shape.strokeBorder(theme.hair, lineWidth: 1))
+            KeyChrome()
 
         case .selected, .glowingFilled:
             shape.fill(theme.orange)
@@ -72,5 +71,17 @@ struct KeyButton<Label: View>: View {
         case .glowingFilled: return theme.selectionInk
         case .disabled:      return theme.ink3
         }
+    }
+}
+
+/// A key's resting chrome on its own, for controls that can't *be* a
+/// `KeyButton` — a `Menu` label, say — but have to look like one.
+struct KeyChrome: View {
+    @Environment(\.carbon) private var theme
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
+        shape.fill(theme.metal)   // opaque, not Material — see ChassisLayer
+             .overlay(shape.strokeBorder(theme.hair, lineWidth: 1))
     }
 }

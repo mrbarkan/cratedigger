@@ -17,10 +17,10 @@ struct LibraryCleanupView: View {
             header
             tabSwitcher
 
-            if activeTab == 0 {
-                deadTracksTab
-            } else {
-                duplicatesTab
+            switch activeTab {
+            case 0:  deadTracksTab
+            case 1:  duplicatesTab
+            default: artworkTab
             }
         }
         .frame(minWidth: 0, idealWidth: 720, maxWidth: .infinity,
@@ -60,8 +60,127 @@ struct LibraryCleanupView: View {
                     .background(activeTab == 1 ? theme.chassis : theme.chassisHi)
             }
             .buttonStyle(.carbonHover)
+
+            Button(action: { activeTab = 2 }) {
+                Text(model.artworkAudit.isEmpty ? "Artwork" : "Artwork (\(model.artworkAudit.count))")
+                    .font(CarbonFont.mono(9.5, weight: .bold))
+                    .foregroundColor(activeTab == 2 ? theme.orange : theme.ink3)
+                    .padding(.vertical, 8)
+                    .frame(maxWidth: .infinity)
+                    .background(activeTab == 2 ? theme.chassis : theme.chassisHi)
+            }
+            .buttonStyle(.carbonHover)
         }
         .overlay(Rectangle().fill(Color.black.opacity(0.12)).frame(height: 1), alignment: .bottom)
+    }
+
+    // MARK: - Artwork Tab
+    //
+    // The counterpart to the ART tab's per-album search: one sweep for every
+    // album whose cover is missing or too small to look at, and one key that
+    // goes and fetches better ones.
+
+    private var artworkTab: some View {
+        VStack(spacing: 0) {
+            if model.isAuditingArtwork {
+                centeredMessage(icon: "hourglass", title: "Measuring covers",
+                                detail: "Reading image headers across the library.")
+            } else if model.artworkAudit.isEmpty {
+                centeredMessage(
+                    icon: "checkmark.circle",
+                    title: "Nothing flagged",
+                    detail: "Scan to find albums with no cover, or a cover under \(ArtworkQuality.minimumLongEdge) px."
+                )
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(model.artworkAudit) { row in
+                            artworkAuditRow(row)
+                            Divider().background(theme.hair.opacity(0.5))
+                        }
+                    }
+                }
+            }
+
+            HStack(spacing: 10) {
+                Text(auditSummary)
+                    .font(CarbonFont.mono(9))
+                    .foregroundStyle(theme.ink3)
+                Spacer()
+                KeyButton(style: model.isAuditingArtwork ? .disabled : .normal,
+                          action: { model.auditLibraryArtwork() }) {
+                    Text("SCAN ARTWORK")
+                }
+                .frame(width: 130, height: geometry.keyHeight)
+
+                KeyButton(style: model.artworkAudit.isEmpty ? .disabled : .selected,
+                          action: { model.fixAuditedArtwork() }) {
+                    Text("FIX ALL (\(model.artworkAudit.count))")
+                }
+                .frame(width: 130, height: geometry.keyHeight)
+                .carbonTip("Look each flagged album up online and write the best cover found into its folder. Never replaces a cover with a smaller one.")
+            }
+            .padding(12)
+            .background(theme.chassisHi)
+            .overlay(Rectangle().fill(Color.black.opacity(0.12)).frame(height: 1), alignment: .top)
+        }
+    }
+
+    private var auditSummary: String {
+        guard !model.artworkAudit.isEmpty else { return "" }
+        let missing = model.artworkAudit.filter { $0.verdict == .missing }.count
+        let low = model.artworkAudit.count - missing
+        return "\(missing) with no cover · \(low) under \(ArtworkQuality.minimumLongEdge) px"
+    }
+
+    private func artworkAuditRow(_ row: ArtworkAuditRow) -> some View {
+        HStack(spacing: 10) {
+            Text(row.verdict == .missing ? "NONE" : "LOW")
+                .font(CarbonFont.mono(7.5, weight: .bold))
+                .tracking(0.8)
+                .foregroundColor(.white)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 2)
+                .background(Capsule().fill(row.verdict == .missing ? theme.orange : theme.ink3))
+                .frame(width: 46)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(row.title)
+                    .font(CarbonFont.sans(11, weight: .semibold))
+                    .foregroundStyle(theme.ink)
+                    .lineLimit(1)
+                Text(row.artist)
+                    .font(CarbonFont.mono(9))
+                    .foregroundStyle(theme.ink3)
+                    .lineLimit(1)
+            }
+            Spacer()
+            Text(row.sizeLabel)
+                .font(CarbonFont.mono(9, weight: .semibold))
+                .foregroundStyle(theme.ink4)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 7)
+    }
+
+    private func centeredMessage(icon: String, title: String, detail: String) -> some View {
+        VStack(spacing: 10) {
+            Spacer()
+            Image(systemName: icon)
+                .font(.system(size: 34, weight: .light))
+                .foregroundStyle(theme.ink4)
+            Text(title.uppercased())
+                .font(CarbonFont.mono(10, weight: .bold))
+                .tracking(1.8)
+                .foregroundStyle(theme.ink2)
+            Text(detail)
+                .font(CarbonFont.sans(11))
+                .foregroundStyle(theme.ink3)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 360)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: - Dead Tracks Tab

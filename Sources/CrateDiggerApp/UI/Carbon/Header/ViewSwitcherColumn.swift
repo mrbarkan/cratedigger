@@ -39,9 +39,9 @@ struct ViewSwitcherColumn: View {
 
             SwitchButton(
                 name: "EQ",
-                dotCount: EQPreset.allCases.count + 1,   // + the CUSTOM lamp
+                dotCount: model.eqCycleSlots.count + 1,   // + the CUSTOM lamp
                 activeIndex: eqActiveIndex,
-                tip: "EQ — cycle equalizer presets. The last LED lights when the curve is custom-edited."
+                tip: "EQ — cycle the presets chosen in the equalizer. The last LED lights when the curve is hand-edited."
             ) {
                 ClickPlayer.shared.play(.key)
                 model.cycleEQPreset()
@@ -49,11 +49,14 @@ struct ViewSwitcherColumn: View {
         }
     }
 
-    /// EQ dot row position: the active preset, or the trailing CUSTOM lamp when
-    /// the editor has dragged the curve away from the preset's shape.
+    /// EQ dot row position: where the current slot sits in the cycle, or the
+    /// trailing CUSTOM lamp once the faders have been dragged off its shape.
     private var eqActiveIndex: Int {
-        if model.eqGains != model.eqPreset.gainCurve() { return EQPreset.allCases.count }
-        return EQPreset.allCases.firstIndex(of: model.eqPreset) ?? 0
+        let cycle = model.eqCycleSlots
+        guard let index = cycle.firstIndex(of: model.eqSlot),
+              model.eqGains == model.eqCurve(for: model.eqSlot)
+        else { return cycle.count }
+        return index
     }
 
 }

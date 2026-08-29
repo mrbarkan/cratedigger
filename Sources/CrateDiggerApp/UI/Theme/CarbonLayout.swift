@@ -56,7 +56,7 @@ public enum CarbonLayout {
     public static let patchBayKeyMinWidthMedium: CGFloat = 84
 
     /// Cycle-button height in the narrow-fallback variant.
-    public static let patchBayCycleButtonHeight: CGFloat = 44
+    public static let patchBayCycleButtonHeight: CGFloat = 36
 
     /// Vertical gap between rows inside the patch bay panel.
     public static let patchBayRowGap: CGFloat = 14

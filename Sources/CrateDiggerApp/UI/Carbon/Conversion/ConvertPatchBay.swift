@@ -93,7 +93,12 @@ struct ConvertPatchBay: View {
             bitrateRow
             sampleRow
             layoutRow
-            patternRow
+            // PATTERN is CUSTOM's editor. It used to sit there dimmed and dead
+            // in every other mode, taking a row's height to say nothing.
+            if folderPlan.wrappedValue == .custom {
+                patternRow
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
             destRow
         case .options:
             artworkRow
@@ -295,16 +300,103 @@ struct ConvertPatchBay: View {
         }
     }
 
-    private var layoutRow: some View {
-        cvRow("Layout") {
-            PatchBayBank(
-                label: "Layout",
-                options: FolderStructureMode.allCases,
-                selection: $model.conversionSelection.folderStructureMode,
-                size: .medium,
-                displayText: layoutLabel
-            )
+    /// The four folder plans the FOLDERS row offers.
+    ///
+    /// Deliberately a UI type rather than a fourth `FolderStructureMode`:
+    /// CUSTOM plans paths exactly like TAGS does, so a Core case would be a
+    /// duplicate in every switch that touches the planner — the kind that
+    /// silently diverges the first time someone adds a fifth. What actually
+    /// differs is which token order is used and whether the pattern editor is
+    /// on screen, and that is already expressible.
+    enum FolderPlan: Hashable, CaseIterable {
+        case mirror, flat, tags, custom
+    }
+
+    /// A pattern built in CUSTOM, parked while another plan is selected.
+    ///
+    /// TAGS has to write the standard order into `tokenOrder` — the planner
+    /// reads that, not the preset, so leaving a custom order in place would
+    /// mean the output quietly disagreeing with the key that's lit. Parking it
+    /// means a tap on TAGS and back doesn't cost you the pattern you built.
+    @State private var parkedPattern: (tokens: [FolderToken], separators: [FolderSeparator])?
+
+    private var folderPlan: Binding<FolderPlan> {
+        Binding(
+            get: {
+                switch model.conversionSelection.folderStructureMode {
+                case .sourceRelative: return .mirror
+                case .flat:           return .flat
+                case .metadataTemplate:
+                    return model.conversionSelection.templatePreset == .custom ? .custom : .tags
+                }
+            },
+            set: { plan in
+                var selection = model.conversionSelection
+                if selection.templatePreset == .custom, plan != .custom {
+                    parkedPattern = (selection.tokenOrder, selection.separators)
+                }
+                switch plan {
+                case .mirror:
+                    selection.folderStructureMode = .sourceRelative
+                case .flat:
+                    selection.folderStructureMode = .flat
+                case .tags:
+                    // TAGS means the standard layout, so it can't inherit a
+                    // pattern someone built in CUSTOM and then hid from view.
+                    selection.folderStructureMode = .metadataTemplate
+                    if selection.templatePreset == .custom {
+                        selection.templatePreset = .artistYearAlbum
+                    }
+                    selection.tokenOrder = FolderTokenOrder.normalize(
+                        selection.templatePreset.defaultTokenOrder
+                    )
+                    selection.separators = []
+                case .custom:
+                    selection.folderStructureMode = .metadataTemplate
+                    if selection.templatePreset != .custom {
+                        if let parked = parkedPattern {
+                            // Back to the pattern you were building.
+                            selection.tokenOrder = parked.tokens
+                            selection.separators = parked.separators
+                        } else {
+                            // Nothing parked: open on the layout already in
+                            // effect rather than on some default.
+                            selection.tokenOrder = FolderTokenOrder.normalize(
+                                selection.templatePreset.defaultTokenOrder
+                            )
+                            selection.separators = []
+                        }
+                        selection.templatePreset = .custom
+                    }
+                }
+                model.conversionSelection = selection
+            }
+        )
+    }
+
+    private func folderPlanLabel(_ plan: FolderPlan) -> String {
+        switch plan {
+        case .mirror: return "MIRROR"
+        case .flat:   return "FLAT"
+        case .tags:   return "TAGS"
+        case .custom: return "CUSTOM"
         }
+    }
+
+    private var layoutRow: some View {
+        // "Layout" said nothing — layout of what? This row decides the folder
+        // structure the converted files are written into, so it says so.
+        cvRow("Folders") {
+            PatchBayBank(
+                label: "Folders",
+                options: FolderPlan.allCases,
+                selection: folderPlan,
+                size: .small,
+                displayText: folderPlanLabel
+            )
+            .carbonTip("How the converted files are foldered. MIRROR keeps your source tree's shape · FLAT puts everything in one folder · TAGS uses the standard Artist / Year Album layout · CUSTOM opens the pattern editor so you can shape it yourself.")
+        }
+        .animation(.easeInOut(duration: 0.18), value: folderPlan.wrappedValue)
     }
 
     private var patternRow: some View {
@@ -324,8 +416,6 @@ struct ConvertPatchBay: View {
                     set: { model.conversionSelection.templatePreset = $0 }
                 )
             )
-            .disabled(model.conversionSelection.folderStructureMode != .metadataTemplate)
-            .opacity(model.conversionSelection.folderStructureMode == .metadataTemplate ? 1 : 0.72)
         }
     }
 
@@ -469,20 +559,14 @@ struct ConvertPatchBay: View {
 
     @ViewBuilder
     private func cvRow<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
-        HStack(alignment: .center, spacing: 12) {
+        HStack(alignment: .center, spacing: 10) {
+            // No divider rule: the label sits close enough to its control to
+            // belong to it, which is what the rule was standing in for.
             Text(label.uppercased())
-                .font(CarbonFont.mono(8.5, weight: .bold))
-                .tracking(1.9)
-                .foregroundStyle(theme.ink3)
-                .frame(width: 56, alignment: .trailing)
-                .padding(.trailing, 8)
-                .overlay(
-                    Rectangle()
-                        .fill(theme.hair.opacity(0.7))
-                        .frame(width: 1)
-                        .padding(.vertical, 2),
-                    alignment: .trailing
-                )
+                .font(CarbonFont.mono(8, weight: .bold))
+                .tracking(1.4)
+                .foregroundStyle(theme.ink4)
+                .frame(width: 46, alignment: .trailing)
             content()
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -564,9 +648,9 @@ struct ConvertPatchBay: View {
 
     private func layoutLabel(_ mode: FolderStructureMode) -> String {
         switch mode {
-        case .sourceRelative:   return "SOURCE"
+        case .sourceRelative:   return "MIRROR"
         case .flat:             return "FLAT"
-        case .metadataTemplate: return "TEMPLATE"
+        case .metadataTemplate: return "TAGS"
         }
     }
 
@@ -605,90 +689,51 @@ private struct DestStrip: View {
     let onChoose: () -> Void
 
     var body: some View {
-        HStack(spacing: 8) {
-            Text(formattedPath)
-                .font(CarbonFont.mono(10.5))
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            Button(action: onChoose) {
-                Text("CHOOSE…")
-                    .font(CarbonFont.mono(9, weight: .bold))
-                    .tracking(1.8)
-                    .foregroundStyle(theme.isDark ? theme.cyanGlow : theme.ink)
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 5)
-                    .background(
-                        RoundedRectangle(cornerRadius: 3, style: .continuous)
-                            .fill(
-                                LinearGradient(
-                                    colors: [theme.metalHi, theme.metal, theme.metalLo],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
-                            )
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 3, style: .continuous)
-                            .stroke(Color.white.opacity(theme.isDark ? 0.10 : 0.45), lineWidth: 1)
-                    )
-                    .depthShadow(color: Color.black.opacity(0.4), radius: 1, y: 1)
+        // The whole strip is the control. A separate CHOOSE… key was a second
+        // slab to say what clicking the path already says, and the forced-dark
+        // screen behind it made a folder path look like an instrument readout.
+        Button(action: onChoose) {
+            HStack(spacing: 7) {
+                Image(systemName: "folder")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(theme.ink4)
+                Text(formattedPath)
+                    .font(CarbonFont.mono(10))
+                    .lineLimit(1)
+                    // Head truncation, not middle: the folder being written
+                    // into is the part worth keeping, and it's at the end.
+                    .truncationMode(.head)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 7, weight: .bold))
+                    .foregroundStyle(theme.ink4)
             }
-            .buttonStyle(.carbonHover)
+            .padding(.horizontal, 8)
+            .frame(height: 26)
+            .contentShape(Rectangle())
+            .background(
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(theme.isDark ? Color.white.opacity(0.04) : Color.black.opacity(0.04))
+            )
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                .fill(
-                    // Stay dark in both themes (the head text is white .45 and the
-                    // tail is cyan — both wash out on the light-grey linen recess).
-                    LinearGradient(
-                        colors: [Color(hex: 0x1C2228), Color(hex: 0x0A0E12)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                .stroke(Color.black.opacity(theme.isDark ? 0.9 : 0.5), lineWidth: 1)
-        )
-        .depthShadow(color: Color.black.opacity(theme.isDark ? 0.6 : 0.2), radius: 1, y: 1)
+        .buttonStyle(.carbonHover)
+        .carbonTip("Converted files are written to \(path). Click to choose another folder.")
     }
 
+    /// Parent dimmed, destination folder in full ink — the leaf is what you
+    /// actually check before pressing convert.
     private var formattedPath: AttributedString {
-        // Split on the first "/" group ending so "~/Music/" reads dim and the
-        // rest is luminous cyan, matching the design's `.seg` highlight.
-        let homePart: String
-        let rest: String
-        if path.hasPrefix("~/") {
-            if let slash = path.dropFirst(2).firstIndex(of: "/") {
-                let head = String(path[..<path.index(slash, offsetBy: 1)])
-                homePart = head
-                rest = String(path[path.index(slash, offsetBy: 1)...])
-            } else {
-                homePart = path
-                rest = ""
-            }
-        } else {
-            homePart = ""
-            rest = path
+        let trimmed = path.count > 1 && path.hasSuffix("/") ? String(path.dropLast()) : path
+        guard let slash = trimmed.lastIndex(of: "/"), slash != trimmed.startIndex else {
+            var only = AttributedString(trimmed)
+            only.foregroundColor = theme.ink
+            return only
         }
-        var out = AttributedString("")
-        if !homePart.isEmpty {
-            var seg = AttributedString(homePart)
-            // Recess is dark in both themes, so dim head reads as dim cyan/ink.
-            seg.foregroundColor = Color.white.opacity(0.45)
-            out.append(seg)
-        }
-        if !rest.isEmpty {
-            var seg = AttributedString(rest)
-            seg.foregroundColor = theme.cyan
-            out.append(seg)
-        }
-        return out
+        var head = AttributedString(String(trimmed[...slash]))
+        head.foregroundColor = theme.ink4
+        var leaf = AttributedString(String(trimmed[trimmed.index(after: slash)...]))
+        leaf.foregroundColor = theme.ink
+        return head + leaf
     }
 }
 
@@ -704,23 +749,10 @@ private struct ArmCancelButton: View {
                 .tracking(2.2)
                 .foregroundStyle(theme.ink2)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: theme.isDark
-                                    ? [theme.metalHi, theme.metalLo]
-                                    : [theme.chassisHi, theme.chassisLo],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .stroke(Color.white.opacity(theme.isDark ? 0.08 : 0.45), lineWidth: 1)
-                )
-                .depthShadow(color: Color.black.opacity(theme.isDark ? 0.5 : 0.2), radius: 4, y: 2)
+                // Flat, like every other key in the app — the pillowed
+                // gradient made the two action keys the loudest thing in a
+                // panel where the settings above them are the point.
+                .background(KeyChrome())
         }
         .buttonStyle(.carbonHover)
         .accessibilityLabel(Text("Cancel"))
@@ -740,20 +772,8 @@ private struct ArmGoButton: View {
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: enabled
-                            ? [theme.orangeHi, theme.orange, theme.orangeLo]
-                            : [theme.metalHi.opacity(0.6), theme.metalLo.opacity(0.6)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-
-            RoundedRectangle(cornerRadius: 5, style: .continuous)
-                .stroke(Color.black.opacity(0.15), lineWidth: 1)
-                .padding(4)
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(enabled ? theme.orange : theme.metal)
 
             // Hazard fill that grows with hold progress so the user gets
             // feedback that they're arming the convert.
@@ -762,7 +782,7 @@ private struct ArmGoButton: View {
                     .fill(Color.black.opacity(0.18))
                     .frame(width: geo.size.width * holdProgress)
             }
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             .blendMode(.multiply)
 
             // At narrow widths, drop the PRESS & HOLD subtitle and the right
@@ -774,8 +794,6 @@ private struct ArmGoButton: View {
             .padding(.horizontal, 14)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .shadow(color: enabled ? theme.orange.opacity(0.45) : .clear, radius: 14, y: 0)
-        .depthShadow(color: Color.black.opacity(0.5), radius: 4, y: 2)
         .opacity(enabled ? 1 : 0.55)
         .contentShape(Rectangle())
         // A plain onLongPressGesture survives the enclosing ScrollView, unlike a
