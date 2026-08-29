@@ -14,11 +14,12 @@ swift build -c release           # release build
 scripts/test.sh                  # run the XCTest suite (preferred — see note below)
 scripts/test.sh --filter OutputPathPlannerTests           # run one test class
 scripts/test.sh --filter OutputPathPlannerTests/testFoo   # run one test method
-scripts/package-app.sh           # assemble dist/CrateDigger.app (bundles ffmpeg/ffprobe, ad-hoc signed)
+scripts/package-app.sh           # assemble dist/CrateDigger.app (bundles ffmpeg/ffprobe/fpcalc, ad-hoc signed)
 ```
 
 - **Run `scripts/test.sh`, not bare `swift test`.** It forces `--enable-xctest --disable-swift-testing`, points at a full Xcode install, and uses a repo-local module cache (`.build/tests`). XCTest needs a *full* Xcode developer dir (not just Command Line Tools); the script prints clear remediation if the license isn't accepted or `PlatformPath` lookup fails.
-- Tests live in `Tests/CrateDiggerCoreTests` (most coverage — the core library is the testable layer) and `Tests/CrateDiggerAppTests` (only `WindowFramePlanner`). **UI / `LibraryViewModel` behavior is largely untested.**
+- Tests live in `Tests/CrateDiggerCoreTests` (most coverage — the core library is the testable layer) and `Tests/CrateDiggerAppTests` (a dozen files: theming, screen presets, `WindowFramePlanner`, `UpdateFeed`, yt-dlp retry). ~900 tests total.
+- **SwiftUI views and `LibraryViewModel` are still untested**, and that is where bugs concentrate: the 2.0 Phase 0 whole-branch review found all three of its cross-task defects in view-model glue, not in Core. Anything that is a *decidable value* — which track was playing, which files belong to a folder, whether leaving a track counts as a skip — belongs in Core with a test, even when the surrounding wiring stays untested.
 - To launch and verify a change in the running app, build then run the binary directly (the local permission allowlist already covers `swift build`, running the debug binary, and `pkill -f CrateDiggerApp`).
 - Release/distribution (Developer ID signing + notarization + DMG) and the full beta gate are documented in `README.md` and `docs/BETA_RELEASE_CHECKLIST.md`.
 
@@ -31,11 +32,29 @@ scripts/package-app.sh           # assemble dist/CrateDigger.app (bundles ffmpeg
   from here ships as a GitHub **prerelease** so `/releases/latest` (and the
   website's Download button) stay on stable.
 
-Isolation is at the **feed**, not the channel: `v2`'s `SUFeedURL` points at
-`website/appcast-beta.xml`, which no shipped 1.5.x app knows about, so
-`website/appcast.xml` is frozen for the whole 2.0 cycle. Never repoint
-`SUFeedURL` on `v2` — that single line is what keeps betas off other people's
-Macs.
+Isolation is at the **feed**, not the channel — but NOT via `Info.plist`.
+`SUFeedURL` is deliberately **identical on both branches** and points at the
+stable `website/appcast.xml`; it is only the fallback for a build that
+overrides nothing. The real choice is made at runtime by
+`UpdateFeed.override(channel:betaOptIn:)` in `Updates/SoftwareUpdater.swift`:
+
+```swift
+(!channel.isEmpty || betaOptIn) ? beta : nil
+```
+
+So a prerelease build follows `appcast-beta.xml` **automatically**, because
+`AppVersion.channel` is `"BETA"` on `v2` — nobody has to tick anything. A
+stable build reads the beta feed only if its owner turned on Advanced ▸
+Receive beta updates. `website/appcast.xml` stays frozen for the whole 2.0
+cycle either way.
+
+Keeping the decision in one pure function rather than in `Info.plist` is the
+point: there is no per-branch line to repoint, and therefore no line that can
+be forgotten or carried onto `main` by accident. **The invariants to protect
+are `AppVersion.channel` staying non-empty on `v2`, and `UpdateFeed.override`
+not being "simplified" into the plist.** `UpdateFeedTests` covers all four
+channel/opt-in combinations and also reads `Info.plist` and fails if
+`SUFeedURL` ever stops matching `UpdateFeed.stable`.
 
 The one thing that does cross over: GitHub Pages only serves `website/` from
 `main`, so publishing a beta feed means copying *just*
@@ -66,7 +85,20 @@ main.swift  →  AppDelegate  →  MainWindowController  →  CarbonHostingContr
 
 ### `LibraryViewModel` — the center of gravity
 
-`Sources/CrateDiggerApp/UI/Carbon/Library/LibraryViewModel.swift` (~4200 lines) is a single `@MainActor ObservableObject` that owns **all** app state, **all** services, and **most** behavior. Almost every SwiftUI view binds to it via `@EnvironmentObject`. Behavior is split across `LibraryViewModel+*.swift` extensions in the same folder: `+Conversion`, `+DeepScan`, `+ExternalDeviceTransfer`, `+LibraryFiles`, `+Listening`, `+MultiSelect`, `+Onboarding`, `+Radio`, `+RecordDivider`, `+Rename`, `+TrackActions`. **When fixing app behavior, start here** — this is where the wiring lives.
+`Sources/CrateDiggerApp/UI/Carbon/Library/LibraryViewModel.swift` (~4300 lines) is a single `@MainActor ObservableObject` that owns **all** app state, **all** services, and **most** behavior. Almost every SwiftUI view binds to it via `@EnvironmentObject`. **When fixing app behavior, start here** — this is where the wiring lives.
+
+Behavior is split across **22 `LibraryViewModel+*.swift` extensions in three
+folders** (don't assume they are all beside the main file):
+
+- `UI/Carbon/Library/` — `+ArrowNav`, `+BatchArtwork`, `+CDDetect`, `+DeepScan`,
+  `+LibraryFiles`, `+Listening`, `+MetadataRepair`, `+MissingFiles`,
+  `+MultiSelect`, `+NowPlaying`, `+Onboarding`, `+Queue`, `+Radio`,
+  `+RecordDivider`, `+Rename`, `+SACDImport`, `+Sleep`, `+TrackActions`,
+  `+Versions`
+- `UI/Conversion/` — `+Conversion`
+- `UI/ExternalDevices/` — `+DeviceSync`, `+ExternalDeviceTransfer`
+
+`find Sources -name "LibraryViewModel+*.swift"` is the reliable way to see them all.
 
 It is a large god-object; prefer extracting testable logic into a Core service over adding more to it.
 
@@ -80,7 +112,7 @@ It is a large god-object; prefer extracting testable logic into a Core service o
 
 ### Sources model (Crates, Prep Crate, Remote, CD, Playlists, Radio)
 
-`LibrarySource` (enum in `LibraryViewModel.swift`) selects what's shown — cases: `localCrate(name:)`, `prepCrate`, `remote`, `playlist(name:)`, `cd(volumePath:)`, `device(volumePath:)`, `radio(category:)`. The view model keeps separate cached indexes (`localIndex`, `remoteIndex`, `cdIndex`, `playlistIndex`, `prepCrateIndex`) for fast switching via `selectSource(_:)`.
+`LibrarySource` (enum in `LibraryViewModel.swift`) selects what's shown — cases: `localAll`, `localCrate(name:)`, `prepCrate`, `remote`, `playlist(name:)`, `cd(volumePath:)`, `device(volumePath:)`, `offlineDevice(profileID:)`, `radio(category:)` (the category is optional: nil means All Streams). The view model keeps separate cached indexes (`localIndex`, `remoteIndex`, `cdIndex`, `playlistIndex`, `prepCrateIndex`) for fast switching via `selectSource(_:)`.
 
 - **Crates** are the persistence unit, stored in a user-chosen "Crates Index Folder". A crate is a **`.cdcrate` file = a JSON array of file paths** (membership only). The tracks themselves live once in a **shared `TrackStore`** (`library.cdtracks` in the same folder), and artwork lives in `ArtworkStore` keyed by SHA-256 — `ArtworkAsset.encode` deliberately omits the image bytes, so no index file ever carries base64 artwork. `loadCrateTracks`/`saveCrateTracks` are the I/O; a "Personal Crate" is auto-created. Legacy `.cdlib` files (full `LoadedTrack` arrays with embedded art) are migrated once on launch by `migrateLegacyCratesIfNeeded` and renamed `.cdlib.bak`.
 - **`saveCrateTracks(_:name:persistStore:)` re-encodes the whole store.** Pass `persistStore: false` inside multi-crate loops and call `persistTrackStore()` once at the end, or a batch operation freezes the UI at library size.
@@ -159,14 +191,29 @@ The app's **only** third-party dependency. `SoftwareUpdater` (`Updates/`) wraps
 `SPUStandardUpdaterController`: the menu item and the daily background check
 both go through it, and it does nothing at all unless `Bundle.main` carries
 `SUFeedURL` — so a `swift build` run has no updater and the menu item greys out.
-The feed is `website/appcast.xml` (GitHub Pages), regenerated per release by
-`scripts/update-appcast.sh`; `scripts/package-app.sh` embeds and re-signs
-`Sparkle.framework` into `Contents/Frameworks` (SwiftPM links it but can't put
-it in a `.app`). Setup and release steps are in README, "In-app updates".
 
-### External tools (ffmpeg / ffprobe)
+There are **two** feeds, both on GitHub Pages and both regenerated per release
+by `scripts/update-appcast.sh`: `website/appcast.xml` (stable) and
+`website/appcast-beta.xml` (the 2.0 line). Which one a build reads is decided
+at runtime by `UpdateFeed` / `ChannelDelegate.feedURLString(for:)`, NOT by
+`Info.plist` — see "Two release lines" above, which is the section to trust on
+this. `allowedChannels` remains only for the older `rc` convention, where
+prerelease items were tagged inside the stable feed rather than split out.
 
-`ExternalToolLocator` resolves binaries (`ExternalTool`: `ffmpeg`, `ffprobe`, `ytdlp`, `fpcalc`, `sacdExtract`) in this priority: **bundled** (`Bundle.main` Resources) → explicit override → env var (`CRATEDIGGER_FFMPEG_PATH` / `CRATEDIGGER_FFPROBE_PATH` / `CRATEDIGGER_FPCALC_PATH`) → system PATH (`/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin`, then `$PATH`). `ffprobe` powers richer metadata via `MetadataProbeService`; if it's missing the app degrades gracefully to **AVFoundation-only** metadata, and conversion surfaces a "install ffmpeg" alert. The packaged `.app` bundles both binaries (entitlements disable library validation so they can run).
+`scripts/package-app.sh` embeds and re-signs `Sparkle.framework` into
+`Contents/Frameworks` (SwiftPM links it but can't put it in a `.app`). Setup
+and release steps are in README, "In-app updates".
+
+### External tools (ffmpeg / ffprobe / fpcalc / yt-dlp / sacd_extract)
+
+`ExternalToolLocator` resolves binaries (`ExternalTool`: `ffmpeg`, `ffprobe`, `ytdlp`, `fpcalc`, `sacdExtract`) in this priority: **bundled** (`Bundle.main` Resources) → explicit override → env var (`CRATEDIGGER_FFMPEG_PATH` / `CRATEDIGGER_FFPROBE_PATH` / `CRATEDIGGER_FPCALC_PATH`) → system PATH (`/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin`, then `$PATH`). `ffprobe` powers richer metadata via `MetadataProbeService`; if it's missing the app degrades gracefully to **AVFoundation-only** metadata, and conversion surfaces a "install ffmpeg" alert. The packaged `.app` bundles **three** binaries — ffmpeg, ffprobe and fpcalc (entitlements disable library validation so they can run).
+
+`fpcalc` is **vendored in the repo** at `Vendor/fpcalc/fpcalc` (Chromaprint
+1.5.1, static, universal) and `package-app.sh` defaults to it ahead of anything
+on `PATH` — a Homebrew fpcalc links against its own ffmpeg dylibs and would
+fail `require_static_tool` on a signed build, or ship and not run. See
+`Vendor/fpcalc/README.md` for provenance, licence and how to replace it.
+`yt-dlp` and `sacd_extract` stay bring-your-own and are not bundled.
 
 ### Playback
 
@@ -183,7 +230,7 @@ it in a `.app`). Setup and release steps are in README, "In-app updates".
 
 ### UI ("Carbon" design system)
 
-SwiftUI under `Sources/CrateDiggerApp/UI/Carbon/`. Skeuomorphic hardware look: chassis layers, recessed wells, paper panels, an OLED display, LED meters, physical knobs/buttons. Theming flows through the `.carbonThemed(mode:)` environment with light/dark/system `AppearanceMode` (persisted, mirrored in the AppKit menu). Layout: a header, a 3-pane `MainShell` (**Sources | Browser | Inspector**, each independently collapsible with width invariants), and a footer transport. The **`OLEDView`** enum (`nowPlaying`/`vu`/`conversion`/`scan`/`remoteSync`/`cdRip`) is the mode switch that drives what the main area shows (e.g. selecting `conversion` swaps the Inspector for the "Patch Bay" and auto-collapses the browser).
+SwiftUI under `Sources/CrateDiggerApp/UI/Carbon/`. Skeuomorphic hardware look: chassis layers, recessed wells, paper panels, an OLED display, LED meters, physical knobs/buttons. Theming flows through the `.carbonThemed(mode:)` environment with light/dark/system `AppearanceMode` (persisted, mirrored in the AppKit menu). Layout: a header, a 3-pane `MainShell` (**Sources | Browser | Inspector**, each independently collapsible with width invariants), and a footer transport. The **`OLEDView`** enum (`nowPlaying`/`conversion`/`scan`/`remoteSync`/`cdRip`/`devices`) is the mode switch that drives what the main area shows (e.g. selecting `conversion` swaps the Inspector for the "Patch Bay" and auto-collapses the browser).
 
 ## Conventions & gotchas
 
