@@ -3709,7 +3709,11 @@ final class LibraryViewModel: ObservableObject {
         // Purged tracks leave the shared store too, or it grows dead entries
         // forever. One store write for the whole purge, not one per crate.
         let store = currentTrackStore()
-        for path in paths { store.remove(path: path) }
+        let plays = currentListeningStore()
+        for path in paths {
+            store.remove(path: path)
+            plays.remove(path: path)
+        }
         for crateName in availableCrates {
             var tracks = loadCrateTracks(name: crateName)
             let before = tracks.count
@@ -3717,6 +3721,7 @@ final class LibraryViewModel: ObservableObject {
             if tracks.count != before { saveCrateTracks(tracks, name: crateName, persistStore: false) }
         }
         persistTrackStore()
+        persistListeningStore()
         refreshCrateCounts()
         selectSource(currentSource)
     }
@@ -3920,8 +3925,13 @@ final class LibraryViewModel: ObservableObject {
         // every crate that references it — patching only saved crates left
         // staged tracks pointing at the pre-move path.
         let oldKey = TrackStore.key(for: oldURL)
-        if oldKey != TrackStore.key(for: newTrack.track.fileURL) {
+        let newKey = TrackStore.key(for: newTrack.track.fileURL)
+        if oldKey != newKey {
             currentTrackStore().remove(path: oldKey)
+            // History is keyed by path, so a retag that moves the file has to
+            // carry it or the user silently loses their play counts.
+            currentListeningStore().repoint(from: oldKey, to: newKey)
+            persistListeningStore()
         }
         replaceTrackEverywhere(matchingPath: oldURL.path, with: newTrack)
     }
@@ -3942,14 +3952,20 @@ final class LibraryViewModel: ObservableObject {
         }
         let store = currentTrackStore()
         var staleKeys = Set<String>()
+        // The same moves, kept as pairs. staleKeys alone cannot say which old
+        // path belongs to which track, and a whole relocated folder produces
+        // many at once.
+        var movedKeys: [String: String] = [:]
         for crateName in availableCrates {
             var tracks = loadCrateTracks(name: crateName)
             var modified = false
             for i in 0..<tracks.count {
                 if let replacement = byID[tracks[i].track.id] {
                     let oldKey = TrackStore.key(for: tracks[i].track.fileURL)
-                    if oldKey != TrackStore.key(for: replacement.track.fileURL) {
+                    let newKey = TrackStore.key(for: replacement.track.fileURL)
+                    if oldKey != newKey {
                         staleKeys.insert(oldKey)
+                        movedKeys[oldKey] = newKey
                     }
                     tracks[i] = replacement
                     modified = true
@@ -3963,6 +3979,14 @@ final class LibraryViewModel: ObservableObject {
         let liveKeys = Set(newTracks.map { TrackStore.key(for: $0.track.fileURL) })
         for key in staleKeys.subtracting(liveKeys) { store.remove(path: key) }
         persistTrackStore()
+
+        // Carry listening history across the same moves, so a relocated folder
+        // keeps its play counts. One save for the whole batch.
+        let plays = currentListeningStore()
+        for (oldKey, newKey) in movedKeys where !liveKeys.contains(oldKey) {
+            plays.repoint(from: oldKey, to: newKey)
+        }
+        persistListeningStore()
         selectSource(currentSource)
     }
 
