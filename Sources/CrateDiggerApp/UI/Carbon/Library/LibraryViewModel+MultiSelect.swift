@@ -83,6 +83,9 @@ extension LibraryViewModel {
             selectedTrackIDs = [id]
         }
         selectedTrackID = id
+        // The flat table spans albums, so the inspector's album has to follow
+        // the row rather than sit on whatever the hidden Album column holds.
+        syncAlbumSelectionToTrack(loaded)
     }
 
     /// ⌘A — select everything in the current source (the "batch-add everything"

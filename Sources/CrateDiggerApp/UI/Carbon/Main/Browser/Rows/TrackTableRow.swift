@@ -1,4 +1,5 @@
 import CrateDiggerCore
+import AppKit
 import SwiftUI
 
 /// One row of the flat Track browser's table.
@@ -26,7 +27,15 @@ struct TrackTableRow: View {
     let onActivate: () -> Void
 
     var body: some View {
-        Button(action: onSelect) {
+        // Activation reads the click count off the event rather than riding a
+        // `TapGesture(count: 2)`. This row is both a drag source and — in a
+        // playlist, the only place the reorder target is live — a drop
+        // destination, and those swallow the second mouse-down, so the gesture
+        // never completed and double-clicking a playlist track did nothing at
+        // all. The event always knows.
+        Button(action: {
+            if (NSApp.currentEvent?.clickCount ?? 1) >= 2 { onActivate() } else { onSelect() }
+        }) {
             HStack(spacing: TrackTableMetrics.columnSpacing) {
                 ForEach(columns) { column in
                     cell(column)
@@ -44,7 +53,6 @@ struct TrackTableRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.carbonHover)
-        .simultaneousGesture(TapGesture(count: 2).onEnded { onActivate() })
         // Dim tracks that aren't playable right now — offline drive or missing file.
         .opacity((isOffline || isMissing) && !selected ? 0.55 : 1)
         .draggable(dragPayload ?? "track::" + loaded.track.id.uuidString)
