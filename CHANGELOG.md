@@ -4,6 +4,26 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 1.5.11 (77) — 2026-08-30
+
+Playlists play. Double clicking a track in one did nothing at all, and the
+inspector described a different record than the one you were listening to.
+
+### Fixed
+
+- **Playlists play again.** Double clicking a track in a playlist did nothing.
+  A playlist row can be dragged to reorder it, and being a drop target
+  swallowed the second click before it ever reached the thing that starts
+  playback. Playlists were the only source where that applied, which is why
+  everything else was fine.
+- **A playlist plays as a playlist.** Starting a track used to build the queue
+  from the album that happened to be selected rather than the list in front of
+  you, so most rows quietly did nothing and the play button started something
+  else entirely. The queue is now the list you are looking at.
+- **The inspector describes the track you picked.** In a playlist it showed
+  whichever album was selected in a column the playlist does not even display,
+  so the cover, year and format belonged to a different record.
+
 ## 1.5.10 (72) — 2026-08-28
 
 Discogs, where the scans of the physical object live. Back sleeves, inners,
