@@ -4,13 +4,16 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
-## 2.0.0 (75) — 2026-08-29 — BETA 3
+## 2.0.0 (76) — 2026-08-30 — BETA 4
 
 Everything in the 2.0 line so far, newest work first. Unfinished by
 definition: this is where 2.0 is built, and it is offered to nobody who has
 not asked for it.
 
-Beta 3 is about artwork and the panels you work in. Artwork you find is now
+Beta 4 is a fix release on top of beta 3: playlists play again, and the
+artwork panel tells the truth about what it did.
+
+Beta 3 was about artwork and the panels you work in. Artwork you find is now
 staged and only written when you say so, the ART tab finally shows the picture
 that lives inside your audio files, and the conversion panel lost its costume.
 
@@ -96,6 +99,33 @@ app.
 
 ### Fixed
 
+- **Playlists play again.** Double clicking a track in a playlist did nothing
+  at all. A playlist row can be dragged to reorder it, and being a drop target
+  swallowed the second click before it ever reached the thing that starts
+  playback. Playlists were the only source where that applied, which is why
+  everything else was fine.
+- **A playlist plays as a playlist.** Starting a track used to build the queue
+  from the album that happened to be selected rather than the list in front of
+  you, so most rows quietly did nothing and the play button started something
+  else entirely. The queue is now the list you are looking at.
+- **The inspector describes the track you picked.** In a playlist it showed
+  whichever album was selected in a column the playlist does not even display,
+  so the cover, year and format belonged to a different record than the one
+  playing.
+- **A stray PDF no longer takes over the artwork button.** Cover art searches
+  can return a PDF, and any PDF in an album folder was treated as that album's
+  booklet, so opening artwork went to the page reader instead of the artwork
+  viewer for good. A PDF you have given another role is left alone, and PDFs
+  now appear in the ART tab so you can remove one.
+- **Opening artwork lands on the cover.** An album whose folder held only
+  scans or a back cover opened on a page of scanned paper with no way to reach
+  the front.
+- **Removing embedded artwork looks like it worked, because it did.** The
+  files were rewritten correctly but the ART tab went on showing the picture,
+  since it was reading metadata cached from before the change.
+- **The artwork grid stops moving under the pointer.** Setting a role scrolled
+  the grid, so the next click landed on nothing. The close buttons are also
+  bigger targets than the thin glyph they were drawn as.
 - **A thumbnail is no longer blown up to fill the screen.** Opening artwork used
   the small picture inside your files even when the folder held real scans. It
   uses those now, and falls back to the embedded one only when there is nothing
