@@ -687,6 +687,13 @@ final class LibraryViewModel: ObservableObject {
         (isPlaylistSource && !playlistSorted) ? playlistTracks : flatTracksSorted
     }
 
+    /// The list the browser is actually showing: the flat table for a playlist
+    /// or the Track layout, the album-scoped list for the three-pane browser.
+    /// Playback starts from here, so what you press is what you get.
+    var browsingTracks: [LoadedTrack] {
+        (isPlaylistSource || browserLayout == .track) ? flatTracks : visibleTracks
+    }
+
     /// Columns shown in the flat Track browser, in display order.
     @Published var trackColumns: [TrackColumn] = TrackColumn.selection(fromSaved: PreferencesStore.shared.savedTrackColumns) {
         didSet { prefs.savedTrackColumns = trackColumns.map(\.rawValue) }
@@ -2479,7 +2486,7 @@ final class LibraryViewModel: ObservableObject {
         // Remember where the queue came from: the sidebar keeps that crate on
         // screen when Local Library is collapsed.
         playingSource = currentSource
-        let queue = currentAlbumQueue()
+        let queue = queue(containing: id)
         guard let startIndex = queue.firstIndex(where: { $0.track.id == id }) else { return }
         // Fail fast with an actionable prompt if the file is missing/offline,
         // rather than a dead-end playback error.
@@ -2512,7 +2519,9 @@ final class LibraryViewModel: ObservableObject {
             playSelectedStream()
             return
         }
-        if case .idle = playbackState, let track = visibleTracks.first {
+        // Start from the list on screen: pressing play in a playlist used to
+        // start the first track of whichever album happened to be selected.
+        if case .idle = playbackState, let track = browsingTracks.first {
             playTrack(id: track.track.id)
             return
         }
@@ -2970,11 +2979,19 @@ final class LibraryViewModel: ObservableObject {
         }
     }
 
-    private func currentAlbumQueue() -> [LoadedTrack] {
-        if shuffleEnabled, let album = selectedAlbum {
-            return album.tracks.shuffled()
-        }
-        return visibleTracks
+    /// The queue a row activates into: the list that row actually belongs to.
+    ///
+    /// This used to be the album-scoped `visibleTracks` unconditionally, which
+    /// is right for the three-pane browser and wrong everywhere else. A
+    /// playlist lists the whole source flat, so every row outside the album
+    /// that happened to be selected failed the lookup in `playTrack` and
+    /// silently did nothing — playlists could not be played at all. Choosing by
+    /// where the track *is* means a row can never activate into a queue that
+    /// doesn't contain it.
+    private func queue(containing id: UUID) -> [LoadedTrack] {
+        let shown = browsingTracks
+        let base = shown.contains { $0.track.id == id } ? shown : visibleTracks
+        return shuffleEnabled ? base.shuffled() : base
     }
 
     // MARK: - Last.fm integration
@@ -4049,6 +4066,26 @@ final class LibraryViewModel: ObservableObject {
     /// `index`. Setting `selectedAlbumID` drives the browser's ScrollViewReader to
     /// center the row; `selectedArtistID` keeps the Album column on the right
     /// artist in the full three-column layout. No-op if the track isn't found.
+    /// Point the album selection at the album a freshly selected track belongs
+    /// to, when the browser is listing tracks from more than one.
+    ///
+    /// The inspector reads `selectedAlbum`, and the flat table (a playlist, or
+    /// the Track layout) lists every album at once — so clicking a playlist row
+    /// left the inspector describing whichever album happened to be selected in
+    /// the Album column it doesn't show. Playing from a playlist then showed
+    /// the wrong cover, title and specs for the track you were hearing.
+    ///
+    /// No `revealTick`: this follows the click, it doesn't scroll anything. In
+    /// the three-pane browser the track is already inside the selected album,
+    /// so this does nothing there.
+    func syncAlbumSelectionToTrack(_ loaded: LoadedTrack) {
+        guard isPlaylistSource || browserLayout == .track else { return }
+        guard let album = browsableAlbum(containing: loaded.track.id),
+              selectedAlbumID != album.id else { return }
+        selectedArtistID = album.artistID
+        selectedAlbumID = album.id
+    }
+
     private func revealAlbum(containingTrackID trackID: UUID?) {
         guard let trackID, let album = browsableAlbum(containing: trackID) else { return }
         selectedArtistID = album.artistID

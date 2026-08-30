@@ -26,6 +26,9 @@ extension LibraryViewModel {
     /// Delegates to `BrowserState.selectTrack` — the rules live there.
     func selectTrack(_ loaded: LoadedTrack, command: Bool, shift: Bool, ordered: [LoadedTrack]) {
         browser.selectTrack(loaded, command: command, shift: shift, ordered: ordered)
+        // The flat table spans albums, so the inspector's album has to follow
+        // the row rather than sit on whatever the hidden Album column holds.
+        syncAlbumSelectionToTrack(loaded)
     }
 
     /// ⌘A — select everything in the current source (the "batch-add everything"

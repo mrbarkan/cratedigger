@@ -435,16 +435,42 @@ struct ArtworkInspectorView: View {
                 if staged { tileBadge("NEW", tint: theme.orange) }
             }
 
-            Picker("", selection: roleBinding(for: url, staged: staged)) {
-                ForEach(ArtworkRole.assignable, id: \.self) { role in
-                    Text(role.displayName).tag(role)
+            // A Menu, not a Picker: a Picker takes keyboard focus, and SwiftUI
+            // answers that by scrolling the focused control into view — which
+            // slides every tile under the pointer just as you go to click the
+            // next one, so the click lands on nothing. A Menu does the same job
+            // without joining the focus chain.
+            Menu {
+                Picker("", selection: roleBinding(for: url, staged: staged)) {
+                    ForEach(ArtworkRole.assignable, id: \.self) { role in
+                        Text(role.displayName).tag(role)
+                    }
+                    Divider()
+                    Text("Auto").tag(ArtworkRole.auto)
+                    Text("Ignore").tag(ArtworkRole.ignore)
                 }
-                Divider()
-                Text("Auto").tag(ArtworkRole.auto)
-                Text("Ignore").tag(ArtworkRole.ignore)
+                .pickerStyle(.inline)
+                .labelsHidden()
+            } label: {
+                HStack(spacing: 4) {
+                    Text(roleBinding(for: url, staged: staged).wrappedValue.displayName)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.system(size: 7, weight: .bold))
+                        .foregroundStyle(theme.ink4)
+                }
             }
-            .labelsHidden()
-            .pickerStyle(.menu)
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(theme.isDark ? Color.white.opacity(0.07) : Color.black.opacity(0.05))
+            )
             .frame(maxWidth: .infinity)
             .disabled(marked)
 

@@ -589,8 +589,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                 model.playbackVolume = 0.8
             }),
             (12, "", { model in
-                // Has to be a track of the *selected* album: playTrack looks the
-                // id up in `currentAlbumQueue()` and silently returns otherwise.
                 if let first = model.selectedAlbum?.tracks.first { model.playTrack(id: first.track.id) }
             }),
             (18, "screenshot_dark", { _ in }),
