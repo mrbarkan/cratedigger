@@ -81,6 +81,39 @@ if [[ -n "${APPCAST_OVERRIDE}" ]]; then
   STAGING_DIR="${ROOT_DIR}/dist/updates-$(basename "${APPCAST}" .xml | sed 's/^appcast-//')"
 fi
 
+# Each feed is generated on the branch that owns it. GitHub Pages serves
+# website/ from main, so the stable feed is written there; the beta feed is
+# written on v2 — whose CHANGELOG carries the 2.0.0 notes — and then carried
+# across with `git checkout v2 -- website/appcast-beta.xml`.
+#
+# Right script, wrong branch is silent and destructive both ways, and both
+# happened while testing the guard above:
+#   - beta feed from main: no '## 2.0.0' section in that CHANGELOG, so the
+#     notes come out empty and every entry is rewritten without its release
+#     notes. The script only warns about missing notes and carries on.
+#   - stable feed from v2: rewrites the appcast that is meant to stay frozen
+#     for the whole 2.0 cycle.
+BRANCH="$(git -C "${ROOT_DIR}" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+case "$(basename "${APPCAST}")" in
+  appcast.xml)      EXPECTED_BRANCH="main" ;;
+  appcast-beta.xml) EXPECTED_BRANCH="v2" ;;
+  *)                EXPECTED_BRANCH="" ;;
+esac
+if [[ -n "${EXPECTED_BRANCH}" && -n "${BRANCH}" && "${BRANCH}" != "${EXPECTED_BRANCH}" ]]; then
+  echo "error: $(basename "${APPCAST}") is generated on ${EXPECTED_BRANCH}; you are on ${BRANCH}." >&2
+  echo "" >&2
+  if [[ "${EXPECTED_BRANCH}" == "v2" ]]; then
+    echo "The 2.0.0 release notes live in v2's CHANGELOG. Running this here would" >&2
+    echo "rewrite the beta feed with every entry stripped of its notes." >&2
+  else
+    echo "website/appcast.xml is the stable feed and stays frozen for the whole" >&2
+    echo "2.0 cycle on this branch. Publish it from main." >&2
+  fi
+  echo "" >&2
+  echo "  git checkout ${EXPECTED_BRANCH}" >&2
+  exit 1
+fi
+
 DMG_NAME="$(basename "${DMG_PATH}")"
 VERSION="${DMG_NAME#CrateDigger-}"
 VERSION="${VERSION%.dmg}"
