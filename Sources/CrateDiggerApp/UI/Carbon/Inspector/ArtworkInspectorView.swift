@@ -346,9 +346,15 @@ struct ArtworkInspectorView: View {
                         .font(.system(size: 15))
                         .foregroundColor(.white)
                         .background(Circle().fill(Color.black.opacity(0.65)))
+                        // Without a content shape the target is the glyph's own
+                        // strokes — a few thin diagonals — so a click a pixel
+                        // off lands on the tile behind and appears to do
+                        // nothing. The frame gives it a real 22pt disc.
+                        .frame(width: 22, height: 22)
+                        .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
-                .padding(4)
+                .padding(2)
                 .help(staging.stripEmbedded ? "Keep the embedded cover after all"
                                             : "Remove the cover embedded in the audio files")
             }
@@ -379,6 +385,22 @@ struct ArtworkInspectorView: View {
                             .aspectRatio(contentMode: .fill)
                             .frame(width: 100, height: 100)
                             .clipped()
+                    } else if url.pathExtension.lowercased() == "pdf" {
+                        // No thumbnail path for a PDF, and a spinner that never
+                        // resolves reads as broken rather than as "document".
+                        Rectangle()
+                            .fill(theme.isDark ? Color.white.opacity(0.06) : Color.black.opacity(0.05))
+                            .frame(width: 100, height: 100)
+                            .overlay(
+                                VStack(spacing: 5) {
+                                    Image(systemName: "doc.richtext")
+                                        .font(.system(size: 24, weight: .light))
+                                    Text("PDF")
+                                        .font(CarbonFont.mono(8, weight: .bold))
+                                        .tracking(1.2)
+                                }
+                                .foregroundStyle(theme.ink3)
+                            )
                     } else {
                         Rectangle()
                             .fill(Color.gray.opacity(0.2))
@@ -401,9 +423,11 @@ struct ArtworkInspectorView: View {
                         .font(.system(size: 15))
                         .foregroundColor(.white)
                         .background(Circle().fill(Color.black.opacity(0.65)))
+                        .frame(width: 22, height: 22)
+                        .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
-                .padding(4)
+                .padding(2)
                 .help(staged ? "Drop this from the pending import"
                              : (marked ? "Keep this file after all" : "Mark for the Trash — happens when you save"))
             }
@@ -626,7 +650,10 @@ struct ArtworkInspectorView: View {
             var isDir: ObjCBool = false
             if fm.fileExists(atPath: dir.path, isDirectory: &isDir), isDir.boolValue {
                 if let contents = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
-                    let exts = ["jpg", "jpeg", "png", "webp", "gif"]
+                    // PDFs are listed too: one can arrive from the artwork
+                    // search, and a file you cannot see is a file you cannot
+                    // remove.
+                    let exts = ["jpg", "jpeg", "png", "webp", "gif", "pdf"]
                     let images = contents.filter { exts.contains($0.pathExtension.lowercased()) }
                     foundImages.append(contentsOf: images)
                 }

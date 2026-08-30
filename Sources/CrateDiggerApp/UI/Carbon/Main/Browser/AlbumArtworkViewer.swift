@@ -119,12 +119,28 @@ enum ArtworkViewerPresenter {
 
     static func buildPages(_ album: Album) -> [ArtworkPage] {
         let albumFolder = album.tracks.first?.track.fileURL.deletingLastPathComponent()
-        let pages = albumFolder.map { AlbumArtCatalog.pages(in: $0) } ?? []
-        // The embedded tag image is a *thumbnail* — typically 300–600 px, which
-        // this viewer would have to upscale into mush. It stands in only when
-        // the folder has nothing at all; any real file on disk beats it.
-        guard pages.isEmpty else { return pages }
-        return [ArtworkPage(kind: .cover, label: "Cover", imageURL: nil)]
+        var pages = albumFolder.map { AlbumArtCatalog.pages(in: $0) } ?? []
+
+        // Guarantee a Cover page, because this viewer opens on page one and a
+        // folder holding only booklet scans or a back would otherwise open on
+        // a sheet of scanned paper with no way to reach the front at all.
+        //
+        // A real cover file always wins: the catalog emits it as `.cover` and
+        // this adds nothing. The synthetic page is the embedded tag image, and
+        // it is drawn capped at its own pixel size (see `embeddedArtSide`) so
+        // standing in for a missing cover can't mean a wall of upscaled pixels.
+        let hasCoverPage = pages.contains { $0.kind == .cover }
+        let hasEmbeddedArt = album.artworkHash != nil
+            || album.tracks.contains { $0.track.artworkHash != nil }
+        if !hasCoverPage, hasEmbeddedArt {
+            pages.insert(ArtworkPage(kind: .cover, label: "Cover", imageURL: nil), at: 0)
+        }
+        // Nothing on disk and nothing in the tags: an empty page still beats an
+        // empty window, and the placeholder sleeve is what it draws.
+        if pages.isEmpty {
+            pages = [ArtworkPage(kind: .cover, label: "Cover", imageURL: nil)]
+        }
+        return pages
     }
 }
 

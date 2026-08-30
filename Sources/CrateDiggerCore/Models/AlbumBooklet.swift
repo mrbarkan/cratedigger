@@ -21,11 +21,27 @@ public struct AlbumBooklet: Codable, Hashable, Sendable {
         }
     }
 
+    /// Whether a role permits a file to stand as the album's booklet. Unroled
+    /// files still qualify: the overwhelming majority of booklet PDFs arrive
+    /// with no manifest at all, and only an explicit contrary role is evidence.
+    static func isBookletRole(_ role: ArtworkRole?) -> Bool {
+        switch role {
+        case nil, .auto, .bookletPage: return true
+        default:                       return false
+        }
+    }
+
     /// Scans the given album folder for any booklet PDF files or folders containing booklet images.
     public static func scan(in albumFolder: URL, fileManager: FileManager = .default, manifest: ArtworkManifest? = nil) -> AlbumBooklet? {
         // 1. Look for PDF files directly in the album folder
         if let contents = try? fileManager.contentsOfDirectory(at: albumFolder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
-            let pdfs = contents.filter { $0.pathExtension.lowercased() == "pdf" }
+            // A PDF the manifest has roled as something else is not the
+            // album's booklet. The Cover Art Archive serves PDFs among its
+            // images, so one can arrive roled "Alt Cover" and, taken as a
+            // booklet, quietly hijack the artwork button for the whole album.
+            let pdfs = contents
+                .filter { $0.pathExtension.lowercased() == "pdf" }
+                .filter { isBookletRole(manifest?.roles[$0.lastPathComponent]) }
             // Sort to prefer names containing 'booklet', 'liner', 'notes', etc.
             let sortedPdfs = pdfs.sorted { lhs, rhs in
                 let lName = lhs.lastPathComponent.lowercased()
@@ -57,7 +73,13 @@ public struct AlbumBooklet: Codable, Hashable, Sendable {
                 if let contents = try? fileManager.contentsOfDirectory(at: subfolderURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
                     // Check for PDF inside the subfolder first
                     if !dirName.isEmpty {
-                        let pdfs = contents.filter { $0.pathExtension.lowercased() == "pdf" }
+                        // A PDF the manifest has roled as something else is not the
+            // album's booklet. The Cover Art Archive serves PDFs among its
+            // images, so one can arrive roled "Alt Cover" and, taken as a
+            // booklet, quietly hijack the artwork button for the whole album.
+            let pdfs = contents
+                .filter { $0.pathExtension.lowercased() == "pdf" }
+                .filter { isBookletRole(manifest?.roles[$0.lastPathComponent]) }
                         if let firstPdf = pdfs.first {
                             return AlbumBooklet(source: .pdf(firstPdf))
                         }

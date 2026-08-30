@@ -217,3 +217,26 @@ final class ArtworkStagingSweepTests: XCTestCase {
         XCTAssertFalse(sweeps(session))
     }
 }
+
+final class AlbumBookletRoleTests: XCTestCase {
+
+    /// The default: a PDF nobody has roled is the booklet, which is how almost
+    /// every real booklet arrives.
+    func testUnroledPDFStillCountsAsTheBooklet() {
+        XCTAssertTrue(AlbumBooklet.isBookletRole(nil))
+        XCTAssertTrue(AlbumBooklet.isBookletRole(.auto))
+        XCTAssertTrue(AlbumBooklet.isBookletRole(.bookletPage))
+    }
+
+    /// The regression this guards: the Cover Art Archive serves PDFs among its
+    /// images, so one can be imported and roled "Alt Cover". Treated as the
+    /// booklet it takes over the artwork button for the whole album, which
+    /// opens the PDF reader instead of the artwork viewer.
+    func testPDFRoledAsSomethingElseIsNotTheBooklet() {
+        XCTAssertFalse(AlbumBooklet.isBookletRole(.altCover))
+        XCTAssertFalse(AlbumBooklet.isBookletRole(.cover))
+        XCTAssertFalse(AlbumBooklet.isBookletRole(.back))
+        XCTAssertFalse(AlbumBooklet.isBookletRole(.inlay))
+        XCTAssertFalse(AlbumBooklet.isBookletRole(.ignore))
+    }
+}

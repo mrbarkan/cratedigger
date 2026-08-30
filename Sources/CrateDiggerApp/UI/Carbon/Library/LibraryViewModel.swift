@@ -2890,6 +2890,8 @@ final class LibraryViewModel: ObservableObject {
     func stripEmbeddedArtworkInBackground(for album: Album) {
         let tracks = album.tracks
         let title = album.title
+        let folderPath = album.tracks.first?.track.fileURL.deletingLastPathComponent().path
+        let filePaths = album.tracks.map { $0.track.fileURL.path }
         Task.detached(priority: .utility) {
             var failed = 0
             await withTaskGroup(of: Bool.self) { group in
@@ -2913,6 +2915,15 @@ final class LibraryViewModel: ObservableObject {
                         title: "Some tracks kept their cover",
                         message: "\(unwritable) file\(unwritable == 1 ? "" : "s") on “\(title)” couldn't be rewritten. The rest had their embedded artwork removed."
                     )
+                }
+                // The files only changed just now, so the cache has to be
+                // dropped *here* — the invalidation the commit did ran before
+                // the rewrite, and the rebuild in between refilled it with the
+                // pre-strip metadata. Without this the tracks keep reporting
+                // embedded art that is no longer in them, and the ART tab goes
+                // on showing an IN FILES tile for a picture that is gone.
+                if let folderPath {
+                    self.indexDiskCache.invalidate(albumFolderPath: folderPath, filePaths: filePaths)
                 }
                 self.refreshLibrary()
             }

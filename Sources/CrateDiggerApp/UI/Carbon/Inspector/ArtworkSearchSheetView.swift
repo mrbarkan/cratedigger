@@ -964,6 +964,7 @@ struct ArtworkSearchSheetView: View {
                         .foregroundColor(isSelected ? theme.orange : .white)
                         .background(Circle().fill(Color.black.opacity(0.4)))
                         .clipShape(Circle())
+                        .frame(width: 24, height: 24)
                         .contentShape(Circle())
                 }
                 .buttonStyle(.carbonHover)
@@ -976,6 +977,7 @@ struct ArtworkSearchSheetView: View {
                         .foregroundColor(.white)
                         .padding(5)
                         .background(Circle().fill(Color.black.opacity(0.45)))
+                        .frame(width: 24, height: 24)
                         .contentShape(Circle())
                 }
                 .buttonStyle(.carbonHover)
