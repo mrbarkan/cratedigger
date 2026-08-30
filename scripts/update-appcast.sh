@@ -87,6 +87,44 @@ VERSION="${VERSION%.dmg}"
 TAG="${TAG_OVERRIDE:-v${VERSION}}"
 
 mkdir -p "${STAGING_DIR}"
+
+# The archive being published and the feed being written have to belong to the
+# same release line, and neither the DMG default nor generate_appcast checks.
+#
+# Two ways that goes wrong, both seen for real:
+#   - Something from the other line is left in this staging directory.
+#     generate_appcast emits an entry for EVERY archive it finds there, so it
+#     is published into this feed with a download URL for a tag that was never
+#     cut. A 2.0.0 beta entry reached the stable appcast exactly this way.
+#   - No --dmg is passed, so the newest DMG in dist/ is taken. That is the
+#     build you just made in the usual flow, and the wrong line entirely when
+#     the other line was built more recently.
+#
+# Compare the two rather than hardcode a version: whatever is already staged
+# defines the line this feed serves.
+MAJOR="${VERSION%%.*}"
+FOREIGN=()
+for archive in "${STAGING_DIR}"/CrateDigger-*.dmg; do
+  [[ -e "${archive}" ]] || continue
+  staged_name="$(basename "${archive}")"
+  staged_version="${staged_name#CrateDigger-}"
+  staged_version="${staged_version%.dmg}"
+  [[ "${staged_version%%.*}" == "${MAJOR}" ]] || FOREIGN+=("${staged_name} (${staged_version%%.*}.x)")
+done
+if (( ${#FOREIGN[@]} )); then
+  echo "error: ${DMG_NAME} does not belong in $(basename "${APPCAST}")." >&2
+  echo "" >&2
+  echo "  publishing:  ${DMG_NAME} (${MAJOR}.x)" >&2
+  echo "  ${STAGING_DIR#${ROOT_DIR}/} already holds:" >&2
+  printf '    %s\n' "${FOREIGN[@]}" >&2
+  echo "" >&2
+  echo "generate_appcast writes an entry for every archive in that directory, so" >&2
+  echo "this run would mix both release lines into one feed, with download URLs" >&2
+  echo "for tags that were never cut. Pass --dmg for the build you meant to" >&2
+  echo "publish, or move the stray archive out of that directory." >&2
+  exit 1
+fi
+
 # The committed feed is the source of truth for what's already published:
 # generate_appcast updates it in place, keeping older entries and their
 # signatures rather than rewriting history from whatever happens to be on disk.
