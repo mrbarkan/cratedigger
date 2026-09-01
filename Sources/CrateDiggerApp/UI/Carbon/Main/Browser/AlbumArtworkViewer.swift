@@ -165,6 +165,7 @@ private enum ArtZoom: Equatable {
 /// live in the control bar. Left/right arrows page; Esc closes.
 struct AlbumArtworkNavigator: View {
     @Environment(\.carbon) private var theme
+    @EnvironmentObject private var model: LibraryViewModel
     let album: Album
     /// State, not a constant: the window stays open while artwork is edited
     /// behind it, and a page list frozen at open time kept showing images that
@@ -186,8 +187,11 @@ struct AlbumArtworkNavigator: View {
     @State private var eventMonitor: Any?
     /// Pointer is over the floating panel — lights its frame.
     @State private var floatingHovering = false
-    /// Focus mode darkens the backdrop so nothing behind competes with the art.
-    @AppStorage("artworkFocusMode") private var focusMode = false
+    @State private var confirmingDelete = false
+    /// How far the app behind is dimmed out, 0 (clear) … 1 (black). Replaces the
+    /// old two-position FOCUS toggle, which was this same value quantised to
+    /// "0.55 or 0.94" — a slider says the same thing and lets you land between.
+    @AppStorage("artworkBackdropDim") private var backdropDim = 0.55
 
     init(album: Album, pages: [ArtworkPage], startIndex: Int = 0, floating: Bool = false,
          onClose: @escaping () -> Void, onFloat: ((Int) -> Void)? = nil, onExpand: ((Int) -> Void)? = nil) {
@@ -248,7 +252,7 @@ struct AlbumArtworkNavigator: View {
             // compositing), and a blurred *artwork* plate here covers the app
             // rather than frosting it. Shipping a look nobody has seen is worse
             // than shipping the one that works.
-            Color.black.opacity(focusMode ? 0.94 : 0.55)
+            Color.black.opacity(backdropDim)
                 .ignoresSafeArea()
                 .contentShape(Rectangle())
                 .onTapGesture { onClose() }
@@ -448,6 +452,13 @@ struct AlbumArtworkNavigator: View {
 
     // MARK: - Control cluster (parked below the art, never overlapping it)
 
+    /// Every control in the bar is one height and one shape, grouped by what it
+    /// acts on and separated by hairlines — the same stepper-then-tools reading
+    /// the floating panel's bar already had. Before this it was six differently
+    /// sized pills in one undifferentiated row, with CLOSE wedged between BACK
+    /// and FWD so the pager didn't read as a pager.
+    private static let barHeight: CGFloat = 34
+
     private var controlCluster: some View {
         VStack(spacing: 8) {
             Text(album.title)
@@ -467,23 +478,80 @@ struct AlbumArtworkNavigator: View {
             .tracking(1.4)
             .lineLimit(1)
 
-            HStack(spacing: 10) {
+            HStack(spacing: 6) {
+                // Page through
                 pillButton(label: "BACK", icon: "chevron.left") { step(-1) }
                     .disabled(pages.count <= 1)
-
-                pillButton(label: "CLOSE") { onClose() }
-
+                    .opacity(pages.count <= 1 ? 0.35 : 1)
+                Text("\(index + 1) / \(pages.count)")
+                    .font(CarbonFont.mono(9.5, weight: .bold))
+                    .tracking(1.2)
+                    .foregroundStyle(.white.opacity(0.55))
+                    .frame(minWidth: 52)
                 pillButton(label: "FWD", icon: "chevron.right") { step(1) }
                     .disabled(pages.count <= 1)
+                    .opacity(pages.count <= 1 ? 0.35 : 1)
 
+                barDivider
+
+                // How it is shown
                 zoomMenu()
+                dimControl
 
-                pillButton(label: "FOCUS", highlighted: focusMode) { focusMode.toggle() }
+                barDivider
 
-                pillButton(label: "FLOAT") { onFloat?(index) }
+                // What to do with this page
+                iconPill("eye.slash", size: Self.barHeight) { hideCurrentPage() }
+                    .disabled(!canEditCurrentPage)
+                    .opacity(canEditCurrentPage ? 1 : 0.35)
+                    .help("Hide this image from the viewer. The file stays put, and the ART tab shows it as Ignore.")
+                iconPill("trash", size: Self.barHeight) { confirmingDelete = true }
+                    .disabled(!canEditCurrentPage)
+                    .opacity(canEditCurrentPage ? 1 : 0.35)
+                    .help("Move this image file to the Trash")
+
+                barDivider
+
+                // The window itself
+                iconPill("macwindow.on.rectangle", size: Self.barHeight) { onFloat?(index) }
+                    .help("Pop out into a small panel that stays on top")
+                pillButton(label: "CLOSE") { onClose() }
             }
             .padding(.top, 4)
         }
+        .confirmationDialog("Move “\(current?.imageURL?.lastPathComponent ?? "")” to the Trash?",
+                            isPresented: $confirmingDelete, titleVisibility: .visible) {
+            Button("Move to Trash", role: .destructive) { deleteCurrentPage() }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("The file leaves the album folder. You can put it back from the Trash.")
+        }
+    }
+
+    private var barDivider: some View {
+        Rectangle()
+            .fill(Color.white.opacity(0.16))
+            .frame(width: 1, height: 20)
+            .padding(.horizontal, 4)
+    }
+
+    /// How far the app behind the viewer is dimmed out. Was a FOCUS toggle with
+    /// two hard-coded stops; artwork on a light backdrop and artwork on black are
+    /// different pictures, so this is a knob rather than a switch.
+    private var dimControl: some View {
+        HStack(spacing: 9) {
+            Image(systemName: "circle.lefthalf.filled")
+                .font(.system(size: 11, weight: .bold))
+            Slider(value: $backdropDim, in: 0...1)
+                .controlSize(.mini)
+                .frame(width: 88)
+                .tint(.white.opacity(0.55))
+        }
+        .foregroundStyle(.white.opacity(0.85))
+        .padding(.horizontal, 14)
+        .frame(height: Self.barHeight)
+        .background(Capsule().fill(Color.white.opacity(0.10)))
+        .help("Dim the app behind the artwork")
     }
 
     /// `compact` sizes it to match `iconPill` for the floating panel's bar.
@@ -492,7 +560,7 @@ struct AlbumArtworkNavigator: View {
             Button("Fit to Screen") { setZoom(.fit) }
             Button("50%") { setZoom(.scale(0.5)) }
             Button("100%") { setZoom(.scale(1.0)) }
-            Button("1:1 (drag to pan)") { setZoom(.scale(1.0)) }
+            Button("200%") { setZoom(.scale(2.0)) }
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: "magnifyingglass").font(.system(size: compact ? 9 : 10, weight: .bold))
@@ -500,8 +568,7 @@ struct AlbumArtworkNavigator: View {
             }
             .foregroundStyle(.white.opacity(0.85))
             .padding(.horizontal, compact ? 10 : 16)
-            .frame(height: compact ? 28 : nil)
-            .padding(.vertical, compact ? 0 : 9)
+            .frame(height: compact ? 28 : Self.barHeight)
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
@@ -512,19 +579,85 @@ struct AlbumArtworkNavigator: View {
         .background(Capsule().fill(Color.white.opacity(0.10)))
     }
 
-    private func pillButton(label: String, icon: String? = nil, highlighted: Bool = false, action: @escaping () -> Void) -> some View {
+    private func pillButton(label: String, icon: String? = nil, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 6) {
                 if let icon, icon == "chevron.left" { Image(systemName: icon) }
                 Text(label).font(CarbonFont.mono(9.5, weight: .bold)).tracking(1.5)
                 if let icon, icon == "chevron.right" { Image(systemName: icon) }
             }
-            .foregroundStyle(highlighted ? theme.orange : .white.opacity(0.85))
+            .foregroundStyle(.white.opacity(0.85))
             .padding(.horizontal, 18)
-            .padding(.vertical, 9)
-            .background(Capsule().fill(Color.white.opacity(highlighted ? 0.20 : 0.10)))
+            .frame(height: Self.barHeight)
+            .background(Capsule().fill(Color.white.opacity(0.10)))
         }
         .buttonStyle(.carbonHover)
+    }
+
+    // MARK: - This page
+
+    private var albumFolder: URL? {
+        album.tracks.first?.track.fileURL.deletingLastPathComponent()
+    }
+
+    /// The synthetic cover has no file behind it, and the tray page is two files
+    /// composited — neither is one image you can hide or throw away.
+    private var canEditCurrentPage: Bool {
+        current?.imageURL != nil && current?.kind != .tray
+    }
+
+    /// Take the page out of the viewer without touching the file: `.ignore` is
+    /// the role the catalog already reads to skip an image, and it is what the
+    /// ART tab's picker calls "Ignore" — so hiding here and hiding there are the
+    /// same edit rather than two ideas.
+    private func hideCurrentPage() {
+        guard let url = current?.imageURL, let folder = albumFolder else { return }
+        var manifest = ArtworkManifest.load(from: folder) ?? ArtworkManifest()
+        manifest.roles[url.lastPathComponent] = .ignore
+        do {
+            try manifest.save(to: folder)
+        } catch {
+            model.appAlert = .error(
+                title: "Couldn't hide that image",
+                message: "Writing to “\(folder.lastPathComponent)” failed: \(error.localizedDescription)"
+            )
+            return
+        }
+        artworkFolderChanged(folder)
+    }
+
+    private func deleteCurrentPage() {
+        guard let url = current?.imageURL, let folder = albumFolder else { return }
+        do {
+            try FileManager.default.trashItem(at: url, resultingItemURL: nil)
+        } catch {
+            model.appAlert = .error(
+                title: "Couldn't move that image to the Trash",
+                message: "“\(url.lastPathComponent)” stayed put: \(error.localizedDescription)"
+            )
+            return
+        }
+        var manifest = ArtworkManifest.load(from: folder) ?? ArtworkManifest()
+        let name = url.lastPathComponent
+        manifest.roles[name] = nil
+        manifest.discSides?[name] = nil
+        manifest.discNumbers?[name] = nil
+        try? manifest.save(to: folder)
+        artworkFolderChanged(folder)
+    }
+
+    /// This folder's art just changed on disk. The notification is the same one
+    /// the ART tab posts on SAVE, and this view listens for it — so the viewer
+    /// rebuilds its own pages through exactly one path.
+    private func artworkFolderChanged(_ folder: URL) {
+        model.indexDiskCache.invalidate(
+            albumFolderPath: folder.path,
+            filePaths: album.tracks.map { $0.track.fileURL.path }
+        )
+        model.refreshLibrary()
+        NotificationCenter.default.post(
+            name: NSNotification.Name("CrateDiggerArtworkImported"), object: nil
+        )
     }
 
     // MARK: - Floating panel controls (compact, pinned at the bottom)
@@ -539,7 +672,7 @@ struct AlbumArtworkNavigator: View {
     /// straight on light artwork.
     private var floatingControls: some View {
         HStack(spacing: 6) {
-            iconPill("chevron.left") { step(-1) }.disabled(pages.count <= 1)
+            iconPill("chevron.left") { step(-1) }.disabled(pages.count <= 1).opacity(pages.count <= 1 ? 0.35 : 1)
 
             Text(current?.label.uppercased() ?? "—")
                 .font(CarbonFont.mono(9, weight: .bold))
@@ -549,7 +682,7 @@ struct AlbumArtworkNavigator: View {
                 .frame(minWidth: 62)          // steady width so paging doesn't shuffle the row
                 .multilineTextAlignment(.center)
 
-            iconPill("chevron.right") { step(1) }.disabled(pages.count <= 1)
+            iconPill("chevron.right") { step(1) }.disabled(pages.count <= 1).opacity(pages.count <= 1 ? 0.35 : 1)
 
             Rectangle()
                 .fill(Color.white.opacity(0.16))
@@ -570,12 +703,12 @@ struct AlbumArtworkNavigator: View {
         .fixedSize()
     }
 
-    private func iconPill(_ systemName: String, action: @escaping () -> Void) -> some View {
+    private func iconPill(_ systemName: String, size: CGFloat = 28, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: 11, weight: .bold))
                 .foregroundStyle(.white.opacity(0.85))
-                .frame(width: 30, height: 28)
+                .frame(width: size + 6, height: size)
                 .background(Capsule().fill(Color.white.opacity(0.10)))
         }
         .buttonStyle(.carbonHover)
@@ -600,10 +733,12 @@ struct AlbumArtworkNavigator: View {
         dragPan = .zero
     }
 
+    /// Turning a page re-centres the image but keeps the zoom: comparing the
+    /// same corner of two scans is the whole reason to be at 100 %, and dropping
+    /// back to FIT on every step made that impossible.
     private func resetView() {
         pan = .zero
         dragPan = .zero
-        zoom = .fit
     }
 
     private func panGesture(display: CGSize, viewport: CGSize) -> some Gesture {
@@ -666,6 +801,9 @@ struct AlbumArtworkNavigator: View {
 
     private func installKeyMonitor() {
         eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            // The Trash confirmation owns the keyboard while it is up: Esc must
+            // cancel the dialog, not close the viewer out from under it.
+            guard !confirmingDelete else { return event }
             switch event.keyCode {
             case 53: onClose(); return nil          // Esc
             case 123: step(-1); return nil          // ←

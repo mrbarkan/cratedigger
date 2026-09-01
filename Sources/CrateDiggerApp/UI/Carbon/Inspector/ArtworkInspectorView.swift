@@ -201,7 +201,7 @@ struct ArtworkInspectorView: View {
 
             Divider().background(theme.isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.1))
 
-            if hasPending { pendingBar }
+            if hasPending || fetching != nil { pendingBar }
 
             ScrollView {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 100, maximum: 120), spacing: 14)], spacing: 14) {
@@ -221,9 +221,16 @@ struct ArtworkInspectorView: View {
             loadStaging()
             isDirty = false
         }
-        .task(id: imageURLs) {
+        // Each chunk of a background fetch lands a few more files in the
+        // staging folder; pick them up so the grid fills in as they arrive
+        // instead of all at once when it finishes.
+        .onChange(of: model.artworkFetch) { _ in loadStaging() }
+        // Staged files are thumbnailed too. They are what the grid shows as
+        // NEW, and leaving them out of this load spun a placeholder forever —
+        // the image only appeared once SAVE moved it into `imageURLs`.
+        .task(id: imageURLs + stagedURLs) {
             var loaded: [URL: NSImage] = [:]
-            for url in imageURLs {
+            for url in imageURLs + stagedURLs {
                 if let nsImage = await loadThumbnail(url: url, maxPixelSize: 300) {
                     loaded[url] = nsImage
                 }
@@ -278,7 +285,10 @@ struct ArtworkInspectorView: View {
         // files and marks are on disk, so the warning points at something you
         // can still finish rather than reporting a loss.
         .onDisappear {
-            guard hasPending, let album else { return }
+            // Not while images are still arriving: "N unsaved changes" is a
+            // report on a finished state, and the fetch's own notice is what
+            // says when that is.
+            guard hasPending, fetching == nil, let album else { return }
             model.appAlert = .error(
                 title: "Artwork still pending",
                 message: "\(pendingCount) unsaved change\(pendingCount == 1 ? "" : "s") for “\(album.title)”. They're kept — reopen the ART tab and press SAVE, or DISCARD."
@@ -288,22 +298,47 @@ struct ArtworkInspectorView: View {
 
     // MARK: - Pending session
 
-    /// The one line that says the album folder has not been touched yet.
+    /// A background fetch filling *this* album's staging folder. Another
+    /// album's fetch is none of this pane's business.
+    private var fetching: ArtworkFetchProgress? {
+        guard let progress = model.artworkFetch, progress.albumID == album?.id else { return nil }
+        return progress
+    }
+
+    /// The one line that says the album folder has not been touched yet — or,
+    /// while images are still coming down, how far along that is. One message
+    /// at a time: the inspector is a narrow pane, and DISCARD is the wrong
+    /// offer to make while files are still landing.
     private var pendingBar: some View {
         HStack(spacing: 8) {
             Circle().fill(theme.orange).frame(width: 6, height: 6)
-            Text("\(pendingCount) PENDING")
-                .font(CarbonFont.mono(8.5, weight: .bold))
-                .tracking(1.2)
-                .foregroundStyle(theme.orange)
-            Text("nothing is written until you save")
-                .font(CarbonFont.mono(8.5))
-                .foregroundStyle(theme.ink4)
-            Spacer(minLength: 4)
-            Button("DISCARD") { confirmingDiscard = true }
-                .buttonStyle(.carbonHover)
-                .font(CarbonFont.mono(8.5, weight: .bold))
-                .foregroundStyle(theme.ink3)
+            if let fetching {
+                Text(fetching.label)
+                    .font(CarbonFont.mono(8.5, weight: .bold))
+                    .tracking(1.2)
+                    .foregroundStyle(theme.orange)
+                ProgressView(value: fetching.fraction)
+                    .progressViewStyle(.linear)
+                    .tint(theme.orange)
+                    .frame(maxWidth: 70)
+                Text("keep browsing")
+                    .font(CarbonFont.mono(8.5))
+                    .foregroundStyle(theme.ink4)
+                Spacer(minLength: 4)
+            } else {
+                Text("\(pendingCount) PENDING")
+                    .font(CarbonFont.mono(8.5, weight: .bold))
+                    .tracking(1.2)
+                    .foregroundStyle(theme.orange)
+                Text("nothing is written until you save")
+                    .font(CarbonFont.mono(8.5))
+                    .foregroundStyle(theme.ink4)
+                Spacer(minLength: 4)
+                Button("DISCARD") { confirmingDiscard = true }
+                    .buttonStyle(.carbonHover)
+                    .font(CarbonFont.mono(8.5, weight: .bold))
+                    .foregroundStyle(theme.ink3)
+            }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 6)
