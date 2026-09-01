@@ -745,6 +745,11 @@ struct ArtworkInspectorView: View {
         let stagingFolder = ArtworkStaging.folder(forAlbumFolder: folder)
         var updated = manifest
         if let releaseMBID = staging.releaseMBID { updated.releaseMBID = releaseMBID }
+        // Read out here, on the main actor, for the same reason `updated` is:
+        // the detached task below reaching into the view's `staging` is a race
+        // the compiler warns about today and rejects outright under Swift 6.
+        let stagedRoles = staging.roles
+        let stagedDiscNumbers = staging.discNumbers
 
         Task {
             let outcome = await Task.detached(priority: .userInitiated) { () -> Result<ArtworkManifest, Error> in
@@ -768,8 +773,8 @@ struct ArtworkInspectorView: View {
                         let to = folder.appendingPathComponent(write.finalName)
                         if fm.fileExists(atPath: to.path) { try fm.removeItem(at: to) }
                         try fm.copyItem(at: from, to: to)
-                        manifest.roles[write.finalName] = staging.roles[write.stagedName] ?? .auto
-                        if let disc = staging.discNumbers[write.stagedName] {
+                        manifest.roles[write.finalName] = stagedRoles[write.stagedName] ?? .auto
+                        if let disc = stagedDiscNumbers[write.stagedName] {
                             var discs = manifest.discNumbers ?? [:]
                             discs[write.finalName] = disc
                             manifest.discNumbers = discs
