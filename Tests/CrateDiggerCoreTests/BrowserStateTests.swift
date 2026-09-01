@@ -174,10 +174,13 @@ final class BrowserStateTests: XCTestCase {
         XCTAssertEqual(state.selectedArtistID, "existing", "a pre-existing anchor survives a select-all")
 
         // empty input changes nothing
-        state.selectedAlbumIDs = ["a1"]
         state.selectAllArtists([])
         XCTAssertEqual(state.selectedArtistIDs, ["ar1", "ar2"], "empty input is a no-op")
-        XCTAssertEqual(state.selectedAlbumIDs, ["a1"], "empty input must not touch the other sets either")
+
+        // one column owns the set: picking in another column moves it there
+        state.selectedAlbumIDs = ["a1"]
+        XCTAssertEqual(state.selectedAlbumIDs, ["a1"])
+        XCTAssertTrue(state.selectedArtistIDs.isEmpty, "the set moved to the other column")
     }
 
     func testSelectAllAlbumsClearsOtherSetsKeepsAnExistingAnchorAndNoOpsOnEmpty() {
@@ -198,10 +201,13 @@ final class BrowserStateTests: XCTestCase {
         XCTAssertEqual(state.selectedAlbumID, "existing", "a pre-existing anchor survives a select-all")
 
         // empty input changes nothing
-        state.selectedArtistIDs = ["ar1"]
         state.selectAllAlbums([])
         XCTAssertEqual(state.selectedAlbumIDs, ["a1", "a2"], "empty input is a no-op")
-        XCTAssertEqual(state.selectedArtistIDs, ["ar1"], "empty input must not touch the other sets either")
+
+        // one column owns the set: picking in another column moves it there
+        state.selectedArtistIDs = ["ar1"]
+        XCTAssertEqual(state.selectedArtistIDs, ["ar1"])
+        XCTAssertTrue(state.selectedAlbumIDs.isEmpty, "the set moved to the other column")
     }
 
     func testSelectAllTracksClearsOtherSetsKeepsAnExistingAnchorAndNoOpsOnEmpty() {
@@ -223,10 +229,13 @@ final class BrowserStateTests: XCTestCase {
         XCTAssertEqual(state.selectedTrackID, existingAnchor, "a pre-existing anchor survives a select-all")
 
         // empty input changes nothing
-        state.selectedArtistIDs = ["ar1"]
         state.selectAllTracks([])
         XCTAssertEqual(state.selectedTrackIDs, Set(tracks.map { $0.track.id }), "empty input is a no-op")
-        XCTAssertEqual(state.selectedArtistIDs, ["ar1"], "empty input must not touch the other sets either")
+
+        // one column owns the set: picking in another column moves it there
+        state.selectedArtistIDs = ["ar1"]
+        XCTAssertEqual(state.selectedArtistIDs, ["ar1"])
+        XCTAssertTrue(state.selectedTrackIDs.isEmpty, "the set moved to the other column")
     }
 
     // MARK: - Sort
@@ -344,6 +353,94 @@ final class BrowserStateTests: XCTestCase {
         XCTAssertNil(state.selectedArtistID)
         XCTAssertNil(state.selectedAlbumID)
         XCTAssertNil(state.selectedTrackID)
+    }
+
+    // MARK: - Generic columns
+
+    /// The same two-artist index, browsed as Genre · Artist · Track. Both
+    /// tracks are untagged, so there is one genre row.
+    private func genreView() -> (BrowserState, LibraryIndex) {
+        var state = BrowserState()
+        state.view = BrowserView([.genre, .artist, .track])
+        return (state, indexFixture())
+    }
+
+    func testSettingTheViewReshapesTheAnchors() {
+        var state = BrowserState()
+        XCTAssertEqual(state.selection.anchors.count, 3)
+        state.view = BrowserView([.genre, .track])
+        XCTAssertEqual(state.selection.anchors.count, 2)
+        XCTAssertNil(state.selection.multiSelection, "a new shape drops the set")
+    }
+
+    func testAClickClearsTheAnchorsToItsRight() {
+        var (state, _) = genreView()
+        state.selection.anchors = ["", "ar2", "x"]
+        state.select(column: 0, id: "", command: false, shift: false, ordered: [""])
+        XCTAssertEqual(state.selection.anchors[0], "")
+        XCTAssertNil(state.selection.anchors[1])
+        XCTAssertNil(state.selection.anchors[2])
+    }
+
+    func testReanchorFillsClearedAnchorsWithTheFirstRow() {
+        var (state, index) = genreView()
+        state.select(column: 0, id: "", command: false, shift: false, ordered: [""])
+        let columns = state.reanchor(in: index)
+        XCTAssertEqual(state.selection.anchors[1], "ar1", "first artist under the genre")
+        XCTAssertEqual(state.selection.anchors[2], index.allTracks[0].track.id.uuidString)
+        XCTAssertEqual(columns.count, 3, "reanchor hands back the columns it computed")
+    }
+
+    func testCommandClickInAnotherColumnMovesTheSet() {
+        var (state, _) = genreView()
+        state.select(column: 1, id: "ar1", command: true, shift: false, ordered: ["ar1", "ar2"])
+        XCTAssertEqual(state.selection.multiSelection, .init(column: 1, ids: ["ar1"]))
+        state.select(column: 0, id: "", command: true, shift: false, ordered: [""])
+        XCTAssertEqual(state.selection.multiSelection?.column, 0, "one column owns the set")
+    }
+
+    func testShiftClickRangesOverTheColumnsOrder() {
+        var (state, _) = genreView()
+        state.select(column: 1, id: "ar1", command: false, shift: false, ordered: ["ar1", "ar2"])
+        state.select(column: 1, id: "ar2", command: false, shift: true, ordered: ["ar1", "ar2"])
+        XCTAssertEqual(state.selection.multiSelection?.ids, ["ar1", "ar2"])
+    }
+
+    func testSelectAllColumnTakesEveryRowAndAnchorsTheFirst() {
+        var (state, _) = genreView()
+        state.selectAll(column: 1, ids: ["ar1", "ar2"])
+        XCTAssertEqual(state.selection.multiSelection, .init(column: 1, ids: ["ar1", "ar2"]))
+        XCTAssertEqual(state.selection.anchors[1], "ar1")
+    }
+
+    /// The outside-in click: "Go to Current Song", the gallery, the condensed
+    /// browser. Every column's anchor comes from the track.
+    func testRevealSetsEveryAnchorFromTheTrack() {
+        var (state, index) = genreView()
+        let two = index.allTracks[1]
+        state.reveal(track: two, in: index)
+        XCTAssertEqual(state.selection.anchors, ["", "ar2", two.track.id.uuidString])
+        XCTAssertNil(state.selection.multiSelection)
+    }
+
+    /// The old names keep working over the new state, so the ~120 call sites
+    /// outside the browser do not move.
+    func testLegacyNamesForwardOntoTheColumns() {
+        var state = BrowserState()   // classic
+        state.selectedArtistID = "ar1"
+        state.selectedAlbumIDs = ["a1", "a2"]
+        XCTAssertEqual(state.selection.anchors[0], "ar1")
+        XCTAssertEqual(state.selection.multiSelection, .init(column: 1, ids: ["a1", "a2"]))
+        XCTAssertEqual(state.selectedAlbumIDs, ["a1", "a2"])
+        XCTAssertTrue(state.selectedArtistIDs.isEmpty, "the set belongs to the album column")
+    }
+
+    func testLegacyNamesAreEmptyWhenTheViewHasNoSuchColumn() {
+        var state = BrowserState()
+        state.view = BrowserView([.genre, .track])
+        state.selectedArtistID = "ar1"
+        XCTAssertNil(state.selectedArtistID, "nowhere to put it")
+        XCTAssertTrue(state.selectedArtistIDs.isEmpty)
     }
 }
 #endif

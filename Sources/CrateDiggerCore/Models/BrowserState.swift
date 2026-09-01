@@ -20,8 +20,8 @@ public struct BrowserSort<Field: Equatable & Sendable>: Sendable, Equatable {
     }
 }
 
-/// Everything the browser is currently showing you and how: what is picked and
-/// what order it is in.
+/// Everything the browser is currently showing you and how: what shape it
+/// has, what is picked in each column, and what order each column is in.
 ///
 /// This lived as roughly a dozen loose `@Published` properties on
 /// `LibraryViewModel` plus 177 lines of selection rules in an extension, which
@@ -30,35 +30,45 @@ public struct BrowserSort<Field: Equatable & Sendable>: Sendable, Equatable {
 /// something one type enforces rather than something several call sites happen
 /// to agree on.
 ///
-/// Phase 1's search lands in the `filter` seam left at the bottom.
+/// The columns are generic: `view` says what each shows, `selection` holds one
+/// anchor per column and at most one multi-selection set, owned by one column.
+/// The old names — `selectedArtistID`, `selectedAlbumIDs`, `selectArtist(…)` —
+/// are forwards onto whichever column shows that facet, so the ~120 call sites
+/// outside the browser did not have to move when the browser stopped being
+/// hard-wired to Artist · Album · Track.
 public struct BrowserState: Sendable, Equatable {
 
-    // MARK: Anchors
+    // MARK: Shape
+
+    /// What each column shows. Changing it reshapes the anchors and drops the
+    /// set: nothing picked in the old columns means anything in the new ones.
+    public var view: BrowserView = .classic {
+        didSet {
+            guard view != oldValue else { return }
+            selection = BrowserSelection(anchors: Array(repeating: nil, count: view.facets.count))
+        }
+    }
+
+    // MARK: Selection
     //
-    // The last thing clicked in each column. Drives drill-down (picking an
-    // artist moves the Album and Track columns) and is what a single selection
-    // reads from, which is why clearing the multi-selection leaves these alone:
-    // the browser always has to be showing something.
+    // One anchor per column — the last thing clicked there, what drill-down
+    // reads and what a single selection resolves to — and at most one set.
+    // Every click below writes the anchor and moves the set to that column,
+    // which is how "you pick artists, or records, or tracks, never a mixture"
+    // holds for any three facets.
 
-    public var selectedArtistID: String?
-    public var selectedAlbumID: String?
-    public var selectedTrackID: UUID?
-
-    // MARK: Multi-selection
-    //
-    // Mutually exclusive by construction: you are picking whole artists, or
-    // whole records, or individual tracks, never a mixture. Every select method
-    // below clears the other two sets first.
-
-    public var selectedArtistIDs: Set<String> = []
-    public var selectedAlbumIDs: Set<String> = []
-    public var selectedTrackIDs: Set<UUID> = []
+    public var selection = BrowserSelection(anchors: [nil, nil, nil])
 
     // MARK: Ordering
 
     public var trackSort = BrowserSort<TrackSortField>(field: .trackNumber)
     public var albumSort = BrowserSort<AlbumSortField>(field: .year)
     public var artistSort = BrowserSort<ArtistSortField>(field: .name)
+    public var valueSort = BrowserSort<ValueSortField>(field: .title)
+
+    public var sorts: BrowserSorts {
+        BrowserSorts(artist: artistSort, album: albumSort, track: trackSort, value: valueSort)
+    }
 
     public var focusedColumn: BrowserColumn = .track
 
@@ -70,156 +80,209 @@ public struct BrowserState: Sendable, Equatable {
 
     public init() {}
 
+    // MARK: - Columns by facet
+
+    public func column(of facet: BrowserFacet) -> Int? { view.column(of: facet) }
+
+    private func anchor(of facet: BrowserFacet) -> String? {
+        column(of: facet).flatMap { selection.anchor($0) }
+    }
+
+    /// A no-op when the view has no such column: there is nowhere to put it.
+    private mutating func setAnchor(_ id: String?, of facet: BrowserFacet) {
+        guard let column = column(of: facet) else { return }
+        selection.anchors[column] = id
+    }
+
+    private func set(of facet: BrowserFacet) -> Set<String> {
+        guard let column = column(of: facet),
+              let multi = selection.multiSelection, multi.column == column else { return [] }
+        return multi.ids
+    }
+
+    private mutating func setSet(_ ids: Set<String>, of facet: BrowserFacet) {
+        guard let column = column(of: facet) else { return }
+        if ids.isEmpty {
+            if selection.multiSelection?.column == column { selection.multiSelection = nil }
+        } else {
+            selection.multiSelection = BrowserSelection.MultiSelection(column: column, ids: ids)
+        }
+    }
+
+    // MARK: - The old names
+
+    public var selectedArtistID: String? {
+        get { anchor(of: .artist) }
+        set { setAnchor(newValue, of: .artist) }
+    }
+
+    public var selectedAlbumID: String? {
+        get { anchor(of: .album) }
+        set { setAnchor(newValue, of: .album) }
+    }
+
+    public var selectedTrackID: UUID? {
+        get { anchor(of: .track).flatMap(UUID.init(uuidString:)) }
+        set { setAnchor(newValue?.uuidString, of: .track) }
+    }
+
+    public var selectedArtistIDs: Set<String> {
+        get { set(of: .artist) }
+        set { setSet(newValue, of: .artist) }
+    }
+
+    public var selectedAlbumIDs: Set<String> {
+        get { set(of: .album) }
+        set { setSet(newValue, of: .album) }
+    }
+
+    public var selectedTrackIDs: Set<UUID> {
+        get { Set(set(of: .track).compactMap(UUID.init(uuidString:))) }
+        set { setSet(Set(newValue.map(\.uuidString)), of: .track) }
+    }
+
     // MARK: - Predicates
 
+    public func isSelected(column: Int, id: String) -> Bool {
+        if selection.anchor(column) == id { return true }
+        guard let multi = selection.multiSelection, multi.column == column else { return false }
+        return multi.ids.contains(id)
+    }
+
     public func isArtistSelected(_ id: String) -> Bool {
-        selectedArtistIDs.contains(id) || selectedArtistID == id
+        column(of: .artist).map { isSelected(column: $0, id: id) } ?? false
     }
 
     public func isAlbumSelected(_ id: String) -> Bool {
-        selectedAlbumIDs.contains(id) || selectedAlbumID == id
+        column(of: .album).map { isSelected(column: $0, id: id) } ?? false
     }
 
     public func isTrackSelected(_ id: UUID) -> Bool {
-        selectedTrackIDs.contains(id) || selectedTrackID == id
+        column(of: .track).map { isSelected(column: $0, id: id.uuidString) } ?? false
     }
 
     public mutating func clearMultiSelection() {
-        selectedArtistIDs = []
-        selectedAlbumIDs = []
-        selectedTrackIDs = []
+        selection.multiSelection = nil
     }
 
     // MARK: - Clicks
 
-    /// Artist-column click with modifier keys. Clears the album/track sets,
-    /// updates the anchor, and drills into the artist so the Album and Track
-    /// columns follow.
-    /// - Parameter ordered: the artists in their current display order, which is
+    /// A click in any column with modifier keys. Writes the anchor, moves the
+    /// set here, and clears every anchor to the right: their populations just
+    /// changed, and `reanchor` puts them on the first row of the new ones.
+    /// - Parameter ordered: the column's row ids in display order, which is
     ///   what a shift-range is measured against.
+    public mutating func select(column: Int, id: String, command: Bool, shift: Bool, ordered: [String]) {
+        guard selection.anchors.indices.contains(column) else { return }
+        if command {
+            var ids = selection.multiSelection?.column == column ? (selection.multiSelection?.ids ?? []) : []
+            if ids.contains(id) { ids.remove(id) } else { ids.insert(id) }
+            selection.multiSelection = BrowserSelection.MultiSelection(column: column, ids: ids)
+        } else if shift, let anchor = selection.anchors[column],
+                  let a = ordered.firstIndex(of: anchor),
+                  let b = ordered.firstIndex(of: id) {
+            selection.multiSelection = BrowserSelection.MultiSelection(column: column, ids: Set(ordered[min(a, b)...max(a, b)]))
+        } else {
+            selection.multiSelection = BrowserSelection.MultiSelection(column: column, ids: [id])
+        }
+        selection.anchors[column] = id
+        for right in selection.anchors.indices where right > column {
+            selection.anchors[right] = nil
+        }
+    }
+
+    /// Artist-column click. Drills into the artist immediately when the
+    /// columns to its right are the classic Album then Track, so a click lands
+    /// with the next columns already anchored, as it always has.
     public mutating func selectArtist(_ artist: Artist, command: Bool, shift: Bool, ordered: [Artist]) {
-        let id = artist.id
-        selectedAlbumIDs = []
-        selectedTrackIDs = []
-        if command {
-            if selectedArtistIDs.contains(id) { selectedArtistIDs.remove(id) } else { selectedArtistIDs.insert(id) }
-        } else if shift, let anchor = selectedArtistID,
-                  let a = ordered.firstIndex(where: { $0.id == anchor }),
-                  let b = ordered.firstIndex(where: { $0.id == id }) {
-            selectedArtistIDs = Set(ordered[min(a, b)...max(a, b)].map(\.id))
-        } else {
-            selectedArtistIDs = [id]
+        guard let column = column(of: .artist) else { return }
+        select(column: column, id: artist.id, command: command, shift: shift, ordered: ordered.map(\.id))
+        let firstAlbum = artist.albums.first
+        if let albumColumn = self.column(of: .album), albumColumn == column + 1 {
+            selection.anchors[albumColumn] = firstAlbum?.id
+            if let trackColumn = self.column(of: .track), trackColumn == albumColumn + 1 {
+                selection.anchors[trackColumn] = firstAlbum?.tracks.first?.track.id.uuidString
+            }
+        } else if let trackColumn = self.column(of: .track), trackColumn == column + 1 {
+            selection.anchors[trackColumn] = firstAlbum?.tracks.first?.track.id.uuidString
         }
-        selectedArtistID = id
-        selectedAlbumID = artist.albums.first?.id
-        selectedTrackID = artist.albums.first?.tracks.first?.track.id
     }
 
-    /// Album-column click with modifier keys. Clears the artist/track sets,
-    /// updates the anchor, and drills into the album so the Track column
-    /// follows the last click.
-    /// - Parameter flat: true in the flat Album/Track layout, where there is no
-    ///   Artist column to have set the artist anchor already.
+    /// Album-column click.
+    /// - Parameter flat: true when the click came from somewhere that did not
+    ///   go through the Artist column (the gallery, the old Album · Track
+    ///   layout), so the artist anchor is set from the album to keep the
+    ///   cascade containing it.
     public mutating func selectAlbum(_ album: Album, command: Bool, shift: Bool, ordered: [Album], flat: Bool) {
-        let id = album.id
-        selectedArtistIDs = []
-        selectedTrackIDs = []
-        if command {
-            if selectedAlbumIDs.contains(id) { selectedAlbumIDs.remove(id) } else { selectedAlbumIDs.insert(id) }
-        } else if shift, let anchor = selectedAlbumID,
-                  let a = ordered.firstIndex(where: { $0.id == anchor }),
-                  let b = ordered.firstIndex(where: { $0.id == id }) {
-            selectedAlbumIDs = Set(ordered[min(a, b)...max(a, b)].map(\.id))
-        } else {
-            selectedAlbumIDs = [id]
+        guard let column = column(of: .album) else { return }
+        select(column: column, id: album.id, command: command, shift: shift, ordered: ordered.map(\.id))
+        if flat { setAnchor(album.artistID, of: .artist) }
+        if let trackColumn = self.column(of: .track), trackColumn == column + 1 {
+            selection.anchors[trackColumn] = album.tracks.first?.track.id.uuidString
         }
-        if flat { selectedArtistID = album.artistID }
-        selectedAlbumID = id
-        selectedTrackID = album.tracks.first?.track.id
     }
 
-    /// Track-column click with modifier keys. Clears the artist/album sets and
-    /// updates the anchor.
+    /// Track-column click.
     public mutating func selectTrack(_ loaded: LoadedTrack, command: Bool, shift: Bool, ordered: [LoadedTrack]) {
-        let id = loaded.track.id
-        selectedArtistIDs = []
-        selectedAlbumIDs = []
-        if command {
-            if selectedTrackIDs.contains(id) { selectedTrackIDs.remove(id) } else { selectedTrackIDs.insert(id) }
-        } else if shift, let anchor = selectedTrackID,
-                  let a = ordered.firstIndex(where: { $0.track.id == anchor }),
-                  let b = ordered.firstIndex(where: { $0.track.id == id }) {
-            selectedTrackIDs = Set(ordered[min(a, b)...max(a, b)].map { $0.track.id })
-        } else {
-            selectedTrackIDs = [id]
-        }
-        selectedTrackID = id
+        guard let column = column(of: .track) else { return }
+        select(column: column, id: loaded.track.id.uuidString, command: command, shift: shift,
+               ordered: ordered.map { $0.track.id.uuidString })
     }
 
     // MARK: - Select all
 
+    /// Every row of a column, anchored on the first if nothing was.
+    public mutating func selectAll(column: Int, ids: [String]) {
+        guard !ids.isEmpty, selection.anchors.indices.contains(column) else { return }
+        selection.multiSelection = BrowserSelection.MultiSelection(column: column, ids: Set(ids))
+        if selection.anchors[column] == nil { selection.anchors[column] = ids.first }
+    }
+
     public mutating func selectAllArtists(_ artists: [Artist]) {
-        guard !artists.isEmpty else { return }
-        selectedAlbumIDs = []
-        selectedTrackIDs = []
-        selectedArtistIDs = Set(artists.map(\.id))
-        if selectedArtistID == nil { selectedArtistID = artists.first?.id }
+        guard let column = column(of: .artist) else { return }
+        selectAll(column: column, ids: artists.map(\.id))
     }
 
     public mutating func selectAllAlbums(_ albums: [Album]) {
-        guard !albums.isEmpty else { return }
-        selectedArtistIDs = []
-        selectedTrackIDs = []
-        selectedAlbumIDs = Set(albums.map(\.id))
-        if selectedAlbumID == nil { selectedAlbumID = albums.first?.id }
+        guard let column = column(of: .album) else { return }
+        selectAll(column: column, ids: albums.map(\.id))
     }
 
     public mutating func selectAllTracks(_ tracks: [LoadedTrack]) {
-        guard !tracks.isEmpty else { return }
-        selectedArtistIDs = []
-        selectedAlbumIDs = []
-        selectedTrackIDs = Set(tracks.map { $0.track.id })
-        if selectedTrackID == nil { selectedTrackID = tracks.first?.track.id }
+        guard let column = column(of: .track) else { return }
+        selectAll(column: column, ids: tracks.map { $0.track.id.uuidString })
     }
 
-    // MARK: - Re-anchoring
+    // MARK: - Re-anchoring and revealing
 
-    /// Point every anchor at something the index actually contains.
+    /// Point every anchor at something its column actually contains, and
+    /// trim the set to rows that are still on screen.
     ///
     /// An anchor that is still there stays; one that is not moves to the first
-    /// artist, its first album and that album's first track. The
-    /// multi-selection sets are cleared outright: a selection you cannot see is
-    /// one that can still be converted, retagged or added to a crate, which is
-    /// the worst way to find out it survived.
+    /// row of its column, left to right, so each column is re-derived under
+    /// the anchor the previous one settled on. The set keeps only ids its
+    /// column still shows and goes away when none are left: a selection you
+    /// cannot see is one that can still be converted, retagged or added to a
+    /// crate, which is the worst way to find out it survived.
     ///
-    /// Called on a source switch (where this used to live inline) and after
-    /// every change to `filter`, which hides rows the same way a new source
-    /// does.
-    public mutating func reanchor(in index: LibraryIndex) {
-        clearMultiSelection()
+    /// Returns the columns it computed on the way, so a caller that needs
+    /// them (the view model does) does not pay for the cascade twice.
+    @discardableResult
+    public mutating func reanchor(in index: LibraryIndex,
+                                  sorts: BrowserSorts? = nil,
+                                  context: FacetContext? = nil) -> [ColumnContent] {
+        let (settled, columns) = BrowserCascade.reanchored(
+            selection, view: view, in: index,
+            sorts: sorts ?? self.sorts, context: context ?? FacetContext(index: index))
+        selection = settled
+        return columns
+    }
 
-        if let id = selectedArtistID, index.artist(id: id) != nil {
-            // Anchor survives; its album/track anchors are checked below.
-        } else {
-            selectedArtistID = index.artists.first?.id
-        }
-
-        let artist = selectedArtistID.flatMap { index.artist(id: $0) }
-        // `albumOrVersion`, not `album`: a member pressing inside a grouped
-        // release is a legal anchor, and resolving it as missing would bounce
-        // the browser off the version row the user just clicked.
-        if let id = selectedAlbumID, index.albumOrVersion(id: id) != nil {
-            // Keep it.
-        } else {
-            selectedAlbumID = artist?.albums.first?.id
-        }
-
-        let album = selectedAlbumID.flatMap { index.albumOrVersion(id: $0) }
-        if let id = selectedTrackID, index.allTracks.contains(where: { $0.track.id == id }) {
-            // Keep it.
-        } else {
-            selectedTrackID = album?.tracks.first?.track.id
-        }
+    /// The outside-in click — "Go to Current Song", the gallery, the condensed
+    /// browser: every column's anchor comes from the track, and the set goes.
+    public mutating func reveal(track loaded: LoadedTrack, in index: LibraryIndex, context: FacetContext? = nil) {
+        let context = context ?? FacetContext(index: index)
+        selection = BrowserSelection(anchors: view.facets.map { $0.key(of: loaded, context: context) })
     }
 }
 
@@ -262,7 +325,7 @@ public struct BrowserFilter: Sendable, Equatable {
 
     /// Case- and diacritic-folded, so `bjork` finds Björk and `MILES` finds
     /// Miles. Folding once per field beats folding once per comparison.
-    private static func fold(_ text: String) -> String {
+    static func fold(_ text: String) -> String {
         text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
     }
 
