@@ -388,10 +388,15 @@ final class LibraryViewModel: ObservableObject {
     /// Transient confirmation shown on the OLED glass (tag saves etc.) instead
     /// of a modal alert; auto-clears after a couple of seconds.
     @Published var oledNotice: String?
+    /// Whether the current notice pulses for attention (see `showOLEDNotice`).
+    @Published var oledNoticeBlinks = false
     private var oledNoticeClearTask: Task<Void, Never>?
     // Not private(set): transient UI state — LibraryViewModel+BatchArtwork
     // marks/clears albums from a different file while a fetch is in flight.
     @Published var albumsFetchingArtwork: Set<String> = []
+    /// A running artwork fetch, so the ART tab can show what it is up to and
+    /// the user can walk away from it.
+    @Published var artworkFetch: ArtworkFetchProgress?
 
     /// Global activity registry driving the header status LED. Anything
     /// long-running registers a label; the LED lights while any are active
@@ -2201,13 +2206,19 @@ final class LibraryViewModel: ObservableObject {
 
     /// Flash a short confirmation on the OLED rail. Repeated calls (batch tag
     /// saves) just restart the clear timer.
-    func showOLEDNotice(_ text: String) {
+    ///
+    /// `blinking` is for the notices nobody is waiting for: background work
+    /// that finished while the user was somewhere else in the app needs to
+    /// catch the eye, where a tag save they just asked for does not.
+    func showOLEDNotice(_ text: String, blinking: Bool = false, seconds: Double = 2.5) {
         oledNotice = text
+        oledNoticeBlinks = blinking
         oledNoticeClearTask?.cancel()
         oledNoticeClearTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
             guard !Task.isCancelled else { return }
             self?.oledNotice = nil
+            self?.oledNoticeBlinks = false
         }
     }
 
@@ -2713,55 +2724,129 @@ final class LibraryViewModel: ObservableObject {
         index = buildIndex(updatedTracks)
     }
 
-    /// Fetch chosen artwork into this album's *staging* folder. Nothing in the
-    /// library changes: the ART tab shows what's waiting, and SAVE there is
-    /// what writes it. Returns how many images landed.
-    @discardableResult
-    func stageArtwork(
+    /// Fetch chosen artwork into this album's *staging* folder, in the
+    /// background. Nothing in the library changes: the ART tab shows what's
+    /// waiting, and SAVE there is what writes it.
+    ///
+    /// It used to be awaited behind a modal spinner, which for a 27-scan
+    /// Cover Art Archive release meant a locked window for the best part of a
+    /// minute. Nothing here needs the user present: the panel closes, the ART
+    /// tab reports progress, the status lamp stays lit, and the OLED says when
+    /// it is done. Roles are written after every image rather than once at the
+    /// end, so quitting mid-fetch keeps the choices for what already landed.
+    func stageArtworkInBackground(
         images: [(url: URL, role: ArtworkRole, suggestedFilename: String, discNumber: Int?)],
         for album: Album,
         releaseMBID: String? = nil
-    ) async -> Int {
-        let activity = beginActivity("Fetching artwork…")
-        defer { endActivity(activity) }
-        guard let representative = album.tracks.first?.track.fileURL else { return 0 }
+    ) {
+        guard let representative = album.tracks.first?.track.fileURL, !images.isEmpty else { return }
         let albumFolder = representative.deletingLastPathComponent()
 
         var info = ArtworkStaging.info(forAlbumFolder: albumFolder)
         if let releaseMBID { info.releaseMBID = releaseMBID }
 
-        let existing = Set(ArtworkStaging.stagedFiles(forAlbumFolder: albumFolder).map(\.lastPathComponent))
-        let staged: [(name: String, role: ArtworkRole, disc: Int?)] = await Task.detached(priority: .userInitiated) {
-            guard let stagingFolder = try? ArtworkStaging.makeFolder(forAlbumFolder: albumFolder) else { return [] }
-            var claimed = existing
-            var landed: [(name: String, role: ArtworkRole, disc: Int?)] = []
-
-            for item in images {
-                // A file the user picked is read straight off disk; URLSession
-                // is for the ones that came over the wire.
-                let data: Data?
-                if item.url.isFileURL {
-                    data = try? Data(contentsOf: item.url)
-                } else {
-                    data = try? await URLSession.shared.data(from: item.url).0
-                }
-                guard let data, !data.isEmpty else { continue }
-
-                let name = ArtworkCommitPlanner.uniqueName(for: item.suggestedFilename, avoiding: claimed)
-                claimed.insert(name)
-                guard (try? data.write(to: stagingFolder.appendingPathComponent(name), options: .atomic)) != nil
-                else { continue }
-                landed.append((name, item.role, item.discNumber))
-            }
-            return landed
-        }.value
-
-        for file in staged {
-            info.roles[file.name] = file.role
-            if file.role == .disc, let disc = file.disc { info.discNumbers[file.name] = disc }
+        // Names are claimed up front, on the main actor, so the downloads can
+        // land in any order without two of them racing for "booklet_03.jpg".
+        var claimed = Set(ArtworkStaging.stagedFiles(forAlbumFolder: albumFolder).map(\.lastPathComponent))
+        let jobs: [(url: URL, name: String, role: ArtworkRole, disc: Int?)] = images.map { item in
+            let name = ArtworkCommitPlanner.uniqueName(for: item.suggestedFilename, avoiding: claimed)
+            claimed.insert(name)
+            return (item.url, name, item.role, item.discNumber)
         }
-        ArtworkStaging.saveInfo(info, forAlbumFolder: albumFolder)
-        return staged.count
+
+        artworkFetch = ArtworkFetchProgress(albumID: album.id, albumTitle: album.title,
+                                            done: 0, total: jobs.count)
+        let activity = beginActivity("Fetching artwork…")
+
+        Task { @MainActor [weak self] in
+            defer { self?.endActivity(activity) }
+            guard let stagingFolder = try? ArtworkStaging.makeFolder(forAlbumFolder: albumFolder) else {
+                self?.artworkFetch = nil
+                self?.appAlert = .error(
+                    title: "Couldn't stage artwork",
+                    message: "CrateDigger couldn't open its staging folder, so nothing was fetched."
+                )
+                return
+            }
+
+            // Chunked rather than a sliding window, matching the batch cover
+            // search: one barrier per chunk costs a little throughput on a
+            // network-bound job and buys a loop anyone can read at 3am. Every
+            // main-actor mutation happens out here, between chunks.
+            var landed = 0
+            var start = 0
+            while start < jobs.count {
+                let chunk = Array(jobs[start..<min(start + Self.artworkFetchConcurrency, jobs.count)])
+                start += Self.artworkFetchConcurrency
+
+                let results = await withTaskGroup(of: (String, ArtworkRole, Int?, Bool).self) { group -> [(String, ArtworkRole, Int?, Bool)] in
+                    for job in chunk {
+                        group.addTask {
+                            let written = await Self.fetchStagedImage(
+                                from: job.url, to: stagingFolder.appendingPathComponent(job.name)
+                            )
+                            return (job.name, job.role, job.disc, written)
+                        }
+                    }
+                    var collected: [(String, ArtworkRole, Int?, Bool)] = []
+                    for await result in group { collected.append(result) }
+                    return collected
+                }
+
+                for (name, role, disc, ok) in results where ok {
+                    landed += 1
+                    info.roles[name] = role
+                    if role == .disc, let disc { info.discNumbers[name] = disc }
+                }
+                // Written per chunk, not once at the end: quitting mid-fetch
+                // then keeps the roles for everything that already landed.
+                ArtworkStaging.saveInfo(info, forAlbumFolder: albumFolder)
+                // Guarded by album: starting a second album's fetch takes over
+                // the progress slot, and this one must not keep counting into
+                // someone else's total.
+                if self?.artworkFetch?.albumID == album.id {
+                    self?.artworkFetch?.done += results.count
+                }
+            }
+
+            guard let self else { return }
+            if self.artworkFetch?.albumID == album.id { self.artworkFetch = nil }
+            // Anything showing this album's art re-reads the folder — the ART
+            // grid and an open artwork viewer both listen for this.
+            NotificationCenter.default.post(
+                name: NSNotification.Name("CrateDiggerArtworkImported"), object: nil
+            )
+
+            if landed == 0 {
+                self.appAlert = .error(
+                    title: "No artwork fetched",
+                    message: "None of the \(jobs.count) image\(jobs.count == 1 ? "" : "s") for “\(album.title)” could be downloaded. Check your connection and try again."
+                )
+            } else {
+                // Short on purpose: the notice is centred over the transport
+                // strip, and anything longer runs under the progress bar. Which
+                // album it was is on the ART tab, which is where it wants you.
+                self.showOLEDNotice("ARTWORK READY · \(landed)", blinking: true, seconds: 6)
+            }
+        }
+    }
+
+    /// How many images are fetched at once. Four is the same ceiling the batch
+    /// cover search uses: enough to hide the latency, not enough to look like a
+    /// scraper to the Cover Art Archive.
+    private static let artworkFetchConcurrency = 4
+
+    /// One image, off the main actor. A file the user picked is read straight
+    /// off disk; URLSession is for the ones that came over the wire.
+    private nonisolated static func fetchStagedImage(from source: URL, to destination: URL) async -> Bool {
+        let data: Data?
+        if source.isFileURL {
+            data = try? Data(contentsOf: source)
+        } else {
+            data = try? await URLSession.shared.data(from: source).0
+        }
+        guard let data, !data.isEmpty else { return false }
+        return (try? data.write(to: destination, options: .atomic)) != nil
     }
 
     /// Embed a small (≤600px, baseline/non-progressive JPEG) copy of the album's

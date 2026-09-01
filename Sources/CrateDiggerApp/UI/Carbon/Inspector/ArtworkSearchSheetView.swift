@@ -91,7 +91,6 @@ struct ArtworkSearchSheetView: View {
     @State private var imageRoles: [String: ArtRoleChoice] = [:] // imageURL string to role choice
     /// Last plain-clicked image, so ⇧-click can select the contiguous range.
     @State private var selectionAnchorID: String? = nil
-    @State private var isDownloading = false
 
     // Full-size preview shown over the grid (does not affect selection).
     @State private var previewImage: RemoteArtworkImage? = nil
@@ -150,32 +149,6 @@ struct ArtworkSearchSheetView: View {
                 .flatMap { ArtworkManifest.load(from: $0) }?
                 .releaseMBID
             executeSearch()
-        }
-        .overlay {
-            if isDownloading {
-                ZStack {
-                    Color.black.opacity(0.4)
-                        .ignoresSafeArea()
-                    
-                    VStack(spacing: 14) {
-                        ProgressView()
-                            .controlSize(.large)
-                        Text("FETCHING ARTWORK...")
-                            .font(CarbonFont.mono(10, weight: .bold))
-                            .tracking(1.5)
-                            .foregroundColor(.white)
-                        Text("They'll wait in the ART tab until you save")
-                            .font(CarbonFont.sans(11, weight: .regular))
-                            .foregroundColor(.white.opacity(0.7))
-                    }
-                    .padding(24)
-                    .background(theme.chassisDeep.opacity(0.9))
-                    .cornerRadius(8)
-                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.15), lineWidth: 1))
-                    .shadow(radius: 12)
-                }
-                .transition(.opacity)
-            }
         }
         .overlay {
             if let preview = previewImage {
@@ -1107,16 +1080,11 @@ struct ArtworkSearchSheetView: View {
             
             if showsGrid {
                 let downloads = compileDownloads()
-                if isDownloading {
-                    ProgressView()
-                        .controlSize(.small)
-                        .padding(.horizontal, 10)
-                } else {
-                    KeyButton(style: downloads.isEmpty ? .disabled : .selected, action: executeDownload) {
-                        Text("STAGE \(downloads.count) IMAGE\(downloads.count == 1 ? "" : "S")")
-                    }
-                    .frame(width: 140, height: geometry.keyHeight)
+                KeyButton(style: downloads.isEmpty ? .disabled : .selected, action: executeDownload) {
+                    Text("STAGE \(downloads.count) IMAGE\(downloads.count == 1 ? "" : "S")")
                 }
+                .frame(width: 140, height: geometry.keyHeight)
+                .help("Fetches in the background — carry on browsing, the ART tab shows the progress")
             }
         }
         .padding(14)
@@ -1358,21 +1326,17 @@ struct ArtworkSearchSheetView: View {
         return downloads
     }
 
+    /// Hand the fetch off and get out of the way.
+    ///
+    /// Staged, not imported: the ART tab is where you look at these and decide,
+    /// and its SAVE is what puts them in the album folder. The download itself
+    /// runs in the background — a full Cover Art Archive release is dozens of
+    /// scans, and holding the window hostage for it bought the user nothing.
     private func executeDownload() {
         let downloads = compileDownloads()
         guard !downloads.isEmpty else { return }
-        
-        isDownloading = true
-
-        Task {
-            // Staged, not imported: the ART tab is where you look at these and
-            // decide, and its SAVE is what puts them in the album folder.
-            await model.stageArtwork(images: downloads, for: album,
-                                     releaseMBID: selectedReleaseID)
-            await MainActor.run {
-                self.isDownloading = false
-                closePanel()
-            }
-        }
+        model.stageArtworkInBackground(images: downloads, for: album,
+                                       releaseMBID: selectedReleaseID)
+        closePanel()
     }
 }

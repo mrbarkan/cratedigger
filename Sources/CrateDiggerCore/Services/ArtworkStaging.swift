@@ -194,3 +194,28 @@ public enum ArtworkStaging {
         return now.timeIntervalSince(newest) > maxAge
     }
 }
+
+/// How far a background artwork fetch has got. Lives in Core so the count and
+/// the wording of "12 of 27" are one decidable value rather than a string built
+/// in two different views.
+public struct ArtworkFetchProgress: Equatable, Sendable {
+    public let albumID: String
+    public let albumTitle: String
+    public var done: Int
+    public let total: Int
+
+    public init(albumID: String, albumTitle: String, done: Int, total: Int) {
+        self.albumID = albumID
+        self.albumTitle = albumTitle
+        self.done = done
+        self.total = total
+    }
+
+    /// 0…1, and never divides by zero for an empty batch.
+    public var fraction: Double {
+        total > 0 ? min(1, Double(done) / Double(total)) : 0
+    }
+
+    /// The one line the ART tab shows: "FETCHING 12 OF 27".
+    public var label: String { "FETCHING \(min(done + 1, total)) OF \(total)" }
+}

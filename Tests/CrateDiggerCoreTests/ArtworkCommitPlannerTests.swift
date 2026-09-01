@@ -240,3 +240,27 @@ final class AlbumBookletRoleTests: XCTestCase {
         XCTAssertFalse(AlbumBooklet.isBookletRole(.ignore))
     }
 }
+
+/// The counter the ART tab shows while a background fetch is running.
+final class ArtworkFetchProgressTests: XCTestCase {
+    private func progress(done: Int, total: Int) -> ArtworkFetchProgress {
+        ArtworkFetchProgress(albumID: "a", albumTitle: "22, a Million", done: done, total: total)
+    }
+
+    func testCountsTheImageBeingFetched() {
+        XCTAssertEqual(progress(done: 0, total: 27).label, "FETCHING 1 OF 27")
+        XCTAssertEqual(progress(done: 11, total: 27).label, "FETCHING 12 OF 27")
+    }
+
+    /// The last chunk reports every one of its images at once, so `done` can
+    /// reach the total while the label is still on screen.
+    func testLabelNeverCountsPastTheTotal() {
+        XCTAssertEqual(progress(done: 27, total: 27).label, "FETCHING 27 OF 27")
+    }
+
+    func testFractionIsClampedAndSafeOnAnEmptyBatch() {
+        XCTAssertEqual(progress(done: 0, total: 0).fraction, 0)
+        XCTAssertEqual(progress(done: 40, total: 27).fraction, 1)
+        XCTAssertEqual(progress(done: 5, total: 10).fraction, 0.5)
+    }
+}
