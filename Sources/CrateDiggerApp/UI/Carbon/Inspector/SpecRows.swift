@@ -136,7 +136,7 @@ struct SpecRows: View {
     }
 
     private func genre(for album: Album) -> String {
-        let names = Set(album.tracks.compactMap(\.metadata.genre).filter { !$0.isEmpty })
+        let names = Set(album.tracks.compactMap(\.metadata.genre).filter { !$0.isEmpty }.map(ID3Genre.name(for:)))
         return names.isEmpty ? "—" : names.sorted().joined(separator: " · ")
     }
 

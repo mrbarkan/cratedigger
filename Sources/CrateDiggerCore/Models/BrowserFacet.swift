@@ -51,7 +51,8 @@ public enum BrowserFacet: String, Codable, CaseIterable, Sendable {
             let name = loaded.metadata.albumArtist.flatMap(Self.nonBlank) ?? Self.nonBlank(track.artist)
             return Self.text(name, missing: "Unknown Album Artist")
         case .genre:
-            return Self.text(loaded.metadata.genre.flatMap(Self.nonBlank), missing: "No Genre")
+            // "17" is Rock, and belongs in the Rock row.
+            return Self.text(loaded.metadata.genre.flatMap(Self.nonBlank).map(ID3Genre.name(for:)), missing: "No Genre")
         case .year:
             guard let year = track.year else { return FacetValue(id: "", title: "Unknown Year") }
             return FacetValue(id: String(year), title: String(year))

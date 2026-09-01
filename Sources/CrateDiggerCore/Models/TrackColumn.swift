@@ -100,7 +100,7 @@ public enum TrackColumn: String, Codable, Sendable, CaseIterable, Hashable, Iden
         case .album:
             return track.track.album
         case .genre:
-            return track.metadata.genre ?? ""
+            return track.metadata.genre.map(ID3Genre.name(for:)) ?? ""
         case .year:
             return track.track.year.map(String.init) ?? ""
         case .format:
