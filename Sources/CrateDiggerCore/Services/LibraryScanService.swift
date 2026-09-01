@@ -265,7 +265,9 @@ public final class LibraryScanService {
             discNumber: avDiscNumber,
             discTotal: avDiscTotal,
             year: avYear,
-            genre: avGenre,
+            // Stored as a name, so FIX TAGS, the table and the browser never
+            // see a raw `gnre` atom or a bare ID3v1 number again.
+            genre: avGenre.map(ID3Genre.name(for:)),
             comment: avComment,
             artwork: artwork
         )

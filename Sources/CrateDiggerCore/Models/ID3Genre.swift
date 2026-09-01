@@ -12,6 +12,14 @@ public enum ID3Genre {
     /// number, the text after a "(n)" prefix if there is one, else the tag
     /// unchanged. An unknown number stays a number rather than guessing.
     public static func name(for tag: String) -> String {
+        // An MP4 `gnre` atom handed over as text: two bytes, big-endian, the
+        // ID3v1 index plus one. Old iTunes rips are full of these and the
+        // probe passes the bytes through as a two-character string.
+        let scalars = Array(tag.unicodeScalars)
+        if scalars.count == 2, scalars[0].value == 0,
+           let name = names[safe: Int(scalars[1].value) - 1] {
+            return name
+        }
         let trimmed = tag.trimmingCharacters(in: .whitespaces)
         if trimmed.hasPrefix("("), let close = trimmed.firstIndex(of: ")") {
             let code = trimmed[trimmed.index(after: trimmed.startIndex)..<close]
