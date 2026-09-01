@@ -54,6 +54,7 @@ public final class PreferencesStore {
         static let albumSortField = "cratedigger.browser.albumSortField"
         static let albumSortAscending = "cratedigger.browser.albumSortAscending"
         static let showSortControls = "cratedigger.browser.showSortControls"
+        static let showSearchField = "cratedigger.browser.showSearchField"
         static let browserLayout = "cratedigger.browser.layout"
         static let trackColumns = "cratedigger.browser.trackColumns"
         static let playlistBrowserLayout = "cratedigger.browser.playlistLayout"
@@ -519,6 +520,16 @@ public final class PreferencesStore {
             return defaults.bool(forKey: Key.albumSortAscending)
         }
         set { defaults.set(newValue, forKey: Key.albumSortAscending) }
+    }
+
+    /// Whether the browser's search field is on screen. Visible by default: a
+    /// search field you cannot see is one you forget the app has.
+    public var savedShowSearchField: Bool {
+        get {
+            if defaults.object(forKey: Key.showSearchField) == nil { return true }
+            return defaults.bool(forKey: Key.showSearchField)
+        }
+        set { defaults.set(newValue, forKey: Key.showSearchField) }
     }
 
     public var savedShowSortControls: Bool {

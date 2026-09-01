@@ -667,6 +667,13 @@ final class LibraryViewModel: ObservableObject {
         didSet { prefs.savedShowSortControls = showSortControls }
     }
 
+    /// Whether the browser's search field is on screen. Hiding it clears the
+    /// query with it — a filter you can't see the cause of is a browser that
+    /// looks broken. See `toggleSearchField`.
+    @Published var showSearchField: Bool = true {
+        didSet { prefs.savedShowSearchField = showSearchField }
+    }
+
     /// How the browser arranges its columns (3-pane / Album·Track / flat Track).
     ///
     /// Remembered per source *kind*, not per source: a playlist is an ordered
@@ -1133,6 +1140,7 @@ final class LibraryViewModel: ObservableObject {
         }
         browser.albumSort.ascending = prefs.savedAlbumSortAscending
         showSortControls = prefs.savedShowSortControls
+        showSearchField = prefs.savedShowSearchField
         if let savedLayout = prefs.savedBrowserLayout, let layout = BrowserLayout(rawValue: savedLayout) {
             browserLayout = layout
         }

@@ -108,15 +108,28 @@ extension LibraryViewModel {
 
     // MARK: - Focus
 
-    /// ⌘F. Puts the browser somewhere the field can be seen, flips the display
-    /// to SEARCH, and asks the field to take focus.
+    /// ⌘F, and the header's magnifier. Puts the browser somewhere the field can
+    /// be seen, flips the display to SEARCH, and asks the field to take focus.
     func requestSearchFocus() {
         guard isSearchAvailable else { return }
-        // Collapsed, the browser has nowhere to show the field — same courtesy
-        // "Go to Current Song" already does for the reveal.
+        // Collapsed or hidden, the browser has nowhere to show the field — same
+        // courtesy "Go to Current Song" already does for the reveal.
         browserCollapsed = false
+        showSearchField = true
         showSearchScreen()
         bumpSearchFocusTick()
+    }
+
+    /// The header key: hide the field, or bring it back and put the cursor in
+    /// it. Hiding takes the query with it, because a browser filtered by a
+    /// field that isn't on screen reads as a bug rather than as a search.
+    func toggleSearchField() {
+        if showSearchField {
+            clearSearch()
+            showSearchField = false
+        } else {
+            requestSearchFocus()
+        }
     }
 
     // MARK: - The display

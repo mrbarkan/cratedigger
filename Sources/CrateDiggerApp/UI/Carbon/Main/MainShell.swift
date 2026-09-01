@@ -132,6 +132,7 @@ struct MainShell: View {
                     trailing: browserWellTrailing,
                     trailingControl: AnyView(HStack(spacing: 6) {
                         if !model.showArtworkGallery && !model.isRadioMode {
+                            searchToggleButton()
                             browserLayoutMenu()
                             sortToggleButton()
                         }
@@ -142,7 +143,7 @@ struct MainShell: View {
                         // Above the switch, not inside BrowserPane: the gallery
                         // reads the same filtered collections, so one field
                         // searches both browsers.
-                        if model.isSearchAvailable {
+                        if model.isSearchAvailable && model.showSearchField {
                             BrowserSearchBar()
                         }
                         if model.isRadioMode {
@@ -357,6 +358,28 @@ struct MainShell: View {
         .menuIndicator(.hidden)
         .fixedSize()
         .carbonTip("Browser columns")
+    }
+
+    /// Shows the search field and puts the cursor in it, or puts it away.
+    /// Lights while a query is live, so a filtered browser always has something
+    /// on screen saying why.
+    private func searchToggleButton() -> some View {
+        Button(action: { model.toggleSearchField() }) {
+            ZStack {
+                ChromeChassis(theme: theme, cornerRadius: 4)
+                    .frame(width: 18, height: 14)
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(searchKeyColor)
+            }
+        }
+        .buttonStyle(.carbonHover)
+        .carbonTip(model.showSearchField ? "Hide the search field" : "Search the library (⌘F)")
+    }
+
+    private var searchKeyColor: Color {
+        if model.isSearchActive { return theme.orange }
+        return model.showSearchField ? theme.cyan : theme.ink3
     }
 
     /// Toggles the per-column sort menus in the browser headers.

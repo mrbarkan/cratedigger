@@ -111,6 +111,7 @@ It is a large god-object; prefer extracting testable logic into a Core service o
 - **`BrowserFilter`** (in `BrowserState.swift`) owns what a query means: whitespace tokens, case- and diacritic-folded, every token matching at least one of title / artist / album artist / album / path / format. Pruning keeps an album whole when the album itself matches, and an artist whole when the artist does.
 - **Folding is the expensive half.** `LibraryIndex.searchHaystacks(for:)` pre-folds one string per track; the view model builds it on the first keystroke of a search and drops it in `index`'s `didSet`. Without it a keystroke costs ~150 ms at 14k tracks, with it ~25.
 - Anything that hides rows must call **`BrowserState.reanchor(in:)`** (the filter setter and `selectSource` both do): it moves anchors onto surviving rows and clears the multi-selection, so nothing invisible stays selected and convertible.
+- The field can be put away with the magnifier key in the browser well header (`showSearchField`, persisted, visible by default). Hiding it clears the query with it: a browser filtered by a field that is not on screen reads as a bug. ⌘F brings it back and focuses it.
 - Widening the scope is a **real source switch** to `localAll` (already the union of every crate), with the query saved and restored around it — `selectSource` deliberately clears the search, so `setSearchScope` writes it back afterwards. `LibraryViewModel+Search.swift` is the whole seam.
 
 ### The library data model & index
