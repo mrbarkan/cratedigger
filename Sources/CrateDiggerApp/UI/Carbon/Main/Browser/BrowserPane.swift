@@ -29,6 +29,9 @@ struct BrowserPane: View {
             if shouldShowEmptyState {
                 BrowserEmptyState()
                     .transition(.opacity)
+            } else if shouldShowNoMatches {
+                BrowserNoMatchesState()
+                    .transition(.opacity)
             }
         }
     }
@@ -52,8 +55,14 @@ struct BrowserPane: View {
         }
     }
 
+    /// Nothing scanned yet. "Nothing matched" is a different state entirely —
+    /// the library is fine, so it must not offer OPEN FOLDER.
     private var shouldShowEmptyState: Bool {
         model.index.allTracks.isEmpty && !model.scanProgress.isRunning
+    }
+
+    private var shouldShowNoMatches: Bool {
+        !model.index.allTracks.isEmpty && model.isSearchActive && model.browsedIndex.allTracks.isEmpty
     }
 
     private var divider: some View {
@@ -104,6 +113,38 @@ private struct BrowserEmptyState: View {
     }
 }
 
+/// A search that matched nothing. Deliberately quieter than the no-library
+/// state: nothing is wrong, there is just nothing here under this query.
+private struct BrowserNoMatchesState: View {
+    @Environment(\.carbon) private var theme
+    @EnvironmentObject private var model: LibraryViewModel
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 30, weight: .light))
+                .foregroundStyle(theme.ink3)
+            Text("No matches for \u{201C}\(model.searchQuery)\u{201D}")
+                .font(CarbonFont.sans(15, weight: .heavy))
+                .foregroundStyle(theme.ink)
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 360)
+            KeyButton(style: .normal, action: { model.clearSearch() }) {
+                Text("CLEAR SEARCH").padding(.horizontal, 14)
+            }
+            .frame(width: 160, height: 30)
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(
+            Rectangle()
+                .fill(theme.paper)
+                .overlay(theme.paper.opacity(theme.isDark ? 0.70 : 0.78))
+        )
+    }
+}
+
 private struct ArtistPane: View {
     @EnvironmentObject private var model: LibraryViewModel
     @Environment(\.carbon) private var theme
@@ -111,7 +152,7 @@ private struct ArtistPane: View {
     var body: some View {
         ColumnList(
             title: "Artist",
-            trailing: String(format: "%02d", model.index.artists.count),
+            trailing: String(format: "%02d", model.browsedIndex.artists.count),
             headerAccessory: model.showSortControls
                 ? AnyView(ColumnSortControl(field: $model.artistSortField,
                                             ascending: $model.artistSortAscending,

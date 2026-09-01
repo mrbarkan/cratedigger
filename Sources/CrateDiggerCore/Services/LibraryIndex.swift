@@ -599,6 +599,84 @@ public extension LibraryIndex {
         return nil
     }
 
+    /// The same index with everything the search hides removed — what the
+    /// browser draws while a query is live. The unfiltered index stays the
+    /// truth: conversion, queueing, relinking and the sidebar counts all keep
+    /// reading it, so a search narrows what you see and nothing else.
+    ///
+    /// The rules, in order of generosity:
+    ///
+    /// - an **artist** whose name matches keeps every album, whole;
+    /// - an **album** whose title or artist matches keeps every track, so
+    ///   searching a record's name gives you the record rather than the one
+    ///   track whose title repeats it;
+    /// - otherwise each survives only on what survives beneath it.
+    ///
+    /// A grouped release applies the album rule to itself and to each pressing
+    /// in `versions`, so a hit in the Gold CD keeps the release carrying only
+    /// that pressing.
+    ///
+    /// `allTracks` is the original list narrowed to what survived anywhere in
+    /// the tree, keeping its order. `totalSizeBytes` is carried over untouched:
+    /// `build` gets it by stat-ing every file, nothing browser-facing reads it,
+    /// and pruning must not pretend to recompute it.
+    /// One pre-folded haystack per track, for `filtered(by:haystacks:)`.
+    ///
+    /// Folding is the expensive half of matching, and it produces the same
+    /// string every keystroke. Building this once per index turns a search over
+    /// fourteen thousand tracks from about 150 ms per keystroke into about 10.
+    /// Keyed by track id, so a stale cache misses rather than lies: a track it
+    /// has never seen falls back to folding.
+    static func searchHaystacks(for tracks: [LoadedTrack]) -> [UUID: String] {
+        var result: [UUID: String] = [:]
+        result.reserveCapacity(tracks.count)
+        for loaded in tracks {
+            result[loaded.track.id] = BrowserFilter.haystack(for: loaded)
+        }
+        return result
+    }
+
+    func filtered(by filter: BrowserFilter, haystacks: [UUID: String]? = nil) -> LibraryIndex {
+        guard filter.isActive else { return self }
+
+        var survivingIDs: Set<UUID> = []
+        let prunedArtists: [Artist] = artists.compactMap { artist in
+            let albums: [Album]
+            if filter.matches(artist: artist) {
+                albums = artist.albums
+            } else {
+                albums = artist.albums.compactMap { prune($0, by: filter, haystacks: haystacks) }
+                guard !albums.isEmpty else { return nil }
+            }
+            for album in albums {
+                survivingIDs.formUnion(album.tracks.map(\.track.id))
+                for version in album.versions ?? [] {
+                    survivingIDs.formUnion(version.tracks.map(\.track.id))
+                }
+            }
+            return Artist(id: artist.id, name: artist.name, albums: albums)
+        }
+
+        return LibraryIndex(
+            artists: prunedArtists,
+            allTracks: allTracks.filter { survivingIDs.contains($0.track.id) },
+            albumCount: prunedArtists.reduce(0) { $0 + $1.albums.count },
+            totalSizeBytes: totalSizeBytes
+        )
+    }
+
+    /// One album, pruned. `nil` when nothing in it survives.
+    private func prune(_ album: Album, by filter: BrowserFilter, haystacks: [UUID: String]?) -> Album? {
+        if filter.matches(album: album) { return album }
+
+        let tracks = album.tracks.filter { filter.matches($0, haystack: haystacks?[$0.track.id]) }
+        let versions = album.versions?.compactMap { prune($0, by: filter, haystacks: haystacks) }
+        // An album is either a plain album or a release carrying pressings;
+        // both are empty here means nothing under it matched.
+        guard !tracks.isEmpty || !(versions ?? []).isEmpty else { return nil }
+        return album.with(tracks: tracks, versions: versions)
+    }
+
     /// Find a top-level album by id, or a member pressing nested inside a grouped
     /// release. Used so selecting a version sub-row resolves to that pressing.
     func albumOrVersion(id: String) -> Album? {

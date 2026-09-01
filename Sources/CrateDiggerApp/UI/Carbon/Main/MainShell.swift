@@ -138,12 +138,20 @@ struct MainShell: View {
                         collapseChevron(action: { model.toggleBrowserCollapsed() })
                     })
                 ) {
-                    if model.isRadioMode {
-                        RadioListView()
-                    } else if model.showArtworkGallery {
-                        ArtworkGalleryView()
-                    } else {
-                        BrowserPane()
+                    VStack(spacing: 0) {
+                        // Above the switch, not inside BrowserPane: the gallery
+                        // reads the same filtered collections, so one field
+                        // searches both browsers.
+                        if model.isSearchAvailable {
+                            BrowserSearchBar()
+                        }
+                        if model.isRadioMode {
+                            RadioListView()
+                        } else if model.showArtworkGallery {
+                            ArtworkGalleryView()
+                        } else {
+                            BrowserPane()
+                        }
                     }
                 }
             }
@@ -254,9 +262,15 @@ struct MainShell: View {
         return browserTrailing
     }
 
+    /// While a search is live this says how much of the source it hid, so the
+    /// well never claims four hundred records over twelve rows.
     private var browserTrailing: String {
-        let n = model.index.allTracks.count
-        return n == 0 ? "—" : "\(n) RECORDS"
+        let total = model.index.allTracks.count
+        guard total > 0 else { return "—" }
+        if model.isSearchActive {
+            return "\(model.browsedIndex.allTracks.count) OF \(total) RECORDS"
+        }
+        return "\(total) RECORDS"
     }
 
     // MARK: - Well shell builder

@@ -11,6 +11,10 @@ enum OLEDView: String, CaseIterable, Codable, Sendable {
     case remoteSync
     case cdRip
     case devices
+    /// Summoned by ⌘F or by typing in the browser's search field, never chosen
+    /// from the DISPLAY cycle or the View menu: a search screen with nothing
+    /// typed is a screen that says READY at you.
+    case search
 
     var label: String {
         switch self {
@@ -20,6 +24,7 @@ enum OLEDView: String, CaseIterable, Codable, Sendable {
         case .remoteSync: return "Sync"
         case .cdRip:      return "CD"
         case .devices:    return "Dev"
+        case .search:     return "Search"
         }
     }
 }
@@ -106,10 +111,20 @@ final class LibraryViewModel: ObservableObject {
 
     @Published private(set) var index: LibraryIndex = .empty {
         didSet {
+            // The search's folded text describes the old index. Dropped, not
+            // rebuilt: rebuilding costs a beat at library size and most index
+            // changes are not followed by a search.
+            searchHaystacks = nil
             recomputeSortedCollections()
             recomputePendingSyncMarks()
         }
     }
+
+    /// Pre-folded search text for `index`, built on the first keystroke of a
+    /// search and thrown away whenever the index changes. Without it a
+    /// keystroke folds six fields on every track — about 150 ms at fourteen
+    /// thousand, which types like treacle. See `LibraryIndex.searchHaystacks`.
+    private var searchHaystacks: [UUID: String]?
     /// Selection, ordering and (from Phase 1) filtering, as one tested Core
     /// value type. The properties below forward onto it so the ~190 call sites
     /// that read `selectedTrackIDs` or `trackSortField` did not have to move.
@@ -149,6 +164,10 @@ final class LibraryViewModel: ObservableObject {
 
     @Published var oledView: OLEDView = .nowPlaying {
         didSet {
+            // SEARCH is never restored: it belongs to a query that died with
+            // the session, so relaunching into it would open the app on an
+            // empty screen asking about nothing.
+            guard oledView != .search else { return }
             prefs.savedOLEDView = oledView.rawValue
         }
     }
@@ -680,7 +699,13 @@ final class LibraryViewModel: ObservableObject {
 
     /// The playlist's tracks in the order the M3U lists them — the order *is* the
     /// content, and `buildIndex` groups by artist/album, which loses it.
-    @Published private(set) var playlistTracks: [LoadedTrack] = []
+    @Published private(set) var playlistTracks: [LoadedTrack] = [] {
+        didSet { recomputeBrowsedPlaylistTracks() }
+    }
+
+    /// `playlistTracks` with the search applied. Equal to it while nothing is
+    /// typed. See `recomputeBrowsedPlaylistTracks()`.
+    @Published private(set) var browsedPlaylistTracks: [LoadedTrack] = []
 
     /// True once a column header has been used to sort a playlist. Sorting is a
     /// view of the playlist, not a change to it, so reordering is off until you
@@ -689,7 +714,7 @@ final class LibraryViewModel: ObservableObject {
 
     /// What the flat Track table lists.
     var flatTracks: [LoadedTrack] {
-        (isPlaylistSource && !playlistSorted) ? playlistTracks : flatTracksSorted
+        (isPlaylistSource && !playlistSorted) ? browsedPlaylistTracks : flatTracksSorted
     }
 
     /// The list the browser is actually showing: the flat table for a playlist
@@ -1322,15 +1347,42 @@ final class LibraryViewModel: ObservableObject {
 
     // MARK: - Selection helpers
 
+    // Both resolve against `browsedIndex`, so drill-down follows the search and
+    // the `?? first` fallbacks land on a row that is actually on screen.
     var selectedArtist: Artist? {
-        guard let id = selectedArtistID else { return index.artists.first }
-        return index.artist(id: id) ?? index.artists.first
+        guard let id = selectedArtistID else { return browsedIndex.artists.first }
+        return browsedIndex.artist(id: id) ?? browsedIndex.artists.first
     }
 
     var selectedAlbum: Album? {
-        if let id = selectedAlbumID, let found = index.albumOrVersion(id: id) { return found }
+        if let id = selectedAlbumID, let found = browsedIndex.albumOrVersion(id: id) { return found }
         return selectedArtist?.albums.first
     }
+
+    /// Bumped by ⌘F. The search field watches it and takes focus — the same
+    /// tick trick `revealTick` uses, because "focus the field" has to fire
+    /// again even when nothing else about the field changed.
+    @Published private(set) var searchFocusTick = 0
+
+
+    /// Bumping it is `requestSearchFocus`'s job, in `+Search`.
+    func bumpSearchFocusTick() { searchFocusTick &+= 1 }
+
+    /// Where the user was before widening the search to All Records, so
+    /// narrowing puts them back. See `setSearchScope`.
+    var sourceBeforeSearch: LibrarySource?
+
+    /// The screen the display was on when the search took it over.
+    var oledViewBeforeSearch: OLEDView?
+
+    /// What the browser is showing: `index` with the search applied. Equal to
+    /// `index` (by identity, no copy) while nothing is typed.
+    ///
+    /// The truth stays in `index`. Conversion, queueing, relinking, batch
+    /// artwork and the sidebar counts all keep reading that, so a live search
+    /// narrows what you can see and nothing else. Only the browser's own lists,
+    /// its anchors and its select-alls read this.
+    @Published private(set) var browsedIndex: LibraryIndex = .empty
 
     /// All artists, sorted by the artist-sort preference. Cached — recomputed
     /// only when the index or artist-sort preference changes, so the 60fps disc
@@ -1360,10 +1412,27 @@ final class LibraryViewModel: ObservableObject {
     /// runs only on index or sort-preference changes, never during a render
     /// pass. At 14k tracks the locale-aware sort is far too expensive to repeat
     /// per frame, which the spinning-disc animation would otherwise trigger.
-    private func recomputeSortedCollections() {
-        visibleArtists = LibraryIndex.sortedArtists(index.artists, by: artistSortField, ascending: artistSortAscending)
-        allAlbumsSorted = LibraryIndex.sortedAlbums(index.allAlbums, by: albumSortField, ascending: albumSortAscending)
-        flatTracksSorted = LibraryIndex.sortedTracks(index.allTracks, by: trackSortField, ascending: trackSortAscending)
+    /// Also the search's recompute: a keystroke changes what survives, which
+    /// is the same job as a sort change.
+    func recomputeSortedCollections() {
+        // Prune first, then sort: the sort is the expensive half and a search
+        // usually leaves it a handful of rows to do.
+        if browser.filter.isActive, searchHaystacks == nil {
+            searchHaystacks = LibraryIndex.searchHaystacks(for: index.allTracks)
+        }
+        browsedIndex = index.filtered(by: browser.filter, haystacks: searchHaystacks)
+        visibleArtists = LibraryIndex.sortedArtists(browsedIndex.artists, by: artistSortField, ascending: artistSortAscending)
+        allAlbumsSorted = LibraryIndex.sortedAlbums(browsedIndex.allAlbums, by: albumSortField, ascending: albumSortAscending)
+        flatTracksSorted = LibraryIndex.sortedTracks(browsedIndex.allTracks, by: trackSortField, ascending: trackSortAscending)
+        recomputeBrowsedPlaylistTracks()
+    }
+
+    /// A playlist listed in its own order bypasses the sorted collections
+    /// entirely, so it needs the filter applied separately or a search would
+    /// look broken until you clicked a sort header.
+    private func recomputeBrowsedPlaylistTracks() {
+        let filter = browser.filter
+        browsedPlaylistTracks = filter.isActive ? playlistTracks.filter { filter.matches($0) } : playlistTracks
     }
 
     var selectedTrack: LoadedTrack? {
@@ -1396,6 +1465,10 @@ final class LibraryViewModel: ObservableObject {
     func revealNowPlaying() {
         guard let playing = nowPlayingTrack else { return }
         clearMultiSelection()
+        // A live search hides most of the library, and revealing into a row the
+        // filter removed would land on nothing. The user asked to be taken to
+        // the song, so the search is what gives way.
+        clearSearch()
         // Collapsed, the browser has nowhere to show the reveal — the CNVRT
         // cockpit collapses it for you, so ⌘L there hit nothing at all.
         browserCollapsed = false
@@ -1526,13 +1599,17 @@ final class LibraryViewModel: ObservableObject {
         if sourceChanged {
             browserLayout = rememberedLayout(for: source)
             playlistSorted = false
-            selectedArtistID = index.artists.first?.id
-            selectedAlbumID = index.artists.first?.albums.first?.id
-            selectedTrackID = index.artists.first?.albums.first?.tracks.first?.track.id
-            // All three sets, not just albums/tracks: artist ids are stable
-            // across crates, so a leftover `selectedArtistIDs` kept lighting up
-            // rows in the new source that the user never clicked.
-            clearMultiSelection()
+            // A query is about the crate you typed it in. Dropped before
+            // re-anchoring so the anchors land in the whole new source, not in
+            // the last source's search. The scope switch restores it after this
+            // call — see setSearchScope.
+            clearSearchState()
+            // Anchors onto rows this source actually has, and drops the
+            // multi-selection: all three sets, not just albums/tracks, because
+            // artist ids are stable across crates and a leftover
+            // `selectedArtistIDs` kept lighting up rows in the new source that
+            // the user never clicked.
+            browser.reanchor(in: browsedIndex)
         }
 
         refreshCrateCounts()

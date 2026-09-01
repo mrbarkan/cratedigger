@@ -39,6 +39,42 @@ final class DisplayLampTokenTests: XCTestCase {
         }
     }
 
+    /// SEARCH is the seventh screen. Every other accent already belongs to a
+    /// lamp, so its unset colour is the teal glow.
+    func testSearchLampFollowsTheTealGlowUntilPinned() {
+        let retinted = theme(colors: ["cyanGlow": "#112233"])
+        XCTAssertEqual(retinted.lampSearch, retinted.cyanGlow)
+
+        let pinned = theme(colors: ["lampSearch": "#00FF00", "cyanGlow": "#112233"])
+        XCTAssertEqual(pinned.lampSearch, Color(hexString: "#00FF00"))
+        XCTAssertEqual(pinned.monochromeGlass.lampSearch, pinned.oledForeground)
+    }
+
+    /// The LED behind the transport caps. Unset it has to keep tracking the
+    /// accent trio exactly, or every theme that ships today changes colour.
+    func testTransportLampFollowsTheAccentTrioUntilPinned() {
+        let retinted = theme(colors: ["orange": "#FF0000", "orangeHi": "#FF8888", "orangeLo": "#880000"])
+        XCTAssertEqual(retinted.transportLamp, retinted.orange)
+        XCTAssertEqual(retinted.transportLampHi, retinted.orangeHi)
+        XCTAssertEqual(retinted.transportLampLo, retinted.orangeLo)
+    }
+
+    /// Pinned, the cap is one hue at three depths: a real LED behind rubber is
+    /// one colour, and the cap's opacity ramp is what makes the gradient.
+    func testPinnedTransportLampIsOneHueAndLeavesTheAccentAlone() {
+        let pinned = theme(colors: ["transportLamp": "#00FF00", "orange": "#FF0000"])
+        XCTAssertEqual(pinned.transportLamp, Color(hexString: "#00FF00"))
+        XCTAssertEqual(pinned.transportLampHi, pinned.transportLamp)
+        XCTAssertEqual(pinned.transportLampLo, pinned.transportLamp)
+        XCTAssertNotEqual(pinned.transportLamp, pinned.orange, "the accent must not follow the cap")
+    }
+
+    func testBothNewTokensAreReachableFromTheEditorCatalog() {
+        let keys = Set(ThemeTokenCatalog.allColorTokens.map(\.key))
+        XCTAssertTrue(keys.contains("lampSearch"), "lampSearch has no swatch in the theme editor")
+        XCTAssertTrue(keys.contains("transportLamp"), "transportLamp has no swatch in the theme editor")
+    }
+
     /// A single-phosphor screen draws everything in its own color — a lamp
     /// pinned to green has to collapse with the accents, not survive them.
     func testMonochromeGlassCollapsesPinnedLamps() {

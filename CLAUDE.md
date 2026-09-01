@@ -102,7 +102,16 @@ folders** (don't assume they are all beside the main file):
 
 It is a large god-object; prefer extracting testable logic into a Core service over adding more to it.
 
-**Browser state is no longer here.** Selection (anchors + the three mutually-exclusive multi-selection sets), the three sort pairs and `focusedColumn` live in Core's `BrowserState`; the view model holds one `@Published var browser` and forwards every old property name onto it as a computed property. Add browser state to `BrowserState`, not here. The forwarding setters are where the `PreferencesStore` writes and the `recomputeSortedCollections()` call live — a single `didSet` on `browser` would re-sort the whole library on every click.
+**Browser state is no longer here.** Selection (anchors + the three mutually-exclusive multi-selection sets), the three sort pairs, `focusedColumn` and the search `filter` live in Core's `BrowserState`; the view model holds one `@Published var browser` and forwards every old property name onto it as a computed property. Add browser state to `BrowserState`, not here. The forwarding setters are where the `PreferencesStore` writes and the `recomputeSortedCollections()` call live — a single `didSet` on `browser` would re-sort the whole library on every click.
+
+### Search (`index` vs `browsedIndex`)
+
+**`index` is the truth; `browsedIndex` is what the browser draws.** A live search prunes the second (`LibraryIndex.filtered(by:haystacks:)` against `BrowserState.filter`) and leaves the first alone, so conversion, queueing, relinking, batch artwork and the sidebar counts keep seeing the whole source. Only the browser's own lists (`visibleArtists`, `allAlbumsSorted`, `flatTracksSorted`, `browsedPlaylistTracks`), its anchors (`selectedArtist`/`selectedAlbum`), its select-alls and its counts read `browsedIndex`. Adding a reader is a decision: "should a search narrow this?"
+
+- **`BrowserFilter`** (in `BrowserState.swift`) owns what a query means: whitespace tokens, case- and diacritic-folded, every token matching at least one of title / artist / album artist / album / path / format. Pruning keeps an album whole when the album itself matches, and an artist whole when the artist does.
+- **Folding is the expensive half.** `LibraryIndex.searchHaystacks(for:)` pre-folds one string per track; the view model builds it on the first keystroke of a search and drops it in `index`'s `didSet`. Without it a keystroke costs ~150 ms at 14k tracks, with it ~25.
+- Anything that hides rows must call **`BrowserState.reanchor(in:)`** (the filter setter and `selectSource` both do): it moves anchors onto surviving rows and clears the multi-selection, so nothing invisible stays selected and convertible.
+- Widening the scope is a **real source switch** to `localAll` (already the union of every crate), with the query saved and restored around it — `selectSource` deliberately clears the search, so `setSearchScope` writes it back afterwards. `LibraryViewModel+Search.swift` is the whole seam.
 
 ### The library data model & index
 
@@ -230,7 +239,9 @@ fail `require_static_tool` on a signed build, or ship and not run. See
 
 ### UI ("Carbon" design system)
 
-SwiftUI under `Sources/CrateDiggerApp/UI/Carbon/`. Skeuomorphic hardware look: chassis layers, recessed wells, paper panels, an OLED display, LED meters, physical knobs/buttons. Theming flows through the `.carbonThemed(mode:)` environment with light/dark/system `AppearanceMode` (persisted, mirrored in the AppKit menu). Layout: a header, a 3-pane `MainShell` (**Sources | Browser | Inspector**, each independently collapsible with width invariants), and a footer transport. The **`OLEDView`** enum (`nowPlaying`/`conversion`/`scan`/`remoteSync`/`cdRip`/`devices`) is the mode switch that drives what the main area shows (e.g. selecting `conversion` swaps the Inspector for the "Patch Bay" and auto-collapses the browser).
+SwiftUI under `Sources/CrateDiggerApp/UI/Carbon/`. Skeuomorphic hardware look: chassis layers, recessed wells, paper panels, an OLED display, LED meters, physical knobs/buttons. Theming flows through the `.carbonThemed(mode:)` environment with light/dark/system `AppearanceMode` (persisted, mirrored in the AppKit menu). Layout: a header, a 3-pane `MainShell` (**Sources | Browser | Inspector**, each independently collapsible with width invariants), and a footer transport. The **`OLEDView`** enum (`nowPlaying`/`conversion`/`scan`/`remoteSync`/`cdRip`/`devices`/`search`) is the mode switch that drives what the main area shows (e.g. selecting `conversion` swaps the Inspector for the "Patch Bay" and auto-collapses the browser). `search` is summoned by ⌘F or by typing, never listed in `DisplayModeButton.cycle` or the View menu, and never persisted to `savedOLEDView` — it belongs to a query that dies with the session.
+
+Per-part color tokens exist so a theme can retint one thing without dragging the accents along: the six `lamp*Override` screen lamps plus `lampSearch`, `selectionGlow`/`selectionSpread`, and `transportLamp` (the LED behind the silicone caps). Each falls back to the accent it historically borrowed, so an unset token is pixel-identical to what shipped; add new ones the same way, with a swatch in `ThemeTokenCatalog` and a fallback test in `DisplayLampTokenTests`.
 
 ## Conventions & gotchas
 

@@ -220,6 +220,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     // MARK: - View / Playback delegations
 
+    /// ⌘F: put the browser somewhere the field can be seen and focus it.
+    func focusSearch() {
+        hostingController.model.requestSearchFocus()
+    }
+
     func setOLEDView(_ view: OLEDView) {
         hostingController.model.oledView = view
     }

@@ -55,14 +55,18 @@ extension LibraryViewModel {
         }
     }
 
-    /// Select every artist in the current source (the Artist column's "Select All").
-    func selectAllArtists() { browser.selectAllArtists(index.artists) }
+    // All three read `browsedIndex`, not `index`: ⌘A has to select what the
+    // browser is showing. Under a live search it would otherwise hand the
+    // convert queue several thousand rows the user could not see.
 
-    /// Select every album in the current source (the Album column's "Select All").
-    func selectAllAlbums() { browser.selectAllAlbums(index.allAlbums) }
+    /// Select every artist the browser is showing (the Artist column's "Select All").
+    func selectAllArtists() { browser.selectAllArtists(browsedIndex.artists) }
 
-    /// Select every track in the current source (the Track column's "Select All").
-    func selectAllTracks() { browser.selectAllTracks(index.allTracks) }
+    /// Select every album the browser is showing (the Album column's "Select All").
+    func selectAllAlbums() { browser.selectAllAlbums(browsedIndex.allAlbums) }
+
+    /// Select every track the browser is showing (the Track column's "Select All").
+    func selectAllTracks() { browser.selectAllTracks(browsedIndex.allTracks) }
 
     /// The tracks an Add-to-Crate action resolves to: the selected tracks, else the
     /// selected albums' tracks, else the selected artists' tracks, else (fallback)

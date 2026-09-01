@@ -16,6 +16,7 @@ extension OLEDView {
         case .remoteSync: return theme.lampSync
         case .cdRip:      return theme.lampCD
         case .devices:    return theme.lampDevices    // salmon
+        case .search:     return theme.lampSearch     // teal glow
         }
     }
 }
@@ -73,6 +74,7 @@ struct DisplayModeButton: View {
         case .remoteSync: return "SYNC"
         case .cdRip:      return "CD-RIP"
         case .devices:    return "DEV"
+        case .search:     return "SRCH"
         }
     }
 

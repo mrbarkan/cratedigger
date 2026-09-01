@@ -8,7 +8,8 @@ import SwiftUI
 ///
 /// `lit` puts an LED behind the cap: the glow blooms from the middle and never
 /// reaches full saturation at the rim, because the light has rubber to get
-/// through.
+/// through. That LED is `transportLamp`, not the accent — a theme can recolour
+/// the transport without dragging the meters and the POSITION bar with it.
 struct SiliconeCap<S: Shape, Imprint: View>: View {
     @Environment(\.carbon) private var theme
     let shape: S
@@ -28,9 +29,9 @@ struct SiliconeCap<S: Shape, Imprint: View>: View {
                 .overlay {
                     if lit {
                         shape.fill(
-                            RadialGradient(colors: [theme.orangeHi.opacity(0.92),
-                                                    theme.orange.opacity(0.74),
-                                                    theme.orangeLo.opacity(0.46)],
+                            RadialGradient(colors: [theme.transportLampHi.opacity(0.92),
+                                                    theme.transportLamp.opacity(0.74),
+                                                    theme.transportLampLo.opacity(0.46)],
                                            center: UnitPoint(x: 0.5, y: 0.42),
                                            startRadius: 1, endRadius: r * 0.94)
                         )
@@ -52,7 +53,7 @@ struct SiliconeCap<S: Shape, Imprint: View>: View {
                         .padding(1)
                 }
                 .depthShadow(color: Color.black.opacity(theme.isDark ? 0.5 : 0.22), radius: 7, y: 4)
-                .shadow(color: theme.orange.opacity(lit ? 0.22 : 0), radius: 11)
+                .shadow(color: theme.transportLamp.opacity(lit ? 0.22 : 0), radius: 11)
         }
     }
 }

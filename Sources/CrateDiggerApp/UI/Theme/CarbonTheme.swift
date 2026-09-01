@@ -104,6 +104,7 @@ public struct CarbonTheme: Equatable {
     public var lampSyncOverride: Color?
     public var lampCDOverride: Color?
     public var lampDevicesOverride: Color?
+    public var lampSearchOverride: Color?
 
     public var lampNow: Color { lampNowOverride ?? sun }
     public var lampConvert: Color { lampConvertOverride ?? orange }
@@ -111,6 +112,25 @@ public struct CarbonTheme: Equatable {
     public var lampSync: Color { lampSyncOverride ?? indigo }
     public var lampCD: Color { lampCDOverride ?? red }
     public var lampDevices: Color { lampDevicesOverride ?? orangeHi }
+    /// The seventh screen. Every other accent already belongs to a lamp, and a
+    /// tuner sweeping for a station wants the cold end of the palette anyway.
+    public var lampSearch: Color { lampSearchOverride ?? cyanGlow }
+
+    /// The LED behind the transport's silicone caps: the play/pause dome,
+    /// shuffle, repeat, and the mini player's row.
+    ///
+    /// Its own token because the caps used to read the accent trio directly,
+    /// which welded "what the transport lights up as" to "what the app's accent
+    /// is" — retint the accent and the dome moved with the POSITION bar, the
+    /// meters and the sort arrows whether or not that was the idea. Unset, the
+    /// three below are exactly the accent trio, so nothing shipped changes.
+    /// Pinned, all three are the one hue: a real LED behind rubber is one
+    /// colour, and the cap's own opacity ramp is what makes the gradient.
+    public var transportLampOverride: Color?
+
+    public var transportLampHi: Color { transportLampOverride ?? orangeHi }
+    public var transportLamp: Color { transportLampOverride ?? orange }
+    public var transportLampLo: Color { transportLampOverride ?? orangeLo }
 
     /// CRT scanline strength on the OLED glass. Both built-ins ship 0 — the
     /// glass is a modern panel, not a tube — and the CRT-flavoured screen
@@ -401,6 +421,10 @@ public extension CarbonTheme {
         lampSyncOverride = optionalColor("lampSync", resolvedBase.lampSyncOverride)
         lampCDOverride = optionalColor("lampCD", resolvedBase.lampCDOverride)
         lampDevicesOverride = optionalColor("lampDevices", resolvedBase.lampDevicesOverride)
+        lampSearchOverride = optionalColor("lampSearch", resolvedBase.lampSearchOverride)
+        // Not a lamp on the glass: the caps are on the chassis, so this one is
+        // absent from `monochromeGlass` below.
+        transportLampOverride = optionalColor("transportLamp", resolvedBase.transportLampOverride)
         // Every overlay effect clamps to its dial's ceiling, so a theme can't
         // ask for a value the renderer would quietly trim away.
         func effect(_ key: String, _ fallback: Double) -> Double {
@@ -471,6 +495,7 @@ public extension CarbonTheme {
         for lamp: WritableKeyPath<CarbonTheme, Color?> in [
             \.lampNowOverride, \.lampConvertOverride, \.lampScanOverride,
             \.lampSyncOverride, \.lampCDOverride, \.lampDevicesOverride,
+            \.lampSearchOverride,
         ] {
             copy[keyPath: lamp] = nil
         }

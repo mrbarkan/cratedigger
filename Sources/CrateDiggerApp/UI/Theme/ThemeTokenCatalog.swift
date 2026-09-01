@@ -206,6 +206,9 @@ enum ThemeTokenCatalog {
             ColorToken(key: "metalDeep", label: "Button Edge",
                        note: "Outer rim and cast shadow beneath keys.",
                        read: \.metalDeep),
+            ColorToken(key: "transportLamp", label: "Transport Lamp",
+                       note: "The LED behind the play, shuffle and repeat caps, in the footer and the mini player. Unset it follows the Accent.",
+                       read: \.transportLamp),
         ]),
         ColorGroup(name: "Desktop Backdrop", tokens: [
             ColorToken(key: "backgroundBase", label: "Backdrop",
@@ -257,6 +260,9 @@ enum ThemeTokenCatalog {
             ColorToken(key: "lampDevices", label: "DEV Lamp",
                        note: "The DEV annunciator and DISPLAY strip on the devices screen. Unset it follows Accent Light.",
                        read: \.lampDevices),
+            ColorToken(key: "lampSearch", label: "SRCH Lamp",
+                       note: "The SRCH annunciator and the tuner sweep on the search screen. Unset it follows Teal Glow.",
+                       read: \.lampSearch),
         ]),
         ColorGroup(name: "Selected Rows", tokens: [
             ColorToken(key: "selectionLedCore", label: "Selection Lamp",

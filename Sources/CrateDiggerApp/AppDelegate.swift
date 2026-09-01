@@ -191,6 +191,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         mainWindowController?.revealNowPlaying()
     }
 
+    @objc private func findInLibrary(_ sender: Any?) {
+        mainWindowController?.focusSearch()
+    }
+
     @objc private func playNext(_ sender: Any?) {
         mainWindowController?.playNext()
     }
@@ -401,8 +405,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     /// Dev-only self-snapshot: with CRATEDIGGER_SNAPSHOT_PATH set, render the
     /// main window (its own view tree — no screen-recording permission needed)
     /// to a PNG a few seconds after launch, then again 4 s later. Optional
-    /// CRATEDIGGER_OLED=<rawValue> preselects an OLED view first. Inert
-    /// without the env var; used for autonomous UI verification.
+    /// CRATEDIGGER_OLED=<rawValue> preselects an OLED view first, and
+    /// CRATEDIGGER_SEARCH=<query> runs a search. Inert without the env var;
+    /// used for autonomous UI verification.
     private func installSnapshotHookIfRequested() {
         let env = ProcessInfo.processInfo.environment
         guard let path = env["CRATEDIGGER_SNAPSHOT_PATH"] else { return }
@@ -429,6 +434,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                 model.showingThemeEditor = true
             }
         }
+        // A live search, so a capture can show the browser filtered and the
+        // SRCH screen reading out. "<query>" or "all:<query>" for the widened
+        // scope; the field itself can't be typed into without accessibility.
+        if let raw = env["CRATEDIGGER_SEARCH"] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) { [weak self] in
+                guard let model = self?.mainWindowController?.model else { return }
+                if raw.hasPrefix("all:") {
+                    model.searchQuery = String(raw.dropFirst(4))
+                    model.setSearchScope(.everywhere)
+                } else {
+                    model.searchQuery = raw
+                }
+            }
+        }
         if env["CRATEDIGGER_WHATS_NEW"] != nil {
             DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) { [weak self] in
                 self?.mainWindowController?.model.startWhatsNew()
@@ -442,12 +461,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             }
         }
         // Dev-only: land on a source the UI can't otherwise be pointed at from
-        // the command line, so a snapshot can show it. "playlist:<name>" only —
-        // everything else is reachable by launching and clicking.
-        if let raw = env["CRATEDIGGER_SOURCE"], raw.hasPrefix("playlist:") {
-            let name = String(raw.dropFirst("playlist:".count))
-            DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) { [weak self] in
-                self?.mainWindowController?.model.selectSource(.playlist(name: name))
+        // the command line, so a snapshot can show it. "playlist:<name>" or
+        // "crate:<name>" — everything else is reachable by launching and
+        // clicking. Runs before CRATEDIGGER_SEARCH, which would otherwise be
+        // cleared by the source switch.
+        if let raw = env["CRATEDIGGER_SOURCE"] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { [weak self] in
+                guard let model = self?.mainWindowController?.model else { return }
+                if raw.hasPrefix("playlist:") {
+                    model.selectSource(.playlist(name: String(raw.dropFirst("playlist:".count))))
+                } else if raw.hasPrefix("crate:") {
+                    model.selectSource(.localCrate(name: String(raw.dropFirst("crate:".count))))
+                }
             }
         }
         // A device route otherwise needs an iPod physically plugged in, which put
@@ -743,6 +768,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             return mainWindowController?.model.hasRatableSelection == true
         case #selector(clearUpNext(_:)):
             return mainWindowController?.hasUpNext() == true
+        case #selector(findInLibrary(_:)):
+            // Radio's list is streams, not an index, so there is nothing to
+            // narrow while it is up.
+            return mainWindowController?.model.isSearchAvailable == true
         case #selector(setAppearanceMode(_:)):
             menuItem.state = (menuItem.representedObject as? String == AppearanceMode.current.rawValue) ? .on : .off
             return true
@@ -893,6 +922,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         editMenu.addItem(responderItem(title: "Paste", action: NSSelectorFromString("paste:"), key: "v"))
         editMenu.addItem(.separator())
         editMenu.addItem(responderItem(title: "Select All", action: #selector(NSResponder.selectAll(_:)), key: "a"))
+        editMenu.addItem(.separator())
+        editMenu.addItem(makeItem(title: "Find", action: #selector(findInLibrary(_:)), key: "f"))
         editMenuItem.submenu = editMenu
 
         // MARK: View menu

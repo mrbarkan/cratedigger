@@ -250,5 +250,100 @@ final class BrowserStateTests: XCTestCase {
         state.trackSort.ascending = false
         XCTAssertEqual(state.selectedAlbumIDs, before)
     }
+
+    // MARK: - Re-anchoring
+
+    /// An index built the way the browser sees one: two artists, one album
+    /// each, one track each.
+    private func indexFixture() -> LibraryIndex {
+        let t1 = track("one")
+        let t2 = track("two")
+        let a1 = album("a1", tracks: [t1])
+        let a2 = album("a2", tracks: [t2])
+        return LibraryIndex(
+            artists: [
+                Artist(id: "ar1", name: "ar1", albums: [a1]),
+                Artist(id: "ar2", name: "ar2", albums: [a2])
+            ],
+            allTracks: [t1, t2],
+            albumCount: 2,
+            totalSizeBytes: 0
+        )
+    }
+
+    func testReanchorKeepsAnchorsTheIndexStillContains() {
+        let index = indexFixture()
+        var state = BrowserState()
+        state.selectedArtistID = "ar2"
+        state.selectedAlbumID = "a2"
+        state.selectedTrackID = index.allTracks[1].track.id
+
+        state.reanchor(in: index)
+
+        XCTAssertEqual(state.selectedArtistID, "ar2")
+        XCTAssertEqual(state.selectedAlbumID, "a2")
+        XCTAssertEqual(state.selectedTrackID, index.allTracks[1].track.id)
+    }
+
+    func testReanchorMovesAMissingAnchorToTheFirstSurvivor() {
+        let index = indexFixture()
+        var state = BrowserState()
+        state.selectedArtistID = "gone"
+        state.selectedAlbumID = "gone"
+        state.selectedTrackID = UUID()
+
+        state.reanchor(in: index)
+
+        XCTAssertEqual(state.selectedArtistID, "ar1")
+        XCTAssertEqual(state.selectedAlbumID, "a1")
+        XCTAssertEqual(state.selectedTrackID, index.allTracks[0].track.id)
+    }
+
+    /// A selection you cannot see can still be converted, retagged or added to
+    /// a crate. Hiding rows has to drop it.
+    func testReanchorClearsTheMultiSelection() {
+        var state = BrowserState()
+        state.selectedArtistIDs = ["ar1"]
+        state.selectedAlbumIDs = ["a1"]
+        state.selectedTrackIDs = [UUID()]
+
+        state.reanchor(in: indexFixture())
+
+        XCTAssertTrue(state.selectedArtistIDs.isEmpty)
+        XCTAssertTrue(state.selectedAlbumIDs.isEmpty)
+        XCTAssertTrue(state.selectedTrackIDs.isEmpty)
+    }
+
+    /// A member pressing is a legal album anchor: resolving it as missing would
+    /// bounce the browser off the version row the user just clicked.
+    func testReanchorKeepsAVersionMemberAsTheAlbumAnchor() {
+        let member = album("member", tracks: [track("m1")])
+        let release = Album(id: "group::r", artistID: "ar1", artistName: "ar1",
+                            title: "R", year: nil, artworkHash: nil,
+                            tracks: member.tracks, versions: [member])
+        let index = LibraryIndex(
+            artists: [Artist(id: "ar1", name: "ar1", albums: [release])],
+            allTracks: member.tracks, albumCount: 1, totalSizeBytes: 0
+        )
+        var state = BrowserState()
+        state.selectedAlbumID = "member"
+
+        state.reanchor(in: index)
+
+        XCTAssertEqual(state.selectedAlbumID, "member")
+    }
+
+    func testReanchorOnAnEmptyIndexClearsEveryAnchor() {
+        var state = BrowserState()
+        state.selectedArtistID = "ar1"
+        state.selectedAlbumID = "a1"
+        state.selectedTrackID = UUID()
+
+        state.reanchor(in: .empty)
+
+        XCTAssertNil(state.selectedArtistID)
+        XCTAssertNil(state.selectedAlbumID)
+        XCTAssertNil(state.selectedTrackID)
+    }
 }
 #endif

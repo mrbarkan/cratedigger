@@ -123,6 +123,7 @@ private struct DisplayContext: View {
             case .remoteSync:  RemoteSyncPane()
             case .cdRip:       CDRipPane()
             case .devices:     DevicesPane()
+            case .search:      SearchPane()
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -150,6 +151,7 @@ private struct DisplayRail: View {
                 ann("SYNC", lit: v == .remoteSync, color: OLEDView.remoteSync.accent(theme))
                 ann("CD", lit: v == .cdRip, color: OLEDView.cdRip.accent(theme))
                 ann("DEV", lit: v == .devices, color: OLEDView.devices.accent(theme))
+                ann("SRCH", lit: v == .search, color: OLEDView.search.accent(theme))
                 ann("ON AIR", lit: radioLive, color: theme.onAir, pulse: onAirPulse)
             }
 
@@ -570,7 +572,7 @@ private struct OLEDTag: View {
 private struct ScanBar: View {
     @Environment(\.carbon) private var theme
 
-    enum Style { case rainbow(Double), orange(Double), indigoSweep }
+    enum Style { case rainbow(Double), orange(Double), indigoSweep, sweep(Color) }
     let style: Style
     @State private var sweep = false
 
@@ -598,6 +600,17 @@ private struct ScanBar: View {
                         .offset(x: sweep ? w * 0.72 : w * 0.04)
                         .onAppear {
                             withAnimation(.easeInOut(duration: 1.6).repeatForever(autoreverses: true)) { sweep = true }
+                        }
+                // The tuner: the same travel as indigoSweep, in one given
+                // colour, faster — it is tracking a query, not a long job.
+                case .sweep(let color):
+                    Capsule()
+                        .fill(LinearGradient(colors: [color.opacity(0.35), color], startPoint: .leading, endPoint: .trailing))
+                        .frame(width: w * 0.18)
+                        .shadow(color: color.opacity(0.45), radius: 5)
+                        .offset(x: sweep ? w * 0.78 : w * 0.04)
+                        .onAppear {
+                            withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) { sweep = true }
                         }
                 }
             }
@@ -1049,6 +1062,81 @@ private struct ConversionPane: View {
 }
 
 // MARK: - SCAN pane
+
+/// SEARCH — the tuner. Shows what you typed, how wide it is looking, and what
+/// it found, so the display answers "why is the browser only showing three
+/// rows" without you having to look back at the field.
+private struct SearchPane: View {
+    @EnvironmentObject private var model: LibraryViewModel
+    @Environment(\.carbon) private var theme
+
+    var body: some View {
+        OLEDPaneScaffold {
+            NPTitles(title: headline, sub: subtitle, titleColor: titleColor)
+        } readout: {
+            VStack(alignment: .trailing, spacing: 6) {
+                Text(matchValue)
+                    .font(CarbonFont.display(34, weight: .thin))
+                    .foregroundStyle(oledFG)
+                if model.isSearchActive {
+                    ScanBar(style: .sweep(theme.lampSearch)).frame(width: 150)
+                } else {
+                    // The empty well, so the readout doesn't jump height when
+                    // the sweep appears.
+                    Capsule().fill(oledFGo(0.10)).frame(width: 150, height: 5)
+                }
+            }
+            .fixedSize()
+        } ticker: {
+            EmptyView()
+        } cells: {
+            OLEDCells(cells)
+        }
+    }
+
+    private var headline: String {
+        model.isSearchActive ? model.searchQuery : "READY"
+    }
+
+    private var titleColor: Color {
+        model.isSearchActive ? oledFG : oledFGo(0.45)
+    }
+
+    private var subtitle: String {
+        guard model.isSearchActive else { return "Type to search" }
+        if model.browsedIndex.allTracks.isEmpty { return "No match" }
+        return searchingEverything ? "Searching all records" : "Searching this crate"
+    }
+
+    /// All Records *is* every crate, so a search in it reads as the wide one
+    /// whether or not the scope switch was ever touched.
+    private var searchingEverything: Bool {
+        model.searchScope == .everywhere || model.currentSource == .localAll
+    }
+
+    /// The number the eye goes to: how many tracks came back.
+    private var matchValue: String {
+        model.isSearchActive ? "\(model.browsedIndex.allTracks.count)" : "—"
+    }
+
+    private var cells: [OLEDCellData] {
+        [
+            OLEDCellData(key: "Artists", value: count(model.browsedIndex.artists.count), sub: "Found",
+                         valueColor: theme.orange),
+            OLEDCellData(key: "Albums", value: count(model.browsedIndex.albumCount), sub: "Found",
+                         valueColor: theme.sun),
+            OLEDCellData(key: "Tracks", value: count(model.browsedIndex.allTracks.count), sub: "Found",
+                         valueColor: theme.cyan),
+            OLEDCellData(key: "Scope", value: searchingEverything ? "ALL" : "CRATE",
+                         sub: searchingEverything ? "Every Crate" : "This Crate"),
+            OLEDCellData(key: "Of", value: "\(model.index.allTracks.count)", sub: "In Source")
+        ]
+    }
+
+    private func count(_ n: Int) -> String {
+        model.isSearchActive ? "\(n)" : "—"
+    }
+}
 
 private struct ScanPane: View {
     @EnvironmentObject private var model: LibraryViewModel
