@@ -179,6 +179,10 @@ private struct DisplayRail: View {
                     .lineLimit(1)
                     .fixedSize()
                     .padding(.bottom, 7)
+                    // Background work that finished while the user was
+                    // elsewhere gets the annunciators' attention blink; a
+                    // notice they asked for stays still.
+                    .modifier(AnnBlink(mode: model.oledNoticeBlinks ? .flash : .none))
             }
         }
         .overlay(
@@ -260,9 +264,16 @@ private struct AnnDot: View {
 ///
 /// It carries only what the rest of the screen isn't already saying. On the
 /// nowPlaying view the title and the clocks are set an inch above in 44pt, so
-/// the strip keeps the bare progress bar and drops both — on every other view
-/// this rail is the *only* place playback is visible, so the title and the
-/// clocks come back.
+/// the strip drops both — on every other view this rail is the *only* place
+/// playback is visible, so the title and the clocks come back.
+///
+/// The progress bar used to live here too, squeezed between the clocks. It has
+/// moved down to the top edge of the cell rail (`OLEDProgressLine`), where it
+/// spans the whole glass instead of a 240pt slot and stops competing with the
+/// notice for the middle of the rail. The VOL meter that sat in the corner is
+/// gone as well: volume is a control, it belongs on the footer fader that sets
+/// it, and repeating it on the glass said nothing the fader wasn't already
+/// showing.
 private struct RailLive: View {
     @Environment(\.carbon) private var theme
     @EnvironmentObject private var model: LibraryViewModel
@@ -295,85 +306,26 @@ private struct RailLive: View {
                 Spacer(minLength: 0)
             }
 
-            // The clocks belong to the bar, not to the rail — one group so
-            // they stay tight against it however wide it stretches.
-            HStack(spacing: 6) {
-                if showMini {
+            // Elapsed over total, as one reading. They used to flank the
+            // progress bar; with the bar gone they'd read as two loose numbers,
+            // so the slash holds them together.
+            if showMini {
+                HStack(spacing: 4) {
                     Text(model.displayedCurrentTime.asClockPadded)
-                        .font(CarbonFont.mono(9, weight: .bold))
                         .foregroundStyle(oledFG)
-                }
-
-                progressBar
-
-                if showMini {
+                    Text("/")
+                        .foregroundStyle(oledFGo(0.25))
                     Text(model.playbackDuration.asClockPadded)
-                        .font(CarbonFont.mono(9, weight: .bold))
                         .foregroundStyle(oledFGo(0.4))
                 }
+                .font(CarbonFont.mono(9, weight: .bold))
+                .fixedSize()
             }
-            .frame(minWidth: 62, maxWidth: showMini ? 240 : 340)
-
-            HStack(spacing: 6) {
-                Text("VOL")
-                    .font(CarbonFont.mono(6.5, weight: .bold))
-                    .tracking(1.3)
-                    .foregroundStyle(oledFGo(0.3))
-                RailVolBars(volume: model.playbackVolume)
-                    .frame(width: 52, height: 9)
-            }
-            .fixedSize()
         }
-    }
-
-    /// Width comes from the layout rather than a constant, so the bar is the
-    /// thing that stretches as the window widens.
-    private var progressBar: some View {
-        Capsule().fill(oledFGo(0.14))
-            .frame(height: 3)
-            .overlay(alignment: .leading) {
-                GeometryReader { proxy in
-                    Capsule().fill(theme.orange)
-                        .frame(width: proxy.size.width * progress)
-                        .shadow(color: theme.orange.opacity(0.6), radius: 4)
-                }
-            }
     }
 
     private var trackTitle: String {
         (model.nowPlayingTrack?.track.title ?? model.selectedTrack?.track.title ?? "—").uppercased()
-    }
-
-    private var progress: CGFloat {
-        guard model.playbackDuration > 0 else { return 0 }
-        return CGFloat(min(max(model.displayedCurrentTime / model.playbackDuration, 0), 1))
-    }
-}
-
-/// A 16-segment cyan→orange VOL meter (revealed through a mask of the lit run),
-/// matching the footer POSITION bar's colour ramp.
-private struct RailVolBars: View {
-    @Environment(\.carbon) private var theme
-    let volume: Double
-
-    private let barCount = 16
-
-    var body: some View {
-        let lit = Int((volume * Double(barCount)).rounded())
-        ZStack {
-            segmentRow { _ in oledFGo(0.16) }
-            LinearGradient(colors: [theme.cyan, theme.orange], startPoint: .leading, endPoint: .trailing)
-                .mask(segmentRow { i in i < lit ? Color.black : Color.clear })
-                .shadow(color: theme.orange.opacity(0.5), radius: 2)
-        }
-    }
-
-    private func segmentRow(_ fill: @escaping (Int) -> Color) -> some View {
-        HStack(spacing: 2) {
-            ForEach(0..<barCount, id: \.self) { i in
-                RoundedRectangle(cornerRadius: 1, style: .continuous).fill(fill(i))
-            }
-        }
     }
 }
 
@@ -475,6 +427,7 @@ private struct OLEDCellData: Identifiable {
 /// columns blank rather than re-spacing the rail, and the fixed height stops a
 /// long value's `minimumScaleFactor` from shrinking the row under the lines.
 private struct OLEDCells: View {
+    @EnvironmentObject private var model: LibraryViewModel
     let cells: [OLEDCellData]
 
     init(_ cells: [OLEDCellData]) {
@@ -500,7 +453,7 @@ private struct OLEDCells: View {
         }
         .frame(height: Self.railHeight, alignment: .top)
         .padding(.top, 6)
-        .overlay(Rectangle().fill(oledFGo(0.12)).frame(height: 1), alignment: .top)
+        .overlay(OLEDProgressLine(clock: model.playbackClock), alignment: .top)
     }
 
     private func cell(_ c: OLEDCellData, leading: Bool) -> some View {
@@ -524,6 +477,38 @@ private struct OLEDCells: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.trailing, 10)
         .padding(.leading, leading ? 10 : 0)
+    }
+}
+
+/// The playback position, drawn as the cell rail's own top edge.
+///
+/// It is the hairline that was always there — it just fills in orange as the
+/// track plays. Down here it spans the full width of the glass, which is both
+/// more resolution than the old 240pt slot in the rail and one fewer thing
+/// crowding the middle of that rail. It stays a hairline: this is a rule that
+/// happens to report a position, not a control, and a thicker bar would read as
+/// something you could drag.
+private struct OLEDProgressLine: View {
+    @Environment(\.carbon) private var theme
+    @EnvironmentObject private var model: LibraryViewModel
+    // The clock is its own object so a tick doesn't republish the whole model.
+    @ObservedObject var clock: PlaybackClock
+
+    private var progress: CGFloat {
+        guard model.playbackDuration > 0 else { return 0 }
+        return CGFloat(min(max(model.displayedCurrentTime / model.playbackDuration, 0), 1))
+    }
+
+    var body: some View {
+        Rectangle().fill(oledFGo(0.12))
+            .frame(height: 1)
+            .overlay(alignment: .leading) {
+                GeometryReader { proxy in
+                    Rectangle().fill(theme.orange)
+                        .frame(width: proxy.size.width * progress)
+                        .shadow(color: theme.orange.opacity(0.7), radius: 3)
+                }
+            }
     }
 }
 
