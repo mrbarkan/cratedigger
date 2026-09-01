@@ -174,6 +174,39 @@ final class ReleaseScorerTests: XCTestCase {
         XCTAssertEqual(proposals[1].proposed.title, "Age of Consent")
     }
 
+    /// The reported case: a rip whose track numbers were swapped had the sheet
+    /// proposing to retitle two songs into each other, confidently and with no
+    /// hint that anything was odd. An exact title match beats a number that
+    /// points somewhere else entirely.
+    func testExactTitleBeatsAWrongTrackNumber() {
+        let tracks = [
+            loaded(title: "Age of Consent", trackNumber: 3),
+            loaded(title: "The Village", trackNumber: 1)
+        ]
+        let proposals = ReleaseScorer.proposals(from: candidate(), for: tracks)
+
+        XCTAssertEqual(proposals[0].proposed.title, "Age of Consent")
+        XCTAssertEqual(proposals[0].proposed.trackNumber, 1)
+        XCTAssertEqual(proposals[1].proposed.title, "The Village")
+        XCTAssertEqual(proposals[1].proposed.trackNumber, 3)
+    }
+
+    /// The other half of the bargain: a number that merely disagrees with a
+    /// scruffy title keeps its slot. Only a near-exact match somewhere else
+    /// overrules it.
+    func testAWeakTitleElsewhereDoesNotOverruleTheNumber() {
+        let tracks = [loaded(title: "the villager (live)", trackNumber: 1)]
+        let proposals = ReleaseScorer.proposals(from: candidate(), for: tracks)
+        XCTAssertEqual(proposals[0].proposed.title, "Age of Consent")
+    }
+
+    func testUntitledFilesStillMapByNumber() {
+        // Nothing to contradict the number with: an untagged rip must keep it.
+        let tracks = [loaded(title: "", trackNumber: 2)]
+        let proposals = ReleaseScorer.proposals(from: candidate(), for: tracks)
+        XCTAssertEqual(proposals[0].proposed.title, "We All Stand")
+    }
+
     func testMapsTracksByTitleWhenNumbersAreMissing() {
         let tracks = [
             loaded(title: "The Village", trackNumber: nil),

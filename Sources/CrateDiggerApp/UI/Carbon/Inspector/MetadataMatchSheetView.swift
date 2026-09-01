@@ -229,12 +229,18 @@ struct MetadataMatchSheetView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     ForEach(changes, id: \.trackID) { change in
                         HStack(spacing: 6) {
-                            Text(change.trackTitle)
-                                .font(CarbonFont.mono(8, weight: .regular))
-                                .foregroundStyle(theme.ink4)
-                                .frame(width: 150, alignment: .leading)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
+                            // The track label is dropped for TITLE: there it is
+                            // the same string as the "current" half of the diff
+                            // beside it, so it read as the change being shown
+                            // twice — and it stole the width the diff needed.
+                            if field != .title {
+                                Text(change.trackTitle)
+                                    .font(CarbonFont.mono(8, weight: .regular))
+                                    .foregroundStyle(theme.ink4)
+                                    .frame(width: 150, alignment: .leading)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                            }
                             valueDiff(from: change.current, to: change.proposed, checked: checked.contains(field))
                             Spacer(minLength: 0)
                         }
@@ -250,11 +256,15 @@ struct MetadataMatchSheetView: View {
         .cornerRadius(6)
     }
 
+    /// Old value → new value, with only the part that actually differs carrying
+    /// any emphasis. Without it a one-letter casing fix and a wholesale retitle
+    /// looked identical: two long, nearly equal strings and no clue which
+    /// characters moved.
     private func valueDiff(from current: String, to proposed: String, checked: Bool) -> some View {
-        HStack(spacing: 6) {
-            Text(current.isEmpty ? "—" : current)
+        let split = ValueDiff.split(current: current, proposed: proposed)
+        return HStack(spacing: 6) {
+            emphasised(split.current, tint: theme.ink4, changed: theme.ink2)
                 .font(CarbonFont.mono(9, weight: .regular))
-                .foregroundStyle(theme.ink3)
                 .strikethrough(checked)
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -262,12 +272,24 @@ struct MetadataMatchSheetView: View {
             Image(systemName: "arrow.right")
                 .font(.system(size: 7, weight: .bold))
                 .foregroundStyle(theme.ink4)
-            Text(proposed.isEmpty ? "—" : proposed)
-                .font(CarbonFont.mono(9, weight: .semibold))
-                .foregroundStyle(checked ? theme.ink : theme.ink3)
+            emphasised(split.proposed, tint: theme.ink3, changed: checked ? theme.orange : theme.ink2)
+                .font(CarbonFont.mono(9, weight: .regular))
                 .lineLimit(1)
                 .truncationMode(.tail)
         }
+    }
+
+    /// One value with its changed span picked out: the shared text recedes, the
+    /// difference is tinted and bold.
+    private func emphasised(_ split: ValueDiff.Split, tint: Color, changed: Color) -> Text {
+        guard !split.isEmpty else {
+            return Text(split.head.isEmpty ? "—" : split.head).foregroundColor(tint)
+        }
+        return Text(split.head).foregroundColor(tint)
+            + Text(split.changed)
+                .foregroundColor(changed)
+                .font(CarbonFont.mono(9, weight: .bold))
+            + Text(split.tail).foregroundColor(tint)
     }
 
     // MARK: - Footer

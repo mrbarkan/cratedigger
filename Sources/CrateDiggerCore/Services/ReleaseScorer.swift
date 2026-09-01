@@ -206,7 +206,11 @@ public enum ReleaseScorer {
         }
 
         // Pass 1: explicit track numbers — the strongest signal, so let them
-        // claim their slots before fuzzier matching gets a look in.
+        // claim their slots before fuzzier matching gets a look in. Strongest
+        // is not infallible, though: a rip whose numbers were shuffled will
+        // hand every file the wrong slot with total confidence, and the result
+        // is a review sheet quietly proposing to retitle songs into each
+        // other. `numberIsContradicted` is the second opinion.
         var unmatched: [Int] = []
         for index in numbered {
             let track = tracks[index]
@@ -215,6 +219,11 @@ public enum ReleaseScorer {
                       $0.position == number && $0.discNumber == (track.metadata.discNumber ?? 1)
                   }) ?? available.firstIndex(where: { $0.position == number })
             else {
+                unmatched.append(index)
+                continue
+            }
+            let title = track.metadata.title ?? track.track.title
+            guard !numberIsContradicted(title: title, numberedSlot: slot, in: available) else {
                 unmatched.append(index)
                 continue
             }
@@ -235,7 +244,7 @@ public enum ReleaseScorer {
         for (index, best) in titleRanked {
             let track = tracks[index]
             let title = track.metadata.title ?? track.track.title
-            guard best >= 0.6,
+            guard best >= titleAgreementFloor,
                   let slot = bestTitleSlot(title: title, duration: track.track.durationSeconds, in: available)
             else {
                 stillUnmatched.append(index)
@@ -257,6 +266,29 @@ public enum ReleaseScorer {
             }
     }
 
+    /// Whether a file's own title says its track number is lying.
+    ///
+    /// Only fires when the disagreement is not a judgement call: the slot the
+    /// number points at is a poor match for this title (below the same 0.6 bar
+    /// title matching uses to accept anything at all) *and* some other slot is
+    /// a near-exact one. An untagged file has no title, scores 0 everywhere and
+    /// so can never trigger this — its number stays the only signal it has.
+    static func numberIsContradicted(title: String, numberedSlot: Int, in available: [ReleaseTrack]) -> Bool {
+        let numbered = StringSimilarity.score(title, available[numberedSlot].title)
+        guard numbered < titleAgreementFloor else { return false }
+        let elsewhere = available.enumerated()
+            .filter { $0.offset != numberedSlot }
+            .map { StringSimilarity.score(title, $0.element.title) }
+            .max() ?? 0
+        return elsewhere >= titleOverridesNumber
+    }
+
+    /// Below this a title match is too weak for pass 2 to accept at all.
+    private static let titleAgreementFloor = 0.6
+    /// A title has to be this close to a *different* slot before it is allowed
+    /// to overrule an explicit track number.
+    private static let titleOverridesNumber = 0.85
+
     private static func bestTitleSlot(title: String, duration: Double, in tracks: [ReleaseTrack]) -> Int? {
         var bestIndex: Int?
         var bestScore = 0.0
@@ -272,7 +304,7 @@ public enum ReleaseScorer {
                 bestIndex = index
             }
         }
-        return bestScore >= 0.6 ? bestIndex : nil
+        return bestScore >= titleAgreementFloor ? bestIndex : nil
     }
 
     /// Merge one release track over one file's tags. Fields the release knows
