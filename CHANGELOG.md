@@ -4,11 +4,16 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
-## 2.0.0 (77) — 2026-08-31 — BETA 5
+## 2.0.0 (78) — 2026-09-01 — BETA 6
 
 Everything in the 2.0 line so far, newest work first. Unfinished by
 definition: this is where 2.0 is built, and it is offered to nobody who has
 not asked for it.
+
+Beta 6 is the browser finding things. You can search your library at last,
+the crate list tells you where the results live, and the three columns are no
+longer welded to Artist, Album and Track: each one shows whatever category you
+pick, and each crate remembers its own arrangement.
 
 Beta 5 is about artwork getting out of your way. Fetching a whole release of
 scans no longer locks the window, the images you fetched actually show up, and
@@ -28,6 +33,38 @@ app.
 
 ### Added
 
+- **Search your library.** A field across the top of the browser, results as
+  you type, over artist, album, title, file path and format. Every word you
+  type has to match something, so "mil blue" finds Kind of Blue and "flac
+  live" finds live FLACs. Command-F puts the cursor in it, Escape clears it,
+  and the magnifier key in the browser header puts the field away or brings it
+  back. Searching a record's name gives you the record, not the one track that
+  repeats it, and a search stays out of everything but the browser: convert,
+  queue and relink keep seeing the whole crate.
+- **The crate list says where the results are.** While a search is running,
+  every crate's count becomes its match count, in the search's colour, and a
+  crate holding nothing dims instead of disappearing. Click one and you arrive
+  with the query still applied. The CRATE / ALL switch beside the field widens
+  a search to every crate you own, which is what All Records already was.
+- **SEARCH on the display.** A seventh screen, summoned by Command-F or by
+  typing: what you typed, how many artists, albums and tracks it found, how
+  wide it is looking, and a bar for how much of the crate survived.
+- **Any category in any column.** The browser is one, two or three columns,
+  and each shows whichever you choose: Artist, Album Artist, Album, Genre,
+  Year, Decade, Format, Rating or Track. Click a column's header to change it;
+  the layout key in the browser header sets how many columns there are. A view
+  can end on an album or a decade rather than a track list, and every crate,
+  playlist and device remembers its own arrangement. Nothing changes shape
+  until you change a crate.
+- **Genre numbers read as names.** Old rips tagged with an ID3v1 number, or
+  with the raw two-byte genre atom an old iTunes wrote into an M4A, now show
+  as Rock, Alternative, Pop and so on in the browser, the track table and the
+  inspector. Files you scan from here on are stored with the name.
+- **A lamp of its own for the transport.** The LED behind the play/pause dome,
+  shuffle and repeat is a theme colour of its own, Transport Lamp, so a theme
+  can retint the transport without dragging the meters and the position bar
+  along. Unset, it follows the accent exactly as before. The SEARCH screen's
+  annunciator has one too.
 - **Throw out a scan while you are looking at it.** The artwork viewer can drop
   the page you are on from the rotation, or move the file to the Trash, so you
   no longer have to remember which one was wrong and go hunting for it in the
@@ -131,6 +168,11 @@ app.
   no longer move anything else.
 
 ### Fixed
+
+- **Saving staged artwork read the staging session off the main thread**, a
+  data race that Swift 6 would refuse to compile. It reads the roles and disc
+  numbers beside the files it is writing now, the way it already did for the
+  images.
 
 - **Artwork you just found appears straight away.** Images fetched from the
   search window sat as spinning placeholders in the ART tab until you pressed
