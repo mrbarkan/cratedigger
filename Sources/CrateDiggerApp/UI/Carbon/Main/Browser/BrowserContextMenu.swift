@@ -129,8 +129,7 @@ enum BrowserContextMenu {
     @ViewBuilder
     static func album(_ album: Album, model: LibraryViewModel) -> some View {
         Button("Play Album") {
-            model.selectedArtistID = album.artistID
-            model.selectedAlbumID = album.id
+            model.revealAlbum(album)
             if let first = album.tracks.first { model.playTrack(id: first.track.id) }
         }
         .disabled(album.tracks.isEmpty)

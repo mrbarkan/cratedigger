@@ -47,8 +47,8 @@ extension LibraryViewModel {
     /// survived. Both halves matter: without the re-anchor the browser filters
     /// down to three rows with none of them selected.
     private func applyFilterChange() {
+        // Recomputing settles the anchors and prunes the set to what survived.
         recomputeSortedCollections()
-        browser.reanchor(in: browsedIndex)
     }
 
     // MARK: - Scope

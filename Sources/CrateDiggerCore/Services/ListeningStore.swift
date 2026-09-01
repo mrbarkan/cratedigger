@@ -84,6 +84,12 @@ public final class ListeningStore {
     public var count: Int { byPath.count }
     public var allPaths: [String] { Array(byPath.keys) }
 
+    /// Every rated track's rating, keyed by path — what the browser's Rating
+    /// column groups by. Unrated tracks are absent, which reads as 0.
+    public var ratingsByPath: [String: Int] {
+        byPath.compactMapValues { $0.rating > 0 ? $0.rating : nil }
+    }
+
     /// The row for a path, creating an empty one stamped `now` if this is the
     /// first time the library has seen it.
     @discardableResult

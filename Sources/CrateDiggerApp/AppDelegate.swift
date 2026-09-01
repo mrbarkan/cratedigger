@@ -448,6 +448,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                 }
             }
         }
+        // A browser view, as comma-separated facets ("genre,artist,track"), so
+        // a capture can show the columns a crate can be given.
+        if let raw = env["CRATEDIGGER_VIEW"] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6.5) { [weak self] in
+                let facets = raw.split(separator: ",").compactMap { BrowserFacet(rawValue: String($0)) }
+                let view = BrowserView(facets)
+                if view.isValid { self?.mainWindowController?.model.browserView = view }
+            }
+        }
         if env["CRATEDIGGER_WHATS_NEW"] != nil {
             DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) { [weak self] in
                 self?.mainWindowController?.model.startWhatsNew()

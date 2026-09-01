@@ -102,7 +102,16 @@ folders** (don't assume they are all beside the main file):
 
 It is a large god-object; prefer extracting testable logic into a Core service over adding more to it.
 
-**Browser state is no longer here.** Selection (anchors + the three mutually-exclusive multi-selection sets), the three sort pairs, `focusedColumn` and the search `filter` live in Core's `BrowserState`; the view model holds one `@Published var browser` and forwards every old property name onto it as a computed property. Add browser state to `BrowserState`, not here. The forwarding setters are where the `PreferencesStore` writes and the `recomputeSortedCollections()` call live — a single `didSet` on `browser` would re-sort the whole library on every click.
+**Browser state is no longer here.** The view (`BrowserView`), the selection (one anchor per column plus at most one multi-selection set, in `BrowserSelection`), the four sort pairs, `focusedColumn` and the search `filter` live in Core's `BrowserState`; the view model holds one `@Published var browser` and forwards every old property name (`selectedArtistID`, `selectedAlbumIDs`, `selectArtist(...)`) onto whichever column shows that facet. Add browser state to `BrowserState`, not here. The sort and filter setters recompute themselves; `browser`'s own `didSet` only reacts to the view or the selection changing, and then recomputes just the columns to the right of the change.
+
+### Browser views (any category in any column)
+
+The browser is not hard-wired to Artist → Album → Track. A **`BrowserView`** is one to three **`BrowserFacet`**s (artist, album artist, album, genre, year, decade, format, rating, track), left to right; the only rules are no duplicates and Track last. **`BrowserCascade`** computes each column as its facet's values among the tracks surviving the columns to its left, resolving Artist and Album columns to the index's own objects so rows keep art and version groups. The index itself is a lookup, never the shape of the browser. Every source remembers its own view (`PreferencesStore.savedBrowserViews`, keyed by `LibrarySource.persistenceKey`), falling back to the two legacy layout keys and then `.classic` / `.table` for a playlist.
+
+- **Clicks never prune the set; index and search changes do.** `settleBrowserColumns(from:pruningSet:)` is the one place columns are recomputed. ⌘A on the Album column deliberately selects albums outside the anchored artist, so a click only fills missing anchors to its right; a rebuilt or filtered index also drops rows the user can no longer see.
+- **A multi-selection resolves literally.** `BrowserCascade.selectedTracks` ignores the anchors on either side of the column that owns the set — otherwise the track anchor would shrink ⌘A to one song. Without a set, the anchors narrow all the way down, and a view ending on an album or a genre resolves to that leaf's tracks (`leafTracks`).
+- `visibleAlbums`, `visibleTracks`, `browsingTracks`, `selectedArtist/Album/Track` are the compat surface: each reads its column's content when the view has one and derives from the other anchors otherwise, which is how the inspector and the condensed browser keep working in a `Genre · Track` view.
+- Anything that selects from outside the columns (Go to Current Song, the gallery, a version row's menu) goes through `revealTrack` / `revealAlbum`, which set every column's anchor from the track. Do not write `selectedArtistID = …` for that: in a view with no Artist column it has nowhere to go and is a silent no-op.
 
 ### Search (`index` vs `browsedIndex`)
 

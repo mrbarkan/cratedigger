@@ -112,6 +112,22 @@ enum LibrarySource: Hashable, Sendable {
     func keepsSearch(movingTo destination: LibrarySource) -> Bool {
         isLocalLibrary && destination.isLocalLibrary
     }
+
+    /// Stable across launches, for anything remembered per source — the
+    /// browser view, today. Radio has no browser and never stores one.
+    var persistenceKey: String {
+        switch self {
+        case .localAll:                    return "all"
+        case .localCrate(let name):        return "crate:\(name)"
+        case .prepCrate:                   return "prep"
+        case .remote:                      return "remote"
+        case .playlist(let name):          return "playlist:\(name)"
+        case .cd(let path):                return "cd:\(path)"
+        case .device(let path):            return "device:\(path)"
+        case .offlineDevice(let profileID): return "offline:\(profileID.uuidString)"
+        case .radio:                       return "radio"
+        }
+    }
 }
 
 /// Which backend plays YouTube streams. Resolved from `PreferencesStore.streamEngine`
@@ -165,7 +181,123 @@ final class LibraryViewModel: ObservableObject {
     /// value type. The properties below forward onto it so the ~190 call sites
     /// that read `selectedTrackIDs` or `trackSortField` did not have to move.
     /// The anchors and the three mutually-exclusive multi-selection sets are defined in `BrowserState` in Core.
-    @Published var browser = BrowserState()
+    @Published var browser = BrowserState() {
+        didSet {
+            // Sorts and the filter live here too, but their setters recompute
+            // themselves; this is only for the shape and the selection.
+            guard !isSettlingBrowser else { return }
+            if oldValue.view != browser.view {
+                settleBrowserColumns(from: 0)
+            } else if let changed = Self.firstChangedColumn(oldValue.selection, browser.selection) {
+                // A column's own content never depends on its own selection.
+                settleBrowserColumns(from: changed + 1)
+            }
+        }
+    }
+
+    /// What each column draws, cached — the cascade is a pass over the source
+    /// per column, which the spinning-disc animation must not re-run per frame.
+    @Published private(set) var browserColumns: [ColumnContent] = []
+
+    /// The tracks under the leaf's anchor when the view ends on an album, a
+    /// genre or the like rather than a Track column. Empty otherwise.
+    @Published private(set) var leafTracks: [LoadedTrack] = []
+
+    /// Where the browsed index files every track, plus the listening store's
+    /// ratings. Rebuilt with `browsedIndex`.
+    private(set) var facetContext = FacetContext(index: .empty)
+
+    private var isSettlingBrowser = false
+
+    /// The leftmost column whose selection differs, or nil for none.
+    private static func firstChangedColumn(_ old: BrowserSelection, _ new: BrowserSelection) -> Int? {
+        guard old != new else { return nil }
+        var changed = Int.max
+        for column in 0..<max(old.anchors.count, new.anchors.count) where old.anchor(column) != new.anchor(column) {
+            changed = column
+            break
+        }
+        if old.multiSelection != new.multiSelection {
+            changed = min(changed, old.multiSelection?.column ?? .max, new.multiSelection?.column ?? .max)
+        }
+        return changed == .max ? 0 : changed
+    }
+
+    /// Recompute the columns from `column` on and put every missing anchor to
+    /// the right on its first row.
+    ///
+    /// Clicks never prune the multi-selection (`pruningSet` false): ⌘A can
+    /// select albums outside the anchored artist on purpose, and they have to
+    /// survive the next arrow key. The index or the search changing under the
+    /// selection does prune it — a row you cannot see must not stay picked.
+    private func settleBrowserColumns(from column: Int, pruningSet: Bool = false) {
+        let (settled, columns) = BrowserCascade.reanchored(
+            browser.selection, view: browser.view, in: browsedIndex,
+            sorts: browser.sorts, context: facetContext,
+            from: column, reusing: browserColumns, pruningSet: pruningSet)
+        browserColumns = columns
+        if settled != browser.selection {
+            isSettlingBrowser = true
+            browser.selection = settled
+            isSettlingBrowser = false
+        }
+        leafTracks = browser.column(of: .track) == nil
+            ? BrowserCascade.selectedTracks(view: browser.view, in: browsedIndex,
+                                            selection: browser.selection, context: facetContext)
+            : []
+    }
+
+    /// Every anchor back on the first row of its column — after an index was
+    /// rebuilt from scratch and the old anchors mean nothing.
+    func resetBrowserSelection() {
+        browser.selection = BrowserSelection(anchors: Array(repeating: nil, count: browser.view.facets.count))
+    }
+
+    /// The outside-in click — "Go to Current Song", the gallery, a version
+    /// row's context menu: every column's anchor comes from the track.
+    func revealTrack(_ loaded: LoadedTrack) {
+        browser.reveal(track: loaded, in: browsedIndex, context: facetContext)
+        revealTick &+= 1
+    }
+
+    func revealAlbum(_ album: Album) {
+        guard let first = album.tracks.first ?? album.versions?.first?.tracks.first else { return }
+        revealTrack(first)
+    }
+
+    /// The header's 1 / 2 / 3 key. Grows by the view's own preference order,
+    /// shrinks from the right.
+    func setColumnCount(_ count: Int) {
+        var view = browserView
+        while view.columnCount < count, view.adding() != view { view = view.adding() }
+        while view.columnCount > count, view.droppingLast() != view { view = view.droppingLast() }
+        browserView = view
+    }
+
+    /// Swap what one column shows, keeping the others.
+    func setFacet(_ facet: BrowserFacet, column: Int) {
+        browserView = browserView.replacing(column: column, with: facet)
+    }
+
+    /// The tracks under one row of a value column — what it drags, what its
+    /// menu queues, what a double-click plays. The anchors to its left narrow
+    /// it, as they narrow the column itself.
+    func tracks(under column: Int, id: String) -> [LoadedTrack] {
+        var anchors = browser.selection.anchors
+        guard anchors.indices.contains(column) else { return [] }
+        anchors[column] = id
+        for right in anchors.indices where right > column { anchors[right] = nil }
+        return BrowserCascade.selectedTracks(view: browserView, in: browsedIndex,
+                                             selection: BrowserSelection(anchors: anchors),
+                                             context: facetContext)
+    }
+
+    /// Play whatever the browser is showing from the top — a double-click on
+    /// a row that is not a track: a genre, a decade, an album at the leaf.
+    func playBrowsingTracks() {
+        guard let first = browsingTracks.first else { return }
+        playTrack(id: first.track.id)
+    }
 
     var selectedArtistID: String? {
         get { browser.selectedArtistID }
@@ -674,6 +806,22 @@ final class LibraryViewModel: ObservableObject {
             recomputeSortedCollections()
         }
     }
+    var valueSortField: ValueSortField {
+        get { browser.valueSort.field }
+        set {
+            guard newValue != browser.valueSort.field else { return }
+            browser.valueSort.field = newValue
+            recomputeSortedCollections()
+        }
+    }
+    var valueSortAscending: Bool {
+        get { browser.valueSort.ascending }
+        set {
+            guard newValue != browser.valueSort.ascending else { return }
+            browser.valueSort.ascending = newValue
+            recomputeSortedCollections()
+        }
+    }
     var artistSortAscending: Bool {
         get { browser.artistSort.ascending }
         set {
@@ -710,19 +858,16 @@ final class LibraryViewModel: ObservableObject {
         didSet { prefs.savedShowSearchField = showSearchField }
     }
 
-    /// How the browser arranges its columns (3-pane / Album·Track / flat Track).
-    ///
-    /// Remembered per source *kind*, not per source: a playlist is an ordered
-    /// list and wants the flat table, the library wants its panes, and neither
-    /// choice should stamp on the other. Anything finer than that is a settings
-    /// screen nobody visits.
-    @Published var browserLayout: BrowserLayout = .full {
-        didSet {
-            if isPlaylistSource {
-                prefs.savedPlaylistBrowserLayout = browserLayout.rawValue
-            } else {
-                prefs.savedBrowserLayout = browserLayout.rawValue
-            }
+    /// What the browser's columns show, per source. Setting it reshapes the
+    /// selection and remembers the view for the source you are in.
+    var browserView: BrowserView {
+        get { browser.view }
+        set {
+            guard newValue != browser.view, newValue.isValid else { return }
+            browser.view = newValue
+            var saved = prefs.savedBrowserViews
+            saved[currentSource.persistenceKey] = newValue
+            prefs.savedBrowserViews = saved
         }
     }
 
@@ -731,13 +876,18 @@ final class LibraryViewModel: ObservableObject {
         return false
     }
 
-    /// The layout a source of this kind should open with.
-    private func rememberedLayout(for source: LibrarySource) -> BrowserLayout {
+    /// The view a source opens in: its own if it has one, else the legacy
+    /// layout key converted, else the classic tree — a playlist, the table.
+    /// The fallback is the whole migration: nobody's saved layout changes
+    /// until they change a crate.
+    private func rememberedView(for source: LibrarySource) -> BrowserView {
+        if let saved = prefs.savedBrowserViews[source.persistenceKey], saved.isValid { return saved }
         if case .playlist = source {
-            // Playlists default to the table even on a fresh install.
-            return prefs.savedPlaylistBrowserLayout.flatMap(BrowserLayout.init(rawValue:)) ?? .track
+            return prefs.savedPlaylistBrowserLayout.flatMap(BrowserLayout.init(rawValue:))
+                .map(BrowserView.init(legacy:)) ?? .table
         }
-        return prefs.savedBrowserLayout.flatMap(BrowserLayout.init(rawValue:)) ?? .full
+        return prefs.savedBrowserLayout.flatMap(BrowserLayout.init(rawValue:))
+            .map(BrowserView.init(legacy:)) ?? .classic
     }
 
     /// The playlist's tracks in the order the M3U lists them — the order *is* the
@@ -760,11 +910,14 @@ final class LibraryViewModel: ObservableObject {
         (isPlaylistSource && !playlistSorted) ? browsedPlaylistTracks : flatTracksSorted
     }
 
-    /// The list the browser is actually showing: the flat table for a playlist
-    /// or the Track layout, the album-scoped list for the three-pane browser.
-    /// Playback starts from here, so what you press is what you get.
+    /// The list the browser is actually showing: the playlist in its own order
+    /// when it is being shown that way, else whatever the Track column holds,
+    /// else the leaf selection's tracks. Playback starts from here, so what
+    /// you press is what you get — and double-clicking an album in an
+    /// `Artist · Album` view plays the album.
     var browsingTracks: [LoadedTrack] {
-        (isPlaylistSource || browserLayout == .track) ? flatTracks : visibleTracks
+        if isPlaylistSource && browserView == .table { return flatTracks }
+        return visibleTracks
     }
 
     /// Columns shown in the flat Track browser, in display order.
@@ -783,7 +936,8 @@ final class LibraryViewModel: ObservableObject {
 
     /// Which browser column the keyboard arrows act on: ↑/↓ move the selection in
     /// it, ←/→ switch columns. Set when a row is clicked; see `LibraryViewModel+ArrowNav`.
-    var focusedColumn: BrowserColumn {
+    /// Which column the arrow keys act on, as an index into `browserView`.
+    var focusedColumn: Int {
         get { browser.focusedColumn }
         set { browser.focusedColumn = newValue }
     }
@@ -1204,9 +1358,7 @@ final class LibraryViewModel: ObservableObject {
         browser.albumSort.ascending = prefs.savedAlbumSortAscending
         showSortControls = prefs.savedShowSortControls
         showSearchField = prefs.savedShowSearchField
-        if let savedLayout = prefs.savedBrowserLayout, let layout = BrowserLayout(rawValue: savedLayout) {
-            browserLayout = layout
-        }
+        browser.view = rememberedView(for: currentSource)
         scrubLockEnabled = prefs.savedScrubLockEnabled
         if let raw = prefs.savedMiniPlayerArtMode, let mode = MiniPlayerArtMode(rawValue: raw) {
             miniPlayerArtMode = mode
@@ -1419,14 +1571,26 @@ final class LibraryViewModel: ObservableObject {
     // MARK: - Selection helpers
 
     // Both resolve against `browsedIndex`, so drill-down follows the search and
-    // the `?? first` fallbacks land on a row that is actually on screen.
+    // the `?? first` fallbacks land on a row that is actually on screen. In a
+    // view with no Artist (or Album) column they derive from the anchors the
+    // view does have, so the inspector and the condensed browser keep
+    // describing what is selected whatever the columns are.
     var selectedArtist: Artist? {
-        guard let id = selectedArtistID else { return browsedIndex.artists.first }
-        return browsedIndex.artist(id: id) ?? browsedIndex.artists.first
+        if let id = selectedArtistID, let artist = browsedIndex.artist(id: id) { return artist }
+        if let id = derivedArtistID, let artist = browsedIndex.artist(id: id) { return artist }
+        return browsedIndex.artists.first
+    }
+
+    private var derivedArtistID: String? {
+        if let id = selectedAlbumID, let album = browsedIndex.albumOrVersion(id: id) { return album.artistID }
+        if let id = selectedTrackID { return facetContext.artistID(of: id) }
+        return leafTracks.first.flatMap { facetContext.artistID(of: $0.track.id) }
     }
 
     var selectedAlbum: Album? {
         if let id = selectedAlbumID, let found = browsedIndex.albumOrVersion(id: id) { return found }
+        let trackID = selectedTrackID ?? leafTracks.first?.track.id
+        if let trackID, let id = facetContext.albumID(of: trackID), let found = browsedIndex.album(id: id) { return found }
         return selectedArtist?.albums.first
     }
 
@@ -1460,14 +1624,23 @@ final class LibraryViewModel: ObservableObject {
     /// animation re-reads a stored array instead of re-sorting every frame.
     @Published private(set) var visibleArtists: [Artist] = []
 
+    /// The Album column's content when the view has one, else the anchored
+    /// artist's albums — what the condensed browser and the inspector read.
     var visibleAlbums: [Album] {
+        if let column = browser.column(of: .album), case .albums(let albums)? = browserColumns[safe: column] {
+            return albums
+        }
         let base = selectedArtist?.albums ?? []
         return LibraryIndex.sortedAlbums(base, by: albumSortField, ascending: albumSortAscending)
     }
 
+    /// The Track column's content when the view has one, else the tracks
+    /// under the leaf's anchor: an album's, a genre's, a decade's.
     var visibleTracks: [LoadedTrack] {
-        let base = selectedAlbum?.tracks ?? []
-        return LibraryIndex.sortedTracks(base, by: trackSortField, ascending: trackSortAscending)
+        if let column = browser.column(of: .track), case .tracks(let tracks)? = browserColumns[safe: column] {
+            return tracks
+        }
+        return LibraryIndex.sortedTracks(leafTracks, by: trackSortField, ascending: trackSortAscending)
     }
 
     /// Every album across all artists, sorted by the album-sort preference.
@@ -1492,11 +1665,14 @@ final class LibraryViewModel: ObservableObject {
             searchHaystacks = LibraryIndex.searchHaystacks(for: allStoredTracks() + index.allTracks)
         }
         browsedIndex = index.filtered(by: browser.filter, haystacks: searchHaystacks)
+        facetContext = FacetContext(index: browsedIndex, ratingByPath: listeningStore?.ratingsByPath ?? [:])
         recomputeCrateMatchCounts()
         visibleArtists = LibraryIndex.sortedArtists(browsedIndex.artists, by: artistSortField, ascending: artistSortAscending)
         allAlbumsSorted = LibraryIndex.sortedAlbums(browsedIndex.allAlbums, by: albumSortField, ascending: albumSortAscending)
         flatTracksSorted = LibraryIndex.sortedTracks(browsedIndex.allTracks, by: trackSortField, ascending: trackSortAscending)
         recomputeBrowsedPlaylistTracks()
+        // Rows may have come or gone under the selection, so this pass prunes.
+        settleBrowserColumns(from: 0, pruningSet: true)
     }
 
     /// A playlist listed in its own order bypasses the sorted collections
@@ -1670,7 +1846,7 @@ final class LibraryViewModel: ObservableObject {
         }
 
         if sourceChanged {
-            browserLayout = rememberedLayout(for: source)
+            browser.view = rememberedView(for: source)
             playlistSorted = false
             // A move inside the local library is navigation within the
             // results — the sidebar counts every crate's matches, so clicking
@@ -1678,12 +1854,10 @@ final class LibraryViewModel: ObservableObject {
             // disc, a playlist or a phone drops it: that is a different
             // library, where a query about your crates means nothing.
             if !previousSource.keepsSearch(movingTo: source) { clearSearchState() }
-            // Anchors onto rows this source actually has, and drops the
-            // multi-selection: all three sets, not just albums/tracks, because
-            // artist ids are stable across crates and a leftover
-            // `selectedArtistIDs` kept lighting up rows in the new source that
-            // the user never clicked.
-            browser.reanchor(in: browsedIndex)
+            // Anchors onto rows this source actually has, and drops the set:
+            // artist ids are stable across crates, and a leftover selection
+            // kept lighting up rows in the new source the user never clicked.
+            settleBrowserColumns(from: 0, pruningSet: true)
         }
 
         refreshCrateCounts()
@@ -1898,9 +2072,7 @@ final class LibraryViewModel: ObservableObject {
                     self.remoteIndex = built
                     if case .remote = self.currentSource {
                         self.index = built
-                        self.selectedArtistID = built.artists.first?.id
-                        self.selectedAlbumID = built.artists.first?.albums.first?.id
-                        self.selectedTrackID = built.artists.first?.albums.first?.tracks.first?.track.id
+                        self.resetBrowserSelection()
                     }
                     self.oledView = .nowPlaying
                     self.scanProgress = .idle
@@ -2153,9 +2325,7 @@ final class LibraryViewModel: ObservableObject {
 
     private func adoptDeviceIndex(_ built: LibraryIndex) {
         index = built
-        selectedArtistID = built.artists.first?.id
-        selectedAlbumID = built.artists.first?.albums.first?.id
-        selectedTrackID = built.artists.first?.albums.first?.tracks.first?.track.id
+        resetBrowserSelection()
     }
 
     /// Present the device-transfer sheet (the same one as ⌘⇧T), so the Sources
@@ -3798,12 +3968,21 @@ final class LibraryViewModel: ObservableObject {
     }
 
     /// Resolve drag payloads to tracks. Each item is "track::<uuid>",
-    /// "album::<id>", or "artist::<id>" — or the plural form carrying a whole
-    /// multi-selection. Album/artist drops expand to all their tracks (in index
+    /// "album::<id>", "artist::<id>" or "facet::<column>::<id>" — or the
+    /// plural form carrying a whole multi-selection. Album/artist drops expand to all their tracks (in index
     /// order).
     func tracksForDragItems(_ items: [String]) -> [LoadedTrack] {
         var tracks: [LoadedTrack] = []
         for item in items {
+            // A value-column row: "facet::<column>::<id>", resolved through the
+            // cascade so a dragged genre carries the tracks the column showed.
+            if item.hasPrefix("facet::") {
+                let body = item.dropFirst("facet::".count)
+                if let sep = body.range(of: "::"), let column = Int(body[..<sep.lowerBound]) {
+                    tracks.append(contentsOf: self.tracks(under: column, id: String(body[sep.upperBound...])))
+                }
+                continue
+            }
             if item.hasPrefix("tracks::") {
                 let ids = String(item.dropFirst("tracks::".count)).split(separator: ",")
                 let wanted = Set(ids.compactMap { UUID(uuidString: String($0)) })
@@ -4311,23 +4490,10 @@ final class LibraryViewModel: ObservableObject {
     /// the Album column it doesn't show. Playing from a playlist then showed
     /// the wrong cover, title and specs for the track you were hearing.
     ///
-    /// No `revealTick`: this follows the click, it doesn't scroll anything. In
-    /// the three-pane browser the track is already inside the selected album,
-    /// so this does nothing there.
-    func syncAlbumSelectionToTrack(_ loaded: LoadedTrack) {
-        guard isPlaylistSource || browserLayout == .track else { return }
-        guard let album = browsableAlbum(containing: loaded.track.id),
-              selectedAlbumID != album.id else { return }
-        selectedArtistID = album.artistID
-        selectedAlbumID = album.id
-    }
 
     private func revealAlbum(containingTrackID trackID: UUID?) {
-        guard let trackID, let album = browsableAlbum(containing: trackID) else { return }
-        selectedArtistID = album.artistID
-        selectedAlbumID = album.id
-        selectedTrackID = trackID
-        revealTick &+= 1
+        guard let trackID, let loaded = browsedIndex.allTracks.first(where: { $0.track.id == trackID }) else { return }
+        revealTrack(loaded)
     }
 
     func updateTrackURLInIndex(oldURL: URL, newTrack: LoadedTrack) {
@@ -4650,4 +4816,9 @@ final class LibraryViewModel: ObservableObject {
     }
 }
 
-
+extension Array {
+    /// `nil` past the end, for caches that can briefly be shorter than the view.
+    subscript(safe index: Int) -> Element? {
+        indices.contains(index) ? self[index] : nil
+    }
+}

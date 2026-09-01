@@ -76,8 +76,16 @@ public enum BrowserFacet: String, Codable, CaseIterable, Sendable {
         value(of: loaded, context: context).id
     }
 
+    /// Nil for a tag that would draw as nothing: blank, a stray newline, a
+    /// control character, a byte-order mark. Such a tag is a missing tag with
+    /// extra steps, and must not become a row with a count and no name.
     private static func nonBlank(_ text: String) -> String? {
-        text.trimmingCharacters(in: .whitespaces).isEmpty ? nil : text
+        let visible = text.unicodeScalars.contains { scalar in
+            !(CharacterSet.whitespacesAndNewlines.contains(scalar)
+              || CharacterSet.controlCharacters.contains(scalar)
+              || scalar.properties.isDefaultIgnorableCodePoint)
+        }
+        return visible ? text : nil
     }
 
     private static func text(_ text: String?, missing: String) -> FacetValue {
@@ -152,14 +160,14 @@ public struct FacetContext: Sendable {
         self.ratingByPath = ratingByPath
     }
 
-    func artistID(of trackID: UUID) -> String? { artistIDByTrack[trackID] }
-    func albumID(of trackID: UUID) -> String? { albumIDByTrack[trackID] }
+    public func artistID(of trackID: UUID) -> String? { artistIDByTrack[trackID] }
+    public func albumID(of trackID: UUID) -> String? { albumIDByTrack[trackID] }
     func artistName(_ id: String) -> String? { artistNames[id] }
     func albumTitle(_ id: String) -> String? { albumTitles[id] }
 
     /// The row an album id lives under: itself for a top-level album, the
     /// release for a version member. Nil for an id the index does not know.
-    func topLevelAlbumID(forAlbumID id: String) -> String? { topLevelAlbumByAlbum[id] }
+    public func topLevelAlbumID(forAlbumID id: String) -> String? { topLevelAlbumByAlbum[id] }
 
     func rating(of track: AudioTrack) -> Int {
         ratingByPath[track.fileURL.standardizedFileURL.path] ?? 0

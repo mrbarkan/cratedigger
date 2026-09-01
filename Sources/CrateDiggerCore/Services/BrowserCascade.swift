@@ -128,14 +128,24 @@ public enum BrowserCascade {
         return result
     }
 
-    /// What "the selection" means, in one place: the tracks surviving every
-    /// column including the last, with the multi-selection applied where it
-    /// lives. A single click at a Track leaf is that track; at an Album leaf
-    /// the album's surviving tracks; at a Genre leaf the genre's. Index order.
+    /// What "the selection" means, in one place.
+    ///
+    /// A multi-selection is what the user picked, literally: its rows' tracks,
+    /// over the whole index, ignoring the anchors on either side. ⌘A on the
+    /// Album column selects every album in the source, not the anchored
+    /// artist's, and the track anchor to its right must not shrink that to one
+    /// song. Without a set, the anchors narrow all the way down: a single
+    /// click at a Track leaf is that track, at an Album leaf the album's
+    /// surviving tracks, at a Genre leaf the genre's. Index order.
     public static func selectedTracks(view: BrowserView,
                                       in index: LibraryIndex,
                                       selection: BrowserSelection,
                                       context: FacetContext) -> [LoadedTrack] {
+        if let multi = selection.multiSelection, !multi.ids.isEmpty,
+           view.facets.indices.contains(multi.column) {
+            return narrow(index.allTracks, by: view.facets[multi.column], to: multi.ids,
+                          index: index, context: context)
+        }
         var population = index.allTracks
         for (column, facet) in view.facets.enumerated() {
             population = narrow(population, by: facet, to: selection.effectiveIDs(column: column),
@@ -151,17 +161,34 @@ public enum BrowserCascade {
     /// One pass: column k is computed, its anchor settled, then k+1 is
     /// narrowed by the settled anchor — so a re-anchored column 0 re-derives
     /// column 1 under the artist it actually landed on.
+    /// - Parameters:
+    ///   - from: the first column whose content is recomputed. Columns before
+    ///     it are taken from `reusing` — a click in column k changes nothing
+    ///     to its left, and the sort of a fourteen-thousand-row Track column
+    ///     is not something to repeat on every arrow key.
+    ///   - pruningSet: whether the multi-selection is trimmed to rows still
+    ///     shown. True when the index or the search changed under it; false
+    ///     for a click, because ⌘A may have selected albums outside the
+    ///     anchored artist on purpose and they must survive the next click.
     public static func reanchored(_ selection: BrowserSelection,
                                   view: BrowserView,
                                   in index: LibraryIndex,
                                   sorts: BrowserSorts,
-                                  context: FacetContext) -> (BrowserSelection, [ColumnContent]) {
+                                  context: FacetContext,
+                                  from: Int = 0,
+                                  reusing: [ColumnContent] = [],
+                                  pruningSet: Bool = true) -> (BrowserSelection, [ColumnContent]) {
         var settled = BrowserSelection(anchors: Array(repeating: nil, count: view.facets.count),
-                                       multiSelection: nil)
+                                       multiSelection: pruningSet ? nil : selection.multiSelection)
         var population = index.allTracks
         var columns: [ColumnContent] = []
         for (column, facet) in view.facets.enumerated() {
-            let content = self.content(of: facet, population: population, index: index, sorts: sorts, context: context)
+            let content: ColumnContent
+            if column < from, reusing.indices.contains(column) {
+                content = reusing[column]
+            } else {
+                content = self.content(of: facet, population: population, index: index, sorts: sorts, context: context)
+            }
             columns.append(content)
             let ids = content.ids
             let idSet = Set(ids)
@@ -174,7 +201,7 @@ public enum BrowserCascade {
             }
             let anchor = selection.anchor(column)
             settled.anchors[column] = anchor.flatMap { present($0) ? $0 : nil } ?? ids.first
-            if let multi = selection.multiSelection, multi.column == column {
+            if pruningSet, let multi = selection.multiSelection, multi.column == column {
                 let kept = multi.ids.filter(present)
                 if !kept.isEmpty {
                     settled.multiSelection = BrowserSelection.MultiSelection(column: column, ids: kept)

@@ -60,6 +60,16 @@ final class BrowserFacetTests: XCTestCase {
         XCTAssertEqual(BrowserFacet.genre.value(of: t, context: context(for: [t])).title, "No Genre")
     }
 
+    /// Tags that draw as nothing — a stray newline, a control character, a
+    /// BOM — must not become blank rows with a count and no name.
+    func testAnInvisibleGenreCountsAsMissing() {
+        for junk in ["\n", "\u{0}", "\u{FEFF}", " \t "] {
+            let t = track(genre: junk)
+            XCTAssertEqual(BrowserFacet.genre.value(of: t, context: context(for: [t])).title, "No Genre",
+                           "genre \(junk.unicodeScalars.map { String($0.value) })")
+        }
+    }
+
     func testYearAndDecade() {
         let t = track(year: 1977)
         let ctx = context(for: [t])

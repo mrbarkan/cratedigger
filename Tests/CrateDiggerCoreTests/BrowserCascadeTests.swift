@@ -185,6 +185,15 @@ final class BrowserCascadeTests: XCTestCase {
                        ["Pharaoh's Dance", "So What"])
     }
 
+    /// ⌘A on the Album column selects every album in the source, not just the
+    /// anchored artist's. A set is what the user picked, literally, so the
+    /// anchors to its left do not narrow it.
+    func testASetIsResolvedLiterallyNotThroughTheAnchorsToItsLeft() {
+        let allAlbums = BrowserSelection.MultiSelection(column: 1, ids: ["miles::kob", "bjork::debut"])
+        XCTAssertEqual(selected(.classic, anchors: ["miles", "miles::kob", soWhat.track.id.uuidString], multi: allAlbums).sorted(),
+                       ["Blue in Green", "Human Behaviour", "So What", "Venus as a Boy"])
+    }
+
     // MARK: - Ids
 
     func testContentIDsFollowDisplayOrder() {

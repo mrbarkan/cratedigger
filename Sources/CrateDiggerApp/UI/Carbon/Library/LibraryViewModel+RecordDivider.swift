@@ -222,7 +222,7 @@ extension LibraryViewModel {
     func playRecordTrack(parent: LoadedTrack, markerIndex: Int) {
         guard let markers = parent.recordMarkers, markers.indices.contains(markerIndex) else { return }
         let start = markers[markerIndex].startSeconds
-        selectedTrackID = parent.track.id
+        revealTrack(parent)
 
         if nowPlayingTrack?.track.id == parent.track.id,
            playbackState == .playing || playbackState == .paused {

@@ -8,20 +8,14 @@ import CrateDiggerCore
 @MainActor
 extension LibraryViewModel {
 
-    /// Columns the current layout actually shows, left→right.
-    var navColumns: [BrowserColumn] {
-        switch browserLayout {
-        case .full:       return [.artist, .album, .track]
-        case .albumTrack: return [.album, .track]
-        case .track:      return [.track]
-        }
-    }
+    /// The columns the view shows, left to right, as indices into it.
+    var navColumns: Range<Int> { 0..<browserView.facets.count }
 
-    /// `focusedColumn` clamped to a column this layout shows. Also what the
+    /// `focusedColumn` clamped to a column this view has. Also what the
     /// browser reads to light the focused column's header — `focusedColumn`
-    /// itself can name a column the current layout doesn't render.
-    var effectiveColumn: BrowserColumn {
-        navColumns.contains(focusedColumn) ? focusedColumn : (navColumns.last ?? .track)
+    /// itself can point past the end after the view narrows.
+    var effectiveColumn: Int {
+        min(max(focusedColumn, 0), max(navColumns.upperBound - 1, 0))
     }
 
     /// Handle a bare arrow key as browser navigation. Returns true when consumed.
@@ -78,35 +72,18 @@ extension LibraryViewModel {
     // MARK: - Movement
 
     func moveBrowserFocus(by delta: Int) {
-        let cols = navColumns
-        let current = cols.firstIndex(of: effectiveColumn) ?? (cols.count - 1)
-        focusedColumn = cols[min(max(current + delta, 0), cols.count - 1)]
+        guard !navColumns.isEmpty else { return }
+        focusedColumn = min(max(effectiveColumn + delta, 0), navColumns.upperBound - 1)
     }
 
+    /// One row up or down in the focused column, whatever it shows. The row
+    /// ids come from the column's content, so this is the same walk for an
+    /// artist, a genre or a track.
     func moveBrowserSelection(by delta: Int) {
-        switch effectiveColumn {
-        case .artist:
-            let items = visibleArtists
-            guard let next = neighbor(items, selectedArtistID, { $0.id }, delta) else { return }
-            selectArtist(next, command: false, shift: false, ordered: items)
-        case .album:
-            let items = browserLayout == .albumTrack ? allAlbumsSorted : visibleAlbums
-            guard let next = neighbor(items, selectedAlbumID, { $0.id }, delta) else { return }
-            selectAlbum(next, command: false, shift: false, ordered: items, flat: browserLayout == .albumTrack)
-        case .track:
-            let items = browserLayout == .track ? flatTracksSorted : visibleTracks
-            guard let next = neighbor(items, selectedTrackID, { $0.track.id }, delta) else { return }
-            selectTrack(next, command: false, shift: false, ordered: items)
-        }
-    }
-
-    /// The item one step (clamped) from the one matching `currentID`; starts at the
-    /// first item when nothing is selected yet.
-    private func neighbor<Item, ID: Equatable>(
-        _ items: [Item], _ currentID: ID?, _ idOf: (Item) -> ID, _ delta: Int
-    ) -> Item? {
-        guard !items.isEmpty else { return nil }
-        let current = currentID.flatMap { id in items.firstIndex { idOf($0) == id } } ?? 0
-        return items[min(max(current + delta, 0), items.count - 1)]
+        let column = effectiveColumn
+        guard let ids = browserColumns[safe: column]?.ids, !ids.isEmpty else { return }
+        let current = browser.selection.anchor(column).flatMap { ids.firstIndex(of: $0) } ?? 0
+        let next = ids[min(max(current + delta, 0), ids.count - 1)]
+        browser.select(column: column, id: next, command: false, shift: false, ordered: ids)
     }
 }

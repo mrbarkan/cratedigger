@@ -23,12 +23,12 @@ extension LibraryViewModel {
         browser.selectAlbum(album, command: command, shift: shift, ordered: ordered, flat: flat)
     }
 
-    /// Delegates to `BrowserState.selectTrack` — the rules live there.
+    /// Delegates to `BrowserState.selectTrack` — the rules live there. The
+    /// inspector's album follows by derivation (`selectedAlbum` reads the
+    /// anchored track when the view has no Album column), so nothing here
+    /// has to keep it in step.
     func selectTrack(_ loaded: LoadedTrack, command: Bool, shift: Bool, ordered: [LoadedTrack]) {
         browser.selectTrack(loaded, command: command, shift: shift, ordered: ordered)
-        // The flat table spans albums, so the inspector's album has to follow
-        // the row rather than sit on whatever the hidden Album column holds.
-        syncAlbumSelectionToTrack(loaded)
     }
 
     /// ⌘A — select everything in the current source (the "batch-add everything"
@@ -49,9 +49,15 @@ extension LibraryViewModel {
             selectAllAlbums()
             return
         }
-        switch browserLayout {
-        case .full, .albumTrack: selectAllAlbums()
-        case .track:             selectAllTracks()
+        if browser.column(of: .album) != nil {
+            selectAllAlbums()
+        } else if browser.column(of: .track) != nil {
+            selectAllTracks()
+        } else {
+            // A view ending on a genre, a decade, an artist: everything in
+            // its leaf column.
+            let leaf = browserView.facets.count - 1
+            browser.selectAll(column: leaf, ids: browserColumns[safe: leaf]?.ids ?? [])
         }
     }
 
@@ -72,17 +78,11 @@ extension LibraryViewModel {
     /// selected albums' tracks, else the selected artists' tracks, else (fallback)
     /// the single anchor album.
     func selectedTracksForCrateAdd() -> [LoadedTrack] {
-        if !selectedTrackIDs.isEmpty {
-            let ids = selectedTrackIDs
-            return index.allTracks.filter { ids.contains($0.track.id) }
-        }
-        if !selectedAlbumIDs.isEmpty {
-            let ids = selectedAlbumIDs
-            return index.allAlbums.filter { ids.contains($0.id) }.flatMap { $0.tracks }
-        }
-        if !selectedArtistIDs.isEmpty {
-            let ids = selectedArtistIDs
-            return index.artists.filter { ids.contains($0.id) }.flatMap { $0.albums }.flatMap { $0.tracks }
+        if let multi = browser.selection.multiSelection, !multi.ids.isEmpty {
+            // Whatever column owns the set — artists, albums, tracks, genres —
+            // the cascade resolves it to tracks the same way.
+            return BrowserCascade.selectedTracks(view: browserView, in: browsedIndex,
+                                                 selection: browser.selection, context: facetContext)
         }
         return selectedAlbum?.tracks ?? []
     }
@@ -95,9 +95,12 @@ extension LibraryViewModel {
     /// should route through this so they never disagree about what "the
     /// selection" is.
     func resolvedSelectionTracks() -> [LoadedTrack] {
-        if selectedTrackIDs.count > 1 || selectedAlbumIDs.count > 1 || selectedArtistIDs.count > 1 {
+        if (browser.selection.multiSelection?.ids.count ?? 0) > 1 {
             return selectedTracksForCrateAdd()
         }
+        // A view that ends on an album or a genre has no single track to
+        // mean: the leaf's tracks are the selection.
+        if browser.column(of: .track) == nil { return leafTracks }
         return selectedTrack.map { [$0] } ?? []
     }
 

@@ -25,6 +25,9 @@ struct ColumnList<Content: View>: View {
     @Environment(\.carbon) private var theme
     let title: String
     let trailing: String
+    /// Drawn in place of the title when given — the facet menu, so a column's
+    /// header is where you change what the column shows.
+    var titleMenu: AnyView? = nil
     let headerAccessory: AnyView?
     /// A second, non-scrolling header strip under the title bar — the flat Track
     /// layout's sortable column headers. Inside the scroll view they'd scroll
@@ -46,6 +49,7 @@ struct ColumnList<Content: View>: View {
     init(
         title: String,
         trailing: String,
+        titleMenu: AnyView? = nil,
         headerAccessory: AnyView? = nil,
         subheader: AnyView? = nil,
         scrollTarget: AnyHashable? = nil,
@@ -55,6 +59,7 @@ struct ColumnList<Content: View>: View {
     ) {
         self.title = title
         self.trailing = trailing
+        self.titleMenu = titleMenu
         self.headerAccessory = headerAccessory
         self.subheader = subheader
         self.scrollTarget = scrollTarget
@@ -70,7 +75,11 @@ struct ColumnList<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 10) {
-                Text(title.uppercased())
+                if let titleMenu {
+                    titleMenu
+                } else {
+                    Text(title.uppercased())
+                }
                 Spacer(minLength: 8)
                 if let headerAccessory {
                     headerAccessory

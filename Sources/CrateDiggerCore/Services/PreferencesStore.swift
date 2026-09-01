@@ -55,6 +55,7 @@ public final class PreferencesStore {
         static let albumSortAscending = "cratedigger.browser.albumSortAscending"
         static let showSortControls = "cratedigger.browser.showSortControls"
         static let showSearchField = "cratedigger.browser.showSearchField"
+        static let browserViews = "cratedigger.browser.views"
         static let browserLayout = "cratedigger.browser.layout"
         static let trackColumns = "cratedigger.browser.trackColumns"
         static let playlistBrowserLayout = "cratedigger.browser.playlistLayout"
@@ -377,6 +378,19 @@ public final class PreferencesStore {
                 defaults.removeObject(forKey: Key.playlistBrowserLayout)
             }
         }
+    }
+
+    /// Each source's browser view, keyed by `LibrarySource.persistenceKey`.
+    /// A key with no entry falls back to the legacy layout keys below, which
+    /// is the whole migration: a user who had `Album · Track` keeps it
+    /// everywhere until they change one crate.
+    public var savedBrowserViews: [String: BrowserView] {
+        get {
+            guard let data = defaults.data(forKey: Key.browserViews),
+                  let stored = try? decoder.decode([String: BrowserView].self, from: data) else { return [:] }
+            return stored
+        }
+        set { defaults.set(try? encoder.encode(newValue), forKey: Key.browserViews) }
     }
 
     public var savedBrowserLayout: String? {

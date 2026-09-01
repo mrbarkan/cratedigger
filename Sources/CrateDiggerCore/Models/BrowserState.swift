@@ -1,10 +1,5 @@
 import Foundation
 
-/// Which browser column the keyboard arrows act on.
-public enum BrowserColumn: Sendable, Equatable {
-    case artist, album, track
-}
-
 /// A column's ordering: which field, which direction.
 ///
 /// Named `BrowserSort` rather than the obvious `SortOrder` because Foundation
@@ -70,7 +65,9 @@ public struct BrowserState: Sendable, Equatable {
         BrowserSorts(artist: artistSort, album: albumSort, track: trackSort, value: valueSort)
     }
 
-    public var focusedColumn: BrowserColumn = .track
+    /// Which column the arrow keys act on, as an index into `view.facets`.
+    /// May point past the end after the view narrows; readers clamp.
+    public var focusedColumn: Int = 2
 
     // MARK: Filtering
 

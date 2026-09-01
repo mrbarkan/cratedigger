@@ -128,8 +128,7 @@ struct ArtworkGalleryView: View {
     private func openDetail(_ album: Album) {
         // Select the album so the Inspector (INFO/ART/DISC) follows it, and so
         // playTrack builds its queue from this album.
-        model.selectedArtistID = album.artistID
-        model.selectedAlbumID = album.id
+        model.revealAlbum(album)
         lastOpenedID = album.id
         withAnimation(Self.heroAnimation) { detailAlbumID = album.id }
     }

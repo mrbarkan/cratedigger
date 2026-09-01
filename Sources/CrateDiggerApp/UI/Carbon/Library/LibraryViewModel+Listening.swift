@@ -162,6 +162,8 @@ extension LibraryViewModel {
             store.setRating(rating, path: ListeningStore.key(for: track.track.fileURL))
         }
         persistListeningStore()
+        // A Rating column groups by what was just changed.
+        if browserView.facets.contains(.rating) { recomputeSortedCollections() }
         objectWillChange.send()
         showOLEDNotice(rating == 0
                        ? "RATING CLEARED"

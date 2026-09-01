@@ -331,17 +331,19 @@ struct MainShell: View {
         .carbonTip("Collapse panel")
     }
 
-    /// Menu to pick the browser column layout (3-pane / Album·Track / flat Track).
+    /// How many columns the browser has: 1, 2 or 3. What each shows is picked
+    /// in the column's own header.
     private func browserLayoutMenu() -> some View {
         Menu {
-            ForEach(BrowserLayout.allCases, id: \.self) { layout in
+            ForEach(1...BrowserView.maxColumns, id: \.self) { count in
                 Button {
-                    model.browserLayout = layout
+                    model.setColumnCount(count)
                 } label: {
-                    if model.browserLayout == layout {
-                        Label(layout.title, systemImage: "checkmark")
+                    let title = count == 1 ? "1 Column" : "\(count) Columns"
+                    if model.browserView.columnCount == count {
+                        Label(title, systemImage: "checkmark")
                     } else {
-                        Text(layout.title)
+                        Text(title)
                     }
                 }
             }
@@ -349,7 +351,7 @@ struct MainShell: View {
             ZStack {
                 ChromeChassis(theme: theme, cornerRadius: 4)
                     .frame(width: 18, height: 14)
-                Image(systemName: model.browserLayout.iconName)
+                Image(systemName: columnCountIcon)
                     .font(.system(size: 8, weight: .bold))
                     .foregroundStyle(theme.ink3)
             }
@@ -357,7 +359,15 @@ struct MainShell: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .carbonTip("Browser columns")
+        .carbonTip("Browser columns: " + model.browserView.facets.map(\.title).joined(separator: " · "))
+    }
+
+    private var columnCountIcon: String {
+        switch model.browserView.columnCount {
+        case 1:  return "rectangle"
+        case 2:  return "rectangle.split.2x1"
+        default: return "rectangle.split.3x1"
+        }
     }
 
     /// Shows the search field and puts the cursor in it, or puts it away.
