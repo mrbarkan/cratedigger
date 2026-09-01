@@ -67,8 +67,9 @@ struct SourcesSidebar: View {
                     sidebarItem(
                         icon: Image(systemName: "square.stack"),
                         title: "All Records",
-                        count: "\(model.allRecordsCount)",
+                        count: "\(model.allRecordsMatchCount ?? model.allRecordsCount)",
                         selected: model.currentSource == .localAll,
+                        matching: model.allRecordsMatchCount,
                         action: { model.selectSource(.localAll) }
                     )
                     }
@@ -462,12 +463,22 @@ struct SourcesSidebar: View {
         return Image(systemName: "externaldrive")
     }
 
+    /// True for a crate the live search found nothing in.
+    private func emptyOfMatches(_ matching: Int?) -> Bool {
+        matching.map { $0 == 0 } ?? false
+    }
+
     private func sidebarItem(
         icon: Image,
         title: String,
         count: String,
         selected: Bool,
         disabled: Bool = false,
+        /// A match count rather than a crate size: shown in the search's own
+        /// colour, and greyed to half when it is zero so a crate holding
+        /// nothing recedes instead of vanishing. The list must not reshuffle
+        /// under the cursor while you type.
+        matching: Int? = nil,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: { if !disabled { action() } }) {
@@ -482,7 +493,8 @@ struct SourcesSidebar: View {
                 Spacer()
                 Text(count)
                     .font(CarbonFont.mono(9.5))
-                    .foregroundStyle(countColor(selected: selected, disabled: disabled))
+                    .foregroundStyle(matching.map { $0 > 0 ? theme.orange : theme.ink4 }
+                        ?? countColor(selected: selected, disabled: disabled))
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
@@ -491,7 +503,7 @@ struct SourcesSidebar: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.carbonHover)
-        .opacity(disabled ? 0.5 : 1)
+        .opacity(emptyOfMatches(matching) ? 0.45 : (disabled ? 0.5 : 1))
         .allowsHitTesting(!disabled)
     }
 
@@ -530,11 +542,13 @@ struct SourcesSidebar: View {
         if editTarget == .crate(crateName) {
             renameField { commitRename(.crate(crateName)) }
         } else {
+            let matches = model.crateMatchCounts?[crateName]
             sidebarItem(
                 icon: Image(systemName: crateName == model.targetCrateName ? "shippingbox.fill" : "shippingbox"),
                 title: crateName,
-                count: "\(model.crateTrackCounts[crateName] ?? 0)",
+                count: "\(matches ?? model.crateTrackCounts[crateName] ?? 0)",
                 selected: isSelectedCrate(crateName),
+                matching: matches,
                 action: {
                     model.selectSource(.localCrate(name: crateName))
                     model.targetCrateName = crateName

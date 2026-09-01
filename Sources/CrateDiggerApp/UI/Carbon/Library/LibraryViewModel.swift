@@ -95,6 +95,23 @@ enum LibrarySource: Hashable, Sendable {
     /// Radio / Streams. `nil` category == "All Streams"; otherwise filtered to
     /// one source category ("YT Live" / "YT Records").
     case radio(category: RadioCategory?)
+
+    /// The crates and the two views over them. These share one track store and
+    /// one search: the sidebar counts each crate's matches while you type, so
+    /// moving between them is navigating inside the results.
+    var isLocalLibrary: Bool {
+        switch self {
+        case .localAll, .localCrate, .prepCrate: return true
+        default: return false
+        }
+    }
+
+    /// Whether a live query survives the move. A disc, a playlist, a remote
+    /// library or a phone is a different library, where a query typed about
+    /// your crates means nothing.
+    func keepsSearch(movingTo destination: LibrarySource) -> Bool {
+        isLocalLibrary && destination.isLocalLibrary
+    }
 }
 
 /// Which backend plays YouTube streams. Resolved from `PreferencesStore.streamEngine`
@@ -120,11 +137,30 @@ final class LibraryViewModel: ObservableObject {
         }
     }
 
-    /// Pre-folded search text for `index`, built on the first keystroke of a
-    /// search and thrown away whenever the index changes. Without it a
-    /// keystroke folds six fields on every track — about 150 ms at fourteen
-    /// thousand, which types like treacle. See `LibraryIndex.searchHaystacks`.
+    /// Pre-folded search text, built on the first keystroke of a search and
+    /// thrown away whenever the index changes. Without it a keystroke folds six
+    /// fields on every track — about 150 ms at fourteen thousand, which types
+    /// like treacle. See `LibraryIndex.searchHaystacks`.
+    ///
+    /// Covers the whole track store, not just the browsed source, because the
+    /// sidebar counts every crate's matches from the same folded text.
     private var searchHaystacks: [UUID: String]?
+
+    /// How many tracks in each crate match the live query, `nil` when nothing
+    /// is typed. While a search is running the sidebar shows these instead of
+    /// the crate sizes, so the list of crates becomes a map of where the
+    /// results actually live.
+    @Published private(set) var crateMatchCounts: [String: Int]?
+
+    /// The same for All Records: matches across every crate, deduplicated.
+    @Published private(set) var allRecordsMatchCount: Int?
+
+    /// Every track the crates folder knows about, across all crates. The search
+    /// haystacks are built from this so a crate that isn't the browsed source
+    /// still counts its matches without folding its text again.
+    private func allStoredTracks() -> [LoadedTrack] {
+        currentTrackStore().allTracks
+    }
     /// Selection, ordering and (from Phase 1) filtering, as one tested Core
     /// value type. The properties below forward onto it so the ~190 call sites
     /// that read `selectedTrackIDs` or `trackSortField` did not have to move.
@@ -774,6 +810,33 @@ final class LibraryViewModel: ObservableObject {
 
     /// Decode every crate once and cache its track count + the deduplicated
     /// all-records total. Call this on crate mutations only.
+    /// Count each crate's matches for the sidebar. Cheap next to the folding it
+    /// reuses: the crates' tracks are already resolved and cached, and every
+    /// one of them has its folded text in `searchHaystacks` already.
+    private func recomputeCrateMatchCounts() {
+        let filter = browser.filter
+        guard filter.isActive else {
+            crateMatchCounts = nil
+            allRecordsMatchCount = nil
+            return
+        }
+        var counts: [String: Int] = [:]
+        var matchedPaths: Set<String> = []
+        for name in availableCrates {
+            var hits = 0
+            for loaded in loadCrateTracks(name: name)
+            where filter.matches(loaded, haystack: searchHaystacks?[loaded.track.id]) {
+                hits += 1
+                // Deduplicated the way All Records itself is: one record in
+                // three crates is one record, not three.
+                matchedPaths.insert(loaded.track.fileURL.standardizedFileURL.path)
+            }
+            counts[name] = hits
+        }
+        crateMatchCounts = counts
+        allRecordsMatchCount = matchedPaths.count
+    }
+
     func refreshCrateCounts() {
         var counts: [String: Int] = [:]
         var all: [LoadedTrack] = []
@@ -1426,9 +1489,10 @@ final class LibraryViewModel: ObservableObject {
         // Prune first, then sort: the sort is the expensive half and a search
         // usually leaves it a handful of rows to do.
         if browser.filter.isActive, searchHaystacks == nil {
-            searchHaystacks = LibraryIndex.searchHaystacks(for: index.allTracks)
+            searchHaystacks = LibraryIndex.searchHaystacks(for: allStoredTracks() + index.allTracks)
         }
         browsedIndex = index.filtered(by: browser.filter, haystacks: searchHaystacks)
+        recomputeCrateMatchCounts()
         visibleArtists = LibraryIndex.sortedArtists(browsedIndex.artists, by: artistSortField, ascending: artistSortAscending)
         allAlbumsSorted = LibraryIndex.sortedAlbums(browsedIndex.allAlbums, by: albumSortField, ascending: albumSortAscending)
         flatTracksSorted = LibraryIndex.sortedTracks(browsedIndex.allTracks, by: trackSortField, ascending: trackSortAscending)
@@ -1561,6 +1625,7 @@ final class LibraryViewModel: ObservableObject {
         // Album/Track computed vars already fall back to first if an anchor id no
         // longer resolves in the rebuilt index.
         let sourceChanged = source != currentSource
+        let previousSource = currentSource
         currentSource = source
         if deviceSyncProgress?.isRunning != true { deviceSyncProgress = nil }
         switch source {
@@ -1607,11 +1672,12 @@ final class LibraryViewModel: ObservableObject {
         if sourceChanged {
             browserLayout = rememberedLayout(for: source)
             playlistSorted = false
-            // A query is about the crate you typed it in. Dropped before
-            // re-anchoring so the anchors land in the whole new source, not in
-            // the last source's search. The scope switch restores it after this
-            // call — see setSearchScope.
-            clearSearchState()
+            // A move inside the local library is navigation within the
+            // results — the sidebar counts every crate's matches, so clicking
+            // one has to arrive with the query still applied. Leaving for a
+            // disc, a playlist or a phone drops it: that is a different
+            // library, where a query about your crates means nothing.
+            if !previousSource.keepsSearch(movingTo: source) { clearSearchState() }
             // Anchors onto rows this source actually has, and drops the
             // multi-selection: all three sets, not just albums/tracks, because
             // artist ids are stable across crates and a leftover

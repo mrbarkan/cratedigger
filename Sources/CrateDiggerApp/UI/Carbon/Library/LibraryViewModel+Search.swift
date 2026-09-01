@@ -59,11 +59,9 @@ extension LibraryViewModel {
     /// a source switch rather than a quiet second index.
     func setSearchScope(_ scope: BrowserFilter.Scope) {
         guard scope != browser.filter.scope else { return }
-        // `selectSource` clears the search (a query belongs to the crate you
-        // typed it in) and drops the origin, so both are captured first and
-        // written back after.
-        let query = browser.filter.query
-
+        // No saving the query around these: both ends are local sources, and a
+        // move inside the local library carries the search with it (see
+        // `LibrarySource.keepsSearch(movingTo:)`).
         switch scope {
         case .everywhere:
             let origin = currentSource
@@ -74,7 +72,7 @@ extension LibraryViewModel {
             sourceBeforeSearch = nil
         }
 
-        browser.filter = BrowserFilter(query: query, scope: scope)
+        browser.filter.scope = scope
         applyFilterChange()
         if browser.filter.isActive { showSearchScreen() }
     }
@@ -97,13 +95,18 @@ extension LibraryViewModel {
         hideSearchScreen()
     }
 
-    /// Drop the query, the scope and the remembered origin without touching the
-    /// browser — for `selectSource`, which is about to rebuild everything
-    /// anyway. Deliberately not `clearSearch()`: that one would recurse back
-    /// through `setSearchScope` into `selectSource`.
+    /// Drop the query, the scope and the remembered origin, for `selectSource`.
+    /// Deliberately not `clearSearch()`: that one would recurse back through
+    /// `setSearchScope` into `selectSource`.
+    ///
+    /// The recompute is not optional. `selectSource` assigns the new `index`
+    /// first, whose `didSet` prunes with the filter that is about to be
+    /// dropped; without this the browser would keep drawing the old query's
+    /// results in a source that no longer has a query.
     func clearSearchState() {
         browser.filter = BrowserFilter()
         sourceBeforeSearch = nil
+        recomputeSortedCollections()
     }
 
     // MARK: - Focus
