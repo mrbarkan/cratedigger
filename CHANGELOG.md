@@ -4,11 +4,16 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
-## 2.0.0 (76) — 2026-08-30 — BETA 4
+## 2.0.0 (77) — 2026-08-31 — BETA 5
 
 Everything in the 2.0 line so far, newest work first. Unfinished by
 definition: this is where 2.0 is built, and it is offered to nobody who has
 not asked for it.
+
+Beta 5 is about artwork getting out of your way. Fetching a whole release of
+scans no longer locks the window, the images you fetched actually show up, and
+you can throw one out from the viewer you are looking at it in. FIX TAGS also
+stopped renaming songs it had no business renaming.
 
 Beta 4 is a fix release on top of beta 3: playlists play again, and the
 artwork panel tells the truth about what it did.
@@ -23,6 +28,10 @@ app.
 
 ### Added
 
+- **Throw out a scan while you are looking at it.** The artwork viewer can drop
+  the page you are on from the rotation, or move the file to the Trash, so you
+  no longer have to remember which one was wrong and go hunting for it in the
+  ART tab afterwards.
 - **Artwork waits for you now.** Anything you import from the search window, or
   pick off your own disk, is held aside instead of landing in your album folder.
   You look at it, set roles, drop what you do not want, and press SAVE. Removing
@@ -75,6 +84,30 @@ app.
 
 ### Changed
 
+- **Artwork downloads while you carry on.** A full Cover Art Archive release is
+  dozens of scans, and the window used to sit locked behind a spinner for the
+  best part of a minute. The search panel closes the moment you press STAGE, the
+  ART tab counts the images in as they land, and the display flashes when the
+  set is ready. Browse and listen the whole time. Four images come down at once
+  now instead of one, so it finishes sooner too.
+- **FIX TAGS shows you what actually changed.** A row correcting "Honeymoon is
+  Over" to "Honeymoon Is Over" and a row replacing a title outright used to look
+  identical: two long strings side by side, and yours to compare. Only the part
+  that differs is picked out now, so a capitalisation tidy up and a wholesale
+  rename can be told apart at a glance. The column that repeated the title
+  beside it is gone.
+- **The artwork viewer keeps the zoom you picked.** Turning a page dropped you
+  back to Fit every time, which made comparing the same corner of two scans
+  impossible.
+- **A dimmer, instead of a focus switch.** How far the app behind the artwork is
+  dimmed out is a slider now, rather than the two fixed positions FOCUS offered.
+  The viewer's controls read as one set of controls as well: the pager reads as
+  a pager, and CLOSE is no longer wedged between BACK and FWD.
+- **The playback position moved to the foot of the display.** It is the line
+  above TRACK, FORMAT and the rest, filling in as the track plays, so it spans
+  the whole glass instead of a short bar squeezed between two clocks. The volume
+  meter has left the display entirely: the fader in the footer was already
+  saying it.
 - **A much bigger cover.** The inspector's cover now takes whatever height the
   text below it leaves, and follows the window as you resize it. The tabs and
   the library tools moved out onto the chassis around the panel, the rows that
@@ -99,6 +132,16 @@ app.
 
 ### Fixed
 
+- **Artwork you just found appears straight away.** Images fetched from the
+  search window sat as spinning placeholders in the ART tab until you pressed
+  SAVE, so the one moment you needed to look at them was the one moment you
+  could not.
+- **A wrong track number no longer renames your songs.** FIX TAGS trusted the
+  number in a file's tags above everything else, so a rip whose numbers had been
+  shuffled quietly offered to swap two songs' titles, confidently and with
+  nothing to say anything was odd. A title that matches a different track almost
+  exactly now wins the argument. A file with no title still goes by its number,
+  which is all an untagged rip has to go on.
 - **Playlists play again.** Double clicking a track in a playlist did nothing
   at all. A playlist row can be dragged to reorder it, and being a drop target
   swallowed the second click before it ever reached the thing that starts
