@@ -572,7 +572,7 @@ private struct OLEDTag: View {
 private struct ScanBar: View {
     @Environment(\.carbon) private var theme
 
-    enum Style { case rainbow(Double), orange(Double), indigoSweep, sweep(Color) }
+    enum Style { case rainbow(Double), orange(Double), indigoSweep, level(Color, Double) }
     let style: Style
     @State private var sweep = false
 
@@ -601,17 +601,15 @@ private struct ScanBar: View {
                         .onAppear {
                             withAnimation(.easeInOut(duration: 1.6).repeatForever(autoreverses: true)) { sweep = true }
                         }
-                // The tuner: the same travel as indigoSweep, in one given
-                // colour, faster — it is tracking a query, not a long job.
-                case .sweep(let color):
+                // How much of the source came back, in a given colour. Not a
+                // sweep: the filter is synchronous and finished before this is
+                // drawn, so anything still moving would be claiming work that
+                // isn't happening.
+                case .level(let color, let f):
                     Capsule()
-                        .fill(LinearGradient(colors: [color.opacity(0.35), color], startPoint: .leading, endPoint: .trailing))
-                        .frame(width: w * 0.18)
-                        .shadow(color: color.opacity(0.45), radius: 5)
-                        .offset(x: sweep ? w * 0.78 : w * 0.04)
-                        .onAppear {
-                            withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) { sweep = true }
-                        }
+                        .fill(LinearGradient(colors: [color.opacity(0.55), color], startPoint: .leading, endPoint: .trailing))
+                        .frame(width: w * CGFloat(min(max(f, 0), 1)))
+                        .shadow(color: color.opacity(0.34), radius: 5)
                 }
             }
         }
@@ -1078,13 +1076,10 @@ private struct SearchPane: View {
                 Text(matchValue)
                     .font(CarbonFont.display(34, weight: .thin))
                     .foregroundStyle(oledFG)
-                if model.isSearchActive {
-                    ScanBar(style: .sweep(theme.lampSearch)).frame(width: 150)
-                } else {
-                    // The empty well, so the readout doesn't jump height when
-                    // the sweep appears.
-                    Capsule().fill(oledFGo(0.10)).frame(width: 150, height: 5)
-                }
+                // Always drawn, so the readout doesn't change height when a
+                // query starts: empty well at rest, filled to the share of the
+                // source that matched while searching.
+                ScanBar(style: .level(theme.lampSearch, matchFraction)).frame(width: 150)
             }
             .fixedSize()
         } ticker: {
@@ -1117,6 +1112,18 @@ private struct SearchPane: View {
     /// The number the eye goes to: how many tracks came back.
     private var matchValue: String {
         model.isSearchActive ? "\(model.browsedIndex.allTracks.count)" : "—"
+    }
+
+    /// The share of the source still showing. Floored just above zero while
+    /// anything matched, so a single hit in a big library is still a mark on
+    /// the bar rather than nothing at all.
+    private var matchFraction: Double {
+        guard model.isSearchActive else { return 0 }
+        let total = model.index.allTracks.count
+        guard total > 0 else { return 0 }
+        let found = model.browsedIndex.allTracks.count
+        guard found > 0 else { return 0 }
+        return max(0.015, Double(found) / Double(total))
     }
 
     private var cells: [OLEDCellData] {
