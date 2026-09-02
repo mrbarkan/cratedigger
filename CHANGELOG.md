@@ -4,11 +4,17 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
-## 2.0.0 (78) — 2026-09-01 — BETA 6
+## 2.0.0 (79) — 2026-09-02 — BETA 7
 
 Everything in the 2.0 line so far, newest work first. Unfinished by
 definition: this is where 2.0 is built, and it is offered to nobody who has
 not asked for it.
+
+Beta 7 is the console becoming yours. Every theme can carry its own logo in
+the header, with a crop table in the editor to frame it, and the parts that
+light up stopped taking their colour from the accent, so a theme built around
+black finally has LEDs that work. The gallery also says what you are looking
+at.
 
 Beta 6 is the browser finding things. You can search your library at last,
 the crate list tells you where the results live, and the three columns are no
@@ -32,6 +38,29 @@ to, and the browser's selection and sorting moving into the tested core of the
 app.
 
 ### Added
+
+- **A logo for every theme.** The header's right side, opposite the CrateDigger
+  name, is the theme's mark now. Carbon, Cobalt and Llama '97 each ship one
+  drawn in their own palette, for light and for dark. A theme with no logo sets
+  its name there instead, so nothing is ever blank.
+- **A crop table for it.** The theme editor's BRAND section shows the header row
+  at actual size with your mark in it. Choose an image or drop one on the
+  section, then drag to move it, pinch or use the SIZE fader to scale it, and
+  FIT and FILL do the two framings you usually want. APPLY renders exactly what
+  you framed into the theme. ADJUST reopens the mark you already have. A theme
+  carrying both a light and a dark version gets a logo for each.
+- **Dividers in the gallery.** Sorting by year, A to Z or artist now cuts the
+  wall of covers into labelled sections, and the label stays pinned to the top
+  of the feed as you scroll past it, with a count of what is under it. Arrow
+  keys follow the sections rather than stepping blindly across them.
+- **The search key reaches the gallery.** The magnifier in the browser header
+  now shows in gallery view too, searching the same records the list does.
+- **Lamps and meters are their own colours.** Three new tokens in the theme
+  editor: Key Lamp for the LEDs on the VIEW, THEME and EQ keys, Meter High for
+  the loud end of the volume, EQ and VU meters, and Buttons under Corner
+  Roundness for how square the keys are. Each starts out following the accent
+  exactly as before, so no theme you already have changes, but a theme whose
+  accent is black can now light its LEDs without giving up black buttons.
 
 - **Search your library.** A field across the top of the browser, results as
   you type, over artist, album, title, file path and format. Every word you
@@ -121,6 +150,16 @@ app.
 
 ### Changed
 
+- **The display rail leads with what is playing.** The track name and the clock
+  moved to the left of the rail, where they read first, and the row of mode
+  lamps moved to the right where a status strip belongs. The clock is pinned to
+  the edge, so it no longer shifts as the title changes length.
+- **The header's two columns line up.** The library keys and the VIEW, THEME and
+  EQ keys sit on one grid now, both starting under the traffic lights and both
+  ending level with the bottom of the display.
+- **The grain stops at the silicone.** Moulded rubber is smooth, so the
+  console's texture no longer crosses the transport caps.
+
 - **Artwork downloads while you carry on.** A full Cover Art Archive release is
   dozens of scans, and the window used to sit locked behind a spinner for the
   best part of a minute. The search panel closes the moment you press STAGE, the
@@ -168,6 +207,17 @@ app.
   no longer move anything else.
 
 ### Fixed
+
+- **The theme editor no longer flips the appearance.** Opening it while in Light
+  threw the whole app into Dark, and the other way round, because the editor
+  previews the layer it is editing and always started on the theme's declared
+  one. It starts on the appearance you are already in.
+- **The browser's column titles are the right size again.** The name in each
+  column header is a menu, and a menu label on macOS ignores the font the header
+  sets, so the facet name rendered in 13pt system type beside 8.5pt monospace.
+- **A theme with glare on no longer stretches the editor's preview.** The glare
+  and dot screen overlays were sizing the view they sat on rather than the other
+  way round, which pushed the preview panel out of shape.
 
 - **Saving staged artwork read the staging session off the main thread**, a
   data race that Swift 6 would refuse to compile. It reads the roles and disc
