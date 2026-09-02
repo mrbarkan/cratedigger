@@ -30,6 +30,7 @@ public struct CarbonGeometry: Equatable {
     public var paperCornerRadius: CGFloat
 
     public var oledCornerRadius: CGFloat
+    public var keyCornerRadius: CGFloat
     public var oledPaddingH: CGFloat
     public var oledPaddingV: CGFloat
 
@@ -61,6 +62,7 @@ public struct CarbonGeometry: Equatable {
         wellPadding: CGFloat,
         paperCornerRadius: CGFloat,
         oledCornerRadius: CGFloat,
+        keyCornerRadius: CGFloat,
         oledPaddingH: CGFloat,
         oledPaddingV: CGFloat,
         viewSwitchWidth: CGFloat,
@@ -87,6 +89,7 @@ public struct CarbonGeometry: Equatable {
         self.wellPadding = Self.Bounds.inset.clamp(wellPadding)
         self.paperCornerRadius = Self.Bounds.cornerRadius.clamp(paperCornerRadius)
         self.oledCornerRadius = Self.Bounds.cornerRadius.clamp(oledCornerRadius)
+        self.keyCornerRadius = Self.Bounds.keyCornerRadius.clamp(keyCornerRadius)
         self.oledPaddingH = Self.Bounds.inset.clamp(oledPaddingH)
         self.oledPaddingV = Self.Bounds.inset.clamp(oledPaddingV)
         self.viewSwitchWidth = Self.Bounds.switcherWidth.clamp(viewSwitchWidth)
@@ -110,6 +113,8 @@ public struct CarbonGeometry: Equatable {
     /// would sit at a value the app then silently ignores.
     enum Bounds {
         static let cornerRadius: ClosedRange<CGFloat> = 0...40
+        /// A key is 20 to 30pt tall, so past this it's a capsule anyway.
+        static let keyCornerRadius: ClosedRange<CGFloat> = 0...16
         static let inset: ClosedRange<CGFloat> = 0...32
         static let gap: ClosedRange<CGFloat> = 0...32
         static let headerFooterHeight: ClosedRange<CGFloat> = 60...240
@@ -147,6 +152,7 @@ public extension CarbonGeometry {
         wellPadding: CarbonLayout.wellPadding,
         paperCornerRadius: CarbonLayout.paperCornerRadius,
         oledCornerRadius: CarbonLayout.oledCornerRadius,
+        keyCornerRadius: CarbonLayout.keyCornerRadius,
         oledPaddingH: CarbonLayout.oledPaddingH,
         oledPaddingV: CarbonLayout.oledPaddingV,
         viewSwitchWidth: CarbonLayout.viewSwitchWidth,
@@ -184,6 +190,7 @@ public extension CarbonGeometry {
             wellPadding: value("wellPadding", resolvedBase.wellPadding),
             paperCornerRadius: value("paperCornerRadius", resolvedBase.paperCornerRadius),
             oledCornerRadius: value("oledCornerRadius", resolvedBase.oledCornerRadius),
+            keyCornerRadius: value("keyCornerRadius", resolvedBase.keyCornerRadius),
             oledPaddingH: value("oledPaddingH", resolvedBase.oledPaddingH),
             oledPaddingV: value("oledPaddingV", resolvedBase.oledPaddingV),
             viewSwitchWidth: value("viewSwitchWidth", resolvedBase.viewSwitchWidth),

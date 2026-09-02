@@ -21,20 +21,26 @@ extension OLEDView {
     }
 }
 
-/// One size for every button in the switcher column — the display strip and
-/// the three settings keys must read as identical physical parts.
-enum SwitcherButtonMetrics {
-    static let height: CGFloat = 28
-    static let cornerRadius: CGFloat = 6
+/// One grid for both header columns: a brand row on top, then the keys, each
+/// column filling the header so its last key lands on the OLED's bottom edge.
+/// The keys take the height that leaves — the same in both columns, since
+/// both stack the same rows — so the library keys and the switcher keys read
+/// as identical physical parts, and a theme's `headerHeight` scales them.
+enum HeaderKeyMetrics {
+    /// Clears the traffic lights, which sit on the brand column's top edge.
+    static let topInset: CGFloat = 18
+    static let brandRowHeight: CGFloat = 20
+    static let rowGap: CGFloat = 6
 }
 
 /// The display toggle: a thin strip of light in a hardware button — no text.
 /// Tapping cycles through the visible OLED views; the strip's glow color is the
 /// same accent the OLED uses for the active screen (NOW sun, CNVRT orange,
-/// SCAN cyan…), so the lamp itself says which screen you're on. Same 28-pt
-/// footprint as the VIEW/THEME/EQ buttons below it. Plays .firm on each press.
+/// SCAN cyan…), so the lamp itself says which screen you're on. Same footprint
+/// as the VIEW/THEME/EQ buttons below it. Plays .firm on each press.
 struct DisplayModeButton: View {
     @Environment(\.carbon) private var theme
+    @Environment(\.carbonGeometry) private var geometry
     @EnvironmentObject private var model: LibraryViewModel
 
     private static let cycle: [OLEDView] = [.nowPlaying, .conversion, .scan, .devices]
@@ -50,9 +56,8 @@ struct DisplayModeButton: View {
                         .stroke(Color.black.opacity(theme.isDark ? 0.5 : 0.15), lineWidth: 0.5)
                 )
                 .padding(.horizontal, 10)
-                .frame(maxWidth: .infinity)
-                .frame(height: SwitcherButtonMetrics.height)
-                .background(ChromeChassis(theme: theme, cornerRadius: SwitcherButtonMetrics.cornerRadius))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(ChromeChassis(theme: theme, cornerRadius: geometry.keyCornerRadius))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.carbonHover)

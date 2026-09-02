@@ -17,12 +17,15 @@ enum KeyButtonStyle: Equatable {
 /// house face, size and tracking, so keys can't drift apart sheet by sheet.
 struct KeyButton<Label: View>: View {
     @Environment(\.carbon) private var theme
+    @Environment(\.carbonGeometry) private var geometry
     var style: KeyButtonStyle = .normal
     var clickVariant: ClickPlayer.Variant = .key
     var action: () -> Void = {}
     @ViewBuilder var label: () -> Label
 
-    private static var shape: RoundedRectangle { RoundedRectangle(cornerRadius: 6, style: .continuous) }
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: geometry.keyCornerRadius, style: .continuous)
+    }
 
     var body: some View {
         Button(action: {
@@ -40,7 +43,7 @@ struct KeyButton<Label: View>: View {
                     .foregroundStyle(textColor)
                     .padding(.horizontal, 8)
             }
-            .contentShape(Self.shape)
+            .contentShape(shape)
         }
         .buttonStyle(.carbonHover)
         .opacity(style == .disabled ? 0.42 : 1)
@@ -49,7 +52,7 @@ struct KeyButton<Label: View>: View {
 
     @ViewBuilder
     private var background: some View {
-        let shape = Self.shape
+        let shape = shape
         switch style {
         case .normal, .disabled:
             KeyChrome()
@@ -78,9 +81,10 @@ struct KeyButton<Label: View>: View {
 /// `KeyButton` — a `Menu` label, say — but have to look like one.
 struct KeyChrome: View {
     @Environment(\.carbon) private var theme
+    @Environment(\.carbonGeometry) private var geometry
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: geometry.keyCornerRadius, style: .continuous)
         shape.fill(theme.metal)   // opaque, not Material — see ChassisLayer
              .overlay(shape.strokeBorder(theme.hair, lineWidth: 1))
     }

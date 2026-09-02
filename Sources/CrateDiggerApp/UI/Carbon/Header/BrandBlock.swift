@@ -5,9 +5,12 @@ struct BrandBlock: View {
     @EnvironmentObject private var model: LibraryViewModel
 
     var body: some View {
-        // v10 brand column: brand-row (name → settings cog + mini-player pip at
-        // far right), then a 4-row full-width library-button column.
-        VStack(alignment: .leading, spacing: 8) {
+        // Brand column: brand-row (name → settings cog + mini-player pip at
+        // far right), then four full-width library keys. On the same grid as
+        // the switcher column opposite (`HeaderKeyMetrics`): the row clears the
+        // traffic lights, and the keys stretch so the last one meets the
+        // OLED's bottom edge.
+        VStack(alignment: .leading, spacing: HeaderKeyMetrics.rowGap) {
             HStack(spacing: 8) {
                 // The brand column is a fixed width, but a theme can set any
                 // interface face — a wider one wrapped "CrateDigger" onto two
@@ -31,9 +34,9 @@ struct BrandBlock: View {
                     NotificationCenter.default.post(name: NSNotification.Name("CrateDiggerShowMiniPlayer"), object: nil)
                 }
             }
-            .padding(.top, 7)   // clear the traffic lights
+            .frame(height: HeaderKeyMetrics.brandRowHeight)
 
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: HeaderKeyMetrics.rowGap) {
                 LibButton(style: .wide, title: "DIG CRATE", systemImage: "folder",
                           tip: "Dig Crate — scan a folder of audio. New tracks land in the Prep Crate.") { model.openFolderViaPanel() }
                 LibButton(style: .wide, title: "RESCAN", systemImage: "arrow.clockwise",
@@ -48,7 +51,8 @@ struct BrandBlock: View {
                 }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, HeaderKeyMetrics.topInset)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private var canAddToCrate: Bool {
@@ -64,13 +68,15 @@ struct BrandBlock: View {
 }
 
 /// Small metal-chrome control button. `.wide` fills its column left-aligned
-/// (the 4-row library column); `.pip` is a compact 20pt icon-only chip (the
-/// mini-player button on the brand row). When `highlighted` it lights up amber
-/// (ADD TO CRATE when a selection is ready).
+/// and takes the row height the header grid hands it (the 4-row library
+/// column); `.pip` is a compact 20pt icon-only chip (the mini-player button on
+/// the brand row). When `highlighted` it lights up amber (ADD TO CRATE when a
+/// selection is ready).
 private enum LibButtonStyle { case normal, wide, pip }
 
 private struct LibButton: View {
     @Environment(\.carbon) private var theme
+    @Environment(\.carbonGeometry) private var geometry
     var style: LibButtonStyle = .normal
     let title: String
     let systemImage: String
@@ -80,7 +86,7 @@ private struct LibButton: View {
 
     @State private var spinning = false
 
-    private var height: CGFloat { style == .pip ? 20 : 24 }
+    private var height: CGFloat? { style == .wide ? nil : (style == .pip ? 20 : 24) }
     private var horizPad: CGFloat { style == .pip ? 6 : 9 }
 
     var body: some View {
@@ -110,9 +116,10 @@ private struct LibButton: View {
             .frame(maxWidth: style == .wide ? .infinity : nil,
                    alignment: .leading)
             .frame(height: height)
+            .frame(maxHeight: style == .wide ? .infinity : nil)
             // Highlight lights the *label*, not the chassis — the button reads
             // as ready without the whole key turning into a lamp.
-            .background(ChromeChassis(theme: theme, cornerRadius: 6))
+            .background(ChromeChassis(theme: theme, cornerRadius: geometry.keyCornerRadius))
         }
         .buttonStyle(.carbonHover)
         .carbonTip(tip ?? title.capitalized)

@@ -2,20 +2,22 @@ import SwiftUI
 
 /// Shared anatomy for the three footer LCDs (EQ, spectrum VU, L/R VU).
 ///
-/// Their lit segments run the **same cyan → orange ramp as the VOLUME fader**,
-/// so every lit element in the footer comes from one palette and follows the
-/// theme's accent pair. The well itself stays a near-black hardware LCD (like
+/// Their lit segments run the **same cyan → meter-high ramp as the VOLUME
+/// fader**, so every lit element in the footer comes from one palette. The
+/// high end is `meterHot`, the accent unless a theme says otherwise, so a
+/// theme with a black accent keeps meters that light up. The well itself
+/// stays a near-black hardware LCD (like
 /// the patch-bay steel: a material, not a theme colour) with a faint wash of
 /// the theme's cyan so it still shifts between themes.
 enum LCDScreen {
     /// Low → high across the meter's own axis, matching the fader's travel.
     static func ramp(_ theme: CarbonTheme, opacity: Double = 1) -> Gradient {
-        Gradient(colors: [theme.cyan.opacity(opacity), theme.orange.opacity(opacity)])
+        Gradient(colors: [theme.cyan.opacity(opacity), theme.meterHot.opacity(opacity)])
     }
 
     /// The brightened ramp used for the leading/peak segment.
     static func peakRamp(_ theme: CarbonTheme) -> Gradient {
-        Gradient(colors: [theme.cyanGlow, theme.orangeHi])
+        Gradient(colors: [theme.cyanGlow, theme.meterHotHi])
     }
 
     /// Shading for a segment path inside a Canvas of `size`. `vertical` ramps
@@ -83,12 +85,12 @@ struct SegmentGrid: View {
             context.fill(unlit, with: LCDScreen.shading(LCDScreen.ramp(theme, opacity: 0.10),
                                                         size: size, vertical: true))
             context.drawLayer { layer in
-                layer.addFilter(.shadow(color: theme.orange.opacity(0.5), radius: 2))
+                layer.addFilter(.shadow(color: theme.meterHot.opacity(0.5), radius: 2))
                 layer.fill(litBody, with: LCDScreen.shading(LCDScreen.ramp(theme),
                                                             size: size, vertical: true))
             }
             context.drawLayer { layer in
-                layer.addFilter(.shadow(color: theme.orange.opacity(0.8), radius: 3))
+                layer.addFilter(.shadow(color: theme.meterHot.opacity(0.8), radius: 3))
                 layer.fill(peak, with: LCDScreen.shading(LCDScreen.peakRamp(theme),
                                                          size: size, vertical: true))
             }

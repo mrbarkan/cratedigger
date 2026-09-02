@@ -17,7 +17,7 @@ struct CarbonAlertView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 8) {
-                Circle().fill(theme.orange).frame(width: 7, height: 7)
+                Circle().fill(theme.keyLamp).frame(width: 7, height: 7)
                 Text(alert.title.uppercased())
                     .font(CarbonFont.mono(11, weight: .bold))
                     .tracking(2)

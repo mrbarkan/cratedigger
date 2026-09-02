@@ -149,7 +149,7 @@ extension View {
             compositingGroup()
                 .overlayPreferenceValue(GrainFreeKey.self) { holes in
                     GeometryReader { proxy in
-                        let mask = GrainMask(holes: holes.map { (proxy[$0.bounds], $0.cornerRadius) })
+                        let mask = GrainMask(holes: holes.map { (proxy[$0.bounds], $0.shape) })
                         ZStack {
                             Image(nsImage: CarbonTexture.grain)
                                 .interpolation(.none)
@@ -174,8 +174,16 @@ extension View {
     /// reported to whichever `carbonGrain` is above it, so the caller doesn't
     /// have to know where in the tree that is.
     func grainFree(cornerRadius: CGFloat) -> some View {
+        grainFree(shape: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+    }
+
+    /// The same, for a view that isn't a rounded rectangle — a silicone cap
+    /// is a circle, and grain in the corners of a square hole around it would
+    /// still be grain on the chassis, which is fine, but grain *on* the rubber
+    /// is not: moulded silicone is smooth.
+    func grainFree<S: Shape>(shape: S) -> some View {
         anchorPreference(key: GrainFreeKey.self, value: .bounds) {
-            [GrainFreeRegion(bounds: $0, cornerRadius: cornerRadius)]
+            [GrainFreeRegion(bounds: $0, shape: AnyShape(shape))]
         }
     }
 
@@ -183,11 +191,16 @@ extension View {
     /// Screen blend so it *adds* light like a real reflection rather than
     /// washing the panel out — and grouped with what it blends against, for
     /// the reason spelled out in `carbonHalftone`.
+    ///
+    /// An overlay, not a `ZStack` with the gradient as a sibling: a gradient
+    /// takes every point it's offered, and as a stack member it offered the
+    /// whole stack that size — the editor's preview slab grew to fill the
+    /// panel the moment a theme turned glare on. An overlay is sized by the
+    /// view it sits on.
     @ViewBuilder
     func carbonGlare(_ amount: Double) -> some View {
         if amount > 0 {
-            ZStack {
-                self
+            overlay(
                 LinearGradient(
                     stops: [
                         .init(color: .white.opacity(amount), location: 0),
@@ -200,7 +213,7 @@ extension View {
                 )
                 .blendMode(.screen)
                 .allowsHitTesting(false)
-            }
+            )
             .compositingGroup()
         } else {
             self
@@ -222,16 +235,18 @@ extension View {
             // reads the same and isn't: the dots end up blending against
             // whatever the enclosing context happens to be, and on the OLED —
             // clipped, and inside the display's own compositing group — that
-            // resolved to no visible change at all.
-            ZStack {
-                self
+            // resolved to no visible change at all. Grouping *after* the
+            // overlay keeps both in the group; and it's an overlay rather
+            // than a stack sibling because a tiled image, like a gradient, is
+            // greedy (see `carbonGlare`).
+            overlay(
                 Image(nsImage: pale ? CarbonTexture.halftoneLight : CarbonTexture.halftoneDark)
                     .interpolation(.none)
                     .resizable(resizingMode: .tile)
                     .blendMode(pale ? .plusLighter : .multiply)
                     .opacity(amount)
                     .allowsHitTesting(false)
-            }
+            )
             .compositingGroup()
         } else {
             self
@@ -244,9 +259,9 @@ extension View {
 
 /// One region the interface grain skips, in the coordinate space of the view
 /// that draws the grain.
-struct GrainFreeRegion: Equatable {
+struct GrainFreeRegion {
     let bounds: Anchor<CGRect>
-    let cornerRadius: CGFloat
+    let shape: AnyShape
 }
 
 struct GrainFreeKey: PreferenceKey {
@@ -259,7 +274,7 @@ struct GrainFreeKey: PreferenceKey {
 /// Opaque everywhere except the reported regions, which are punched clear so
 /// the grain layers above them draw nothing at all.
 private struct GrainMask: View {
-    let holes: [(rect: CGRect, cornerRadius: CGFloat)]
+    let holes: [(rect: CGRect, shape: AnyShape)]
 
     var body: some View {
         Rectangle()
@@ -267,7 +282,7 @@ private struct GrainMask: View {
             .overlay(
                 ZStack {
                     ForEach(Array(holes.enumerated()), id: \.offset) { _, hole in
-                        RoundedRectangle(cornerRadius: hole.cornerRadius, style: .continuous)
+                        hole.shape
                             .fill(Color.black)
                             .frame(width: hole.rect.width, height: hole.rect.height)
                             .position(x: hole.rect.midX, y: hole.rect.midY)

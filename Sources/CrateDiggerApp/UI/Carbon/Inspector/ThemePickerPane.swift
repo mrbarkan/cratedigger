@@ -272,7 +272,7 @@ struct ThemePickerPane: View {
     }
 
     private func edit(_ manifest: ThemeManifest) {
-        registry.beginEditing(manifest)
+        registry.beginEditing(manifest, appearance: theme.isDark ? .dark : .light)
         model.showingThemeEditor = true
     }
 

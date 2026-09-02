@@ -15,8 +15,9 @@ struct FaderDetent {
 struct FaderTrack: View {
     @Environment(\.carbon) private var theme
     let progress: Double
-    /// Solid rail colour (POSITION). Left nil, the rail wears the cyan→orange
-    /// ramp (VOLUME), *revealed* through a mask rather than squeezed into the
+    /// Solid rail colour (POSITION). Left nil, the rail wears the cyan→meter
+    /// ramp (VOLUME; the high end is `meterHot`), *revealed* through a mask
+    /// rather than squeezed into the
     /// filled width — so a given colour always sits at the same point on the
     /// travel, like a printed scale.
     var fillColor: Color? = nil
@@ -50,7 +51,7 @@ struct FaderTrack: View {
                         Capsule()
                             .fill(
                                 LinearGradient(
-                                    colors: [theme.cyan.opacity(0.92), theme.orange.opacity(0.88)],
+                                    colors: [theme.cyan.opacity(0.92), theme.meterHot.opacity(0.88)],
                                     startPoint: .leading,
                                     endPoint: .trailing
                                 )

@@ -112,13 +112,45 @@ public struct ThemeLoaderService {
         let byID = Dictionary(uniqueKeysWithValues: accepted.map { ($0.definition.id, $0.definition) })
 
         let manifests = accepted.map { candidate in
-            ThemeManifest(
+            // Resolved off the candidate's *own* declaration, before
+            // inheritance: the logo is the one key `merge` doesn't carry down.
+            // One lookup per appearance, since a layer may name its own file.
+            var logoURLs: [ThemeDefinition.BaseAppearance: URL] = [:]
+            var dangling: [String] = []
+            for appearance in [ThemeDefinition.BaseAppearance.light, .dark] {
+                guard let name = candidate.definition.resolved(for: appearance).logo else { continue }
+                if let url = Self.logoURL(declared: name, besides: candidate.sourceURL) {
+                    logoURLs[appearance] = url
+                } else if !dangling.contains(name) {
+                    dangling.append(name)
+                }
+            }
+            for name in dangling {
+                warnings.append(ThemeLoadWarning(
+                    sourceURL: candidate.sourceURL,
+                    message: "Logo \"\(name)\" not found next to theme.json, so the theme name is shown instead."
+                ))
+            }
+            return ThemeManifest(
                 definition: Self.resolveInheritance(candidate.definition, in: byID, warnings: &warnings, sourceURL: candidate.sourceURL),
-                origin: candidate.origin
+                origin: candidate.origin,
+                logoURLs: logoURLs
             )
         }
 
         return ThemeLoadResult(themes: manifests, warnings: warnings)
+    }
+
+    /// Where a declared logo file would be: beside `theme.json`, inside a
+    /// `.cdtheme` bundle. `nil` for a bare `.json` theme, a declaration that
+    /// escapes the bundle (`"../x.png"`), or a file that isn't there — the
+    /// caller falls back to the theme name in every case.
+    public static func logoURL(declared name: String?, besides manifestURL: URL, fileManager: FileManager = .default) -> URL? {
+        guard let name, !name.isEmpty, !name.contains("/") else { return nil }
+        let bundleDirectory = manifestURL.deletingLastPathComponent()
+        guard bundleDirectory.pathExtension.lowercased() == "cdtheme" else { return nil }
+        let url = bundleDirectory.appendingPathComponent(name)
+        return fileManager.fileExists(atPath: url.path) ? url : nil
     }
 
     // MARK: - Inheritance resolution
@@ -176,6 +208,9 @@ public struct ThemeLoaderService {
             colors: mergeDictionaries(base.colors, override.colors),
             shadows: mergeDictionaries(base.shadows, override.shadows),
             fonts: mergeDictionaries(base.fonts, override.fonts),
+            // Deliberately not `?? base.logo`: the file is in the child's
+            // bundle or nowhere (see `ThemeDefinition.logo`).
+            logo: override.logo,
             geometry: mergeDictionaries(base.geometry, override.geometry),
             effects: mergeDictionaries(base.effects, override.effects),
             // Inheriting an adaptive theme must inherit its adaptiveness —
@@ -192,7 +227,8 @@ public struct ThemeLoaderService {
         return ThemeVariant(
             colors: mergeDictionaries(base.colors, override.colors),
             shadows: mergeDictionaries(base.shadows, override.shadows),
-            effects: mergeDictionaries(base.effects, override.effects)
+            effects: mergeDictionaries(base.effects, override.effects),
+            logo: override.logo   // not inherited, same as the shared one
         )
     }
 

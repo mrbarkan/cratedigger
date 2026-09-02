@@ -2,15 +2,20 @@ import AppKit
 import CrateDiggerCore
 import SwiftUI
 
-/// Right-hand header column: the DISPLAY screen tile (OLED mode) plus three
-/// settings buttons — VIEW / THEME / EQ — each showing a dot indicator row for
-/// its current option, mirroring the CrateDigger v6 design.
+/// Right-hand header column, the brand column's mirror: the theme's logo where
+/// the left has "CrateDigger", then the DISPLAY screen tile (OLED mode) and
+/// three settings buttons — VIEW / THEME / EQ — each showing a dot indicator
+/// row for its current option. Same row grid as `BrandBlock`
+/// (`HeaderKeyMetrics`), so the two columns' keys line up across the glass.
 struct ViewSwitcherColumn: View {
     @Environment(\.carbon) private var theme
     @EnvironmentObject private var model: LibraryViewModel
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: HeaderKeyMetrics.rowGap) {
+            ThemeLogo()
+                .frame(height: HeaderKeyMetrics.brandRowHeight)
+
             DisplayModeButton()
 
             SwitchButton(
@@ -47,6 +52,8 @@ struct ViewSwitcherColumn: View {
                 model.cycleEQPreset()
             }
         }
+        .padding(.top, HeaderKeyMetrics.topInset)
+        .frame(maxHeight: .infinity, alignment: .top)
     }
 
     /// EQ dot row position: where the current slot sits in the cycle, or the
@@ -66,6 +73,7 @@ struct ViewSwitcherColumn: View {
 /// no fixed option count, so the lamp acknowledges the click instead).
 private struct SwitchButton: View {
     @Environment(\.carbon) private var theme
+    @Environment(\.carbonGeometry) private var geometry
     let name: String
     let dotCount: Int
     let activeIndex: Int
@@ -105,9 +113,11 @@ private struct SwitchButton: View {
     var body: some View {
         Button(action: fire) {
             HStack(spacing: 4) {
+                // Same face as the library keys opposite (`LibButton`): the two
+                // columns are one set of parts.
                 Text(name)
-                    .font(CarbonFont.mono(8.5, weight: .bold))
-                    .tracking(1.3)
+                    .font(CarbonFont.mono(8, weight: .bold))
+                    .tracking(1.4)
                     .foregroundStyle(theme.ink3)
                     .lineLimit(1)
                     // Scales down a hair rather than truncating to "T…" if a
@@ -119,9 +129,9 @@ private struct SwitchButton: View {
                     HStack(spacing: dotSpacing) {
                         ForEach(0..<dotCount, id: \.self) { i in
                             Circle()
-                                .fill(i == activeIndex ? theme.orange : theme.ink4.opacity(0.4))
+                                .fill(i == activeIndex ? theme.keyLamp : theme.ink4.opacity(0.4))
                                 .frame(width: dotSize, height: dotSize)
-                                .shadow(color: i == activeIndex ? theme.orange.opacity(0.7) : .clear, radius: 2.5)
+                                .shadow(color: i == activeIndex ? theme.keyLamp.opacity(0.7) : .clear, radius: 2.5)
                         }
                     }
                     .frame(width: Self.lampBudget, alignment: .trailing)
@@ -129,18 +139,17 @@ private struct SwitchButton: View {
                 if dash {
                     let on = lit || dashLit
                     Capsule(style: .continuous)
-                        .fill(on ? theme.orange : theme.ink4.opacity(0.4))
+                        .fill(on ? theme.keyLamp : theme.ink4.opacity(0.4))
                         .frame(width: 14, height: 4)
-                        .shadow(color: on ? theme.orange.opacity(0.7) : .clear, radius: 3)
+                        .shadow(color: on ? theme.keyLamp.opacity(0.7) : .clear, radius: 3)
                         // Same budget as the lamp rows, so THEME's trailing edge
                         // lines up with VIEW's and EQ's.
                         .frame(width: Self.lampBudget, alignment: .trailing)
                 }
             }
             .padding(.horizontal, Self.horizontalPadding)
-            .frame(maxWidth: .infinity)
-            .frame(height: SwitcherButtonMetrics.height)
-            .background(ChromeChassis(theme: theme, cornerRadius: SwitcherButtonMetrics.cornerRadius))
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(ChromeChassis(theme: theme, cornerRadius: geometry.keyCornerRadius))
         }
         .buttonStyle(.carbonHover)
         .carbonTip(tip ?? "\(name): tap to change")

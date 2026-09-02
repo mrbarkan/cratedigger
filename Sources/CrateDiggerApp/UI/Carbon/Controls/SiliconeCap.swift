@@ -54,6 +54,8 @@ struct SiliconeCap<S: Shape, Imprint: View>: View {
                 }
                 .depthShadow(color: Color.black.opacity(theme.isDark ? 0.5 : 0.22), radius: 7, y: 4)
                 .shadow(color: theme.transportLamp.opacity(lit ? 0.22 : 0), radius: 11)
+                // Rubber is smooth: the console's grain stops at the cap's edge.
+                .grainFree(shape: shape)
         }
     }
 }

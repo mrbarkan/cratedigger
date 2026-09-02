@@ -87,7 +87,8 @@ public struct ThemeAuthoringService {
         return ThemeVariant(
             colors: prune(variant.colors, definition.colors, equal: colorsMatch),
             shadows: prune(variant.shadows, definition.shadows, equal: ==),
-            effects: prune(variant.effects, definition.effects, equal: ==)
+            effects: prune(variant.effects, definition.effects, equal: ==),
+            logo: variant.logo == definition.logo ? nil : variant.logo
         )
     }
 
@@ -142,18 +143,24 @@ public struct ThemeAuthoringService {
         sourceURL ?? bundleURL(for: definition.id).appendingPathComponent("theme.json")
     }
 
-    /// A theme's bundled-font folder, resolved against the same source.
+    /// The `.cdtheme` folder a theme's files (fonts, logo) belong in, resolved
+    /// against the same source as `manifestURL(for:replacing:)`.
     ///
-    /// Returns `nil` for a bare `<slug>.json` theme: `Fonts/` is only ever read
-    /// from inside a `.cdtheme` bundle (see `fontURLs(for:)`), so there is
-    /// nowhere to put a font that the loader would find again.
-    public func fontsDirectory(for themeID: String, replacing sourceURL: URL? = nil) -> URL? {
-        guard let sourceURL else {
-            return bundleURL(for: themeID).appendingPathComponent("Fonts", isDirectory: true)
-        }
+    /// Returns `nil` for a bare `<slug>.json` theme: its files are only ever
+    /// read from inside a `.cdtheme` bundle (see `fontURLs(for:)` and
+    /// `logoURL(declared:besides:)`), so there is nowhere to put one that the
+    /// loader would find again.
+    public func bundleDirectory(for themeID: String, replacing sourceURL: URL? = nil) -> URL? {
+        guard let sourceURL else { return bundleURL(for: themeID) }
         let directory = sourceURL.deletingLastPathComponent()
         guard directory.pathExtension.lowercased() == "cdtheme" else { return nil }
-        return directory.appendingPathComponent("Fonts", isDirectory: true)
+        return directory
+    }
+
+    /// A theme's bundled-font folder — see `bundleDirectory(for:replacing:)`.
+    public func fontsDirectory(for themeID: String, replacing sourceURL: URL? = nil) -> URL? {
+        bundleDirectory(for: themeID, replacing: sourceURL)?
+            .appendingPathComponent("Fonts", isDirectory: true)
     }
 
     // MARK: - I/O
@@ -205,6 +212,75 @@ public struct ThemeAuthoringService {
         }
         try fileManager.copyItem(at: source, to: destination)
         return destination
+    }
+
+    public struct LogoImportUnsupported: LocalizedError {
+        public var errorDescription: String? {
+            "This theme is a single .json file, which can't carry a logo. Re-save it as a .cdtheme bundle first."
+        }
+    }
+
+    /// The name a logo is stored under: `logo.<ext>` for the shared one,
+    /// `logo-light.<ext>` / `logo-dark.<ext>` for a layer's. One slot each, so
+    /// re-importing replaces rather than accumulates, and a hand-authored
+    /// bundle reads the same as an app-authored one.
+    public static func logoBaseName(layer: ThemeDefinition.BaseAppearance? = nil) -> String {
+        layer.map { "logo-\($0.rawValue)" } ?? "logo"
+    }
+
+    /// Copies an image into the theme's bundle under its slot's name and
+    /// returns the file; the caller records `.lastPathComponent` in the
+    /// definition (or the layer). Any previous file in that slot goes, whatever
+    /// its extension, so swapping a PNG for a PDF doesn't leave the PNG behind
+    /// in a bundle meant to be shared.
+    @discardableResult
+    public func importLogo(
+        from source: URL,
+        into themeID: String,
+        replacing sourceURL: URL? = nil,
+        layer: ThemeDefinition.BaseAppearance? = nil
+    ) throws -> URL {
+        try installLogo(try Data(contentsOf: source), extension: source.pathExtension.lowercased(),
+                        into: themeID, replacing: sourceURL, layer: layer)
+    }
+
+    /// Writes image bytes the app rendered itself (the editor's crop) into the
+    /// slot, same rules as `importLogo(from:)`.
+    @discardableResult
+    public func installLogo(
+        _ data: Data,
+        extension fileExtension: String,
+        into themeID: String,
+        replacing sourceURL: URL? = nil,
+        layer: ThemeDefinition.BaseAppearance? = nil
+    ) throws -> URL {
+        guard let bundleDirectory = bundleDirectory(for: themeID, replacing: sourceURL) else {
+            throw LogoImportUnsupported()
+        }
+        try fileManager.createDirectory(at: bundleDirectory, withIntermediateDirectories: true)
+        try removeLogo(from: themeID, replacing: sourceURL, layer: layer)
+
+        let destination = bundleDirectory
+            .appendingPathComponent(Self.logoBaseName(layer: layer))
+            .appendingPathExtension(fileExtension)
+        try data.write(to: destination, options: .atomic)
+        return destination
+    }
+
+    /// Deletes the slot's file, whatever its extension. Safe when there is
+    /// none, and a no-op for a bare `.json` theme, which never had one.
+    public func removeLogo(
+        from themeID: String,
+        replacing sourceURL: URL? = nil,
+        layer: ThemeDefinition.BaseAppearance? = nil
+    ) throws {
+        guard let bundleDirectory = bundleDirectory(for: themeID, replacing: sourceURL),
+              let entries = try? fileManager.contentsOfDirectory(at: bundleDirectory, includingPropertiesForKeys: nil)
+        else { return }
+        let baseName = Self.logoBaseName(layer: layer)
+        for url in entries where url.deletingPathExtension().lastPathComponent == baseName {
+            try fileManager.removeItem(at: url)
+        }
     }
 
     /// Removes an authored theme's whole bundle. Only ever called for

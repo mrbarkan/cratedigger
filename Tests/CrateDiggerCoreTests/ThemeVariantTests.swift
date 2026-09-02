@@ -41,6 +41,31 @@ final class ThemeVariantTests: XCTestCase {
         XCTAssertEqual(resolved.baseAppearance, .light, "the layer being rendered decides the appearance")
     }
 
+    /// A layer's logo wins for that appearance; without one, the shared file
+    /// is what both looks show.
+    func testLayerLogoOverridesTheSharedOne() {
+        var definition = adaptive()
+        definition.logo = "logo.png"
+        definition.light?.logo = "logo-light.png"
+
+        XCTAssertEqual(definition.resolved(for: .light).logo, "logo-light.png")
+        XCTAssertEqual(definition.resolved(for: .dark).logo, "logo.png")
+    }
+
+    /// A layer naming the same file as the shared set is saying nothing, and
+    /// saving drops it — the same rule as a layer colour matching the shared one.
+    func testMinimizationPrunesALayerLogoMatchingTheSharedOne() {
+        var definition = adaptive()
+        definition.logo = "logo.png"
+        definition.light?.logo = "logo.png"
+        definition.dark?.logo = "logo-dark.png"
+
+        let minimized = ThemeAuthoringService.minimized(definition, against: nil)
+        XCTAssertNil(minimized.light?.logo)
+        XCTAssertEqual(minimized.dark?.logo, "logo-dark.png")
+        XCTAssertNotNil(minimized.light, "an emptied layer still marks the theme adaptive")
+    }
+
     /// Tokens the layer doesn't mention fall through to the shared set — that's
     /// what keeps a light/dark pair from having to restate a whole palette.
     func testSharedTokensSurviveTheLayer() {

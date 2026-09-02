@@ -18,6 +18,7 @@
   },
 
   "dark": {
+    "logo": "logo-dark.pdf",
     "colors": {
       "chassis": "#2A2D3C",
       "chassisHi": "#4A4F66",
@@ -67,6 +68,7 @@
   },
 
   "light": {
+    "logo": "logo-light.pdf",
     "colors": {
       "chassis": "#E3E1E9",
       "chassisHi": "#FFFFFF",

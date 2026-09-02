@@ -73,6 +73,32 @@ final class DisplayLampTokenTests: XCTestCase {
         let keys = Set(ThemeTokenCatalog.allColorTokens.map(\.key))
         XCTAssertTrue(keys.contains("lampSearch"), "lampSearch has no swatch in the theme editor")
         XCTAssertTrue(keys.contains("transportLamp"), "transportLamp has no swatch in the theme editor")
+        XCTAssertTrue(keys.contains("keyLamp"), "keyLamp has no swatch in the theme editor")
+        XCTAssertTrue(keys.contains("meterHot"), "meterHot has no swatch in the theme editor")
+    }
+
+    /// The meters' loud end follows the accent pair until named, then is one
+    /// hue for the body and the peak, and leaves the accent alone.
+    func testMeterHighFollowsTheAccentPairUntilPinned() {
+        let retinted = theme(colors: ["orange": "#000000", "orangeHi": "#222222"])
+        XCTAssertEqual(retinted.meterHot, retinted.orange)
+        XCTAssertEqual(retinted.meterHotHi, retinted.orangeHi)
+
+        let pinned = theme(colors: ["meterHot": "#FF4000", "orange": "#000000"])
+        XCTAssertEqual(pinned.meterHot, Color(hexString: "#FF4000"))
+        XCTAssertEqual(pinned.meterHotHi, pinned.meterHot)
+        XCTAssertEqual(pinned.orange, Color(hexString: "#000000"))
+    }
+
+    /// A theme with black keys still needs LEDs that light: the key lamps
+    /// follow the accent until named, and once named leave the accent alone.
+    func testKeyLampFollowsTheAccentUntilPinned() {
+        let retinted = theme(colors: ["orange": "#000000"])
+        XCTAssertEqual(retinted.keyLamp, retinted.orange)
+
+        let pinned = theme(colors: ["keyLamp": "#00FF00", "orange": "#000000"])
+        XCTAssertEqual(pinned.keyLamp, Color(hexString: "#00FF00"))
+        XCTAssertEqual(pinned.orange, Color(hexString: "#000000"), "the keys stay black")
     }
 
     /// A single-phosphor screen draws everything in its own color — a lamp

@@ -14,6 +14,7 @@ import XCTest
 final class BundledThemeTests: XCTestCase {
 
     private var themes: [String: ThemeDefinition] = [:]
+    private var manifests: [String: ThemeManifest] = [:]
 
     override func setUpWithError() throws {
         try super.setUpWithError()
@@ -28,6 +29,7 @@ final class BundledThemeTests: XCTestCase {
 
         XCTAssertEqual(result.warnings.map(\.message), [], "a bundled theme failed to parse")
         themes = Dictionary(uniqueKeysWithValues: result.themes.map { ($0.id, $0.definition) })
+        manifests = Dictionary(uniqueKeysWithValues: result.themes.map { ($0.id, $0) })
     }
 
     /// Every shipped theme follows the app's Light/Dark setting — Linen was
@@ -37,6 +39,19 @@ final class BundledThemeTests: XCTestCase {
         XCTAssertFalse(themes.isEmpty)
         for (id, definition) in themes {
             XCTAssertTrue(definition.isAdaptive, "\(id) is missing a light or dark layer")
+        }
+    }
+
+    /// Every shipped theme has a mark for each look, drawn by
+    /// `scripts/render-theme-logos.swift`, and each file is a real image the
+    /// header can draw at the slot's proportion.
+    func testEveryBundledThemeShipsALogoPerLayer() throws {
+        for (id, manifest) in manifests {
+            for appearance in [ThemeDefinition.BaseAppearance.light, .dark] {
+                let url = try XCTUnwrap(manifest.logoURL(for: appearance), "\(id) has no \(appearance) logo")
+                let image = try XCTUnwrap(NSImage(contentsOf: url), "\(url.lastPathComponent) did not load")
+                XCTAssertEqual(image.size.width / image.size.height, 5.5, accuracy: 0.01, "\(id): not the slot's shape")
+            }
         }
     }
 

@@ -311,7 +311,7 @@ struct ArtworkInspectorView: View {
     /// offer to make while files are still landing.
     private var pendingBar: some View {
         HStack(spacing: 8) {
-            Circle().fill(theme.orange).frame(width: 6, height: 6)
+            Circle().fill(theme.keyLamp).frame(width: 6, height: 6)
             if let fetching {
                 Text(fetching.label)
                     .font(CarbonFont.mono(8.5, weight: .bold))

@@ -26,6 +26,8 @@ public enum CarbonLayout {
     public static let paperCornerRadius: CGFloat = 8
 
     public static let oledCornerRadius: CGFloat = 16
+    /// The flat keys and the header's chrome buttons.
+    public static let keyCornerRadius: CGFloat = 6
     public static let oledPaddingH: CGFloat = 20
     public static let oledPaddingV: CGFloat = 12
 

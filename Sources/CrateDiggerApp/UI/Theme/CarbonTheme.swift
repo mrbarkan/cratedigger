@@ -132,6 +132,24 @@ public struct CarbonTheme: Equatable {
     public var transportLamp: Color { transportLampOverride ?? orange }
     public var transportLampLo: Color { transportLampOverride ?? orangeLo }
 
+    /// The small LEDs mounted on the chassis: the option lamps on the VIEW,
+    /// THEME and EQ keys, the power dot beside a sheet's title, the activity
+    /// lamp in the titlebar. Its own token because a key and a lamp are
+    /// different parts: a theme whose keys are black still needs LEDs that
+    /// light, and black is not a colour an LED comes in. Unset, the accent.
+    public var keyLampOverride: Color?
+    public var keyLamp: Color { keyLampOverride ?? orange }
+
+    /// The loud end of every meter: where the VOLUME ramp, the EQ bars and
+    /// the VU LEDs run from `cyan` up to. Its own token for the same reason
+    /// as the lamps — a lit segment is a light, and a theme whose accent is
+    /// black has meters that go dark as the signal rises. Unset, the accent
+    /// pair, so nothing shipped changes; pinned, one hue for both the body and
+    /// the peak segment.
+    public var meterHotOverride: Color?
+    public var meterHot: Color { meterHotOverride ?? orange }
+    public var meterHotHi: Color { meterHotOverride ?? orangeHi }
+
     /// CRT scanline strength on the OLED glass. Both built-ins ship 0 — the
     /// glass is a modern panel, not a tube — and the CRT-flavoured screen
     /// presets rake it. Themeable via `effects.oledScanlineOpacity`, clamped to
@@ -196,6 +214,15 @@ public struct CarbonTheme: Equatable {
     /// every `@Environment(\.carbon)` reader already reacts to. It's compared,
     /// never displayed.
     public var fontsSignature: String = ""
+
+    /// What the header sets opposite "CrateDigger": the theme's logo when its
+    /// bundle carries one, otherwise `name` as a wordmark. The stamp is the
+    /// logo file's modification date — the theme is compared by value, and
+    /// re-importing a logo keeps its URL, so without the stamp a swapped image
+    /// would be an equal theme and the header would keep drawing the old one.
+    public var name: String = "Carbon"
+    public var logoURL: URL?
+    public var logoStamp: Date?
 
     public var isDark: Bool { mode == .carbon }
 }
@@ -425,6 +452,8 @@ public extension CarbonTheme {
         // Not a lamp on the glass: the caps are on the chassis, so this one is
         // absent from `monochromeGlass` below.
         transportLampOverride = optionalColor("transportLamp", resolvedBase.transportLampOverride)
+        keyLampOverride = optionalColor("keyLamp", resolvedBase.keyLampOverride)
+        meterHotOverride = optionalColor("meterHot", resolvedBase.meterHotOverride)
         // Every overlay effect clamps to its dial's ceiling, so a theme can't
         // ask for a value the renderer would quietly trim away.
         func effect(_ key: String, _ fallback: Double) -> Double {

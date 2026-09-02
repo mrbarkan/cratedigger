@@ -31,7 +31,7 @@ struct RecordDividerSheet: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Circle().fill(theme.orange).frame(width: 7, height: 7)
+            Circle().fill(theme.keyLamp).frame(width: 7, height: 7)
             Text("RECORD DIVIDER")
                 .font(CarbonFont.mono(11, weight: .bold))
                 .tracking(2)

@@ -92,8 +92,8 @@ private struct MiniPlayerBody: View {
     private var topBar: some View {
         HStack(spacing: 0) {
             HStack(spacing: 7) {
-                Circle().fill(theme.orange).frame(width: 6, height: 6)
-                    .shadow(color: theme.orange.opacity(0.8), radius: 3)
+                Circle().fill(theme.keyLamp).frame(width: 6, height: 6)
+                    .shadow(color: theme.keyLamp.opacity(0.8), radius: 3)
                 Text("NOW PLAYING")
                     .font(CarbonFont.mono(9, weight: .bold)).tracking(2)
                     .foregroundStyle(theme.ink3)

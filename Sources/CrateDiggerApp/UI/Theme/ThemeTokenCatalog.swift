@@ -209,6 +209,12 @@ enum ThemeTokenCatalog {
             ColorToken(key: "transportLamp", label: "Transport Lamp",
                        note: "The LED behind the play, shuffle and repeat caps, in the footer and the mini player. Unset it follows the Accent.",
                        read: \.transportLamp),
+            ColorToken(key: "meterHot", label: "Meter High",
+                       note: "The loud end of the VOLUME ramp, the EQ bars and the VU LEDs; they run from Cyan up to this. Unset it follows the Accent.",
+                       read: \.meterHot),
+            ColorToken(key: "keyLamp", label: "Key Lamp",
+                       note: "The small LEDs on the VIEW, THEME and EQ keys, the dot beside a sheet's title and the activity lamp. Unset it follows the Accent, so a theme with black keys can keep lit LEDs.",
+                       read: \.keyLamp),
         ]),
         ColorGroup(name: "Desktop Backdrop", tokens: [
             ColorToken(key: "backgroundBase", label: "Backdrop",
@@ -492,6 +498,9 @@ enum ThemeTokenCatalog {
             GeometryToken(key: "oledCornerRadius", label: "Screen",
                           note: "Roundness of the big display glass.",
                           range: CarbonGeometry.Bounds.cornerRadius, read: \.oledCornerRadius),
+            GeometryToken(key: "keyCornerRadius", label: "Buttons",
+                          note: "Roundness of the flat keys and the header buttons.",
+                          range: CarbonGeometry.Bounds.keyCornerRadius, read: \.keyCornerRadius),
         ]),
         GeometryGroup(name: "Padding & Gaps", tokens: [
             GeometryToken(key: "chassisInsetH", label: "Side Margin",

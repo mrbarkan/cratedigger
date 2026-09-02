@@ -15,10 +15,10 @@ struct StatusLED: View {
             // Opaque black base so the chassis color never tints the "off"
             // state; the faint orange wash on top reads as an unlit filament.
             .fill(Color.black)
-            .overlay(Circle().fill(theme.orange.opacity(model.isWorking ? 1.0 : 0.18)))
+            .overlay(Circle().fill(theme.keyLamp.opacity(model.isWorking ? 1.0 : 0.18)))
             .frame(width: 9, height: 9)
             .overlay(Circle().stroke(Color.black.opacity(0.5), lineWidth: 1))
-            .shadow(color: model.isWorking ? theme.orange.opacity(0.6) : .clear, radius: 3)
+            .shadow(color: model.isWorking ? theme.keyLamp.opacity(0.6) : .clear, radius: 3)
             .help(helpText)
     }
 
