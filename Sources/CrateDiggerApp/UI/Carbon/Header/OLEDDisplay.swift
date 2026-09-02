@@ -141,6 +141,14 @@ private struct DisplayRail: View {
 
     var body: some View {
         HStack(spacing: 0) {
+            // What is playing leads the rail: the clock sits on the left edge
+            // where it never moves, and the title grows right into the gap.
+            // No Spacer — this block takes the whole remainder of the rail
+            // itself, so the annunciators stay pinned to the far edge.
+            RailLive(clock: model.playbackClock)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.trailing, 14)
+
             // Annunciators — every mode permanently printed on the glass, each
             // lit in its own accent (the same color the display-toggle strip
             // glows — see OLEDView.accent).
@@ -154,13 +162,6 @@ private struct DisplayRail: View {
                 ann("SRCH", lit: v == .search, color: OLEDView.search.accent(theme))
                 ann("ON AIR", lit: radioLive, color: theme.onAir, pulse: onAirPulse)
             }
-
-            // No Spacer: the transport strip takes the whole remainder of the
-            // rail itself, so the title and the position bar grow into the gap
-            // instead of leaving one.
-            RailLive(clock: model.playbackClock)
-                .frame(maxWidth: .infinity, alignment: .trailing)
-                .padding(.leading, 14)
         }
         .padding(.bottom, 7)
         // Transient system notice (tag saves etc.) — snaps in on the rail
@@ -291,26 +292,13 @@ private struct RailLive: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            if showTitle {
-                Text(trackTitle)
-                    .font(CarbonFont.mono(9, weight: .bold))
-                    .tracking(1.08)
-                    .foregroundStyle(theme.orange)
-                    .shadow(color: theme.orange.opacity(0.4), radius: 6)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    // Takes whatever the bar and the meter don't: a long title
-                    // is what the spare width on this rail is *for*.
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-            } else if showMini {
-                // Hold the gap open so the bar and clocks don't slide across
-                // and back as a notice comes and goes.
-                Spacer(minLength: 0)
-            }
-
             // Elapsed over total, as one reading. They used to flank the
             // progress bar; with the bar gone they'd read as two loose numbers,
             // so the slash holds them together.
+            //
+            // First on the rail, so the clock is anchored to the left edge and
+            // stays put while the title beside it changes length or yields to
+            // a notice.
             if showMini {
                 HStack(spacing: 4) {
                     Text(model.displayedCurrentTime.asClockPadded)
@@ -322,6 +310,23 @@ private struct RailLive: View {
                 }
                 .font(CarbonFont.mono(9, weight: .bold))
                 .fixedSize()
+            }
+
+            if showTitle {
+                Text(trackTitle)
+                    .font(CarbonFont.mono(9, weight: .bold))
+                    .tracking(1.08)
+                    .foregroundStyle(theme.orange)
+                    .shadow(color: theme.orange.opacity(0.4), radius: 6)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    // Takes whatever the clock doesn't: a long title is what
+                    // the spare width on this rail is *for*.
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else if showMini {
+                // Hold the rail open so the annunciators don't drift inward
+                // as a notice comes and goes.
+                Spacer(minLength: 0)
             }
         }
     }
