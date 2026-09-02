@@ -563,7 +563,12 @@ private struct ColumnFacetMenu: View {
             }
         } label: {
             HStack(spacing: 4) {
+                // Set here, not inherited: a Menu's label on macOS ignores the
+                // font its row applies, and came out in 13pt system type next
+                // to the header's 8.5pt mono.
                 Text((model.browserView.facets[safe: column]?.title ?? "").uppercased())
+                    .font(CarbonFont.mono(8.5, weight: .semibold))
+                    .tracking(2.2)
                 Image(systemName: "chevron.down")
                     .font(.system(size: 6, weight: .bold))
             }
