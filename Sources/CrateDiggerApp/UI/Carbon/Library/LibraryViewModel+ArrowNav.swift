@@ -28,8 +28,8 @@ extension LibraryViewModel {
         // The gallery is a grid, not columns: ←/→ step one cover, ↑/↓ a whole row.
         if showArtworkGallery {
             switch event.keyCode {
-            case 126: moveGallerySelection(by: -galleryColumnsPerRow); return true  // up
-            case 125: moveGallerySelection(by:  galleryColumnsPerRow); return true  // down
+            case 126: moveGallerySelection(down: false); return true   // up
+            case 125: moveGallerySelection(down: true);  return true   // down
             case 123: moveGallerySelection(by: -1); return true                     // left
             case 124: moveGallerySelection(by:  1); return true                     // right
             default:  return false
@@ -46,13 +46,23 @@ extension LibraryViewModel {
     }
 
     /// Step the gallery selection through `allAlbumsSorted`, clamped at both ends.
-    /// `delta` is ±1 for a cover or ±`galleryColumnsPerRow` for a row.
+    /// `delta` is ±1 for a cover; rows go through `moveGallerySelection(down:)`.
     func moveGallerySelection(by delta: Int) {
         let items = allAlbumsSorted
         guard !items.isEmpty else { return }
         let current = selectedAlbumID.flatMap { id in items.firstIndex { $0.id == id } } ?? 0
         let next = items[min(max(current + delta, 0), items.count - 1)]
         selectAlbum(next, command: false, shift: false, ordered: items, flat: true)
+    }
+
+    /// A row up or down. Not ±columns: every divider starts a fresh row, so
+    /// the step has to know where the sections cut (`GallerySection`).
+    func moveGallerySelection(down: Bool) {
+        let items = allAlbumsSorted
+        guard !items.isEmpty else { return }
+        let current = selectedAlbumID.flatMap { id in items.firstIndex { $0.id == id } } ?? 0
+        let target = GallerySection.verticalNeighbor(of: current, in: gallerySections, columns: galleryColumnsPerRow, down: down)
+        selectAlbum(items[target], command: false, shift: false, ordered: items, flat: true)
     }
 
     /// True when the main window is key (not a sheet, the mini-player, or the

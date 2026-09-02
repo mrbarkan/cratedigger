@@ -1647,6 +1647,8 @@ final class LibraryViewModel: ObservableObject {
     /// Drives the "Album · Track" browser layout. Cached — see
     /// recomputeSortedCollections().
     @Published private(set) var allAlbumsSorted: [Album] = []
+    /// `allAlbumsSorted` cut under the gallery's dividers; rebuilt with it.
+    @Published private(set) var gallerySections: [GallerySection] = []
 
     /// Every track in the source, sorted by the track-sort preference. Drives
     /// the flat "Track" browser layout. Cached — see recomputeSortedCollections().
@@ -1669,6 +1671,7 @@ final class LibraryViewModel: ObservableObject {
         recomputeCrateMatchCounts()
         visibleArtists = LibraryIndex.sortedArtists(browsedIndex.artists, by: artistSortField, ascending: artistSortAscending)
         allAlbumsSorted = LibraryIndex.sortedAlbums(browsedIndex.allAlbums, by: albumSortField, ascending: albumSortAscending)
+        gallerySections = GallerySection.sections(of: allAlbumsSorted, by: albumSortField)
         flatTracksSorted = LibraryIndex.sortedTracks(browsedIndex.allTracks, by: trackSortField, ascending: trackSortAscending)
         recomputeBrowsedPlaylistTracks()
         // Rows may have come or gone under the selection, so this pass prunes.

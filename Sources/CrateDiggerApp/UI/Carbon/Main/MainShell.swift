@@ -131,8 +131,13 @@ struct MainShell: View {
                     title: browserWellTitle,
                     trailing: browserWellTrailing,
                     trailingControl: AnyView(HStack(spacing: 6) {
-                        if !model.showArtworkGallery && !model.isRadioMode {
+                        // The gallery searches the same collections as the
+                        // list, so its key is here too; columns and per-column
+                        // sort are the list's alone.
+                        if !model.isRadioMode {
                             searchToggleButton()
+                        }
+                        if !model.showArtworkGallery && !model.isRadioMode {
                             browserLayoutMenu()
                             sortToggleButton()
                         }

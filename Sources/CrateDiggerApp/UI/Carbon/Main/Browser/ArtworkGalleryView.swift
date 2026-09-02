@@ -54,13 +54,24 @@ struct ArtworkGalleryView: View {
                     GeometryReader { geo in
                         ScrollViewReader { proxy in
                             ScrollView(.vertical, showsIndicators: true) {
-                                LazyVGrid(columns: gridColumns(for: geo.size.width), spacing: Self.gridSpacing) {
-                                    ForEach(allAlbums) { album in
-                                        albumCoverCell(album)
-                                            .id(album.id)
+                                // One section per divider (year, initial or
+                                // artist, whichever the sort is by); headers pin
+                                // so the feed always says what it's showing.
+                                LazyVGrid(columns: gridColumns(for: geo.size.width), spacing: Self.gridSpacing,
+                                          pinnedViews: [.sectionHeaders]) {
+                                    ForEach(model.gallerySections) { section in
+                                        Section {
+                                            ForEach(section.albums) { album in
+                                                albumCoverCell(album)
+                                                    .id(album.id)
+                                            }
+                                        } header: {
+                                            galleryDivider(section)
+                                        }
                                     }
                                 }
-                                .padding(Self.gridPadding)
+                                .padding(.horizontal, Self.gridPadding)
+                                .padding(.bottom, Self.gridPadding)
                             }
                             // Bring the selected album (synced with the list browser)
                             // into view, falling back to the last opened one.
@@ -167,6 +178,28 @@ struct ArtworkGalleryView: View {
         .padding(.vertical, 10)
         .background(theme.chassisHi)
         .overlay(Rectangle().fill(Color.black.opacity(0.12)).frame(height: 1), alignment: .bottom)
+    }
+
+    /// A divider in the feed: the section's label, a hairline, and how many
+    /// covers sit under it. Opaque on the chassis, since it pins while its
+    /// covers scroll beneath.
+    private func galleryDivider(_ section: GallerySection) -> some View {
+        HStack(spacing: 10) {
+            Text(section.title.uppercased())
+                .font(CarbonFont.mono(8.5, weight: .bold))
+                .tracking(2)
+                .foregroundStyle(theme.ink2)
+                .lineLimit(1)
+            Rectangle()
+                .fill(theme.hair)
+                .frame(height: 1)
+            Text("\(section.albums.count)")
+                .font(CarbonFont.mono(8.5, weight: .semibold))
+                .foregroundStyle(theme.ink4)
+        }
+        .padding(.top, 14)
+        .padding(.bottom, 8)
+        .background(theme.chassis)
     }
 
     private func sortPill(_ label: String, field: AlbumSortField) -> some View {

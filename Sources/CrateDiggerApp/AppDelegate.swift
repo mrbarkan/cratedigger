@@ -425,6 +425,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                 self?.mainWindowController?.model.showingThemePicker = true
             }
         }
+        // The gallery is only reachable through the VIEW key, which a capture
+        // can't press either.
+        if env["CRATEDIGGER_GALLERY"] != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) { [weak self] in
+                self?.mainWindowController?.model.showArtworkGallery = true
+            }
+        }
         // Value is an optional token filter ("fonts", "corner"), so a capture
         // can bring one section of the editor into view.
         if let raw = env["CRATEDIGGER_THEME_EDITOR"] {
