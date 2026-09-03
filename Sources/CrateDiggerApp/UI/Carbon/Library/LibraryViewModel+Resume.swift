@@ -42,6 +42,12 @@ extension LibraryViewModel {
     /// Record the transport. Called on every index change, pause, queue edit
     /// and at quit; cheap because identical bytes are not written twice.
     func savePlaybackSnapshot() {
+        // A deferred seek is still outstanding for this track (resume at
+        // launch, or a Record Divider sub-track): the position is not yet
+        // real, and writing it would overwrite the snapshot that was just
+        // read with 0:00. The seek's own pause or index change saves it.
+        if let pending = pendingSeekTrackID, pending == nowPlayingTrack?.track.id { return }
+
         guard !isStreamActive,
               let index = playbackCurrentIndex,
               !playbackQueue.isEmpty,
