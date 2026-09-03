@@ -23,9 +23,11 @@ public final class PreferencesStore {
         static let customFFmpegPath = "cratedigger.tools.ffmpegPath"
         static let customFFprobePath = "cratedigger.tools.ffprobePath"
         static let oledView = "cratedigger.ui.oledView"
+        static let statsWindow = "cratedigger.ui.statsWindow"
         static let collapsedSourceSections = "cratedigger.sidebar.collapsedSections"
         static let shuffleEnabled = "cratedigger.playback.shuffle"
         static let repeatMode = "cratedigger.playback.repeatMode"
+        static let playbackSnapshot = "cratedigger.playback.snapshot"
         static let dsdOutputMode = "cratedigger.playback.dsdOutputMode"
         static let playbackVolume = "cratedigger.playback.volume"
         static let clickSoundsEnabled = "cratedigger.ui.clickSoundsEnabled"
@@ -295,6 +297,18 @@ public final class PreferencesStore {
         }
     }
 
+    /// `ListeningWindow.rawValue` the STATS screen was last showing.
+    public var savedStatsWindow: String? {
+        get { defaults.string(forKey: Key.statsWindow) }
+        set {
+            if let value = newValue {
+                defaults.set(value, forKey: Key.statsWindow)
+            } else {
+                defaults.removeObject(forKey: Key.statsWindow)
+            }
+        }
+    }
+
     public var savedShuffleEnabled: Bool {
         get { defaults.bool(forKey: Key.shuffleEnabled) }
         set { defaults.set(newValue, forKey: Key.shuffleEnabled) }
@@ -313,6 +327,20 @@ public final class PreferencesStore {
                 defaults.set(value, forKey: Key.repeatMode)
             } else {
                 defaults.removeObject(forKey: Key.repeatMode)
+            }
+        }
+    }
+
+    /// Raw JSON of a `PlaybackSnapshot`: the transport at last quit.
+    /// `LibraryViewModel+Resume` owns (de)serialization. Bounded by
+    /// `PlaybackSnapshot.maxUpNext`, so this stays in the tens of KB.
+    public var playbackSnapshotData: Data? {
+        get { defaults.data(forKey: Key.playbackSnapshot) }
+        set {
+            if let data = newValue {
+                defaults.set(data, forKey: Key.playbackSnapshot)
+            } else {
+                defaults.removeObject(forKey: Key.playbackSnapshot)
             }
         }
     }
