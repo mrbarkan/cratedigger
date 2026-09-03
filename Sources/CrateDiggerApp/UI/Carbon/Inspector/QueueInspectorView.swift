@@ -66,26 +66,35 @@ struct QueueInspectorView: View {
     // MARK: - List
 
     private var list: some View {
-        ScrollView {
-            LazyVStack(spacing: 0) {
-                // Offset into the full queue: Up Next starts after the playing track.
-                let base = (model.playbackCurrentIndex ?? -1) + 1
-                ForEach(Array(model.upNextTracks.enumerated()), id: \.element.track.id) { offset, loaded in
-                    QueueRow(
-                        loaded: loaded,
-                        position: offset + 1,
-                        onPlay: { model.playFromQueue(trackID: loaded.track.id) },
-                        onRemove: { model.removeFromQueue(trackIDs: [loaded.track.id]) },
-                        onMoveUp: offset > 0
-                            ? { model.moveInQueue(from: base + offset, to: base + offset - 1) }
-                            : nil,
-                        onMoveDown: offset < model.upNextTracks.count - 1
-                            ? { model.moveInQueue(from: base + offset, to: base + offset + 2) }
-                            : nil
-                    )
-                }
+        // Offset into the full queue: Up Next starts after the playing track.
+        let base = (model.playbackCurrentIndex ?? -1) + 1
+        return List {
+            ForEach(Array(model.upNextTracks.enumerated()), id: \.element.track.id) { offset, loaded in
+                QueueRow(
+                    loaded: loaded,
+                    position: offset + 1,
+                    onPlay: { model.playFromQueue(trackID: loaded.track.id) },
+                    onRemove: { model.removeFromQueue(trackIDs: [loaded.track.id]) },
+                    onMoveUp: offset > 0
+                        ? { model.moveInQueue(from: base + offset, to: base + offset - 1) }
+                        : nil,
+                    onMoveDown: offset < model.upNextTracks.count - 1
+                        ? { model.moveInQueue(from: base + offset, to: base + offset + 2) }
+                        : nil
+                )
+                .listRowInsets(EdgeInsets())
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+            }
+            .onMove { offsets, destination in
+                // `destination` is List's insertion index in the pre-move
+                // array, the convention `moveInQueue` already implements.
+                guard let source = offsets.first else { return }
+                model.moveInQueue(from: base + source, to: base + destination)
             }
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
     }
 
     private func notice(_ text: String) -> some View {
