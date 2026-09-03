@@ -829,10 +829,12 @@ struct ArtworkSearchSheetView: View {
 
             selectionButton("SELECT ALL") { selectAllImages() }
             selectionButton("NONE") {
-                selectedImages = []
+                // Scoped to the chip, like SELECT ALL: clearing what you can
+                // see must not quietly drop choices made under another source.
+                selectedImages.subtract(displayedImages.map(\.id))
                 selectionAnchorID = nil
             }
-            Text("\(selectedImages.count)/\(caaImages.count)")
+            Text("\(actionableImages.count)/\(displayedImages.count)")
                 .font(CarbonFont.mono(8.5, weight: .semibold))
                 .foregroundStyle(theme.ink4)
                 .help("Tip: ⇧-click to select a range")
@@ -857,9 +859,16 @@ struct ArtworkSearchSheetView: View {
         return seen
     }
 
+    /// What the grid draws, and — through `ArtworkSelectionScope` — what every
+    /// action in the toolbar applies to. One definition, so a chip can never
+    /// again hide a tile from the eye while leaving it in reach of STAGE.
     private var displayedImages: [RemoteArtworkImage] {
-        guard let sourceFilter else { return caaImages }
-        return caaImages.filter { $0.source == sourceFilter }
+        ArtworkSelectionScope.visible(caaImages, source: sourceFilter)
+    }
+
+    /// The visible images that are selected, in grid order.
+    private var actionableImages: [RemoteArtworkImage] {
+        ArtworkSelectionScope.actionable(caaImages, selected: selectedImages, source: sourceFilter)
     }
 
     private func artworkCell(_ img: RemoteArtworkImage) -> some View {
@@ -1040,19 +1049,25 @@ struct ArtworkSearchSheetView: View {
     /// Plain click toggles one image and moves the ⇧-anchor there; ⇧-click adds
     /// the contiguous range from the anchor to the clicked cell (grid order).
     private func handleImageTap(_ img: RemoteArtworkImage) {
+        // The range runs through what is on screen. Indexing the unfiltered
+        // list made a ⇧-click across two visible tiles sweep up every hidden
+        // one that happened to sit between them.
+        let visible = displayedImages
         if NSEvent.modifierFlags.contains(.shift),
            let anchor = selectionAnchorID,
-           let a = caaImages.firstIndex(where: { $0.id == anchor }),
-           let b = caaImages.firstIndex(where: { $0.id == img.id }) {
-            for i in min(a, b)...max(a, b) { selectSingle(caaImages[i]) }
+           let a = visible.firstIndex(where: { $0.id == anchor }),
+           let b = visible.firstIndex(where: { $0.id == img.id }) {
+            for i in min(a, b)...max(a, b) { selectSingle(visible[i]) }
         } else {
             toggleImageSelection(img)
             selectionAnchorID = img.id
         }
     }
 
+    /// Everything the chip is showing. Under a filter this adds to whatever is
+    /// already selected elsewhere rather than replacing it.
     private func selectAllImages() {
-        for img in caaImages { selectSingle(img) }
+        for img in displayedImages { selectSingle(img) }
     }
 
     private func selectionButton(_ title: String, action: @escaping () -> Void) -> some View {
@@ -1127,6 +1142,11 @@ struct ArtworkSearchSheetView: View {
         // more likely to be a booklet page. Same rule the old key used.
         let single = files.count == 1
         let existing = Set(caaImages.map(\.id))
+
+        // Show what is about to be added. A source chip now scopes staging as
+        // well as drawing, so adopting files under a filter that hides them
+        // would tick them and then refuse to fetch them.
+        sourceFilter = nil
 
         for url in files.sorted(by: { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }) {
             let image = RemoteArtworkImage(
@@ -1313,7 +1333,9 @@ struct ArtworkSearchSheetView: View {
         var downloads: [(url: URL, role: ArtworkRole, suggestedFilename: String, discNumber: Int?)] = []
         var choiceCounts: [ArtRoleChoice: Int] = [:]
 
-        let orderedSelected = caaImages.filter { selectedImages.contains($0.id) }
+        // Selected *and* on screen: a source chip scopes what is fetched, not
+        // just what is drawn.
+        let orderedSelected = actionableImages
 
         for img in orderedSelected {
             let choice = imageRoles[img.id] ?? defaultRole(for: img.types)
