@@ -10,6 +10,11 @@ Everything in the 2.0 line so far, newest work first. Unfinished by
 definition: this is where 2.0 is built, and it is offered to nobody who has
 not asked for it.
 
+Beta 9 is the listening room. The app comes back where you left it, paused
+on the same track at the same second with the same queue. A STATS screen on
+the display shows your most played record, artist and track for the month,
+the year, or all time. And Up Next can finally be dragged into order.
+
 Beta 8 is one fix, for a bug that quietly made a mess of your album folders:
 filtering the artwork search to one source and pressing SELECT ALL fetched the
 hidden sources too, so an album could come back with two covers and a set of
@@ -44,6 +49,20 @@ app.
 
 ### Added
 
+- **Resume where you left off.** Quit mid-record and the transport comes
+  back paused on the same track, at the same second, with the same Up Next,
+  and the crate it was playing from still marked in the sidebar. Press play
+  to carry on. Streams, CDs and remote libraries start fresh, as they always
+  have.
+- **STATS on the display.** An eighth screen, on the DISPLAY key after DEV
+  and in the View menu as Command-5: the record you played most, its artist
+  and its plays as the headline, then top artist, top track, hours listened,
+  and how many records and tracks you touched. The tag under the number
+  switches between this month, this year and all time. Plays are counted per
+  calendar month from this build on; all time reads the lifetime count, so a
+  library that already had plays keeps them.
+- **Drag to reorder the queue.** Rows in the QUEUE tab drag now; the up and
+  down keys stay for the keyboard.
 - **A logo for every theme.** The header's right side, opposite the CrateDigger
   name, is the theme's mark now. Carbon, Cobalt and Llama '97 each ship one
   drawn in their own palette, for light and for dark. A theme with no logo sets

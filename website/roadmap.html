@@ -25,7 +25,7 @@
     "@type": "Article",
     "headline": "CrateDigger 2.0 Roadmap",
     "datePublished": "2026-08-28",
-    "dateModified": "2026-08-28",
+    "dateModified": "2026-09-03",
     "author": { "@type": "Organization", "name": "CrateDigger" },
     "publisher": {
       "@type": "Organization",
@@ -107,7 +107,7 @@
           <strong>Crates never fill themselves.</strong> A crate is a list of file paths, which is exactly the right design for what a crate is. It also means every crate you will ever own has to be assembled by hand, one record at a time, forever.
         </p>
 
-        <h2>Phase 0: the foundations</h2>
+        <h2>Phase 0: the foundations (shipped in beta 2)</h2>
         <p>
           Unglamorous, and everything else depends on it. Listening data moves into the shared track store: play count, skip count, last played, date added, rating. It is a small change to the model and it unlocks a disproportionate amount of what follows.
         </p>
@@ -115,12 +115,22 @@
           At the same time, browser state (selection, sort, and the filtering that Phase 1 introduces) moves out of the view model and into the tested core library. That view model is the largest file in the project and it currently owns almost everything. Every feature below gets cheaper once it stops being the place where all behaviour lives.
         </p>
 
-        <h2>Phase 1: find anything</h2>
+        <h2>Phase 1: find anything (shipped in beta 6)</h2>
         <p>
           One field, one keystroke to reach it, results as you type. It searches artist, album, track title, file path and format across the crate you are in, with a mode that widens to every crate you own. The index it searches is already built and already in memory, so this should feel instant rather than merely fast.
         </p>
         <p>
           Sortable browser columns land here too. And because the console deserves it, SEARCH becomes a view on the OLED display, the way CNVRT and SCAN already are. A tuner sweeping for a station is the right metaphor and the hardware already has the shape for it.
+        </p>
+
+        <h2>Phase 4: the listening room (shipped in beta 9)</h2>
+        <p>
+          A queue you can actually edit: drag to reorder, play this next, see what is coming. Resume where you left off when you reopen the app. And a stats view on the glass, built on Phase 0 data, showing your most played record, artist and track of the month, the year and all time. Cheap to build, genuinely fun, and precisely the sort of thing an OLED panel on a piece of imaginary hardware should be doing.
+        </p>
+
+        <h2>After 2.0</h2>
+        <p>
+          Phases 2 and 3 are the workshop half of this list, and 2.0 ships the listening half first. They stay on the plan; they are not in the release.
         </p>
 
         <h2>Phase 2: crates that fill themselves</h2>
@@ -140,11 +150,6 @@
         </p>
         <p>
           Phase 3 gathers them into one panel that opens with a straight answer: 41 albums with no cover, 18 tracks whose files have moved, 62 probable duplicates, 9 albums with no year. Every row is a smart crate. Click it, see exactly what it means, fix it in batch. This is mostly surfacing work rather than new engines, which is what makes it worth doing early.
-        </p>
-
-        <h2>Phase 4: the listening room</h2>
-        <p>
-          A queue you can actually edit: drag to reorder, play this next, see what is coming. Resume where you left off when you reopen the app. And a stats view on the glass, built on Phase 0 data, showing your most played records of the month and the year. Cheap to build, genuinely fun, and precisely the sort of thing an OLED panel on a piece of imaginary hardware should be doing.
         </p>
 
         <h2>Two bets worth making</h2>
