@@ -283,8 +283,9 @@ Recompute policy, so the pass never runs more than it has to:
 - `markListeningSummaryStale()` is called from `recordPlayIfThresholdMet`
   after the store records the play, from `resetListeningStoreCache()`, and
   from the `statsWindow` setter. Nowhere else.
-- `refreshListeningSummaryIfNeeded()` is called from `oledView`'s `didSet`
-  when the new value is `.stats`, and from `markListeningSummaryStale()`
+- `refreshListeningSummaryIfNeeded()` is called from the pane's `onAppear`
+  (which covers both switching to the screen and relaunching into it, since
+  `didSet` does not fire in `init`), and from `markListeningSummaryStale()`
   when `oledView == .stats` already. So: while the screen is showing, a
   counted play updates it; while it is not, nothing is computed until it
   is shown again. A shuffle-heavy evening on the NOW screen costs zero
