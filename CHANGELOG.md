@@ -4,11 +4,16 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
-## 2.0.0 (79) — 2026-09-02 — BETA 7
+## 2.0.0 (80) — 2026-09-03 — BETA 8
 
 Everything in the 2.0 line so far, newest work first. Unfinished by
 definition: this is where 2.0 is built, and it is offered to nobody who has
 not asked for it.
+
+Beta 8 is one fix, for a bug that quietly made a mess of your album folders:
+filtering the artwork search to one source and pressing SELECT ALL fetched the
+hidden sources too, so an album could come back with two covers and a set of
+duplicate booklet pages.
 
 Beta 7 is the console becoming yours. Every theme can carry its own logo in
 the header, with a crop table in the editor to frame it, and the parts that
@@ -207,6 +212,18 @@ app.
   no longer move anything else.
 
 ### Fixed
+
+- **The artwork search staged images you had filtered out of sight.** The
+  source chips above the grid, CAA and DISCOGS and DISK, decided which scans
+  were drawn but not which ones the buttons acted on. So filtering to one
+  source and pressing SELECT ALL ticked everything, including the tiles you
+  could no longer see, and STAGE then fetched the lot. An album could end up
+  with the same cover twice and a stack of duplicate booklet pages, and the
+  counter beside the buttons read a number that did not match the grid in
+  front of you. Every control now works on what the chip is showing: SELECT
+  ALL, NONE, shift-click ranges, the counter and STAGE. Images the filter
+  hides keep their tick and come back selected when you lift it, so a chip is
+  a way of looking at the grid rather than an edit to it.
 
 - **The theme editor no longer flips the appearance.** Opening it while in Light
   threw the whole app into Dark, and the other way round, because the editor
