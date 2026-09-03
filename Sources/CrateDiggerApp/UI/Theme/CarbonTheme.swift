@@ -105,6 +105,7 @@ public struct CarbonTheme: Equatable {
     public var lampCDOverride: Color?
     public var lampDevicesOverride: Color?
     public var lampSearchOverride: Color?
+    public var lampStatsOverride: Color?
 
     public var lampNow: Color { lampNowOverride ?? sun }
     public var lampConvert: Color { lampConvertOverride ?? orange }
@@ -115,6 +116,9 @@ public struct CarbonTheme: Equatable {
     /// The seventh screen. Every other accent already belongs to a lamp, and a
     /// tuner sweeping for a station wants the cold end of the palette anyway.
     public var lampSearch: Color { lampSearchOverride ?? cyanGlow }
+    /// The eighth screen. What you have been playing, so the NOW family one
+    /// step brighter: related to the Now Playing lamp without being the same LED.
+    public var lampStats: Color { lampStatsOverride ?? sunHi }
 
     /// The LED behind the transport's silicone caps: the play/pause dome,
     /// shuffle, repeat, and the mini player's row.
@@ -449,6 +453,7 @@ public extension CarbonTheme {
         lampCDOverride = optionalColor("lampCD", resolvedBase.lampCDOverride)
         lampDevicesOverride = optionalColor("lampDevices", resolvedBase.lampDevicesOverride)
         lampSearchOverride = optionalColor("lampSearch", resolvedBase.lampSearchOverride)
+        lampStatsOverride = optionalColor("lampStats", resolvedBase.lampStatsOverride)
         // Not a lamp on the glass: the caps are on the chassis, so this one is
         // absent from `monochromeGlass` below.
         transportLampOverride = optionalColor("transportLamp", resolvedBase.transportLampOverride)
@@ -524,7 +529,7 @@ public extension CarbonTheme {
         for lamp: WritableKeyPath<CarbonTheme, Color?> in [
             \.lampNowOverride, \.lampConvertOverride, \.lampScanOverride,
             \.lampSyncOverride, \.lampCDOverride, \.lampDevicesOverride,
-            \.lampSearchOverride,
+            \.lampSearchOverride, \.lampStatsOverride,
         ] {
             copy[keyPath: lamp] = nil
         }

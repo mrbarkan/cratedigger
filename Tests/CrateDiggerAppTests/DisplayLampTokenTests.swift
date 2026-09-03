@@ -50,6 +50,17 @@ final class DisplayLampTokenTests: XCTestCase {
         XCTAssertEqual(pinned.monochromeGlass.lampSearch, pinned.oledForeground)
     }
 
+    /// STATS is the eighth screen. It is about what you have been playing, so
+    /// its lamp is the NOW family one step brighter: `sunHi`.
+    func testStatsLampFollowsSunHiUntilPinned() {
+        let retinted = theme(colors: ["sunHi": "#332211"])
+        XCTAssertEqual(retinted.lampStats, retinted.sunHi)
+
+        let pinned = theme(colors: ["lampStats": "#00FF00", "sunHi": "#332211"])
+        XCTAssertEqual(pinned.lampStats, Color(hexString: "#00FF00"))
+        XCTAssertEqual(pinned.monochromeGlass.lampStats, pinned.oledForeground)
+    }
+
     /// The LED behind the transport caps. Unset it has to keep tracking the
     /// accent trio exactly, or every theme that ships today changes colour.
     func testTransportLampFollowsTheAccentTrioUntilPinned() {
@@ -72,6 +83,7 @@ final class DisplayLampTokenTests: XCTestCase {
     func testBothNewTokensAreReachableFromTheEditorCatalog() {
         let keys = Set(ThemeTokenCatalog.allColorTokens.map(\.key))
         XCTAssertTrue(keys.contains("lampSearch"), "lampSearch has no swatch in the theme editor")
+        XCTAssertTrue(keys.contains("lampStats"), "lampStats has no swatch in the theme editor")
         XCTAssertTrue(keys.contains("transportLamp"), "transportLamp has no swatch in the theme editor")
         XCTAssertTrue(keys.contains("keyLamp"), "keyLamp has no swatch in the theme editor")
         XCTAssertTrue(keys.contains("meterHot"), "meterHot has no swatch in the theme editor")

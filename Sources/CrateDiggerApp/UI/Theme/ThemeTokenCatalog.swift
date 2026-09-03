@@ -269,6 +269,9 @@ enum ThemeTokenCatalog {
             ColorToken(key: "lampSearch", label: "SRCH Lamp",
                        note: "The SRCH annunciator and the tuner sweep on the search screen. Unset it follows Teal Glow.",
                        read: \.lampSearch),
+            ColorToken(key: "lampStats", label: "STAT Lamp",
+                       note: "The STAT annunciator and DISPLAY strip on the stats screen. Unset it follows Amber Light.",
+                       read: \.lampStats),
         ]),
         ColorGroup(name: "Selected Rows", tokens: [
             ColorToken(key: "selectionLedCore", label: "Selection Lamp",
