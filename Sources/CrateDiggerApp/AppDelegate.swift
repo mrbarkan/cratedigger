@@ -951,7 +951,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             (.nowPlaying, "1"),
             (.conversion, "2"),
             (.scan, "3"),
-            (.devices, "4")
+            (.devices, "4"),
+            (.stats, "5")
         ]
         for (view, key) in displayedViews {
             let item = makeItem(title: "\(view.label) Display", action: #selector(selectOLEDView(_:)), key: key)

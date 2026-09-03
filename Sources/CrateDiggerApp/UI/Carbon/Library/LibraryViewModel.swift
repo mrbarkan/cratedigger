@@ -15,6 +15,10 @@ enum OLEDView: String, CaseIterable, Codable, Sendable {
     /// from the DISPLAY cycle or the View menu: a search screen with nothing
     /// typed is a screen that says READY at you.
     case search
+    /// What you have been playing: most played record, artist and track for
+    /// the month, the year, or all time. Persisted like the other chosen
+    /// screens; only SEARCH is not.
+    case stats
 
     var label: String {
         switch self {
@@ -25,6 +29,7 @@ enum OLEDView: String, CaseIterable, Codable, Sendable {
         case .cdRip:      return "CD"
         case .devices:    return "Dev"
         case .search:     return "Search"
+        case .stats:      return "Stats"
         }
     }
 }
@@ -1107,6 +1112,24 @@ final class LibraryViewModel: ObservableObject {
     var pendingRecordSeekSeconds: Double?
     var pendingRecordSeekTrackID: UUID?
 
+    // MARK: - Stats screen (behaviour in LibraryViewModel+Stats)
+
+    /// The period the STATS screen shows. Persisted; the setter marks the
+    /// summary stale so the next look recomputes.
+    @Published var statsWindow: ListeningWindow = .month {
+        didSet {
+            prefs.savedStatsWindow = statsWindow.rawValue
+            markListeningSummaryStale()
+        }
+    }
+    /// The cached summary the STATS pane draws. Written only by
+    /// `refreshListeningSummaryIfNeeded()`; nil until the screen is first shown.
+    @Published var listeningSummary: ListeningSummary?
+    /// Set on every counted play, window change and store reset; cleared by
+    /// the recompute. The pass never runs unless this is true and the STATS
+    /// screen is the one on the glass.
+    var listeningSummaryIsStale = true
+
     var isRadioMode: Bool {
         if case .radio = currentSource { return true }
         return false
@@ -1322,6 +1345,9 @@ final class LibraryViewModel: ObservableObject {
 
         if let saved = prefs.savedOLEDView, let view = OLEDView(rawValue: saved) {
             oledView = view
+        }
+        if let saved = prefs.savedStatsWindow, let window = ListeningWindow(rawValue: saved) {
+            statsWindow = window
         }
         shuffleEnabled = prefs.savedShuffleEnabled
         if let saved = prefs.savedRepeatMode, let mode = RepeatMode(rawValue: saved) {
@@ -3825,7 +3851,8 @@ final class LibraryViewModel: ObservableObject {
     /// per track while the user holds Next through a folder.
     var listeningSaveFailureAlerted = false
 
-    private func currentTrackStore() -> TrackStore {
+    /// Not private: the +Stats and +Resume extensions read it.
+    func currentTrackStore() -> TrackStore {
         let folder = cratesDirectoryURL
         if let store = trackStore, trackStoreFolder?.path == folder.path {
             return store

@@ -68,6 +68,7 @@ extension LibraryViewModel {
         listeningStore = nil
         listeningStoreFolder = nil
         listeningSaveFailureAlerted = false
+        markListeningSummaryStale()
     }
 
     /// Count a play once the same threshold that triggers a scrobble is met.
@@ -92,6 +93,7 @@ extension LibraryViewModel {
         // minutes of listening that is nothing; if a shuffle-heavy session ever
         // shows up in a profile, batch it behind a timer.
         persistListeningStore()
+        markListeningSummaryStale()
     }
 
     /// The track being left counts as skipped if it was abandoned part-way.

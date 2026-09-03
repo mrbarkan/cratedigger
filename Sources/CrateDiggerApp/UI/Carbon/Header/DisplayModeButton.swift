@@ -17,6 +17,7 @@ extension OLEDView {
         case .cdRip:      return theme.lampCD
         case .devices:    return theme.lampDevices    // salmon
         case .search:     return theme.lampSearch     // teal glow
+        case .stats:      return theme.lampStats
         }
     }
 }
@@ -43,7 +44,7 @@ struct DisplayModeButton: View {
     @Environment(\.carbonGeometry) private var geometry
     @EnvironmentObject private var model: LibraryViewModel
 
-    private static let cycle: [OLEDView] = [.nowPlaying, .conversion, .scan, .devices]
+    static let cycle: [OLEDView] = [.nowPlaying, .conversion, .scan, .devices, .stats]
 
     var body: some View {
         Button(action: cycleToNext) {
@@ -80,6 +81,7 @@ struct DisplayModeButton: View {
         case .cdRip:      return "CD-RIP"
         case .devices:    return "DEV"
         case .search:     return "SRCH"
+        case .stats:      return "STATS"
         }
     }
 

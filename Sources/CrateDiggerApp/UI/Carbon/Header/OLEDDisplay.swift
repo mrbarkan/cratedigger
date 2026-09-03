@@ -124,6 +124,7 @@ private struct DisplayContext: View {
             case .cdRip:       CDRipPane()
             case .devices:     DevicesPane()
             case .search:      SearchPane()
+            case .stats:       SearchPane()   // replaced by StatsPane in the next task
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -160,6 +161,7 @@ private struct DisplayRail: View {
                 ann("CD", lit: v == .cdRip, color: OLEDView.cdRip.accent(theme))
                 ann("DEV", lit: v == .devices, color: OLEDView.devices.accent(theme))
                 ann("SRCH", lit: v == .search, color: OLEDView.search.accent(theme))
+                ann("STAT", lit: v == .stats, color: OLEDView.stats.accent(theme))
                 ann("ON AIR", lit: radioLive, color: theme.onAir, pulse: onAirPulse)
             }
         }
