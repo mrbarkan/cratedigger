@@ -1107,10 +1107,16 @@ final class LibraryViewModel: ObservableObject {
     @Published var recordDividerIsScanning: Bool = false
     /// Hint shown when a scan finds 0–1 breaks (suggest raising sensitivity).
     @Published var recordDividerHint: String?
-    /// A marker start to seek to once a just-started divided file is playing
-    /// (clicking a sub-track in the browser before its file is loaded).
-    var pendingRecordSeekSeconds: Double?
-    var pendingRecordSeekTrackID: UUID?
+    /// A position to seek to once the target file is loaded and its duration
+    /// is known. Two writers: Record Divider (clicking a sub-track before its
+    /// file is playing) and resume at launch (a paused load of the last queue).
+    /// Consumed by `applyPendingSeekIfNeeded()` in `+Resume`.
+    var pendingSeekSeconds: Double?
+    var pendingSeekTrackID: UUID?
+
+    /// The last snapshot bytes written, so a pause/unpause of the same track
+    /// does not touch UserDefaults twice. See `savePlaybackSnapshot()`.
+    var lastSavedPlaybackSnapshot: Data?
 
     // MARK: - Stats screen (behaviour in LibraryViewModel+Stats)
 
@@ -1438,6 +1444,7 @@ final class LibraryViewModel: ObservableObject {
         refreshAvailableCrates()
         streams = streamStore.all()
         selectSource(.localAll)
+        restorePlaybackSnapshot()
         recomputeOfflineVolumes()
         recomputeMissingFiles()
         fetchMissingMetadata()
@@ -2865,6 +2872,7 @@ final class LibraryViewModel: ObservableObject {
             )
         }
         playback.load(queue: queueItems, startIndex: startIndex, autoPlay: true)
+        savePlaybackSnapshot()
     }
 
     func togglePlayPause() {
@@ -3436,6 +3444,11 @@ final class LibraryViewModel: ObservableObject {
         // sleep timer waits for.
         if state == .ended { noteSleepQueueEnded() }
 
+        // Pause and end are the natural "I might quit now" moments; the
+        // position saved here is insurance against a crash, and the exact one
+        // is taken in applicationWillTerminate.
+        if state == .paused || state == .ended { savePlaybackSnapshot() }
+
         // DSD decode (via ffmpeg) can take a beat before playback starts;
         // let the user know why the transport is sitting on "loading". The
         // native (DoP) path doesn't decode — it gets a bit-perfect badge.
@@ -3554,6 +3567,7 @@ final class LibraryViewModel: ObservableObject {
                 // An end-of-track sleep timer resolves here — the track it was
                 // armed against has been replaced.
                 self.noteSleepTrackChanged()
+                self.savePlaybackSnapshot()
             }
         }
         playback.onTimeChange = { [weak self] current, duration in
@@ -3561,7 +3575,7 @@ final class LibraryViewModel: ObservableObject {
                 self?.playbackCurrentTime = current
                 self?.playbackDuration = duration
                 self?.clearScrubPreviewIfSeekLanded(current)
-                self?.applyPendingRecordSeekIfNeeded()
+                self?.applyPendingSeekIfNeeded()
                 self?.checkScrobbleProgress(current: current, duration: duration)
                 self?.updateNowPlayingElapsed()
             }

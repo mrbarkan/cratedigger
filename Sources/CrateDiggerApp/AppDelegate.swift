@@ -73,6 +73,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        // The one snapshot whose position has to be exact.
+        mainWindowController?.model.savePlaybackSnapshot()
         if let token = spaceKeyMonitor {
             NSEvent.removeMonitor(token)
             spaceKeyMonitor = nil
