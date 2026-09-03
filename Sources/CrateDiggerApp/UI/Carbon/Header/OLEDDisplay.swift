@@ -124,7 +124,7 @@ private struct DisplayContext: View {
             case .cdRip:       CDRipPane()
             case .devices:     DevicesPane()
             case .search:      SearchPane()
-            case .stats:       SearchPane()   // replaced by StatsPane in the next task
+            case .stats:       StatsPane()
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -1150,6 +1150,100 @@ private struct SearchPane: View {
     private func count(_ n: Int) -> String {
         model.isSearchActive ? "\(n)" : "—"
     }
+}
+
+/// STATS: what you have been playing. The headline is the window's top
+/// record, the readout its play count with the period tag under it, and the
+/// rail names the rest. The tag cycles Month, Year, All Time.
+private struct StatsPane: View {
+    @EnvironmentObject private var model: LibraryViewModel
+    @Environment(\.carbon) private var theme
+
+    var body: some View {
+        OLEDPaneScaffold {
+            NPTitles(title: headline, sub: subtitle, titleColor: titleColor)
+        } readout: {
+            VStack(alignment: .trailing, spacing: 6) {
+                Text(playsValue)
+                    .font(CarbonFont.display(34, weight: .thin))
+                    .foregroundStyle(oledFG)
+                Button(action: { model.cycleStatsWindow() }) {
+                    OLEDTag(text: periodLabel, ink: theme.lampStats, background: theme.lampStats.opacity(0.14))
+                }
+                .buttonStyle(.plain)
+                .carbonTip("Click to change the period")
+            }
+            .fixedSize()
+        } ticker: {
+            EmptyView()
+        } cells: {
+            OLEDCells(cells)
+        }
+        // The summary is computed lazily: showing the screen is what asks
+        // for it, so a relaunch straight into STATS draws real numbers too.
+        .onAppear { model.refreshListeningSummaryIfNeeded() }
+    }
+
+    private var summary: ListeningSummary? { model.listeningSummary }
+    private var hasPlays: Bool { !(summary?.isEmpty ?? true) }
+    private var windowTitle: String { model.statsWindow.title(now: Date(), calendar: .current) }
+
+    private var headline: String {
+        summary?.topRecord?.name ?? "NOTHING YET"
+    }
+
+    private var titleColor: Color {
+        hasPlays ? oledFG : oledFGo(0.45)
+    }
+
+    private var subtitle: String {
+        guard hasPlays, let record = summary?.topRecord else { return "Play something · \(windowTitle)" }
+        return record.detail.isEmpty
+            ? "Top record · \(windowTitle)"
+            : "\(record.detail) · Top record · \(windowTitle)"
+    }
+
+    private var playsValue: String {
+        hasPlays ? "\(summary?.plays ?? 0)" : "—"
+    }
+
+    private var periodLabel: String {
+        switch model.statsWindow {
+        case .month:   return "MONTH"
+        case .year:    return "YEAR"
+        case .allTime: return "ALL"
+        }
+    }
+
+    private var cells: [OLEDCellData] {
+        [
+            OLEDCellData(key: "Artist", value: summary?.topArtist?.name ?? "—",
+                         sub: summary?.topArtist.map { "\($0.plays) plays" } ?? "Top",
+                         valueColor: theme.lampStats),
+            OLEDCellData(key: "Track", value: summary?.topTrack?.name ?? "—",
+                         sub: summary?.topTrack?.detail.nonEmpty ?? "Top",
+                         valueColor: theme.sun),
+            OLEDCellData(key: "Hours", value: hoursValue, sub: "Listened"),
+            OLEDCellData(key: "Records", value: count(summary?.recordsTouched), sub: "Played"),
+            OLEDCellData(key: "Tracks", value: count(summary?.tracksTouched), sub: "Played")
+        ]
+    }
+
+    private var hoursValue: String {
+        guard hasPlays, let seconds = summary?.listenedSeconds, seconds > 0 else { return "—" }
+        let hours = seconds / 3600
+        return hours < 10 ? String(format: "%.1f", hours) : "\(Int(hours.rounded()))"
+    }
+
+    private func count(_ n: Int?) -> String {
+        guard hasPlays, let n else { return "—" }
+        return "\(n)"
+    }
+}
+
+private extension String {
+    /// nil for "", so a `??` fallback can take over an empty detail line.
+    var nonEmpty: String? { isEmpty ? nil : self }
 }
 
 private struct ScanPane: View {
