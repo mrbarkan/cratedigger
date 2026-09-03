@@ -27,6 +27,61 @@ final class ListeningStatsTests: XCTestCase {
         XCTAssertEqual(stats.playCount, 2)
     }
 
+    /// A fixed calendar so the month boundary in these tests is not the
+    /// machine's time zone.
+    private var utc: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        return calendar
+    }
+
+    func testAPlayLandsInItsCalendarMonth() {
+        var stats = ListeningStats(dateAdded: added)
+        // 2026-09-03T12:00:00Z
+        let september = Date(timeIntervalSince1970: 1_788_436_800)
+        stats.recordPlay(at: september, calendar: utc)
+        stats.recordPlay(at: september.addingTimeInterval(3600), calendar: utc)
+        // 2026-10-01T00:00:00Z, the first second of the next month.
+        stats.recordPlay(at: Date(timeIntervalSince1970: 1_790_812_800), calendar: utc)
+        XCTAssertEqual(stats.playsByMonth, ["2026-09": 2, "2026-10": 1])
+        XCTAssertEqual(stats.playCount, 3, "the lifetime count still moves with every play")
+    }
+
+    func testTheMonthKeyRespectsTheCalendarsTimeZone() {
+        // 2026-09-30T23:30:00Z is still September in UTC but already October
+        // in Auckland (UTC+13 in its summer).
+        let lateSeptember = Date(timeIntervalSince1970: 1_790_811_000)
+        XCTAssertEqual(ListeningStats.monthKey(for: lateSeptember, calendar: utc), "2026-09")
+        var auckland = Calendar(identifier: .gregorian)
+        auckland.timeZone = TimeZone(identifier: "Pacific/Auckland")!
+        XCTAssertEqual(ListeningStats.monthKey(for: lateSeptember, calendar: auckland), "2026-10")
+        XCTAssertEqual(ListeningStats.monthKey(year: 2026, month: 3), "2026-03")
+    }
+
+    func testAnOldRecordWithoutAHistogramStillDecodes() throws {
+        let json = #"{"playCount": 4, "skipCount": 0, "dateAdded": 1700000000.0, "rating": 0}"#
+        let stats = try JSONDecoder().decode(ListeningStats.self, from: json.data(using: .utf8)!)
+        XCTAssertEqual(stats.playsByMonth, [:])
+        XCTAssertEqual(stats.playCount, 4, "plays counted before the histogram shipped are not lost")
+    }
+
+    func testAnEmptyHistogramIsNotWrittenAndAFullOneRoundTrips() throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+
+        let unplayed = ListeningStats(dateAdded: added)
+        let unplayedJSON = String(decoding: try encoder.encode(unplayed), as: UTF8.self)
+        XCTAssertFalse(unplayedJSON.contains("playsByMonth"),
+                       "an unplayed track must not grow by an empty histogram")
+
+        var played = ListeningStats(dateAdded: added)
+        played.recordPlay(at: Date(timeIntervalSince1970: 1_788_436_800), calendar: utc)
+        let data = try encoder.encode(played)
+        XCTAssertTrue(String(decoding: data, as: UTF8.self).contains(#""playsByMonth":{"2026-09":1}"#))
+        let decoded = try JSONDecoder().decode(ListeningStats.self, from: data)
+        XCTAssertEqual(decoded, played)
+    }
+
     func testASkipDoesNotCountAsAPlayAndDoesNotStampLastPlayed() {
         var stats = ListeningStats(dateAdded: added)
         stats.recordSkip()

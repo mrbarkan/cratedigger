@@ -27,18 +27,31 @@ public struct ListeningStats: Codable, Sendable, Equatable {
         didSet { rating = min(max(rating, 0), 5) }
     }
 
+    /// Counted plays per calendar month, keyed "YYYY-MM" in the local calendar
+    /// at the moment the play was counted. Empty for anything not played since
+    /// this field shipped: `playCount` is the lifetime total and predates it, so
+    /// the two are not expected to agree. All Time on the STATS screen reads
+    /// `playCount`; Month and Year read this.
+    ///
+    /// A histogram rather than a list of dates on purpose: the plays file is
+    /// rewritten on every counted play, so it must be bounded by tracks times
+    /// months, not by how much someone listens.
+    public var playsByMonth: [String: Int]
+
     public init(
         playCount: Int = 0,
         skipCount: Int = 0,
         lastPlayed: Date? = nil,
         dateAdded: Date,
-        rating: Int = 0
+        rating: Int = 0,
+        playsByMonth: [String: Int] = [:]
     ) {
         self.playCount = playCount
         self.skipCount = skipCount
         self.lastPlayed = lastPlayed
         self.dateAdded = dateAdded
         self.rating = min(max(rating, 0), 5)
+        self.playsByMonth = playsByMonth
     }
 
     public init(from decoder: Decoder) throws {
@@ -49,6 +62,7 @@ public struct ListeningStats: Codable, Sendable, Equatable {
         self.dateAdded = try container.decode(Date.self, forKey: .dateAdded)
         let decodedRating = try container.decode(Int.self, forKey: .rating)
         self.rating = min(max(decodedRating, 0), 5)
+        self.playsByMonth = try container.decodeIfPresent([String: Int].self, forKey: .playsByMonth) ?? [:]
     }
 
     enum CodingKeys: String, CodingKey {
@@ -57,14 +71,42 @@ public struct ListeningStats: Codable, Sendable, Equatable {
         case lastPlayed
         case dateAdded
         case rating
+        case playsByMonth
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(playCount, forKey: .playCount)
+        try container.encode(skipCount, forKey: .skipCount)
+        // encodeIfPresent, as the synthesized encoder did, so an existing file's
+        // bytes do not change on its next save.
+        try container.encodeIfPresent(lastPlayed, forKey: .lastPlayed)
+        try container.encode(dateAdded, forKey: .dateAdded)
+        try container.encode(rating, forKey: .rating)
+        if !playsByMonth.isEmpty {
+            try container.encode(playsByMonth, forKey: .playsByMonth)
+        }
     }
 
     /// Whether the user has expressed an opinion, as distinct from a low one.
     public var isRated: Bool { rating > 0 }
 
-    public mutating func recordPlay(at date: Date) {
+    /// The histogram key for a year and month: "2026-09". One formatter for the
+    /// store and the summary, so a window can never miss a month over a
+    /// formatting difference.
+    public static func monthKey(year: Int, month: Int) -> String {
+        String(format: "%04d-%02d", year, month)
+    }
+
+    public static func monthKey(for date: Date, calendar: Calendar = .current) -> String {
+        let parts = calendar.dateComponents([.year, .month], from: date)
+        return monthKey(year: parts.year ?? 0, month: parts.month ?? 0)
+    }
+
+    public mutating func recordPlay(at date: Date, calendar: Calendar = .current) {
         playCount += 1
         lastPlayed = date
+        playsByMonth[Self.monthKey(for: date, calendar: calendar), default: 0] += 1
     }
 
     /// A skip leaves `lastPlayed` alone: you did not listen to it, so it should
