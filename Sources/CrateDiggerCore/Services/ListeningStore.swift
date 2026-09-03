@@ -84,6 +84,10 @@ public final class ListeningStore {
     public var count: Int { byPath.count }
     public var allPaths: [String] { Array(byPath.keys) }
 
+    /// Every row, for a summary pass. A copy-on-write handle to the same
+    /// storage, not a deep copy: nothing is duplicated until someone mutates it.
+    public var allStats: [String: ListeningStats] { byPath }
+
     /// Every rated track's rating, keyed by path — what the browser's Rating
     /// column groups by. Unrated tracks are absent, which reads as 0.
     public var ratingsByPath: [String: Int] {
@@ -185,7 +189,9 @@ public final class ListeningStore {
             lastPlayed: [a.lastPlayed, b.lastPlayed].compactMap { $0 }.max(),
             // The track entered the library when the first of these rows was
             // created, not the second.
-            dateAdded: min(a.dateAdded, b.dateAdded)
+            dateAdded: min(a.dateAdded, b.dateAdded),
+            // Two rows' months are two partial histories of one file: add them.
+            playsByMonth: a.playsByMonth.merging(b.playsByMonth, uniquingKeysWith: +)
         )
         // 0 means unrated, so a real rating must never lose to an unrated row.
         merged.rating = a.rating != 0 ? a.rating : b.rating

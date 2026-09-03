@@ -246,6 +246,42 @@ final class ListeningStorePersistenceTests: XCTestCase {
         XCTAssertEqual(merged.dateAdded, earlier, "dateAdded must take the earlier of the two rows")
     }
 
+    func testRepointOntoAnExistingRowSumsTheMonthHistograms() throws {
+        let store = ListeningStore(fileURL: fileURL)
+        let old = ListeningStore.key(for: trackA)
+        let new = ListeningStore.key(for: trackB)
+        // Mid-month, midday UTC. `ListeningStore.recordPlay` takes no calendar,
+        // so these bucket under `Calendar.current`: a date on a month boundary
+        // would fall either side of it depending on the machine's time zone and
+        // the two keys could collide.
+        let september = Date(timeIntervalSince1970: 1_788_436_800)  // 2026-09-03T12:00Z
+        let october = Date(timeIntervalSince1970: 1_792_065_600)  // 2026-10-15T12:00Z
+
+        store.recordPlay(path: old, at: september)
+        store.recordPlay(path: old, at: september)
+        store.recordPlay(path: new, at: september)
+        store.recordPlay(path: new, at: october)
+
+        store.repoint(from: old, to: new)
+
+        let merged = try XCTUnwrap(store.stats(path: new))
+        let sep = ListeningStats.monthKey(for: september)
+        let oct = ListeningStats.monthKey(for: october)
+        XCTAssertEqual(merged.playsByMonth[sep], 3, "both rows' September plays survive the move")
+        XCTAssertEqual(merged.playsByMonth[oct], 1)
+        XCTAssertEqual(merged.playCount, 2, "playCount keeps its max rule; the histogram is added on top")
+    }
+
+    func testAllStatsHandsBackEveryRow() {
+        let store = ListeningStore(fileURL: fileURL)
+        store.recordPlay(path: ListeningStore.key(for: trackA), at: now)
+        store.recordSkip(path: ListeningStore.key(for: trackB))
+        let all = store.allStats
+        XCTAssertEqual(all.count, 2)
+        XCTAssertEqual(all[ListeningStore.key(for: trackA)]?.playCount, 1)
+        XCTAssertEqual(all[ListeningStore.key(for: trackB)]?.skipCount, 1)
+    }
+
     private func freshFileURL() -> URL {
         folder.appendingPathComponent("cdplays-\(UUID().uuidString).json")
     }
