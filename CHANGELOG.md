@@ -4,6 +4,22 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## Unreleased
+
+New identity. The app icon is a record on an orange plate. The graphite chassis
+it replaces had a black disc on a black ground that turned to mush below 64px,
+and a meter bar that turned to noise. There is a logo mark to go with it, a
+record half out of the crate, and the name is now set in the display face the
+OLED already speaks, so the header and the screen share one voice.
+
+The About window carries all of it: the new icon, the lockup, and the two keys
+every About should have had, Check for Updates and Release Notes.
+
+One fix underneath: after running the test suite once, a development build
+stopped loading the app's own fonts, because the search for resources beside
+the binary picked whichever bundle the filesystem listed first and that became
+the test bundle. It never affected a packaged build.
+
 ## 2.0.0 (81) — 2026-09-03 — BETA 9
 
 Everything in the 2.0 line so far, newest work first. Unfinished by

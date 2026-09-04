@@ -13,16 +13,16 @@ struct BrandBlock: View {
         VStack(alignment: .leading, spacing: HeaderKeyMetrics.rowGap) {
             HStack(spacing: 8) {
                 // The brand column is a fixed width, but a theme can set any
-                // interface face — a wider one wrapped "CrateDigger" onto two
+                // display face — a wider one wrapped "CrateDigger" onto two
                 // lines and pushed the cog and pip out of the row. Scaling down
                 // is the right failure: the name stays whole and the row keeps
                 // its height. Same contract `KeyButton` already applies to
-                // every other themed label.
-                Text("CrateDigger")
-                    .font(CarbonFont.sans(14, weight: .semibold))
-                    .foregroundStyle(theme.ink)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
+                // every other themed label, and `BrandLockup` carries it.
+                //
+                // 11pt is what the shipped face fits beside both pips in a
+                // 156pt column. Widening `brandWidth` would buy a step, at the
+                // OLED's expense — not worth it for one point.
+                BrandLockup(typeSize: 11)
                 Spacer(minLength: 0)
                 LibButton(style: .pip, title: "", systemImage: "gearshape",
                           tip: "Settings") {

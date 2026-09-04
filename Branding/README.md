@@ -1,44 +1,78 @@
 # CrateDigger Design Package
 
-This package gives CrateDigger a coherent visual system built around a single idea: a graphite **"Carbon" chassis** — an OLED meter row, a vinyl disc with an orange spindle, and a cyan power LED — echoing the app's hardware UI. It keeps the app's light AppKit chrome, but adds a stronger identity so the brand feels deliberate in the Dock, in launch artwork, and inside the About screen.
+This package gives CrateDigger a coherent visual system built around a single
+idea: **the record is the brand**. The app icon *is* a record on an orange
+plate, and the logo mark is a record half out of the crate the app is named
+for. Both are drawn from the Carbon palette the app itself is built from, so
+the identity reads as part of the instrument rather than a label on it.
+
+The live, editable design canvas is at
+<https://claude.ai/code/artifact/1245b8ee-8a01-427c-91a2-443796b07c78>, and its
+sources are committed in [Design/](Design/).
 
 ## Visual Direction
 
-- Core motif: Carbon chassis squircle — OLED meter + vinyl disc (orange spindle) + cyan LED
-- Tone: polished utility, tactile music hardware, light modern-retro desktop
-- Primary colors:
-  - `Paper`: `#F4F7FB`
-  - `Mist`: `#E3EBF7`
-  - `Slate`: `#262D3A`
-  - `Cyan`: `#2BB8F7`
-  - `Amber`: `#FFC939`
-  - `Coral`: `#EB634A`
+- App icon: an orange plate, a black disc with two deep grooves and fine ones
+  between, a paper label with an orange spindle.
+- Logo mark: the same record half out of a crate — two shapes and one accent,
+  which is what lets it survive 11px in the header.
+- Wordmark: **Major Mono Display**, the face the OLED already speaks, so the
+  name and the display share one voice. Set through `CarbonFont.display`, so a
+  theme that names its own display face restyles it with everything else.
+- Lockup: the mark's ink spans the capitals — disc top on the cap line, crate
+  underside on the baseline — with a gap of a third of the type size.
+  `BrandLockupMetrics` (Core) computes it from the face actually in use;
+  `BrandLockupMetricsTests` fails if it stops lining up.
+- Tone: polished utility, tactile music hardware, modern-retro desktop.
+- Primary colors, from the Carbon theme itself:
+  - `Orange`: `#FF6D3F` (plate `#FF8A5C` → `#E5552B`)
+  - `Label`: `#FFFDF7` → `#EDE6D6`
+  - `Chassis`: `#171C22`
+  - `Cyan`: `#45C7BD`
+  - `Sun`: `#F4CA54`
+  - `Indigo`: `#7282E8`
 
 ## Deliverables
 
+- Design canvas sources: [Branding/Design/](Design/)
 - App icon (built, multi-size `.icns`): [Packaging/CrateDiggerApp/Resources/CrateDigger.icns](../Packaging/CrateDiggerApp/Resources/CrateDigger.icns)
-- App icon source bundle: [Branding/Icon/](Icon/) — see [App Icon](#app-icon) below
+- App icon assets: [Branding/Icon/](Icon/) — see [App Icon](#app-icon) below
 - Icon preview: [Branding/Generated/CrateDiggerIcon-1024.png](Generated/CrateDiggerIcon-1024.png)
 - Splash artwork: [Branding/Generated/CrateDiggerSplash.png](Generated/CrateDiggerSplash.png) — *still the earlier crate-era art, pending refresh*
-- About screen preview: [Branding/Generated/CrateDiggerAboutPreview.png](Generated/CrateDiggerAboutPreview.png) — *older About layout, pending redesign*
 
 ## App Icon
 
-The icon is the **Carbon chassis** mark, authored as vector and rasterised crisply at every size. The source bundle lives in [Branding/Icon/](Icon/) and ships two tracks:
+**Everything under `Icon/` is generated. Do not hand-edit it.**
 
-- **Backwards compatible (macOS 13–26):** `AppIcon.appiconset/` (Xcode-ready — drag into `Assets.xcassets`) and `CrateDigger.iconset/`. `build-icons.sh` (re)builds `CrateDigger.icns`, which is what the packaged app uses via `CFBundleIconFile`.
-- **Tahoe (Liquid Glass):** `Tahoe/CrateDigger-1024-fullbleed.png` — import into **Icon Composer** (Xcode 26) to author the `.icon`, with the appiconset as the automatic fallback.
+The artwork lives in exactly one place —
+[`Sources/CrateDiggerApp/UI/Theme/AppIconArtwork.swift`](../Sources/CrateDiggerApp/UI/Theme/AppIconArtwork.swift)
+— which the app draws on screen (the About window's `AppIconView`) and the
+render script compiles against. An edit to the icon therefore cannot land in
+one and not the other. That is also why that file must stay free of app
+dependencies: the script compiles it on its own.
 
-To rebuild the `.icns` after editing the source, from the repo root:
+To rebuild every asset and the `.icns`, from the repo root:
 
 ```bash
-./Branding/Icon/build-icons.sh
-cp Branding/Icon/CrateDigger.icns Packaging/CrateDiggerApp/Resources/CrateDigger.icns
+./scripts/render-app-icon.sh
 ```
+
+It writes, and then runs `iconutil` and copies the result into `Packaging/`:
+
+- `Icon/CrateDigger.iconset/` — the classic sizes, on Apple's grid: the artwork
+  occupies 824 of a 1024 canvas, which is what makes the icon sit at the same
+  size as its neighbours in the Dock.
+- `Icon/AppIcon.appiconset/` — the same art for an Xcode asset catalogue.
+- `Icon/Tahoe/CrateDigger-1024-fullbleed.png` — full bleed, no baked corners,
+  for **Icon Composer** (Xcode 26); the system supplies the mask.
+- `Icon/Tahoe/Layers/{1-plate,2-disc,3-label}.png` — the same art split back to
+  front, which is what gives Liquid Glass its depth. See
+  [docs/ICON_COMPOSER_TAHOE.md](../docs/ICON_COMPOSER_TAHOE.md).
+- `Generated/CrateDiggerIcon-1024.png` — the preview above.
 
 ## Notes
 
 - macOS apps do not typically ship with an automatic splash screen the way iOS apps do, so the splash asset here is provided as branded launch artwork and a ready-to-integrate visual if you decide to add a startup panel later.
-- The About window is implemented directly in AppKit. Its layout predates the current Carbon look and is slated for a redesign.
+- The About window is `CarbonAboutView`, a SwiftUI Carbon faceplate hosted in an AppKit window. It draws the icon as vectors rather than reading the bundle, so it is correct in a `swift build` run too.
 - The custom icon only appears on the **packaged** `.app`; a debug / `swift build` run shows a generic Dock icon.
-- The earlier crate-motif assets were generated by `scripts/generate-brand-assets.swift`; the current Carbon chassis icon supersedes that pipeline.
+- The earlier crate-motif assets were generated by `scripts/generate-brand-assets.swift`, and the graphite chassis icon that replaced them by hand; `scripts/render-app-icon.sh` supersedes both.

@@ -32,3 +32,6 @@ scripts/.lastfm.env
 
 # Coverage artifact dropped by a raw `swift test` run in the repo root.
 default.profraw
+
+# Intermediate icon build product; the committed copy lives in Packaging/.
+Branding/Icon/CrateDigger.icns

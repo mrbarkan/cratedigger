@@ -18,7 +18,7 @@ struct CarbonAboutView: View {
         // this view would get the default (linen) palette and paint light-mode
         // ink onto the dark chassis.
         AboutFaceplate()
-            .frame(minWidth: 700, minHeight: 440)
+            .frame(minWidth: 780, minHeight: 450)
             .carbonThemed(mode: mode)
     }
 }
@@ -45,21 +45,67 @@ private struct AboutFaceplate: View {
 
     private var iconBay: some View {
         RecessedWell {
-            VStack(spacing: 16) {
+            VStack(spacing: 10) {
                 Spacer(minLength: 0)
-                Image(nsImage: NSApplication.shared.applicationIconImage)
-                    .resizable()
+                // Drawn as vectors rather than read from the bundle: a
+                // `swift build` run carries no icon resource, so
+                // `applicationIconImage` would show the generic placeholder
+                // through every development session.
+                AppIconView()
                     .frame(width: 150, height: 150)
                     .depthShadow(color: .black.opacity(0.5), radius: 14, y: 7)
-                Text("CARBON CHASSIS")
-                    .font(CarbonFont.mono(10, weight: .semibold))
-                    .tracking(2.2)
-                    .foregroundStyle(theme.ink3)
+                    .padding(.bottom, 6)
+                BrandLockup(typeSize: 16)
                 Spacer(minLength: 0)
+                aboutKey("CHECK FOR UPDATES", systemImage: "arrow.down.circle",
+                         enabled: SoftwareUpdater.shared.canCheckForUpdates,
+                         tip: SoftwareUpdater.shared.canCheckForUpdates
+                             ? "Check for a newer version"
+                             : "Only the packaged app updates itself") {
+                    SoftwareUpdater.shared.checkForUpdates()
+                }
+                aboutKey("RELEASE NOTES", systemImage: "doc.text",
+                         tip: "What changed in each release") {
+                    open("https://github.com/mrbarkan/cratedigger/releases")
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(width: 226)
+    }
+
+    /// A chrome key, the same part the header's library column is built from.
+    private func aboutKey(
+        _ title: String,
+        systemImage: String,
+        enabled: Bool = true,
+        tip: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 9, weight: .bold))
+                Text(title)
+                    .font(CarbonFont.mono(8, weight: .bold))
+                    .tracking(1.4)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(enabled ? theme.ink2 : theme.ink4)
+            .padding(.horizontal, 9)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(height: 30)
+            .background(ChromeChassis(theme: theme, cornerRadius: 6))
+        }
+        .buttonStyle(.carbonHover)
+        .disabled(!enabled)
+        .carbonTip(tip)
+    }
+
+    private func open(_ string: String) {
+        if let url = URL(string: string) { openURL(url) }
     }
 
     // MARK: - Right column
@@ -72,7 +118,7 @@ private struct AboutFaceplate: View {
                 .foregroundStyle(theme.cyan)
 
             Text("CrateDigger")
-                .font(CarbonFont.sans(30, weight: .bold))
+                .font(CarbonFont.display(28))
                 .foregroundStyle(theme.ink)
 
             Text("A modern-retro workstation for scanning, previewing, and cleaning up unruly music libraries.")
@@ -90,7 +136,7 @@ private struct AboutFaceplate: View {
                 featureRow(dot: theme.orange, label: "CONVERT",
                            desc: "Batch-reshape chaotic rips into clean libraries with FFmpeg.")
                 featureRow(dot: theme.indigo, label: "SPIN",
-                           desc: "Play local files, CDs, streams, and YouTube radio — or split vinyl rips.")
+                           desc: "Play local files, CDs, streams and YouTube radio, or split vinyl rips.")
             }
             .padding(.top, 2)
 
@@ -123,7 +169,7 @@ private struct AboutFaceplate: View {
 
     private func linkButton(_ title: String, url: String) -> some View {
         Button {
-            if let url = URL(string: url) { openURL(url) }
+            open(url)
         } label: {
             Text(title)
                 .font(CarbonFont.mono(11, weight: .semibold))
