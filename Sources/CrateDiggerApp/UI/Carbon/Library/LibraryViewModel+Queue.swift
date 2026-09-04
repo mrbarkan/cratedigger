@@ -83,7 +83,6 @@ extension LibraryViewModel {
         playingSource = currentSource
         playbackQueue = tracks
         playback.load(queue: tracks.map(Self.queueItem), startIndex: index, autoPlay: true)
-        savePlaybackSnapshot()
     }
 
     // MARK: - Editing
@@ -138,7 +137,6 @@ extension LibraryViewModel {
         if presentIfFileMissing(playbackQueue[index]) { return }
         oledView = .nowPlaying
         playback.load(queue: playbackQueue.map(Self.queueItem), startIndex: index, autoPlay: true)
-        savePlaybackSnapshot()
     }
 
     /// The tracks a browser selection means, for the queue actions in the

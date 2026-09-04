@@ -39,8 +39,11 @@ extension LibraryViewModel {
         }
     }
 
-    /// Record the transport. Called on every index change, pause, queue edit
-    /// and at quit; cheap because identical bytes are not written twice.
+    /// Record the transport. Called on every index change, pause, end, queue
+    /// edit that does not reload the queue, and at quit; cheap because
+    /// identical bytes are not written twice. Loading a queue is deliberately
+    /// not a caller: the index change the load fires is the save, and calling
+    /// straight after `playback.load` would record the outgoing index.
     func savePlaybackSnapshot() {
         // A deferred seek is still outstanding for this track (resume at
         // launch, or a Record Divider sub-track): the position is not yet
@@ -55,7 +58,9 @@ extension LibraryViewModel {
               let snapshot = PlaybackSnapshot(
                 paths: playbackQueue.map { ListeningStore.key(for: $0.track.fileURL) },
                 currentIndex: index,
-                positionSeconds: playback.currentTimeSeconds,
+                // A queue that ran dry parks the clock at the duration; coming
+                // back to the last track at its final second is not a resume.
+                positionSeconds: playbackState == .ended ? 0 : playback.currentTimeSeconds,
                 sourceKey: (playingSource ?? .localAll).persistenceKey
               )
         else {
@@ -96,8 +101,11 @@ extension LibraryViewModel {
             return
         }
 
-        // `persistenceKey` has no inverse and does not need one for the five
-        // shapes that can be here: match by key, else All Records.
+        // `persistenceKey` has no inverse and does not need one: match by key,
+        // else All Records. A playlist is saved but not listed here, so it
+        // comes back as All Records; the queue itself is intact and plays, only
+        // the sidebar's playing mark moves, which is not worth a playlist load
+        // at launch to avoid.
         let candidates: [LibrarySource] = [.localAll, .prepCrate]
             + availableCrates.map { LibrarySource.localCrate(name: $0) }
         playingSource = candidates.first { $0.persistenceKey == resolved.sourceKey } ?? .localAll

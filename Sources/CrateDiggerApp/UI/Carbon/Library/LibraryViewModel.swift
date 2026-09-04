@@ -2872,7 +2872,6 @@ final class LibraryViewModel: ObservableObject {
             )
         }
         playback.load(queue: queueItems, startIndex: startIndex, autoPlay: true)
-        savePlaybackSnapshot()
     }
 
     func togglePlayPause() {
@@ -3551,6 +3550,12 @@ final class LibraryViewModel: ObservableObject {
                 // it never reached the play threshold.
                 self.recordSkipForOutgoingTrack()
                 self.playbackCurrentIndex = index
+                // A deferred seek belongs to one track; moving on abandons it,
+                // or a stranded one could fire the next time that track plays.
+                if self.pendingSeekTrackID != self.nowPlayingTrack?.track.id {
+                    self.pendingSeekTrackID = nil
+                    self.pendingSeekSeconds = nil
+                }
                 // New track (or repeat-one replay): reset the scrobble state so
                 // a re-played track scrobbles again and listened time restarts.
                 self.lastScrobbledTrackID = nil
