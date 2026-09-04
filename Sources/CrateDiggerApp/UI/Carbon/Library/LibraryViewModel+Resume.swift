@@ -51,8 +51,14 @@ extension LibraryViewModel {
         // read with 0:00. The seek's own pause or index change saves it.
         if let pending = pendingSeekTrackID, pending == nowPlayingTrack?.track.id { return }
 
-        guard !isStreamActive,
-              let index = playbackCurrentIndex,
+        // A stream plays over a local queue that is only paused, not gone:
+        // leave the last snapshot alone rather than erasing a resume point
+        // that is still good. Streams are never snapshotted either way; they
+        // populate no queue, and playbackState mirrors the stream while one
+        // is up, so a save taken mid-stream could record position 0.
+        if isStreamActive { return }
+
+        guard let index = playbackCurrentIndex,
               !playbackQueue.isEmpty,
               Self.isResumable(playingSource),
               let snapshot = PlaybackSnapshot(

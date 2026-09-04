@@ -12,7 +12,7 @@ final class OLEDViewCycleTests: XCTestCase {
         XCTAssertEqual(DisplayModeButton.cycle.count, Set(DisplayModeButton.cycle).count, "no screen twice")
     }
 
-    func testEveryScreenHasARailLabel() {
+    func testEveryScreenHasALabel() {
         for view in OLEDView.allCases {
             XCTAssertFalse(view.label.isEmpty, "\(view) has no label")
         }

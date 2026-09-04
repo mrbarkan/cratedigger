@@ -2858,7 +2858,14 @@ final class LibraryViewModel: ObservableObject {
         guard let startIndex = queue.firstIndex(where: { $0.track.id == id }) else { return }
         // Fail fast with an actionable prompt if the file is missing/offline,
         // rather than a dead-end playback error.
-        if presentIfFileMissing(queue[startIndex]) { return }
+        if presentIfFileMissing(queue[startIndex]) {
+            // Nothing loads, so no index change comes to clear a seek a caller
+            // (Record Divider) staged for this track: drop it here, or it fires
+            // the next time the same track plays.
+            pendingSeekTrackID = nil
+            pendingSeekSeconds = nil
+            return
+        }
         // Starting a track jumps the OLED to Now Playing.
         oledView = .nowPlaying
         playbackQueue = queue
