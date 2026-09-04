@@ -126,39 +126,3 @@ private struct LibButton: View {
         .animation(.easeInOut(duration: 0.18), value: highlighted)
     }
 }
-
-struct BrandMark: View {
-    @Environment(\.carbon) private var theme
-    var size: CGFloat = 38
-
-    var body: some View {
-        ZStack {
-            Circle()
-                .fill(
-                    RadialGradient(
-                        colors: theme.isDark
-                            ? [theme.metalHi, theme.metal, theme.metalLo, theme.chassisDeep]
-                            : [.white, theme.chassisHi, theme.well, theme.chassisDeep],
-                        center: UnitPoint(x: 0.35, y: 0.30),
-                        startRadius: 0,
-                        endRadius: size * 0.6
-                    )
-                )
-                .overlay(
-                    Circle()
-                        .strokeBorder(Color.black.opacity(theme.isDark ? 0.4 : 0.12), lineWidth: 0.5)
-                )
-                .depthShadow(color: Color.black.opacity(theme.isDark ? 0.5 : 0.12), radius: 2, y: 2)
-
-            Circle()
-                .fill(theme.isDark ? Color(hex: 0x050504) : theme.ink)
-                .padding(size * 0.13)
-
-            Circle()
-                .fill(theme.orange)
-                .frame(width: size * 0.13, height: size * 0.13)
-                .shadow(color: theme.orange.opacity(theme.isDark ? 0.70 : 0.35), radius: 5)
-        }
-        .frame(width: size, height: size)
-    }
-}

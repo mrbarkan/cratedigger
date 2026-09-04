@@ -216,3 +216,33 @@ a light/dark pair: its shared block holds what both looks agree on, and the
 Note that inheriting an adaptive theme inherits its *layers* too, so a `light`
 or `dark` block in the parent overrides a shared token you set in the child.
 Set such a token in your own layers (or drop `inherits`) when that bites.
+
+## Editing the built-in themes (beta only)
+
+Normally the editor **forks** a shipped theme: opening Carbon gives you
+"Carbon Copy", a user theme that inherits from it, saved into
+`~/Library/Application Support/CrateDigger/Themes/`. That is right for anyone
+running the app, because the built-ins live inside the app bundle.
+
+While 2.0 is in beta the defaults are still being tuned, so a development
+build opens them **in place** instead. Saving writes straight to
+`Sources/CrateDiggerApp/Resources/Themes/<Theme>.cdtheme/theme.json` in the
+checkout the app was compiled from, and to the copy inside the running build's
+resource bundle so the change appears without a rebuild.
+
+What that means in practice:
+
+- Only the tokens you actually touch are written, so a token the theme leaves
+  unset stays unset. That matters for the screen lamps, which follow the
+  accent until something pins them.
+- The first save on a given theme reformats it into the canonical sorted form
+  the editor writes, so expect one large mechanical diff per theme and small
+  ones after that. Any key the schema does not model, such as the `"//"` note
+  in `Llama 97`, is carried across untouched.
+- Re-render the marks with `swift scripts/render-theme-logos.swift` if the
+  palette moved, then run `scripts/test.sh --filter BundledThemeTests`.
+
+This is deliberately temporary. `BuiltInThemeEditing.isOpen` in
+`Sources/CrateDiggerApp/UI/Theme/BuiltInThemeEditing.swift` turns it off for
+the RC, and it never applies to a packaged build in any case: it does nothing
+unless the app can see the checkout it was built from.

@@ -15,6 +15,14 @@ OLED already speaks, so the header and the screen share one voice.
 The About window carries all of it: the new icon, the lockup, and the two keys
 every About should have had, Check for Updates and Release Notes.
 
+The onboarding, welcome and guide screens now show the new icon too, instead
+of the older circular mark they were still drawing.
+
+For this beta only, a development build can edit the shipped themes in place
+rather than forking them, so the defaults can be tuned in the app and land
+straight in the checkout. It writes only the tokens you touch, and it does
+nothing in a packaged build. It closes again for the RC.
+
 One fix underneath: after running the test suite once, a development build
 stopped loading the app's own fonts, because the search for resources beside
 the binary picked whichever bundle the filesystem listed first and that became

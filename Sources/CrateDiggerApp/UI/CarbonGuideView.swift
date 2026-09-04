@@ -89,7 +89,8 @@ private struct GuideContent: View {
 
     private var header: some View {
         HStack(spacing: 14) {
-            BrandMark(size: 38)
+            AppIconView()
+                .frame(width: 38, height: 38)
             VStack(alignment: .leading, spacing: 3) {
                 Text("CrateDigger Guide")
                     .font(CarbonFont.sans(22, weight: .bold))

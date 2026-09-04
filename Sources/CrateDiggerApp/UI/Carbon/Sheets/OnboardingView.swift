@@ -46,7 +46,8 @@ struct OnboardingView: View {
 
     private var header: some View {
         HStack(spacing: 14) {
-            BrandMark(size: 40)
+            AppIconView()
+                .frame(width: 40, height: 40)
             VStack(alignment: .leading, spacing: 3) {
                 Text("Welcome to CrateDigger")
                     .font(CarbonFont.sans(20, weight: .bold))

@@ -352,6 +352,14 @@ public final class ThemeRegistry: ObservableObject {
             draft = seeded(definition)
             draftSeed = draft
             draftEditingAppearance = layer
+        case .builtIn where BuiltInThemeEditing.isEditable(manifest):
+            // Beta-only: the shipped themes are still being tuned, so the
+            // editor writes them back to the checkout rather than forking.
+            // See `BuiltInThemeEditing` — and close it for the RC.
+            draftLogoFallback = [:]
+            draft = seeded(definition)
+            draftSeed = draft
+            draftEditingAppearance = layer
         case .builtIn:
             // The logo files stay in the app bundle; the fork previews them
             // from there and gets its own copies when it's saved.
@@ -602,6 +610,13 @@ public final class ThemeRegistry: ObservableObject {
         return result
     }
 
+    /// True while the draft is a shipped theme opened in place rather than a
+    /// fork of one. Beta-only; see `BuiltInThemeEditing`.
+    public var editingBuiltIn: Bool {
+        guard let draft, let manifest = manifest(for: draft.id) else { return false }
+        return manifest.origin == .builtIn && BuiltInThemeEditing.isEditable(manifest)
+    }
+
     /// Writes the draft to the Themes folder, re-scans, and selects it — the
     /// theme you just authored becomes the theme you're using. Returns the
     /// saved id.
@@ -609,15 +624,32 @@ public final class ThemeRegistry: ObservableObject {
     public func saveDraft() throws -> String? {
         guard let draft, let authoring else { return nil }
 
-        try materializeDraftLogos()
-
         // Only record what differs from the parent, so the file reads as the
-        // author's intent rather than a dump of every token.
+        // author's intent rather than a dump of every token. A root theme has
+        // no parent, and this still prunes each appearance layer against the
+        // shared tokens — which is all a built-in needs.
         let parent = manifest(for: draft.inherits)?.definition
-        try authoring.save(
-            ThemeAuthoringService.minimized(draft, against: parent),
-            replacing: sourceURL(for: draft.id)
-        )
+        let normalized = ThemeAuthoringService.minimized(draft, against: parent)
+
+        let builtInDestinations = editingBuiltIn ? BuiltInThemeEditing.destinations(forThemeID: draft.id) : []
+        if builtInDestinations.isEmpty {
+            // A built-in's logos already sit beside it; only a fork needs its
+            // own copies, and `bundleDirectory` would put them in the user's
+            // Themes folder, which is not where this theme lives.
+            try materializeDraftLogos()
+            try authoring.save(normalized, replacing: sourceURL(for: draft.id))
+        } else {
+            // Patch the shipped file rather than rewrite it: the draft has
+            // every token filled in, so saving it whole would freeze the ones
+            // the theme deliberately leaves unset — the screen lamps follow
+            // the accent until something pins them. Against the seed the
+            // editor started from, the diff is exactly what was touched.
+            let shipped = manifest(for: draft.id)?.definition ?? draft
+            let patched = shipped.merging(draft.tokensChanged(from: draftSeed ?? draft))
+            for destination in builtInDestinations {
+                try BuiltInThemeEditing.write(patched, to: destination)
+            }
+        }
 
         let id = draft.id
         self.draft = nil

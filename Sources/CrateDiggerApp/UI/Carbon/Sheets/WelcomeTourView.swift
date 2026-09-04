@@ -194,7 +194,8 @@ private struct TourArtWelcome: View {
             .frame(height: 130)
             .opacity(0.5)
 
-            BrandMark(size: 84)
+            AppIconView()
+                .frame(width: 84, height: 84)
                 .depthShadow(color: Color.black.opacity(theme.isDark ? 0.5 : 0.2), radius: 10, y: 5)
         }
     }
