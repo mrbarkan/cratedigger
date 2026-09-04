@@ -13,17 +13,17 @@ struct OnboardingView: View {
             VStack(spacing: 10) {
                 folderRow(
                     icon: "internaldrive", title: "MUSIC FOLDER",
-                    desc: "Where your albums & tracks live — can be an external drive.",
+                    desc: "Where your albums and tracks live. Can be an external drive.",
                     path: model.localLibraryDisplayPath, isDefault: !model.localLibraryIsSet,
                     choose: { model.chooseLocalLibraryFolder() })
                 folderRow(
                     icon: "tray.2", title: "CRATES INDEX",
-                    desc: "Where crate index (.cdcrate) files are saved — not your music.",
+                    desc: "Where crate index (.cdcrate) files are saved, not your music. Keep it on a local disk.",
                     path: model.libraryFileDisplayPath, isDefault: !model.libraryFileIsSet,
                     choose: { model.chooseLibraryFileFolder() })
                 folderRow(
                     icon: "arrow.down.doc", title: "DEFAULT OUTPUT",
-                    desc: "Where converted files go by default.",
+                    desc: "Where converted files go by default. It does not have to be inside your library.",
                     path: model.outputDisplayPath, isDefault: !model.outputIsSet,
                     choose: { model.chooseOutputFolder() })
             }
@@ -31,7 +31,7 @@ struct OnboardingView: View {
             Button(action: { model.openExistingLibrary() }) {
                 HStack(spacing: 6) {
                     Image(systemName: "folder.badge.gearshape").font(.system(size: 10, weight: .semibold))
-                    Text("I already have a library — open it…")
+                    Text("I already have a library. Open it…")
                         .font(CarbonFont.mono(10, weight: .semibold))
                 }
                 .foregroundStyle(theme.cyan)
@@ -52,7 +52,7 @@ struct OnboardingView: View {
                 Text("Welcome to CrateDigger")
                     .font(CarbonFont.sans(20, weight: .bold))
                     .foregroundStyle(theme.ink)
-                Text("Pick where your library lives. Each is independent — you can change them later in Preferences.")
+                Text("Three folders and you are set. They are independent of each other, and you can change any of them later in Preferences.")
                     .font(CarbonFont.sans(12))
                     .foregroundStyle(theme.ink3)
                     .fixedSize(horizontal: false, vertical: true)
@@ -94,7 +94,7 @@ struct OnboardingView: View {
 
     private var footer: some View {
         HStack {
-            Text("Unchosen folders default to ~/Music/CrateDigger.")
+            Text("Anything you skip defaults to ~/Music/CrateDigger.")
                 .font(CarbonFont.mono(8.5)).foregroundStyle(theme.ink4)
             Spacer()
             Button("Get Started") { model.completeFirstRunSetup() }

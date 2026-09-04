@@ -18,6 +18,14 @@ every About should have had, Check for Updates and Release Notes.
 The onboarding, welcome and guide screens now show the new icon too, instead
 of the older circular mark they were still drawing.
 
+The welcome tour and the in-app guide have been rewritten for what 2.0
+actually is. The tour gained a page on searching and browsing, and one on
+themes and STATS, and its copy now names the real keys. The guide was worse
+than out of date: it still called crates .cdlib files and Conversion the Patch
+Bay, and said nothing about search, the browser columns, Deep Scan, artwork,
+resume, devices, radio, the Record Divider or listening stats. It covers all
+of them now.
+
 For this beta only, a development build can edit the shipped themes in place
 rather than forking them, so the defaults can be tuned in the app and land
 straight in the checkout. It writes only the tokens you touch, and it does

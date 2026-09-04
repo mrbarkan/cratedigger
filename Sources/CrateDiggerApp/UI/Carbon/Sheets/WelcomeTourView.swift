@@ -1,9 +1,13 @@
 import SwiftUI
 
-/// Visual welcome tour: a five-page walkthrough of the CrateDigger model
-/// (dig → stage → organize → convert → play), shown once on first launch
-/// before the folder-setup sheet, and replayable from Help ▸ Welcome Tour or
-/// the Interface preferences. Presented from `model.showingWelcomeTour`.
+/// Visual welcome tour: a walkthrough of the CrateDigger model
+/// (dig → organize → find → convert → play → make it yours), shown once on
+/// first launch before the folder-setup sheet, and replayable from
+/// Help ▸ Welcome Tour or the Interface preferences. Presented from
+/// `model.showingWelcomeTour`.
+///
+/// The copy names real keys and real controls, so it goes stale when they
+/// move. Anything renamed in the app has to be renamed here too.
 struct WelcomeTourView: View {
     @Environment(\.carbon) private var theme
     @EnvironmentObject private var model: LibraryViewModel
@@ -45,8 +49,10 @@ struct WelcomeTourView: View {
         case .welcome: TourArtWelcome()
         case .dig: TourArtDig()
         case .organize: TourArtOrganize()
+        case .find: TourArtFind()
         case .convert: TourArtConvert()
         case .play: TourArtPlay()
+        case .yours: TourArtYours()
         }
     }
 
@@ -122,7 +128,7 @@ struct WelcomeTourView: View {
 // MARK: - Page model
 
 private struct TourPage {
-    enum Art { case welcome, dig, organize, convert, play }
+    enum Art { case welcome, dig, organize, find, convert, play, yours }
 
     let art: Art
     let eyebrow: String
@@ -145,33 +151,45 @@ private struct TourPage {
         TourPage(
             art: .welcome,
             eyebrow: "WELCOME",
-            title: "Welcome to CrateDigger",
-            body: "A modern-retro workbench for scanning, playing, and cleaning up unruly music libraries. This one-minute tour shows how the pieces fit — you can replay it any time from Help ▸ Welcome Tour.",
+            title: "Your record collection, on a workbench",
+            body: "CrateDigger reads the folders your music already lives in, then hands you the tools to sort it, repair it, convert it and play it. The tour takes about a minute, and you can replay it any time from Help ▸ Welcome Tour.",
             accentKey: .cyan),
         TourPage(
             art: .dig,
             eyebrow: "STEP 1 · DIG",
-            title: "Dig crates, stage in the Prep Crate",
-            body: "DIG CRATE (⌘O) scans any folder of audio. Everything lands in the Prep Crate first — a staging area where you review, clean, and decide what's worth keeping before it touches your library.",
+            title: "Dig a crate, stage it first",
+            body: "DIG CRATE (⌘O) scans any folder of audio. Everything lands in the Prep Crate first, a staging area where you look it over before it joins your library. Scanning only reads: nothing on disk moves unless you ask it to.",
             accentKey: .orange),
         TourPage(
             art: .organize,
             eyebrow: "STEP 2 · ORGANIZE",
-            title: "File albums into crates",
-            body: "Crates are your top-level categories, listed in the Sources pane and saved as small library files. Select albums, hit ADD TO CRATE, and fix tags or artwork in the Inspector on the right.",
+            title: "File it into crates, fix what is broken",
+            body: "Crates are your categories, listed in Sources and saved as small .cdcrate index files. Select albums and press ADD TO CRATE, then fix tags and artwork in the Inspector. FIX TAGS looks a release up for you, and DEEP SCAN identifies one from the audio itself when the tags are useless.",
             accentKey: .sun),
         TourPage(
+            art: .find,
+            eyebrow: "STEP 3 · FIND",
+            title: "Search it, and browse it your way",
+            body: "⌘F searches artist, album, title, path and format at once, and every crate in the sidebar shows how many matches it holds. The columns are yours too: set any of them to Genre, Year, Decade, Format or Rating, and each crate remembers its own arrangement.",
+            accentKey: .cyan),
+        TourPage(
             art: .convert,
-            eyebrow: "STEP 3 · CONVERT",
-            title: "Convert anything",
-            body: "Select tracks and press Convert (⇧⌘C) to open Conversion. FFmpeg re-encodes to the format you choose and writes clean, collision-safe files into your Default Output folder.",
+            eyebrow: "STEP 4 · CONVERT",
+            title: "Convert anything to anything",
+            body: "Select tracks and press Convert (⇧⌘C). FFmpeg re-encodes to the format you pick and writes clean, collision-safe files into your Default Output folder, carrying tags and artwork across with them.",
             accentKey: .orange),
         TourPage(
             art: .play,
-            eyebrow: "STEP 4 · SPIN",
-            title: "Play it everywhere",
-            body: "Space plays and pauses anywhere. Pop out the Mini Player, tune YouTube radio streams, or split a continuous vinyl rip into tracks with the Record Divider. There's a welcome record waiting in your Personal Crate — give it a spin.",
+            eyebrow: "STEP 5 · SPIN",
+            title: "Play it, and pick up where you left off",
+            body: "Space plays and pauses anywhere. Quit mid-record and CrateDigger comes back on the same track, at the same second, with the same Up Next. There is a Mini Player, CD ripping, YouTube radio, and a Record Divider that cuts a continuous vinyl rip into tracks.",
             accentKey: .indigo),
+        TourPage(
+            art: .yours,
+            eyebrow: "LAST · MAKE IT YOURS",
+            title: "The console is yours",
+            body: "Three themes ship with the app and the editor builds more: colours, geometry, fonts, even your own logo in the header. STATS (⌘5) keeps score of what you actually play, by month, by year or all time. A welcome record is waiting in your Personal Crate. Give it a spin.",
+            accentKey: .sun),
     ]
 }
 
@@ -350,7 +368,185 @@ private struct TourArtOrganize: View {
     }
 }
 
-/// Format chips patched into an output format, patch-bay style.
+/// A search field over three column headers, one of which has been switched
+/// away from the default — the point of the page.
+private struct TourArtFind: View {
+    @Environment(\.carbon) private var theme
+
+    var body: some View {
+        VStack(spacing: 14) {
+            searchField
+
+            HStack(spacing: 8) {
+                columnHeader("ARTIST", picked: false)
+                columnHeader("GENRE", picked: true)
+                columnHeader("YEAR", picked: true)
+            }
+
+            HStack(spacing: 14) {
+                crateCount("BREAKS", count: "24", lit: true)
+                crateCount("DISCO 45s", count: "6", lit: true)
+                crateCount("JAZZ", count: "0", lit: false)
+            }
+        }
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 7) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(theme.cyan)
+            Text("mil blue")
+                .font(CarbonFont.mono(11, weight: .semibold))
+                .foregroundStyle(theme.ink)
+            // A caret, so the field reads as live rather than filled in.
+            RoundedRectangle(cornerRadius: 0.5)
+                .fill(theme.cyan)
+                .frame(width: 1.5, height: 13)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 11)
+        .padding(.vertical, 7)
+        .frame(width: 250)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(theme.paper.opacity(theme.isDark ? 0.55 : 0.9))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .strokeBorder(theme.cyan.opacity(0.7), lineWidth: 1.2)
+                )
+        )
+    }
+
+    private func columnHeader(_ name: String, picked: Bool) -> some View {
+        HStack(spacing: 4) {
+            Text(name)
+                .font(CarbonFont.mono(8.5, weight: .bold))
+                .tracking(1.4)
+                .foregroundStyle(picked ? theme.cyan : theme.ink3)
+            Image(systemName: "chevron.down")
+                .font(.system(size: 6, weight: .bold))
+                .foregroundStyle(picked ? theme.cyan : theme.ink4)
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .frame(width: 78)
+        .background(
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(picked ? theme.cyan.opacity(0.14) : theme.paper.opacity(theme.isDark ? 0.45 : 0.8))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .strokeBorder(picked ? theme.cyan.opacity(0.55) : theme.hair, lineWidth: 1)
+                )
+        )
+    }
+
+    private func crateCount(_ name: String, count: String, lit: Bool) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: "shippingbox.fill")
+                .font(.system(size: 7))
+                .foregroundStyle(lit ? theme.sun : theme.ink4)
+            Text(name)
+                .font(CarbonFont.mono(7.5, weight: .bold))
+                .tracking(1)
+                .foregroundStyle(lit ? theme.ink2 : theme.ink4)
+            Text(count)
+                .font(CarbonFont.mono(7.5, weight: .bold))
+                .foregroundStyle(lit ? theme.cyan : theme.ink4)
+        }
+        .opacity(lit ? 1 : 0.55)
+    }
+}
+
+/// Three theme faceplates and a scoreboard: the two things this page is
+/// about, side by side.
+private struct TourArtYours: View {
+    @Environment(\.carbon) private var theme
+
+    var body: some View {
+        HStack(spacing: 26) {
+            VStack(spacing: 8) {
+                HStack(spacing: 9) {
+                    faceplate(body: theme.chassis, lamp: theme.orange, ink: theme.ink)
+                    faceplate(body: theme.indigo.opacity(0.85), lamp: theme.sun, ink: .white)
+                    faceplate(body: theme.ink, lamp: theme.cyan, ink: theme.cyan)
+                }
+                caption("THEMES")
+            }
+
+            VStack(spacing: 8) {
+                scoreboard
+                caption("STATS · ⌘5")
+            }
+        }
+    }
+
+    private func faceplate(body: Color, lamp: Color, ink: Color) -> some View {
+        RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .fill(body)
+            .overlay(
+                VStack(alignment: .leading, spacing: 4) {
+                    Circle()
+                        .fill(lamp)
+                        .frame(width: 6, height: 6)
+                        .shadow(color: lamp.opacity(0.8), radius: 3)
+                    RoundedRectangle(cornerRadius: 1).fill(ink.opacity(0.5)).frame(width: 26, height: 3)
+                    RoundedRectangle(cornerRadius: 1).fill(ink.opacity(0.3)).frame(width: 18, height: 3)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .padding(8)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .strokeBorder(theme.hair, lineWidth: 1)
+            )
+            .frame(width: 46, height: 62)
+    }
+
+    /// The OLED is always a dark surface, in either appearance.
+    private var scoreboard: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text("MOST PLAYED")
+                .font(CarbonFont.mono(7, weight: .bold))
+                .tracking(1.6)
+                .foregroundStyle(Color.white.opacity(0.55))
+            Text("MOON SAFARI")
+                .font(CarbonFont.mono(11, weight: .bold))
+                .tracking(1.2)
+                .foregroundStyle(theme.orange)
+            HStack(spacing: 6) {
+                Text("148 PLAYS")
+                    .font(CarbonFont.mono(8, weight: .bold))
+                    .foregroundStyle(Color.white.opacity(0.75))
+                Text("THIS YEAR")
+                    .font(CarbonFont.mono(7, weight: .bold))
+                    .foregroundStyle(theme.cyan)
+                    .padding(.horizontal, 4).padding(.vertical, 1)
+                    .background(RoundedRectangle(cornerRadius: 2).fill(theme.cyan.opacity(0.18)))
+            }
+        }
+        .padding(.horizontal, 13)
+        .padding(.vertical, 11)
+        .frame(width: 158, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(theme.oledSurface)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .strokeBorder(theme.oledStrokeInner, lineWidth: 1)
+                )
+        )
+    }
+
+    private func caption(_ text: String) -> some View {
+        Text(text)
+            .font(CarbonFont.mono(8.5, weight: .bold))
+            .tracking(1.6)
+            .foregroundStyle(theme.ink3)
+    }
+}
+
+/// Format chips patched into an output format, Conversion-panel style.
 private struct TourArtConvert: View {
     @Environment(\.carbon) private var theme
 
@@ -366,7 +562,7 @@ private struct TourArtConvert: View {
                 Image(systemName: "cable.connector.horizontal")
                     .font(.system(size: 26))
                     .foregroundStyle(theme.orange)
-                Text("PATCH BAY")
+                Text("CONVERSION")
                     .font(CarbonFont.mono(8, weight: .bold))
                     .tracking(1.6)
                     .foregroundStyle(theme.ink3)

@@ -22,46 +22,81 @@ private struct GuideContent: View {
                     header
 
                     section("THE THREE FOLDERS", accent: theme.cyan) {
-                        Text("Each is independent — set them separately in first-run setup or Preferences.")
+                        Text("Each is independent. Set them in first-run setup or in Preferences.")
                             .font(CarbonFont.sans(11)).foregroundStyle(theme.ink3)
-                        concept("Music Folder", "Where your albums & tracks live. Can be an external drive.")
-                        concept("Crates Index", "Where crate index (.cdcrate) files are saved — not your music. Keep it on a local disk.")
-                        concept("Default Output", "Where conversions go by default — not necessarily into your library.")
+                        concept("Music Folder", "Where your albums and tracks live. Can be an external drive.")
+                        concept("Crates Index", "Where crate index (.cdcrate) files are saved, not your music. Keep it on a local disk.")
+                        concept("Default Output", "Where conversions go by default. It does not have to be inside your library.")
                     }
 
                     section("CORE CONCEPTS", accent: theme.orange) {
-                        concept("Crates", "Top-level album categories — think Gmail's Priority / Updates / Promotions tabs. Each crate's index is a .cdlib file.")
-                        concept("Prep Crate", "A temporary staging area. Newly scanned folders land here first — sort, clean, and convert before committing to a crate.")
-                        concept("Library File", "A .cdlib crate index you can import, export, or back up.")
+                        concept("Crates", "Your top-level categories, listed in Sources. A crate is a .cdcrate file listing which tracks belong to it; the tracks themselves are stored once and shared between crates, so filing a record in two places costs nothing.")
+                        concept("Prep Crate", "A staging area. Newly scanned folders land here first, so you can review, repair and convert before committing anything to a crate.")
+                        concept("All Records", "Everything you have scanned, whatever crate it sits in.")
                     }
 
                     section("GETTING STARTED", accent: theme.cyan) {
-                        bullet("Dig Crate (⌘O) — scan a folder of audio. Tracks land in the Prep Crate.")
-                        bullet("Review & clean, then Add to Crate to file an album into a crate.")
-                        bullet("Edit tags & artwork in the Inspector; right-click a track for more actions.")
+                        bullet("Dig Crate (⌘O) scans a folder of audio. Tracks land in the Prep Crate.")
+                        bullet("Review what arrived, then Add to Crate to file an album where it belongs.")
+                        bullet("Edit tags and artwork in the Inspector. Right-click a track for the rest.")
+                        note("Scanning only reads. Nothing on disk moves unless you ask: Move Music Files… and Consolidate Music Files… live in Preferences.")
+                    }
+
+                    section("FINDING THINGS", accent: theme.sun) {
+                        bullet("Find (⌘F) searches artist, album, title, file path and format at once. Every word has to match something, so \"mil blue\" finds Kind of Blue.")
+                        bullet("While a search runs, each crate in Sources shows its match count, and clicking one keeps the query. CRATE / ALL widens the search to everything.")
+                        bullet("Click a browser column's header to change what it shows: Artist, Album Artist, Album, Genre, Year, Decade, Format, Rating or Track. The layout key sets how many columns there are, and every crate remembers its own arrangement.")
+                        bullet("Escape clears the search. The magnifier in the browser header puts the field away.")
+                    }
+
+                    section("FIXING TAGS & ARTWORK", accent: theme.orange) {
+                        bullet("FIX TAGS matches a selected album against MusicBrainz and iTunes by name, and shows you every change before it writes anything.")
+                        bullet("DEEP SCAN is for when the tags are blank or wrong: it fingerprints the audio and identifies the record from the sound, not the text.")
+                        bullet("FIND ART searches the Cover Art Archive, Discogs, iTunes and Deezer, and shows what is already embedded in your files. Images stage first and are only written when you say so.")
+                        bullet("The CLEANUP key in the Inspector relinks tracks whose files moved, finds duplicates, and flags albums whose covers are too small.")
                     }
 
                     section("CONVERTING", accent: theme.orange) {
-                        bullet("Select an album or tracks → Convert Selected… (⇧⌘C).")
-                        bullet("Pick a format on the Patch Bay; FFmpeg re-encodes to your Default Output (or a folder you choose).")
+                        bullet("Select an album or some tracks, then Convert Selected… (⇧⌘C).")
+                        bullet("Pick a format in the Conversion panel. FFmpeg re-encodes into your Default Output, or a folder you choose, keeping tags and artwork.")
+                        bullet("Filenames never collide: a name already taken gets (2), (3) and so on.")
+                    }
+
+                    section("PLAYING", accent: theme.indigo) {
+                        bullet("Space plays and pauses anywhere. Lock the POSITION dial to scroll-seek with a wheel or trackpad.")
+                        bullet("Quit mid-record and CrateDigger comes back on the same track, at the same second, with the same Up Next.")
+                        bullet("Drag rows in the QUEUE tab to reorder what is coming. The EQ has three slots of your own and imports AutoEQ configs.")
+                        bullet("Window ▸ Mini Player floats a small player over your desktop. Cycle its art between CD, vinyl and cover.")
+                    }
+
+                    section("BEYOND YOUR OWN FILES", accent: theme.cyan) {
+                        bullet("Audio CDs mount as a source and rip straight into a crate.")
+                        bullet("YouTube radio streams live sets and mixes, if yt-dlp is installed.")
+                        bullet("A Subsonic or Navidrome server appears as a remote library.")
+                        bullet("iPods and USB players you have saved appear under Devices, and Transfer to Device… (⇧⌘T) converts on the way if it has to.")
+                    }
+
+                    section("RECORD DIVIDER", accent: theme.sun) {
+                        bullet("Right-click a continuous vinyl-side rip and choose Record Divider.")
+                        bullet("It finds the gaps for you, and the sensitivity slider decides how eager it is. Drag the markers, name the tracks, and export one file per track.")
+                    }
+
+                    section("STATS", accent: theme.indigo) {
+                        bullet("CrateDigger keeps a private record of what you play: counts, skips, when you last heard something, and when you added it.")
+                        bullet("The STATS screen (⌘5) shows your most played record, artist and track, for this month, this year or all time.")
+                    }
+
+                    section("MAKING IT YOURS", accent: theme.orange) {
+                        bullet("Carbon, Cobalt and Llama '97 ship with the app. The THEME key cycles them; Appearance ▸ Theme Editor… builds your own.")
+                        bullet("A theme carries colours, geometry, fonts and its own logo for the header, in light and dark. Drop a .cdtheme folder in the Themes folder to install one.")
                     }
 
                     section("BACKING UP & SHARING", accent: theme.cyan) {
-                        bullet("File → Library → Back Up Library… — one dated .zip of all your crate indexes.")
-                        bullet("Import / Export Library File… — move individual .cdlib crates in or out.")
-                        note("Your audio lives in the Music Folder — back that up separately (it's just files).")
+                        bullet("File ▸ Library ▸ Back Up Library… writes one dated .zip of every crate index.")
+                        bullet("Import / Export Library File… moves individual crates in and out.")
+                        note("Your audio lives in the Music Folder. Back that up separately: it is just files.")
                     }
 
-                    section("MINI PLAYER", accent: theme.orange) {
-                        bullet("Window → Mini Player (or the footer button) — a floating player over your desktop.")
-                        bullet("Cycle the art between CD / Vinyl / Album Cover; Expand returns to the full app.")
-                    }
-
-                    section("HANDY", accent: theme.cyan) {
-                        bullet("Space — play / pause. Lock the POSITION dial to scroll-seek with the wheel or trackpad.")
-                        bullet("Right-click a vinyl-rip file → Record Divider to split it into tracks.")
-                        bullet("THEME (top-right) toggles light / dark.")
-                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 // Top inset keeps the header clear of the window's traffic-light
