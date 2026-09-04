@@ -4,7 +4,7 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
-## 2.0.0 (80) — 2026-09-03 — BETA 8
+## 2.0.0 (81) — 2026-09-03 — BETA 9
 
 Everything in the 2.0 line so far, newest work first. Unfinished by
 definition: this is where 2.0 is built, and it is offered to nobody who has
