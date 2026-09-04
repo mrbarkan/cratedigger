@@ -1,0 +1,55 @@
+{
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "x": 0,
+      "y": 0,
+      "w": 1200,
+      "h": 900,
+      "title": "Logo"
+    },
+    {
+      "file": "About.dc.html",
+      "x": 1300,
+      "y": 0,
+      "w": 800,
+      "h": 480,
+      "title": "About \u00b7 Dark"
+    },
+    {
+      "file": "AboutLight.dc.html",
+      "x": 2200,
+      "y": 0,
+      "w": 800,
+      "h": 480,
+      "title": "About \u00b7 Light"
+    },
+    {
+      "file": "AppIcon.dc.html",
+      "x": 0,
+      "y": 1040,
+      "w": 1200,
+      "h": 940,
+      "title": "App Icon Package"
+    }
+  ],
+  "annotations": [
+    {
+      "id": "direction",
+      "x": 1300,
+      "y": 560,
+      "w": 560,
+      "text": "Direction: the logo keeps the record-in-the-crate mark; the app icon is Alt A refined, the whole icon as the record. Same tokens as the app: Carbon palette, Inter, JetBrains Mono."
+    },
+    {
+      "id": "about-notes",
+      "x": 2200,
+      "y": 560,
+      "w": 560,
+      "text": "About: same faceplate, three changes. The new lockup replaces the CARBON CHASSIS caption, two chrome keys give the window the actions every About has (Check for Updates goes to Sparkle, Release Notes to the changelog), and the SPIN line loses its dash."
+    }
+  ],
+  "launch": {
+    "view": "canvas"
+  }
+}
