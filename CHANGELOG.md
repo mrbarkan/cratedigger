@@ -26,6 +26,10 @@ Bay, and said nothing about search, the browser columns, Deep Scan, artwork,
 resume, devices, radio, the Record Divider or listening stats. It covers all
 of them now.
 
+What's New was rewritten with them: it had been left at the state of beta 7,
+so it led with the Discogs artwork scans and said nothing about search, the
+browser columns, resume or the STATS screen.
+
 For this beta only, a development build can edit the shipped themes in place
 rather than forking them, so the defaults can be tuned in the app and land
 straight in the checkout. It writes only the tokens you touch, and it does
