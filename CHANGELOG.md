@@ -4,57 +4,18 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
-## Unreleased
-
-New identity. The app icon is a record on an orange plate. The graphite chassis
-it replaces had a black disc on a black ground that turned to mush below 64px,
-and a meter bar that turned to noise. There is a logo mark to go with it, a
-record half out of the crate, and the name is now set in the display face the
-OLED already speaks, so the header and the screen share one voice.
-
-The About window carries all of it: the new icon, the lockup, and the two keys
-every About should have had, Check for Updates and Release Notes.
-
-The mini player keeps its big artwork and gets a transport of five keys of
-one size in a row, the way a portable player has them. A key in its top bar
-slides a panel out from behind the deck, the way the keypad half of a slider
-phone comes out from behind the screen, with two faces. UP NEXT is the queue: click a row to jump to it, drag
-to reorder, hover for remove. SOURCES lists every crate, playlist and saved
-stream, and one click shuffles that crate or puts that stream on, without
-opening the full window. The main window follows along, so expanding lands
-you where the music is. With nothing playing, the player opens with the
-panel already out, since that is the only useful thing it can show.
-
-The onboarding, welcome and guide screens now show the new icon too, instead
-of the older circular mark they were still drawing.
-
-The welcome tour and the in-app guide have been rewritten for what 2.0
-actually is. The tour gained a page on searching and browsing, and one on
-themes and STATS, and its copy now names the real keys. The guide was worse
-than out of date: it still called crates .cdlib files and Conversion the Patch
-Bay, and said nothing about search, the browser columns, Deep Scan, artwork,
-resume, devices, radio, the Record Divider or listening stats. It covers all
-of them now.
-
-What's New was rewritten with them: it had been left at the state of beta 7,
-so it led with the Discogs artwork scans and said nothing about search, the
-browser columns, resume or the STATS screen.
-
-For this beta only, a development build can edit the shipped themes in place
-rather than forking them, so the defaults can be tuned in the app and land
-straight in the checkout. It writes only the tokens you touch, and it does
-nothing in a packaged build. It closes again for the RC.
-
-One fix underneath: after running the test suite once, a development build
-stopped loading the app's own fonts, because the search for resources beside
-the binary picked whichever bundle the filesystem listed first and that became
-the test bundle. It never affected a packaged build.
-
-## 2.0.0 (81) — 2026-09-03 — BETA 9
+## 2.0.0 (82) — 2026-09-05 — RC 1
 
 Everything in the 2.0 line so far, newest work first. Unfinished by
 definition: this is where 2.0 is built, and it is offered to nobody who has
 not asked for it.
+
+RC 1 is the new face. The app icon is a record on an orange plate, there is a
+logo mark to go with it, and the name is set in the display face the OLED
+already speaks. The About window carries all of it. The mini player slides a
+panel out from behind the deck with Up Next and every crate, playlist and
+stream one click away. And every word of the first-run sheet, the welcome
+tour, the guide and What's New was rewritten for what 2.0 actually is.
 
 Beta 9 is the listening room. The app comes back where you left it, paused
 on the same track at the same second with the same queue. A STATS screen on
@@ -95,6 +56,21 @@ app.
 
 ### Added
 
+- **A new identity.** The app icon is a record on an orange plate; the old
+  graphite chassis had a black disc on a black ground that turned to mush
+  below 64px. The logo mark is a record half out of the crate, sized to the
+  capitals of whatever face is drawing the name, and the name itself is set in
+  the display face the OLED speaks. Both are drawn in the header and in About.
+- **Check for Updates and Release Notes in About**, as two keys under the icon.
+- **A panel under the mini player.** A key in its top bar slides it out from
+  behind the deck, the way the keypad half of a slider phone comes out from
+  behind the screen. UP NEXT is the queue: click to jump, drag to reorder,
+  hover for remove. SOURCES lists All Records, every crate with its count,
+  every playlist and every saved stream; one click shuffles that crate or puts
+  that stream on, and the main window follows so expanding lands you where the
+  music is. With nothing playing, the panel is already out.
+- **Two more pages in the welcome tour**, one on searching and the browser
+  columns, one on themes and STATS.
 - **Resume where you left off.** Quit mid-record and the transport comes
   back paused on the same track, at the same second, with the same Up Next,
   and the crate it was playing from still marked in the sidebar. Press play
@@ -220,6 +196,17 @@ app.
 
 ### Changed
 
+- **The mini player's transport is five keys of one size in a row**, the way a
+  portable player has them, in place of the dome with smaller caps around it.
+  Its OLED sets its title in the display face and its second line in the mono,
+  the same pair as the main display.
+- **The welcome tour, the guide and What's New were rewritten** for 2.0. The
+  guide had drifted into being wrong: it called crates .cdlib files, called
+  Conversion the Patch Bay, and said nothing about search, the browser columns,
+  Deep Scan, artwork, resume, devices, radio, the Record Divider or stats.
+  What's New had been left at beta 7. The first-run sheet's copy is tightened.
+- **The onboarding, welcome and guide screens show the new icon** instead of the
+  older circular mark they were still drawing.
 - **The display rail leads with what is playing.** The track name and the clock
   moved to the left of the rail, where they read first, and the row of mode
   lamps moved to the right where a status strip belongs. The clock is pinned to
@@ -278,6 +265,12 @@ app.
 
 ### Fixed
 
+- **Development builds lost the app's own fonts after one test run.** The scan
+  for resource bundles beside the binary returned whichever the filesystem
+  listed first, which became the test bundle, so every custom face fell back to
+  the system font. Packaged builds were never affected.
+- **About no longer wraps its website link onto two lines**; the window is wide
+  enough for the footer.
 - **The artwork search staged images you had filtered out of sight.** The
   source chips above the grid, CAA and DISCOGS and DISK, decided which scans
   were drawn but not which ones the buttons acted on. So filtering to one
