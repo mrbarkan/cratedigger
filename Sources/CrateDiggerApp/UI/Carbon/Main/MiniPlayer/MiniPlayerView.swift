@@ -40,27 +40,111 @@ struct MiniPlayerView: View {
     @AppStorage(AppearanceMode.userDefaultsKey) private var rawMode: String = AppearanceMode.system.rawValue
     @ObservedObject var model: LibraryViewModel
     let onExpand: () -> Void
-    /// The content's size, whenever it changes. The window follows it so the
-    /// panel can open downward without the player jumping.
-    let onSizeChange: (CGSize) -> Void
+    /// The panel was opened or closed. The window controller animates the
+    /// window to `height(panelOpen:)`; the drawer below follows the window's
+    /// edge, so the animation is the window's.
+    let onPanelChange: (Bool) -> Void
+
+    @State private var panelOpen = false
+    @State private var panelTab: MiniPlayerPanelTab = .sources
+    @State private var appeared = false
+
+    // MARK: Fixed geometry
+    //
+    // The controller sizes the window from these, so they have to agree with
+    // the layout. They are sums of the fixed frames and paddings below; a
+    // change to either side without the other shows up at once as a drawer
+    // that stops short or a deck with a gap under it.
+
+    static let width: CGFloat = 272
+    /// The deck: 13 pad, 22 bar + 11, 246 art, 13 + 58 OLED, 11 + 11 rail,
+    /// 14 + 40 transport, 13 pad.
+    static let deckHeight: CGFloat = 452
+    /// The drawer's visible part: 34 tabs (22 + 6 + 6), 250 list, 13 pad.
+    static let drawerHeight: CGFloat = 297
+    /// How far the drawer runs up behind the deck, so the seam between the
+    /// two is the deck's own rounded foot and never a hairline gap.
+    static let drawerOverlap: CGFloat = 40
+
+    static func height(panelOpen: Bool) -> CGFloat {
+        panelOpen ? deckHeight + drawerHeight : deckHeight
+    }
 
     var body: some View {
-        MiniPlayerBody(model: model, clock: model.playbackClock, onExpand: onExpand)
-            .carbonThemed(mode: AppearanceMode(rawValue: rawMode) ?? .system)
-            .background(
-                GeometryReader { proxy in
-                    Color.clear.preference(key: MiniPlayerSizeKey.self, value: proxy.size)
-                }
-            )
-            .onPreferenceChange(MiniPlayerSizeKey.self, perform: onSizeChange)
+        // A slider phone: the drawer is the keypad half, parked behind the
+        // screen half, and the window's bottom edge drags it out. It is always
+        // in the tree; only its offset moves, and that is a pure function of
+        // the window's live height, so opening and closing are the same code
+        // run in opposite directions and there is no state to get out of step.
+        GeometryReader { window in
+            let travel = window.size.height - Self.height(panelOpen: true)
+            ZStack(alignment: .top) {
+                MiniPlayerDrawer(model: model, tab: $panelTab)
+                    .frame(height: Self.drawerHeight + Self.drawerOverlap)
+                    .offset(y: Self.deckHeight - Self.drawerOverlap + travel)
+                MiniPlayerBody(
+                    model: model, clock: model.playbackClock, onExpand: onExpand,
+                    panelOpen: $panelOpen, panelTab: $panelTab, onPanelChange: onPanelChange
+                )
+                .frame(height: Self.deckHeight)
+            }
+            .frame(width: Self.width, height: max(window.size.height, 1), alignment: .top)
+        }
+        .frame(width: Self.width)
+        .carbonThemed(mode: AppearanceMode(rawValue: rawMode) ?? .system)
+        .onAppear {
+            guard !appeared else { return }
+            appeared = true
+            let playing = model.nowPlayingTrack != nil || model.isStreamActive
+            panelTab = MiniPlayerPanelTab.initial(isPlaying: playing, isStream: model.isStreamActive)
+            panelOpen = MiniPlayerPanelTab.opensExpanded(isPlaying: playing)
+            onPanelChange(panelOpen)
+        }
+        .onExitCommand {
+            guard panelOpen else { return }
+            panelOpen = false
+            onPanelChange(false)
+        }
     }
 }
 
-private struct MiniPlayerSizeKey: PreferenceKey {
-    static let defaultValue: CGSize = .zero
-    static func reduce(value: inout CGSize, nextValue: () -> CGSize) { value = nextValue() }
+/// The lower half: UP NEXT / SOURCES on their own glass body.
+private struct MiniPlayerDrawer: View {
+    @ObservedObject var model: LibraryViewModel
+    @Binding var tab: MiniPlayerPanelTab
+    @Environment(\.carbon) private var theme
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
+            MiniPlayerPanel(model: model, tab: $tab)
+                .padding(.horizontal, 13)
+                .padding(.bottom, 13)
+        }
+        .frame(width: MiniPlayerView.width)
+        .background(MiniPlayerGlass(cornerRadius: 22))
+    }
 }
 
+/// The glass both halves are made of.
+private struct MiniPlayerGlass: View {
+    @Environment(\.carbon) private var theme
+    let cornerRadius: CGFloat
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        shape
+            .fill(theme.chassis) // opaque, not Material — see ChassisLayer
+            .overlay(
+                shape.fill(LinearGradient(
+                    colors: [theme.chassisHi.opacity(0.5), theme.chassis.opacity(0.55), theme.chassisLo.opacity(0.62)],
+                    startPoint: .topLeading, endPoint: .bottomTrailing))
+            )
+            .overlay(shape.strokeBorder(Color.white.opacity(0.14), lineWidth: 1))
+    }
+}
+
+/// The upper half: art, readout, transport. The screen half of the slider.
 private struct MiniPlayerBody: View {
     @ObservedObject var model: LibraryViewModel
     /// Deliberately NOT observed here. The clock ticks ~5×/s, and observing it
@@ -69,17 +153,13 @@ private struct MiniPlayerBody: View {
     /// `MiniPlayerSeekRail`).
     let clock: PlaybackClock
     let onExpand: () -> Void
+    @Binding var panelOpen: Bool
+    @Binding var panelTab: MiniPlayerPanelTab
+    let onPanelChange: (Bool) -> Void
     @Environment(\.carbon) private var theme
 
     /// Cover for the COVER art mode, resolved off-main like AlbumPoster.
     @State private var coverImage: NSImage?
-
-    /// The pull-out panel. Starts out when there is nothing to show above it.
-    @State private var panelOpen = false
-    @State private var panelTab: MiniPlayerPanelTab = .sources
-    @State private var appeared = false
-
-    private static let width: CGFloat = 272
 
     var body: some View {
         VStack(spacing: 0) {
@@ -89,24 +169,14 @@ private struct MiniPlayerBody: View {
             MiniPlayerSeekRail(model: model, clock: clock, theme: theme)
                 .padding(.top, 11).padding(.horizontal, 2)
             transport
-            if panelOpen {
-                MiniPlayerPanel(model: model, tab: $panelTab, onClose: { setPanel(open: false) })
-                    .padding(.top, 12)
-                    .transition(.opacity)
-            }
         }
         .padding(13)
-        .frame(width: Self.width)
-        .background(panel)
+        .frame(width: MiniPlayerView.width)
+        .background(MiniPlayerGlass(cornerRadius: 22))
+        // Drawn above the drawer, and the glass is opaque, so the drawer is
+        // out of sight while it is parked behind.
+        .compositingGroup()
         .task(id: coverKey) { await loadCoverImage() }
-        .onAppear {
-            guard !appeared else { return }
-            appeared = true
-            let playing = model.nowPlayingTrack != nil || model.isStreamActive
-            panelTab = MiniPlayerPanelTab.initial(isPlaying: playing, isStream: model.isStreamActive)
-            panelOpen = MiniPlayerPanelTab.opensExpanded(isPlaying: playing)
-        }
-        .onExitCommand { if panelOpen { setPanel(open: false) } }
     }
 
     private func setPanel(open: Bool) {
@@ -115,21 +185,10 @@ private struct MiniPlayerBody: View {
             let playing = model.nowPlayingTrack != nil || model.isStreamActive
             panelTab = MiniPlayerPanelTab.initial(isPlaying: playing, isStream: model.isStreamActive)
         }
-        withAnimation(.easeInOut(duration: 0.16)) { panelOpen = open }
-    }
-
-    // MARK: - Glass panel
-
-    private var panel: some View {
-        let shape = RoundedRectangle(cornerRadius: 22, style: .continuous)
-        return shape
-            .fill(theme.chassis) // opaque, not Material — see ChassisLayer
-            .overlay(
-                shape.fill(LinearGradient(
-                    colors: [theme.chassisHi.opacity(0.5), theme.chassis.opacity(0.55), theme.chassisLo.opacity(0.62)],
-                    startPoint: .topLeading, endPoint: .bottomTrailing))
-            )
-            .overlay(shape.strokeBorder(Color.white.opacity(0.14), lineWidth: 1))
+        // No SwiftUI animation on purpose: the window animates, and the
+        // drawer's position is a function of the window's height.
+        panelOpen = open
+        onPanelChange(open)
     }
 
     // MARK: - Top bar
@@ -216,14 +275,19 @@ private struct MiniPlayerBody: View {
             .overlay(Scanlines(opacity: 0.02).clipShape(shape))
             .overlay(shape.strokeBorder(theme.oledStrokeInner, lineWidth: 1.5))
             .overlay(
-                VStack(alignment: .leading, spacing: 5) {
+                // Same faces as the main display's NOW screen: the display
+                // face for the title, the mono for the line under it.
+                VStack(alignment: .leading, spacing: 4) {
                     Text(trackTitle)
-                        .font(CarbonFont.sans(15, weight: .bold))
+                        .font(CarbonFont.display(18, weight: .thin))
+                        .tracking(-0.4)
                         .foregroundStyle(theme.oledForeground)
                         .lineLimit(1)
+                        .minimumScaleFactor(0.6)
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text(band)
-                            .font(CarbonFont.mono(9, weight: .semibold)).tracking(0.6)
+                            .font(CarbonFont.mono(9.5, weight: .semibold)).tracking(1.9)
+                            .textCase(.uppercase)
                             .foregroundStyle(theme.oledForeground.opacity(0.52))
                             .lineLimit(1)
                         Spacer(minLength: 6)
@@ -343,7 +407,6 @@ private struct MiniPlayerBody: View {
 private struct MiniPlayerPanel: View {
     @ObservedObject var model: LibraryViewModel
     @Binding var tab: MiniPlayerPanelTab
-    let onClose: () -> Void
     @Environment(\.carbon) private var theme
 
     /// Tall enough for a dozen rows, short enough that a library with forty

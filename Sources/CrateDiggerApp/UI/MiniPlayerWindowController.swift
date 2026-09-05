@@ -6,12 +6,16 @@ import SwiftUI
 final class MiniPlayerWindowController: NSWindowController {
     init(model: LibraryViewModel, onExpand: @escaping () -> Void) {
         // Assigned after `super.init` so the closure can reach `self`.
-        var resize: (CGSize) -> Void = { _ in }
+        var panelChanged: (Bool) -> Void = { _ in }
         let hosting = NSHostingController(rootView: MiniPlayerView(
             model: model,
             onExpand: onExpand,
-            onSizeChange: { size in resize(size) }
+            onPanelChange: { open in panelChanged(open) }
         ))
+        // The controller would otherwise resize the window itself whenever
+        // the content's ideal size changed, anchored at the bottom-left like
+        // every AppKit resize. One driver only: `fit(panelOpen:)`.
+        hosting.sizingOptions = []
 
         let window = MiniPlayerWindow(contentViewController: hosting)
         window.styleMask = [.borderless]
@@ -25,15 +29,25 @@ final class MiniPlayerWindowController: NSWindowController {
 
         super.init(window: window)
 
-        // Size to the SwiftUI content (the window's auto-size can be stale at
-        // init — which made it land off-screen), then place it top-right.
-        let fitting = hosting.view.fittingSize
-        let size = (fitting.width > 100 && fitting.height > 60)
-            ? fitting : NSSize(width: 272, height: 460)
-        window.setContentSize(size)
+        window.setContentSize(NSSize(width: MiniPlayerView.width, height: MiniPlayerView.height(panelOpen: false)))
         positionTopRight()
 
-        resize = { [weak self] size in self?.fit(to: size) }
+        panelChanged = { [weak self] open in self?.fit(panelOpen: open) }
+    }
+
+    /// Animate the window to the height the view says it needs, keeping the
+    /// top-left corner where it is. AppKit anchors a resize at the bottom-left,
+    /// which would make a drawer that opens *downward* shove the whole player
+    /// up the screen instead. The drawer inside follows the moving edge.
+    private func fit(panelOpen: Bool) {
+        guard let window else { return }
+        let height = MiniPlayerView.height(panelOpen: panelOpen)
+        let current = window.frame
+        guard abs(current.height - height) > 0.5 else { return }
+        let frame = NSRect(x: current.minX, y: current.maxY - height, width: MiniPlayerView.width, height: height)
+        // Before the window is on screen (the first-run "nothing playing"
+        // open) there is nothing to animate.
+        window.setFrame(frame, display: true, animate: window.isVisible)
     }
 
     /// Default the player to the top-right of the active screen.
@@ -44,23 +58,6 @@ final class MiniPlayerWindowController: NSWindowController {
         let size = window.frame.size
         window.setFrameOrigin(NSPoint(x: visible.maxX - size.width - 24,
                                       y: visible.maxY - size.height - 24))
-    }
-
-    /// Follow the content when the panel opens or closes, keeping the top-left
-    /// corner where it is. AppKit anchors a resize at the bottom-left, which
-    /// would make a panel that opens *downward* shove the whole player up the
-    /// screen instead.
-    private func fit(to size: CGSize) {
-        guard let window, size.width > 0, size.height > 0 else { return }
-        let current = window.frame
-        guard abs(current.height - size.height) > 0.5 || abs(current.width - size.width) > 0.5 else { return }
-        let frame = NSRect(
-            x: current.minX,
-            y: current.maxY - size.height,
-            width: size.width,
-            height: size.height
-        )
-        window.setFrame(frame, display: true, animate: false)
     }
 
     @available(*, unavailable)

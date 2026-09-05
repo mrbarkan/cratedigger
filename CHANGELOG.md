@@ -17,7 +17,8 @@ every About should have had, Check for Updates and Release Notes.
 
 The mini player keeps its big artwork and gets a transport of five keys of
 one size in a row, the way a portable player has them. A key in its top bar
-pulls out a panel with two faces. UP NEXT is the queue: click a row to jump to it, drag
+slides a panel out from behind the deck, the way the keypad half of a slider
+phone comes out from behind the screen, with two faces. UP NEXT is the queue: click a row to jump to it, drag
 to reorder, hover for remove. SOURCES lists every crate, playlist and saved
 stream, and one click shuffles that crate or puts that stream on, without
 opening the full window. The main window follows along, so expanding lands
