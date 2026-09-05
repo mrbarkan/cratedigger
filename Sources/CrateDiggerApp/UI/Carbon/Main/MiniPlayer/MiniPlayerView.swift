@@ -84,7 +84,10 @@ private struct MiniPlayerBody: View {
     var body: some View {
         VStack(spacing: 0) {
             topBar
-            deck
+            artFrame
+            oledDisplay.padding(.top, 13)
+            MiniPlayerSeekRail(model: model, clock: clock, theme: theme)
+                .padding(.top, 11).padding(.horizontal, 2)
             transport
             if panelOpen {
                 MiniPlayerPanel(model: model, tab: $panelTab, onClose: { setPanel(open: false) })
@@ -186,45 +189,52 @@ private struct MiniPlayerBody: View {
         .padding(.leading, 6)
     }
 
-    // MARK: - Deck: art beside the readout
-
-    private var deck: some View {
-        HStack(alignment: .center, spacing: 12) {
-            artFrame
-            VStack(alignment: .leading, spacing: 6) {
-                Text(trackTitle)
-                    .font(CarbonFont.sans(14, weight: .bold))
-                    .foregroundStyle(theme.ink)
-                    .lineLimit(1)
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(band)
-                        .font(CarbonFont.mono(8.5, weight: .semibold)).tracking(0.6)
-                        .foregroundStyle(theme.ink3)
-                        .lineLimit(1)
-                    Spacer(minLength: 6)
-                    MiniPlayerTimeReadout(model: model, clock: clock)
-                }
-                MiniPlayerSeekRail(model: model, clock: clock, theme: theme)
-                    .padding(.top, 2)
-            }
-        }
-        .padding(.horizontal, 2)
-    }
+    // MARK: - Art
 
     private var artFrame: some View {
-        let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
         return ZStack {
             shape.fill(theme.wellDeep)
             artContent
             shape
-                .fill(LinearGradient(colors: [Color.white.opacity(0.14), .clear],
+                .fill(LinearGradient(colors: [Color.white.opacity(0.16), .clear],
                                      startPoint: .topLeading, endPoint: .center))
                 .allowsHitTesting(false)
         }
-        .frame(width: 60, height: 60)
+        .frame(width: 246, height: 246)
         .clipShape(shape)
-        .overlay(shape.strokeBorder(Color.black.opacity(0.55), lineWidth: 1))
-        .depthShadow(color: .black.opacity(0.45), radius: 7, y: 4)
+        .overlay(shape.strokeBorder(Color.black.opacity(0.6), lineWidth: 1))
+        .depthShadow(color: .black.opacity(0.5), radius: 12, y: 6)
+    }
+
+    // MARK: - OLED display (title · band · time)
+
+    private var oledDisplay: some View {
+        let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
+        return shape
+            .fill(theme.oledSurface)
+            .overlay(Scanlines(opacity: 0.02).clipShape(shape))
+            .overlay(shape.strokeBorder(theme.oledStrokeInner, lineWidth: 1.5))
+            .overlay(
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(trackTitle)
+                        .font(CarbonFont.sans(15, weight: .bold))
+                        .foregroundStyle(theme.oledForeground)
+                        .lineLimit(1)
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(band)
+                            .font(CarbonFont.mono(9, weight: .semibold)).tracking(0.6)
+                            .foregroundStyle(theme.oledForeground.opacity(0.52))
+                            .lineLimit(1)
+                        Spacer(minLength: 6)
+                        MiniPlayerTimeReadout(model: model, clock: clock)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
+            )
+            .frame(height: 58)
+            .compositingGroup()
     }
 
     @ViewBuilder
@@ -238,7 +248,7 @@ private struct MiniPlayerBody: View {
                                startPoint: .topLeading, endPoint: .bottomTrailing)
             }
         case .disc:
-            SpinningRecordView(model: model).padding(3)
+            SpinningRecordView(model: model).padding(10)
         }
     }
 
@@ -257,18 +267,18 @@ private struct MiniPlayerBody: View {
         }
         if let album = model.album(containing: loaded.track.id),
            let coverURL = album.booklet?.frontCoverURL,
-           let image = await loadThumbnail(url: coverURL, maxPixelSize: 240) {
+           let image = await loadThumbnail(url: coverURL, maxPixelSize: 480) {
             coverImage = image
             return
         }
         if let hash = loaded.track.artworkHash,
-           let image = await model.artworkService.thumbnailAsync(artworkHash: hash, maxPixel: 240) {
+           let image = await model.artworkService.thumbnailAsync(artworkHash: hash, maxPixel: 480) {
             coverImage = image
             return
         }
         if loaded.track.fileURL.isFileURL,
            let asset = await model.artworkService.resolveArtwork(trackURL: loaded.track.fileURL) {
-            coverImage = await model.artworkService.thumbnailAsync(artworkHash: asset.hash, maxPixel: 240)
+            coverImage = await model.artworkService.thumbnailAsync(artworkHash: asset.hash, maxPixel: 480)
             return
         }
         coverImage = nil
@@ -292,54 +302,37 @@ private struct MiniPlayerBody: View {
 
     // MARK: - Transport
 
+    /// Five keys of one size in one row, the way a portable player lays them
+    /// out. Play/pause sits in the middle and is the only one that lights
+    /// while playing; shuffle and repeat light when they are on.
     private var transport: some View {
-        HStack(spacing: 9) {
-            toggleButton(system: "shuffle", on: model.shuffleEnabled) { model.toggleShuffle() }
-            transportButton(system: "backward.fill", size: 12) { model.previous() }
-            dome
-            transportButton(system: "forward.fill", size: 12) { model.next() }
-            toggleButton(system: repeatIcon, on: model.repeatMode != .off) { model.cycleRepeatMode() }
+        HStack(spacing: 11) {
+            transportKey("shuffle", lit: model.shuffleEnabled, tip: "Shuffle") { model.toggleShuffle() }
+            transportKey("backward.fill", tip: "Previous") { model.previous() }
+            transportKey("playpause.fill", lit: model.playbackState == .playing, tip: "Play / Pause") {
+                model.togglePlayPause()
+            }
+            transportKey("forward.fill", tip: "Next") { model.next() }
+            transportKey(repeatIcon, lit: model.repeatMode != .off, tip: "Repeat") { model.cycleRepeatMode() }
         }
         .frame(maxWidth: .infinity)
-        .padding(.top, 12)
+        .padding(.top, 14)
     }
 
     private var repeatIcon: String {
         model.repeatMode == .one ? "repeat.1" : "repeat"
     }
 
-    // Same silicone caps as the footer transport, scaled down for the strip.
-
-    private var dome: some View {
-        Button(action: { ClickPlayer.shared.play(.key); model.togglePlayPause() }) {
-            SiliconeCap(shape: Circle(), lit: model.playbackState == .playing) {
-                Image(systemName: "playpause.fill").font(.system(size: 15, weight: .bold))
+    private func transportKey(_ system: String, lit: Bool = false, tip: String,
+                              action: @escaping () -> Void) -> some View {
+        Button(action: { ClickPlayer.shared.play(.key); action() }) {
+            SiliconeCap(shape: RoundedRectangle(cornerRadius: 11, style: .continuous), lit: lit) {
+                Image(systemName: system).font(.system(size: 14, weight: .semibold))
             }
-            .frame(width: 44, height: 44)
+            .frame(width: 40, height: 40)
         }
         .buttonStyle(.carbonHover)
-        .carbonTip("Play / Pause")
-    }
-
-    private func transportButton(system: String, size: CGFloat, action: @escaping () -> Void) -> some View {
-        Button(action: { ClickPlayer.shared.play(.key); action() }) {
-            cap(system: system, size: size, lit: false)
-        }
-        .buttonStyle(.carbonHover)
-    }
-
-    private func toggleButton(system: String, on: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: { ClickPlayer.shared.play(.key); action() }) {
-            cap(system: system, size: 12, lit: on)
-        }
-        .buttonStyle(.carbonHover)
-    }
-
-    private func cap(system: String, size: CGFloat, lit: Bool) -> some View {
-        SiliconeCap(shape: RoundedRectangle(cornerRadius: 9, style: .continuous), lit: lit) {
-            Image(systemName: system).font(.system(size: size, weight: .semibold))
-        }
-        .frame(width: 32, height: 32)
+        .carbonTip(tip)
     }
 }
 

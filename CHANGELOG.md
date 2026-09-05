@@ -15,9 +15,9 @@ OLED already speaks, so the header and the screen share one voice.
 The About window carries all of it: the new icon, the lockup, and the two keys
 every About should have had, Check for Updates and Release Notes.
 
-The mini player is a light strip now, about a third the height it was, with
-the art beside the title instead of above it. A key in its top bar pulls out
-a panel with two faces. UP NEXT is the queue: click a row to jump to it, drag
+The mini player keeps its big artwork and gets a transport of five keys of
+one size in a row, the way a portable player has them. A key in its top bar
+pulls out a panel with two faces. UP NEXT is the queue: click a row to jump to it, drag
 to reorder, hover for remove. SOURCES lists every crate, playlist and saved
 stream, and one click shuffles that crate or puts that stream on, without
 opening the full window. The main window follows along, so expanding lands

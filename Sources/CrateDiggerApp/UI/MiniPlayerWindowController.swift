@@ -29,7 +29,7 @@ final class MiniPlayerWindowController: NSWindowController {
         // init — which made it land off-screen), then place it top-right.
         let fitting = hosting.view.fittingSize
         let size = (fitting.width > 100 && fitting.height > 60)
-            ? fitting : NSSize(width: 272, height: 168)
+            ? fitting : NSSize(width: 272, height: 460)
         window.setContentSize(size)
         positionTopRight()
 
