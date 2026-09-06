@@ -721,6 +721,7 @@ private struct AdvancedPreferencesView: View {
     @State private var ffprobePath: String = ""
     @State private var ytdlpPath: String = ""
     @State private var betaUpdates = false
+    @State private var gaplessPlayback = true
     @State private var showResetConfirmation = false
 
     var body: some View {
@@ -754,6 +755,20 @@ private struct AdvancedPreferencesView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Text("Leave blank to use the bundled binaries (or system PATH for development builds). Restart the app after changing.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Playback") {
+                Toggle("Gapless playback", isOn: $gaplessPlayback)
+                    .onChange(of: gaplessPlayback) { newValue in
+                        PreferencesStore.shared.gaplessPlaybackEnabled = newValue
+                        NotificationCenter.default.post(
+                            name: NSNotification.Name("CrateDiggerGaplessChanged"), object: newValue)
+                    }
+                Text(gaplessPlayback
+                     ? "The next track is buffered while the current one plays, so a live album or a mix runs without a seam. Turn it off if a particular output device stumbles at a track change."
+                     : "Off, so each track loads at its boundary and a continuous recording has a short gap between tracks.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -806,6 +821,7 @@ private struct AdvancedPreferencesView: View {
         ffprobePath = PreferencesStore.shared.customFFprobePath ?? ""
         ytdlpPath = PreferencesStore.shared.customYtDlpPath ?? ""
         betaUpdates = PreferencesStore.shared.betaUpdatesEnabled
+        gaplessPlayback = PreferencesStore.shared.gaplessPlaybackEnabled
     }
 
     private func persistFFmpeg() {

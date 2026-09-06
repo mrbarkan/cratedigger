@@ -409,7 +409,7 @@ final class PlaybackServiceTests: XCTestCase {
     }
 }
 
-private final class MockPlaybackEngine: PlaybackEngineProtocol {
+final class MockPlaybackEngine: PlaybackEngineProtocol {
     var onItemReady: (() -> Void)?
     var onItemFailed: ((String) -> Void)?
     var onItemEnded: (() -> Void)?
@@ -447,6 +447,32 @@ private final class MockPlaybackEngine: PlaybackEngineProtocol {
 
     func setOutputDeviceUID(_ uid: String?) {
         // No-op for mock
+    }
+
+    /// Every value `prepareNextItem` was handed, in order — nil entries are
+    /// the look-ahead being cleared.
+    var preparedURLs: [URL?] = []
+    /// What is prepared right now: the last value handed over, or nil if none.
+    var preparedURL: URL? { preparedURLs.last ?? nil }
+    private(set) var didAdvanceGaplessly = false
+    /// True when the most recent look-ahead call cleared it, as opposed to
+    /// setting one or never having been called at all.
+    var lookAheadWasCleared: Bool {
+        guard let last = preparedURLs.last else { return false }
+        return last == nil
+    }
+
+    func prepareNextItem(url: URL?) {
+        preparedURLs.append(url)
+    }
+
+    /// The prepared item taking over from the one that ended, which is what a
+    /// real AVQueuePlayer does by itself. The flag is only true for the length
+    /// of the callback, exactly as the engine sets it.
+    func simulateGaplessAdvance() {
+        didAdvanceGaplessly = true
+        onItemEnded?()
+        didAdvanceGaplessly = false
     }
 
     func simulateReady() {

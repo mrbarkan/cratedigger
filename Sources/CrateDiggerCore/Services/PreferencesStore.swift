@@ -62,6 +62,7 @@ public final class PreferencesStore {
         static let trackColumns = "cratedigger.browser.trackColumns"
         static let playlistBrowserLayout = "cratedigger.browser.playlistLayout"
         static let scrubLock = "cratedigger.transport.scrubLock"
+        static let gaplessPlayback = "cratedigger.transport.gapless"
         static let miniPlayerArtMode = "cratedigger.miniplayer.artMode"
         static let hasCompletedFirstRunSetup = "cratedigger.onboarding.completed"
         static let hasSeenWelcomeTour = "cratedigger.onboarding.tourSeen"
@@ -572,6 +573,18 @@ public final class PreferencesStore {
             return defaults.bool(forKey: Key.showSearchField)
         }
         set { defaults.set(newValue, forKey: Key.showSearchField) }
+    }
+
+    /// Buffer the next track while the current one plays, so an album that was
+    /// recorded continuously plays without a seam. On unless a listener turns
+    /// it off: the look-ahead keeps a second decoder open, and a stubborn
+    /// output device is easier to diagnose with it out of the way.
+    public var gaplessPlaybackEnabled: Bool {
+        get {
+            if defaults.object(forKey: Key.gaplessPlayback) == nil { return true }
+            return defaults.bool(forKey: Key.gaplessPlayback)
+        }
+        set { defaults.set(newValue, forKey: Key.gaplessPlayback) }
     }
 
     public var savedShowSortControls: Bool {
