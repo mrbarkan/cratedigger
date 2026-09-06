@@ -1,8 +1,23 @@
 # 2.0.0 Final — Release Prep Plan
 
-Status: **plan only, nothing implemented yet.** Written against `v2` at
-`c4a3351` (2.0.0 RC 1, build 82). Work it on the desktop in the order below;
-each phase ends with `scripts/test.sh` green and a commit.
+Status: **workstream 1 (gapless) is implemented; 2 and 3 are still plan
+only.** Written against `v2` at `c4a3351` (2.0.0 RC 1, build 82). Work it on
+the desktop in the order below; each phase ends with `scripts/test.sh` green
+and a commit.
+
+Done so far:
+
+- **3.1, the 1.5.11 merge-back** (`e15b1d8`). Changelog section, stable
+  appcast item, README and site footer. `website/roadmap.html` still diverges
+  between the branches and is a copy decision, not a merge.
+- **1, gapless playback** (`b348549`, `f2fc854`). Shipped roughly as designed
+  below, with three departures worth knowing: the engine reports the handover
+  the player *made* rather than the one we queued, and resolves it one runloop
+  turn after the end notification because `currentItem` has not caught up by
+  then; seek does **not** flush the look-ahead, because seeking does not change
+  what plays next; and `indexAfterCurrentEnds()` is shared by the look-ahead
+  and the end handler so the two can never disagree. 26 new tests, three of
+  them against a real `AVQueuePlayer`. **Still needs the listening test below.**
 
 Branch note: `claude/v2-release-prep-plan-8d2ndu` was originally cut from
 `main` (1.5.11). It now sits on `origin/v2`. All line numbers below are v2.
