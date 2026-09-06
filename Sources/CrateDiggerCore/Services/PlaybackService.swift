@@ -324,10 +324,36 @@ final class AVPlayerEngine: PlaybackEngineProtocol {
         // nothing to say about what plays now.
         guard item === playingItem else { return }
 
-        if preparedItem != nil {
+        guard preparedItem != nil else {
+            didAdvanceGaplessly = false
+            onItemEnded?()
+            return
+        }
+
+        // The player has not published the new `currentItem` by the time this
+        // notification lands, so asking now always says it did not advance.
+        // Let it settle one turn and then look. The audio has already carried
+        // on; it is only the bookkeeping that lands a runloop later.
+        DispatchQueue.main.async { [weak self] in
+            self?.resolveBoundary(after: item)
+        }
+    }
+
+    /// Report the boundary once the player has settled, on what it actually
+    /// did rather than on what we queued. Claiming a handover that did not
+    /// happen would walk the service's index forward over a stopped player,
+    /// leaving the app insisting it is playing silence.
+    private func resolveBoundary(after item: AVPlayerItem) {
+        // Already resolved, or the service loaded something else in between.
+        guard item === playingItem else { return }
+
+        if let preparedItem, player.currentItem === preparedItem {
             promotePrepared()
             didAdvanceGaplessly = true
         } else {
+            // The player declined the item we queued. It must not linger and
+            // play later out of nowhere; the service reloads the boundary.
+            clearPrepared()
             didAdvanceGaplessly = false
         }
         onItemEnded?()
