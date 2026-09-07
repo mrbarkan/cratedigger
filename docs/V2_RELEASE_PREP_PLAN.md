@@ -169,7 +169,26 @@ launch profile).
 Everything below in A–F was written by reading code and estimating cost.
 Measurement contradicts the ranking, so **the order in this list is wrong** and
 several items are not worth doing at all. Numbers are from a **release** build
-on the dev machine (Apple silicon), against a synthetic 15,000-track library.
+on the dev machine (Apple silicon, 8 P-cores + 4 E-cores), against a synthetic
+15,000-track library.
+
+> **Taken on a busy machine.** A DaVinci Resolve render was running throughout,
+> with load average ~2.9 of 12 cores. Roughly nine cores were free, so
+> contention was modest, but a single-threaded benchmark under load can be put
+> on an efficiency core, which is worth 2–3× on its own.
+>
+> Every timing here is therefore an **upper bound**. That direction matters:
+> "the FFT is negligible" and "idle is already 0 %" only get more true on a
+> quiet machine, so those conclusions stand as they are. The absolute figures
+> are the part to distrust — do **not** compare a post-fix number measured on
+> an idle machine against these, or the fix will look like it did more than it
+> did. The disk-vs-CPU split inside `LibraryIndex.build` is the single figure
+> most worth taking again, because a video render competes for disk in
+> particular, so the disk share is likely overstated relative to the CPU share.
+>
+> Unaffected by the load, and not worth re-running: the theme-logo decode count
+> and the idle CPU figure (both counts, not durations), resident memory, and
+> every functional check.
 
 | Claim | Estimated | Measured (release) | Verdict |
 |---|---|---|---|
