@@ -770,9 +770,7 @@ final class LibraryViewModel: ObservableObject {
     }
 
     private func setupEqualizerObserver() {
-        NotificationCenter.default.addObserver(
-            forName: NSNotification.Name("CrateDiggerEQChanged"), object: nil, queue: .main
-        ) { [weak self] _ in
+        observe("CrateDiggerEQChanged") { [weak self] _ in
             Task { @MainActor in self?.reloadEqualizerFromPrefs() }
         }
     }
@@ -1457,19 +1455,35 @@ final class LibraryViewModel: ObservableObject {
         fetchMissingMetadata()
     }
 
+    /// Tokens for the block-based notification observers below. The observer
+    /// NotificationCenter registers for those is the token the call returns,
+    /// not `self`, so `removeObserver(self)` never removed them and every one
+    /// stayed registered for the life of the process. Harmless while this is a
+    /// single long-lived object, and a zombie the day it stops being one.
+    private var notificationObservers: [NSObjectProtocol] = []
+
+    /// Observe a cross-cutting app notification, keeping the token so `deinit`
+    /// can actually drop it. Use this rather than `NotificationCenter` directly.
+    private func observe(_ name: String, using block: @escaping (Notification) -> Void) {
+        notificationObservers.append(
+            NotificationCenter.default.addObserver(
+                forName: NSNotification.Name(name), object: nil, queue: .main, using: block
+            )
+        )
+    }
+
     deinit {
         if let monitor = localEventMonitor {
             NSEvent.removeMonitor(monitor)
+        }
+        for observer in notificationObservers {
+            NotificationCenter.default.removeObserver(observer)
         }
         NotificationCenter.default.removeObserver(self)
     }
 
     private func setupAudioDeviceObserver() {
-        NotificationCenter.default.addObserver(
-            forName: NSNotification.Name("CrateDiggerAudioDeviceChanged"),
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
+        observe("CrateDiggerAudioDeviceChanged") { [weak self] notification in
             let uid = notification.object as? String
             Task { @MainActor [weak self] in
                 self?.playback.setOutputDeviceUID(uid)
@@ -1478,11 +1492,7 @@ final class LibraryViewModel: ObservableObject {
     }
 
     private func setupGaplessObserver() {
-        NotificationCenter.default.addObserver(
-            forName: NSNotification.Name("CrateDiggerGaplessChanged"),
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
+        observe("CrateDiggerGaplessChanged") { [weak self] notification in
             let enabled = notification.object as? Bool ?? true
             Task { @MainActor [weak self] in
                 self?.playback.gaplessEnabled = enabled
@@ -1491,11 +1501,7 @@ final class LibraryViewModel: ObservableObject {
     }
 
     private func setupCDSpeedObserver() {
-        NotificationCenter.default.addObserver(
-            forName: NSNotification.Name("CrateDiggerCDSpeedChanged"),
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
+        observe("CrateDiggerCDSpeedChanged") { [weak self] notification in
             if let speed = notification.object as? CDAnimationSpeed {
                 Task { @MainActor [weak self] in
                     self?.cdAnimationSpeed = speed
@@ -1505,41 +1511,25 @@ final class LibraryViewModel: ObservableObject {
     }
 
     private func setupLibraryOperationsObservers() {
-        NotificationCenter.default.addObserver(
-            forName: NSNotification.Name("CrateDiggerMoveLibrary"),
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
+        observe("CrateDiggerMoveLibrary") { [weak self] _ in
             Task { @MainActor in
                 self?.moveLibrary()
             }
         }
         
-        NotificationCenter.default.addObserver(
-            forName: NSNotification.Name("CrateDiggerConsolidateLibrary"),
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
+        observe("CrateDiggerConsolidateLibrary") { [weak self] _ in
             Task { @MainActor in
                 self?.consolidateLibrary()
             }
         }
 
-        NotificationCenter.default.addObserver(
-            forName: NSNotification.Name("CrateDiggerMoveIndexFiles"),
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
+        observe("CrateDiggerMoveIndexFiles") { [weak self] _ in
             Task { @MainActor in
                 self?.moveIndexFiles()
             }
         }
 
-        NotificationCenter.default.addObserver(
-            forName: NSNotification.Name("CrateDiggerCratesFolderChanged"),
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
+        observe("CrateDiggerCratesFolderChanged") { [weak self] _ in
             Task { @MainActor in
                 self?.refreshAvailableCrates()
                 self?.selectSource(self?.currentSource ?? .localAll)
