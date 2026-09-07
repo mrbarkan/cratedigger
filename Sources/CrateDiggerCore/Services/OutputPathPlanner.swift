@@ -412,9 +412,12 @@ public enum PathComponentSanitizer {
     /// Compiled once; sanitize runs ~4x per track on every index rebuild.
     private static let whitespaceRuns = try! NSRegularExpression(pattern: "\\s+")
 
-    public static func sanitize(_ rawValue: String, fallback: String) -> String {
+    /// One path component, cleaned. Returns nil when nothing usable survives,
+    /// so a caller assembling a subpath can drop the component outright rather
+    /// than substitute something for it.
+    public static func sanitizedComponent(_ rawValue: String) -> String? {
         var value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        if value.isEmpty { return fallback }
+        if value.isEmpty { return nil }
 
         value = value.replacingOccurrences(of: "/", with: "-")
         value = value.replacingOccurrences(of: ":", with: "-")
@@ -432,6 +435,22 @@ public enum PathComponentSanitizer {
         while trimmed.first == "." {
             trimmed = String(trimmed.dropFirst()).trimmingCharacters(in: .whitespaces)
         }
-        return trimmed.isEmpty ? fallback : trimmed
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    public static func sanitize(_ rawValue: String, fallback: String) -> String {
+        sanitizedComponent(rawValue) ?? fallback
+    }
+
+    /// A relative subpath, every component put through the same rule and the
+    /// empties dropped. Because the traversal guard runs on each component,
+    /// the result can never climb out of the directory it is joined onto —
+    /// which is the whole reason this exists in one place instead of being
+    /// re-derived at each call site.
+    public static func sanitizeSubpath(_ rawValue: String, fallback: String) -> String {
+        let components = rawValue
+            .split(separator: "/", omittingEmptySubsequences: true)
+            .compactMap { sanitizedComponent(String($0)) }
+        return components.isEmpty ? fallback : components.joined(separator: "/")
     }
 }
