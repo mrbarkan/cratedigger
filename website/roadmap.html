@@ -3,29 +3,29 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>CrateDigger 2.0 Roadmap: Search, Resume, and a Library That Knows You</title>
-  <meta name="description" content="The plan for CrateDigger 2.0: library search, any category in any column, resume where you left off, a stats screen on the display, listening history, and audio fingerprinting for untitled rips. Smart crates and library health follow after 2.0.">
+  <title>CrateDigger Roadmap: 2.0 Is Out, and What Comes Next</title>
+  <meta name="description" content="CrateDigger 2.0 has shipped: library search, any category in any column, listening history, a stats screen on the display, resume where you left off, and gapless playback. What comes next in 2.x, and what version 3 is for.">
   <link rel="canonical" href="https://cratedigger.mrbarkan.com/roadmap.html">
 
   <meta property="og:type" content="article">
-  <meta property="og:title" content="CrateDigger 2.0 Roadmap">
-  <meta property="og:description" content="1.x made your library beautiful. 2.0 makes it livable. Search, resume where you left off, and a display that knows what you have been playing.">
+  <meta property="og:title" content="CrateDigger Roadmap">
+  <meta property="og:description" content="2.0 is out. Search, resume where you left off, a display that knows what you have been playing, and an album that plays without a seam. Here is what comes next.">
   <meta property="og:url" content="https://cratedigger.mrbarkan.com/roadmap.html">
   <meta property="og:image" content="https://cratedigger.mrbarkan.com/assets/app_icon.png">
   <meta property="og:site_name" content="CrateDigger">
 
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="CrateDigger 2.0 Roadmap">
-  <meta name="twitter:description" content="1.x made your library beautiful. 2.0 makes it livable. Search, resume where you left off, and a display that knows what you have been playing.">
+  <meta name="twitter:title" content="CrateDigger Roadmap">
+  <meta name="twitter:description" content="2.0 is out. Search, resume where you left off, a display that knows what you have been playing, and an album that plays without a seam. Here is what comes next.">
   <meta name="twitter:image" content="https://cratedigger.mrbarkan.com/assets/app_icon.png">
 
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
     "@type": "Article",
-    "headline": "CrateDigger 2.0 Roadmap",
+    "headline": "CrateDigger Roadmap",
     "datePublished": "2026-08-28",
-    "dateModified": "2026-09-03",
+    "dateModified": "2026-09-07",
     "author": { "@type": "Organization", "name": "CrateDigger" },
     "publisher": {
       "@type": "Organization",
@@ -84,93 +84,84 @@
 
       <div class="article-header">
         <span class="article-eyebrow">Roadmap</span>
-        <h1 class="article-title">CrateDigger 2.0: your library, finally livable</h1>
-        <div class="article-meta">Planning · August 28, 2026 · Current release v1.5.10</div>
+        <h1 class="article-title">CrateDigger 2.0 is out. Here is what comes next.</h1>
+        <div class="article-meta">Updated September 7, 2026 · Current release v2.0.0</div>
       </div>
 
       <div class="article-body">
         <p>
-          Version 1.x was about making your library beautiful. Scan it, convert it, tag it, dress it in real cover scans, split the vinyl rips, push it to the iPod. That work is done, and it works well.
+          Version 1.x was about making your library beautiful. Scan it, convert it, tag it, dress it in real cover scans, split the vinyl rips, push it to the iPod. That work was done, and it worked well.
         </p>
         <p>
-          But there is an honest gap in the app today. CrateDigger is a workshop. You open it when you have a job to do, you do the job, and you close it. What it cannot yet be is the app you open on a Tuesday night because you want to hear something. Version 2.0 is about closing that gap.
-        </p>
-
-        <h2>Three things stand in the way</h2>
-        <p>
-          <strong>You cannot search your own library.</strong> There is no search field in the browser. Not in the sources list, not over artists, not over tracks. On a small crate you scroll. On a real collection you give up. This is the single most surprising gap in the app and it is the first thing 2.0 fixes.
-        </p>
-        <p>
-          <strong>Nothing records that you played anything.</strong> Last.fm gets the scrobble and CrateDigger keeps nothing for itself. There is no play count, no last played date, no date added, no rating. Every question that starts with "what have I actually been listening to" is unanswerable, and so is every crate rule that would depend on it.
-        </p>
-        <p>
-          <strong>Crates never fill themselves.</strong> A crate is a list of file paths, which is exactly the right design for what a crate is. It also means every crate you will ever own has to be assembled by hand, one record at a time, forever.
+          But there was an honest gap in the app. CrateDigger was a workshop. You opened it when you had a job to do, you did the job, and you closed it. What it could not be was the app you open on a Tuesday night because you want to hear something. Version 2.0 was about closing that gap, and it has shipped.
         </p>
 
-        <h2>Phase 0: the foundations (shipped in beta 2)</h2>
+        <h2>What 2.0 fixed</h2>
         <p>
-          Unglamorous, and everything else depends on it. Listening data moves into the shared track store: play count, skip count, last played, date added, rating. It is a small change to the model and it unlocks a disproportionate amount of what follows.
+          <strong>You can search your own library.</strong> One field, one keystroke to reach it, results as you type, across the crate you are in or every crate you own. The crate list tells you which crates the results are in, so it doubles as a map.
         </p>
         <p>
-          At the same time, browser state (selection, sort, and the filtering that Phase 1 introduces) moves out of the view model and into the tested core library. That view model is the largest file in the project and it currently owns almost everything. Every feature below gets cheaper once it stops being the place where all behaviour lives.
-        </p>
-
-        <h2>Phase 1: find anything (shipped in beta 6)</h2>
-        <p>
-          One field, one keystroke to reach it, results as you type. It searches artist, album, track title, file path and format across the crate you are in, with a mode that widens to every crate you own. The index it searches is already built and already in memory, so this should feel instant rather than merely fast.
+          <strong>The browser is no longer welded to Artist, Album and Track.</strong> Each column shows whatever category you point it at, genre, year, decade, format, rating, and every crate remembers its own arrangement.
         </p>
         <p>
-          Sortable browser columns land here too. And because the console deserves it, SEARCH becomes a view on the OLED display, the way CNVRT and SCAN already are. A tuner sweeping for a station is the right metaphor and the hardware already has the shape for it.
+          <strong>CrateDigger keeps a record of what you play.</strong> Play count, skip count, last played, date added, rating. The STATS screen on the display reads it back: your most played record, artist and track for the month, the year, or all time.
+        </p>
+        <p>
+          <strong>It comes back where you left it.</strong> Paused on the same track at the same second, with the same queue. Up Next can be dragged into order. An album recorded in one piece plays without a seam between tracks. Artwork you fetch is staged and written only when you say so. And the console has a new face, with theming that finally reaches the parts that light up.
         </p>
 
-        <h2>Phase 4: the listening room (shipped in beta 9)</h2>
+        <h2>Phase 0: the foundations <span class="badge">SHIPPED</span></h2>
         <p>
-          A queue you can actually edit: drag to reorder, play this next, see what is coming. Resume where you left off when you reopen the app. And a stats view on the glass, built on Phase 0 data, showing your most played record, artist and track of the month, the year and all time. Cheap to build, genuinely fun, and precisely the sort of thing an OLED panel on a piece of imaginary hardware should be doing.
+          Unglamorous, and everything else depended on it. Listening data moved into the shared track store: play count, skip count, last played, date added, rating. A small change to the model that unlocked a disproportionate amount of what followed.
+        </p>
+        <p>
+          At the same time, browser state (selection, sort and filtering) moved out of the view model and into the tested core library. That view model is the largest file in the project, and every feature got cheaper once it stopped being the place where all behaviour lived.
         </p>
 
-        <h2>Two bets worth making</h2>
+        <h2>Phase 1: find anything <span class="badge">SHIPPED</span></h2>
         <p>
-          <strong>Audio fingerprinting for untitled rips (shipped as DEEP SCAN).</strong> Split a vinyl side with Record Divider and you are left holding eight files with no titles. Fingerprinting is what finishes that job: identify the recording by its audio, then fill the tags. The tool that does it, fpcalc, drops into the same locator that already finds ffmpeg and yt-dlp, so the plumbing is largely written. Best value for effort on this page, and nothing else here does what it does.
-        </p>
-        <p>
-          <strong>Loudness normalisation.</strong> A shelf of records ripped across twenty years plays back at twenty different volumes. FFmpeg already ships the analysis, so this is mostly a question of where the numbers get stored and how the player applies them. The Patch Bay even has the switch for it already, which is a fair sign of where this was always heading.
+          The search field, the sortable columns, and SEARCH as a view on the OLED display the way CNVRT and SCAN already were. A tuner sweeping for a station turned out to be exactly the right metaphor, and the hardware already had the shape for it.
         </p>
 
-        <h2>After 2.0</h2>
+        <h2>Phase 4: the listening room <span class="badge">SHIPPED</span></h2>
         <p>
-          Phases 2 and 3 are the workshop half of this list, and 2.0 ships the listening half first. They stay on the plan; they are not in the release.
+          A queue you can actually edit. Resume where you left off. A stats view on the glass. Cheap to build, genuinely fun, and precisely the sort of thing an OLED panel on a piece of imaginary hardware should be doing.
+        </p>
+        <p>
+          <strong>Audio fingerprinting for untitled rips</strong> shipped alongside it as DEEP SCAN, in the Fix Tags window. Split a vinyl side with Record Divider and you are left holding eight files with no titles; DEEP SCAN identifies each one by what it sounds like and pairs it to the right slot on the record, which is exactly the case where reading the tags cannot help.
         </p>
 
-        <h2>Phase 2: crates that fill themselves</h2>
+        <h2>Next, in 2.x</h2>
         <p>
-          A smart crate is a rule set instead of a list of paths. It sits in the same sidebar, in the same place, behaving the same way, so there is no second concept to learn. It just stays current on its own.
+          <strong>macOS native notifications.</strong> A scan finishing, a conversion batch landing, a device sync done: told to you the way the system tells you things, in Notification Centre, instead of only inside a window you may have put behind something.
         </p>
         <p>
-          Rules run over what CrateDigger already knows about every file: format, bitrate, sample rate, year, genre, album artist, whether it has artwork, whether it looks like a duplicate. Phase 0 adds the interesting half of the list: never played, most played, added this month, rated four stars and up.
+          <strong>Extended library management.</strong> A better way of moving more files. Move Library and Consolidate exist and work, one library at a time. Moving a lot of records between folders, volumes and structures needs to be a first-class job with a plan you can read before it runs, not a menu item you brace for.
         </p>
         <p>
-          This is the most natural feature in the whole plan, because it extends the crate idea rather than bolting a new one alongside it.
+          <strong>Vinyl and cassette rips, organised and tagged properly.</strong> Record Divider splits a side into tracks and DEEP SCAN names them. What is still manual is everything around that: which side, which pressing, a K7 tape's A and B, the rip's own provenance. The next pass makes organising and tagging a needle drop or a cassette transfer as quick as importing a CD.
+        </p>
+        <p>
+          <strong>Support for a mobile companion.</strong> This page used to say an iOS companion was a second product wearing the same name. That is still true, which is why it is a companion and not a port: it does not replace the console, it reaches it. It starts small and useful, seeing what is playing and what is up next, and grows from there.
+        </p>
+        <p>
+          <strong>Loudness normalisation.</strong> A shelf of records ripped across twenty years plays back at twenty different volumes. FFmpeg already ships the analysis, so this is mostly a question of where the numbers get stored and how the player applies them. The Patch Bay even has the switch for it already.
+        </p>
+        <p>
+          <strong>Crates that fill themselves, deferred.</strong> Phase 2 on the old plan, and the one piece of it that did not ship. It is deferred on purpose, until there has been more time to think about how it should work. The idea has not changed: a crate that is a rule set instead of a list of paths, sitting where every other crate sits, staying current on its own. What needs thought is the rule language and how a rule crate and a hand-built crate live side by side. It will not be rushed into a point release. Library health in one place, Phase 3, leaned on it (every row in that panel was going to be a smart crate), so it waits with it.
         </p>
 
-        <h2>Phase 3: library health, in one place</h2>
+        <h2>Version 3</h2>
         <p>
-          CrateDigger can already find your duplicates, repair broken tags, relink files that moved out from under it, and fill in missing covers in batch. Almost nobody knows that, because each capability lives behind a different menu item in a different corner of the app.
+          <strong>A library for the gear.</strong> Headphones, IEMs, DACs and amps: the same care 1.x gave records, given to the hardware you listen on. What you own, what you paired it with, what you thought of it. Not measurements, not a review site. A crate for the kit.
         </p>
         <p>
-          Phase 3 gathers them into one panel that opens with a straight answer: 41 albums with no cover, 18 tracks whose files have moved, 62 probable duplicates, 9 albums with no year. Every row is a smart crate. Click it, see exactly what it means, fix it in batch. This is mostly surfacing work rather than new engines, which is what makes it worth doing early.
-        </p>
-
-        <h2>What is deliberately not in 2.0</h2>
-        <p>
-          <strong>An iOS companion, or any kind of cloud sync.</strong> That is a second product wearing the same name, and it would consume the entire release on its own.
-        </p>
-        <p>
-          <strong>DJ performance features.</strong> Beat detection, key detection, waveform decks. The name tempts you toward it, but that is Rekordbox, and Rekordbox is very good at being Rekordbox. CrateDigger is for the crate, not the booth.
+          <strong>DJ, party and mixing tools.</strong> This page also used to say CrateDigger is for the crate, not the booth, and it is still not going to try to be Rekordbox. But there is a way of playing records for a room that is closer to a party than a performance: a queue that knows the room, a crossfade that does not embarrass you, a way to hand the next pick to someone else. That is a version 3 conversation, and it starts once the library is finished being a library.
         </p>
 
         <h2>No dates</h2>
         <p>
-          Phases are ordered by what unblocks what, not by calendar. 1.x shipped nineteen releases in seven weeks by shipping what was ready, and that is not going to change now.
+          Phases are ordered by what unblocks what, not by calendar. 1.x shipped nineteen releases in seven weeks by shipping what was ready, 2.0 went through nine betas and a release candidate the same way, and that is not going to change now.
         </p>
         <p>
           If something here is wrong, or something you need is missing, the issue tracker is open and this plan is not carved into anything. The best argument wins.
