@@ -177,6 +177,8 @@ on the dev machine (Apple silicon), against a synthetic 15,000-track library.
 | Idle CPU, window visible, nothing playing | target "~0 %" | **0.00 % of one core** over 20 s | **Already met.** The meter and disc timers self-halt at rest, as their comments claim. |
 | D8 `TrackStore.save()` at 15k | ~365 ms | **139 ms**, 7 MB | Real, 2.6× smaller than the comment in the source says. That comment should be corrected. |
 | D9 `LibraryIndex.build` at 15k | listed 9th | **889 ms cold, 362 ms warm** | **The largest main-actor stall found.** Ranked far too low here. |
+| D11 `NSImage(contentsOf:)` in `ThemeLogo`'s body | "in a view body", implied hot | **2 decodes in 18 s of running** | **Not a problem.** The view has no stored properties, so SwiftUI does not re-invoke its body unless the theme actually changes. The `ponytail:` comment already in that file is correct and should stay. |
+| D11 disc-image folder probing | "7 folders x 13 filenames on every now-playing change" | ~91 `stat`s per *track change* | Not worth touching. Sub-millisecond, and it happens once a song. |
 
 Where `LibraryIndex.build`'s 362 ms warm actually goes, measured by
 substitution:
