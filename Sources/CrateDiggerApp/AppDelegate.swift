@@ -36,7 +36,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         windowController.restoreLastSession()
 
         installSpaceKeyMonitor()
+        #if DEBUG
         installSnapshotHookIfRequested()
+        #endif
 
         // Touching the singleton starts Sparkle, including its once-a-day
         // background check. No-op in an unpackaged build.
@@ -404,6 +406,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         }
     }
 
+    // MARK: - Dev harness (debug builds only)
+    //
+    // The self-snapshot hook and the marketing shot list: fourteen CRATEDIGGER_*
+    // environment switches that render the app's own view tree to PNGs, which is
+    // how the UI gets verified without a screen-recording permission. None of it
+    // belongs in a build someone downloads — left compiled in, a stray
+    // environment variable could make a shipped app start writing files.
+    //
+    // The only CRATEDIGGER_* variables a release build still reads are
+    // ExternalToolLocator's ffmpeg/ffprobe/fpcalc path overrides.
+    #if DEBUG
     /// Dev-only self-snapshot: with CRATEDIGGER_SNAPSHOT_PATH set, render the
     /// main window (its own view tree — no screen-recording permission needed)
     /// to a PNG a few seconds after launch, then again 4 s later. Optional
@@ -695,6 +708,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             return false
         }
     }
+    #endif
 
     @objc private func sendFeedback(_ sender: Any?) {
         if let url = URL(string: "mailto:opa@mrbarkan.com?subject=CrateDigger%20Feedback") {

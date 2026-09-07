@@ -9,9 +9,16 @@ public final class PreferencesStore {
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
 
-    public init(defaults: UserDefaults = .standard, secrets: SecretStoring = KeychainStore()) {
+    /// `secrets` defaults to the keychain in a release build and to
+    /// `DevSecretStore` in a debug one — see that type for why.
+    public init(defaults: UserDefaults = .standard, secrets: SecretStoring? = nil) {
+        #if DEBUG
+        let resolvedSecrets = secrets ?? DevSecretStore(defaults: defaults)
+        #else
+        let resolvedSecrets = secrets ?? KeychainStore()
+        #endif
         self.defaults = defaults
-        self.secrets = secrets
+        self.secrets = resolvedSecrets
     }
 
     private enum Key {

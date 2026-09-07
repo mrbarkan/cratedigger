@@ -2262,6 +2262,9 @@ final class LibraryViewModel: ObservableObject {
     /// a device, in memory only. The browser strip and the album dots otherwise
     /// need an iPod plugged in to appear at all, and writing a real queue to
     /// snapshot one would clobber whatever the user actually has waiting.
+    ///
+    /// Debug-only, like the harness in AppDelegate that is its only caller.
+    #if DEBUG
     func installPreviewSyncQueue(profileID: UUID, tracks: [LoadedTrack]) {
         pendingSyncPaths = Set(tracks.map { $0.track.fileURL.path })
         syncQueueCounts[profileID] = tracks.count
@@ -2275,6 +2278,7 @@ final class LibraryViewModel: ObservableObject {
         )
         recomputePendingSyncMarks()
     }
+    #endif
 
     /// Post-sync: force the next browse of this device to re-walk the volume.
     func invalidateDeviceCatalog(for device: MountedDevice) {
