@@ -23,8 +23,12 @@ scripts/.lastfm.env
 .env
 .env.local
 
-# Claude Code local session state (permissions, worktrees).
-.claude/
+# Claude Code local session state (permissions, worktrees). Skills are shared
+# project tooling, so they are tracked; everything else here stays local. The
+# pattern must be `.claude/*`, not `.claude/`: git does not descend into an
+# excluded directory, so a `!` rule under one is silently ignored.
+.claude/*
+!.claude/skills/
 
 # Agent tooling scratch (session diffs, task reports, local tokens). Never
 # source — and .superpowers/brainstorm/.last-token is a credential.
