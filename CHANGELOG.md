@@ -4,55 +4,26 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
-## 2.0.0 (82) — 2026-09-05 — RC 1
+## 2.0.0 (82) — 2026-09-05
 
-Everything in the 2.0 line so far, newest work first. Unfinished by
-definition: this is where 2.0 is built, and it is offered to nobody who has
-not asked for it.
+1.x made your library beautiful to look at. 2.0 makes it livable.
 
-RC 1 is the new face. The app icon is a record on an orange plate, there is a
-logo mark to go with it, and the name is set in the display face the OLED
-already speaks. The About window carries all of it. The mini player slides a
-panel out from behind the deck with Up Next and every crate, playlist and
-stream one click away. And every word of the first-run sheet, the welcome
-tour, the guide and What's New was rewritten for what 2.0 actually is.
+You can search it, at last, and the crate list tells you which crates the
+results are in. The browser's three columns stopped being welded to Artist,
+Album and Track: each one shows whatever category you point it at, and every
+crate remembers its own arrangement. CrateDigger also keeps a record of what
+you actually listen to, which is what the STATS screen reads to show your most
+played record, artist and track for the month, the year, or all time.
 
-Beta 9 is the listening room. The app comes back where you left it, paused
-on the same track at the same second with the same queue. A STATS screen on
-the display shows your most played record, artist and track for the month,
-the year, or all time. And Up Next can finally be dragged into order.
+It comes back where you left it, paused on the same track at the same second
+with the same queue. An album recorded in one piece plays without a seam
+between tracks. Artwork you fetch is staged and written only when you say so.
+The mini player slides a panel out from behind the deck with Up Next and every
+crate, playlist and stream one click away. And the console has a new face: a
+record on an orange plate for an icon, a logo mark to go with it, and theming
+that reaches the parts that light up, so one built around black finally has
+LEDs that work.
 
-Beta 8 is one fix, for a bug that quietly made a mess of your album folders:
-filtering the artwork search to one source and pressing SELECT ALL fetched the
-hidden sources too, so an album could come back with two covers and a set of
-duplicate booklet pages.
-
-Beta 7 is the console becoming yours. Every theme can carry its own logo in
-the header, with a crop table in the editor to frame it, and the parts that
-light up stopped taking their colour from the accent, so a theme built around
-black finally has LEDs that work. The gallery also says what you are looking
-at.
-
-Beta 6 is the browser finding things. You can search your library at last,
-the crate list tells you where the results live, and the three columns are no
-longer welded to Artist, Album and Track: each one shows whatever category you
-pick, and each crate remembers its own arrangement.
-
-Beta 5 is about artwork getting out of your way. Fetching a whole release of
-scans no longer locks the window, the images you fetched actually show up, and
-you can throw one out from the viewer you are looking at it in. FIX TAGS also
-stopped renaming songs it had no business renaming.
-
-Beta 4 is a fix release on top of beta 3: playlists play again, and the
-artwork panel tells the truth about what it did.
-
-Beta 3 was about artwork and the panels you work in. Artwork you find is now
-staged and only written when you say so, the ART tab finally shows the picture
-that lives inside your audio files, and the conversion panel lost its costume.
-
-Beta 2 was mostly foundations: CrateDigger keeping a record of what you listen
-to, and the browser's selection and sorting moving into the tested core of the
-app.
 
 ### Added
 
@@ -354,12 +325,6 @@ app.
   else, at its own size rather than stretched.
 - **The equalizer reads 0 at the centre.** A fader sitting at zero used to show
   +0, or sometimes -0.
-
-### Notes for testers
-
-Betas can lose data. Point CrateDigger at a copy of your library, not the only
-copy, and keep a stable install to fall back to. 2.0's plan is at
-cratedigger.mrbarkan.com/roadmap.html.
 
 ## 1.5.11 (77) — 2026-08-30
 

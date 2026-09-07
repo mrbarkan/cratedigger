@@ -344,6 +344,46 @@ that landed listed there.
 
 ## 3. Code check and cleanup
 
+### Status, 2026-09-07
+
+Done: **3.1** (1.5.11 merge-back), **3.2** (changelog recast as a final note),
+**3.3** (path traversal, and it was real), **3.4** (dev harness out of release,
+verified by diffing the strings in both binaries), **3.5** (README's two
+feeds), **3.8**–**3.11**, **3.13** as far as it goes, **3.14**, **3.15**,
+**3.16**, **3.17**.
+
+Three items are deliberately **not** done, with reasons:
+
+- **3.7 (tags) and 3.6 (version flips)** are release-time actions the
+  `press-the-record` skill already performs. Doing them now would only go
+  stale.
+- **3.12 (the completion-handler `URLSession` in `ChunkedStreamLoader`)** is
+  skipped. It is a resource-loader delegate that already runs on its own queue
+  and works; converting it to async buys style and risks a streaming path with
+  no test harness. Reopen it only if that file needs changing anyway.
+- **Smart crates** is the open scope decision and belongs to a person. See the
+  banner on `docs/superpowers/plans/2026-09-02-phase-2-smart-crates.md`.
+
+The audit's counts were often high, in the same way section 2's estimates
+were. Of five `@unchecked Sendable` types said to lack a rationale, three
+already had one. Of 37 `try?` calls said to need logging, 32 are reads with a
+sensible fallback or best-effort cleanup where silence is correct; the five
+that could actually lose user data now report. Of four services said to be
+untested, one had a genuine gap: the other three are either already covered
+elsewhere (the AcoustID vote ranking, `ExternalDeviceProfile.match`) or are
+thin wrappers over volume enumeration with nothing pure to test.
+
+One thing not in the plan came out of it. `DeviceCatalogStore` names a file
+after the volume's *name* when the drive reports no UUID, so an owner-supplied
+string decides a path. It handles that correctly, and now has a test saying so.
+
+Another, found while working: a `swift build` binary is re-signed on every
+build, so the keychain treated each rebuild as a new app and asked for the
+login password at every launch. Debug builds now keep the Last.fm session key
+outside the keychain (`197a07a`).
+
+
+
 Survey result: no `TODO`/`FIXME`/`print` debris in `Sources/` or `Tests/`,
 git tree clean, no generated artifacts tracked. The loose ends are mostly
 release-hygiene and docs.
