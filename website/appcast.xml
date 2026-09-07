@@ -3,6 +3,43 @@
     <channel>
         <title>CrateDigger</title>
         <item>
+            <title>1.5.11</title>
+            <pubDate>Sun, 30 Aug 2026 08:35:46 -0300</pubDate>
+            <link>https://cratedigger.mrbarkan.com/</link>
+            <sparkle:fullReleaseNotesLink>https://github.com/mrbarkan/cratedigger/releases</sparkle:fullReleaseNotesLink>
+            <sparkle:version>77</sparkle:version>
+            <sparkle:shortVersionString>1.5.11</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description sparkle:format="markdown"><![CDATA[
+Playlists play. Double clicking a track in one did nothing at all, and the
+inspector described a different record than the one you were listening to.
+
+### Fixed
+
+- **Playlists play again.** Double clicking a track in a playlist did nothing.
+  A playlist row can be dragged to reorder it, and being a drop target
+  swallowed the second click before it ever reached the thing that starts
+  playback. Playlists were the only source where that applied, which is why
+  everything else was fine.
+- **A playlist plays as a playlist.** Starting a track used to build the queue
+  from the album that happened to be selected rather than the list in front of
+  you, so most rows quietly did nothing and the play button started something
+  else entirely. The queue is now the list you are looking at.
+- **The inspector describes the track you picked.** In a playlist it showed
+  whichever album was selected in a column the playlist does not even display,
+  so the cover, year and format belonged to a different record.
+
+]]></description>
+            <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v1.5.11/CrateDigger-1.5.11.dmg" length="65908485" type="application/octet-stream" sparkle:edSignature="QVvgMt4Z/2aHfdysvX7p8E8+JPjv/iW8bERtpRVdZDgqcSGKI3owhBFbNG4+9Dtu53OjuwTX0iZhDFDSs7mcAA=="/>
+            <sparkle:deltas>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v1.5.11/CrateDigger77-72.delta" sparkle:deltaFrom="72" length="507630" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="1iqnsE7PZQsu4DHzQl3oIK+bxO7/EEh7VHNxPvmscaOgGwfwbImHsGbxcVSFui9xfacD9LqyV1I2x+HQ42+iDw=="/>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v1.5.11/CrateDigger77-71.delta" sparkle:deltaFrom="71" length="786610" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="eMCe+biFFdKFG9HFVSocgP8zqbuYkxBEv3POMDg/Ht5tVTmI3rMZbHctqCwKozXApJ5pDMx40eBhrsA7bsZbBw=="/>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v1.5.11/CrateDigger77-70.delta" sparkle:deltaFrom="70" length="1367766" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="6Vzi3KaYN73LcsJls4VvaGXuk0jwU7qzPzikDJ14kyMUo/pnREhX0YXBUzdZRpwgFdVM8M6NdrKoR3D067VGDw=="/>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v1.5.11/CrateDigger77-69.delta" sparkle:deltaFrom="69" length="1371298" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="M5tsOr7d9HyXSvE1D+VOe8Ya6M4PWASRqZR9hVVlg/4w2YcESgNpd1Bez98ZyDDdNdxPOWrZ43ENDG512M7rDA=="/>
+            </sparkle:deltas>
+        </item>
+        <item>
             <title>1.5.10</title>
             <pubDate>Fri, 28 Aug 2026 16:31:06 -0300</pubDate>
             <link>https://cratedigger.mrbarkan.com/</link>
@@ -135,34 +172,6 @@ The theme editor gained a pin and its own colour for every lamp on the display.
             <sparkle:deltas>
                 <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v1.5.9/CrateDigger71-70.delta" sparkle:deltaFrom="70" length="1220446" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="Tm6uy8MpAvO3Zk9y1l+iOEMtMwBW3PHDg1lJeUOmNhYpT9yPxiFxIydhI/1RS1fnwKIs33ItFcMRRACLZgohDw=="/>
                 <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v1.5.9/CrateDigger71-69.delta" sparkle:deltaFrom="69" length="1284782" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="3JAX72rWhAsUNGO6s52BTBAy7fNwr5wgmA7UwKrm6VkcHXMhCYYfAgfv6XVMabQaaEhyN0Sin5qqegnwmWv8Bw=="/>
-            </sparkle:deltas>
-        </item>
-        <item>
-            <title>1.5.8</title>
-            <pubDate>Thu, 27 Aug 2026 12:01:43 -0300</pubDate>
-            <link>https://cratedigger.mrbarkan.com/</link>
-            <sparkle:fullReleaseNotesLink>https://github.com/mrbarkan/cratedigger/releases</sparkle:fullReleaseNotesLink>
-            <sparkle:version>70</sparkle:version>
-            <sparkle:shortVersionString>1.5.8</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
-            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[
-The VU meters really do move on radio this time — including live streams, which
-1.5.7 said were impossible.
-
-### Fixed
-
-- **The VU meters work on every stream, live ones included.** 1.5.7 pointed the
-  meters at the radio player, but they still sat flat: every YouTube stream —
-  not just live ones — arrives as HLS, and macOS won't hand out the audio from
-  an HLS player. CrateDigger now measures its own output at the audio-hardware
-  level instead, so the needles follow whatever you're listening to. Requires
-  macOS 14.4 or later; on older systems the meters rest at zero as before.
-
-]]></description>
-            <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v1.5.8/CrateDigger-1.5.8.dmg" length="65826310" type="application/octet-stream" sparkle:edSignature="pPZMxtqEMN6BobJ+x3ox8oa4CjZSI8JIGzzF3ozmbEXzV5YtPgtHCEOL0AqD9NAoocZfAKGPJ2b2Qg9R7XFWDA=="/>
-            <sparkle:deltas>
-                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v1.5.8/CrateDigger70-69.delta" sparkle:deltaFrom="69" length="622874" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="zjWr4KHyEt1YfVSSUiwYyEDhO6E6s/fNGSyas/4QhGLrevEcPskW6suYFv+PwjbW4LNAKhD+oh7rEarNsi8ZAg=="/>
             </sparkle:deltas>
         </item>
     </channel>

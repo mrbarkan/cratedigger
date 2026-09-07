@@ -56,6 +56,12 @@ app.
 
 ### Added
 
+- **Gapless playback.** An album recorded in one go, like a live record, a mix
+  or most classical, now plays without the hole that used to open between every
+  track. The next track is buffered while the current one is still playing, so
+  the handover costs nothing. Streams and DSD keep the old path, and Advanced
+  ▸ Gapless playback turns it off for an output device that stumbles at a
+  track change.
 - **A new identity.** The app icon is a record on an orange plate; the old
   graphite chassis had a black disc on a black ground that turned to mush
   below 64px. The logo mark is a record half out of the crate, sized to the
@@ -195,6 +201,12 @@ app.
   go back to finished releases.
 
 ### Changed
+
+- **A window nobody can see stops animating.** The spinning disc and the LED
+  meters redraw 60 and 30 times a second. With the deck hidden behind another
+  app none of that reaches a screen, so both now stop until a window comes
+  back. Playback and the meters' own measurement are untouched, so the bars
+  are correct the instant you look again.
 
 - **The mini player's transport is five keys of one size in a row**, the way a
   portable player has them, in place of the dome with smaller caps around it.
@@ -348,6 +360,26 @@ app.
 Betas can lose data. Point CrateDigger at a copy of your library, not the only
 copy, and keep a stable install to fall back to. 2.0's plan is at
 cratedigger.mrbarkan.com/roadmap.html.
+
+## 1.5.11 (77) — 2026-08-30
+
+Playlists play. Double clicking a track in one did nothing at all, and the
+inspector described a different record than the one you were listening to.
+
+### Fixed
+
+- **Playlists play again.** Double clicking a track in a playlist did nothing.
+  A playlist row can be dragged to reorder it, and being a drop target
+  swallowed the second click before it ever reached the thing that starts
+  playback. Playlists were the only source where that applied, which is why
+  everything else was fine.
+- **A playlist plays as a playlist.** Starting a track used to build the queue
+  from the album that happened to be selected rather than the list in front of
+  you, so most rows quietly did nothing and the play button started something
+  else entirely. The queue is now the list you are looking at.
+- **The inspector describes the track you picked.** In a playlist it showed
+  whichever album was selected in a column the playlist does not even display,
+  so the cover, year and format belonged to a different record.
 
 ## 1.5.10 (72) — 2026-08-28
 

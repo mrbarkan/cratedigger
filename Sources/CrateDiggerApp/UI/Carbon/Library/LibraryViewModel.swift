@@ -770,9 +770,7 @@ final class LibraryViewModel: ObservableObject {
     }
 
     private func setupEqualizerObserver() {
-        NotificationCenter.default.addObserver(
-            forName: NSNotification.Name("CrateDiggerEQChanged"), object: nil, queue: .main
-        ) { [weak self] _ in
+        observe("CrateDiggerEQChanged") { [weak self] _ in
             Task { @MainActor in self?.reloadEqualizerFromPrefs() }
         }
     }
@@ -1264,6 +1262,11 @@ final class LibraryViewModel: ObservableObject {
     /// identity.
     var countedPlayKey: String?
     private var playbackStartTimestamp: Int = 0
+    /// The track Last.fm was last told is playing. Cleared on pause so a resume
+    /// re-asserts it, and checked on both paths that can start a track so a
+    /// gapless advance reports exactly once and a normal load does not report
+    /// twice.
+    private var lastNowPlayingTrackID: UUID?
     /// Actual listened time, accumulated from time-change deltas — the playhead
     /// position alone would scrobble instantly after a seek to 60%.
     /// Not `private`: `LibraryViewModel+Listening.swift` reads it to decide
@@ -1309,6 +1312,7 @@ final class LibraryViewModel: ObservableObject {
         prefs: PreferencesStore = .shared
     ) {
         self.playback = playback
+        self.playback.gaplessEnabled = prefs.gaplessPlaybackEnabled
         self.artworkService = artworkService
         self.remoteArtworkService = remoteArtworkService
         self.matchService = matchService
@@ -1434,6 +1438,7 @@ final class LibraryViewModel: ObservableObject {
         }
 
         setupAudioDeviceObserver()
+        setupGaplessObserver()
         setupCDSpeedObserver()
         setupKeyboardShortcutsMonitor()
         setupLibraryOperationsObservers()
@@ -1450,19 +1455,35 @@ final class LibraryViewModel: ObservableObject {
         fetchMissingMetadata()
     }
 
+    /// Tokens for the block-based notification observers below. The observer
+    /// NotificationCenter registers for those is the token the call returns,
+    /// not `self`, so `removeObserver(self)` never removed them and every one
+    /// stayed registered for the life of the process. Harmless while this is a
+    /// single long-lived object, and a zombie the day it stops being one.
+    private var notificationObservers: [NSObjectProtocol] = []
+
+    /// Observe a cross-cutting app notification, keeping the token so `deinit`
+    /// can actually drop it. Use this rather than `NotificationCenter` directly.
+    private func observe(_ name: String, using block: @escaping (Notification) -> Void) {
+        notificationObservers.append(
+            NotificationCenter.default.addObserver(
+                forName: NSNotification.Name(name), object: nil, queue: .main, using: block
+            )
+        )
+    }
+
     deinit {
         if let monitor = localEventMonitor {
             NSEvent.removeMonitor(monitor)
+        }
+        for observer in notificationObservers {
+            NotificationCenter.default.removeObserver(observer)
         }
         NotificationCenter.default.removeObserver(self)
     }
 
     private func setupAudioDeviceObserver() {
-        NotificationCenter.default.addObserver(
-            forName: NSNotification.Name("CrateDiggerAudioDeviceChanged"),
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
+        observe("CrateDiggerAudioDeviceChanged") { [weak self] notification in
             let uid = notification.object as? String
             Task { @MainActor [weak self] in
                 self?.playback.setOutputDeviceUID(uid)
@@ -1470,12 +1491,17 @@ final class LibraryViewModel: ObservableObject {
         }
     }
 
+    private func setupGaplessObserver() {
+        observe("CrateDiggerGaplessChanged") { [weak self] notification in
+            let enabled = notification.object as? Bool ?? true
+            Task { @MainActor [weak self] in
+                self?.playback.gaplessEnabled = enabled
+            }
+        }
+    }
+
     private func setupCDSpeedObserver() {
-        NotificationCenter.default.addObserver(
-            forName: NSNotification.Name("CrateDiggerCDSpeedChanged"),
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
+        observe("CrateDiggerCDSpeedChanged") { [weak self] notification in
             if let speed = notification.object as? CDAnimationSpeed {
                 Task { @MainActor [weak self] in
                     self?.cdAnimationSpeed = speed
@@ -1485,41 +1511,25 @@ final class LibraryViewModel: ObservableObject {
     }
 
     private func setupLibraryOperationsObservers() {
-        NotificationCenter.default.addObserver(
-            forName: NSNotification.Name("CrateDiggerMoveLibrary"),
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
+        observe("CrateDiggerMoveLibrary") { [weak self] _ in
             Task { @MainActor in
                 self?.moveLibrary()
             }
         }
         
-        NotificationCenter.default.addObserver(
-            forName: NSNotification.Name("CrateDiggerConsolidateLibrary"),
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
+        observe("CrateDiggerConsolidateLibrary") { [weak self] _ in
             Task { @MainActor in
                 self?.consolidateLibrary()
             }
         }
 
-        NotificationCenter.default.addObserver(
-            forName: NSNotification.Name("CrateDiggerMoveIndexFiles"),
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
+        observe("CrateDiggerMoveIndexFiles") { [weak self] _ in
             Task { @MainActor in
                 self?.moveIndexFiles()
             }
         }
 
-        NotificationCenter.default.addObserver(
-            forName: NSNotification.Name("CrateDiggerCratesFolderChanged"),
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
+        observe("CrateDiggerCratesFolderChanged") { [weak self] _ in
             Task { @MainActor in
                 self?.refreshAvailableCrates()
                 self?.selectSource(self?.currentSource ?? .localAll)
@@ -3453,7 +3463,12 @@ final class LibraryViewModel: ObservableObject {
         // Pause and end are the natural "I might quit now" moments; the
         // position saved here is insurance against a crash, and the exact one
         // is taken in applicationWillTerminate.
-        if state == .paused || state == .ended { savePlaybackSnapshot() }
+        if state == .paused || state == .ended {
+            savePlaybackSnapshot()
+            // Last.fm expires "now playing" on its own, so a resume has to say
+            // it again rather than be de-duplicated away.
+            lastNowPlayingTrackID = nil
+        }
 
         // DSD decode (via ffmpeg) can take a beat before playback starts;
         // let the user know why the transport is sitting on "loading". The
@@ -3463,24 +3478,32 @@ final class LibraryViewModel: ObservableObject {
             showOLEDNotice(playback.isNativeDSDActive ? "DSD ► BIT-PERFECT" : "DECODING DSD…")
         }
 
-        if state == .playing, let nowPlaying = nowPlayingTrack {
+        if state == .playing {
             // Track-start timestamp is set on index change; resetting it here
             // too would stamp scrobbles with the last *unpause* time instead.
             if playbackStartTimestamp == 0 {
                 playbackStartTimestamp = Int(Date().timeIntervalSince1970)
             }
+            sendNowPlayingIfNeeded()
+        }
+    }
 
-            // Check if we need to update "Now Playing" on Last.fm
-            if let sessionKey = prefs.lastFmSessionKey, !sessionKey.isEmpty {
-                Task {
-                    _ = try? await lastFM.updateNowPlaying(
-                        artist: nowPlaying.track.artist,
-                        track: nowPlaying.track.title,
-                        album: nowPlaying.track.album,
-                        sessionKey: sessionKey
-                    )
-                }
-            }
+    /// Tell Last.fm what is playing, at most once per track until it is paused
+    /// or another track starts. Two paths reach it: the `.playing` transition
+    /// of a track that had to load, and the index change of one that arrived
+    /// gaplessly and so never left `.playing`.
+    private func sendNowPlayingIfNeeded() {
+        guard let nowPlaying = nowPlayingTrack else { return }
+        guard lastNowPlayingTrackID != nowPlaying.track.id else { return }
+        guard let sessionKey = prefs.lastFmSessionKey, !sessionKey.isEmpty else { return }
+        lastNowPlayingTrackID = nowPlaying.track.id
+        Task {
+            _ = try? await lastFM.updateNowPlaying(
+                artist: nowPlaying.track.artist,
+                track: nowPlaying.track.title,
+                album: nowPlaying.track.album,
+                sessionKey: sessionKey
+            )
         }
     }
 
@@ -3575,6 +3598,10 @@ final class LibraryViewModel: ObservableObject {
                     (ListeningStore.key(for: $0.track.fileURL), $0.track.durationSeconds)
                 }
                 self.playbackStartTimestamp = Int(Date().timeIntervalSince1970)
+                // A track that arrived gaplessly never re-enters `.playing`, so
+                // the state handler will not run for it. Anything that had to
+                // load is still `.loading` here and reports from there instead.
+                if self.playback.state == .playing { self.sendNowPlayingIfNeeded() }
                 self.refreshNowPlayingInfo()
                 // An end-of-track sleep timer resolves here — the track it was
                 // armed against has been replaced.
