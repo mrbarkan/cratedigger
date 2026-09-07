@@ -59,7 +59,16 @@ public final class ArtworkStore {
         let destination = url(for: hash)
         guard !fileManager.fileExists(atPath: destination.path) else { return }
         let thumbnail = ArtworkThumbnail.encode(data) ?? data
-        try? thumbnail.write(to: destination, options: .atomic)
+        do {
+            try thumbnail.write(to: destination, options: .atomic)
+        } catch {
+            // This is the only write in the store, so a silent failure meant
+            // artwork the user had just fetched was simply gone next launch,
+            // with the crate index still pointing at its hash.
+            AppLog.library.warning(
+                "Could not store artwork \(hash, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+        }
     }
 
     public func data(for hash: String) -> Data? {

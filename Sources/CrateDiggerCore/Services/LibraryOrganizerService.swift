@@ -251,6 +251,20 @@ public final class LibraryOrganizerService {
         return OrganizeResult(tracks: updatedTracks, failures: failures)
     }
 
+    /// Cover art, booklets and rip logs that live beside the audio. A failure
+    /// here leaves the organised album incomplete while the move itself still
+    /// reports success, so it is worth a line in the log even though it is not
+    /// worth failing the whole operation over.
+    private func copySupporting(_ item: URL, to destination: URL) {
+        do {
+            try fileManager.copyItem(at: item, to: destination)
+        } catch {
+            AppLog.library.warning(
+                "Could not copy \(item.lastPathComponent, privacy: .public) alongside the album: \(error.localizedDescription, privacy: .public)"
+            )
+        }
+    }
+
     private func copySupportingFiles(from sourceDir: URL, to targetDir: URL) {
         guard let contents = try? fileManager.contentsOfDirectory(at: sourceDir, includingPropertiesForKeys: nil) else {
             return
@@ -268,7 +282,7 @@ public final class LibraryOrganizerService {
                 if isSupportingFolder {
                     let destFolder = targetDir.appendingPathComponent(item.lastPathComponent)
                     if !fileManager.fileExists(atPath: destFolder.path) {
-                        try? fileManager.copyItem(at: item, to: destFolder)
+                        copySupporting(item, to: destFolder)
                     }
                 }
             } else {
@@ -276,7 +290,7 @@ public final class LibraryOrganizerService {
                 if !audioExtensions.contains(ext) {
                     let destFile = targetDir.appendingPathComponent(item.lastPathComponent)
                     if !fileManager.fileExists(atPath: destFile.path) {
-                        try? fileManager.copyItem(at: item, to: destFile)
+                        copySupporting(item, to: destFile)
                     }
                 }
             }
@@ -292,7 +306,13 @@ public final class LibraryOrganizerService {
         guard ArtworkManifest.load(from: albumDir) == nil else { return }
         let images = AlbumArtCatalog.gatherImageURLs(in: albumDir, fileManager: fileManager)
         guard !images.isEmpty else { return }
-        try? ArtworkManifest(roles: AlbumArtCatalog.autoClassify(imageURLs: images)).save(to: albumDir)
+        do {
+            try ArtworkManifest(roles: AlbumArtCatalog.autoClassify(imageURLs: images)).save(to: albumDir)
+        } catch {
+            AppLog.library.warning(
+                "Could not write the artwork manifest into \(albumDir.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+        }
     }
 
     private func hasAnyAudioFiles(in dir: URL) -> Bool {
