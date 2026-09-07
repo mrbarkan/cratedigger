@@ -4,6 +4,32 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 2.0.2 (85), 2026-09-07
+
+The floating artwork panel is made of glass now.
+
+### Changed
+
+- **The floating artwork panel uses Apple's Liquid Glass.** It used to paint a
+  blurred copy of the record under a black wash, which looked like a solid tile
+  sitting on your screen. Now it is real glass: whatever is behind the panel
+  shows through it, bending at the edges the way the rest of macOS does. Panels
+  on older systems still get the frosted look.
+- **The controls under the artwork match each other.** Every button in both the
+  full screen viewer and the floating panel is now the same shape, the same
+  height and the same material, so the row reads as one set of controls instead
+  of an assortment.
+
+### Fixed
+
+- **The zoom button.** It was a squared off box wedged in among rounded ones,
+  and in the full screen viewer it had stopped drawing altogether, leaving a gap
+  where it should have been. It is back, and it looks like everything beside it.
+- **The panel's top corners.** The artwork was pushed down from the top edge,
+  which left a bare strip above it and made the upper corners look doubled.
+- **The panel follows the app's own light or dark setting** rather than the
+  system's, so a dark console no longer opens a pale panel.
+
 ## 2.0.1 (84), 2026-09-07
 
 A crash fix for playlists.
