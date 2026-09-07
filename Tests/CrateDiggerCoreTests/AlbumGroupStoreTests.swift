@@ -4,7 +4,7 @@ import XCTest
 
 final class AlbumGroupStoreTests: XCTestCase {
     private func freshStore() -> AlbumGroupStore {
-        let d = UserDefaults(suiteName: "test.\(UUID().uuidString)")!
+        let d = makeScratchDefaults()
         return AlbumGroupStore(prefs: PreferencesStore(defaults: d))
     }
 
@@ -41,7 +41,7 @@ final class AlbumGroupStoreTests: XCTestCase {
     }
 
     func testSavingEmptyClearsStorage() {
-        let d = UserDefaults(suiteName: "test.\(UUID().uuidString)")!
+        let d = makeScratchDefaults()
         let prefs = PreferencesStore(defaults: d)
         AlbumGroupStore(prefs: prefs).save([make("g1")])
         AlbumGroupStore(prefs: prefs).save([])

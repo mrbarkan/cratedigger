@@ -12,6 +12,7 @@
     "selectionInk": "#FFFFFF"
   },
   "dark": {
+    "logo": "logo-dark.pdf",
     "colors": {
       "chassis": "#171C22",
       "chassisHi": "#2B3540",
@@ -62,6 +63,7 @@
     }
   },
   "light": {
+    "logo": "logo-light.pdf",
     "colors": {
       "chassis": "#F5F8FA",
       "chassisHi": "#FFFFFF",

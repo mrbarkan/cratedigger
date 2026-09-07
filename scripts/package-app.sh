@@ -23,6 +23,8 @@ fi
 
 FFMPEG_PATH="${CRATEDIGGER_FFMPEG_PATH:-}"
 FFPROBE_PATH="${CRATEDIGGER_FFPROBE_PATH:-}"
+FPCALC_PATH="${CRATEDIGGER_FPCALC_PATH:-}"
+VENDORED_FPCALC="${ROOT_DIR}/Vendor/fpcalc/fpcalc"
 SIGN_IDENTITY="${CRATEDIGGER_SIGNING_IDENTITY:-}"
 NOTARY_PROFILE="${CRATEDIGGER_NOTARY_PROFILE:-}"
 LASTFM_API_KEY="${CRATEDIGGER_LASTFM_API_KEY:-}"
@@ -35,11 +37,15 @@ usage() {
 Usage: scripts/package-app.sh [options]
 
 Builds a release executable with SwiftPM, assembles CrateDigger.app, bundles
-ffmpeg and ffprobe into Contents/Resources, and signs the resulting app.
+ffmpeg, ffprobe and fpcalc into Contents/Resources, and signs the resulting app.
 
 Options:
   --ffmpeg PATH            Path to ffmpeg binary (or CRATEDIGGER_FFMPEG_PATH)
   --ffprobe PATH           Path to ffprobe (or CRATEDIGGER_FFPROBE_PATH)
+  --fpcalc PATH            Path to fpcalc, Chromaprint's CLI, which powers
+                           DEEP SCAN (or CRATEDIGGER_FPCALC_PATH). Defaults to
+                           the vendored Vendor/fpcalc/fpcalc; see the README
+                           there before replacing it.
   --output PATH            Output directory (default: ./dist)
   --sign IDENTITY          Developer ID signing identity, e.g.
                            "Developer ID Application: Acme Inc (TEAMID)".
@@ -214,6 +220,10 @@ while [[ $# -gt 0 ]]; do
       FFPROBE_PATH="${2:?missing path for --ffprobe}"
       shift 2
       ;;
+    --fpcalc)
+      FPCALC_PATH="${2:?missing path for --fpcalc}"
+      shift 2
+      ;;
     --output)
       OUTPUT_DIR="${2:?missing path for --output}"
       APP_BUNDLE="${OUTPUT_DIR}/${APP_NAME}"
@@ -284,9 +294,34 @@ fi
 
 FFMPEG_PATH="$(resolve_tool "${FFMPEG_PATH}" "ffmpeg")"
 FFPROBE_PATH="$(resolve_tool "${FFPROBE_PATH}" "ffprobe")"
+# fpcalc is optional: missing it costs DEEP SCAN, not the app. Homebrew's copy
+# is dynamically linked against its own ffmpeg dylibs and is fine for a local
+# build but useless on anyone else's Mac, so a signed build insists on a static
+# one (the acoustid/chromaprint releases ship a universal static fpcalc).
+if [[ -z "${FPCALC_PATH}" ]]; then
+  # The vendored copy beats anything on PATH on purpose: a Homebrew fpcalc would
+  # pass here and then fail require_static_tool, or worse, ship and not run.
+  if [[ -x "${VENDORED_FPCALC}" ]]; then
+    FPCALC_PATH="${VENDORED_FPCALC}"
+  else
+    FPCALC_PATH="$(command -v fpcalc || true)"
+  fi
+fi
+if [[ -n "${FPCALC_PATH}" && ! -x "${FPCALC_PATH}" ]]; then
+  echo "error: fpcalc not executable at ${FPCALC_PATH}" >&2
+  exit 1
+fi
 if [[ -n "${SIGN_IDENTITY}" ]]; then
   require_static_tool "${FFMPEG_PATH}"
   require_static_tool "${FFPROBE_PATH}"
+  if [[ -n "${FPCALC_PATH}" ]]; then
+    require_static_tool "${FPCALC_PATH}"
+  fi
+fi
+if [[ -z "${FPCALC_PATH}" ]]; then
+  echo "warning: fpcalc not found — packaging without it. DEEP SCAN (identify by" >&2
+  echo "         audio) will be unavailable in this build. Pass --fpcalc PATH to" >&2
+  echo "         bundle a static universal build from acoustid/chromaprint." >&2
 fi
 prepare_swift_environment
 
@@ -356,6 +391,10 @@ else
 fi
 cp "${FFMPEG_PATH}" "${APP_BUNDLE}/Contents/Resources/ffmpeg"
 cp "${FFPROBE_PATH}" "${APP_BUNDLE}/Contents/Resources/ffprobe"
+if [[ -n "${FPCALC_PATH}" ]]; then
+  cp "${FPCALC_PATH}" "${APP_BUNDLE}/Contents/Resources/fpcalc"
+  chmod 755 "${APP_BUNDLE}/Contents/Resources/fpcalc"
+fi
 
 chmod 755 "${APP_BUNDLE}/Contents/MacOS/CrateDiggerApp"
 chmod 755 "${APP_BUNDLE}/Contents/Resources/ffmpeg" "${APP_BUNDLE}/Contents/Resources/ffprobe"
@@ -365,6 +404,9 @@ if [[ -n "${SIGN_IDENTITY}" ]]; then
   # Sign nested binaries first (inside-out), then the app bundle.
   sign_distribution "${APP_BUNDLE}/Contents/Resources/ffmpeg" "no"
   sign_distribution "${APP_BUNDLE}/Contents/Resources/ffprobe" "no"
+  if [[ -n "${FPCALC_PATH}" ]]; then
+    sign_distribution "${APP_BUNDLE}/Contents/Resources/fpcalc" "no"
+  fi
   sign_sparkle_framework "${APP_BUNDLE}/Contents/Frameworks/Sparkle.framework"
   sign_distribution "${APP_BUNDLE}/Contents/MacOS/CrateDiggerApp" "yes"
   sign_distribution "${APP_BUNDLE}" "yes"
@@ -373,6 +415,9 @@ else
   echo "Ad-hoc signing (development build; not suitable for distribution)"
   sign_adhoc "${APP_BUNDLE}/Contents/Resources/ffmpeg"
   sign_adhoc "${APP_BUNDLE}/Contents/Resources/ffprobe"
+  if [[ -n "${FPCALC_PATH}" ]]; then
+    sign_adhoc "${APP_BUNDLE}/Contents/Resources/fpcalc"
+  fi
   codesign --force --deep --sign - --timestamp=none "${APP_BUNDLE}"
 fi
 

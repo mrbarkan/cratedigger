@@ -50,6 +50,13 @@ public final class ThemeRegistry: ObservableObject {
     /// left to compare against.
     private var draftSeed: ThemeDefinition?
 
+    /// Where a forked or duplicated draft's logo files still live: the
+    /// original's bundle. The draft keeps the file *names*, previews from
+    /// here until it has files of its own, and Save copies them over
+    /// (`materializeDraftLogos`). Nothing touches disk before Save, so a
+    /// discarded fork leaves no half-made bundle behind.
+    private var draftLogoFallback: [ThemeDefinition.BaseAppearance: URL] = [:]
+
     private let loader: ThemeLoaderService
     private var resolvedCache: [String: (theme: CarbonTheme, geometry: CarbonGeometry)] = [:]
     private var selectionObserver: NSObjectProtocol?
@@ -156,7 +163,7 @@ public final class ThemeRegistry: ObservableObject {
             // one the system happens to be in — otherwise editing an adaptive
             // theme's Light layer at night shows you the Dark one.
             let flattened = flatten(draft, for: draft.isAdaptive ? draftEditingAppearance : appearance)
-            return (theme: rendered(flattened), geometry: CarbonGeometry(definition: flattened))
+            return (theme: rendered(flattened, logoURL: draftLogoURL(for: flattened)), geometry: CarbonGeometry(definition: flattened))
         }
 
         guard let manifest = manifest(for: selectedThemeID) else { return nil }
@@ -170,7 +177,7 @@ public final class ThemeRegistry: ObservableObject {
         }
 
         let resolved = (
-            theme: rendered(definition),
+            theme: rendered(definition, logoURL: manifest.logoURL(for: definition.baseAppearance)),
             geometry: CarbonGeometry(definition: definition)
         )
         resolvedCache[cacheKey] = resolved
@@ -187,9 +194,115 @@ public final class ThemeRegistry: ObservableObject {
         return definition.resolved(for: target)
     }
 
-    private func rendered(_ definition: ThemeDefinition) -> CarbonTheme {
+    private func rendered(_ definition: ThemeDefinition, logoURL: URL?) -> CarbonTheme {
         let base: CarbonTheme = definition.baseAppearance == .dark ? .carbon : .linen
-        return CarbonTheme(definition: definition, resolvedBase: base)
+        var theme = CarbonTheme(definition: definition, resolvedBase: base)
+        theme.name = definition.name
+        theme.logoURL = logoURL
+        theme.logoStamp = logoURL.flatMap {
+            try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+        }
+        return theme
+    }
+
+    /// The draft's logo for the layer being rendered, looked up live: an
+    /// import lands in the bundle before the draft is saved, and the preview
+    /// has to show it from that moment.
+    private func draftLogoURL(for flattened: ThemeDefinition) -> URL? {
+        guard let draft, let authoring, let name = flattened.logo else { return nil }
+        if let own = ThemeLoaderService.logoURL(
+            declared: name,
+            besides: authoring.manifestURL(for: draft, replacing: sourceURL(for: draft.id))
+        ) {
+            return own
+        }
+        // A fork's file is still the original's, under the same name.
+        guard let fallback = draftLogoFallback[flattened.baseAppearance],
+              fallback.lastPathComponent == name
+        else { return nil }
+        return fallback
+    }
+
+    /// Copies into the draft's bundle every logo file it names but doesn't
+    /// yet own — a fork's, still sitting in the original's bundle. Run by
+    /// `saveDraft` before the manifest is written, so the saved theme is
+    /// self-contained and the original is never referenced.
+    public func materializeDraftLogos() throws {
+        guard let draft, let authoring, !draftLogoFallback.isEmpty,
+              let bundle = authoring.bundleDirectory(for: draft.id, replacing: sourceURL(for: draft.id))
+        else { return }
+        for appearance in [ThemeDefinition.BaseAppearance.light, .dark] {
+            let flattened = draft.resolved(for: appearance)
+            guard let name = flattened.logo,
+                  let source = draftLogoFallback[appearance], source.lastPathComponent == name
+            else { continue }
+            let destination = bundle.appendingPathComponent(name)
+            guard !FileManager.default.fileExists(atPath: destination.path) else { continue }
+            try FileManager.default.createDirectory(at: bundle, withIntermediateDirectories: true)
+            try FileManager.default.copyItem(at: source, to: destination)
+        }
+        draftLogoFallback = [:]
+    }
+
+    // MARK: - Logo
+
+    /// The logo file the layer being edited shows: its own, else the shared
+    /// one. Same rule as `draftColor(_:)`.
+    public var draftLogo: String? {
+        guard let draft else { return nil }
+        if draft.isAdaptive {
+            return draft.variant(for: draftEditingAppearance)?.logo ?? draft.logo
+        }
+        return draft.logo
+    }
+
+    /// The slot an imported logo belongs in: the layer being edited when the
+    /// draft is adaptive, otherwise the shared one (`nil`).
+    public var draftLogoLayer: ThemeDefinition.BaseAppearance? {
+        draft?.isAdaptive == true ? draftEditingAppearance : nil
+    }
+
+    /// Records `fileName` in the slot `draftLogoLayer` names.
+    public func setDraftLogo(_ fileName: String) {
+        guard var draft else { return }
+        if let layer = draftLogoLayer {
+            var variant = draft.variant(for: layer) ?? ThemeVariant()
+            variant.logo = fileName
+            draft.setVariant(variant, for: layer)
+        } else {
+            draft.logo = fileName
+        }
+        self.draft = draft
+    }
+
+    /// Takes the logo off the layer being edited, and only that layer. When
+    /// the layer was showing the *shared* file, the other layer keeps it as
+    /// its own — clearing one side of an adaptive theme must not blank the
+    /// side you aren't looking at.
+    public func clearDraftLogo() {
+        guard var draft else { return }
+        if let layer = draftLogoLayer {
+            let other: ThemeDefinition.BaseAppearance = layer == .light ? .dark : .light
+            if draft.variant(for: layer)?.logo == nil, let shared = draft.logo {
+                var otherVariant = draft.variant(for: other) ?? ThemeVariant()
+                if otherVariant.logo == nil { otherVariant.logo = shared }
+                draft.setVariant(otherVariant, for: other)
+                draft.logo = nil
+            }
+            var variant = draft.variant(for: layer) ?? ThemeVariant()
+            variant.logo = nil
+            draft.setVariant(variant, for: layer)
+        } else {
+            draft.logo = nil
+        }
+        self.draft = draft
+    }
+
+    /// Every logo file the draft still names, in any slot — what CLEAR checks
+    /// before deleting a file from the bundle.
+    public var draftLogoFilesInUse: Set<String> {
+        guard let draft else { return [] }
+        return Set([draft.logo, draft.light?.logo, draft.dark?.logo].compactMap { $0 })
     }
 
     // MARK: - Authoring
@@ -223,15 +336,34 @@ public final class ThemeRegistry: ObservableObject {
     /// with the bundled copy on next launch (the loader drops duplicate ids).
     /// A user theme opens in place, keeping its id so the selection and any
     /// `inherits` chains pointing at it survive the edit.
-    public func beginEditing(_ manifest: ThemeManifest) {
+    ///
+    /// `appearance` is the look on screen when the editor opens. An adaptive
+    /// theme starts on that layer, so opening the editor never flips the app
+    /// to the other one; a single-appearance theme has only its own, and the
+    /// window follows it as it always has.
+    public func beginEditing(_ manifest: ThemeManifest, appearance: ThemeDefinition.BaseAppearance? = nil) {
         // A different theme is a different edit history.
         clearUndo()
+        let definition = manifest.definition
+        let layer = definition.isAdaptive ? (appearance ?? definition.baseAppearance) : definition.baseAppearance
         switch manifest.origin {
         case .userInstalled:
-            draft = seeded(manifest.definition)
+            draftLogoFallback = [:]
+            draft = seeded(definition)
             draftSeed = draft
-            draftEditingAppearance = manifest.definition.baseAppearance
+            draftEditingAppearance = layer
+        case .builtIn where BuiltInThemeEditing.isEditable(manifest):
+            // Beta-only: the shipped themes are still being tuned, so the
+            // editor writes them back to the checkout rather than forking.
+            // See `BuiltInThemeEditing` — and close it for the RC.
+            draftLogoFallback = [:]
+            draft = seeded(definition)
+            draftSeed = draft
+            draftEditingAppearance = layer
         case .builtIn:
+            // The logo files stay in the app bundle; the fork previews them
+            // from there and gets its own copies when it's saved.
+            draftLogoFallback = manifest.logoURLs
             var fork = manifest.definition
             fork.id = ThemeAuthoringService.slug(
                 from: "\(manifest.definition.name) Copy",
@@ -245,7 +377,7 @@ public final class ThemeRegistry: ObservableObject {
             fork.inherits = manifest.definition.id
             draft = seeded(fork)
             draftSeed = draft
-            draftEditingAppearance = manifest.definition.baseAppearance
+            draftEditingAppearance = layer
         }
     }
 
@@ -348,8 +480,18 @@ public final class ThemeRegistry: ObservableObject {
         target.colors = source.colors
         target.shadows = source.shadows
         target.effects = source.effects
+        // The logo comes along as its own file in the destination's slot, so
+        // a later re-import on either side changes only that side.
+        target.logo = nil
+        if let file = draftLogoURL(for: source), let authoring,
+           let copied = try? authoring.importLogo(
+               from: file, into: draft.id,
+               replacing: sourceURL(for: draft.id), layer: destination
+           ) {
+            target.logo = copied.lastPathComponent
+        }
 
-        if destination == .light { draft.light = target } else { draft.dark = target }
+        draft.setVariant(target, for: destination)
         self.draft = draft
     }
 
@@ -357,6 +499,15 @@ public final class ThemeRegistry: ObservableObject {
     /// one" doesn't mean saving, closing, and re-opening a copy.
     public func duplicateDraft() {
         guard var draft else { return }
+        // The logo files stay where they are (the original's bundle, or
+        // wherever this draft was already previewing them from); the copy
+        // keeps their names and gets its own files on Save.
+        var fallback: [ThemeDefinition.BaseAppearance: URL] = [:]
+        for appearance in [ThemeDefinition.BaseAppearance.light, .dark] {
+            fallback[appearance] = draftLogoURL(for: draft.resolved(for: appearance))
+        }
+        draftLogoFallback = fallback
+
         let name = "\(draft.name) Copy"
         draft.id = ThemeAuthoringService.slug(from: name, taken: Set(manifests.map(\.id)))
         draft.name = name
@@ -459,6 +610,13 @@ public final class ThemeRegistry: ObservableObject {
         return result
     }
 
+    /// True while the draft is a shipped theme opened in place rather than a
+    /// fork of one. Beta-only; see `BuiltInThemeEditing`.
+    public var editingBuiltIn: Bool {
+        guard let draft, let manifest = manifest(for: draft.id) else { return false }
+        return manifest.origin == .builtIn && BuiltInThemeEditing.isEditable(manifest)
+    }
+
     /// Writes the draft to the Themes folder, re-scans, and selects it — the
     /// theme you just authored becomes the theme you're using. Returns the
     /// saved id.
@@ -467,12 +625,31 @@ public final class ThemeRegistry: ObservableObject {
         guard let draft, let authoring else { return nil }
 
         // Only record what differs from the parent, so the file reads as the
-        // author's intent rather than a dump of every token.
+        // author's intent rather than a dump of every token. A root theme has
+        // no parent, and this still prunes each appearance layer against the
+        // shared tokens — which is all a built-in needs.
         let parent = manifest(for: draft.inherits)?.definition
-        try authoring.save(
-            ThemeAuthoringService.minimized(draft, against: parent),
-            replacing: sourceURL(for: draft.id)
-        )
+        let normalized = ThemeAuthoringService.minimized(draft, against: parent)
+
+        let builtInDestinations = editingBuiltIn ? BuiltInThemeEditing.destinations(forThemeID: draft.id) : []
+        if builtInDestinations.isEmpty {
+            // A built-in's logos already sit beside it; only a fork needs its
+            // own copies, and `bundleDirectory` would put them in the user's
+            // Themes folder, which is not where this theme lives.
+            try materializeDraftLogos()
+            try authoring.save(normalized, replacing: sourceURL(for: draft.id))
+        } else {
+            // Patch the shipped file rather than rewrite it: the draft has
+            // every token filled in, so saving it whole would freeze the ones
+            // the theme deliberately leaves unset — the screen lamps follow
+            // the accent until something pins them. Against the seed the
+            // editor started from, the diff is exactly what was touched.
+            let shipped = manifest(for: draft.id)?.definition ?? draft
+            let patched = shipped.merging(draft.tokensChanged(from: draftSeed ?? draft))
+            for destination in builtInDestinations {
+                try BuiltInThemeEditing.write(patched, to: destination)
+            }
+        }
 
         let id = draft.id
         self.draft = nil
@@ -507,6 +684,7 @@ public final class ThemeRegistry: ObservableObject {
     public func discardDraft() {
         draft = nil
         draftSeed = nil
+        draftLogoFallback = [:]
         clearUndo()
     }
 

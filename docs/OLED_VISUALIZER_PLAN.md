@@ -1,6 +1,7 @@
 # OLED Visualizer — future screen plan
 
-*Status: planned, not implemented (2026-07-22). Replaces the RTA spectrum-analyzer
+*Status: not implemented, and deliberately **not in 2.0** — a 2.1 candidate,
+kept because the design and the lessons below are the expensive part (2026-07-22). Replaces the RTA spectrum-analyzer
 screen, which shipped briefly on `beta/1.1.0-theming` and was removed the same week —
 it pegged a core and "no one is going to mix music" with an RTA. This doc keeps the
 lessons and the design so the build is cheap when we pick it up.*

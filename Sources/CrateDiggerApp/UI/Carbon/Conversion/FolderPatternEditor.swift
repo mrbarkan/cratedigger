@@ -45,10 +45,10 @@ struct FolderPatternEditor: View {
     // MARK: - Body
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 4) {
             // Chips + separators wrap to new lines if the row runs out of width,
             // so tags never get squeezed into vertical letter stacks.
-            FlowLayout(spacing: 5, lineSpacing: 5) {
+            FlowLayout(spacing: 4, lineSpacing: 4) {
                 ForEach(Array(chips.enumerated()), id: \.element) { index, token in
                     chipView(token)
                         .background(chipCenterReader(token))
@@ -63,22 +63,25 @@ struct FolderPatternEditor: View {
                 }
 
                 if !addable.isEmpty { addMenu }
+                // The presets menu belongs with the chips it rewrites, not
+                // parked beside the preview — which frees the whole second
+                // line for the path.
+                presetMenu
             }
             .coordinateSpace(name: Self.rowSpace)
             .onPreferenceChange(ChipCenterKey.self) { chipCenters = $0 }
 
-            HStack(spacing: 8) {
-                Text(previewPath())
-                    .font(CarbonFont.mono(9, weight: .medium))
-                    .foregroundStyle(theme.ink3)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                Spacer(minLength: 8)
-                presetMenu
-            }
+            // The rendered result, with the full width to itself: a four-tag
+            // pattern used to truncate against the presets button.
+            Text(previewPath())
+                .font(CarbonFont.mono(9, weight: .medium))
+                .foregroundStyle(theme.ink3)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 7)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 5)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 5, style: .continuous)
@@ -94,13 +97,13 @@ struct FolderPatternEditor: View {
 
     private func chipView(_ token: FolderToken) -> some View {
         Text(chipLabel(token))
-            .font(CarbonFont.mono(10, weight: .bold))
-            .tracking(0.5)
+            .font(CarbonFont.mono(9.5, weight: .bold))
+            .tracking(0.3)
             .foregroundStyle(theme.orange)
             .lineLimit(1)
             .fixedSize()
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3.5)
             .background(
                 RoundedRectangle(cornerRadius: 4, style: .continuous)
                     .fill(theme.isDark ? Color.white.opacity(0.07) : Color.white.opacity(0.7))
@@ -113,7 +116,7 @@ struct FolderPatternEditor: View {
                 if hovered == token {
                     Button { remove(token) } label: {
                         Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 11))
+                            .font(.system(size: 10))
                             .foregroundStyle(theme.ink2, theme.isDark ? Color.black : Color.white)
                     }
                     .buttonStyle(.plain)
@@ -183,9 +186,9 @@ struct FolderPatternEditor: View {
         let isSlash = chipSeparators[index] == .slash
         return Button { toggleSeparator(at: index) } label: {
             Text(isSlash ? "/" : "·")
-                .font(CarbonFont.mono(11, weight: .bold))
+                .font(CarbonFont.mono(10.5, weight: .bold))
                 .foregroundStyle(isSlash ? theme.ink2 : theme.cyan)
-                .frame(width: 16, height: 22)
+                .frame(width: 13, height: 20)
                 .background(
                     RoundedRectangle(cornerRadius: 3)
                         .fill(theme.isDark ? Color.white.opacity(0.05) : Color.black.opacity(0.05))
@@ -204,9 +207,9 @@ struct FolderPatternEditor: View {
             }
         } label: {
             Image(systemName: "plus")
-                .font(.system(size: 10, weight: .bold))
+                .font(.system(size: 9, weight: .bold))
                 .foregroundStyle(theme.ink2)
-                .frame(width: 22, height: 22)
+                .frame(width: 18, height: 20)
                 .background(RoundedRectangle(cornerRadius: 4).fill(theme.isDark ? Color.white.opacity(0.05) : Color.black.opacity(0.05)))
         }
         .menuStyle(.borderlessButton)
@@ -224,7 +227,7 @@ struct FolderPatternEditor: View {
             Image(systemName: "square.stack.3d.up")
                 .font(.system(size: 10, weight: .bold))
                 .foregroundStyle(theme.ink3)
-                .frame(width: 22, height: 22)
+                .frame(width: 18, height: 18)
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
@@ -288,9 +291,12 @@ struct FolderPatternEditor: View {
     }
 
     private func apply(_ newPreset: TemplatePreset) {
-        preset = newPreset
         tokenOrder = FolderTokenOrder.normalize(newPreset.defaultTokenOrder)
         separators = []   // presets are always one-folder-per-tag
+        // Stays `.custom`: this menu seeds a layout to keep editing, and
+        // handing the selection back to a named preset would close the editor
+        // out from under the tap that opened it.
+        preset = .custom
     }
 
     /// Write the enabled tags back into the 5-slot `.disabled`-padded shape the rest

@@ -7,7 +7,6 @@ struct MainShell: View {
     @EnvironmentObject private var model: LibraryViewModel
 
     private static let collapsedRailWidth: CGFloat = 36
-    private static let condensedBrowserWidth: CGFloat = 200
 
     private static let collapseAnimation: Animation =
         .spring(response: 0.36, dampingFraction: 0.92)
@@ -113,9 +112,9 @@ struct MainShell: View {
 
     // MARK: - Browser
     //
-    // Browser has two states: condensed (compact track-list context column,
-    // fixed 200pt) and full (Artist/Album/Track 3-pane, flex). When the
-    // inspector is also collapsed the browser flexes — see flex math below.
+    // Browser has two states: condensed (compact track-list context column)
+    // and full (Artist/Album/Track 3-pane). Both flex — it is the only
+    // section that absorbs the chassis width.
 
     private var browserSection: some View {
         Group {
@@ -132,6 +131,12 @@ struct MainShell: View {
                     title: browserWellTitle,
                     trailing: browserWellTrailing,
                     trailingControl: AnyView(HStack(spacing: 6) {
+                        // The gallery searches the same collections as the
+                        // list, so its key is here too; columns and per-column
+                        // sort are the list's alone.
+                        if !model.isRadioMode {
+                            searchToggleButton()
+                        }
                         if !model.showArtworkGallery && !model.isRadioMode {
                             browserLayoutMenu()
                             sortToggleButton()
@@ -139,12 +144,20 @@ struct MainShell: View {
                         collapseChevron(action: { model.toggleBrowserCollapsed() })
                     })
                 ) {
-                    if model.isRadioMode {
-                        RadioListView()
-                    } else if model.showArtworkGallery {
-                        ArtworkGalleryView()
-                    } else {
-                        BrowserPane()
+                    VStack(spacing: 0) {
+                        // Above the switch, not inside BrowserPane: the gallery
+                        // reads the same filtered collections, so one field
+                        // searches both browsers.
+                        if model.isSearchAvailable && model.showSearchField {
+                            BrowserSearchBar()
+                        }
+                        if model.isRadioMode {
+                            RadioListView()
+                        } else if model.showArtworkGallery {
+                            ArtworkGalleryView()
+                        } else {
+                            BrowserPane()
+                        }
                     }
                 }
             }
@@ -153,16 +166,9 @@ struct MainShell: View {
         .clipShape(RoundedRectangle(cornerRadius: geometry.wellCornerRadius, style: .continuous))
     }
 
-    /// Browser is at 200pt when condensed AND inspector is full (so inspector
-    /// can flex). When BOTH are condensed/collapsed, the invariant in the
-    /// view-model prevents this — but as a defense in depth, browser flexes
-    /// to absorb leftover space if it would otherwise leave dead chassis.
-    private var browserMaxWidth: CGFloat {
-        if model.browserCollapsed && !model.inspectorCollapsed {
-            return Self.condensedBrowserWidth
-        }
-        return .infinity
-    }
+    /// The browser always flexes: the inspector is a fixed-width column, so
+    /// the browser is what absorbs the chassis width, condensed or not.
+    private var browserMaxWidth: CGFloat { .infinity }
 
     private var browserCollapsedTrailing: String {
         let n = model.visibleTracks.count
@@ -183,7 +189,9 @@ struct MainShell: View {
                 wellShell(
                     title: inspectorWellTitle,
                     trailing: inspectorWellTrailing,
-                    trailingControl: AnyView(collapseChevron(action: { model.toggleInspectorCollapsed() }))
+                    trailingControl: AnyView(collapseChevron(action: { model.toggleInspectorCollapsed() })),
+                    above: showsInspectorChrome ? AnyView(InspectorTabBar()) : nil,
+                    below: showsInspectorChrome ? AnyView(InspectorToolsBar()) : nil
                 ) {
                     InspectorPane()
                 }
@@ -193,20 +201,21 @@ struct MainShell: View {
         .clipShape(RoundedRectangle(cornerRadius: geometry.wellCornerRadius, style: .continuous))
     }
 
-    /// Inspector has three target widths:
-    /// - collapsed rail (36pt fixed)
-    /// - default narrow (380pt fixed) — when browser is full
-    /// - flex (`.infinity`) — when browser is collapsed/condensed, so the
-    ///   inspector takes the freed chassis width
+    /// Collapsed rail (36pt) or the fixed column width. Never flexes — a
+    /// metadata column stretched across a wide window reads as empty chassis.
     private var inspectorMaxWidth: CGFloat {
-        if model.inspectorCollapsed { return Self.collapsedRailWidth }
-        if model.browserCollapsed   { return .infinity }
-        return geometry.inspectorWidth
+        model.inspectorCollapsed ? Self.collapsedRailWidth : geometry.inspectorWidth
+    }
+
+    /// The patch bay and the theme picker take over the whole well, so the
+    /// inspector's own tabs and tools step aside for them.
+    private var showsInspectorChrome: Bool {
+        model.oledView != .conversion && !model.showingThemePicker
     }
 
     private var inspectorWellTitle: String {
         if model.oledView == .conversion {
-            return "Conversion · Patch Bay"
+            return "Conversion · Setup"
         }
         return "Inspector"
     }
@@ -259,17 +268,27 @@ struct MainShell: View {
         return browserTrailing
     }
 
+    /// While a search is live this says how much of the source it hid, so the
+    /// well never claims four hundred records over twelve rows.
     private var browserTrailing: String {
-        let n = model.index.allTracks.count
-        return n == 0 ? "—" : "\(n) RECORDS"
+        let total = model.index.allTracks.count
+        guard total > 0 else { return "—" }
+        if model.isSearchActive {
+            return "\(model.browsedIndex.allTracks.count) OF \(total) RECORDS"
+        }
+        return "\(total) RECORDS"
     }
 
     // MARK: - Well shell builder
 
+    /// `above` / `below` mount controls on the chassis, outside the paper
+    /// panel — the inspector's tab row and library tools.
     private func wellShell<Inner: View>(
         title: String,
         trailing: String,
         trailingControl: AnyView? = nil,
+        above: AnyView? = nil,
+        below: AnyView? = nil,
         @ViewBuilder content: @escaping () -> Inner
     ) -> some View {
         RecessedWell {
@@ -291,11 +310,19 @@ struct MainShell: View {
                 }
                 .padding(.horizontal, 4)
 
+                if let above {
+                    above.padding(.horizontal, 2)
+                }
+
                 PaperPanel {
                     content()
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                if let below {
+                    below.padding(.horizontal, 2)
+                }
             }
         }
         .frame(maxHeight: .infinity)
@@ -309,17 +336,19 @@ struct MainShell: View {
         .carbonTip("Collapse panel")
     }
 
-    /// Menu to pick the browser column layout (3-pane / Album·Track / flat Track).
+    /// How many columns the browser has: 1, 2 or 3. What each shows is picked
+    /// in the column's own header.
     private func browserLayoutMenu() -> some View {
         Menu {
-            ForEach(BrowserLayout.allCases, id: \.self) { layout in
+            ForEach(1...BrowserView.maxColumns, id: \.self) { count in
                 Button {
-                    model.browserLayout = layout
+                    model.setColumnCount(count)
                 } label: {
-                    if model.browserLayout == layout {
-                        Label(layout.title, systemImage: "checkmark")
+                    let title = count == 1 ? "1 Column" : "\(count) Columns"
+                    if model.browserView.columnCount == count {
+                        Label(title, systemImage: "checkmark")
                     } else {
-                        Text(layout.title)
+                        Text(title)
                     }
                 }
             }
@@ -327,7 +356,7 @@ struct MainShell: View {
             ZStack {
                 ChromeChassis(theme: theme, cornerRadius: 4)
                     .frame(width: 18, height: 14)
-                Image(systemName: model.browserLayout.iconName)
+                Image(systemName: columnCountIcon)
                     .font(.system(size: 8, weight: .bold))
                     .foregroundStyle(theme.ink3)
             }
@@ -335,7 +364,37 @@ struct MainShell: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .carbonTip("Browser columns")
+        .carbonTip("Browser columns: " + model.browserView.facets.map(\.title).joined(separator: " · "))
+    }
+
+    private var columnCountIcon: String {
+        switch model.browserView.columnCount {
+        case 1:  return "rectangle"
+        case 2:  return "rectangle.split.2x1"
+        default: return "rectangle.split.3x1"
+        }
+    }
+
+    /// Shows the search field and puts the cursor in it, or puts it away.
+    /// Lights while a query is live, so a filtered browser always has something
+    /// on screen saying why.
+    private func searchToggleButton() -> some View {
+        Button(action: { model.toggleSearchField() }) {
+            ZStack {
+                ChromeChassis(theme: theme, cornerRadius: 4)
+                    .frame(width: 18, height: 14)
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(searchKeyColor)
+            }
+        }
+        .buttonStyle(.carbonHover)
+        .carbonTip(model.showSearchField ? "Hide the search field" : "Search the library (⌘F)")
+    }
+
+    private var searchKeyColor: Color {
+        if model.isSearchActive { return theme.orange }
+        return model.showSearchField ? theme.cyan : theme.ink3
     }
 
     /// Toggles the per-column sort menus in the browser headers.

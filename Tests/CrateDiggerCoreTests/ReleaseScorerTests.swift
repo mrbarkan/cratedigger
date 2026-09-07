@@ -174,6 +174,39 @@ final class ReleaseScorerTests: XCTestCase {
         XCTAssertEqual(proposals[1].proposed.title, "Age of Consent")
     }
 
+    /// The reported case: a rip whose track numbers were swapped had the sheet
+    /// proposing to retitle two songs into each other, confidently and with no
+    /// hint that anything was odd. An exact title match beats a number that
+    /// points somewhere else entirely.
+    func testExactTitleBeatsAWrongTrackNumber() {
+        let tracks = [
+            loaded(title: "Age of Consent", trackNumber: 3),
+            loaded(title: "The Village", trackNumber: 1)
+        ]
+        let proposals = ReleaseScorer.proposals(from: candidate(), for: tracks)
+
+        XCTAssertEqual(proposals[0].proposed.title, "Age of Consent")
+        XCTAssertEqual(proposals[0].proposed.trackNumber, 1)
+        XCTAssertEqual(proposals[1].proposed.title, "The Village")
+        XCTAssertEqual(proposals[1].proposed.trackNumber, 3)
+    }
+
+    /// The other half of the bargain: a number that merely disagrees with a
+    /// scruffy title keeps its slot. Only a near-exact match somewhere else
+    /// overrules it.
+    func testAWeakTitleElsewhereDoesNotOverruleTheNumber() {
+        let tracks = [loaded(title: "the villager (live)", trackNumber: 1)]
+        let proposals = ReleaseScorer.proposals(from: candidate(), for: tracks)
+        XCTAssertEqual(proposals[0].proposed.title, "Age of Consent")
+    }
+
+    func testUntitledFilesStillMapByNumber() {
+        // Nothing to contradict the number with: an untagged rip must keep it.
+        let tracks = [loaded(title: "", trackNumber: 2)]
+        let proposals = ReleaseScorer.proposals(from: candidate(), for: tracks)
+        XCTAssertEqual(proposals[0].proposed.title, "We All Stand")
+    }
+
     func testMapsTracksByTitleWhenNumbersAreMissing() {
         let tracks = [
             loaded(title: "The Village", trackNumber: nil),
@@ -282,5 +315,93 @@ final class ReleaseScorerTests: XCTestCase {
         XCTAssertEqual(proposals[0].proposed.year, 1983)
         XCTAssertEqual(proposals[0].proposed.comment, "ripped from vinyl", "untouched fields must survive")
         XCTAssertFalse(proposals[0].changedFields.contains(.genre))
+    }
+
+    // MARK: - Recording-ID pairing (DEEP SCAN)
+
+    /// The release as MusicBrainz returns it for a fingerprint match: every
+    /// track carries the recording MBID that AcoustID matched the audio to.
+    private func identifiedCandidate() -> ReleaseCandidate {
+        candidate(tracks: [
+            ReleaseTrack(position: 1, title: "Age of Consent", durationSeconds: 305, recordingID: "rec-age"),
+            ReleaseTrack(position: 2, title: "We All Stand", durationSeconds: 315, recordingID: "rec-stand"),
+            ReleaseTrack(position: 3, title: "The Village", durationSeconds: 250, recordingID: "rec-village")
+        ])
+    }
+
+    /// An untagged rip: no title worth matching, no track number, and file
+    /// order that does not follow the record. Only the fingerprint knows.
+    private func untagged(_ name: String) -> LoadedTrack {
+        let url = URL(fileURLWithPath: "/Music/side a/\(name).flac")
+        let track = AudioTrack(fileURL: url, title: name, durationSeconds: 0, trackNumber: nil)
+        return LoadedTrack(track: track, metadata: ConversionMetadata())
+    }
+
+    func testRecordingIDsPairUntaggedFilesToTheRightTrack() {
+        let a = untagged("track_02")
+        let b = untagged("track_07")
+        let recordingIDs: [UUID: Set<String>] = [
+            a.track.id: ["rec-village"],
+            b.track.id: ["rec-age"]
+        ]
+
+        let proposals = ReleaseScorer.proposals(
+            from: identifiedCandidate(),
+            for: [a, b],
+            recordingIDs: recordingIDs
+        )
+
+        // Without the fingerprint these two would have been handed out in file
+        // order and both titles would be wrong.
+        XCTAssertEqual(proposals[0].proposed.title, "The Village")
+        XCTAssertEqual(proposals[0].proposed.trackNumber, 3)
+        XCTAssertEqual(proposals[1].proposed.title, "Age of Consent")
+        XCTAssertEqual(proposals[1].proposed.trackNumber, 1)
+    }
+
+    func testRecordingIDBeatsAWrongTrackNumberOnTheFile() {
+        // A mistagged file claiming to be track 1 is still the recording the
+        // audio says it is.
+        let mistagged = loaded(title: "Some Other Song", trackNumber: 1)
+        let proposals = ReleaseScorer.proposals(
+            from: identifiedCandidate(),
+            for: [mistagged],
+            recordingIDs: [mistagged.track.id: ["rec-village"]]
+        )
+        XCTAssertEqual(proposals[0].proposed.title, "The Village")
+        XCTAssertEqual(proposals[0].proposed.trackNumber, 3)
+    }
+
+    func testEachRecordingSlotIsClaimedOnlyOnce() {
+        // Two files fingerprinted as the same recording (a duplicate rip) must
+        // not both become track 1.
+        let a = untagged("a")
+        let b = untagged("b")
+        let proposals = ReleaseScorer.proposals(
+            from: identifiedCandidate(),
+            for: [a, b],
+            recordingIDs: [a.track.id: ["rec-age"], b.track.id: ["rec-age"]]
+        )
+        XCTAssertEqual(proposals[0].proposed.title, "Age of Consent")
+        XCTAssertNotEqual(proposals[1].proposed.title, "Age of Consent")
+    }
+
+    func testFilesWithNoRecordingMatchFallBackToTheOldPasses() {
+        let numbered = loaded(title: "We All Stand", trackNumber: 2)
+        let proposals = ReleaseScorer.proposals(
+            from: identifiedCandidate(),
+            for: [numbered],
+            recordingIDs: [numbered.track.id: ["rec-not-on-this-release"]]
+        )
+        XCTAssertEqual(proposals[0].proposed.title, "We All Stand")
+        XCTAssertEqual(proposals[0].proposed.trackNumber, 2)
+    }
+
+    func testAnEmptyRecordingMapLeavesOrdinaryMatchingUnchanged() {
+        let tracks = [loaded(title: "The Village", trackNumber: 3), loaded(title: "Age of Consent", trackNumber: 1)]
+        XCTAssertEqual(
+            ReleaseScorer.proposals(from: identifiedCandidate(), for: tracks).map(\.proposed.title),
+            ReleaseScorer.proposals(from: identifiedCandidate(), for: tracks, recordingIDs: [:]).map(\.proposed.title)
+        )
     }
 }

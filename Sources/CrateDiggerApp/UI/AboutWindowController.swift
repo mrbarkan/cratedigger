@@ -17,7 +17,10 @@ final class AboutWindowController: NSWindowController {
         window.titlebarAppearsTransparent = true
         window.isMovableByWindowBackground = true
         window.isReleasedWhenClosed = false
-        window.setContentSize(NSSize(width: 720, height: 450))
+        // Wide enough that the footer's links and credits share one line: the
+        // credits never truncate, so anything narrower pushes the link onto a
+        // second row.
+        window.setContentSize(NSSize(width: 800, height: 470))
         window.center()
         window.appearance = mode.nsAppearance
 

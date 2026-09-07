@@ -163,6 +163,52 @@ public final class MetadataEditorService: @unchecked Sendable {
         try fileManager.replaceItem(at: fileURL, withItemAt: tempURL, backupItemName: nil, options: [], resultingItemURL: &resultingURL)
     }
 
+    /// Strip every attached picture from a file, keeping the audio stream and
+    /// the rest of the tags untouched.
+    ///
+    /// The inverse of `embedArtwork`, and the reason the ART view can offer to
+    /// delete embedded art: `-vn` drops the attached_pic stream, `-c copy`
+    /// means the audio is not re-encoded, so this costs a file rewrite and no
+    /// quality. The picture itself is gone for good afterwards.
+    public func stripArtwork(from fileURL: URL) throws {
+        let tempURL = fileURL.deletingLastPathComponent()
+            .appendingPathComponent("cratedigger-art-strip-\(UUID().uuidString)")
+            .appendingPathExtension(fileURL.pathExtension)
+
+        let output = try commandRunner.run(
+            executableURL: ffmpegExecutableURL,
+            arguments: Self.stripArtworkArguments(input: fileURL, output: tempURL)
+        )
+        guard output.terminationStatus == 0 else {
+            try? fileManager.removeItem(at: tempURL)
+            throw NSError(domain: "MetadataEditorService", code: Int(output.terminationStatus),
+                          userInfo: [NSLocalizedDescriptionKey: "Couldn't remove the artwork — " + Self.failureReason(output)])
+        }
+
+        var resultingURL: NSURL?
+        try fileManager.replaceItem(at: fileURL, withItemAt: tempURL, backupItemName: nil, options: [], resultingItemURL: &resultingURL)
+    }
+
+    /// Pure argument vector, so the flags that decide whether the audio
+    /// survives are testable without running ffmpeg.
+    static func stripArtworkArguments(input: URL, output: URL) -> [String] {
+        var arguments = [
+            "-hide_banner",
+            "-nostdin",
+            "-y",
+            "-i", input.path,
+            "-map", "0:a",      // audio only: the attached picture is a video stream
+            "-c", "copy",       // never re-encode; this is a tag edit, not a conversion
+            "-map_metadata", "0",
+            "-vn"
+        ]
+        if input.pathExtension.lowercased() == "mp3" {
+            arguments.append(contentsOf: ["-id3v2_version", "3"])
+        }
+        arguments.append(output.path)
+        return arguments
+    }
+
     /// One readable sentence out of an ffmpeg failure.
     ///
     /// ffmpeg dumps its full per-stream analysis before it fails — hundreds of

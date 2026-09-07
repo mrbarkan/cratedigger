@@ -127,14 +127,45 @@ public actor MusicBrainzReleaseClient: ReleaseMetadataProvider {
     }
 
     private func detail(for release: SearchRelease) async throws -> ReleaseCandidate {
-        var components = URLComponents(string: "\(Self.host)/release/\(release.id)")
+        guard let url = Self.detailURL(releaseID: release.id) else { return release.asCandidate(tracks: []) }
+        let detail: DetailResponse = try await get(url)
+        return release.asCandidate(tracks: Self.tracks(in: detail), totalDiscs: Self.discCount(in: detail))
+    }
+
+    /// One release fetched straight by its MusicBrainz ID.
+    ///
+    /// DEEP SCAN's second hop: AcoustID answers with release MBIDs rather than
+    /// search terms, so there is nothing to search *for* — the release is
+    /// already named. Returns nil when the response carries no usable release.
+    public func release(id: String) async throws -> ReleaseCandidate? {
+        guard let url = Self.detailURL(releaseID: id) else { return nil }
+        let detail: DetailResponse = try await get(url)
+        guard let title = detail.title else { return nil }
+
+        let tracks = Self.tracks(in: detail)
+        return ReleaseCandidate(
+            source: .musicBrainz,
+            providerID: detail.id ?? id,
+            title: title,
+            artist: detail.artistCredit?.joined ?? "",
+            year: ReleaseProviderSupport.year(fromDate: detail.date),
+            genre: nil,
+            totalTracks: tracks.isEmpty ? nil : tracks.count,
+            totalDiscs: Self.discCount(in: detail),
+            tracks: tracks
+        )
+    }
+
+    static func detailURL(releaseID: String) -> URL? {
+        var components = URLComponents(string: "\(host)/release/\(releaseID)")
         components?.queryItems = [
             URLQueryItem(name: "inc", value: "recordings+artist-credits"),
             URLQueryItem(name: "fmt", value: "json")
         ]
-        guard let url = components?.url else { return release.asCandidate(tracks: []) }
+        return components?.url
+    }
 
-        let detail: DetailResponse = try await get(url)
+    private static func tracks(in detail: DetailResponse) -> [ReleaseTrack] {
         var tracks: [ReleaseTrack] = []
         for medium in detail.media ?? [] {
             let disc = medium.position ?? 1
@@ -144,12 +175,16 @@ public actor MusicBrainzReleaseClient: ReleaseMetadataProvider {
                     discNumber: disc,
                     title: track.title,
                     artist: track.artistCredit?.joined,
-                    durationSeconds: track.length.map { Double($0) / 1000 }
+                    durationSeconds: track.length.map { Double($0) / 1000 },
+                    recordingID: track.recording?.id
                 ))
             }
         }
-        let discCount = (detail.media?.count).flatMap { $0 > 0 ? $0 : nil }
-        return release.asCandidate(tracks: tracks, totalDiscs: discCount)
+        return tracks
+    }
+
+    private static func discCount(in detail: DetailResponse) -> Int? {
+        (detail.media?.count).flatMap { $0 > 0 ? $0 : nil }
     }
 
     /// Serialized through the actor, so the sleep genuinely spaces requests
@@ -209,6 +244,17 @@ public actor MusicBrainzReleaseClient: ReleaseMetadataProvider {
 
     struct DetailResponse: Decodable {
         let media: [Medium]?
+        // Only a by-ID fetch reads these; a detail lookup that follows a search
+        // already has the header fields from the search result.
+        let id: String?
+        let title: String?
+        let date: String?
+        let artistCredit: [ArtistCredit]?
+
+        enum CodingKeys: String, CodingKey {
+            case media, id, title, date
+            case artistCredit = "artist-credit"
+        }
     }
 
     struct Medium: Decodable {
@@ -221,11 +267,16 @@ public actor MusicBrainzReleaseClient: ReleaseMetadataProvider {
         let title: String
         let length: Int?
         let artistCredit: [ArtistCredit]?
+        let recording: Recording?
 
         enum CodingKeys: String, CodingKey {
-            case position, title, length
+            case position, title, length, recording
             case artistCredit = "artist-credit"
         }
+    }
+
+    struct Recording: Decodable {
+        let id: String
     }
 
     struct ArtistCredit: Decodable {

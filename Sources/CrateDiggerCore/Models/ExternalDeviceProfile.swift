@@ -272,23 +272,16 @@ public struct ExternalDeviceProfile: Identifiable, Codable, Hashable, Sendable {
         }
     }
 
+    /// The music directory a device profile points at, relative to the volume
+    /// root. Shares `PathComponentSanitizer`'s rule with the conversion output
+    /// path rather than carrying its own copy: two implementations of "clean a
+    /// path component" is exactly how the album-folder review sheet ended up
+    /// without the traversal guard this one had.
+    ///
+    /// One behaviour change comes with that: a component starting with "." now
+    /// loses the dot instead of keeping it, so a destination can no longer be a
+    /// folder invisible in Finder.
     public static func normalizedSubpath(_ rawValue: String) -> String {
-        rawValue
-            .split(separator: "/", omittingEmptySubsequences: true)
-            .map { sanitizePathComponent(String($0)) }
-            .filter { !$0.isEmpty }
-            .joined(separator: "/")
-    }
-
-    private static func sanitizePathComponent(_ rawValue: String) -> String {
-        var value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        value = value.replacingOccurrences(of: ":", with: "-")
-        value = value.replacingOccurrences(of: "\\", with: "-")
-        value = value.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-        value = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        if value == "." || value == ".." {
-            return ""
-        }
-        return value
+        PathComponentSanitizer.sanitizeSubpath(rawValue, fallback: "")
     }
 }

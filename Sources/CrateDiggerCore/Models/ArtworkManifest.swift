@@ -170,17 +170,23 @@ public struct ArtworkManifest: Codable, Equatable, Sendable {
     /// nudged to sit straight in the round disc face. Filename → crop.
     /// Optional ⇒ old manifests still decode. See `ArtworkCrop`.
     public var crops: [String: ArtworkCrop]?
+    /// The MusicBrainz release this album's artwork was taken from, so the
+    /// search sheet can reopen on the pressing already identified instead of
+    /// making you find it again. Optional ⇒ old manifests still decode.
+    public var releaseMBID: String?
 
     public init(mediaFormat: MediaFormat? = nil,
                 roles: [String: ArtworkRole] = [:],
                 discSides: [String: String]? = nil,
                 discNumbers: [String: Int]? = nil,
-                crops: [String: ArtworkCrop]? = nil) {
+                crops: [String: ArtworkCrop]? = nil,
+                releaseMBID: String? = nil) {
         self.mediaFormat = mediaFormat
         self.roles = roles
         self.discSides = discSides
         self.discNumbers = discNumbers
         self.crops = crops
+        self.releaseMBID = releaseMBID
     }
 
     /// The stored crop for an image, or the identity when it has none.

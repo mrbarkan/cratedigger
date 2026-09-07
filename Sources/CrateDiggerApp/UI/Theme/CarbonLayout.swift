@@ -26,6 +26,8 @@ public enum CarbonLayout {
     public static let paperCornerRadius: CGFloat = 8
 
     public static let oledCornerRadius: CGFloat = 16
+    /// The flat keys and the header's chrome buttons.
+    public static let keyCornerRadius: CGFloat = 6
     public static let oledPaddingH: CGFloat = 20
     public static let oledPaddingV: CGFloat = 12
 
@@ -56,7 +58,7 @@ public enum CarbonLayout {
     public static let patchBayKeyMinWidthMedium: CGFloat = 84
 
     /// Cycle-button height in the narrow-fallback variant.
-    public static let patchBayCycleButtonHeight: CGFloat = 44
+    public static let patchBayCycleButtonHeight: CGFloat = 36
 
     /// Vertical gap between rows inside the patch bay panel.
     public static let patchBayRowGap: CGFloat = 14

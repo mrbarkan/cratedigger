@@ -127,12 +127,12 @@ struct HorizontalLEDMeter: View {
                 context.fill(unlit, with: LCDScreen.shading(LCDScreen.ramp(theme, opacity: 0.10),
                                                             size: size, vertical: false))
                 context.drawLayer { layer in
-                    layer.addFilter(.shadow(color: theme.orange.opacity(0.5), radius: 2))
+                    layer.addFilter(.shadow(color: theme.meterHot.opacity(0.5), radius: 2))
                     layer.fill(litBody, with: LCDScreen.shading(LCDScreen.ramp(theme),
                                                                 size: size, vertical: false))
                 }
                 context.drawLayer { layer in
-                    layer.addFilter(.shadow(color: theme.orange.opacity(0.8), radius: 3))
+                    layer.addFilter(.shadow(color: theme.meterHot.opacity(0.8), radius: 3))
                     layer.fill(peak, with: LCDScreen.shading(LCDScreen.peakRamp(theme),
                                                              size: size, vertical: false))
                 }

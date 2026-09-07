@@ -220,6 +220,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     // MARK: - View / Playback delegations
 
+    /// ⌘F: put the browser somewhere the field can be seen and focus it.
+    func focusSearch() {
+        hostingController.model.requestSearchFocus()
+    }
+
     func setOLEDView(_ view: OLEDView) {
         hostingController.model.oledView = view
     }
@@ -319,6 +324,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     func setSleepMode(_ mode: SleepMode) {
         hostingController.model.setSleepMode(mode)
+    }
+
+    func rateSelection(_ rating: Int) {
+        hostingController.model.rateSelection(rating)
     }
 
     func currentSleepMode() -> SleepMode { hostingController.model.sleepMode }

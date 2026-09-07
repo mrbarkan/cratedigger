@@ -182,6 +182,9 @@ extension LibraryViewModel {
     func playSelectedStream() {
         guard let stream = selectedStream else { return }
 
+        // The resume point is the second the record was interrupted by the radio.
+        savePlaybackSnapshot()
+
         // Stop any library playback so we don't hear both.
         playback.pause()
 

@@ -85,11 +85,7 @@ final class ExternalDeviceTransferPlannerTests: XCTestCase {
     }
 
     func testDeviceProfilesPersistThroughPreferencesStore() {
-        let suiteName = "CrateDiggerDeviceProfileTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-
-        let store = PreferencesStore(defaults: defaults)
+        let store = PreferencesStore(defaults: makeScratchDefaults())
         let profile = ExternalDeviceProfile.directFilePlayer(
             name: "Gym Shuffle",
             rootBookmark: Data([1, 2, 3]),

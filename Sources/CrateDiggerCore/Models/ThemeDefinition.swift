@@ -46,6 +46,17 @@ public struct ThemeDefinition: Codable, Sendable, Equatable {
     /// fonts for this to be safe.
     public var fonts: [String: ThemeFont]?
 
+    /// File name of an image inside the `.cdtheme` bundle (`"logo.png"`),
+    /// drawn in the header opposite the CrateDigger name. Absent, the header
+    /// sets the theme's `name` there instead, so every theme has a mark.
+    /// A `light`/`dark` layer can name its own (`ThemeVariant.logo`), since a
+    /// mark drawn for a dark console rarely survives a light one.
+    ///
+    /// Not inherited: the file lives in *this* theme's bundle, so a child
+    /// naming its parent's logo would point at nothing. A bare `.json` theme
+    /// has no bundle and can't carry one.
+    public var logo: String?
+
     /// Geometry overrides keyed by `CarbonLayout`'s field names (e.g.
     /// `"chassisCornerRadius"`, `"playButtonSize"`). Values are clamped to
     /// safe ranges when converted to `CarbonGeometry` — a theme cannot break
@@ -79,6 +90,7 @@ public struct ThemeDefinition: Codable, Sendable, Equatable {
         colors: [String: String]? = nil,
         shadows: [String: ShadowDefinition]? = nil,
         fonts: [String: ThemeFont]? = nil,
+        logo: String? = nil,
         geometry: [String: Double]? = nil,
         effects: [String: Double]? = nil,
         light: ThemeVariant? = nil,
@@ -95,6 +107,7 @@ public struct ThemeDefinition: Codable, Sendable, Equatable {
         self.colors = colors
         self.shadows = shadows
         self.fonts = fonts
+        self.logo = logo
         self.geometry = geometry
         self.effects = effects
     }
@@ -243,19 +256,25 @@ public struct ThemeVariant: Codable, Sendable, Equatable {
     public var colors: [String: String]?
     public var shadows: [String: ShadowDefinition]?
     public var effects: [String: Double]?
+    /// This appearance's own logo file, over the shared `ThemeDefinition.logo`.
+    /// The one non-token a layer may carry: a logo is colour, and colour is
+    /// exactly what changes between light and dark.
+    public var logo: String?
 
     public init(
         colors: [String: String]? = nil,
         shadows: [String: ShadowDefinition]? = nil,
-        effects: [String: Double]? = nil
+        effects: [String: Double]? = nil,
+        logo: String? = nil
     ) {
         self.colors = colors
         self.shadows = shadows
         self.effects = effects
+        self.logo = logo
     }
 
     public var isEmpty: Bool {
-        (colors?.isEmpty ?? true) && (shadows?.isEmpty ?? true) && (effects?.isEmpty ?? true)
+        (colors?.isEmpty ?? true) && (shadows?.isEmpty ?? true) && (effects?.isEmpty ?? true) && logo == nil
     }
 }
 
@@ -267,6 +286,10 @@ public extension ThemeDefinition {
 
     func variant(for appearance: BaseAppearance) -> ThemeVariant? {
         appearance == .light ? light : dark
+    }
+
+    mutating func setVariant(_ variant: ThemeVariant?, for appearance: BaseAppearance) {
+        if appearance == .light { light = variant } else { dark = variant }
     }
 
     /// Flattens this theme for one appearance: the shared tokens with that
@@ -281,6 +304,7 @@ public extension ThemeDefinition {
         result.colors = ThemeDefinition.overlay(colors, variant.colors)
         result.shadows = ThemeDefinition.overlay(shadows, variant.shadows)
         result.effects = ThemeDefinition.overlay(effects, variant.effects)
+        result.logo = variant.logo ?? logo
         return result
     }
 
@@ -320,10 +344,23 @@ public struct ThemeManifest: Identifiable, Sendable, Equatable {
     public var id: String { definition.id }
     public var definition: ThemeDefinition
     public var origin: Origin
+    /// The logo file for each appearance, resolved against the theme's own
+    /// bundle at discovery and present only when the file is actually there.
+    /// Resolved here, where the loader still knows the file's location,
+    /// because the definition alone doesn't and neither does anything
+    /// downstream of it. A single-appearance theme maps both keys to the
+    /// same file.
+    public var logoURLs: [ThemeDefinition.BaseAppearance: URL]
 
-    public init(definition: ThemeDefinition, origin: Origin) {
+    public init(definition: ThemeDefinition, origin: Origin, logoURLs: [ThemeDefinition.BaseAppearance: URL] = [:]) {
         self.definition = definition
         self.origin = origin
+        self.logoURLs = logoURLs
+    }
+
+    /// The logo to draw when the theme renders `appearance`.
+    public func logoURL(for appearance: ThemeDefinition.BaseAppearance) -> URL? {
+        logoURLs[appearance]
     }
 }
 

@@ -29,31 +29,42 @@ struct BrowserPane: View {
             if shouldShowEmptyState {
                 BrowserEmptyState()
                     .transition(.opacity)
+            } else if shouldShowNoMatches {
+                BrowserNoMatchesState()
+                    .transition(.opacity)
             }
         }
     }
 
-    /// Column composition per the selected browser layout.
+    /// One pane per column of the view, in order. Artist, Album and Track
+    /// keep their own panes (rows with art, version groups, the table); every
+    /// other facet is a `FacetPane` of plain rows.
     @ViewBuilder
     private var columns: some View {
-        switch model.browserLayout {
-        case .full:
-            ArtistPane().frame(maxWidth: .infinity)
-            divider
-            AlbumPane().frame(maxWidth: .infinity)
-            divider
-            TrackPane().frame(maxWidth: .infinity)
-        case .albumTrack:
-            AlbumPane(flat: true).frame(maxWidth: .infinity)
-            divider
-            TrackPane().frame(maxWidth: .infinity)
-        case .track:
-            TrackPane(flat: true).frame(maxWidth: .infinity)
+        ForEach(Array(model.browserView.facets.enumerated()), id: \.offset) { column, facet in
+            if column > 0 { divider }
+            pane(for: facet, column: column).frame(maxWidth: .infinity)
         }
     }
 
+    @ViewBuilder
+    private func pane(for facet: BrowserFacet, column: Int) -> some View {
+        switch facet {
+        case .artist: ArtistPane(column: column)
+        case .album:  AlbumPane(column: column)
+        case .track:  TrackPane(column: column)
+        default:      FacetPane(column: column, facet: facet)
+        }
+    }
+
+    /// Nothing scanned yet. "Nothing matched" is a different state entirely —
+    /// the library is fine, so it must not offer OPEN FOLDER.
     private var shouldShowEmptyState: Bool {
         model.index.allTracks.isEmpty && !model.scanProgress.isRunning
+    }
+
+    private var shouldShowNoMatches: Bool {
+        !model.index.allTracks.isEmpty && model.isSearchActive && model.browsedIndex.allTracks.isEmpty
     }
 
     private var divider: some View {
@@ -104,14 +115,53 @@ private struct BrowserEmptyState: View {
     }
 }
 
+/// A search that matched nothing. Deliberately quieter than the no-library
+/// state: nothing is wrong, there is just nothing here under this query.
+private struct BrowserNoMatchesState: View {
+    @Environment(\.carbon) private var theme
+    @EnvironmentObject private var model: LibraryViewModel
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 30, weight: .light))
+                .foregroundStyle(theme.ink3)
+            Text("No matches for \u{201C}\(model.searchQuery)\u{201D}")
+                .font(CarbonFont.sans(15, weight: .heavy))
+                .foregroundStyle(theme.ink)
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 360)
+            KeyButton(style: .normal, action: { model.clearSearch() }) {
+                Text("CLEAR SEARCH").padding(.horizontal, 14)
+            }
+            .frame(width: 160, height: 30)
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(
+            Rectangle()
+                .fill(theme.paper)
+                .overlay(theme.paper.opacity(theme.isDark ? 0.70 : 0.78))
+        )
+    }
+}
+
 private struct ArtistPane: View {
     @EnvironmentObject private var model: LibraryViewModel
     @Environment(\.carbon) private var theme
+    let column: Int
+
+    private var artists: [Artist] {
+        if case .artists(let artists)? = model.browserColumns[safe: column] { return artists }
+        return []
+    }
 
     var body: some View {
         ColumnList(
             title: "Artist",
-            trailing: String(format: "%02d", model.index.artists.count),
+            trailing: String(format: "%02d", artists.count),
+            titleMenu: AnyView(ColumnFacetMenu(column: column)),
             headerAccessory: model.showSortControls
                 ? AnyView(ColumnSortControl(field: $model.artistSortField,
                                             ascending: $model.artistSortAscending,
@@ -119,9 +169,9 @@ private struct ArtistPane: View {
                 : nil,
             scrollTarget: model.selectedArtistID.map(AnyHashable.init),
             revealTick: model.revealTick,
-            isFocused: model.effectiveColumn == .artist
+            isFocused: model.effectiveColumn == column
         ) {
-            ForEach(Array(model.visibleArtists.enumerated()), id: \.element.id) { row, artist in
+            ForEach(Array(artists.enumerated()), id: \.element.id) { row, artist in
                 ArtistRow(
                     artist: artist,
                     selected: model.isArtistSelected(artist.id),
@@ -130,12 +180,12 @@ private struct ArtistPane: View {
                     pendingSync: model.hasPendingSync(artist),
                     onSelect: {
                         let m = NSEvent.modifierFlags
-                        model.focusedColumn = .artist
+                        model.focusedColumn = column
                         model.selectArtist(artist, command: m.contains(.command), shift: m.contains(.shift),
-                                           ordered: model.visibleArtists)
+                                           ordered: artists)
                     },
                     onPrimaryAction: {
-                        model.selectArtist(artist, command: false, shift: false, ordered: model.visibleArtists)
+                        model.selectArtist(artist, command: false, shift: false, ordered: artists)
                     }
                 )
                 .contextMenu { BrowserContextMenu.artist(artist, model: model) }
@@ -155,16 +205,19 @@ private struct ArtistPane: View {
 private struct AlbumPane: View {
     @EnvironmentObject private var model: LibraryViewModel
     @Environment(\.carbon) private var theme
-    /// When true, list every album across all artists (the "Album · Track" layout).
-    var flat: Bool = false
+    let column: Int
     @State private var expandedReleaseIDs: Set<String> = []
 
-    private var albums: [Album] { flat ? model.allAlbumsSorted : model.visibleAlbums }
+    private var albums: [Album] {
+        if case .albums(let albums)? = model.browserColumns[safe: column] { return albums }
+        return []
+    }
 
     var body: some View {
         ColumnList(
             title: "Album",
-            trailing: String(format: "%02d", flat ? albums.count : (model.selectedArtist?.albumCount ?? 0)),
+            trailing: String(format: "%02d", albums.count),
+            titleMenu: AnyView(ColumnFacetMenu(column: column)),
             headerAccessory: model.showSortControls
                 ? AnyView(ColumnSortControl(field: $model.albumSortField,
                                             ascending: $model.albumSortAscending,
@@ -172,7 +225,7 @@ private struct AlbumPane: View {
                 : nil,
             scrollTarget: model.selectedAlbumID.map(AnyHashable.init),
             revealTick: model.revealTick,
-            isFocused: model.effectiveColumn == .album
+            isFocused: model.effectiveColumn == column
         ) {
             ForEach(Array(albums.enumerated()), id: \.element.id) { row, album in
                 if album.isVersionGroup {
@@ -200,9 +253,9 @@ private struct AlbumPane: View {
             pendingSync: model.hasPendingSync(album),
             onSelect: {
                 let m = NSEvent.modifierFlags
-                model.focusedColumn = .album
+                model.focusedColumn = column
                 model.selectAlbum(album, command: m.contains(.command), shift: m.contains(.shift),
-                                  ordered: albums, flat: flat)
+                                  ordered: albums, flat: false)
             }
         )
         .contextMenu { BrowserContextMenu.album(album, model: model) }
@@ -227,9 +280,9 @@ private struct AlbumPane: View {
             pendingSync: model.hasPendingSync(release),
             onSelect: {
                 let m = NSEvent.modifierFlags
-                model.focusedColumn = .album
+                model.focusedColumn = column
                 model.selectAlbum(release, command: m.contains(.command), shift: m.contains(.shift),
-                                  ordered: albums, flat: flat)
+                                  ordered: albums, flat: false)
             },
             badge: releaseBadge(release),
             disclosed: expandedReleaseIDs.contains(release.id),
@@ -250,7 +303,7 @@ private struct AlbumPane: View {
             edition: version.editionLabel,
             mediaFormat: version.mediaFormat,
             selected: model.selectedAlbumID == version.id,
-            onSelect: { model.focusedColumn = .album; model.selectedAlbumID = version.id }
+            onSelect: { model.focusedColumn = column; model.selectedAlbumID = version.id }
         )
         .contextMenu { BrowserContextMenu.version(version, release: release, model: model) }
     }
@@ -267,12 +320,25 @@ private struct AlbumPane: View {
 private struct TrackPane: View {
     @EnvironmentObject private var model: LibraryViewModel
     @Environment(\.carbon) private var theme
-    /// When true, list every track in the source flat (the "Track" layout) — no
-    /// album scoping and no disc-header separators.
-    var flat: Bool = false
+    let column: Int
 
+    /// The sole column is the table: every track in the source, the user's
+    /// chosen columns, sortable headers. Beside other columns it is the narrow
+    /// list, the panes to its left having already said which artist and album.
+    private var flat: Bool { model.browserView == .table }
+
+    /// The table reads `flatTracks` so an unsorted playlist keeps its own
+    /// order; every other Track column is the cascade's.
     private var sourceTracks: [LoadedTrack] {
-        flat ? model.flatTracks : model.visibleTracks
+        if flat { return model.flatTracks }
+        if case .tracks(let tracks)? = model.browserColumns[safe: column] { return tracks }
+        return []
+    }
+
+    /// Disc separators belong to an album: only under an Album column
+    /// directly to the left, where the list is one record.
+    private var followsAlbumColumn: Bool {
+        column > 0 && model.browserView.facets[column - 1] == .album
     }
 
     /// A playlist shown in its own order can be rearranged by dragging; a sorted
@@ -285,6 +351,7 @@ private struct TrackPane: View {
         ColumnList(
             title: "Track",
             trailing: trackTrailing,
+            titleMenu: AnyView(ColumnFacetMenu(column: column)),
             headerAccessory: (model.showSortControls && !flat)
                 ? AnyView(ColumnSortControl(field: $model.trackSortField,
                                             ascending: $model.trackSortAscending,
@@ -297,7 +364,7 @@ private struct TrackPane: View {
                 : nil,
             scrollTarget: model.selectedTrackID.map(AnyHashable.init),
             revealTick: model.revealTick,
-            isFocused: model.effectiveColumn == .track
+            isFocused: model.effectiveColumn == column
         ) {
             ForEach(Array(trackEntries.enumerated()), id: \.element.id) { row, entry in
                 switch entry {
@@ -327,7 +394,7 @@ private struct TrackPane: View {
                                 : nil,
                             onSelect: {
                                 let m = NSEvent.modifierFlags
-                                model.focusedColumn = .track
+                                model.focusedColumn = column
                                 model.selectTrack(loaded, command: m.contains(.command), shift: m.contains(.shift),
                                                   ordered: sourceTracks)
                             },
@@ -347,7 +414,7 @@ private struct TrackPane: View {
                         isPendingSync: model.isPendingSync(loaded),
                         onSelect: {
                             let m = NSEvent.modifierFlags
-                            model.focusedColumn = .track
+                            model.focusedColumn = column
                             model.selectTrack(loaded, command: m.contains(.command), shift: m.contains(.shift),
                                               ordered: sourceTracks)
                         },
@@ -375,7 +442,7 @@ private struct TrackPane: View {
     /// multiple discs, and Record Divider sub-tracks listed under a divided file.
     private var trackEntries: [TrackListEntry] {
         let tracks = sourceTracks
-        let multiDisc = !flat && model.selectedAlbum?.isMultiDisc == true && model.trackSortField == .trackNumber
+        let multiDisc = followsAlbumColumn && model.selectedAlbum?.isMultiDisc == true && model.trackSortField == .trackNumber
         let counts = multiDisc
             ? Dictionary(grouping: tracks, by: { $0.track.discNumber ?? 1 }).mapValues(\.count)
             : [:]
@@ -401,13 +468,115 @@ private struct TrackPane: View {
 
     private var trackTrailing: String {
         let count = sourceTracks.count
-        let total = flat
-            ? sourceTracks.reduce(0) { $0 + $1.track.durationSeconds }
-            : (model.selectedAlbum?.totalDurationSeconds ?? 0)
+        // What is listed, not the album's whole: under a Genre column the
+        // list is the record's rock tracks, and the header should say so.
+        let total = sourceTracks.reduce(0) { $0 + $1.track.durationSeconds }
         guard count > 0 else { return "—" }
         let minutes = Int(total) / 60
         let seconds = Int(total) % 60
         return String(format: "%02d / %02d:%02d", count, minutes, seconds)
+    }
+}
+
+/// A column of plain value rows — genre, year, decade, format, album artist,
+/// rating. One row per distinct value among the tracks surviving the columns
+/// to its left, with how many of them sit under it.
+private struct FacetPane: View {
+    @EnvironmentObject private var model: LibraryViewModel
+    @Environment(\.carbon) private var theme
+    let column: Int
+    let facet: BrowserFacet
+
+    private var values: [FacetValue] {
+        if case .values(let values)? = model.browserColumns[safe: column] { return values }
+        return []
+    }
+
+    var body: some View {
+        ColumnList(
+            title: facet.title,
+            trailing: String(format: "%02d", values.count),
+            titleMenu: AnyView(ColumnFacetMenu(column: column)),
+            headerAccessory: model.showSortControls
+                ? AnyView(ColumnSortControl(field: $model.valueSortField,
+                                            ascending: $model.valueSortAscending,
+                                            allCases: Array(ValueSortField.allCases)))
+                : nil,
+            scrollTarget: model.browser.selection.anchor(column).map(AnyHashable.init),
+            revealTick: model.revealTick,
+            isFocused: model.effectiveColumn == column
+        ) {
+            ForEach(Array(values.enumerated()), id: \.element.id) { row, value in
+                FacetRow(
+                    value: value,
+                    selected: model.browser.isSelected(column: column, id: value.id),
+                    dragPayload: "facet::\(column)::" + value.id,
+                    onSelect: {
+                        let m = NSEvent.modifierFlags
+                        model.focusedColumn = column
+                        model.browser.select(column: column, id: value.id,
+                                             command: m.contains(.command), shift: m.contains(.shift),
+                                             ordered: values.map(\.id))
+                    },
+                    onActivate: {
+                        model.browser.select(column: column, id: value.id, command: false, shift: false,
+                                             ordered: values.map(\.id))
+                        model.playBrowsingTracks()
+                    }
+                )
+                .id(value.id)
+                .contextMenu {
+                    // Resolved on open, not per row: a genre can hold thousands.
+                    let tracks = model.tracks(under: column, id: value.id)
+                    BrowserContextMenu.queueButtons(for: tracks, model: model)
+                    BrowserContextMenu.moveToCrateMenu(for: tracks, model: model)
+                    BrowserContextMenu.transferToDeviceMenu(for: tracks, model: model)
+                    BrowserContextMenu.showInFinderButton(for: tracks)
+                }
+                .browserStripe(row, theme)
+            }
+        }
+    }
+}
+
+/// A column header that is also the menu for what the column shows. Every
+/// facet is listed; choices that would break a rule — a facet already in
+/// another column, Track anywhere but last — are greyed, not hidden, so the
+/// list reads the same in every column.
+private struct ColumnFacetMenu: View {
+    @EnvironmentObject private var model: LibraryViewModel
+    let column: Int
+
+    var body: some View {
+        Menu {
+            ForEach(BrowserFacet.allCases, id: \.self) { facet in
+                Button {
+                    model.setFacet(facet, column: column)
+                } label: {
+                    if model.browserView.facets[safe: column] == facet {
+                        Label(facet.title, systemImage: "checkmark")
+                    } else {
+                        Text(facet.title)
+                    }
+                }
+                .disabled(!model.browserView.canReplace(column: column, with: facet))
+            }
+        } label: {
+            HStack(spacing: 4) {
+                // Set here, not inherited: a Menu's label on macOS ignores the
+                // font its row applies, and came out in 13pt system type next
+                // to the header's 8.5pt mono.
+                Text((model.browserView.facets[safe: column]?.title ?? "").uppercased())
+                    .font(CarbonFont.mono(8.5, weight: .semibold))
+                    .tracking(2.2)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 6, weight: .bold))
+            }
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .carbonTip("What this column shows")
     }
 }
 

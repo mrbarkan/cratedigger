@@ -11,6 +11,14 @@ enum OLEDView: String, CaseIterable, Codable, Sendable {
     case remoteSync
     case cdRip
     case devices
+    /// Summoned by ⌘F or by typing in the browser's search field, never chosen
+    /// from the DISPLAY cycle or the View menu: a search screen with nothing
+    /// typed is a screen that says READY at you.
+    case search
+    /// What you have been playing: most played record, artist and track for
+    /// the month, the year, or all time. Persisted like the other chosen
+    /// screens; only SEARCH is not.
+    case stats
 
     var label: String {
         switch self {
@@ -20,6 +28,8 @@ enum OLEDView: String, CaseIterable, Codable, Sendable {
         case .remoteSync: return "Sync"
         case .cdRip:      return "CD"
         case .devices:    return "Dev"
+        case .search:     return "Search"
+        case .stats:      return "Stats"
         }
     }
 }
@@ -90,6 +100,39 @@ enum LibrarySource: Hashable, Sendable {
     /// Radio / Streams. `nil` category == "All Streams"; otherwise filtered to
     /// one source category ("YT Live" / "YT Records").
     case radio(category: RadioCategory?)
+
+    /// The crates and the two views over them. These share one track store and
+    /// one search: the sidebar counts each crate's matches while you type, so
+    /// moving between them is navigating inside the results.
+    var isLocalLibrary: Bool {
+        switch self {
+        case .localAll, .localCrate, .prepCrate: return true
+        default: return false
+        }
+    }
+
+    /// Whether a live query survives the move. A disc, a playlist, a remote
+    /// library or a phone is a different library, where a query typed about
+    /// your crates means nothing.
+    func keepsSearch(movingTo destination: LibrarySource) -> Bool {
+        isLocalLibrary && destination.isLocalLibrary
+    }
+
+    /// Stable across launches, for anything remembered per source — the
+    /// browser view, today. Radio has no browser and never stores one.
+    var persistenceKey: String {
+        switch self {
+        case .localAll:                    return "all"
+        case .localCrate(let name):        return "crate:\(name)"
+        case .prepCrate:                   return "prep"
+        case .remote:                      return "remote"
+        case .playlist(let name):          return "playlist:\(name)"
+        case .cd(let path):                return "cd:\(path)"
+        case .device(let path):            return "device:\(path)"
+        case .offlineDevice(let profileID): return "offline:\(profileID.uuidString)"
+        case .radio:                       return "radio"
+        }
+    }
 }
 
 /// Which backend plays YouTube streams. Resolved from `PreferencesStore.streamEngine`
@@ -106,13 +149,185 @@ final class LibraryViewModel: ObservableObject {
 
     @Published private(set) var index: LibraryIndex = .empty {
         didSet {
+            // The search's folded text describes the old index. Dropped, not
+            // rebuilt: rebuilding costs a beat at library size and most index
+            // changes are not followed by a search.
+            searchHaystacks = nil
             recomputeSortedCollections()
             recomputePendingSyncMarks()
         }
     }
-    @Published var selectedArtistID: String?
-    @Published var selectedAlbumID: String?
-    @Published var selectedTrackID: UUID?
+
+    /// Pre-folded search text, built on the first keystroke of a search and
+    /// thrown away whenever the index changes. Without it a keystroke folds six
+    /// fields on every track — about 150 ms at fourteen thousand, which types
+    /// like treacle. See `LibraryIndex.searchHaystacks`.
+    ///
+    /// Covers the whole track store, not just the browsed source, because the
+    /// sidebar counts every crate's matches from the same folded text.
+    private var searchHaystacks: [UUID: String]?
+
+    /// How many tracks in each crate match the live query, `nil` when nothing
+    /// is typed. While a search is running the sidebar shows these instead of
+    /// the crate sizes, so the list of crates becomes a map of where the
+    /// results actually live.
+    @Published private(set) var crateMatchCounts: [String: Int]?
+
+    /// The same for All Records: matches across every crate, deduplicated.
+    @Published private(set) var allRecordsMatchCount: Int?
+
+    /// Every track the crates folder knows about, across all crates. The search
+    /// haystacks are built from this so a crate that isn't the browsed source
+    /// still counts its matches without folding its text again.
+    private func allStoredTracks() -> [LoadedTrack] {
+        currentTrackStore().allTracks
+    }
+    /// Selection, ordering and (from Phase 1) filtering, as one tested Core
+    /// value type. The properties below forward onto it so the ~190 call sites
+    /// that read `selectedTrackIDs` or `trackSortField` did not have to move.
+    /// The anchors and the three mutually-exclusive multi-selection sets are defined in `BrowserState` in Core.
+    @Published var browser = BrowserState() {
+        didSet {
+            // Sorts and the filter live here too, but their setters recompute
+            // themselves; this is only for the shape and the selection.
+            guard !isSettlingBrowser else { return }
+            if oldValue.view != browser.view {
+                settleBrowserColumns(from: 0)
+            } else if let changed = Self.firstChangedColumn(oldValue.selection, browser.selection) {
+                // A column's own content never depends on its own selection.
+                settleBrowserColumns(from: changed + 1)
+            }
+        }
+    }
+
+    /// What each column draws, cached — the cascade is a pass over the source
+    /// per column, which the spinning-disc animation must not re-run per frame.
+    @Published private(set) var browserColumns: [ColumnContent] = []
+
+    /// The tracks under the leaf's anchor when the view ends on an album, a
+    /// genre or the like rather than a Track column. Empty otherwise.
+    @Published private(set) var leafTracks: [LoadedTrack] = []
+
+    /// Where the browsed index files every track, plus the listening store's
+    /// ratings. Rebuilt with `browsedIndex`.
+    private(set) var facetContext = FacetContext(index: .empty)
+
+    private var isSettlingBrowser = false
+
+    /// The leftmost column whose selection differs, or nil for none.
+    private static func firstChangedColumn(_ old: BrowserSelection, _ new: BrowserSelection) -> Int? {
+        guard old != new else { return nil }
+        var changed = Int.max
+        for column in 0..<max(old.anchors.count, new.anchors.count) where old.anchor(column) != new.anchor(column) {
+            changed = column
+            break
+        }
+        if old.multiSelection != new.multiSelection {
+            changed = min(changed, old.multiSelection?.column ?? .max, new.multiSelection?.column ?? .max)
+        }
+        return changed == .max ? 0 : changed
+    }
+
+    /// Recompute the columns from `column` on and put every missing anchor to
+    /// the right on its first row.
+    ///
+    /// Clicks never prune the multi-selection (`pruningSet` false): ⌘A can
+    /// select albums outside the anchored artist on purpose, and they have to
+    /// survive the next arrow key. The index or the search changing under the
+    /// selection does prune it — a row you cannot see must not stay picked.
+    private func settleBrowserColumns(from column: Int, pruningSet: Bool = false) {
+        let (settled, columns) = BrowserCascade.reanchored(
+            browser.selection, view: browser.view, in: browsedIndex,
+            sorts: browser.sorts, context: facetContext,
+            from: column, reusing: browserColumns, pruningSet: pruningSet)
+        browserColumns = columns
+        if settled != browser.selection {
+            isSettlingBrowser = true
+            browser.selection = settled
+            isSettlingBrowser = false
+        }
+        leafTracks = browser.column(of: .track) == nil
+            ? BrowserCascade.selectedTracks(view: browser.view, in: browsedIndex,
+                                            selection: browser.selection, context: facetContext)
+            : []
+    }
+
+    /// Every anchor back on the first row of its column — after an index was
+    /// rebuilt from scratch and the old anchors mean nothing.
+    func resetBrowserSelection() {
+        browser.selection = BrowserSelection(anchors: Array(repeating: nil, count: browser.view.facets.count))
+    }
+
+    /// The outside-in click — "Go to Current Song", the gallery, a version
+    /// row's context menu: every column's anchor comes from the track.
+    func revealTrack(_ loaded: LoadedTrack) {
+        browser.reveal(track: loaded, in: browsedIndex, context: facetContext)
+        revealTick &+= 1
+    }
+
+    func revealAlbum(_ album: Album) {
+        guard let first = album.tracks.first ?? album.versions?.first?.tracks.first else { return }
+        revealTrack(first)
+    }
+
+    /// The header's 1 / 2 / 3 key. Grows by the view's own preference order,
+    /// shrinks from the right.
+    func setColumnCount(_ count: Int) {
+        var view = browserView
+        while view.columnCount < count, view.adding() != view { view = view.adding() }
+        while view.columnCount > count, view.droppingLast() != view { view = view.droppingLast() }
+        browserView = view
+    }
+
+    /// Swap what one column shows, keeping the others.
+    func setFacet(_ facet: BrowserFacet, column: Int) {
+        browserView = browserView.replacing(column: column, with: facet)
+    }
+
+    /// The tracks under one row of a value column — what it drags, what its
+    /// menu queues, what a double-click plays. The anchors to its left narrow
+    /// it, as they narrow the column itself.
+    func tracks(under column: Int, id: String) -> [LoadedTrack] {
+        var anchors = browser.selection.anchors
+        guard anchors.indices.contains(column) else { return [] }
+        anchors[column] = id
+        for right in anchors.indices where right > column { anchors[right] = nil }
+        return BrowserCascade.selectedTracks(view: browserView, in: browsedIndex,
+                                             selection: BrowserSelection(anchors: anchors),
+                                             context: facetContext)
+    }
+
+    /// Play whatever the browser is showing from the top — a double-click on
+    /// a row that is not a track: a genre, a decade, an album at the leaf.
+    func playBrowsingTracks() {
+        guard let first = browsingTracks.first else { return }
+        playTrack(id: first.track.id)
+    }
+
+    var selectedArtistID: String? {
+        get { browser.selectedArtistID }
+        set { browser.selectedArtistID = newValue }
+    }
+    var selectedAlbumID: String? {
+        get { browser.selectedAlbumID }
+        set { browser.selectedAlbumID = newValue }
+    }
+    var selectedTrackID: UUID? {
+        get { browser.selectedTrackID }
+        set { browser.selectedTrackID = newValue }
+    }
+    var selectedArtistIDs: Set<String> {
+        get { browser.selectedArtistIDs }
+        set { browser.selectedArtistIDs = newValue }
+    }
+    var selectedAlbumIDs: Set<String> {
+        get { browser.selectedAlbumIDs }
+        set { browser.selectedAlbumIDs = newValue }
+    }
+    var selectedTrackIDs: Set<UUID> {
+        get { browser.selectedTrackIDs }
+        set { browser.selectedTrackIDs = newValue }
+    }
 
     /// Bumped whenever something asks the browser to re-centre its selection.
     /// The columns scroll on this as well as on the selected id: "Go to Current
@@ -120,16 +335,12 @@ final class LibraryViewModel: ObservableObject {
     /// id, fires no `onChange`, and used to look like a dead button.
     @Published private(set) var revealTick = 0
 
-    /// Multi-selection sets for batch actions (⌘/⇧-click, ⌘A). The three are kept
-    /// mutually exclusive — you're selecting artists *or* albums *or* tracks — while
-    /// `selectedArtistID` / `selectedAlbumID` / `selectedTrackID` stay the "anchor"
-    /// (last-clicked) that drives the Inspector and the ⇧-click range origin.
-    @Published var selectedArtistIDs: Set<String> = []
-    @Published var selectedAlbumIDs: Set<String> = []
-    @Published var selectedTrackIDs: Set<UUID> = []
-
     @Published var oledView: OLEDView = .nowPlaying {
         didSet {
+            // SEARCH is never restored: it belongs to a query that died with
+            // the session, so relaunching into it would open the app on an
+            // empty screen asking about nothing.
+            guard oledView != .search else { return }
             prefs.savedOLEDView = oledView.rawValue
         }
     }
@@ -369,10 +580,15 @@ final class LibraryViewModel: ObservableObject {
     /// Transient confirmation shown on the OLED glass (tag saves etc.) instead
     /// of a modal alert; auto-clears after a couple of seconds.
     @Published var oledNotice: String?
+    /// Whether the current notice pulses for attention (see `showOLEDNotice`).
+    @Published var oledNoticeBlinks = false
     private var oledNoticeClearTask: Task<Void, Never>?
     // Not private(set): transient UI state — LibraryViewModel+BatchArtwork
     // marks/clears albums from a different file while a fetch is in flight.
     @Published var albumsFetchingArtwork: Set<String> = []
+    /// A running artwork fetch, so the ART tab can show what it is up to and
+    /// the user can walk away from it.
+    @Published var artworkFetch: ArtworkFetchProgress?
 
     /// Global activity registry driving the header status LED. Anything
     /// long-running registers a label; the LED lights while any are active
@@ -447,9 +663,22 @@ final class LibraryViewModel: ObservableObject {
         }
     }
 
-    /// EQ preset label (OLED readout + view-switcher EQ button). Cycling one now
-    /// applies its real gain curve to the working equalizer.
-    @Published var eqPreset: EQPreset = .flat
+    /// Where the EQ currently sits: a built-in preset or a user slot. The
+    /// header key, the editor's highlight and the OLED readout all read this.
+    @Published var eqSlot: EQSlot = .preset(.flat)
+
+    /// The built-in preset half of `eqSlot`, forwarded so the older call sites
+    /// (and the EQ screen's shape) keep working unchanged.
+    var eqPreset: EQPreset {
+        get { if case .preset(let preset) = eqSlot { return preset }; return .flat }
+        set { eqSlot = .preset(newValue) }
+    }
+
+    /// Slot ids the header EQ key steps through. Editing it writes straight
+    /// through to preferences — there is no separate save.
+    @Published var eqCycleIDs: [String] = PreferencesStore.shared.eqCycleSelection {
+        didSet { prefs.eqCycleSelection = eqCycleIDs }
+    }
 
     /// Working equalizer state — 12 per-band gains in dB + master enable. Drives
     /// the footer EQ panel display *and* real audio (via the playback tap).
@@ -457,17 +686,81 @@ final class LibraryViewModel: ObservableObject {
     @Published var eqGains: [Double] = Array(repeating: 0, count: EqualizerProcessor.bandCount) {
         didSet { eqDidChange() }
     }
+    /// Albums the artwork audit flagged, newest scan wins. Display only — the
+    /// repair pass re-measures, so this can go stale without doing harm.
+    @Published var artworkAudit: [ArtworkAuditRow] = []
+    @Published var isAuditingArtwork = false
+    /// The albums behind `artworkAudit`, kept so "Fix All" doesn't have to look
+    /// them up again (a version-group member isn't addressable by id).
+    var artworkAuditAlbums: [Album] = []
+
     /// Presents the graphic-EQ editor sheet (opened by clicking the footer EQ panel).
     @Published var showingEQEditor = false
 
-    /// The footer EQ button: cycle to the next preset, apply its curve, and turn
-    /// the EQ on so it's audible (the flat preset is transparent anyway).
-    func cycleEQPreset() {
-        let all = EQPreset.allCases
-        let idx = all.firstIndex(of: eqPreset) ?? 0
-        eqPreset = all[(idx + 1) % all.count]
-        eqGains = eqPreset.gainCurve()
+    /// The slots the header EQ key actually steps through: the user's chosen
+    /// set, minus any user slot that was never saved into. An empty selection
+    /// falls back to every built-in preset rather than leaving a dead key.
+    var eqCycleSlots: [EQSlot] {
+        let chosen = eqCycleIDs.compactMap(EQSlot.init(id:)).filter(isEQSlotUsable)
+        return chosen.isEmpty ? EQPreset.allCases.map(EQSlot.preset) : chosen
+    }
+
+    /// A user slot with nothing saved in it has no curve to apply.
+    func isEQSlotUsable(_ slot: EQSlot) -> Bool {
+        guard case .user(let index) = slot else { return true }
+        let slots = prefs.customEQPresets
+        return index < slots.count && !slots[index].isEmpty
+    }
+
+    func isEQSlotInCycle(_ slot: EQSlot) -> Bool {
+        eqCycleIDs.isEmpty ? !slot.isUser : eqCycleIDs.contains(slot.id)
+    }
+
+    /// Toggling the first lamp materialises the implicit "all built-ins"
+    /// default into a real list, so the click removes one entry instead of
+    /// silently starting from nothing.
+    func toggleEQCycle(_ slot: EQSlot) {
+        var ids = eqCycleIDs.isEmpty ? EQPreset.allCases.map(\.rawValue) : eqCycleIDs
+        if let index = ids.firstIndex(of: slot.id) {
+            ids.remove(at: index)
+        } else {
+            ids.append(slot.id)
+        }
+        // Keep display order so the header lamps read left-to-right.
+        eqCycleIDs = EQSlot.all.map(\.id).filter(ids.contains)
+    }
+
+    /// The curve a slot stands for, or nil for an empty user slot.
+    func eqCurve(for slot: EQSlot) -> [Double]? {
+        switch slot {
+        case .preset(let preset): return preset.gainCurve()
+        case .user(let index):
+            let slots = prefs.customEQPresets
+            guard index < slots.count, !slots[index].isEmpty else { return nil }
+            return slots[index].gains
+        }
+    }
+
+    /// Load a slot's curve and switch the EQ on so it's audible.
+    func applyEQSlot(_ slot: EQSlot) {
+        switch slot {
+        case .preset(let preset):
+            eqSlot = slot
+            eqGains = preset.gainCurve()
+        case .user(let index):
+            let slots = prefs.customEQPresets
+            guard index < slots.count, !slots[index].isEmpty else { return }
+            eqSlot = slot
+            eqGains = slots[index].gains
+        }
         eqEnabled = true
+    }
+
+    /// The header EQ button: step to the next slot in the cycle.
+    func cycleEQPreset() {
+        let cycle = eqCycleSlots
+        let index = cycle.firstIndex(of: eqSlot) ?? -1
+        applyEQSlot(cycle[(index + 1) % cycle.count])
     }
 
     private func eqDidChange() {
@@ -477,9 +770,7 @@ final class LibraryViewModel: ObservableObject {
     }
 
     private func setupEqualizerObserver() {
-        NotificationCenter.default.addObserver(
-            forName: NSNotification.Name("CrateDiggerEQChanged"), object: nil, queue: .main
-        ) { [weak self] _ in
+        observe("CrateDiggerEQChanged") { [weak self] _ in
             Task { @MainActor in self?.reloadEqualizerFromPrefs() }
         }
     }
@@ -494,42 +785,92 @@ final class LibraryViewModel: ObservableObject {
     }
 
     /// How the Track column orders the currently shown album.
-    @Published var trackSortField: TrackSortField = .trackNumber {
-        didSet { prefs.savedTrackSortField = trackSortField.rawValue; recomputeSortedCollections() }
+    var trackSortField: TrackSortField {
+        get { browser.trackSort.field }
+        set {
+            browser.trackSort.field = newValue
+            prefs.savedTrackSortField = newValue.rawValue
+            recomputeSortedCollections()
+        }
     }
-    @Published var trackSortAscending: Bool = true {
-        didSet { prefs.savedTrackSortAscending = trackSortAscending; recomputeSortedCollections() }
+    var trackSortAscending: Bool {
+        get { browser.trackSort.ascending }
+        set {
+            browser.trackSort.ascending = newValue
+            prefs.savedTrackSortAscending = newValue
+            recomputeSortedCollections()
+        }
     }
-    @Published var artistSortField: ArtistSortField = .name {
-        didSet { prefs.savedArtistSortField = artistSortField.rawValue; recomputeSortedCollections() }
+    var artistSortField: ArtistSortField {
+        get { browser.artistSort.field }
+        set {
+            browser.artistSort.field = newValue
+            prefs.savedArtistSortField = newValue.rawValue
+            recomputeSortedCollections()
+        }
     }
-    @Published var artistSortAscending: Bool = true {
-        didSet { prefs.savedArtistSortAscending = artistSortAscending; recomputeSortedCollections() }
+    var valueSortField: ValueSortField {
+        get { browser.valueSort.field }
+        set {
+            guard newValue != browser.valueSort.field else { return }
+            browser.valueSort.field = newValue
+            recomputeSortedCollections()
+        }
     }
-    @Published var albumSortField: AlbumSortField = .year {
-        didSet { prefs.savedAlbumSortField = albumSortField.rawValue; recomputeSortedCollections() }
+    var valueSortAscending: Bool {
+        get { browser.valueSort.ascending }
+        set {
+            guard newValue != browser.valueSort.ascending else { return }
+            browser.valueSort.ascending = newValue
+            recomputeSortedCollections()
+        }
     }
-    @Published var albumSortAscending: Bool = true {
-        didSet { prefs.savedAlbumSortAscending = albumSortAscending; recomputeSortedCollections() }
+    var artistSortAscending: Bool {
+        get { browser.artistSort.ascending }
+        set {
+            browser.artistSort.ascending = newValue
+            prefs.savedArtistSortAscending = newValue
+            recomputeSortedCollections()
+        }
+    }
+    var albumSortField: AlbumSortField {
+        get { browser.albumSort.field }
+        set {
+            browser.albumSort.field = newValue
+            prefs.savedAlbumSortField = newValue.rawValue
+            recomputeSortedCollections()
+        }
+    }
+    var albumSortAscending: Bool {
+        get { browser.albumSort.ascending }
+        set {
+            browser.albumSort.ascending = newValue
+            prefs.savedAlbumSortAscending = newValue
+            recomputeSortedCollections()
+        }
     }
     /// Whether the per-column sort menus are shown in the browser headers.
     @Published var showSortControls: Bool = true {
         didSet { prefs.savedShowSortControls = showSortControls }
     }
 
-    /// How the browser arranges its columns (3-pane / Album·Track / flat Track).
-    ///
-    /// Remembered per source *kind*, not per source: a playlist is an ordered
-    /// list and wants the flat table, the library wants its panes, and neither
-    /// choice should stamp on the other. Anything finer than that is a settings
-    /// screen nobody visits.
-    @Published var browserLayout: BrowserLayout = .full {
-        didSet {
-            if isPlaylistSource {
-                prefs.savedPlaylistBrowserLayout = browserLayout.rawValue
-            } else {
-                prefs.savedBrowserLayout = browserLayout.rawValue
-            }
+    /// Whether the browser's search field is on screen. Hiding it clears the
+    /// query with it — a filter you can't see the cause of is a browser that
+    /// looks broken. See `toggleSearchField`.
+    @Published var showSearchField: Bool = true {
+        didSet { prefs.savedShowSearchField = showSearchField }
+    }
+
+    /// What the browser's columns show, per source. Setting it reshapes the
+    /// selection and remembers the view for the source you are in.
+    var browserView: BrowserView {
+        get { browser.view }
+        set {
+            guard newValue != browser.view, newValue.isValid else { return }
+            browser.view = newValue
+            var saved = prefs.savedBrowserViews
+            saved[currentSource.persistenceKey] = newValue
+            prefs.savedBrowserViews = saved
         }
     }
 
@@ -538,18 +879,29 @@ final class LibraryViewModel: ObservableObject {
         return false
     }
 
-    /// The layout a source of this kind should open with.
-    private func rememberedLayout(for source: LibrarySource) -> BrowserLayout {
+    /// The view a source opens in: its own if it has one, else the legacy
+    /// layout key converted, else the classic tree — a playlist, the table.
+    /// The fallback is the whole migration: nobody's saved layout changes
+    /// until they change a crate.
+    private func rememberedView(for source: LibrarySource) -> BrowserView {
+        if let saved = prefs.savedBrowserViews[source.persistenceKey], saved.isValid { return saved }
         if case .playlist = source {
-            // Playlists default to the table even on a fresh install.
-            return prefs.savedPlaylistBrowserLayout.flatMap(BrowserLayout.init(rawValue:)) ?? .track
+            return prefs.savedPlaylistBrowserLayout.flatMap(BrowserLayout.init(rawValue:))
+                .map(BrowserView.init(legacy:)) ?? .table
         }
-        return prefs.savedBrowserLayout.flatMap(BrowserLayout.init(rawValue:)) ?? .full
+        return prefs.savedBrowserLayout.flatMap(BrowserLayout.init(rawValue:))
+            .map(BrowserView.init(legacy:)) ?? .classic
     }
 
     /// The playlist's tracks in the order the M3U lists them — the order *is* the
     /// content, and `buildIndex` groups by artist/album, which loses it.
-    @Published private(set) var playlistTracks: [LoadedTrack] = []
+    @Published private(set) var playlistTracks: [LoadedTrack] = [] {
+        didSet { recomputeBrowsedPlaylistTracks() }
+    }
+
+    /// `playlistTracks` with the search applied. Equal to it while nothing is
+    /// typed. See `recomputeBrowsedPlaylistTracks()`.
+    @Published private(set) var browsedPlaylistTracks: [LoadedTrack] = []
 
     /// True once a column header has been used to sort a playlist. Sorting is a
     /// view of the playlist, not a change to it, so reordering is off until you
@@ -558,14 +910,17 @@ final class LibraryViewModel: ObservableObject {
 
     /// What the flat Track table lists.
     var flatTracks: [LoadedTrack] {
-        (isPlaylistSource && !playlistSorted) ? playlistTracks : flatTracksSorted
+        (isPlaylistSource && !playlistSorted) ? browsedPlaylistTracks : flatTracksSorted
     }
 
-    /// The list the browser is actually showing: the flat table for a playlist
-    /// or the Track layout, the album-scoped list for the three-pane browser.
-    /// Playback starts from here, so what you press is what you get.
+    /// The list the browser is actually showing: the playlist in its own order
+    /// when it is being shown that way, else whatever the Track column holds,
+    /// else the leaf selection's tracks. Playback starts from here, so what
+    /// you press is what you get — and double-clicking an album in an
+    /// `Artist · Album` view plays the album.
     var browsingTracks: [LoadedTrack] {
-        (isPlaylistSource || browserLayout == .track) ? flatTracks : visibleTracks
+        if isPlaylistSource && browserView == .table { return flatTracks }
+        return visibleTracks
     }
 
     /// Columns shown in the flat Track browser, in display order.
@@ -584,7 +939,11 @@ final class LibraryViewModel: ObservableObject {
 
     /// Which browser column the keyboard arrows act on: ↑/↓ move the selection in
     /// it, ←/→ switch columns. Set when a row is clicked; see `LibraryViewModel+ArrowNav`.
-    @Published var focusedColumn: BrowserColumn = .track
+    /// Which column the arrow keys act on, as an index into `browserView`.
+    var focusedColumn: Int {
+        get { browser.focusedColumn }
+        set { browser.focusedColumn = newValue }
+    }
 
     // MARK: - New Sources & Playlists State
     @Published var currentSource: LibrarySource = .localAll
@@ -608,6 +967,33 @@ final class LibraryViewModel: ObservableObject {
 
     /// Decode every crate once and cache its track count + the deduplicated
     /// all-records total. Call this on crate mutations only.
+    /// Count each crate's matches for the sidebar. Cheap next to the folding it
+    /// reuses: the crates' tracks are already resolved and cached, and every
+    /// one of them has its folded text in `searchHaystacks` already.
+    private func recomputeCrateMatchCounts() {
+        let filter = browser.filter
+        guard filter.isActive else {
+            crateMatchCounts = nil
+            allRecordsMatchCount = nil
+            return
+        }
+        var counts: [String: Int] = [:]
+        var matchedPaths: Set<String> = []
+        for name in availableCrates {
+            var hits = 0
+            for loaded in loadCrateTracks(name: name)
+            where filter.matches(loaded, haystack: searchHaystacks?[loaded.track.id]) {
+                hits += 1
+                // Deduplicated the way All Records itself is: one record in
+                // three crates is one record, not three.
+                matchedPaths.insert(loaded.track.fileURL.standardizedFileURL.path)
+            }
+            counts[name] = hits
+        }
+        crateMatchCounts = counts
+        allRecordsMatchCount = matchedPaths.count
+    }
+
     func refreshCrateCounts() {
         var counts: [String: Int] = [:]
         var all: [LoadedTrack] = []
@@ -663,8 +1049,19 @@ final class LibraryViewModel: ObservableObject {
     @Published var pendingMatchBatches: [AlbumMatchBatch] = []
     @Published var matchQueueProgress: MatchQueueProgress?
     @Published var currentMatchAlbumLabel: String?
+    /// The tracks behind the batch under review, so DEEP SCAN has something to
+    /// fingerprint when the user says the match looks wrong.
+    var currentMatchTracks: [LoadedTrack] = []
+    /// Bumped whenever `metadataMatches` is replaced in place — DEEP SCAN
+    /// merging its findings into the open sheet. The sheet watches it to reset
+    /// its candidate pager and checkboxes; the queue position can't do that job
+    /// because a deep scan doesn't move the queue.
+    @Published var matchRevision = 0
     /// Albums that came back with no online match — reported once at the end.
     var matchQueueNoMatchLabels: [String] = []
+    /// The same albums kept whole, so the "didn't match" alert can offer to
+    /// listen to them instead of only naming them.
+    var matchQueueNoMatchGroups: [[LoadedTrack]] = []
 
     // MARK: - Radio / Streams state
     @Published var streams: [StreamSource] = []
@@ -708,10 +1105,34 @@ final class LibraryViewModel: ObservableObject {
     @Published var recordDividerIsScanning: Bool = false
     /// Hint shown when a scan finds 0–1 breaks (suggest raising sensitivity).
     @Published var recordDividerHint: String?
-    /// A marker start to seek to once a just-started divided file is playing
-    /// (clicking a sub-track in the browser before its file is loaded).
-    var pendingRecordSeekSeconds: Double?
-    var pendingRecordSeekTrackID: UUID?
+    /// A position to seek to once the target file is loaded and its duration
+    /// is known. Two writers: Record Divider (clicking a sub-track before its
+    /// file is playing) and resume at launch (a paused load of the last queue).
+    /// Consumed by `applyPendingSeekIfNeeded()` in `+Resume`.
+    var pendingSeekSeconds: Double?
+    var pendingSeekTrackID: UUID?
+
+    /// The last snapshot bytes written, so a pause/unpause of the same track
+    /// does not touch UserDefaults twice. See `savePlaybackSnapshot()`.
+    var lastSavedPlaybackSnapshot: Data?
+
+    // MARK: - Stats screen (behaviour in LibraryViewModel+Stats)
+
+    /// The period the STATS screen shows. Persisted; the setter marks the
+    /// summary stale so the next look recomputes.
+    @Published var statsWindow: ListeningWindow = .month {
+        didSet {
+            prefs.savedStatsWindow = statsWindow.rawValue
+            markListeningSummaryStale()
+        }
+    }
+    /// The cached summary the STATS pane draws. Written only by
+    /// `refreshListeningSummaryIfNeeded()`; nil until the screen is first shown.
+    @Published var listeningSummary: ListeningSummary?
+    /// Set on every counted play, window change and store reset; cleared by
+    /// the recompute. The pass never runs unless this is true and the STATS
+    /// screen is the one on the glass.
+    var listeningSummaryIsStale = true
 
     var isRadioMode: Bool {
         if case .radio = currentSource { return true }
@@ -819,10 +1240,38 @@ final class LibraryViewModel: ObservableObject {
 
     // Last.fm tracking
     private var lastScrobbledTrackID: UUID?
+    /// The track playback is currently settled on, as the listening store sees
+    /// it: its store key plus its own duration.
+    ///
+    /// Held rather than recomputed from `nowPlayingTrack`, which is
+    /// `playbackQueue[playbackCurrentIndex]` and is NOT stable across a queue
+    /// replacement: `playTrack`/`startQueue` assign the new `playbackQueue`
+    /// synchronously, while the index-change callback that updates
+    /// `playbackCurrentIndex` runs a hop later, so in between `nowPlayingTrack`
+    /// resolves to `newQueue[oldIndex]` — an unrelated track. Written in the
+    /// index-change callback once the index has been updated. The duration
+    /// travels with the key so the skip rule cannot be applied against the
+    /// *incoming* track's length, which `playbackDuration` may already hold.
+    /// Not `private`: `LibraryViewModel+Listening.swift` is the only reader.
+    var listeningTrack: (key: String, duration: Double)?
+
+    /// The track whose play has already been counted, so a long track cannot
+    /// count twice. Kept separate from `lastScrobbledTrackID` because play
+    /// counts must work with no Last.fm account. Keyed the same way as
+    /// `listeningTrack` so the play guard and the skip guard compare the same
+    /// identity.
+    var countedPlayKey: String?
     private var playbackStartTimestamp: Int = 0
+    /// The track Last.fm was last told is playing. Cleared on pause so a resume
+    /// re-asserts it, and checked on both paths that can start a track so a
+    /// gapless advance reports exactly once and a normal load does not report
+    /// twice.
+    private var lastNowPlayingTrackID: UUID?
     /// Actual listened time, accumulated from time-change deltas — the playhead
     /// position alone would scrobble instantly after a seek to 60%.
-    private var listenedSeconds: Double = 0
+    /// Not `private`: `LibraryViewModel+Listening.swift` reads it to decide
+    /// whether the outgoing track counts as a skip.
+    var listenedSeconds: Double = 0
     private var lastScrobbleTickTime: Double?
 
     // MARK: - Private
@@ -863,6 +1312,7 @@ final class LibraryViewModel: ObservableObject {
         prefs: PreferencesStore = .shared
     ) {
         self.playback = playback
+        self.playback.gaplessEnabled = prefs.gaplessPlaybackEnabled
         self.artworkService = artworkService
         self.remoteArtworkService = remoteArtworkService
         self.matchService = matchService
@@ -906,6 +1356,9 @@ final class LibraryViewModel: ObservableObject {
         if let saved = prefs.savedOLEDView, let view = OLEDView(rawValue: saved) {
             oledView = view
         }
+        if let saved = prefs.savedStatsWindow, let window = ListeningWindow(rawValue: saved) {
+            statsWindow = window
+        }
         shuffleEnabled = prefs.savedShuffleEnabled
         if let saved = prefs.savedRepeatMode, let mode = RepeatMode(rawValue: saved) {
             repeatMode = mode
@@ -922,22 +1375,26 @@ final class LibraryViewModel: ObservableObject {
         playback.dsdOutputMode = dsdOutputMode
         applyVolumeToEngines()
         cdAnimationSpeed = prefs.cdAnimationSpeed
+        // Direct to `browser`, not through the forwarding setters: those call
+        // recomputeSortedCollections(), and during init there is no index to
+        // recompute against. The stored properties this replaced had didSet
+        // observers, which do not fire in init either, so this preserves the
+        // existing behaviour exactly.
         if let savedField = prefs.savedTrackSortField, let field = TrackSortField(rawValue: savedField) {
-            trackSortField = field
+            browser.trackSort.field = field
         }
-        trackSortAscending = prefs.savedTrackSortAscending
+        browser.trackSort.ascending = prefs.savedTrackSortAscending
         if let savedField = prefs.savedArtistSortField, let field = ArtistSortField(rawValue: savedField) {
-            artistSortField = field
+            browser.artistSort.field = field
         }
-        artistSortAscending = prefs.savedArtistSortAscending
+        browser.artistSort.ascending = prefs.savedArtistSortAscending
         if let savedField = prefs.savedAlbumSortField, let field = AlbumSortField(rawValue: savedField) {
-            albumSortField = field
+            browser.albumSort.field = field
         }
-        albumSortAscending = prefs.savedAlbumSortAscending
+        browser.albumSort.ascending = prefs.savedAlbumSortAscending
         showSortControls = prefs.savedShowSortControls
-        if let savedLayout = prefs.savedBrowserLayout, let layout = BrowserLayout(rawValue: savedLayout) {
-            browserLayout = layout
-        }
+        showSearchField = prefs.savedShowSearchField
+        browser.view = rememberedView(for: currentSource)
         scrubLockEnabled = prefs.savedScrubLockEnabled
         if let raw = prefs.savedMiniPlayerArtMode, let mode = MiniPlayerArtMode(rawValue: raw) {
             miniPlayerArtMode = mode
@@ -981,6 +1438,7 @@ final class LibraryViewModel: ObservableObject {
         }
 
         setupAudioDeviceObserver()
+        setupGaplessObserver()
         setupCDSpeedObserver()
         setupKeyboardShortcutsMonitor()
         setupLibraryOperationsObservers()
@@ -991,24 +1449,41 @@ final class LibraryViewModel: ObservableObject {
         refreshAvailableCrates()
         streams = streamStore.all()
         selectSource(.localAll)
+        restorePlaybackSnapshot()
         recomputeOfflineVolumes()
         recomputeMissingFiles()
         fetchMissingMetadata()
+    }
+
+    /// Tokens for the block-based notification observers below. The observer
+    /// NotificationCenter registers for those is the token the call returns,
+    /// not `self`, so `removeObserver(self)` never removed them and every one
+    /// stayed registered for the life of the process. Harmless while this is a
+    /// single long-lived object, and a zombie the day it stops being one.
+    private var notificationObservers: [NSObjectProtocol] = []
+
+    /// Observe a cross-cutting app notification, keeping the token so `deinit`
+    /// can actually drop it. Use this rather than `NotificationCenter` directly.
+    private func observe(_ name: String, using block: @escaping (Notification) -> Void) {
+        notificationObservers.append(
+            NotificationCenter.default.addObserver(
+                forName: NSNotification.Name(name), object: nil, queue: .main, using: block
+            )
+        )
     }
 
     deinit {
         if let monitor = localEventMonitor {
             NSEvent.removeMonitor(monitor)
         }
+        for observer in notificationObservers {
+            NotificationCenter.default.removeObserver(observer)
+        }
         NotificationCenter.default.removeObserver(self)
     }
 
     private func setupAudioDeviceObserver() {
-        NotificationCenter.default.addObserver(
-            forName: NSNotification.Name("CrateDiggerAudioDeviceChanged"),
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
+        observe("CrateDiggerAudioDeviceChanged") { [weak self] notification in
             let uid = notification.object as? String
             Task { @MainActor [weak self] in
                 self?.playback.setOutputDeviceUID(uid)
@@ -1016,12 +1491,17 @@ final class LibraryViewModel: ObservableObject {
         }
     }
 
+    private func setupGaplessObserver() {
+        observe("CrateDiggerGaplessChanged") { [weak self] notification in
+            let enabled = notification.object as? Bool ?? true
+            Task { @MainActor [weak self] in
+                self?.playback.gaplessEnabled = enabled
+            }
+        }
+    }
+
     private func setupCDSpeedObserver() {
-        NotificationCenter.default.addObserver(
-            forName: NSNotification.Name("CrateDiggerCDSpeedChanged"),
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
+        observe("CrateDiggerCDSpeedChanged") { [weak self] notification in
             if let speed = notification.object as? CDAnimationSpeed {
                 Task { @MainActor [weak self] in
                     self?.cdAnimationSpeed = speed
@@ -1031,41 +1511,25 @@ final class LibraryViewModel: ObservableObject {
     }
 
     private func setupLibraryOperationsObservers() {
-        NotificationCenter.default.addObserver(
-            forName: NSNotification.Name("CrateDiggerMoveLibrary"),
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
+        observe("CrateDiggerMoveLibrary") { [weak self] _ in
             Task { @MainActor in
                 self?.moveLibrary()
             }
         }
         
-        NotificationCenter.default.addObserver(
-            forName: NSNotification.Name("CrateDiggerConsolidateLibrary"),
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
+        observe("CrateDiggerConsolidateLibrary") { [weak self] _ in
             Task { @MainActor in
                 self?.consolidateLibrary()
             }
         }
 
-        NotificationCenter.default.addObserver(
-            forName: NSNotification.Name("CrateDiggerMoveIndexFiles"),
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
+        observe("CrateDiggerMoveIndexFiles") { [weak self] _ in
             Task { @MainActor in
                 self?.moveIndexFiles()
             }
         }
 
-        NotificationCenter.default.addObserver(
-            forName: NSNotification.Name("CrateDiggerCratesFolderChanged"),
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
+        observe("CrateDiggerCratesFolderChanged") { [weak self] _ in
             Task { @MainActor in
                 self?.refreshAvailableCrates()
                 self?.selectSource(self?.currentSource ?? .localAll)
@@ -1149,35 +1613,85 @@ final class LibraryViewModel: ObservableObject {
 
     // MARK: - Selection helpers
 
+    // Both resolve against `browsedIndex`, so drill-down follows the search and
+    // the `?? first` fallbacks land on a row that is actually on screen. In a
+    // view with no Artist (or Album) column they derive from the anchors the
+    // view does have, so the inspector and the condensed browser keep
+    // describing what is selected whatever the columns are.
     var selectedArtist: Artist? {
-        guard let id = selectedArtistID else { return index.artists.first }
-        return index.artist(id: id) ?? index.artists.first
+        if let id = selectedArtistID, let artist = browsedIndex.artist(id: id) { return artist }
+        if let id = derivedArtistID, let artist = browsedIndex.artist(id: id) { return artist }
+        return browsedIndex.artists.first
+    }
+
+    private var derivedArtistID: String? {
+        if let id = selectedAlbumID, let album = browsedIndex.albumOrVersion(id: id) { return album.artistID }
+        if let id = selectedTrackID { return facetContext.artistID(of: id) }
+        return leafTracks.first.flatMap { facetContext.artistID(of: $0.track.id) }
     }
 
     var selectedAlbum: Album? {
-        if let id = selectedAlbumID, let found = index.albumOrVersion(id: id) { return found }
+        if let id = selectedAlbumID, let found = browsedIndex.albumOrVersion(id: id) { return found }
+        let trackID = selectedTrackID ?? leafTracks.first?.track.id
+        if let trackID, let id = facetContext.albumID(of: trackID), let found = browsedIndex.album(id: id) { return found }
         return selectedArtist?.albums.first
     }
+
+    /// Bumped by ⌘F. The search field watches it and takes focus — the same
+    /// tick trick `revealTick` uses, because "focus the field" has to fire
+    /// again even when nothing else about the field changed.
+    @Published private(set) var searchFocusTick = 0
+
+
+    /// Bumping it is `requestSearchFocus`'s job, in `+Search`.
+    func bumpSearchFocusTick() { searchFocusTick &+= 1 }
+
+    /// Where the user was before widening the search to All Records, so
+    /// narrowing puts them back. See `setSearchScope`.
+    var sourceBeforeSearch: LibrarySource?
+
+    /// The screen the display was on when the search took it over.
+    var oledViewBeforeSearch: OLEDView?
+
+    /// What the browser is showing: `index` with the search applied. Equal to
+    /// `index` (by identity, no copy) while nothing is typed.
+    ///
+    /// The truth stays in `index`. Conversion, queueing, relinking, batch
+    /// artwork and the sidebar counts all keep reading that, so a live search
+    /// narrows what you can see and nothing else. Only the browser's own lists,
+    /// its anchors and its select-alls read this.
+    @Published private(set) var browsedIndex: LibraryIndex = .empty
 
     /// All artists, sorted by the artist-sort preference. Cached — recomputed
     /// only when the index or artist-sort preference changes, so the 60fps disc
     /// animation re-reads a stored array instead of re-sorting every frame.
     @Published private(set) var visibleArtists: [Artist] = []
 
+    /// The Album column's content when the view has one, else the anchored
+    /// artist's albums — what the condensed browser and the inspector read.
     var visibleAlbums: [Album] {
+        if let column = browser.column(of: .album), case .albums(let albums)? = browserColumns[safe: column] {
+            return albums
+        }
         let base = selectedArtist?.albums ?? []
         return LibraryIndex.sortedAlbums(base, by: albumSortField, ascending: albumSortAscending)
     }
 
+    /// The Track column's content when the view has one, else the tracks
+    /// under the leaf's anchor: an album's, a genre's, a decade's.
     var visibleTracks: [LoadedTrack] {
-        let base = selectedAlbum?.tracks ?? []
-        return LibraryIndex.sortedTracks(base, by: trackSortField, ascending: trackSortAscending)
+        if let column = browser.column(of: .track), case .tracks(let tracks)? = browserColumns[safe: column] {
+            return tracks
+        }
+        return LibraryIndex.sortedTracks(leafTracks, by: trackSortField, ascending: trackSortAscending)
     }
 
     /// Every album across all artists, sorted by the album-sort preference.
     /// Drives the "Album · Track" browser layout. Cached — see
     /// recomputeSortedCollections().
     @Published private(set) var allAlbumsSorted: [Album] = []
+    /// `allAlbumsSorted` cut under the gallery's dividers; rebuilt with it.
+    @Published private(set) var gallerySections: [GallerySection] = []
 
     /// Every track in the source, sorted by the track-sort preference. Drives
     /// the flat "Track" browser layout. Cached — see recomputeSortedCollections().
@@ -1187,10 +1701,32 @@ final class LibraryViewModel: ObservableObject {
     /// runs only on index or sort-preference changes, never during a render
     /// pass. At 14k tracks the locale-aware sort is far too expensive to repeat
     /// per frame, which the spinning-disc animation would otherwise trigger.
-    private func recomputeSortedCollections() {
-        visibleArtists = LibraryIndex.sortedArtists(index.artists, by: artistSortField, ascending: artistSortAscending)
-        allAlbumsSorted = LibraryIndex.sortedAlbums(index.allAlbums, by: albumSortField, ascending: albumSortAscending)
-        flatTracksSorted = LibraryIndex.sortedTracks(index.allTracks, by: trackSortField, ascending: trackSortAscending)
+    /// Also the search's recompute: a keystroke changes what survives, which
+    /// is the same job as a sort change.
+    func recomputeSortedCollections() {
+        // Prune first, then sort: the sort is the expensive half and a search
+        // usually leaves it a handful of rows to do.
+        if browser.filter.isActive, searchHaystacks == nil {
+            searchHaystacks = LibraryIndex.searchHaystacks(for: allStoredTracks() + index.allTracks)
+        }
+        browsedIndex = index.filtered(by: browser.filter, haystacks: searchHaystacks)
+        facetContext = FacetContext(index: browsedIndex, ratingByPath: listeningStore?.ratingsByPath ?? [:])
+        recomputeCrateMatchCounts()
+        visibleArtists = LibraryIndex.sortedArtists(browsedIndex.artists, by: artistSortField, ascending: artistSortAscending)
+        allAlbumsSorted = LibraryIndex.sortedAlbums(browsedIndex.allAlbums, by: albumSortField, ascending: albumSortAscending)
+        gallerySections = GallerySection.sections(of: allAlbumsSorted, by: albumSortField)
+        flatTracksSorted = LibraryIndex.sortedTracks(browsedIndex.allTracks, by: trackSortField, ascending: trackSortAscending)
+        recomputeBrowsedPlaylistTracks()
+        // Rows may have come or gone under the selection, so this pass prunes.
+        settleBrowserColumns(from: 0, pruningSet: true)
+    }
+
+    /// A playlist listed in its own order bypasses the sorted collections
+    /// entirely, so it needs the filter applied separately or a search would
+    /// look broken until you clicked a sort header.
+    private func recomputeBrowsedPlaylistTracks() {
+        let filter = browser.filter
+        browsedPlaylistTracks = filter.isActive ? playlistTracks.filter { filter.matches($0) } : playlistTracks
     }
 
     var selectedTrack: LoadedTrack? {
@@ -1223,6 +1759,10 @@ final class LibraryViewModel: ObservableObject {
     func revealNowPlaying() {
         guard let playing = nowPlayingTrack else { return }
         clearMultiSelection()
+        // A live search hides most of the library, and revealing into a row the
+        // filter removed would land on nothing. The user asked to be taken to
+        // the song, so the search is what gives way.
+        clearSearch()
         // Collapsed, the browser has nowhere to show the reveal — the CNVRT
         // cockpit collapses it for you, so ⌘L there hit nothing at all.
         browserCollapsed = false
@@ -1307,6 +1847,7 @@ final class LibraryViewModel: ObservableObject {
         // Album/Track computed vars already fall back to first if an anchor id no
         // longer resolves in the rebuilt index.
         let sourceChanged = source != currentSource
+        let previousSource = currentSource
         currentSource = source
         if deviceSyncProgress?.isRunning != true { deviceSyncProgress = nil }
         switch source {
@@ -1351,15 +1892,18 @@ final class LibraryViewModel: ObservableObject {
         }
 
         if sourceChanged {
-            browserLayout = rememberedLayout(for: source)
+            browser.view = rememberedView(for: source)
             playlistSorted = false
-            selectedArtistID = index.artists.first?.id
-            selectedAlbumID = index.artists.first?.albums.first?.id
-            selectedTrackID = index.artists.first?.albums.first?.tracks.first?.track.id
-            // All three sets, not just albums/tracks: artist ids are stable
-            // across crates, so a leftover `selectedArtistIDs` kept lighting up
-            // rows in the new source that the user never clicked.
-            clearMultiSelection()
+            // A move inside the local library is navigation within the
+            // results — the sidebar counts every crate's matches, so clicking
+            // one has to arrive with the query still applied. Leaving for a
+            // disc, a playlist or a phone drops it: that is a different
+            // library, where a query about your crates means nothing.
+            if !previousSource.keepsSearch(movingTo: source) { clearSearchState() }
+            // Anchors onto rows this source actually has, and drops the set:
+            // artist ids are stable across crates, and a leftover selection
+            // kept lighting up rows in the new source the user never clicked.
+            settleBrowserColumns(from: 0, pruningSet: true)
         }
 
         refreshCrateCounts()
@@ -1574,9 +2118,7 @@ final class LibraryViewModel: ObservableObject {
                     self.remoteIndex = built
                     if case .remote = self.currentSource {
                         self.index = built
-                        self.selectedArtistID = built.artists.first?.id
-                        self.selectedAlbumID = built.artists.first?.albums.first?.id
-                        self.selectedTrackID = built.artists.first?.albums.first?.tracks.first?.track.id
+                        self.resetBrowserSelection()
                     }
                     self.oledView = .nowPlaying
                     self.scanProgress = .idle
@@ -1720,6 +2262,9 @@ final class LibraryViewModel: ObservableObject {
     /// a device, in memory only. The browser strip and the album dots otherwise
     /// need an iPod plugged in to appear at all, and writing a real queue to
     /// snapshot one would clobber whatever the user actually has waiting.
+    ///
+    /// Debug-only, like the harness in AppDelegate that is its only caller.
+    #if DEBUG
     func installPreviewSyncQueue(profileID: UUID, tracks: [LoadedTrack]) {
         pendingSyncPaths = Set(tracks.map { $0.track.fileURL.path })
         syncQueueCounts[profileID] = tracks.count
@@ -1733,6 +2278,7 @@ final class LibraryViewModel: ObservableObject {
         )
         recomputePendingSyncMarks()
     }
+    #endif
 
     /// Post-sync: force the next browse of this device to re-walk the volume.
     func invalidateDeviceCatalog(for device: MountedDevice) {
@@ -1781,13 +2327,23 @@ final class LibraryViewModel: ObservableObject {
             return
         }
         index = .empty
-        scanProgress = ScanProgress(folderName: device.name, filesProbed: 0, totalCandidates: nil, isRunning: true)
+        scanGeneration += 1
+        let generation = scanGeneration
+        let deviceName = device.name
+        scanProgress = ScanProgress(folderName: deviceName, filesProbed: 0, totalCandidates: nil, isRunning: true)
         oledView = .scan
         let root = device.volumeURL
         scanTask?.cancel()
         scanTask = Task { [weak self] in
             guard let self else { return }
-            let scanned = await self.scanner.scanFolder(root)
+            let scanned = await self.scanner.scanFolder(
+                root,
+                onProgress: self.scanProgressReporter(
+                    generation: generation,
+                    folderName: deviceName,
+                    baseProbed: 0
+                )
+            )
             if Task.isCancelled { return }
             // Persist the catalog off-main so a big iPod doesn't hitch the UI.
             Task.detached(priority: .utility) { DeviceCatalogStore().save(scanned, key: key) }
@@ -1819,9 +2375,7 @@ final class LibraryViewModel: ObservableObject {
 
     private func adoptDeviceIndex(_ built: LibraryIndex) {
         index = built
-        selectedArtistID = built.artists.first?.id
-        selectedAlbumID = built.artists.first?.albums.first?.id
-        selectedTrackID = built.artists.first?.albums.first?.tracks.first?.track.id
+        resetBrowserSelection()
     }
 
     /// Present the device-transfer sheet (the same one as ⌘⇧T), so the Sources
@@ -2023,13 +2577,19 @@ final class LibraryViewModel: ObservableObject {
 
     /// Flash a short confirmation on the OLED rail. Repeated calls (batch tag
     /// saves) just restart the clear timer.
-    func showOLEDNotice(_ text: String) {
+    ///
+    /// `blinking` is for the notices nobody is waiting for: background work
+    /// that finished while the user was somewhere else in the app needs to
+    /// catch the eye, where a tag save they just asked for does not.
+    func showOLEDNotice(_ text: String, blinking: Bool = false, seconds: Double = 2.5) {
         oledNotice = text
+        oledNoticeBlinks = blinking
         oledNoticeClearTask?.cancel()
         oledNoticeClearTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
             guard !Task.isCancelled else { return }
             self?.oledNotice = nil
+            self?.oledNoticeBlinks = false
         }
     }
 
@@ -2203,6 +2763,15 @@ final class LibraryViewModel: ObservableObject {
         do {
             try LibraryCleanupService().deleteTracks(selected, useTrash: true)
             repointCrateReferences(repoint)
+            // The same repoint the crates get, for the listening history: the
+            // copy being trashed may be the one with all the plays, and the
+            // purge below removes exactly these paths. `repoint` merges field by
+            // field, so the keeper ends up with the higher counts and the older
+            // dateAdded. A trashed file with no surviving keeper is absent from
+            // this map and correctly loses its history in the purge.
+            currentListeningStore().repoint(
+                pairs: repoint.mapValues { ListeningStore.key(for: $0.track.fileURL) }
+            )
             purgeTracksFromLibraryState(paths: selectedPaths)
             scanForCleanup()
             let repointNote = repoint.isEmpty ? "" : " Crate entries now point at the kept copies."
@@ -2303,7 +2872,14 @@ final class LibraryViewModel: ObservableObject {
         guard let startIndex = queue.firstIndex(where: { $0.track.id == id }) else { return }
         // Fail fast with an actionable prompt if the file is missing/offline,
         // rather than a dead-end playback error.
-        if presentIfFileMissing(queue[startIndex]) { return }
+        if presentIfFileMissing(queue[startIndex]) {
+            // Nothing loads, so no index change comes to clear a seek a caller
+            // (Record Divider) staged for this track: drop it here, or it fires
+            // the next time the same track plays.
+            pendingSeekTrackID = nil
+            pendingSeekSeconds = nil
+            return
+        }
         // Starting a track jumps the OLED to Now Playing.
         oledView = .nowPlaying
         playbackQueue = queue
@@ -2526,161 +3102,129 @@ final class LibraryViewModel: ObservableObject {
         index = buildIndex(updatedTracks)
     }
 
-    func downloadAndImportArtwork(
+    /// Fetch chosen artwork into this album's *staging* folder, in the
+    /// background. Nothing in the library changes: the ART tab shows what's
+    /// waiting, and SAVE there is what writes it.
+    ///
+    /// It used to be awaited behind a modal spinner, which for a 27-scan
+    /// Cover Art Archive release meant a locked window for the best part of a
+    /// minute. Nothing here needs the user present: the panel closes, the ART
+    /// tab reports progress, the status lamp stays lit, and the OLED says when
+    /// it is done. Roles are written after every image rather than once at the
+    /// end, so quitting mid-fetch keeps the choices for what already landed.
+    func stageArtworkInBackground(
         images: [(url: URL, role: ArtworkRole, suggestedFilename: String, discNumber: Int?)],
-        for album: Album
-    ) async {
-        let activity = beginActivity("Importing artwork…")
-        defer { endActivity(activity) }
-        guard let representative = album.tracks.first?.track.fileURL else { return }
+        for album: Album,
+        releaseMBID: String? = nil
+    ) {
+        guard let representative = album.tracks.first?.track.fileURL, !images.isEmpty else { return }
         let albumFolder = representative.deletingLastPathComponent()
-        
-        let result = await Task.detached(priority: .userInitiated) { () -> (manifest: ArtworkManifest, ingestedAssets: [ArtworkAsset], coverFilename: String?, coverAsset: ArtworkAsset?) in
-            var manifest = ArtworkManifest.load(from: albumFolder) ?? ArtworkManifest(mediaFormat: album.mediaFormat, roles: [:])
-            var ingestedAssets: [ArtworkAsset] = []
-            var coverFilename: String? = nil
-            var newCoverAsset: ArtworkAsset? = nil
-            
-            // Parallel downloads
-            typealias DownloadResult = (item: (url: URL, role: ArtworkRole, suggestedFilename: String, discNumber: Int?), data: Data)
-            var downloadedData: [DownloadResult] = []
-            
-            do {
-                try await withThrowingTaskGroup(of: DownloadResult.self) { group in
-                    for item in images {
+
+        var info = ArtworkStaging.info(forAlbumFolder: albumFolder)
+        if let releaseMBID { info.releaseMBID = releaseMBID }
+
+        // Names are claimed up front, on the main actor, so the downloads can
+        // land in any order without two of them racing for "booklet_03.jpg".
+        var claimed = Set(ArtworkStaging.stagedFiles(forAlbumFolder: albumFolder).map(\.lastPathComponent))
+        let jobs: [(url: URL, name: String, role: ArtworkRole, disc: Int?)] = images.map { item in
+            let name = ArtworkCommitPlanner.uniqueName(for: item.suggestedFilename, avoiding: claimed)
+            claimed.insert(name)
+            return (item.url, name, item.role, item.discNumber)
+        }
+
+        artworkFetch = ArtworkFetchProgress(albumID: album.id, albumTitle: album.title,
+                                            done: 0, total: jobs.count)
+        let activity = beginActivity("Fetching artwork…")
+
+        Task { @MainActor [weak self] in
+            defer { self?.endActivity(activity) }
+            guard let stagingFolder = try? ArtworkStaging.makeFolder(forAlbumFolder: albumFolder) else {
+                self?.artworkFetch = nil
+                self?.appAlert = .error(
+                    title: "Couldn't stage artwork",
+                    message: "CrateDigger couldn't open its staging folder, so nothing was fetched."
+                )
+                return
+            }
+
+            // Chunked rather than a sliding window, matching the batch cover
+            // search: one barrier per chunk costs a little throughput on a
+            // network-bound job and buys a loop anyone can read at 3am. Every
+            // main-actor mutation happens out here, between chunks.
+            var landed = 0
+            var start = 0
+            while start < jobs.count {
+                let chunk = Array(jobs[start..<min(start + Self.artworkFetchConcurrency, jobs.count)])
+                start += Self.artworkFetchConcurrency
+
+                let results = await withTaskGroup(of: (String, ArtworkRole, Int?, Bool).self) { group -> [(String, ArtworkRole, Int?, Bool)] in
+                    for job in chunk {
                         group.addTask {
-                            let (data, _) = try await URLSession.shared.data(from: item.url)
-                            return (item, data)
+                            let written = await Self.fetchStagedImage(
+                                from: job.url, to: stagingFolder.appendingPathComponent(job.name)
+                            )
+                            return (job.name, job.role, job.disc, written)
                         }
                     }
-                    for try await res in group {
-                        downloadedData.append(res)
-                    }
+                    var collected: [(String, ArtworkRole, Int?, Bool)] = []
+                    for await result in group { collected.append(result) }
+                    return collected
                 }
-            } catch {
-                AppLog.library.warning("Error downloading artwork in parallel: \(error.localizedDescription)")
-            }
-            
-            for res in downloadedData {
-                let item = res.item
-                let data = res.data
-                do {
-                    guard let image = NSImage(data: data) else { continue }
-                    
-                    let fileURL = albumFolder.appendingPathComponent(item.suggestedFilename)
-                    try data.write(to: fileURL, options: .atomic)
-                    
-                    let filename = fileURL.lastPathComponent
-                    manifest.roles[filename] = item.role
-                    if item.role == .disc, let disc = item.discNumber {
-                        var discs = manifest.discNumbers ?? [:]
-                        discs[filename] = disc
-                        manifest.discNumbers = discs
-                    }
 
-                    let digest = SHA256.hash(data: data)
-                    let hashHex = digest.compactMap { String(format: "%02x", $0) }.joined()
-                    
-                    let asset = ArtworkAsset(
-                        source: .remote,
-                        hash: hashHex,
-                        dimensions: ArtworkDimensions(width: Int(image.size.width), height: Int(image.size.height)),
-                        data: data
-                    )
-                    ingestedAssets.append(asset)
-                    
-                    if item.role == .cover {
-                        newCoverAsset = asset
-                        coverFilename = filename
-                    }
-                } catch {
-                    AppLog.library.warning("Failed to save or parse artwork: \(error.localizedDescription)")
+                for (name, role, disc, ok) in results where ok {
+                    landed += 1
+                    info.roles[name] = role
+                    if role == .disc, let disc { info.discNumbers[name] = disc }
+                }
+                // Written per chunk, not once at the end: quitting mid-fetch
+                // then keeps the roles for everything that already landed.
+                ArtworkStaging.saveInfo(info, forAlbumFolder: albumFolder)
+                // Guarded by album: starting a second album's fetch takes over
+                // the progress slot, and this one must not keep counting into
+                // someone else's total.
+                if self?.artworkFetch?.albumID == album.id {
+                    self?.artworkFetch?.done += results.count
                 }
             }
-            
-            // The cover is written to the album folder as cover.jpg (above), which
-            // is what CrateDigger displays everywhere, so we deliberately do NOT
-            // rewrite every track file to embed it — that's hundreds of MB of I/O
-            // on a lossless album for no in-app benefit. Conversion/transfer still
-            // bake artwork into their *output* files when you export.
 
-            // Save manifest
-            if !ingestedAssets.isEmpty {
-                try? manifest.save(to: albumFolder)
+            guard let self else { return }
+            if self.artworkFetch?.albumID == album.id { self.artworkFetch = nil }
+            // Anything showing this album's art re-reads the folder — the ART
+            // grid and an open artwork viewer both listen for this.
+            NotificationCenter.default.post(
+                name: NSNotification.Name("CrateDiggerArtworkImported"), object: nil
+            )
+
+            if landed == 0 {
+                self.appAlert = .error(
+                    title: "No artwork fetched",
+                    message: "None of the \(jobs.count) image\(jobs.count == 1 ? "" : "s") for “\(album.title)” could be downloaded. Check your connection and try again."
+                )
+            } else {
+                // Short on purpose: the notice is centred over the transport
+                // strip, and anything longer runs under the progress bar. Which
+                // album it was is on the ART tab, which is where it wants you.
+                self.showOLEDNotice("ARTWORK READY · \(landed)", blinking: true, seconds: 6)
             }
-            
-            return (manifest, ingestedAssets, coverFilename, newCoverAsset)
-        }.value
-
-        // Back on MainActor: ingest to cache, rebuild indexes, notify, alert.
-        applyImportedArtwork(
-            ingestedAssets: result.ingestedAssets,
-            coverAsset: result.coverAsset,
-            for: album
-        )
+        }
     }
 
-    /// Attach image files chosen from disk to `album`. The files are copied into
-    /// the album folder with role-based names; a `.cover` becomes the folder
-    /// cover.jpg. Mirrors `downloadAndImportArtwork` but reads from the local disk.
-    func attachLocalArtwork(
-        fileURLs: [URL],
-        role: ArtworkRole = .cover,
-        for album: Album
-    ) async {
-        guard let representative = album.tracks.first?.track.fileURL else { return }
-        let albumFolder = representative.deletingLastPathComponent()
+    /// How many images are fetched at once. Four is the same ceiling the batch
+    /// cover search uses: enough to hide the latency, not enough to look like a
+    /// scraper to the Cover Art Archive.
+    private static let artworkFetchConcurrency = 4
 
-        let result = await Task.detached(priority: .userInitiated) { () -> (ingestedAssets: [ArtworkAsset], coverAsset: ArtworkAsset?) in
-            var manifest = ArtworkManifest.load(from: albumFolder) ?? ArtworkManifest(mediaFormat: album.mediaFormat, roles: [:])
-            var ingestedAssets: [ArtworkAsset] = []
-            var newCoverAsset: ArtworkAsset?
-
-            for (offset, source) in fileURLs.enumerated() {
-                do {
-                    let data = try Data(contentsOf: source)
-                    guard let image = NSImage(data: data) else { continue }
-
-                    let ext = source.pathExtension.isEmpty ? "jpg" : source.pathExtension.lowercased()
-                    let filename = Self.suggestedArtworkFilename(role: role, index: offset, ext: ext)
-                    let fileURL = albumFolder.appendingPathComponent(filename)
-                    try data.write(to: fileURL, options: .atomic)
-
-                    manifest.roles[filename] = role
-
-                    let digest = SHA256.hash(data: data)
-                    let hashHex = digest.compactMap { String(format: "%02x", $0) }.joined()
-                    let asset = ArtworkAsset(
-                        source: .embedded,
-                        hash: hashHex,
-                        dimensions: ArtworkDimensions(width: Int(image.size.width), height: Int(image.size.height)),
-                        data: data
-                    )
-                    ingestedAssets.append(asset)
-
-                    if role == .cover, newCoverAsset == nil {
-                        newCoverAsset = asset
-                    }
-                } catch {
-                    AppLog.library.warning("Failed to import local artwork: \(error.localizedDescription)")
-                }
-            }
-
-            // No per-track embedding — the folder cover.jpg drives display; see
-            // downloadAndImportArtwork.
-
-            if !ingestedAssets.isEmpty {
-                try? manifest.save(to: albumFolder)
-            }
-
-            return (ingestedAssets, newCoverAsset)
-        }.value
-
-        applyImportedArtwork(
-            ingestedAssets: result.ingestedAssets,
-            coverAsset: result.coverAsset,
-            for: album
-        )
+    /// One image, off the main actor. A file the user picked is read straight
+    /// off disk; URLSession is for the ones that came over the wire.
+    private nonisolated static func fetchStagedImage(from source: URL, to destination: URL) async -> Bool {
+        let data: Data?
+        if source.isFileURL {
+            data = try? Data(contentsOf: source)
+        } else {
+            data = try? await URLSession.shared.data(from: source).0
+        }
+        guard let data, !data.isEmpty else { return false }
+        return (try? data.write(to: destination, options: .atomic)) != nil
     }
 
     /// Embed a small (≤600px, baseline/non-progressive JPEG) copy of the album's
@@ -2808,6 +3352,58 @@ final class LibraryViewModel: ObservableObject {
     /// Rebuild every browsable index with new folder covers applied, in one pass.
     /// Lives here (not in +BatchArtwork) so it can write the private(set)
     /// index/localIndex; the batch fetch builds the map and calls this.
+
+    /// Strip the embedded picture out of every track on an album.
+    ///
+    /// Runs in the background like the embed pass and for the same reason: it
+    /// is a full rewrite per file. `-c copy` means no re-encode, so the audio
+    /// is bit-identical — but the pictures themselves are gone afterwards,
+    /// which is why the ART tab confirms before staging this.
+    func stripEmbeddedArtworkInBackground(for album: Album) {
+        let tracks = album.tracks
+        let title = album.title
+        let folderPath = album.tracks.first?.track.fileURL.deletingLastPathComponent().path
+        let filePaths = album.tracks.map { $0.track.fileURL.path }
+        Task.detached(priority: .utility) {
+            var failed = 0
+            await withTaskGroup(of: Bool.self) { group in
+                var inFlight = 0
+                for track in tracks {
+                    if inFlight >= 4, let ok = await group.next() { inFlight -= 1; if !ok { failed += 1 } }
+                    let fileURL = track.track.fileURL
+                    group.addTask {
+                        do { try MetadataEditorService().stripArtwork(from: fileURL); return true }
+                        catch { return false }
+                    }
+                    inFlight += 1
+                }
+                for await ok in group where !ok { failed += 1 }
+            }
+            let unwritable = failed
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                if unwritable > 0 {
+                    self.appAlert = .error(
+                        title: "Some tracks kept their cover",
+                        message: "\(unwritable) file\(unwritable == 1 ? "" : "s") on “\(title)” couldn't be rewritten. The rest had their embedded artwork removed."
+                    )
+                }
+                // The files only changed just now, so the cache has to be
+                // dropped *here* — the invalidation the commit did ran before
+                // the rewrite, and the rebuild in between refilled it with the
+                // pre-strip metadata. Without this the tracks keep reporting
+                // embedded art that is no longer in them, and the ART tab goes
+                // on showing an IN FILES tile for a picture that is gone.
+                if let folderPath {
+                    self.indexDiskCache.invalidate(albumFolderPath: folderPath, filePaths: filePaths)
+                }
+                self.refreshLibrary()
+            }
+        }
+    }
+    /// Rebuild every browsable index with new folder covers applied, in one pass.
+    /// Lives here (not in +BatchArtwork) so it can write the private(set)
+    /// index/localIndex; the batch fetch builds the map and calls this.
     func applyFolderCovers(_ assetByTrackID: [UUID: ArtworkAsset]) {
         guard !assetByTrackID.isEmpty else { return }
         func applyArtwork(_ loaded: LoadedTrack) -> LoadedTrack {
@@ -2852,7 +3448,9 @@ final class LibraryViewModel: ObservableObject {
     /// is right for the three-pane browser and wrong everywhere else. A
     /// playlist lists the whole source flat, so every row outside the album
     /// that happened to be selected failed the lookup in `playTrack` and
-    /// silently did nothing — playlists could not be played at all.
+    /// silently did nothing — playlists could not be played at all. Choosing by
+    /// where the track *is* means a row can never activate into a queue that
+    /// doesn't contain it.
     private func queue(containing id: UUID) -> [LoadedTrack] {
         let shown = browsingTracks
         let base = shown.contains { $0.track.id == id } ? shown : visibleTracks
@@ -2866,6 +3464,16 @@ final class LibraryViewModel: ObservableObject {
         // sleep timer waits for.
         if state == .ended { noteSleepQueueEnded() }
 
+        // Pause and end are the natural "I might quit now" moments; the
+        // position saved here is insurance against a crash, and the exact one
+        // is taken in applicationWillTerminate.
+        if state == .paused || state == .ended {
+            savePlaybackSnapshot()
+            // Last.fm expires "now playing" on its own, so a resume has to say
+            // it again rather than be de-duplicated away.
+            lastNowPlayingTrackID = nil
+        }
+
         // DSD decode (via ffmpeg) can take a beat before playback starts;
         // let the user know why the transport is sitting on "loading". The
         // native (DoP) path doesn't decode — it gets a bit-perfect badge.
@@ -2874,24 +3482,32 @@ final class LibraryViewModel: ObservableObject {
             showOLEDNotice(playback.isNativeDSDActive ? "DSD ► BIT-PERFECT" : "DECODING DSD…")
         }
 
-        if state == .playing, let nowPlaying = nowPlayingTrack {
+        if state == .playing {
             // Track-start timestamp is set on index change; resetting it here
             // too would stamp scrobbles with the last *unpause* time instead.
             if playbackStartTimestamp == 0 {
                 playbackStartTimestamp = Int(Date().timeIntervalSince1970)
             }
+            sendNowPlayingIfNeeded()
+        }
+    }
 
-            // Check if we need to update "Now Playing" on Last.fm
-            if let sessionKey = prefs.lastFmSessionKey, !sessionKey.isEmpty {
-                Task {
-                    _ = try? await lastFM.updateNowPlaying(
-                        artist: nowPlaying.track.artist,
-                        track: nowPlaying.track.title,
-                        album: nowPlaying.track.album,
-                        sessionKey: sessionKey
-                    )
-                }
-            }
+    /// Tell Last.fm what is playing, at most once per track until it is paused
+    /// or another track starts. Two paths reach it: the `.playing` transition
+    /// of a track that had to load, and the index change of one that arrived
+    /// gaplessly and so never left `.playing`.
+    private func sendNowPlayingIfNeeded() {
+        guard let nowPlaying = nowPlayingTrack else { return }
+        guard lastNowPlayingTrackID != nowPlaying.track.id else { return }
+        guard let sessionKey = prefs.lastFmSessionKey, !sessionKey.isEmpty else { return }
+        lastNowPlayingTrackID = nowPlaying.track.id
+        Task {
+            _ = try? await lastFM.updateNowPlaying(
+                artist: nowPlaying.track.artist,
+                track: nowPlaying.track.title,
+                album: nowPlaying.track.album,
+                sessionKey: sessionKey
+            )
         }
     }
 
@@ -2907,15 +3523,18 @@ final class LibraryViewModel: ObservableObject {
         }
         lastScrobbleTickTime = current
 
+        // Play counts are ours and do not depend on a Last.fm account, so this
+        // runs before the session-key guard below returns.
+        recordPlayIfThresholdMet(elapsed: listenedSeconds, duration: duration)
+
         guard let sessionKey = prefs.lastFmSessionKey, !sessionKey.isEmpty,
               let nowPlaying = nowPlayingTrack,
               lastScrobbledTrackID != nowPlaying.track.id else {
             return
         }
 
-        // Last.fm guidelines: scrobble if played at least 4 minutes (240s) or half the duration, whichever is shorter, and played for at least 30s.
-        let triggerTime = min(duration / 2.0, 240.0)
-        if listenedSeconds >= triggerTime && listenedSeconds >= 30.0 {
+        // Same rule as the play counter — see PlayThreshold.
+        if PlayThreshold.isPlayed(elapsed: listenedSeconds, duration: duration) {
             lastScrobbledTrackID = nowPlaying.track.id
             let artist = nowPlaying.track.artist
             let trackName = nowPlaying.track.title
@@ -2961,17 +3580,37 @@ final class LibraryViewModel: ObservableObject {
         playback.onCurrentIndexChange = { [weak self] index in
             Task { @MainActor in
                 guard let self else { return }
+                // Before the index moves: the track we are leaving is skipped if
+                // it never reached the play threshold.
+                self.recordSkipForOutgoingTrack()
                 self.playbackCurrentIndex = index
+                // A deferred seek belongs to one track; moving on abandons it,
+                // or a stranded one could fire the next time that track plays.
+                if self.pendingSeekTrackID != self.nowPlayingTrack?.track.id {
+                    self.pendingSeekTrackID = nil
+                    self.pendingSeekSeconds = nil
+                }
                 // New track (or repeat-one replay): reset the scrobble state so
                 // a re-played track scrobbles again and listened time restarts.
                 self.lastScrobbledTrackID = nil
                 self.listenedSeconds = 0
                 self.lastScrobbleTickTime = nil
+                self.countedPlayKey = nil
+                // Only now, with the index updated, does `nowPlayingTrack` name
+                // the incoming track — see `listeningTrack`.
+                self.listeningTrack = self.nowPlayingTrack.map {
+                    (ListeningStore.key(for: $0.track.fileURL), $0.track.durationSeconds)
+                }
                 self.playbackStartTimestamp = Int(Date().timeIntervalSince1970)
+                // A track that arrived gaplessly never re-enters `.playing`, so
+                // the state handler will not run for it. Anything that had to
+                // load is still `.loading` here and reports from there instead.
+                if self.playback.state == .playing { self.sendNowPlayingIfNeeded() }
                 self.refreshNowPlayingInfo()
                 // An end-of-track sleep timer resolves here — the track it was
                 // armed against has been replaced.
                 self.noteSleepTrackChanged()
+                self.savePlaybackSnapshot()
             }
         }
         playback.onTimeChange = { [weak self] current, duration in
@@ -2979,7 +3618,7 @@ final class LibraryViewModel: ObservableObject {
                 self?.playbackCurrentTime = current
                 self?.playbackDuration = duration
                 self?.clearScrubPreviewIfSeekLanded(current)
-                self?.applyPendingRecordSeekIfNeeded()
+                self?.applyPendingSeekIfNeeded()
                 self?.checkScrobbleProgress(current: current, duration: duration)
                 self?.updateNowPlayingElapsed()
             }
@@ -3091,6 +3730,14 @@ final class LibraryViewModel: ObservableObject {
         for crate in availableCrates { filed.formUnion(crateMembership(name: crate)) }
         let unfiled = tracks.filter { !filed.contains(TrackStore.key(for: $0.track.fileURL)) }
         ingestArtwork(from: unfiled)
+        // First sighting of these files in this library: stamp dateAdded now,
+        // because "added" means added here, not the file's creation date.
+        let store = currentListeningStore()
+        let now = Date()
+        for track in unfiled {
+            store.statsOrCreate(path: ListeningStore.key(for: track.track.fileURL), now: now)
+        }
+        persistListeningStore()
         let before = prepCrateTracks.count
         prepCrateTracks = LibraryViewModel.deduplicate(tracks: prepCrateTracks + unfiled)
         return prepCrateTracks.count - before
@@ -3154,7 +3801,16 @@ final class LibraryViewModel: ObservableObject {
         // so stale/renamed/removed crates can't survive. Rare, non-hot path.
         crateTracksCache.removeAll()
         trackStore = nil   // rebuilt lazily for the (possibly new) folder
+        resetListeningStoreCache()
         migrateLegacyCratesIfNeeded()
+        // Pending artwork is cached, not owned: drop sessions whose album has
+        // gone away and ones nobody has come back to in a month.
+        ArtworkStaging.sweep()
+        // First run against a library older than the plays file: give every
+        // known track a dateAdded. The track store's own paths are the source,
+        // so this does not wait for the index to be built. No-op after the
+        // first time, because the guard is "the plays file is empty".
+        backfillListeningStoreIfNeeded(knownPaths: currentTrackStore().allPaths)
         let fm = FileManager.default
         let cratesDir = cratesDirectoryURL
         do {
@@ -3242,7 +3898,18 @@ final class LibraryViewModel: ObservableObject {
     private var trackStore: TrackStore?
     private var trackStoreFolder: URL?
 
-    private func currentTrackStore() -> TrackStore {
+    /// Listening history for the current crates folder. Separate from the track
+    /// store on purpose — see ListeningStore.
+    var listeningStore: ListeningStore?
+    var listeningStoreFolder: URL?
+    /// One alert per store, not one per write. `ListeningStore.save()` throws
+    /// permanently once the file is unreadable, and this store is written on
+    /// every counted play and every skip, so an unlatched alert means a modal
+    /// per track while the user holds Next through a folder.
+    var listeningSaveFailureAlerted = false
+
+    /// Not private: the +Stats and +Resume extensions read it.
+    func currentTrackStore() -> TrackStore {
         let folder = cratesDirectoryURL
         if let store = trackStore, trackStoreFolder?.path == folder.path {
             return store
@@ -3388,12 +4055,21 @@ final class LibraryViewModel: ObservableObject {
     }
 
     /// Resolve drag payloads to tracks. Each item is "track::<uuid>",
-    /// "album::<id>", or "artist::<id>" — or the plural form carrying a whole
-    /// multi-selection. Album/artist drops expand to all their tracks (in index
+    /// "album::<id>", "artist::<id>" or "facet::<column>::<id>" — or the
+    /// plural form carrying a whole multi-selection. Album/artist drops expand to all their tracks (in index
     /// order).
     func tracksForDragItems(_ items: [String]) -> [LoadedTrack] {
         var tracks: [LoadedTrack] = []
         for item in items {
+            // A value-column row: "facet::<column>::<id>", resolved through the
+            // cascade so a dragged genre carries the tracks the column showed.
+            if item.hasPrefix("facet::") {
+                let body = item.dropFirst("facet::".count)
+                if let sep = body.range(of: "::"), let column = Int(body[..<sep.lowerBound]) {
+                    tracks.append(contentsOf: self.tracks(under: column, id: String(body[sep.upperBound...])))
+                }
+                continue
+            }
             if item.hasPrefix("tracks::") {
                 let ids = String(item.dropFirst("tracks::".count)).split(separator: ",")
                 let wanted = Set(ids.compactMap { UUID(uuidString: String($0)) })
@@ -3681,7 +4357,11 @@ final class LibraryViewModel: ObservableObject {
         // Purged tracks leave the shared store too, or it grows dead entries
         // forever. One store write for the whole purge, not one per crate.
         let store = currentTrackStore()
-        for path in paths { store.remove(path: path) }
+        let plays = currentListeningStore()
+        for path in paths {
+            store.remove(path: path)
+            plays.remove(path: path)
+        }
         for crateName in availableCrates {
             var tracks = loadCrateTracks(name: crateName)
             let before = tracks.count
@@ -3689,6 +4369,7 @@ final class LibraryViewModel: ObservableObject {
             if tracks.count != before { saveCrateTracks(tracks, name: crateName, persistStore: false) }
         }
         persistTrackStore()
+        persistListeningStore()
         refreshCrateCounts()
         selectSource(currentSource)
     }
@@ -3730,13 +4411,22 @@ final class LibraryViewModel: ObservableObject {
 
     func addURLsToCrate(_ urls: [URL], crateName: String) {
         // Scan files dropped from Finder
+        scanGeneration += 1
+        let generation = scanGeneration
         scanProgress = ScanProgress(folderName: "Scanning dropped files...", filesProbed: 0, totalCandidates: nil, isRunning: true)
-        
+
         Task { [weak self] in
             guard let self else { return }
             var collected: [LoadedTrack] = []
             for url in urls {
-                let scanned = await self.scanner.scanFolder(url)
+                let scanned = await self.scanner.scanFolder(
+                    url,
+                    onProgress: self.scanProgressReporter(
+                        generation: generation,
+                        folderName: "Scanning dropped files...",
+                        baseProbed: collected.count
+                    )
+                )
                 collected.append(contentsOf: scanned)
             }
             
@@ -3884,21 +4574,13 @@ final class LibraryViewModel: ObservableObject {
     /// The inspector reads `selectedAlbum`, and the flat table (a playlist, or
     /// the Track layout) lists every album at once — so clicking a playlist row
     /// left the inspector describing whichever album happened to be selected in
-    /// the Album column it doesn't show.
-    func syncAlbumSelectionToTrack(_ loaded: LoadedTrack) {
-        guard isPlaylistSource || browserLayout == .track else { return }
-        guard let album = browsableAlbum(containing: loaded.track.id),
-              selectedAlbumID != album.id else { return }
-        selectedArtistID = album.artistID
-        selectedAlbumID = album.id
-    }
+    /// the Album column it doesn't show. Playing from a playlist then showed
+    /// the wrong cover, title and specs for the track you were hearing.
+    ///
 
     private func revealAlbum(containingTrackID trackID: UUID?) {
-        guard let trackID, let album = browsableAlbum(containing: trackID) else { return }
-        selectedArtistID = album.artistID
-        selectedAlbumID = album.id
-        selectedTrackID = trackID
-        revealTick &+= 1
+        guard let trackID, let loaded = browsedIndex.allTracks.first(where: { $0.track.id == trackID }) else { return }
+        revealTrack(loaded)
     }
 
     func updateTrackURLInIndex(oldURL: URL, newTrack: LoadedTrack) {
@@ -3907,8 +4589,13 @@ final class LibraryViewModel: ObservableObject {
         // every crate that references it — patching only saved crates left
         // staged tracks pointing at the pre-move path.
         let oldKey = TrackStore.key(for: oldURL)
-        if oldKey != TrackStore.key(for: newTrack.track.fileURL) {
+        let newKey = TrackStore.key(for: newTrack.track.fileURL)
+        if oldKey != newKey {
             currentTrackStore().remove(path: oldKey)
+            // History is keyed by path, so a retag that moves the file has to
+            // carry it or the user silently loses their play counts.
+            currentListeningStore().repoint(from: oldKey, to: newKey)
+            persistListeningStore()
         }
         replaceTrackEverywhere(matchingPath: oldURL.path, with: newTrack)
     }
@@ -3929,14 +4616,24 @@ final class LibraryViewModel: ObservableObject {
         }
         let store = currentTrackStore()
         var staleKeys = Set<String>()
+        // The same moves, kept as pairs. staleKeys alone cannot say which old
+        // path belongs to which track, and a whole relocated folder produces
+        // many at once.
+        // ponytail: only walks saved crates, so a track that lives only in the
+        // Prep Crate gets no listening repoint here. Pre-existing gap (the
+        // track store's own stale-key cleanup above has it too); upgrade path
+        // is to walk prepCrateTracks in the same pass.
+        var movedKeys: [String: String] = [:]
         for crateName in availableCrates {
             var tracks = loadCrateTracks(name: crateName)
             var modified = false
             for i in 0..<tracks.count {
                 if let replacement = byID[tracks[i].track.id] {
                     let oldKey = TrackStore.key(for: tracks[i].track.fileURL)
-                    if oldKey != TrackStore.key(for: replacement.track.fileURL) {
+                    let newKey = TrackStore.key(for: replacement.track.fileURL)
+                    if oldKey != newKey {
                         staleKeys.insert(oldKey)
+                        movedKeys[oldKey] = newKey
                     }
                     tracks[i] = replacement
                     modified = true
@@ -3950,6 +4647,15 @@ final class LibraryViewModel: ObservableObject {
         let liveKeys = Set(newTracks.map { TrackStore.key(for: $0.track.fileURL) })
         for key in staleKeys.subtracting(liveKeys) { store.remove(path: key) }
         persistTrackStore()
+
+        // Carry listening history across the same moves, so a relocated folder
+        // keeps its play counts. One save for the whole batch. Order-independent
+        // repoint: liveKeys is deliberately not used as a filter here (unlike
+        // the track-store cleanup above) because repoint is a merge, not a
+        // delete, and filtering by liveKeys can cross-wire history on a swap
+        // (one track's new path is another track's old path).
+        currentListeningStore().repoint(pairs: movedKeys)
+        persistListeningStore()
         selectSource(currentSource)
     }
 
@@ -4067,8 +4773,14 @@ final class LibraryViewModel: ObservableObject {
         let fm = FileManager.default
         let indexFiles: [URL]
         do {
+            // This extension list is the whole function. Anything missing from it
+            // is left behind AND cleared from the collision check below, and the
+            // folder-changed notification this posts then rebuilds a fresh empty
+            // store over the top of the loss. `cdplays` in particular has no
+            // backup and nothing that can rebuild it — add new index files here.
             indexFiles = try fm.contentsOfDirectory(at: currentURL, includingPropertiesForKeys: nil)
-                .filter { $0.pathExtension == "cdcrate" || $0.pathExtension == "cdtracks" }
+                .filter { $0.pathExtension == "cdcrate" || $0.pathExtension == "cdtracks"
+                    || $0.pathExtension == "cdplays" }
         } catch {
             appAlert = .error(title: "Move Failed", message: "Could not read the current index folder: \(error.localizedDescription)")
             return
@@ -4191,4 +4903,9 @@ final class LibraryViewModel: ObservableObject {
     }
 }
 
-
+extension Array {
+    /// `nil` past the end, for caches that can briefly be shorter than the view.
+    subscript(safe index: Int) -> Element? {
+        indices.contains(index) ? self[index] : nil
+    }
+}

@@ -44,6 +44,65 @@ final class ThemeLoaderServiceTests: XCTestCase {
         }
     }
 
+    /// The logo is the one key that lives as a file: it resolves only beside
+    /// its own `theme.json`, is never inherited, and a dangling name warns
+    /// rather than breaking the theme.
+    func testLogoResolvesBesideItsOwnManifestOnly() throws {
+        try withTemporaryDirectory(prefix: "CrateDiggerThemeLoaderTests") { temporaryDirectory in
+            let bundle = try makeAppBundle(in: temporaryDirectory)
+            let userThemesDirectory = temporaryDirectory.appendingPathComponent("UserThemes", isDirectory: true)
+            try FileManager.default.createDirectory(at: userThemesDirectory, withIntermediateDirectories: true)
+
+            try writeCdtheme(named: "Marked.cdtheme", in: userThemesDirectory, id: "marked", name: "Marked", baseAppearance: "dark", logo: "logo.png")
+            try Data("png".utf8).write(to: userThemesDirectory.appendingPathComponent("Marked.cdtheme/logo.png"))
+            try writeCdtheme(named: "Dangling.cdtheme", in: userThemesDirectory, id: "dangling", name: "Dangling", baseAppearance: "dark", logo: "logo.png")
+            try writeThemeJSON(named: "child.json", in: userThemesDirectory, id: "child", name: "Child", baseAppearance: "dark", inherits: "marked")
+
+            let loader = ThemeLoaderService(bundle: bundle, userThemesDirectoryOverride: userThemesDirectory)
+            let result = loader.discoverThemes()
+            let byID = Dictionary(uniqueKeysWithValues: result.themes.map { ($0.id, $0) })
+
+            XCTAssertEqual(byID["marked"]?.logoURL(for: .dark)?.lastPathComponent, "logo.png")
+            XCTAssertEqual(byID["marked"]?.logoURL(for: .light)?.lastPathComponent, "logo.png", "one file serves both looks")
+            XCTAssertNil(byID["dangling"]?.logoURL(for: .dark))
+            XCTAssertTrue(result.warnings.contains { $0.message.contains("Logo") && $0.sourceURL.path.contains("Dangling") })
+            XCTAssertNil(byID["child"]?.definition.logo, "the file is in the parent's bundle, not the child's")
+            XCTAssertNil(byID["child"]?.logoURL(for: .dark))
+
+            // A name can't reach outside its bundle.
+            let manifestURL = userThemesDirectory.appendingPathComponent("Marked.cdtheme/theme.json")
+            XCTAssertNil(ThemeLoaderService.logoURL(declared: "../secret.png", besides: manifestURL))
+            XCTAssertNil(ThemeLoaderService.logoURL(declared: "logo.png", besides: userThemesDirectory.appendingPathComponent("child.json")))
+        }
+    }
+
+    /// An adaptive theme names a file per layer; each resolves on its own,
+    /// and a layer without one falls back to the shared file.
+    func testLayersResolveTheirOwnLogos() throws {
+        try withTemporaryDirectory(prefix: "CrateDiggerThemeLoaderTests") { temporaryDirectory in
+            let bundle = try makeAppBundle(in: temporaryDirectory)
+            let userThemesDirectory = temporaryDirectory.appendingPathComponent("UserThemes", isDirectory: true)
+            let themeDirectory = userThemesDirectory.appendingPathComponent("Pair.cdtheme", isDirectory: true)
+            try FileManager.default.createDirectory(at: themeDirectory, withIntermediateDirectories: true)
+            try Data("""
+            {
+              "id": "pair", "name": "Pair", "baseAppearance": "dark",
+              "logo": "logo.png",
+              "light": { "logo": "logo-light.png" },
+              "dark": {}
+            }
+            """.utf8).write(to: themeDirectory.appendingPathComponent("theme.json"))
+            try Data("png".utf8).write(to: themeDirectory.appendingPathComponent("logo.png"))
+            try Data("png".utf8).write(to: themeDirectory.appendingPathComponent("logo-light.png"))
+
+            let loader = ThemeLoaderService(bundle: bundle, userThemesDirectoryOverride: userThemesDirectory)
+            let manifest = try XCTUnwrap(loader.discoverThemes().themes.first)
+
+            XCTAssertEqual(manifest.logoURL(for: .light)?.lastPathComponent, "logo-light.png")
+            XCTAssertEqual(manifest.logoURL(for: .dark)?.lastPathComponent, "logo.png")
+        }
+    }
+
     func testAutoCreatesMissingUserThemesFolder() throws {
         try withTemporaryDirectory(prefix: "CrateDiggerThemeLoaderTests") { temporaryDirectory in
             let bundle = try makeAppBundle(in: temporaryDirectory)
@@ -263,11 +322,12 @@ private func writeCdtheme(
     baseAppearance: String,
     inherits: String? = nil,
     colors: [String: String]? = nil,
-    geometry: [String: Double]? = nil
+    geometry: [String: Double]? = nil,
+    logo: String? = nil
 ) throws {
     let cdthemeDirectory = directory.appendingPathComponent(folderName, isDirectory: true)
     try FileManager.default.createDirectory(at: cdthemeDirectory, withIntermediateDirectories: true)
-    let payload = themeJSONObject(id: id, name: name, baseAppearance: baseAppearance, inherits: inherits, colors: colors, geometry: geometry)
+    let payload = themeJSONObject(id: id, name: name, baseAppearance: baseAppearance, inherits: inherits, colors: colors, geometry: geometry, logo: logo)
     let data = try JSONSerialization.data(withJSONObject: payload, options: [])
     try data.write(to: cdthemeDirectory.appendingPathComponent("theme.json"))
 }
@@ -278,7 +338,8 @@ private func themeJSONObject(
     baseAppearance: String,
     inherits: String?,
     colors: [String: String]?,
-    geometry: [String: Double]?
+    geometry: [String: Double]?,
+    logo: String? = nil
 ) -> [String: Any] {
     var payload: [String: Any] = [
         "id": id,
@@ -288,6 +349,7 @@ private func themeJSONObject(
     if let inherits { payload["inherits"] = inherits }
     if let colors { payload["colors"] = colors }
     if let geometry { payload["geometry"] = geometry }
+    if let logo { payload["logo"] = logo }
     return payload
 }
 #endif

@@ -124,7 +124,8 @@ struct BrowserCondensed: View {
             model.playTrack(id: track.id)
         }
         .onTapGesture {
-            model.selectedTrackID = track.id
+            // Outside the columns, so every anchor comes from the row.
+            model.revealTrack(loaded)
         }
     }
 

@@ -48,6 +48,7 @@ final class ThemeDraftSaveTests: XCTestCase {
     /// effect on whoever is running it.
     private func saveCurrentDraft() throws {
         let draft = try XCTUnwrap(registry.draft)
+        try registry.materializeDraftLogos()
         let parent = registry.manifest(for: draft.inherits)?.definition
         try authoring.save(ThemeAuthoringService.minimized(draft, against: parent))
         registry.refresh()
@@ -103,6 +104,155 @@ final class ThemeDraftSaveTests: XCTestCase {
 
         let resolved = try XCTUnwrap(registry.resolvedTheme(for: nil))
         XCTAssertTrue(resolved.theme.fontsSignature.contains("Helvetica-Bold"))
+    }
+
+    /// A logo is a key *and* a file. The preview has to find the file before
+    /// anything is saved, the key has to survive the save, and the reloaded
+    /// theme has to point at the file again.
+    func testLogoIsPreviewedLiveAndSurvivesSave() throws {
+        registry.beginEditing(try manifest("base-theme"))
+        let draft = try XCTUnwrap(registry.draft)
+
+        let before = try XCTUnwrap(registry.resolvedTheme(for: nil)).theme
+        XCTAssertEqual(before.name, "Base Theme", "no logo: the header sets the theme's name")
+        XCTAssertNil(before.logoURL)
+
+        let source = themesDirectory.appendingPathComponent("mark.png")
+        try Data("png".utf8).write(to: source)
+        let installed = try authoring.importLogo(from: source, into: draft.id, replacing: registry.sourceURL(for: draft.id))
+        registry.draft?.logo = installed.lastPathComponent
+
+        let previewed = try XCTUnwrap(registry.resolvedTheme(for: nil)).theme
+        XCTAssertEqual(previewed.logoURL?.lastPathComponent, "logo.png")
+        XCTAssertNotNil(previewed.logoStamp)
+
+        try saveCurrentDraft()
+
+        let reloaded = try manifest("base-theme")
+        XCTAssertEqual(reloaded.definition.logo, "logo.png")
+        XCTAssertEqual(reloaded.logoURL(for: .dark)?.lastPathComponent, "logo.png")
+        XCTAssertEqual(try XCTUnwrap(registry.resolvedTheme(for: "base-theme")).theme.logoURL?.lastPathComponent, "logo.png")
+    }
+
+    /// On an adaptive draft the logo follows the EDITING switch, like every
+    /// swatch: what's installed lands in that layer's slot, and the app
+    /// previews it only when rendering that layer.
+    func testAdaptiveDraftWritesTheLogoToTheLayerBeingEdited() throws {
+        registry.beginEditing(try manifest("base-theme"))
+        registry.setDraftAdaptive(true)
+        registry.draftEditingAppearance = .dark
+        let draft = try XCTUnwrap(registry.draft)
+
+        XCTAssertEqual(registry.draftLogoLayer, .dark)
+        let installed = try authoring.installLogo(
+            Data("png".utf8), extension: "png", into: draft.id,
+            replacing: registry.sourceURL(for: draft.id), layer: registry.draftLogoLayer
+        )
+        registry.setDraftLogo(installed.lastPathComponent)
+
+        XCTAssertEqual(registry.draft?.dark?.logo, "logo-dark.png")
+        XCTAssertNil(registry.draft?.logo, "the shared slot is untouched")
+        XCTAssertEqual(registry.resolvedTheme(for: nil)?.theme.logoURL?.lastPathComponent, "logo-dark.png")
+
+        registry.draftEditingAppearance = .light
+        XCTAssertNil(registry.draftLogo, "the light layer has none of its own and there is no shared one")
+        XCTAssertNil(registry.resolvedTheme(for: nil)?.theme.logoURL)
+        XCTAssertEqual(registry.resolvedTheme(for: nil)?.theme.name, "Base Theme")
+    }
+
+    /// CLEAR on one layer must leave the other showing what it showed. When
+    /// both were sharing one file, the untouched layer takes it over.
+    func testClearingOneLayerHandsASharedLogoToTheOther() throws {
+        registry.beginEditing(try manifest("base-theme"))
+        registry.setDraftLogo("logo.png")
+        registry.setDraftAdaptive(true)
+        registry.draftEditingAppearance = .dark
+
+        registry.clearDraftLogo()
+
+        XCTAssertNil(registry.draftLogo)
+        XCTAssertNil(registry.draft?.logo)
+        XCTAssertEqual(registry.draft?.light?.logo, "logo.png")
+        XCTAssertEqual(registry.draftLogoFilesInUse, ["logo.png"], "still named, so CLEAR must not delete the file")
+    }
+
+    /// Opening the editor must not flip the app: an adaptive theme starts on
+    /// the layer that's on screen, whatever appearance it declares as base.
+    func testEditingStartsOnTheAppearanceOnScreen() throws {
+        registry.beginEditing(try manifest("base-theme"))
+        registry.setDraftAdaptive(true)
+        try saveCurrentDraft()
+        XCTAssertEqual(try manifest("base-theme").definition.baseAppearance, .dark)
+
+        registry.beginEditing(try manifest("base-theme"), appearance: .light)
+        XCTAssertEqual(registry.draftEditingAppearance, .light)
+        XCTAssertFalse(try XCTUnwrap(registry.resolvedTheme(for: nil)).theme.isDark, "previews the light layer")
+
+        registry.beginEditing(try manifest("base-theme"), appearance: .dark)
+        XCTAssertEqual(registry.draftEditingAppearance, .dark)
+    }
+
+    /// A single-appearance theme has only its own look; asking for the other
+    /// one can't be honoured and the draft stays on what the theme is.
+    func testSingleAppearanceThemeIgnoresTheRequestedLayer() throws {
+        registry.beginEditing(try manifest("base-theme"), appearance: .light)
+        XCTAssertEqual(registry.draftEditingAppearance, .dark)
+    }
+
+    /// Editing a built-in forks it, and the fork must open *with* the
+    /// built-in's logo: previewed from the original's bundle while editing,
+    /// then copied into the fork's own bundle by Save, so the saved theme
+    /// carries its files and the original is never referenced.
+    func testForkKeepsTheLogoAndOwnsACopyOnceSaved() throws {
+        // Stand in for a built-in: a manifest whose files live somewhere the
+        // fork can't write.
+        let originalBundle = themesDirectory.appendingPathComponent("base-theme.cdtheme")
+        try Data("pdf".utf8).write(to: originalBundle.appendingPathComponent("logo-dark.pdf"))
+        var original = try manifest("base-theme")
+        original.definition.dark = ThemeVariant(logo: "logo-dark.pdf")
+        original.definition.light = ThemeVariant()
+        original = ThemeManifest(
+            definition: original.definition, origin: .builtIn,
+            logoURLs: [.dark: originalBundle.appendingPathComponent("logo-dark.pdf")]
+        )
+
+        registry.beginEditing(original)
+        registry.draftEditingAppearance = .dark
+        XCTAssertEqual(registry.draftLogo, "logo-dark.pdf")
+        XCTAssertEqual(registry.resolvedTheme(for: nil)?.theme.logoURL, originalBundle.appendingPathComponent("logo-dark.pdf"),
+                       "previewed from the original until the fork has files of its own")
+        let forkID = try XCTUnwrap(registry.draft?.id)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: themesDirectory.appendingPathComponent("\(forkID).cdtheme").path),
+                       "nothing is written before Save")
+
+        try saveCurrentDraft()
+
+        let saved = try manifest(forkID)
+        let copy = themesDirectory.appendingPathComponent("\(forkID).cdtheme/logo-dark.pdf")
+        XCTAssertEqual(saved.logoURL(for: .dark)?.resolvingSymlinksInPath().path, copy.resolvingSymlinksInPath().path)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: copy.path))
+    }
+
+    /// DUPLICATE is the same story from a user theme: the copy keeps showing
+    /// the original's mark and gets its own file on Save.
+    func testDuplicateKeepsTheLogoAndCopiesItOnSave() throws {
+        registry.beginEditing(try manifest("base-theme"))
+        let source = themesDirectory.appendingPathComponent("mark.png")
+        try Data("png".utf8).write(to: source)
+        let draft = try XCTUnwrap(registry.draft)
+        let installed = try authoring.importLogo(from: source, into: draft.id, replacing: registry.sourceURL(for: draft.id))
+        registry.setDraftLogo(installed.lastPathComponent)
+
+        registry.duplicateDraft()
+        let copyID = try XCTUnwrap(registry.draft?.id)
+        XCTAssertEqual(registry.draftLogo, "logo.png")
+        XCTAssertEqual(registry.resolvedTheme(for: nil)?.theme.logoURL?.path, installed.path)
+
+        try saveCurrentDraft()
+
+        XCTAssertEqual(try manifest(copyID).logoURL(for: .dark)?.resolvingSymlinksInPath().path,
+                       themesDirectory.appendingPathComponent("\(copyID).cdtheme/logo.png").resolvingSymlinksInPath().path)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: installed.path), "the original keeps its file")
     }
 
     /// Resetting a role back to the default must actually drop it from the

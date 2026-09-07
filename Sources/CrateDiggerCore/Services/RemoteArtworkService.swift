@@ -461,6 +461,9 @@ public struct MBReleaseCandidate: Identifiable, Codable, Sendable {
 public enum RemoteArtworkSource: String, Codable, Sendable {
     case coverArtArchive
     case discogs
+    /// A file the user picked off their own disk. It rides in the same grid as
+    /// the online candidates so both go through one review and one import.
+    case localFile
 
     /// Badge text on the artwork grid, so it's obvious which database a scan
     /// came from before you commit it to the album folder.
@@ -468,6 +471,7 @@ public enum RemoteArtworkSource: String, Codable, Sendable {
         switch self {
         case .coverArtArchive: return "CAA"
         case .discogs: return "DISCOGS"
+        case .localFile: return "DISK"
         }
     }
 }

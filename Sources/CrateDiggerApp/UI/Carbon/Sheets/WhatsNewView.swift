@@ -113,50 +113,85 @@ struct WhatsNewItem: Identifiable {
     let body: String
     var id: String { title }
 
-    /// Edit this list each release. Shown in order.
+    /// Edit this list each release. Shown in order, so the biggest thing
+    /// goes first and theming stays last, beside the button that opens it.
     static let current: [WhatsNewItem] = [
         WhatsNewItem(
-            symbol: "photo.on.rectangle.angled",
-            title: "Deep scans from Discogs",
+            symbol: "magnifyingglass",
+            title: "Search your library",
             body: """
-            Artwork search now reaches Discogs, where the scans of physical \
-            pressings live: gatefolds, inner sleeves, obi strips, label \
-            close-ups, the back of the sleeve with the runout etched into it. \
-            CrateDigger finds the release three ways in turn, by the link \
-            MusicBrainz already holds, then by barcode, then by artist and \
-            title. No account needed.
+            A field across the top of the browser, results as you type, over \
+            artist, album, title, file path and format. Every word has to match \
+            something, so "mil blue" finds Kind of Blue and "flac live" finds \
+            live FLACs. Command-F puts the cursor in it. While a search runs \
+            every crate in the sidebar shows its match count, so you can see \
+            where the results actually live.
             """
         ),
         WhatsNewItem(
-            symbol: "arrow.down.circle",
-            title: "It updates itself",
+            symbol: "rectangle.split.3x1",
+            title: "Any category in any column",
             body: """
-            Check for Updates now downloads the new version, verifies we signed \
-            it, installs it and relaunches. No more fetching a disk image and \
-            dragging the app across by hand. It also looks once a day without \
-            being asked, and a stable install is never offered a release \
-            candidate.
+            The browser's columns are no longer welded to Artist, Album and \
+            Track. Click a column's header and pick Album Artist, Genre, Year, \
+            Decade, Format or Rating instead, and the layout key sets how many \
+            columns there are. A view can end on a decade rather than a track \
+            list, and every crate, playlist and device remembers its own \
+            arrangement.
+            """
+        ),
+        WhatsNewItem(
+            symbol: "arrow.uturn.backward.circle",
+            title: "Pick up where you left off",
+            body: """
+            Quit in the middle of a record and CrateDigger comes back paused on \
+            the same track, at the same second, with the same Up Next, and the \
+            crate it was playing from still marked in the sidebar. Press play to \
+            carry on. Streams, CDs and remote libraries start fresh, as they \
+            always have.
+            """
+        ),
+        WhatsNewItem(
+            symbol: "chart.bar.xaxis",
+            title: "It keeps score",
+            body: """
+            CrateDigger remembers what you actually play: counts, skips, when \
+            you last heard something and when you added it. The STATS screen \
+            (Command-5) turns that into your most played record, artist and \
+            track, with hours listened, for this month, this year or all time.
             """
         ),
         WhatsNewItem(
             symbol: "waveform",
-            title: "The meters follow radio",
+            title: "Fix tags by listening to the record",
             body: """
-            The VU needles used to sit flat through every broadcast, because \
-            they were reading the library player that radio had just paused. \
-            They now measure the app's own output, so they move for anything \
-            you are listening to, live streams included. Needs macOS 14.4 or \
-            later.
+            When a file's tags are blank or wrong, searching by text has nothing \
+            to search with. DEEP SCAN fingerprints the audio instead, identifies \
+            each recording from the sound, and lets the album's files vote on \
+            which release they all belong to. It never reads the tags it is \
+            there to replace.
             """
         ),
         WhatsNewItem(
-            symbol: "scope",
-            title: "Go to Current Song",
+            symbol: "photo.on.rectangle.angled",
+            title: "Artwork worth framing",
             body: """
-            Dig three crates deep and lose your place, then press it to land \
-            back on the record you are hearing. It crosses crates: if the queue \
-            came from somewhere other than the crate on screen, it switches \
-            back to that one and reveals the track there.
+            FIND ART searches the Cover Art Archive, Discogs, iTunes and Deezer \
+            in one window, and shows what is already embedded in your files \
+            beside them. Discogs is where the scans of physical pressings live: \
+            gatefolds, inner sleeves, obi strips, the back of the sleeve with the \
+            runout etched into it. Nothing is written to your files until you \
+            say so.
+            """
+        ),
+        WhatsNewItem(
+            symbol: "sparkles",
+            title: "A new face",
+            body: """
+            The app icon is a record on an orange plate, and there is a mark to \
+            go with it: a record half out of the crate the app is named for. The \
+            name is set in the display face the OLED already speaks, so the \
+            header and the screen share one voice.
             """
         ),
         WhatsNewItem(
@@ -169,11 +204,12 @@ struct WhatsNewItem: Identifiable {
             application behind the panel rather than a picture of it. One theme \
             carries both a light and a dark version and follows your system \
             setting. Any font on your Mac can letter the interface, with the \
-            family's real weights mapped rather than smeared. Seven one-click \
-            presets restyle the glass alone, from green LCD to e-paper, and \
-            each of the six lamps on the display takes its own colour. UNDO \
-            steps back through your last ten changes. A finished theme is a \
-            small .cdtheme folder you can zip and send to anyone.
+            family's real weights mapped rather than smeared. A theme can carry \
+            its own logo for the header, framed in the editor. Seven one-click \
+            presets restyle the glass alone, from green LCD to e-paper, and each \
+            lamp on the display takes its own colour. UNDO steps back through \
+            your last ten changes. A finished theme is a small .cdtheme folder \
+            you can zip and send to anyone.
             """
         ),
     ]

@@ -27,6 +27,18 @@ final class ThemeDefinitionTests: XCTestCase {
         XCTAssertNil(definition.geometry)
     }
 
+    func testLogoRoundTrips() throws {
+        let json = """
+        { "id": "marked", "name": "Marked", "baseAppearance": "dark", "logo": "logo.png" }
+        """
+
+        let definition = try JSONDecoder().decode(ThemeDefinition.self, from: Data(json.utf8))
+        XCTAssertEqual(definition.logo, "logo.png")
+
+        let reencoded = try JSONDecoder().decode(ThemeDefinition.self, from: JSONEncoder().encode(definition))
+        XCTAssertEqual(reencoded.logo, "logo.png")
+    }
+
     func testUnknownKeysAreIgnored() throws {
         let json = """
         {

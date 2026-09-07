@@ -36,7 +36,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         windowController.restoreLastSession()
 
         installSpaceKeyMonitor()
+        #if DEBUG
         installSnapshotHookIfRequested()
+        #endif
 
         // Touching the singleton starts Sparkle, including its once-a-day
         // background check. No-op in an unpackaged build.
@@ -73,6 +75,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        // The one snapshot whose position has to be exact.
+        mainWindowController?.model.savePlaybackSnapshot()
         if let token = spaceKeyMonitor {
             NSEvent.removeMonitor(token)
             spaceKeyMonitor = nil
@@ -191,6 +195,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         mainWindowController?.revealNowPlaying()
     }
 
+    @objc private func findInLibrary(_ sender: Any?) {
+        mainWindowController?.focusSearch()
+    }
+
     @objc private func playNext(_ sender: Any?) {
         mainWindowController?.playNext()
     }
@@ -248,6 +256,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         guard let tag = (sender as? NSMenuItem)?.representedObject as? String,
               let mode = Self.sleepMode(fromTag: tag) else { return }
         mainWindowController?.setSleepMode(mode)
+    }
+
+    @objc private func setRating(_ sender: Any?) {
+        guard let item = sender as? NSMenuItem else { return }
+        mainWindowController?.rateSelection(item.tag)
     }
 
     @objc private func queuePlayNext(_ sender: Any?) {
@@ -393,11 +406,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         }
     }
 
+    // MARK: - Dev harness (debug builds only)
+    //
+    // The self-snapshot hook and the marketing shot list: fourteen CRATEDIGGER_*
+    // environment switches that render the app's own view tree to PNGs, which is
+    // how the UI gets verified without a screen-recording permission. None of it
+    // belongs in a build someone downloads — left compiled in, a stray
+    // environment variable could make a shipped app start writing files.
+    //
+    // The only CRATEDIGGER_* variables a release build still reads are
+    // ExternalToolLocator's ffmpeg/ffprobe/fpcalc path overrides.
+    #if DEBUG
     /// Dev-only self-snapshot: with CRATEDIGGER_SNAPSHOT_PATH set, render the
     /// main window (its own view tree — no screen-recording permission needed)
     /// to a PNG a few seconds after launch, then again 4 s later. Optional
-    /// CRATEDIGGER_OLED=<rawValue> preselects an OLED view first. Inert
-    /// without the env var; used for autonomous UI verification.
+    /// CRATEDIGGER_OLED=<rawValue> preselects an OLED view first, and
+    /// CRATEDIGGER_SEARCH=<query> runs a search. Inert without the env var;
+    /// used for autonomous UI verification.
     private func installSnapshotHookIfRequested() {
         let env = ProcessInfo.processInfo.environment
         guard let path = env["CRATEDIGGER_SNAPSHOT_PATH"] else { return }
@@ -415,6 +440,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                 self?.mainWindowController?.model.showingThemePicker = true
             }
         }
+        // The gallery is only reachable through the VIEW key, which a capture
+        // can't press either.
+        if env["CRATEDIGGER_GALLERY"] != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) { [weak self] in
+                self?.mainWindowController?.model.showArtworkGallery = true
+            }
+        }
         // Value is an optional token filter ("fonts", "corner"), so a capture
         // can bring one section of the editor into view.
         if let raw = env["CRATEDIGGER_THEME_EDITOR"] {
@@ -422,6 +454,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                 guard let model = self?.mainWindowController?.model else { return }
                 if raw != "1" { model.themeEditorInitialFilter = raw }
                 model.showingThemeEditor = true
+            }
+        }
+        // A live search, so a capture can show the browser filtered and the
+        // SRCH screen reading out. "<query>" or "all:<query>" for the widened
+        // scope; the field itself can't be typed into without accessibility.
+        if let raw = env["CRATEDIGGER_SEARCH"] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) { [weak self] in
+                guard let model = self?.mainWindowController?.model else { return }
+                if raw.hasPrefix("all:") {
+                    model.searchQuery = String(raw.dropFirst(4))
+                    model.setSearchScope(.everywhere)
+                } else {
+                    model.searchQuery = raw
+                }
+            }
+        }
+        // A browser view, as comma-separated facets ("genre,artist,track"), so
+        // a capture can show the columns a crate can be given.
+        if let raw = env["CRATEDIGGER_VIEW"] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6.5) { [weak self] in
+                let facets = raw.split(separator: ",").compactMap { BrowserFacet(rawValue: String($0)) }
+                let view = BrowserView(facets)
+                if view.isValid { self?.mainWindowController?.model.browserView = view }
             }
         }
         if env["CRATEDIGGER_WHATS_NEW"] != nil {
@@ -437,12 +492,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             }
         }
         // Dev-only: land on a source the UI can't otherwise be pointed at from
-        // the command line, so a snapshot can show it. "playlist:<name>" only —
-        // everything else is reachable by launching and clicking.
-        if let raw = env["CRATEDIGGER_SOURCE"], raw.hasPrefix("playlist:") {
-            let name = String(raw.dropFirst("playlist:".count))
-            DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) { [weak self] in
-                self?.mainWindowController?.model.selectSource(.playlist(name: name))
+        // the command line, so a snapshot can show it. "playlist:<name>" or
+        // "crate:<name>" — everything else is reachable by launching and
+        // clicking. Runs before CRATEDIGGER_SEARCH, which would otherwise be
+        // cleared by the source switch.
+        if let raw = env["CRATEDIGGER_SOURCE"] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { [weak self] in
+                guard let model = self?.mainWindowController?.model else { return }
+                if raw.hasPrefix("playlist:") {
+                    model.selectSource(.playlist(name: String(raw.dropFirst("playlist:".count))))
+                } else if raw.hasPrefix("crate:") {
+                    model.selectSource(.localCrate(name: String(raw.dropFirst("crate:".count))))
+                }
             }
         }
         // A device route otherwise needs an iPod physically plugged in, which put
@@ -584,8 +645,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                 model.playbackVolume = 0.8
             }),
             (12, "", { model in
-                // Has to be a track of the *selected* album: playTrack looks the
-                // id up in `currentAlbumQueue()` and silently returns otherwise.
                 if let first = model.selectedAlbum?.tracks.first { model.playTrack(id: first.track.id) }
             }),
             (18, "screenshot_dark", { _ in }),
@@ -649,6 +708,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             return false
         }
     }
+    #endif
 
     @objc private func sendFeedback(_ sender: Any?) {
         if let url = URL(string: "mailto:opa@mrbarkan.com?subject=CrateDigger%20Feedback") {
@@ -736,8 +796,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             return true
         case #selector(queuePlayNext(_:)), #selector(queuePlayLast(_:)):
             return mainWindowController?.canQueueSelection() == true
+        case #selector(setRating(_:)):
+            return mainWindowController?.model.hasRatableSelection == true
         case #selector(clearUpNext(_:)):
             return mainWindowController?.hasUpNext() == true
+        case #selector(findInLibrary(_:)):
+            // Radio's list is streams, not an index, so there is nothing to
+            // narrow while it is up.
+            return mainWindowController?.model.isSearchAvailable == true
         case #selector(setAppearanceMode(_:)):
             menuItem.state = (menuItem.representedObject as? String == AppearanceMode.current.rawValue) ? .on : .off
             return true
@@ -888,6 +954,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         editMenu.addItem(responderItem(title: "Paste", action: NSSelectorFromString("paste:"), key: "v"))
         editMenu.addItem(.separator())
         editMenu.addItem(responderItem(title: "Select All", action: #selector(NSResponder.selectAll(_:)), key: "a"))
+        editMenu.addItem(.separator())
+        editMenu.addItem(makeItem(title: "Find", action: #selector(findInLibrary(_:)), key: "f"))
         editMenuItem.submenu = editMenu
 
         // MARK: View menu
@@ -899,7 +967,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             (.nowPlaying, "1"),
             (.conversion, "2"),
             (.scan, "3"),
-            (.devices, "4")
+            (.devices, "4"),
+            (.stats, "5")
         ]
         for (view, key) in displayedViews {
             let item = makeItem(title: "\(view.label) Display", action: #selector(selectOLEDView(_:)), key: key)
@@ -939,6 +1008,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         let shuffleItem = makeItem(title: "Toggle Shuffle", action: #selector(toggleShuffle(_:)), key: "s")
         shuffleItem.keyEquivalentModifierMask = [.command, .option]
         playbackMenu.addItem(shuffleItem)
+        playbackMenu.addItem(.separator())
+        let ratingMenuItem = NSMenuItem(title: "Rating", action: nil, keyEquivalent: "")
+        let ratingMenu = NSMenu(title: "Rating")
+        let clearItem = makeItem(title: "Clear Rating", action: #selector(setRating(_:)), key: "0")
+        clearItem.keyEquivalentModifierMask = [.command, .option]
+        ratingMenu.addItem(clearItem)
+        for stars in 1...5 {
+            let item = makeItem(
+                title: stars == 1 ? "1 Star" : "\(stars) Stars",
+                action: #selector(setRating(_:)),
+                key: String(stars)
+            )
+            item.keyEquivalentModifierMask = [.command, .option]
+            item.tag = stars
+            ratingMenu.addItem(item)
+        }
+        ratingMenuItem.submenu = ratingMenu
+        playbackMenu.addItem(ratingMenuItem)
         let repeatItem = makeItem(title: "Cycle Repeat Mode", action: #selector(cycleRepeatMode(_:)), key: "r")
         repeatItem.keyEquivalentModifierMask = [.command, .option]
         playbackMenu.addItem(repeatItem)

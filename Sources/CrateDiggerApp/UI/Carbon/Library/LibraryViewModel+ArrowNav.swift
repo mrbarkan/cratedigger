@@ -1,11 +1,6 @@
 import AppKit
 import CrateDiggerCore
 
-/// Which browser column the keyboard arrows act on.
-enum BrowserColumn: Sendable {
-    case artist, album, track
-}
-
 /// Keyboard navigation of the browser: bare ↑/↓ move the selection within the
 /// focused column, ←/→ switch columns. Space stays play/pause and ⌘-arrows stay
 /// transport/volume (handled by the existing shortcut monitor / menu). Driven from
@@ -13,20 +8,14 @@ enum BrowserColumn: Sendable {
 @MainActor
 extension LibraryViewModel {
 
-    /// Columns the current layout actually shows, left→right.
-    var navColumns: [BrowserColumn] {
-        switch browserLayout {
-        case .full:       return [.artist, .album, .track]
-        case .albumTrack: return [.album, .track]
-        case .track:      return [.track]
-        }
-    }
+    /// The columns the view shows, left to right, as indices into it.
+    var navColumns: Range<Int> { 0..<browserView.facets.count }
 
-    /// `focusedColumn` clamped to a column this layout shows. Also what the
+    /// `focusedColumn` clamped to a column this view has. Also what the
     /// browser reads to light the focused column's header — `focusedColumn`
-    /// itself can name a column the current layout doesn't render.
-    var effectiveColumn: BrowserColumn {
-        navColumns.contains(focusedColumn) ? focusedColumn : (navColumns.last ?? .track)
+    /// itself can point past the end after the view narrows.
+    var effectiveColumn: Int {
+        min(max(focusedColumn, 0), max(navColumns.upperBound - 1, 0))
     }
 
     /// Handle a bare arrow key as browser navigation. Returns true when consumed.
@@ -39,8 +28,8 @@ extension LibraryViewModel {
         // The gallery is a grid, not columns: ←/→ step one cover, ↑/↓ a whole row.
         if showArtworkGallery {
             switch event.keyCode {
-            case 126: moveGallerySelection(by: -galleryColumnsPerRow); return true  // up
-            case 125: moveGallerySelection(by:  galleryColumnsPerRow); return true  // down
+            case 126: moveGallerySelection(down: false); return true   // up
+            case 125: moveGallerySelection(down: true);  return true   // down
             case 123: moveGallerySelection(by: -1); return true                     // left
             case 124: moveGallerySelection(by:  1); return true                     // right
             default:  return false
@@ -57,13 +46,23 @@ extension LibraryViewModel {
     }
 
     /// Step the gallery selection through `allAlbumsSorted`, clamped at both ends.
-    /// `delta` is ±1 for a cover or ±`galleryColumnsPerRow` for a row.
+    /// `delta` is ±1 for a cover; rows go through `moveGallerySelection(down:)`.
     func moveGallerySelection(by delta: Int) {
         let items = allAlbumsSorted
         guard !items.isEmpty else { return }
         let current = selectedAlbumID.flatMap { id in items.firstIndex { $0.id == id } } ?? 0
         let next = items[min(max(current + delta, 0), items.count - 1)]
         selectAlbum(next, command: false, shift: false, ordered: items, flat: true)
+    }
+
+    /// A row up or down. Not ±columns: every divider starts a fresh row, so
+    /// the step has to know where the sections cut (`GallerySection`).
+    func moveGallerySelection(down: Bool) {
+        let items = allAlbumsSorted
+        guard !items.isEmpty else { return }
+        let current = selectedAlbumID.flatMap { id in items.firstIndex { $0.id == id } } ?? 0
+        let target = GallerySection.verticalNeighbor(of: current, in: gallerySections, columns: galleryColumnsPerRow, down: down)
+        selectAlbum(items[target], command: false, shift: false, ordered: items, flat: true)
     }
 
     /// True when the main window is key (not a sheet, the mini-player, or the
@@ -83,35 +82,18 @@ extension LibraryViewModel {
     // MARK: - Movement
 
     func moveBrowserFocus(by delta: Int) {
-        let cols = navColumns
-        let current = cols.firstIndex(of: effectiveColumn) ?? (cols.count - 1)
-        focusedColumn = cols[min(max(current + delta, 0), cols.count - 1)]
+        guard !navColumns.isEmpty else { return }
+        focusedColumn = min(max(effectiveColumn + delta, 0), navColumns.upperBound - 1)
     }
 
+    /// One row up or down in the focused column, whatever it shows. The row
+    /// ids come from the column's content, so this is the same walk for an
+    /// artist, a genre or a track.
     func moveBrowserSelection(by delta: Int) {
-        switch effectiveColumn {
-        case .artist:
-            let items = visibleArtists
-            guard let next = neighbor(items, selectedArtistID, { $0.id }, delta) else { return }
-            selectArtist(next, command: false, shift: false, ordered: items)
-        case .album:
-            let items = browserLayout == .albumTrack ? allAlbumsSorted : visibleAlbums
-            guard let next = neighbor(items, selectedAlbumID, { $0.id }, delta) else { return }
-            selectAlbum(next, command: false, shift: false, ordered: items, flat: browserLayout == .albumTrack)
-        case .track:
-            let items = browserLayout == .track ? flatTracksSorted : visibleTracks
-            guard let next = neighbor(items, selectedTrackID, { $0.track.id }, delta) else { return }
-            selectTrack(next, command: false, shift: false, ordered: items)
-        }
-    }
-
-    /// The item one step (clamped) from the one matching `currentID`; starts at the
-    /// first item when nothing is selected yet.
-    private func neighbor<Item, ID: Equatable>(
-        _ items: [Item], _ currentID: ID?, _ idOf: (Item) -> ID, _ delta: Int
-    ) -> Item? {
-        guard !items.isEmpty else { return nil }
-        let current = currentID.flatMap { id in items.firstIndex { idOf($0) == id } } ?? 0
-        return items[min(max(current + delta, 0), items.count - 1)]
+        let column = effectiveColumn
+        guard let ids = browserColumns[safe: column]?.ids, !ids.isEmpty else { return }
+        let current = browser.selection.anchor(column).flatMap { ids.firstIndex(of: $0) } ?? 0
+        let next = ids[min(max(current + delta, 0), ids.count - 1)]
+        browser.select(column: column, id: next, command: false, shift: false, ordered: ids)
     }
 }

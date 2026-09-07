@@ -16,7 +16,7 @@ final class StreamSourceCodableTests: XCTestCase {
 
 final class StreamStoreTests: XCTestCase {
     private func freshStore() -> StreamStore {
-        let d = UserDefaults(suiteName: "test.\(UUID().uuidString)")!
+        let d = makeScratchDefaults()
         return StreamStore(prefs: PreferencesStore(defaults: d))
     }
 
@@ -53,14 +53,14 @@ final class StreamStoreTests: XCTestCase {
     }
 
     func testCorruptDataYieldsEmpty() {
-        let d = UserDefaults(suiteName: "test.\(UUID().uuidString)")!
+        let d = makeScratchDefaults()
         let prefs = PreferencesStore(defaults: d)
         prefs.streamSourcesData = Data([0x00, 0x01])
         XCTAssertEqual(StreamStore(prefs: prefs).all(), [])
     }
 
     func testStreamEngineDefaultsToAuto() {
-        let d = UserDefaults(suiteName: "test.\(UUID().uuidString)")!
+        let d = makeScratchDefaults()
         XCTAssertEqual(PreferencesStore(defaults: d).streamEngine, "auto")
     }
 }

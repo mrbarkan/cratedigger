@@ -113,6 +113,7 @@ private final class FakePlayer: PlaybackServiceProtocol {
     var errorMessage: String?
     var queue: [PlaybackQueueItem] = []
     var repeatMode: PlaybackRepeatMode = .off
+    var gaplessEnabled = true
     var dsdOutputMode: DSDOutputMode = .auto
     var isNativeDSDActive = false
 

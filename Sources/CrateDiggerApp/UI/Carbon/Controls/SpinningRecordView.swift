@@ -502,6 +502,7 @@ final class RecordAnimator: ObservableObject {
     private var timer: Timer?
     private var lastUpdateTime: Date?
     private var playbackStateSub: AnyCancellable?
+    private var visibilitySub: AnyCancellable?
 
     func start(model: LibraryViewModel) {
         self.model = model
@@ -516,15 +517,25 @@ final class RecordAnimator: ObservableObject {
                 if state == .playing { self?.ensureTimer() }
             }
         }
+        // A disc nobody can see does not need to be turned 60 times a second.
+        // Resuming just restarts the timer; `tick` re-reads the playback state
+        // and settles the disc again by itself if it should be at rest.
+        visibilitySub = AppVisibility.shared.$isVisible.sink { [weak self] visible in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                if visible { self.ensureTimer() } else { self.haltTimer() }
+            }
+        }
     }
 
     func stop() {
         playbackStateSub = nil
+        visibilitySub = nil
         haltTimer()
     }
 
     private func ensureTimer() {
-        guard timer == nil else { return }
+        guard timer == nil, AppVisibility.shared.isVisible else { return }
         lastUpdateTime = Date()
         let t = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {

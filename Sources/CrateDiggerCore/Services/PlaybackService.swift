@@ -40,6 +40,9 @@ public protocol PlaybackServiceProtocol: AnyObject {
     var errorMessage: String? { get }
     var queue: [PlaybackQueueItem] { get }
     var repeatMode: PlaybackRepeatMode { get set }
+    /// Buffer the next track while the current one plays so the boundary has
+    /// no seam. Off falls back to loading each track at its boundary.
+    var gaplessEnabled: Bool { get set }
 
     var onStateChange: ((PlaybackState) -> Void)? { get set }
     var onCurrentIndexChange: ((Int?) -> Void)? { get set }
@@ -113,6 +116,13 @@ protocol PlaybackEngineProtocol: AnyObject {
     var currentSpectrum: [Double] { get }
     func setEqualizer(enabled: Bool, gains: [Double])
     func setMasterGain(_ gain: Double)
+    /// Pre-buffer the item that will follow the current one so the boundary is
+    /// gapless; nil clears whatever was prepared. An engine that cannot look
+    /// ahead ignores this and the service reloads at the boundary as before.
+    func prepareNextItem(url: URL?)
+    /// True when the item that just ended handed straight over to the prepared
+    /// item, with no reload. Only meaningful read from inside `onItemEnded`.
+    var didAdvanceGaplessly: Bool { get }
 }
 
 extension PlaybackEngineProtocol {
@@ -120,6 +130,8 @@ extension PlaybackEngineProtocol {
     var currentSpectrum: [Double] { [] }
     func setEqualizer(enabled: Bool, gains: [Double]) {}
     func setMasterGain(_ gain: Double) {}
+    func prepareNextItem(url: URL?) {}
+    var didAdvanceGaplessly: Bool { false }
 }
 
 final class AVPlayerEngine: PlaybackEngineProtocol {
@@ -139,17 +151,40 @@ final class AVPlayerEngine: PlaybackEngineProtocol {
         return seconds(for: item.duration)
     }
 
-    private let player = AVPlayer()
+    /// An `AVQueuePlayer` so the next track can sit behind the playing one and
+    /// take over with no gap. It never holds more than those two items — the
+    /// rest of the queue is the service's business, not the player's.
+    private let player = AVQueuePlayer()
     private let levelTap = AudioLevelTap()
-    /// Kept alive for the current item — `AVAssetResourceLoader` holds its
-    /// delegate weakly, and a released loader silently stalls playback.
+
+    /// The item currently playing and the one buffered behind it. Held as
+    /// fields rather than read back off the player so end-of-item handling
+    /// never has to guess whether the player has advanced yet.
+    private var playingItem: AVPlayerItem?
+    private var preparedItem: AVPlayerItem?
+    private var preparedItemURL: URL?
+
+    /// Kept alive per item — `AVAssetResourceLoader` holds its delegate
+    /// weakly, and a released loader silently stalls playback. There are two
+    /// because a wrapped stream can be playing while a plain file is buffered
+    /// behind it; one shared field would free the playing item's loader.
     private var chunkedLoader: ChunkedStreamLoader?
+    private var preparedLoader: ChunkedStreamLoader?
+
     private var timeObserverToken: Any?
     private var statusObservation: NSKeyValueObservation?
-    private var itemEndObserver: NSObjectProtocol?
+    private var preparedStatusObservation: NSKeyValueObservation?
+    private var playingEndObserver: NSObjectProtocol?
+    private var preparedEndObserver: NSObjectProtocol?
+
+    private(set) var didAdvanceGaplessly = false
 
     init() {
         player.automaticallyWaitsToMinimizeStalling = true
+        // Advance only when a look-ahead is deliberately queued. Left on
+        // `.advance` with an empty queue the player drops `currentItem` at the
+        // end of the last track, and the finished track's duration goes with it.
+        player.actionAtItemEnd = .pause
         addPeriodicTimeObserver()
     }
 
@@ -158,23 +193,30 @@ final class AVPlayerEngine: PlaybackEngineProtocol {
             player.removeTimeObserver(timeObserverToken)
         }
         statusObservation = nil
-        if let itemEndObserver {
-            NotificationCenter.default.removeObserver(itemEndObserver)
+        preparedStatusObservation = nil
+        for observer in [playingEndObserver, preparedEndObserver].compactMap({ $0 }) {
+            NotificationCenter.default.removeObserver(observer)
         }
     }
 
     func replaceCurrentItem(url: URL) {
-        statusObservation = nil
-        if let itemEndObserver {
-            NotificationCenter.default.removeObserver(itemEndObserver)
-            self.itemEndObserver = nil
+        clearPrepared()
+        if let playingEndObserver {
+            NotificationCenter.default.removeObserver(playingEndObserver)
+            self.playingEndObserver = nil
         }
+        statusObservation = nil
+        didAdvanceGaplessly = false
 
-        let item = makeItem(url: url)
-        attachLevelMetering(to: item)
-        player.replaceCurrentItem(with: item)
+        let made = makeItem(url: url)
+        chunkedLoader = made.loader
+        attachLevelMetering(to: made.item, resettingMeters: true)
 
-        statusObservation = item.observe(\.status, options: [.new, .initial]) { [weak self] item, _ in
+        player.removeAllItems()
+        player.insert(made.item, after: nil)
+        playingItem = made.item
+
+        statusObservation = made.item.observe(\.status, options: [.new, .initial]) { [weak self] item, _ in
             guard let self else { return }
             switch item.status {
             case .readyToPlay:
@@ -188,28 +230,148 @@ final class AVPlayerEngine: PlaybackEngineProtocol {
             }
         }
 
-        itemEndObserver = NotificationCenter.default.addObserver(
+        playingEndObserver = endObserver(for: made.item)
+    }
+
+    /// Queue `url` behind the playing item so the boundary costs nothing.
+    /// Idempotent: re-arming with the same URL leaves the buffered item alone.
+    func prepareNextItem(url: URL?) {
+        guard let url else {
+            clearPrepared()
+            return
+        }
+        guard preparedItemURL != url else { return }
+        clearPrepared()
+        guard let playingItem else { return }
+
+        let made = makeItem(url: url)
+        guard player.canInsert(made.item, after: playingItem) else { return }
+        made.item.preferredForwardBufferDuration = 5
+        // No meter reset: the tap store is shared, so the meters carry straight
+        // through the handover instead of dropping to zero for a frame.
+        attachLevelMetering(to: made.item, resettingMeters: false)
+        player.insert(made.item, after: playingItem)
+
+        preparedItem = made.item
+        preparedItemURL = url
+        preparedLoader = made.loader
+        preparedEndObserver = endObserver(for: made.item)
+        preparedStatusObservation = made.item.observe(\.status, options: [.new]) { [weak self] item, _ in
+            // A look-ahead that cannot play must not sit in the queue: drop it
+            // and let the boundary fall back to a normal load, which is the
+            // path that reports the failure to the listener.
+            guard item.status == .failed else { return }
+            DispatchQueue.main.async { self?.clearPrepared() }
+        }
+        player.actionAtItemEnd = .advance
+    }
+
+    private func clearPrepared() {
+        // Never pull out the item the player is actually on. If a clear ever
+        // races ahead of the end-of-item handler the prepared item is already
+        // playing, and removing it would stop the music outright.
+        if let preparedItem, player.currentItem !== preparedItem {
+            player.remove(preparedItem)
+        }
+        if let preparedEndObserver {
+            NotificationCenter.default.removeObserver(preparedEndObserver)
+        }
+        preparedEndObserver = nil
+        preparedStatusObservation = nil
+        preparedItem = nil
+        preparedItemURL = nil
+        preparedLoader = nil
+        player.actionAtItemEnd = .pause
+    }
+
+    /// The buffered item becomes the playing one. The player has already made
+    /// that move by itself; this only catches the bookkeeping up, and must not
+    /// remove the item from the queue the way `clearPrepared` does.
+    private func promotePrepared() {
+        if let playingEndObserver {
+            NotificationCenter.default.removeObserver(playingEndObserver)
+        }
+        playingEndObserver = preparedEndObserver
+        preparedEndObserver = nil
+        // The item is already playing, so there is no status left to wait on.
+        // A look-ahead that could not play never gets this far: its own status
+        // observation drops it while the previous track is still going, and the
+        // boundary falls back to a normal load, which reports the failure.
+        statusObservation = nil
+        preparedStatusObservation = nil
+
+        playingItem = preparedItem
+        chunkedLoader = preparedLoader
+
+        preparedItem = nil
+        preparedItemURL = nil
+        preparedLoader = nil
+        player.actionAtItemEnd = .pause
+    }
+
+    private func endObserver(for item: AVPlayerItem) -> NSObjectProtocol {
+        NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime,
             object: item,
             queue: .main
         ) { [weak self] _ in
-            self?.onItemEnded?()
+            self?.handleEnd(of: item)
         }
+    }
+
+    private func handleEnd(of item: AVPlayerItem) {
+        // A stale observer, from an item replaced before it finished, has
+        // nothing to say about what plays now.
+        guard item === playingItem else { return }
+
+        guard preparedItem != nil else {
+            didAdvanceGaplessly = false
+            onItemEnded?()
+            return
+        }
+
+        // The player has not published the new `currentItem` by the time this
+        // notification lands, so asking now always says it did not advance.
+        // Let it settle one turn and then look. The audio has already carried
+        // on; it is only the bookkeeping that lands a runloop later.
+        DispatchQueue.main.async { [weak self] in
+            self?.resolveBoundary(after: item)
+        }
+    }
+
+    /// Report the boundary once the player has settled, on what it actually
+    /// did rather than on what we queued. Claiming a handover that did not
+    /// happen would walk the service's index forward over a stopped player,
+    /// leaving the app insisting it is playing silence.
+    private func resolveBoundary(after item: AVPlayerItem) {
+        // Already resolved, or the service loaded something else in between.
+        guard item === playingItem else { return }
+
+        if let preparedItem, player.currentItem === preparedItem {
+            promotePrepared()
+            didAdvanceGaplessly = true
+        } else {
+            // The player declined the item we queued. It must not linger and
+            // play later out of nowhere; the service reloads the boundary.
+            clearPrepared()
+            didAdvanceGaplessly = false
+        }
+        onItemEnded?()
+        didAdvanceGaplessly = false
     }
 
     /// A URL wrapped by `ChunkedStreamLoader` needs an `AVURLAsset` with the
     /// loader attached; everything else takes the plain path. The loader is
-    /// held here because `resourceLoader` does not retain its delegate.
-    private func makeItem(url: URL) -> AVPlayerItem {
+    /// returned rather than stored because the caller knows whether this item
+    /// is the playing one or the look-ahead.
+    private func makeItem(url: URL) -> (item: AVPlayerItem, loader: ChunkedStreamLoader?) {
         guard ChunkedStreamLoader.isWrapped(url) else {
-            chunkedLoader = nil
-            return AVPlayerItem(url: url)
+            return (AVPlayerItem(url: url), nil)
         }
         let loader = ChunkedStreamLoader()
         let asset = AVURLAsset(url: url)
         asset.resourceLoader.setDelegate(loader, queue: loader.queue)
-        chunkedLoader = loader
-        return AVPlayerItem(asset: asset)
+        return (AVPlayerItem(asset: asset), loader)
     }
 
     func play() {
@@ -266,8 +428,10 @@ final class AVPlayerEngine: PlaybackEngineProtocol {
 
     /// Attach an audio tap so `currentLevels` reflects the real signal. The
     /// asset's audio track loads asynchronously, so wire the mix once it's ready.
-    private func attachLevelMetering(to item: AVPlayerItem) {
-        levelTap.reset()
+    /// Every item gets its own tap; they all write the one shared store, which
+    /// is what lets the meters run straight through a gapless handover.
+    private func attachLevelMetering(to item: AVPlayerItem, resettingMeters: Bool) {
+        if resettingMeters { levelTap.reset() }
         let tap = levelTap
         Task { [weak item] in
             guard let item,
@@ -334,7 +498,22 @@ public final class PlaybackService: PlaybackServiceProtocol {
     }
     public private(set) var errorMessage: String?
     public private(set) var queue: [PlaybackQueueItem] = []
-    public var repeatMode: PlaybackRepeatMode = .off
+    public var repeatMode: PlaybackRepeatMode = .off {
+        didSet {
+            // What plays next just changed, so what is buffered has to change
+            // with it — otherwise Repeat One would still glide into track 2.
+            guard repeatMode != oldValue else { return }
+            prepareNext()
+        }
+    }
+    /// Off-switch for the gapless look-ahead. On by default; a device that
+    /// misbehaves at a boundary can fall back to the reload path.
+    public var gaplessEnabled = true {
+        didSet {
+            guard gaplessEnabled != oldValue else { return }
+            prepareNext()
+        }
+    }
 
     public var onStateChange: ((PlaybackState) -> Void)?
     public var onCurrentIndexChange: ((Int?) -> Void)?
@@ -392,6 +571,10 @@ public final class PlaybackService: PlaybackServiceProtocol {
         self.queue = queue
         pendingAutoPlay = autoPlay
         errorMessage = nil
+        // Whatever was buffered was buffered to follow a track we are about to
+        // stop playing. Drop it before the engine takes a new item, or the old
+        // look-ahead plays after it.
+        engine.prepareNextItem(url: nil)
 
         guard !queue.isEmpty else {
             loadGeneration += 1
@@ -491,6 +674,60 @@ public final class PlaybackService: PlaybackServiceProtocol {
         state = .failed(message: message)
     }
 
+    // MARK: - Gapless look-ahead
+    //
+    // The engine is told what follows the playing track while that track is
+    // still going, so the boundary costs nothing. `indexAfterCurrentEnds()` is
+    // the single answer to "what plays when this ends" — both the look-ahead
+    // and `onItemEnded` read it, and they must agree or the engine glides into
+    // a track the service does not think is playing.
+
+    private func indexAfterCurrentEnds() -> Int? {
+        guard !queue.isEmpty else { return nil }
+        if let currentIndex {
+            if repeatMode == .one { return currentIndex }
+            if queue.indices.contains(currentIndex + 1) { return currentIndex + 1 }
+        }
+        if repeatMode == .all { return 0 }
+        return nil
+    }
+
+    /// Re-arm the look-ahead. Cheap and idempotent, so anything that changes
+    /// the queue, the index or the repeat mode can just call it.
+    private func prepareNext() {
+        engine.prepareNextItem(url: lookAheadURL())
+    }
+
+    private func lookAheadURL() -> URL? {
+        guard gaplessEnabled, state == .playing, activeEngine === engine else { return nil }
+        guard let index = indexAfterCurrentEnds(), queue.indices.contains(index) else { return nil }
+        let url = queue[index].url
+        return canLookAhead(url) ? url : nil
+    }
+
+    /// Only a plain local file can be buffered ahead. A stream keeps the reload
+    /// path (radio resolves a fresh URL every time it plays), and DSD is either
+    /// decoded to a temp file first or handed to the native DoP engine —
+    /// neither exists yet at the moment we would have to queue it.
+    private func canLookAhead(_ url: URL) -> Bool {
+        url.isFileURL
+            && !FFmpegDSDDecoder.decodableExtensions.contains(url.pathExtension.lowercased())
+    }
+
+    /// The engine handed over to the item it had buffered, so audio never
+    /// stopped. Move the bookkeeping and touch nothing else: reloading here is
+    /// precisely the gap this exists to remove.
+    private func adoptGaplessAdvance(to index: Int) {
+        loadGeneration += 1
+        replaceTemp(with: nil)
+        pendingAutoPlay = true
+        currentTimeSeconds = 0
+        let reported = activeEngine.durationSeconds
+        durationSeconds = reported > 0 ? reported : queue[index].durationSeconds
+        currentIndex = index
+        prepareNext()
+    }
+
     // MARK: - Queue editing
     //
     // All of these mutate `queue` around the playing track without touching the
@@ -504,6 +741,7 @@ public final class PlaybackService: PlaybackServiceProtocol {
         // With nothing playing there is no "next" — the front of the queue is.
         let at = currentIndex.map { $0 + 1 } ?? 0
         queue.insert(contentsOf: items, at: min(at, queue.count))
+        prepareNext()
         return at..<(at + items.count)
     }
 
@@ -512,6 +750,7 @@ public final class PlaybackService: PlaybackServiceProtocol {
         guard !items.isEmpty else { return 0..<0 }
         let at = queue.count
         queue.append(contentsOf: items)
+        prepareNext()
         return at..<(at + items.count)
     }
 
@@ -528,6 +767,7 @@ public final class PlaybackService: PlaybackServiceProtocol {
             if removedBefore > 0 { reindexCurrent(to: current - removedBefore) }
         }
         for index in removable.sorted(by: >) { queue.remove(at: index) }
+        prepareNext()
         return removable
     }
 
@@ -547,6 +787,7 @@ public final class PlaybackService: PlaybackServiceProtocol {
             if target <= updated { updated += 1 }
             reindexCurrent(to: updated)
         }
+        prepareNext()
     }
 
     /// Move `currentIndex` because the queue around it changed, NOT because the
@@ -581,6 +822,7 @@ public final class PlaybackService: PlaybackServiceProtocol {
         pendingAutoPlay = true
         activeEngine.play()
         state = .playing
+        prepareNext()
     }
 
     public func pause() {
@@ -701,7 +943,9 @@ public final class PlaybackService: PlaybackServiceProtocol {
             if self.pendingAutoPlay {
                 boundEngine.play()
                 self.state = .playing
+                self.prepareNext()
             } else {
+                // A paused deck buffers nothing; `play()` arms the look-ahead.
                 self.state = .paused
             }
         }
@@ -738,25 +982,21 @@ public final class PlaybackService: PlaybackServiceProtocol {
 
         boundEngine.onItemEnded = { [weak self, weak boundEngine] in
             guard let self, let boundEngine, boundEngine === self.activeEngine else { return }
-            if self.repeatMode == .one, let currentIndex {
-                self.load(queue: self.queue, startIndex: currentIndex, autoPlay: true)
-                return
-            }
-
-            if let currentIndex, self.queue.indices.contains(currentIndex + 1) {
-                self.load(queue: self.queue, startIndex: currentIndex + 1, autoPlay: true)
-                return
-            }
 
             // Repeat-all wraps within the queue as loaded; a shuffled queue is
             // shuffled by the caller before load, so the wrap follows that order.
-            if self.repeatMode == .all, !self.queue.isEmpty {
-                self.load(queue: self.queue, startIndex: 0, autoPlay: true)
+            guard let target = self.indexAfterCurrentEnds() else {
+                self.currentTimeSeconds = self.durationSeconds
+                self.state = .ended
                 return
             }
 
-            self.currentTimeSeconds = self.durationSeconds
-            self.state = .ended
+            if boundEngine.didAdvanceGaplessly {
+                self.adoptGaplessAdvance(to: target)
+                return
+            }
+
+            self.load(queue: self.queue, startIndex: target, autoPlay: true)
         }
 
         boundEngine.onPeriodicTime = { [weak self, weak boundEngine] current, duration in

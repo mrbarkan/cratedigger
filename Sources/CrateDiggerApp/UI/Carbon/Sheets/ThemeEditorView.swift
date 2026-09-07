@@ -1,6 +1,7 @@
 import AppKit
 import CrateDiggerCore
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// The theme editor. Every control writes straight into
 /// `ThemeRegistry.shared.draft`, which the whole app renders from while it's
@@ -32,6 +33,11 @@ struct ThemeEditorView: View {
     /// the app behind it, so clicking the browser to see a row restyle must not
     /// bury the controls you're dragging.
     @State private var pinnedOnTop = true
+    /// The image being framed for the logo slot; the BRAND section swaps
+    /// its row for the crop table while this is set.
+    @State private var logoSource: NSImage?
+    @State private var logoCrop = LogoCrop.fit
+    @State private var logoDropTargeted = false
 
     private var draft: ThemeDefinition? { registry.draft }
 
@@ -326,6 +332,13 @@ struct ThemeEditorView: View {
                     .padding(.vertical, 4)
                 }
 
+                if showBrand {
+                    sectionLabel("Brand")
+                        .padding(.top, 16)
+                        .padding(.bottom, 4)
+                    brandSection
+                }
+
                 if showFonts {
                     sectionLabel("Fonts")
                         .padding(.top, 16)
@@ -335,7 +348,7 @@ struct ThemeEditorView: View {
                     }
                 }
 
-                if visibleColorGroups.isEmpty && visibleGeometryGroups.isEmpty && !showFonts && !showInterface {
+                if visibleColorGroups.isEmpty && visibleGeometryGroups.isEmpty && !showFonts && !showInterface && !showBrand {
                     Text("No tokens match “\(filter)”")
                         .font(CarbonFont.mono(10))
                         .foregroundStyle(theme.ink4)
@@ -495,6 +508,153 @@ struct ThemeEditorView: View {
         var effects = registry.draft?.effects ?? [:]
         effects["flat"] = isOn ? 1 : 0
         registry.draft?.effects = effects
+    }
+
+    // MARK: - Brand
+
+    /// The header's right-hand mark: the theme's name until a logo is
+    /// bundled, which then takes its place. The row above is the header at
+    /// 1:1, so the mark is judged where it will live rather than in a file
+    /// dialog. Choosing an image opens the crop table in place; dropping one
+    /// anywhere on the section does the same.
+    private var brandSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            LogoHeaderPreview {
+                if let logoSource {
+                    LogoCropCanvas(image: logoSource, crop: logoCrop)
+                } else {
+                    ThemeLogo()
+                }
+            }
+
+            if let logoSource {
+                LogoCropperView(
+                    image: logoSource,
+                    crop: $logoCrop,
+                    onApply: applyLogoCrop,
+                    onCancel: { self.logoSource = nil }
+                )
+            } else {
+                logoRow
+            }
+        }
+        .padding(.vertical, 4)
+        .overlay(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .strokeBorder(theme.orange, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                .padding(-4)
+                .opacity(logoDropTargeted ? 1 : 0)
+        )
+        .onDrop(of: [.fileURL], isTargeted: $logoDropTargeted) { providers in
+            guard let provider = providers.first else { return false }
+            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier) { item, _ in
+                guard let data = item as? Data, let url = URL(dataRepresentation: data, relativeTo: nil) else { return }
+                DispatchQueue.main.async { loadLogoSource(from: url) }
+            }
+            return true
+        }
+    }
+
+    private var logoRow: some View {
+        HStack(spacing: 5) {
+            Text("LOGO")
+                .font(CarbonFont.mono(9, weight: .bold))
+                .tracking(1.2)
+                .foregroundStyle(theme.ink3)
+
+            if let layer = registry.draftLogoLayer {
+                Text(layer == .light ? "LIGHT" : "DARK")
+                    .font(CarbonFont.mono(7.5, weight: .bold))
+                    .tracking(1.2)
+                    .foregroundStyle(theme.orange)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 1)
+                    .overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(theme.orange.opacity(0.6)))
+                    .carbonTip("This logo is the \(layer == .light ? "light" : "dark") version's. Switch EDITING above to set the other.")
+            }
+
+            Text(registry.draftLogo ?? "Theme name")
+                .font(CarbonFont.mono(9))
+                .foregroundStyle(registry.draftLogo == nil ? theme.ink4 : theme.ink2)
+                .lineLimit(1)
+                .truncationMode(.middle)
+
+            Spacer(minLength: 4)
+
+            KeyButton(action: chooseLogoFile) { Text("FILE") }
+                .frame(width: 42, height: 19)
+                .carbonTip("Choose an image (PNG, JPEG, PDF or SVG) to frame for the slot, or drop one here.")
+
+            KeyButton(style: registry.draftLogo == nil ? .disabled : .normal, action: adjustLogo) { Text("ADJUST") }
+                .frame(width: 54, height: 19)
+                .carbonTip("Reframe the logo already in the theme.")
+
+            KeyButton(style: registry.draftLogo == nil ? .disabled : .normal, action: clearLogo) { Text("CLEAR") }
+                .frame(width: 48, height: 19)
+        }
+        .padding(.vertical, 3)
+        .help("Shown in the header where the left side says CrateDigger. Without one, the theme's name is set there instead.")
+    }
+
+    private func chooseLogoFile() {
+        guard let draft else { return }
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.png, .jpeg, .pdf, .svg, .tiff, .heic]
+        panel.allowsMultipleSelection = false
+        panel.message = "Choose a logo for “\(draft.name)”"
+        guard panel.runModal() == .OK, let source = panel.url else { return }
+        loadLogoSource(from: source)
+    }
+
+    private func loadLogoSource(from url: URL) {
+        guard let image = NSImage(contentsOf: url), image.size.width > 0, image.size.height > 0 else {
+            saveError = "Couldn't read an image from \(url.lastPathComponent)."
+            return
+        }
+        logoSource = image
+        logoCrop = .fit
+    }
+
+    /// Re-opens the shipped file in the crop table. It's the rendered strip,
+    /// so FIT is where it was and any change crops further into it.
+    private func adjustLogo() {
+        guard let url = registry.resolvedTheme(for: nil)?.theme.logoURL else { return }
+        loadLogoSource(from: url)
+    }
+
+    private func applyLogoCrop() {
+        guard let draft, let logoSource, let authoring = registry.authoring else {
+            saveError = "No writable Themes folder, so a logo can't be saved."
+            return
+        }
+        let slot = CGSize(width: geometry.viewSwitchWidth, height: HeaderKeyMetrics.brandRowHeight)
+        guard let png = LogoRenderer.png(logoSource, slot: slot, crop: logoCrop) else {
+            saveError = "Couldn't render the logo."
+            return
+        }
+        do {
+            let installed = try authoring.installLogo(
+                png, extension: "png",
+                into: draft.id,
+                replacing: registry.sourceURL(for: draft.id),
+                layer: registry.draftLogoLayer
+            )
+            registry.setDraftLogo(installed.lastPathComponent)
+            self.logoSource = nil
+        } catch {
+            saveError = "Couldn't save the logo: \(error.localizedDescription)"
+        }
+    }
+
+    /// Drops the logo from the layer being edited and deletes its file only
+    /// once nothing in the theme names it any more.
+    private func clearLogo() {
+        guard let draft, let removed = registry.draftLogo else { return }
+        registry.clearDraftLogo()
+        guard !registry.draftLogoFilesInUse.contains(removed),
+              let bundle = registry.authoring?.bundleDirectory(for: draft.id, replacing: registry.sourceURL(for: draft.id))
+        else { return }
+        try? FileManager.default.removeItem(at: bundle.appendingPathComponent(removed))
     }
 
     // MARK: - Fonts
@@ -863,15 +1023,16 @@ struct ThemeEditorView: View {
 
     private func beginEditingActiveTheme() {
         let selected = PreferencesStore.shared.selectedThemeID
+        let onScreen: ThemeDefinition.BaseAppearance = theme.isDark ? .dark : .light
         if let manifest = registry.manifest(for: selected) {
-            registry.beginEditing(manifest)
+            registry.beginEditing(manifest, appearance: onScreen)
         } else if let fallback = registry.manifests.first(where: {
             // No theme selected — fork whichever built-in matches the
             // appearance currently on screen, so editing starts from what the
             // user is actually looking at.
-            $0.definition.baseAppearance == (theme.isDark ? .dark : .light)
+            $0.definition.baseAppearance == onScreen
         }) {
-            registry.beginEditing(fallback)
+            registry.beginEditing(fallback, appearance: onScreen)
         }
     }
 
@@ -915,6 +1076,10 @@ struct ThemeEditorView: View {
         query.isEmpty || ThemeTokenCatalog.fontRoles.contains {
             matches($0.key, $0.label, $0.note, "fonts", "typeface")
         }
+    }
+
+    private var showBrand: Bool {
+        matches("brand", "logo", "mark", "wordmark", "header", "name", "image")
     }
 
     private func sectionLabel(_ text: String) -> some View {

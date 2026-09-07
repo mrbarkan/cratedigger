@@ -43,9 +43,9 @@ struct AlbumPoster: View {
 
     private func loadThumbnailImage() async {
         if let coverURL = album?.booklet?.frontCoverURL {
-            localThumbnail = await loadThumbnail(url: coverURL, maxPixelSize: 480)
+            localThumbnail = await loadThumbnail(url: coverURL, maxPixelSize: 900)
         } else if let hash = album?.artworkHash {
-            localThumbnail = await model.artworkService.thumbnailAsync(artworkHash: hash, maxPixel: 480)
+            localThumbnail = await model.artworkService.thumbnailAsync(artworkHash: hash, maxPixel: 900)
         } else {
             localThumbnail = nil
         }

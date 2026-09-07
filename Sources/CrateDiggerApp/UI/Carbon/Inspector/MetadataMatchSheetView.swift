@@ -41,9 +41,10 @@ struct MetadataMatchSheetView: View {
                minHeight: 0, idealHeight: 620, maxHeight: .infinity)
         .onAppear { seedChecks() }
         .onChange(of: candidateIndex) { _ in seedChecks() }
-        // Keyed on queue position, not the album label — two consecutive
-        // "Unknown Album" batches must still reset the pager and checks.
-        .onChange(of: model.matchQueueProgress?.current) { _ in
+        // Keyed on the revision counter, not the album label — two consecutive
+        // "Unknown Album" batches must still reset the pager and checks, and a
+        // DEEP SCAN that re-ranks the list in place doesn't move the queue.
+        .onChange(of: model.matchRevision) { _ in
             candidateIndex = 0
             seedChecks()
         }
@@ -88,7 +89,12 @@ struct MetadataMatchSheetView: View {
                     .lineLimit(1)
                 HStack(spacing: 6) {
                     sourceBadge(match.candidate.source)
-                    Text("\(Int((match.score * 100).rounded()))% MATCH")
+                    // An audio match's score is the share of the album's tracks
+                    // whose fingerprints place them on this release, which is a
+                    // different claim from tag similarity and should read as one.
+                    Text(match.candidate.source.isAudioMatch
+                         ? "\(Int((match.score * 100).rounded()))% OF TRACKS"
+                         : "\(Int((match.score * 100).rounded()))% MATCH")
                         .font(CarbonFont.mono(8, weight: .bold))
                         .tracking(0.8)
                         .foregroundStyle(theme.ink4)
@@ -223,12 +229,18 @@ struct MetadataMatchSheetView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     ForEach(changes, id: \.trackID) { change in
                         HStack(spacing: 6) {
-                            Text(change.trackTitle)
-                                .font(CarbonFont.mono(8, weight: .regular))
-                                .foregroundStyle(theme.ink4)
-                                .frame(width: 150, alignment: .leading)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
+                            // The track label is dropped for TITLE: there it is
+                            // the same string as the "current" half of the diff
+                            // beside it, so it read as the change being shown
+                            // twice — and it stole the width the diff needed.
+                            if field != .title {
+                                Text(change.trackTitle)
+                                    .font(CarbonFont.mono(8, weight: .regular))
+                                    .foregroundStyle(theme.ink4)
+                                    .frame(width: 150, alignment: .leading)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                            }
                             valueDiff(from: change.current, to: change.proposed, checked: checked.contains(field))
                             Spacer(minLength: 0)
                         }
@@ -244,11 +256,15 @@ struct MetadataMatchSheetView: View {
         .cornerRadius(6)
     }
 
+    /// Old value → new value, with only the part that actually differs carrying
+    /// any emphasis. Without it a one-letter casing fix and a wholesale retitle
+    /// looked identical: two long, nearly equal strings and no clue which
+    /// characters moved.
     private func valueDiff(from current: String, to proposed: String, checked: Bool) -> some View {
-        HStack(spacing: 6) {
-            Text(current.isEmpty ? "—" : current)
+        let split = ValueDiff.split(current: current, proposed: proposed)
+        return HStack(spacing: 6) {
+            emphasised(split.current, tint: theme.ink4, changed: theme.ink2)
                 .font(CarbonFont.mono(9, weight: .regular))
-                .foregroundStyle(theme.ink3)
                 .strikethrough(checked)
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -256,12 +272,24 @@ struct MetadataMatchSheetView: View {
             Image(systemName: "arrow.right")
                 .font(.system(size: 7, weight: .bold))
                 .foregroundStyle(theme.ink4)
-            Text(proposed.isEmpty ? "—" : proposed)
-                .font(CarbonFont.mono(9, weight: .semibold))
-                .foregroundStyle(checked ? theme.ink : theme.ink3)
+            emphasised(split.proposed, tint: theme.ink3, changed: checked ? theme.orange : theme.ink2)
+                .font(CarbonFont.mono(9, weight: .regular))
                 .lineLimit(1)
                 .truncationMode(.tail)
         }
+    }
+
+    /// One value with its changed span picked out: the shared text recedes, the
+    /// difference is tinted and bold.
+    private func emphasised(_ split: ValueDiff.Split, tint: Color, changed: Color) -> Text {
+        guard !split.isEmpty else {
+            return Text(split.head.isEmpty ? "—" : split.head).foregroundColor(tint)
+        }
+        return Text(split.head).foregroundColor(tint)
+            + Text(split.changed)
+                .foregroundColor(changed)
+                .font(CarbonFont.mono(9, weight: .bold))
+            + Text(split.tail).foregroundColor(tint)
     }
 
     // MARK: - Footer
@@ -279,6 +307,25 @@ struct MetadataMatchSheetView: View {
                 .padding(.leading, 4)
 
             Spacer()
+
+            // The escape hatch when the proposed release is plainly wrong:
+            // stop searching by name and go by what the record sounds like.
+            KeyButton(style: model.isRepairingMetadata ? .disabled : .normal, action: {
+                model.deepScanCurrentAlbum()
+            }) {
+                HStack(spacing: 4) {
+                    if model.isRepairingMetadata {
+                        ProgressView().controlSize(.mini)
+                    } else {
+                        Image(systemName: "waveform").font(.system(size: 9))
+                    }
+                    Text("DEEP SCAN")
+                }
+            }
+            .frame(width: 130, height: CarbonLayout.keyHeight)
+            .disabled(model.isRepairingMetadata)
+            .help("Not the right record? Identify these tracks by their audio instead of their tags. "
+                  + "Slower, because it has to listen to each file, but it works on untagged rips.")
 
             KeyButton(style: .normal, action: { model.cancelMatchQueue() }) {
                 Text("CANCEL")

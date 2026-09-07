@@ -104,6 +104,8 @@ public struct CarbonTheme: Equatable {
     public var lampSyncOverride: Color?
     public var lampCDOverride: Color?
     public var lampDevicesOverride: Color?
+    public var lampSearchOverride: Color?
+    public var lampStatsOverride: Color?
 
     public var lampNow: Color { lampNowOverride ?? sun }
     public var lampConvert: Color { lampConvertOverride ?? orange }
@@ -111,6 +113,46 @@ public struct CarbonTheme: Equatable {
     public var lampSync: Color { lampSyncOverride ?? indigo }
     public var lampCD: Color { lampCDOverride ?? red }
     public var lampDevices: Color { lampDevicesOverride ?? orangeHi }
+    /// The seventh screen. Every other accent already belongs to a lamp, and a
+    /// tuner sweeping for a station wants the cold end of the palette anyway.
+    public var lampSearch: Color { lampSearchOverride ?? cyanGlow }
+    /// The eighth screen. What you have been playing, so the NOW family one
+    /// step brighter: related to the Now Playing lamp without being the same LED.
+    public var lampStats: Color { lampStatsOverride ?? sunHi }
+
+    /// The LED behind the transport's silicone caps: the play/pause dome,
+    /// shuffle, repeat, and the mini player's row.
+    ///
+    /// Its own token because the caps used to read the accent trio directly,
+    /// which welded "what the transport lights up as" to "what the app's accent
+    /// is" — retint the accent and the dome moved with the POSITION bar, the
+    /// meters and the sort arrows whether or not that was the idea. Unset, the
+    /// three below are exactly the accent trio, so nothing shipped changes.
+    /// Pinned, all three are the one hue: a real LED behind rubber is one
+    /// colour, and the cap's own opacity ramp is what makes the gradient.
+    public var transportLampOverride: Color?
+
+    public var transportLampHi: Color { transportLampOverride ?? orangeHi }
+    public var transportLamp: Color { transportLampOverride ?? orange }
+    public var transportLampLo: Color { transportLampOverride ?? orangeLo }
+
+    /// The small LEDs mounted on the chassis: the option lamps on the VIEW,
+    /// THEME and EQ keys, the power dot beside a sheet's title, the activity
+    /// lamp in the titlebar. Its own token because a key and a lamp are
+    /// different parts: a theme whose keys are black still needs LEDs that
+    /// light, and black is not a colour an LED comes in. Unset, the accent.
+    public var keyLampOverride: Color?
+    public var keyLamp: Color { keyLampOverride ?? orange }
+
+    /// The loud end of every meter: where the VOLUME ramp, the EQ bars and
+    /// the VU LEDs run from `cyan` up to. Its own token for the same reason
+    /// as the lamps — a lit segment is a light, and a theme whose accent is
+    /// black has meters that go dark as the signal rises. Unset, the accent
+    /// pair, so nothing shipped changes; pinned, one hue for both the body and
+    /// the peak segment.
+    public var meterHotOverride: Color?
+    public var meterHot: Color { meterHotOverride ?? orange }
+    public var meterHotHi: Color { meterHotOverride ?? orangeHi }
 
     /// CRT scanline strength on the OLED glass. Both built-ins ship 0 — the
     /// glass is a modern panel, not a tube — and the CRT-flavoured screen
@@ -176,6 +218,15 @@ public struct CarbonTheme: Equatable {
     /// every `@Environment(\.carbon)` reader already reacts to. It's compared,
     /// never displayed.
     public var fontsSignature: String = ""
+
+    /// What the header sets opposite "CrateDigger": the theme's logo when its
+    /// bundle carries one, otherwise `name` as a wordmark. The stamp is the
+    /// logo file's modification date — the theme is compared by value, and
+    /// re-importing a logo keeps its URL, so without the stamp a swapped image
+    /// would be an equal theme and the header would keep drawing the old one.
+    public var name: String = "Carbon"
+    public var logoURL: URL?
+    public var logoStamp: Date?
 
     public var isDark: Bool { mode == .carbon }
 }
@@ -401,6 +452,13 @@ public extension CarbonTheme {
         lampSyncOverride = optionalColor("lampSync", resolvedBase.lampSyncOverride)
         lampCDOverride = optionalColor("lampCD", resolvedBase.lampCDOverride)
         lampDevicesOverride = optionalColor("lampDevices", resolvedBase.lampDevicesOverride)
+        lampSearchOverride = optionalColor("lampSearch", resolvedBase.lampSearchOverride)
+        lampStatsOverride = optionalColor("lampStats", resolvedBase.lampStatsOverride)
+        // Not a lamp on the glass: the caps are on the chassis, so this one is
+        // absent from `monochromeGlass` below.
+        transportLampOverride = optionalColor("transportLamp", resolvedBase.transportLampOverride)
+        keyLampOverride = optionalColor("keyLamp", resolvedBase.keyLampOverride)
+        meterHotOverride = optionalColor("meterHot", resolvedBase.meterHotOverride)
         // Every overlay effect clamps to its dial's ceiling, so a theme can't
         // ask for a value the renderer would quietly trim away.
         func effect(_ key: String, _ fallback: Double) -> Double {
@@ -471,6 +529,7 @@ public extension CarbonTheme {
         for lamp: WritableKeyPath<CarbonTheme, Color?> in [
             \.lampNowOverride, \.lampConvertOverride, \.lampScanOverride,
             \.lampSyncOverride, \.lampCDOverride, \.lampDevicesOverride,
+            \.lampSearchOverride, \.lampStatsOverride,
         ] {
             copy[keyPath: lamp] = nil
         }

@@ -123,6 +123,8 @@ private struct DisplayContext: View {
             case .remoteSync:  RemoteSyncPane()
             case .cdRip:       CDRipPane()
             case .devices:     DevicesPane()
+            case .search:      SearchPane()
+            case .stats:       StatsPane()
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -140,6 +142,14 @@ private struct DisplayRail: View {
 
     var body: some View {
         HStack(spacing: 0) {
+            // What is playing leads the rail: the clock sits on the left edge
+            // where it never moves, and the title grows right into the gap.
+            // No Spacer — this block takes the whole remainder of the rail
+            // itself, so the annunciators stay pinned to the far edge.
+            RailLive(clock: model.playbackClock)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.trailing, 14)
+
             // Annunciators — every mode permanently printed on the glass, each
             // lit in its own accent (the same color the display-toggle strip
             // glows — see OLEDView.accent).
@@ -150,11 +160,21 @@ private struct DisplayRail: View {
                 ann("SYNC", lit: v == .remoteSync, color: OLEDView.remoteSync.accent(theme))
                 ann("CD", lit: v == .cdRip, color: OLEDView.cdRip.accent(theme))
                 ann("DEV", lit: v == .devices, color: OLEDView.devices.accent(theme))
+                ann("SRCH", lit: v == .search, color: OLEDView.search.accent(theme))
+                ann("STAT", lit: v == .stats, color: OLEDView.stats.accent(theme))
                 ann("ON AIR", lit: radioLive, color: theme.onAir, pulse: onAirPulse)
             }
-
-            // Transient system notice (tag saves etc.) — snaps in on the rail
-            // instead of interrupting the user with a modal alert.
+        }
+        .padding(.bottom, 7)
+        // Transient system notice (tag saves etc.) — snaps in on the rail
+        // instead of interrupting the user with a modal alert.
+        //
+        // An overlay rather than a member of the HStack: in the flow it pushed
+        // the transport strip sideways every time a notice came and went, and
+        // it read as a third thing crammed after the annunciators rather than
+        // as the display talking to you. Centred on the glass it is the one
+        // thing the panel is saying, which is what a notice is.
+        .overlay(alignment: .center) {
             if let notice = model.oledNotice {
                 Text(notice)
                     .font(CarbonFont.mono(9, weight: .bold))
@@ -163,17 +183,13 @@ private struct DisplayRail: View {
                     .shadow(color: theme.sun.opacity(0.55), radius: 6)
                     .lineLimit(1)
                     .fixedSize()
-                    .padding(.leading, 14)
+                    .padding(.bottom, 7)
+                    // Background work that finished while the user was
+                    // elsewhere gets the annunciators' attention blink; a
+                    // notice they asked for stays still.
+                    .modifier(AnnBlink(mode: model.oledNoticeBlinks ? .flash : .none))
             }
-
-            // No Spacer: the transport strip takes the whole remainder of the
-            // rail itself, so the title and the position bar grow into the gap
-            // instead of leaving one.
-            RailLive(clock: model.playbackClock)
-                .frame(maxWidth: .infinity, alignment: .trailing)
-                .padding(.leading, 14)
         }
-        .padding(.bottom, 7)
         .overlay(
             Rectangle().fill(oledFGo(0.09)).frame(height: 1),
             alignment: .bottom
@@ -253,9 +269,16 @@ private struct AnnDot: View {
 ///
 /// It carries only what the rest of the screen isn't already saying. On the
 /// nowPlaying view the title and the clocks are set an inch above in 44pt, so
-/// the strip keeps the bare progress bar and drops both — on every other view
-/// this rail is the *only* place playback is visible, so the title and the
-/// clocks come back.
+/// the strip drops both — on every other view this rail is the *only* place
+/// playback is visible, so the title and the clocks come back.
+///
+/// The progress bar used to live here too, squeezed between the clocks. It has
+/// moved down to the top edge of the cell rail (`OLEDProgressLine`), where it
+/// spans the whole glass instead of a 240pt slot and stops competing with the
+/// notice for the middle of the rail. The VOL meter that sat in the corner is
+/// gone as well: volume is a control, it belongs on the footer fader that sets
+/// it, and repeating it on the glass said nothing the fader wasn't already
+/// showing.
 private struct RailLive: View {
     @Environment(\.carbon) private var theme
     @EnvironmentObject private var model: LibraryViewModel
@@ -264,9 +287,34 @@ private struct RailLive: View {
 
     private var showMini: Bool { model.oledView != .nowPlaying }
 
+    /// The centred notice owns the middle of the rail while it's up, and the
+    /// mini title is the only element long enough to run under it. Yield rather
+    /// than overlap; the title is back a couple of seconds later.
+    private var showTitle: Bool { showMini && model.oledNotice == nil }
+
     var body: some View {
         HStack(spacing: 12) {
+            // Elapsed over total, as one reading. They used to flank the
+            // progress bar; with the bar gone they'd read as two loose numbers,
+            // so the slash holds them together.
+            //
+            // First on the rail, so the clock is anchored to the left edge and
+            // stays put while the title beside it changes length or yields to
+            // a notice.
             if showMini {
+                HStack(spacing: 4) {
+                    Text(model.displayedCurrentTime.asClockPadded)
+                        .foregroundStyle(oledFG)
+                    Text("/")
+                        .foregroundStyle(oledFGo(0.25))
+                    Text(model.playbackDuration.asClockPadded)
+                        .foregroundStyle(oledFGo(0.4))
+                }
+                .font(CarbonFont.mono(9, weight: .bold))
+                .fixedSize()
+            }
+
+            if showTitle {
                 Text(trackTitle)
                     .font(CarbonFont.mono(9, weight: .bold))
                     .tracking(1.08)
@@ -274,90 +322,19 @@ private struct RailLive: View {
                     .shadow(color: theme.orange.opacity(0.4), radius: 6)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    // Takes whatever the bar and the meter don't: a long title
-                    // is what the spare width on this rail is *for*.
-                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    // Takes whatever the clock doesn't: a long title is what
+                    // the spare width on this rail is *for*.
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else if showMini {
+                // Hold the rail open so the annunciators don't drift inward
+                // as a notice comes and goes.
+                Spacer(minLength: 0)
             }
-
-            // The clocks belong to the bar, not to the rail — one group so
-            // they stay tight against it however wide it stretches.
-            HStack(spacing: 6) {
-                if showMini {
-                    Text(model.displayedCurrentTime.asClockPadded)
-                        .font(CarbonFont.mono(9, weight: .bold))
-                        .foregroundStyle(oledFG)
-                }
-
-                progressBar
-
-                if showMini {
-                    Text(model.playbackDuration.asClockPadded)
-                        .font(CarbonFont.mono(9, weight: .bold))
-                        .foregroundStyle(oledFGo(0.4))
-                }
-            }
-            .frame(minWidth: 62, maxWidth: showMini ? 240 : 340)
-
-            HStack(spacing: 6) {
-                Text("VOL")
-                    .font(CarbonFont.mono(6.5, weight: .bold))
-                    .tracking(1.3)
-                    .foregroundStyle(oledFGo(0.3))
-                RailVolBars(volume: model.playbackVolume)
-                    .frame(width: 52, height: 9)
-            }
-            .fixedSize()
         }
-    }
-
-    /// Width comes from the layout rather than a constant, so the bar is the
-    /// thing that stretches as the window widens.
-    private var progressBar: some View {
-        Capsule().fill(oledFGo(0.14))
-            .frame(height: 3)
-            .overlay(alignment: .leading) {
-                GeometryReader { proxy in
-                    Capsule().fill(theme.orange)
-                        .frame(width: proxy.size.width * progress)
-                        .shadow(color: theme.orange.opacity(0.6), radius: 4)
-                }
-            }
     }
 
     private var trackTitle: String {
         (model.nowPlayingTrack?.track.title ?? model.selectedTrack?.track.title ?? "—").uppercased()
-    }
-
-    private var progress: CGFloat {
-        guard model.playbackDuration > 0 else { return 0 }
-        return CGFloat(min(max(model.displayedCurrentTime / model.playbackDuration, 0), 1))
-    }
-}
-
-/// A 16-segment cyan→orange VOL meter (revealed through a mask of the lit run),
-/// matching the footer POSITION bar's colour ramp.
-private struct RailVolBars: View {
-    @Environment(\.carbon) private var theme
-    let volume: Double
-
-    private let barCount = 16
-
-    var body: some View {
-        let lit = Int((volume * Double(barCount)).rounded())
-        ZStack {
-            segmentRow { _ in oledFGo(0.16) }
-            LinearGradient(colors: [theme.cyan, theme.orange], startPoint: .leading, endPoint: .trailing)
-                .mask(segmentRow { i in i < lit ? Color.black : Color.clear })
-                .shadow(color: theme.orange.opacity(0.5), radius: 2)
-        }
-    }
-
-    private func segmentRow(_ fill: @escaping (Int) -> Color) -> some View {
-        HStack(spacing: 2) {
-            ForEach(0..<barCount, id: \.self) { i in
-                RoundedRectangle(cornerRadius: 1, style: .continuous).fill(fill(i))
-            }
-        }
     }
 }
 
@@ -459,6 +436,7 @@ private struct OLEDCellData: Identifiable {
 /// columns blank rather than re-spacing the rail, and the fixed height stops a
 /// long value's `minimumScaleFactor` from shrinking the row under the lines.
 private struct OLEDCells: View {
+    @EnvironmentObject private var model: LibraryViewModel
     let cells: [OLEDCellData]
 
     init(_ cells: [OLEDCellData]) {
@@ -484,7 +462,7 @@ private struct OLEDCells: View {
         }
         .frame(height: Self.railHeight, alignment: .top)
         .padding(.top, 6)
-        .overlay(Rectangle().fill(oledFGo(0.12)).frame(height: 1), alignment: .top)
+        .overlay(OLEDProgressLine(clock: model.playbackClock), alignment: .top)
     }
 
     private func cell(_ c: OLEDCellData, leading: Bool) -> some View {
@@ -508,6 +486,38 @@ private struct OLEDCells: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.trailing, 10)
         .padding(.leading, leading ? 10 : 0)
+    }
+}
+
+/// The playback position, drawn as the cell rail's own top edge.
+///
+/// It is the hairline that was always there — it just fills in orange as the
+/// track plays. Down here it spans the full width of the glass, which is both
+/// more resolution than the old 240pt slot in the rail and one fewer thing
+/// crowding the middle of that rail. It stays a hairline: this is a rule that
+/// happens to report a position, not a control, and a thicker bar would read as
+/// something you could drag.
+private struct OLEDProgressLine: View {
+    @Environment(\.carbon) private var theme
+    @EnvironmentObject private var model: LibraryViewModel
+    // The clock is its own object so a tick doesn't republish the whole model.
+    @ObservedObject var clock: PlaybackClock
+
+    private var progress: CGFloat {
+        guard model.playbackDuration > 0 else { return 0 }
+        return CGFloat(min(max(model.displayedCurrentTime / model.playbackDuration, 0), 1))
+    }
+
+    var body: some View {
+        Rectangle().fill(oledFGo(0.12))
+            .frame(height: 1)
+            .overlay(alignment: .leading) {
+                GeometryReader { proxy in
+                    Rectangle().fill(theme.orange)
+                        .frame(width: proxy.size.width * progress)
+                        .shadow(color: theme.orange.opacity(0.7), radius: 3)
+                }
+            }
     }
 }
 
@@ -569,7 +579,7 @@ private struct OLEDTag: View {
 private struct ScanBar: View {
     @Environment(\.carbon) private var theme
 
-    enum Style { case rainbow(Double), orange(Double), indigoSweep }
+    enum Style { case rainbow(Double), orange(Double), indigoSweep, level(Color, Double) }
     let style: Style
     @State private var sweep = false
 
@@ -598,6 +608,15 @@ private struct ScanBar: View {
                         .onAppear {
                             withAnimation(.easeInOut(duration: 1.6).repeatForever(autoreverses: true)) { sweep = true }
                         }
+                // How much of the source came back, in a given colour. Not a
+                // sweep: the filter is synchronous and finished before this is
+                // drawn, so anything still moving would be claiming work that
+                // isn't happening.
+                case .level(let color, let f):
+                    Capsule()
+                        .fill(LinearGradient(colors: [color.opacity(0.55), color], startPoint: .leading, endPoint: .trailing))
+                        .frame(width: w * CGFloat(min(max(f, 0), 1)))
+                        .shadow(color: color.opacity(0.34), radius: 5)
                 }
             }
         }
@@ -1048,6 +1067,184 @@ private struct ConversionPane: View {
 }
 
 // MARK: - SCAN pane
+
+/// SEARCH — the tuner. Shows what you typed, how wide it is looking, and what
+/// it found, so the display answers "why is the browser only showing three
+/// rows" without you having to look back at the field.
+private struct SearchPane: View {
+    @EnvironmentObject private var model: LibraryViewModel
+    @Environment(\.carbon) private var theme
+
+    var body: some View {
+        OLEDPaneScaffold {
+            NPTitles(title: headline, sub: subtitle, titleColor: titleColor)
+        } readout: {
+            VStack(alignment: .trailing, spacing: 6) {
+                Text(matchValue)
+                    .font(CarbonFont.display(34, weight: .thin))
+                    .foregroundStyle(oledFG)
+                // Always drawn, so the readout doesn't change height when a
+                // query starts: empty well at rest, filled to the share of the
+                // source that matched while searching.
+                ScanBar(style: .level(theme.lampSearch, matchFraction)).frame(width: 150)
+            }
+            .fixedSize()
+        } ticker: {
+            EmptyView()
+        } cells: {
+            OLEDCells(cells)
+        }
+    }
+
+    private var headline: String {
+        model.isSearchActive ? model.searchQuery : "READY"
+    }
+
+    private var titleColor: Color {
+        model.isSearchActive ? oledFG : oledFGo(0.45)
+    }
+
+    private var subtitle: String {
+        guard model.isSearchActive else { return "Type to search" }
+        if model.browsedIndex.allTracks.isEmpty { return "No match" }
+        return searchingEverything ? "Searching all records" : "Searching this crate"
+    }
+
+    /// All Records *is* every crate, so a search in it reads as the wide one
+    /// whether or not the scope switch was ever touched.
+    private var searchingEverything: Bool {
+        model.searchScope == .everywhere || model.currentSource == .localAll
+    }
+
+    /// The number the eye goes to: how many tracks came back.
+    private var matchValue: String {
+        model.isSearchActive ? "\(model.browsedIndex.allTracks.count)" : "—"
+    }
+
+    /// The share of the source still showing. Floored just above zero while
+    /// anything matched, so a single hit in a big library is still a mark on
+    /// the bar rather than nothing at all.
+    private var matchFraction: Double {
+        guard model.isSearchActive else { return 0 }
+        let total = model.index.allTracks.count
+        guard total > 0 else { return 0 }
+        let found = model.browsedIndex.allTracks.count
+        guard found > 0 else { return 0 }
+        return max(0.015, Double(found) / Double(total))
+    }
+
+    private var cells: [OLEDCellData] {
+        [
+            OLEDCellData(key: "Artists", value: count(model.browsedIndex.artists.count), sub: "Found",
+                         valueColor: theme.orange),
+            OLEDCellData(key: "Albums", value: count(model.browsedIndex.albumCount), sub: "Found",
+                         valueColor: theme.sun),
+            OLEDCellData(key: "Tracks", value: count(model.browsedIndex.allTracks.count), sub: "Found",
+                         valueColor: theme.cyan),
+            OLEDCellData(key: "Scope", value: searchingEverything ? "ALL" : "CRATE",
+                         sub: searchingEverything ? "Every Crate" : "This Crate"),
+            OLEDCellData(key: "Of", value: "\(model.index.allTracks.count)", sub: "In Source")
+        ]
+    }
+
+    private func count(_ n: Int) -> String {
+        model.isSearchActive ? "\(n)" : "—"
+    }
+}
+
+/// STATS: what you have been playing. The headline is the window's top
+/// record, the readout its play count with the period tag under it, and the
+/// rail names the rest. The tag cycles Month, Year, All Time.
+private struct StatsPane: View {
+    @EnvironmentObject private var model: LibraryViewModel
+    @Environment(\.carbon) private var theme
+
+    var body: some View {
+        OLEDPaneScaffold {
+            NPTitles(title: headline, sub: subtitle, titleColor: titleColor)
+        } readout: {
+            VStack(alignment: .trailing, spacing: 6) {
+                Text(playsValue)
+                    .font(CarbonFont.display(34, weight: .thin))
+                    .foregroundStyle(oledFG)
+                Button(action: { model.cycleStatsWindow() }) {
+                    OLEDTag(text: periodLabel, ink: theme.lampStats, background: theme.lampStats.opacity(0.14))
+                }
+                .buttonStyle(.plain)
+                .carbonTip("Click to change the period")
+            }
+            .fixedSize()
+        } ticker: {
+            EmptyView()
+        } cells: {
+            OLEDCells(cells)
+        }
+        // The summary is computed lazily: showing the screen is what asks
+        // for it, so a relaunch straight into STATS draws real numbers too.
+        .onAppear { model.refreshListeningSummaryIfNeeded() }
+    }
+
+    private var summary: ListeningSummary? { model.listeningSummary }
+    private var hasPlays: Bool { !(summary?.isEmpty ?? true) }
+    private var windowTitle: String { model.statsWindow.title(now: Date(), calendar: .current) }
+
+    private var headline: String {
+        summary?.topRecord?.name ?? "NOTHING YET"
+    }
+
+    private var titleColor: Color {
+        hasPlays ? oledFG : oledFGo(0.45)
+    }
+
+    private var subtitle: String {
+        guard hasPlays, let record = summary?.topRecord else { return "Play something · \(windowTitle)" }
+        return record.detail.isEmpty
+            ? "Top record · \(windowTitle)"
+            : "\(record.detail) · Top record · \(windowTitle)"
+    }
+
+    private var playsValue: String {
+        hasPlays ? "\(summary?.plays ?? 0)" : "—"
+    }
+
+    private var periodLabel: String {
+        switch model.statsWindow {
+        case .month:   return "MONTH"
+        case .year:    return "YEAR"
+        case .allTime: return "ALL"
+        }
+    }
+
+    private var cells: [OLEDCellData] {
+        [
+            OLEDCellData(key: "Artist", value: summary?.topArtist?.name ?? "—",
+                         sub: summary?.topArtist.map { "\($0.plays) plays" } ?? "Top",
+                         valueColor: theme.lampStats),
+            OLEDCellData(key: "Track", value: summary?.topTrack?.name ?? "—",
+                         sub: summary?.topTrack?.detail.nonEmpty ?? "Top",
+                         valueColor: theme.sun),
+            OLEDCellData(key: "Hours", value: hoursValue, sub: "Listened"),
+            OLEDCellData(key: "Records", value: count(summary?.recordsTouched), sub: "Played"),
+            OLEDCellData(key: "Tracks", value: count(summary?.tracksTouched), sub: "Played")
+        ]
+    }
+
+    private var hoursValue: String {
+        guard hasPlays, let seconds = summary?.listenedSeconds, seconds > 0 else { return "—" }
+        let hours = seconds / 3600
+        return hours < 10 ? String(format: "%.1f", hours) : "\(Int(hours.rounded()))"
+    }
+
+    private func count(_ n: Int?) -> String {
+        guard hasPlays, let n else { return "—" }
+        return "\(n)"
+    }
+}
+
+private extension String {
+    /// nil for "", so a `??` fallback can take over an empty detail line.
+    var nonEmpty: String? { isEmpty ? nil : self }
+}
 
 private struct ScanPane: View {
     @EnvironmentObject private var model: LibraryViewModel

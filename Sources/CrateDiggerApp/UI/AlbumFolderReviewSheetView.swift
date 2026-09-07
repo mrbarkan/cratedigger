@@ -79,7 +79,10 @@ struct AlbumFolderReviewSheetView: View {
                 Button("Continue") {
                     var reviewed: [AlbumFolderKey: String] = [:]
                     for row in rows {
-                        let cleaned = sanitizeRelativeSubpath(row.destinationSubpath, fallback: row.albumLabel.replacingOccurrences(of: " • ", with: "/"))
+                        let cleaned = PathComponentSanitizer.sanitizeSubpath(
+                            row.destinationSubpath,
+                            fallback: fallbackSubpath(for: row.key)
+                        )
                         reviewed[row.key] = cleaned
                     }
                     onDecision(reviewed)
@@ -94,22 +97,16 @@ struct AlbumFolderReviewSheetView: View {
         .background(theme.chassis)
     }
 
-    private func sanitizeRelativeSubpath(_ rawPath: String, fallback: String) -> String {
-        let components = rawPath
-            .split(separator: "/")
-            .map {
-                $0
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                    .replacingOccurrences(of: "/", with: "-")
-                    .replacingOccurrences(of: ":", with: "-")
-                    .replacingOccurrences(of: "\\", with: "-")
-            }
-            .filter { !$0.isEmpty }
-
-        if components.isEmpty {
-            return fallback
-        }
-
-        return components.joined(separator: "/")
+    /// Where an album goes when the field has been cleared. Built from the
+    /// album key itself rather than by picking apart the display label — the
+    /// label's separator and the one this used to split on had already drifted
+    /// apart (a middle dot versus a bullet), so the fallback silently produced
+    /// one flat folder named "Artist · Album · Year".
+    private func fallbackSubpath(for key: AlbumFolderKey) -> String {
+        let parts = [key.artistBucket, key.album, key.year].filter { !$0.isEmpty }
+        return PathComponentSanitizer.sanitizeSubpath(
+            parts.joined(separator: "/"),
+            fallback: "Unknown Album"
+        )
     }
 }

@@ -166,12 +166,35 @@ For the full release gate, see [docs/BETA_RELEASE_CHECKLIST.md](docs/BETA_RELEAS
 
 ### In-app updates (Sparkle)
 
-The shipped app updates itself: it reads an appcast from
-`https://cratedigger.mrbarkan.com/appcast.xml` (served by GitHub Pages from
-`website/`), verifies the EdDSA signature on the DMG, installs it and relaunches.
+The shipped app updates itself: it reads an appcast served by GitHub Pages from
+`website/`, verifies the EdDSA signature on the DMG, installs it and relaunches.
 "Check for Updates…" in the app menu does it on demand; otherwise it checks once
 a day in the background. A `swift build` run has no feed and no key, so the
 updater is never created there and the menu item stays greyed out.
+
+**There are two feeds, and which one a build reads is decided at runtime, not
+in `Info.plist`.**
+
+| Feed | Who reads it |
+|------|--------------|
+| `website/appcast.xml` | stable releases (currently the 1.5.x line) |
+| `website/appcast-beta.xml` | the 2.0 line, published as GitHub prereleases |
+
+`SUFeedURL` is deliberately **identical on both branches** and points at the
+stable feed; it is only the fallback for a build that overrides nothing. The
+real choice is `UpdateFeed.override(channel:betaOptIn:)` in
+`Updates/SoftwareUpdater.swift`, which returns the beta feed when either the
+build's own `AppVersion.channel` is non-empty or the owner has ticked Advanced
+▸ Receive beta updates. So a prerelease build follows the beta feed
+automatically, because `AppVersion.channel` is `BETA` on `v2` and nobody has to
+tick anything, while a stable build only ever sees a beta if its owner asked
+for one.
+
+Keeping that decision in one pure function rather than in `Info.plist` is the
+point: there is no per-branch line to repoint, so there is no line that can be
+forgotten or carried onto `main` by accident. `UpdateFeedTests` covers all four
+channel/opt-in combinations and also reads `Info.plist`, failing if `SUFeedURL`
+ever stops matching `UpdateFeed.stable`.
 
 **One-time setup.** Generate the signing key. The private half goes into your
 login Keychain and never leaves it; the tool prints the public half:
@@ -191,17 +214,30 @@ while the placeholder is still there.
 **Each release**, after the notarized DMG exists and before pushing:
 
 ```bash
-scripts/update-appcast.sh                    # newest dist/CrateDigger-*.dmg
-scripts/update-appcast.sh --channel rc       # ...if it's a prerelease
+scripts/update-appcast.sh                              # stable, run from main
+scripts/update-appcast.sh --appcast website/appcast-beta.xml   # beta, run from v2
 ```
 
-That signs the DMG into `website/appcast.xml`, with release notes lifted from
-the matching `CHANGELOG.md` section. Upload the same DMG to the GitHub release
-(the feed points at that download URL and the signature covers those exact
-bytes — re-packaging afterwards invalidates it), then commit and push
-`website/appcast.xml`; Pages redeploys the feed on push. `--channel rc` keeps a
-prerelease off everyone else's Mac: only builds whose `AppVersion.channel` says
-`RC` are offered it.
+That signs the DMG into the chosen feed, with release notes lifted from the
+matching `CHANGELOG.md` section. Each feed is generated on the branch that owns
+it and the script refuses to run on the wrong one, because getting it backwards
+is silent and destructive in both directions: it would either publish a beta
+into the feed every stable copy reads, or overwrite the stable feed's history
+from a branch that does not have it.
+
+Upload the same DMG to the GitHub release (the feed points at that download URL
+and the signature covers those exact bytes — re-packaging afterwards
+invalidates it), then commit and push the feed; Pages redeploys on push.
+
+One thing does have to cross branches: Pages only serves `website/` from
+`main`, so publishing a beta feed means copying *just* that one file over
+(`git checkout v2 -- website/appcast-beta.xml`). Never carry anything else
+across. The `press-the-record` skill scripts both paths, and using it is
+preferable to releasing by hand.
+
+`--channel rc` remains for the older convention, where prerelease items were
+tagged inside the stable feed rather than split into their own. The 2.0 line
+does not use it.
 
 ### Last.fm scrobbling (optional)
 

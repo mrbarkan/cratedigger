@@ -9,9 +9,16 @@ public final class PreferencesStore {
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
 
-    public init(defaults: UserDefaults = .standard, secrets: SecretStoring = KeychainStore()) {
+    /// `secrets` defaults to the keychain in a release build and to
+    /// `DevSecretStore` in a debug one — see that type for why.
+    public init(defaults: UserDefaults = .standard, secrets: SecretStoring? = nil) {
+        #if DEBUG
+        let resolvedSecrets = secrets ?? DevSecretStore(defaults: defaults)
+        #else
+        let resolvedSecrets = secrets ?? KeychainStore()
+        #endif
         self.defaults = defaults
-        self.secrets = secrets
+        self.secrets = resolvedSecrets
     }
 
     private enum Key {
@@ -23,9 +30,11 @@ public final class PreferencesStore {
         static let customFFmpegPath = "cratedigger.tools.ffmpegPath"
         static let customFFprobePath = "cratedigger.tools.ffprobePath"
         static let oledView = "cratedigger.ui.oledView"
+        static let statsWindow = "cratedigger.ui.statsWindow"
         static let collapsedSourceSections = "cratedigger.sidebar.collapsedSections"
         static let shuffleEnabled = "cratedigger.playback.shuffle"
         static let repeatMode = "cratedigger.playback.repeatMode"
+        static let playbackSnapshot = "cratedigger.playback.snapshot"
         static let dsdOutputMode = "cratedigger.playback.dsdOutputMode"
         static let playbackVolume = "cratedigger.playback.volume"
         static let clickSoundsEnabled = "cratedigger.ui.clickSoundsEnabled"
@@ -54,10 +63,13 @@ public final class PreferencesStore {
         static let albumSortField = "cratedigger.browser.albumSortField"
         static let albumSortAscending = "cratedigger.browser.albumSortAscending"
         static let showSortControls = "cratedigger.browser.showSortControls"
+        static let showSearchField = "cratedigger.browser.showSearchField"
+        static let browserViews = "cratedigger.browser.views"
         static let browserLayout = "cratedigger.browser.layout"
         static let trackColumns = "cratedigger.browser.trackColumns"
         static let playlistBrowserLayout = "cratedigger.browser.playlistLayout"
         static let scrubLock = "cratedigger.transport.scrubLock"
+        static let gaplessPlayback = "cratedigger.transport.gapless"
         static let miniPlayerArtMode = "cratedigger.miniplayer.artMode"
         static let hasCompletedFirstRunSetup = "cratedigger.onboarding.completed"
         static let hasSeenWelcomeTour = "cratedigger.onboarding.tourSeen"
@@ -67,6 +79,7 @@ public final class PreferencesStore {
         static let streamEngine = "cratedigger.radio.engine"
         static let customYtDlpPath = "cratedigger.tools.ytdlpPath"
         static let discogsToken = "cratedigger.artwork.discogsToken"
+        static let betaUpdates = "cratedigger.updates.betaChannel"
         static let albumGroups = "cratedigger.library.albumGroups"
         static let selectedThemeID = "cratedigger.ui.selectedThemeID"
     }
@@ -292,6 +305,18 @@ public final class PreferencesStore {
         }
     }
 
+    /// `ListeningWindow.rawValue` the STATS screen was last showing.
+    public var savedStatsWindow: String? {
+        get { defaults.string(forKey: Key.statsWindow) }
+        set {
+            if let value = newValue {
+                defaults.set(value, forKey: Key.statsWindow)
+            } else {
+                defaults.removeObject(forKey: Key.statsWindow)
+            }
+        }
+    }
+
     public var savedShuffleEnabled: Bool {
         get { defaults.bool(forKey: Key.shuffleEnabled) }
         set { defaults.set(newValue, forKey: Key.shuffleEnabled) }
@@ -310,6 +335,20 @@ public final class PreferencesStore {
                 defaults.set(value, forKey: Key.repeatMode)
             } else {
                 defaults.removeObject(forKey: Key.repeatMode)
+            }
+        }
+    }
+
+    /// Raw JSON of a `PlaybackSnapshot`: the transport at last quit.
+    /// `LibraryViewModel+Resume` owns (de)serialization. Bounded by
+    /// `PlaybackSnapshot.maxUpNext`, so this stays in the tens of KB.
+    public var playbackSnapshotData: Data? {
+        get { defaults.data(forKey: Key.playbackSnapshot) }
+        set {
+            if let data = newValue {
+                defaults.set(data, forKey: Key.playbackSnapshot)
+            } else {
+                defaults.removeObject(forKey: Key.playbackSnapshot)
             }
         }
     }
@@ -377,6 +416,19 @@ public final class PreferencesStore {
         }
     }
 
+    /// Each source's browser view, keyed by `LibrarySource.persistenceKey`.
+    /// A key with no entry falls back to the legacy layout keys below, which
+    /// is the whole migration: a user who had `Album · Track` keeps it
+    /// everywhere until they change one crate.
+    public var savedBrowserViews: [String: BrowserView] {
+        get {
+            guard let data = defaults.data(forKey: Key.browserViews),
+                  let stored = try? decoder.decode([String: BrowserView].self, from: data) else { return [:] }
+            return stored
+        }
+        set { defaults.set(try? encoder.encode(newValue), forKey: Key.browserViews) }
+    }
+
     public var savedBrowserLayout: String? {
         get { defaults.string(forKey: Key.browserLayout) }
         set {
@@ -410,6 +462,29 @@ public final class PreferencesStore {
     public var savedEQGains: [Double] {
         get { (defaults.array(forKey: "cratedigger.eq.gains") as? [Double]) ?? [] }
         set { defaults.set(newValue, forKey: "cratedigger.eq.gains") }
+    }
+
+    /// The three user EQ slots. Always returns `CustomEQPreset.slotCount`
+    /// entries, so the editor can index them without bounds checks.
+    public var customEQPresets: [CustomEQPreset] {
+        get {
+            guard let data = defaults.data(forKey: "cratedigger.eq.custom"),
+                  let stored = try? JSONDecoder().decode([CustomEQPreset].self, from: data)
+            else { return CustomEQPreset.emptySlots }
+            let defaults = CustomEQPreset.emptySlots
+            return (0..<CustomEQPreset.slotCount).map { i in
+                i < stored.count ? stored[i] : defaults[i]
+            }
+        }
+        set { defaults.set(try? JSONEncoder().encode(newValue), forKey: "cratedigger.eq.custom") }
+    }
+
+    /// Which EQ slots the header EQ key cycles through, as slot ids. Empty
+    /// means "every built-in preset" — the behaviour before the key was
+    /// selectable, and the right fallback if the list is ever emptied.
+    public var eqCycleSelection: [String] {
+        get { defaults.stringArray(forKey: "cratedigger.eq.cycle") ?? [] }
+        set { defaults.set(newValue, forKey: "cratedigger.eq.cycle") }
     }
 
     public var savedMiniPlayerArtMode: String? {
@@ -495,6 +570,28 @@ public final class PreferencesStore {
             return defaults.bool(forKey: Key.albumSortAscending)
         }
         set { defaults.set(newValue, forKey: Key.albumSortAscending) }
+    }
+
+    /// Whether the browser's search field is on screen. Visible by default: a
+    /// search field you cannot see is one you forget the app has.
+    public var savedShowSearchField: Bool {
+        get {
+            if defaults.object(forKey: Key.showSearchField) == nil { return true }
+            return defaults.bool(forKey: Key.showSearchField)
+        }
+        set { defaults.set(newValue, forKey: Key.showSearchField) }
+    }
+
+    /// Buffer the next track while the current one plays, so an album that was
+    /// recorded continuously plays without a seam. On unless a listener turns
+    /// it off: the look-ahead keeps a second decoder open, and a stubborn
+    /// output device is easier to diagnose with it out of the way.
+    public var gaplessPlaybackEnabled: Bool {
+        get {
+            if defaults.object(forKey: Key.gaplessPlayback) == nil { return true }
+            return defaults.bool(forKey: Key.gaplessPlayback)
+        }
+        set { defaults.set(newValue, forKey: Key.gaplessPlayback) }
     }
 
     public var savedShowSortControls: Bool {
@@ -641,6 +738,19 @@ public final class PreferencesStore {
     /// lower rate limit (25 req/min against 60). A token also keeps the feature
     /// working if Discogs goes back to gating image URLs behind auth, which it
     /// has done before.
+    /// Opt in to prerelease updates. Off unless the person deliberately turns
+    /// it on, which is the whole point: a beta is never pushed to someone who
+    /// did not ask for it.
+    ///
+    /// It selects a *feed*, not a flag on the stable one. `SoftwareUpdater`
+    /// hands Sparkle the beta appcast when this is on, so the file every
+    /// stable copy reads is never the file a beta is published into, and a
+    /// mistake in a beta release cannot reach someone who left this off.
+    public var betaUpdatesEnabled: Bool {
+        get { defaults.bool(forKey: Key.betaUpdates) }
+        set { defaults.set(newValue, forKey: Key.betaUpdates) }
+    }
+
     public var discogsToken: String? {
         get { defaults.string(forKey: Key.discogsToken) }
         set {

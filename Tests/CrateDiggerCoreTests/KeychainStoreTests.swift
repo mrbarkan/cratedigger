@@ -19,7 +19,6 @@ private final class FakeSecretStore: SecretStoring {
 
 final class KeychainStoreTests: XCTestCase {
 
-    private let suiteName = "KeychainStoreTests"
     private let subsonicKey = "cratedigger.remote.subsonicPassword"
     private let lastFmKey = "cratedigger.lastfm.sessionKey"
 
@@ -29,14 +28,12 @@ final class KeychainStoreTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
-        defaults = UserDefaults(suiteName: suiteName)
-        defaults.removePersistentDomain(forName: suiteName)
+        defaults = makeScratchDefaults()
         secrets = FakeSecretStore()
         prefs = PreferencesStore(defaults: defaults, secrets: secrets)
     }
 
     override func tearDown() {
-        defaults.removePersistentDomain(forName: suiteName)
         defaults = nil
         secrets = nil
         prefs = nil

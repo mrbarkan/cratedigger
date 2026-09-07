@@ -180,6 +180,64 @@ final class ThemeAuthoringServiceTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: installed), Data("second".utf8))
     }
 
+    // MARK: - Logo
+
+    /// One slot, `logo.<ext>`: importing again replaces whatever was there,
+    /// across extensions, so a shared bundle never carries two marks.
+    func testImportLogoKeepsOneFileAndRemoveClearsIt() throws {
+        let png = themesDirectory.appendingPathComponent("Mark.PNG")
+        try Data("png".utf8).write(to: png)
+
+        let installed = try service.importLogo(from: png, into: "midnight")
+        XCTAssertEqual(
+            installed.path,
+            themesDirectory.appendingPathComponent("midnight.cdtheme").appendingPathComponent("logo.png").path
+        )
+        XCTAssertTrue(FileManager.default.fileExists(atPath: installed.path))
+
+        let pdf = themesDirectory.appendingPathComponent("Mark.pdf")
+        try Data("pdf".utf8).write(to: pdf)
+        let replaced = try service.importLogo(from: pdf, into: "midnight")
+        XCTAssertEqual(replaced.lastPathComponent, "logo.pdf")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: installed.path), "the PNG must not linger beside the PDF")
+
+        try service.removeLogo(from: "midnight")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: replaced.path))
+        XCTAssertNoThrow(try service.removeLogo(from: "midnight"), "clearing twice is fine")
+    }
+
+    /// Each layer has its own slot, and touching one never disturbs the other
+    /// or the shared file.
+    func testLayerLogosLiveInTheirOwnSlots() throws {
+        let png = themesDirectory.appendingPathComponent("Mark.png")
+        try Data("png".utf8).write(to: png)
+
+        let shared = try service.importLogo(from: png, into: "midnight")
+        let light = try service.installLogo(Data("rendered".utf8), extension: "png", into: "midnight", layer: .light)
+        let dark = try service.importLogo(from: png, into: "midnight", layer: .dark)
+
+        XCTAssertEqual(shared.lastPathComponent, "logo.png")
+        XCTAssertEqual(light.lastPathComponent, "logo-light.png")
+        XCTAssertEqual(dark.lastPathComponent, "logo-dark.png")
+        XCTAssertEqual(try Data(contentsOf: light), Data("rendered".utf8))
+
+        try service.removeLogo(from: "midnight", layer: .light)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: light.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: shared.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dark.path))
+    }
+
+    func testImportLogoRefusesABareJSONTheme() throws {
+        let bare = themesDirectory.appendingPathComponent("bare.json")
+        try Data("{}".utf8).write(to: bare)
+        let png = themesDirectory.appendingPathComponent("Mark.png")
+        try Data("png".utf8).write(to: png)
+
+        XCTAssertThrowsError(try service.importLogo(from: png, into: "bare", replacing: bare)) { error in
+            XCTAssertTrue(error is ThemeAuthoringService.LogoImportUnsupported)
+        }
+    }
+
     func testDeleteRemovesTheBundleAndIsSafeWhenMissing() throws {
         try service.save(definition(id: "midnight"))
         XCTAssertTrue(FileManager.default.fileExists(atPath: service.bundleURL(for: "midnight").path))

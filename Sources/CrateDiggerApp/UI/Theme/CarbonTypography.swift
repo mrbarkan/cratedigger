@@ -1,3 +1,4 @@
+import CoreText
 import CrateDiggerCore
 import SwiftUI
 
@@ -101,4 +102,34 @@ public enum CarbonFont {
         }
         return Font.custom(displayFamily, size: size, relativeTo: .title).weight(weight)
     }
+
+    /// The PostScript name `display(_:)` is actually drawing with, theme
+    /// override included. The brand lockup needs it to measure the face.
+    public static var displayFaceName: String {
+        ActiveThemeFonts.overrides["display"]?.resolvedFace(for: .regular) ?? displayFamily
+    }
+
+    /// Cap height of the current display face, in ems.
+    ///
+    /// Measured rather than assumed, because the brand lockup sizes its mark
+    /// to the capitals and a theme can name any face. A name that is not
+    /// installed resolves to the same system fallback CoreText will draw, so
+    /// the measurement still describes what lands on screen.
+    public static var displayCapHeight: CGFloat {
+        let name = displayFaceName
+        if let cached = capHeightCache[name] { return cached }
+        // A large probe size keeps the ratio well away from hinting rounding.
+        let probe: CGFloat = 1000
+        let font = CTFontCreateWithName(name as CFString, probe, nil)
+        let measured = CTFontGetCapHeight(font) / probe
+        // A face that reports nothing usable (some icon and bitmap faces do)
+        // would collapse the mark, so fall back to the shipped face's number.
+        let capHeight = measured > 0.1 ? measured : BrandLockupMetrics.majorMonoCapHeight
+        capHeightCache[name] = capHeight
+        return capHeight
+    }
+
+    /// Only ever touched from view bodies on the main thread, same as
+    /// `ActiveThemeFonts.overrides` above it.
+    private nonisolated(unsafe) static var capHeightCache: [String: CGFloat] = [:]
 }

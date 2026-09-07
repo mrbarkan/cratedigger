@@ -29,10 +29,19 @@ public struct DeviceSyncQueueStore {
         return (try? JSONDecoder().decode([DeviceSyncQueueEntry].self, from: data)) ?? []
     }
 
+    /// Failures are logged, not thrown: the queue is a convenience the caller
+    /// cannot usefully recover from mid-sync. Silent was the problem — a full
+    /// disk used to drop the whole queue with nothing said anywhere.
     public func save(_ entries: [DeviceSyncQueueEntry], profileID: UUID) {
         try? fileManager.createDirectory(at: queuesDirectory, withIntermediateDirectories: true)
-        guard let data = try? JSONEncoder().encode(entries) else { return }
-        try? data.write(to: queueURL(for: profileID), options: .atomic)
+        do {
+            let data = try JSONEncoder().encode(entries)
+            try data.write(to: queueURL(for: profileID), options: .atomic)
+        } catch {
+            AppLog.library.warning(
+                "Could not save the sync queue for \(profileID, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+        }
     }
 
     /// Drop the whole queue: JSON + entire staging tree.

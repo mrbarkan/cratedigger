@@ -67,6 +67,7 @@ extension LibraryViewModel {
         playbackQueue.insert(contentsOf: queueable, at: min(range.lowerBound, playbackQueue.count))
 
         showOLEDNotice(queueNotice(count: queueable.count, next: next))
+        savePlaybackSnapshot()
     }
 
     private func queueNotice(count: Int, next: Bool) -> String {
@@ -99,6 +100,7 @@ extension LibraryViewModel {
         for index in removed.sorted(by: >) where playbackQueue.indices.contains(index) {
             playbackQueue.remove(at: index)
         }
+        savePlaybackSnapshot()
     }
 
     /// Drop everything after the playing track, keeping it playing.
@@ -106,6 +108,7 @@ extension LibraryViewModel {
         guard let current = playbackCurrentIndex, current >= 0 else {
             playbackQueue = []
             playback.load(queue: [], startIndex: 0, autoPlay: false)
+            savePlaybackSnapshot()
             return
         }
         let tail = IndexSet(integersIn: min(current + 1, playbackQueue.count)..<playbackQueue.count)
@@ -113,6 +116,7 @@ extension LibraryViewModel {
         playback.removeFromQueue(at: tail)
         playbackQueue.removeSubrange(min(current + 1, playbackQueue.count)..<playbackQueue.count)
         showOLEDNotice("QUEUE CLEARED")
+        savePlaybackSnapshot()
     }
 
     /// Reorder a queued track. Indices address the full queue, not just Up Next.
@@ -124,6 +128,7 @@ extension LibraryViewModel {
         let item = playbackQueue.remove(at: source)
         let target = min(clamped > source ? clamped - 1 : clamped, playbackQueue.count)
         playbackQueue.insert(item, at: target)
+        savePlaybackSnapshot()
     }
 
     /// Jump straight to a queued track (double-clicking a row in Up Next).

@@ -32,6 +32,19 @@ final class MeterDriver: ObservableObject {
     private var lastUpdate = Date()
     /// True while playing; false means release toward zero, then stop ticking.
     private var active = false
+    private var visibilitySub: AnyCancellable?
+
+    init() {
+        // LEDs nobody can see do not need redrawing 30 times a second. The
+        // levels themselves keep being measured on the audio thread, so the
+        // bars are correct the moment the window comes back.
+        visibilitySub = AppVisibility.shared.$isVisible.sink { [weak self] visible in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                if visible { self.ensureTimer() } else { self.haltTimer() }
+            }
+        }
+    }
 
     /// Begin metering (playback started).
     func start() {
@@ -43,6 +56,11 @@ final class MeterDriver: ObservableObject {
     func stop() {
         active = false
         ensureTimer()
+    }
+
+    private func haltTimer() {
+        timer?.invalidate()
+        timer = nil
     }
 
     /// Continuous ballistic state. Published values are quantized snapshots of
@@ -59,7 +77,9 @@ final class MeterDriver: ObservableObject {
     private let levelQuantum = 1.0 / 18.0
 
     private func ensureTimer() {
-        guard timer == nil else { return }
+        // Nothing to drive while the bars are already at rest and playback is
+        // stopped, or while no window is on screen to draw them.
+        guard timer == nil, AppVisibility.shared.isVisible else { return }
         lastUpdate = Date()
         // 30fps: LED meters with ~120ms release ballistics look identical at
         // half the invalidation rate of the old 60fps tick.
@@ -104,8 +124,7 @@ final class MeterDriver: ObservableObject {
             leftLevel = 0
             rightLevel = 0
             bands = Array(repeating: 0, count: bands.count)
-            timer?.invalidate()
-            timer = nil
+            haltTimer()
         }
     }
 

@@ -82,6 +82,16 @@ public struct Album: Identifiable, Sendable, Equatable {
 
     /// A copy of this album carrying the given edition label (used when folding a
     /// pressing into a release's `versions`).
+    /// A copy carrying a narrowed track list (and, for a grouped release, a
+    /// narrowed set of pressings). Used by `LibraryIndex.filtered(by:)`, which
+    /// hides rows without rebuilding the index.
+    public func with(tracks: [LoadedTrack], versions: [Album]?) -> Album {
+        Album(id: id, artistID: artistID, artistName: artistName, title: title,
+              year: year, artworkHash: artworkHash, tracks: tracks, booklet: booklet,
+              mediaFormat: mediaFormat, versions: versions, originalYear: originalYear,
+              editionLabel: editionLabel, groupKind: groupKind, folderKey: folderKey)
+    }
+
     public func with(editionLabel: String?) -> Album {
         Album(id: id, artistID: artistID, artistName: artistName, title: title,
               year: year, artworkHash: artworkHash, tracks: tracks, booklet: booklet,
