@@ -4,6 +4,18 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 2.0.1 (84), 2026-09-07
+
+A crash fix for playlists.
+
+### Fixed
+
+- **Opening a saved playlist no longer quits the app.** A playlist opens as a
+  single flat table, which means the browser's other columns go away as it
+  loads. Those columns were still being asked what their neighbour held after
+  they had gone, and the app quit rather than answer. Playlists now open the
+  way they always should have.
+
 ## 2.0.0 (83) — 2026-09-07
 
 1.x made your library beautiful to look at. 2.0 makes it livable.
