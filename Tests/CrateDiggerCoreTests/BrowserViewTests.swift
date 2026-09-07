@@ -98,6 +98,18 @@ final class BrowserViewTests: XCTestCase {
         XCTAssertNil(BrowserView.classic.column(of: .genre))
     }
 
+    /// A pane's column index is its SwiftUI identity, so it outlives a view
+    /// that just got shorter: opening a playlist swaps .classic for .table
+    /// and the outgoing column-2 pane reads its neighbour once more. That
+    /// read crashed 2.0.0 (build 83) with "Index out of range".
+    func testFacetAtColumnIsNilPastTheEnd() {
+        XCTAssertEqual(BrowserView.classic.facet(at: 1), .album)
+        XCTAssertNil(BrowserView.table.facet(at: 1), "playlist view has one column")
+        XCTAssertNil(BrowserView.table.facet(at: 2))
+        XCTAssertNil(BrowserView.classic.facet(at: -1))
+        XCTAssertNil(BrowserView.classic.facet(at: 3))
+    }
+
     func testViewsRoundTripThroughJSON() throws {
         let view = BrowserView([.decade, .albumArtist, .track])
         let data = try JSONEncoder().encode(view)

@@ -99,6 +99,14 @@ public struct BrowserView: Codable, Equatable, Sendable {
         return BrowserView(swapped)
     }
 
+    /// The facet at `column`, or nil past either end. A browser pane's column
+    /// index is its view identity, so it can read its neighbour one last time
+    /// after the view got shorter — switching to a playlist drops three
+    /// columns to one. Nil is that moment, not a programming error.
+    public func facet(at column: Int) -> BrowserFacet? {
+        facets.indices.contains(column) ? facets[column] : nil
+    }
+
     /// Whether the header menu should offer `facet` for `column`: false for
     /// a choice that would break a rule. The current facet is always allowed.
     public func canReplace(column: Int, with facet: BrowserFacet) -> Bool {

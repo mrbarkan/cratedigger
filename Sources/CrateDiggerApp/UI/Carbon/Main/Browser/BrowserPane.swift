@@ -338,7 +338,7 @@ private struct TrackPane: View {
     /// Disc separators belong to an album: only under an Album column
     /// directly to the left, where the list is one record.
     private var followsAlbumColumn: Bool {
-        column > 0 && model.browserView.facets[column - 1] == .album
+        column > 0 && model.browserView.facet(at: column - 1) == .album
     }
 
     /// A playlist shown in its own order can be rearranged by dragging; a sorted
