@@ -3,6 +3,32 @@
     <channel>
         <title>CrateDigger</title>
         <item>
+            <title>2.0.1</title>
+            <pubDate>Mon, 07 Sep 2026 10:47:41 -0300</pubDate>
+            <link>https://cratedigger.mrbarkan.com/</link>
+            <sparkle:fullReleaseNotesLink>https://github.com/mrbarkan/cratedigger/releases</sparkle:fullReleaseNotesLink>
+            <sparkle:version>84</sparkle:version>
+            <sparkle:shortVersionString>2.0.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description sparkle:format="markdown"><![CDATA[
+A crash fix for playlists.
+
+### Fixed
+
+- **Opening a saved playlist no longer quits the app.** A playlist opens as a
+  single flat table, which means the browser's other columns go away as it
+  loads. Those columns were still being asked what their neighbour held after
+  they had gone, and the app quit rather than answer. Playlists now open the
+  way they always should have.
+
+]]></description>
+            <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.0.1/CrateDigger-2.0.1.dmg" length="69793469" type="application/octet-stream" sparkle:edSignature="tUP7zfMtx1b8fFwNxq0Z75+/HykUOMGYzioQZexsJPAJMElbuT5xk6x4R3/KOPUblSNQk/R6GzFSjRrZnWSzCQ=="/>
+            <sparkle:deltas>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.0.1/CrateDigger84-83.delta" sparkle:deltaFrom="83" length="418270" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="+CHYEhpP7GTADFNsofiKsnyssQU26GMxFG23NWSu8kOzCyJUmmBzr/wyczBE8HOhleipM9JaQVMl5UFlQZjKDw=="/>
+            </sparkle:deltas>
+        </item>
+        <item>
             <title>2.0.0</title>
             <pubDate>Mon, 07 Sep 2026 09:24:18 -0300</pubDate>
             <link>https://cratedigger.mrbarkan.com/</link>
@@ -370,78 +396,6 @@ inspector described a different record than the one you were listening to.
                 <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v1.5.11/CrateDigger77-71.delta" sparkle:deltaFrom="71" length="786610" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="eMCe+biFFdKFG9HFVSocgP8zqbuYkxBEv3POMDg/Ht5tVTmI3rMZbHctqCwKozXApJ5pDMx40eBhrsA7bsZbBw=="/>
                 <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v1.5.11/CrateDigger77-70.delta" sparkle:deltaFrom="70" length="1367766" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="6Vzi3KaYN73LcsJls4VvaGXuk0jwU7qzPzikDJ14kyMUo/pnREhX0YXBUzdZRpwgFdVM8M6NdrKoR3D067VGDw=="/>
                 <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v1.5.11/CrateDigger77-69.delta" sparkle:deltaFrom="69" length="1371298" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="M5tsOr7d9HyXSvE1D+VOe8Ya6M4PWASRqZR9hVVlg/4w2YcESgNpd1Bez98ZyDDdNdxPOWrZ43ENDG512M7rDA=="/>
-            </sparkle:deltas>
-        </item>
-        <item>
-            <title>1.5.10</title>
-            <pubDate>Fri, 28 Aug 2026 16:31:06 -0300</pubDate>
-            <link>https://cratedigger.mrbarkan.com/</link>
-            <sparkle:fullReleaseNotesLink>https://github.com/mrbarkan/cratedigger/releases</sparkle:fullReleaseNotesLink>
-            <sparkle:version>72</sparkle:version>
-            <sparkle:shortVersionString>1.5.10</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
-            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[
-Discogs, where the scans of the physical object live. Back sleeves, inners,
-labels and obi strips, for the shelf of vinyl and cassettes that the front
-cover alone never described.
-
-### Added
-
-- **Physical-release scans from Discogs.** The artwork sheet offered iTunes and
-  Deezer fronts plus whatever the Cover Art Archive held, which for most
-  releases is a front and little else. Discogs carries the deep scans: back
-  sleeves, spines, labels, inners, inserts, obi strips. They arrive with a
-  DISCOGS badge so it is clear what came from where, and a Discogs failure is
-  never raised as an error, since the archive's images still stand on their
-  own.
-- **Three ways to find the release, cheapest first.** The `discogs` link
-  MusicBrainz already carries, else the barcode, which is the same number
-  printed on the same physical object, else artist and title with the album
-  checked against the result before anyone's folder gets someone else's scans.
-  Each rung costs a request only when the rung above it missed. Measured on
-  releases that previously had one image each: Paracosm went to 3, 22, A
-  Million to 10, Teen Dream to 21.
-- **An optional Discogs token.** Settings, Integrations. Blank stays fully
-  working; a token raises the rate limit from 25 requests a minute to 60.
-- **Release notes worth reading.** What's New had not been rewritten since
-  1.5.0, so nine releases of upgraders saw the same five theme editor notes. It
-  now covers what actually shipped, and folds theming into one standing summary
-  instead of five entries.
-
-### Changed
-
-- **The artwork sheet loads in two stages.** Walking the Discogs ladder takes
-  several seconds. The archive's images now go on screen at about 1.5 seconds
-  and the Discogs scans append behind them, rather than everything waiting on
-  the slower source.
-- **The website says what the app does.** It offered no way to download
-  CrateDigger, and described crates as `.cdlib` files two storage formats ago.
-  There is now a download route, accurate crate and artwork copy, and a public
-  roadmap for 2.0 at cratedigger.mrbarkan.com/roadmap.html.
-
-### Fixed
-
-- **A slow MusicBrainz no longer reads as a failed search.** Artwork search
-  reported "Network error: The request timed out" on queries that were merely
-  still running. MusicBrainz search is far slower than anything else here, the
-  same query answering in 0.8s and 5.2s within one session, so it gets 25
-  seconds of its own instead of the 12 that suit iTunes and Deezer.
-- **One slow rung no longer discards the whole search.** The search walks
-  progressively looser queries, and any rung throwing threw all of them away.
-  The strict quoted rung fails most often, which is exactly the case an oddly
-  tagged album depends on falling through. Only a search where every rung
-  failed is a failed search now.
-- **The artist and album fields line up.** They were sized independently from
-  their own contents, which could render the artist column shorter and lower
-  than the album column.
-
-]]></description>
-            <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v1.5.10/CrateDigger-1.5.10.dmg" length="66492663" type="application/octet-stream" sparkle:edSignature="wMnTrkyg9hiG5a1N7Bi9Xu4E4TzsZo4FjQjKJATalE8k2CShQVoqOl13sN2qmGiNIXWiJBeiVMIxR4T49XFAAQ=="/>
-            <sparkle:deltas>
-                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v1.5.10/CrateDigger72-71.delta" sparkle:deltaFrom="71" length="760682" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="dhYOVRRobM77GQm9kcUFb5QeXzD+w1IzUwIUonwn4zo/w/czJI59oJ+TOLEvQIwut/Xo+L2XLHiO9EB4ZQUhCg=="/>
-                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v1.5.10/CrateDigger72-70.delta" sparkle:deltaFrom="70" length="1344202" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="9uz1bWn3lhAw9kNa5lKIqO9OS9Azw6pt+PqMZuGYEgpJXn1UbIqsY8dhfHh2R0eckasr4su7pgcxO3KlmXYlCg=="/>
-                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v1.5.10/CrateDigger72-69.delta" sparkle:deltaFrom="69" length="1361090" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="SEqK1CdIDWnFx7JPkILGejyGvlk8d2zhJ9CzagkN3P3k6spslEPTKyvRD3Ue74TxV6U1KbGqiBNhJll9co0EBA=="/>
             </sparkle:deltas>
         </item>
     </channel>
