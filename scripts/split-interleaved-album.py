@@ -9,6 +9,12 @@ default — pass --apply to actually move files.
 Usage:
     scripts/split-interleaved-album.py "/path/to/Artist/2001 Album"          # preview
     scripts/split-interleaved-album.py "/path/to/Artist/2001 Album" --apply  # do it
+
+Kept deliberately, and not part of any build. This repairs libraries that were
+already interleaved before the write-time version guard landed (615c2fa); the
+app cannot produce that state any more, so nothing calls this and it will never
+be needed on a library created since. Deleting it would leave anyone upgrading
+with an already-damaged folder no way back.
 """
 import re
 import shutil

@@ -12,11 +12,6 @@ public enum BookletItem: Equatable, Sendable {
     case dualPage(Int, Int?)   // Side-by-side single pages (left, optional right)
 }
 
-public enum PageSide: String, Equatable, Sendable {
-    case left
-    case right
-}
-
 // MARK: - Fullscreen Transparent Borderless Window
 public final class BorderlessBookletWindow: NSWindow {
     init(contentView: AnyView) {
@@ -49,6 +44,10 @@ public final class BorderlessBookletWindow: NSWindow {
 }
 
 // MARK: - Window Manager Singleton
+/// `@unchecked` because `NSObject` conformance plus a stored `NSWindow` is
+/// more than the compiler will accept, not because anything is shared. Both
+/// methods that touch `activeWindow` are `@MainActor`, which is the only place
+/// an `NSWindow` may be touched anyway.
 public final class BookletWindowManager: NSObject, @unchecked Sendable {
     public static let shared = BookletWindowManager()
     private var activeWindow: BorderlessBookletWindow? = nil

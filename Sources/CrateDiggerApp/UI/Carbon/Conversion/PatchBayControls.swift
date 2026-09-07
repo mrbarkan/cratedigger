@@ -93,29 +93,6 @@ struct PatchBaySwitch: View {
     }
 }
 
-// MARK: - LED dot (theme-aware off-state)
-
-struct LedDot: View {
-    @Environment(\.carbon) private var theme
-    let on: Bool
-
-    var body: some View {
-        Circle()
-            .fill(on ? theme.selectionInk : ledOff)
-            .frame(width: 4, height: 4)
-            .overlay(
-                Circle().stroke(Color.black.opacity(0.5), lineWidth: 0.5)
-            )
-            .shadow(color: on ? Color.white.opacity(0.4) : .clear, radius: on ? 2 : 0)
-    }
-
-    private var ledOff: Color {
-        // Light mode uses a dim graphite dot; dark mode keeps the near-black
-        // inactive slot used by the OLED-adjacent controls.
-        theme.isDark ? Color.black.opacity(0.6) : theme.ink3.opacity(0.4)
-    }
-}
-
 // MARK: - Recess for switch banks
 
 /// Glass tray behind fixed-width switch banks.

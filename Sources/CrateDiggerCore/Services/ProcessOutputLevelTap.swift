@@ -18,6 +18,12 @@ import Foundation
 ///
 /// macOS 14.4+ (`AudioHardwareCreateProcessTap`). Older systems get a tap that
 /// starts successfully and reports silence, which is what they did before.
+/// `@unchecked` because this genuinely has mutable state, and the safety comes
+/// from where it is touched rather than from the type. The three CoreAudio
+/// object IDs are written only by `start()` and `stop()`, both called from the
+/// main actor (`LibraryViewModel+Radio`). The audio IO thread never reads them
+/// — it only writes into `store`, which takes a lock. Do not call start/stop
+/// from anywhere else without giving them one too.
 public final class ProcessOutputLevelTap: @unchecked Sendable {
     private let store = AudioTapLevelStore()
     private var tapID: AudioObjectID = 0

@@ -6,6 +6,9 @@ import Foundation
 /// playback uses. yt-dlp silently breaking after a YouTube change is the #1
 /// way radio dies in the field — this gives the user a one-click diagnosis
 /// and a repair action.
+/// `@unchecked` only because `runner` is an existential the compiler cannot
+/// verify, the same reason as `StreamResolver`. The one stored property is a
+/// `let` and running a subprocess keeps no state between calls.
 public struct StreamEngineDoctor: @unchecked Sendable {
     /// "Me at the zoo" — the first video ever uploaded to YouTube (2005). As
     /// stable as a public test URL gets; if yt-dlp can't resolve this, its
