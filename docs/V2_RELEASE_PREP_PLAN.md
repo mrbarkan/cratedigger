@@ -172,50 +172,54 @@ several items are not worth doing at all. Numbers are from a **release** build
 on the dev machine (Apple silicon, 8 P-cores + 4 E-cores), against a synthetic
 15,000-track library.
 
-> **Taken on a busy machine.** A DaVinci Resolve render was running throughout,
-> with load average ~2.9 of 12 cores. Roughly nine cores were free, so
-> contention was modest, but a single-threaded benchmark under load can be put
-> on an efficiency core, which is worth 2–3× on its own.
+> **Taken twice, and the load did not matter.** The first pass ran with a
+> DaVinci Resolve render going (load ~2.9 of 12 cores); the second ran after it
+> finished (load ~2.5, ordinary desktop). Both agree within 7 %, and the
+> repeat-to-repeat spread on the quiet pass was 1–3 %, so these figures are
+> solid and the caution about contention turned out not to be needed. The
+> numbers below are the quiet pass, reported as the **minimum of five runs** —
+> the run that suffered least from anything else on the machine.
 >
-> Every timing here is therefore an **upper bound**. That direction matters:
-> "the FFT is negligible" and "idle is already 0 %" only get more true on a
-> quiet machine, so those conclusions stand as they are. The absolute figures
-> are the part to distrust — do **not** compare a post-fix number measured on
-> an idle machine against these, or the fix will look like it did more than it
-> did. The disk-vs-CPU split inside `LibraryIndex.build` is the single figure
-> most worth taking again, because a video render competes for disk in
-> particular, so the disk share is likely overstated relative to the CPU share.
+> | Figure | With the render | Quiet | Delta |
+> |---|---|---|---|
+> | `SpectrumProcessor.compute` | 2.90 µs | 3.09 µs | +7 % |
+> | `build` cold | 889 ms | 830 ms | −7 % |
+> | `build` warm | 362 ms | 349 ms | −4 % |
+> | `build`, no disk branch | 253 ms | 237 ms | −6 % |
+> | `versionSourceFolder` ×15k | 41 ms | 38 ms | −7 % |
+> | `albumFolderKey` ×15k | 71 ms | 69 ms | −3 % |
+> | `TrackStore.save` | 139 ms | 130 ms | −7 % |
+> | Idle CPU | 0.00 % | 0.00 % | same |
 >
-> Unaffected by the load, and not worth re-running: the theme-logo decode count
-> and the idle CPU figure (both counts, not durations), resident memory, and
-> every functional check.
+> The FFT came out *slower* on the quiet machine, which is the clearest sign
+> the first pass was not inflated: it is noise, not contention.
 
 | Claim | Estimated | Measured (release) | Verdict |
 |---|---|---|---|
-| A1 FFT on every audio buffer | "biggest idle-CPU win" | **0.03 % of one core** (2.9 µs/call at 512-frame buffers) | **Not worth doing.** It reads as expensive only in a debug build, where it is 61 µs — 21× slower. |
-| Idle CPU, window visible, nothing playing | target "~0 %" | **0.00 % of one core** over 20 s | **Already met.** The meter and disc timers self-halt at rest, as their comments claim. |
-| D8 `TrackStore.save()` at 15k | ~365 ms | **139 ms**, 7 MB | Real, 2.6× smaller than the comment in the source says. That comment should be corrected. |
-| D9 `LibraryIndex.build` at 15k | listed 9th | **889 ms cold, 362 ms warm** | **The largest main-actor stall found.** Ranked far too low here. |
+| A1 FFT on every audio buffer | "biggest idle-CPU win" | **0.027 % of one core** (3.1 µs/call at 512-frame buffers) | **Not worth doing.** It reads as expensive only in a debug build, where it is 61 µs — 20× slower. |
+| Idle CPU, nothing playing | target "~0 %" | **0.00 % of one core**, window visible *and* hidden | **Already met.** The meter and disc timers self-halt at rest, as their comments claim. |
+| D8 `TrackStore.save()` at 15k | ~365 ms | **130 ms**, 7 MB | Real, 2.8× smaller than the comment in the source says. That comment should be corrected. |
+| D9 `LibraryIndex.build` at 15k | listed 9th | **830 ms cold, 349 ms warm** | **The largest main-actor stall found.** Ranked far too low here. |
 | D11 `NSImage(contentsOf:)` in `ThemeLogo`'s body | "in a view body", implied hot | **2 decodes in 18 s of running** | **Not a problem.** The view has no stored properties, so SwiftUI does not re-invoke its body unless the theme actually changes. The `ponytail:` comment already in that file is correct and should stay. |
 | D11 disc-image folder probing | "7 folders x 13 filenames on every now-playing change" | ~91 `stat`s per *track change* | Not worth touching. Sub-millisecond, and it happens once a song. |
 
-Where `LibraryIndex.build`'s 362 ms warm actually goes, measured by
+Where `LibraryIndex.build`'s 349 ms warm actually goes, measured by
 substitution:
 
 | Part | Cost at 15k |
 |---|---|
-| Grouping with no disk branch at all | 188 ms |
-| `albumFolderKey` per track | 71 ms |
-| `versionSourceFolder` per track (regex + URL standardisation, recomputed ~12× per album) | 41 ms |
+| Grouping with no disk branch at all | 237 ms |
+| `albumFolderKey` per track | 69 ms |
+| `versionSourceFolder` per track (regex + URL standardisation, recomputed ~12× per album) | 38 ms |
 | `computeTotalSizeBytes` — one `stat` per track, for the OLED's GB readout | 55–65 ms, and far more on a real volume where the calls succeed |
 | Per-album booklet/manifest scan | the rest of the cold 889 ms |
 
 Two things temper D9 before anyone rushes at it. `selectSource` does **not**
 rebuild — it switches between cached indexes — so clicking between crates was
 never paying this. Every rebuild site follows an operation that is already slow
-and visible (launch, scan, import, tag edit, delete). A 362 ms stall there is
+and visible (launch, scan, import, tag edit, delete). A 349 ms stall there is
 worth removing but is not the emergency the raw number suggests, and
-micro-optimising the parts above only reaches ~300 ms. **The only change that
+micro-optimising the parts above only reaches ~290 ms. **The only change that
 alters what a user feels is moving the build off the main actor, which is an
 architectural change across ~17 call sites and wants its own decision.**
 
@@ -229,8 +233,10 @@ Nothing here could be measured without driving the UI and playing audio:
   the one plausible cost that has not been ruled out.
 - **Session 4, cold launch on a real 15k library.** The synthetic numbers above
   bound the index build's share of it, nothing else.
-- **Session 5, allocations and leaks under real use.** Note idle RSS measured
-  **321 MB**, which is worth a look on its own.
+- **Session 5, allocations and leaks under real use.** Idle resident memory
+  measured **395 MB with a window up, 337 MB once hidden** (the system reclaims
+  some backing store on occlusion). That is the one figure here that looks
+  worth chasing, and nothing in this audit explains it.
 
 ### What landed from this section
 
