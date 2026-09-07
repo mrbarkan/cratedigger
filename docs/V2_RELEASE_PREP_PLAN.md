@@ -1,5 +1,11 @@
 # 2.0.0 Final — Release Prep Plan
 
+> **Shipped.** 2.0.0 (build 83) went out from `main` on 2026-09-07. The
+> promotion was: fast-forward `v2` to the release-prep branch, merge `v2` into
+> `main` taking `v2`'s side of every conflict, flip `AppVersion.channel` to
+> `""`, bump the build, publish into `website/appcast.xml`, then one final
+> entry in `website/appcast-beta.xml` so the RC build is offered GA.
+
 Status: **workstream 1 (gapless) is implemented; 2 and 3 are still plan
 only.** Written against `v2` at `c4a3351` (2.0.0 RC 1, build 82). Work it on
 the desktop in the order below; each phase ends with `scripts/test.sh` green

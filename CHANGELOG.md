@@ -4,7 +4,7 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
-## 2.0.0 (82) — 2026-09-05
+## 2.0.0 (83) — 2026-09-07
 
 1.x made your library beautiful to look at. 2.0 makes it livable.
 

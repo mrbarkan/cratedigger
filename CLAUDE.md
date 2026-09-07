@@ -25,42 +25,43 @@ scripts/package-app.sh           # assemble dist/CrateDigger.app (bundles ffmpeg
 
 ## Two release lines (read before committing anything)
 
-- **`main` is the stable line**, currently 1.5.x, and it is what the public
-  downloads and what every installed copy auto-updates from. Only ship
-  bug fixes here.
-- **`v2` is the beta line** and is where all work up to 2.0 goes. Everything
-  from here ships as a GitHub **prerelease** so `/releases/latest` (and the
-  website's Download button) stay on stable.
+**2.0.0 shipped from `main` on 2026-09-07.** `main` is the stable line, now
+2.0.x: it is what the public downloads and what every installed copy
+auto-updates from. The `v2` branch was the beta line for the whole 2.0 cycle;
+it was fast-forwarded to `main` at GA and is kept for history only. **Do not
+branch new work from `v2`.** Work on `main`, or on feature branches off it.
 
-Isolation is at the **feed**, not the channel — but NOT via `Info.plist`.
-`SUFeedURL` is deliberately **identical on both branches** and points at the
-stable `website/appcast.xml`; it is only the fallback for a build that
-overrides nothing. The real choice is made at runtime by
-`UpdateFeed.override(channel:betaOptIn:)` in `Updates/SoftwareUpdater.swift`:
+The mechanism that kept the two lines apart is still in the code and still
+matters, because the next major cycle will want it back:
 
-```swift
-(!channel.isEmpty || betaOptIn) ? beta : nil
-```
+- `SUFeedURL` in `Info.plist` points at the stable `website/appcast.xml` and
+  is only the fallback for a build that overrides nothing. The real choice is
+  made at runtime by `UpdateFeed.override(channel:betaOptIn:)` in
+  `Updates/SoftwareUpdater.swift`:
 
-So a prerelease build follows `appcast-beta.xml` **automatically**, because
-`AppVersion.channel` is `"BETA"` on `v2` — nobody has to tick anything. A
-stable build reads the beta feed only if its owner turned on Advanced ▸
-Receive beta updates. `website/appcast.xml` stays frozen for the whole 2.0
-cycle either way.
+  ```swift
+  (!channel.isEmpty || betaOptIn) ? beta : nil
+  ```
 
-Keeping the decision in one pure function rather than in `Info.plist` is the
-point: there is no per-branch line to repoint, and therefore no line that can
-be forgotten or carried onto `main` by accident. **The invariants to protect
-are `AppVersion.channel` staying non-empty on `v2`, and `UpdateFeed.override`
-not being "simplified" into the plist.** `UpdateFeedTests` covers all four
-channel/opt-in combinations and also reads `Info.plist` and fails if
-`SUFeedURL` ever stops matching `UpdateFeed.stable`.
+  A build whose `AppVersion.channel` is non-empty follows `appcast-beta.xml`
+  automatically; a stable build reads the beta feed only if its owner turned
+  on Advanced ▸ Receive beta updates. On `main`, `channel` is `""`.
+- Keeping that decision in one pure function rather than in `Info.plist` is
+  the point: there is no per-branch line to repoint, and so none to forget.
+  `UpdateFeedTests` covers all four channel/opt-in combinations and fails if
+  `SUFeedURL` ever stops matching `UpdateFeed.stable`. **Do not "simplify"
+  `UpdateFeed.override` into the plist.**
+- `scripts/update-appcast.sh` generates each feed only on the branch that
+  owns it (`appcast.xml` on `main`, `appcast-beta.xml` on `v2`) and refuses a
+  DMG whose major version differs from what is already staged in
+  `dist/updates*/`. Both guards were written for the 2.0 cycle.
 
-The one thing that does cross over: GitHub Pages only serves `website/` from
-`main`, so publishing a beta feed means copying *just*
-`website/appcast-beta.xml` onto `main` (`git checkout v2 -- <that file>`).
-Never carry anything else across. The `press-the-record` skill scripts both
-paths — use it rather than releasing by hand.
+When a 3.0 cycle starts: cut a `v3` branch, set `channel` there, teach the
+script the new branch name, publish betas as GitHub prereleases so
+`/releases/latest` stays on stable, and copy only `website/appcast-beta.xml`
+across to `main` when publishing a beta feed. The `press-the-record` skill
+scripts stable and beta releases; the promotion itself was done by hand at
+2.0.0 and is written up at the top of `docs/V2_RELEASE_PREP_PLAN.md`.
 
 ## Two-target architecture
 
