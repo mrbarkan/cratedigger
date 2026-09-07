@@ -18,7 +18,7 @@ scripts/package-app.sh           # assemble dist/CrateDigger.app (bundles ffmpeg
 ```
 
 - **Run `scripts/test.sh`, not bare `swift test`.** It forces `--enable-xctest --disable-swift-testing`, points at a full Xcode install, and uses a repo-local module cache (`.build/tests`). XCTest needs a *full* Xcode developer dir (not just Command Line Tools); the script prints clear remediation if the license isn't accepted or `PlatformPath` lookup fails.
-- Tests live in `Tests/CrateDiggerCoreTests` (most coverage — the core library is the testable layer) and `Tests/CrateDiggerAppTests` (a dozen files: theming, screen presets, `WindowFramePlanner`, `UpdateFeed`, yt-dlp retry). ~900 tests total.
+- Tests live in `Tests/CrateDiggerCoreTests` (114 files, and most of the coverage — the core library is the testable layer) and `Tests/CrateDiggerAppTests` (18 files: theming, screen presets, `WindowFramePlanner`, `UpdateFeed`, yt-dlp retry). ~1,185 tests total. These counts drift; `scripts/test.sh` prints the real one.
 - **SwiftUI views and `LibraryViewModel` are still untested**, and that is where bugs concentrate: the 2.0 Phase 0 whole-branch review found all three of its cross-task defects in view-model glue, not in Core. Anything that is a *decidable value* — which track was playing, which files belong to a folder, whether leaving a track counts as a skip — belongs in Core with a test, even when the surrounding wiring stays untested.
 - To launch and verify a change in the running app, build then run the binary directly (the local permission allowlist already covers `swift build`, running the debug binary, and `pkill -f CrateDiggerApp`).
 - Release/distribution (Developer ID signing + notarization + DMG) and the full beta gate are documented in `README.md` and `docs/BETA_RELEASE_CHECKLIST.md`.
@@ -85,16 +85,16 @@ main.swift  →  AppDelegate  →  MainWindowController  →  CarbonHostingContr
 
 ### `LibraryViewModel` — the center of gravity
 
-`Sources/CrateDiggerApp/UI/Carbon/Library/LibraryViewModel.swift` (~4300 lines) is a single `@MainActor ObservableObject` that owns **all** app state, **all** services, and **most** behavior. Almost every SwiftUI view binds to it via `@EnvironmentObject`. **When fixing app behavior, start here** — this is where the wiring lives.
+`Sources/CrateDiggerApp/UI/Carbon/Library/LibraryViewModel.swift` (~4,900 lines) is a single `@MainActor ObservableObject` that owns **all** app state, **all** services, and **most** behavior. Almost every SwiftUI view binds to it via `@EnvironmentObject`. **When fixing app behavior, start here** — this is where the wiring lives.
 
-Behavior is split across **22 `LibraryViewModel+*.swift` extensions in three
+Behavior is split across **26 `LibraryViewModel+*.swift` extensions in three
 folders** (don't assume they are all beside the main file):
 
 - `UI/Carbon/Library/` — `+ArrowNav`, `+BatchArtwork`, `+CDDetect`, `+DeepScan`,
-  `+LibraryFiles`, `+Listening`, `+MetadataRepair`, `+MissingFiles`,
-  `+MultiSelect`, `+NowPlaying`, `+Onboarding`, `+Queue`, `+Radio`,
-  `+RecordDivider`, `+Rename`, `+SACDImport`, `+Sleep`, `+TrackActions`,
-  `+Versions`
+  `+LibraryFiles`, `+Listening`, `+MetadataRepair`, `+MiniPlayer`,
+  `+MissingFiles`, `+MultiSelect`, `+NowPlaying`, `+Onboarding`, `+Queue`,
+  `+Radio`, `+RecordDivider`, `+Rename`, `+Resume`, `+SACDImport`, `+Search`,
+  `+Sleep`, `+Stats`, `+TrackActions`, `+Versions`
 - `UI/Conversion/` — `+Conversion`
 - `UI/ExternalDevices/` — `+DeviceSync`, `+ExternalDeviceTransfer`
 

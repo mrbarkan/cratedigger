@@ -75,6 +75,39 @@ Run this on a clean or clean-ish Mac, ideally one without Homebrew FFmpeg in the
   - `Metadata Template`
 - Use `Review album folders` and confirm edited paths are respected.
 - Confirm duplicate output names get unique filenames instead of overwriting.
+- In that same sheet, type `../..` into a destination and confirm the output
+  still lands inside the chosen folder rather than above it.
+
+### Gapless verification
+
+The look-ahead only exists on the local-file path, so each of these is a
+different branch of it and headphones are the instrument.
+
+- Play a continuously recorded album (a live record, a mix, a classical piece)
+  and listen at a track boundary. Compare against Music.app if in doubt.
+- Repeat with the Mini Player open, with the equaliser on, and with an external
+  output device selected. Output device selection is player-wide rather than
+  per item, so a device switch mid-album is the case worth trying.
+- Radio stream to local track and back: radio must keep reloading at the
+  boundary, not glide.
+- A DSD album still decodes or plays bit-perfect, with its usual gap.
+- Sleep timer set to "after this track" still resolves on the boundary.
+- Turn Advanced ▸ Gapless playback off and confirm the old behaviour returns
+  without a restart.
+
+### Performance audit
+
+Run against the packaged release build, not a `swift build` one; debug figures
+are not comparable and mislead badly (the spectrum FFT alone reads 20x slower).
+Record the numbers so the next release has something to compare against.
+
+- Idle with nothing playing: expect ~0% CPU.
+- Playing with the window hidden behind another app: the disc and meter timers
+  should be halted, so expect well under 5%.
+- Scroll a large flat track table while playing and watch for dropped frames.
+- Cold launch on a full library.
+- Resident memory at idle. The last measurement was 395 MB with a window up,
+  which is the figure nobody has explained yet.
 - Confirm readiness/status messaging is understandable when tools are available.
 - Confirm readiness/status messaging is understandable when conversion or probing is unavailable.
 - Resize the window smaller and larger and confirm the UI stays legible.
