@@ -56,6 +56,12 @@ app.
 
 ### Added
 
+- **Gapless playback.** An album recorded in one go, like a live record, a mix
+  or most classical, now plays without the hole that used to open between every
+  track. The next track is buffered while the current one is still playing, so
+  the handover costs nothing. Streams and DSD keep the old path, and Advanced
+  ▸ Gapless playback turns it off for an output device that stumbles at a
+  track change.
 - **A new identity.** The app icon is a record on an orange plate; the old
   graphite chassis had a black disc on a black ground that turned to mush
   below 64px. The logo mark is a record half out of the crate, sized to the
@@ -195,6 +201,12 @@ app.
   go back to finished releases.
 
 ### Changed
+
+- **A window nobody can see stops animating.** The spinning disc and the LED
+  meters redraw 60 and 30 times a second. With the deck hidden behind another
+  app none of that reaches a screen, so both now stop until a window comes
+  back. Playback and the meters' own measurement are untouched, so the bars
+  are correct the instant you look again.
 
 - **The mini player's transport is five keys of one size in a row**, the way a
   portable player has them, in place of the dome with smaller caps around it.

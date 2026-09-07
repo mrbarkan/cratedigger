@@ -164,9 +164,69 @@ launch profile).
 | 6 | Energy Log / `powermetrics` | Import a 2k-file folder | ffprobe spawn concurrency |
 | 7 | Core Animation / Metal | OLED + LED meters visible, 30 s | overdraw of the skeuomorphic chassis layers |
 
+### Measured, 2026-09-06 — read this before implementing any of section A
+
+Everything below in A–F was written by reading code and estimating cost.
+Measurement contradicts the ranking, so **the order in this list is wrong** and
+several items are not worth doing at all. Numbers are from a **release** build
+on the dev machine (Apple silicon), against a synthetic 15,000-track library.
+
+| Claim | Estimated | Measured (release) | Verdict |
+|---|---|---|---|
+| A1 FFT on every audio buffer | "biggest idle-CPU win" | **0.03 % of one core** (2.9 µs/call at 512-frame buffers) | **Not worth doing.** It reads as expensive only in a debug build, where it is 61 µs — 21× slower. |
+| Idle CPU, window visible, nothing playing | target "~0 %" | **0.00 % of one core** over 20 s | **Already met.** The meter and disc timers self-halt at rest, as their comments claim. |
+| D8 `TrackStore.save()` at 15k | ~365 ms | **139 ms**, 7 MB | Real, 2.6× smaller than the comment in the source says. That comment should be corrected. |
+| D9 `LibraryIndex.build` at 15k | listed 9th | **889 ms cold, 362 ms warm** | **The largest main-actor stall found.** Ranked far too low here. |
+
+Where `LibraryIndex.build`'s 362 ms warm actually goes, measured by
+substitution:
+
+| Part | Cost at 15k |
+|---|---|
+| Grouping with no disk branch at all | 188 ms |
+| `albumFolderKey` per track | 71 ms |
+| `versionSourceFolder` per track (regex + URL standardisation, recomputed ~12× per album) | 41 ms |
+| `computeTotalSizeBytes` — one `stat` per track, for the OLED's GB readout | 55–65 ms, and far more on a real volume where the calls succeed |
+| Per-album booklet/manifest scan | the rest of the cold 889 ms |
+
+Two things temper D9 before anyone rushes at it. `selectSource` does **not**
+rebuild — it switches between cached indexes — so clicking between crates was
+never paying this. Every rebuild site follows an operation that is already slow
+and visible (launch, scan, import, tag edit, delete). A 362 ms stall there is
+worth removing but is not the emergency the raw number suggests, and
+micro-optimising the parts above only reaches ~300 ms. **The only change that
+alters what a user feels is moving the build off the main actor, which is an
+architectural change across ~17 call sites and wants its own decision.**
+
+### Still unmeasured — these need Instruments and a person
+
+Nothing here could be measured without driving the UI and playing audio:
+
+- **Session 1 / 2, CPU while playing.** Needs real playback.
+- **Session 3, SwiftUI re-render pressure (finding C7).** Needs a 10k-row
+  scroll. This is now the most likely remaining real problem, because it is
+  the one plausible cost that has not been ruled out.
+- **Session 4, cold launch on a real 15k library.** The synthetic numbers above
+  bound the index build's share of it, nothing else.
+- **Session 5, allocations and leaks under real use.** Note idle RSS measured
+  **321 MB**, which is worth a look on its own.
+
+### What landed from this section
+
+- **Occlusion gate** (`47ce1dd`). The 60 fps disc animator and the 30 fps LED
+  meters now halt while every window is occluded — findings B5's real content.
+  This targets the plan's own goal of "well under 5 % while playing with the
+  window in the background", which is exactly the case no measurement here
+  could reach. Building it turned up two things only running it revealed:
+  `occlusionState` reports "not visible" before the first window exists, which
+  latched the flag off for the session, and the app-level notification fires
+  just ahead of the window state settling.
+- **Observer tokens** (`b2a182d`). Finding E13, fixed via one helper.
+
 ### Findings already visible from the code (fix after measuring)
 
-Ordered by expected payoff; file:line refs are v2.
+Ordered by *estimated* payoff — see the measured table above, which supersedes
+this ordering. File:line refs are v2.
 
 **A. Audio hot path (biggest idle-CPU win)**
 1. FFT runs on the real-time audio thread on every buffer, unconditionally —
