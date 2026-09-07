@@ -1,7 +1,10 @@
 # Spec: GitHub CodeQL & Security Scanning for CrateDigger
 
-**Status:** Files implemented (§1–3). Repo settings (§4) still to be ticked by the owner.
-**Branch:** `claude/github-ql-sec-compliance-06jjjc`
+**Status:** Done. Files (§1–3) shipped; repo settings (§4) were ticked on
+2026-08-22 and re-confirmed on 2026-09-07 (secret scanning, push protection and
+Dependabot all report enabled through the API). Scanning is live: the seven
+CodeQL alerts on the repo are all *dismissed*, being the MD5 signatures Last.fm
+and Subsonic require by protocol rather than anything we chose.
 **Repo:** `mrbarkan/cratedigger` (public)
 
 ## Why

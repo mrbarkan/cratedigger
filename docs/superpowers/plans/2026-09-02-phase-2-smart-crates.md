@@ -1,5 +1,12 @@
 # Smart Crates (2.0 Phase 2, part one) Implementation Plan
 
+> **NOT IMPLEMENTED, and the open scope decision for 2.0.** Every other plan in
+> this folder has been archived as shipped; this is the one that has not.
+> `SmartCrate` has no hits anywhere in `Sources/`. Two ways out, and it needs a
+> person: cut it from 2.0 and say so on `website/roadmap.html`, which currently
+> promises it, or build it as the last feature before GA. Do not read the
+> unticked boxes below as merely untracked — here they are literal.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** A crate that is a rule set instead of a list of paths, sitting in the
