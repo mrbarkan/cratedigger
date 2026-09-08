@@ -225,15 +225,19 @@ private struct MiniPlayerBody: View {
         }) {
             Image(systemName: model.miniPlayerArtMode.iconName)
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(model.isRadioMode ? theme.ink4.opacity(0.5) : theme.ink3)
+                .foregroundStyle(artModeDisabled ? theme.ink4.opacity(0.5) : theme.ink3)
                 .frame(width: 24, height: 24)
                 .background(ChromeChassis(theme: theme, cornerRadius: 7))
         }
         .buttonStyle(.carbonHover)
-        .disabled(model.isRadioMode)
+        .disabled(artModeDisabled)
         .carbonTip("Art: \(model.miniPlayerArtMode.label). Tap to cycle")
         .padding(.leading, 6)
     }
+
+    /// Nothing to cycle while a stream owns the deck: both modes would draw
+    /// the same thumbnail.
+    private var artModeDisabled: Bool { model.isRadioMode || model.isStreamActive }
 
     private func iconButton(system: String, lit: Bool = false, help: String, action: @escaping () -> Void) -> some View {
         Button(action: { ClickPlayer.shared.play(.key); action() }) {
@@ -303,6 +307,18 @@ private struct MiniPlayerBody: View {
 
     @ViewBuilder
     private var artContent: some View {
+        // A stream has no disc and no album cover. Falling through to the art
+        // modes drew the last local track's record, which reads as that album
+        // playing while a YouTube set is on the air.
+        if model.isStreamActive, let stream = model.selectedStream {
+            StreamThumbnail(stream: stream)
+        } else {
+            localArtContent
+        }
+    }
+
+    @ViewBuilder
+    private var localArtContent: some View {
         switch model.miniPlayerArtMode {
         case .cover:
             if let image = coverImage {
@@ -318,6 +334,7 @@ private struct MiniPlayerBody: View {
 
     /// Reload key: track change or a freshly committed cover (hash change).
     private var coverKey: String {
+        if model.isStreamActive { return "stream-\(model.selectedStreamID ?? "none")" }
         let track = model.nowPlayingTrack?.track
         return "\(track?.id.uuidString ?? "none")-\(track?.artworkHash ?? "")"
     }
@@ -496,6 +513,14 @@ private struct MiniPlayerPanel: View {
                     let base = current + 1
                     model.moveInQueue(from: base + first, to: base + destination)
                 }
+                // A shuffle deals a fixed hand, so the end of the list is where
+                // you ask for more of the same crate rather than a dead stop.
+                if model.shuffleDealMoreCount > 0 {
+                    dealMoreRow
+                        .listRowInsets(EdgeInsets())
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                }
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
@@ -505,11 +530,43 @@ private struct MiniPlayerPanel: View {
         }
     }
 
+    private var dealMoreRow: some View {
+        let more = min(model.shuffleDealMoreCount, LibraryViewModel.shuffleDealSize)
+        return Button {
+            ClickPlayer.shared.play(.key)
+            model.dealMoreShuffled()
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "plus.circle")
+                    .font(.system(size: 10, weight: .semibold))
+                Text("ADD \(more) MORE")
+                    .font(CarbonFont.mono(8.5, weight: .bold))
+                    .tracking(1.6)
+            }
+            .foregroundStyle(theme.orange)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 9)
+        }
+        .buttonStyle(.carbonHover)
+        .carbonTip("Deal another \(more) shuffled from this source")
+    }
+
     // MARK: Sources
 
     private var sources: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 0) {
+                // Says what a tap does before you make it: every row here
+                // shuffles, and it deals a hand rather than the whole box.
+                Text("TAP TO SHUFFLE \(LibraryViewModel.shuffleDealSize) INTO UP NEXT")
+                    .font(CarbonFont.mono(7.5, weight: .bold))
+                    .tracking(1.4)
+                    .foregroundStyle(theme.ink4)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12)
+                    .padding(.top, 8)
                 sectionHeader("LIBRARY")
                 sourceRow(icon: "square.grid.2x2", title: "All Records",
                           trailing: "shuffle", playing: isPlaying(.localAll)) {

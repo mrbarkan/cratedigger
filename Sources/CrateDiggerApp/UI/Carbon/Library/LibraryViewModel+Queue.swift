@@ -76,7 +76,7 @@ extension LibraryViewModel {
     }
 
     /// Replace the queue outright and start playing at `index`.
-    private func startQueue(_ tracks: [LoadedTrack], at index: Int) {
+    func startQueue(_ tracks: [LoadedTrack], at index: Int) {
         guard !tracks.isEmpty else { return }
         if presentIfFileMissing(tracks[min(index, tracks.count - 1)]) { return }
         oledView = .nowPlaying
