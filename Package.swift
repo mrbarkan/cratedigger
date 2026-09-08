@@ -36,8 +36,12 @@ let package = Package(
                 // format a 3rd-party theme uses (see ThemeLoaderService) —
                 // dogfoods the format instead of special-casing the defaults.
                 .copy("Resources/Themes"),
-                // Display typeface for the OLED's big names (Major Mono
-                // Display) — registered at launch by FontRegistrar.
+                // The app's own type — Inter, JetBrains Mono and Major Mono
+                // Display, the faces CarbonFont names — registered at launch
+                // by FontRegistrar, which also walks each bundled theme's own
+                // Fonts/ folder (Llama '97 ships its pixel faces there, like a
+                // third-party theme would). BundledFontTests keeps the two in
+                // step.
                 .copy("Resources/Fonts")
             ],
             linkerSettings: [
