@@ -61,7 +61,8 @@ struct ConversionQueueView: View {
         sectionHeader(
             title: "DEVICE QUEUE · \(profile.name.uppercased())",
             detail: summary.headline.uppercased(),
-            stacked: true
+            stacked: true,
+            arm: arm(for: profile.id, tip: "Arm this queue — the key below syncs it to \(profile.name)")
         ) {
             // Copy-mode devices have nothing to bake, so the key would be a
             // permanently dead control.
@@ -97,7 +98,8 @@ struct ConversionQueueView: View {
         sectionHeader(
             title: "CRATE QUEUE",
             detail: "\(model.conversionSelection.batchScope.shortTitle.uppercased()) · \(summary)",
-            stacked: true
+            stacked: true,
+            arm: arm(for: nil, tip: "Arm this queue — the key below converts it with the settings above")
         ) {
             // Only the convert queue is ours to empty: Prep and Selection are
             // owned elsewhere, and a CLEAR that quietly emptied the Prep Crate
@@ -125,6 +127,37 @@ struct ConversionQueueView: View {
         }
     }
 
+    // MARK: - Arming
+
+    /// Which queue the go key runs. Both lists live here, so the choice lives
+    /// here too: one lit lamp at a time, and the key below reads back whatever
+    /// it is pointed at. A hand-off owns the cockpit outright while it lasts,
+    /// so nothing is armable then.
+    private struct Arm {
+        let isArmed: Bool
+        let tip: String
+        let select: () -> Void
+    }
+
+    private func arm(for deviceID: UUID?, tip: String) -> Arm? {
+        guard model.pendingDeviceConversion == nil else { return nil }
+        return Arm(
+            isArmed: model.patchBayDeviceQueue?.id == deviceID,
+            tip: tip,
+            select: { model.armQueue(deviceID: deviceID) }
+        )
+    }
+
+    /// Lit and glowing when armed, a ghost ring when not — the same lamp
+    /// grammar as the OLED's annunciators.
+    private func armLamp(_ armed: Bool) -> some View {
+        Circle()
+            .fill(armed ? theme.orange : Color.clear)
+            .overlay(Circle().strokeBorder(armed ? Color.clear : theme.ink4.opacity(0.55), lineWidth: 1))
+            .frame(width: 7, height: 7)
+            .shadow(color: armed ? theme.orange.opacity(0.7) : .clear, radius: armed ? 4 : 0)
+    }
+
     // MARK: - Header
 
     /// One line when the title and detail are short (the crate queue); stacked
@@ -134,15 +167,30 @@ struct ConversionQueueView: View {
         title: String,
         detail: String,
         stacked: Bool = false,
+        arm: Arm? = nil,
         @ViewBuilder accessory: () -> Accessory
     ) -> some View {
         HStack(spacing: 8) {
+            if let arm {
+                Button(action: {
+                    ClickPlayer.shared.play(.key)
+                    arm.select()
+                }) {
+                    armLamp(arm.isArmed)
+                        // A 7pt dot is not a target; the padding is.
+                        .padding(6)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.carbonHover)
+                .carbonTip(arm.tip)
+                .padding(.leading, -6)
+            }
             if stacked {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
-                        .font(CarbonFont.mono(8.5, weight: .semibold))
+                        .font(CarbonFont.mono(8.5, weight: arm?.isArmed == true ? .bold : .semibold))
                         .tracking(2.2)
-                        .foregroundStyle(theme.ink3)
+                        .foregroundStyle(arm?.isArmed == true ? theme.orange : theme.ink3)
                         .lineLimit(1)
                     Text(detail)
                         .font(CarbonFont.mono(8.5, weight: .semibold))
@@ -153,9 +201,9 @@ struct ConversionQueueView: View {
                 Spacer(minLength: 8)
             } else {
                 Text(title)
-                    .font(CarbonFont.mono(8.5, weight: .semibold))
+                    .font(CarbonFont.mono(8.5, weight: arm?.isArmed == true ? .bold : .semibold))
                     .tracking(2.2)
-                    .foregroundStyle(theme.ink3)
+                    .foregroundStyle(arm?.isArmed == true ? theme.orange : theme.ink3)
                     .lineLimit(1)
                 Spacer(minLength: 8)
                 Text(detail)
@@ -168,12 +216,16 @@ struct ConversionQueueView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
+        .background(arm?.isArmed == true ? theme.orange.opacity(theme.isDark ? 0.10 : 0.08) : Color.clear)
         .overlay(
             Rectangle()
                 .fill(theme.isDark ? Color.white.opacity(0.05) : Color.black.opacity(0.07))
                 .frame(height: 1),
             alignment: .bottom
         )
+        // The whole strip arms it, not just the lamp — the lamp is the readout.
+        .contentShape(Rectangle())
+        .onTapGesture { if let arm { ClickPlayer.shared.play(.key); arm.select() } }
     }
 
     private var summary: String {

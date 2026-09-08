@@ -198,8 +198,12 @@ private struct DisplayRail: View {
 
     /// ON AIR animation: fast flash while a stream is buffering, slow breathe
     /// while it's actually on the air, steady when radio is merely selected.
+    ///
+    /// Keyed on the *stream* being live, not on `radioLive`: `playbackState` is
+    /// shared with local playback, so browsing Radio with a record on kept the
+    /// lamp breathing after the stream had been stopped.
     private var onAirPulse: AnnPulse {
-        guard radioLive else { return .none }
+        guard model.isStreamActive else { return .none }
         switch model.playbackState {
         case .loading: return .flash
         case .playing: return .breathe
@@ -1608,10 +1612,16 @@ private struct DevicesPane: View {
     private var profiles: [ExternalDeviceProfile] { PreferencesStore.shared.savedExternalDeviceProfiles }
 
     var body: some View {
-        if let sync = model.deviceSyncProgress {
+        // A *running* sync owns the pane. A finished one steps aside for the
+        // device itself and lives on in its Last Sync cell — it used to be
+        // wiped by the next source change, so coming back to DEV after playing
+        // something else said nothing about the sync at all.
+        if let sync = model.deviceSyncProgress, sync.isRunning {
             syncBody(sync)
         } else if let c = connected {
             deviceBody(profile: c.profile, device: c.device)
+        } else if let sync = model.deviceSyncProgress {
+            syncBody(sync)
         } else {
             emptyBody
         }
@@ -1808,8 +1818,26 @@ private struct DevicesPane: View {
             OLEDCellData(key: "Transfer", value: transfer.0, sub: transfer.1),
             OLEDCellData(key: "Format", value: fmt, sub: fmtSub),
             OLEDCellData(key: "Artwork", value: artwork.0, sub: artwork.1),
-            OLEDCellData(key: "Profiles", value: "\(profiles.count)", sub: "Saved")
+            statusCell(for: profile)
         ]
+    }
+
+    /// The rail's last cell answers what you came to the pane for while standing
+    /// on a device: what the last sync did, or what is still waiting for it.
+    /// "How many profiles are saved" is the answer when neither applies.
+    private func statusCell(for profile: ExternalDeviceProfile) -> OLEDCellData {
+        if let sync = model.deviceSyncProgress, sync.profileName == profile.name {
+            return OLEDCellData(
+                key: "Last Sync",
+                value: "\(sync.completed)",
+                sub: sync.failed > 0 ? "\(sync.failed) failed" : "Synced",
+                valueColor: sync.failed > 0 ? theme.orange : theme.cyan
+            )
+        }
+        if let queued = model.syncQueueCounts[profile.id], queued > 0 {
+            return OLEDCellData(key: "Queue", value: "\(queued)", sub: "Waiting", valueColor: theme.orange)
+        }
+        return OLEDCellData(key: "Profiles", value: "\(profiles.count)", sub: "Saved")
     }
 
     private func kindCell(_ kind: ExternalDeviceKind) -> (String, String) {

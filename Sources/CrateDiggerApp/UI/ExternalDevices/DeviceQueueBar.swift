@@ -127,8 +127,13 @@ struct DeviceQueueBar: View {
             .carbonTip("Show the conversion holding this send")
         } else if !summary.isEmpty {
             // Everything about *how* this queue converts belongs in one place,
-            // and that place is the conversion panel — including pre-converting it.
-            KeyButton(style: .normal, action: { model.oledView = .conversion }) {
+            // and that place is the conversion panel — including pre-converting
+            // it. Arm it on the way: the cockpit's key is otherwise pointed at
+            // the crate queue, and the two lists sit one above the other there.
+            KeyButton(style: .normal, action: {
+                model.armQueue(deviceID: profile.id)
+                model.oledView = .conversion
+            }) {
                 Text("SETTINGS")
             }
             .frame(width: 88, height: 22)

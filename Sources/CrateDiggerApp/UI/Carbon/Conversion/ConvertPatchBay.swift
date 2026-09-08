@@ -501,9 +501,7 @@ struct ConvertPatchBay: View {
                     enabled: armEnabled,
                     label: goLabel
                 ) {
-                    if armEnabled {
-                        model.triggerConversionFromPatchBay()
-                    }
+                    model.runPatchBayGo()
                 }
                 .frame(maxWidth: .infinity)
             }
@@ -511,29 +509,30 @@ struct ConvertPatchBay: View {
         }
     }
 
-    private var armEnabled: Bool {
-        !model.conversionProgress.isRunning && !model.conversionQueueTracks.isEmpty
-    }
+    private var armEnabled: Bool { model.patchBayGoEnabled }
 
     private var armReadyColor: Color {
-        if model.conversionProgress.isRunning { return theme.cyan }
-        if model.conversionQueueTracks.isEmpty { return theme.ink4 }
-        return theme.orange
+        if model.conversionProgress.isRunning || model.deviceSyncProgress?.isRunning == true { return theme.cyan }
+        return armEnabled ? theme.orange : theme.ink4
     }
 
     private var armReadyLabel: String {
         if model.conversionProgress.isRunning { return "● RUNNING" }
-        if model.conversionQueueTracks.isEmpty { return "● EMPTY" }
+        if model.deviceSyncProgress?.isRunning == true { return "● SYNCING" }
+        if !armEnabled { return "● EMPTY" }
         return "● READY"
     }
 
+    /// The readout names the queue the key runs, so the two can never describe
+    /// different lists — which is what "CONVERT" over a device queue did.
     private var armMetaLeft: String {
+        if let profile = model.patchBayDeviceQueue {
+            let summary = model.syncQueueSummary(profileID: profile.id)
+            return "DEVICE QUEUE · \(summary.totalCount) TRK · \(formatBytes(summary.transferBytes))"
+        }
         let count = model.conversionQueueTracks.count
         let bytes = formatBytes(model.conversionEstimatedOutputBytes)
         let dur = formatHHMMSS(model.conversionQueueDurationSeconds)
-        // Named, because the QUEUE tab now lists device queues beside this one
-        // and the key below must not look like it runs those too — those are
-        // pre-converted from their own PRE-CONVERT keys.
         let label = model.pendingDeviceConversion == nil ? "CRATE QUEUE" : "DEVICE QUEUE"
         return "\(label) · \(count) TRK · \(bytes) · \(dur)"
     }
@@ -541,6 +540,12 @@ struct ConvertPatchBay: View {
     /// `nil` on the folder route — the destination strip already says it, and a
     /// second line for "your usual output folder" is noise.
     private var deviceRouteLine: String? {
+        if let profile = model.patchBayDeviceQueue {
+            let name = profile.name.uppercased()
+            return model.isDeviceConnected(profileID: profile.id)
+                ? "→ \(name) · CONNECTED"
+                : "→ \(name) · NOT CONNECTED"
+        }
         guard let device = model.pendingDeviceConversion else { return nil }
         let name = device.deviceName.uppercased()
         guard let free = device.destinationRoot.volumeFreeBytes else {
@@ -550,10 +555,9 @@ struct ConvertPatchBay: View {
     }
 
     /// The key says what the press does. Same gesture, same lamp — a different
-    /// word, because "CONVERT" was the only thing on screen for a send.
-    private var goLabel: String {
-        model.pendingDeviceConversion.map { "SEND TO \($0.deviceName.uppercased())" } ?? "CONVERT"
-    }
+    /// word, because "CONVERT" was the only thing on screen for a send, and for
+    /// a device queue it named the wrong run entirely.
+    private var goLabel: String { model.patchBayGoAction.label }
 
     // MARK: - Row scaffolding
 

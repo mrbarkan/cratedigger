@@ -352,6 +352,14 @@ final class LibraryViewModel: ObservableObject {
     /// Live SYNC-to-device run (DEV OLED readout). nil when no sync has run.
     @Published var deviceSyncProgress: DeviceSyncProgressSnapshot?
 
+    /// Which queue the cockpit's go key runs: a device's sync queue, or nil for
+    /// the crate queue. Both are listed in the QUEUE tab and either can be
+    /// armed there; the device strip's SETTINGS key arms the queue it came
+    /// from, so pressing it lands on that device rather than on your crate
+    /// queue. Falls back to the crate queue on its own once the armed device
+    /// has nothing waiting (see `patchBayDeviceQueue`).
+    @Published var armedDeviceQueueID: UUID?
+
     /// Set while a "send to device (convert)" hand-off owns the CNVRT cockpit: the
     /// device folder is the destination and its tracks are the queue. Cleared when
     /// the run finishes or the user leaves convert mode.
@@ -1849,7 +1857,6 @@ final class LibraryViewModel: ObservableObject {
         let sourceChanged = source != currentSource
         let previousSource = currentSource
         currentSource = source
-        if deviceSyncProgress?.isRunning != true { deviceSyncProgress = nil }
         switch source {
         case .localAll:
             var all: [LoadedTrack] = []

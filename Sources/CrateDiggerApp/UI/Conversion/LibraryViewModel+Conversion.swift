@@ -833,6 +833,70 @@ extension LibraryViewModel {
         return lines.joined(separator: "\n")
     }
 
+    // MARK: - The cockpit's go key
+
+    /// The device queue the key is armed on, or nil when it is the crate queue's
+    /// turn. An armed device that no longer has anything waiting resolves to nil
+    /// rather than to a dead key — a finished sync empties its own queue.
+    /// A hand-off (`pendingDeviceConversion`) has its own route and outranks both.
+    @MainActor
+    var patchBayDeviceQueue: ExternalDeviceProfile? {
+        guard pendingDeviceConversion == nil,
+              let id = armedDeviceQueueID,
+              let profile = prefs.savedExternalDeviceProfiles.first(where: { $0.id == id }),
+              !syncQueueSummary(profileID: id).isEmpty
+        else { return nil }
+        return profile
+    }
+
+    /// Arm a queue: a device's, or the crate queue with nil. The QUEUE tab's
+    /// headers and the device strip's SETTINGS key both come through here.
+    @MainActor
+    func armQueue(deviceID: UUID?) {
+        armedDeviceQueueID = deviceID
+    }
+
+    @MainActor
+    var patchBayGoAction: PatchBayGoAction {
+        let armed = patchBayDeviceQueue
+        return PatchBayGoAction.resolve(
+            pendingDeviceName: pendingDeviceConversion?.deviceName,
+            armedDeviceName: armed?.name,
+            armedDeviceIsConnected: armed.map { isDeviceConnected(profileID: $0.id) } ?? false
+        )
+    }
+
+    /// Nothing to press when the run it names has no work in it.
+    @MainActor
+    var patchBayGoEnabled: Bool {
+        guard !conversionProgress.isRunning, deviceSyncProgress?.isRunning != true else { return false }
+        switch patchBayGoAction {
+        case .convert, .sendToDevice:
+            return !conversionQueueTracks.isEmpty
+        case .syncToDevice:
+            return true   // patchBayDeviceQueue is non-empty by construction
+        case .preConvertForDevice:
+            guard let profile = patchBayDeviceQueue else { return false }
+            return syncQueueSummary(profileID: profile.id).pendingConversionCount > 0
+        }
+    }
+
+    /// Run whatever the key says.
+    @MainActor
+    func runPatchBayGo() {
+        guard patchBayGoEnabled else { return }
+        switch patchBayGoAction {
+        case .convert, .sendToDevice:
+            triggerConversionFromPatchBay()
+        case .syncToDevice:
+            guard let profile = patchBayDeviceQueue else { return }
+            syncQueuedTransfers(profileID: profile.id)
+        case .preConvertForDevice:
+            guard let profile = patchBayDeviceQueue else { return }
+            convertQueuedTransfers(profileID: profile.id)
+        }
+    }
+
     @MainActor
     func presentSummary(report: ConversionReport, presentingFrom host: NSViewController) {
         let summary = ConversionSummarySheetController(report: report)
