@@ -4,6 +4,76 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 2.0.3 (86), 2026-09-08
+
+The interface type ships with the app, and Llama '97 becomes the skin it was
+always meant to be.
+
+### Added
+
+- **Two new theme colours: Column Header and Key Print.** The type on a browser
+  column's header, and the labels and glyphs printed on keys and transport caps,
+  can now be coloured on their own. Both follow the colours they always borrowed
+  until a theme sets them, so nothing existing changes. They exist because a
+  theme with black lists inside a light console could not make both legible
+  with one colour.
+- **Choose which queue the conversion key runs.** The QUEUE tab lists your crate
+  queue and every device queue. Click a queue's header to arm it: the lamp
+  lights, and the key below reads CONVERT, SYNC TO IPOD or PRE-CONVERT FOR
+  IPOD to match. Pressing SETTINGS on a device strip arms that device on the way
+  in.
+- **ADD 20 MORE in the mini player.** A shuffled source deals twenty tracks. When
+  you reach the end of Up Next, one tap deals another twenty from the same
+  source.
+- **Skins.** Under Llama '97 the app calls a theme a skin: the key on the
+  console, the inspector pane, the editor and the Appearance menu. Pick any other
+  theme and the word goes back to theme. A small tribute to Winamp.
+
+### Changed
+
+- **Tapping a source in the mini player says what it does.** A line above the
+  list reads TAP TO SHUFFLE 20 INTO UP NEXT. It used to deal whatever the main
+  window's browser happened to be pointed at, which could be three tracks or
+  three thousand.
+- **The sync and conversion summary is a list of files.** It used to print the
+  raw log as one block of monospace that wrapped into a paragraph. Each file now
+  gets a row: an OK, SKIP or FAIL chip, the filename, the folder in smaller type
+  underneath, and a failure's reason on its own line.
+- **Llama '97's light look is the skin as it shipped.** Silver bevels that are
+  actually raised, a black screen running green in both looks, a navy bar under
+  the selected row straight out of the original playlist editor, and its own
+  type: Silkscreen for the screen, Pixel Operator Mono for the labels, Arial
+  for the rows. The fonts travel inside the theme.
+- **The device screen remembers the last sync.** A finished sync used to vanish
+  from the DEV display the moment you looked at anything else. It now shows the
+  device with a Last Sync cell, or a Queue cell when something is still
+  waiting.
+
+### Fixed
+
+- **The interface type now ships with the app.** Inter and JetBrains Mono, the
+  faces every label and row is drawn in, were never bundled. They rendered on
+  the machine the app was built on and fell back to Helvetica everywhere else,
+  silently, since 2.0. Both are included now, along with a test that fails if a
+  font the app names ever goes missing again.
+- **The mini player showed the wrong artwork during a stream.** It drew the last
+  local track's record while a YouTube set was on the air. It now shows the
+  stream's own thumbnail, and the disc/cover switch greys out until the stream
+  stops.
+- **ON AIR kept pulsing after the stream had stopped.** Browsing Radio with a
+  local track playing kept the lamp breathing. It now pulses only while a
+  stream is actually live.
+- **CONVERT and SYNC NOW for the same tracks.** Opening a device queue's settings
+  landed in a cockpit whose key said CONVERT, while the device strip said SYNC
+  NOW. The key now names the run it will perform.
+- **Opening the theme editor changed the theme.** An adaptive theme's unset
+  colours were filled from the wrong appearance the moment the editor opened,
+  repainting the lamp rail and the transport in the other look's defaults, and
+  the theme's logo disappeared from the header. Both fixed; the editor now shows
+  exactly what you were looking at.
+- **Llama '97 named a screen font it did not ship.** The OLED fell back to the
+  system font on any Mac but the author's.
+
 ## 2.0.2 (85), 2026-09-07
 
 The floating artwork panel is made of glass now.
