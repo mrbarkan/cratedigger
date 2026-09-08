@@ -41,7 +41,7 @@ struct SiliconeCap<S: Shape, Imprint: View>: View {
                 // A hair of blur is the silicone between it and your eye.
                 .overlay {
                     imprint()
-                        .foregroundStyle(lit ? Color.black.opacity(0.34) : theme.ink2.opacity(0.82))
+                        .foregroundStyle(lit ? Color.black.opacity(0.34) : theme.chassisInk.opacity(0.82))
                         .blur(radius: 0.4)
                 }
                 // Broad, soft sheen — last, so it passes over the print the way

@@ -29,12 +29,12 @@ struct ViewSwitcherColumn: View {
             }
 
             SwitchButton(
-                name: "THEME",
+                name: theme.word("THEME"),
                 dotCount: 0,
                 activeIndex: 0,
                 dash: true,
                 lit: model.showingThemePicker,
-                tip: "THEME — appearance and installed skins, in the inspector."
+                tip: theme.word("THEME — appearance and installed skins, in the inspector.")
             ) {
                 ClickPlayer.shared.play(.key)
                 // Same gesture as CNVRT: the key swaps the inspector for its

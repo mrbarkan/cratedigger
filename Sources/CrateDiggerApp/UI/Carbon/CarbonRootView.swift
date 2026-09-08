@@ -22,6 +22,16 @@ struct CarbonRootView: View {
         themeRegistry.resolvedTheme(for: PreferencesStore.shared.selectedThemeID)?.geometry ?? .standard
     }
 
+    /// Resolved the same way and for the same reason as `geometry`: the panel's
+    /// title is built out here, above the themed scope. Llama '97 calls a theme
+    /// a skin — see `ThemeWord`.
+    private func word(_ text: String) -> String {
+        ThemeWord.inflect(
+            text,
+            themeID: themeRegistry.activeDefinition(for: PreferencesStore.shared.selectedThemeID)?.id
+        )
+    }
+
     var body: some View {
         ChassisLayer {
             VStack(spacing: geometry.chassisRowGap) {
@@ -64,7 +74,7 @@ struct CarbonRootView: View {
                     if NSColorPanel.sharedColorPanelExists { NSColorPanel.shared.close() }
                 }
             ),
-            title: "Theme Editor",
+            title: word("Theme Editor"),
             // Deliberately narrow: the editor previews by letting you watch the
             // app behind it, so a panel wide enough to cover the browser
             // defeats its own purpose on a laptop screen.

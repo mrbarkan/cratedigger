@@ -125,6 +125,40 @@ final class DisplayLampTokenTests: XCTestCase {
         XCTAssertEqual(CarbonTheme.linen.rowAlt, .clear)
         XCTAssertEqual(theme(colors: ["rowAlt": "#FFFFFF20"]).rowAlt, Color(hexString: "#FFFFFF20"))
     }
+
+    /// Print on a key. Shares `ink2` with body copy until a theme separates
+    /// them, which a dark list inside a light console has to: Llama '97's
+    /// silver keys need near-black glyphs while its rows need green.
+    func testKeyPrintFollowsSecondaryTextUntilPinned() {
+        let retinted = theme(colors: ["ink2": "#00E000"])
+        XCTAssertEqual(retinted.chassisInk, retinted.ink2)
+
+        let pinned = theme(colors: ["chassisInk": "#1E2A1E", "ink2": "#00E000"])
+        XCTAssertEqual(pinned.chassisInk, Color(hexString: "#1E2A1E"))
+        XCTAssertEqual(pinned.ink2, Color(hexString: "#00E000"), "pinning the print must not move body copy")
+        XCTAssertTrue(
+            ThemeTokenCatalog.allColorTokens.contains { $0.key == "chassisInk" },
+            "chassisInk has no swatch in the theme editor"
+        )
+    }
+
+    /// The browser column headers. Section-label type drawn on the well rather
+    /// than on the chassis, so a dark browser needs it separable from SOURCES
+    /// and BROWSER — but unset it is `ink3` exactly, or every theme that ships
+    /// today changes the moment the token exists.
+    func testColumnHeaderInkFollowsSectionLabelsUntilPinned() {
+        let retinted = theme(colors: ["ink3": "#445566"])
+        XCTAssertEqual(retinted.columnHeaderInk, retinted.ink3)
+
+        let pinned = theme(colors: ["columnHeaderInk": "#00FF00", "ink3": "#445566"])
+        XCTAssertEqual(pinned.columnHeaderInk, Color(hexString: "#00FF00"))
+        XCTAssertNotEqual(pinned.columnHeaderInk, pinned.ink3)
+        XCTAssertEqual(pinned.ink3, Color(hexString: "#445566"), "pinning the header must not move the labels")
+        XCTAssertTrue(
+            ThemeTokenCatalog.allColorTokens.contains { $0.key == "columnHeaderInk" },
+            "columnHeaderInk has no swatch in the theme editor"
+        )
+    }
 }
 
 /// The browser column's scroll trigger. "Go to Current Song" on an album that

@@ -45,9 +45,9 @@ struct ThemePickerPane: View {
 
                     appearanceNote
 
-                    sectionLabel("Themes")
+                    sectionLabel(theme.word("Themes"))
                     if registry.manifests.isEmpty {
-                        Text("No themes installed.")
+                        Text(theme.word("No themes installed."))
                             .font(CarbonFont.mono(9))
                             .foregroundStyle(theme.ink4)
                             .padding(.horizontal, 14)
@@ -90,7 +90,7 @@ struct ThemePickerPane: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Text("THEME")
+            Text(theme.word("THEME"))
                 .font(CarbonFont.mono(9.5, weight: .bold))
                 .tracking(1.8)
                 .foregroundStyle(theme.ink2)
@@ -257,7 +257,7 @@ struct ThemePickerPane: View {
             }
             .frame(maxWidth: .infinity)
             .frame(height: geometry.keyHeight)
-            .carbonTip("Open the theme editor on the current theme")
+            .carbonTip(theme.word("Open the theme editor on the current theme"))
         }
         .padding(.horizontal, 14)
         .padding(.top, 12)

@@ -91,6 +91,37 @@ final class BuiltInThemeEditingTests: XCTestCase {
         XCTAssertEqual(Set(destinations).count, destinations.count, "no file written twice")
     }
 
+    // MARK: - The mark survives the edit
+
+    /// Opening a shipped theme in place must keep its logo on screen. The
+    /// editor looks for a draft's logo beside the *user* Themes folder, where a
+    /// built-in has no bundle at all, so the mark vanished the moment you
+    /// pressed EDIT — the fallback is what points the preview back at the app
+    /// bundle the file actually lives in.
+    @MainActor
+    func testAnEditedBuiltInStillPreviewsItsLogo() throws {
+        let directory = try XCTUnwrap(BuiltInThemeEditing.repositoryThemesDirectory)
+        // Read from the checkout (the loader calls that user-installed), then
+        // re-label it as shipped — which is what it is at runtime, and the
+        // origin the preview got wrong.
+        let found = try XCTUnwrap(
+            ThemeLoaderService(bundles: [], userThemesDirectoryOverride: directory)
+                .discoverThemes().themes.first { $0.id == "carbon" }
+        )
+        let carbon = ThemeManifest(definition: found.definition, origin: .builtIn,
+                                   logoURLs: found.logoURLs)
+        try XCTSkipUnless(BuiltInThemeEditing.isEditable(carbon))
+        XCTAssertNotNil(carbon.logoURL(for: .dark), "the shipped theme has a mark to keep")
+
+        let registry = ThemeRegistry(loader: ThemeLoaderService(bundles: []))
+        registry.beginEditing(carbon, appearance: .dark)
+        defer { registry.draft = nil }
+        XCTAssertNotNil(
+            registry.resolvedTheme(for: carbon.id, appearance: .dark)?.theme.logoURL,
+            "the draft lost the logo the theme was drawing a moment ago"
+        )
+    }
+
     // MARK: -
 
     private func definition(id: String) -> ThemeDefinition {

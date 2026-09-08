@@ -258,7 +258,7 @@ struct ThemeEditorView: View {
                 Button(manifest.definition.name) { registry.beginEditing(manifest) }
             }
             if registry.manifests.isEmpty {
-                Text("No themes installed")
+                Text(theme.word("No themes installed"))
             }
         } label: {
             HStack(spacing: 4) {
@@ -269,16 +269,16 @@ struct ThemeEditorView: View {
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
-        .carbonTip("Open an installed theme. Built-ins open as an editable copy — the originals ship with the app and stay put.")
+        .carbonTip(theme.word("Open an installed theme. Built-ins open as an editable copy — the originals ship with the app and stay put."))
     }
 
     private var emptyState: some View {
         VStack(spacing: 10) {
             Spacer()
-            Text("No theme loaded")
+            Text(theme.word("No theme loaded"))
                 .font(CarbonFont.sans(13, weight: .semibold))
                 .foregroundStyle(theme.ink3)
-            KeyButton(action: beginEditingActiveTheme) { Text("EDIT CURRENT THEME") }
+            KeyButton(action: beginEditingActiveTheme) { Text(theme.word("EDIT CURRENT THEME")) }
                 .frame(width: 180, height: geometry.keyHeight)
             Spacer()
         }

@@ -111,7 +111,7 @@ private struct LibButton: View {
                         .minimumScaleFactor(0.7)
                 }
             }
-            .foregroundStyle(highlighted ? theme.orange : theme.ink2)
+            .foregroundStyle(highlighted ? theme.orange : theme.chassisInk)
             .padding(.horizontal, horizPad)
             .frame(maxWidth: style == .wide ? .infinity : nil,
                    alignment: .leading)

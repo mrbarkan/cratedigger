@@ -759,8 +759,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             }
         }
         menu.addItem(.separator())
-        menu.addItem(makeItem(title: "Theme Editor…", action: #selector(openThemeEditor(_:))))
-        menu.addItem(makeItem(title: "Refresh Themes", action: #selector(refreshThemes(_:))))
+        // Llama '97 is a Winamp tribute and calls a theme a skin (`ThemeWord`).
+        // The menu is rebuilt every time it opens, so it needs no observer to
+        // follow the choice. "Show Themes Folder…" is deliberately left alone:
+        // it names a real folder, and Finder will still say Themes.
+        let word = { (text: String) in ThemeWord.inflect(text, themeID: self.prefs.selectedThemeID) }
+        menu.addItem(makeItem(title: word("Theme Editor…"), action: #selector(openThemeEditor(_:))))
+        menu.addItem(makeItem(title: word("Refresh Themes"), action: #selector(refreshThemes(_:))))
         menu.addItem(makeItem(title: "Show Themes Folder…", action: #selector(showThemesFolder(_:))))
     }
 

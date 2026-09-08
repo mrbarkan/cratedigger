@@ -144,6 +144,31 @@ public struct CarbonTheme: Equatable {
     public var keyLampOverride: Color?
     public var keyLamp: Color { keyLampOverride ?? orange }
 
+    /// The type and glyphs printed on the controls themselves: a key's label,
+    /// the symbol moulded under a transport cap, the header's DIG CRATE row.
+    ///
+    /// Its own token because print on a key is not body copy. It has always
+    /// been `ink2`, which also draws the secondary line of every row and every
+    /// sheet — surfaces that are the chassis's opposite in any theme with a
+    /// dark list inside a light console. Llama '97's light layer is exactly
+    /// that: green-on-black rows in a silver machine, where one token cannot be
+    /// legible on both. Unset, it is `ink2` exactly.
+    public var chassisInkOverride: Color?
+    public var chassisInk: Color { chassisInkOverride ?? ink2 }
+
+    /// The type printed across a browser column's header: the facet the column
+    /// shows (its type selector), the count on the right, and the sort keys
+    /// between them.
+    ///
+    /// Its own token because that strip is the one piece of section-label type
+    /// drawn on the *well* rather than on the chassis. It shares `ink3` with
+    /// SOURCES and BROWSER, which sit on a lighter surface, so a theme with a
+    /// dark browser well had to choose which of the two to make legible. Unset,
+    /// it is `ink3` exactly, so nothing shipped changes. A focused column still
+    /// overrides it with the focus LED — focus outranks colour.
+    public var columnHeaderInkOverride: Color?
+    public var columnHeaderInk: Color { columnHeaderInkOverride ?? ink3 }
+
     /// The loud end of every meter: where the VOLUME ramp, the EQ bars and
     /// the VU LEDs run from `cyan` up to. Its own token for the same reason
     /// as the lamps — a lit segment is a light, and a theme whose accent is
@@ -225,7 +250,18 @@ public struct CarbonTheme: Equatable {
     /// re-importing a logo keeps its URL, so without the stamp a swapped image
     /// would be an equal theme and the header would keep drawing the old one.
     public var name: String = "Carbon"
+    /// The definition's id, carried on the rendered theme so any view can ask
+    /// what it is looking at without reaching for the registry. `ThemeWord`
+    /// is the only reader: the app's word for a theme is the theme's to
+    /// choose (see `word(_:)`).
+    public var id: String = "carbon"
     public var logoURL: URL?
+
+    /// This theme's word for `text`. Llama '97 is a Winamp tribute, so under it
+    /// the app says SKIN; every other theme says THEME. See `ThemeWord`.
+    public func word(_ text: String) -> String {
+        ThemeWord.inflect(text, themeID: id)
+    }
     public var logoStamp: Date?
 
     public var isDark: Bool { mode == .carbon }
@@ -458,6 +494,8 @@ public extension CarbonTheme {
         // absent from `monochromeGlass` below.
         transportLampOverride = optionalColor("transportLamp", resolvedBase.transportLampOverride)
         keyLampOverride = optionalColor("keyLamp", resolvedBase.keyLampOverride)
+        columnHeaderInkOverride = optionalColor("columnHeaderInk", resolvedBase.columnHeaderInkOverride)
+        chassisInkOverride = optionalColor("chassisInk", resolvedBase.chassisInkOverride)
         meterHotOverride = optionalColor("meterHot", resolvedBase.meterHotOverride)
         // Every overlay effect clamps to its dial's ceiling, so a theme can't
         // ask for a value the renderer would quietly trim away.

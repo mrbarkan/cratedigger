@@ -88,7 +88,7 @@ struct ColumnList<Content: View>: View {
             }
             .font(CarbonFont.mono(8.5, weight: .semibold))
             .tracking(2.2)
-            .foregroundStyle(isFocused ? focusAccent : theme.ink3)
+            .foregroundStyle(isFocused ? focusAccent : theme.columnHeaderInk)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .frame(maxWidth: .infinity, alignment: .leading)

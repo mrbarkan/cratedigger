@@ -1,130 +1,157 @@
 {
-  "id": "llama-97",
-  "name": "Llama '97",
-  "author": "CrateDigger",
-  "version": "2.0",
-
-  "baseAppearance": "dark",
-
-  "//": "A tribute to the 1997 skin everyone remembers: green-on-black readouts, grey bevelled chrome, square corners. Dark is the player itself, green on black; light is the same console in muted purple, its screen switched to white type.",
-
-  "colors": {
-    "oledSurface": "#000000",
-    "oledStrokeInner": "#0B140B",
-    "oledSurfaceShade": "#00000099",
-    "onAir": "#FF4032",
-
-    "selectionInk": "#FFFFFF"
+  "//" : "A tribute to the 1997 skin everyone remembers: green-on-black readouts, grey bevelled chrome, square corners. Dark is the player at night, its chrome gone to slate; light is the skin as it shipped — silver bevels, a black screen running green, and a navy bar under the selected row.",
+  "author" : "CrateDigger",
+  "baseAppearance" : "dark",
+  "colors" : {
+    "oledStrokeInner" : "#0B140B",
+    "oledSurface" : "#000000",
+    "oledSurfaceShade" : "#00000099",
+    "onAir" : "#FF4032",
+    "selectionInk" : "#FFFFFF"
   },
-
-  "dark": {
-    "logo": "logo-dark.pdf",
-    "colors": {
-      "chassis": "#2A2D3C",
-      "chassisHi": "#4A4F66",
-      "chassisLo": "#161821",
-      "chassisDeep": "#080910",
-
-      "well": "#181A24",
-      "wellDeep": "#0A0B10",
-      "paper": "#000000",
-      "paper2": "#050805",
-
-      "ink": "#12F012",
-      "ink2": "#0FC80F",
-      "ink3": "#7A8C7A",
-      "ink4": "#4C5A4C",
-      "hair": "#1E2A1E",
-
-      "orange": "#2B4ACF",
-      "orangeHi": "#5E78F0",
-      "orangeLo": "#1A2F92",
-      "sun": "#FFE45C",
-      "sunHi": "#FFF3A8",
-      "sunLo": "#C9A82A",
-      "cyan": "#00E23C",
-      "cyanGlow": "#B6FFC4",
-      "red": "#FF4032",
-      "indigo": "#6E7CE0",
-
-      "metalHi": "#9AA1B4",
-      "metal": "#5C6274",
-      "metalLo": "#2C303F",
-      "metalDeep": "#0B0C12",
-
-      "backgroundBase": "#0A0B12",
-      "backgroundGradientStart": "#1D2030",
-      "backgroundGradientEnd": "#050609",
-
-      "selectionLedCore": "#00FF3C",
-
-      "oledForeground": "#00FF00",
-      "oledForegroundMuted": "#00FF0099"
+  "dark" : {
+    "colors" : {
+      "backgroundBase" : "#0A0B12",
+      "backgroundGradientEnd" : "#050609",
+      "backgroundGradientStart" : "#1D2030",
+      "chassis" : "#2A2D3C",
+      "chassisDeep" : "#080910",
+      "chassisHi" : "#4A4F66",
+      "chassisLo" : "#161821",
+      "cyan" : "#00E23C",
+      "cyanGlow" : "#B6FFC4",
+      "hair" : "#1E2A1E",
+      "indigo" : "#6E7CE0",
+      "ink" : "#12F012",
+      "ink2" : "#0FC80F",
+      "ink3" : "#7A8C7A",
+      "ink4" : "#4C5A4C",
+      "keyLamp" : "#FF0D19",
+      "metal" : "#5C6274",
+      "metalDeep" : "#0B0C12",
+      "metalHi" : "#9AA1B4",
+      "metalLo" : "#2C303F",
+      "meterHot" : "#FF0000",
+      "oledForeground" : "#00FF00",
+      "oledForegroundMuted" : "#00FF0099",
+      "orange" : "#2B4ACF",
+      "orangeHi" : "#5E78F0",
+      "orangeLo" : "#1A2F92",
+      "paper" : "#000000",
+      "paper2" : "#050805",
+      "red" : "#FF4032",
+      "selectionGlow" : "#00A7FF",
+      "selectionLedCore" : "#0086FF",
+      "selectionSpread" : "#0069FF",
+      "sun" : "#FFE45C",
+      "sunHi" : "#FFF3A8",
+      "sunLo" : "#C9A82A",
+      "transportLamp" : "#FF2B00",
+      "well" : "#181A24",
+      "wellDeep" : "#0A0B10"
     },
-    "shadows": {
-      "shadow1": { "color": "#00000099", "radius": 8, "x": 0, "y": 2 },
-      "shadow2": { "color": "#000000C4", "radius": 40, "x": 0, "y": 18 }
+    "logo" : "logo-dark.pdf",
+    "shadows" : {
+      "shadow1" : {
+        "color" : "#00000099",
+        "radius" : 8,
+        "x" : 0,
+        "y" : 2
+      },
+      "shadow2" : {
+        "color" : "#000000C4",
+        "radius" : 40,
+        "x" : 0,
+        "y" : 18
+      }
     }
   },
-
-  "light": {
-    "logo": "logo-light.pdf",
-    "colors": {
-      "chassis": "#E3E1E9",
-      "chassisHi": "#FFFFFF",
-      "chassisLo": "#C1BDCD",
-      "chassisDeep": "#8D8A9C",
-
-      "well": "#D8D5E1",
-      "wellDeep": "#B4B0C2",
-      "paper": "#FAF9FC",
-      "paper2": "#EFEDF4",
-
-      "ink": "#1B1826",
-      "ink2": "#3B3750",
-      "ink3": "#6A6580",
-      "ink4": "#9995AA",
-      "hair": "#CBC7D6",
-
-      "orange": "#6E58C0",
-      "orangeHi": "#9082DC",
-      "orangeLo": "#4A3690",
-      "sun": "#B08A20",
-      "sunHi": "#D8B44C",
-      "sunLo": "#8A6A10",
-      "cyan": "#3E7A52",
-      "cyanGlow": "#BEDEC6",
-      "red": "#A83A30",
-      "indigo": "#4A4590",
-
-      "metalHi": "#FFFFFF",
-      "metal": "#DEDBE7",
-      "metalLo": "#ADA9BE",
-      "metalDeep": "#6D6980",
-
-      "backgroundBase": "#BDB8CC",
-      "backgroundGradientStart": "#E2DFEA",
-      "backgroundGradientEnd": "#A5A0B8",
-
-      "selectionLedCore": "#6E58C0",
-
-      "oledForeground": "#F2F2F4",
-      "oledForegroundMuted": "#F2F2F4A6"
+  "effects" : {
+    "flat" : 0,
+    "oledGlare" : 0,
+    "oledMonochrome" : 1
+  },
+  "fonts" : {
+    "display" : {
+      "bold" : "Silkscreen-Bold",
+      "regular" : "Silkscreen-Regular"
     },
-    "shadows": {
-      "shadow1": { "color": "#251F3A1F", "radius": 6, "x": 0, "y": 2 },
-      "shadow2": { "color": "#251F3A3D", "radius": 32, "x": 0, "y": 14 }
+    "mono" : {
+      "bold" : "PixelOperatorMono8-Bold",
+      "regular" : "PixelOperatorMono8"
+    },
+    "sans" : {
+      "bold" : "Arial-BoldMT",
+      "regular" : "ArialMT"
     }
   },
-
-  "effects": {
-    "oledMonochrome": 1
+  "geometry" : {
+    "chassisCornerRadius" : 3,
+    "oledCornerRadius" : 2,
+    "paperCornerRadius" : 2,
+    "wellCornerRadius" : 3
   },
-
-  "geometry": {
-    "chassisCornerRadius": 3,
-    "wellCornerRadius": 3,
-    "paperCornerRadius": 2,
-    "oledCornerRadius": 2
-  }
+  "id" : "llama-97",
+  "light" : {
+    "colors" : {
+      "backgroundBase" : "#9A9A9A",
+      "backgroundGradientEnd" : "#7C7C7C",
+      "backgroundGradientStart" : "#D2D2D2",
+      "chassis" : "#C0C0C0",
+      "chassisDeep" : "#5A5A5A",
+      "chassisHi" : "#E6E6E6",
+      "chassisInk" : "#1E2A1E",
+      "chassisLo" : "#8E8E8E",
+      "columnHeaderInk" : "#00E000",
+      "cyan" : "#00FF00",
+      "cyanGlow" : "#00FF00CC",
+      "hair" : "#6E6E6E",
+      "indigo" : "#2A2AD0",
+      "ink" : "#FFFFFF",
+      "ink2" : "#00E000",
+      "ink3" : "#38473A",
+      "ink4" : "#5A6A5B",
+      "keyLamp" : "#FFA828",
+      "metal" : "#C4C4C4",
+      "metalDeep" : "#5A5A5A",
+      "metalHi" : "#EFEFEF",
+      "metalLo" : "#909090",
+      "meterHot" : "#FF0000",
+      "oledForeground" : "#00FF00",
+      "oledForegroundMuted" : "#00FF0099",
+      "orange" : "#0B7A0B",
+      "orangeHi" : "#17A317",
+      "orangeLo" : "#064F06",
+      "paper" : "#000000",
+      "paper2" : "#2B2B2B",
+      "red" : "#E30000",
+      "rowAlt" : "#FFFFFF17",
+      "selectionGlow" : "#2030E0",
+      "selectionLedCore" : "#4A5AFF",
+      "selectionSpread" : "#0000C6",
+      "sun" : "#FF8A20",
+      "sunHi" : "#F9B44C",
+      "sunLo" : "#8A6A10",
+      "transportLamp" : "#14A814",
+      "well" : "#6E6E6E",
+      "wellDeep" : "#2A2A2A"
+    },
+    "logo" : "logo-light.pdf",
+    "shadows" : {
+      "shadow1" : {
+        "color" : "#00000026",
+        "radius" : 6,
+        "x" : 0,
+        "y" : 2
+      },
+      "shadow2" : {
+        "color" : "#00000047",
+        "radius" : 32,
+        "x" : 0,
+        "y" : 14
+      }
+    }
+  },
+  "name" : "Llama '97",
+  "version" : "2.0"
 }

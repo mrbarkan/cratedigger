@@ -85,7 +85,7 @@ struct LogoCropperView: View {
                     .frame(width: 60, height: 20)
                 KeyButton(style: .glowingFilled, action: onApply) { Text("APPLY") }
                     .frame(width: 60, height: 20)
-                    .carbonTip("Render this framing into the theme as its logo.")
+                    .carbonTip(theme.word("Render this framing into the theme as its logo."))
             }
         }
     }

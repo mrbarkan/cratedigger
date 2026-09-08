@@ -1,116 +1,123 @@
 {
-  "id": "carbon",
-  "name": "Carbon",
-  "author": "CrateDigger",
-  "version": "2.0",
-  "baseAppearance": "dark",
-  "colors": {
-    "oledForeground": "#F5F1E6",
-    "oledForegroundMuted": "#FFFFFF8C",
-    "onAir": "#FF5B4A",
-    "selectionLedCore": "#FFD24A",
-    "selectionInk": "#FFFFFF"
+  "author" : "CrateDigger",
+  "baseAppearance" : "dark",
+  "colors" : {
+    "oledForeground" : "#F5F1E6",
+    "oledForegroundMuted" : "#FFFFFF8C",
+    "onAir" : "#FF5B4A",
+    "selectionInk" : "#FFFFFF",
+    "selectionLedCore" : "#FFD24A"
   },
-  "dark": {
-    "logo": "logo-dark.pdf",
-    "colors": {
-      "chassis": "#171C22",
-      "chassisHi": "#2B3540",
-      "chassisLo": "#0C0F13",
-      "chassisDeep": "#05070A",
-      "well": "#121A22",
-      "wellDeep": "#070A0E",
-      "paper": "#111820",
-      "paper2": "#0A0E13",
-      "ink": "#F3F7F7",
-      "ink2": "#C8D4D9",
-      "ink3": "#82929B",
-      "ink4": "#56636C",
-      "hair": "#26333C",
-      "orange": "#FF6D3F",
-      "orangeHi": "#FFA07C",
-      "orangeLo": "#D94C25",
-      "sun": "#F4CA54",
-      "sunHi": "#FFE894",
-      "sunLo": "#C79D30",
-      "cyan": "#45C7BD",
-      "cyanGlow": "#BEF4EF",
-      "red": "#EA554C",
-      "indigo": "#7282E8",
-      "metalHi": "#56626B",
-      "metal": "#303A43",
-      "metalLo": "#151A20",
-      "metalDeep": "#05070A",
-      "backgroundBase": "#080A0E",
-      "backgroundGradientStart": "#18232C",
-      "backgroundGradientEnd": "#030406",
-      "oledSurface": "#050504",
-      "oledStrokeInner": "#0E0E0C"
+  "dark" : {
+    "colors" : {
+      "backgroundBase" : "#080A0E",
+      "backgroundGradientEnd" : "#030406",
+      "backgroundGradientStart" : "#18232C",
+      "chassis" : "#171C22",
+      "chassisDeep" : "#05070A",
+      "chassisHi" : "#2B3540",
+      "chassisLo" : "#0C0F13",
+      "cyan" : "#45C7BD",
+      "cyanGlow" : "#BEF4EF",
+      "hair" : "#26333C",
+      "indigo" : "#7282E8",
+      "ink" : "#F3F7F7",
+      "ink2" : "#C8D4D9",
+      "ink3" : "#82929B",
+      "ink4" : "#56636C",
+      "metal" : "#303A43",
+      "metalDeep" : "#05070A",
+      "metalHi" : "#56626B",
+      "metalLo" : "#151A20",
+      "oledStrokeInner" : "#0E0E0C",
+      "oledSurface" : "#050504",
+      "orange" : "#FF6D3F",
+      "orangeHi" : "#FFA07C",
+      "orangeLo" : "#D94C25",
+      "paper" : "#111820",
+      "paper2" : "#0A0E13",
+      "red" : "#EA554C",
+      "selectionLedCore" : "#56FFFD",
+      "selectionSpread" : "#56FFFD8D",
+      "sun" : "#F4CA54",
+      "sunHi" : "#FFE894",
+      "sunLo" : "#C79D30",
+      "well" : "#121A22",
+      "wellDeep" : "#070A0E"
     },
-    "shadows": {
-      "shadow1": {
-        "color": "#00000085",
-        "radius": 12,
-        "x": 0,
-        "y": 3
+    "logo" : "logo-dark.pdf",
+    "shadows" : {
+      "shadow1" : {
+        "color" : "#00000085",
+        "radius" : 12,
+        "x" : 0,
+        "y" : 3
       },
-      "shadow2": {
-        "color": "#000000B8",
-        "radius": 54,
-        "x": 0,
-        "y": 24
+      "shadow2" : {
+        "color" : "#000000B8",
+        "radius" : 54,
+        "x" : 0,
+        "y" : 24
       }
     }
   },
-  "light": {
-    "logo": "logo-light.pdf",
-    "colors": {
-      "chassis": "#F5F8FA",
-      "chassisHi": "#FFFFFF",
-      "chassisLo": "#D7E1E5",
-      "chassisDeep": "#9CAAB0",
-      "well": "#E9F1F4",
-      "wellDeep": "#C8D5DA",
-      "paper": "#FAFCFD",
-      "paper2": "#EEF4F7",
-      "ink": "#12171C",
-      "ink2": "#313E47",
-      "ink3": "#657580",
-      "ink4": "#98A5AB",
-      "hair": "#C7D2D7",
-      "orange": "#FF6236",
-      "orangeHi": "#FF956F",
-      "orangeLo": "#D7441E",
-      "sun": "#F4C84A",
-      "sunHi": "#FFE58A",
-      "sunLo": "#C99E2F",
-      "cyan": "#3AA8B8",
-      "cyanGlow": "#BDEEF2",
-      "red": "#E2473F",
-      "indigo": "#4B6FCB",
-      "metalHi": "#FFFFFF",
-      "metal": "#DDE8EC",
-      "metalLo": "#ABB9C0",
-      "metalDeep": "#5F6D75",
-      "backgroundBase": "#DCE9EC",
-      "backgroundGradientStart": "#F2F8F9",
-      "backgroundGradientEnd": "#C7D8DF",
-      "oledSurface": "#0A0A0A",
-      "oledStrokeInner": "#1A1A1A"
+  "effects" : {
+    "grain" : 0.099961076512455518
+  },
+  "id" : "carbon",
+  "light" : {
+    "colors" : {
+      "backgroundBase" : "#DCE9EC",
+      "backgroundGradientEnd" : "#C7D8DF",
+      "backgroundGradientStart" : "#F2F8F9",
+      "chassis" : "#F5F8FA",
+      "chassisDeep" : "#9CAAB0",
+      "chassisHi" : "#FFFFFF",
+      "chassisLo" : "#D7E1E5",
+      "cyan" : "#3AA8B8",
+      "cyanGlow" : "#BDEEF2",
+      "hair" : "#C7D2D7",
+      "indigo" : "#4B6FCB",
+      "ink" : "#12171C",
+      "ink2" : "#313E47",
+      "ink3" : "#657580",
+      "ink4" : "#98A5AB",
+      "metal" : "#DDE8EC",
+      "metalDeep" : "#5F6D75",
+      "metalHi" : "#FFFFFF",
+      "metalLo" : "#ABB9C0",
+      "oledStrokeInner" : "#1A1A1A",
+      "oledSurface" : "#0A0A0A",
+      "orange" : "#FF6236",
+      "orangeHi" : "#FF956F",
+      "orangeLo" : "#D7441E",
+      "paper" : "#FAFCFD",
+      "paper2" : "#EEF4F7",
+      "red" : "#E2473F",
+      "selectionGlow" : "#FFC800",
+      "selectionSpread" : "#FF6236",
+      "sun" : "#F4C84A",
+      "sunHi" : "#FFE58A",
+      "sunLo" : "#C99E2F",
+      "well" : "#E9F1F4",
+      "wellDeep" : "#C8D5DA"
     },
-    "shadows": {
-      "shadow1": {
-        "color": "#0F0F0F1A",
-        "radius": 10,
-        "x": 0,
-        "y": 3
+    "logo" : "logo-light.pdf",
+    "shadows" : {
+      "shadow1" : {
+        "color" : "#0F0F0F1A",
+        "radius" : 10,
+        "x" : 0,
+        "y" : 3
       },
-      "shadow2": {
-        "color": "#0D0D0D3D",
-        "radius": 48,
-        "x": 0,
-        "y": 22
+      "shadow2" : {
+        "color" : "#0D0D0D3D",
+        "radius" : 48,
+        "x" : 0,
+        "y" : 22
       }
     }
-  }
+  },
+  "name" : "Carbon",
+  "version" : "2.0"
 }

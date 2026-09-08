@@ -198,6 +198,7 @@ public final class ThemeRegistry: ObservableObject {
         let base: CarbonTheme = definition.baseAppearance == .dark ? .carbon : .linen
         var theme = CarbonTheme(definition: definition, resolvedBase: base)
         theme.name = definition.name
+        theme.id = definition.id
         theme.logoURL = logoURL
         theme.logoStamp = logoURL.flatMap {
             try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
@@ -349,15 +350,21 @@ public final class ThemeRegistry: ObservableObject {
         switch manifest.origin {
         case .userInstalled:
             draftLogoFallback = [:]
-            draft = seeded(definition)
+            draft = Self.seeded(definition)
             draftSeed = draft
             draftEditingAppearance = layer
         case .builtIn where BuiltInThemeEditing.isEditable(manifest):
             // Beta-only: the shipped themes are still being tuned, so the
             // editor writes them back to the checkout rather than forking.
             // See `BuiltInThemeEditing` — and close it for the RC.
-            draftLogoFallback = [:]
-            draft = seeded(definition)
+            //
+            // Its logo files stay in the app bundle, and `draftLogoURL` looks
+            // for a draft's own logo beside the *user* Themes folder — where a
+            // built-in has nothing. Without the fallback the mark vanished the
+            // moment the editor opened. `saveDraft` never materializes these:
+            // an in-place built-in already sits beside them.
+            draftLogoFallback = manifest.logoURLs
+            draft = Self.seeded(definition)
             draftSeed = draft
             draftEditingAppearance = layer
         case .builtIn:
@@ -375,7 +382,7 @@ public final class ThemeRegistry: ObservableObject {
             // The fork keeps the built-in as its parent, so saving records
             // only the tokens actually changed (see `minimized(_:against:)`).
             fork.inherits = manifest.definition.id
-            draft = seeded(fork)
+            draft = Self.seeded(fork)
             draftSeed = draft
             draftEditingAppearance = layer
         }
@@ -586,18 +593,32 @@ public final class ThemeRegistry: ObservableObject {
     /// Seeding makes the draft a complete definition rather than a sparse one;
     /// `ThemeAuthoringService.minimized(_:against:)` strips it back down at
     /// save time, so the file on disk still records only real changes.
-    private func seeded(_ definition: ThemeDefinition) -> ThemeDefinition {
-        let base: CarbonTheme = definition.baseAppearance == .dark ? .carbon : .linen
-        let renderedTheme = CarbonTheme(definition: definition, resolvedBase: base)
-        let renderedGeometry = CarbonGeometry(definition: definition)
-
+    ///
+    /// An adaptive theme has to be seeded **per layer**, because each layer
+    /// falls back to a different stock theme: Carbon's light layer resolves its
+    /// unset tokens from Linen, not from Carbon. Filling only the shared token
+    /// set from one render pushed the declared appearance's defaults into every
+    /// token the other layer left unset — so opening the editor on a dark-based
+    /// theme while the app was in Light repainted half the window, and the theme
+    /// you were about to edit was not the one you had been looking at.
+    nonisolated static func seeded(_ definition: ThemeDefinition) -> ThemeDefinition {
         var result = definition
-        var colors = definition.colors ?? [:]
-        for token in ThemeTokenCatalog.allColorTokens where colors[token.key] == nil {
-            colors[token.key] = renderedTheme[keyPath: token.read].themeHexString
-        }
-        result.colors = colors
 
+        if definition.isAdaptive {
+            // The shared set is the declared appearance's — that layer's
+            // variant is pruned back against it at save time.
+            result.colors = filledColors(of: definition.resolved(for: definition.baseAppearance))
+            let other: ThemeDefinition.BaseAppearance = definition.baseAppearance == .dark ? .light : .dark
+            var variant = definition.variant(for: other) ?? ThemeVariant()
+            variant.colors = filledColors(of: definition.resolved(for: other))
+            result.setVariant(variant, for: other)
+        } else {
+            result.colors = filledColors(of: definition)
+        }
+
+        // Geometry and fonts are theme-wide — there is no per-layer variant of
+        // either, so one render answers for both looks.
+        let renderedGeometry = CarbonGeometry(definition: definition)
         var geometry = definition.geometry ?? [:]
         for token in ThemeTokenCatalog.allGeometryTokens where geometry[token.key] == nil {
             geometry[token.key] = Double(renderedGeometry[keyPath: token.read])
@@ -608,6 +629,18 @@ public final class ThemeRegistry: ObservableObject {
         // encodes as absent after minimization.
         result.fonts = definition.fonts ?? [:]
         return result
+    }
+
+    /// Every color token of one *flattened* layer, its own values first and the
+    /// stock theme behind them — exactly what the app draws for that layer.
+    nonisolated private static func filledColors(of flattened: ThemeDefinition) -> [String: String] {
+        let base: CarbonTheme = flattened.baseAppearance == .dark ? .carbon : .linen
+        let rendered = CarbonTheme(definition: flattened, resolvedBase: base)
+        var colors = flattened.colors ?? [:]
+        for token in ThemeTokenCatalog.allColorTokens where colors[token.key] == nil {
+            colors[token.key] = rendered[keyPath: token.read].themeHexString
+        }
+        return colors
     }
 
     /// True while the draft is a shipped theme opened in place rather than a
