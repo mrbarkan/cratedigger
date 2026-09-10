@@ -42,6 +42,7 @@ final class AmbientServiceTests: XCTestCase {
             let wanted = uid ?? defaultOutputUID
             return outputs.first { $0.uid == wanted }
         }
+        func allInputs() -> [AudioDeviceSummary] { inputs }
     }
 
     private struct DeviceBusy: LocalizedError {
@@ -301,6 +302,52 @@ final class AmbientServiceTests: XCTestCase {
 
         XCTAssertEqual(service.state, .off)
         XCTAssertEqual(stops, [.failed("device busy")])
+    }
+
+    /// Starting an engine makes the hardware report a change of its own (probed
+    /// on a UGREEN Bluetooth receiver: every start posted one), and each rebuild
+    /// is another start. Past a few rebuilds in quick succession Ambient must turn
+    /// off and say why, instead of rebuilding forever with the app frozen.
+    func testConfigurationChangesThatKeepComingTurnItOffInsteadOfLooping() async {
+        let service = makeService()
+        _ = await service.turnOn(outputUID: headsetOut.uid)
+
+        for _ in 0..<10 { engines.last?.onConfigurationChange?() }
+
+        XCTAssertEqual(service.state, .off)
+        XCTAssertEqual(stops.count, 1)
+        guard case .failed = stops.first else {
+            return XCTFail("expected Ambient to stop with a reason, got \(stops)")
+        }
+        XCTAssertLessThanOrEqual(engines.count, 4, "the first start plus at most three rebuilds")
+    }
+
+    // MARK: - Which mic "System Default" means
+
+    /// A Bluetooth receiver is often the system's default input as well as its
+    /// output (probed: a UGREEN receiver was both). "System Default" must not
+    /// quietly open that mic, which drops the music to call quality; it uses the
+    /// Mac's microphone instead, without asking.
+    func testSystemDefaultPrefersTheMacMicWhenTheDefaultInputIsTheHeadset() async throws {
+        let service = makeService()
+        devices.defaultInputUID = headsetIn.uid
+
+        let result = await service.turnOn(outputUID: headsetOut.uid)
+
+        XCTAssertEqual(result, .started(inputName: macMic.name))
+        XCTAssertEqual(try XCTUnwrap(engines.first?.startedConfigs.first).input, macMic)
+    }
+
+    /// With no built-in mic to fall back on, System Default asks the same
+    /// question a named choice of the headset's mic does.
+    func testSystemDefaultAsksAboutTheHeadsetMicWhenThereIsNoMacMic() async {
+        let service = makeService()
+        devices.defaultInputUID = headsetIn.uid
+        devices.inputs.removeAll { $0.uid == macMic.uid }
+
+        let result = await service.turnOn(outputUID: headsetOut.uid)
+
+        XCTAssertEqual(result, .needsCallModeApproval(deviceName: headsetIn.name, deviceUID: headsetIn.uid))
     }
 
     // MARK: - Bit-perfect DSD

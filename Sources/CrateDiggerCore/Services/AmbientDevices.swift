@@ -21,6 +21,7 @@ public final class CoreAudioAmbientDevices: AmbientDeviceProviding {
     }
 
     public func inputs() -> [AudioDeviceSummary] { summaries(scope: kAudioObjectPropertyScopeInput) }
+    public func allInputs() -> [AudioDeviceSummary] { inputs() }
     public func outputs() -> [AudioDeviceSummary] { summaries(scope: kAudioObjectPropertyScopeOutput) }
 
     public func input(uid: String?) -> AudioDeviceSummary? {

@@ -38,6 +38,8 @@ public protocol AmbientEngine: AnyObject {
 public protocol AmbientDeviceProviding: AnyObject {
     func input(uid: String?) -> AudioDeviceSummary?
     func output(uid: String?) -> AudioDeviceSummary?
+    /// Every input connected right now, for finding the Mac's own mic.
+    func allInputs() -> [AudioDeviceSummary]
 }
 
 /// Ambient's state machine: which mic, which output, whether it may run, and
@@ -89,15 +91,29 @@ public final class AmbientService {
     /// when the saved setting is "system default".
     private var runningInputUID: String?
     private var bitPerfectDSDActive = false
+    /// When each recent rebuild caused by the hardware reporting a change
+    /// happened. Starting an engine can make the hardware report one of its own
+    /// (probed on a Bluetooth receiver: every start did), so without a limit
+    /// each rebuild set off the next and the app froze.
+    private var hardwareRebuilds: [Date] = []
+    private let now: () -> Date
+
+    static let hardwareRebuildLimit = 3
+    static let hardwareRebuildWindow: TimeInterval = 10
+    static let keptReconfiguringMessage =
+        "Your audio devices kept reconfiguring, so Ambient turned off to keep CrateDigger responsive. "
+        + "A Bluetooth headset's own microphone is the usual cause; the Mac's microphone avoids it."
 
     public init(settings: AmbientSettings,
                 devices: AmbientDeviceProviding,
                 authorize: @escaping () async -> Bool,
-                makeEngine: @escaping (AmbientEngineKind) -> AmbientEngine) {
+                makeEngine: @escaping (AmbientEngineKind) -> AmbientEngine,
+                now: @escaping () -> Date = Date.init) {
         self.settings = settings
         self.devices = devices
         self.authorize = authorize
         self.makeEngine = makeEngine
+        self.now = now
     }
 
     // MARK: - Switching
@@ -216,13 +232,11 @@ public final class AmbientService {
 
     /// The devices and settings as they are right now, or why they can't run.
     private func resolve() -> Result<AmbientEngineConfig, Refusal> {
-        // A saved mic that isn't plugged in falls back to the default, which is
-        // how the picker shows it.
-        guard let input = devices.input(uid: settings.inputUID) ?? devices.input(uid: nil) else {
-            return .failure(.noInput)
-        }
         guard let output = devices.output(uid: outputUID) ?? devices.output(uid: nil) else {
             return .failure(.noOutput)
+        }
+        guard let input = chooseInput(for: output) else {
+            return .failure(.noInput)
         }
         switch AmbientPolicy.verdict(input: input, output: output,
                                      approvedCallModeUIDs: settings.callModeApprovedUIDs) {
@@ -236,10 +250,32 @@ public final class AmbientService {
                                             lowCut: settings.lowCut))
     }
 
+    /// The saved mic while it is plugged in. Otherwise the system default,
+    /// except that the default may not be the headset the music plays through
+    /// when the Mac has a mic of its own: a Bluetooth receiver is often both the
+    /// default input and the output (probed on a UGREEN), and opening its mic
+    /// drops the music to call quality without anyone having chosen that.
+    /// Picking the headset's mic by name still gets the question.
+    private func chooseInput(for output: AudioDeviceSummary) -> AudioDeviceSummary? {
+        if let uid = settings.inputUID, let saved = devices.input(uid: uid) {
+            return saved
+        }
+        guard let systemDefault = devices.input(uid: nil) else { return nil }
+        let defaultIsTheHeadset = AmbientPolicy.verdict(input: systemDefault, output: output,
+                                                        approvedCallModeUIDs: []) == .needsCallModeApproval
+        guard defaultIsTheHeadset,
+              let builtIn = devices.allInputs().first(where: { $0.transport == .builtIn }) else {
+            return systemDefault
+        }
+        return builtIn
+    }
+
     private func launch(_ config: AmbientEngineConfig) throws {
+        // A session starting from off gets a fresh rebuild allowance.
+        if state == .off { hardwareRebuilds.removeAll() }
         teardown()
         let engine = makeEngine(settings.engine)
-        engine.onConfigurationChange = { [weak self] in self?.rebuild() }
+        engine.onConfigurationChange = { [weak self] in self?.hardwareReconfigured() }
         do {
             try engine.start(config)
         } catch {
@@ -254,6 +290,22 @@ public final class AmbientService {
 
     private func rebuild() {
         guard case .running = state else { return }
+        restart()
+    }
+
+    /// The hardware reported a change under a running engine. Rebuild, unless
+    /// that has already happened `hardwareRebuildLimit` times inside
+    /// `hardwareRebuildWindow`: by then the rebuilds are feeding themselves,
+    /// and turning off with a reason beats freezing the app.
+    private func hardwareReconfigured() {
+        guard case .running = state else { return }
+        let current = now()
+        hardwareRebuilds.removeAll { current.timeIntervalSince($0) > Self.hardwareRebuildWindow }
+        guard hardwareRebuilds.count < Self.hardwareRebuildLimit else {
+            stop(because: .failed(Self.keptReconfiguringMessage))
+            return
+        }
+        hardwareRebuilds.append(current)
         restart()
     }
 
