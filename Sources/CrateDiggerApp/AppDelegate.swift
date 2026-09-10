@@ -1067,6 +1067,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         playbackMenu.addItem(sleepMenuItem)
         playbackMenu.addItem(.separator())
 
+        // Ambient: the room through the headphones, under the music. Its
+        // controller owns the items, checkmarks and the live mic list.
+        playbackMenu.addItem(MainActor.assumeIsolated {
+            AmbientMenuController.shared.makeMenuItem { [weak self] in
+                self?.mainWindowController?.model
+            }
+        })
+        playbackMenu.addItem(.separator())
+
         // DSD output picker: bit-perfect DoP to a capable DAC, or PCM decode.
         let dsdMenuItem = NSMenuItem(title: "DSD Output", action: nil, keyEquivalent: "")
         let dsdMenu = NSMenu(title: "DSD Output")

@@ -370,6 +370,8 @@ private struct PlaybackPreferencesView: View {
     @State private var eqEnabled: Bool = PreferencesStore.shared.savedEQEnabled
     @State private var shortcuts = PreferencesStore.shared.keyboardShortcuts
     @State private var editingAction: String? = nil
+    @State private var ambient = PreferencesStore.shared.ambientSettings
+    @State private var ambientInputs: [AudioDeviceSummary] = []
 
     private let actions = [
         ("Play / Pause", "playPause"),
@@ -379,6 +381,7 @@ private struct PlaybackPreferencesView: View {
         ("Volume Down", "volumeDown"),
         ("Seek Forward", "seekForward"),
         ("Seek Backward", "seekBackward"),
+        ("Toggle Ambient", "toggleAmbient"),
     ]
 
     var body: some View {
@@ -395,7 +398,54 @@ private struct PlaybackPreferencesView: View {
                     NotificationCenter.default.post(
                         name: NSNotification.Name("CrateDiggerAudioDeviceChanged"), object: newValue)
                 }
-                Button("Refresh Devices") { refreshDevices() }
+                Button("Refresh Devices") {
+                    refreshDevices()
+                    ambientInputs = CoreAudioAmbientDevices().inputs()
+                }
+            }
+
+            Section("Ambient") {
+                Picker("Microphone", selection: Binding(get: { ambient.inputUID ?? "" },
+                                                        set: { ambient.inputUID = $0.isEmpty ? nil : $0 })) {
+                    Text("System Default").tag("")
+                    ForEach(ambientInputs, id: \.uid) { device in
+                        Text(device.name).tag(device.uid)
+                    }
+                }
+                Picker("Delay", selection: $ambient.delay) {
+                    ForEach(AmbientDelay.allCases, id: \.self) { delay in
+                        Text(delay.title).tag(delay)
+                    }
+                }
+                .pickerStyle(.segmented)
+                Toggle("Low cut", isOn: $ambient.lowCut)
+                Picker("Engine", selection: $ambient.engine) {
+                    ForEach(AmbientEngineKind.allCases, id: \.self) { kind in
+                        Text(kind.title).tag(kind)
+                    }
+                }
+                .pickerStyle(.segmented)
+                Text("Ambient plays the room through your headphones, under the music, so a doorbell or a voice still reaches you. Turn it on with the AMB key in the footer and set how loud the room is on the AMBIENT fader. Live feels immediate and Smooth never crackles. Low cut trims hum and rumble. Try both engines and keep whichever sounds better on your headphones.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .onAppear {
+                // The window controller is cached across opens; the app may have
+                // changed these from the menu or the footer since.
+                ambient = PreferencesStore.shared.ambientSettings
+                ambientInputs = CoreAudioAmbientDevices().inputs()
+            }
+            .onChange(of: ambient) { edited in
+                // Only these four belong to this pane. The level and any "use
+                // anyway" approvals may have moved in the app while it was open.
+                var stored = PreferencesStore.shared.ambientSettings
+                stored.inputUID = edited.inputUID
+                stored.delay = edited.delay
+                stored.lowCut = edited.lowCut
+                stored.engine = edited.engine
+                guard stored != PreferencesStore.shared.ambientSettings else { return }
+                PreferencesStore.shared.ambientSettings = stored
+                NotificationCenter.default.post(name: NSNotification.Name("CrateDiggerAmbientChanged"), object: nil)
             }
 
             Section("Equalizer") {
