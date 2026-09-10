@@ -14,8 +14,8 @@ import os
 /// - A fill that runs far past the target skips back to it, so a mic clock
 ///   that is slightly fast cannot make the delay creep up over an afternoon.
 ///
-/// The output gain is applied on read, so the level fader never has to touch
-/// the engine graph.
+/// `underruns` and `skippedFrames` count the audible consequences, so how
+/// clean Ambient sounds can be measured rather than guessed.
 public final class AmbientRingBuffer: @unchecked Sendable {
     private let storage: UnsafeMutablePointer<Float>
     private let capacity: Int
@@ -27,7 +27,8 @@ public final class AmbientRingBuffer: @unchecked Sendable {
     private var readIndex = 0
     private var fill = 0
     private var priming = true
-    private var storedGain: Float = 1
+    private var underrunCount = 0
+    private var skippedCount = 0
 
     public init(capacityFrames: Int, targetFrames: Int) {
         capacity = max(1, capacityFrames)
@@ -44,13 +45,14 @@ public final class AmbientRingBuffer: @unchecked Sendable {
         lock.deallocate()
     }
 
-    /// Linear gain applied to every frame read.
-    public var gain: Float {
-        get { withLock { storedGain } }
-        set { withLock { storedGain = newValue } }
-    }
-
     public var fillFrames: Int { withLock { fill } }
+
+    /// Times the output ran dry mid-stream, each an audible gap. The silence
+    /// while the delay first fills is by design and not counted.
+    public var underruns: Int { withLock { underrunCount } }
+
+    /// Frames thrown away, on overflow or catching up with a fast mic clock.
+    public var skippedFrames: Int { withLock { skippedCount } }
 
     public func write(_ samples: UnsafePointer<Float>, frameCount: Int) {
         guard frameCount > 0 else { return }
@@ -58,6 +60,7 @@ public final class AmbientRingBuffer: @unchecked Sendable {
             var source = samples
             var count = frameCount
             if count > capacity {                // only the newest can fit
+                skippedCount += count - capacity
                 source += count - capacity
                 count = capacity
             }
@@ -107,9 +110,7 @@ public final class AmbientRingBuffer: @unchecked Sendable {
             if available < frameCount {
                 (out + available).update(repeating: 0, count: frameCount - available)
                 priming = true
-            }
-            if storedGain != 1 {
-                for index in 0..<available { out[index] *= storedGain }
+                underrunCount += 1
             }
         }
     }
@@ -118,6 +119,7 @@ public final class AmbientRingBuffer: @unchecked Sendable {
         let count = min(frames, fill)
         readIndex = (readIndex + count) % capacity
         fill -= count
+        skippedCount += count
     }
 
     private func withLock<T>(_ body: () -> T) -> T {

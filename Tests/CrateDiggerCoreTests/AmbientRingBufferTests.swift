@@ -56,11 +56,39 @@ final class AmbientRingBufferTests: XCTestCase {
         XCTAssertEqual(ring.fillFrames, 10)
     }
 
-    func testGainScalesWhatIsRead() {
-        let ring = AmbientRingBuffer(capacityFrames: 16, targetFrames: 1)
-        ring.gain = 0.5
-        write(ring, [2, 4])
-        XCTAssertEqual(read(ring, 2), [1, 2])
+    // MARK: - Counters, for judging how clean Ambient sounds
+
+    /// Running dry mid-stream is an audible gap, and worth counting.
+    func testRunningDryMidStreamCountsAsAnUnderrun() {
+        let ring = AmbientRingBuffer(capacityFrames: 64, targetFrames: 4)
+        write(ring, ramp(0..<6))
+        _ = read(ring, 4)
+        _ = read(ring, 4)
+        XCTAssertEqual(ring.underruns, 1)
+    }
+
+    /// The silence while the delay first fills is by design, not a gap.
+    func testWaitingForTheTargetIsNotAnUnderrun() {
+        let ring = AmbientRingBuffer(capacityFrames: 64, targetFrames: 8)
+        write(ring, ramp(0..<5))
+        _ = read(ring, 4)
+        _ = read(ring, 4)
+        XCTAssertEqual(ring.underruns, 0)
+    }
+
+    func testAudioDroppedOnOverflowCountsAsSkipped() {
+        let ring = AmbientRingBuffer(capacityFrames: 8, targetFrames: 1)
+        write(ring, ramp(0..<10))
+        XCTAssertEqual(ring.skippedFrames, 2)
+        write(ring, ramp(10..<13))
+        XCTAssertEqual(ring.skippedFrames, 5)
+    }
+
+    func testCatchingUpWithDriftCountsAsSkipped() {
+        let ring = AmbientRingBuffer(capacityFrames: 64, targetFrames: 10)
+        write(ring, ramp(0..<40))
+        _ = read(ring, 4)
+        XCTAssertEqual(ring.skippedFrames, 26)
     }
 }
 #endif

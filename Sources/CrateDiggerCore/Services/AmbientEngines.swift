@@ -32,6 +32,16 @@ public enum AmbientEngineError: LocalizedError, Equatable {
 // or never returned. A HAL unit is told its device before it initialises and
 // never touches the default (probed: the receiver stayed at 44.1 kHz).
 
+/// What an engine has measured while running, for judging how clean it sounds.
+struct AmbientEngineReading: Equatable {
+    /// Times the output ran dry mid-stream (Split only; Combined has no ring).
+    var underruns: Int
+    /// Frames discarded on overflow or drift (Split only).
+    var skippedFrames: Int
+    /// Loudest output sample since the previous reading, 0...1 and beyond.
+    var peak: Float
+}
+
 // MARK: - Engine A: Split
 
 /// Two HAL units, one per device. The mic unit captures mono at the mic's own
@@ -93,6 +103,9 @@ public final class SplitAmbientEngine: AmbientEngine {
     public func setGain(_ gain: Float) { context?.setGain(gain) }
 
     public func setLowCut(_ enabled: Bool) { context?.setLowCut(enabled) }
+
+    /// nil while stopped. Reading resets the peak.
+    func takeReading() -> AmbientEngineReading? { context?.takeReading() }
 }
 
 // MARK: - Engine B: Combined
@@ -166,6 +179,9 @@ public final class CombinedAmbientEngine: AmbientEngine {
 
     public func setLowCut(_ enabled: Bool) { context?.setLowCut(enabled) }
 
+    /// nil while stopped. Reading resets the peak.
+    func takeReading() -> AmbientEngineReading? { context?.takeReading() }
+
     private static func createAggregate(inputUID: String, outputUID: String) throws -> AudioDeviceID {
         let description: [String: Any] = [
             kAudioAggregateDeviceUIDKey: CoreAudioAmbientDevices.aggregateUIDPrefix + UUID().uuidString,
@@ -235,6 +251,7 @@ final class AmbientRenderContext: @unchecked Sendable {
     private let lock: UnsafeMutablePointer<os_unfair_lock>
     private var lowCut: AmbientLowCutFilter
     private var gain: Float
+    private var peak: Float = 0
 
     init(sampleRate: Double, gain: Float, lowCut: Bool, ring: AmbientRingBuffer?) {
         self.ring = ring
@@ -264,6 +281,15 @@ final class AmbientRenderContext: @unchecked Sendable {
         os_unfair_lock_lock(lock)
         lowCut.isEnabled = enabled
         os_unfair_lock_unlock(lock)
+    }
+
+    func takeReading() -> AmbientEngineReading {
+        os_unfair_lock_lock(lock)
+        let loudest = peak
+        peak = 0
+        os_unfair_lock_unlock(lock)
+        return AmbientEngineReading(underruns: ring?.underruns ?? 0, skippedFrames: ring?.skippedFrames ?? 0,
+                                    peak: loudest)
     }
 
     func captureMic(flags: UnsafeMutablePointer<AudioUnitRenderActionFlags>, timeStamp: UnsafePointer<AudioTimeStamp>,
@@ -300,12 +326,13 @@ final class AmbientRenderContext: @unchecked Sendable {
         copyToOtherChannels(samples, buffers: buffers, frameCount: frameCount)
     }
 
-    /// Low cut, then level.
+    /// Low cut, then level; notes the loudest sample for `takeReading`.
     private func shape(_ samples: UnsafeMutablePointer<Float>, frameCount: Int) {
         os_unfair_lock_lock(lock)
         lowCut.process(samples, frameCount: frameCount)
-        if gain != 1 {
-            for index in 0..<frameCount { samples[index] *= gain }
+        for index in 0..<frameCount {
+            samples[index] *= gain
+            peak = max(peak, abs(samples[index]))
         }
         os_unfair_lock_unlock(lock)
     }
