@@ -82,7 +82,6 @@ public final class PreferencesStore {
         static let betaUpdates = "cratedigger.updates.betaChannel"
         static let albumGroups = "cratedigger.library.albumGroups"
         static let selectedThemeID = "cratedigger.ui.selectedThemeID"
-        static let ambientSettings = "cratedigger.ambient.settings"
     }
 
     // MARK: - Window frame
@@ -593,23 +592,6 @@ public final class PreferencesStore {
             return defaults.bool(forKey: Key.gaplessPlayback)
         }
         set { defaults.set(newValue, forKey: Key.gaplessPlayback) }
-    }
-
-    /// Ambient's mic, level, delay, low cut and engine, as one blob. Never the
-    /// on/off switch: Ambient starts off every launch (see `AmbientSettings`).
-    public var ambientSettings: AmbientSettings {
-        get {
-            guard let data = defaults.data(forKey: Key.ambientSettings),
-                  let settings = try? decoder.decode(AmbientSettings.self, from: data) else {
-                return .defaults
-            }
-            return settings
-        }
-        set {
-            if let data = try? encoder.encode(newValue) {
-                defaults.set(data, forKey: Key.ambientSettings)
-            }
-        }
     }
 
     public var savedShowSortControls: Bool {

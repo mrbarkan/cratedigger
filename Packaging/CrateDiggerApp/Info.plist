@@ -38,8 +38,6 @@
 	<true/>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2026 Mr. Barkan. MIT-licensed.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>CrateDigger listens through the microphone you choose only while Ambient is on, so you can hear the room over your headphones. Nothing is recorded or saved.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 	<key>NSRemovableVolumesUsageDescription</key>

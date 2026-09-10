@@ -110,9 +110,6 @@ Then verify — report what these actually print, never assume:
 - `/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" -c "Print :CFBundleVersion" dist/CrateDigger.app/Contents/Info.plist`
 - `spctl -a -t open --context context:primary-signature -v dist/CrateDigger-<version>.dmg` → expect `accepted` / `source=Notarized Developer ID`
 - `xcrun stapler validate dist/CrateDigger-<version>.dmg` → expect `The validate action worked!`
-- `codesign -d --entitlements - dist/CrateDigger.app` → must list
-  `com.apple.security.device.audio-input`. Without it the hardened runtime
-  hands Ambient silence and nothing reports an error.
 
 If signing or notarization fails (expired cert, missing profile, Apple
 rejection), stop and report with the actual error — the push has already

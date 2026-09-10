@@ -645,16 +645,6 @@ final class LibraryViewModel: ObservableObject {
         radioEngine?.setVolume(VolumeCurve.playerVolume(forPosition: playbackVolume))
     }
 
-    /// Ambient: the room through the headphones (see LibraryViewModel+Ambient).
-    /// `AmbientService` owns the audio; these mirror it for the footer pod, the
-    /// menu and Preferences. The settings persist; on/off never does.
-    @Published var ambientState: AmbientService.State = .off
-    @Published var ambientSettings: AmbientSettings = .defaults
-    lazy var ambientDevices = CoreAudioAmbientDevices()
-    lazy var ambientService: AmbientService = makeAmbientService()
-    /// Observer tokens and subscriptions Ambient keeps for the model's life.
-    var ambientSubscriptions: [Any] = []
-
     @Published var shuffleEnabled: Bool = false {
         didSet { prefs.savedShuffleEnabled = shuffleEnabled }
     }
@@ -1463,7 +1453,6 @@ final class LibraryViewModel: ObservableObject {
         setupVolumeObservers()
         setupEqualizerObserver()
         reloadEqualizerFromPrefs()
-        setupAmbient()
 
         refreshAvailableCrates()
         streams = streamStore.all()
@@ -1626,7 +1615,6 @@ final class LibraryViewModel: ObservableObject {
         case "volumeDown": setVolume(playbackVolume - 0.05)
         case "seekForward": forward8s()
         case "seekBackward": rewind8s()
-        case "toggleAmbient": toggleAmbient()
         default: break
         }
     }

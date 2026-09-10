@@ -29,9 +29,8 @@ scripts/package-app.sh           # assemble dist/CrateDigger.app (bundles ffmpeg
 2.0.x: it is what the public downloads and what every installed copy
 auto-updates from. Fixes for 2.0.x land on `main`.
 
-**`v2.1` is the beta line** for the 2.1 cycle, cut from `main` after 2.0.4. Its
-first feature is Ambient (mic passthrough, see below). `AppVersion.channel` is
-`"BETA"` there, betas are tagged `v2.1.0-beta.<build>` and published as GitHub
+**`v2.1` is the beta line** for the 2.1 cycle, cut from `main` after 2.0.4.
+`AppVersion.channel` is `"BETA"` there, betas are tagged `v2.1.0-beta.<build>` and published as GitHub
 prereleases, and their only audience is stable users who turned on Receive
 beta updates. Merge `main` into `v2.1` before each beta so the beta never
 lacks a stable fix; when 2.1.0 ships, merge `v2.1` into `main` and set
@@ -100,10 +99,10 @@ main.swift  →  AppDelegate  →  MainWindowController  →  CarbonHostingContr
 
 `Sources/CrateDiggerApp/UI/Carbon/Library/LibraryViewModel.swift` (~4,900 lines) is a single `@MainActor ObservableObject` that owns **all** app state, **all** services, and **most** behavior. Almost every SwiftUI view binds to it via `@EnvironmentObject`. **When fixing app behavior, start here** — this is where the wiring lives.
 
-Behavior is split across **27 `LibraryViewModel+*.swift` extensions in three
+Behavior is split across **26 `LibraryViewModel+*.swift` extensions in three
 folders** (don't assume they are all beside the main file):
 
-- `UI/Carbon/Library/` — `+Ambient`, `+ArrowNav`, `+BatchArtwork`, `+CDDetect`, `+DeepScan`,
+- `UI/Carbon/Library/` — `+ArrowNav`, `+BatchArtwork`, `+CDDetect`, `+DeepScan`,
   `+LibraryFiles`, `+Listening`, `+MetadataRepair`, `+MiniPlayer`,
   `+MissingFiles`, `+MultiSelect`, `+NowPlaying`, `+Onboarding`, `+Queue`,
   `+Radio`, `+RecordDivider`, `+Rename`, `+Resume`, `+SACDImport`, `+Search`,
@@ -258,54 +257,6 @@ fail `require_static_tool` on a signed build, or ship and not run. See
 
 - **Gapless** is a one-item look-ahead. The engine's `AVQueuePlayer` holds the playing item plus at most one buffered behind it (`prepareNextItem(url:)`), and when the player hands over by itself the service only moves its bookkeeping — `adoptGaplessAdvance` deliberately never touches the engine, because touching it is the gap. `indexAfterCurrentEnds()` is the one answer to "what plays when this ends", read by both the look-ahead and `onItemEnded`, so the engine can never glide into a track the service does not think is playing. Only plain local files are buffered ahead: a stream keeps the reload path (radio resolves a fresh URL per play) and DSD keeps it (decoded to a temp file, or routed to the DoP engine). The engine reports `didAdvanceGaplessly` from what the player actually holds, one runloop turn after the end notification, because `currentItem` has not caught up before that. Off-switch: Advanced ▸ Gapless playback (`PreferencesStore.gaplessPlaybackEnabled`, on by default, applied live via `"CrateDiggerGaplessChanged"`).
 - A gapless advance never re-enters `.playing`, so anything keyed on that transition has to be keyed on the index change too — that is why Last.fm "now playing" goes through `sendNowPlayingIfNeeded()` from both, de-duplicated by track and cleared on pause. The scrobble itself is still driven off the time-change callback (`checkScrobbleProgress`), which is unaffected.
-
-### Ambient (mic passthrough, 2.1 beta)
-
-Plays a chosen input under the music, so someone in closed-back headphones
-still hears the room. Core makes every decision; `LibraryViewModel+Ambient` is
-glue.
-
-- **`AmbientService`** (`@MainActor`, Core) is the state machine: off, running,
-  paused. It refuses the built-in speakers (feedback), holds a Bluetooth
-  headset's own mic for approval when that mic is picked by name (opening it
-  drops the headset to call quality; "Use Anyway" is remembered per UID),
-  rebuilds on an output, mic, delay or engine change, turns off when the mic in
-  use disappears, and pauses while `PlaybackService.isNativeDSDActive`, because
-  anything mixed into DoP corrupts it. `AmbientServiceTests` drives it with a
-  fake engine: new rules go there, not in the view model.
-- **"System Default" never means the headset's own mic** when the Mac has a
-  mic of its own. A Bluetooth receiver is often both the default input and the
-  output, and opening its mic silently drops the music to phone quality.
-- **Hardware-triggered rebuilds are capped** at three in ten seconds, after
-  which Ambient turns off with a reason. An engine start can make the hardware
-  report a change of its own; uncapped, each rebuild set off the next and froze
-  the app, which is exactly what the first 2.1 beta build did.
-- **`AmbientPolicy`** is the pure verdict. Speakers are recognised only by the
-  `ispk` output data source, and "same Bluetooth device" by UID minus
-  `:input`/`:output`, then name. Both were probed on real hardware (see the
-  spec); do not widen the speaker rule without probing a headphone jack.
-- **Two engines on raw HAL units, never `AVAudioEngine`**, and the listener
-  picks. `SplitAmbientEngine` is a capture-only HAL unit writing
-  `AmbientRingBuffer` at the mic's rate plus a playback HAL unit reading it,
-  with the HAL converting to the output's rate. `CombinedAmbientEngine` is one
-  duplex HAL unit on a private aggregate device. **Do not move them back to
-  `AVAudioEngine`:** touching `AVAudioEngine.inputNode` opens the system default
-  mic before the node can be pointed elsewhere. On a Bluetooth default that
-  forces call mode, keeps recording that mic at 8 kHz whatever was chosen, and
-  stalled starts for 21 s or for good. Low cut is `AmbientLowCutFilter`, a
-  tested biquad. Engines report a configuration change only when a device dies
-  or the mic's rate changes. They can't be unit tested: check them by ear on a
-  signed build.
-- **On/off is never persisted.** `AmbientSettings` (mic, level, delay, low cut,
-  engine, approvals) is one blob in `PreferencesStore`. The footer AMBIENT pod,
-  Playback ▸ Ambient (`AmbientMenuController`, ⌥⌘A) and Preferences all use the
-  same setters; Preferences posts `"CrateDiggerAmbientChanged"`.
-- **The mic needs `NSMicrophoneUsageDescription` and
-  `com.apple.security.device.audio-input`.** Without the entitlement a notarized
-  build is handed silence and nothing reports an error, which a `swift build`
-  run never shows. `AmbientPackagingTests` guards both.
-- Design and the manual hardware checklist:
-  `docs/superpowers/specs/2026-09-10-ambient-design.md`.
 
 ### Artwork
 
