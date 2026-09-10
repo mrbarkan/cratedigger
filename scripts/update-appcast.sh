@@ -32,7 +32,7 @@ newest dist/CrateDigger-*.dmg.
   --channel NAME    Publish on a Sparkle channel instead of to everyone.
                     Use 'rc' for prereleases — only builds whose
                     AppVersion.channel says so will be offered them.
-  --appcast PATH    The feed to write (default: website/appcast.xml). The v2
+  --appcast PATH    The feed to write (default: website/appcast.xml). The v2.1
                     beta line writes website/appcast-beta.xml instead, so the
                     stable feed cannot be touched by a beta release.
   --tag TAG         The git tag whose release holds the DMG (default: derived
@@ -83,31 +83,33 @@ fi
 
 # Each feed is generated on the branch that owns it. GitHub Pages serves
 # website/ from main, so the stable feed is written there; the beta feed is
-# written on v2 — whose CHANGELOG carries the 2.0.0 notes — and then carried
-# across with `git checkout v2 -- website/appcast-beta.xml`.
+# written on the beta branch (BETA_BRANCH, v2.1 for the 2.1 cycle), whose
+# CHANGELOG carries the beta's notes, and then carried across with
+# `git checkout v2.1 -- website/appcast-beta.xml`.
 #
 # Right script, wrong branch is silent and destructive both ways, and both
-# happened while testing the guard above:
-#   - beta feed from main: no '## 2.0.0' section in that CHANGELOG, so the
+# happened while testing the guard above (during the 2.0 cycle, on v2):
+#   - beta feed from main: no '## 2.1.0' section in that CHANGELOG, so the
 #     notes come out empty and every entry is rewritten without its release
 #     notes. The script only warns about missing notes and carries on.
-#   - stable feed from v2: rewrites the appcast that is meant to stay frozen
-#     for the whole 2.0 cycle.
+#   - stable feed from the beta branch: rewrites the appcast every stable
+#     copy reads, with the beta branch's notes and version history.
+BETA_BRANCH="v2.1"
 BRANCH="$(git -C "${ROOT_DIR}" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
 case "$(basename "${APPCAST}")" in
   appcast.xml)      EXPECTED_BRANCH="main" ;;
-  appcast-beta.xml) EXPECTED_BRANCH="v2" ;;
+  appcast-beta.xml) EXPECTED_BRANCH="${BETA_BRANCH}" ;;
   *)                EXPECTED_BRANCH="" ;;
 esac
 if [[ -n "${EXPECTED_BRANCH}" && -n "${BRANCH}" && "${BRANCH}" != "${EXPECTED_BRANCH}" ]]; then
   echo "error: $(basename "${APPCAST}") is generated on ${EXPECTED_BRANCH}; you are on ${BRANCH}." >&2
   echo "" >&2
-  if [[ "${EXPECTED_BRANCH}" == "v2" ]]; then
-    echo "The 2.0.0 release notes live in v2's CHANGELOG. Running this here would" >&2
+  if [[ "${EXPECTED_BRANCH}" == "${BETA_BRANCH}" ]]; then
+    echo "The beta release notes live in ${BETA_BRANCH}'s CHANGELOG. Running this here would" >&2
     echo "rewrite the beta feed with every entry stripped of its notes." >&2
   else
-    echo "website/appcast.xml is the stable feed and stays frozen for the whole" >&2
-    echo "2.0 cycle on this branch. Publish it from main." >&2
+    echo "website/appcast.xml is the stable feed. Publish it from main, never from" >&2
+    echo "the ${BETA_BRANCH} beta branch." >&2
   fi
   echo "" >&2
   echo "  git checkout ${EXPECTED_BRANCH}" >&2

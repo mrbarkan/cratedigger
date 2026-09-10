@@ -27,12 +27,21 @@ scripts/package-app.sh           # assemble dist/CrateDigger.app (bundles ffmpeg
 
 **2.0.0 shipped from `main` on 2026-09-07.** `main` is the stable line, now
 2.0.x: it is what the public downloads and what every installed copy
-auto-updates from. The `v2` branch was the beta line for the whole 2.0 cycle;
-it was fast-forwarded to `main` at GA and is kept for history only. **Do not
-branch new work from `v2`.** Work on `main`, or on feature branches off it.
+auto-updates from. Fixes for 2.0.x land on `main`.
 
-The mechanism that kept the two lines apart is still in the code and still
-matters, because the next major cycle will want it back:
+**`v2.1` is the beta line** for the 2.1 cycle, cut from `main` after 2.0.4. Its
+first feature is Ambient (mic passthrough, see below). `AppVersion.channel` is
+`"BETA"` there, betas are tagged `v2.1.0-beta.<build>` and published as GitHub
+prereleases, and their only audience is stable users who turned on Receive
+beta updates. Merge `main` into `v2.1` before each beta so the beta never
+lacks a stable fix; when 2.1.0 ships, merge `v2.1` into `main` and set
+`channel` back to `""`.
+
+The `v2` branch was the beta line for the whole 2.0 cycle; it was
+fast-forwarded to `main` at GA and is kept for history only. **Do not branch
+new work from `v2`.**
+
+The mechanism that keeps the two lines apart:
 
 - `SUFeedURL` in `Info.plist` points at the stable `website/appcast.xml` and
   is only the fallback for a build that overrides nothing. The real choice is
@@ -45,23 +54,26 @@ matters, because the next major cycle will want it back:
 
   A build whose `AppVersion.channel` is non-empty follows `appcast-beta.xml`
   automatically; a stable build reads the beta feed only if its owner turned
-  on Advanced ▸ Receive beta updates. On `main`, `channel` is `""`.
+  on Advanced ▸ Receive beta updates. On `main`, `channel` is `""`; on `v2.1`
+  it is `"BETA"`.
 - Keeping that decision in one pure function rather than in `Info.plist` is
   the point: there is no per-branch line to repoint, and so none to forget.
   `UpdateFeedTests` covers all four channel/opt-in combinations and fails if
   `SUFeedURL` ever stops matching `UpdateFeed.stable`. **Do not "simplify"
   `UpdateFeed.override` into the plist.**
 - `scripts/update-appcast.sh` generates each feed only on the branch that
-  owns it (`appcast.xml` on `main`, `appcast-beta.xml` on `v2`) and refuses a
-  DMG whose major version differs from what is already staged in
-  `dist/updates*/`. Both guards were written for the 2.0 cycle.
+  owns it (`appcast.xml` on `main`, `appcast-beta.xml` on `BETA_BRANCH`, now
+  `v2.1`) and refuses a DMG whose major version differs from what is already
+  staged in `dist/updates*/`. When 2.1 started, the 2.0.0 beta DMG was moved to
+  `dist/updates-beta/old_updates`, so the beta feed carries 2.1 betas only.
 
-When a 3.0 cycle starts: cut a `v3` branch, set `channel` there, teach the
-script the new branch name, publish betas as GitHub prereleases so
-`/releases/latest` stays on stable, and copy only `website/appcast-beta.xml`
-across to `main` when publishing a beta feed. The `press-the-record` skill
-scripts stable and beta releases; the promotion itself was done by hand at
-2.0.0 and is written up at the top of `docs/V2_RELEASE_PREP_PLAN.md`.
+When the next beta cycle starts (2.2, 3.0): cut its branch from `main`, set
+`channel` there, change `BETA_BRANCH` in `update-appcast.sh` and the beta column
+of the `press-the-record` skill, move the previous line's DMG out of
+`dist/updates-beta/`, publish betas as GitHub prereleases so `/releases/latest`
+stays on stable, and copy only `website/appcast-beta.xml` across to `main` when
+publishing a beta feed. The 2.0.0 promotion was done by hand and is written up
+at the top of `docs/V2_RELEASE_PREP_PLAN.md`.
 
 ## Two-target architecture
 
