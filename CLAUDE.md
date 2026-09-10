@@ -267,22 +267,35 @@ glue.
 
 - **`AmbientService`** (`@MainActor`, Core) is the state machine: off, running,
   paused. It refuses the built-in speakers (feedback), holds a Bluetooth
-  headset's own mic for approval (opening it drops that headset to call
-  quality; "Use Anyway" is remembered per UID), rebuilds on an output, mic,
-  delay, engine or `AVAudioEngineConfigurationChange`, turns off when the mic in
+  headset's own mic for approval when that mic is picked by name (opening it
+  drops the headset to call quality; "Use Anyway" is remembered per UID),
+  rebuilds on an output, mic, delay or engine change, turns off when the mic in
   use disappears, and pauses while `PlaybackService.isNativeDSDActive`, because
   anything mixed into DoP corrupts it. `AmbientServiceTests` drives it with a
   fake engine: new rules go there, not in the view model.
+- **"System Default" never means the headset's own mic** when the Mac has a
+  mic of its own. A Bluetooth receiver is often both the default input and the
+  output, and opening its mic silently drops the music to phone quality.
+- **Hardware-triggered rebuilds are capped** at three in ten seconds, after
+  which Ambient turns off with a reason. An engine start can make the hardware
+  report a change of its own; uncapped, each rebuild set off the next and froze
+  the app, which is exactly what the first 2.1 beta build did.
 - **`AmbientPolicy`** is the pure verdict. Speakers are recognised only by the
   `ispk` output data source, and "same Bluetooth device" by UID minus
   `:input`/`:output`, then name. Both were probed on real hardware (see the
   spec); do not widen the speaker rule without probing a headphone jack.
-- **Two engines** behind `AmbientEngine`, and the listener picks:
-  `SplitAmbientEngine` (a mic engine's `AVAudioSinkNode` writes
-  `AmbientRingBuffer`, an output engine's `AVAudioSourceNode` reads it, pinned
-  to the playback device) and `CombinedAmbientEngine` (one engine on a private
-  aggregate device). Neither can be unit tested: check them by ear on a signed
-  build.
+- **Two engines on raw HAL units, never `AVAudioEngine`**, and the listener
+  picks. `SplitAmbientEngine` is a capture-only HAL unit writing
+  `AmbientRingBuffer` at the mic's rate plus a playback HAL unit reading it,
+  with the HAL converting to the output's rate. `CombinedAmbientEngine` is one
+  duplex HAL unit on a private aggregate device. **Do not move them back to
+  `AVAudioEngine`:** touching `AVAudioEngine.inputNode` opens the system default
+  mic before the node can be pointed elsewhere. On a Bluetooth default that
+  forces call mode, keeps recording that mic at 8 kHz whatever was chosen, and
+  stalled starts for 21 s or for good. Low cut is `AmbientLowCutFilter`, a
+  tested biquad. Engines report a configuration change only when a device dies
+  or the mic's rate changes. They can't be unit tested: check them by ear on a
+  signed build.
 - **On/off is never persisted.** `AmbientSettings` (mic, level, delay, low cut,
   engine, approvals) is one blob in `PreferencesStore`. The footer AMBIENT pod,
   Playback ▸ Ambient (`AmbientMenuController`, ⌥⌘A) and Preferences all use the

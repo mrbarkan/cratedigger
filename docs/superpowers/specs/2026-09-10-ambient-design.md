@@ -140,3 +140,55 @@ runtime; confirm with `codesign -d --entitlements -`):
 - Same-Bluetooth-device detection compares UIDs with any `:input` / `:output`
   suffix removed, then names. Probed: a UGREEN Bluetooth receiver appears as
   `F4-4E-FC-BE-BF-7A:input` and `F4-4E-FC-BE-BF-7A:output`.
+
+## Revision 1, same day: the first beta build hung
+
+The maintainer pressed AMB on a signed 2.1.0 (87) build, accepted Use Anyway
+for the UGREEN receiver's own mic, and got a spinning beach ball.
+
+Evidence:
+
+- The hang report (77 s unresponsive) showed the main thread inside a rebuild
+  triggered by `AVAudioEngineConfigurationChange`, blocked starting the next
+  engine while the engine's IO queue serviced HAL property changes.
+- Probes on the same Mac16,8, with the receiver as both default input and
+  default output:
+  - Every `AVAudioEngine` start posted configuration changes of its own, so
+    each rebuild set off the next.
+  - Merely touching `AVAudioEngine.inputNode` opened the default (receiver)
+    mic: the output dropped from 44.1 kHz to 8 kHz at that step, the node still
+    read 8 kHz after being pinned to the MacBook mic, a start on the receiver's
+    mic took 21 s, and a start with the MacBook mic pinned never returned.
+  - A HAL unit given its device before initialising never touched the
+    receiver: the output held 44.1 kHz through create, initialise and start.
+- The maintainer also reported the probe audio as low quality: it was the
+  receiver in call mode.
+
+Changes:
+
+- Both engines are raw HAL units. Split: a capture-only unit writes the ring at
+  the mic's rate, a playback unit reads it, and the HAL converts to the
+  output's rate (no resampler of ours). Combined: one duplex unit on the
+  aggregate. This supersedes the `AVAudioSinkNode` / `AVAudioSourceNode` /
+  `AVAudioConverter` / `AVAudioUnitEQ` description under Architecture.
+- Low cut is `AmbientLowCutFilter`, a tested 120 Hz Butterworth biquad.
+- Engines report a configuration change only when a device dies or the mic's
+  sample rate changes.
+- `AmbientService` caps hardware-triggered rebuilds at three in ten seconds,
+  then turns off with a reason instead of freezing.
+- "System Default" uses the Mac's microphone when the default input is the
+  headset the music plays through. Picking the headset's mic by name still
+  asks. An earlier Use Anyway only applies to that named choice.
+
+Re-probed, MacBook mic into the receiver: Split started in 0.30 s, Combined in
+0.14 s, the output held 44.1 kHz throughout, and neither reported a
+configuration change over 8 s.
+
+Re-probed on the receiver's own mic (the Use Anyway case): Split started in
+0.31 s and Combined in 0.04 s, neither reported a configuration change, and the
+receiver returned to 44.1 kHz after stopping. Starts stay on the main thread.
+Ceiling: a start can hitch the UI for about a third of a second; move it to a
+serial queue if a device ever measures seconds.
+
+Still open when this revision was written: measuring quality (ring underruns
+and skipped frames) before calling it decent.
