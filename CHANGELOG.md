@@ -4,6 +4,25 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 2.0.4 (87), 2026-09-10
+
+Two small fixes to the screen.
+
+### Added
+
+- **The clock rail says what is playing.** When the screen is showing another
+  mode, the track name beside the clock now reads NOW PLAYING: first. The label
+  only appears while a track is loaded, so a track you have merely selected is
+  never passed off as the one on the air.
+
+### Fixed
+
+- **Progress bars reveal their colours instead of stretching them.** The bar
+  under a scan, sync, rip or device readout squeezed its whole cyan to orange
+  ramp into the lit part, so 16% looked like a finished bar shrunk small. The
+  ramp now spans the full bar and progress uncovers it, so orange only arrives
+  as the job nears the end.
+
 ## 2.0.3 (86), 2026-09-08
 
 The interface type ships with the app, and Llama '97 becomes the skin it was
