@@ -90,5 +90,23 @@ final class AmbientRingBufferTests: XCTestCase {
         _ = read(ring, 4)
         XCTAssertEqual(ring.skippedFrames, 26)
     }
+
+    // MARK: - The shortest delay that can hold
+
+    /// A whole mic buffer can arrive just after the output has asked for a whole
+    /// buffer of its own, so the ring must hold both or it runs dry. Measured:
+    /// a 10 ms target (480 frames) under a 512-frame MacBook mic underran six
+    /// times in eight seconds into a 44.1 kHz Bluetooth output.
+    func testMinimumTargetHoldsOneBufferFromEachSide() {
+        XCTAssertEqual(AmbientRingBuffer.minimumTargetFrames(inputBufferFrames: 512, inputRate: 48_000,
+                                                             outputBufferFrames: 512, outputRate: 44_100),
+                       512 + 558, "the output's 512 frames at 44.1 kHz are 558 frames of 48 kHz audio")
+    }
+
+    func testMinimumTargetAtMatchingRatesIsTheTwoBuffersAdded() {
+        XCTAssertEqual(AmbientRingBuffer.minimumTargetFrames(inputBufferFrames: 256, inputRate: 48_000,
+                                                             outputBufferFrames: 128, outputRate: 48_000),
+                       384)
+    }
 }
 #endif

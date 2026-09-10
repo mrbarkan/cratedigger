@@ -62,12 +62,22 @@ public final class SplitAmbientEngine: AmbientEngine {
 
     public func start(_ config: AmbientEngineConfig) throws {
         stop()
-        guard let micRate = AudioOutputManager().nominalSampleRate(deviceID: config.input.id) else {
+        let manager = AudioOutputManager()
+        guard let micRate = manager.nominalSampleRate(deviceID: config.input.id) else {
             throw AmbientEngineError.noSignal(name: config.input.name)
         }
+        // Live's 10 ms is shorter than one mic buffer on most hardware (measured:
+        // six underruns in eight seconds), so the target never drops below what
+        // the two IO cycles can hold. 512 frames is the macOS default when a
+        // device doesn't say.
+        let minimum = AmbientRingBuffer.minimumTargetFrames(
+            inputBufferFrames: manager.bufferFrameSize(deviceID: config.input.id) ?? 512,
+            inputRate: micRate,
+            outputBufferFrames: manager.bufferFrameSize(deviceID: config.output.id) ?? 512,
+            outputRate: manager.nominalSampleRate(deviceID: config.output.id) ?? micRate)
         // One second of room; the longest delay setting is a small part of it.
         let ring = AmbientRingBuffer(capacityFrames: Int(micRate),
-                                     targetFrames: Int(micRate * config.delaySeconds))
+                                     targetFrames: max(Int(micRate * config.delaySeconds), minimum))
         let context = AmbientRenderContext(sampleRate: micRate, gain: config.gain, lowCut: config.lowCut, ring: ring)
         self.context = context
 

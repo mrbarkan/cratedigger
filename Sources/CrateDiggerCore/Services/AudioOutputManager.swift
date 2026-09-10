@@ -178,6 +178,20 @@ public final class AudioOutputManager: Sendable {
         return rate
     }
 
+    /// The device's IO buffer size in frames: how much audio each IO cycle
+    /// hands over or asks for.
+    public func bufferFrameSize(deviceID: AudioDeviceID) -> Int? {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyBufferFrameSize,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        var frames: UInt32 = 0
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        guard AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &frames) == noErr,
+              frames > 0 else { return nil }
+        return Int(frames)
+    }
+
     @discardableResult
     public func setNominalSampleRate(_ rate: Double, deviceID: AudioDeviceID) -> Bool {
         var address = AudioObjectPropertyAddress(

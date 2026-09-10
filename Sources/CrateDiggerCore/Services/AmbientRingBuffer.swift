@@ -47,6 +47,16 @@ public final class AmbientRingBuffer: @unchecked Sendable {
 
     public var fillFrames: Int { withLock { fill } }
 
+    /// The shortest target that can't run dry between IO cycles. A whole mic
+    /// buffer can land just after the output has asked for a whole buffer of
+    /// its own, so the ring has to hold one of each, with the output's counted
+    /// in the mic's frames.
+    public static func minimumTargetFrames(inputBufferFrames: Int, inputRate: Double,
+                                           outputBufferFrames: Int, outputRate: Double) -> Int {
+        guard inputRate > 0, outputRate > 0 else { return inputBufferFrames + outputBufferFrames }
+        return inputBufferFrames + Int((Double(outputBufferFrames) * inputRate / outputRate).rounded(.up))
+    }
+
     /// Times the output ran dry mid-stream, each an audible gap. The silence
     /// while the delay first fills is by design and not counted.
     public var underruns: Int { withLock { underrunCount } }
