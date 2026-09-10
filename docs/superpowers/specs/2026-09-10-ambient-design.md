@@ -190,5 +190,16 @@ receiver returned to 44.1 kHz after stopping. Starts stay on the main thread.
 Ceiling: a start can hitch the UI for about a third of a second; move it to a
 serial queue if a device ever measures seconds.
 
-Still open when this revision was written: measuring quality (ring underruns
-and skipped frames) before calling it decent.
+Quality, measured with ring counters and an output peak meter, MacBook mic
+into the receiver, 8 s per engine and delay:
+
+- First pass: every setting ran clean except Split at Live, which underran six
+  times. Its 10 ms target (480 frames) was shorter than one 512-frame mic
+  buffer.
+- Fix: the ring's target never drops below one input buffer plus one output
+  buffer, counted in the mic's frames (`minimumTargetFrames`, from the devices'
+  own IO buffer sizes). On this hardware Live now means about 22 ms.
+- Second pass: no underruns and no skipped frames at any setting, peaks of
+  -29 to -52 dBFS at half level (ordinary room sound), output held 44.1 kHz.
+
+The maintainer's own listen on a signed build is the remaining check.
