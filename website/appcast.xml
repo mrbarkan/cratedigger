@@ -3,6 +3,42 @@
     <channel>
         <title>CrateDigger</title>
         <item>
+            <title>2.0.4</title>
+            <pubDate>Thu, 10 Sep 2026 10:35:54 -0300</pubDate>
+            <link>https://cratedigger.mrbarkan.com/</link>
+            <sparkle:fullReleaseNotesLink>https://github.com/mrbarkan/cratedigger/releases</sparkle:fullReleaseNotesLink>
+            <sparkle:version>87</sparkle:version>
+            <sparkle:shortVersionString>2.0.4</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description sparkle:format="markdown"><![CDATA[
+Two small fixes to the screen.
+
+### Added
+
+- **The clock rail says what is playing.** When the screen is showing another
+  mode, the track name beside the clock now reads NOW PLAYING: first. The label
+  only appears while a track is loaded, so a track you have merely selected is
+  never passed off as the one on the air.
+
+### Fixed
+
+- **Progress bars reveal their colours instead of stretching them.** The bar
+  under a scan, sync, rip or device readout squeezed its whole cyan to orange
+  ramp into the lit part, so 16% looked like a finished bar shrunk small. The
+  ramp now spans the full bar and progress uncovers it, so orange only arrives
+  as the job nears the end.
+
+]]></description>
+            <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.0.4/CrateDigger-2.0.4.dmg" length="71747964" type="application/octet-stream" sparkle:edSignature="wzwPT6+sl9Dcf6D88/z3HhgwinG+tbYXY6UFi+JPzm6SyYwSw/Fj82lNQBT48yX00S5xljyFGyl4rlRLnC94AQ=="/>
+            <sparkle:deltas>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.0.4/CrateDigger87-86.delta" sparkle:deltaFrom="86" length="541042" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="yfAM7WkU3yAxP5MmRZUBCACXcvh2CFTqPmgHGqGX1UbT9FzgeAK+Nry10fpa1D7TjvMlHRwsVuvfYUWe5OVvCA=="/>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.0.4/CrateDigger87-85.delta" sparkle:deltaFrom="85" length="1963622" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="UM/ODXF6su1U3Zg2Z0f7Y9ygmxBplrpqMITsegu2ulp7AELeGMgXY93bwz/umba9HWClzNbA68N20yUSZbsTDA=="/>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.0.4/CrateDigger87-84.delta" sparkle:deltaFrom="84" length="2056926" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="7nxAKSt+FXGFZ5tFVcEPGaND3i/MNOoiEglwxSIEAUC0gOHhj83ker85WogKdaMUDjVBmqU/69oJxSWaQFnRCA=="/>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.0.4/CrateDigger87-83.delta" sparkle:deltaFrom="83" length="2074578" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="FMqrva4Dza0T1JgJ32oI+w6xVLWwddnHiPQSCuxevvf+ImP54JiLUBDfesv1SBqFVSiECJmeKOs/T+U8PA5IDA=="/>
+            </sparkle:deltas>
+        </item>
+        <item>
             <title>2.0.3</title>
             <pubDate>Tue, 08 Sep 2026 09:30:52 -0300</pubDate>
             <link>https://cratedigger.mrbarkan.com/</link>
@@ -127,32 +163,6 @@ The floating artwork panel is made of glass now.
             <sparkle:deltas>
                 <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.0.2/CrateDigger85-84.delta" sparkle:deltaFrom="84" length="857942" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="FqrUxS3lCMlhCDkapsyreMYF3Rz+8KhvoSXO1MhfWBtpEnf8h+HkDXhFMrUn8T0nMfOekan56ODLwdQkDnMpCA=="/>
                 <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.0.2/CrateDigger85-83.delta" sparkle:deltaFrom="83" length="887990" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="6lA/bhh/oYG1o7LTc7y74iJlLFodJSe824AxbtRZZKs5KLQZp3gZ1K9vuwt1t8hNxtK4U1V5EiAcM1dU1NA0AQ=="/>
-            </sparkle:deltas>
-        </item>
-        <item>
-            <title>2.0.1</title>
-            <pubDate>Mon, 07 Sep 2026 10:47:41 -0300</pubDate>
-            <link>https://cratedigger.mrbarkan.com/</link>
-            <sparkle:fullReleaseNotesLink>https://github.com/mrbarkan/cratedigger/releases</sparkle:fullReleaseNotesLink>
-            <sparkle:version>84</sparkle:version>
-            <sparkle:shortVersionString>2.0.1</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
-            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[
-A crash fix for playlists.
-
-### Fixed
-
-- **Opening a saved playlist no longer quits the app.** A playlist opens as a
-  single flat table, which means the browser's other columns go away as it
-  loads. Those columns were still being asked what their neighbour held after
-  they had gone, and the app quit rather than answer. Playlists now open the
-  way they always should have.
-
-]]></description>
-            <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.0.1/CrateDigger-2.0.1.dmg" length="69793469" type="application/octet-stream" sparkle:edSignature="tUP7zfMtx1b8fFwNxq0Z75+/HykUOMGYzioQZexsJPAJMElbuT5xk6x4R3/KOPUblSNQk/R6GzFSjRrZnWSzCQ=="/>
-            <sparkle:deltas>
-                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.0.1/CrateDigger84-83.delta" sparkle:deltaFrom="83" length="418270" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="+CHYEhpP7GTADFNsofiKsnyssQU26GMxFG23NWSu8kOzCyJUmmBzr/wyczBE8HOhleipM9JaQVMl5UFlQZjKDw=="/>
             </sparkle:deltas>
         </item>
     </channel>
