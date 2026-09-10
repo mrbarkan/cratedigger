@@ -319,16 +319,26 @@ private struct RailLive: View {
             }
 
             if showTitle {
-                Text(trackTitle)
-                    .font(CarbonFont.mono(9, weight: .bold))
-                    .tracking(1.08)
-                    .foregroundStyle(theme.orange)
-                    .shadow(color: theme.orange.opacity(0.4), radius: 6)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    // Takes whatever the clock doesn't: a long title is what
-                    // the spare width on this rail is *for*.
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                HStack(spacing: 6) {
+                    // Only when something is loaded: the title falls back to
+                    // the selected track, which isn't playing.
+                    if model.nowPlayingTrack != nil {
+                        Text("NOW PLAYING:")
+                            .tracking(1.08)
+                            .foregroundStyle(oledFGo(0.4))
+                            .fixedSize()
+                    }
+                    Text(trackTitle)
+                        .tracking(1.08)
+                        .foregroundStyle(theme.orange)
+                        .shadow(color: theme.orange.opacity(0.4), radius: 6)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+                .font(CarbonFont.mono(9, weight: .bold))
+                // Takes whatever the clock doesn't: a long title is what
+                // the spare width on this rail is *for*.
+                .frame(maxWidth: .infinity, alignment: .leading)
             } else if showMini {
                 // Hold the rail open so the annunciators don't drift inward
                 // as a notice comes and goes.
@@ -594,9 +604,8 @@ private struct ScanBar: View {
                 Capsule().fill(oledFGo(0.10))
                 switch style {
                 case .rainbow(let f):
-                    Capsule()
-                        .fill(LinearGradient(colors: [theme.cyan, theme.indigo, theme.orange], startPoint: .leading, endPoint: .trailing))
-                        .frame(width: w * CGFloat(min(max(f, 0), 1)))
+                    reveal(LinearGradient(colors: [theme.cyan, theme.indigo, theme.orange], startPoint: .leading, endPoint: .trailing),
+                           fraction: f, width: w)
                         .shadow(color: theme.cyan.opacity(0.34), radius: 5)
                 case .orange(let f):
                     Capsule()
@@ -617,14 +626,24 @@ private struct ScanBar: View {
                 // drawn, so anything still moving would be claiming work that
                 // isn't happening.
                 case .level(let color, let f):
-                    Capsule()
-                        .fill(LinearGradient(colors: [color.opacity(0.55), color], startPoint: .leading, endPoint: .trailing))
-                        .frame(width: w * CGFloat(min(max(f, 0), 1)))
+                    reveal(LinearGradient(colors: [color.opacity(0.55), color], startPoint: .leading, endPoint: .trailing),
+                           fraction: f, width: w)
                         .shadow(color: color.opacity(0.34), radius: 5)
                 }
             }
         }
         .frame(height: 5)
+    }
+
+    /// Paints the gradient across the whole rail and uncovers `fraction` of it,
+    /// so each colour stays pinned to its spot on the rail (16% shows only the
+    /// cyan end) instead of the full ramp squeezing into the lit part.
+    private func reveal(_ fill: LinearGradient, fraction: Double, width: CGFloat) -> some View {
+        Capsule()
+            .fill(fill)
+            .mask(alignment: .leading) {
+                Capsule().frame(width: width * CGFloat(min(max(fraction, 0), 1)))
+            }
     }
 }
 
