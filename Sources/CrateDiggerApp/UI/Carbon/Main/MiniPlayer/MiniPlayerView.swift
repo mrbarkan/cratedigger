@@ -120,6 +120,7 @@ private struct MiniPlayerDrawer: View {
     @ObservedObject var model: LibraryViewModel
     @Binding var tab: MiniPlayerPanelTab
     @Environment(\.carbon) private var theme
+    @Environment(\.carbonGeometry) private var geometry
 
     var body: some View {
         VStack(spacing: 0) {
@@ -129,7 +130,7 @@ private struct MiniPlayerDrawer: View {
                 .padding(.bottom, 13)
         }
         .frame(width: MiniPlayerView.width)
-        .background(MiniPlayerGlass(cornerRadius: 22))
+        .background(MiniPlayerGlass(cornerRadius: geometry.scaled(22, following: \.chassisCornerRadius)))
     }
 }
 
@@ -164,6 +165,7 @@ private struct MiniPlayerBody: View {
     @Binding var panelTab: MiniPlayerPanelTab
     let onPanelChange: (Bool) -> Void
     @Environment(\.carbon) private var theme
+    @Environment(\.carbonGeometry) private var geometry
 
     /// Cover for the COVER art mode, resolved off-main like AlbumPoster.
     @State private var coverImage: NSImage?
@@ -179,7 +181,7 @@ private struct MiniPlayerBody: View {
         }
         .padding(13)
         .frame(width: MiniPlayerView.width)
-        .background(MiniPlayerGlass(cornerRadius: 22))
+        .background(MiniPlayerGlass(cornerRadius: geometry.scaled(22, following: \.chassisCornerRadius)))
         // Drawn above the drawer, and the glass is opaque, so the drawer is
         // out of sight while it is parked behind.
         .compositingGroup()
@@ -234,7 +236,7 @@ private struct MiniPlayerBody: View {
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(artModeDisabled ? theme.ink4.opacity(0.5) : theme.ink3)
                 .frame(width: 24, height: 24)
-                .background(ChromeChassis(theme: theme, cornerRadius: 7))
+                .background(ChromeChassis(theme: theme, cornerRadius: geometry.scaled(7, following: \.keyCornerRadius)))
         }
         .buttonStyle(.carbonHover)
         .disabled(artModeDisabled)
@@ -252,7 +254,7 @@ private struct MiniPlayerBody: View {
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(lit ? theme.orange : theme.ink3)
                 .frame(width: 24, height: 24)
-                .background(ChromeChassis(theme: theme, cornerRadius: 7))
+                .background(ChromeChassis(theme: theme, cornerRadius: geometry.scaled(7, following: \.keyCornerRadius)))
         }
         .buttonStyle(.carbonHover)
         .carbonTip(help)
@@ -262,7 +264,8 @@ private struct MiniPlayerBody: View {
     // MARK: - Art
 
     private var artFrame: some View {
-        let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: geometry.scaled(14, following: \.paperCornerRadius),
+                                     style: .continuous)
         return ZStack {
             shape.fill(theme.wellDeep)
             artContent
@@ -281,7 +284,8 @@ private struct MiniPlayerBody: View {
     // MARK: - OLED display (title · band · time)
 
     private var oledDisplay: some View {
-        let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: geometry.scaled(10, following: \.oledCornerRadius),
+                                     style: .continuous)
         return shape
             .fill(theme.oledSurface)
             .overlay(Scanlines(opacity: 0.02).clipShape(shape))
@@ -441,12 +445,15 @@ private struct MiniPlayerPanel: View {
     @ObservedObject var model: LibraryViewModel
     @Binding var tab: MiniPlayerPanelTab
     @Environment(\.carbon) private var theme
+    @Environment(\.carbonGeometry) private var geometry
 
     /// Tall enough for a dozen rows, short enough that a library with forty
     /// crates does not become a two-foot window.
     private static let listHeight: CGFloat = 300
 
     var body: some View {
+        let well = RoundedRectangle(cornerRadius: geometry.scaled(12, following: \.wellCornerRadius),
+                                    style: .continuous)
         VStack(spacing: 0) {
             tabs
             Group {
@@ -458,14 +465,11 @@ private struct MiniPlayerPanel: View {
             .frame(height: Self.listHeight)
         }
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            well
                 .fill(theme.well.opacity(theme.isDark ? 0.75 : 0.9))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .strokeBorder(theme.hair.opacity(theme.isDark ? 0.6 : 0.8), lineWidth: 1)
-                )
+                .overlay(well.strokeBorder(theme.hair.opacity(theme.isDark ? 0.6 : 0.8), lineWidth: 1))
         )
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .clipShape(well)
         // Dragging inside the lists must scroll and reorder, not move the window.
         .background(WindowDragGuard())
     }
@@ -484,7 +488,8 @@ private struct MiniPlayerPanel: View {
                         .frame(maxWidth: .infinity)
                         .frame(height: 22)
                         .background(
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            RoundedRectangle(cornerRadius: geometry.scaled(6, following: \.keyCornerRadius),
+                                             style: .continuous)
                                 .fill(tab == candidate ? theme.orange.opacity(0.14) : Color.clear)
                         )
                 }
@@ -666,6 +671,7 @@ private struct MiniPlayerPanel: View {
 /// text is a count, LIVE, or the shuffle glyph for All Records.
 private struct MiniSourceRow: View {
     @Environment(\.carbon) private var theme
+    @Environment(\.carbonGeometry) private var geometry
     let icon: String
     let title: String
     let trailing: String
@@ -699,7 +705,7 @@ private struct MiniSourceRow: View {
             .padding(.vertical, 5)
             .contentShape(Rectangle())
             .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: geometry.scaled(6, following: \.keyCornerRadius), style: .continuous)
                     .fill(playing ? theme.orange.opacity(0.10) : (hovering ? theme.ink.opacity(0.05) : Color.clear))
                     .padding(.horizontal, 5)
             )

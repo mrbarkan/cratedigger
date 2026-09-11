@@ -129,6 +129,20 @@ public struct CarbonGeometry: Equatable {
     }
 }
 
+extension CarbonGeometry {
+    /// A designed radius that follows a roundness dial *scaled from the dial's
+    /// shipped value*, for surfaces drawn at a different size from the one
+    /// the dial was tuned on (the mini player is the console at a quarter
+    /// scale). The default theme is pixel-identical to `designed`; a squarer
+    /// theme squares it, a rounder one rounds it. Reading the dial raw would
+    /// make a 272pt card as square as a 1400pt window.
+    func scaled(_ designed: CGFloat, following dial: KeyPath<CarbonGeometry, CGFloat>) -> CGFloat {
+        let shipped = Self.standard[keyPath: dial]
+        guard shipped > 0 else { return designed }
+        return designed * self[keyPath: dial] / shipped
+    }
+}
+
 private extension ClosedRange where Bound == CGFloat {
     func clamp(_ value: CGFloat) -> CGFloat {
         Swift.min(Swift.max(value, lowerBound), upperBound)

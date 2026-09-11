@@ -23,5 +23,23 @@ final class CarbonGeometryTokenTests: XCTestCase {
         ))
         XCTAssertEqual(capsule.keyCornerRadius, CarbonGeometry.Bounds.keyCornerRadius.upperBound)
     }
+
+    /// The mini player's corners follow the dials without the default theme
+    /// moving a pixel: a designed 22 stays 22 at the shipped value, and
+    /// halving the dial halves it.
+    func testScaledRadiusFollowsTheDialFromItsShippedValue() {
+        XCTAssertEqual(CarbonGeometry.standard.scaled(22, following: \.chassisCornerRadius), 22)
+
+        let half = CarbonGeometry(definition: ThemeDefinition(
+            id: "t", name: "T", baseAppearance: .dark,
+            geometry: ["chassisCornerRadius": CarbonLayout.chassisCornerRadius / 2]
+        ))
+        XCTAssertEqual(half.scaled(22, following: \.chassisCornerRadius), 11)
+
+        let square = CarbonGeometry(definition: ThemeDefinition(
+            id: "t", name: "T", baseAppearance: .dark, geometry: ["chassisCornerRadius": 0]
+        ))
+        XCTAssertEqual(square.scaled(22, following: \.chassisCornerRadius), 0)
+    }
 }
 #endif
