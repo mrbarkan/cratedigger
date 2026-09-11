@@ -11,6 +11,11 @@ struct MainShell: View {
     private static let collapseAnimation: Animation =
         .spring(response: 0.36, dampingFraction: 0.92)
 
+    /// Emptying the Prep Crate also drops the saved dig folders, so one stray
+    /// click must not do it. The sidebar's context-menu item is a deliberate
+    /// act already; a key in a toolbar is not.
+    @State private var confirmingClearPrepCrate = false
+
     var body: some View {
         HStack(spacing: geometry.mainGap) {
             sourcesSection
@@ -140,6 +145,9 @@ struct MainShell: View {
                         if !model.showArtworkGallery && !model.isRadioMode {
                             browserLayoutMenu()
                             sortToggleButton()
+                        }
+                        if showsClearPrepCrateKey {
+                            clearPrepCrateButton()
                         }
                         collapseChevron(action: { model.toggleBrowserCollapsed() })
                     })
@@ -395,6 +403,38 @@ struct MainShell: View {
     private var searchKeyColor: Color {
         if model.isSearchActive { return theme.orange }
         return model.showSearchField ? theme.cyan : theme.ink3
+    }
+
+    /// The Prep Crate is staging, not storage, so the key that empties it
+    /// belongs beside the other view controls of the browser showing it —
+    /// never in DIG CRATE's slot in the header, which is the action you still
+    /// want while the crate has something in it.
+    private var showsClearPrepCrateKey: Bool {
+        model.currentSource == .prepCrate && !model.prepCrateTracks.isEmpty
+    }
+
+    private func clearPrepCrateButton() -> some View {
+        Button(action: { confirmingClearPrepCrate = true }) {
+            ZStack {
+                ChromeChassis(theme: theme, cornerRadius: 4)
+                    .frame(width: 18, height: 14)
+                Image(systemName: "trash")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(theme.red)
+            }
+        }
+        .buttonStyle(.carbonHover)
+        .carbonTip("Clear the Prep Crate — \(model.prepCrateTracks.count) staged track\(model.prepCrateTracks.count == 1 ? "" : "s") and the dig folders they came from")
+        .confirmationDialog(
+            "Clear the Prep Crate?",
+            isPresented: $confirmingClearPrepCrate,
+            titleVisibility: .visible
+        ) {
+            Button("Clear Crate", role: .destructive) { model.clearPrepCrate() }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("\(model.prepCrateTracks.count) staged track\(model.prepCrateTracks.count == 1 ? "" : "s") leave the Prep Crate, along with the dig folders they came from. Nothing on disk is touched, and tracks already filed in a crate stay there.")
+        }
     }
 
     /// Toggles the per-column sort menus in the browser headers.
