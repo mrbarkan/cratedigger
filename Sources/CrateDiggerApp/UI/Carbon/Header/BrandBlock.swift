@@ -29,8 +29,9 @@ struct BrandBlock: View {
                     // Same route the ⌘, menu item takes — up the responder chain to AppDelegate.
                     NSApp.sendAction(Selector(("showPreferences:")), to: nil, from: nil)
                 }
+                // pip.enter here, pip.exit on the mini player: one switch, two ends.
                 LibButton(style: .pip, title: "", systemImage: "pip.enter",
-                          tip: "Open the mini player") {
+                          tip: "Mini player (⇧⌘M)") {
                     NotificationCenter.default.post(name: NSNotification.Name("CrateDiggerShowMiniPlayer"), object: nil)
                 }
             }

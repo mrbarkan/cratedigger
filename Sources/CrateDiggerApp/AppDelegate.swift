@@ -347,6 +347,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         mainWindowController?.window?.orderOut(nil)
     }
 
+    @objc private func toggleMiniPlayer(_ sender: Any?) {
+        if miniPlayerWindowController?.window?.isVisible == true {
+            exitMiniPlayer()
+        } else {
+            showMiniPlayer(sender)
+        }
+    }
+
     /// Return from the mini player to the full app (keeps the mini's position).
     private func exitMiniPlayer() {
         miniPlayerWindowController?.window?.orderOut(nil)
@@ -1117,7 +1125,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         windowMenu.addItem(responderItem(title: "Minimize", action: #selector(NSWindow.miniaturize(_:)), key: "m"))
         windowMenu.addItem(responderItem(title: "Zoom", action: #selector(NSWindow.zoom(_:))))
         windowMenu.addItem(.separator())
-        windowMenu.addItem(makeItem(title: "Mini Player", action: #selector(showMiniPlayer(_:))))
+        // Uppercase key = ⇧⌘M, Music's own binding. A toggle, so the same
+        // chord goes both ways from either window.
+        windowMenu.addItem(makeItem(title: "Mini Player", action: #selector(toggleMiniPlayer(_:)), key: "M"))
         windowMenu.addItem(.separator())
         windowMenu.addItem(makeItem(title: "Bring All to Front", action: #selector(NSApplication.arrangeInFront(_:)), target: NSApp))
         windowMenuItem.submenu = windowMenu

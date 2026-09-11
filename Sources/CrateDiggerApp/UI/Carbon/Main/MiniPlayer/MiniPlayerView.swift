@@ -218,7 +218,7 @@ private struct MiniPlayerBody: View {
                 setPanel(open: !panelOpen)
             }
             artModeButton
-            iconButton(system: "arrow.up.left.and.arrow.down.right", help: "Open the full app") {
+            iconButton(system: "pip.exit", help: "Full app (⇧⌘M)") {
                 onExpand()
             }
         }
