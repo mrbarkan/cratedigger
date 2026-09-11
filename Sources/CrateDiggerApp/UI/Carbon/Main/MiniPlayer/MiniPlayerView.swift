@@ -57,9 +57,9 @@ struct MiniPlayerView: View {
     // that stops short or a deck with a gap under it.
 
     static let width: CGFloat = 272
-    /// The deck: 13 pad, 22 bar + 11, 246 art, 13 + 58 OLED, 11 + 11 rail,
-    /// 12 + 54 transport (the play dome is the tallest key), 13 pad.
-    static let deckHeight: CGFloat = 464
+    /// The deck: 13 pad, 22 bar + 11, 246 art, 13 + 72 OLED, 12 + 54
+    /// transport (the play dome is the tallest key), 12 + 11 rail, 13 pad.
+    static let deckHeight: CGFloat = 479
     /// The drawer's visible part: 34 tabs (22 + 6 + 6), 300 list, 13 pad.
     static let drawerHeight: CGFloat = 347
     /// How far the drawer runs up behind the deck, so the seam between the
@@ -175,9 +175,9 @@ private struct MiniPlayerBody: View {
             topBar
             artFrame
             oledDisplay.padding(.top, 13)
-            MiniPlayerSeekRail(model: model, clock: clock, theme: theme)
-                .padding(.top, 11).padding(.horizontal, 2)
             transport
+            MiniPlayerSeekRail(model: model, clock: clock, theme: theme)
+                .padding(.top, 12).padding(.horizontal, 2)
         }
         .padding(13)
         .frame(width: MiniPlayerView.width)
@@ -281,7 +281,7 @@ private struct MiniPlayerBody: View {
         .depthShadow(color: .black.opacity(0.18), radius: 5, y: 2)
     }
 
-    // MARK: - OLED display (title · band · time)
+    // MARK: - OLED display (title / band / album · time)
 
     private var oledDisplay: some View {
         let shape = RoundedRectangle(cornerRadius: geometry.scaled(10, following: \.oledCornerRadius),
@@ -292,7 +292,7 @@ private struct MiniPlayerBody: View {
             .overlay(shape.strokeBorder(theme.oledStrokeInner, lineWidth: 1.5))
             .overlay(
                 // Same faces as the main display's NOW screen: the display
-                // face for the title, the mono for the line under it.
+                // face for the title, the mono for the two lines under it.
                 VStack(alignment: .leading, spacing: 4) {
                     Text(trackTitle)
                         .font(CarbonFont.display(18, weight: .thin))
@@ -300,8 +300,13 @@ private struct MiniPlayerBody: View {
                         .foregroundStyle(theme.oledForeground)
                         .lineLimit(1)
                         .minimumScaleFactor(0.6)
+                    Text(band)
+                        .font(CarbonFont.mono(9.5, weight: .semibold)).tracking(1.9)
+                        .textCase(.uppercase)
+                        .foregroundStyle(theme.oledForeground.opacity(0.52))
+                        .lineLimit(1)
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text(band)
+                        Text(album)
                             .font(CarbonFont.mono(9.5, weight: .semibold)).tracking(1.9)
                             .textCase(.uppercase)
                             .foregroundStyle(theme.oledForeground.opacity(0.52))
@@ -313,7 +318,7 @@ private struct MiniPlayerBody: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 9)
             )
-            .frame(height: 58)
+            .frame(height: 72)
             .compositingGroup()
     }
 
@@ -387,10 +392,13 @@ private struct MiniPlayerBody: View {
             return stream.channel.isEmpty ? "LIVE" : stream.channel.uppercased()
         }
         guard let t = model.nowPlayingTrack?.track else { return "PICK SOMETHING BELOW" }
-        var parts: [String] = []
-        if !t.artist.isEmpty { parts.append(t.artist) }
-        if !t.album.isEmpty { parts.append(t.album) }
-        return parts.isEmpty ? "" : parts.joined(separator: " · ").uppercased()
+        return t.artist.uppercased()
+    }
+
+    /// Third line. A stream has no album; the time readout still sits here.
+    private var album: String {
+        if model.isStreamActive { return "" }
+        return (model.nowPlayingTrack?.track.album ?? "").uppercased()
     }
 
     // MARK: - Transport
