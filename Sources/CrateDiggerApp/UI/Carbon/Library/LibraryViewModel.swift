@@ -2448,6 +2448,7 @@ final class LibraryViewModel: ObservableObject {
                 // literally "Audio CD" — bypassing the output planner entirely.
                 let loadedTracks = await MainActor.run { self.cdTracks(for: info) }
                 let planner = OutputPathPlanner()
+                let albumKeys = planner.albumFolderKeys(for: loadedTracks)
                 let templateConfig = await MainActor.run {
                     FolderTemplateConfig(
                         preset: self.conversionSelection.templatePreset,
@@ -2468,7 +2469,8 @@ final class LibraryViewModel: ObservableObject {
                         sourceRoot: nil,
                         folderMode: folderMode,
                         templateConfig: templateConfig,
-                        reservedDestinationPaths: reserved
+                        reservedDestinationPaths: reserved,
+                        albumKey: albumKeys[loaded.track.id]
                     )
                     reserved.insert(plan.destinationURL.standardizedFileURL.resolvingSymlinksInPath().path)
                     jobs.append(ConversionJob(

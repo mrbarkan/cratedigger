@@ -115,11 +115,15 @@ struct ConversionQueueView: View {
         if model.conversionQueueTracks.isEmpty {
             empty
         } else {
+            // Once per render, not once per row: the keys are reconciled across
+            // the whole queue, which is what makes the preview name the folder
+            // the batch will really write to.
+            let albumKeys = model.conversionQueueAlbumKeys
             ForEach(Array(model.conversionQueueTracks.enumerated()), id: \.element.track.id) { index, loaded in
                 ConversionQueueRow(
                     loaded: loaded,
                     position: index + 1,
-                    destination: model.plannedOutputName(for: loaded),
+                    destination: model.plannedOutputName(for: loaded, albumKey: albumKeys[loaded.track.id]),
                     badge: loaded.track.formatName ?? "—",
                     badgeIsDone: false
                 )

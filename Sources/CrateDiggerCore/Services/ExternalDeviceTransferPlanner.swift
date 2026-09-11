@@ -70,6 +70,10 @@ public struct ExternalDeviceTransferPlanner {
         let action: ExternalDeviceTransferAction = preset == nil ? .copyOriginal : .convert
         let sourceRoot = commonAncestorDirectory(for: tracks.map { $0.track.fileURL })
 
+        // One album, one folder on the device: reconciled across the batch so a
+        // soundtrack doesn't arrive as a folder per performer.
+        let albumKeys = pathPlanner.albumFolderKeys(for: tracks)
+
         var reserved = reservedDestinationPaths
         var plannedTransfers: [PlannedExternalDeviceTransfer] = []
         plannedTransfers.reserveCapacity(tracks.count)
@@ -85,7 +89,8 @@ public struct ExternalDeviceTransferPlanner {
                 templateConfig: profile.transferSettings.templateConfig,
                 reviewedAlbumFolders: reviewedAlbumFolders,
                 reservedDestinationPaths: reserved,
-                destinationFileExtension: destinationExtension
+                destinationFileExtension: destinationExtension,
+                albumKey: albumKeys[track.track.id]
             )
             reserved.insert(plannedPath.destinationURL.standardizedFileURL.resolvingSymlinksInPath().path)
 

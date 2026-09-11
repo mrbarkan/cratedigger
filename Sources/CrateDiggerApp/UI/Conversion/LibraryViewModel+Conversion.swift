@@ -227,8 +227,9 @@ extension LibraryViewModel {
         let fileManager = FileManager.default
         let planner = OutputPathPlanner()
         let batchDestinations = Set(jobs.map { $0.destinationURL.standardizedFileURL.path })
+        let albumKeys = planner.albumFolderKeys(for: tracks)
         let keyBySourcePath = Dictionary(
-            tracks.map { ($0.track.fileURL.path, planner.albumFolderKey(for: $0)) },
+            tracks.map { ($0.track.fileURL.path, albumKeys[$0.track.id] ?? planner.albumFolderKey(for: $0)) },
             uniquingKeysWith: { first, _ in first }
         )
 
@@ -582,12 +583,15 @@ extension LibraryViewModel {
         templateConfig: FolderTemplateConfig
     ) -> [AlbumFolderReviewRow] {
         let planner = OutputPathPlanner()
+        let albumKeys = planner.albumFolderKeys(for: tracks)
         var seen = Set<AlbumFolderKey>()
         var rows: [AlbumFolderReviewRow] = []
         for track in tracks {
-            let key = planner.albumFolderKey(for: track)
+            let key = albumKeys[track.track.id] ?? planner.albumFolderKey(for: track)
             guard seen.insert(key).inserted else { continue }
-            let proposed = planner.buildOutputSubpath(for: track, templateConfig: templateConfig)
+            let proposed = planner.buildOutputSubpath(
+                for: track, templateConfig: templateConfig, albumKey: key
+            )
             let label = [key.artistBucket, key.album, key.year]
                 .filter { !$0.isEmpty }
                 .joined(separator: " · ")
@@ -627,6 +631,7 @@ extension LibraryViewModel {
         reviewedAlbumFolders: [AlbumFolderKey: String]
     ) -> [ConversionJob] {
         let planner = OutputPathPlanner()
+        let albumKeys = planner.albumFolderKeys(for: tracks)
         var reserved = Set<String>()
         var jobs: [ConversionJob] = []
 
@@ -651,7 +656,8 @@ extension LibraryViewModel {
                         reviewedAlbumFolders: reviewedAlbumFolders,
                         reservedDestinationPaths: reserved,
                         baseNameOverride: recordPlan.baseName,
-                        avoidExistingFiles: false
+                        avoidExistingFiles: false,
+                        albumKey: albumKeys[track.track.id]
                     )
                     reserved.insert(plan.destinationURL.standardizedFileURL.resolvingSymlinksInPath().path)
                     jobs.append(ConversionJob(
@@ -674,7 +680,8 @@ extension LibraryViewModel {
                 templateConfig: templateConfig,
                 reviewedAlbumFolders: reviewedAlbumFolders,
                 reservedDestinationPaths: reserved,
-                avoidExistingFiles: false
+                avoidExistingFiles: false,
+                albumKey: albumKeys[track.track.id]
             )
             reserved.insert(plan.destinationURL.standardizedFileURL.resolvingSymlinksInPath().path)
             jobs.append(ConversionJob(
@@ -918,7 +925,14 @@ extension LibraryViewModel {
     /// resolved through the same planner the conversion uses so the queue view
     /// shows the real destination rather than a guess. Nil when the format can't
     /// be resolved yet.
-    func plannedOutputName(for track: LoadedTrack) -> String? {
+    /// The album keys of everything in the convert queue, reconciled together.
+    /// Read once per queue render and handed to `plannedOutputName(for:albumKey:)`,
+    /// so the preview names the folder the batch will really write to.
+    var conversionQueueAlbumKeys: [UUID: AlbumFolderKey] {
+        OutputPathPlanner().albumFolderKeys(for: conversionQueueTracks)
+    }
+
+    func plannedOutputName(for track: LoadedTrack, albumKey: AlbumFolderKey? = nil) -> String? {
         let selection = conversionSelection
         let templateConfig = FolderTemplateConfig(
             preset: selection.templatePreset,
@@ -931,7 +945,9 @@ extension LibraryViewModel {
 
         switch selection.folderStructureMode {
         case .metadataTemplate:
-            let folder = planner.buildOutputSubpath(for: track, templateConfig: templateConfig)
+            let folder = planner.buildOutputSubpath(
+                for: track, templateConfig: templateConfig, albumKey: albumKey
+            )
             return folder.isEmpty ? "\(base).\(ext)" : "\(folder)/\(base).\(ext)"
         case .flat, .sourceRelative:
             return "\(base).\(ext)"

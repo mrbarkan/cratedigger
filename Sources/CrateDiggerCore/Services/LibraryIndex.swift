@@ -101,12 +101,15 @@ public struct LibraryIndex: Sendable {
             let tagKey: AlbumFolderKey
             let folder: String
         }
+        // Reconciled, not tag-literal: the files of one album folder agree on a
+        // title, an artist bucket and a year even when their tags don't.
+        let keyByTrackID = planner.albumFolderKeys(for: loaded)
         var groupsByKey: [BuildKey: [LoadedTrack]] = [:]
         var buildOrder: [BuildKey] = []
         for track in loaded {
             let key = BuildKey(
-                tagKey: planner.albumFolderKey(for: track),
-                folder: versionSourceFolder(for: track)
+                tagKey: keyByTrackID[track.track.id] ?? planner.albumFolderKey(for: track),
+                folder: planner.albumSourceFolder(for: track)
             )
             if groupsByKey[key] == nil {
                 buildOrder.append(key)
@@ -483,25 +486,8 @@ public struct LibraryIndex: Sendable {
     /// normalized up to THEIR parent so a multi-disc album stored as subfolders
     /// stays one album. Empty for non-file URLs (remote/streaming tracks are
     /// never folder-split).
-    static func versionSourceFolder(for track: LoadedTrack) -> String {
-        guard track.track.fileURL.isFileURL else { return "" }
-        var folder = track.track.fileURL.deletingLastPathComponent()
-        if isDiscFolderName(folder.lastPathComponent) {
-            folder = folder.deletingLastPathComponent()
-        }
-        return folder.standardizedFileURL.path
-    }
 
     /// "CD1", "cd 2", "Disc 3", "DISK-04", "D2" — with or without separator.
-    private static let discFolderPattern = try! NSRegularExpression(
-        pattern: #"^(cd|disc|disk|d)[ ._-]*\d{1,3}$"#, options: [.caseInsensitive]
-    )
-
-    private static func isDiscFolderName(_ name: String) -> Bool {
-        let range = NSRange(name.startIndex..., in: name)
-        return discFolderPattern.firstMatch(in: name, options: [], range: range) != nil
-    }
-
     private static func parseYear(_ raw: String) -> Int? {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count == 4, let value = Int(trimmed) else { return nil }

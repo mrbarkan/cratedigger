@@ -175,9 +175,15 @@ public struct OutputPathPlanner {
         )
     }
 
+    /// Pass the `albumKey` from `albumFolderKeys(for:)` whenever the whole
+    /// batch is in hand: the album-artist / album / year tokens then read the
+    /// album's reconciled identity, so a soundtrack lands in one Various Artists
+    /// folder instead of one folder per performer. Without it the tokens read
+    /// the single file's tags, which is all a lone track can offer.
     public func buildOutputSubpath(
         for loadedTrack: LoadedTrack,
-        templateConfig: FolderTemplateConfig
+        templateConfig: FolderTemplateConfig,
+        albumKey: AlbumFolderKey? = nil
     ) -> String {
         let tokenOrder = (templateConfig.preset == .custom)
             ? templateConfig.tokenOrder
@@ -190,7 +196,7 @@ public struct OutputPathPlanner {
         // current folder; a `space` keeps the next token in the same folder.
         var levels: [[String]] = [[]]
         for (i, token) in tokenOrder.enumerated() {
-            if let value = tokenValue(for: token, loadedTrack: loadedTrack) {
+            if let value = tokenValue(for: token, loadedTrack: loadedTrack, albumKey: albumKey) {
                 levels[levels.count - 1].append(value)
             }
             if i < tokenOrder.count - 1 {
@@ -203,9 +209,9 @@ public struct OutputPathPlanner {
             .filter { !$0.isEmpty }
 
         let fallbackPath = [
-            resolvedYearComponent(for: loadedTrack),
-            resolvedAlbumArtistComponent(for: loadedTrack),
-            resolvedAlbumComponent(for: loadedTrack)
+            albumKey?.year ?? resolvedYearComponent(for: loadedTrack),
+            albumKey?.artistBucket ?? resolvedAlbumArtistComponent(for: loadedTrack),
+            albumKey?.album ?? resolvedAlbumComponent(for: loadedTrack)
         ].joined(separator: "/")
         let rawPath = components.joined(separator: "/")
 
@@ -223,13 +229,13 @@ public struct OutputPathPlanner {
         reservedDestinationPaths: Set<String> = [],
         destinationFileExtension: String? = nil,
         baseNameOverride: String? = nil,
-        avoidExistingFiles: Bool = true
+        avoidExistingFiles: Bool = true,
+        albumKey: AlbumFolderKey? = nil
     ) -> PlannedOutputPath {
         let track = loadedTrack.track
         let sourceDirectory = track.fileURL.deletingLastPathComponent()
         var outputDirectory = destinationRoot
         var relativeSubpath: String?
-        var albumKey: AlbumFolderKey?
 
         switch folderMode {
         case .sourceRelative:
@@ -249,8 +255,9 @@ public struct OutputPathPlanner {
         case .flat:
             break
         case .metadataTemplate:
-            albumKey = albumFolderKey(for: loadedTrack)
-            let subpath = reviewedAlbumFolders[albumKey!] ?? buildOutputSubpath(for: loadedTrack, templateConfig: templateConfig)
+            let key = albumKey ?? albumFolderKey(for: loadedTrack)
+            let subpath = reviewedAlbumFolders[key]
+                ?? buildOutputSubpath(for: loadedTrack, templateConfig: templateConfig, albumKey: key)
             relativeSubpath = subpath
             for component in subpath.split(separator: "/").map(String.init) where !component.isEmpty {
                 outputDirectory.appendPathComponent(component, isDirectory: true)
@@ -326,16 +333,20 @@ public struct OutputPathPlanner {
         return value.isEmpty ? nil : value
     }
 
-    private func tokenValue(for token: FolderToken, loadedTrack: LoadedTrack) -> String? {
+    private func tokenValue(
+        for token: FolderToken,
+        loadedTrack: LoadedTrack,
+        albumKey: AlbumFolderKey?
+    ) -> String? {
         switch token {
         case .disabled:
             return nil
         case .year:
-            return resolvedYearComponent(for: loadedTrack)
+            return albumKey?.year ?? resolvedYearComponent(for: loadedTrack)
         case .albumArtist:
-            return resolvedAlbumArtistComponent(for: loadedTrack)
+            return albumKey?.artistBucket ?? resolvedAlbumArtistComponent(for: loadedTrack)
         case .album:
-            return resolvedAlbumComponent(for: loadedTrack)
+            return albumKey?.album ?? resolvedAlbumComponent(for: loadedTrack)
         case .compilation:
             return loadedTrack.metadata.compilation == true ? "Compilation" : nil
         case .genre:
@@ -373,6 +384,121 @@ public struct OutputPathPlanner {
             ?? normalizedMetadataValue(loadedTrack.track.album)
             ?? unknownAlbum
         return PathComponentSanitizer.sanitize(value, fallback: unknownAlbum)
+    }
+
+    /// `"Bitches Brew (Disc 2)"` -> `"Bitches Brew"`. A disc suffix in the album
+    /// tag is the commonest way a two-disc release shatters into two albums that
+    /// sort apart, and it is a property of the *file*, not of the release. Only
+    /// `albumFolderKeys(for:)` applies it, and only to files that share one album
+    /// folder: two discs filed as separate folders stay separate albums, keeping
+    /// their own titles, so a box set's discs remain tellable apart. The disc
+    /// number itself is never lost either way — it lives in `discNumber`, which
+    /// is what the track sort already reads.
+    static func strippingDiscSuffix(_ title: String) -> String {
+        let range = NSRange(title.startIndex..., in: title)
+        guard let match = discSuffixPattern.firstMatch(in: title, options: [], range: range),
+              let matched = Range(match.range, in: title)
+        else { return title }
+        let remainder = title[title.startIndex..<matched.lowerBound]
+            .trimmingCharacters(in: .whitespaces)
+        // "Disc 2" on its own is the whole title; stripping it leaves nothing.
+        return remainder.isEmpty ? title : remainder
+    }
+
+    /// Trailing `(Disc 2)`, `[CD 1 of 3]`, `- Disc 2`, `, CD2`, or a bare `Disc 2`.
+    private static let discSuffixPattern = try! NSRegularExpression(
+        pattern: #"[ ._,:–-]*(?:[(\[{][ ._-]*)?(?:cd|disc|disk)[ ._-]*\d{1,3}(?:[ ._-]*(?:of|/)[ ._-]*\d{1,3})?[ ._-]*[)\]}]?$"#,
+        options: [.caseInsensitive]
+    )
+
+    /// The folder that decides which physical album a file belongs to: its own
+    /// folder, except that a disc subfolder (`CD1`, `Disc 2`) resolves to the
+    /// album folder above it, so a multi-disc rip is one album, not two pressings.
+    public func albumSourceFolder(for loadedTrack: LoadedTrack) -> String {
+        guard loadedTrack.track.fileURL.isFileURL else { return "" }
+        var folder = loadedTrack.track.fileURL.deletingLastPathComponent()
+        let range = NSRange(folder.lastPathComponent.startIndex..., in: folder.lastPathComponent)
+        if Self.discFolderPattern.firstMatch(in: folder.lastPathComponent, options: [], range: range) != nil {
+            folder = folder.deletingLastPathComponent()
+        }
+        return folder.standardizedFileURL.path
+    }
+
+    private static let discFolderPattern = try! NSRegularExpression(
+        pattern: #"^(cd|disc|disk|d)[ ._-]*\d{1,3}$"#, options: [.caseInsensitive]
+    )
+
+    /// Album identity for a whole set of tracks at once.
+    ///
+    /// `albumFolderKey(for:)` reads one file's tags literally, and three ordinary
+    /// tag inconsistencies each shatter one release into several albums: a disc
+    /// suffix in the title, per-track artists on a compilation or soundtrack with
+    /// no album-artist tag, and tracks carrying different years. Files that share
+    /// one album folder (disc subfolders folded into it) and one album title ARE
+    /// one album, so the whole group agrees on a single artist bucket and year.
+    ///
+    /// Untitled files are left alone — a flat folder of loose, untagged tracks
+    /// would otherwise collapse into a single "Unknown Album".
+    public func albumFolderKeys(for tracks: [LoadedTrack]) -> [UUID: AlbumFolderKey] {
+        struct PhysicalAlbum: Hashable { let folder: String; let album: String }
+
+        var members: [PhysicalAlbum: [LoadedTrack]] = [:]
+        var keys: [UUID: AlbumFolderKey] = [:]
+        for track in tracks {
+            let key = albumFolderKey(for: track)
+            keys[track.track.id] = key
+            guard key.album != unknownAlbum else { continue }
+            let physical = PhysicalAlbum(
+                folder: albumSourceFolder(for: track),
+                album: Self.strippingDiscSuffix(key.album)
+            )
+            members[physical, default: []].append(track)
+        }
+
+        for (physical, group) in members where group.count > 1 {
+            let reconciled = AlbumFolderKey(
+                artistBucket: sharedArtistBucket(in: group),
+                album: physical.album,
+                year: sharedYearComponent(in: group)
+            )
+            for track in group { keys[track.track.id] = reconciled }
+        }
+        return keys
+    }
+
+    /// One album-artist for a set of files: the tag they agree on, else Various
+    /// Artists. An explicit album-artist outranks the per-track artist, which is
+    /// what makes a soundtrack one album instead of one album per performer.
+    private func sharedArtistBucket(in group: [LoadedTrack]) -> String {
+        let various = PathComponentSanitizer.sanitize(Self.variousArtists, fallback: unknownArtist)
+        if group.contains(where: { $0.metadata.compilation == true })
+            && group.allSatisfy({ normalizedMetadataValue($0.metadata.albumArtist) == nil }) {
+            return various
+        }
+        let albumArtists = Set(group.compactMap { normalizedMetadataValue($0.metadata.albumArtist) })
+        if albumArtists.count == 1, let only = albumArtists.first {
+            return PathComponentSanitizer.sanitize(only, fallback: unknownArtist)
+        }
+        if albumArtists.count > 1 { return various }
+
+        let artists = Set(group.compactMap {
+            normalizedMetadataValue($0.metadata.artist) ?? normalizedMetadataValue($0.track.artist)
+        })
+        guard artists.count == 1, let only = artists.first else { return various }
+        return PathComponentSanitizer.sanitize(only, fallback: unknownArtist)
+    }
+
+    /// The year the set mostly agrees on. A stray original-release year on one
+    /// track of a compilation must not split the album off from its siblings.
+    private func sharedYearComponent(in group: [LoadedTrack]) -> String {
+        var counts: [Int: Int] = [:]
+        for track in group {
+            if let year = track.metadata.year { counts[year, default: 0] += 1 }
+        }
+        guard let winner = counts.max(by: { ($0.value, $1.key) < ($1.value, $0.key) })?.key else {
+            return PathComponentSanitizer.sanitize("", fallback: unknownYear)
+        }
+        return PathComponentSanitizer.sanitize(String(winner), fallback: unknownYear)
     }
 
     private func normalizedMetadataValue(_ value: String?) -> String? {
