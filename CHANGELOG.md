@@ -4,6 +4,32 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 2.0.5 (88), 2026-09-11
+
+One album folder is one album, however its tags disagree.
+
+### Fixed
+
+- **Multi-disc albums stay whole.** A two-disc set whose files were tagged
+  `Album (Disc 1)` and `Album (Disc 2)` used to browse as two separate albums
+  that sorted apart. Files sharing one album folder are now read as one album,
+  so both discs sit under a single cover with the disc order preserved.
+- **Compilations and soundtracks stop shattering.** A soundtrack carrying a
+  different performer on every track, with no album-artist tag and no
+  compilation flag, used to appear as one album per performer. It now reunites
+  under Various Artists as a single album.
+- **A stray year no longer splits an album.** One track tagged with a different
+  year to the rest used to break off into an album of its own. The album now
+  takes the year most of its tracks carry.
+- **Converting and transferring write one folder per album.** The same
+  reunited album identity now drives the output planner, so a soundtrack lands
+  in one Various Artists folder instead of a folder per performer, and a
+  two-disc set converts into a single folder. This covers conversion, the
+  album folder review sheet, the convert queue preview, CD ripping and
+  transfers to an external device.
+- **FIX TAGS looks an album up once.** A compilation used to fire one metadata
+  lookup per performer; it now sends a single query for the whole album.
+
 ## 2.0.4 (87), 2026-09-10
 
 Two small fixes to the screen.
