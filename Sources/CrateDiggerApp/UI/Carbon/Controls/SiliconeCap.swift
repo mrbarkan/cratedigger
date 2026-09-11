@@ -14,6 +14,9 @@ struct SiliconeCap<S: Shape, Imprint: View>: View {
     @Environment(\.carbon) private var theme
     let shape: S
     var lit: Bool = false
+    /// Scales the contact shadow: 1 is the footer's; the mini player's smaller
+    /// caps sit closer to the card and cast less.
+    var shadowScale: CGFloat = 1
     @ViewBuilder var imprint: () -> Imprint
 
     var body: some View {
@@ -52,7 +55,8 @@ struct SiliconeCap<S: Shape, Imprint: View>: View {
                                              startPoint: .top, endPoint: .center))
                         .padding(1)
                 }
-                .depthShadow(color: Color.black.opacity(theme.isDark ? 0.5 : 0.22), radius: 7, y: 4)
+                .depthShadow(color: Color.black.opacity((theme.isDark ? 0.5 : 0.22) * shadowScale),
+                             radius: 7 * shadowScale, y: 4 * shadowScale)
                 .shadow(color: theme.transportLamp.opacity(lit ? 0.22 : 0), radius: 11)
                 // Rubber is smooth: the console's grain stops at the cap's edge.
                 .grainFree(shape: shape)

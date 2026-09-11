@@ -58,10 +58,10 @@ struct MiniPlayerView: View {
 
     static let width: CGFloat = 272
     /// The deck: 13 pad, 22 bar + 11, 246 art, 13 + 58 OLED, 11 + 11 rail,
-    /// 14 + 40 transport, 13 pad.
-    static let deckHeight: CGFloat = 452
-    /// The drawer's visible part: 34 tabs (22 + 6 + 6), 250 list, 13 pad.
-    static let drawerHeight: CGFloat = 297
+    /// 12 + 54 transport (the play dome is the tallest key), 13 pad.
+    static let deckHeight: CGFloat = 464
+    /// The drawer's visible part: 34 tabs (22 + 6 + 6), 300 list, 13 pad.
+    static let drawerHeight: CGFloat = 347
     /// How far the drawer runs up behind the deck, so the seam between the
     /// two is the deck's own rounded foot and never a hairline gap.
     static let drawerOverlap: CGFloat = 40
@@ -87,6 +87,13 @@ struct MiniPlayerView: View {
                     panelOpen: $panelOpen, panelTab: $panelTab, onPanelChange: onPanelChange
                 )
                 .frame(height: Self.deckHeight)
+                // The deck sits *on* the drawer once it is out, so it casts
+                // onto it. Faded with the travel: while parked, the deck's foot
+                // is the window's own edge, and a shadow clipped there draws as
+                // a hard rectangular line around the window. Plain `.shadow`, not
+                // `depthShadow`: this is one part sliding over another, and a
+                // flat theme still needs to show where the deck ends.
+                .shadow(color: .black.opacity(0.3 * (1 + travel / Self.drawerHeight)), radius: 10, y: 5)
             }
             .frame(width: Self.width, height: max(window.size.height, 1), alignment: .top)
         }
@@ -267,7 +274,8 @@ private struct MiniPlayerBody: View {
         .frame(width: 246, height: 246)
         .clipShape(shape)
         .overlay(shape.strokeBorder(Color.black.opacity(0.6), lineWidth: 1))
-        .depthShadow(color: .black.opacity(0.5), radius: 12, y: 6)
+        // A sleeve laid on the card, not a tile floating over it.
+        .depthShadow(color: .black.opacity(0.18), radius: 5, y: 2)
     }
 
     // MARK: - OLED display (title · band · time)
@@ -383,23 +391,28 @@ private struct MiniPlayerBody: View {
 
     // MARK: - Transport
 
-    /// Five keys of one size in one row, the way a portable player lays them
-    /// out. Play/pause sits in the middle and is the only one that lights
-    /// while playing; shuffle and repeat light when they are on.
+    /// The footer's transport row, scaled to the card: the round play dome in
+    /// the middle, one size up, is the only key that lights while playing;
+    /// the four square keys beside it are the footer's, and shuffle and
+    /// repeat light when they are on.
     private var transport: some View {
-        // 8pt gaps: the keys read as one cluster under the slider, not five
-        // pods pushed to the edges of the card.
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             transportKey("shuffle", lit: model.shuffleEnabled, tip: "Shuffle") { model.toggleShuffle() }
-            transportKey("backward.fill", tip: "Previous") { model.previous() }
-            transportKey("playpause.fill", lit: model.playbackState == .playing, tip: "Play / Pause") {
-                model.togglePlayPause()
+            transportKey("backward.end.fill", tip: "Previous") { model.previous() }
+            Button(action: { ClickPlayer.shared.play(.firm); model.togglePlayPause() }) {
+                SiliconeCap(shape: Circle(), lit: model.playbackState == .playing, shadowScale: 0.6) {
+                    Image(systemName: "playpause.fill").font(.system(size: 17, weight: .black))
+                }
+                .frame(width: 54, height: 54)
             }
-            transportKey("forward.fill", tip: "Next") { model.next() }
+            .buttonStyle(.carbonHover)
+            .carbonTip("Play / Pause")
+            .accessibilityLabel(model.playbackState == .playing ? "Pause" : "Play")
+            transportKey("forward.end.fill", tip: "Next") { model.next() }
             transportKey(repeatIcon, lit: model.repeatMode != .off, tip: "Repeat") { model.cycleRepeatMode() }
         }
         .frame(maxWidth: .infinity)
-        .padding(.top, 14)
+        .padding(.top, 12)
     }
 
     private var repeatIcon: String {
@@ -409,15 +422,14 @@ private struct MiniPlayerBody: View {
     private func transportKey(_ system: String, lit: Bool = false, tip: String,
                               action: @escaping () -> Void) -> some View {
         Button(action: { ClickPlayer.shared.play(.key); action() }) {
-            SiliconeCap(shape: RoundedRectangle(cornerRadius: 11, style: .continuous), lit: lit) {
-                // 17pt: at 14 the print under the silicone blur read as fuzzy.
-                // The footer's caps carry 19 in a larger key; same ratio here.
-                Image(systemName: system).font(.system(size: 17, weight: .semibold))
+            SiliconeCap(shape: RoundedRectangle(cornerRadius: 11, style: .continuous), lit: lit, shadowScale: 0.6) {
+                Image(systemName: system).font(.system(size: 13, weight: .semibold))
             }
             .frame(width: 40, height: 40)
         }
         .buttonStyle(.carbonHover)
         .carbonTip(tip)
+        .accessibilityLabel(tip)
     }
 }
 
@@ -432,7 +444,7 @@ private struct MiniPlayerPanel: View {
 
     /// Tall enough for a dozen rows, short enough that a library with forty
     /// crates does not become a two-foot window.
-    private static let listHeight: CGFloat = 250
+    private static let listHeight: CGFloat = 300
 
     var body: some View {
         VStack(spacing: 0) {
