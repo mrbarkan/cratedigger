@@ -3,6 +3,50 @@
     <channel>
         <title>CrateDigger</title>
         <item>
+            <title>2.0.5</title>
+            <pubDate>Fri, 11 Sep 2026 10:49:18 -0300</pubDate>
+            <link>https://cratedigger.mrbarkan.com/</link>
+            <sparkle:fullReleaseNotesLink>https://github.com/mrbarkan/cratedigger/releases</sparkle:fullReleaseNotesLink>
+            <sparkle:version>88</sparkle:version>
+            <sparkle:shortVersionString>2.0.5</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description sparkle:format="markdown"><![CDATA[
+One album folder is one album, however its tags disagree.
+
+### Fixed
+
+- **Multi-disc albums stay whole.** A two-disc set whose files were tagged
+  `Album (Disc 1)` and `Album (Disc 2)` used to browse as two separate albums
+  that sorted apart. Files sharing one album folder are now read as one album,
+  so both discs sit under a single cover with the disc order preserved.
+- **Compilations and soundtracks stop shattering.** A soundtrack carrying a
+  different performer on every track, with no album-artist tag and no
+  compilation flag, used to appear as one album per performer. It now reunites
+  under Various Artists as a single album.
+- **A stray year no longer splits an album.** One track tagged with a different
+  year to the rest used to break off into an album of its own. The album now
+  takes the year most of its tracks carry.
+- **Converting and transferring write one folder per album.** The same
+  reunited album identity now drives the output planner, so a soundtrack lands
+  in one Various Artists folder instead of a folder per performer, and a
+  two-disc set converts into a single folder. This covers conversion, the
+  album folder review sheet, the convert queue preview, CD ripping and
+  transfers to an external device.
+- **FIX TAGS looks an album up once.** A compilation used to fire one metadata
+  lookup per performer; it now sends a single query for the whole album.
+
+]]></description>
+            <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.0.5/CrateDigger-2.0.5.dmg" length="72253910" type="application/octet-stream" sparkle:edSignature="b3FHiIuQigT3y4RjFiXSsqg0kx6WxmQONg2qrQa79bqAuttahjOD1KRw4BN87kp0HLgLjzATR5z7AxNyxLBCDA=="/>
+            <sparkle:deltas>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.0.5/CrateDigger88-87.delta" sparkle:deltaFrom="87" length="724490" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="NZu335fKkGVhRihj38/MdhKftU2nI4ZauGRPyQyzoQut0nnQebCpGlLZvUZcullD2CwHka7hYDDnW+D3/aKRDw=="/>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.0.5/CrateDigger88-86.delta" sparkle:deltaFrom="86" length="769338" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="LSjIRxEzPvx4V09wswRXWPu2DOc8V+aILp83bWRuD8QxRW8YkjpLB2uqiolpmsWUHMXw2mGGdkmcbb7GMiJUCA=="/>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.0.5/CrateDigger88-85.delta" sparkle:deltaFrom="85" length="2016714" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="IacsskzG2JHGLZkeZ2y+Z1cuILSBPWSf/S7en27pGLLnv0qeFypNwCNjSHb0tuaOEu4Jk/EtHAgIlmIqWOj8CQ=="/>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.0.5/CrateDigger88-84.delta" sparkle:deltaFrom="84" length="2113634" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="G1zKJV7vPXozOCIYhSq/ZyCzjZqcCg4WVsJ7SJ6PeSOoGsclPTv7guOYvMbRImiuX8/hXUHGPm/ujOuDdiGxAQ=="/>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.0.5/CrateDigger88-83.delta" sparkle:deltaFrom="83" length="2121870" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="KRTGpKXTjlWdv2si6/vxJLjbUoCeXXv2NPkxPjlHN1Su5cCC4CDP1jglWhsddL8u6k25NAVGIQjF9qsrWbvhBA=="/>
+            </sparkle:deltas>
+        </item>
+        <item>
             <title>2.0.4</title>
             <pubDate>Thu, 10 Sep 2026 10:35:54 -0300</pubDate>
             <link>https://cratedigger.mrbarkan.com/</link>
@@ -122,47 +166,6 @@ always meant to be.
                 <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.0.3/CrateDigger86-85.delta" sparkle:deltaFrom="85" length="1923862" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="zeeeXyREyhzXLlVuzg/BlDuEfRpD4e2WWkdhaaQ2KN4dwLOv7mlDx+0nTvj9YGFMy2Z5aiAbNIjWewj/8KwJCw=="/>
                 <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.0.3/CrateDigger86-84.delta" sparkle:deltaFrom="84" length="2061842" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="e+5yBKOJedV3yXyzpdzd9mjQdIkg/WTyZEhUcq0j6j/gQpRCDoAwtytDgR4osv3uS67ISxxSWoG/VEhf0s7vDw=="/>
                 <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.0.3/CrateDigger86-83.delta" sparkle:deltaFrom="83" length="2056418" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="gOOkfIz6NdnYHdxkwp68hefluVr4rxBEZR4sdbtOpuUe2Z44e32zO4PRpGKpUya7Ue1FDJVDCrZQPoV2f1pZDw=="/>
-            </sparkle:deltas>
-        </item>
-        <item>
-            <title>2.0.2</title>
-            <pubDate>Mon, 07 Sep 2026 16:31:24 -0300</pubDate>
-            <link>https://cratedigger.mrbarkan.com/</link>
-            <sparkle:fullReleaseNotesLink>https://github.com/mrbarkan/cratedigger/releases</sparkle:fullReleaseNotesLink>
-            <sparkle:version>85</sparkle:version>
-            <sparkle:shortVersionString>2.0.2</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
-            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[
-The floating artwork panel is made of glass now.
-
-### Changed
-
-- **The floating artwork panel uses Apple's Liquid Glass.** It used to paint a
-  blurred copy of the record under a black wash, which looked like a solid tile
-  sitting on your screen. Now it is real glass: whatever is behind the panel
-  shows through it, bending at the edges the way the rest of macOS does. Panels
-  on older systems still get the frosted look.
-- **The controls under the artwork match each other.** Every button in both the
-  full screen viewer and the floating panel is now the same shape, the same
-  height and the same material, so the row reads as one set of controls instead
-  of an assortment.
-
-### Fixed
-
-- **The zoom button.** It was a squared off box wedged in among rounded ones,
-  and in the full screen viewer it had stopped drawing altogether, leaving a gap
-  where it should have been. It is back, and it looks like everything beside it.
-- **The panel's top corners.** The artwork was pushed down from the top edge,
-  which left a bare strip above it and made the upper corners look doubled.
-- **The panel follows the app's own light or dark setting** rather than the
-  system's, so a dark console no longer opens a pale panel.
-
-]]></description>
-            <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.0.2/CrateDigger-2.0.2.dmg" length="69745858" type="application/octet-stream" sparkle:edSignature="9ENgIMsQDjFdjwxnDEjwQIluOt5PGt9uZhqTFVO1GQN9nGaBZaELRPm7txkCXmKG7DfGP2z+waAG2oZIETiKDg=="/>
-            <sparkle:deltas>
-                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.0.2/CrateDigger85-84.delta" sparkle:deltaFrom="84" length="857942" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="FqrUxS3lCMlhCDkapsyreMYF3Rz+8KhvoSXO1MhfWBtpEnf8h+HkDXhFMrUn8T0nMfOekan56ODLwdQkDnMpCA=="/>
-                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.0.2/CrateDigger85-83.delta" sparkle:deltaFrom="83" length="887990" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="6lA/bhh/oYG1o7LTc7y74iJlLFodJSe824AxbtRZZKs5KLQZp3gZ1K9vuwt1t8hNxtK4U1V5EiAcM1dU1NA0AQ=="/>
             </sparkle:deltas>
         </item>
     </channel>
