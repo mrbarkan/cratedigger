@@ -424,8 +424,12 @@ public struct OutputPathPlanner {
         return folder.standardizedFileURL.path
     }
 
+    /// A disc folder starts with a disc number: `CD1`, `Disc 2 - Live`, Picard's
+    /// `01 - Digital Media`, or a bare `1`. Three digits at most, so a year
+    /// folder (`1994 - Album`) is not a disc, and a folder that merely *ends*
+    /// in a number (`Vol. 3`) is not one either.
     private static let discFolderPattern = try! NSRegularExpression(
-        pattern: #"^(cd|disc|disk|d)[ ._-]*\d{1,3}$"#, options: [.caseInsensitive]
+        pattern: #"^(?:(?:cd|disc|disk|d)[ ._-]*)?\d{1,3}(?:[ ._-].*)?$"#, options: [.caseInsensitive]
     )
 
     /// Album identity for a whole set of tracks at once.

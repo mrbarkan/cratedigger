@@ -66,6 +66,22 @@ final class AlbumReconciliationTests: XCTestCase {
         XCTAssertEqual(OutputPathPlanner.strippingDiscSuffix("Blonde on Blonde"), "Blonde on Blonde")
     }
 
+    func testDiscSubfolderNamesFoldIntoTheAlbumFolder() {
+        // Picard's default is "{disc} - {media}"; other rippers write "Disc 1
+        // - Live", "CD 2 (Bonus)" or a bare "1". All of them are one album.
+        let planner = OutputPathPlanner()
+        for sub in ["01 - Digital Media", "2 - CD", "Disc 1 - Live", "CD 2 (Bonus)", "1", "Disk_03", "D2"] {
+            let t = track("/m/X/Album/\(sub)/01.flac", artist: "X", album: "Album")
+            XCTAssertEqual(planner.albumSourceFolder(for: t), "/m/X/Album", sub)
+        }
+        // A numbered *album* folder is not a disc folder: a year, or a name
+        // that only ends in a number.
+        for sub in ["1994 - Album", "Album 2", "Vol. 3", "Take 5"] {
+            let t = track("/m/X/\(sub)/01.flac", artist: "X", album: "Album")
+            XCTAssertEqual(planner.albumSourceFolder(for: t), "/m/X/\(sub)", sub)
+        }
+    }
+
     func testSeparateDiscFoldersKeepTheirOwnTitles() {
         // Two disc folders that are NOT disc-named subfolders of one album are
         // still two albums, and must keep the titles that tell them apart —

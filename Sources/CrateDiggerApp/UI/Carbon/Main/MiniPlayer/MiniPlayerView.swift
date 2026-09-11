@@ -387,7 +387,9 @@ private struct MiniPlayerBody: View {
     /// out. Play/pause sits in the middle and is the only one that lights
     /// while playing; shuffle and repeat light when they are on.
     private var transport: some View {
-        HStack(spacing: 11) {
+        // 8pt gaps: the keys read as one cluster under the slider, not five
+        // pods pushed to the edges of the card.
+        HStack(spacing: 8) {
             transportKey("shuffle", lit: model.shuffleEnabled, tip: "Shuffle") { model.toggleShuffle() }
             transportKey("backward.fill", tip: "Previous") { model.previous() }
             transportKey("playpause.fill", lit: model.playbackState == .playing, tip: "Play / Pause") {
@@ -408,7 +410,9 @@ private struct MiniPlayerBody: View {
                               action: @escaping () -> Void) -> some View {
         Button(action: { ClickPlayer.shared.play(.key); action() }) {
             SiliconeCap(shape: RoundedRectangle(cornerRadius: 11, style: .continuous), lit: lit) {
-                Image(systemName: system).font(.system(size: 14, weight: .semibold))
+                // 17pt: at 14 the print under the silicone blur read as fuzzy.
+                // The footer's caps carry 19 in a larger key; same ratio here.
+                Image(systemName: system).font(.system(size: 17, weight: .semibold))
             }
             .frame(width: 40, height: 40)
         }

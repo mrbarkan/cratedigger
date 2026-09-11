@@ -138,5 +138,9 @@ struct HorizontalLEDMeter: View {
                 }
             }
         }
+        // Pin the row height: the label's text is taller than a row's share of
+        // the 27pt LCD, so without this the VStack gives L its full share and R
+        // only the leftover, and the L LEDs draw taller than the R LEDs.
+        .frame(height: 7.5)
     }
 }
