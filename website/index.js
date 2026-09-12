@@ -14,12 +14,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (theme === 'dark') {
       btnCarbon.classList.add('active');
       btnLinen.classList.remove('active');
-      appScreenshot.src = 'assets/screenshot_dark.png';
+      appScreenshot.src = 'assets/screenshot_dark.jpg';
       appScreenshot.alt = 'CrateDigger Carbon (Dark) Mode';
     } else {
       btnCarbon.classList.remove('active');
       btnLinen.classList.add('active');
-      appScreenshot.src = 'assets/screenshot_light.png';
+      appScreenshot.src = 'assets/screenshot_light.jpg';
       appScreenshot.alt = 'CrateDigger Linen (Light) Mode';
     }
   }

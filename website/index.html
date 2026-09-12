@@ -116,7 +116,7 @@
     <div class="container">
       <div class="section-header">
         <h2 class="section-title">Hardware-Level Curating</h2>
-        <p class="section-lead">Toggle between <strong>Carbon (Dark)</strong> and <strong>Linen (Light)</strong> modes and hover over the hotspots to tour the console.</p>
+        <p class="section-lead">Toggle between <strong>Carbon (Dark)</strong> and <strong>Carbon (Light)</strong> modes and hover over the hotspots to tour the console.</p>
         
         <!-- Theme Selector -->
         <div class="theme-switcher">
@@ -124,7 +124,7 @@
             <span class="theme-icon dark-icon"></span> Carbon (Dark)
           </button>
           <button id="theme-linen" class="theme-btn" data-mode="light">
-            <span class="theme-icon light-icon"></span> Linen (Light)
+            <span class="theme-icon light-icon"></span> Carbon (Light)
           </button>
         </div>
       </div>
@@ -133,7 +133,7 @@
       <div class="app-canvas-container">
         <div class="app-canvas">
           <!-- The screenshot that changes -->
-          <img id="app-screenshot" src="assets/screenshot_dark.png" alt="CrateDigger Interface Screenshot" class="screenshot-img">
+          <img id="app-screenshot" src="assets/screenshot_dark.jpg" alt="CrateDigger Interface Screenshot" class="screenshot-img">
           
           <!-- Hotspots -->
           <!-- Hotspot 1: OLED Display -->
@@ -343,7 +343,7 @@
 
       <div class="spotlight-row">
         <div class="spotlight-media">
-          <img src="assets/screenshot_conversion.png" alt="CrateDigger batch conversion Patch Bay view" class="spotlight-img">
+          <img src="assets/screenshot_conversion.jpg" alt="CrateDigger batch conversion Patch Bay view" class="spotlight-img">
         </div>
         <div class="spotlight-copy">
           <span class="spotlight-eyebrow">Conversion Engine</span>
@@ -362,7 +362,7 @@
 
       <div class="spotlight-row reverse">
         <div class="spotlight-media">
-          <img src="assets/screenshot_crates.png" alt="CrateDigger Prep Crate staging sidebar" class="spotlight-img">
+          <img src="assets/screenshot_crates.jpg" alt="CrateDigger Prep Crate staging sidebar" class="spotlight-img">
         </div>
         <div class="spotlight-copy">
           <span class="spotlight-eyebrow">Library Organization</span>
@@ -382,7 +382,7 @@
 
       <div class="spotlight-row">
         <div class="spotlight-media">
-          <img src="assets/screenshot_radio.png" alt="CrateDigger Radio streaming a YouTube source" class="spotlight-img">
+          <img src="assets/screenshot_radio.jpg" alt="CrateDigger Radio streaming a YouTube source" class="spotlight-img">
         </div>
         <div class="spotlight-copy">
           <span class="spotlight-eyebrow">Radio</span>
@@ -401,7 +401,7 @@
 
       <div class="spotlight-row reverse">
         <div class="spotlight-media">
-          <img src="assets/screenshot_artwork.png" alt="CrateDigger album artwork inspector and viewer" class="spotlight-img">
+          <img src="assets/screenshot_artwork.jpg" alt="CrateDigger album artwork inspector and viewer" class="spotlight-img">
         </div>
         <div class="spotlight-copy">
           <span class="spotlight-eyebrow">Artwork</span>
@@ -416,6 +416,44 @@
             <li>One shared artwork store keyed by hash, so covers load instantly across every crate</li>
             <li>Batch cover fetch finds the best iTunes cover for a whole selection of albums and writes it into each folder</li>
             <li>A CD or a record spins on the deck wearing the album's own disc scan, with the vinyl side on the label</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="spotlight-row">
+        <div class="spotlight-media">
+          <img src="assets/screenshot_queue.jpg" alt="CrateDigger Up Next queue in the Inspector" class="spotlight-img">
+        </div>
+        <div class="spotlight-copy">
+          <span class="spotlight-eyebrow">Up Next</span>
+          <h3 class="spotlight-title">A queue that moves the way you expect.</h3>
+          <p class="spotlight-text">
+            Play Next and Play Last never interrupt what is playing. The Inspector's QUEUE tab shows what is coming, and since 2.1 you click, hold and drag a track to put it where you want it.
+          </p>
+          <ul class="spotlight-list">
+            <li>Drag a track onto another to move it there, or below the last one to send it to the end</li>
+            <li>A lit line shows where the drop will land</li>
+            <li>Double-click to jump to a track, hover for remove, CLEAR for everything after the playing one</li>
+            <li>The same queue lives in the mini player, and quitting keeps it for next time</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="spotlight-row reverse">
+        <div class="spotlight-media">
+          <img src="assets/screenshot_themes.jpg" alt="CrateDigger theme picker in the Inspector, Carbon light" class="spotlight-img">
+        </div>
+        <div class="spotlight-copy">
+          <span class="spotlight-eyebrow">Theming</span>
+          <h3 class="spotlight-title">Your console, your colours.</h3>
+          <p class="spotlight-text">
+            Press THEME for the picker, EDITOR to start changing one. Every colour, corner radius and typeface is a control, and the app repaints as you work, so the preview is the application behind the panel.
+          </p>
+          <ul class="spotlight-list">
+            <li>Carbon, Cobalt and Llama '97 ship with the app, each with a light and a dark side</li>
+            <li>Any font on your Mac can letter the interface, with the family's real weights</li>
+            <li>A finished theme is a small <code>.cdtheme</code> folder you can zip and send to anyone</li>
+            <li><a href="https://github.com/mrbarkan/cratedigger/blob/main/docs/THEMING.md">Read the theming guide</a></li>
           </ul>
         </div>
       </div>
