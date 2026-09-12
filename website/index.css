@@ -685,6 +685,10 @@ body[data-theme="light"] .navbar {
 }
 
 .spotlight-media {
+  min-width: 0;
+}
+
+.spotlight-frame {
   border-radius: 20px;
   overflow: hidden;
   border: 1px solid var(--border);
@@ -695,6 +699,56 @@ body[data-theme="light"] .navbar {
   display: block;
   width: 100%;
   height: auto;
+}
+
+.spotlight-thumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.spotlight-thumb {
+  flex: 1 1 0;
+  min-width: 90px;
+  padding: 0;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  color: var(--text-muted);
+}
+
+.spotlight-thumb img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  opacity: 0.55;
+  transition: opacity 0.2s, border-color 0.2s;
+}
+
+.spotlight-thumb span {
+  display: block;
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.spotlight-thumb:hover img {
+  opacity: 0.85;
+}
+
+.spotlight-thumb.active img {
+  opacity: 1;
+  border-color: var(--coral);
+}
+
+.spotlight-thumb.active span {
+  color: var(--text);
 }
 
 .spotlight-eyebrow {

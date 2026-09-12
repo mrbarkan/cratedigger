@@ -84,4 +84,17 @@ document.addEventListener('DOMContentLoaded', () => {
       resetTooltip();
     });
   }
+
+
+  // --- Spotlight galleries: a thumbnail click swaps the big picture ---
+  document.querySelectorAll('.spotlight-thumbs').forEach(strip => {
+    const main = strip.parentElement.querySelector('.spotlight-img');
+    strip.addEventListener('click', event => {
+      const thumb = event.target.closest('.spotlight-thumb');
+      if (!thumb) return;
+      main.src = thumb.dataset.src;
+      main.alt = thumb.dataset.alt;
+      strip.querySelectorAll('.spotlight-thumb').forEach(t => t.classList.toggle('active', t === thumb));
+    });
+  });
 });
