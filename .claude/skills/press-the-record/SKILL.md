@@ -23,6 +23,11 @@ step, and getting this wrong is the one mistake here that reaches real users.
 | Feed | `website/appcast.xml` | `website/appcast-beta.xml` |
 | CHANGELOG section | new per release | one `## 2.1.0` that accumulates |
 
+**No beta line is open since 2.1.0 shipped (2026-09-11).** `v2.1` was
+fast-forwarded into `main` and is history. The beta column above describes how a
+beta branch works; until the next one is cut (see CLAUDE.md, "Two release
+lines"), every release is a stable one from `main`.
+
 Then pick the version:
 - Read the current `marketing` and `build` from `Sources/CrateDiggerApp/AppVersion.swift`.
 - **Build number:** always bump by 1, on either line. It is monotonic across both.

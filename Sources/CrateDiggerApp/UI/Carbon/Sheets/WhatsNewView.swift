@@ -130,81 +130,33 @@ struct WhatsNewItem: Identifiable {
             """
         ),
         WhatsNewItem(
-            symbol: "magnifyingglass",
-            title: "Search your library",
+            symbol: "hand.draw",
+            title: "Drag to reorder Up Next",
             body: """
-            A field across the top of the browser, results as you type, over \
-            artist, album, title, file path and format. Every word has to match \
-            something, so "mil blue" finds Kind of Blue and "flac live" finds \
-            live FLACs. Command-F puts the cursor in it. While a search runs \
-            every crate in the sidebar shows its match count, so you can see \
-            where the results actually live.
+            Click, hold and drag a queued track onto another to move it there, \
+            or below the last one to send it to the end. A lit line shows where \
+            it will land. It works in the Inspector's queue and in the mini \
+            player's.
             """
         ),
         WhatsNewItem(
-            symbol: "rectangle.split.3x1",
-            title: "Any category in any column",
+            symbol: "pip",
+            title: "A new mini player",
             body: """
-            The browser's columns are no longer welded to Artist, Album and \
-            Track. Click a column's header and pick Album Artist, Genre, Year, \
-            Decade, Format or Rating instead, and the layout key sets how many \
-            columns there are. A view can end on a decade rather than a track \
-            list, and every crate, playlist and device remembers its own \
-            arrangement.
+            Title, band and album each get their own line, the transport matches \
+            the main window's footer with a round play key that lights while it \
+            plays, and every corner follows your theme. The key that opens it and \
+            the key that brings the main window back are now one switch, on \
+            Shift-Command-M from either window.
             """
         ),
         WhatsNewItem(
-            symbol: "arrow.uturn.backward.circle",
-            title: "Pick up where you left off",
+            symbol: "tray",
+            title: "Clear the Prep Crate in one place",
             body: """
-            Quit in the middle of a record and CrateDigger comes back paused on \
-            the same track, at the same second, with the same Up Next, and the \
-            crate it was playing from still marked in the sidebar. Press play to \
-            carry on. Streams, CDs and remote libraries start fresh, as they \
-            always have.
-            """
-        ),
-        WhatsNewItem(
-            symbol: "chart.bar.xaxis",
-            title: "It keeps score",
-            body: """
-            CrateDigger remembers what you actually play: counts, skips, when \
-            you last heard something and when you added it. The STATS screen \
-            (Command-5) turns that into your most played record, artist and \
-            track, with hours listened, for this month, this year or all time.
-            """
-        ),
-        WhatsNewItem(
-            symbol: "waveform",
-            title: "Fix tags by listening to the record",
-            body: """
-            When a file's tags are blank or wrong, searching by text has nothing \
-            to search with. DEEP SCAN fingerprints the audio instead, identifies \
-            each recording from the sound, and lets the album's files vote on \
-            which release they all belong to. It never reads the tags it is \
-            there to replace.
-            """
-        ),
-        WhatsNewItem(
-            symbol: "photo.on.rectangle.angled",
-            title: "Artwork worth framing",
-            body: """
-            FIND ART searches the Cover Art Archive, Discogs, iTunes and Deezer \
-            in one window, and shows what is already embedded in your files \
-            beside them. Discogs is where the scans of physical pressings live: \
-            gatefolds, inner sleeves, obi strips, the back of the sleeve with the \
-            runout etched into it. Nothing is written to your files until you \
-            say so.
-            """
-        ),
-        WhatsNewItem(
-            symbol: "sparkles",
-            title: "A new face",
-            body: """
-            The app icon is a record on an orange plate, and there is a mark to \
-            go with it: a record half out of the crate the app is named for. The \
-            name is set in the display face the OLED already speaks, so the \
-            header and the screen share one voice.
+            With the Prep Crate selected, a key beside the browser's search and \
+            sort controls empties it. It asks first, because clearing also \
+            forgets which folders you dug.
             """
         ),
         WhatsNewItem(

@@ -4,7 +4,9 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
-## 2.1.0 (in progress)
+## 2.1.0 (89), 2026-09-11
+
+Now playing on your desktop, and an Up Next that moves.
 
 ### Added
 
@@ -19,6 +21,10 @@ build, which is monotonic across every release.
   widget with a line to get you digging. The wide widget puts words beside
   the cover: the record, its artist and year and a crate it lives in, or how
   long ago you last played it.
+- **Clear the Prep Crate from the browser.** While the Prep Crate is selected
+  and holds tracks, a key beside the browser's search, layout and sort
+  controls empties it. It asks first, because clearing also forgets which
+  folders you dug.
 
 ### Changed
 
@@ -26,6 +32,24 @@ build, which is monotonic across every release.
   another to move it there, or below the last one to send it to the end, in
   the Inspector's queue and the mini player's. A lit line shows where it will
   land. The up and down arrows are gone; hover still offers remove.
+- **A new mini player deck.** Title, band and album each get their own line,
+  with the time beside the album. The transport matches the main window's
+  footer, with a round play key in the middle that lights while playing, and
+  the position rail sits under the keys. The art tile sits flat on the card,
+  the Up Next list runs longer, and every corner follows your theme's
+  roundness.
+- **One switch for the mini player.** The key that opens the mini player and
+  the key that returns to the main window are now a matching pair, and
+  Window, Mini Player (⇧⌘M) toggles between the two from either window.
+
+### Fixed
+
+- **Picard disc folders stay one album.** A rip with disc subfolders such as
+  `01 - Digital Media` and `02 - Digital Media` used to show as two albums. A
+  folder that starts with an optional disc word and a number now counts as a
+  disc of its album, while a year folder stays an album of its own.
+- **Even VU rows.** The horizontal VU meter's left and right bars now draw at
+  the same height.
 
 ## 2.0.5 (88), 2026-09-11
 

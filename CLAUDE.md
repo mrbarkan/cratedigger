@@ -25,20 +25,20 @@ scripts/package-app.sh           # assemble dist/CrateDigger.app (bundles ffmpeg
 
 ## Two release lines (read before committing anything)
 
-**2.0.0 shipped from `main` on 2026-09-07.** `main` is the stable line, now
-2.0.x: it is what the public downloads and what every installed copy
-auto-updates from. Fixes for 2.0.x land on `main`.
+**2.1.0 shipped from `main` on 2026-09-11.** `main` is the stable line, now
+2.1.x: it is what the public downloads and what every installed copy
+auto-updates from. Fixes for 2.1.x land on `main`.
 
-**`v2.1` is the beta line** for the 2.1 cycle, cut from `main` after 2.0.4.
-`AppVersion.channel` is `"BETA"` there, betas are tagged `v2.1.0-beta.<build>` and published as GitHub
-prereleases, and their only audience is stable users who turned on Receive
-beta updates. Merge `main` into `v2.1` before each beta so the beta never
-lacks a stable fix; when 2.1.0 ships, merge `v2.1` into `main` and set
-`channel` back to `""`.
-
-The `v2` branch was the beta line for the whole 2.0 cycle; it was
-fast-forwarded to `main` at GA and is kept for history only. **Do not branch
-new work from `v2`.**
+**No beta line is open.** `v2.1` was the beta line for the 2.1 cycle. It never
+published a beta: it was fast-forwarded into `main` for 2.1.0 and is kept for
+history only, like `v2`, which carried the whole 2.0 cycle and was
+fast-forwarded to `main` at 2.0.0. **Do not branch new work from `v2` or
+`v2.1`.** A beta branch works like this: `AppVersion.channel` is `"BETA"`
+there, betas are tagged `v<version>-beta.<build>` and published as GitHub
+prereleases, their only audience is stable users who turned on Receive beta
+updates, `main` is merged in before each beta so the beta never lacks a stable
+fix, and at GA the branch is merged into `main` with `channel` set back to
+`""`.
 
 The mechanism that keeps the two lines apart:
 
@@ -53,18 +53,22 @@ The mechanism that keeps the two lines apart:
 
   A build whose `AppVersion.channel` is non-empty follows `appcast-beta.xml`
   automatically; a stable build reads the beta feed only if its owner turned
-  on Advanced ▸ Receive beta updates. On `main`, `channel` is `""`; on `v2.1`
-  it is `"BETA"`.
+  on Advanced ▸ Receive beta updates. On `main`, `channel` is `""`; a beta
+  branch sets `"BETA"`.
 - Keeping that decision in one pure function rather than in `Info.plist` is
   the point: there is no per-branch line to repoint, and so none to forget.
   `UpdateFeedTests` covers all four channel/opt-in combinations and fails if
   `SUFeedURL` ever stops matching `UpdateFeed.stable`. **Do not "simplify"
   `UpdateFeed.override` into the plist.**
 - `scripts/update-appcast.sh` generates each feed only on the branch that
-  owns it (`appcast.xml` on `main`, `appcast-beta.xml` on `BETA_BRANCH`, now
-  `v2.1`) and refuses a DMG whose major version differs from what is already
-  staged in `dist/updates*/`. When 2.1 started, the 2.0.0 beta DMG was moved to
-  `dist/updates-beta/old_updates`, so the beta feed carries 2.1 betas only.
+  owns it (`appcast.xml` on `main`, `appcast-beta.xml` on `BETA_BRANCH`, still
+  `v2.1` until the next beta branch is cut) and refuses a DMG whose major
+  version differs from what is already staged in `dist/updates*/`. When 2.1
+  started, the 2.0.0 beta DMG was moved to `dist/updates-beta/old_updates`.
+- A stable build with Receive beta updates on reads **only** the beta feed, so
+  every GA also gets an entry there, or opted-in users are never offered it.
+  For 2.1.0 that entry was written on `v2.1` (fast-forwarded to `main` first)
+  and only `website/appcast-beta.xml` was carried back to `main`.
 
 When the next beta cycle starts (2.2, 3.0): cut its branch from `main`, set
 `channel` there, change `BETA_BRANCH` in `update-appcast.sh` and the beta column
