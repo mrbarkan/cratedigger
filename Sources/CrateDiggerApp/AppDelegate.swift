@@ -872,6 +872,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             }),
             ("02-inspector-queue", 2, { model.inspectorTab = .queue }),
             ("03-inspector-art", 3, { model.inspectorTab = .art }),
+            // FIND ART asks the Cover Art Archive, Discogs, iTunes and Deezer.
+            ("03b-find-art", 12, {
+                NotificationCenter.default.post(name: ArtworkInspectorView.debugFindArtNotification, object: nil)
+            }),
             ("04-inspector-disc", 3, { model.inspectorTab = .disc }),
             ("05-convert-patch-bay", 3, {
                 model.inspectorTab = .info
@@ -908,7 +912,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                 model.showArtworkGallery = false
                 model.artworkViewerAlbum = scansAlbum
             }),
-            ("18-booklet-pdf", 4, { if let pdfAlbum { model.artworkViewerAlbum = pdfAlbum } }),
+            // Opens on the cover, so turn the page once it is up: a spread is the shot.
+            ("18-booklet-pdf", 6, {
+                guard let pdfAlbum else { return }
+                model.artworkViewerAlbum = pdfAlbum
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 2_000_000_000)
+                    NotificationCenter.default.post(name: AlbumBookletView.debugNextPageNotification, object: nil)
+                }
+            }),
             ("19-theme-picker", 3, { model.showingThemePicker = true }),
             ("20-theme-editor", 4, {
                 model.showingThemePicker = false

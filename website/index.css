@@ -703,14 +703,13 @@ body[data-theme="light"] .navbar {
 
 .spotlight-thumbs {
   display: flex;
-  flex-wrap: wrap;
   gap: 12px;
   margin-top: 16px;
 }
 
 .spotlight-thumb {
   flex: 1 1 0;
-  min-width: 90px;
+  min-width: 0;
   padding: 0;
   background: none;
   border: 0;
@@ -722,7 +721,8 @@ body[data-theme="light"] .navbar {
 .spotlight-thumb img {
   display: block;
   width: 100%;
-  height: auto;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
   border-radius: 8px;
   border: 2px solid transparent;
   opacity: 0.55;
@@ -736,6 +736,9 @@ body[data-theme="light"] .navbar {
   font-size: 11px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .spotlight-thumb:hover img {

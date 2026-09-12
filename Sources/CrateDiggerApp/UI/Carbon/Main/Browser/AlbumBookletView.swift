@@ -365,6 +365,11 @@ struct AlbumBookletView: View {
         self.onClose = onClose
     }
 
+    #if DEBUG
+    /// The screenshot tour turns the page, so the shot is a spread and not the cover.
+    static let debugNextPageNotification = Notification.Name("CrateDiggerDebugBookletNextPage")
+    #endif
+
     var body: some View {
         ZStack {
             // Fullscreen Transparent Backdrop (Click outside the booklet to close)
@@ -437,6 +442,11 @@ struct AlbumBookletView: View {
         .onDisappear {
             removeKeyboardMonitor()
         }
+        #if DEBUG
+        .onReceive(NotificationCenter.default.publisher(for: Self.debugNextPageNotification)) { _ in
+            viewModel.nextPage()
+        }
+        #endif
     }
 
     // MARK: - Dual Page Spread

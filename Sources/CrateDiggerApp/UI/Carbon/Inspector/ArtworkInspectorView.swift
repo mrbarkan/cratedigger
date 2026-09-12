@@ -13,6 +13,9 @@ struct ArtworkInspectorView: View {
     @State private var thumbnails: [URL: NSImage] = [:]
     @State private var isSaving = false
     @State private var showingSearch = false
+    #if DEBUG
+    static let debugFindArtNotification = Notification.Name("CrateDiggerDebugFindArt")
+    #endif
     /// When on (default), the cover embedded into each track is downscaled to a
     /// 600px baseline JPEG so Rockbox / legacy players can read it. Off embeds the
     /// full-resolution original. Persisted so the choice sticks across sessions.
@@ -261,6 +264,12 @@ struct ArtworkInspectorView: View {
                 ArtworkSearchSheetView(album: album).environmentObject(model)
             }
         }
+        #if DEBUG
+        // The screenshot tour presses FIND ART; the key itself is not reachable from outside.
+        .onReceive(NotificationCenter.default.publisher(for: Self.debugFindArtNotification)) { _ in
+            if album != nil { showingSearch = true }
+        }
+        #endif
         // Removing the picture from inside the audio files is the one action
         // here that can't be walked back, so it says how many files it will
         // rewrite before it's even staged.
