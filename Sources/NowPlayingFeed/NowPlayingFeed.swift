@@ -1,12 +1,31 @@
 import Foundation
 
-/// What CrateDigger is playing, as the Now Playing widget sees it.
+/// What CrateDigger is playing, as the Now Playing widget sees it, and what the
+/// widget shows around it.
 ///
 /// The app writes one of these into the app-group container whenever the
-/// system's now-playing info changes; the widget reads it back and draws.
-/// Nothing ever travels the other way.
+/// system's now-playing info changes, with the pictures it names; the widget
+/// reads it back and draws. Nothing ever travels the other way.
 public struct NowPlayingFeed: Codable, Equatable, Sendable {
     public enum State: String, Codable, Sendable { case idle, playing, paused }
+
+    /// What the widget shows with nothing playing.
+    public enum IdleMode: String, Codable, CaseIterable, Sendable {
+        /// Random covers from the whole library, one a minute.
+        case librarySlideshow
+        /// The cover of the last album that played.
+        case lastAlbumCover
+        /// A clear widget with one of `idlePhrases`.
+        case phrase
+    }
+
+    /// What the widget shows while a track is playing or paused.
+    public enum PlayingMode: String, Codable, CaseIterable, Sendable {
+        /// The album's cover.
+        case albumCover
+        /// The cover, then the album's booklet pages, one a minute.
+        case coverAndBooklet
+    }
 
     public var state: State
     public var title: String
@@ -20,12 +39,22 @@ public struct NowPlayingFeed: Codable, Equatable, Sendable {
     /// write on a tick.
     public var playhead: Double
     public var playheadAt: Date
-    /// File name inside the container (`art-<hash>.jpg`), nil for no art.
+    /// The playing cover's picture file, nil for no art.
     public var artworkFile: String?
+    public var idleMode: IdleMode
+    public var playingMode: PlayingMode
+    /// The playing album's pictures, cover first, in `coverAndBooklet` mode.
+    public var slides: [String]
+    /// Random library covers, in `librarySlideshow` mode.
+    public var idleSlides: [String]
+    /// The cover of the last album that played, kept after playback stops.
+    public var lastArtworkFile: String?
 
     public init(state: State = .idle, title: String = "", artist: String = "", album: String = "",
                 isLive: Bool = false, duration: Double = 0, playhead: Double = 0,
-                playheadAt: Date = .distantPast, artworkFile: String? = nil) {
+                playheadAt: Date = .distantPast, artworkFile: String? = nil,
+                idleMode: IdleMode = .librarySlideshow, playingMode: PlayingMode = .albumCover,
+                slides: [String] = [], idleSlides: [String] = [], lastArtworkFile: String? = nil) {
         self.state = state
         self.title = title
         self.artist = artist
@@ -35,6 +64,11 @@ public struct NowPlayingFeed: Codable, Equatable, Sendable {
         self.playhead = playhead
         self.playheadAt = playheadAt
         self.artworkFile = artworkFile
+        self.idleMode = idleMode
+        self.playingMode = playingMode
+        self.slides = slides
+        self.idleSlides = idleSlides
+        self.lastArtworkFile = lastArtworkFile
     }
 
     public static let idle = NowPlayingFeed()
@@ -51,12 +85,83 @@ public struct NowPlayingFeed: Codable, Equatable, Sendable {
     public static func containerURL() -> URL? {
         FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: groupIdentifier)
     }
+
+    // MARK: - What the widget shows
+
+    /// Every picture file this feed names.
+    public var pictureNames: [String] {
+        [artworkFile, lastArtworkFile].compactMap { $0 } + slides + idleSlides
+    }
+
+    /// The pictures to cycle through now: the album's slides while playing in
+    /// `coverAndBooklet`, the library covers while idle in `librarySlideshow`,
+    /// otherwise none.
+    public var slideshow: [String] {
+        switch state {
+        case .idle: return idleMode == .librarySlideshow ? idleSlides : []
+        case .playing, .paused: return playingMode == .coverAndBooklet ? slides : []
+        }
+    }
+
+    /// The one picture to show when there is no slideshow to show instead.
+    public var stillPicture: String? {
+        switch state {
+        case .idle: return idleMode == .lastAlbumCover ? lastArtworkFile : nil
+        case .playing, .paused: return artworkFile
+        }
+    }
+
+    /// Slides change on the minute: the fastest pace the system reliably
+    /// honours for a widget's timeline.
+    public static let slideInterval: TimeInterval = 60
+
+    /// Which of `count` slides shows at `date`. Keyed on the wall clock rather
+    /// than on when the widget last reloaded, so a reload in the middle of a
+    /// slideshow carries on instead of jumping back to the first picture.
+    public static func slideIndex(at date: Date, count: Int) -> Int {
+        guard count > 0 else { return 0 }
+        let step = Int((date.timeIntervalSinceReferenceDate / slideInterval).rounded(.down))
+        return ((step % count) + count) % count
+    }
+
+    /// When the next `count` slides go up: `date` itself, then each following
+    /// minute boundary.
+    public static func slideDates(from date: Date, count: Int) -> [Date] {
+        let minute = (date.timeIntervalSinceReferenceDate / slideInterval).rounded(.down) * slideInterval
+        return (0..<count).map { offset in
+            offset == 0 ? date : Date(timeIntervalSinceReferenceDate: minute + Double(offset) * slideInterval)
+        }
+    }
+
+    /// A nudge for when nothing is playing, shared by the OLED's NOW pane and
+    /// the widget's phrase mode so both speak with one voice.
+    public static let idlePhrases: [String] = [
+        "Play something you love",
+        "Drop the needle",
+        "The crates are calling",
+        "Silence is just a long intro",
+        "Spin something dusty",
+        "Your records miss you",
+        "Find that B-side",
+        "Every dig starts with play",
+        "Warm up the tubes",
+        "Press play, dig deep",
+        "One more spin won't hurt",
+        "Dust off a classic",
+        "The groove is waiting",
+        "Feed the turntable",
+        "What's on side B?",
+        "Make the speakers proud",
+        "Somewhere, a record spins",
+        "Rewind. Replay. Repeat.",
+        "Today deserves a soundtrack",
+        "Good ears deserve good records"
+    ]
 }
 
-/// The feed on disk: one JSON file plus at most one artwork file beside it.
+/// The feed on disk: one JSON file, and a folder of the pictures it names.
 public struct NowPlayingFeedStore: Sendable {
     public static let feedFileName = "now-playing.json"
-    private static let artworkPrefix = "art-"
 
     public let directory: URL
 
@@ -64,39 +169,66 @@ public struct NowPlayingFeedStore: Sendable {
         self.directory = directory
     }
 
+    /// Holds the pictures a feed names and nothing else, so anything in it the
+    /// feed no longer names can go.
+    public var picturesDirectory: URL {
+        directory.appendingPathComponent("pictures", isDirectory: true)
+    }
+
     /// Write `feed` unless the file already holds exactly these bytes, and
     /// say whether anything changed, so the caller reloads the widget only
-    /// then. `artwork` is asked for bytes only when the feed names an art file
-    /// that is not on disk yet; with none to give, the feed goes out without
-    /// art. Art files the feed no longer names are removed.
+    /// then.
+    ///
+    /// Pictures the feed does not name are removed first. `picture` is then
+    /// asked for the bytes of each named picture not on disk yet; one it cannot
+    /// supply is left out of what is written, so the widget never names a file
+    /// that is not there. A picture rendered later with `writePicture` joins
+    /// the feed on the next write that still names it.
     @discardableResult
-    public func write(_ feed: NowPlayingFeed, artwork: () -> Data?) throws -> Bool {
+    public func write(_ feed: NowPlayingFeed, picture: (String) -> Data?) throws -> Bool {
         let fileManager = FileManager.default
-        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: picturesDirectory, withIntermediateDirectories: true)
 
-        var feed = feed
-        if let name = feed.artworkFile {
-            let url = directory.appendingPathComponent(name)
-            if !fileManager.fileExists(atPath: url.path) {
-                if let data = artwork() {
-                    try data.write(to: url, options: .atomic)
-                } else {
-                    feed.artworkFile = nil
-                }
+        let named = Set(feed.pictureNames)
+        let onDisk = (try? fileManager.contentsOfDirectory(atPath: picturesDirectory.path)) ?? []
+        for name in onDisk where !named.contains(name) {
+            try? fileManager.removeItem(at: picturesDirectory.appendingPathComponent(name))
+        }
+        for name in named where !hasPicture(named: name) {
+            if let data = picture(name) {
+                try writePicture(data, named: name)
             }
         }
-        let names = (try? fileManager.contentsOfDirectory(atPath: directory.path)) ?? []
-        for name in names where name.hasPrefix(Self.artworkPrefix) && name != feed.artworkFile {
-            try? fileManager.removeItem(at: directory.appendingPathComponent(name))
-        }
+
+        var written = feed
+        written.artworkFile = feed.artworkFile.flatMap { hasPicture(named: $0) ? $0 : nil }
+        written.lastArtworkFile = feed.lastArtworkFile.flatMap { hasPicture(named: $0) ? $0 : nil }
+        written.slides = feed.slides.filter(hasPicture(named:))
+        written.idleSlides = feed.idleSlides.filter(hasPicture(named:))
 
         let encoder = JSONEncoder()
         encoder.outputFormatting = .sortedKeys
-        let data = try encoder.encode(feed)
+        let data = try encoder.encode(written)
         let url = directory.appendingPathComponent(Self.feedFileName)
         if (try? Data(contentsOf: url)) == data { return false }
         try data.write(to: url, options: .atomic)
         return true
+    }
+
+    /// Put one picture in place, for a render that finishes after the write
+    /// that named it.
+    public func writePicture(_ data: Data, named name: String) throws {
+        try FileManager.default.createDirectory(at: picturesDirectory, withIntermediateDirectories: true)
+        try data.write(to: picturesDirectory.appendingPathComponent(name), options: .atomic)
+    }
+
+    public func hasPicture(named name: String) -> Bool {
+        FileManager.default.fileExists(atPath: picturesDirectory.appendingPathComponent(name).path)
+    }
+
+    /// The picture's file, when it is on disk.
+    public func pictureURL(named name: String) -> URL? {
+        hasPicture(named: name) ? picturesDirectory.appendingPathComponent(name) : nil
     }
 
     /// The last feed written, or idle when there is none or it cannot be read.
@@ -105,17 +237,5 @@ public struct NowPlayingFeedStore: Sendable {
               let feed = try? JSONDecoder().decode(NowPlayingFeed.self, from: data)
         else { return .idle }
         return feed
-    }
-
-    /// The feed's artwork file, when it names one that is on disk.
-    public func artworkURL(for feed: NowPlayingFeed) -> URL? {
-        guard let name = feed.artworkFile else { return nil }
-        let url = directory.appendingPathComponent(name)
-        return FileManager.default.fileExists(atPath: url.path) ? url : nil
-    }
-
-    /// The artwork file name for an artwork hash.
-    public static func artworkFileName(forHash hash: String) -> String {
-        "\(artworkPrefix)\(hash).jpg"
     }
 }

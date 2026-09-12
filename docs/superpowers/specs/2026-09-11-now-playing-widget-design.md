@@ -140,6 +140,46 @@ ad-hoc builds with a printed note.
 - Widget views: SwiftUI, untested, like the rest of the app's views.
 - Packaging: the field-by-field check in the script is the test.
 
+## Modes (added the same day)
+
+Settings ▸ Interface ▸ Now Playing Widget picks what the widget shows
+around the track. Both modes travel inside the feed, and changing one
+republishes it.
+
+- **When nothing is playing:** a slideshow of 30 random library covers
+  (default), the cover of the last album played, or a clear widget with one
+  of the OLED's idle phrases (moved to `NowPlayingFeed.idlePhrases`, one
+  list for both). No last cover and no covers both fall back to the phrase.
+- **While playing:** the album cover (default), or the cover followed by up
+  to 12 booklet pages. Scanned pages skip the booklet's own front cover when
+  the album has artwork; a PDF booklet has its pages rendered with PDFKit.
+
+Pictures:
+
+- The feed names picture files (`artworkFile`, `lastArtworkFile`, `slides`,
+  `idleSlides`) in the container's `pictures/` folder. The store removes
+  anything there the feed does not name, and leaves out of the written feed
+  any name whose file is not on disk yet, so the widget never names a
+  missing file.
+- `WidgetSlide` (Core) is one picture and how to make it: a cover by artwork
+  hash, a scan, or a PDF page, each rendered to a JPEG of at most 600 px.
+  Covers are named by hash and pages by path, so nothing renders twice.
+- The playing cover is still encoded on the main thread from the cached
+  thumbnail. The idle pool (picked once per launch from All Records) and
+  booklet pages (scanned once per album folder) render off the main thread,
+  and the feed is published again when they land. Only what the chosen
+  modes show is ever rendered.
+
+Slideshows move on the minute, the fastest pace the system reliably honours.
+The widget schedules 30 one-minute entries and asks again at the end; the
+slide shown is keyed on the wall clock, so a reload carries on rather than
+restarting. A phrase changes on the hour. Pictures that are not square sit
+over a blurred fill of themselves instead of being cropped.
+
+Tests: `NowPlayingFeedTests` (store sweep and omission, slideshow and still
+picture per state and mode, slide clock) and `WidgetSlideTests` (names,
+cover and booklet order, page cap, rendering to size).
+
 ## Out of scope for 2.1
 
 Buttons (macOS 14 App Intents, plus a channel back to the app), the large

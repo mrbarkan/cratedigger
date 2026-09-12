@@ -4,6 +4,20 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 2.1.0 (in progress)
+
+### Added
+
+- **Now Playing widget.** A small and a medium widget for the desktop and
+  Notification Center show the cover, the track and a progress bar that moves
+  by itself. Tapping one opens CrateDigger. To add it, right-click the desktop
+  and choose Edit Widgets.
+- **Pick what the widget shows.** Settings, Interface, Now Playing Widget.
+  While a record plays: its cover, or its cover followed by the booklet, scans
+  or PDF, one page a minute. With nothing playing: a slideshow of covers from
+  your whole library, the cover of the last album you played, or a clear
+  widget with a line to get you digging.
+
 ## 2.0.5 (88), 2026-09-11
 
 One album folder is one album, however its tags disagree.

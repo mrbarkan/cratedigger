@@ -328,6 +328,8 @@ private struct InterfacePreferencesView: View {
                 }
             }
 
+            WidgetPreferencesSection()
+
             Section("Welcome Tour") {
                 Toggle("Show the welcome tour at next launch", isOn: $showTourAtLaunch)
                     .onChange(of: showTourAtLaunch) { newValue in

@@ -182,7 +182,7 @@ private struct TourPage {
             art: .play,
             eyebrow: "STEP 5 · SPIN",
             title: "Play it, and pick up where you left off",
-            body: "Space plays and pauses anywhere. Quit mid-record and CrateDigger comes back on the same track, at the same second, with the same Up Next. There is a Mini Player, CD ripping, YouTube radio, and a Record Divider that cuts a continuous vinyl rip into tracks.",
+            body: "Space plays and pauses anywhere. Quit mid-record and CrateDigger comes back on the same track, at the same second, with the same Up Next. There is a Mini Player, a desktop widget that shows the cover and turns the booklet, CD ripping, YouTube radio, and a Record Divider that cuts a continuous vinyl rip into tracks.",
             accentKey: .indigo),
         TourPage(
             art: .yours,

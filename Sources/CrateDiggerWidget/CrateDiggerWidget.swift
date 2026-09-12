@@ -4,38 +4,66 @@ import WidgetKit
 // No `import NowPlayingFeed`: the Xcode project compiles Sources/NowPlayingFeed
 // into this module.
 
-/// What CrateDigger is playing. Show-only: the app writes the feed into the
-/// app-group container and reloads this widget; tapping it opens the app.
+/// What CrateDigger is playing, or a picture while it plays nothing. Show-only:
+/// the app writes the feed and its pictures into the app-group container and
+/// reloads this widget; tapping it opens the app.
 
 struct NowPlayingEntry: TimelineEntry {
     let date: Date
     let feed: NowPlayingFeed
-    let artwork: NSImage?
+    /// The cover or slide on screen at `date`, nil when there is none.
+    let picture: NSImage?
+    /// Shown with nothing playing when there is no picture to show instead.
+    let phrase: String
 }
 
 struct NowPlayingProvider: TimelineProvider {
+    /// A slideshow schedules this many one-minute entries, then asks again.
+    /// ponytail: half an hour, not more: every entry is rendered up front and a
+    /// widget extension gets little memory. Raise it if reloads show up in the
+    /// energy report.
+    private static let slideEntryCount = 30
+
     func placeholder(in context: Context) -> NowPlayingEntry {
-        NowPlayingEntry(date: .now, feed: .idle, artwork: nil)
+        NowPlayingEntry(date: .now, feed: .idle, picture: nil, phrase: NowPlayingFeed.idlePhrases[0])
     }
 
     func getSnapshot(in context: Context, completion: @escaping (NowPlayingEntry) -> Void) {
-        completion(currentEntry())
+        completion(timeline(from: .now).entries[0])
     }
 
-    /// One entry and no schedule: the app reloads the widget whenever the
-    /// feed changes, and the progress bar animates from the entry by itself.
+    /// The app reloads the widget whenever the feed changes. Between reloads a
+    /// slideshow runs from its schedule, a phrase changes on the hour, and
+    /// anything else holds still; the progress bar animates on its own.
     func getTimeline(in context: Context, completion: @escaping (Timeline<NowPlayingEntry>) -> Void) {
-        completion(Timeline(entries: [currentEntry()], policy: .never))
+        completion(timeline(from: .now))
     }
 
-    private func currentEntry() -> NowPlayingEntry {
-        guard let container = NowPlayingFeed.containerURL() else {
-            return NowPlayingEntry(date: .now, feed: .idle, artwork: nil)
+    private func timeline(from now: Date) -> Timeline<NowPlayingEntry> {
+        let store = NowPlayingFeed.containerURL().map { NowPlayingFeedStore(directory: $0) }
+        let feed = store?.read() ?? .idle
+        let phrase = NowPlayingFeed.idlePhrases.randomElement() ?? ""
+        var loaded: [String: NSImage] = [:]
+        func picture(_ name: String?) -> NSImage? {
+            guard let name else { return nil }
+            if let image = loaded[name] { return image }
+            let image = store?.pictureURL(named: name).flatMap { NSImage(contentsOf: $0) }
+            loaded[name] = image
+            return image
         }
-        let store = NowPlayingFeedStore(directory: container)
-        let feed = store.read()
-        let artwork = store.artworkURL(for: feed).flatMap { NSImage(contentsOf: $0) }
-        return NowPlayingEntry(date: .now, feed: feed, artwork: artwork)
+
+        let slides = feed.slideshow
+        if slides.count > 1 {
+            let entries = NowPlayingFeed.slideDates(from: now, count: Self.slideEntryCount).map { date in
+                let slide = slides[NowPlayingFeed.slideIndex(at: date, count: slides.count)]
+                return NowPlayingEntry(date: date, feed: feed, picture: picture(slide), phrase: phrase)
+            }
+            return Timeline(entries: entries, policy: .atEnd)
+        }
+
+        let entry = NowPlayingEntry(date: now, feed: feed, picture: picture(slides.first ?? feed.stillPicture), phrase: phrase)
+        let showsPhrase = feed.state == .idle && entry.picture == nil
+        return Timeline(entries: [entry], policy: showsPhrase ? .after(now.addingTimeInterval(3600)) : .never)
     }
 }
 
@@ -45,19 +73,23 @@ struct NowPlayingWidgetView: View {
 
     var body: some View {
         if entry.feed.state == .idle {
-            IdleView()
+            if let picture = entry.picture {
+                IdlePictureView(picture: picture, caption: entry.feed.idleMode == .lastAlbumCover ? "Nothing playing" : nil)
+            } else {
+                PhraseView(phrase: entry.phrase)
+            }
         } else if family == .systemSmall {
-            SmallView(feed: entry.feed, artwork: entry.artwork)
+            SmallView(feed: entry.feed, picture: entry.picture)
         } else {
-            MediumView(feed: entry.feed, artwork: entry.artwork)
+            MediumView(feed: entry.feed, picture: entry.picture)
         }
     }
 }
 
-/// Art fills the widget; title and band sit over a gradient at the bottom.
+/// The picture fills the widget; title and band sit over a gradient.
 private struct SmallView: View {
     let feed: NowPlayingFeed
-    let artwork: NSImage?
+    let picture: NSImage?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
@@ -72,19 +104,19 @@ private struct SmallView: View {
                 .opacity(0.8)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .foregroundStyle(artwork == nil ? Color.primary : Color.white)
-        .modifier(WidgetBackground(artwork: artwork))
+        .foregroundStyle(picture == nil ? Color.primary : Color.white)
+        .modifier(WidgetBackdrop(picture.map { .picture($0, shaded: true) } ?? .plain))
     }
 }
 
-/// Art on the left; the mini player's three lines and progress on the right.
+/// The picture on the left; the mini player's three lines and progress on the right.
 private struct MediumView: View {
     let feed: NowPlayingFeed
-    let artwork: NSImage?
+    let picture: NSImage?
 
     var body: some View {
         HStack(spacing: 12) {
-            ArtworkTile(image: artwork)
+            PictureTile(image: picture)
             VStack(alignment: .leading, spacing: 2) {
                 Text(feed.title)
                     .font(.headline)
@@ -105,26 +137,46 @@ private struct MediumView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .modifier(WidgetBackground(artwork: nil))
+        .modifier(WidgetBackdrop(.plain))
     }
 }
 
-private struct IdleView: View {
+/// A library cover, or the last album's cover under a caption.
+private struct IdlePictureView: View {
+    let picture: NSImage
+    let caption: String?
+
     var body: some View {
-        VStack(spacing: 6) {
-            Image(systemName: "music.note")
-                .font(.title)
-                .foregroundStyle(.secondary)
-            Text("Nothing playing")
-                .font(.headline)
-                .accentable()
+        VStack {
+            Spacer(minLength: 0)
+            if let caption {
+                Text(caption)
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                    .accentable()
+            }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .modifier(WidgetBackground(artwork: nil))
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+        .modifier(WidgetBackdrop(.picture(picture, shaded: caption != nil)))
     }
 }
 
-private struct ArtworkTile: View {
+/// A line from the OLED's idle phrases on a clear widget.
+private struct PhraseView: View {
+    let phrase: String
+
+    var body: some View {
+        Text(phrase)
+            .font(.title3.weight(.semibold))
+            .multilineTextAlignment(.center)
+            .minimumScaleFactor(0.7)
+            .accentable()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .modifier(WidgetBackdrop(.clear))
+    }
+}
+
+private struct PictureTile: View {
     let image: NSImage?
 
     var body: some View {
@@ -132,9 +184,7 @@ private struct ArtworkTile: View {
             .aspectRatio(1, contentMode: .fit)
             .overlay {
                 if let image {
-                    Image(nsImage: image)
-                        .resizable()
-                        .scaledToFill()
+                    FittedPicture(image: image)
                 } else {
                     Rectangle()
                         .fill(Color.secondary.opacity(0.2))
@@ -146,6 +196,27 @@ private struct ArtworkTile: View {
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+/// The whole picture, over a blurred fill of itself. A square cover fills
+/// its square on its own; a portrait booklet page or a cover in the wide
+/// medium widget keeps every edge instead of being cropped.
+private struct FittedPicture: View {
+    let image: NSImage
+
+    var body: some View {
+        ZStack {
+            Image(nsImage: image)
+                .resizable()
+                .scaledToFill()
+                .blur(radius: 18)
+                .opacity(0.6)
+            Image(nsImage: image)
+                .resizable()
+                .scaledToFit()
+        }
+        .clipped()
     }
 }
 
@@ -179,35 +250,59 @@ private struct ProgressLine: View {
     }
 }
 
+private enum Backdrop {
+    /// A picture filling the widget, with a gradient under any text.
+    case picture(NSImage, shaded: Bool)
+    /// The system's plain widget fill.
+    case plain
+    /// No fill at all.
+    case clear
+}
+
 /// `containerBackground` is required on macOS 14+ and absent below it, where
-/// the widget pads itself instead.
-private struct WidgetBackground: ViewModifier {
-    let artwork: NSImage?
+/// the widget pads itself and has no clear mode to offer.
+private struct WidgetBackdrop: ViewModifier {
+    let backdrop: Backdrop
+
+    init(_ backdrop: Backdrop) {
+        self.backdrop = backdrop
+    }
 
     func body(content: Content) -> some View {
         if #available(macOS 14, *) {
-            if let artwork {
-                content.containerBackground(for: .widget) { ArtBackdrop(image: artwork) }
-            } else {
+            switch backdrop {
+            case .picture(let image, let shaded):
+                content.containerBackground(for: .widget) { PictureBackdrop(image: image, shaded: shaded) }
+            case .plain:
                 content.containerBackground(.fill.tertiary, for: .widget)
+            case .clear:
+                content.containerBackground(Color.clear, for: .widget)
             }
         } else {
             content
                 .padding()
-                .background(artwork.map { ArtBackdrop(image: $0) })
+                .background(legacyBackground)
+        }
+    }
+
+    @ViewBuilder
+    private var legacyBackground: some View {
+        if case .picture(let image, let shaded) = backdrop {
+            PictureBackdrop(image: image, shaded: shaded)
         }
     }
 }
 
-private struct ArtBackdrop: View {
+private struct PictureBackdrop: View {
     let image: NSImage
+    let shaded: Bool
 
     var body: some View {
         ZStack {
-            Image(nsImage: image)
-                .resizable()
-                .scaledToFill()
-            LinearGradient(colors: [.clear, .black.opacity(0.7)], startPoint: .center, endPoint: .bottom)
+            FittedPicture(image: image)
+            if shaded {
+                LinearGradient(colors: [.clear, .black.opacity(0.7)], startPoint: .center, endPoint: .bottom)
+            }
         }
     }
 }
@@ -230,7 +325,7 @@ struct NowPlayingWidget: Widget {
             NowPlayingWidgetView(entry: entry)
         }
         .configurationDisplayName("Now Playing")
-        .description("What CrateDigger is playing.")
+        .description("What CrateDigger is playing, with its cover and booklet.")
         .supportedFamilies([.systemSmall, .systemMedium])
     }
 }

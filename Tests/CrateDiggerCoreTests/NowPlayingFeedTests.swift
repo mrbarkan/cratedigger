@@ -25,60 +25,130 @@ final class NowPlayingFeedTests: XCTestCase {
                        artworkFile: art)
     }
 
-    private func artFiles() throws -> [String] {
-        try FileManager.default.contentsOfDirectory(atPath: directory.path)
-            .filter { $0.hasPrefix("art-") }
-            .sorted()
+    private func pictures() -> [String] {
+        ((try? FileManager.default.contentsOfDirectory(atPath: store.picturesDirectory.path)) ?? []).sorted()
     }
+
+    private let bytesOfName: (String) -> Data? = { Data($0.utf8) }
+
+    // MARK: Store
 
     func testNothingWrittenReadsAsIdle() {
         XCTAssertEqual(store.read(), .idle)
     }
 
     func testAWrittenFeedReadsBack() throws {
-        XCTAssertTrue(try store.write(playing(), artwork: { nil }))
+        XCTAssertTrue(try store.write(playing(), picture: { _ in nil }))
         XCTAssertEqual(store.read(), playing())
     }
 
     func testTheSameFeedIsNotWrittenTwice() throws {
-        try store.write(playing(), artwork: { nil })
+        try store.write(playing(), picture: { _ in nil })
         let file = directory.appendingPathComponent(NowPlayingFeedStore.feedFileName)
         let past = Date(timeIntervalSince1970: 0)
         try FileManager.default.setAttributes([.modificationDate: past], ofItemAtPath: file.path)
 
-        XCTAssertFalse(try store.write(playing(), artwork: { nil }))
+        XCTAssertFalse(try store.write(playing(), picture: { _ in nil }))
         let modified = try FileManager.default.attributesOfItem(atPath: file.path)[.modificationDate] as? Date
         XCTAssertEqual(modified, past)
     }
 
-    func testArtworkIsWrittenOncePerFile() throws {
-        var encodes = 0
-        let art = { () -> Data? in encodes += 1; return Data([1, 2, 3]) }
+    func testEachPictureIsAskedForOnce() throws {
+        var asked: [String] = []
+        let bytes = { (name: String) -> Data? in asked.append(name); return Data(name.utf8) }
 
-        try store.write(playing(art: "art-a.jpg"), artwork: art)
-        var paused = playing(art: "art-a.jpg")
+        try store.write(playing(art: "a.jpg"), picture: bytes)
+        var paused = playing(art: "a.jpg")
         paused.state = .paused
-        try store.write(paused, artwork: art)
+        try store.write(paused, picture: bytes)
 
-        XCTAssertEqual(encodes, 1)
-        XCTAssertEqual(try artFiles(), ["art-a.jpg"])
-        let url = try XCTUnwrap(store.artworkURL(for: store.read()))
-        XCTAssertEqual(try Data(contentsOf: url), Data([1, 2, 3]))
+        XCTAssertEqual(asked, ["a.jpg"])
+        let url = try XCTUnwrap(store.pictureURL(named: "a.jpg"))
+        XCTAssertEqual(try Data(contentsOf: url), Data("a.jpg".utf8))
     }
 
-    func testTheOldArtworkGoesWhenTheArtChanges() throws {
-        try store.write(playing(art: "art-a.jpg"), artwork: { Data([1]) })
-        try store.write(playing(art: "art-b.jpg"), artwork: { Data([2]) })
-        XCTAssertEqual(try artFiles(), ["art-b.jpg"])
+    func testEveryNamedPictureIsKeptAndTheRestRemoved() throws {
+        var feed = playing(art: "a.jpg")
+        feed.slides = ["a.jpg", "p1.jpg"]
+        feed.idleSlides = ["c1.jpg"]
+        feed.lastArtworkFile = "a.jpg"
+        try store.write(feed, picture: bytesOfName)
+        XCTAssertEqual(pictures(), ["a.jpg", "c1.jpg", "p1.jpg"])
 
-        try store.write(.idle, artwork: { nil })
-        XCTAssertEqual(try artFiles(), [])
+        feed.slides = []
+        try store.write(feed, picture: bytesOfName)
+        XCTAssertEqual(pictures(), ["a.jpg", "c1.jpg"])
+
+        try store.write(.idle, picture: bytesOfName)
+        XCTAssertEqual(pictures(), [])
     }
 
-    func testMissingArtworkLeavesTheFeedWithoutArt() throws {
-        try store.write(playing(art: "art-a.jpg"), artwork: { nil })
-        XCTAssertNil(store.read().artworkFile)
-        XCTAssertNil(store.artworkURL(for: store.read()))
+    func testAPictureWithNoBytesIsLeftOutOfTheFeed() throws {
+        var feed = playing(art: "a.jpg")
+        feed.slides = ["a.jpg", "p1.jpg"]
+        feed.idleSlides = ["c1.jpg"]
+        feed.lastArtworkFile = "old.jpg"
+        try store.write(feed, picture: { $0 == "a.jpg" ? Data([1]) : nil })
+
+        let read = store.read()
+        XCTAssertEqual(read.artworkFile, "a.jpg")
+        XCTAssertEqual(read.slides, ["a.jpg"])
+        XCTAssertEqual(read.idleSlides, [])
+        XCTAssertNil(read.lastArtworkFile)
+    }
+
+    func testAPictureRenderedLaterJoinsTheNextWrite() throws {
+        var feed = playing()
+        feed.idleSlides = ["c1.jpg"]
+        try store.write(feed, picture: { _ in nil })
+        XCTAssertEqual(store.read().idleSlides, [])
+
+        try store.writePicture(Data([1]), named: "c1.jpg")
+        XCTAssertTrue(try store.write(feed, picture: { _ in nil }))
+        XCTAssertEqual(store.read().idleSlides, ["c1.jpg"])
+    }
+
+    // MARK: What the widget shows
+
+    func testTheSlideshowFollowsStateAndMode() {
+        var feed = NowPlayingFeed(slides: ["a", "p"], idleSlides: ["c"])
+        XCTAssertEqual(feed.slideshow, ["c"])
+        feed.idleMode = .lastAlbumCover
+        XCTAssertEqual(feed.slideshow, [])
+
+        feed.state = .playing
+        XCTAssertEqual(feed.slideshow, [])
+        feed.playingMode = .coverAndBooklet
+        XCTAssertEqual(feed.slideshow, ["a", "p"])
+        feed.state = .paused
+        XCTAssertEqual(feed.slideshow, ["a", "p"])
+    }
+
+    func testTheStillPictureFollowsStateAndMode() {
+        var feed = NowPlayingFeed(artworkFile: "now", idleMode: .lastAlbumCover, lastArtworkFile: "last")
+        XCTAssertEqual(feed.stillPicture, "last")
+        feed.idleMode = .phrase
+        XCTAssertNil(feed.stillPicture)
+        feed.state = .paused
+        XCTAssertEqual(feed.stillPicture, "now")
+    }
+
+    func testSlidesMoveOnTheMinuteAndWrap() {
+        let minute = Date(timeIntervalSinceReferenceDate: 60 * 1000)
+        XCTAssertEqual(NowPlayingFeed.slideIndex(at: minute, count: 3), 1)
+        XCTAssertEqual(NowPlayingFeed.slideIndex(at: minute.addingTimeInterval(59), count: 3), 1)
+        XCTAssertEqual(NowPlayingFeed.slideIndex(at: minute.addingTimeInterval(60), count: 3), 2)
+        XCTAssertEqual(NowPlayingFeed.slideIndex(at: minute.addingTimeInterval(120), count: 3), 0)
+        XCTAssertEqual(NowPlayingFeed.slideIndex(at: minute, count: 0), 0)
+    }
+
+    func testSlideDatesStartNowThenLandOnMinutes() {
+        let now = Date(timeIntervalSinceReferenceDate: 60 * 1000 + 25)
+        XCTAssertEqual(NowPlayingFeed.slideDates(from: now, count: 3), [
+            now,
+            Date(timeIntervalSinceReferenceDate: 60 * 1001),
+            Date(timeIntervalSinceReferenceDate: 60 * 1002)
+        ])
     }
 }
 #endif

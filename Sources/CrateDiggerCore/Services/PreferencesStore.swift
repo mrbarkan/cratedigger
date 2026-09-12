@@ -70,6 +70,8 @@ public final class PreferencesStore {
         static let playlistBrowserLayout = "cratedigger.browser.playlistLayout"
         static let scrubLock = "cratedigger.transport.scrubLock"
         static let gaplessPlayback = "cratedigger.transport.gapless"
+        static let widgetIdleMode = "cratedigger.widget.idleMode"
+        static let widgetPlayingMode = "cratedigger.widget.playingMode"
         static let miniPlayerArtMode = "cratedigger.miniplayer.artMode"
         static let hasCompletedFirstRunSetup = "cratedigger.onboarding.completed"
         static let hasSeenWelcomeTour = "cratedigger.onboarding.tourSeen"
@@ -592,6 +594,19 @@ public final class PreferencesStore {
             return defaults.bool(forKey: Key.gaplessPlayback)
         }
         set { defaults.set(newValue, forKey: Key.gaplessPlayback) }
+    }
+
+    /// The Now Playing widget's modes, as raw values. The types live in the
+    /// NowPlayingFeed target, which Core does not link; the app's
+    /// `widgetIdleMode` / `widgetPlayingMode` wrap these. Nil means the default.
+    public var widgetIdleModeRaw: String? {
+        get { defaults.string(forKey: Key.widgetIdleMode) }
+        set { defaults.set(newValue, forKey: Key.widgetIdleMode) }
+    }
+
+    public var widgetPlayingModeRaw: String? {
+        get { defaults.string(forKey: Key.widgetPlayingMode) }
+        set { defaults.set(newValue, forKey: Key.widgetPlayingMode) }
     }
 
     public var savedShowSortControls: Bool {

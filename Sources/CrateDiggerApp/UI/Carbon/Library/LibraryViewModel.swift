@@ -516,6 +516,10 @@ final class LibraryViewModel: ObservableObject {
     /// whole of playback showed up as constant background churn.
     var nowPlayingElapsedAnchor: (elapsed: Double, wall: Date, rate: Double)?
 
+    /// The Now Playing widget's pictures and slides between feed writes. See
+    /// `LibraryViewModel+Widget`.
+    var widgetFeedState = WidgetFeedState()
+
     /// While the user drags (or scroll-seeks) the position dial, the in-progress
     /// fraction (0–1) so the OLED time can follow the scrub before the seek
     /// commits. Nil when not scrubbing.
@@ -1458,6 +1462,8 @@ final class LibraryViewModel: ObservableObject {
         streams = streamStore.all()
         selectSource(.localAll)
         restorePlaybackSnapshot()
+        // After selectSource: the widget's idle covers come from All Records.
+        startWidgetFeed()
         recomputeOfflineVolumes()
         recomputeMissingFiles()
         fetchMissingMetadata()

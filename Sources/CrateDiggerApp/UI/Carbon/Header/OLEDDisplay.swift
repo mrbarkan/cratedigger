@@ -1,4 +1,5 @@
 import CrateDiggerCore
+import NowPlayingFeed
 import SwiftUI
 
 // MARK: - Shared OLED palette
@@ -662,32 +663,11 @@ private struct NowPlayingPane: View {
 }
 
 /// What the NOW pane shows while nothing is playing — a little crate-digger
-/// nudge instead of leaking the browser selection onto the glass.
+/// nudge instead of leaking the browser selection onto the glass. The lines
+/// live in `NowPlayingFeed`, so the widget's phrase mode speaks with the same
+/// voice.
 private enum OLEDIdleMessages {
-    static let all: [String] = [
-        "Play something you love",
-        "Drop the needle",
-        "The crates are calling",
-        "Silence is just a long intro",
-        "Spin something dusty",
-        "Your records miss you",
-        "Find that B-side",
-        "Every dig starts with play",
-        "Warm up the tubes",
-        "Press play, dig deep",
-        "One more spin won't hurt",
-        "Dust off a classic",
-        "The groove is waiting",
-        "Feed the turntable",
-        "What's on side B?",
-        "Make the speakers proud",
-        "Somewhere, a record spins",
-        "Rewind. Replay. Repeat.",
-        "Today deserves a soundtrack",
-        "Good ears deserve good records"
-    ]
-
-    static func pick() -> String { all.randomElement() ?? all[0] }
+    static func pick() -> String { NowPlayingFeed.idlePhrases.randomElement() ?? "Drop the needle" }
 }
 
 private struct LibraryNowPlaying: View {
