@@ -13,9 +13,16 @@ Center and takes the system's Liquid Glass on macOS 26.
 
 - **Show-only** keeps it on the app's macOS 13 floor and one-directional:
   the app writes, the widget reads, nothing ever has to call back.
-- **No Xcode project.** The widget is a third SwiftPM executable target;
-  `scripts/package-app.sh` folds it into `Contents/PlugIns/` the same way it
-  already folds Sparkle into `Contents/Frameworks/`.
+- **Xcode for the widget, SwiftPM for everything else.** WidgetKit only
+  lists an extension built as Xcode's app-extension product type. The spike
+  first tried a SwiftPM executable wrapped by hand: it registered with
+  pluginkit, launched, and read the group container, but never appeared in
+  Edit Widgets. Its binary entered at Swift's `_main` where Xcode links
+  `-e _NSExtensionMain`, and its plist lacked the `DT*` keys Xcode writes.
+  Faking those in SwiftPM would rest on undocumented gallery rules, so one
+  small committed project holds the one target, and
+  `scripts/package-app.sh` embeds its `.appex` into `Contents/PlugIns/` the
+  same way it embeds Sparkle into `Contents/Frameworks/`.
 - **Native look.** WidgetKit draws the glass itself as long as the views
   stay plain (text, image, `containerBackground`, `widgetAccentable`). A
   Carbon chassis inside a widget would fight the material and would have
@@ -65,7 +72,7 @@ writes `idle`.
 Nothing in the tick path reaches the widget: the widget animates progress
 from `(playhead, playheadAt, duration)` on its own.
 
-### Widget (`Sources/CrateDiggerWidget`, executable target)
+### Widget (`Sources/CrateDiggerWidget`, built by `Packaging/CrateDiggerWidget/CrateDiggerWidget.xcodeproj`)
 
 `@main` `WidgetBundle` with one `StaticConfiguration` widget, kind
 `"NowPlaying"`, families `.systemSmall` and `.systemMedium`.
@@ -89,31 +96,41 @@ Views:
 
 ### Packaging (`scripts/package-app.sh`, `Packaging/CrateDiggerWidget/`)
 
-- Build: `swift build -c release --product CrateDiggerWidget` alongside the
-  app product.
-- Assemble `Contents/PlugIns/CrateDiggerWidget.appex/Contents/{MacOS,Info.plist}`
-  from a template plist: `CFBundleIdentifier = com.cratedigger.app.widget`,
-  `CFBundlePackageType = XPC!`, `LSMinimumSystemVersion = 13.0`,
-  `NSExtension.NSExtensionPointIdentifier = com.apple.widgetkit-extension`.
+- Project: one app-extension target, no host app, no scheme. It compiles
+  `Sources/CrateDiggerWidget` and `Sources/NowPlayingFeed` directly rather
+  than referencing the package, so `xcodebuild` resolves nothing (the widget
+  therefore has no `import NowPlayingFeed`). Code signing is off in the
+  project; the script signs, like every other piece of the bundle.
+- Build: `xcodebuild -target CrateDiggerWidget -configuration Release` into
+  `.build/package-app/widget`, on every run so a break shows before a
+  release. `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` come from the
+  app's `Info.plist`, which the widget's plist reads as build variables.
 - Entitlements: `Packaging/CrateDiggerWidget/CrateDiggerWidget.entitlements`
   with `com.apple.security.app-sandbox` and
   `com.apple.security.application-groups`. The app's own entitlements gain
   the same `application-groups` key.
-- Sign the `.appex` before the app, inside-out, in both the ad-hoc and the
-  Developer ID branch.
-- Verify, field by field, before finishing: the plist keys above,
-  `codesign -d --entitlements` shows the group on both, and
-  `codesign --verify --deep --strict` passes.
+- Embedded and signed (before the app, inside-out) in the Developer ID
+  branch only. An ad-hoc build skips it with a note: a team-prefixed group
+  needs a Team ID, and that branch's `--deep` re-sign would strip the
+  sandbox entitlement.
+- After signing, the script checks `codesign -d --entitlements` shows the
+  group on both the `.appex` and the app, on top of
+  `codesign --verify --deep --strict`.
 
-## The risk, and the spike that retires it first
+## The risk, and the spike that retired it
 
 Whether a hand-assembled, ad-hoc-signed `.appex` loads under macOS 15+ and
 reads the group container, and which group id format the system accepts
-(`group.com.cratedigger.app` versus a team-prefixed id). Task 1 is a
-throwaway widget that shows one string from the container, packaged and
-added on this machine. If ad-hoc fails, the fallback is that the widget is
-a Developer ID-only feature, which is what ships anyway, and the script
-skips it on ad-hoc builds with a printed note.
+(`group.com.cratedigger.app` versus a team-prefixed id). Task 1 was a
+throwaway widget that showed one string from the container, packaged and
+added on this machine.
+
+Result (macOS 26.7): the team-prefixed id works, with a Developer ID
+signature on both the app and the extension. The hand-assembled SwiftPM
+`.appex` registered and launched but never reached the gallery; the same
+source built by the Xcode project did, and read the container. The widget
+is therefore a Developer ID-only feature, and the script skips it on
+ad-hoc builds with a printed note.
 
 ## Tests
 

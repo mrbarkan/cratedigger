@@ -3571,7 +3571,12 @@ final class LibraryViewModel: ObservableObject {
     // `private(set)` contract (only this type mutates playback state) while
     // letting the same-type extension drive it.
 
-    func radioPublish(state: PlaybackState) { playbackState = state }
+    func radioPublish(state: PlaybackState) {
+        playbackState = state
+        // A stream never goes through refreshNowPlayingInfo, so the widget
+        // hears about it here.
+        publishWidgetFeed()
+    }
 
     func radioPublish(currentTime: Double, duration: Double) {
         playbackCurrentTime = currentTime

@@ -81,6 +81,8 @@ at the top of `docs/V2_RELEASE_PREP_PLAN.md`.
 - **`CrateDiggerCore`** (`Sources/CrateDiggerCore`) — a pure library: `Models/` + `Services/`. No AppKit *views*, no app state. This is the unit-tested layer; put logic here when it can be tested in isolation. Most types are `public`, `Sendable`, `Codable`.
 - **`CrateDiggerApp`** (`Sources/CrateDiggerApp`) — the AppKit executable + all SwiftUI views, depends on Core.
 
+Plus a small third target, **`NowPlayingFeed`** (`Sources/NowPlayingFeed`): the Codable record and file store the app writes into the app-group container for the **Now Playing widget**. The widget itself (`Sources/CrateDiggerWidget`) is **not** a SwiftPM target: WidgetKit only lists extensions built as Xcode's app-extension product type (a hand-wrapped SwiftPM binary registers and launches but never reaches the gallery), so `Packaging/CrateDiggerWidget/CrateDiggerWidget.xcodeproj` builds it, compiling the NowPlayingFeed sources directly, and `package-app.sh` embeds it in Developer ID builds only. The app writes the feed from `LibraryViewModel+NowPlaying` and only when the `.appex` is in its bundle, so a `swift build` run never touches the container. Design: `docs/superpowers/specs/2026-09-11-now-playing-widget-design.md`.
+
 ### App launch & control flow
 
 There is no `@main` / SwiftUI App lifecycle. The chain is explicit:

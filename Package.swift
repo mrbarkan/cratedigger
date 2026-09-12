@@ -25,6 +25,7 @@ let package = Package(
             name: "CrateDiggerApp",
             dependencies: [
                 "CrateDiggerCore",
+                "NowPlayingFeed",
                 .product(name: "Sparkle", package: "Sparkle")
             ],
             path: "Sources/CrateDiggerApp",
@@ -51,9 +52,18 @@ let package = Package(
                 .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])
             ]
         ),
+        // What the app writes and the Now Playing widget reads: one Codable
+        // record plus the app-group container it lives in. The widget is not
+        // a SwiftPM target: WidgetKit only lists extensions built by Xcode, so
+        // Packaging/CrateDiggerWidget/CrateDiggerWidget.xcodeproj compiles
+        // Sources/CrateDiggerWidget and these same files directly.
+        .target(
+            name: "NowPlayingFeed",
+            path: "Sources/NowPlayingFeed"
+        ),
         .testTarget(
             name: "CrateDiggerCoreTests",
-            dependencies: ["CrateDiggerCore"],
+            dependencies: ["CrateDiggerCore", "NowPlayingFeed"],
             path: "Tests/CrateDiggerCoreTests",
             resources: [
                 // Real captures used as golden inputs — e.g. the `.TOC.plist`

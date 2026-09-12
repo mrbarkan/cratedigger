@@ -12,5 +12,9 @@
 	<false/>
 	<key>com.apple.security.automation.apple-events</key>
 	<false/>
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>L26TPPMPF3.com.cratedigger.shared</string>
+	</array>
 </dict>
 </plist>

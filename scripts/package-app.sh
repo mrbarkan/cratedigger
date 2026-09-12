@@ -10,6 +10,8 @@ APP_BUNDLE="${OUTPUT_DIR}/${APP_NAME}"
 INFO_PLIST_SOURCE="${ROOT_DIR}/Packaging/CrateDiggerApp/Info.plist"
 ENTITLEMENTS_SOURCE="${ROOT_DIR}/Packaging/CrateDiggerApp/CrateDigger.entitlements"
 ICON_SOURCE="${ROOT_DIR}/Packaging/CrateDiggerApp/Resources/CrateDigger.icns"
+WIDGET_PROJECT="${ROOT_DIR}/Packaging/CrateDiggerWidget/CrateDiggerWidget.xcodeproj"
+WIDGET_ENTITLEMENTS="${ROOT_DIR}/Packaging/CrateDiggerWidget/CrateDiggerWidget.entitlements"
 DEFAULT_XCODE_DEVELOPER_DIR="/Applications/Xcode.app/Contents/Developer"
 
 # Optionally load local secrets (e.g. Last.fm API credentials) from an
@@ -38,6 +40,8 @@ Usage: scripts/package-app.sh [options]
 
 Builds a release executable with SwiftPM, assembles CrateDigger.app, bundles
 ffmpeg, ffprobe and fpcalc into Contents/Resources, and signs the resulting app.
+The Now Playing widget is built with xcodebuild and embedded in Developer ID
+builds only.
 
 Options:
   --ffmpeg PATH            Path to ffmpeg binary (or CRATEDIGGER_FFMPEG_PATH)
@@ -374,6 +378,43 @@ mkdir -p "${APP_BUNDLE}/Contents/Frameworks"
 /usr/bin/ditto "${SPARKLE_FRAMEWORK}" "${APP_BUNDLE}/Contents/Frameworks/Sparkle.framework"
 echo "Bundled updater: Sparkle.framework"
 
+# The Now Playing widget. WidgetKit only lists an extension built as Xcode's
+# app-extension product type (the _NSExtensionMain entry point, the DT* plist
+# keys): a SwiftPM binary wrapped by hand registers and launches but never
+# reaches the widget gallery. So this one target is an Xcode project, and its
+# versions are the app's. It is built on every run so a break shows up before
+# a release, but embedded only when signing with a Developer ID: its
+# team-prefixed app group means nothing without a Team ID, and the ad-hoc
+# branch's --deep re-sign would strip its sandbox entitlement anyway.
+WIDGET_APPEX="${APP_BUNDLE}/Contents/PlugIns/CrateDiggerWidget.appex"
+WIDGET_BUILD="${BUILD_PATH}/widget"
+APP_BUILD_NUMBER="$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "${INFO_PLIST_SOURCE}")" || {
+  echo "error: no CFBundleVersion in ${INFO_PLIST_SOURCE}" >&2
+  exit 1
+}
+WIDGET_OUTPUT="$(
+  xcodebuild \
+    -project "${WIDGET_PROJECT}" \
+    -target CrateDiggerWidget \
+    -configuration Release \
+    SYMROOT="${WIDGET_BUILD}/sym" \
+    OBJROOT="${WIDGET_BUILD}/obj" \
+    MARKETING_VERSION="$(read_app_version)" \
+    CURRENT_PROJECT_VERSION="${APP_BUILD_NUMBER}" \
+    build 2>&1
+)" || {
+  printf '%s\n' "${WIDGET_OUTPUT}" >&2
+  explain_build_failure "${WIDGET_OUTPUT}"
+  exit 1
+}
+if [[ -n "${SIGN_IDENTITY}" ]]; then
+  mkdir -p "${APP_BUNDLE}/Contents/PlugIns"
+  /usr/bin/ditto "${WIDGET_BUILD}/sym/Release/CrateDiggerWidget.appex" "${WIDGET_APPEX}"
+  echo "Bundled widget: CrateDiggerWidget.appex"
+else
+  echo "note: ad-hoc build, so the Now Playing widget is built but not embedded."
+fi
+
 # Embed Last.fm API credentials into the bundled Info.plist when provided.
 # These are kept out of source control; supply them via scripts/.lastfm.env or
 # the CRATEDIGGER_LASTFM_API_KEY / _SECRET env vars. Without them, the app
@@ -408,9 +449,25 @@ if [[ -n "${SIGN_IDENTITY}" ]]; then
     sign_distribution "${APP_BUNDLE}/Contents/Resources/fpcalc" "no"
   fi
   sign_sparkle_framework "${APP_BUNDLE}/Contents/Frameworks/Sparkle.framework"
+  codesign --force --options runtime --timestamp \
+    --entitlements "${WIDGET_ENTITLEMENTS}" \
+    --sign "${SIGN_IDENTITY}" \
+    "${WIDGET_APPEX}"
   sign_distribution "${APP_BUNDLE}/Contents/MacOS/CrateDiggerApp" "yes"
   sign_distribution "${APP_BUNDLE}" "yes"
   codesign --verify --deep --strict --verbose=2 "${APP_BUNDLE}"
+  # The widget can only read what the app writes if both signatures carry the
+  # same group. A verify pass does not check that, so check it here.
+  APP_GROUP="$(/usr/libexec/PlistBuddy -c "Print :com.apple.security.application-groups:0" "${WIDGET_ENTITLEMENTS}")" || {
+    echo "error: no application group in ${WIDGET_ENTITLEMENTS}" >&2
+    exit 1
+  }
+  for signed in "${WIDGET_APPEX}" "${APP_BUNDLE}"; do
+    codesign -d --entitlements - --xml "${signed}" 2>/dev/null | grep -q "${APP_GROUP}" || {
+      echo "error: ${signed} is not signed with the ${APP_GROUP} app group" >&2
+      exit 1
+    }
+  done
 else
   echo "Ad-hoc signing (development build; not suitable for distribution)"
   sign_adhoc "${APP_BUNDLE}/Contents/Resources/ffmpeg"
