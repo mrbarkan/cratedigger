@@ -25,6 +25,10 @@ final class NowPlayingFeedTests: XCTestCase {
                        artworkFile: art)
     }
 
+    private func cover(_ file: String) -> NowPlayingFeed.Cover {
+        NowPlayingFeed.Cover(file: file, album: "Record \(file)", artist: "Band", year: 1999, crate: "Jazz")
+    }
+
     private func pictures() -> [String] {
         ((try? FileManager.default.contentsOfDirectory(atPath: store.picturesDirectory.path)) ?? []).sorted()
     }
@@ -38,8 +42,12 @@ final class NowPlayingFeedTests: XCTestCase {
     }
 
     func testAWrittenFeedReadsBack() throws {
-        XCTAssertTrue(try store.write(playing(), picture: { _ in nil }))
-        XCTAssertEqual(store.read(), playing())
+        var feed = playing()
+        feed.lastCover = NowPlayingFeed.Cover(file: "a.jpg", album: "Record", artist: "Band",
+                                              playedAt: Date(timeIntervalSince1970: 2_000))
+        try store.writePicture(Data([1]), named: "a.jpg")
+        XCTAssertTrue(try store.write(feed, picture: { _ in nil }))
+        XCTAssertEqual(store.read(), feed)
     }
 
     func testTheSameFeedIsNotWrittenTwice() throws {
@@ -70,8 +78,8 @@ final class NowPlayingFeedTests: XCTestCase {
     func testEveryNamedPictureIsKeptAndTheRestRemoved() throws {
         var feed = playing(art: "a.jpg")
         feed.slides = ["a.jpg", "p1.jpg"]
-        feed.idleSlides = ["c1.jpg"]
-        feed.lastArtworkFile = "a.jpg"
+        feed.idleSlides = [cover("c1.jpg")]
+        feed.lastCover = cover("a.jpg")
         try store.write(feed, picture: bytesOfName)
         XCTAssertEqual(pictures(), ["a.jpg", "c1.jpg", "p1.jpg"])
 
@@ -86,32 +94,32 @@ final class NowPlayingFeedTests: XCTestCase {
     func testAPictureWithNoBytesIsLeftOutOfTheFeed() throws {
         var feed = playing(art: "a.jpg")
         feed.slides = ["a.jpg", "p1.jpg"]
-        feed.idleSlides = ["c1.jpg"]
-        feed.lastArtworkFile = "old.jpg"
+        feed.idleSlides = [cover("c1.jpg")]
+        feed.lastCover = cover("old.jpg")
         try store.write(feed, picture: { $0 == "a.jpg" ? Data([1]) : nil })
 
         let read = store.read()
         XCTAssertEqual(read.artworkFile, "a.jpg")
         XCTAssertEqual(read.slides, ["a.jpg"])
         XCTAssertEqual(read.idleSlides, [])
-        XCTAssertNil(read.lastArtworkFile)
+        XCTAssertNil(read.lastCover)
     }
 
     func testAPictureRenderedLaterJoinsTheNextWrite() throws {
         var feed = playing()
-        feed.idleSlides = ["c1.jpg"]
+        feed.idleSlides = [cover("c1.jpg")]
         try store.write(feed, picture: { _ in nil })
         XCTAssertEqual(store.read().idleSlides, [])
 
         try store.writePicture(Data([1]), named: "c1.jpg")
         XCTAssertTrue(try store.write(feed, picture: { _ in nil }))
-        XCTAssertEqual(store.read().idleSlides, ["c1.jpg"])
+        XCTAssertEqual(store.read().idleSlides, [cover("c1.jpg")])
     }
 
     // MARK: What the widget shows
 
     func testTheSlideshowFollowsStateAndMode() {
-        var feed = NowPlayingFeed(slides: ["a", "p"], idleSlides: ["c"])
+        var feed = NowPlayingFeed(slides: ["a", "p"], idleSlides: [cover("c")])
         XCTAssertEqual(feed.slideshow, ["c"])
         feed.idleMode = .lastAlbumCover
         XCTAssertEqual(feed.slideshow, [])
@@ -125,12 +133,19 @@ final class NowPlayingFeedTests: XCTestCase {
     }
 
     func testTheStillPictureFollowsStateAndMode() {
-        var feed = NowPlayingFeed(artworkFile: "now", idleMode: .lastAlbumCover, lastArtworkFile: "last")
+        var feed = NowPlayingFeed(artworkFile: "now", idleMode: .lastAlbumCover, lastCover: cover("last"))
         XCTAssertEqual(feed.stillPicture, "last")
         feed.idleMode = .phrase
         XCTAssertNil(feed.stillPicture)
         feed.state = .paused
         XCTAssertEqual(feed.stillPicture, "now")
+    }
+
+    func testAPictureFindsTheWordsThatGoBesideIt() {
+        let feed = NowPlayingFeed(idleSlides: [cover("c1"), cover("c2")], lastCover: cover("last"))
+        XCTAssertEqual(feed.cover(forPicture: "c2"), cover("c2"))
+        XCTAssertEqual(feed.cover(forPicture: "last"), cover("last"))
+        XCTAssertNil(feed.cover(forPicture: "elsewhere"))
     }
 
     func testSlidesMoveOnTheMinuteAndWrap() {

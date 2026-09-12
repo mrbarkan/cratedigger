@@ -16,7 +16,9 @@ build, which is monotonic across every release.
   While a record plays: its cover, or its cover followed by the booklet, scans
   or PDF, one page a minute. With nothing playing: a slideshow of covers from
   your whole library, the cover of the last album you played, or a clear
-  widget with a line to get you digging.
+  widget with a line to get you digging. The wide widget puts words beside
+  the cover: the record, its artist and year and a crate it lives in, or how
+  long ago you last played it.
 
 ## 2.0.5 (88), 2026-09-11
 

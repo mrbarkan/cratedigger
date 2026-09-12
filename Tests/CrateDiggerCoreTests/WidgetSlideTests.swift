@@ -77,5 +77,24 @@ final class WidgetSlideTests: XCTestCase {
         XCTAssertNil(WidgetSlide.artwork(hash: "abc").renderJPEG(maxPixel: 300, artworkData: { _ in nil }))
         XCTAssertNil(WidgetSlide.image(URL(fileURLWithPath: "/nonexistent.jpg")).renderJPEG(maxPixel: 300, artworkData: { _ in nil }))
     }
+
+    // MARK: Captions
+
+    func testARecordIsCreditedToItsSmallestCrate() {
+        let crates: [(name: String, paths: Set<String>)] = [
+            ("Personal Crate", ["/a", "/b", "/c"]),
+            ("Jazz", ["/a", "/b"]),
+            ("Vinyls", ["/a"])
+        ]
+        XCTAssertEqual(WidgetCaption.crate(containing: "/a", in: crates), "Vinyls")
+        XCTAssertEqual(WidgetCaption.crate(containing: "/b", in: crates), "Jazz")
+        XCTAssertEqual(WidgetCaption.crate(containing: "/c", in: crates), "Personal Crate")
+        XCTAssertNil(WidgetCaption.crate(containing: "/d", in: crates))
+    }
+
+    func testATieGoesToTheCrateListedFirst() {
+        let crates: [(name: String, paths: Set<String>)] = [("Rock", ["/a"]), ("Heavy", ["/a"])]
+        XCTAssertEqual(WidgetCaption.crate(containing: "/a", in: crates), "Rock")
+    }
 }
 #endif

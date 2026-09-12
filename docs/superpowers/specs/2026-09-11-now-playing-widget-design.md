@@ -176,6 +176,15 @@ slide shown is keyed on the wall clock, so a reload carries on rather than
 restarting. A phrase changes on the hour. Pictures that are not square sit
 over a blurred fill of themselves instead of being cropped.
 
+The wide widget keeps one layout whether or not anything plays: the square
+picture on the left, words on the right. Idle, the words come from the
+feed's `Cover` records. A library cover carries its album, artist, year and
+the smallest crate holding it (`WidgetCaption.crate`, so "in Jazz" beats
+"in Personal Crate"). The last album's cover carries its album, artist and
+`playedAt`, stamped on every publish while a record plays and once more on
+the first publish after it stops, which the widget shows as a relative time
+that keeps itself current. The small widget stays a full-bleed picture.
+
 Tests: `NowPlayingFeedTests` (store sweep and omission, slideshow and still
 picture per state and mode, slide clock) and `WidgetSlideTests` (names,
 cover and booklet order, page cap, rendering to size).

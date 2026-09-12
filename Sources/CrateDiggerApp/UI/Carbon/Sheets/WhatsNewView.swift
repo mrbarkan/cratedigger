@@ -124,8 +124,9 @@ struct WhatsNewItem: Identifiable {
             desktop, choose Edit Widgets and find CrateDigger. It shows the \
             cover, the track and a progress bar that moves by itself, and it can \
             turn the album's booklet pages while the record plays. With nothing \
-            playing it shows a slideshow of your library, the last album you \
-            played, or a line to get you digging. Pick in Settings, Interface.
+            playing it shows a slideshow of your library, naming each record and \
+            a crate it lives in, the last album you played and how long ago, or a \
+            line to get you digging. Pick in Settings, Interface.
             """
         ),
         WhatsNewItem(

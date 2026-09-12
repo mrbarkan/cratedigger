@@ -27,6 +27,30 @@ public struct NowPlayingFeed: Codable, Equatable, Sendable {
         case coverAndBooklet
     }
 
+    /// A cover shown with nothing playing, and the words the wide widget puts
+    /// beside it.
+    public struct Cover: Codable, Equatable, Sendable {
+        /// The picture file.
+        public var file: String
+        public var album: String
+        public var artist: String
+        public var year: Int?
+        /// A crate the record lives in, for a library cover.
+        public var crate: String?
+        /// When the record last played, for the last album's cover.
+        public var playedAt: Date?
+
+        public init(file: String, album: String, artist: String, year: Int? = nil,
+                    crate: String? = nil, playedAt: Date? = nil) {
+            self.file = file
+            self.album = album
+            self.artist = artist
+            self.year = year
+            self.crate = crate
+            self.playedAt = playedAt
+        }
+    }
+
     public var state: State
     public var title: String
     public var artist: String
@@ -46,15 +70,15 @@ public struct NowPlayingFeed: Codable, Equatable, Sendable {
     /// The playing album's pictures, cover first, in `coverAndBooklet` mode.
     public var slides: [String]
     /// Random library covers, in `librarySlideshow` mode.
-    public var idleSlides: [String]
+    public var idleSlides: [Cover]
     /// The cover of the last album that played, kept after playback stops.
-    public var lastArtworkFile: String?
+    public var lastCover: Cover?
 
     public init(state: State = .idle, title: String = "", artist: String = "", album: String = "",
                 isLive: Bool = false, duration: Double = 0, playhead: Double = 0,
                 playheadAt: Date = .distantPast, artworkFile: String? = nil,
                 idleMode: IdleMode = .librarySlideshow, playingMode: PlayingMode = .albumCover,
-                slides: [String] = [], idleSlides: [String] = [], lastArtworkFile: String? = nil) {
+                slides: [String] = [], idleSlides: [Cover] = [], lastCover: Cover? = nil) {
         self.state = state
         self.title = title
         self.artist = artist
@@ -68,7 +92,7 @@ public struct NowPlayingFeed: Codable, Equatable, Sendable {
         self.playingMode = playingMode
         self.slides = slides
         self.idleSlides = idleSlides
-        self.lastArtworkFile = lastArtworkFile
+        self.lastCover = lastCover
     }
 
     public static let idle = NowPlayingFeed()
@@ -90,7 +114,7 @@ public struct NowPlayingFeed: Codable, Equatable, Sendable {
 
     /// Every picture file this feed names.
     public var pictureNames: [String] {
-        [artworkFile, lastArtworkFile].compactMap { $0 } + slides + idleSlides
+        [artworkFile, lastCover?.file].compactMap { $0 } + slides + idleSlides.map(\.file)
     }
 
     /// The pictures to cycle through now: the album's slides while playing in
@@ -98,7 +122,7 @@ public struct NowPlayingFeed: Codable, Equatable, Sendable {
     /// otherwise none.
     public var slideshow: [String] {
         switch state {
-        case .idle: return idleMode == .librarySlideshow ? idleSlides : []
+        case .idle: return idleMode == .librarySlideshow ? idleSlides.map(\.file) : []
         case .playing, .paused: return playingMode == .coverAndBooklet ? slides : []
         }
     }
@@ -106,9 +130,14 @@ public struct NowPlayingFeed: Codable, Equatable, Sendable {
     /// The one picture to show when there is no slideshow to show instead.
     public var stillPicture: String? {
         switch state {
-        case .idle: return idleMode == .lastAlbumCover ? lastArtworkFile : nil
+        case .idle: return idleMode == .lastAlbumCover ? lastCover?.file : nil
         case .playing, .paused: return artworkFile
         }
+    }
+
+    /// The idle cover a picture belongs to, for the words beside it.
+    public func cover(forPicture file: String) -> Cover? {
+        idleSlides.first { $0.file == file } ?? (lastCover?.file == file ? lastCover : nil)
     }
 
     /// Slides change on the minute: the fastest pace the system reliably
@@ -202,9 +231,9 @@ public struct NowPlayingFeedStore: Sendable {
 
         var written = feed
         written.artworkFile = feed.artworkFile.flatMap { hasPicture(named: $0) ? $0 : nil }
-        written.lastArtworkFile = feed.lastArtworkFile.flatMap { hasPicture(named: $0) ? $0 : nil }
+        written.lastCover = feed.lastCover.flatMap { hasPicture(named: $0.file) ? $0 : nil }
         written.slides = feed.slides.filter(hasPicture(named:))
-        written.idleSlides = feed.idleSlides.filter(hasPicture(named:))
+        written.idleSlides = feed.idleSlides.filter { hasPicture(named: $0.file) }
 
         let encoder = JSONEncoder()
         encoder.outputFormatting = .sortedKeys

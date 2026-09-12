@@ -13,6 +13,8 @@ struct NowPlayingEntry: TimelineEntry {
     let feed: NowPlayingFeed
     /// The cover or slide on screen at `date`, nil when there is none.
     let picture: NSImage?
+    /// With nothing playing, the words for the cover on screen.
+    let cover: NowPlayingFeed.Cover?
     /// Shown with nothing playing when there is no picture to show instead.
     let phrase: String
 }
@@ -25,7 +27,7 @@ struct NowPlayingProvider: TimelineProvider {
     private static let slideEntryCount = 30
 
     func placeholder(in context: Context) -> NowPlayingEntry {
-        NowPlayingEntry(date: .now, feed: .idle, picture: nil, phrase: NowPlayingFeed.idlePhrases[0])
+        NowPlayingEntry(date: .now, feed: .idle, picture: nil, cover: nil, phrase: NowPlayingFeed.idlePhrases[0])
     }
 
     func getSnapshot(in context: Context, completion: @escaping (NowPlayingEntry) -> Void) {
@@ -52,18 +54,22 @@ struct NowPlayingProvider: TimelineProvider {
             return image
         }
 
+        func entry(_ date: Date, showing name: String?) -> NowPlayingEntry {
+            let cover = feed.state == .idle ? name.flatMap(feed.cover(forPicture:)) : nil
+            return NowPlayingEntry(date: date, feed: feed, picture: picture(name), cover: cover, phrase: phrase)
+        }
+
         let slides = feed.slideshow
         if slides.count > 1 {
             let entries = NowPlayingFeed.slideDates(from: now, count: Self.slideEntryCount).map { date in
-                let slide = slides[NowPlayingFeed.slideIndex(at: date, count: slides.count)]
-                return NowPlayingEntry(date: date, feed: feed, picture: picture(slide), phrase: phrase)
+                entry(date, showing: slides[NowPlayingFeed.slideIndex(at: date, count: slides.count)])
             }
             return Timeline(entries: entries, policy: .atEnd)
         }
 
-        let entry = NowPlayingEntry(date: now, feed: feed, picture: picture(slides.first ?? feed.stillPicture), phrase: phrase)
-        let showsPhrase = feed.state == .idle && entry.picture == nil
-        return Timeline(entries: [entry], policy: showsPhrase ? .after(now.addingTimeInterval(3600)) : .never)
+        let still = entry(now, showing: slides.first ?? feed.stillPicture)
+        let showsPhrase = feed.state == .idle && still.picture == nil
+        return Timeline(entries: [still], policy: showsPhrase ? .after(now.addingTimeInterval(3600)) : .never)
     }
 }
 
@@ -73,8 +79,10 @@ struct NowPlayingWidgetView: View {
 
     var body: some View {
         if entry.feed.state == .idle {
-            if let picture = entry.picture {
+            if let picture = entry.picture, family == .systemSmall {
                 IdlePictureView(picture: picture, caption: entry.feed.idleMode == .lastAlbumCover ? "Nothing playing" : nil)
+            } else if let picture = entry.picture {
+                IdleMediumView(mode: entry.feed.idleMode, picture: picture, cover: entry.cover)
             } else {
                 PhraseView(phrase: entry.phrase)
             }
@@ -138,6 +146,57 @@ private struct MediumView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .modifier(WidgetBackdrop(.plain))
+    }
+}
+
+/// The wide widget with nothing playing, laid out like `MediumView`: the cover
+/// on the left, and beside it what the record is and why it is on screen.
+private struct IdleMediumView: View {
+    let mode: NowPlayingFeed.IdleMode
+    let picture: NSImage
+    let cover: NowPlayingFeed.Cover?
+
+    var body: some View {
+        HStack(spacing: 12) {
+            PictureTile(image: picture)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(mode == .lastAlbumCover ? "LAST PLAYED" : "FROM YOUR CRATES")
+                    .font(.caption2.weight(.semibold))
+                    .tracking(1.2)
+                    .foregroundStyle(.secondary)
+                    .padding(.bottom, 2)
+                if let cover {
+                    Text(cover.album)
+                        .font(.headline)
+                        .lineLimit(2)
+                        .accentable()
+                    Text(cover.year.map { "\(cover.artist) · \(String($0))" } ?? cover.artist)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                    footer(cover)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                } else {
+                    Spacer(minLength: 0)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .modifier(WidgetBackdrop(.plain))
+    }
+
+    /// Where a library cover lives, or how long ago the last album played. The
+    /// relative time counts on by itself, with no reload.
+    @ViewBuilder
+    private func footer(_ cover: NowPlayingFeed.Cover) -> some View {
+        if mode == .lastAlbumCover, let playedAt = cover.playedAt {
+            Text(playedAt, style: .relative) + Text(" ago")
+        } else if let crate = cover.crate {
+            Text("in \(crate)")
+        }
     }
 }
 

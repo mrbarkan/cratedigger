@@ -94,3 +94,14 @@ public enum WidgetSlide: Hashable, Sendable {
         SHA256.hash(data: Data(string.utf8)).prefix(8).map { String(format: "%02x", $0) }.joined()
     }
 }
+
+/// Words the wide widget puts beside a library cover.
+public enum WidgetCaption {
+    /// The crate to name for a record: the smallest crate holding `path`, so a
+    /// record reads "in Jazz" rather than "in Personal Crate", which holds
+    /// nearly everything. A tie goes to the crate listed first; nil when no
+    /// crate holds it.
+    public static func crate(containing path: String, in crates: [(name: String, paths: Set<String>)]) -> String? {
+        crates.filter { $0.paths.contains(path) }.min { $0.paths.count < $1.paths.count }?.name
+    }
+}

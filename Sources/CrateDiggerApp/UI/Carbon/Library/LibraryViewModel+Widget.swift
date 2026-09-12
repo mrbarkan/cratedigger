@@ -6,20 +6,25 @@ import WidgetKit
 /// The Now Playing widget's feed: what is playing, the pictures that go with
 /// it, and the modes picked in Settings ▸ Interface. What the widget shows for
 /// a feed is `NowPlayingFeed`, which booklet pages make a slideshow is
-/// `WidgetSlide`; this file is the wiring.
+/// `WidgetSlide`, which crate a record is credited to is `WidgetCaption`; this
+/// file is the wiring.
 ///
 /// Pictures come at two speeds. The playing cover is encoded on the spot from
 /// the thumbnail the system now-playing info already uses. Library covers and
 /// booklet pages are rendered off the main thread, and the feed is published
 /// again once they land; until then the store leaves them out.
 struct WidgetFeedState {
-    /// Random library covers for the idle slideshow, picked once per launch.
-    var idlePool: [WidgetSlide] = []
+    /// Random library covers for the idle slideshow, with the words that go
+    /// beside them, picked once per launch.
+    var idlePool: [(slide: WidgetSlide, cover: NowPlayingFeed.Cover)] = []
     /// The playing album's slides, and the folder and cover they were read for.
     var albumSlides: [WidgetSlide] = []
     var albumSlidesKey: String?
-    /// The last cover that played, carried into the idle feed.
-    var lastArtworkFile: String?
+    /// The last album that played, carried into the idle feed.
+    var lastCover: NowPlayingFeed.Cover?
+    /// Whether the last feed published was a record playing, so the first
+    /// feed after it can stamp when the music stopped.
+    var wasPlaying = false
     /// Pictures already handed to a background render, so a publish never
     /// starts the same work twice. One that failed stays here and is not
     /// retried until the next launch.
@@ -45,18 +50,43 @@ extension LibraryViewModel {
     }()
 
     /// At launch, once All Records is loaded: pick the idle covers from it,
-    /// carry the last cover over from the feed on disk, and follow Settings.
+    /// carry the last album over from the feed on disk, and follow Settings.
     func startWidgetFeed() {
         guard let store = Self.widgetFeedStore else { return }
-        widgetFeedState.lastArtworkFile = store.read().lastArtworkFile
-        let hashes = Set(localIndex.allTracks.compactMap { $0.track.artworkHash })
-        widgetFeedState.idlePool = hashes.shuffled().prefix(Self.widgetIdlePoolSize).map { WidgetSlide.artwork(hash: $0) }
+        widgetFeedState.lastCover = store.read().lastCover
+        widgetFeedState.idlePool = pickIdleCovers()
         NotificationCenter.default.addObserver(
             forName: NSNotification.Name("CrateDiggerWidgetModesChanged"), object: nil, queue: .main
         ) { [weak self] _ in
             Task { @MainActor in self?.publishWidgetFeed() }
         }
         publishWidgetFeed()
+    }
+
+    /// Random albums with art from All Records, each captioned with its album,
+    /// artist, year and the most specific crate holding it. The crates are
+    /// already resolved and cached by the All Records load this follows.
+    private func pickIdleCovers() -> [(slide: WidgetSlide, cover: NowPlayingFeed.Cover)] {
+        let albums = localIndex.artists
+            .flatMap(\.albums)
+            .filter { $0.artworkHash != nil }
+            .shuffled()
+            .prefix(Self.widgetIdlePoolSize)
+        guard !albums.isEmpty else { return [] }
+
+        let crates = availableCrates.map { name in
+            (name: name, paths: Set(loadCrateTracks(name: name).map { $0.track.fileURL.standardizedFileURL.path }))
+        }
+        return albums.compactMap { album in
+            guard let hash = album.artworkHash else { return nil }
+            let slide = WidgetSlide.artwork(hash: hash)
+            let crate = album.tracks.first.flatMap {
+                WidgetCaption.crate(containing: $0.track.fileURL.standardizedFileURL.path, in: crates)
+            }
+            let cover = NowPlayingFeed.Cover(file: slide.fileName, album: album.title, artist: album.artistName,
+                                             year: album.originalYear ?? album.year, crate: crate)
+            return (slide, cover)
+        }
     }
 
     /// Hand the widget what is playing. Called wherever the system's
@@ -111,12 +141,21 @@ extension LibraryViewModel {
         var feed = base
         feed.idleMode = prefs.widgetIdleMode
         feed.playingMode = prefs.widgetPlayingMode
-        if let cover = feed.artworkFile {
-            widgetFeedState.lastArtworkFile = cover
+
+        let isPlayingRecord = feed.state == .playing && !feed.isLive
+        if let file = feed.artworkFile, widgetFeedState.lastCover?.file != file {
+            widgetFeedState.lastCover = NowPlayingFeed.Cover(file: file, album: feed.album, artist: feed.artist)
         }
-        feed.lastArtworkFile = widgetFeedState.lastArtworkFile
+        // "Last played" counts from when the music stopped: stamped on every
+        // publish while a record plays, and once more on the first after.
+        if isPlayingRecord || widgetFeedState.wasPlaying {
+            widgetFeedState.lastCover?.playedAt = Date()
+        }
+        widgetFeedState.wasPlaying = isPlayingRecord
+        feed.lastCover = widgetFeedState.lastCover
+
         if feed.idleMode == .librarySlideshow {
-            feed.idleSlides = widgetFeedState.idlePool.map(\.fileName)
+            feed.idleSlides = widgetFeedState.idlePool.map(\.cover)
         }
         if feed.playingMode == .coverAndBooklet, feed.state != .idle, !feed.isLive, let track = nowPlayingTrack {
             refreshAlbumSlides(for: track)
@@ -154,7 +193,7 @@ extension LibraryViewModel {
     private func renderMissingWidgetPictures(named feed: NowPlayingFeed, in store: NowPlayingFeedStore) {
         let named = Set(feed.pictureNames)
         var queued = Set<String>()
-        let slides = (widgetFeedState.idlePool + widgetFeedState.albumSlides).filter { slide in
+        let slides = (widgetFeedState.idlePool.map(\.slide) + widgetFeedState.albumSlides).filter { slide in
             let name = slide.fileName
             return named.contains(name)
                 && !widgetFeedState.rendering.contains(name)
