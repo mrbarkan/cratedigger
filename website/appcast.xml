@@ -3,6 +3,71 @@
     <channel>
         <title>CrateDigger</title>
         <item>
+            <title>2.1.0</title>
+            <pubDate>Fri, 11 Sep 2026 23:04:59 -0300</pubDate>
+            <link>https://cratedigger.mrbarkan.com/</link>
+            <sparkle:fullReleaseNotesLink>https://github.com/mrbarkan/cratedigger/releases</sparkle:fullReleaseNotesLink>
+            <sparkle:version>89</sparkle:version>
+            <sparkle:shortVersionString>2.1.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description sparkle:format="markdown"><![CDATA[
+Now playing on your desktop, and an Up Next that moves.
+
+### Added
+
+- **Now Playing widget.** A small and a medium widget for the desktop and
+  Notification Center show the cover, the track and a progress bar that moves
+  by itself. Tapping one opens CrateDigger. To add it, right-click the desktop
+  and choose Edit Widgets.
+- **Pick what the widget shows.** Settings, Interface, Now Playing Widget.
+  While a record plays: its cover, or its cover followed by the booklet, scans
+  or PDF, one page a minute. With nothing playing: a slideshow of covers from
+  your whole library, the cover of the last album you played, or a clear
+  widget with a line to get you digging. The wide widget puts words beside
+  the cover: the record, its artist and year and a crate it lives in, or how
+  long ago you last played it.
+- **Clear the Prep Crate from the browser.** While the Prep Crate is selected
+  and holds tracks, a key beside the browser's search, layout and sort
+  controls empties it. It asks first, because clearing also forgets which
+  folders you dug.
+
+### Changed
+
+- **Drag to reorder Up Next.** Click, hold and drag a queued track onto
+  another to move it there, or below the last one to send it to the end, in
+  the Inspector's queue and the mini player's. A lit line shows where it will
+  land. The up and down arrows are gone; hover still offers remove.
+- **A new mini player deck.** Title, band and album each get their own line,
+  with the time beside the album. The transport matches the main window's
+  footer, with a round play key in the middle that lights while playing, and
+  the position rail sits under the keys. The art tile sits flat on the card,
+  the Up Next list runs longer, and every corner follows your theme's
+  roundness.
+- **One switch for the mini player.** The key that opens the mini player and
+  the key that returns to the main window are now a matching pair, and
+  Window, Mini Player (⇧⌘M) toggles between the two from either window.
+
+### Fixed
+
+- **Picard disc folders stay one album.** A rip with disc subfolders such as
+  `01 - Digital Media` and `02 - Digital Media` used to show as two albums. A
+  folder that starts with an optional disc word and a number now counts as a
+  disc of its album, while a year folder stays an album of its own.
+- **Even VU rows.** The horizontal VU meter's left and right bars now draw at
+  the same height.
+
+]]></description>
+            <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.1.0/CrateDigger-2.1.0.dmg" length="71968775" type="application/octet-stream" sparkle:edSignature="c8safuHymTFUzsGZ3upfpher3AT6hYkEhZy0/zETFd8JhDeD/vP0XVwfstWPW8EMOGm6TskwM1WNeWl1j4y2Dg=="/>
+            <sparkle:deltas>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.1.0/CrateDigger89-88.delta" sparkle:deltaFrom="88" length="1321406" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="p3ghFomgzUKUGfaBRBuJ6+nerF/pjowGsVcA3ViihWyCUVCWmFNMPIoWVVgt3H3+7rcro48b6XW5mG2/xe/GDw=="/>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.1.0/CrateDigger89-87.delta" sparkle:deltaFrom="87" length="1379894" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="5lWaAvEaJ4/Nq6IyUzPI3KB7l+c2GuYOeqRczMBmPPnNyzXgU3DJwMVZwkv/HYR7hEfVb4fSmvirMMYA+NimAQ=="/>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.1.0/CrateDigger89-86.delta" sparkle:deltaFrom="86" length="1419594" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="0Sc+nRJzPbpFbsS3EonOTktPOaH8caftKdymySZVouYDmsk+7pZ8vrQoDWgTQmrMZvuwuaxdL06xJhOqiG4ZAw=="/>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.1.0/CrateDigger89-85.delta" sparkle:deltaFrom="85" length="2381798" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="qJlWGnh9HPjY59j01Bx/Mm3zCOz2DUQVPSGxn81BoI1bwzMd23MmV/q2RSOvmlqDtVkf44Rty0+WQXS5xPoDAg=="/>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.1.0/CrateDigger89-84.delta" sparkle:deltaFrom="84" length="2440642" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="vlngM9bDSKsJ9zJgomDrHveGYpQAYkD34Uhu8lLebIJSYeEpac/dMooaDCRDXlj0XnXNVmIiwWOxAz6jClqLBg=="/>
+            </sparkle:deltas>
+        </item>
+        <item>
             <title>2.0.5</title>
             <pubDate>Fri, 11 Sep 2026 10:49:18 -0300</pubDate>
             <link>https://cratedigger.mrbarkan.com/</link>
@@ -80,92 +145,6 @@ Two small fixes to the screen.
                 <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.0.4/CrateDigger87-85.delta" sparkle:deltaFrom="85" length="1963622" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="UM/ODXF6su1U3Zg2Z0f7Y9ygmxBplrpqMITsegu2ulp7AELeGMgXY93bwz/umba9HWClzNbA68N20yUSZbsTDA=="/>
                 <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.0.4/CrateDigger87-84.delta" sparkle:deltaFrom="84" length="2056926" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="7nxAKSt+FXGFZ5tFVcEPGaND3i/MNOoiEglwxSIEAUC0gOHhj83ker85WogKdaMUDjVBmqU/69oJxSWaQFnRCA=="/>
                 <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.0.4/CrateDigger87-83.delta" sparkle:deltaFrom="83" length="2074578" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="FMqrva4Dza0T1JgJ32oI+w6xVLWwddnHiPQSCuxevvf+ImP54JiLUBDfesv1SBqFVSiECJmeKOs/T+U8PA5IDA=="/>
-            </sparkle:deltas>
-        </item>
-        <item>
-            <title>2.0.3</title>
-            <pubDate>Tue, 08 Sep 2026 09:30:52 -0300</pubDate>
-            <link>https://cratedigger.mrbarkan.com/</link>
-            <sparkle:fullReleaseNotesLink>https://github.com/mrbarkan/cratedigger/releases</sparkle:fullReleaseNotesLink>
-            <sparkle:version>86</sparkle:version>
-            <sparkle:shortVersionString>2.0.3</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
-            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[
-The interface type ships with the app, and Llama '97 becomes the skin it was
-always meant to be.
-
-### Added
-
-- **Two new theme colours: Column Header and Key Print.** The type on a browser
-  column's header, and the labels and glyphs printed on keys and transport caps,
-  can now be coloured on their own. Both follow the colours they always borrowed
-  until a theme sets them, so nothing existing changes. They exist because a
-  theme with black lists inside a light console could not make both legible
-  with one colour.
-- **Choose which queue the conversion key runs.** The QUEUE tab lists your crate
-  queue and every device queue. Click a queue's header to arm it: the lamp
-  lights, and the key below reads CONVERT, SYNC TO IPOD or PRE-CONVERT FOR
-  IPOD to match. Pressing SETTINGS on a device strip arms that device on the way
-  in.
-- **ADD 20 MORE in the mini player.** A shuffled source deals twenty tracks. When
-  you reach the end of Up Next, one tap deals another twenty from the same
-  source.
-- **Skins.** Under Llama '97 the app calls a theme a skin: the key on the
-  console, the inspector pane, the editor and the Appearance menu. Pick any other
-  theme and the word goes back to theme. A small tribute to Winamp.
-
-### Changed
-
-- **Tapping a source in the mini player says what it does.** A line above the
-  list reads TAP TO SHUFFLE 20 INTO UP NEXT. It used to deal whatever the main
-  window's browser happened to be pointed at, which could be three tracks or
-  three thousand.
-- **The sync and conversion summary is a list of files.** It used to print the
-  raw log as one block of monospace that wrapped into a paragraph. Each file now
-  gets a row: an OK, SKIP or FAIL chip, the filename, the folder in smaller type
-  underneath, and a failure's reason on its own line.
-- **Llama '97's light look is the skin as it shipped.** Silver bevels that are
-  actually raised, a black screen running green in both looks, a navy bar under
-  the selected row straight out of the original playlist editor, and its own
-  type: Silkscreen for the screen, Pixel Operator Mono for the labels, Arial
-  for the rows. The fonts travel inside the theme.
-- **The device screen remembers the last sync.** A finished sync used to vanish
-  from the DEV display the moment you looked at anything else. It now shows the
-  device with a Last Sync cell, or a Queue cell when something is still
-  waiting.
-
-### Fixed
-
-- **The interface type now ships with the app.** Inter and JetBrains Mono, the
-  faces every label and row is drawn in, were never bundled. They rendered on
-  the machine the app was built on and fell back to Helvetica everywhere else,
-  silently, since 2.0. Both are included now, along with a test that fails if a
-  font the app names ever goes missing again.
-- **The mini player showed the wrong artwork during a stream.** It drew the last
-  local track's record while a YouTube set was on the air. It now shows the
-  stream's own thumbnail, and the disc/cover switch greys out until the stream
-  stops.
-- **ON AIR kept pulsing after the stream had stopped.** Browsing Radio with a
-  local track playing kept the lamp breathing. It now pulses only while a
-  stream is actually live.
-- **CONVERT and SYNC NOW for the same tracks.** Opening a device queue's settings
-  landed in a cockpit whose key said CONVERT, while the device strip said SYNC
-  NOW. The key now names the run it will perform.
-- **Opening the theme editor changed the theme.** An adaptive theme's unset
-  colours were filled from the wrong appearance the moment the editor opened,
-  repainting the lamp rail and the transport in the other look's defaults, and
-  the theme's logo disappeared from the header. Both fixed; the editor now shows
-  exactly what you were looking at.
-- **Llama '97 named a screen font it did not ship.** The OLED fell back to the
-  system font on any Mac but the author's.
-
-]]></description>
-            <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.0.3/CrateDigger-2.0.3.dmg" length="71608961" type="application/octet-stream" sparkle:edSignature="4CxXv7cH9W1GIjZapBscAneEeBsU6acXA8KKYz3VqzMNuUtli0Tjrezz5B2MahcfajC9NW6dxTZmhpMWA9IyAQ=="/>
-            <sparkle:deltas>
-                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.0.3/CrateDigger86-85.delta" sparkle:deltaFrom="85" length="1923862" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="zeeeXyREyhzXLlVuzg/BlDuEfRpD4e2WWkdhaaQ2KN4dwLOv7mlDx+0nTvj9YGFMy2Z5aiAbNIjWewj/8KwJCw=="/>
-                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.0.3/CrateDigger86-84.delta" sparkle:deltaFrom="84" length="2061842" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="e+5yBKOJedV3yXyzpdzd9mjQdIkg/WTyZEhUcq0j6j/gQpRCDoAwtytDgR4osv3uS67ISxxSWoG/VEhf0s7vDw=="/>
-                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.0.3/CrateDigger86-83.delta" sparkle:deltaFrom="83" length="2056418" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="gOOkfIz6NdnYHdxkwp68hefluVr4rxBEZR4sdbtOpuUe2Z44e32zO4PRpGKpUya7Ue1FDJVDCrZQPoV2f1pZDw=="/>
             </sparkle:deltas>
         </item>
     </channel>
