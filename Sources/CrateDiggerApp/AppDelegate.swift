@@ -38,6 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         installSpaceKeyMonitor()
         #if DEBUG
         installSnapshotHookIfRequested()
+        installDemoTourIfRequested()
         #endif
 
         // Touching the singleton starts Sparkle, including its once-a-day
@@ -693,6 +694,336 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         NSLog("[shot list] capturing 6 screenshots into \(folder.path); leave the app alone for ~45s")
     }
 
+    // MARK: - Demo screenshot tour
+
+    /// Dev-only: build a demo library from a music folder, then walk every
+    /// feature and write one PNG per visible window, in Carbon dark and light.
+    /// `scripts/screenshot-tour.sh` sets all of this up.
+    ///
+    /// - `CRATEDIGGER_CRATES_DIR`: the demo library's own crates folder. Required:
+    ///   without it the tour would seed into the real library, so it refuses.
+    /// - `CRATEDIGGER_SEED`: the music folder to import.
+    /// - `CRATEDIGGER_SEED_CRATES`: JSON `{"Crate": ["folder name prefix", …]}`.
+    ///   Everything unmatched lands in the Prep Crate.
+    /// - `CRATEDIGGER_TOUR`: the output folder; `dark/` and `light/` go inside.
+    ///
+    /// Run it from a renamed copy of the debug binary, as the script does, so its
+    /// preferences are a domain of their own too: no bookmarks into the real
+    /// library, no Last.fm session.
+    private func installDemoTourIfRequested() {
+        let env = ProcessInfo.processInfo.environment
+        guard let out = env["CRATEDIGGER_TOUR"] else { return }
+        guard LibraryViewModel.debugCratesDirectory != nil else {
+            NSLog("[tour] refusing to run: CRATEDIGGER_CRATES_DIR is not set, so the demo would be seeded into the real library")
+            return
+        }
+        let folder = URL(fileURLWithPath: out, isDirectory: true)
+        let crates = env["CRATEDIGGER_SEED_CRATES"]
+            .flatMap { $0.data(using: .utf8) }
+            .flatMap { try? JSONDecoder().decode([String: [String]].self, from: $0) } ?? [:]
+
+        Task { @MainActor [weak self] in
+            // Let the window and the empty library settle first.
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard let self, let model = self.mainWindowController?.model else { return }
+            // Carbon by name. With no theme saved, the theme editor forks the
+            // first theme matching the screen, and in light that was a theme
+            // installed on this Mac rather than Carbon.
+            PreferencesStore.shared.selectedThemeID = "carbon"
+            if let seed = env["CRATEDIGGER_SEED"] {
+                await Self.seedDemoLibrary(model: model, folder: URL(fileURLWithPath: seed, isDirectory: true), crates: crates)
+            }
+            await self.runFeatureTour(model: model, into: folder)
+            try? "done\n".write(to: folder.appendingPathComponent("DONE.txt"), atomically: true, encoding: .utf8)
+            NSApp.terminate(nil)
+            // The first run's terminate never completed and the script sat
+            // waiting on the process. Every file is written by now, so give the
+            // clean quit five seconds and then leave anyway.
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            exit(0)
+        }
+    }
+
+    /// Scan the folder once, file the mapped items into crates, stage the rest
+    /// in the Prep Crate, and give Radio a few stations to list.
+    @MainActor
+    private static func seedDemoLibrary(model: LibraryViewModel, folder: URL, crates: [String: [String]]) async {
+        let items = ((try? FileManager.default.contentsOfDirectory(
+            at: folder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? [])
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+        func crate(for item: URL) -> String? {
+            crates.first { _, prefixes in prefixes.contains { item.lastPathComponent.hasPrefix($0) } }?.key
+        }
+
+        var filed: [String: [LoadedTrack]] = [:]
+        var unfiled: [URL] = []
+        for item in items {
+            guard let name = crate(for: item) else {
+                unfiled.append(item)
+                continue
+            }
+            filed[name, default: []] += await model.scanner.scanFolder(item)
+        }
+        for (name, tracks) in filed {
+            model.saveCrateTracks(tracks, name: name, persistStore: false)
+        }
+        model.persistTrackStore()
+        // Crate files never carry image bytes; the store has to hold them.
+        model.ingestArtwork(from: filed.values.flatMap { $0 })
+        model.refreshAvailableCrates()
+
+        if !unfiled.isEmpty {
+            model.importDroppedURLs(unfiled)
+            var waited = 0
+            while (model.scanProgress.isRunning || model.prepCrateTracks.isEmpty) && waited < 240 {
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                waited += 1
+            }
+        }
+
+        if model.streams.isEmpty {
+            let picks = StreamSuggestion.catalog(for: .youtubeLive).prefix(3)
+                + StreamSuggestion.catalog(for: .youtubeRecords).prefix(3)
+            for suggestion in picks {
+                guard let parsed = StreamURLParser.parse(suggestion.url) else { continue }
+                let stream = StreamSource(
+                    id: "demo-" + suggestion.id,
+                    url: parsed.normalizedURL,
+                    title: suggestion.title,
+                    channel: suggestion.channel,
+                    kind: suggestion.kind,
+                    hue: Int.random(in: 0...359),
+                    addedAt: Date(),
+                    viewers: suggestion.kind == .live ? "0" : nil
+                )
+                model.streams = model.streamStore.add(stream)
+            }
+        }
+
+        model.selectSource(.localAll)
+        seedListeningHistory(model: model)
+        NSLog("[tour] seeded \(filed.values.map(\.count).reduce(0, +)) tracks into \(filed.count) crates, \(model.prepCrateTracks.count) into the Prep Crate")
+    }
+
+    /// Plays and ratings for the demo library, so STATS and the stars have
+    /// something to read. The showcase album is played most and rated highest,
+    /// so the hero shot and the stats screen tell the same story. Plays spread
+    /// back over a few months, so Month and Year both have data.
+    @MainActor
+    private static func seedListeningHistory(model: LibraryViewModel) {
+        let albums = model.index.artists.flatMap(\.albums).sorted { $0.title < $1.title }
+        guard !albums.isEmpty else { return }
+        let showcase = showcaseAlbum(in: albums)
+        let store = model.currentListeningStore()
+        let now = Date()
+        for (rank, album) in albums.enumerated() {
+            let isShowcase = album.id == showcase?.id
+            let albumPlays = isShowcase ? 9 : 1 + rank % 5
+            for (index, track) in album.tracks.enumerated() {
+                let path = ListeningStore.key(for: track.track.fileURL)
+                for play in 0..<max(1, albumPlays - index % 3) {
+                    store.recordPlay(path: path, at: now.addingTimeInterval(-Double(index * 3 + play * 9) * 86_400))
+                }
+                store.setRating(isShowcase ? 5 : 3 + rank % 3, path: path)
+            }
+        }
+        _ = model.persistListeningStore()
+        model.markListeningSummaryStale()
+    }
+
+    /// The album the tour leads with: `CRATEDIGGER_SHOWCASE`, a title or artist
+    /// prefix, when set; else the first album with art and a few tracks.
+    private static func showcaseAlbum(in albums: [Album]) -> Album? {
+        if let prefix = ProcessInfo.processInfo.environment["CRATEDIGGER_SHOWCASE"]?.lowercased(), !prefix.isEmpty,
+           let match = albums.first(where: {
+               $0.title.lowercased().hasPrefix(prefix) || $0.artistName.lowercased().hasPrefix(prefix)
+           }) {
+            return match
+        }
+        return albums.first { $0.artworkHash != nil && $0.tracks.count > 3 } ?? albums.first
+    }
+
+    /// Every feature the website and the README talk about, one state per step,
+    /// in dark and then light. Each step sets its own state up, waits for it to
+    /// settle, captures every visible window (sheets, panels and the mini player
+    /// are windows of their own), then closes whatever it opened.
+    @MainActor
+    private func runFeatureTour(model: LibraryViewModel, into folder: URL) async {
+        let albums = model.index.artists.flatMap(\.albums)
+        let showcase = Self.showcaseAlbum(in: albums)
+        let pdfAlbum = albums.first { album in
+            if case .pdf? = album.booklet?.source { return true } else { return false }
+        }
+        let scansAlbum = albums.first { album in
+            if case .images? = album.booklet?.source { return true } else { return false }
+        } ?? showcase
+        let crate = model.availableCrates.first { $0 != "Personal Crate" } ?? model.availableCrates.first
+
+        typealias Step = (name: String, settle: Double, setUp: @MainActor () -> Void)
+        let steps: [Step] = [
+            ("01-now-playing", 5, {
+                model.selectSource(.localAll)
+                model.browserView = .classic
+                if let showcase { model.revealAlbum(showcase) }
+                model.playbackVolume = 0.35
+                if let track = showcase?.tracks.first { model.playTrack(id: track.track.id) }
+                model.oledView = .nowPlaying
+                model.inspectorTab = .info
+            }),
+            ("02-inspector-queue", 2, { model.inspectorTab = .queue }),
+            ("03-inspector-art", 3, { model.inspectorTab = .art }),
+            ("04-inspector-disc", 3, { model.inspectorTab = .disc }),
+            ("05-convert-patch-bay", 3, {
+                model.inspectorTab = .info
+                model.oledView = .conversion
+            }),
+            ("06-screen-scan", 2, { model.oledView = .scan }),
+            ("07-screen-sync", 2, { model.oledView = .remoteSync }),
+            ("08-screen-cd", 2, { model.oledView = .cdRip }),
+            ("09-screen-devices", 2, { model.oledView = .devices }),
+            ("10-screen-stats", 3, { model.oledView = .stats }),
+            ("11-search", 3, {
+                model.oledView = .nowPlaying
+                model.searchQuery = "memory"
+            }),
+            ("12-browser-year-columns", 3, {
+                model.searchQuery = ""
+                model.browserView = BrowserView([.year, .album, .track])
+            }),
+            ("13-prep-crate", 3, {
+                model.browserView = .classic
+                model.selectSource(.prepCrate)
+            }),
+            ("14-crate", 3, { if let crate { model.selectSource(.localCrate(name: crate)) } }),
+            ("15-radio", 4, { model.selectSource(.radio(category: nil)) }),
+            ("16-artwork-gallery", 4, {
+                model.selectSource(.localAll)
+                // A–Z makes a grid of covers. By year, a small library is one
+                // album per section, and the gallery scrolls to the selection.
+                model.albumSortField = .title
+                if let showcase { model.revealAlbum(showcase) }
+                model.showArtworkGallery = true
+            }),
+            ("17-artwork-viewer", 4, {
+                model.showArtworkGallery = false
+                model.artworkViewerAlbum = scansAlbum
+            }),
+            ("18-booklet-pdf", 4, { if let pdfAlbum { model.artworkViewerAlbum = pdfAlbum } }),
+            ("19-theme-picker", 3, { model.showingThemePicker = true }),
+            ("20-theme-editor", 4, {
+                model.showingThemePicker = false
+                model.showingThemeEditor = true
+            }),
+            ("21-whats-new", 3, {
+                model.showingThemeEditor = false
+                model.startWhatsNew()
+            }),
+            ("22-welcome-tour", 3, {
+                model.showingWhatsNew = false
+                model.startWelcomeTour()
+            }),
+            ("23-eq-editor", 3, {
+                model.showingWelcomeTour = false
+                model.showingEQEditor = true
+            }),
+            ("24-record-divider", 4, {
+                model.showingEQEditor = false
+                if let track = model.nowPlayingTrack { model.beginRecordDivider(for: track) }
+            }),
+            // FIX TAGS asks MusicBrainz and iTunes, so it gets the longest wait.
+            ("25-fix-tags", 15, {
+                model.showingRecordDividerSheet = false
+                if let showcase {
+                    model.revealAlbum(showcase)
+                    // A selection is what sends FIX TAGS online; with nothing
+                    // selected it only checks the source's track numbers.
+                    model.selectAlbum(showcase, command: true, shift: false, ordered: albums, flat: false)
+                }
+                model.repairMissingMetadata()
+            }),
+            ("26-sleep-timer", 3, {
+                model.cancelMatchQueue()
+                model.clearMultiSelection()
+                model.setSleepMode(.after(minutes: 30))
+            }),
+            ("27-settings", 3, {
+                model.cancelSleep()
+                self.showPreferences(nil)
+            }),
+            ("28-mini-player", 4, { self.showMiniPlayer(nil) })
+        ]
+
+        for (appearance, label) in [(AppearanceMode.dark, "dark"), (AppearanceMode.light, "light")] {
+            let dir = folder.appendingPathComponent(label, isDirectory: true)
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            exitMiniPlayer()
+            Self.setAppearance(appearance)
+            for step in steps {
+                let openBefore = Set(NSApp.windows.filter(\.isVisible).map(ObjectIdentifier.init))
+                // An alert left by the last step would cover this one.
+                model.appAlert = nil
+                step.setUp()
+                try? await Task.sleep(nanoseconds: UInt64(step.settle * 1_000_000_000))
+                captureVisibleWindows(named: step.name, into: dir)
+                closeWindowsOpened(since: openBefore)
+                NSLog("[tour] \(label)/\(step.name)")
+            }
+        }
+        exitMiniPlayer()
+    }
+
+    /// Close the windows a step opened (a viewer, a booklet, a panel, Settings)
+    /// once it is captured, so none of them walks into the next shot. The first
+    /// run went by title bar and missed the borderless viewers; comparing with
+    /// what was open before the step catches every kind. Sheets are dismissed by
+    /// their state, and the mini player by `exitMiniPlayer`.
+    @MainActor
+    private func closeWindowsOpened(since openBefore: Set<ObjectIdentifier>) {
+        let keep = Set([mainWindowController?.window, miniPlayerWindowController?.window]
+            .compactMap { $0 }.map(ObjectIdentifier.init))
+        for window in NSApp.windows where window.isVisible && window.sheetParent == nil {
+            let id = ObjectIdentifier(window)
+            if !openBefore.contains(id) && !keep.contains(id) { window.close() }
+        }
+    }
+
+    /// The main window as `<name>.png`, and every other visible window beside it
+    /// as `<name>-<title>.png` (numbered when untitled).
+    @MainActor
+    private func captureVisibleWindows(named name: String, into folder: URL) {
+        let main = mainWindowController?.window
+        var untitled = 0
+        for window in NSApp.windows where window.isVisible {
+            let file: String
+            if window === main {
+                file = name
+            } else {
+                let title = window.title.lowercased().replacingOccurrences(of: " ", with: "-")
+                if title.isEmpty { untitled += 1 }
+                file = "\(name)-\(title.isEmpty ? "window\(untitled)" : title)"
+            }
+            Self.writePNG(of: window, to: folder.appendingPathComponent("\(file).png"))
+        }
+    }
+
+    /// A window's own view tree as a PNG: no screen-recording permission, and
+    /// nothing else on screen gets into the frame.
+    @discardableResult
+    private static func writePNG(of window: NSWindow, to url: URL) -> Bool {
+        guard let frameView = window.contentView?.superview ?? window.contentView,
+              let rep = frameView.bitmapImageRepForCachingDisplay(in: frameView.bounds)
+        else { return false }
+        frameView.cacheDisplay(in: frameView.bounds, to: rep)
+        guard let png = rep.representation(using: .png, properties: [:]) else { return false }
+        do {
+            try png.write(to: url)
+            return true
+        } catch {
+            NSLog("[tour] failed to write \(url.lastPathComponent): \(error)")
+            return false
+        }
+    }
+
     private static func setAppearance(_ mode: AppearanceMode) {
         UserDefaults.standard.set(mode.rawValue, forKey: AppearanceMode.userDefaultsKey)
         NotificationCenter.default.post(name: AppearanceMode.didChangeNotification, object: nil)
@@ -702,20 +1033,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     /// permission, and nothing else on screen can get into the frame.
     @discardableResult
     private func captureWindow(to url: URL) -> Bool {
-        guard let window = mainWindowController?.window,
-              let frameView = window.contentView?.superview ?? window.contentView,
-              let rep = frameView.bitmapImageRepForCachingDisplay(in: frameView.bounds)
-        else { return false }
-        frameView.cacheDisplay(in: frameView.bounds, to: rep)
-        guard let png = rep.representation(using: .png, properties: [:]) else { return false }
-        do {
-            try png.write(to: url)
-            NSLog("[shot list] wrote \(url.lastPathComponent)")
-            return true
-        } catch {
-            NSLog("[shot list] failed to write \(url.lastPathComponent): \(error)")
-            return false
-        }
+        guard let window = mainWindowController?.window, Self.writePNG(of: window, to: url) else { return false }
+        NSLog("[shot list] wrote \(url.lastPathComponent)")
+        return true
     }
     #endif
 

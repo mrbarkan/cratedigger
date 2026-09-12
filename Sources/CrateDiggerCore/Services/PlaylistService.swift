@@ -15,13 +15,17 @@ public final class PlaylistService {
     private let fileManager: FileManager
     private let playlistsDirectoryURL: URL
 
-    public init(fileManager: FileManager = .default) {
+    /// `directory` replaces the shared `Application Support/CrateDigger/Playlists`
+    /// folder; the debug demo library passes one of its own.
+    public init(fileManager: FileManager = .default, directory: URL? = nil) {
         self.fileManager = fileManager
-        
-        let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let appDirectory = appSupport.appendingPathComponent("CrateDigger", isDirectory: true)
-        self.playlistsDirectoryURL = appDirectory.appendingPathComponent("Playlists", isDirectory: true)
-        
+        if let directory {
+            self.playlistsDirectoryURL = directory
+        } else {
+            let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            let appDirectory = appSupport.appendingPathComponent("CrateDigger", isDirectory: true)
+            self.playlistsDirectoryURL = appDirectory.appendingPathComponent("Playlists", isDirectory: true)
+        }
         try? fileManager.createDirectory(at: playlistsDirectoryURL, withIntermediateDirectories: true)
     }
 

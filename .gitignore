@@ -39,3 +39,7 @@ default.profraw
 
 # Intermediate icon build product; the committed copy lives in Packaging/.
 Branding/Icon/CrateDigger.icns
+
+# Screenshot tour output (scripts/screenshot-tour.sh): regenerated, and far
+# too heavy for git. Copy the keepers into website/assets.
+docs/screenshots/

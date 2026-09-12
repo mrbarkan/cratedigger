@@ -67,7 +67,15 @@ public final class ThemeRegistry: ObservableObject {
     public init(loader: ThemeLoaderService? = nil) {
         // Not a default argument: `Bundle.crateDiggerResources` is internal to
         // this target and can't appear in a public signature.
-        self.loader = loader ?? ThemeLoaderService(bundles: Bundle.crateDiggerSearchBundles)
+        #if DEBUG
+        // The screenshot tour's demo library keeps a themes folder of its own,
+        // so themes installed on this Mac never turn up in its captures.
+        let userThemes = LibraryViewModel.debugCratesDirectory?.appendingPathComponent("Themes", isDirectory: true)
+        #else
+        let userThemes: URL? = nil
+        #endif
+        self.loader = loader ?? ThemeLoaderService(bundles: Bundle.crateDiggerSearchBundles,
+                                                   userThemesDirectoryOverride: userThemes)
         refresh()
 
         // `selectedThemeID` changing is the common case (picking a theme in

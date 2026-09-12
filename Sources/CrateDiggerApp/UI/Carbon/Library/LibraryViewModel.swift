@@ -1244,7 +1244,13 @@ final class LibraryViewModel: ObservableObject {
     let subsonicClient = SubsonicClient()
     let cdRipper = CDRipperService()
     let deviceDetector = DeviceDetectionService()
+    #if DEBUG
+    let playlistService = PlaylistService(
+        directory: LibraryViewModel.debugCratesDirectory?.appendingPathComponent("Playlists", isDirectory: true)
+    )
+    #else
     let playlistService = PlaylistService()
+    #endif
     let audioOutput = AudioOutputManager()
     let lastFM = LastFMScrobbler()
     var metadataEditor: MetadataEditorService?
@@ -3775,8 +3781,23 @@ final class LibraryViewModel: ObservableObject {
 
     // MARK: - Crates Directory URL
 
+    #if DEBUG
+    /// `CRATEDIGGER_CRATES_DIR`: a debug run keeps its crates, track store,
+    /// listening history and playlists in a folder of its own, so the demo
+    /// library the screenshot tour builds never mixes with the real one. See
+    /// `installDemoTourIfRequested` in AppDelegate.
+    nonisolated static let debugCratesDirectory: URL? = ProcessInfo.processInfo.environment["CRATEDIGGER_CRATES_DIR"]
+        .map { URL(fileURLWithPath: $0, isDirectory: true) }
+    #endif
+
     var cratesDirectoryURL: URL {
         let fm = FileManager.default
+        #if DEBUG
+        if let dir = Self.debugCratesDirectory {
+            try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+            return dir
+        }
+        #endif
         if let data = prefs.cratesIndexFolderBookmark,
            let resolved = PreferencesStore.resolveBookmark(data)?.url {
             try? fm.createDirectory(at: resolved, withIntermediateDirectories: true)
