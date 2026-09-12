@@ -20,6 +20,13 @@ build, which is monotonic across every release.
   the cover: the record, its artist and year and a crate it lives in, or how
   long ago you last played it.
 
+### Changed
+
+- **Drag to reorder Up Next.** Click, hold and drag a queued track onto
+  another to move it there, or below the last one to send it to the end, in
+  the Inspector's queue and the mini player's. A lit line shows where it will
+  land. The up and down arrows are gone; hover still offers remove.
+
 ## 2.0.5 (88), 2026-09-11
 
 One album folder is one album, however its tags disagree.

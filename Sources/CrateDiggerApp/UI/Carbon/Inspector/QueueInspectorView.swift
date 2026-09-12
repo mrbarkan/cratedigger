@@ -1,9 +1,11 @@
+import AppKit
 import CrateDiggerCore
 import SwiftUI
 
-/// Up Next — the queue behind the playing track, with reordering and removal.
-/// Rows mirror the browser's track rows so the queue reads as the same hardware,
-/// not a separate list widget.
+/// Up Next — the queue behind the playing track. Drag a row onto another to
+/// reorder, hover for ✕ to remove, double-click to play. Rows mirror the
+/// browser's track rows so the queue reads as the same hardware, not a
+/// separate list widget.
 struct QueueInspectorView: View {
     @Environment(\.carbon) private var theme
     @EnvironmentObject private var model: LibraryViewModel
@@ -65,36 +67,29 @@ struct QueueInspectorView: View {
 
     // MARK: - List
 
+    /// A plain stack rather than a `List` with `onMove`: the rows are drag
+    /// sources and drop targets the way playlist rows are, which is what lets a
+    /// click, hold and drag pick one up and shows where it will land.
     private var list: some View {
-        // Offset into the full queue: Up Next starts after the playing track.
-        let base = (model.playbackCurrentIndex ?? -1) + 1
-        return List {
-            ForEach(Array(model.upNextTracks.enumerated()), id: \.element.track.id) { offset, loaded in
-                QueueRow(
-                    loaded: loaded,
-                    position: offset + 1,
-                    onPlay: { model.playFromQueue(trackID: loaded.track.id) },
-                    onRemove: { model.removeFromQueue(trackIDs: [loaded.track.id]) },
-                    onMoveUp: offset > 0
-                        ? { model.moveInQueue(from: base + offset, to: base + offset - 1) }
-                        : nil,
-                    onMoveDown: offset < model.upNextTracks.count - 1
-                        ? { model.moveInQueue(from: base + offset, to: base + offset + 2) }
-                        : nil
-                )
-                .listRowInsets(EdgeInsets())
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
-            }
-            .onMove { offsets, destination in
-                // `destination` is List's insertion index in the pre-move
-                // array, the convention `moveInQueue` already implements.
-                guard let source = offsets.first else { return }
-                model.moveInQueue(from: base + source, to: base + destination)
+        ScrollView(.vertical, showsIndicators: false) {
+            LazyVStack(spacing: 0) {
+                ForEach(Array(model.upNextTracks.enumerated()), id: \.element.track.id) { offset, loaded in
+                    QueueRow(
+                        loaded: loaded,
+                        position: offset + 1,
+                        onPlay: { model.playFromQueue(trackID: loaded.track.id) },
+                        onRemove: { model.removeFromQueue(trackIDs: [loaded.track.id]) }
+                    )
+                    .draggable(QueueDrag.payload(for: loaded.track.id))
+                    .modifier(ReorderDropTarget(onDrop: { model.dropQueuedTracks($0, before: loaded.track.id) }))
+                }
+                // Below the last row: a drop here sends the track to the end.
+                Color.clear
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .contentShape(Rectangle())
+                    .modifier(ReorderDropTarget(onDrop: { model.dropQueuedTracks($0, before: nil) }))
             }
         }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
     }
 
     private func notice(_ text: String) -> some View {
@@ -125,34 +120,52 @@ private struct QueueRow: View {
     let position: Int
     let onPlay: () -> Void
     let onRemove: () -> Void
-    let onMoveUp: (() -> Void)?
-    let onMoveDown: (() -> Void)?
 
     @State private var hovering = false
 
     var body: some View {
         HStack(spacing: 8) {
-            Text(String(format: "%02d", position))
-                .font(CarbonFont.mono(9.5))
-                .foregroundStyle(theme.ink4)
-                .frame(width: 20, alignment: .trailing)
+            // Double-click plays. Read off the event rather than a
+            // `TapGesture(count: 2)`: the row is a drag source and a drop
+            // target, and those swallow the second mouse-down (see
+            // `TrackTableRow`). The remove key sits outside this button so the
+            // two never nest.
+            Button(action: {
+                if (NSApp.currentEvent?.clickCount ?? 1) >= 2 { onPlay() }
+            }) {
+                HStack(spacing: 8) {
+                    Text(String(format: "%02d", position))
+                        .font(CarbonFont.mono(9.5))
+                        .foregroundStyle(theme.ink4)
+                        .frame(width: 20, alignment: .trailing)
 
-            VStack(alignment: .leading, spacing: 1) {
-                Text(loaded.track.title)
-                    .font(CarbonFont.sans(12, weight: .medium))
-                    .foregroundStyle(theme.ink)
-                    .lineLimit(1)
-                Text(subtitle)
-                    .font(CarbonFont.mono(8.5))
-                    .foregroundStyle(theme.ink4)
-                    .lineLimit(1)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(loaded.track.title)
+                            .font(CarbonFont.sans(12, weight: .medium))
+                            .foregroundStyle(theme.ink)
+                            .lineLimit(1)
+                        Text(subtitle)
+                            .font(CarbonFont.mono(8.5))
+                            .foregroundStyle(theme.ink4)
+                            .lineLimit(1)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .contentShape(Rectangle())
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .buttonStyle(.plain)
 
-            // Controls replace the duration on hover — the row is narrow and the
-            // time is the less useful of the two while you're editing the queue.
+            // The remove key replaces the duration on hover: the row is narrow
+            // and the time is the less useful of the two while editing.
             if hovering {
-                controls
+                Button(action: onRemove) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(theme.ink2)
+                        .frame(width: 18, height: 18)
+                }
+                .buttonStyle(.carbonHover)
+                .carbonTip("Remove from queue")
             } else if loaded.track.durationSeconds > 0 {
                 Text(QueueInspectorView.durationLabel(loaded.track.durationSeconds))
                     .font(CarbonFont.mono(9.5))
@@ -170,7 +183,6 @@ private struct QueueRow: View {
             alignment: .bottom
         )
         .onHover { hovering = $0 }
-        .onTapGesture(count: 2, perform: onPlay)
         .contextMenu {
             Button("Play Now", action: onPlay)
             Button("Remove from Queue", action: onRemove)
@@ -182,26 +194,5 @@ private struct QueueRow: View {
             .filter { !$0.isEmpty }
             .joined(separator: " · ")
             .uppercased()
-    }
-
-    private var controls: some View {
-        HStack(spacing: 2) {
-            iconButton("chevron.up", help: "Move up", action: onMoveUp)
-            iconButton("chevron.down", help: "Move down", action: onMoveDown)
-            iconButton("xmark", help: "Remove from queue", action: onRemove)
-        }
-    }
-
-    @ViewBuilder
-    private func iconButton(_ symbol: String, help: String, action: (() -> Void)?) -> some View {
-        Button(action: { action?() }) {
-            Image(systemName: symbol)
-                .font(.system(size: 9, weight: .bold))
-                .foregroundStyle(action == nil ? theme.ink4.opacity(0.35) : theme.ink2)
-                .frame(width: 18, height: 18)
-        }
-        .buttonStyle(.carbonHover)
-        .disabled(action == nil)
-        .carbonTip(help)
     }
 }

@@ -118,12 +118,17 @@ enum TrackTableMetrics {
     static let horizontalPadding: CGFloat = 10
 }
 
-/// The insertion affordance for playlist reordering: a lit rule along the row's
-/// top edge while a drag hovers, so you can see where the drop will land.
-private struct ReorderDropTarget: ViewModifier {
+/// The insertion affordance for reordering a playlist or Up Next: a lit rule
+/// along the row's top edge while a drag hovers, so you can see where the drop
+/// will land.
+struct ReorderDropTarget: ViewModifier {
     @Environment(\.carbon) private var theme
     let onDrop: (([String]) -> Void)?
     @State private var targeted = false
+
+    init(onDrop: (([String]) -> Void)?) {
+        self.onDrop = onDrop
+    }
 
     func body(content: Content) -> some View {
         if let onDrop {

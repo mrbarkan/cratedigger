@@ -131,6 +131,16 @@ extension LibraryViewModel {
         savePlaybackSnapshot()
     }
 
+    /// Drop dragged Up Next rows in ahead of `target`, or at the end of the
+    /// queue for a drop below the last row. Anything else dragged over the
+    /// queue, a browser track say, is ignored.
+    func dropQueuedTracks(_ payloads: [String], before target: UUID?) {
+        for payload in payloads {
+            guard let move = QueueDrag.move(payload: payload, before: target, in: playbackQueue.map(\.track.id)) else { continue }
+            moveInQueue(from: move.from, to: move.to)
+        }
+    }
+
     /// Jump straight to a queued track (double-clicking a row in Up Next).
     func playFromQueue(trackID: UUID) {
         guard let index = playbackQueue.firstIndex(where: { $0.track.id == trackID }) else { return }

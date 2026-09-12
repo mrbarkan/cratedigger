@@ -523,39 +523,33 @@ private struct MiniPlayerPanel: View {
                    ? "Nothing playing.\nPick a crate or a stream under Sources."
                    : "Nothing up next.")
         } else {
-            List {
-                ForEach(Array(model.upNextTracks.enumerated()), id: \.element.track.id) { offset, loaded in
-                    MiniQueueRow(
-                        loaded: loaded,
-                        position: offset + 1,
-                        onPlay: { model.playFromQueue(trackID: loaded.track.id) },
-                        onRemove: { model.removeFromQueue(trackIDs: [loaded.track.id]) }
-                    )
-                    .listRowInsets(EdgeInsets())
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
-                }
-                .onMove { offsets, destination in
-                    guard let first = offsets.first, let current = model.playbackCurrentIndex else { return }
-                    // Up Next is the queue after the playing track; shift into
-                    // queue coordinates the way the inspector does.
-                    let base = current + 1
-                    model.moveInQueue(from: base + first, to: base + destination)
-                }
-                // A shuffle deals a fixed hand, so the end of the list is where
-                // you ask for more of the same crate rather than a dead stop.
-                if model.shuffleDealMoreCount > 0 {
-                    dealMoreRow
-                        .listRowInsets(EdgeInsets())
-                        .listRowSeparator(.hidden)
-                        .listRowBackground(Color.clear)
+            // A plain stack of drag sources and drop targets, as in the
+            // inspector's Up Next: a List's onMove never picked a row up.
+            ScrollView(.vertical, showsIndicators: false) {
+                LazyVStack(spacing: 0) {
+                    ForEach(Array(model.upNextTracks.enumerated()), id: \.element.track.id) { offset, loaded in
+                        MiniQueueRow(
+                            loaded: loaded,
+                            position: offset + 1,
+                            onPlay: { model.playFromQueue(trackID: loaded.track.id) },
+                            onRemove: { model.removeFromQueue(trackIDs: [loaded.track.id]) }
+                        )
+                        .draggable(QueueDrag.payload(for: loaded.track.id))
+                        .modifier(ReorderDropTarget(onDrop: { model.dropQueuedTracks($0, before: loaded.track.id) }))
+                    }
+                    // Below the last row: a drop here sends the track to the end.
+                    Color.clear
+                        .frame(maxWidth: .infinity, minHeight: 24)
+                        .contentShape(Rectangle())
+                        .modifier(ReorderDropTarget(onDrop: { model.dropQueuedTracks($0, before: nil) }))
+                    // A shuffle deals a fixed hand, so the end of the list is
+                    // where you ask for more of the same crate rather than a
+                    // dead stop.
+                    if model.shuffleDealMoreCount > 0 {
+                        dealMoreRow
+                    }
                 }
             }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
-            // Rows are two lines of small type; List's default minimum would
-            // pad each one out to a finger-sized cell.
-            .environment(\.defaultMinListRowHeight, 1)
         }
     }
 
@@ -735,21 +729,30 @@ private struct MiniQueueRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Text(String(format: "%02d", position))
-                .font(CarbonFont.mono(8.5))
-                .foregroundStyle(theme.ink4)
-                .frame(width: 18, alignment: .trailing)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(loaded.track.title)
-                    .font(CarbonFont.sans(12, weight: .medium))
-                    .foregroundStyle(theme.ink)
-                    .lineLimit(1)
-                Text(loaded.track.artist.uppercased())
-                    .font(CarbonFont.mono(8))
-                    .foregroundStyle(theme.ink4)
-                    .lineLimit(1)
+            // A button, not a tap gesture: a tap gesture on a drag source eats
+            // the mouse-down that starts the drag. The remove key sits outside
+            // it so the two never nest.
+            Button(action: onPlay) {
+                HStack(spacing: 8) {
+                    Text(String(format: "%02d", position))
+                        .font(CarbonFont.mono(8.5))
+                        .foregroundStyle(theme.ink4)
+                        .frame(width: 18, alignment: .trailing)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(loaded.track.title)
+                            .font(CarbonFont.sans(12, weight: .medium))
+                            .foregroundStyle(theme.ink)
+                            .lineLimit(1)
+                        Text(loaded.track.artist.uppercased())
+                            .font(CarbonFont.mono(8))
+                            .foregroundStyle(theme.ink4)
+                            .lineLimit(1)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .contentShape(Rectangle())
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .buttonStyle(.plain)
             if hovering {
                 Button(action: onRemove) {
                     Image(systemName: "xmark")
@@ -770,7 +773,6 @@ private struct MiniQueueRow: View {
         .contentShape(Rectangle())
         .background(hovering ? theme.ink.opacity(0.05) : Color.clear)
         .onHover { hovering = $0 }
-        .onTapGesture(perform: onPlay)
     }
 }
 
