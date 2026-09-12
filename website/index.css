@@ -710,6 +710,7 @@ body[data-theme="light"] .navbar {
 .spotlight-thumb {
   flex: 1 1 0;
   min-width: 0;
+  max-width: 150px;
   padding: 0;
   background: none;
   border: 0;

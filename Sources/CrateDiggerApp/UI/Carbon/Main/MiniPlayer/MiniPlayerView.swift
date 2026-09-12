@@ -112,7 +112,19 @@ struct MiniPlayerView: View {
             panelOpen = false
             onPanelChange(false)
         }
+        #if DEBUG
+        // The screenshot tour opens the Up Next drawer; the tab is not reachable from outside.
+        .onReceive(NotificationCenter.default.publisher(for: Self.debugShowUpNextNotification)) { _ in
+            panelTab = .upNext
+            panelOpen = true
+            onPanelChange(true)
+        }
+        #endif
     }
+
+    #if DEBUG
+    static let debugShowUpNextNotification = Notification.Name("CrateDiggerDebugMiniPlayerUpNext")
+    #endif
 }
 
 /// The lower half: UP NEXT / SOURCES on their own glass body.

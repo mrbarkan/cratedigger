@@ -881,7 +881,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                 model.inspectorTab = .info
                 model.oledView = .conversion
             }),
-            ("06-screen-scan", 2, { model.oledView = .scan }),
+            ("05b-convert-queue", 3, {
+                if let showcase { model.addToConvertQueue(showcase.tracks) }
+            }),
+            ("06-screen-scan", 2, {
+                model.clearConvertQueue()
+                model.oledView = .scan
+            }),
             ("07-screen-sync", 2, { model.oledView = .remoteSync }),
             ("08-screen-cd", 2, { model.oledView = .cdRip }),
             ("09-screen-devices", 2, { model.oledView = .devices }),
@@ -900,8 +906,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             }),
             ("14-crate", 3, { if let crate { model.selectSource(.localCrate(name: crate)) } }),
             ("15-radio", 4, { model.selectSource(.radio(category: nil)) }),
+            // yt-dlp resolves the stream, so ON AIR takes a while to light. A
+            // record is steadier than a live stream for the shot.
+            ("15b-radio-on-air", 15, {
+                if let stream = model.streams.first(where: { $0.kind != .live }) ?? model.streams.first {
+                    model.selectStream(id: stream.id)
+                }
+            }),
             ("16-artwork-gallery", 4, {
+                model.stopRadio()
                 model.selectSource(.localAll)
+                if let track = showcase?.tracks.first { model.playTrack(id: track.track.id) }
                 // A–Z makes a grid of covers. By year, a small library is one
                 // album per section, and the gallery scrolls to the selection.
                 model.albumSortField = .title
@@ -962,7 +977,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                 model.cancelSleep()
                 self.showPreferences(nil)
             }),
-            ("28-mini-player", 4, { self.showMiniPlayer(nil) })
+            ("28-mini-player", 4, { self.showMiniPlayer(nil) }),
+            ("28b-mini-player-up-next", 4, {
+                NotificationCenter.default.post(name: MiniPlayerView.debugShowUpNextNotification, object: nil)
+            })
         ]
 
         for (appearance, label) in [(AppearanceMode.dark, "dark"), (AppearanceMode.light, "light")] {
