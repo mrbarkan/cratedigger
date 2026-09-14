@@ -11,7 +11,7 @@ the skeumorphic tool we all ~don't~ need.
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 
 <p align="center">
-  <img src="website/assets/screenshot_dark.png" alt="CrateDigger playing an album: Sources, Browser and Inspector panes under the OLED display, transport controls and VU meters below" width="820">
+  <img src="website/assets/screenshot_dark.jpg" alt="CrateDigger playing an album: Sources, Browser and Inspector panes under the OLED display, transport controls and VU meters below" width="820">
 </p>
 
 The whole interface is a bit like a hardware console (the design system is called
