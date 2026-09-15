@@ -3,6 +3,35 @@
     <channel>
         <title>CrateDigger</title>
         <item>
+            <title>2.1.1</title>
+            <pubDate>Tue, 15 Sep 2026 19:01:24 -0300</pubDate>
+            <link>https://cratedigger.mrbarkan.com/</link>
+            <sparkle:fullReleaseNotesLink>https://github.com/mrbarkan/cratedigger/releases</sparkle:fullReleaseNotesLink>
+            <sparkle:version>90</sparkle:version>
+            <sparkle:shortVersionString>2.1.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description sparkle:format="markdown"><![CDATA[
+Ready for macOS 27 Golden Gate.
+
+### Changed
+
+- **Built for macOS 27.** CrateDigger is now built with the macOS 27 SDK.
+- **Updates keep working on macOS 27.** The in-app updater moves to Sparkle
+  2.10.0, which fixes a macOS 27 problem with the smaller patch updates
+  CrateDigger downloads between versions.
+
+]]></description>
+            <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.1.1/CrateDigger-2.1.1.dmg" length="72016728" type="application/octet-stream" sparkle:edSignature="kG5lD6P/NfUdawFN8moKNhski13E/yVq8qnqVhHgT+zHwJyMmJU8/MadcJi4tGaeAwVgL17YDG52dfORsgzWBw=="/>
+            <sparkle:deltas>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.1.1/CrateDigger90-89.delta" sparkle:deltaFrom="89" length="494174" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="w+uqsbD3ucIHKzFp7VjRbsL2dRxwXFrvQxJ+8Cc6t5YakU3gSOOMtKoIMmWHzSQoFlOR9usVPYEdDoEIphMDBg=="/>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.1.1/CrateDigger90-88.delta" sparkle:deltaFrom="88" length="1682910" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="Nn9NOuRPS6KA+4P8LzfyhXGlPP1cWZAZ+Gi7OBHPF4VaVw9xOLbDnioxniKeqkbjBKfHLR8ZzOjtiLuTALaYBg=="/>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.1.1/CrateDigger90-87.delta" sparkle:deltaFrom="87" length="1739006" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="HSGgXX7dVjJ6xZ2SU3MTpsQM/fHU/KPLqVd+0jWy2DnIlbZnTCAzHk7htq7nizs6RDB4fYL0gwrRJPfrk90aDA=="/>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.1.1/CrateDigger90-86.delta" sparkle:deltaFrom="86" length="1782782" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="XOvFxTKmKd4O0jFHmTgbNltDXuO8jGFeLqHgJ0BLMfRWY4Jgq5AbfChPPAVm64FSmP2tXECzOXDpf0/WlEbjDA=="/>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.1.1/CrateDigger90-85.delta" sparkle:deltaFrom="85" length="2743234" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="jJMe0l6ctB+QZQqlEY4h0bwMafiv0QrLyyqDky3iRlYKgRAXQ9pUo/8GJ9krhxX/A+LByJMAHW97Obo8RQBbDQ=="/>
+            </sparkle:deltas>
+        </item>
+        <item>
             <title>2.1.0</title>
             <pubDate>Fri, 11 Sep 2026 23:04:59 -0300</pubDate>
             <link>https://cratedigger.mrbarkan.com/</link>
@@ -109,42 +138,6 @@ One album folder is one album, however its tags disagree.
                 <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.0.5/CrateDigger88-85.delta" sparkle:deltaFrom="85" length="2016714" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="IacsskzG2JHGLZkeZ2y+Z1cuILSBPWSf/S7en27pGLLnv0qeFypNwCNjSHb0tuaOEu4Jk/EtHAgIlmIqWOj8CQ=="/>
                 <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.0.5/CrateDigger88-84.delta" sparkle:deltaFrom="84" length="2113634" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="G1zKJV7vPXozOCIYhSq/ZyCzjZqcCg4WVsJ7SJ6PeSOoGsclPTv7guOYvMbRImiuX8/hXUHGPm/ujOuDdiGxAQ=="/>
                 <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.0.5/CrateDigger88-83.delta" sparkle:deltaFrom="83" length="2121870" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="KRTGpKXTjlWdv2si6/vxJLjbUoCeXXv2NPkxPjlHN1Su5cCC4CDP1jglWhsddL8u6k25NAVGIQjF9qsrWbvhBA=="/>
-            </sparkle:deltas>
-        </item>
-        <item>
-            <title>2.0.4</title>
-            <pubDate>Thu, 10 Sep 2026 10:35:54 -0300</pubDate>
-            <link>https://cratedigger.mrbarkan.com/</link>
-            <sparkle:fullReleaseNotesLink>https://github.com/mrbarkan/cratedigger/releases</sparkle:fullReleaseNotesLink>
-            <sparkle:version>87</sparkle:version>
-            <sparkle:shortVersionString>2.0.4</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
-            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[
-Two small fixes to the screen.
-
-### Added
-
-- **The clock rail says what is playing.** When the screen is showing another
-  mode, the track name beside the clock now reads NOW PLAYING: first. The label
-  only appears while a track is loaded, so a track you have merely selected is
-  never passed off as the one on the air.
-
-### Fixed
-
-- **Progress bars reveal their colours instead of stretching them.** The bar
-  under a scan, sync, rip or device readout squeezed its whole cyan to orange
-  ramp into the lit part, so 16% looked like a finished bar shrunk small. The
-  ramp now spans the full bar and progress uncovers it, so orange only arrives
-  as the job nears the end.
-
-]]></description>
-            <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.0.4/CrateDigger-2.0.4.dmg" length="71747964" type="application/octet-stream" sparkle:edSignature="wzwPT6+sl9Dcf6D88/z3HhgwinG+tbYXY6UFi+JPzm6SyYwSw/Fj82lNQBT48yX00S5xljyFGyl4rlRLnC94AQ=="/>
-            <sparkle:deltas>
-                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.0.4/CrateDigger87-86.delta" sparkle:deltaFrom="86" length="541042" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="yfAM7WkU3yAxP5MmRZUBCACXcvh2CFTqPmgHGqGX1UbT9FzgeAK+Nry10fpa1D7TjvMlHRwsVuvfYUWe5OVvCA=="/>
-                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.0.4/CrateDigger87-85.delta" sparkle:deltaFrom="85" length="1963622" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="UM/ODXF6su1U3Zg2Z0f7Y9ygmxBplrpqMITsegu2ulp7AELeGMgXY93bwz/umba9HWClzNbA68N20yUSZbsTDA=="/>
-                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.0.4/CrateDigger87-84.delta" sparkle:deltaFrom="84" length="2056926" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="7nxAKSt+FXGFZ5tFVcEPGaND3i/MNOoiEglwxSIEAUC0gOHhj83ker85WogKdaMUDjVBmqU/69oJxSWaQFnRCA=="/>
-                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.0.4/CrateDigger87-83.delta" sparkle:deltaFrom="83" length="2074578" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="FMqrva4Dza0T1JgJ32oI+w6xVLWwddnHiPQSCuxevvf+ImP54JiLUBDfesv1SBqFVSiECJmeKOs/T+U8PA5IDA=="/>
             </sparkle:deltas>
         </item>
     </channel>
