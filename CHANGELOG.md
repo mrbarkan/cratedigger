@@ -4,6 +4,17 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 2.1.1 (90), 2026-09-15
+
+Ready for macOS 27 Golden Gate.
+
+### Changed
+
+- **Built for macOS 27.** CrateDigger is now built with the macOS 27 SDK.
+- **Updates keep working on macOS 27.** The in-app updater moves to Sparkle
+  2.10.0, which fixes a macOS 27 problem with the smaller patch updates
+  CrateDigger downloads between versions.
+
 ## 2.1.0 (89), 2026-09-11
 
 Now playing on your desktop, and an Up Next that moves.
