@@ -14,7 +14,7 @@ let package = Package(
         // In-app updates. The only third-party dependency in the app: a safe
         // self-updater is signature verification, a privileged install and a
         // relaunch, and Sparkle is the one everybody's Mac already trusts.
-        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.4")
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.10.0")
     ],
     targets: [
         .target(
