@@ -676,24 +676,11 @@ final class LibraryViewModel: ObservableObject {
     }
 
     /// Where the EQ currently sits: a built-in preset or a user slot. The
-    /// header key, the editor's highlight and the OLED readout all read this.
+    /// editor's preset keys read this to show which curve is loaded.
     @Published var eqSlot: EQSlot = .preset(.flat)
 
-    /// The built-in preset half of `eqSlot`, forwarded so the older call sites
-    /// (and the EQ screen's shape) keep working unchanged.
-    var eqPreset: EQPreset {
-        get { if case .preset(let preset) = eqSlot { return preset }; return .flat }
-        set { eqSlot = .preset(newValue) }
-    }
-
-    /// Slot ids the header EQ key steps through. Editing it writes straight
-    /// through to preferences — there is no separate save.
-    @Published var eqCycleIDs: [String] = PreferencesStore.shared.eqCycleSelection {
-        didSet { prefs.eqCycleSelection = eqCycleIDs }
-    }
-
-    /// Working equalizer state — 12 per-band gains in dB + master enable. Drives
-    /// the footer EQ panel display *and* real audio (via the playback tap).
+    /// Working equalizer state: 12 per-band gains in dB + master enable. Drives
+    /// real audio (via the playback tap) and the header EQ key's lamp.
     @Published var eqEnabled: Bool = false { didSet { eqDidChange() } }
     @Published var eqGains: [Double] = Array(repeating: 0, count: EqualizerProcessor.bandCount) {
         didSet { eqDidChange() }
@@ -706,40 +693,14 @@ final class LibraryViewModel: ObservableObject {
     /// them up again (a version-group member isn't addressable by id).
     var artworkAuditAlbums: [Album] = []
 
-    /// Presents the graphic-EQ editor sheet (opened by clicking the footer EQ panel).
+    /// Presents the graphic-EQ editor sheet, opened by the header EQ key.
     @Published var showingEQEditor = false
-
-    /// The slots the header EQ key actually steps through: the user's chosen
-    /// set, minus any user slot that was never saved into. An empty selection
-    /// falls back to every built-in preset rather than leaving a dead key.
-    var eqCycleSlots: [EQSlot] {
-        let chosen = eqCycleIDs.compactMap(EQSlot.init(id:)).filter(isEQSlotUsable)
-        return chosen.isEmpty ? EQPreset.allCases.map(EQSlot.preset) : chosen
-    }
 
     /// A user slot with nothing saved in it has no curve to apply.
     func isEQSlotUsable(_ slot: EQSlot) -> Bool {
         guard case .user(let index) = slot else { return true }
         let slots = prefs.customEQPresets
         return index < slots.count && !slots[index].isEmpty
-    }
-
-    func isEQSlotInCycle(_ slot: EQSlot) -> Bool {
-        eqCycleIDs.isEmpty ? !slot.isUser : eqCycleIDs.contains(slot.id)
-    }
-
-    /// Toggling the first lamp materialises the implicit "all built-ins"
-    /// default into a real list, so the click removes one entry instead of
-    /// silently starting from nothing.
-    func toggleEQCycle(_ slot: EQSlot) {
-        var ids = eqCycleIDs.isEmpty ? EQPreset.allCases.map(\.rawValue) : eqCycleIDs
-        if let index = ids.firstIndex(of: slot.id) {
-            ids.remove(at: index)
-        } else {
-            ids.append(slot.id)
-        }
-        // Keep display order so the header lamps read left-to-right.
-        eqCycleIDs = EQSlot.all.map(\.id).filter(ids.contains)
     }
 
     /// The curve a slot stands for, or nil for an empty user slot.
@@ -766,13 +727,6 @@ final class LibraryViewModel: ObservableObject {
             eqGains = slots[index].gains
         }
         eqEnabled = true
-    }
-
-    /// The header EQ button: step to the next slot in the cycle.
-    func cycleEQPreset() {
-        let cycle = eqCycleSlots
-        let index = cycle.firstIndex(of: eqSlot) ?? -1
-        applyEQSlot(cycle[(index + 1) % cycle.count])
     }
 
     private func eqDidChange() {
@@ -2999,7 +2953,8 @@ final class LibraryViewModel: ObservableObject {
         playbackVolume = clamped
     }
 
-    /// Latest real 0...1 VU levels (L/R) for the footer meter and VU screen,
+    /// Latest real 0...1 VU levels (L/R) and spectrum bands, for the NOW screen's
+    /// meter and playback diagnostics,
     /// from whichever tap can actually see the audio.
     ///
     /// Local files are tapped per player-item (`AudioLevelTap`). Streams can't

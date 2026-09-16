@@ -6,7 +6,8 @@ build, which is monotonic across every release.
 
 ## 2.2.0 (91), 2026-09-16
 
-Beta 1: your library, even with the drive unplugged. This section collects
+Beta 1: your library, even with the drive unplugged, and a quieter bottom
+shelf. This section collects
 everything in the 2.2 line so far. Betas are offered only to people who turned
 on Receive beta updates.
 
@@ -21,6 +22,17 @@ on Receive beta updates.
   artwork changes and moving files wait until the drive is back, and the
   display says why instead of quietly doing nothing. Plays are not counted
   while the library is disconnected.
+
+### Changed
+
+- **A quieter bottom shelf.** The EQ display and the VU meter are gone from
+  the bottom of the window, leaving the position dial, the transport and the
+  volume knob. The Simple horizontal VU meter setting goes with them.
+- **A small spectrum meter on the NOW screen.** It sits beside the clock
+  while a track or a stream plays, and settles flat when you pause.
+- **The EQ key in the header opens the equalizer.** It no longer steps through
+  presets: pick one on the equalizer's preset keys. Its lamp is lit while the
+  equalizer is on.
 
 ### Fixed
 

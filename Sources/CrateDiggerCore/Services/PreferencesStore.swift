@@ -447,14 +447,6 @@ public final class PreferencesStore {
         set { defaults.set(newValue, forKey: Key.scrubLock) }
     }
 
-    /// When true, the footer shows the classic horizontal L/R VU bars instead of
-    /// the vertical spectrum analyzer. Key is read reactively via `@AppStorage`
-    /// in the footer, so keep the string in sync there.
-    public var savedSimpleHorizontalVU: Bool {
-        get { defaults.bool(forKey: "cratedigger.meter.simpleHorizontalVU") }
-        set { defaults.set(newValue, forKey: "cratedigger.meter.simpleHorizontalVU") }
-    }
-
     /// Real-EQ master enable + the 12 per-band gains (dB).
     public var savedEQEnabled: Bool {
         get { defaults.bool(forKey: "cratedigger.eq.enabled") }
@@ -479,14 +471,6 @@ public final class PreferencesStore {
             }
         }
         set { defaults.set(try? JSONEncoder().encode(newValue), forKey: "cratedigger.eq.custom") }
-    }
-
-    /// Which EQ slots the header EQ key cycles through, as slot ids. Empty
-    /// means "every built-in preset" — the behaviour before the key was
-    /// selectable, and the right fallback if the list is ever emptied.
-    public var eqCycleSelection: [String] {
-        get { defaults.stringArray(forKey: "cratedigger.eq.cycle") ?? [] }
-        set { defaults.set(newValue, forKey: "cratedigger.eq.cycle") }
     }
 
     public var savedMiniPlayerArtMode: String? {

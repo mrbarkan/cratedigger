@@ -37,7 +37,7 @@ struct PositionDial: View {
                     ? "Scroll-to-seek on — scroll the dial to search"
                     : "Lock to scroll the dial to search")
             }
-            .frame(height: 12)   // fixed label-row height: all four footer pods share one text line
+            .frame(height: 12)   // fixed label-row height: the footer pods share one text line
 
             Spacer(minLength: 0)
 
@@ -54,7 +54,7 @@ struct PositionDial: View {
             .frame(height: 27)   // same content-box height as the EQ/VU LCDs so rail and LCD centers match
             .background(WindowDragGuard())
         }
-        .padding(.vertical, 9)   // matches EQScreen/LEDMeter so the four footer panels' labels align
+        .padding(.vertical, 9)   // matches the other footer pod so their labels align
         .padding(.horizontal, 12)
         .frame(width: 184, height: 64)
         .background(ChromeChassis(theme: theme, cornerRadius: 12))

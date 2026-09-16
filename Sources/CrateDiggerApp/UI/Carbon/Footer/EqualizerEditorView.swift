@@ -2,7 +2,7 @@ import CrateDiggerCore
 import SwiftUI
 
 /// Industry-standard graphic EQ: a bank of vertical faders (one per band) with a
-/// dB scale and quick presets. Opened by clicking the footer EQ panel. Edits
+/// dB scale and quick presets. Opened by the EQ key in the header. Edits
 /// `model.eqGains` live, so playback updates as you drag.
 struct EqualizerEditorView: View {
     @Environment(\.carbon) private var theme
@@ -64,8 +64,7 @@ struct EqualizerEditorView: View {
     //
     // Built-ins and user slots share one six-column grid, so the three custom
     // keys are the same size as everything else instead of being a second-class
-    // row bolted underneath. Each key carries a lamp: lit means the header EQ
-    // key steps through it.
+    // row bolted underneath.
 
     private static let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 6)
 
@@ -77,12 +76,9 @@ struct EqualizerEditorView: View {
                 }
             }
 
-            HStack(spacing: 6) {
-                lamp(lit: true)
-                Text("Lit keys cycle from the EQ key in the header. Right-click a user key to save, rename or clear it.")
-                    .font(CarbonFont.mono(8.5))
-                    .foregroundStyle(theme.ink4)
-            }
+            Text("Right-click a user key to save, rename or clear it.")
+                .font(CarbonFont.mono(8.5))
+                .foregroundStyle(theme.ink4)
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 12)
@@ -91,26 +87,14 @@ struct EqualizerEditorView: View {
     @ViewBuilder
     private func presetKey(_ slot: EQSlot) -> some View {
         let isEmptyUser = !model.isEQSlotUsable(slot)
-        VStack(spacing: 5) {
-            KeyButton(style: keyStyle(slot), action: { press(slot) }) {
-                Text(title(for: slot))
-            }
-            .frame(height: 22)
-            // An empty slot reads quieter but stays live: clicking it is how
-            // you fill it. `.disabled` would look right and swallow the click.
-            .opacity(isEmptyUser ? 0.55 : 1)
-            .carbonTip(tip(for: slot))
-
-            Button(action: { model.toggleEQCycle(slot) }) {
-                lamp(lit: model.isEQSlotInCycle(slot) && !isEmptyUser)
-                    .frame(width: 22, height: 8)          // a forgiving hit area
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.carbonHover)
-            .disabled(isEmptyUser)
-            .carbonTip(isEmptyUser ? "Save a curve here first"
-                                   : "Include in the header EQ key's cycle")
+        KeyButton(style: keyStyle(slot), action: { press(slot) }) {
+            Text(title(for: slot))
         }
+        .frame(height: 22)
+        // An empty slot reads quieter but stays live: clicking it is how
+        // you fill it. `.disabled` would look right and swallow the click.
+        .opacity(isEmptyUser ? 0.55 : 1)
+        .carbonTip(tip(for: slot))
         .contextMenu {
             if case .user(let index) = slot {
                 Button("Save Current Curve") { store(index) }
@@ -125,13 +109,6 @@ struct EqualizerEditorView: View {
                 .disabled(slots[index].isEmpty)
             }
         }
-    }
-
-    private func lamp(lit: Bool) -> some View {
-        Circle()
-            .fill(lit ? theme.orange : theme.ink4.opacity(0.28))
-            .frame(width: 5, height: 5)
-            .shadow(color: lit ? theme.orange.opacity(0.7) : .clear, radius: 2.5)
     }
 
     private func title(for slot: EQSlot) -> String {
@@ -179,8 +156,6 @@ struct EqualizerEditorView: View {
 
     private func saveSlots() {
         PreferencesStore.shared.customEQPresets = slots
-        // A cleared slot can't stay in the cycle.
-        model.eqCycleIDs = model.eqCycleIDs.filter { EQSlot(id: $0).map(model.isEQSlotUsable) ?? false }
     }
 
     private var faderBank: some View {

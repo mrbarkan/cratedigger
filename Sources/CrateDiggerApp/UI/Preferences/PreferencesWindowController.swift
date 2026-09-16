@@ -283,7 +283,6 @@ private struct GeneralPreferencesView: View {
 private struct InterfacePreferencesView: View {
     @State private var clickSoundsEnabled: Bool = PreferencesStore.shared.clickSoundsEnabled
     @State private var showHoverTips: Bool = PreferencesStore.shared.showHoverTips
-    @State private var simpleHorizontalVU: Bool = PreferencesStore.shared.savedSimpleHorizontalVU
     @State private var cdAnimationSpeed: CDAnimationSpeed = PreferencesStore.shared.cdAnimationSpeed
     @State private var showTourAtLaunch: Bool = !PreferencesStore.shared.hasSeenWelcomeTour
 
@@ -307,15 +306,7 @@ private struct InterfacePreferencesView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Section("Meters & Motion") {
-                Toggle("Simple horizontal VU meter", isOn: $simpleHorizontalVU)
-                    .onChange(of: simpleHorizontalVU) { newValue in
-                        PreferencesStore.shared.savedSimpleHorizontalVU = newValue
-                    }
-                Text("Classic left/right VU bars in the footer instead of the vertical spectrum analyzer.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
+            Section("Motion") {
                 Picker("CD animation speed", selection: $cdAnimationSpeed) {
                     ForEach(CDAnimationSpeed.allCases, id: \.self) { speed in
                         Text(speed.label).tag(speed)
@@ -358,7 +349,6 @@ private struct InterfacePreferencesView: View {
         let prefs = PreferencesStore.shared
         clickSoundsEnabled = prefs.clickSoundsEnabled
         showHoverTips = prefs.showHoverTips
-        simpleHorizontalVU = prefs.savedSimpleHorizontalVU
         cdAnimationSpeed = prefs.cdAnimationSpeed
         showTourAtLaunch = !prefs.hasSeenWelcomeTour
     }
@@ -403,7 +393,7 @@ private struct PlaybackPreferencesView: View {
             Section("Equalizer") {
                 Toggle("Apply equalizer to playback", isOn: $eqEnabled)
                     .onChange(of: eqEnabled) { _ in saveEQ() }
-                Text("A real 12-band equalizer applied to what you hear. Click the EQ panel in the footer to set the bands.")
+                Text("A real 12-band equalizer applied to what you hear. Press the EQ key in the header to set the bands.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

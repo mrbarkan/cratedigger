@@ -19,7 +19,7 @@ struct VolumeKnob: View {
                     .foregroundStyle(theme.ink3)
                 Spacer(minLength: 0)
             }
-            .frame(height: 12)   // fixed label-row height: all four footer pods share one text line
+            .frame(height: 12)   // fixed label-row height: the footer pods share one text line
 
             Spacer(minLength: 0)
 
@@ -38,7 +38,7 @@ struct VolumeKnob: View {
                 value = Self.unityFraction   // double-tap → unity (0 dB)
             }
         }
-        .padding(.vertical, 9)   // matches EQScreen/LEDMeter so the four footer panels' labels align
+        .padding(.vertical, 9)   // matches the other footer pod so their labels align
         .padding(.horizontal, 12)
         .frame(width: 184, height: 64)
         .background(ChromeChassis(theme: theme, cornerRadius: 12))

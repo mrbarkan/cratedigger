@@ -433,6 +433,56 @@ private struct NPClock: View {
     }
 }
 
+/// The NOW screen's quiet VU: a 12-column, 6-segment spectrum beside the
+/// clock, drawn in OLED ink at low brightness so it reads as texture rather than
+/// a second readout. It owns its driver, so the timer exists only while the NOW
+/// screen is on the glass. Decorative, so VoiceOver skips it; its bottom edge
+/// sits on the clock's baseline.
+private struct OLEDSpectrum: View {
+    @EnvironmentObject private var model: LibraryViewModel
+    @StateObject private var meters = MeterDriver()
+
+    private static let segments = 6
+
+    var body: some View {
+        Canvas { context, size in
+            let bands = meters.bands
+            let columns = bands.count
+            guard columns > 0 else { return }
+            let gap: CGFloat = 1.5
+            let cellW = (size.width - CGFloat(columns - 1) * gap) / CGFloat(columns)
+            let cellH = (size.height - CGFloat(Self.segments - 1) * gap) / CGFloat(Self.segments)
+            var lit = Path()
+            var unlit = Path()
+            for (column, level) in bands.enumerated() {
+                let litCount = Int((min(max(level, 0), 1) * Double(Self.segments)).rounded())
+                for segment in 0..<Self.segments {
+                    let rect = CGRect(x: CGFloat(column) * (cellW + gap),
+                                      y: size.height - CGFloat(segment + 1) * cellH - CGFloat(segment) * gap,
+                                      width: cellW, height: cellH)
+                    if segment < litCount { lit.addRect(rect) } else { unlit.addRect(rect) }
+                }
+            }
+            context.fill(unlit, with: .color(oledFGo(0.07)))
+            context.fill(lit, with: .color(oledFGo(0.55)))
+        }
+        .frame(width: 58, height: 22)
+        .accessibilityHidden(true)
+        .onAppear {
+            // A local, so the provider's weak capture is the only one.
+            let model = self.model
+            meters.spectrumProvider = { [weak model] in model?.currentPlaybackSpectrum() ?? [] }
+            syncRunning()
+        }
+        .onChange(of: model.playbackState) { _ in syncRunning() }
+        .onDisappear { meters.halt() }
+    }
+
+    private func syncRunning() {
+        if model.playbackState == .playing { meters.start() } else { meters.stop() }
+    }
+}
+
 /// One cell in the bottom data rail.
 private struct OLEDCellData: Identifiable {
     let key: String
@@ -687,9 +737,12 @@ private struct LibraryNowPlaying: View {
                      titleColor: isIdle ? oledFGo(0.6) : oledFG,
                      titleItalic: isIdle)
         } readout: {
-            NPClock(now: isIdle ? "--:--" : model.displayedCurrentTime.asClockPadded,
-                    tot: isIdle ? "" : "/ " + model.playbackDuration.asClockPadded)
-                .fixedSize()
+            HStack(alignment: .firstTextBaseline, spacing: 14) {
+                if !isIdle { OLEDSpectrum() }
+                NPClock(now: isIdle ? "--:--" : model.displayedCurrentTime.asClockPadded,
+                        tot: isIdle ? "" : "/ " + model.playbackDuration.asClockPadded)
+            }
+            .fixedSize()
         } ticker: {
             EmptyView()
         } cells: {
@@ -735,7 +788,11 @@ private struct RadioNowPlaying: View {
         OLEDPaneScaffold {
             NPTitles(title: headline.uppercased(), sub: subtitle)
         } readout: {
-            radioReadout.fixedSize()
+            HStack(alignment: .firstTextBaseline, spacing: 14) {
+                OLEDSpectrum()
+                radioReadout
+            }
+            .fixedSize()
         } ticker: {
             EmptyView()
         } cells: {

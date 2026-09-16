@@ -1,6 +1,10 @@
 import SwiftUI
 
+/// The bottom shelf: POSITION dial, transport, VOLUME. The EQ panel and the
+/// VU meter used to sit here; the equalizer now opens from the header EQ key,
+/// and a small spectrum lives beside the clock on the NOW screen.
 struct FooterShell: View {
+    @EnvironmentObject private var model: LibraryViewModel
     @Environment(\.carbon) private var theme
     @Environment(\.carbonGeometry) private var geometry
 
@@ -27,10 +31,10 @@ struct FooterShell: View {
                 )
 
             HStack(alignment: .center, spacing: 0) {
-                FooterLeftCluster()
+                PositionDial(clock: model.playbackClock)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 TransportCluster()
-                UtilityCluster()
+                VolumeKnob(value: $model.playbackVolume)
                     .frame(maxWidth: .infinity, alignment: .trailing)
             }
             .padding(.horizontal, 26)

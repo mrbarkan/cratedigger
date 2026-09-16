@@ -44,26 +44,16 @@ struct ViewSwitcherColumn: View {
 
             SwitchButton(
                 name: "EQ",
-                dotCount: model.eqCycleSlots.count + 1,   // + the CUSTOM lamp
-                activeIndex: eqActiveIndex,
-                tip: "EQ — cycle the presets chosen in the equalizer. The last LED lights when the curve is hand-edited."
+                dotCount: 1,
+                activeIndex: model.eqEnabled ? 0 : -1,   // lit while the EQ shapes playback
+                tip: "EQ: open the equalizer. The lamp is lit while it shapes playback."
             ) {
                 ClickPlayer.shared.play(.key)
-                model.cycleEQPreset()
+                model.showingEQEditor = true
             }
         }
         .padding(.top, HeaderKeyMetrics.topInset)
         .frame(maxHeight: .infinity, alignment: .top)
-    }
-
-    /// EQ dot row position: where the current slot sits in the cycle, or the
-    /// trailing CUSTOM lamp once the faders have been dragged off its shape.
-    private var eqActiveIndex: Int {
-        let cycle = model.eqCycleSlots
-        guard let index = cycle.firstIndex(of: model.eqSlot),
-              model.eqGains == model.eqCurve(for: model.eqSlot)
-        else { return cycle.count }
-        return index
     }
 
 }
