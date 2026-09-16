@@ -78,6 +78,7 @@ extension LibraryViewModel {
     /// Re-attach one missing track to a file the user located, without playing it.
     /// Used by the Missing Tracks maintenance panel.
     func relinkMissingTrack(_ track: LoadedTrack) {
+        guard !refuseWhileLibraryDisconnected() else { return }
         guard let newURL = promptForReplacementFile(track) else { return }
         reattach(track, to: newURL)
         recomputeMissingFiles()
@@ -128,6 +129,7 @@ extension LibraryViewModel {
     /// Prompt for a folder, then re-attach every missing track whose filename is
     /// found under it (recursively). One pick re-links a whole moved library.
     func relinkMissingTracksFromFolder(_ tracks: [LoadedTrack]) {
+        guard !refuseWhileLibraryDisconnected() else { return }
         let missing = tracks.filter {
             $0.track.fileURL.isFileURL
                 && !FileManager.default.fileExists(atPath: $0.track.fileURL.path)
@@ -233,13 +235,24 @@ extension LibraryViewModel {
 
     // MARK: - Offline volume tracking
 
-    /// Subscribe to drive mount/unmount so the offline badge + the Sources
-    /// "Devices" list update live.
+    /// Subscribe to drive mount/unmount so the offline badge, the Sources
+    /// "Devices" list and a library kept on an external drive update live.
     func setupVolumeObservers() {
         let center = NSWorkspace.shared.notificationCenter
+        // Before an eject, while the library drive can still be read. Handled in
+        // the observer itself: a hop to the main actor could run after the drive
+        // is gone.
+        let copy = libraryIndexCopy
+        center.addObserver(forName: NSWorkspace.willUnmountNotification, object: nil, queue: .main) { note in
+            LibraryViewModel.copyLibraryIndexBeforeUnmount(
+                volumeURL: note.userInfo?[NSWorkspace.volumeURLUserInfoKey] as? URL, copy: copy)
+        }
         for name in [NSWorkspace.didMountNotification, NSWorkspace.didUnmountNotification, NSWorkspace.didRenameVolumeNotification] {
             center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
                 Task { @MainActor in
+                    // First: whether the live index or the copy is loaded decides
+                    // which tracks the offline badges below are computed from.
+                    self?.libraryVolumesChanged()
                     self?.recomputeOfflineVolumes()
                     self?.recomputeMissingFiles()
                     self?.refreshCDs()

@@ -32,6 +32,8 @@ extension LibraryViewModel {
     /// rebuilt in `resetListeningStoreCache()`.
     @discardableResult
     func persistListeningStore() -> Bool {
+        // Plays and skips are not something the user pressed, so no notice.
+        guard !libraryLocation.isDisconnected else { return false }
         do {
             try currentListeningStore().save()
             return true
@@ -83,6 +85,9 @@ extension LibraryViewModel {
     /// has not moved yet, and `nowPlayingTrack` names the wrong record there.
     func recordPlayIfThresholdMet(elapsed: Double, duration: Double) {
         guard !isRadioMode else { return }
+        // Read-only while the library drive is out: a count held only in
+        // memory would vanish when the live index is reloaded.
+        guard !libraryLocation.isDisconnected else { return }
         guard let playing = listeningTrack else { return }
         guard countedPlayKey != playing.key else { return }
         guard PlayThreshold.isPlayed(elapsed: elapsed, duration: duration) else { return }
@@ -108,6 +113,7 @@ extension LibraryViewModel {
         guard !isRadioMode else { return }
         guard let outgoing = listeningTrack else { return }
         listeningTrack = nil
+        guard !libraryLocation.isDisconnected else { return }
         guard countedPlayKey != outgoing.key else { return }
         // Nothing at all was heard: an auto-advance into a track that failed to
         // open is not a skip, it is a non-event.
@@ -156,6 +162,7 @@ extension LibraryViewModel {
 
     /// Rate everything selected. 0 clears.
     func rateSelection(_ rating: Int) {
+        guard !refuseWhileLibraryDisconnected() else { return }
         guard hasRatableSelection else { return }
         let tracks = resolvedSelectionTracks()
         guard !tracks.isEmpty else { return }

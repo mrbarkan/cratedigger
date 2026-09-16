@@ -52,6 +52,7 @@ extension LibraryViewModel {
     }
 
     func searchAndAddCovers(for albums: [Album], policy: CoverFetchPolicy = .missingOnly) {
+        guard !refuseWhileLibraryDisconnected() else { return }
         // Flatten version groups to their member pressings — a group has no folder
         // of its own to write into; each pressing does.
         let candidates: [CoverTarget] = albums

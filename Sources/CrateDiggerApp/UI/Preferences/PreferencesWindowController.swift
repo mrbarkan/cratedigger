@@ -155,7 +155,7 @@ private struct GeneralPreferencesView: View {
                             name: NSNotification.Name("CrateDiggerCratesFolderChanged"), object: url)
                     }
                 )
-                .help("The small .cdcrate database files that record what's in each crate — not your music. Keep this on a local disk so crates load even when drives are unplugged.")
+                .help("The small database files that record what's in each crate, not your music. If they live on an external drive, a copy on this Mac keeps your crates browsable while the drive is unplugged.")
 
                 FolderSettingRow(
                     label: "Default Output",

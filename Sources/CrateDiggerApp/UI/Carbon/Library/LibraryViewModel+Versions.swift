@@ -163,6 +163,7 @@ extension LibraryViewModel {
     /// mid-batch rolls the already-moved files back so the album never ends up
     /// half-split.
     func splitAlbumFolder(_ album: Album, movingCodec: String, folderName: String) {
+        guard !refuseWhileLibraryDisconnected() else { return }
         let trimmed = folderName.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else {
             appAlert = .error(title: "Folder Name Needed", message: "Type a name for the new folder.")

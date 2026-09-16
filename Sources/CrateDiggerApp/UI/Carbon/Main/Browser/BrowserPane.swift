@@ -17,6 +17,10 @@ struct BrowserPane: View {
             if let cd = model.currentAudioCD {
                 DiscIdentityBar(info: cd)
             }
+            // With nothing loaded the empty state says it instead.
+            if model.isLibraryDisconnected, model.isLocalSource, !model.index.allTracks.isEmpty {
+                LibraryDisconnectedBar()
+            }
             browserBody
         }
     }
@@ -80,30 +84,14 @@ private struct BrowserEmptyState: View {
 
     var body: some View {
         VStack(spacing: 14) {
-            Image(systemName: "square.stack.3d.up.slash")
-                .font(.system(size: 38, weight: .light))
-                .foregroundStyle(theme.ink3)
-            Text("No library loaded")
-                .font(CarbonFont.sans(18, weight: .heavy))
-                .foregroundStyle(theme.ink)
-            Text("Choose a folder of audio files to scan. CrateDigger will read tags, fetch artwork, and build the artist · album · track browser.")
-                .font(CarbonFont.mono(11))
-                .foregroundStyle(theme.ink3)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 380)
-            KeyButton(style: .glowingOrange, action: { model.openFolderViaPanel() }) {
-                HStack(spacing: 8) {
-                    Image(systemName: "folder.fill.badge.plus")
-                        .font(.system(size: 12, weight: .bold))
-                    Text("OPEN FOLDER…")
-                }
-                .padding(.horizontal, 16)
+            // A library on an unplugged drive with no local copy yet is not an
+            // empty library: offering OPEN FOLDER here is what sent people off
+            // to rebuild a library that was only unplugged.
+            if model.isLibraryDisconnected, model.isLocalSource {
+                disconnected
+            } else {
+                noLibrary
             }
-            .frame(width: 220, height: 38)
-            Text("Or press \u{2318}O")
-                .font(CarbonFont.mono(9.5))
-                .foregroundStyle(theme.ink4)
-                .padding(.top, 4)
         }
         .padding(28)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -112,6 +100,54 @@ private struct BrowserEmptyState: View {
                 .fill(theme.paper) // opaque, not Material — see ChassisLayer
                 .overlay(theme.paper.opacity(theme.isDark ? 0.70 : 0.78))
         )
+    }
+
+    @ViewBuilder
+    private var noLibrary: some View {
+        Image(systemName: "square.stack.3d.up.slash")
+            .font(.system(size: 38, weight: .light))
+            .foregroundStyle(theme.ink3)
+        Text("No library loaded")
+            .font(CarbonFont.sans(18, weight: .heavy))
+            .foregroundStyle(theme.ink)
+        Text("Choose a folder of audio files to scan. CrateDigger will read tags, fetch artwork, and build the artist · album · track browser.")
+            .font(CarbonFont.mono(11))
+            .foregroundStyle(theme.ink3)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: 380)
+        KeyButton(style: .glowingOrange, action: { model.openFolderViaPanel() }) {
+            HStack(spacing: 8) {
+                Image(systemName: "folder.fill.badge.plus")
+                    .font(.system(size: 12, weight: .bold))
+                Text("OPEN FOLDER…")
+            }
+            .padding(.horizontal, 16)
+        }
+        .frame(width: 220, height: 38)
+        Text("Or press \u{2318}O")
+            .font(CarbonFont.mono(9.5))
+            .foregroundStyle(theme.ink4)
+            .padding(.top, 4)
+    }
+
+    /// No button: there is nothing to open. The drive coming back is picked up
+    /// on its own; a folder that is really gone is re-chosen in Preferences.
+    @ViewBuilder
+    private var disconnected: some View {
+        let volume = model.disconnectedLibraryVolumeName
+        Image(systemName: "externaldrive.badge.xmark")
+            .font(.system(size: 38, weight: .light))
+            .foregroundStyle(theme.ink3)
+        Text(volume == nil ? "Library folder not found" : "Library drive disconnected")
+            .font(CarbonFont.sans(18, weight: .heavy))
+            .foregroundStyle(theme.ink)
+        Text(volume.map {
+            "Your library is on \u{201C}\($0)\u{201D}, which isn\u{2019}t connected. Connect it and CrateDigger picks it up automatically."
+        } ?? "CrateDigger can\u{2019}t find your library folder. Connect its drive, or choose the folder again in Preferences.")
+            .font(CarbonFont.mono(11))
+            .foregroundStyle(theme.ink3)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: 380)
     }
 }
 

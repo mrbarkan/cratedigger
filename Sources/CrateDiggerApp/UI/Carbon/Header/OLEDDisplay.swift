@@ -1288,8 +1288,18 @@ private struct ScanPane: View {
         ]
     }
 
+    /// A library on an unplugged drive is not an empty one, and must not read
+    /// like one: "NO LIBRARY" is what made the drive look lost.
+    private var libraryDisconnected: Bool {
+        model.isLibraryDisconnected && model.isLocalSource
+    }
+
     private var headline: String {
-        model.index.allTracks.isEmpty ? "NO LIBRARY" : "\(model.index.allTracks.count) TRACKS"
+        if libraryDisconnected {
+            return model.disconnectedLibraryVolumeName.map { "\($0.uppercased()) DISCONNECTED" }
+                ?? "LIBRARY NOT FOUND"
+        }
+        return model.index.allTracks.isEmpty ? "NO LIBRARY" : "\(model.index.allTracks.count) TRACKS"
     }
 
     private var subtitle: String {
@@ -1298,6 +1308,11 @@ private struct ScanPane: View {
                 return "\(model.scanProgress.filesProbed) / \(total) files probed · Indexing"
             }
             return "\(model.scanProgress.filesProbed) files probed · Indexing"
+        }
+        if libraryDisconnected {
+            return model.index.allTracks.isEmpty
+                ? "Connect the drive to see your library"
+                : "Showing your last saved library · Changes paused"
         }
         if model.index.allTracks.isEmpty { return "Library empty · Press ⌘O to load a folder" }
         return "Indexed across \(model.index.albumCount) albums · \(sourceLine) · Ready"

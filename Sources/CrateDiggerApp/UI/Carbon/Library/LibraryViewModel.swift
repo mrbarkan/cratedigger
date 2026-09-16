@@ -1026,6 +1026,16 @@ final class LibraryViewModel: ObservableObject {
     /// volume mount/unmount + at startup (see recomputeOfflineVolumes), which is
     /// the only writer.
     @Published var offlineVolumes: Set<String> = []
+    /// Where the crates index is: not chosen, here, or on a drive that is out.
+    /// Decided in `refreshAvailableCrates()`, which every folder change already
+    /// runs through, and again on every mount and unmount (see
+    /// LibraryViewModel+LibraryLocation). `cratesDirectoryURL` reads this
+    /// instead of resolving the bookmark on each of its many calls.
+    @Published var libraryLocation: LibraryLocation = .notChosen
+    /// When the copy on screen was taken, while the library is disconnected.
+    @Published var libraryCopyDate: Date?
+    /// The read-only copy of the index kept on this Mac.
+    let libraryIndexCopy = LibraryIndexCopy()
     /// Standardized paths of library files that are gone from disk while their
     /// drive is still mounted (moved / renamed / deleted). Drives the "missing"
     /// row badge. Recomputed off the main thread by recomputeMissingFiles().
@@ -1465,6 +1475,9 @@ final class LibraryViewModel: ObservableObject {
         reloadEqualizerFromPrefs()
 
         refreshAvailableCrates()
+        // A library on an external drive: refresh its copy on this Mac while the
+        // drive is here to read.
+        refreshLibraryIndexCopyInBackground()
         streams = streamStore.all()
         selectSource(.localAll)
         restorePlaybackSnapshot()
@@ -2615,6 +2628,7 @@ final class LibraryViewModel: ObservableObject {
     }
 
     func updateTrackMetadata(_ track: LoadedTrack, newMetadata: ConversionMetadata) {
+        guard !refuseWhileLibraryDisconnected() else { return }
         guard let editor = metadataEditor else { return }
 
         let updatedTrack = AudioTrack(
@@ -2866,6 +2880,7 @@ final class LibraryViewModel: ObservableObject {
     }
 
     func automaticallyReorganizeLibrary() {
+        guard !refuseWhileLibraryDisconnected() else { return }
         guard let dest = currentConversionDestinationURL else {
             self.appAlert = .error(title: "No Destination Set", message: "Configure default output folder in Preferences.")
             return
@@ -3104,6 +3119,7 @@ final class LibraryViewModel: ObservableObject {
     }
 
     func applyFetchedArtwork(_ asset: ArtworkAsset, toAlbumID albumID: String) {
+        guard !refuseWhileLibraryDisconnected() else { return }
         artworkService.ingest(asset)
 
         guard let album = index.album(id: albumID) else { return }
@@ -3254,6 +3270,7 @@ final class LibraryViewModel: ObservableObject {
     /// per-file rewrite (ffmpeg `-c copy`, dominated by the audio, not the image)
     /// happens quietly in the background.
     func embedCoverIntoTracksInBackground(for album: Album, deviceCompatible: Bool = true) {
+        guard !refuseWhileLibraryDisconnected() else { return }
         guard let folder = album.tracks.first?.track.fileURL.deletingLastPathComponent() else { return }
         // Prefer the manifest's .cover-roled file, else cover.jpg. `roles` is a
         // dictionary, so `.first(where:)` picked a different file run to run when
@@ -3381,6 +3398,7 @@ final class LibraryViewModel: ObservableObject {
     /// is bit-identical — but the pictures themselves are gone afterwards,
     /// which is why the ART tab confirms before staging this.
     func stripEmbeddedArtworkInBackground(for album: Album) {
+        guard !refuseWhileLibraryDisconnected() else { return }
         let tracks = album.tracks
         let title = album.title
         let folderPath = album.tracks.first?.track.fileURL.deletingLastPathComponent().path
@@ -3798,15 +3816,21 @@ final class LibraryViewModel: ObservableObject {
             return dir
         }
         #endif
-        if let data = prefs.cratesIndexFolderBookmark,
-           let resolved = PreferencesStore.resolveBookmark(data)?.url {
-            try? fm.createDirectory(at: resolved, withIntermediateDirectories: true)
-            return resolved
+        switch libraryLocation {
+        case .available(let folder):
+            try? fm.createDirectory(at: folder, withIntermediateDirectories: true)
+            return folder
+        case .disconnected:
+            // The read-only copy, never created here: with no copy yet this lists
+            // no crates, where the Application Support fallback below used to
+            // stand in an empty library and write a Personal Crate into it.
+            return libraryIndexCopy.directory
+        case .notChosen:
+            let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            let cratesDir = appSupport.appendingPathComponent("CrateDigger").appendingPathComponent("Crates")
+            try? fm.createDirectory(at: cratesDir, withIntermediateDirectories: true)
+            return cratesDir
         }
-        let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let cratesDir = appSupport.appendingPathComponent("CrateDigger").appendingPathComponent("Crates")
-        try? fm.createDirectory(at: cratesDir, withIntermediateDirectories: true)
-        return cratesDir
     }
 
     func checkAndPromptForCratesFolder() -> Bool {
@@ -3843,7 +3867,15 @@ final class LibraryViewModel: ObservableObject {
         crateTracksCache.removeAll()
         trackStore = nil   // rebuilt lazily for the (possibly new) folder
         resetListeningStoreCache()
-        migrateLegacyCratesIfNeeded()
+        // Decide where the index is before anything reads it. A library on an
+        // unplugged drive loads read-only from the local copy, and none of the
+        // first-run writes below may run against it.
+        let location = resolveLibraryLocation()
+        if location != libraryLocation { libraryLocation = location }
+        let disconnected = location.isDisconnected
+        let copyDate = disconnected ? libraryIndexCopy.record()?.copiedAt : nil
+        if copyDate != libraryCopyDate { libraryCopyDate = copyDate }
+        if !disconnected { migrateLegacyCratesIfNeeded() }
         // Pending artwork is cached, not owned: drop sessions whose album has
         // gone away and ones nobody has come back to in a month.
         ArtworkStaging.sweep()
@@ -3851,7 +3883,7 @@ final class LibraryViewModel: ObservableObject {
         // known track a dateAdded. The track store's own paths are the source,
         // so this does not wait for the index to be built. No-op after the
         // first time, because the guard is "the plays file is empty".
-        backfillListeningStoreIfNeeded(knownPaths: currentTrackStore().allPaths)
+        if !disconnected { backfillListeningStoreIfNeeded(knownPaths: currentTrackStore().allPaths) }
         let fm = FileManager.default
         let cratesDir = cratesDirectoryURL
         do {
@@ -3861,8 +3893,9 @@ final class LibraryViewModel: ObservableObject {
                 .map { $0.deletingPathExtension().lastPathComponent }
             self.availableCrates = orderedCrates(names)
 
-            // Auto-create Personal Crate if none exist
-            if self.availableCrates.isEmpty {
+            // Auto-create Personal Crate if none exist. Never while disconnected:
+            // that is how an unplugged drive used to become a second, empty library.
+            if self.availableCrates.isEmpty, !disconnected {
                 createCrate(name: Self.personalCrateName)
                 return
             }
@@ -3877,6 +3910,9 @@ final class LibraryViewModel: ObservableObject {
 
             refreshCrateCounts()
         } catch {
+            // Disconnected with no copy yet: no crates, rather than the list from
+            // before the drive went.
+            if disconnected { availableCrates = [] }
             AppLog.library.warning("Failed to list crates: \(error.localizedDescription)")
         }
     }
@@ -3908,6 +3944,7 @@ final class LibraryViewModel: ObservableObject {
     }
 
     func createCrate(name: String) {
+        guard !refuseWhileLibraryDisconnected() else { return }
         let safeName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !safeName.isEmpty else { return }
         saveCrateTracks([], name: safeName)
@@ -3915,6 +3952,7 @@ final class LibraryViewModel: ObservableObject {
     }
 
     func deleteCrate(name: String) {
+        guard !refuseWhileLibraryDisconnected() else { return }
         let fileURL = cratesDirectoryURL.appendingPathComponent("\(name).cdcrate")
         try? FileManager.default.removeItem(at: fileURL)
         refreshAvailableCrates()
@@ -3992,6 +4030,7 @@ final class LibraryViewModel: ObservableObject {
     /// volume) instead of silently dropping edits while the UI claims success.
     @discardableResult
     func persistTrackStore() -> Bool {
+        guard !refuseWhileLibraryDisconnected() else { return false }
         do {
             try currentTrackStore().save()
             return true
@@ -4009,6 +4048,7 @@ final class LibraryViewModel: ObservableObject {
     /// track it holds, so per-crate saves froze the UI for seconds at 14k tracks.
     @discardableResult
     func saveCrateTracks(_ tracks: [LoadedTrack], name: String, persistStore: Bool = true) -> Bool {
+        guard !refuseWhileLibraryDisconnected() else { return false }
         let store = currentTrackStore()
         for track in tracks { store.upsert(track) }
         if persistStore, !persistTrackStore() { return false }
@@ -4340,6 +4380,7 @@ final class LibraryViewModel: ObservableObject {
     /// Prompt for a destination folder and move the album's files there,
     /// rewriting the stored paths in the library and every crate.
     func moveAlbumFiles(_ album: Album) {
+        guard !refuseWhileLibraryDisconnected() else { return }
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
@@ -4451,6 +4492,9 @@ final class LibraryViewModel: ObservableObject {
     }
 
     func addURLsToCrate(_ urls: [URL], crateName: String) {
+        // Before the scan, not only in importTracksIntoCrate at its end: a
+        // refusal after scanning a whole folder would waste the wait.
+        guard !refuseWhileLibraryDisconnected() else { return }
         // Scan files dropped from Finder
         scanGeneration += 1
         let generation = scanGeneration
@@ -4491,6 +4535,7 @@ final class LibraryViewModel: ObservableObject {
     ///   A Finder drop straight onto a crate is an import but not a prep commit.
     private func importTracksIntoCrate(_ tracks: [LoadedTrack], crateName: String,
                                        treatAsImport: Bool, fromPrepCrate: Bool) {
+        guard !refuseWhileLibraryDisconnected() else { return }
         beginImportStatus(count: tracks.count, crateName: crateName)
         let copyEnabled = prefs.copyOnImport && treatAsImport
         let libraryFolderURL = managedLibraryFolderURL
@@ -4701,6 +4746,7 @@ final class LibraryViewModel: ObservableObject {
     }
 
     func moveLibrary() {
+        guard !refuseWhileLibraryDisconnected() else { return }
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
@@ -4795,6 +4841,7 @@ final class LibraryViewModel: ObservableObject {
     /// bookmark — the audio files stay where they are. The counterpart to
     /// `moveLibrary()`, which moves the music and leaves the index alone.
     func moveIndexFiles() {
+        guard !refuseWhileLibraryDisconnected() else { return }
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
@@ -4814,14 +4861,14 @@ final class LibraryViewModel: ObservableObject {
         let fm = FileManager.default
         let indexFiles: [URL]
         do {
-            // This extension list is the whole function. Anything missing from it
+            // `LibraryIndexFiles` is the whole function. Anything missing from it
             // is left behind AND cleared from the collision check below, and the
             // folder-changed notification this posts then rebuilds a fresh empty
             // store over the top of the loss. `cdplays` in particular has no
-            // backup and nothing that can rebuild it — add new index files here.
+            // backup and nothing that can rebuild it. Add new index files to that
+            // list, which the local copy of the index reads as well.
             indexFiles = try fm.contentsOfDirectory(at: currentURL, includingPropertiesForKeys: nil)
-                .filter { $0.pathExtension == "cdcrate" || $0.pathExtension == "cdtracks"
-                    || $0.pathExtension == "cdplays" }
+                .filter(LibraryIndexFiles.isIndexFile)
         } catch {
             appAlert = .error(title: "Move Failed", message: "Could not read the current index folder: \(error.localizedDescription)")
             return
@@ -4885,6 +4932,7 @@ final class LibraryViewModel: ObservableObject {
     }
 
     func consolidateLibrary() {
+        guard !refuseWhileLibraryDisconnected() else { return }
         guard let libraryFolderURL = managedLibraryFolderURL else {
             appAlert = .error(title: "No Library Folder", message: "Please set a library folder in Preferences first.")
             return
