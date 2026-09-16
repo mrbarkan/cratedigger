@@ -346,9 +346,19 @@ BUILD_OUTPUT="$(
 
 printf '%s\n' "${BUILD_OUTPUT}"
 
-BINARY_PATH="$(find "${BUILD_PATH}" -type f -path '*/release/CrateDiggerApp' | head -n 1)"
-if [[ -z "${BINARY_PATH}" ]]; then
-  echo "error: could not locate release CrateDiggerApp binary in ${BUILD_PATH}" >&2
+# Ask SwiftPM where it put the product rather than guessing the layout: the
+# Swift 6.4 build system writes to out/Products/Release, and a find for
+# */release/ silently stopped matching when it arrived.
+BIN_DIR="$(
+  swift build \
+    --configuration release \
+    --product CrateDiggerApp \
+    --build-path "${BUILD_PATH}" \
+    --show-bin-path
+)"
+BINARY_PATH="${BIN_DIR}/CrateDiggerApp"
+if [[ ! -f "${BINARY_PATH}" ]]; then
+  echo "error: could not locate release CrateDiggerApp binary in ${BIN_DIR}" >&2
   exit 1
 fi
 
