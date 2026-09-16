@@ -1,6 +1,6 @@
 ---
 name: press-the-record
-description: CrateDigger release macro. Use when the user says "press the record" (also "press record", "cut a release", "ship a release"). Verifies the build, bumps the version, updates the changelog + README + website copy, commits, pushes, builds the signed + notarized DMG, and publishes the GitHub release with the DMG attached. Handles both lines: stable from main, and the 2.1 betas from the v2.1 branch.
+description: CrateDigger release macro. Use when the user says "press the record" (also "press record", "cut a release", "ship a release"). Verifies the build, bumps the version, updates the changelog + README + website copy, commits, pushes, builds the signed + notarized DMG, and publishes the GitHub release with the DMG attached. Handles both lines: stable from main, and the 2.2 betas from the v2.2 branch.
 ---
 
 # Press the Record — CrateDigger release macro
@@ -13,20 +13,20 @@ package on a red build.
 **Run `git branch --show-current` first.** The two lines differ at almost every
 step, and getting this wrong is the one mistake here that reaches real users.
 
-| | `main` (stable) | `v2.1` (beta) |
+| | `main` (stable) | `v2.2` (beta) |
 |---|---|---|
 | Audience | everyone | stable users who turned on Receive beta updates |
-| Marketing version | patch bump | stays `2.1.0` |
+| Marketing version | patch bump | stays `2.2.0` |
 | `AppVersion.channel` | `""` | `"BETA"` |
-| Tag | `v2.0.5` | `v2.1.0-beta.<build>` |
+| Tag | `v2.0.5` | `v2.2.0-beta.<build>` |
 | GitHub release | normal | `--prerelease` |
 | Feed | `website/appcast.xml` | `website/appcast-beta.xml` |
-| CHANGELOG section | new per release | one `## 2.1.0` that accumulates |
+| CHANGELOG section | new per release | one `## 2.2.0` that accumulates |
 
-**No beta line is open since 2.1.0 shipped (2026-09-11).** `v2.1` was
-fast-forwarded into `main` and is history. The beta column above describes how a
-beta branch works; until the next one is cut (see CLAUDE.md, "Two release
-lines"), every release is a stable one from `main`.
+**The 2.2 beta line is open on `v2.2`**, cut from `main` on 2026-09-16 for
+2.2.0 beta 1 (build 91). `v2.2` never published a beta and is history, like
+`v2`. A beta ships from `v2.2`, a 2.1.x fix from `main`; when the request does
+not say which line, ask. Merge `main` into `v2.2` before each beta.
 
 Then pick the version:
 - Read the current `marketing` and `build` from `Sources/CrateDiggerApp/AppVersion.swift`.
@@ -35,10 +35,10 @@ Then pick the version:
   "press the record 1.1.0"), use it. Otherwise default to a **patch bump**
   (`X.Y.Z` → `X.Y.(Z+1)`) and state the version you chose in your first message
   so the user can correct it.
-- **Marketing version (v2.1):** stays `2.1.0`. Bump `channelOrdinal` instead — it
+- **Marketing version (v2.2):** stays `2.2.0`. Bump `channelOrdinal` instead — it
   is the beta number in the About pill, so beta 3 is `channelOrdinal = "3"`.
-  The first 2.1 beta takes it from `""` to `"1"`.
-- `channel` stays `""` on main and `"BETA"` on v2.1 unless the user says otherwise.
+  The first 2.2 beta took it from `""` to `"1"`.
+- `channel` stays `""` on main and `"BETA"` on v2.2 unless the user says otherwise.
 
 ## 1. Verify green
 - `swift build` must succeed.
@@ -48,7 +48,7 @@ Then pick the version:
 ## 2. Bump the version (keep both in sync)
 - `Sources/CrateDiggerApp/AppVersion.swift`: `marketing` and `build`.
 - `Packaging/CrateDiggerApp/Info.plist`: `CFBundleShortVersionString` (= marketing)
-  and `CFBundleVersion` (= build). On v2.1 only `CFBundleVersion` moves, and do
+  and `CFBundleVersion` (= build). On v2.2 only `CFBundleVersion` moves, and do
   not touch `SUFeedURL` — pointing it back at the stable feed is exactly the
   mistake the beta line exists to prevent.
 - Re-run `swift build` to confirm the bump compiles.
@@ -63,12 +63,12 @@ Then pick the version:
 - **`README.md`**: update the release line (currently "Now at the X release.").
 - **`website/index.html`**: update the footer "Current Release: vX.Y.Z".
 
-**On v2.1, step 3 is different.** There is one `## 2.1.0 (<build>), <date>`
+**On v2.2, step 3 is different.** There is one `## 2.2.0 (<build>), <date>`
 section at the top of the CHANGELOG that you *add to* each beta rather than
-replacing, since a tester wants to read everything in 2.1.0 so far. Keep the
-heading matching `## 2.1.0 ` exactly — the appcast script finds the notes by
+replacing, since a tester wants to read everything in 2.2.0 so far. Keep the
+heading matching `## 2.2.0 ` exactly — the appcast script finds the notes by
 that prefix. Do **not** touch `README.md` or `website/index.html`: those
-describe the shipping stable release, which is still 2.0.x.
+describe the shipping stable release, which is still 2.1.x.
 
 ## 4. Commit
 - If there is uncommitted **feature/code** work in the tree, commit it first with a
@@ -81,8 +81,8 @@ describe the shipping stable release, which is still 2.0.x.
 
 ## 5. Push
 - `git fetch origin` then `git push origin <branch>` — `main` for a stable
-  release, `v2.1` for a beta. The website redeploys via GitHub Pages on a push to
-  `main` that touches `website/`; a `v2.1` push deploys nothing.
+  release, `v2.2` for a beta. The website redeploys via GitHub Pages on a push to
+  `main` that touches `website/`; a `v2.2` push deploys nothing.
 - If the push is rejected (remote moved), `git rebase origin/<branch>` and push
   again.
 
@@ -125,10 +125,10 @@ Only after step 6 verified clean — never publish a DMG whose staple you haven'
 checked.
 
 House style, matched from the previous release (`gh release view <last tag>`):
-- **Tag:** `v<marketing>` on main, `v2.1.0-beta.<build>` on v2.1, created by this
+- **Tag:** `v<marketing>` on main, `v2.2.0-beta.<build>` on v2.2, created by this
   command against the branch you released from (pass `--target main` or
-  `--target v2.1`; a raw commit SHA is rejected as an invalid `target_commitish`).
-- **On v2.1, pass `--prerelease`.** Without it the beta becomes
+  `--target v2.2`; a raw commit SHA is rejected as an invalid `target_commitish`).
+- **On v2.2, pass `--prerelease`.** Without it the beta becomes
   `/releases/latest`, which is what the website's Download button and every
   fresh download resolve to. That hands an untested build to everyone even
   though the update feed is clean.
@@ -146,10 +146,10 @@ gh release create v<marketing> dist/CrateDigger-<marketing>.dmg \
   --title "CrateDigger <marketing> (build <build>): <tagline>" \
   --notes-file <notes.md>
 
-# v2.1 beta instead:
-gh release create v2.1.0-beta.<build> dist/CrateDigger-2.1.0.dmg \
-  --target v2.1 --prerelease \
-  --title "CrateDigger 2.1.0 beta <ordinal> (build <build>): <tagline>" \
+# v2.2 beta instead:
+gh release create v2.2.0-beta.<build> dist/CrateDigger-2.2.0.dmg \
+  --target v2.2 --prerelease \
+  --title "CrateDigger 2.2.0 beta <ordinal> (build <build>): <tagline>" \
   --notes-file <notes.md>
 ```
 
@@ -167,22 +167,22 @@ URL, and the signature covers the exact DMG bytes uploaded in step 7:
 ```bash
 scripts/update-appcast.sh                    # stable, from main
 
-# v2.1 beta: its own feed, and a tag that cannot be derived from the DMG name.
+# v2.2 beta: its own feed, and a tag that cannot be derived from the DMG name.
 scripts/update-appcast.sh \
   --appcast website/appcast-beta.xml \
-  --tag v2.1.0-beta.<build>
+  --tag v2.2.0-beta.<build>
 ```
 
 **Publishing the beta feed takes one extra move.** GitHub Pages only deploys
-`website/` from `main`, so a feed sitting on `v2.1` is never served. Take just
+`website/` from `main`, so a feed sitting on `v2.2` is never served. Take just
 that one file across, and nothing else:
 
 ```bash
 git checkout main
-git checkout v2.1 -- website/appcast-beta.xml
-git commit -m "chore(release): publish 2.1.0-beta.<build> to the beta feed"
+git checkout v2.2 -- website/appcast-beta.xml
+git commit -m "chore(release): publish 2.2.0-beta.<build> to the beta feed"
 git push origin main
-git checkout v2.1
+git checkout v2.2
 ```
 
 `main` never receives beta code this way — only the beta feed, which no stable

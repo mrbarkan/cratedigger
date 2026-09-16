@@ -32,8 +32,8 @@ newest dist/CrateDigger-*.dmg.
   --channel NAME    Publish on a Sparkle channel instead of to everyone.
                     Use 'rc' for prereleases — only builds whose
                     AppVersion.channel says so will be offered them.
-  --appcast PATH    The feed to write (default: website/appcast.xml). The v2.1
-                    beta line writes website/appcast-beta.xml instead, so the
+  --appcast PATH    The feed to write (default: website/appcast.xml). The beta
+                    line writes website/appcast-beta.xml instead, so the
                     stable feed cannot be touched by a beta release.
   --tag TAG         The git tag whose release holds the DMG (default: derived
                     from the DMG name, e.g. v1.5.10). Prerelease tags carry the
@@ -83,9 +83,9 @@ fi
 
 # Each feed is generated on the branch that owns it. GitHub Pages serves
 # website/ from main, so the stable feed is written there; the beta feed is
-# written on the beta branch (BETA_BRANCH, v2.1 for the 2.1 cycle), whose
+# written on the beta branch (BETA_BRANCH, v2.2 for the 2.2 cycle), whose
 # CHANGELOG carries the beta's notes, and then carried across with
-# `git checkout v2.1 -- website/appcast-beta.xml`.
+# `git checkout v2.2 -- website/appcast-beta.xml`.
 #
 # Right script, wrong branch is silent and destructive both ways, and both
 # happened while testing the guard above (during the 2.0 cycle, on v2):
@@ -94,7 +94,7 @@ fi
 #     notes. The script only warns about missing notes and carries on.
 #   - stable feed from the beta branch: rewrites the appcast every stable
 #     copy reads, with the beta branch's notes and version history.
-BETA_BRANCH="v2.1"
+BETA_BRANCH="v2.2"
 BRANCH="$(git -C "${ROOT_DIR}" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
 case "$(basename "${APPCAST}")" in
   appcast.xml)      EXPECTED_BRANCH="main" ;;
@@ -209,8 +209,8 @@ fi
 # plain run rewrites older releases' DMG URLs to point inside this release's
 # tag — a 404 for anyone the newest entry doesn't apply to. Each asset already
 # names its own version, so re-derive the tag per URL and put the old ones back.
-python3 - "${STAGING_DIR}/appcast.xml" "${TAG}" "${DMG_NAME}" <<'PYFIX'
-import re, sys
+python3 - "${STAGING_DIR}/appcast.xml" "${TAG}" "${DMG_NAME}" "${APPCAST}" <<'PYFIX'
+import os, re, sys
 
 path, this_tag, this_dmg = sys.argv[1], sys.argv[2], sys.argv[3]
 xml = open(path).read()
@@ -225,8 +225,24 @@ base = "https://github.com/mrbarkan/cratedigger/releases/download/"
 prerelease = re.fullmatch(r"v(?P<short>[^-]+)-(?P<channel>[a-z]+)\.(?P<build>\d+)", this_tag)
 channel = prerelease.group("channel") if prerelease else None
 
+# An entry that is already published keeps the tag it was published under, read
+# from the committed feed (argv[4], not yet overwritten) and keyed by
+# sparkle:version, which is unique per build. Deriving it from this release's tag
+# breaks on a feed that mixes lines: publishing v2.2.0-beta.91 would have pointed
+# the 2.1.0 GA entry at v2.1.0-beta.89, a tag that was never cut.
+published = {}
+published_path = sys.argv[4] if len(sys.argv) > 4 else ""
+if published_path and os.path.exists(published_path):
+    for old_item in re.findall(r"<item>.*?</item>", open(published_path).read(), flags=re.S):
+        old_build = re.search(r"<sparkle:version>([^<]+)</sparkle:version>", old_item)
+        old_tag = re.search(re.escape(base) + r"(v[^/\"]+)/", old_item)
+        if old_build and old_tag:
+            published[old_build.group(1)] = old_tag.group(1)
+
 def owning_tag(item):
     build = re.search(r"<sparkle:version>([^<]+)</sparkle:version>", item)
+    if build and build.group(1) in published:
+        return published[build.group(1)]
     short = re.search(r"<sparkle:shortVersionString>([^<]+)</sparkle:shortVersionString>", item)
     if not short:
         return this_tag
