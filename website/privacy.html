@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CrateDigger Privacy Policy and Terms of Use</title>
+  <meta name="description" content="What CrateDigger sends over the network, what it keeps on your Mac, and the terms it is offered under. No accounts, no analytics, no telemetry.">
+  <link rel="canonical" href="https://cratedigger.mrbarkan.com/privacy.html">
+  <meta name="robots" content="index,follow">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="index.css">
+</head>
+<body data-theme="dark">
+
+  <div class="backdrop"></div>
+
+  <header class="navbar">
+    <div class="nav-container">
+      <div class="logo">
+        <span class="logo-led"></span>
+        <span class="logo-text">CrateDigger</span>
+        <span class="logo-sub">CD-01</span>
+      </div>
+      <nav class="nav-links">
+        <a href="index.html#demo">Interactive UI</a>
+        <a href="index.html#features">Features</a>
+        <a href="index.html#comparison">Compare</a>
+        <a href="index.html#specs">Specs</a>
+        <a href="roadmap.html">Roadmap</a>
+        <a href="blog/index.html">Blog</a>
+        <a href="https://github.com/mrbarkan/cratedigger" class="btn btn-secondary">GitHub</a>
+        <a href="https://github.com/mrbarkan/cratedigger/releases/latest" class="btn btn-primary">Download</a>
+      </nav>
+    </div>
+  </header>
+
+  <section class="article-section">
+    <div class="article-container">
+      <div class="breadcrumb">
+        <a href="index.html">Home</a> / Privacy and Terms
+      </div>
+
+      <div class="article-header">
+        <span class="article-eyebrow">Privacy Policy and Terms of Use</span>
+        <h1 class="article-title">Your library stays on your Mac.</h1>
+        <div class="article-meta">Updated September 16, 2026 · Applies to CrateDigger 2.1 and later</div>
+      </div>
+
+      <div class="article-body">
+        <p>
+          CrateDigger is a free, open source macOS app made by David Barkan. It has no accounts, no analytics, no crash reporting and no telemetry. Nothing about you, your Mac or your music is collected by the developer. The full source is on <a href="https://github.com/mrbarkan/cratedigger">GitHub</a>, so every claim on this page can be checked.
+        </p>
+
+        <h2>What stays on your Mac</h2>
+        <p>
+          Your music files, crates, tags, artwork, listening history, playback position and settings are stored in folders you choose and in the app's own preferences. They are never uploaded anywhere. The optional Now Playing widget reads the current track from a container shared only between the app and the widget on the same Mac.
+        </p>
+
+        <h2>When the app talks to the internet</h2>
+        <p>
+          CrateDigger contacts third party services only when you trigger a feature that needs them. Each request carries the minimum the service needs to answer, typically an artist and album name, a track fingerprint or a release identifier. What those services do with a request is governed by their own policies.
+        </p>
+        <ul>
+          <li><strong>Find Art and Fix Tags:</strong> MusicBrainz, the iTunes Search API, Deezer, the Cover Art Archive and Discogs, to look up releases and cover images. A Discogs token, if you add one, is stored in your preferences and sent only to Discogs.</li>
+          <li><strong>Deep Scan:</strong> AcoustID, which receives an audio fingerprint of a file, never the audio itself.</li>
+          <li><strong>Last.fm scrobbling:</strong> only if you sign in. Your session key is stored locally and the track you are playing is sent to Last.fm.</li>
+          <li><strong>Subsonic and Navidrome:</strong> only the server you configure yourself.</li>
+          <li><strong>Radio:</strong> YouTube, through yt-dlp installed by you, for the streams you paste in.</li>
+          <li><strong>Updates:</strong> once a day the app checks this site for a new version through Sparkle. The check sends no system profile.</li>
+        </ul>
+        <p>
+          This website is static, sets no cookies and runs no analytics.
+        </p>
+
+        <h2>Terms of use</h2>
+        <p>
+          CrateDigger is released under the <a href="https://github.com/mrbarkan/cratedigger/blob/main/LICENSE">MIT License</a>. It is provided as is, without warranty of any kind. Conversion, cleanup and library moves rewrite files on disk; keep a backup before running them on music you cannot replace. You are responsible for holding the rights to any audio you convert, rip or stream, and for complying with the terms of the services listed above.
+        </p>
+
+        <h2>Contact</h2>
+        <p>
+          Questions about this page go to <a href="mailto:opa@mrbarkan.com">opa@mrbarkan.com</a> or to the <a href="https://github.com/mrbarkan/cratedigger/issues">issue tracker</a>. Changes to this policy are published here and in the repository history.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="container footer-container">
+      <p class="copyright">&copy; 2026 CrateDigger. All rights reserved. macOS, SwiftUI, and AppKit are trademarks of Apple Inc.</p>
+      <div class="footer-meta">
+        <a href="roadmap.html">Roadmap</a>
+        <a href="blog/index.html">Blog</a>
+        <a href="https://www.patreon.com/mrbarkan">Support &hearts;</a>
+        <a href="https://github.com/mrbarkan/cratedigger/blob/main/docs/THEMING.md">Theming Guide</a>
+        <a href="privacy.html">Privacy &amp; Terms</a>
+        <span>Current Release: v2.1.1</span>
+        <span class="footer-led"></span>
+      </div>
+    </div>
+  </footer>
+
+</body>
+</html>
