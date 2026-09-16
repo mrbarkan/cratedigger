@@ -117,46 +117,36 @@ struct WhatsNewItem: Identifiable {
     /// goes first and theming stays last, beside the button that opens it.
     static let current: [WhatsNewItem] = [
         WhatsNewItem(
-            symbol: "photo.stack",
-            title: "Now Playing on your desktop",
+            symbol: "externaldrive.badge.xmark",
+            title: "Your library, even with the drive unplugged",
             body: """
-            A widget for the desktop and Notification Center: right-click the \
-            desktop, choose Edit Widgets and find CrateDigger. It shows the \
-            cover, the track and a progress bar that moves by itself, and it can \
-            turn the album's booklet pages while the record plays. With nothing \
-            playing it shows a slideshow of your library, naming each record and \
-            a crate it lives in, the last album you played and how long ago, or a \
-            line to get you digging. Pick in Settings, Interface.
+            If your library index lives on an external drive, CrateDigger now \
+            keeps a copy of it on this Mac. Launch without the drive and your \
+            crates, albums, covers, play counts and ratings are all still there, \
+            dimmed, with a note naming the drive that is out. Changes wait until \
+            it is back, and plugging it in brings the live library back by \
+            itself. Before, the app said No library loaded and started an empty \
+            one in its place.
             """
         ),
         WhatsNewItem(
-            symbol: "hand.draw",
-            title: "Drag to reorder Up Next",
+            symbol: "waveform",
+            title: "A quieter bottom shelf",
             body: """
-            Click, hold and drag a queued track onto another to move it there, \
-            or below the last one to send it to the end. A lit line shows where \
-            it will land. It works in the Inspector's queue and in the mini \
-            player's.
+            The EQ display and the VU meter have left the bottom of the window, \
+            which now holds the position dial, the transport and the volume \
+            knob. A small spectrum meter sits beside the clock on the NOW screen \
+            instead, moving while a record or a stream plays and settling flat \
+            when you pause.
             """
         ),
         WhatsNewItem(
-            symbol: "pip",
-            title: "A new mini player",
+            symbol: "slider.vertical.3",
+            title: "The EQ key opens the equalizer",
             body: """
-            Title, band and album each get their own line, the transport matches \
-            the main window's footer with a round play key that lights while it \
-            plays, and every corner follows your theme. The key that opens it and \
-            the key that brings the main window back are now one switch, on \
-            Shift-Command-M from either window.
-            """
-        ),
-        WhatsNewItem(
-            symbol: "tray",
-            title: "Clear the Prep Crate in one place",
-            body: """
-            With the Prep Crate selected, a key beside the browser's search and \
-            sort controls empties it. It asks first, because clearing also \
-            forgets which folders you dug.
+            Press EQ in the header for the equalizer's faders, presets and \
+            AutoEQ import. The key no longer steps through presets: pick one on \
+            the preset keys. Its lamp is lit while the equalizer is on.
             """
         ),
         WhatsNewItem(
