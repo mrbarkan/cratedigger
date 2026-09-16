@@ -4,6 +4,32 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 2.2.0 (91), 2026-09-16
+
+Beta 1: your library, even with the drive unplugged. This section collects
+everything in the 2.2 line so far. Betas are offered only to people who turned
+on Receive beta updates.
+
+### Added
+
+- **Your library stays visible when its drive is unplugged.** If your library
+  index lives on an external drive, CrateDigger now keeps a copy of it on this
+  Mac. Launch without the drive and your crates, albums, covers, play counts
+  and ratings are all still there, dimmed, with a note saying which drive is
+  disconnected. Plug it back in and the live library returns by itself.
+- **Nothing changes while the drive is out.** Ratings, crate edits, tag and
+  artwork changes and moving files wait until the drive is back, and the
+  display says why instead of quietly doing nothing. Plays are not counted
+  while the library is disconnected.
+
+### Fixed
+
+- **Launching without the library drive no longer looks like an empty
+  library.** CrateDigger used to say "No library loaded" and quietly start a
+  new, empty library in its place, so anything you changed that session was
+  saved there instead of in your real one. It now says the drive is
+  disconnected and changes nothing.
+
 ## 2.1.1 (90), 2026-09-15
 
 Ready for macOS 27 Golden Gate.
