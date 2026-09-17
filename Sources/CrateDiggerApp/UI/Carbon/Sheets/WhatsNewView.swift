@@ -117,6 +117,26 @@ struct WhatsNewItem: Identifiable {
     /// goes first and theming stays last, beside the button that opens it.
     static let current: [WhatsNewItem] = [
         WhatsNewItem(
+            symbol: "arrow.up.left.and.arrow.down.right",
+            title: "A full-screen player",
+            body: """
+            View > Full Screen Player, or Shift-Cmd-F, fills the screen with the \
+            playing cover, the title, artist and album, the time, and the \
+            shelf's own position, transport and volume controls. Esc, CLOSE or \
+            a click on the black brings the window back.
+            """
+        ),
+        WhatsNewItem(
+            symbol: "slider.horizontal.below.rectangle",
+            title: "Position and volume are two mixer faders",
+            body: """
+            They sit either side of the transport, the same length, growing \
+            together as the window widens. The rail is a bevelled slot in the \
+            shelf and the fill glows like a light. The volume's unity mark \
+            reads 0dB.
+            """
+        ),
+        WhatsNewItem(
             symbol: "externaldrive.badge.xmark",
             title: "Your library, even with the drive unplugged",
             body: """
