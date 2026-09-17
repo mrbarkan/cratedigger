@@ -718,6 +718,9 @@ struct GalleryAlbumCoverView: View {
         }
         .frame(width: size, height: size)
         .clipped()
+        // Art keeps the interface grain off it — see `carbonGrain`. A square
+        // hole: the callers' 4–6pt corner rounding is under the cover's shadow.
+        .grainFree(shape: Rectangle())
         .task(id: loadKey) { await loadCover() }
     }
 

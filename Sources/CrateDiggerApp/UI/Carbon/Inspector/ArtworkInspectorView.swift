@@ -429,6 +429,7 @@ struct ArtworkInspectorView: View {
                             .aspectRatio(contentMode: .fill)
                             .frame(width: 100, height: 100)
                             .clipped()
+                            .grainFree(shape: Rectangle())
                     } else if url.pathExtension.lowercased() == "pdf" {
                         // No thumbnail path for a PDF, and a spinner that never
                         // resolves reads as broken rather than as "document".

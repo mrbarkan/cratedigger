@@ -25,6 +25,8 @@ struct AlbumPoster: View {
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+        // A printed sleeve has no chassis grain on it — see `carbonGrain`.
+        .grainFree(cornerRadius: 3)
         .overlay(
             RoundedRectangle(cornerRadius: 3, style: .continuous)
                 .stroke(Color.black.opacity(theme.isDark ? 0.6 : 0.18), lineWidth: 1)

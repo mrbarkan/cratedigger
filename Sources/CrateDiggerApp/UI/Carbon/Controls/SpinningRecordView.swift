@@ -124,6 +124,8 @@ struct SpinningRecordView: View {
             .frame(width: size, height: size)
             .position(x: geo.size.width / 2, y: geo.size.height / 2)
             .clipShape(Circle())
+            // Polycarbonate and vinyl are smooth: no chassis grain on the disc.
+            .grainFree(shape: Circle())
             .gesture(isAdjustingCut ? cutDragGesture(frameSize: size) : nil)
             .mask(
                 Group {
