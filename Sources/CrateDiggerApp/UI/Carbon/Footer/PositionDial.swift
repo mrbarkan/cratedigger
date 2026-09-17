@@ -56,8 +56,8 @@ struct PositionDial: View {
         }
         .padding(.vertical, 9)   // matches the other footer pod so their labels align
         .padding(.horizontal, 12)
-        .frame(width: 184, height: 64)
-        .background(ChromeChassis(theme: theme, cornerRadius: 12))
+        .frame(minWidth: 184, maxWidth: 380, minHeight: 64, maxHeight: 64)   // grows with the shelf, see FooterShell
+        // No pod: the fader sits straight in the shelf, like a mixer's.
         .overlay(
             ScrollSeekCatcher(enabled: model.scrubLockEnabled) { delta in
                 model.scrollSeek(byFraction: delta)

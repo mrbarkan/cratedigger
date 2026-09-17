@@ -37,32 +37,52 @@ struct FaderTrack: View {
                     detentMark(detents[i], width: w)
                 }
 
-                // Recessed pill rail.
+                // Recessed pill rail: a dark slot cut into the shelf, with the
+                // inner bevel a milled groove has — shadow along its top wall,
+                // light catching its bottom lip.
                 Capsule()
-                    .fill(Color.black.opacity(theme.isDark ? 0.42 : 0.12))
-                    .overlay(Capsule().stroke(Color.white.opacity(theme.isDark ? 0.08 : 0.45), lineWidth: 0.6))
+                    .fill(Color.black.opacity(theme.isDark ? 0.62 : 0.30))
+                    .overlay(
+                        Capsule()
+                            .stroke(Color.black.opacity(theme.isDark ? 0.9 : 0.55), lineWidth: 2.5)
+                            .blur(radius: 1.6)
+                            .offset(y: 1.4)
+                            .mask(Capsule())
+                    )
+                    .overlay(
+                        Capsule()
+                            .stroke(Color.white.opacity(theme.isDark ? 0.14 : 0.5), lineWidth: 1)
+                            .blur(radius: 0.6)
+                            .offset(y: -0.8)
+                            .mask(Capsule())
+                    )
+                    .overlay(Capsule().stroke(Color.white.opacity(theme.isDark ? 0.10 : 0.55), lineWidth: 0.6).offset(y: 0.5))
                     .frame(height: 7)
 
                 // Fill up to the cap.
+                // The fill is a light, not paint: a tight bloom hugging the
+                // tube and a wider, fainter one spilling onto the shelf.
                 Group {
                     if let fillColor {
-                        Capsule().fill(fillColor.opacity(0.9))
+                        Capsule().fill(fillColor)
                     } else {
                         Capsule()
                             .fill(
                                 LinearGradient(
-                                    colors: [theme.cyan.opacity(0.92), theme.meterHot.opacity(0.88)],
+                                    colors: [theme.cyan, theme.meterHot],
                                     startPoint: .leading,
                                     endPoint: .trailing
                                 )
                             )
                     }
                 }
-                .frame(width: w, height: 7)
+                .frame(width: w, height: 5)
+                .overlay(Capsule().fill(Color.white.opacity(0.22)).frame(height: 1.5).offset(y: -1.2))
                 .mask(alignment: .leading) {
-                    Capsule().frame(width: max(2, w * p), height: 7)
+                    Capsule().frame(width: max(2, w * p), height: 5)
                 }
-                .shadow(color: (fillColor ?? theme.cyan).opacity(theme.isDark ? 0.26 : 0.18), radius: 5)
+                .shadow(color: (fillColor ?? theme.cyan).opacity(theme.isDark ? 0.9 : 0.55), radius: 2)
+                .shadow(color: (fillColor ?? theme.meterHot).opacity(theme.isDark ? 0.45 : 0.28), radius: 8)
 
                 // Vertical metal cap.
                 cap.offset(x: min(max(w * p - 5.5, 0), w - 11))

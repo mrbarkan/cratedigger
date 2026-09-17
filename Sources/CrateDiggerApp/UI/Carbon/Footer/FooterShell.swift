@@ -30,12 +30,17 @@ struct FooterShell: View {
                     shape.strokeBorder(Color.white.opacity(theme.isDark ? 0.12 : 0.62), lineWidth: 1)
                 )
 
-            HStack(alignment: .center, spacing: 0) {
+            // One cluster, like a deck: the two pods hug the transport instead
+            // of being pinned to the shelf's ends, where a wide window left
+            // them stranded in bare chassis. The halves are equal so the
+            // transport stays dead centre, and both pods grow into their half
+            // by the same amount, like a mixer's two faders.
+            HStack(alignment: .center, spacing: 28) {
                 PositionDial(clock: model.playbackClock)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
                 TransportCluster()
                 VolumeKnob(value: $model.playbackVolume)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(.horizontal, 26)
         }
