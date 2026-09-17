@@ -4,15 +4,20 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
-## 2.2.0 (91), 2026-09-16
+## 2.2.0 (92), 2026-09-17
 
-Beta 1: your library, even with the drive unplugged, and a quieter bottom
-shelf. This section collects
-everything in the 2.2 line so far. Betas are offered only to people who turned
-on Receive beta updates.
+Beta 2: a full-screen player and a shelf like a mixer. Beta 1 brought your
+library, even with the drive unplugged, and a quieter bottom shelf. This
+section collects everything in the 2.2 line so far. Betas are offered only to
+people who turned on Receive beta updates.
 
 ### Added
 
+- **A full-screen player.** View > Full Screen Player, or Shift-Cmd-F, fills
+  the screen with the playing cover, the title, artist and album, the elapsed
+  and total time, and the shelf's own position, transport and volume
+  controls. Esc, CLOSE or a click on the black backdrop brings the window
+  back. Space still plays and pauses.
 - **Your library stays visible when its drive is unplugged.** If your library
   index lives on an external drive, CrateDigger now keeps a copy of it on this
   Mac. Launch without the drive and your crates, albums, covers, play counts
@@ -33,9 +38,21 @@ on Receive beta updates.
 - **The EQ key in the header opens the equalizer.** It no longer steps through
   presets: pick one on the equalizer's preset keys. Its lamp is lit while the
   equalizer is on.
+- **Position and volume are two mixer faders.** They sit either side of the
+  transport, the same length, and grow together as the window widens. The
+  rail is a bevelled slot cut into the shelf and the fill glows like a light.
+  The VOLUME label moves to the outer edge, and its unity mark reads 0dB.
+- **Cleanup looks across versions again, carefully.** Tracks in different
+  versions of one release are flagged as duplicates only when their tags are
+  exactly the same. Differently tagged pressings, such as a JP and a US
+  release, stay apart as before.
 
 ### Fixed
 
+- **No grain on album art.** The interface grain no longer sits on the
+  inspector cover, the gallery covers, the artwork thumbnails or the disc.
+- **Column titles read whole.** ARTIST, ALBUM and TRACK in the browser
+  header were clipped to half their height on macOS 27.
 - **Launching without the library drive no longer looks like an empty
   library.** CrateDigger used to say "No library loaded" and quietly start a
   new, empty library in its place, so anything you changed that session was
