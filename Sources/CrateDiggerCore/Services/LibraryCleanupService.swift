@@ -96,13 +96,18 @@ public final class LibraryCleanupService {
         mode: DuplicateScanMode = .strict,
         ignoring ignoredSignatures: Set<String> = []
     ) -> [DuplicateGroup] {
-        // Tracks inside a grouped release must only ever match duplicates within the
-        // SAME member pressing — never across versions of the same release.
-        var versionAlbumOfTrack: [UUID: String] = [:]
+        // Tracks inside a grouped release are fenced off from the other
+        // pressings: a JP and a US pressing of one album are not duplicates
+        // of each other. The fence is the exact tag set rather than the
+        // pressing itself, so two pressings whose files carry identical tags
+        // (one rip filed in two folders) still surface.
+        // ponytail: same pressing, differently tagged copies no longer pair;
+        // key on the pressing id as well if that ever bites.
+        var inVersionGroup: Set<UUID> = []
         for album in index.allAlbums where album.isVersionGroup {
             for version in album.versions ?? [] {
                 for loaded in version.tracks {
-                    versionAlbumOfTrack[loaded.track.id] = version.id
+                    inVersionGroup.insert(loaded.track.id)
                 }
             }
         }
@@ -115,8 +120,8 @@ public final class LibraryCleanupService {
             if mode == .strict {
                 key += " @@ " + Self.normalizeForMatch(loadedTrack.track.album)
             }
-            if let version = versionAlbumOfTrack[loadedTrack.track.id] {
-                key += " :: \(version)"
+            if inVersionGroup.contains(loadedTrack.track.id) {
+                key += " :: " + Self.exactTagFence(loadedTrack)
             }
             grouped[key, default: []].append(loadedTrack)
         }
@@ -159,6 +164,16 @@ public final class LibraryCleanupService {
         return duplicateGroups.sorted {
             $0.bestTrack.track.title.localizedCaseInsensitiveCompare($1.bestTrack.track.title) == .orderedAscending
         }
+    }
+
+    /// The tags as written, untouched by `normalizeForMatch`: what a user
+    /// means by "the exact same metadata".
+    static func exactTagFence(_ loaded: LoadedTrack) -> String {
+        let t = loaded.track
+        let m = loaded.metadata
+        return [t.title, t.artist, t.album, m.albumArtist ?? "", m.genre ?? "",
+                t.year.map(String.init) ?? "", t.trackNumber.map(String.init) ?? "",
+                t.discNumber.map(String.init) ?? ""].joined(separator: "\u{1F}")
     }
 
     /// Sort by duration, split where the gap to the previous track exceeds 2s.

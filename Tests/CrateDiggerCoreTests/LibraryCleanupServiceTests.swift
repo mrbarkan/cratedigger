@@ -162,6 +162,37 @@ final class LibraryCleanupServiceTests: XCTestCase {
         XCTAssertEqual(dupes.count, 0)
     }
 
+    /// Two pressings whose files carry the exact same tags are not two
+    /// pressings, they are one rip filed twice: the fence opens for those.
+    func testIdenticallyTaggedVersionsAreFlagged() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        func mk(_ folder: String) throws -> LoadedTrack {
+            let sub = dir.appendingPathComponent(folder)
+            try FileManager.default.createDirectory(at: sub, withIntermediateDirectories: true)
+            let url = sub.appendingPathComponent("01 One More Time.flac")
+            try "x".write(to: url, atomically: true, encoding: .utf8)
+            let t = AudioTrack(fileURL: url, title: "One More Time", artist: "Daft Punk",
+                               album: "Discovery", durationSeconds: 200, formatName: "flac",
+                               bitrateKbps: 900, sampleRateHz: 44100, year: 2001, trackNumber: 1)
+            return LoadedTrack(track: t, metadata: ConversionMetadata())
+        }
+        let us = try mk("Discovery")
+        let jp = try mk("Discovery [JP]")
+        // Same tags, different folders: the index keeps them apart with a
+        // discriminator, and the group lists both keys as it would have them.
+        let index = LibraryIndex.build(from: [us, jp])
+        let keys = index.allAlbums.compactMap(\.folderKey)
+        XCTAssertEqual(keys.count, 2, "fixture: two same-tagged folders must index as two albums")
+        let group = AlbumGroup(id: "g1", name: "Discovery", artistID: "daft punk",
+                               originalYear: 2001, primaryKey: keys[0],
+                               members: keys.map { VersionMember(key: $0) })
+        let grouped = LibraryIndex.build(from: [us, jp], groups: [group])
+        XCTAssertTrue(grouped.allAlbums.contains { $0.isVersionGroup }, "fixture: the group must fold")
+        let dupes = LibraryCleanupService(fileManager: .default).findDuplicates(in: grouped, mode: .strict)
+        XCTAssertEqual(dupes.count, 1)
+    }
+
     func testDuplicateWithinSinglePressingStillFlagged() throws {
         // Same pressing ("Discovery") contains "One More Time" twice.
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
