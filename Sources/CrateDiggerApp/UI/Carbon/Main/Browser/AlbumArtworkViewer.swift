@@ -142,8 +142,9 @@ public final class FloatingArtworkPanel: NSPanel {
 /// capsule, the material, the hover and the press — and picks a label colour
 /// that stays readable over whatever the control is floating above. Before 26 it
 /// is the app's `carbonHover` style over a hand-drawn capsule.
-private extension View {
+extension View {
     @ViewBuilder
+    /// Shared with the full-screen player, which sits in the same dark room.
     func artworkBarButtonStyle() -> some View {
         if #available(macOS 26.0, *) {
             // Capsule so the buttons match the readouts and the zoom pill, which

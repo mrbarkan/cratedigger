@@ -112,6 +112,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         hostingController.model.revealNowPlaying()
     }
 
+    func toggleFullScreenPlayer() {
+        hostingController.model.fullScreenPlayerRequested = true
+    }
+
     var isConversionRunning: Bool {
         hostingController.model.conversionProgress.isRunning
     }

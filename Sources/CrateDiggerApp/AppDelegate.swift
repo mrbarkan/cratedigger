@@ -200,6 +200,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         mainWindowController?.revealNowPlaying()
     }
 
+    @objc private func toggleFullScreenPlayer(_ sender: Any?) {
+        mainWindowController?.toggleFullScreenPlayer()
+    }
+
     @objc private func findInLibrary(_ sender: Any?) {
         mainWindowController?.focusSearch()
     }
@@ -501,7 +505,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
                 guard let model = self?.mainWindowController?.model else { return }
                 model.playbackVolume = 0.8   // meters scale by volume; 0 reads as silence
-                if let first = model.index.allTracks.first { model.playTrack(id: first.track.id) }
+                // The first track whose file is on disk: a stale demo library
+                // would otherwise open the missing-file alert instead of playing.
+                if let first = model.index.allTracks.first(where: { FileManager.default.fileExists(atPath: $0.track.fileURL.path) }) {
+                    model.playTrack(id: first.track.id)
+                }
+                // Dev-only: the full-screen player, a second later, so a
+                // snapshot can show it with a track on the shelf.
+                if env["CRATEDIGGER_FULLSCREEN"] != nil {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { model.fullScreenPlayerRequested = true }
+                }
             }
         }
         // Dev-only: land on a source the UI can't otherwise be pointed at from
@@ -1211,6 +1224,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             return mainWindowController?.hasLoadedTracks ?? false
         case #selector(goToCurrentSong(_:)):
             return mainWindowController?.hasNowPlayingTrack ?? false
+        case #selector(toggleFullScreenPlayer(_:)):
+            menuItem.state = NowPlayingFullScreenPresenter.isShowing ? .on : .off
+            return (mainWindowController?.hasNowPlayingTrack ?? false) || NowPlayingFullScreenPresenter.isShowing
         case #selector(openRecentItem(_:)):
             return menuItem.tag < recentFolderURLs.count
         default:
@@ -1345,6 +1361,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         viewMenu.addItem(.separator())
         // ⌘L is what Music.app binds "Go to Current Song" to — muscle memory for free.
         viewMenu.addItem(makeItem(title: "Go to Current Song", action: #selector(goToCurrentSong(_:)), key: "l"))
+        viewMenu.addItem(makeItem(title: "Full Screen Player", action: #selector(toggleFullScreenPlayer(_:)), key: "F"))
         viewMenuItem.submenu = viewMenu
 
         // MARK: Playback menu

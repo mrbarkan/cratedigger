@@ -454,6 +454,9 @@ final class LibraryViewModel: ObservableObject {
     /// Album whose artwork to show in the floating viewer. A transient trigger:
     /// `MainShell` observes it, presents the viewer window, then clears it.
     @Published var artworkViewerAlbum: Album?
+    /// One-shot trigger for the full-screen player (View ▸ Full Screen Player,
+    /// ⇧⌘F). `MainShell` presents it, because that is where the theme lives.
+    @Published var fullScreenPlayerRequested = false
 
     /// Open the tag editor for a set of tracks (album/artist context menus pass
     /// all their tracks; the inspector passes the single selected track).

@@ -80,6 +80,11 @@ struct MainShell: View {
             }
             model.artworkViewerAlbum = nil
         }
+        .onChange(of: model.fullScreenPlayerRequested) { requested in
+            guard requested else { return }
+            NowPlayingFullScreenPresenter.toggle(theme: theme, model: model)
+            model.fullScreenPlayerRequested = false
+        }
     }
 
     // MARK: - Sources
