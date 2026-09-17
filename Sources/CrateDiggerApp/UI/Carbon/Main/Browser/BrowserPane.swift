@@ -609,7 +609,11 @@ private struct ColumnFacetMenu: View {
                     .font(.system(size: 6, weight: .bold))
             }
         }
-        .menuStyle(.borderlessButton)
+        // `.borderlessButton` sizes the pop-up to its own control height and
+        // clips the label to it, which cut the title's lower half off on
+        // macOS 26. A plain button just draws the label.
+        .menuStyle(.button)
+        .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .fixedSize()
         .carbonTip("What this column shows")
