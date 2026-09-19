@@ -45,6 +45,14 @@ struct FooterShell: View {
                     // dome 28.5 pt right of centre and made the left fader look
                     // stranded. 57 pt of empty trailing width centres PLAY
                     // while both faders keep the same gap to the window edge.
+                    // Recompute this if the key counts either side of PLAY
+                    // change, or if a theme retunes `transportButtonSize`:
+                    // it is (keysLeft − keysRight) × (transportButtonSize +
+                    // 11), where 11 is TransportCluster's own key spacing
+                    // (not itself a geometry token). A theme is free to set
+                    // `transportButtonSize` without touching this file, so
+                    // this padding can silently drift out of sync and
+                    // reintroduce the same off-centre dome.
                     .padding(.trailing, 57)
                 VolumeKnob(value: $model.playbackVolume)
                     .frame(maxWidth: .infinity, alignment: .leading)
