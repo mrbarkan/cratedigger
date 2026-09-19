@@ -32,13 +32,20 @@ struct FooterShell: View {
 
             // One cluster, like a deck: the two pods hug the transport instead
             // of being pinned to the shelf's ends, where a wide window left
-            // them stranded in bare chassis. The halves are equal so the
-            // transport stays dead centre, and both pods grow into their half
-            // by the same amount, like a mixer's two faders.
+            // them stranded in bare chassis. The halves are equal, so both
+            // pods grow into their half by the same amount, like a mixer's
+            // two faders. The transport itself is not symmetric though (see
+            // the trailing padding below), so it is the dome, not the
+            // cluster's own bounds, that lands dead centre.
             HStack(alignment: .center, spacing: 28) {
                 PositionDial(clock: model.playbackClock)
                     .frame(maxWidth: .infinity, alignment: .trailing)
                 TransportCluster()
+                    // Four keys sit left of PLAY and three right, which put the
+                    // dome 28.5 pt right of centre and made the left fader look
+                    // stranded. 57 pt of empty trailing width centres PLAY
+                    // while both faders keep the same gap to the window edge.
+                    .padding(.trailing, 57)
                 VolumeKnob(value: $model.playbackVolume)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
