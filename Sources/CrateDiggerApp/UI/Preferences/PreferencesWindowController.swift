@@ -362,6 +362,7 @@ private struct PlaybackPreferencesView: View {
     @State private var eqEnabled: Bool = PreferencesStore.shared.savedEQEnabled
     @State private var shortcuts = PreferencesStore.shared.keyboardShortcuts
     @State private var editingAction: String? = nil
+    @State private var volumeReadoutUnit = PreferencesStore.shared.volumeReadoutUnit
 
     private let actions = [
         ("Play / Pause", "playPause"),
@@ -388,6 +389,20 @@ private struct PlaybackPreferencesView: View {
                         name: NSNotification.Name("CrateDiggerAudioDeviceChanged"), object: newValue)
                 }
                 Button("Refresh Devices") { refreshDevices() }
+            }
+
+            Section("Volume") {
+                Picker("Volume readout", selection: $volumeReadoutUnit) {
+                    ForEach(VolumeReadoutUnit.allCases, id: \.self) { unit in
+                        Text(unit.label).tag(unit)
+                    }
+                }
+                .onChange(of: volumeReadoutUnit) { newValue in
+                    PreferencesStore.shared.volumeReadoutUnit = newValue
+                }
+                Text("Shown on the display for a moment whenever the volume changes. 100% is the 0 dB mark.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section("Equalizer") {

@@ -640,7 +640,21 @@ final class LibraryViewModel: ObservableObject {
         didSet {
             applyVolumeToEngines()
             prefs.savedPlaybackVolume = playbackVolume
+            // Every route (fader, menu, shortcut) lands here. The launch restore
+            // assigns inside init, where observers don't fire, so it stays silent.
+            guard oldValue != playbackVolume else { return }
+            showOLEDNotice(
+                VolumeCurve.readout(forPosition: playbackVolume,
+                                    unit: prefs.volumeReadoutUnit,
+                                    boostAvailable: volumeBoostAvailable),
+                seconds: 1.2)
         }
+    }
+
+    /// Streams have no audio tap and native DSD is bit-perfect, so neither gets
+    /// the makeup gain above unity. See `VolumeCurve.readout`.
+    private var volumeBoostAvailable: Bool {
+        !isStreamActive && !playback.isNativeDSDActive
     }
 
     /// Apply the dB-curved fader position to the engines: the ≤0 dB part rides
@@ -1593,8 +1607,8 @@ final class LibraryViewModel: ObservableObject {
         case "playPause": togglePlayPause()
         case "next": next()
         case "previous": previous()
-        case "volumeUp": setVolume(playbackVolume + 0.05)
-        case "volumeDown": setVolume(playbackVolume - 0.05)
+        case "volumeUp": stepVolume(by: 0.05)
+        case "volumeDown": stepVolume(by: -0.05)
         case "seekForward": forward8s()
         case "seekBackward": rewind8s()
         default: break
@@ -2954,6 +2968,11 @@ final class LibraryViewModel: ObservableObject {
     func setVolume(_ value: Double) {
         let clamped = min(max(value, 0), 1)
         playbackVolume = clamped
+    }
+
+    /// A Volume Up / Down step; stops on the 0 dB mark instead of walking over it.
+    func stepVolume(by delta: Double) {
+        playbackVolume = VolumeCurve.stepped(from: playbackVolume, by: delta)
     }
 
     /// Latest real 0...1 VU levels (L/R) and spectrum bands, for the NOW screen's

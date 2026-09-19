@@ -294,7 +294,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func adjustVolume(by delta: Double) {
-        hostingController.model.setVolume(hostingController.model.playbackVolume + delta)
+        hostingController.model.stepVolume(by: delta)
     }
 
     func toggleShuffle() {

@@ -47,6 +47,7 @@ public final class PreferencesStore {
         static let outputDeviceUID = "cratedigger.audio.outputDeviceUID"
         static let keyboardShortcuts = "cratedigger.ui.keyboardShortcuts"
         static let cdAnimationSpeed = "cratedigger.ui.cdAnimationSpeed"
+        static let volumeReadoutUnit = "cratedigger.ui.volumeReadoutUnit"
         static let managedLibraryFolderBookmark = "cratedigger.library.managedFolderBookmark"
         static let copyOnImport = "cratedigger.library.copyOnImport"
         static let deleteOriginalsAfterCopy = "cratedigger.library.deleteOriginalsAfterCopy"
@@ -858,5 +859,13 @@ public extension PreferencesStore {
         set {
             defaults.set(newValue.rawValue, forKey: Key.cdAnimationSpeed)
         }
+    }
+}
+
+public extension PreferencesStore {
+    /// dB or percent for the OLED's transient volume readout.
+    var volumeReadoutUnit: VolumeReadoutUnit {
+        get { defaults.string(forKey: Key.volumeReadoutUnit).flatMap(VolumeReadoutUnit.init(rawValue:)) ?? .decibels }
+        set { defaults.set(newValue.rawValue, forKey: Key.volumeReadoutUnit) }
     }
 }

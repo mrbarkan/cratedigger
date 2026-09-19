@@ -5,6 +5,7 @@ import SwiftUI
 struct VolumeKnob: View {
     @Environment(\.carbon) private var theme
     @Binding var value: Double  // 0...1
+    @State private var lastScrub: Double = 0
 
     /// Unity (0 dB) sits at ~92% of travel under the v10 volume law
     /// (dB = −60 + pct·65); the embossed "0" mark lives there.
@@ -29,15 +30,20 @@ struct VolumeKnob: View {
                 progress: value,
                 detents: [FaderDetent(fraction: Self.unityFraction, label: "0dB")],
                 onScrub: { raw in
+                    lastScrub = raw
                     // Magnetically snap to the 0 dB (unity) detent when close.
-                    value = abs(raw - Self.unityFraction) < 0.025 ? Self.unityFraction : raw
+                    value = abs(raw - Self.unityFraction) < VolumeCurve.magnetWidth ? Self.unityFraction : raw
                 }
             )
             .frame(height: 27)   // same content-box height as the EQ/VU LCDs so rail and LCD centers match
             .background(WindowDragGuard())
             .onTapGesture(count: 2) {
+                // Only a double-click ON the mark resets to unity. Anywhere else
+                // two clicks are two clicks: this used to yank a fader set to
+                // full back to 0 dB.
+                guard abs(lastScrub - Self.unityFraction) < 0.04 else { return }
                 ClickPlayer.shared.play(.tick)
-                value = Self.unityFraction   // double-tap → unity (0 dB)
+                value = Self.unityFraction
             }
         }
         .padding(.vertical, 9)   // matches the other footer pod so their labels align
@@ -45,6 +51,6 @@ struct VolumeKnob: View {
         .frame(minWidth: 184, maxWidth: 380, minHeight: 64, maxHeight: 64)   // same travel as POSITION, like a mixer
         // No pod: the fader sits straight in the shelf, like a mixer's.
         .accessibilityLabel("Volume")
-        .accessibilityValue("\(Int(value * 100)) percent")
+        .accessibilityValue(VolumeCurve.readout(forPosition: value, unit: .percent).replacingOccurrences(of: "VOL  ", with: ""))
     }
 }
