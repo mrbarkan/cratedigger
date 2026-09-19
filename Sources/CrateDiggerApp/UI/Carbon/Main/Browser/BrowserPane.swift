@@ -87,10 +87,11 @@ private struct BrowserEmptyState: View {
             // A library on an unplugged drive with no local copy yet is not an
             // empty library: offering OPEN FOLDER here is what sent people off
             // to rebuild a library that was only unplugged.
-            if model.isLibraryDisconnected, model.isLocalSource {
-                disconnected
-            } else {
-                noLibrary
+            switch emptyKind {
+            case .disconnected:         disconnected
+            case .noLibrary:            noLibrary
+            case .prepCrate:            prepCrateGuide
+            case .emptyCrate(let name): emptyCrate(name)
             }
         }
         .padding(28)
@@ -100,6 +101,17 @@ private struct BrowserEmptyState: View {
                 .fill(theme.paper) // opaque, not Material — see ChassisLayer
                 .overlay(theme.paper.opacity(theme.isDark ? 0.70 : 0.78))
         )
+    }
+
+    private var emptyKind: BrowserEmptyKind {
+        let source: BrowserEmptyKind.Source
+        switch model.currentSource {
+        case .localAll:              source = .localAll
+        case .localCrate(let name):  source = .localCrate(name: name)
+        case .prepCrate:             source = .prepCrate
+        default:                     source = .other
+        }
+        return BrowserEmptyKind.resolve(source: source, disconnected: model.isLibraryDisconnected)
     }
 
     @ViewBuilder
@@ -144,6 +156,63 @@ private struct BrowserEmptyState: View {
         Text(volume.map {
             "Your library is on \u{201C}\($0)\u{201D}, which isn\u{2019}t connected. Connect it and CrateDigger picks it up automatically."
         } ?? "CrateDigger can\u{2019}t find your library folder. Connect its drive, or choose the folder again in Preferences.")
+            .font(CarbonFont.mono(11))
+            .foregroundStyle(theme.ink3)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: 380)
+    }
+
+    @ViewBuilder
+    private var prepCrateGuide: some View {
+        Image(systemName: "tray.and.arrow.down")
+            .font(.system(size: 38, weight: .light))
+            .foregroundStyle(theme.ink3)
+        Text("The Prep Crate is empty")
+            .font(CarbonFont.sans(18, weight: .heavy))
+            .foregroundStyle(theme.ink)
+        Text("This is the staging area. Everything you dig lands here first, so you can look it over before it joins your library. Scanning only reads: nothing on disk moves unless you ask it to.")
+            .font(CarbonFont.mono(11))
+            .foregroundStyle(theme.ink3)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: 380)
+        VStack(alignment: .leading, spacing: 6) {
+            guideStep(1, "DIG CRATE (\u{2318}O), or drop a folder anywhere on the window.")
+            guideStep(2, "Check it over: FIX TAGS, TAGS, artwork, CLEANUP.")
+            guideStep(3, "Select what is ready and press ADD TO CRATE. It leaves the Prep Crate when it is filed.")
+        }
+        .frame(maxWidth: 380, alignment: .leading)
+        KeyButton(style: .glowingOrange, action: { model.openFolderViaPanel() }) {
+            HStack(spacing: 8) {
+                Image(systemName: "folder.fill.badge.plus")
+                    .font(.system(size: 12, weight: .bold))
+                Text("DIG CRATE…")
+            }
+            .padding(.horizontal, 16)
+        }
+        .frame(width: 220, height: 38)
+    }
+
+    private func guideStep(_ number: Int, _ text: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text("\(number)")
+                .font(CarbonFont.mono(11, weight: .bold))
+                .foregroundStyle(theme.ink2)
+            Text(text)
+                .font(CarbonFont.mono(11))
+                .foregroundStyle(theme.ink3)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @ViewBuilder
+    private func emptyCrate(_ name: String) -> some View {
+        Image(systemName: "shippingbox")
+            .font(.system(size: 38, weight: .light))
+            .foregroundStyle(theme.ink3)
+        Text("\u{201C}\(name)\u{201D} is empty")
+            .font(CarbonFont.sans(18, weight: .heavy))
+            .foregroundStyle(theme.ink)
+        Text("Select albums or tracks in All Records or the Prep Crate and press ADD TO CRATE, or drag them onto this crate in the sidebar.")
             .font(CarbonFont.mono(11))
             .foregroundStyle(theme.ink3)
             .multilineTextAlignment(.center)
