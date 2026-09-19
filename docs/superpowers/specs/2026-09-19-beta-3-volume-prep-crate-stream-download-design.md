@@ -304,8 +304,8 @@ losing the stream.
 - **The link.** `StreamSource` gains `downloadedPath: String?`, an additive
   optional, so old blobs decode unchanged. Set when the download's file is
   imported. A stream is "downloaded" when the path is set **and** the file
-  exists: a file deleted in Finder simply drops out of the list, and the stale
-  path is cleared the next time the list is built.
+  exists: a file deleted in Finder simply drops out of the list. The stale
+  path is harmless and is overwritten by the next download.
 - **Where.** A third row under Radio in the sidebar, **Downloads**, with a
   count: `RadioCategory.downloaded`. It is a filter over the same streams, not
   a second store, so `RadioCategory.of(_:)` keeps answering live or records and
