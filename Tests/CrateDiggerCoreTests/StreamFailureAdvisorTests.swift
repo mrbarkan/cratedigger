@@ -100,7 +100,9 @@ final class StreamSuggestionTests: XCTestCase {
     }
 
     func testEveryCategoryHasSuggestions() {
-        for category in RadioCategory.allCases {
+        // .downloaded is a filter over the other categories, not a home a
+        // suggested station could belong to, so it's excluded here.
+        for category in RadioCategory.allCases where category != .downloaded {
             XCTAssertFalse(StreamSuggestion.catalog(for: category).isEmpty,
                            "no suggestions for \(category)")
         }

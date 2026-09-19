@@ -21,12 +21,17 @@ public enum StreamProvider: String, Codable, Sendable {
 public enum RadioCategory: String, Codable, Sendable, Hashable, CaseIterable {
     case youtubeLive
     case youtubeRecords
+    /// A filter over the other two categories, not a third home: `of(_:)`
+    /// never returns it, so a downloaded YT Records stream still shows in its
+    /// own row too, not just here.
+    case downloaded
 
     /// Display name shown in the sidebar.
     public var title: String {
         switch self {
         case .youtubeLive:    return "YT Live"
         case .youtubeRecords: return "YT Records"
+        case .downloaded:     return "Downloads"
         }
     }
 
@@ -35,6 +40,7 @@ public enum RadioCategory: String, Codable, Sendable, Hashable, CaseIterable {
         switch self {
         case .youtubeLive:    return "antenna.radiowaves.left.and.right"
         case .youtubeRecords: return "waveform"
+        case .downloaded:     return "arrow.down.circle"
         }
     }
 
@@ -45,9 +51,11 @@ public enum RadioCategory: String, Codable, Sendable, Hashable, CaseIterable {
         }
     }
 
-    /// Whether a stream belongs to this category.
+    /// Whether a stream belongs to this category. `downloaded` is a filter over
+    /// the other two, not a home: `of(_:)` never returns it.
     public func contains(_ stream: StreamSource) -> Bool {
-        RadioCategory.of(stream) == self
+        // ponytail: one stat per stream per sidebar draw; cache if lists reach hundreds.
+        self == .downloaded ? stream.isDownloaded() : RadioCategory.of(stream) == self
     }
 }
 
@@ -91,6 +99,11 @@ public struct StreamSource: Codable, Sendable, Hashable, Identifiable {
     public var thumbnailURL: String?
     /// YouTube chapters (a tracklist for long mixes); nil/empty = none.
     public var chapters: [StreamChapter]?
+    /// Path of the offline copy made by Download for Offline; nil = none. The
+    /// file is an ordinary library track, so it can move: `StreamStore.repointDownload`
+    /// follows it, and `isDownloaded` also checks the file is really there, so a
+    /// missed repoint reads as "not downloaded", never as a wrong file.
+    public var downloadedPath: String?
 
     public init(
         id: String,
@@ -104,7 +117,8 @@ public struct StreamSource: Codable, Sendable, Hashable, Identifiable {
         viewers: String? = nil,
         durationSeconds: Double? = nil,
         thumbnailURL: String? = nil,
-        chapters: [StreamChapter]? = nil
+        chapters: [StreamChapter]? = nil,
+        downloadedPath: String? = nil
     ) {
         self.id = id
         self.url = url
@@ -118,9 +132,19 @@ public struct StreamSource: Codable, Sendable, Hashable, Identifiable {
         self.durationSeconds = durationSeconds
         self.thumbnailURL = thumbnailURL
         self.chapters = chapters
+        self.downloadedPath = downloadedPath
     }
 
     public var isLive: Bool { kind == .live }
+
+    /// A downloaded stream is an offline copy: the path is set AND the file is
+    /// still there. The file is an ordinary library track the user can rename,
+    /// move, retag or delete outside the app, so a stale path degrades to "not
+    /// downloaded" rather than pointing at the wrong file.
+    public func isDownloaded(fileExists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }) -> Bool {
+        guard let downloadedPath else { return false }
+        return fileExists(downloadedPath)
+    }
 
     /// Index of the chapter playing at `seconds`, or nil if no/empty chapters.
     public func chapterIndex(at seconds: Double) -> Int? {

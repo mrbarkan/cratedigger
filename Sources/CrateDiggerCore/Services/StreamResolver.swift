@@ -19,6 +19,8 @@ public enum StreamResolverError: Error, Equatable {
     case emptyOutput
     case commandFailed(Int32, String)
     case badURL(String)
+    /// No yt-dlp and no offline copy to fall back to.
+    case toolMissing
 }
 
 /// Resolves a `StreamSource` to a playable URL by invoking yt-dlp. The argument
@@ -30,10 +32,10 @@ public enum StreamResolverError: Error, Equatable {
 /// value type, safe to use from a background task). This lets `resolve` run
 /// off the main actor.
 public struct StreamResolver: @unchecked Sendable {
-    private let ytdlpURL: URL
+    private let ytdlpURL: URL?
     private let runner: CommandRunning
 
-    public init(ytdlpURL: URL, runner: CommandRunning = ProcessCommandRunner()) {
+    public init(ytdlpURL: URL?, runner: CommandRunning = ProcessCommandRunner()) {
         self.ytdlpURL = ytdlpURL
         self.runner = runner
     }
@@ -65,6 +67,12 @@ public struct StreamResolver: @unchecked Sendable {
     }
 
     public func resolve(_ stream: StreamSource) throws -> ResolvedStream {
+        // An offline copy plays with no network and no yt-dlp.
+        if stream.isDownloaded(), let path = stream.downloadedPath {
+            return ResolvedStream(playbackURL: URL(fileURLWithPath: path), isLive: false,
+                                  durationSeconds: stream.durationSeconds)
+        }
+        guard let ytdlpURL else { throw StreamResolverError.toolMissing }
         let output = try runner.run(executableURL: ytdlpURL, arguments: arguments(for: stream))
         guard output.terminationStatus == 0 else {
             throw StreamResolverError.commandFailed(output.terminationStatus, output.standardError)

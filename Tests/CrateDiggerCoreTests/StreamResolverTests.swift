@@ -105,4 +105,26 @@ final class StreamResolverTests: XCTestCase {
         let r = StreamResolver(ytdlpURL: ytdlp, runner: runner)
         XCTAssertThrowsError(try r.resolve(stream(.video)))
     }
+
+    func testADownloadedStreamResolvesToItsFileWithoutRunningYtDlp() throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).m4a")
+        FileManager.default.createFile(atPath: file.path, contents: Data())
+        defer { try? FileManager.default.removeItem(at: file) }
+        var s = StreamSource(id: "a", url: "https://youtu.be/a", title: "A", channel: "C", kind: .mix,
+                             hue: 0, addedAt: Date(), durationSeconds: 300)
+        s.downloadedPath = file.path
+
+        // No yt-dlp at all: offline listening must not need it.
+        let resolved = try StreamResolver(ytdlpURL: nil).resolve(s)
+        XCTAssertEqual(resolved.playbackURL, file)
+        XCTAssertFalse(resolved.isLive)
+        XCTAssertEqual(resolved.durationSeconds, 300)
+    }
+
+    func testWithoutYtDlpAndWithoutADownloadResolvingFailsClearly() {
+        let s = StreamSource(id: "a", url: "https://youtu.be/a", title: "A", channel: "C", kind: .mix, hue: 0, addedAt: Date())
+        XCTAssertThrowsError(try StreamResolver(ytdlpURL: nil).resolve(s)) {
+            XCTAssertEqual($0 as? StreamResolverError, .toolMissing)
+        }
+    }
 }

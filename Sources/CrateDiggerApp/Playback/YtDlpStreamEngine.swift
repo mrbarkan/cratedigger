@@ -129,6 +129,7 @@ final class YtDlpStreamEngine: RadioPlaybackEngine {
         switch e {
         case .emptyOutput:               return "yt-dlp returned no playable stream."
         case .badURL:                    return "yt-dlp returned an unreadable URL."
+        case .toolMissing:               return "yt-dlp isn't installed, and this stream has no offline copy."
         case .commandFailed(_, let err):
             // yt-dlp puts warnings before the real failure, so report the ERROR
             // line rather than whatever came out first.

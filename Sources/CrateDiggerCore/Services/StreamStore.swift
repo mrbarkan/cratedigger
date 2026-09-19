@@ -52,4 +52,25 @@ public final class StreamStore {
     public func liveChannels() -> Set<String> {
         Set(all().filter(\.isLive).map(\.channel))
     }
+
+    /// Record (or clear, with nil) a stream's offline copy.
+    @discardableResult
+    public func setDownload(path: String?, forStreamID id: String) -> [StreamSource] {
+        var list = all()
+        guard let i = list.firstIndex(where: { $0.id == id }) else { return list }
+        list[i].downloadedPath = path
+        save(list)
+        return list
+    }
+
+    /// Follow a downloaded file that a retag, rename or library move relocated.
+    /// Called beside `ListeningStore.repoint(from:to:)`.
+    @discardableResult
+    public func repointDownload(from oldPath: String, to newPath: String) -> [StreamSource] {
+        var list = all()
+        guard let i = list.firstIndex(where: { $0.downloadedPath == oldPath }) else { return list }
+        list[i].downloadedPath = newPath
+        save(list)
+        return list
+    }
 }
