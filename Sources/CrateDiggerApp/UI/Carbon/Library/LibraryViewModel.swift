@@ -4459,6 +4459,22 @@ final class LibraryViewModel: ObservableObject {
             store.upsert(new)
             if !newKeys.contains(oldPath) { store.remove(path: oldPath) }
         }
+        // Carry listening history and any download link across the same
+        // moves: this mover has no other choke point in common with
+        // updateTrackURLsInIndex, so both live here instead.
+        var movedKeys: [String: String] = [:]
+        for (oldPath, new) in byOldPath {
+            let newKey = TrackStore.key(for: new.track.fileURL)
+            if oldPath != newKey { movedKeys[oldPath] = newKey }
+        }
+        currentListeningStore().repoint(pairs: movedKeys)
+        persistListeningStore()
+        // Skip the loop entirely when nothing downloaded is in play: each
+        // iteration decodes the whole stream list before it can find out it
+        // has no download to repoint.
+        if streams.contains(where: { $0.downloadedPath != nil }) {
+            for (old, new) in movedKeys { streams = streamStore.repointDownload(from: old, to: new) }
+        }
         for crateName in availableCrates {
             var tracks = loadCrateTracks(name: crateName)
             var modified = false
@@ -4727,9 +4743,12 @@ final class LibraryViewModel: ObservableObject {
         // (one track's new path is another track's old path).
         currentListeningStore().repoint(pairs: movedKeys)
         persistListeningStore()
-        // Small JSON blob, re-saved once per moved file that is a download and
-        // returns early for every other file: cheap enough not to batch.
-        for (old, new) in movedKeys { streams = streamStore.repointDownload(from: old, to: new) }
+        // Skip the loop entirely when nothing downloaded is in play: each
+        // iteration decodes the whole stream list before it can find out it
+        // has no download to repoint.
+        if streams.contains(where: { $0.downloadedPath != nil }) {
+            for (old, new) in movedKeys { streams = streamStore.repointDownload(from: old, to: new) }
+        }
         selectSource(currentSource)
     }
 

@@ -61,5 +61,38 @@ final class StreamDownloaderTests: XCTestCase {
         XCTAssertNil(StreamDownloader.progress(fromLine: "[download] Destination: x.m4a"))
         XCTAssertNil(StreamDownloader.progress(fromLine: ""))
     }
+
+    // MARK: - isDownloadFolder / isDisposableLeftover (Remove Download cleanup)
+
+    func testIsDownloadFolderMatchesThePlannedFolder() throws {
+        let s = stream()
+        let plan = try StreamDownloader.plan(for: s, in: root)
+        XCTAssertTrue(StreamDownloader.isDownloadFolder(plan.folder, for: s))
+    }
+
+    func testIsDownloadFolderRejectsAFolderARepointMovedTheTrackInto() {
+        // The exact scenario Remove Download must not trash: a retag or an
+        // auto-organize repoints `downloadedPath` into a folder the app never
+        // created, named for the artist/album rather than the sanitized title.
+        let s = stream(title: "Deep House Mix")
+        let userOwnedAlbumFolder = URL(fileURLWithPath: "/Music/Library/Some Artist/Some Album")
+        XCTAssertFalse(StreamDownloader.isDownloadFolder(userOwnedAlbumFolder, for: s))
+    }
+
+    func testIsDownloadFolderUsesTheSameSanitizingAsPlan() {
+        // A title with characters `plan` sanitizes (":" -> "-") must still
+        // match the folder `plan` itself would have produced.
+        let s = stream(title: "A/B: 100% live")
+        let sanitizedFolder = URL(fileURLWithPath: "/Music/Library/Some Channel/A-B- 100% live")
+        XCTAssertTrue(StreamDownloader.isDownloadFolder(sanitizedFolder, for: s))
+    }
+
+    func testIsDisposableLeftoverAllowsOnlyCoverAndDSStore() {
+        XCTAssertTrue(StreamDownloader.isDisposableLeftover(contents: []))
+        XCTAssertTrue(StreamDownloader.isDisposableLeftover(contents: ["cover.jpg"]))
+        XCTAssertTrue(StreamDownloader.isDisposableLeftover(contents: ["cover.jpg", ".DS_Store"]))
+        XCTAssertFalse(StreamDownloader.isDisposableLeftover(contents: ["cover.jpg", "01 Track.flac"]))
+        XCTAssertFalse(StreamDownloader.isDisposableLeftover(contents: ["booklet.pdf"]))
+    }
 }
 #endif

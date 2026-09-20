@@ -229,7 +229,7 @@ extension LibraryViewModel {
 
         let alert = NSAlert()
         alert.messageText = "Move the offline copy of \u{201C}\(stream.title)\u{201D} to the Trash?"
-        alert.informativeText = "The stream stays in your list and plays online."
+        alert.informativeText = "The stream stays in your list and plays online. The track leaves your library along with it, and its play history goes with it."
         alert.addButton(withTitle: "Move to Trash")
         alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
@@ -253,13 +253,36 @@ extension LibraryViewModel {
         }
         purgeTracksFromLibraryState(paths: [path])
 
-        // The folder was made for this download; take it too when only the cover is left.
+        // Pausing only silences the engine; the queue still names the trashed
+        // file, so pressing play would try to resume it from the Trash. Rebuild
+        // the queue without it, landing paused on whatever is next.
+        if let idx = playbackQueue.firstIndex(where: { $0.track.fileURL.standardizedFileURL.path == path }) {
+            playbackQueue.remove(at: idx)
+            let nextIndex = min(idx, max(playbackQueue.count - 1, 0))
+            playback.load(queue: playbackQueue.map(Self.queueItem), startIndex: nextIndex, autoPlay: false)
+        }
+
+        // The folder was made for this download; take it too when only the
+        // cover is left AND it is still that folder. A repoint (retag, auto
+        // organize, library move) can have since moved the track into a
+        // folder the user owns, which can just as easily hold nothing but its
+        // own track and cover.jpg; only trash the folder when its name still
+        // identifies it as the one this download created.
         let folder = fileURL.deletingLastPathComponent()
-        let rest = ((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? [])
-            .filter { $0 != "cover.jpg" && $0 != ".DS_Store" }
-        if rest.isEmpty { try? FileManager.default.trashItem(at: folder, resultingItemURL: nil) }
+        if StreamDownloader.isDownloadFolder(folder, for: stream) {
+            let contents = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+            if StreamDownloader.isDisposableLeftover(contents: contents) {
+                try? FileManager.default.trashItem(at: folder, resultingItemURL: nil)
+            }
+        }
 
         streams = streamStore.setDownload(path: nil, forStreamID: streamID)
+
+        // This was the only way this call can empty the filtered list: a
+        // sidebar row that just vanished would otherwise strand the browser
+        // on a filter it can no longer reach or add anything from.
+        if radioCategoryFilter != nil, filteredStreams.isEmpty { radioCategoryFilter = nil }
+
         showOLEDNotice("DOWNLOAD REMOVED")
     }
 

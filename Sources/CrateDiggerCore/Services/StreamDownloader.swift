@@ -60,6 +60,25 @@ public struct StreamDownloader: Sendable {
         return args + ["--", stream.url]
     }
 
+    /// Whether `folder` is still the one the download itself created, so it is
+    /// safe to consider trashing as a unit. A retag, an auto-organize or a
+    /// library move can repoint the track's `downloadedPath` into a folder the
+    /// app did not create and does not own; this is a positive identity check
+    /// rather than a guess from the folder's current contents, so an ordinary
+    /// album folder that happens to hold just a track and a cover.jpg is never
+    /// mistaken for a download's own disposable folder.
+    public static func isDownloadFolder(_ folder: URL, for stream: StreamSource) -> Bool {
+        folder.lastPathComponent == PathComponentSanitizer.sanitize(stream.title, fallback: stream.id)
+    }
+
+    /// Whether a folder listing is nothing but the download's own cover art
+    /// and OS cruft, so the folder is disposable once the audio file itself
+    /// is gone. Callers should pair this with `isDownloadFolder` first: this
+    /// alone only describes contents, not ownership.
+    public static func isDisposableLeftover(contents: [String]) -> Bool {
+        contents.allSatisfy { $0 == "cover.jpg" || $0 == ".DS_Store" }
+    }
+
     /// 0...1 from one progress-template line; nil for any other line.
     public static func progress(fromLine line: String) -> Double? {
         let parts = line.split(separator: " ")
