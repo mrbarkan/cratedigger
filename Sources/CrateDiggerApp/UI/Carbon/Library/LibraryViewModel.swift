@@ -1170,6 +1170,12 @@ final class LibraryViewModel: ObservableObject {
         return selectedStreamChapters[i]
     }
     let streamStore = StreamStore()
+    /// The running yt-dlp download, if any. One at a time.
+    var streamDownloadHandle: StreamingCommandHandle?
+    @Published var downloadingStreamID: String?
+    /// What to do with a downloaded file when its scan reaches `handleImport`,
+    /// keyed by standardized file path. See `LibraryViewModel+StreamDownload`.
+    var pendingStreamImports: [String: PendingStreamImport] = [:]
     var radioUptimeTimer: Timer?
     /// Active playback engine while a stream is playing (WebView or native). nil when idle.
     var radioEngine: RadioPlaybackEngine?
@@ -3721,6 +3727,7 @@ final class LibraryViewModel: ObservableObject {
             selectSource(.prepCrate)
             return
         }
+        let tracks = applyingPendingStreamImports(to: tracks)
 
         let staged = stageIntoPrepCrate(tracks)
         selectSource(.prepCrate)

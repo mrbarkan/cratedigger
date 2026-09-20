@@ -85,6 +85,7 @@ public final class PreferencesStore {
         static let betaUpdates = "cratedigger.updates.betaChannel"
         static let albumGroups = "cratedigger.library.albumGroups"
         static let selectedThemeID = "cratedigger.ui.selectedThemeID"
+        static let hasAcknowledgedStreamDownloadNotice = "cratedigger.radio.downloadNoticeAcknowledged"
     }
 
     // MARK: - Window frame
@@ -492,6 +493,13 @@ public final class PreferencesStore {
     public var hasSeenWelcomeTour: Bool {
         get { defaults.bool(forKey: Key.hasSeenWelcomeTour) }
         set { defaults.set(newValue, forKey: Key.hasSeenWelcomeTour) }
+    }
+
+    /// The personal-use notice shown before the first stream download. Set only
+    /// when the user goes ahead; Cancel shows it again next time.
+    public var hasAcknowledgedStreamDownloadNotice: Bool {
+        get { defaults.bool(forKey: Key.hasAcknowledgedStreamDownloadNotice) }
+        set { defaults.set(newValue, forKey: Key.hasAcknowledgedStreamDownloadNotice) }
     }
 
     /// The app version whose release notes have already been shown, so they

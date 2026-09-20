@@ -35,6 +35,15 @@ struct RadioListView: View {
                                         NSPasteboard.general.clearContents()
                                         NSPasteboard.general.setString(stream.url, forType: .string)
                                     }
+                                    if model.downloadingStreamID == stream.id {
+                                        Button("Cancel Download") { model.cancelStreamDownload() }
+                                    } else if !stream.isDownloaded() {
+                                        Button("Download for Offline…") { model.downloadStream(id: stream.id) }
+                                            .disabled(!model.canDownload(stream) || model.isDownloadingStream)
+                                            .help(stream.kind == .live ? "A live stream has no end to download."
+                                                  : stream.kind == .playlist ? "Playlists can't be downloaded yet. Add a single video or mix."
+                                                  : "")
+                                    }
                                     Divider()
                                     Button("Remove Stream", role: .destructive) {
                                         model.removeStream(id: stream.id)
