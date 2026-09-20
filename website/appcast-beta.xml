@@ -7,6 +7,105 @@
             <pubDate>Wed, 16 Sep 2026 14:35:40 -0300</pubDate>
             <link>https://cratedigger.mrbarkan.com/</link>
             <sparkle:fullReleaseNotesLink>https://github.com/mrbarkan/cratedigger/releases</sparkle:fullReleaseNotesLink>
+            <sparkle:version>93</sparkle:version>
+            <sparkle:shortVersionString>2.2.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description sparkle:format="markdown"><![CDATA[
+Beta 3: a volume readout, an empty Prep Crate that explains itself, and
+downloadable radio streams. Beta 2 brought a full-screen player and a shelf
+like a mixer; beta 1 brought your library even with the drive unplugged, and a
+quieter bottom shelf. This section collects everything in the 2.2 line so far.
+Betas are offered only to people who turned on Receive beta updates.
+
+### Added
+
+- **A volume readout.** Move the fader, or press a volume key, and the
+  display briefly shows where you landed, in decibels or percent. Choose
+  which under Settings, Playback.
+- **An empty Prep Crate explains itself.** Land on an empty Prep Crate and it
+  now tells you what the staging area is for and how to fill it, instead of
+  reading like a broken library.
+- **Download a stream for offline listening.** Save a YouTube mix or video to
+  your library and it plays with no network. Chapters become tracks, and a
+  Downloads list under Radio shows what you have saved.
+
+- **A full-screen player.** View > Full Screen Player, or Shift-Cmd-F, fills
+  the screen with the playing cover, the title, artist and album, the elapsed
+  and total time, and the shelf's own position, transport and volume
+  controls. Esc, CLOSE or a click on the black backdrop brings the window
+  back. Space still plays and pauses.
+- **Your library stays visible when its drive is unplugged.** If your library
+  index lives on an external drive, CrateDigger now keeps a copy of it on this
+  Mac. Launch without the drive and your crates, albums, covers, play counts
+  and ratings are all still there, dimmed, with a note saying which drive is
+  disconnected. Plug it back in and the live library returns by itself.
+- **Nothing changes while the drive is out.** Ratings, crate edits, tag and
+  artwork changes and moving files wait until the drive is back, and the
+  display says why instead of quietly doing nothing. Plays are not counted
+  while the library is disconnected.
+
+### Changed
+
+- **A quieter bottom shelf.** The EQ display and the VU meter are gone from
+  the bottom of the window, leaving the position dial, the transport and the
+  volume knob. The Simple horizontal VU meter setting goes with them.
+- **A small spectrum meter on the NOW screen.** It sits beside the clock
+  while a track or a stream plays, and settles flat when you pause.
+- **The EQ key in the header opens the equalizer.** It no longer steps through
+  presets: pick one on the equalizer's preset keys. Its lamp is lit while the
+  equalizer is on.
+- **Position and volume are two mixer faders.** They sit either side of the
+  transport, the same length, and grow together as the window widens. The
+  rail is a bevelled slot cut into the shelf and the fill glows like a light.
+  The VOLUME label moves to the outer edge, and its unity mark reads 0dB.
+- **Cleanup looks across versions again, carefully.** Tracks in different
+  versions of one release are flagged as duplicates only when their tags are
+  exactly the same. Differently tagged pressings, such as a JP and a US
+  release, stay apart as before.
+
+### Fixed
+
+- **The volume fader no longer snaps back from full.** A double click
+  anywhere on the fader used to reset it to 0 dB; now only a double click on
+  the 0 dB mark itself does.
+- **Volume Up and Down stop on 0 dB.** A step used to be able to jump
+  straight over the unity mark; a step that would now cross it lands on it
+  instead.
+- **The footer's transport is centred.** The play button used to sit closer
+  to VOLUME than to POSITION; it is now centred against a same-feature,
+  cap-to-cap measurement of both fader rails.
+- **An empty crate no longer says no library is loaded.** A named crate with
+  nothing in it, and an empty Prep Crate, each get their own explanation now
+  instead of the message meant for a library that was never opened.
+
+- **No grain on album art.** The interface grain no longer sits on the
+  inspector cover, the gallery covers, the artwork thumbnails or the disc.
+- **Column titles read whole.** ARTIST, ALBUM and TRACK in the browser
+  header were clipped to half their height on macOS 27.
+- **Launching without the library drive no longer looks like an empty
+  library.** CrateDigger used to say "No library loaded" and quietly start a
+  new, empty library in its place, so anything you changed that session was
+  saved there instead of in your real one. It now says the drive is
+  disconnected and changes nothing.
+
+### Investigated
+
+- **The makeup gain above 0 dB.** A report that boost past unity was
+  inaudible turned out not to be a bug: measured against the audio tap's own
+  RMS, the gain applied live, and the gain measured again after a track
+  change, were both within 0.03% of the expected value. The boost range
+  itself is just short: the whole +5 dB sits in the top 7.7% of the fader's
+  travel.
+
+]]></description>
+            <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.0-beta.93/CrateDigger-2.2.0.dmg" length="72980251" type="application/octet-stream" sparkle:edSignature="Ho8xq5VqM4Mlb+BQIHAQ47bbjGmaVH71M82wnZ7nUP164GcCzCJah8sAeQrp3st4D7oxmJLUWjyEKiTSSOgXBg=="/>
+        </item>
+        <item>
+            <title>2.2.0</title>
+            <pubDate>Wed, 16 Sep 2026 14:35:40 -0300</pubDate>
+            <link>https://cratedigger.mrbarkan.com/</link>
+            <sparkle:fullReleaseNotesLink>https://github.com/mrbarkan/cratedigger/releases</sparkle:fullReleaseNotesLink>
             <sparkle:version>92</sparkle:version>
             <sparkle:shortVersionString>2.2.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
@@ -116,64 +215,6 @@ on Receive beta updates.
 
 ]]></description>
             <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.0-beta.91/CrateDigger-2.2.0.dmg" length="71834546" type="application/octet-stream" sparkle:edSignature="Sg7NmjSzki4ljDrPAIk1zYFLtKxdIeu4Y3SfQudVM6w4VaeQopjAvYVCJkbqZ75OmrOyMw/p3LEQkgXt7RxeBg=="/>
-        </item>
-        <item>
-            <title>2.1.0</title>
-            <pubDate>Fri, 11 Sep 2026 23:07:15 -0300</pubDate>
-            <link>https://cratedigger.mrbarkan.com/</link>
-            <sparkle:fullReleaseNotesLink>https://github.com/mrbarkan/cratedigger/releases</sparkle:fullReleaseNotesLink>
-            <sparkle:version>89</sparkle:version>
-            <sparkle:shortVersionString>2.1.0</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
-            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[
-Now playing on your desktop, and an Up Next that moves.
-
-### Added
-
-- **Now Playing widget.** A small and a medium widget for the desktop and
-  Notification Center show the cover, the track and a progress bar that moves
-  by itself. Tapping one opens CrateDigger. To add it, right-click the desktop
-  and choose Edit Widgets.
-- **Pick what the widget shows.** Settings, Interface, Now Playing Widget.
-  While a record plays: its cover, or its cover followed by the booklet, scans
-  or PDF, one page a minute. With nothing playing: a slideshow of covers from
-  your whole library, the cover of the last album you played, or a clear
-  widget with a line to get you digging. The wide widget puts words beside
-  the cover: the record, its artist and year and a crate it lives in, or how
-  long ago you last played it.
-- **Clear the Prep Crate from the browser.** While the Prep Crate is selected
-  and holds tracks, a key beside the browser's search, layout and sort
-  controls empties it. It asks first, because clearing also forgets which
-  folders you dug.
-
-### Changed
-
-- **Drag to reorder Up Next.** Click, hold and drag a queued track onto
-  another to move it there, or below the last one to send it to the end, in
-  the Inspector's queue and the mini player's. A lit line shows where it will
-  land. The up and down arrows are gone; hover still offers remove.
-- **A new mini player deck.** Title, band and album each get their own line,
-  with the time beside the album. The transport matches the main window's
-  footer, with a round play key in the middle that lights while playing, and
-  the position rail sits under the keys. The art tile sits flat on the card,
-  the Up Next list runs longer, and every corner follows your theme's
-  roundness.
-- **One switch for the mini player.** The key that opens the mini player and
-  the key that returns to the main window are now a matching pair, and
-  Window, Mini Player (⇧⌘M) toggles between the two from either window.
-
-### Fixed
-
-- **Picard disc folders stay one album.** A rip with disc subfolders such as
-  `01 - Digital Media` and `02 - Digital Media` used to show as two albums. A
-  folder that starts with an optional disc word and a number now counts as a
-  disc of its album, while a year folder stays an album of its own.
-- **Even VU rows.** The horizontal VU meter's left and right bars now draw at
-  the same height.
-
-]]></description>
-            <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.1.0/CrateDigger-2.1.0.dmg" length="71968775" type="application/octet-stream" sparkle:edSignature="c8safuHymTFUzsGZ3upfpher3AT6hYkEhZy0/zETFd8JhDeD/vP0XVwfstWPW8EMOGm6TskwM1WNeWl1j4y2Dg=="/>
         </item>
     </channel>
 </rss>
