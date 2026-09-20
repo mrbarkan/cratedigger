@@ -20,9 +20,11 @@ Betas are offered only to people who turned on Receive beta updates.
 - **An empty Prep Crate explains itself.** Land on an empty Prep Crate and it
   now tells you what the staging area is for and how to fill it, instead of
   reading like a broken library.
-- **Download a stream for offline listening.** Save a YouTube mix or video to
-  your library and it plays with no network. Chapters become tracks, and a
-  Downloads list under Radio shows what you have saved.
+- **Download a stream for offline listening.** Save a YouTube mix or video
+  and it plays with no network. A Downloads list under Radio shows what you
+  have saved, and any of them can be removed without losing the stream. A
+  download stays in Radio; add it to a crate from its menu when you want to
+  convert it, split its chapters into tracks, or send it to a device.
 
 - **A full-screen player.** View > Full Screen Player, or Shift-Cmd-F, fills
   the screen with the playing cover, the title, artist and album, the elapsed
@@ -40,6 +42,14 @@ Betas are offered only to people who turned on Receive beta updates.
   while the library is disconnected.
 
 ### Changed
+
+- **Downloads stay in Radio.** A downloaded stream no longer lands in the
+  Prep Crate as if you had just dug a folder. It sits under Radio, Downloads,
+  and plays offline from there. Add it to a crate from the stream's menu when
+  you want it in your library.
+- **The CD screen is now DUB.** The screen that shows a CD being ripped also
+  shows an SACD being extracted and a stream being downloaded, so it is named
+  for the job rather than for one of its three sources.
 
 - **A quieter bottom shelf.** The EQ display and the VU meter are gone from
   the bottom of the window, leaving the position dial, the transport and the
@@ -59,6 +69,16 @@ Betas are offered only to people who turned on Receive beta updates.
   release, stay apart as before.
 
 ### Fixed
+
+- **A finished download no longer leaves the display reading NO LIBRARY.**
+  Finishing a download switched the display to SCAN, which reports on
+  whatever you are browsing; sitting in Radio at the time, it read out the
+  radio list as an empty library, stuck at 8%. Downloads no longer touch that
+  screen.
+- **A download is no longer reported as a CD rip.** While it ran, the display
+  said CD-RIP and described the stream as a 44.1 kHz 16-bit disc. The DUB
+  screen now shows the download for what it is: the channel, the title, the
+  percentage and its chapter count.
 
 - **The volume fader no longer snaps back from full.** A double click
   anywhere on the fader used to reset it to 0 dB; now only a double click on

@@ -12,6 +12,15 @@ final class OLEDViewCycleTests: XCTestCase {
         XCTAssertEqual(DisplayModeButton.cycle.count, Set(DisplayModeButton.cycle).count, "no screen twice")
     }
 
+    /// `savedOLEDView` persists the raw value, so renaming `cdRip` to `dub`
+    /// would have silently thrown away the saved screen of everyone sitting on
+    /// it. The case keeps its old raw value; this is what stops a later tidy-up
+    /// from dropping the `= "cdRip"` and breaking that quietly.
+    func testRenamedScreensKeepTheirPersistedRawValue() {
+        XCTAssertEqual(OLEDView.dub.rawValue, "cdRip")
+        XCTAssertEqual(OLEDView(rawValue: "cdRip"), .dub)
+    }
+
     func testEveryScreenHasALabel() {
         for view in OLEDView.allCases {
             XCTAssertFalse(view.label.isEmpty, "\(view) has no label")

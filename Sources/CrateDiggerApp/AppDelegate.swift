@@ -905,7 +905,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                 model.oledView = .scan
             }),
             ("07-screen-sync", 2, { model.oledView = .remoteSync }),
-            ("08-screen-cd", 2, { model.oledView = .cdRip }),
+            ("08-screen-cd", 2, { model.oledView = .dub }),
             ("09-screen-devices", 2, { model.oledView = .devices }),
             ("10-screen-stats", 3, { model.oledView = .stats }),
             ("11-search", 3, {

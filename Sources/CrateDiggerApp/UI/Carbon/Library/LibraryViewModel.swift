@@ -9,7 +9,10 @@ enum OLEDView: String, CaseIterable, Codable, Sendable {
     case conversion
     case scan
     case remoteSync
-    case cdRip
+    /// Getting audio off a source and into the library: an audio CD, an SACD
+    /// ISO, a stream downloaded for offline listening. Raw value stays "cdRip"
+    /// so a saved `savedOLEDView` from before the rename still resolves.
+    case dub = "cdRip"
     case devices
     /// Summoned by ⌘F or by typing in the browser's search field, never chosen
     /// from the DISPLAY cycle or the View menu: a search screen with nothing
@@ -26,7 +29,7 @@ enum OLEDView: String, CaseIterable, Codable, Sendable {
         case .conversion: return "Cnvrt"
         case .scan:       return "Scan"
         case .remoteSync: return "Sync"
-        case .cdRip:      return "CD"
+        case .dub:        return "Dub"
         case .devices:    return "Dev"
         case .search:     return "Search"
         case .stats:      return "Stats"
@@ -2407,7 +2410,7 @@ final class LibraryViewModel: ObservableObject {
         // The CD screen was only ever reachable *during* a rip, so a disc
         // sitting in the drive showed nothing. Selecting one is exactly when
         // its readout is useful.
-        if !conversionProgress.isRunning { oledView = .cdRip }
+        if !conversionProgress.isRunning { oledView = .dub }
         // Selecting a disc is the moment to identify it: everything downstream
         // (browser, inspector, and the rip's tags and filenames) reads better
         // once it is, and the lookup is one throttled request.
@@ -2420,7 +2423,7 @@ final class LibraryViewModel: ObservableObject {
             return
         }
 
-        oledView = .cdRip
+        oledView = .dub
         conversionProgress = ConversionProgressSnapshot(
             jobsCompleted: 0, jobsTotal: info.tracks.count,
             currentFilename: nil, isRunning: true, startedAt: Date()
@@ -4520,7 +4523,14 @@ final class LibraryViewModel: ObservableObject {
                 self.scanProgress = .idle
                 // Files dropped from Finder are genuinely new to the app, so this is
                 // a real import — honor copy-on-import.
-                self.importTracksIntoCrate(deduplicated, crateName: crateName,
+                //
+                // Through `applyingPendingStreamImports` first: this is the path
+                // `addDownloadToCrate` files a downloaded stream through, and the
+                // scanner cannot know its chapter markers or the tags yt-dlp left
+                // blank. A plain Finder drop has no pending entries and passes
+                // through untouched.
+                let tracks = self.applyingPendingStreamImports(to: deduplicated)
+                self.importTracksIntoCrate(tracks, crateName: crateName,
                                            treatAsImport: true, fromPrepCrate: false)
             }
         }

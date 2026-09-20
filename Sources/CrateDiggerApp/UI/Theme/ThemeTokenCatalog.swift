@@ -266,7 +266,7 @@ enum ThemeTokenCatalog {
             ColorToken(key: "lampSync", label: "SYNC Lamp",
                        note: "The SYNC annunciator for the remote-library screen. Unset it follows Info Blue.",
                        read: \.lampSync),
-            ColorToken(key: "lampCD", label: "CD Lamp",
+            ColorToken(key: "lampCD", label: "Dub Lamp",
                        note: "The CD annunciator for the disc-ripping screen. Unset it follows Alert Red.",
                        read: \.lampCD),
             ColorToken(key: "lampDevices", label: "DEV Lamp",

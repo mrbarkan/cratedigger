@@ -50,7 +50,20 @@ struct RadioListView: View {
                                             downloadButton
                                         }
                                     } else {
-                                        Button("Show in Library") { model.showDownloadInLibrary(streamID: stream.id) }
+                                        // A download lives in Radio ▸ Downloads, not in a
+                                        // crate. Filing it is explicit, and the only way to
+                                        // reach Convert, Record Divider and Transfer To.
+                                        if model.isDownloadFiled(streamID: stream.id) {
+                                            Button("Show in Library") { model.showDownloadInLibrary(streamID: stream.id) }
+                                        } else if !model.availableCrates.isEmpty {
+                                            Menu("Add to Crate") {
+                                                ForEach(model.availableCrates, id: \.self) { crate in
+                                                    Button(crate) {
+                                                        model.addDownloadToCrate(streamID: stream.id, crateName: crate)
+                                                    }
+                                                }
+                                            }
+                                        }
                                         Button("Remove Download…") { model.removeDownload(streamID: stream.id) }
                                     }
                                     Divider()

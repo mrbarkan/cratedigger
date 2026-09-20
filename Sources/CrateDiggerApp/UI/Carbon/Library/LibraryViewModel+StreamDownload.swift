@@ -2,9 +2,11 @@ import AppKit
 import CrateDiggerCore
 import Foundation
 
-/// A downloaded stream waiting for its scan: the markers and tag defaults the
-/// scanner cannot know, and the stream to link the file back to. `queuedAt`
-/// bounds how long an entry can wait — see `prunePendingStreamImports()`.
+/// A downloaded file waiting for the scan that will turn it into a library
+/// track: the markers and tag defaults the scanner cannot know, and the stream
+/// to link it back to. Queued by `addDownloadToCrate`, never by the download
+/// itself — a download does not enter the library on its own. `queuedAt` bounds
+/// how long an entry can wait — see `prunePendingStreamImports()`.
 struct PendingStreamImport {
     let streamID: String
     let markers: [RecordMarker]
@@ -13,9 +15,16 @@ struct PendingStreamImport {
     let queuedAt: Date = Date()
 }
 
-/// Download for Offline: yt-dlp saves a stream's audio into the library, it
-/// lands in the Prep Crate like any dig, and its chapters arrive as Record
-/// Divider markers. yt-dlp is bring-your-own, as for playback.
+/// Download for Offline: yt-dlp saves a stream's audio to disk and the stream
+/// plays from that copy instead of the network. **It does not enter the
+/// library.** A download is a property of the stream, not a record you dug —
+/// it belongs in Radio ▸ Downloads, not in the Prep Crate waiting to be filed.
+///
+/// Filing it is a separate, explicit act: `addDownloadToCrate` scans the file
+/// into a crate the user names, and only then does it become an ordinary
+/// `LoadedTrack` that conversion, Record Divider and device transfer can reach
+/// — which is how a download gets split into per-chapter tracks for an
+/// external device. yt-dlp is bring-your-own, as for playback.
 @MainActor
 extension LibraryViewModel {
     var isDownloadingStream: Bool { downloadingStreamID != nil }
@@ -58,7 +67,7 @@ extension LibraryViewModel {
 
         downloadingStreamID = id
         streamDownloadCancelled = false
-        oledView = .cdRip
+        oledView = .dub
         conversionProgress = ConversionProgressSnapshot(jobsCompleted: 0, jobsTotal: 100,
                                                         currentFilename: stream.title, isRunning: true)
         let ffmpeg = ExternalToolLocator().resolveOptional(.ffmpeg)?.url
@@ -123,48 +132,77 @@ extension LibraryViewModel {
         streamDownloadHandle = nil
         downloadingStreamID = nil
         conversionProgress = .idle
-        if oledView == .cdRip { oledView = .nowPlaying }
+        if oledView == .dub { oledView = .nowPlaying }
     }
 
-    /// Cover, markers and tag defaults, then scan the folder into the Prep Crate.
+    /// Link the file to its stream and fetch the cover. Nothing is scanned and
+    /// nothing is staged: the stream now plays offline, and that is the whole
+    /// job. Filing it into the library is `addDownloadToCrate`, on request.
+    ///
     /// A download can run for minutes, so the drive that was connected when it
     /// started may not be by the time it finishes — re-check rather than trust
     /// the entry check in `downloadStream`. The file is left on disk either way;
-    /// only the import (and the stream's `downloadedPath`) is refused.
+    /// only the link (and so the offline playback) is refused, because
+    /// `downloadedPath` lives in the library's own store.
     private func finishStreamDownload(_ stream: StreamSource, fileURL: URL) {
         guard !refuseWhileLibraryDisconnected() else { return }
         // The copy captured when the download began may predate its metadata.
         let stream = streams.first(where: { $0.id == stream.id }) ?? stream
-        let markers = RecordMarker.markers(from: stream.chapters ?? [], duration: stream.durationSeconds)
-        pendingStreamImports[fileURL.standardizedFileURL.path] = PendingStreamImport(
-            streamID: stream.id, markers: markers, artist: stream.channel, album: stream.title)
+        let path = fileURL.standardizedFileURL.path
+        streams = streamStore.setDownload(path: path, forStreamID: stream.id)
 
         let folder = fileURL.deletingLastPathComponent()
         let thumbnail = stream.thumbnailURL.flatMap(URL.init(string:))
         Task { [weak self] in
             // Folder art is resolveArtwork's second rung; embedding a thumbnail in
-            // m4a needs yt-dlp extras we cannot count on.
+            // m4a needs yt-dlp extras we cannot count on. Only useful once the
+            // file is filed into a crate, but the thumbnail URL expires, so it
+            // is fetched now rather than whenever that happens.
             if let thumbnail, let (data, _) = try? await URLSession.shared.data(from: thumbnail), !data.isEmpty {
                 try? data.write(to: folder.appendingPathComponent("cover.jpg"), options: .atomic)
             }
-            // `loadFolders` scans on its own Task and returns immediately: the
-            // "Downloaded" success message belongs to whichever track actually
-            // comes back out of that scan, not to this call site — see
-            // `applyingPendingStreamImports`, which is the one place that knows.
-            await MainActor.run { self?.loadFolders([folder]) }
         }
+
+        let chapters = stream.chapters?.count ?? 0
+        appAlert = .info(
+            title: "Downloaded",
+            message: chapters > 1
+                ? "\u{201C}\(stream.title)\u{201D} plays offline now. It has \(chapters) chapters, so adding it to a crate will split it into tracks you can convert or send to a device."
+                : "\u{201C}\(stream.title)\u{201D} plays offline now. Add it to a crate if you want to convert it or send it to a device.")
     }
 
-    /// Called from `handleImport` before staging. Gives a just-downloaded file its
-    /// chapter markers and the tags yt-dlp left blank, and links the stream to it.
-    /// The scan surfaces artist/album for display from `AudioTrack`, not
-    /// `ConversionMetadata` (see OLED, mini player, TAGS panel), so both are
-    /// filled here.
+    /// File a downloaded stream into a crate on request: the one way a download
+    /// becomes an ordinary library track. Reuses the Finder-drop path
+    /// (`addURLsToCrate`), so copy-on-import, artwork ingest and crate
+    /// persistence all behave exactly as they do for any other import — the only
+    /// thing added is the pending entry that carries the chapter markers and the
+    /// tags yt-dlp left blank through that scan.
+    func addDownloadToCrate(streamID: String, crateName: String) {
+        guard !refuseWhileLibraryDisconnected() else { return }
+        guard let stream = streams.first(where: { $0.id == streamID }),
+              let path = stream.downloadedPath else { return }
+        guard FileManager.default.fileExists(atPath: path) else {
+            appAlert = .error(title: "File Missing",
+                              message: "The offline copy is no longer on disk. Download it again.")
+            return
+        }
+        let markers = RecordMarker.markers(from: stream.chapters ?? [], duration: stream.durationSeconds)
+        pendingStreamImports[path] = PendingStreamImport(
+            streamID: streamID, markers: markers, artist: stream.channel, album: stream.title)
+        addURLsToCrate([URL(fileURLWithPath: path)], crateName: crateName)
+    }
+
+    /// Called from the two scan-into-the-library paths (`handleImport` for a dig
+    /// or a Finder drop, `addURLsToCrate` for a crate drop or an explicit
+    /// `addDownloadToCrate`) before the tracks are filed. Gives a downloaded file
+    /// its chapter markers and the tags yt-dlp left blank. The scan surfaces
+    /// artist/album for display from `AudioTrack`, not `ConversionMetadata` (see
+    /// OLED, mini player, TAGS panel), so both are filled here.
     ///
     /// This is also the one place that knows a download's file really made it
-    /// into a scanned `LoadedTrack` — so the "Downloaded" success message is
-    /// posted from here, not from `finishStreamDownload`, which only knows it
-    /// *started* a scan. A scan that yields nothing for this entry (a corrupt
+    /// into a scanned `LoadedTrack`, so the "Added to <crate>" confirmation is
+    /// posted from here rather than from `addDownloadToCrate`, which only knows
+    /// it *started* a scan. A scan that yields nothing for this entry (a corrupt
     /// remux, a transient I/O error) posts nothing rather than claiming a
     /// success nobody observed.
     func applyingPendingStreamImports(to tracks: [LoadedTrack]) -> [LoadedTrack] {
@@ -172,11 +210,11 @@ extension LibraryViewModel {
         guard !pendingStreamImports.isEmpty else { return tracks }
         // Collected rather than posted inline: setting `appAlert` from inside the
         // `map` would be a side effect per element, and if one scan ever matched
-        // two pending entries (today's one-download-at-a-time flow keeps that from
-        // happening, but `handleImport` is the general dig/drop path too, and a
-        // future batch could reach it) only the last write would ever be seen.
-        // Posting once after the map, for whichever matched last, makes that
-        // "last one wins" explicit instead of an accident of iteration order.
+        // two pending entries (a Finder drop of two previously-downloaded files
+        // reaches this the same way an explicit add does) only the last write
+        // would ever be seen. Posting once after the map, for whichever matched
+        // last, makes that "last one wins" explicit instead of an accident of
+        // iteration order.
         var lastDownloaded: PendingStreamImport?
         let result = tracks.map { loaded -> LoadedTrack in
             let path = loaded.track.fileURL.standardizedFileURL.path
@@ -192,12 +230,13 @@ extension LibraryViewModel {
             return LoadedTrack(track: track, metadata: metadata,
                                recordMarkers: pending.markers.isEmpty ? nil : pending.markers)
         }
-        if let pending = lastDownloaded {
+        if let pending = lastDownloaded, !pending.markers.isEmpty {
+            // Only the divided case is worth an alert: the plain "it is in the
+            // crate you just picked" case is already visible in the browser,
+            // and `finishImportStatus` says it on the OLED rail.
             appAlert = .info(
-                title: "Downloaded",
-                message: pending.markers.isEmpty
-                    ? "\u{201C}\(pending.album)\u{201D} is in the Prep Crate."
-                    : "\u{201C}\(pending.album)\u{201D} is in the Prep Crate, divided into \(pending.markers.count) tracks. Convert it, or transfer it with a converting device profile, to get one file per track.")
+                title: "Added to Your Library",
+                message: "\u{201C}\(pending.album)\u{201D} is divided into \(pending.markers.count) tracks. Convert it, or transfer it with a converting device profile, to get one file per track.")
         }
         return result
     }
@@ -223,6 +262,13 @@ extension LibraryViewModel {
         }
     }
 
+    /// Whether the offline copy has been filed into the library as a track —
+    /// which decides whether the row offers "Show in Library" or "Add to Crate".
+    func isDownloadFiled(streamID: String) -> Bool {
+        guard let stream = streams.first(where: { $0.id == streamID }) else { return false }
+        return downloadedTrack(for: stream) != nil
+    }
+
     /// The downloaded file as the library knows it, wherever it is filed.
     private func downloadedTrack(for stream: StreamSource) -> LoadedTrack? {
         guard let path = stream.downloadedPath else { return nil }
@@ -237,7 +283,12 @@ extension LibraryViewModel {
 
         let alert = NSAlert()
         alert.messageText = "Move the offline copy of \u{201C}\(stream.title)\u{201D} to the Trash?"
-        alert.informativeText = "The stream stays in your list and plays online. The track leaves your library along with it, and its play history goes with it."
+        // A download only reaches the library if the user filed it there, so
+        // promising that "the track leaves your library" is a lie in the
+        // ordinary case — there is no track.
+        alert.informativeText = downloadedTrack(for: stream) == nil
+            ? "The stream stays in your list and plays online again."
+            : "The stream stays in your list and plays online. The track leaves your library along with it, and its play history goes with it."
         alert.addButton(withTitle: "Move to Trash")
         alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else { return }

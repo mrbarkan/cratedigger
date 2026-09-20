@@ -122,7 +122,7 @@ private struct DisplayContext: View {
             case .conversion:  ConversionPane()
             case .scan:        ScanPane()
             case .remoteSync:  RemoteSyncPane()
-            case .cdRip:       CDRipPane()
+            case .dub:       DubPane()
             case .devices:     DevicesPane()
             case .search:      SearchPane()
             case .stats:       StatsPane()
@@ -159,7 +159,7 @@ private struct DisplayRail: View {
                 ann("CNVRT", lit: v == .conversion, color: OLEDView.conversion.accent(theme))
                 ann("SCAN", lit: v == .scan, color: OLEDView.scan.accent(theme))
                 ann("SYNC", lit: v == .remoteSync, color: OLEDView.remoteSync.accent(theme))
-                ann("CD", lit: v == .cdRip, color: OLEDView.cdRip.accent(theme))
+                ann("DUB", lit: v == .dub, color: OLEDView.dub.accent(theme))
                 ann("DEV", lit: v == .devices, color: OLEDView.devices.accent(theme))
                 ann("SRCH", lit: v == .search, color: OLEDView.search.accent(theme))
                 ann("STAT", lit: v == .stats, color: OLEDView.stats.accent(theme))
@@ -1470,7 +1470,13 @@ private struct RemoteSyncPane: View {
 
 // MARK: - CD RIP pane
 
-private struct CDRipPane: View {
+/// DUB: getting audio off a source and into the library. An audio CD, an SACD
+/// ISO, or a stream downloaded for offline listening — three sources, one
+/// screen. The download state is its own body rather than borrowing the rip's:
+/// a YouTube download has no disc, no CDDA sample rate, no read speed and no
+/// track count, so showing it under "CD-RIP · Disc: CDDA" was a lie in every
+/// cell.
+private struct DubPane: View {
     @EnvironmentObject private var model: LibraryViewModel
     @Environment(\.carbon) private var theme
 
@@ -1478,7 +1484,11 @@ private struct CDRipPane: View {
     private var total: Int { model.conversionProgress.jobsTotal }
 
     var body: some View {
-        if model.conversionProgress.isRunning {
+        if let stream = downloadingStream {
+            TimelineView(.periodic(from: .now, by: 1)) { _ in
+                downloadingBody(stream)
+            }
+        } else if model.conversionProgress.isRunning {
             // A rip is the only thing that ticks, so only it drives a clock.
             TimelineView(.periodic(from: .now, by: 1)) { _ in
                 rippingBody
@@ -1522,6 +1532,53 @@ private struct CDRipPane: View {
         }
     }
 
+    // MARK: - Downloading a stream
+    //
+    // `conversionProgress` carries the download as jobsCompleted = percent out
+    // of jobsTotal = 100 (see `downloadStream`), so `done` reads straight as a
+    // percentage here and no separate progress field is needed.
+
+    private var downloadingStream: StreamSource? {
+        guard let id = model.downloadingStreamID else { return nil }
+        return model.streams.first { $0.id == id }
+    }
+
+    private func downloadingBody(_ stream: StreamSource) -> some View {
+        OLEDPaneScaffold {
+            NPTitles(title: "DOWNLOAD",
+                     sub: stream.channel.isEmpty ? stream.title : "\(stream.channel) · \(stream.title)")
+        } readout: {
+            VStack(alignment: .trailing, spacing: 6) {
+                HStack(alignment: .firstTextBaseline, spacing: 2) {
+                    Text("\(done)")
+                        .font(CarbonFont.display(34, weight: .thin)).foregroundStyle(oledFG)
+                    Text("%")
+                        .font(CarbonFont.mono(12, weight: .semibold)).foregroundStyle(oledFGo(0.4))
+                }
+                ScanBar(style: .orange(min(max(Double(done) / 100, 0), 1))).frame(width: 150)
+            }
+            .fixedSize()
+        } ticker: {
+            DSPTicker(prefix: String(format: "DOWNLOADING · %02d%%", done),
+                      path: AttributedString(destinationPath))
+        } cells: {
+            OLEDCells([
+                OLEDCellData(key: "Source", value: stream.provider.rawValue.uppercased(), sub: "Stream"),
+                OLEDCellData(key: "Format", value: "M4A", sub: "AAC · As published"),
+                OLEDCellData(key: "Chapters", value: chapterCount(stream), sub: "Marked"),
+                OLEDCellData(key: "Elapsed", value: elapsedLabel, sub: "This Download"),
+                OLEDCellData(key: "Status", value: "PULLING", sub: "yt-dlp", valueColor: theme.cyan)
+            ])
+        }
+    }
+
+    /// Chapters are what a download can be divided into later; "—" when the
+    /// stream has none rather than a misleading zero.
+    private func chapterCount(_ stream: StreamSource) -> String {
+        guard let chapters = stream.chapters, !chapters.isEmpty else { return "—" }
+        return "\(chapters.count)"
+    }
+
     // MARK: - Ripping
 
     private var rippingBody: some View {
@@ -1553,11 +1610,11 @@ private struct CDRipPane: View {
 
     private var emptyBody: some View {
         OLEDPaneScaffold {
-            NPTitles(title: "NO DISC", sub: "Insert an audio CD to rip it")
+            NPTitles(title: "NOTHING TO DUB", sub: "Insert an audio CD, or download a stream for offline listening")
         } readout: {
             EmptyView()
         } ticker: {
-            DSPTicker(prefix: "CD", path: AttributedString(destinationPath))
+            DSPTicker(prefix: "DUB", path: AttributedString(destinationPath))
         } cells: {
             OLEDCells([
                 OLEDCellData(key: "Disc", value: "—", sub: "None"),

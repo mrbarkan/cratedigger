@@ -36,7 +36,7 @@ extension LibraryViewModel {
             return
         }
         let service = SACDExtractService(toolURL: toolURL)
-        oledView = .cdRip
+        oledView = .dub
         conversionProgress = ConversionProgressSnapshot(jobsCompleted: 0, jobsTotal: 1,
                                                         currentFilename: iso.lastPathComponent,
                                                         isRunning: true)
@@ -114,7 +114,7 @@ extension LibraryViewModel {
 
     private func finishSACDImport(alert: AppAlert?) {
         conversionProgress = .idle
-        if oledView == .cdRip { oledView = .nowPlaying }
+        if oledView == .dub { oledView = .nowPlaying }
         if let alert { appAlert = alert }
     }
 

@@ -14,7 +14,7 @@ extension OLEDView {
         case .conversion: return theme.lampConvert
         case .scan:       return theme.lampScan
         case .remoteSync: return theme.lampSync
-        case .cdRip:      return theme.lampCD
+        case .dub:      return theme.lampCD
         case .devices:    return theme.lampDevices    // salmon
         case .search:     return theme.lampSearch     // teal glow
         case .stats:      return theme.lampStats
@@ -78,7 +78,7 @@ struct DisplayModeButton: View {
         case .conversion: return "CNVRT"
         case .scan:       return "SCAN"
         case .remoteSync: return "SYNC"
-        case .cdRip:      return "CD-RIP"
+        case .dub:      return "DUB"
         case .devices:    return "DEV"
         case .search:     return "SRCH"
         case .stats:      return "STATS"
