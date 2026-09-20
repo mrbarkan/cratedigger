@@ -3,12 +3,14 @@ import CrateDiggerCore
 import Foundation
 
 /// A downloaded stream waiting for its scan: the markers and tag defaults the
-/// scanner cannot know, and the stream to link the file back to.
+/// scanner cannot know, and the stream to link the file back to. `queuedAt`
+/// bounds how long an entry can wait — see `prunePendingStreamImports()`.
 struct PendingStreamImport {
     let streamID: String
     let markers: [RecordMarker]
     let artist: String
     let album: String
+    let queuedAt: Date = Date()
 }
 
 /// Download for Offline: yt-dlp saves a stream's audio into the library, it
@@ -27,11 +29,6 @@ extension LibraryViewModel {
         guard !refuseWhileLibraryDisconnected() else { return }
         guard let stream = streams.first(where: { $0.id == id }), canDownload(stream) else { return }
         guard !isDownloadingStream else { return showOLEDNotice("ONE DOWNLOAD AT A TIME") }
-        guard let ytdlp = resolvedYtDlpURL() else {
-            appAlert = .error(title: "yt-dlp Not Found",
-                              message: "Downloading needs yt-dlp. Install it (for example with Homebrew: brew install yt-dlp) or set its path in Settings.")
-            return
-        }
         guard let root = currentConversionDestinationURL ?? managedLibraryFolderURL else {
             appAlert = .error(title: "No Destination Set",
                               message: "Configure a default output folder in Preferences first.")
@@ -43,8 +40,15 @@ extension LibraryViewModel {
         do { plan = try StreamDownloader.plan(for: stream, in: root) }
         catch { return appAlert = .error(title: "Can't Download", message: "Only single videos and mixes can be downloaded.") }
         guard !FileManager.default.fileExists(atPath: plan.fileURL.path) else {
-            // Already on disk from an earlier run: adopt it instead of fetching again.
+            // Already on disk from an earlier run: adopt it instead of fetching
+            // again. Nothing here downloads, so yt-dlp is not required.
             return finishStreamDownload(stream, fileURL: plan.fileURL)
+        }
+
+        guard let ytdlp = resolvedYtDlpURL() else {
+            appAlert = .error(title: "yt-dlp Not Found",
+                              message: "Downloading needs yt-dlp. Install it (for example with Homebrew: brew install yt-dlp) or set its path in Settings.")
+            return
         }
 
         // A stream added but never opened has no chapters cached yet. Ask now;
@@ -115,7 +119,12 @@ extension LibraryViewModel {
     }
 
     /// Cover, markers and tag defaults, then scan the folder into the Prep Crate.
+    /// A download can run for minutes, so the drive that was connected when it
+    /// started may not be by the time it finishes — re-check rather than trust
+    /// the entry check in `downloadStream`. The file is left on disk either way;
+    /// only the import (and the stream's `downloadedPath`) is refused.
     private func finishStreamDownload(_ stream: StreamSource, fileURL: URL) {
+        guard !refuseWhileLibraryDisconnected() else { return }
         // The copy captured when the download began may predate its metadata.
         let stream = streams.first(where: { $0.id == stream.id }) ?? stream
         let markers = RecordMarker.markers(from: stream.chapters ?? [], duration: stream.durationSeconds)
@@ -130,15 +139,11 @@ extension LibraryViewModel {
             if let thumbnail, let (data, _) = try? await URLSession.shared.data(from: thumbnail), !data.isEmpty {
                 try? data.write(to: folder.appendingPathComponent("cover.jpg"), options: .atomic)
             }
-            await MainActor.run {
-                guard let self else { return }
-                self.loadFolders([folder])
-                self.appAlert = .info(
-                    title: "Downloaded",
-                    message: markers.isEmpty
-                        ? "\u{201C}\(stream.title)\u{201D} is in the Prep Crate."
-                        : "\u{201C}\(stream.title)\u{201D} is in the Prep Crate, divided into \(markers.count) tracks. Convert it, or transfer it with a converting device profile, to get one file per track.")
-            }
+            // `loadFolders` scans on its own Task and returns immediately: the
+            // "Downloaded" success message belongs to whichever track actually
+            // comes back out of that scan, not to this call site — see
+            // `applyingPendingStreamImports`, which is the one place that knows.
+            await MainActor.run { self?.loadFolders([folder]) }
         }
     }
 
@@ -147,9 +152,25 @@ extension LibraryViewModel {
     /// The scan surfaces artist/album for display from `AudioTrack`, not
     /// `ConversionMetadata` (see OLED, mini player, TAGS panel), so both are
     /// filled here.
+    ///
+    /// This is also the one place that knows a download's file really made it
+    /// into a scanned `LoadedTrack` — so the "Downloaded" success message is
+    /// posted from here, not from `finishStreamDownload`, which only knows it
+    /// *started* a scan. A scan that yields nothing for this entry (a corrupt
+    /// remux, a transient I/O error) posts nothing rather than claiming a
+    /// success nobody observed.
     func applyingPendingStreamImports(to tracks: [LoadedTrack]) -> [LoadedTrack] {
+        prunePendingStreamImports()
         guard !pendingStreamImports.isEmpty else { return tracks }
-        return tracks.map { loaded in
+        // Collected rather than posted inline: setting `appAlert` from inside the
+        // `map` would be a side effect per element, and if one scan ever matched
+        // two pending entries (today's one-download-at-a-time flow keeps that from
+        // happening, but `handleImport` is the general dig/drop path too, and a
+        // future batch could reach it) only the last write would ever be seen.
+        // Posting once after the map, for whichever matched last, makes that
+        // "last one wins" explicit instead of an accident of iteration order.
+        var lastDownloaded: PendingStreamImport?
+        let result = tracks.map { loaded -> LoadedTrack in
             let path = loaded.track.fileURL.standardizedFileURL.path
             guard let pending = pendingStreamImports.removeValue(forKey: path) else { return loaded }
             var metadata = loaded.metadata
@@ -159,8 +180,38 @@ extension LibraryViewModel {
             if track.artist.isEmpty { track.artist = pending.artist }
             if track.album.isEmpty { track.album = pending.album }
             streams = streamStore.setDownload(path: path, forStreamID: pending.streamID)
+            lastDownloaded = pending
             return LoadedTrack(track: track, metadata: metadata,
                                recordMarkers: pending.markers.isEmpty ? nil : pending.markers)
+        }
+        if let pending = lastDownloaded {
+            appAlert = .info(
+                title: "Downloaded",
+                message: pending.markers.isEmpty
+                    ? "\u{201C}\(pending.album)\u{201D} is in the Prep Crate."
+                    : "\u{201C}\(pending.album)\u{201D} is in the Prep Crate, divided into \(pending.markers.count) tracks. Convert it, or transfer it with a converting device profile, to get one file per track.")
+        }
+        return result
+    }
+
+    /// A pending entry only exists between a download finishing and its scan
+    /// landing — normally milliseconds. If that scan never produces a matching
+    /// track (the file was corrupt, or never appeared), the entry would
+    /// otherwise sit forever: an unbounded leak, and — because
+    /// `StreamDownloader.plan`'s path has no uniqueness suffix — a later,
+    /// unrelated stream whose sanitized channel and title collide with it
+    /// would silently inherit its stale artist/album/markers. Dropping
+    /// anything older than a few minutes bounds both.
+    private static let pendingStreamImportLifetime: TimeInterval = 5 * 60
+
+    private func prunePendingStreamImports() {
+        guard !pendingStreamImports.isEmpty else { return }
+        let cutoff = Date().addingTimeInterval(-Self.pendingStreamImportLifetime)
+        let stale = pendingStreamImports.filter { $0.value.queuedAt < cutoff }
+        guard !stale.isEmpty else { return }
+        for (path, pending) in stale {
+            pendingStreamImports.removeValue(forKey: path)
+            AppLog.library.notice("Dropped an unconsumed stream download entry for \(pending.streamID, privacy: .public): its scan never produced a matching track.")
         }
     }
 

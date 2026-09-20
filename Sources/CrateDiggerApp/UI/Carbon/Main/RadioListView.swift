@@ -38,11 +38,17 @@ struct RadioListView: View {
                                     if model.downloadingStreamID == stream.id {
                                         Button("Cancel Download") { model.cancelStreamDownload() }
                                     } else if !stream.isDownloaded() {
-                                        Button("Download for Offline…") { model.downloadStream(id: stream.id) }
+                                        let downloadButton = Button("Download for Offline…") { model.downloadStream(id: stream.id) }
                                             .disabled(!model.canDownload(stream) || model.isDownloadingStream)
-                                            .help(stream.kind == .live ? "A live stream has no end to download."
-                                                  : stream.kind == .playlist ? "Playlists can't be downloaded yet. Add a single video or mix."
-                                                  : "")
+                                        // Only a disabled button has anything to explain; an
+                                        // enabled one gets no tooltip at all rather than an empty one.
+                                        if stream.kind == .live {
+                                            downloadButton.help("A live stream has no end to download.")
+                                        } else if stream.kind == .playlist {
+                                            downloadButton.help("Playlists can't be downloaded yet. Add a single video or mix.")
+                                        } else {
+                                            downloadButton
+                                        }
                                     }
                                     Divider()
                                     Button("Remove Stream", role: .destructive) {
