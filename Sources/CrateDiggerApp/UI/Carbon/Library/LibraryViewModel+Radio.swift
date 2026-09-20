@@ -144,6 +144,14 @@ extension LibraryViewModel {
     }
 
     func removeStream(id: String) {
+        if let stream = streams.first(where: { $0.id == id }), stream.isDownloaded() {
+            let alert = NSAlert()
+            alert.messageText = "Remove \u{201C}\(stream.title)\u{201D}?"
+            alert.informativeText = "Its downloaded file stays in your library as an ordinary track. To delete the file too, use Remove Download first."
+            alert.addButton(withTitle: "Remove Stream")
+            alert.addButton(withTitle: "Cancel")
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+        }
         streams = streamStore.remove(id: id)
         if selectedStreamID == id {
             selectedStreamID = filteredStreams.first?.id
@@ -264,8 +272,9 @@ extension LibraryViewModel {
         case .webview:
             return YouTubeEmbedStreamEngine()
         case .native:
-            guard let url = resolvedYtDlpURL() else {
-                // Shouldn't happen (resolveActiveEngineKind guards), but fall back safely.
+            let url = resolvedYtDlpURL()
+            // No yt-dlp is fine for an offline copy; the resolver never runs it then.
+            guard url != nil || selectedStream?.isDownloaded() == true else {
                 return YouTubeEmbedStreamEngine()
             }
             let engine = YtDlpStreamEngine(resolver: StreamResolver(ytdlpURL: url))
@@ -277,6 +286,9 @@ extension LibraryViewModel {
     /// Resolves the engine from the `streamEngine` preference plus yt-dlp
     /// availability. `auto` prefers native when yt-dlp is present, else WebView.
     func resolveActiveEngineKind() -> RadioEngineKind {
+        // An offline copy is a local file: only the native engine can play it,
+        // whatever the preference says and whether or not yt-dlp is installed.
+        if selectedStream?.isDownloaded() == true { return .native }
         switch prefs.streamEngine {
         case "webview":
             return .webview

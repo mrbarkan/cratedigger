@@ -4666,6 +4666,7 @@ final class LibraryViewModel: ObservableObject {
             // carry it or the user silently loses their play counts.
             currentListeningStore().repoint(from: oldKey, to: newKey)
             persistListeningStore()
+            streams = streamStore.repointDownload(from: oldKey, to: newKey)
         }
         replaceTrackEverywhere(matchingPath: oldURL.path, with: newTrack)
     }
@@ -4726,6 +4727,9 @@ final class LibraryViewModel: ObservableObject {
         // (one track's new path is another track's old path).
         currentListeningStore().repoint(pairs: movedKeys)
         persistListeningStore()
+        // Small JSON blob, re-saved once per moved file that is a download and
+        // returns early for every other file: cheap enough not to batch.
+        for (old, new) in movedKeys { streams = streamStore.repointDownload(from: old, to: new) }
         selectSource(currentSource)
     }
 

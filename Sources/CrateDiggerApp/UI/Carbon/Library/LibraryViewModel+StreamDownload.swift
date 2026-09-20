@@ -215,6 +215,62 @@ extension LibraryViewModel {
         }
     }
 
+    /// The downloaded file as the library knows it, wherever it is filed.
+    private func downloadedTrack(for stream: StreamSource) -> LoadedTrack? {
+        guard let path = stream.downloadedPath else { return nil }
+        let match: (LoadedTrack) -> Bool = { $0.track.fileURL.standardizedFileURL.path == path }
+        return prepCrateTracks.first(where: match) ?? localIndex.allTracks.first(where: match)
+    }
+
+    /// Trash the offline copy; the stream stays and plays online again.
+    func removeDownload(streamID: String) {
+        guard !refuseWhileLibraryDisconnected() else { return }
+        guard let stream = streams.first(where: { $0.id == streamID }), let path = stream.downloadedPath else { return }
+
+        let alert = NSAlert()
+        alert.messageText = "Move the offline copy of \u{201C}\(stream.title)\u{201D} to the Trash?"
+        alert.informativeText = "The stream stays in your list and plays online."
+        alert.addButton(withTitle: "Move to Trash")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        // Let go of the file before it moves: the radio engine if it is playing
+        // this offline copy, the library player if the track was started from a crate.
+        if selectedStreamID == streamID, radioEngine != nil { stopRadio() }
+        if let current = nowPlayingTrack, current.track.fileURL.standardizedFileURL.path == path { playback.pause() }
+
+        let fileURL = URL(fileURLWithPath: path)
+        do {
+            if let track = downloadedTrack(for: stream) {
+                try LibraryCleanupService().deleteTracks([track], useTrash: true)
+            } else if FileManager.default.fileExists(atPath: path) {
+                try FileManager.default.trashItem(at: fileURL, resultingItemURL: nil)
+            }
+        } catch {
+            // Link left intact: the file is still there and still the download.
+            appAlert = .error(title: "Trash Failed", message: error.localizedDescription)
+            return
+        }
+        purgeTracksFromLibraryState(paths: [path])
+
+        // The folder was made for this download; take it too when only the cover is left.
+        let folder = fileURL.deletingLastPathComponent()
+        let rest = ((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? [])
+            .filter { $0 != "cover.jpg" && $0 != ".DS_Store" }
+        if rest.isEmpty { try? FileManager.default.trashItem(at: folder, resultingItemURL: nil) }
+
+        streams = streamStore.setDownload(path: nil, forStreamID: streamID)
+        showOLEDNotice("DOWNLOAD REMOVED")
+    }
+
+    func showDownloadInLibrary(streamID: String) {
+        guard let stream = streams.first(where: { $0.id == streamID }),
+              let track = downloadedTrack(for: stream) else { return }
+        let inPrep = prepCrateTracks.contains { $0.track.fileURL == track.track.fileURL }
+        selectSource(inPrep ? .prepCrate : .localAll)
+        revealTrack(track)
+    }
+
     private func confirmPersonalUse() -> Bool {
         guard !prefs.hasAcknowledgedStreamDownloadNotice else { return true }
         let alert = NSAlert()

@@ -49,6 +49,9 @@ struct RadioListView: View {
                                         } else {
                                             downloadButton
                                         }
+                                    } else {
+                                        Button("Show in Library") { model.showDownloadInLibrary(streamID: stream.id) }
+                                        Button("Remove Download…") { model.removeDownload(streamID: stream.id) }
                                     }
                                     Divider()
                                     Button("Remove Stream", role: .destructive) {
@@ -76,34 +79,36 @@ struct RadioListView: View {
             Text("\(model.filteredStreams.count) SOURCE\(model.filteredStreams.count == 1 ? "" : "S")")
                 .font(CarbonFont.mono(8.5))
                 .foregroundStyle(theme.ink3)
-            Button(action: { model.showingStreamSuggestions.toggle() }) {
-                HStack(spacing: 4) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 8, weight: .bold))
-                    Text("BROWSE")
-                        .font(CarbonFont.mono(8, weight: .bold))
-                        .tracking(1)
+            if model.radioCategoryFilter != .downloaded {
+                Button(action: { model.showingStreamSuggestions.toggle() }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 8, weight: .bold))
+                        Text("BROWSE")
+                            .font(CarbonFont.mono(8, weight: .bold))
+                            .tracking(1)
+                    }
+                    .foregroundStyle(model.showingStreamSuggestions ? theme.orange : theme.ink3)
                 }
-                .foregroundStyle(model.showingStreamSuggestions ? theme.orange : theme.ink3)
-            }
-            .buttonStyle(.carbonHover)
-            .carbonTip("Suggested stations you can add in one tap")
+                .buttonStyle(.carbonHover)
+                .carbonTip("Suggested stations you can add in one tap")
 
-            Button(action: { model.showingAddStreamSheet = true }) {
-                HStack(spacing: 4) {
-                    Image(systemName: "plus")
-                        .font(.system(size: 8, weight: .bold))
-                    Text("ADD URL")
-                        .font(CarbonFont.mono(8, weight: .bold))
-                        .tracking(1)
+                Button(action: { model.showingAddStreamSheet = true }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "plus")
+                            .font(.system(size: 8, weight: .bold))
+                        Text("ADD URL")
+                            .font(CarbonFont.mono(8, weight: .bold))
+                            .tracking(1)
+                    }
+                    .foregroundStyle(theme.cyan)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(ChromeChassis(theme: theme, cornerRadius: 5))
                 }
-                .foregroundStyle(theme.cyan)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(ChromeChassis(theme: theme, cornerRadius: 5))
+                .buttonStyle(.carbonHover)
+                .carbonTip("Add a YouTube stream source")
             }
-            .buttonStyle(.carbonHover)
-            .carbonTip("Add a YouTube stream source")
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
@@ -206,6 +211,14 @@ private struct RadioRow: View {
                         .font(CarbonFont.mono(9))
                         .foregroundStyle(selected ? theme.selectionInk.opacity(0.8) : theme.ink3)
                         .lineLimit(1)
+                    if stream.isDownloaded() {
+                        Text("OFFLINE")
+                            .font(CarbonFont.mono(7, weight: .bold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 3)
+                            .padding(.vertical, 1)
+                            .background(RoundedRectangle(cornerRadius: 2).fill(.black.opacity(0.6)))
+                    }
                 }
             }
             Spacer(minLength: 6)
@@ -269,11 +282,18 @@ private struct RadioRow: View {
     }
 
     private var subtext: String {
-        if stream.isLive { return "● \(stream.viewers ?? "0") watching" }
-        if let count = stream.chapters?.count, count > 0 {
-            return "\(count) tracks"
-        }
-        return stream.kind.rawValue.capitalized
+        let base: String
+        if stream.isLive { base = "● \(stream.viewers ?? "0") watching" }
+        else if let count = stream.chapters?.count, count > 0 { base = "\(count) tracks" }
+        else { base = stream.kind.rawValue.capitalized }
+        guard let offlineSize else { return base }
+        return "\(base) · \(offlineSize)"
+    }
+
+    private var offlineSize: String? {
+        guard stream.isDownloaded(), let path = stream.downloadedPath,
+              let bytes = (try? FileManager.default.attributesOfItem(atPath: path))?[.size] as? Int64 else { return nil }
+        return ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
     }
 
     private var badgeColor: Color {
