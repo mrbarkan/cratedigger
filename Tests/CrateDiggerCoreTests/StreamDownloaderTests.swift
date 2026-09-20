@@ -31,7 +31,8 @@ final class StreamDownloaderTests: XCTestCase {
     }
 
     func testArguments() throws {
-        let s = stream(title: "100% live")
+        // Both path components carry a literal %, so both must survive escaped.
+        let s = stream(title: "100% live", channel: "100% Channel")
         let plan = try StreamDownloader.plan(for: s, in: root)
         let args = StreamDownloader.arguments(for: s, plan: plan, ffmpegURL: URL(fileURLWithPath: "/opt/ffmpeg"))
         XCTAssertEqual(Array(args.suffix(2)), ["--", "https://youtu.be/abc"])   // "--" so a URL is never a flag
@@ -40,9 +41,9 @@ final class StreamDownloaderTests: XCTestCase {
         XCTAssertEqual(args[args.firstIndex(of: "-f")! + 1], "bestaudio[ext=m4a]/bestaudio")
         XCTAssertEqual(args[args.firstIndex(of: "--audio-format")! + 1], "m4a")
         XCTAssertEqual(args[args.firstIndex(of: "--ffmpeg-location")! + 1], "/opt/ffmpeg")
-        // A literal % in the title must not be read as an output-template field.
+        // A literal % in the channel folder AND the title must not be read as an output-template field.
         let template = args[args.firstIndex(of: "-o")! + 1]
-        XCTAssertTrue(template.hasSuffix("/100%% live.%(ext)s"), template)
+        XCTAssertTrue(template.contains("/100%% Channel/100%% live/100%% live.%(ext)s"), template)
     }
 
     func testArgumentsWithoutFfmpegOmitTheLocation() throws {

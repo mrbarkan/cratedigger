@@ -16,7 +16,7 @@ public enum StreamDownloadError: Error, Equatable {
 
 /// Saves a stream's audio for offline listening by running yt-dlp. The plan,
 /// the argument vector and the progress parsing are pure; only `download` spawns.
-public struct StreamDownloader: @unchecked Sendable {
+public struct StreamDownloader: Sendable {
     private let ytdlpURL: URL
     private let runner: StreamingCommandRunning
 
