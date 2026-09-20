@@ -94,6 +94,11 @@ final class StreamingCommandRunnerTests: XCTestCase {
         XCTAssertTrue(processExists(commandContaining: "sleep 9"),
                       "the orphan should have survived terminate() -- if it didn't, this test proves nothing")
         killAll(commandContaining: "sleep 9")
+        // Under job control the foreground `sleep 30` gets its own process
+        // group too (the same reason `sleep 9` survives), so terminate()'s
+        // group signal misses it as well. Left uncleaned it was an orphaned
+        // ~30s sleep after every test run.
+        killAll(commandContaining: "sleep 30")
     }
 
     private func processExists(commandContaining needle: String) -> Bool {

@@ -1172,6 +1172,10 @@ final class LibraryViewModel: ObservableObject {
     let streamStore = StreamStore()
     /// The running yt-dlp download, if any. One at a time.
     var streamDownloadHandle: StreamingCommandHandle?
+    /// Set by `cancelStreamDownload()` right before `terminate()`, so the
+    /// completion handler can tell "we killed it" from "yt-dlp exited with
+    /// status 15 on its own" without hardcoding SIGTERM's number.
+    var streamDownloadCancelled = false
     @Published var downloadingStreamID: String?
     /// What to do with a downloaded file when its scan reaches `handleImport`,
     /// keyed by standardized file path. See `LibraryViewModel+StreamDownload`.
@@ -2971,11 +2975,6 @@ final class LibraryViewModel: ObservableObject {
         selectStream(id: list[next].id)
     }
 
-    func setVolume(_ value: Double) {
-        let clamped = min(max(value, 0), 1)
-        playbackVolume = clamped
-    }
-
     /// A Volume Up / Down step; stops on the 0 dB mark instead of walking over it.
     func stepVolume(by delta: Double) {
         playbackVolume = VolumeCurve.stepped(from: playbackVolume, by: delta)
@@ -4565,6 +4564,20 @@ final class LibraryViewModel: ObservableObject {
                     }
                     
                     await MainActor.run {
+                        // The organizer just moved/copied these onto new paths.
+                        // Anything keyed by path (listening history, a
+                        // Downloads link) has to follow, the same as every
+                        // other mover that changes a track's file path,
+                        // otherwise a Downloads commit with copy-on-import on
+                        // (the default) silently loses play history and
+                        // orphans the stream's downloadedPath. Paired by
+                        // track id, which withFileURL preserves, rather than
+                        // by array position: organize() never reorders or
+                        // drops entries (its own doc comment guarantees one
+                        // output per input), but id matching is what
+                        // updateTrackURLsInIndex does and does not depend on
+                        // that guarantee holding forever.
+                        self.repointDownloadRelatedState(from: tracks, to: updatedTracks)
                         if self.appendTracksToCrateFile(updatedTracks, crateName: crateName), fromPrepCrate {
                             self.removeCommittedFromPrepCrate(tracks)
                         }
@@ -4586,6 +4599,32 @@ final class LibraryViewModel: ObservableObject {
             }
             revealAfterCommit(tracks, crateName: crateName, fromPrepCrate: fromPrepCrate)
             finishImportStatus(count: tracks.count, crateName: crateName)
+        }
+    }
+
+    /// Carry listening history and a Downloads link across a copy-on-import
+    /// move. `old` and `updated` are paired by track id (stable across
+    /// `withFileURL`, the same key `updateTrackURLsInIndex` matches on)
+    /// rather than by array position, so a future change to the organizer
+    /// that reorders or drops entries cannot cross-wire one track's history
+    /// onto another's new path.
+    private func repointDownloadRelatedState(from old: [LoadedTrack], to updated: [LoadedTrack]) {
+        let byID = Dictionary(old.map { ($0.track.id, $0) }, uniquingKeysWith: { a, _ in a })
+        var movedKeys: [String: String] = [:]
+        for new in updated {
+            guard let original = byID[new.track.id] else { continue }
+            let oldKey = TrackStore.key(for: original.track.fileURL)
+            let newKey = TrackStore.key(for: new.track.fileURL)
+            if oldKey != newKey { movedKeys[oldKey] = newKey }
+        }
+        guard !movedKeys.isEmpty else { return }
+        currentListeningStore().repoint(pairs: movedKeys)
+        persistListeningStore()
+        // Skip the loop entirely when nothing downloaded is in play: each
+        // iteration decodes the whole stream list before it can find out it
+        // has no download to repoint.
+        if streams.contains(where: { $0.downloadedPath != nil }) {
+            for (old, new) in movedKeys { streams = streamStore.repointDownload(from: old, to: new) }
         }
     }
 

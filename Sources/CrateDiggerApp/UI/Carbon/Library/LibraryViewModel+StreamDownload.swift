@@ -29,6 +29,7 @@ extension LibraryViewModel {
         guard !refuseWhileLibraryDisconnected() else { return }
         guard let stream = streams.first(where: { $0.id == id }), canDownload(stream) else { return }
         guard !isDownloadingStream else { return showOLEDNotice("ONE DOWNLOAD AT A TIME") }
+        guard !isConversionRunning else { return showOLEDNotice("BUSY") }
         guard let root = currentConversionDestinationURL ?? managedLibraryFolderURL else {
             appAlert = .error(title: "No Destination Set",
                               message: "Configure a default output folder in Preferences first.")
@@ -56,6 +57,7 @@ extension LibraryViewModel {
         if stream.chapters == nil { fetchMetadata(for: id) }
 
         downloadingStreamID = id
+        streamDownloadCancelled = false
         oledView = .cdRip
         conversionProgress = ConversionProgressSnapshot(jobsCompleted: 0, jobsTotal: 100,
                                                         currentFilename: stream.title, isRunning: true)
@@ -66,8 +68,13 @@ extension LibraryViewModel {
                 onProgress: { [weak self] fraction in
                     Task { @MainActor in
                         guard let self, self.downloadingStreamID == id else { return }
+                        let percent = Int(fraction * 100)
+                        // yt-dlp's --newline progress can fire many times a
+                        // second; skip the write (and the SwiftUI diff it
+                        // triggers) when the integer percent hasn't moved.
+                        guard percent != self.conversionProgress.jobsCompleted else { return }
                         self.conversionProgress = ConversionProgressSnapshot(
-                            jobsCompleted: Int(fraction * 100), jobsTotal: 100,
+                            jobsCompleted: percent, jobsTotal: 100,
                             currentFilename: stream.title, isRunning: true)
                     }
                 },
@@ -82,6 +89,7 @@ extension LibraryViewModel {
 
     /// Stops yt-dlp for real (unlike conversion) and clears its partial file.
     func cancelStreamDownload() {
+        streamDownloadCancelled = true
         streamDownloadHandle?.terminate()
     }
 
@@ -101,7 +109,7 @@ extension LibraryViewModel {
                     try? FileManager.default.removeItem(at: plan.folder)
                 }
             }
-            if case .commandFailed(let status, let detail) = error, status != 15 {   // 15 = our own terminate
+            if case .commandFailed(let status, let detail) = error, !streamDownloadCancelled {
                 // Same inline FIX panel a failed stream gets, not a throwaway alert.
                 streamFailure = StreamFailureAdvisor.diagnose(detail: detail, ytdlpInstalled: true)
                 AppLog.library.error("Stream download failed (\(status)): \(detail)")
@@ -280,8 +288,12 @@ extension LibraryViewModel {
 
         // This was the only way this call can empty the filtered list: a
         // sidebar row that just vanished would otherwise strand the browser
-        // on a filter it can no longer reach or add anything from.
-        if radioCategoryFilter != nil, filteredStreams.isEmpty { radioCategoryFilter = nil }
+        // on a filter it can no longer reach or add anything from. Route
+        // through enterRadio rather than clearing radioCategoryFilter alone,
+        // or currentSource keeps naming the now-empty category and the next
+        // selectSource(currentSource) (purgeTracksFromLibraryState above
+        // already ran one) re-applies it over an empty list.
+        if radioCategoryFilter != nil, filteredStreams.isEmpty { enterRadio(category: nil) }
 
         showOLEDNotice("DOWNLOAD REMOVED")
     }

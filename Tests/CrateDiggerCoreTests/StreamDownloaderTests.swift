@@ -79,6 +79,16 @@ final class StreamDownloaderTests: XCTestCase {
         XCTAssertFalse(StreamDownloader.isDownloadFolder(userOwnedAlbumFolder, for: s))
     }
 
+    func testIsDownloadFolderRejectsARightTitleUnderTheWrongChannel() {
+        // The leaf name alone used to be the whole check, so an ordinary album
+        // folder that happened to be named exactly like the sanitized title
+        // (just filed under a different artist/channel folder) would pass.
+        // The parent component must match the sanitized channel too.
+        let s = stream(title: "Deep House Mix", channel: "Some Channel")
+        let wrongChannelFolder = URL(fileURLWithPath: "/Music/Library/Some Other Channel/Deep House Mix")
+        XCTAssertFalse(StreamDownloader.isDownloadFolder(wrongChannelFolder, for: s))
+    }
+
     func testIsDownloadFolderUsesTheSameSanitizingAsPlan() {
         // A title with characters `plan` sanitizes (":" -> "-") must still
         // match the folder `plan` itself would have produced.

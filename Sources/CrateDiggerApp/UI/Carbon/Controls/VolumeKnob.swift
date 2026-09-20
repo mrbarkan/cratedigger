@@ -40,8 +40,10 @@ struct VolumeKnob: View {
             .onTapGesture(count: 2) {
                 // Only a double-click ON the mark resets to unity. Anywhere else
                 // two clicks are two clicks: this used to yank a fader set to
-                // full back to 0 dB.
-                guard abs(lastScrub - Self.unityFraction) < 0.04 else { return }
+                // full back to 0 dB. Same band as the magnetic snap above, per
+                // spec ("within the magnet band of the tick"), not a wider one:
+                // a click that doesn't snap shouldn't reset either.
+                guard abs(lastScrub - Self.unityFraction) < VolumeCurve.magnetWidth else { return }
                 ClickPlayer.shared.play(.tick)
                 value = Self.unityFraction
             }

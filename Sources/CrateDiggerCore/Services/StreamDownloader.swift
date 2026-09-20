@@ -63,12 +63,17 @@ public struct StreamDownloader: Sendable {
     /// Whether `folder` is still the one the download itself created, so it is
     /// safe to consider trashing as a unit. A retag, an auto-organize or a
     /// library move can repoint the track's `downloadedPath` into a folder the
-    /// app did not create and does not own; this is a positive identity check
-    /// rather than a guess from the folder's current contents, so an ordinary
-    /// album folder that happens to hold just a track and a cover.jpg is never
-    /// mistaken for a download's own disposable folder.
+    /// app did not create and does not own. This compares both the folder's
+    /// name and its parent's name against the sanitized title and channel, so
+    /// it takes a coincidence in both `<Channel>/<Title>` path components, not
+    /// just the leaf, to fool it. It is still a name comparison, not proof of
+    /// provenance: an album folder named to match both components exactly
+    /// would still pass.
     public static func isDownloadFolder(_ folder: URL, for stream: StreamSource) -> Bool {
-        folder.lastPathComponent == PathComponentSanitizer.sanitize(stream.title, fallback: stream.id)
+        let title = PathComponentSanitizer.sanitize(stream.title, fallback: stream.id)
+        let channel = PathComponentSanitizer.sanitize(stream.channel, fallback: "Unknown Channel")
+        return folder.lastPathComponent == title
+            && folder.deletingLastPathComponent().lastPathComponent == channel
     }
 
     /// Whether a folder listing is nothing but the download's own cover art
