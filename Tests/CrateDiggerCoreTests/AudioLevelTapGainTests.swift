@@ -30,9 +30,10 @@ import XCTest
 /// `assertDeltaMatchesGain` below for why that is still exactly the right
 /// thing to assert against, without hardcoding this machine's RMS numbers.
 ///
-/// See `.superpowers/sdd/2026-09-19-beta-3-volume-prep-crate-stream-download/task-3-report.md`
-/// for the full investigation and CLAUDE.md's "### Playback" section for the
-/// standing rule this guards.
+/// Measured via the tap's own RMS: the gain applied live, and the gain
+/// measured again after reattachment (a track change), were both within
+/// 0.03% of the expected +5 dB. See CLAUDE.md's "### Playback" section for
+/// the standing rule this test guards.
 final class AudioLevelTapGainTests: XCTestCase {
 
     func testMasterGainSurvivesReattachToANewItem() throws {
