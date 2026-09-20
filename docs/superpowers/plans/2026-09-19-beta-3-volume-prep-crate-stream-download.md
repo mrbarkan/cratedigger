@@ -756,6 +756,21 @@ Build and fix any non-exhaustive `switch` over `RadioCategory` the compiler repo
 
 ### Task 9: `StreamDownloader` and the streaming runner
 
+> **Correction (post-review, see commit `cef9c9a`): the `StreamingCommandRunner`
+> code block below is historical, not the shipped implementation.** It reached
+> review with three concurrency defects: a throwing `run()` left the
+> readability handler armed forever, spinning a thread until the app quit;
+> `emit` was called while holding a non-recursive lock, which deadlocked
+> against the progress-bar wiring; and the drain could outlive a cancel,
+> making Cancel look hung. Writing the tests this task calls for then exposed
+> two more: the tail flush was unreachable, so the last line of yt-dlp output
+> was silently dropped on every run, and every successful download leaked a
+> file descriptor. All five are fixed in the code that actually shipped.
+> **Treat `Sources/CrateDiggerCore/Services/StreamingCommandRunner.swift` as
+> the source of truth for this task, not the block below.** The block is left
+> as-is, a record of what was planned and had to be corrected, and must not be
+> copied from if this plan is ever re-run.
+
 **Files:**
 - Create: `Sources/CrateDiggerCore/Services/StreamingCommandRunner.swift`, `Sources/CrateDiggerCore/Services/StreamDownloader.swift`
 - Test: `Tests/CrateDiggerCoreTests/StreamDownloaderTests.swift`

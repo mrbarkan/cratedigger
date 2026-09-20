@@ -4,6 +4,48 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 2.2.0 beta 3 (unreleased)
+
+Not yet built or tagged; collected here as work lands, ahead of a build
+number. A volume readout, an empty Prep Crate that explains itself, and
+downloadable radio streams.
+
+### Added
+
+- **A volume readout.** Move the fader, or press a volume key, and the
+  display briefly shows where you landed, in decibels or percent. Choose
+  which under Settings, Playback.
+- **An empty Prep Crate explains itself.** Land on an empty Prep Crate and it
+  now tells you what the staging area is for and how to fill it, instead of
+  reading like a broken library.
+- **Download a stream for offline listening.** Save a YouTube mix or video to
+  your library and it plays with no network. Chapters become tracks, and a
+  Downloads list under Radio shows what you have saved.
+
+### Fixed
+
+- **The volume fader no longer snaps back from full.** A double click
+  anywhere on the fader used to reset it to 0 dB; now only a double click on
+  the 0 dB mark itself does.
+- **Volume Up and Down stop on 0 dB.** A step used to be able to jump
+  straight over the unity mark; a step that would now cross it lands on it
+  instead.
+- **The footer's transport is centred.** The play button used to sit closer
+  to VOLUME than to POSITION; it is now centred against a same-feature,
+  cap-to-cap measurement of both fader rails.
+- **An empty crate no longer says no library is loaded.** A named crate with
+  nothing in it, and an empty Prep Crate, each get their own explanation now
+  instead of the message meant for a library that was never opened.
+
+### Investigated
+
+- **The makeup gain above 0 dB.** A report that boost past unity was
+  inaudible turned out not to be a bug: measured against the audio tap's own
+  RMS, the gain applied live, and the gain measured again after a track
+  change, were both within 0.03% of the expected value. The boost range
+  itself is just short: the whole +5 dB sits in the top 7.7% of the fader's
+  travel.
+
 ## 2.2.0 (92), 2026-09-17
 
 Beta 2: a full-screen player and a shelf like a mixer. Beta 1 brought your

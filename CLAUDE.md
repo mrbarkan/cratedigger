@@ -9,7 +9,7 @@ CrateDigger is a native **macOS** music-library utility (AppKit + SwiftUI, Swift
 ## Commands
 
 ```bash
-swift build                      # build (debug). App binary: .build/arm64-apple-macosx/debug/CrateDiggerApp
+swift build                      # build (debug). App binary: .build/debug/CrateDiggerApp
 swift build -c release           # release build
 scripts/test.sh                  # run the XCTest suite (preferred — see note below)
 scripts/test.sh --filter OutputPathPlannerTests           # run one test class
@@ -17,8 +17,9 @@ scripts/test.sh --filter OutputPathPlannerTests/testFoo   # run one test method
 scripts/package-app.sh           # assemble dist/CrateDigger.app (bundles ffmpeg/ffprobe/fpcalc, ad-hoc signed)
 ```
 
+- **The debug binary lives at `.build/debug/CrateDiggerApp`.** `swift build` on this machine uses the Swift Build backend, which writes to `.build/out/Products/Debug/`; `.build/debug` is a symlink to that folder. The classic SwiftPM layout, `.build/arm64-apple-macosx/debug/CrateDiggerApp`, **does not exist here at all**: that path is gone, not just moved, so don't reintroduce it. (`.build/release` still resolves the old way, to `.build/arm64-apple-macosx/release`.)
 - **Run `scripts/test.sh`, not bare `swift test`.** It forces `--enable-xctest --disable-swift-testing`, points at a full Xcode install, and uses a repo-local module cache (`.build/tests`). XCTest needs a *full* Xcode developer dir (not just Command Line Tools); the script prints clear remediation if the license isn't accepted or `PlatformPath` lookup fails.
-- Tests live in `Tests/CrateDiggerCoreTests` (114 files, and most of the coverage — the core library is the testable layer) and `Tests/CrateDiggerAppTests` (18 files: theming, screen presets, `WindowFramePlanner`, `UpdateFeed`, yt-dlp retry). ~1,185 tests total. These counts drift; `scripts/test.sh` prints the real one.
+- Tests live in `Tests/CrateDiggerCoreTests` (130 files, and most of the coverage; the core library is the testable layer) and `Tests/CrateDiggerAppTests` (21 files: theming, screen presets, `WindowFramePlanner`, `UpdateFeed`, yt-dlp retry). 1,316 tests total (1,176 Core + 140 App). These counts drift; `scripts/test.sh` prints the real one.
 - **SwiftUI views and `LibraryViewModel` are still untested**, and that is where bugs concentrate: the 2.0 Phase 0 whole-branch review found all three of its cross-task defects in view-model glue, not in Core. Anything that is a *decidable value* — which track was playing, which files belong to a folder, whether leaving a track counts as a skip — belongs in Core with a test, even when the surrounding wiring stays untested.
 - To launch and verify a change in the running app, build then run the binary directly (the local permission allowlist already covers `swift build`, running the debug binary, and `pkill -f CrateDiggerApp`).
 - Release/distribution (Developer ID signing + notarization + DMG) and the full beta gate are documented in `README.md` and `docs/BETA_RELEASE_CHECKLIST.md`.
@@ -103,20 +104,21 @@ main.swift  →  AppDelegate  →  MainWindowController  →  CarbonHostingContr
 ```
 
 - **`AppDelegate`** builds the entire NSMenu programmatically and is the target for every menu action. Menu actions forward to `MainWindowController`, which forwards to `LibraryViewModel`. `validateMenuItem` gates enablement on view-model state. It also installs a global Space-key monitor (AppKit swallows plain Space otherwise) for play/pause.
-- **AppKit ↔ SwiftUI bridge:** the menu bar, window chrome, and all **sheets** are AppKit. Sheets are `NSViewController`s (e.g. `ConversionOptionsSheetController`, `AlbumFolderReviewSheetController`, `ExternalDeviceTransferSheetController`) presented via `presentAsSheet`, communicating results back through an `onDecision` closure. The main content is SwiftUI hosted in the window.
+- **AppKit ↔ SwiftUI bridge:** the menu bar, window chrome, and all **sheets** are AppKit. Sheets are `NSViewController`s (e.g. `ConversionOptionsSheetController`, `AlbumFolderReviewSheetController`) presented via `presentAsSheet`, communicating results back through an `onDecision` closure. The main content is SwiftUI hosted in the window.
 
 ### `LibraryViewModel` — the center of gravity
 
 `Sources/CrateDiggerApp/UI/Carbon/Library/LibraryViewModel.swift` (~4,900 lines) is a single `@MainActor ObservableObject` that owns **all** app state, **all** services, and **most** behavior. Almost every SwiftUI view binds to it via `@EnvironmentObject`. **When fixing app behavior, start here** — this is where the wiring lives.
 
-Behavior is split across **26 `LibraryViewModel+*.swift` extensions in three
+Behavior is split across **29 `LibraryViewModel+*.swift` extensions in three
 folders** (don't assume they are all beside the main file):
 
 - `UI/Carbon/Library/` — `+ArrowNav`, `+BatchArtwork`, `+CDDetect`, `+DeepScan`,
-  `+LibraryFiles`, `+Listening`, `+MetadataRepair`, `+MiniPlayer`,
-  `+MissingFiles`, `+MultiSelect`, `+NowPlaying`, `+Onboarding`, `+Queue`,
-  `+Radio`, `+RecordDivider`, `+Rename`, `+Resume`, `+SACDImport`, `+Search`,
-  `+Sleep`, `+Stats`, `+TrackActions`, `+Versions`
+  `+LibraryFiles`, `+LibraryLocation`, `+Listening`, `+MetadataRepair`,
+  `+MiniPlayer`, `+MissingFiles`, `+MultiSelect`, `+NowPlaying`, `+Onboarding`,
+  `+Queue`, `+Radio`, `+RecordDivider`, `+Rename`, `+Resume`, `+SACDImport`,
+  `+Search`, `+Sleep`, `+Stats`, `+StreamDownload`, `+TrackActions`,
+  `+Versions`, `+Widget`
 - `UI/Conversion/` — `+Conversion`
 - `UI/ExternalDevices/` — `+DeviceSync`, `+ExternalDeviceTransfer`
 
@@ -134,6 +136,7 @@ The browser is not hard-wired to Artist → Album → Track. A **`BrowserView`**
 - **A multi-selection resolves literally.** `BrowserCascade.selectedTracks` ignores the anchors on either side of the column that owns the set — otherwise the track anchor would shrink ⌘A to one song. Without a set, the anchors narrow all the way down, and a view ending on an album or a genre resolves to that leaf's tracks (`leafTracks`).
 - `visibleAlbums`, `visibleTracks`, `browsingTracks`, `selectedArtist/Album/Track` are the compat surface: each reads its column's content when the view has one and derives from the other anchors otherwise, which is how the inspector and the condensed browser keep working in a `Genre · Track` view.
 - Anything that selects from outside the columns (Go to Current Song, the gallery, a version row's menu) goes through `revealTrack` / `revealAlbum`, which set every column's anchor from the track. Do not write `selectedArtistID = …` for that: in a view with no Artist column it has nowhere to go and is a silent no-op.
+- **`BrowserEmptyKind`** (Core) decides which empty state the browser draws: an empty Prep Crate, an empty named crate, a disconnected library, and no library at all are different messages, not one generic "no library loaded." It carries its own small `Source` mirror of `LibrarySource` (`.localAll`/`.localCrate`/`.prepCrate`/`.other`) because Core cannot depend on the app target that defines the real enum.
 
 ### Search (`index` vs `browsedIndex`)
 
@@ -177,6 +180,16 @@ A second playback path that streams YouTube audio instead of local files. Entire
 - **`StreamURLParser`** normalizes a pasted URL into a `StreamSource`; **`StreamStore`** persists the list as a small JSON blob in `PreferencesStore` (app-global, *not* a per-folder `.cdcrate`).
 - **`StreamResolver`** invokes **yt-dlp** to turn a `StreamSource` into a `ResolvedStream` (HLS `.m3u8` for live, progressive m4a/AAC for VOD — formats AVPlayer can decode, unlike YouTube's default WebM/Opus). The argument vector is pure and unit-tested with a fake runner. **`StreamMetadataService`** fetches title/channel/thumbnail/viewers/`StreamChapter`s.
 - yt-dlp is resolved by `ExternalToolLocator` (`ToolKind.ytdlp`, binary name `yt-dlp`) with the same priority chain as ffmpeg/ffprobe. Missing yt-dlp degrades radio, not the rest of the app.
+
+**Downloads.** A stream's audio can be saved for offline listening.
+
+- **`StreamDownloader`** (Core) plans the destination (`<root>/<Channel>/<Title>/<Title>.m4a`, one folder per download so its `cover.jpg` belongs to it alone), builds the yt-dlp argument vector, and parses its progress lines. It runs through **`StreamingCommandRunning`**, a second command-runner protocol that exists beside the shared `CommandRunning` for one reason: `CommandRunning` reads a process to end of file, so it can neither report progress mid-run nor be stopped, and a download needs both. Consolidating the two would break cancel and the progress bar, not simplify anything.
+- **`StreamSource.downloadedPath`** plus `isDownloaded(fileExists:)` check **both** the stored path and that the file is actually there. The download becomes an ordinary library track the moment it lands: the user can rename it, move it, or delete it, so a path whose file is gone must read as "not downloaded" rather than dangle.
+- **`RadioCategory.downloaded`** is a filter over the other two categories, not a third home: `of(_:)` never returns it, only `contains(_:)` does. That is what lets one downloaded YT Records stream sit in both its own row and the Downloads row with no duplicated state.
+- **`pendingStreamImports`**, consumed in `handleImport`, carries a just-downloaded file's chapter markers and tag defaults across the scan that turns it into a `LoadedTrack` (the scanner itself can't know them). Entries are pruned after five minutes, so a scan that never lands (a corrupt remux, a transient I/O error) can't strand one forever.
+- **`StreamResolver.resolve(_:)`** returns the local file before it ever touches yt-dlp when a stream is downloaded, so offline playback needs neither network nor yt-dlp installed; `resolveActiveEngineKind()` also forces the native engine for a downloaded stream regardless of the WebView/native preference, since only the native engine can play a local file.
+- **The rule that matters most for future work:** anything that moves a track's path must call `streamStore.repointDownload(from:to:)` beside `ListeningStore.repoint`. The four movers are `updateTrackURLInIndex` (one track), `updateTrackURLsInIndex` (a batch, which `moveLibrary` and `consolidateLibrary` both funnel through), and `rewriteTrackPaths` (used by `moveAlbumFiles`). That fourth one was missed during this work precisely because it had no existing `repoint` call to grep for, so a new mover needs the same treatment even when nothing already there hints at it.
+- **`removeDownload`** trashes the offline copy rather than deleting it, and only trashes its containing folder when `StreamDownloader.isDownloadFolder` confirms the folder is still the one the download itself created. This matters because a repoint (retag, auto-organize, library move) can land the track in a folder the user owns; a single-track album plus the user's own `cover.jpg` would otherwise pass a contents-only "just art left" check and be trashed along with their artwork.
 
 ### Record Divider (vinyl-side rip splitting)
 
@@ -268,7 +281,8 @@ fail `require_static_tool` on a signed build, or ship and not run. See
 
 - **Gapless** is a one-item look-ahead. The engine's `AVQueuePlayer` holds the playing item plus at most one buffered behind it (`prepareNextItem(url:)`), and when the player hands over by itself the service only moves its bookkeeping — `adoptGaplessAdvance` deliberately never touches the engine, because touching it is the gap. `indexAfterCurrentEnds()` is the one answer to "what plays when this ends", read by both the look-ahead and `onItemEnded`, so the engine can never glide into a track the service does not think is playing. Only plain local files are buffered ahead: a stream keeps the reload path (radio resolves a fresh URL per play) and DSD keeps it (decoded to a temp file, or routed to the DoP engine). The engine reports `didAdvanceGaplessly` from what the player actually holds, one runloop turn after the end notification, because `currentItem` has not caught up before that. Off-switch: Advanced ▸ Gapless playback (`PreferencesStore.gaplessPlaybackEnabled`, on by default, applied live via `"CrateDiggerGaplessChanged"`).
 - A gapless advance never re-enters `.playing`, so anything keyed on that transition has to be keyed on the index change too — that is why Last.fm "now playing" goes through `sendNowPlayingIfNeeded()` from both, de-duplicated by track and cleared on pause. The scrobble itself is still driven off the time-change callback (`checkScrobbleProgress`), which is unaffected.
-- **The fader's makeup gain (`AudioLevelTap.setMasterGain`, for the >0 dB boost — see `VolumeCurve`) already survives every track change and gapless handover, and does not need a fix.** `AVPlayerEngine` holds one `AudioLevelTap` (and its one `AudioTapLevelStore`) for its whole lifetime; `attachLevelMetering` builds a fresh `MTAudioProcessingTap` per item but always retains that same store, so a gain set once keeps applying to whatever plays next without the fader moving again. Investigated 2026-09-19 after a report that boost above 0 dB was inaudible: measured via the tap's own RMS (never by ear), the gain applied live and after reattachment within 0.03% of the expected +5 dB. The real explanation is that the whole boost ceiling sits in the top 7.7% of fader travel, which reads as subtle rather than broken — see `.superpowers/sdd/2026-09-19-beta-3-volume-prep-crate-stream-download/task-3-report.md`. `AudioLevelTapGainTests` (Core) guards the carryover invariant with a real `AVPlayer`/`MTAudioProcessingTap`; it needs a working audio render pipeline like the pre-existing `AVPlayerEngineGaplessTests` does, so it polls with a bounded timeout and skips rather than hangs or fails outright if nothing ever plays.
+- **The fader's makeup gain (`AudioLevelTap.setMasterGain`, for the >0 dB boost, see `VolumeCurve`) already survives every track change and gapless handover, and does not need a fix.** `AVPlayerEngine` holds one `AudioLevelTap` (and its one `AudioTapLevelStore`) for its whole lifetime; `attachLevelMetering` builds a fresh `MTAudioProcessingTap` per item but always retains that same store, so a gain set once keeps applying to whatever plays next without the fader moving again. Investigated 2026-09-19 after a report that boost above 0 dB was inaudible: measured via the tap's own RMS (never by ear), the gain applied live was within 0.03% of the expected +5 dB, and the gain measured again after reattachment (a track change) was also within 0.03% of it. Whether that ceiling reading as subtle rather than broken is the right product outcome, versus wanting a taller boost range, was left as an open call for later, not settled by this investigation. `AudioLevelTapGainTests` (Core) guards the carryover invariant with a real `AVPlayer`/`MTAudioProcessingTap`; it needs a working audio render pipeline like the pre-existing `AVPlayerEngineGaplessTests` does, so it polls with a bounded timeout and skips rather than hangs or fails outright if nothing ever plays.
+- **`VolumeCurve.readout(forPosition:unit:boostAvailable:)`** (Core) renders the OLED's transient volume readout, in dB (`label(forPosition:)`) or percent (`percent(forPosition:)`, 100 at the 0 dB detent, 108 at the top of travel) per Settings ▸ Playback. `stepped(from:by:)` is what Volume Up/Down use: a step that would walk straight over the 0 dB detent stops on it instead. All three read `playbackVolume`'s `didSet` on `LibraryViewModel`, the one choke point every volume route (fader drag, menu command, keyboard shortcut, launch restore) passes through, which is also where the readout is fired and `applyVolumeToEngines()` pushes the position to the player, the audio tap and the radio engine.
 
 ### Artwork
 

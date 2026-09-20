@@ -28,6 +28,11 @@ public extension RecordMarker {
     /// exports track by track. A chapter closes on the next one's start (yt-dlp's
     /// own end times can overlap), the last on the file's real duration, else on
     /// its own end. Fewer than two usable chapters means an ordinary, undivided track.
+    /// When a chapter under a second gets dropped, the marker before it still closes
+    /// at that dropped chapter's own start rather than reaching past it to whichever
+    /// chapter survives next, so the sliver plays as audible-but-skipped audio
+    /// instead of being silently absorbed into its neighbor. Deliberate: a
+    /// sub-second chapter is almost always a yt-dlp artifact, not a real cue.
     static func markers(from chapters: [StreamChapter], duration: Double?) -> [RecordMarker] {
         let sorted = chapters.sorted { $0.startSeconds < $1.startSeconds }
         var markers: [RecordMarker] = []

@@ -170,6 +170,33 @@ struct WhatsNewItem: Identifiable {
             """
         ),
         WhatsNewItem(
+            symbol: "speaker.wave.2",
+            title: "A volume readout",
+            body: """
+            Move the fader, or press a volume key, and the display briefly \
+            shows where you landed, in decibels or percent. Choose which \
+            under Settings > Playback.
+            """
+        ),
+        WhatsNewItem(
+            symbol: "tray.and.arrow.down",
+            title: "An empty Prep Crate explains itself",
+            body: """
+            Land on an empty Prep Crate and it now tells you what the \
+            staging area is for and how to fill it, instead of reading like \
+            a broken library.
+            """
+        ),
+        WhatsNewItem(
+            symbol: "arrow.down.circle",
+            title: "Download a stream for offline listening",
+            body: """
+            Save a YouTube mix or video to your library and it plays with \
+            no network. Chapters become tracks, and a Downloads list under \
+            Radio shows what you have saved.
+            """
+        ),
+        WhatsNewItem(
             symbol: "paintpalette",
             title: "Everything about theming, in one place",
             body: """

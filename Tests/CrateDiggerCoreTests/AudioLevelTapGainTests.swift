@@ -27,7 +27,7 @@ import XCTest
 ///
 /// Reads `engine.currentLevels`, which folds a constant `player.volume` into
 /// a nonlinear meter-position value via `PlaybackMeterScale` — see
-/// `impliedDeltaPosition` below for why that is still exactly the right
+/// `assertDeltaMatchesGain` below for why that is still exactly the right
 /// thing to assert against, without hardcoding this machine's RMS numbers.
 ///
 /// See `.superpowers/sdd/2026-09-19-beta-3-volume-prep-crate-stream-download/task-3-report.md`
