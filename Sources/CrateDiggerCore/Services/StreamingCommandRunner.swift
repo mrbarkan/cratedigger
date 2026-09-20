@@ -19,8 +19,13 @@ public struct ProcessStreamingCommandRunner: StreamingCommandRunning {
     public init() {}
 
     /// Safe from any thread: `Process.terminate()`/`.isRunning` are documented
-    /// thread-safe, and `claim()` is the one piece of mutable state, guarded by
-    /// its own lock.
+    /// thread-safe. The shared `pipe`'s `FileHandle` is touched from both
+    /// `terminate()` and the termination handler (`readabilityHandler = nil`
+    /// and `close()` appear on both paths), which is safe because Foundation
+    /// defers the actual `close(2)` until the readability source's
+    /// cancellation has completed, so an in-flight read can never observe a
+    /// closed fd, and a second `close()` on an already-closed handle returns
+    /// normally rather than throwing or raising.
     private final class Handle: StreamingCommandHandle, @unchecked Sendable {
         let process: Process
         private let pipe: Pipe
@@ -138,9 +143,10 @@ public struct ProcessStreamingCommandRunner: StreamingCommandRunning {
             if handle.claim() {
                 // Nobody closed the pipe ahead of us (the ordinary, non-cancelled
                 // path): pick up any bytes the readability handler hasn't gotten to
-                // yet (a single bounded read; yt-dlp already waited for any
-                // postprocessing child before exiting, so this cannot block on an
-                // orphan), then flush whatever's left as a final unterminated line.
+                // yet (a single bounded read; unreachable in our one caller because
+                // yt-dlp already waits for its own postprocessing child before
+                // exiting, not a guarantee this code itself makes), then flush
+                // whatever's left as a final unterminated line.
                 let rest = pipe.fileHandleForReading.availableData
                 if !rest.isEmpty { buffer.feed(rest, emit: onLine) }
                 buffer.flushRemainder(emit: onLine)
