@@ -14,6 +14,9 @@ Betas are offered only to people who turned on Receive beta updates.
 
 ### Added
 
+- **A large Now Playing widget.** The cover as big as the widget allows,
+  with the track, artist, album and progress beneath it. With nothing
+  playing it shows the library slideshow or the last album the same way.
 - **A volume readout.** Move the fader, or press a volume key, and the
   display briefly shows where you landed, in decibels or percent. Choose
   which under Settings, Playback.
@@ -70,6 +73,10 @@ Betas are offered only to people who turned on Receive beta updates.
 
 ### Fixed
 
+- **The Now Playing widget keeps working after an update.** After an update
+  the widget could freeze on one picture, its slideshow stopped for good,
+  because the previous version's widget was still running. The
+  app now retires it the first time the new version opens.
 - **A finished download no longer leaves the display reading NO LIBRARY.**
   Finishing a download switched the display to SCAN, which reports on
   whatever you are browsing; sitting in Radio at the time, it read out the

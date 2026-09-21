@@ -81,6 +81,8 @@ struct NowPlayingWidgetView: View {
         if entry.feed.state == .idle {
             if let picture = entry.picture, family == .systemSmall {
                 IdlePictureView(picture: picture, caption: entry.feed.idleMode == .lastAlbumCover ? "Nothing playing" : nil)
+            } else if let picture = entry.picture, family == .systemLarge {
+                IdleLargeView(mode: entry.feed.idleMode, picture: picture, cover: entry.cover)
             } else if let picture = entry.picture {
                 IdleMediumView(mode: entry.feed.idleMode, picture: picture, cover: entry.cover)
             } else {
@@ -88,6 +90,8 @@ struct NowPlayingWidgetView: View {
             }
         } else if family == .systemSmall {
             SmallView(feed: entry.feed, picture: entry.picture)
+        } else if family == .systemLarge {
+            LargeView(feed: entry.feed, picture: entry.picture)
         } else {
             MediumView(feed: entry.feed, picture: entry.picture)
         }
@@ -160,32 +164,47 @@ private struct IdleMediumView: View {
         HStack(spacing: 12) {
             PictureTile(image: picture)
             VStack(alignment: .leading, spacing: 2) {
-                Text(mode == .lastAlbumCover ? "LAST PLAYED" : "FROM YOUR CRATES")
-                    .font(.caption2.weight(.semibold))
-                    .tracking(1.2)
-                    .foregroundStyle(.secondary)
-                    .padding(.bottom, 2)
-                if let cover {
-                    Text(cover.album)
-                        .font(.headline)
-                        .lineLimit(2)
-                        .accentable()
-                    Text(cover.year.map { "\(cover.artist) · \(String($0))" } ?? cover.artist)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                    Spacer(minLength: 0)
-                    footer(cover)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                } else {
-                    Spacer(minLength: 0)
-                }
+                IdleCaption(mode: mode, cover: cover, titleLines: 2, pushesFooterDown: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .modifier(WidgetBackdrop(.plain))
+    }
+}
+
+/// What an idle cover is and why it is on screen, shared by the wide and the
+/// large widget.
+private struct IdleCaption: View {
+    let mode: NowPlayingFeed.IdleMode
+    let cover: NowPlayingFeed.Cover?
+    let titleLines: Int
+    /// The wide widget pins the footer to its bottom edge; the large one sets
+    /// it straight under the artist.
+    var pushesFooterDown = false
+
+    var body: some View {
+        Text(mode == .lastAlbumCover ? "LAST PLAYED" : "FROM YOUR CRATES")
+            .font(.caption2.weight(.semibold))
+            .tracking(1.2)
+            .foregroundStyle(.secondary)
+            .padding(.bottom, 2)
+        if let cover {
+            Text(cover.album)
+                .font(.headline)
+                .lineLimit(titleLines)
+                .accentable()
+            Text(cover.year.map { "\(cover.artist) · \(String($0))" } ?? cover.artist)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            if pushesFooterDown { Spacer(minLength: 0) }
+            footer(cover)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        } else if pushesFooterDown {
+            Spacer(minLength: 0)
+        }
     }
 
     /// Where a library cover lives, or how long ago the last album played. The
@@ -197,6 +216,51 @@ private struct IdleMediumView: View {
         } else if let crate = cover.crate {
             Text("in \(crate)")
         }
+    }
+}
+
+/// The large widget: the picture as big as the widget allows, and beneath it
+/// the mini player's lines and progress.
+private struct LargeView: View {
+    let feed: NowPlayingFeed
+    let picture: NSImage?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            PictureTile(image: picture)
+                .frame(maxWidth: .infinity)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(feed.title)
+                    .font(.headline)
+                    .lineLimit(1)
+                    .accentable()
+                Text(feed.album.isEmpty ? feed.artist : "\(feed.artist) · \(feed.album)")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            ProgressLine(feed: feed)
+        }
+        .modifier(WidgetBackdrop(.plain))
+    }
+}
+
+/// The large widget with nothing playing: the cover, and beneath it the same
+/// words the wide widget puts beside it.
+private struct IdleLargeView: View {
+    let mode: NowPlayingFeed.IdleMode
+    let picture: NSImage
+    let cover: NowPlayingFeed.Cover?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            PictureTile(image: picture)
+                .frame(maxWidth: .infinity)
+            VStack(alignment: .leading, spacing: 2) {
+                IdleCaption(mode: mode, cover: cover, titleLines: 1)
+            }
+        }
+        .modifier(WidgetBackdrop(.plain))
     }
 }
 
@@ -385,7 +449,7 @@ struct NowPlayingWidget: Widget {
         }
         .configurationDisplayName("Now Playing")
         .description("What CrateDigger is playing, with its cover and booklet.")
-        .supportedFamilies([.systemSmall, .systemMedium])
+        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
     }
 }
 

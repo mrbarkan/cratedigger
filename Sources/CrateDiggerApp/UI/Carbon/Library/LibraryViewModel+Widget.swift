@@ -34,8 +34,8 @@ struct WidgetFeedState {
 @MainActor
 extension LibraryViewModel {
     private static let widgetIdlePoolSize = 30
-    /// Twice the largest spot a picture fills (the small widget, 164 pt), with
-    /// room to spare for a booklet page's text.
+    /// Twice the largest spot a picture fills (the large widget's tile, about
+    /// 260 pt), with room to spare for a booklet page's text.
     private static let widgetPictureMaxPixel = 600
 
     /// Where the widget reads from, or nil when this build carries no widget
@@ -53,6 +53,7 @@ extension LibraryViewModel {
     /// carry the last album over from the feed on disk, and follow Settings.
     func startWidgetFeed() {
         guard let store = Self.widgetFeedStore else { return }
+        endStaleWidgetExtensionIfUpdated()
         widgetFeedState.lastCover = store.read().lastCover
         widgetFeedState.idlePool = pickIdleCovers()
         NotificationCenter.default.addObserver(
@@ -61,6 +62,36 @@ extension LibraryViewModel {
             Task { @MainActor in self?.publishWidgetFeed() }
         }
         publishWidgetFeed()
+    }
+
+    /// An update replaces the app, but the widget extension the old build
+    /// launched keeps running, and chronod rejects everything it renders
+    /// ("Bundle version did not match") until it exits: every reload fails,
+    /// chronod retries hourly and fails again, and the widget sits frozen on
+    /// its last frame. Seen 2026-09-21, frozen for five days after build 93
+    /// landed by Sparkle. Ending the old process is enough; chronod launches
+    /// the new extension on the next reload.
+    /// Once per build, so an ordinary launch never touches a healthy extension.
+    private func endStaleWidgetExtensionIfUpdated() {
+        guard prefs.widgetExtensionBuild != AppVersion.build,
+              let executable = Bundle.main.builtInPlugInsURL?
+                .appendingPathComponent("CrateDiggerWidget.appex/Contents/MacOS/CrateDiggerWidget")
+        else { return }
+        prefs.widgetExtensionBuild = AppVersion.build
+        let pkill = Process()
+        pkill.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
+        // -x on the full command would miss the launch arguments chronod adds;
+        // the executable path is specific enough, and names this copy only.
+        pkill.arguments = ["-f", executable.path]
+        do {
+            try pkill.run()
+            pkill.waitUntilExit()
+        } catch {
+            AppLog.ui.error("Could not end the old widget extension: \(error.localizedDescription, privacy: .public)")
+        }
+        // The feed about to be written may be byte-identical to the one on
+        // disk, and an unchanged feed asks for no reload; ask here instead.
+        WidgetCenter.shared.reloadTimelines(ofKind: NowPlayingFeed.widgetKind)
     }
 
     /// Random albums with art from All Records, each captioned with its album,

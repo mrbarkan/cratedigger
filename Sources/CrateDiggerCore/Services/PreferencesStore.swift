@@ -86,6 +86,7 @@ public final class PreferencesStore {
         static let albumGroups = "cratedigger.library.albumGroups"
         static let selectedThemeID = "cratedigger.ui.selectedThemeID"
         static let hasAcknowledgedStreamDownloadNotice = "cratedigger.radio.downloadNoticeAcknowledged"
+        static let widgetExtensionBuild = "cratedigger.widget.extensionBuild"
     }
 
     // MARK: - Window frame
@@ -500,6 +501,13 @@ public final class PreferencesStore {
     public var hasAcknowledgedStreamDownloadNotice: Bool {
         get { defaults.bool(forKey: Key.hasAcknowledgedStreamDownloadNotice) }
         set { defaults.set(newValue, forKey: Key.hasAcknowledgedStreamDownloadNotice) }
+    }
+
+    /// The app build that last made sure the Now Playing widget's extension is
+    /// its own, so an update ends the old build's extension exactly once.
+    public var widgetExtensionBuild: String? {
+        get { defaults.string(forKey: Key.widgetExtensionBuild) }
+        set { defaults.set(newValue, forKey: Key.widgetExtensionBuild) }
     }
 
     /// The app version whose release notes have already been shown, so they
