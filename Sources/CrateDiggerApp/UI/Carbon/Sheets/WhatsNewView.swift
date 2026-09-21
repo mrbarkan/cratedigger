@@ -191,9 +191,19 @@ struct WhatsNewItem: Identifiable {
             symbol: "arrow.down.circle",
             title: "Download a stream for offline listening",
             body: """
-            Save a YouTube mix or video to your library and it plays with \
-            no network. Chapters become tracks, and a Downloads list under \
-            Radio shows what you have saved.
+            Save a YouTube mix or video and it plays with no network, from \
+            a Downloads list under Radio. Add one to a crate from its menu \
+            to convert it, split its chapters into tracks, or send it to a \
+            device.
+            """
+        ),
+        WhatsNewItem(
+            symbol: "rectangle.inset.filled",
+            title: "A large Now Playing widget",
+            body: """
+            The cover as big as the widget allows, with the track and its \
+            progress beneath. The widget also keeps working after an update \
+            now, instead of freezing on one picture.
             """
         ),
         WhatsNewItem(
