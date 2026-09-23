@@ -3,6 +3,52 @@
     <channel>
         <title>CrateDigger</title>
         <item>
+            <title>2.2.1</title>
+            <pubDate>Wed, 23 Sep 2026 13:52:04 -0300</pubDate>
+            <link>https://cratedigger.mrbarkan.com/</link>
+            <sparkle:fullReleaseNotesLink>https://github.com/mrbarkan/cratedigger/releases</sparkle:fullReleaseNotesLink>
+            <sparkle:version>96</sparkle:version>
+            <sparkle:shortVersionString>2.2.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description sparkle:format="markdown"><![CDATA[
+Safer crates and cleanup: nothing you curated disappears without asking.
+
+### Fixed
+
+- **A new crate or playlist can no longer wipe an existing one.** Creating
+  one with a name already in use saved an empty list over it. The name is
+  now checked as you type, the sheet says why Create is unavailable, and
+  Return creates.
+- **Deleting a crate or a playlist asks first, and can be undone.** The list
+  goes to the Trash, where you can put it back; your music files were never
+  touched and still aren't. Deleting a playlist you aren't looking at no
+  longer sends you back to All Records.
+- **Library Cleanup's REMOVE ALL never deletes a file.** If a missing track
+  came back before you pressed it (a drive plugged in, a folder renamed
+  back), the file itself could be erased permanently. It now only forgets
+  tracks that are still missing, asks first, and says their play counts and
+  ratings go with them.
+- **Removing a downloaded stream tells the truth.** If its download was never
+  added to a crate, the offline copy goes to the Trash along with it instead
+  of being left behind where nothing could find it. Removing the stream you
+  had selected no longer starts the next one playing.
+- **What's New doesn't come back for a fix release.** Updating from 2.2.0 to
+  2.2.1 no longer shows the same list again.
+
+### Changed
+
+- **The Patch Bay's OPTIONS face lost four switches that did nothing.** Keep
+  tags, Replay-Gain, Overwrite and Eject after were never read by a
+  conversion. They return when they work.
+
+]]></description>
+            <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.1/CrateDigger-2.2.1.dmg" length="72037381" type="application/octet-stream" sparkle:edSignature="YUOl84OhEtvHCQSr8DCu+JsekRqVPUScHKzb7+9MdPEbe/wIiIkVWUPVyaMRZV4ZjMGGR5eik6vC+W9RKD64Dg=="/>
+            <sparkle:deltas>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.1/CrateDigger96-95.delta" sparkle:deltaFrom="95" length="855194" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="CG+lM5o5on0S2/00ICgPVxMmrYlUMokT0OIQyG//KhMVqTx7+uufU4TB4jjZkSkcIJr8XwDrMXx3rGMOK16WBQ=="/>
+            </sparkle:deltas>
+        </item>
+        <item>
             <title>2.2.0</title>
             <pubDate>Wed, 16 Sep 2026 14:35:40 -0300</pubDate>
             <link>https://cratedigger.mrbarkan.com/</link>
@@ -257,105 +303,6 @@ Receive beta updates.
 
 ]]></description>
             <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.0-rc.94/CrateDigger-2.2.0.dmg" length="72085715" type="application/octet-stream" sparkle:edSignature="jcu2vpL/fkolaRSNR1KAWHhfb5rsPGeXdRjZzc6KTH6PPJw8lbiiz3W87Xt7umPCcFm/SZb3hBLuTHEfJPVDBQ=="/>
-        </item>
-        <item>
-            <title>2.2.0</title>
-            <pubDate>Wed, 16 Sep 2026 14:35:40 -0300</pubDate>
-            <link>https://cratedigger.mrbarkan.com/</link>
-            <sparkle:fullReleaseNotesLink>https://github.com/mrbarkan/cratedigger/releases</sparkle:fullReleaseNotesLink>
-            <sparkle:version>93</sparkle:version>
-            <sparkle:shortVersionString>2.2.0</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
-            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[
-Beta 3: a volume readout, an empty Prep Crate that explains itself, and
-downloadable radio streams. Beta 2 brought a full-screen player and a shelf
-like a mixer; beta 1 brought your library even with the drive unplugged, and a
-quieter bottom shelf. This section collects everything in the 2.2 line so far.
-Betas are offered only to people who turned on Receive beta updates.
-
-### Added
-
-- **A volume readout.** Move the fader, or press a volume key, and the
-  display briefly shows where you landed, in decibels or percent. Choose
-  which under Settings, Playback.
-- **An empty Prep Crate explains itself.** Land on an empty Prep Crate and it
-  now tells you what the staging area is for and how to fill it, instead of
-  reading like a broken library.
-- **Download a stream for offline listening.** Save a YouTube mix or video to
-  your library and it plays with no network. Chapters become tracks, and a
-  Downloads list under Radio shows what you have saved.
-
-- **A full-screen player.** View > Full Screen Player, or Shift-Cmd-F, fills
-  the screen with the playing cover, the title, artist and album, the elapsed
-  and total time, and the shelf's own position, transport and volume
-  controls. Esc, CLOSE or a click on the black backdrop brings the window
-  back. Space still plays and pauses.
-- **Your library stays visible when its drive is unplugged.** If your library
-  index lives on an external drive, CrateDigger now keeps a copy of it on this
-  Mac. Launch without the drive and your crates, albums, covers, play counts
-  and ratings are all still there, dimmed, with a note saying which drive is
-  disconnected. Plug it back in and the live library returns by itself.
-- **Nothing changes while the drive is out.** Ratings, crate edits, tag and
-  artwork changes and moving files wait until the drive is back, and the
-  display says why instead of quietly doing nothing. Plays are not counted
-  while the library is disconnected.
-
-### Changed
-
-- **A quieter bottom shelf.** The EQ display and the VU meter are gone from
-  the bottom of the window, leaving the position dial, the transport and the
-  volume knob. The Simple horizontal VU meter setting goes with them.
-- **A small spectrum meter on the NOW screen.** It sits beside the clock
-  while a track or a stream plays, and settles flat when you pause.
-- **The EQ key in the header opens the equalizer.** It no longer steps through
-  presets: pick one on the equalizer's preset keys. Its lamp is lit while the
-  equalizer is on.
-- **Position and volume are two mixer faders.** They sit either side of the
-  transport, the same length, and grow together as the window widens. The
-  rail is a bevelled slot cut into the shelf and the fill glows like a light.
-  The VOLUME label moves to the outer edge, and its unity mark reads 0dB.
-- **Cleanup looks across versions again, carefully.** Tracks in different
-  versions of one release are flagged as duplicates only when their tags are
-  exactly the same. Differently tagged pressings, such as a JP and a US
-  release, stay apart as before.
-
-### Fixed
-
-- **The volume fader no longer snaps back from full.** A double click
-  anywhere on the fader used to reset it to 0 dB; now only a double click on
-  the 0 dB mark itself does.
-- **Volume Up and Down stop on 0 dB.** A step used to be able to jump
-  straight over the unity mark; a step that would now cross it lands on it
-  instead.
-- **The footer's transport is centred.** The play button used to sit closer
-  to VOLUME than to POSITION; it is now centred against a same-feature,
-  cap-to-cap measurement of both fader rails.
-- **An empty crate no longer says no library is loaded.** A named crate with
-  nothing in it, and an empty Prep Crate, each get their own explanation now
-  instead of the message meant for a library that was never opened.
-
-- **No grain on album art.** The interface grain no longer sits on the
-  inspector cover, the gallery covers, the artwork thumbnails or the disc.
-- **Column titles read whole.** ARTIST, ALBUM and TRACK in the browser
-  header were clipped to half their height on macOS 27.
-- **Launching without the library drive no longer looks like an empty
-  library.** CrateDigger used to say "No library loaded" and quietly start a
-  new, empty library in its place, so anything you changed that session was
-  saved there instead of in your real one. It now says the drive is
-  disconnected and changes nothing.
-
-### Investigated
-
-- **The makeup gain above 0 dB.** A report that boost past unity was
-  inaudible turned out not to be a bug: measured against the audio tap's own
-  RMS, the gain applied live, and the gain measured again after a track
-  change, were both within 0.03% of the expected value. The boost range
-  itself is just short: the whole +5 dB sits in the top 7.7% of the fader's
-  travel.
-
-]]></description>
-            <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.0-beta.93/CrateDigger-2.2.0.dmg" length="72980251" type="application/octet-stream" sparkle:edSignature="Ho8xq5VqM4Mlb+BQIHAQ47bbjGmaVH71M82wnZ7nUP164GcCzCJah8sAeQrp3st4D7oxmJLUWjyEKiTSSOgXBg=="/>
         </item>
     </channel>
 </rss>
