@@ -26,15 +26,15 @@ scripts/package-app.sh           # assemble dist/CrateDigger.app (bundles ffmpeg
 
 ## Two release lines (read before committing anything)
 
-**2.1.0 shipped from `main` on 2026-09-11.** `main` is the stable line, now
-2.1.x: it is what the public downloads and what every installed copy
-auto-updates from. Fixes for 2.1.x land on `main`.
+**2.2.0 shipped from `main` on 2026-09-23** (build 95). `main` is the stable
+line, now 2.2.x: it is what the public downloads and what every installed copy
+auto-updates from. Fixes for 2.2.x land on `main`.
 
-**The 2.2 beta line is open on `v2.2`**, cut from `main` on 2026-09-16 for
-2.2.0 beta 1 (build 91). `v2.1` was the beta line for the 2.1 cycle; it never
-published a beta and was fast-forwarded into `main` for 2.1.0, and like `v2`,
-which carried the whole 2.0 cycle, it is kept for history only. **Do not branch
-new work from `v2` or `v2.1`.** A beta branch works like this: `AppVersion.channel` is `"BETA"`
+**No beta line is open.** `v2.2` carried the 2.2 cycle (betas 91 to 93, RC 94)
+and was fast-forwarded into `main` for 2.2.0, as `v2.1` was for 2.1.0; like
+`v2`, which carried the whole 2.0 cycle, all three are kept for history only.
+**Do not branch new work from `v2`, `v2.1` or `v2.2`.** The 2.3 cycle gets its
+own `v2.3` branch, following the steps at the end of this section. A beta branch works like this: `AppVersion.channel` is `"BETA"`
 there, betas are tagged `v<version>-beta.<build>` and published as GitHub
 prereleases, their only audience is stable users who turned on Receive beta
 updates, `main` is merged in before each beta so the beta never lacks a stable

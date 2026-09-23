@@ -4,16 +4,11 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
-## 2.2.0 (94), 2026-09-21
+## 2.2.0 (95), 2026-09-23
 
-Release candidate 1: downloads that stay in Radio, a DUB screen for getting
-music in, a large Now Playing widget, and a widget that survives updates.
-Beta 3 brought a volume readout, an empty Prep Crate that explains itself,
-and downloadable radio streams. Beta 2 brought a full-screen player and a shelf
-like a mixer; beta 1 brought your library even with the drive unplugged, and a
-quieter bottom shelf. This section collects everything in the 2.2 line so far.
-Betas and release candidates are offered only to people who turned on
-Receive beta updates.
+Your library even with the drive unplugged, a full-screen player, streams you
+can download and play offline, a shelf laid out like a mixer, and a large Now
+Playing widget.
 
 ### Added
 
@@ -76,6 +71,9 @@ Receive beta updates.
 
 ### Fixed
 
+- **The Art Finder's filters read whole.** MEDIA and COUNTRY showed a
+  chevron in front of a clipped label and never the value picked; they now
+  read "MEDIA: All" and change as you filter.
 - **The Now Playing widget keeps working after an update.** After an update
   the widget could freeze on one picture, its slideshow stopped for good,
   because the previous version's widget was still running. The
