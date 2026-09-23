@@ -67,9 +67,13 @@ public final class PlaylistService {
         try exportPlaylist(playlist, to: url)
     }
 
-    public func deletePlaylist(name: String) throws {
+    /// `useTrash` is what the app passes, so a deleted playlist can be put back.
+    public func deletePlaylist(name: String, useTrash: Bool = false) throws {
         let url = playlistsDirectoryURL.appendingPathComponent(name).appendingPathExtension("m3u")
-        if fileManager.fileExists(atPath: url.path) {
+        guard fileManager.fileExists(atPath: url.path) else { return }
+        if useTrash {
+            try fileManager.trashItem(at: url, resultingItemURL: nil)
+        } else {
             try fileManager.removeItem(at: url)
         }
     }

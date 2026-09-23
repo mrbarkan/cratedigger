@@ -2535,16 +2535,54 @@ final class LibraryViewModel: ObservableObject {
 
     // MARK: - Playlist Actions
 
-    func createPlaylist(name: String) {
-        let playlist = Playlist(name: name, trackURLs: [])
-        try? playlistService.savePlaylist(playlist)
-        playlists = playlistService.listPlaylists()
+    /// Returns false (and shows an alert) on an invalid or taken name. Saving an
+    /// empty playlist over an existing one's file used to wipe it, so a
+    /// duplicate is refused here, where every caller passes through.
+    @discardableResult
+    func createPlaylist(name: String) -> Bool {
+        switch CrateNameValidator.validate(name, existing: playlists.map(\.name)) {
+        case .invalid(let reason):
+            appAlert = .error(title: "Can’t Create Playlist", message: reason)
+            return false
+        case .ok(let safeName):
+            do {
+                try playlistService.savePlaylist(Playlist(name: safeName, trackURLs: []))
+            } catch {
+                appAlert = .error(title: "Can’t Create Playlist", message: error.localizedDescription)
+                return false
+            }
+            playlists = playlistService.listPlaylists()
+            return true
+        }
     }
 
     func deletePlaylist(name: String) {
-        try? playlistService.deletePlaylist(name: name)
+        guard let playlist = playlists.first(where: { $0.name == name }),
+              Self.confirmDelete(kind: "Playlist", name: name, trackCount: playlist.trackURLs.count) else { return }
+        do {
+            try playlistService.deletePlaylist(name: name, useTrash: true)
+        } catch {
+            appAlert = .error(title: "Can’t Delete Playlist", message: error.localizedDescription)
+            return
+        }
         playlists = playlistService.listPlaylists()
-        selectSource(.localAll)
+        // Only leave the playlist if it was the one on screen.
+        if case .playlist(let current) = currentSource, current == name {
+            selectSource(.localAll)
+        }
+    }
+
+    /// Asks before a crate or playlist file goes to the Trash. Both are the
+    /// user's own curation, so neither leaves without a word.
+    static func confirmDelete(kind: String, name: String, trackCount: Int) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = "Delete the \(kind.lowercased()) \u{201C}\(name)\u{201D}?"
+        let tracks = trackCount == 1 ? "1 track" : "\(trackCount) tracks"
+        alert.informativeText = "Its list of \(tracks) moves to the Trash, where you can put it back. The music files themselves are not touched."
+        alert.addButton(withTitle: "Delete \(kind)")
+        alert.buttons.first?.hasDestructiveAction = true
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
     }
 
     /// Move the dragged tracks so they sit just before `destination`, and write
@@ -2746,16 +2784,29 @@ final class LibraryViewModel: ObservableObject {
         duplicateGroups.removeAll { $0.id == group.id }
     }
 
+    /// Forgets the missing tracks: crate membership, the track store and play
+    /// history. Never touches the disk. This used to run the files through
+    /// `deleteTracks(useTrash: false)`, which erased any of them that had come
+    /// back (a drive replugged, a folder renamed back) since the list was built.
     func deleteDeadTracks() {
-        let cleanup = LibraryCleanupService()
-        do {
-            try cleanup.deleteTracks(deadTracks, useTrash: false)
-            purgeTracksFromLibraryState(paths: Set(deadTracks.map { $0.track.fileURL.standardizedFileURL.path }))
+        guard !refuseWhileLibraryDisconnected() else { return }
+        let stillMissing = deadTracks.filter { !FileManager.default.fileExists(atPath: $0.track.fileURL.path) }
+        guard !stillMissing.isEmpty else {
             deadTracks = []
-            appAlert = .error(title: "Cleared", message: "Removed reference to dead tracks.")
-        } catch {
-            appAlert = .error(title: "Removal Failed", message: error.localizedDescription)
+            return
         }
+        let alert = NSAlert()
+        let tracks = stillMissing.count == 1 ? "1 missing track" : "\(stillMissing.count) missing tracks"
+        alert.messageText = "Remove \(tracks) from every crate?"
+        alert.informativeText = "Their play counts and ratings go with them. No file is deleted. If they only moved, choose Locate Folder… instead and they are re-linked with their history."
+        alert.addButton(withTitle: "Remove")
+        alert.buttons.first?.hasDestructiveAction = true
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        purgeTracksFromLibraryState(paths: Set(stillMissing.map { $0.track.fileURL.standardizedFileURL.path }))
+        deadTracks = []
+        showOLEDNotice(stillMissing.count == 1 ? "1 TRACK REMOVED" : "\(stillMissing.count) TRACKS REMOVED")
     }
 
     /// Trash exactly the reviewed selection. Crates that referenced a trashed
@@ -3929,18 +3980,33 @@ final class LibraryViewModel: ObservableObject {
         prefs.savedCrateOrder = order
     }
 
-    func createCrate(name: String) {
-        guard !refuseWhileLibraryDisconnected() else { return }
-        let safeName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !safeName.isEmpty else { return }
-        saveCrateTracks([], name: safeName)
-        refreshAvailableCrates()
+    /// Returns false (and shows an alert) on an invalid or taken name. Saving an
+    /// empty crate over an existing one's file used to wipe its membership, so
+    /// a duplicate is refused here, where every caller passes through.
+    @discardableResult
+    func createCrate(name: String) -> Bool {
+        guard !refuseWhileLibraryDisconnected() else { return false }
+        switch CrateNameValidator.validate(name, existing: availableCrates) {
+        case .invalid(let reason):
+            appAlert = .error(title: "Can’t Create Crate", message: reason)
+            return false
+        case .ok(let safeName):
+            saveCrateTracks([], name: safeName)
+            refreshAvailableCrates()
+            return true
+        }
     }
 
     func deleteCrate(name: String) {
         guard !refuseWhileLibraryDisconnected() else { return }
+        guard Self.confirmDelete(kind: "Crate", name: name, trackCount: crateTrackCounts[name] ?? 0) else { return }
         let fileURL = cratesDirectoryURL.appendingPathComponent("\(name).cdcrate")
-        try? FileManager.default.removeItem(at: fileURL)
+        do {
+            try FileManager.default.trashItem(at: fileURL, resultingItemURL: nil)
+        } catch {
+            appAlert = .error(title: "Can’t Delete Crate", message: error.localizedDescription)
+            return
+        }
         refreshAvailableCrates()
         if case .localCrate(let currentName) = currentSource, currentName == name {
             selectSource(.localAll)

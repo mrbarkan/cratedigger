@@ -277,21 +277,26 @@ extension LibraryViewModel {
     }
 
     /// Trash the offline copy; the stream stays and plays online again.
-    func removeDownload(streamID: String) {
-        guard !refuseWhileLibraryDisconnected() else { return }
-        guard let stream = streams.first(where: { $0.id == streamID }), let path = stream.downloadedPath else { return }
+    /// `askFirst: false` is for a caller that already confirmed (Remove Stream).
+    /// Returns whether the copy is gone, so that caller can stop if it isn't.
+    @discardableResult
+    func removeDownload(streamID: String, askFirst: Bool = true) -> Bool {
+        guard !refuseWhileLibraryDisconnected() else { return false }
+        guard let stream = streams.first(where: { $0.id == streamID }), let path = stream.downloadedPath else { return false }
 
-        let alert = NSAlert()
-        alert.messageText = "Move the offline copy of \u{201C}\(stream.title)\u{201D} to the Trash?"
-        // A download only reaches the library if the user filed it there, so
-        // promising that "the track leaves your library" is a lie in the
-        // ordinary case — there is no track.
-        alert.informativeText = downloadedTrack(for: stream) == nil
-            ? "The stream stays in your list and plays online again."
-            : "The stream stays in your list and plays online. The track leaves your library along with it, and its play history goes with it."
-        alert.addButton(withTitle: "Move to Trash")
-        alert.addButton(withTitle: "Cancel")
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        if askFirst {
+            let alert = NSAlert()
+            alert.messageText = "Move the offline copy of \u{201C}\(stream.title)\u{201D} to the Trash?"
+            // A download only reaches the library if the user filed it there, so
+            // promising that "the track leaves your library" is a lie in the
+            // ordinary case — there is no track.
+            alert.informativeText = downloadedTrack(for: stream) == nil
+                ? "The stream stays in your list and plays online again."
+                : "The stream stays in your list and plays online. The track leaves your library along with it, and its play history goes with it."
+            alert.addButton(withTitle: "Move to Trash")
+            alert.addButton(withTitle: "Cancel")
+            guard alert.runModal() == .alertFirstButtonReturn else { return false }
+        }
 
         // Let go of the file before it moves: the radio engine if it is playing
         // this offline copy, the library player if the track was started from a crate.
@@ -308,7 +313,7 @@ extension LibraryViewModel {
         } catch {
             // Link left intact: the file is still there and still the download.
             appAlert = .error(title: "Trash Failed", message: error.localizedDescription)
-            return
+            return false
         }
         purgeTracksFromLibraryState(paths: [path])
 
@@ -347,6 +352,7 @@ extension LibraryViewModel {
         if radioCategoryFilter != nil, filteredStreams.isEmpty { enterRadio(category: nil) }
 
         showOLEDNotice("DOWNLOAD REMOVED")
+        return true
     }
 
     func showDownloadInLibrary(streamID: String) {

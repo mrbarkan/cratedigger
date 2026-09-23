@@ -91,7 +91,7 @@ struct SourcesSidebar: View {
                                 Button("Rename") {
                                     beginRename(.crate(crateName), current: crateName)
                                 }
-                                Button("Delete Crate") {
+                                Button("Delete Crate…", role: .destructive) {
                                     model.deleteCrate(name: crateName)
                                 }
                             }
@@ -271,7 +271,7 @@ struct SourcesSidebar: View {
                             Button("Rename") {
                                 beginRename(.playlist(pl.name), current: pl.name)
                             }
-                            Button("Delete Playlist") {
+                            Button("Delete Playlist…", role: .destructive) {
                                 model.deletePlaylist(name: pl.name)
                             }
                         }
@@ -355,6 +355,7 @@ struct SourcesSidebar: View {
                 .tracking(2)
             TextField("Playlist Name", text: $newPlaylistName)
                 .textFieldStyle(.roundedBorder)
+            nameProblem(newPlaylistName, existing: model.playlists.map(\.name))
             HStack {
                 Button("Cancel") {
                     showingPlaylistSheet = false
@@ -362,17 +363,29 @@ struct SourcesSidebar: View {
                 }
                 Spacer()
                 Button("Create") {
-                    if !newPlaylistName.isEmpty {
-                        model.createPlaylist(name: newPlaylistName)
+                    if model.createPlaylist(name: newPlaylistName) {
                         showingPlaylistSheet = false
                         newPlaylistName = ""
                     }
                 }
                 .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+                .disabled(!CrateNameValidator.validate(newPlaylistName, existing: model.playlists.map(\.name)).isValid)
             }
         }
         .padding(20)
         .frame(width: 300)
+    }
+
+    /// Why Create is disabled, once there is something typed to judge.
+    @ViewBuilder
+    private func nameProblem(_ name: String, existing: [String]) -> some View {
+        if !name.isEmpty, case .invalid(let reason) = CrateNameValidator.validate(name, existing: existing) {
+            Text(reason)
+                .font(.caption)
+                .foregroundStyle(theme.red)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 
     private var crateCreationSheet: some View {
@@ -382,6 +395,7 @@ struct SourcesSidebar: View {
                 .tracking(2)
             TextField("Crate Name", text: $newCrateName)
                 .textFieldStyle(.roundedBorder)
+            nameProblem(newCrateName, existing: model.availableCrates)
             HStack {
                 Button("Cancel") {
                     showingCrateSheet = false
@@ -389,13 +403,14 @@ struct SourcesSidebar: View {
                 }
                 Spacer()
                 Button("Create") {
-                    if !newCrateName.isEmpty {
-                        model.createCrate(name: newCrateName)
+                    if model.createCrate(name: newCrateName) {
                         showingCrateSheet = false
                         newCrateName = ""
                     }
                 }
                 .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+                .disabled(!CrateNameValidator.validate(newCrateName, existing: model.availableCrates).isValid)
             }
         }
         .padding(20)

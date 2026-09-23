@@ -236,7 +236,9 @@ struct LibraryCleanupView: View {
                         model.relinkMissingTracksFromFolder(model.deadTracks)
                     }
                     .font(CarbonFont.mono(9, weight: .bold))
-                    KeyButton(style: .selected, action: {
+                    // Normal, not the orange primary: Locate Folder… is the
+                    // recommended way out, and this one forgets history.
+                    KeyButton(style: .normal, action: {
                         model.deleteDeadTracks()
                     }) {
                         Text("REMOVE ALL")

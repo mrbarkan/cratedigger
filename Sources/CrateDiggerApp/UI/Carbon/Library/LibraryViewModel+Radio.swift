@@ -145,17 +145,27 @@ extension LibraryViewModel {
 
     func removeStream(id: String) {
         if let stream = streams.first(where: { $0.id == id }), stream.isDownloaded() {
+            // Filed, the download is an ordinary library track and outlives the
+            // stream. Unfiled, nothing else refers to it, so keeping it would
+            // strand a file no screen can reach.
+            let filed = isDownloadFiled(streamID: id)
             let alert = NSAlert()
             alert.messageText = "Remove \u{201C}\(stream.title)\u{201D}?"
-            alert.informativeText = "Its downloaded file stays in your library as an ordinary track. To delete the file too, use Remove Download first."
-            alert.addButton(withTitle: "Remove Stream")
+            alert.informativeText = filed
+                ? "Its downloaded file stays in your library as an ordinary track."
+                : "Its offline copy isn't in a crate, so it moves to the Trash with the stream. To keep the file, add it to a crate first."
+            alert.addButton(withTitle: filed ? "Remove Stream" : "Remove Stream and Download")
+            if !filed { alert.buttons.first?.hasDestructiveAction = true }
             alert.addButton(withTitle: "Cancel")
             guard alert.runModal() == .alertFirstButtonReturn else { return }
+            if !filed, !removeDownload(streamID: id, askFirst: false) { return }
         }
         streams = streamStore.remove(id: id)
         if selectedStreamID == id {
+            // Removing a row must not start audio: silence what it was playing
+            // and move the selection only.
+            if radioEngine != nil { stopRadio() }
             selectedStreamID = filteredStreams.first?.id
-            if let next = selectedStreamID { selectStream(id: next) } else { stopRadio() }
         }
     }
 

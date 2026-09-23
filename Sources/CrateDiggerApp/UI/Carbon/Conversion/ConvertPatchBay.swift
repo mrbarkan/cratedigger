@@ -11,10 +11,6 @@ struct ConvertPatchBay: View {
     @Environment(\.carbonGeometry) private var geometry
     @EnvironmentObject private var model: LibraryViewModel
 
-    @State private var keepTags: Bool = true
-    @State private var replayGain: Bool = true
-    @State private var overwriteExisting: Bool = false
-    @State private var ejectAfter: Bool = false
     /// Measured height of the scrollable settings rows, vs. the viewport, so a
     /// discrete "more below" fade appears only when a row is scrolled out of sight.
     @State private var patchContentHeight: CGFloat = 0
@@ -103,7 +99,6 @@ struct ConvertPatchBay: View {
         case .options:
             artworkRow
             artworkSizeRow
-            optsRow
         }
     }
 
@@ -428,22 +423,6 @@ struct ConvertPatchBay: View {
         }
     }
 
-    private var optsRow: some View {
-        cvRow("Opts") {
-            // Paddles are visual stubs — the conversion pipeline doesn't
-            // consume these flags yet. Wired here so the panel matches the
-            // design without introducing dead model state. Promote to
-            // backing prefs as the pipeline grows to honor them.
-            let columns = [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)]
-            LazyVGrid(columns: columns, alignment: .leading, spacing: 10) {
-                paddleOption(label: "Keep tags", sub: "ID3 + ART", isOn: $keepTags)
-                paddleOption(label: "Replay-Gain", sub: "ALBUM", isOn: $replayGain)
-                paddleOption(label: "Overwrite", sub: "SKIP DUPES", isOn: $overwriteExisting)
-                paddleOption(label: "Eject after", sub: "UNMOUNT", isOn: $ejectAfter)
-            }
-        }
-    }
-
     // MARK: - Arm block
 
     private var armBlock: some View {
@@ -573,22 +552,6 @@ struct ConvertPatchBay: View {
                 .frame(width: 46, alignment: .trailing)
             content()
                 .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
-    private func paddleOption(label: String, sub: String, isOn: Binding<Bool>) -> some View {
-        HStack(spacing: 8) {
-            PatchBayPaddle(isOn: isOn)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(label)
-                    .font(CarbonFont.mono(10, weight: .medium))
-                    .foregroundStyle(theme.ink)
-                Text(sub.uppercased())
-                    .font(CarbonFont.mono(8.5, weight: .semibold))
-                    .tracking(1.6)
-                    .foregroundStyle(theme.ink3)
-            }
-            Spacer(minLength: 0)
         }
     }
 
