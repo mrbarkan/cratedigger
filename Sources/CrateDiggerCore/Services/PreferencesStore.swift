@@ -522,9 +522,13 @@ public final class PreferencesStore {
     /// True only for someone who has used a previous version. A first-time user
     /// gets the welcome tour; following it with "what's new since a release you
     /// never ran" would be noise.
+    ///
+    /// Compared by major.minor: a patch release (2.2.0 → 2.2.1) carries the
+    /// same list, and showing it again the day after reads as a bug.
     public func shouldShowWhatsNew(for version: String) -> Bool {
         guard hasSeenWelcomeTour else { return false }
-        return lastWhatsNewVersion != version
+        let feature = { (v: String) in v.split(separator: ".").prefix(2).joined(separator: ".") }
+        return lastWhatsNewVersion.map(feature) != feature(version)
     }
 
     /// Whether the bundled starter album has been copied into the library, so
