@@ -4,6 +4,38 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 2.2.1 (96), 2026-09-23
+
+Safer crates and cleanup: nothing you curated disappears without asking.
+
+### Fixed
+
+- **A new crate or playlist can no longer wipe an existing one.** Creating
+  one with a name already in use saved an empty list over it. The name is
+  now checked as you type, the sheet says why Create is unavailable, and
+  Return creates.
+- **Deleting a crate or a playlist asks first, and can be undone.** The list
+  goes to the Trash, where you can put it back; your music files were never
+  touched and still aren't. Deleting a playlist you aren't looking at no
+  longer sends you back to All Records.
+- **Library Cleanup's REMOVE ALL never deletes a file.** If a missing track
+  came back before you pressed it (a drive plugged in, a folder renamed
+  back), the file itself could be erased permanently. It now only forgets
+  tracks that are still missing, asks first, and says their play counts and
+  ratings go with them.
+- **Removing a downloaded stream tells the truth.** If its download was never
+  added to a crate, the offline copy goes to the Trash along with it instead
+  of being left behind where nothing could find it. Removing the stream you
+  had selected no longer starts the next one playing.
+- **What's New doesn't come back for a fix release.** Updating from 2.2.0 to
+  2.2.1 no longer shows the same list again.
+
+### Changed
+
+- **The Patch Bay's OPTIONS face lost four switches that did nothing.** Keep
+  tags, Replay-Gain, Overwrite and Eject after were never read by a
+  conversion. They return when they work.
+
 ## 2.2.0 (95), 2026-09-23
 
 Your library even with the drive unplugged, a full-screen player, streams you
