@@ -453,7 +453,12 @@ struct ArtworkSearchSheetView: View {
             .cornerRadius(4)
             .overlay(RoundedRectangle(cornerRadius: 4).stroke(theme.ink4.opacity(0.25), lineWidth: 0.8))
         }
-        .menuStyle(.borderlessButton)
+        // `.button` + `.plain`, not `.borderlessButton`: the borderless style
+        // hands the label to AppKit, which keeps only the image and the first
+        // text, puts the chevron in front and clips the mono caps to its own
+        // button height. Same fix as the zoom menu in AlbumArtworkViewer.
+        .menuStyle(.button)
+        .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .fixedSize()
         .disabled(options.isEmpty)
