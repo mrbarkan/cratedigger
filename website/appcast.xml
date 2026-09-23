@@ -3,6 +3,140 @@
     <channel>
         <title>CrateDigger</title>
         <item>
+            <title>2.2.0</title>
+            <pubDate>Wed, 23 Sep 2026 13:06:25 -0300</pubDate>
+            <link>https://cratedigger.mrbarkan.com/</link>
+            <sparkle:fullReleaseNotesLink>https://github.com/mrbarkan/cratedigger/releases</sparkle:fullReleaseNotesLink>
+            <sparkle:version>95</sparkle:version>
+            <sparkle:shortVersionString>2.2.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description sparkle:format="markdown"><![CDATA[
+Your library even with the drive unplugged, a full-screen player, streams you
+can download and play offline, a shelf laid out like a mixer, and a large Now
+Playing widget.
+
+### Added
+
+- **A large Now Playing widget.** The cover as big as the widget allows,
+  with the track, artist, album and progress beneath it. With nothing
+  playing it shows the library slideshow or the last album the same way.
+- **A volume readout.** Move the fader, or press a volume key, and the
+  display briefly shows where you landed, in decibels or percent. Choose
+  which under Settings, Playback.
+- **An empty Prep Crate explains itself.** Land on an empty Prep Crate and it
+  now tells you what the staging area is for and how to fill it, instead of
+  reading like a broken library.
+- **Download a stream for offline listening.** Save a YouTube mix or video
+  and it plays with no network. A Downloads list under Radio shows what you
+  have saved, and any of them can be removed without losing the stream. A
+  download stays in Radio; add it to a crate from its menu when you want to
+  convert it, split its chapters into tracks, or send it to a device.
+
+- **A full-screen player.** View > Full Screen Player, or Shift-Cmd-F, fills
+  the screen with the playing cover, the title, artist and album, the elapsed
+  and total time, and the shelf's own position, transport and volume
+  controls. Esc, CLOSE or a click on the black backdrop brings the window
+  back. Space still plays and pauses.
+- **Your library stays visible when its drive is unplugged.** If your library
+  index lives on an external drive, CrateDigger now keeps a copy of it on this
+  Mac. Launch without the drive and your crates, albums, covers, play counts
+  and ratings are all still there, dimmed, with a note saying which drive is
+  disconnected. Plug it back in and the live library returns by itself.
+- **Nothing changes while the drive is out.** Ratings, crate edits, tag and
+  artwork changes and moving files wait until the drive is back, and the
+  display says why instead of quietly doing nothing. Plays are not counted
+  while the library is disconnected.
+
+### Changed
+
+- **Downloads stay in Radio.** A downloaded stream no longer lands in the
+  Prep Crate as if you had just dug a folder. It sits under Radio, Downloads,
+  and plays offline from there. Add it to a crate from the stream's menu when
+  you want it in your library.
+- **The CD screen is now DUB.** The screen that shows a CD being ripped also
+  shows an SACD being extracted and a stream being downloaded, so it is named
+  for the job rather than for one of its three sources.
+
+- **A quieter bottom shelf.** The EQ display and the VU meter are gone from
+  the bottom of the window, leaving the position dial, the transport and the
+  volume knob. The Simple horizontal VU meter setting goes with them.
+- **A small spectrum meter on the NOW screen.** It sits beside the clock
+  while a track or a stream plays, and settles flat when you pause.
+- **The EQ key in the header opens the equalizer.** It no longer steps through
+  presets: pick one on the equalizer's preset keys. Its lamp is lit while the
+  equalizer is on.
+- **Position and volume are two mixer faders.** They sit either side of the
+  transport, the same length, and grow together as the window widens. The
+  rail is a bevelled slot cut into the shelf and the fill glows like a light.
+  The VOLUME label moves to the outer edge, and its unity mark reads 0dB.
+- **Cleanup looks across versions again, carefully.** Tracks in different
+  versions of one release are flagged as duplicates only when their tags are
+  exactly the same. Differently tagged pressings, such as a JP and a US
+  release, stay apart as before.
+
+### Fixed
+
+- **The Art Finder's filters read whole.** MEDIA and COUNTRY showed a
+  chevron in front of a clipped label and never the value picked; they now
+  read "MEDIA: All" and change as you filter.
+- **The Now Playing widget keeps working after an update.** After an update
+  the widget could freeze on one picture, its slideshow stopped for good,
+  because the previous version's widget was still running. The
+  app now retires it the first time the new version opens.
+- **A finished download no longer leaves the display reading NO LIBRARY.**
+  Finishing a download switched the display to SCAN, which reports on
+  whatever you are browsing; sitting in Radio at the time, it read out the
+  radio list as an empty library, stuck at 8%. Downloads no longer touch that
+  screen.
+- **A download is no longer reported as a CD rip.** While it ran, the display
+  said CD-RIP and described the stream as a 44.1 kHz 16-bit disc. The DUB
+  screen now shows the download for what it is: the channel, the title, the
+  percentage and its chapter count.
+
+- **The volume fader no longer snaps back from full.** A double click
+  anywhere on the fader used to reset it to 0 dB; now only a double click on
+  the 0 dB mark itself does.
+- **Volume Up and Down stop on 0 dB.** A step used to be able to jump
+  straight over the unity mark; a step that would now cross it lands on it
+  instead.
+- **The footer's transport is centred.** The play button used to sit closer
+  to VOLUME than to POSITION; it is now centred against a same-feature,
+  cap-to-cap measurement of both fader rails.
+- **An empty crate no longer says no library is loaded.** A named crate with
+  nothing in it, and an empty Prep Crate, each get their own explanation now
+  instead of the message meant for a library that was never opened.
+
+- **No grain on album art.** The interface grain no longer sits on the
+  inspector cover, the gallery covers, the artwork thumbnails or the disc.
+- **Column titles read whole.** ARTIST, ALBUM and TRACK in the browser
+  header were clipped to half their height on macOS 27.
+- **Launching without the library drive no longer looks like an empty
+  library.** CrateDigger used to say "No library loaded" and quietly start a
+  new, empty library in its place, so anything you changed that session was
+  saved there instead of in your real one. It now says the drive is
+  disconnected and changes nothing.
+
+### Investigated
+
+- **The makeup gain above 0 dB.** A report that boost past unity was
+  inaudible turned out not to be a bug: measured against the audio tap's own
+  RMS, the gain applied live, and the gain measured again after a track
+  change, were both within 0.03% of the expected value. The boost range
+  itself is just short: the whole +5 dB sits in the top 7.7% of the fader's
+  travel.
+
+]]></description>
+            <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.0/CrateDigger-2.2.0.dmg" length="72042100" type="application/octet-stream" sparkle:edSignature="B8BmdE9JWcVWm/1CdQTOOC2K0MeYurDpa3kpHxV/z4oWyg5RRxib0gFeyrzNIf2VyLf+M7zbTWGqkAqp2NGFBg=="/>
+            <sparkle:deltas>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.0/CrateDigger95-90.delta" sparkle:deltaFrom="90" length="3134742" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="nILlC9O9+CiLmUSEuo3eOGZ4MhpYoqzHAL/I7HrEyHlRgvYjQ/a/yXcPyyRPU+3B8ZKKCjTC+J9HMyb4Uk6RAQ=="/>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.0/CrateDigger95-89.delta" sparkle:deltaFrom="89" length="3552050" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="Xehnj2ViT0IlCthUZ+gfrD4b08uTWtBv9zOog8tnMocFx7m03nn4I+GgGopyteZv0koinSzK3rtp6fmO3PWSAA=="/>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.0/CrateDigger95-88.delta" sparkle:deltaFrom="88" length="3688642" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="dl8AzTedUE1b8CHwgr3pYFbQpb1Wltdvyoj10LU/f4TnDr542/3xOZeF8mD6RuZ+akY9flXfzV+O27Ld+wHiDg=="/>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.0/CrateDigger95-87.delta" sparkle:deltaFrom="87" length="3685934" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="hkCiQTrDQukTaZXaZPJz6VQzqvDxD91bGffsRvvR9e9pEK57sZ52g5FJlIGACyK3ZVUsy+Ig04d/qEJivwJDCA=="/>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.0/CrateDigger95-86.delta" sparkle:deltaFrom="86" length="3700430" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="GqAZcbCHU0SSiyUnhpCGQPW0tvN6mnREJ9/Ow8J5E/NHSZTE4UXonaTXfmNhAIW5z+tE5HAgW04Ddh4FVPtuCg=="/>
+            </sparkle:deltas>
+        </item>
+        <item>
             <title>2.1.1</title>
             <pubDate>Tue, 15 Sep 2026 19:01:24 -0300</pubDate>
             <link>https://cratedigger.mrbarkan.com/</link>
@@ -94,50 +228,6 @@ Now playing on your desktop, and an Up Next that moves.
                 <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.1.0/CrateDigger89-86.delta" sparkle:deltaFrom="86" length="1419594" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="0Sc+nRJzPbpFbsS3EonOTktPOaH8caftKdymySZVouYDmsk+7pZ8vrQoDWgTQmrMZvuwuaxdL06xJhOqiG4ZAw=="/>
                 <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.1.0/CrateDigger89-85.delta" sparkle:deltaFrom="85" length="2381798" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="qJlWGnh9HPjY59j01Bx/Mm3zCOz2DUQVPSGxn81BoI1bwzMd23MmV/q2RSOvmlqDtVkf44Rty0+WQXS5xPoDAg=="/>
                 <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.1.0/CrateDigger89-84.delta" sparkle:deltaFrom="84" length="2440642" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="vlngM9bDSKsJ9zJgomDrHveGYpQAYkD34Uhu8lLebIJSYeEpac/dMooaDCRDXlj0XnXNVmIiwWOxAz6jClqLBg=="/>
-            </sparkle:deltas>
-        </item>
-        <item>
-            <title>2.0.5</title>
-            <pubDate>Fri, 11 Sep 2026 10:49:18 -0300</pubDate>
-            <link>https://cratedigger.mrbarkan.com/</link>
-            <sparkle:fullReleaseNotesLink>https://github.com/mrbarkan/cratedigger/releases</sparkle:fullReleaseNotesLink>
-            <sparkle:version>88</sparkle:version>
-            <sparkle:shortVersionString>2.0.5</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
-            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[
-One album folder is one album, however its tags disagree.
-
-### Fixed
-
-- **Multi-disc albums stay whole.** A two-disc set whose files were tagged
-  `Album (Disc 1)` and `Album (Disc 2)` used to browse as two separate albums
-  that sorted apart. Files sharing one album folder are now read as one album,
-  so both discs sit under a single cover with the disc order preserved.
-- **Compilations and soundtracks stop shattering.** A soundtrack carrying a
-  different performer on every track, with no album-artist tag and no
-  compilation flag, used to appear as one album per performer. It now reunites
-  under Various Artists as a single album.
-- **A stray year no longer splits an album.** One track tagged with a different
-  year to the rest used to break off into an album of its own. The album now
-  takes the year most of its tracks carry.
-- **Converting and transferring write one folder per album.** The same
-  reunited album identity now drives the output planner, so a soundtrack lands
-  in one Various Artists folder instead of a folder per performer, and a
-  two-disc set converts into a single folder. This covers conversion, the
-  album folder review sheet, the convert queue preview, CD ripping and
-  transfers to an external device.
-- **FIX TAGS looks an album up once.** A compilation used to fire one metadata
-  lookup per performer; it now sends a single query for the whole album.
-
-]]></description>
-            <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.0.5/CrateDigger-2.0.5.dmg" length="72253910" type="application/octet-stream" sparkle:edSignature="b3FHiIuQigT3y4RjFiXSsqg0kx6WxmQONg2qrQa79bqAuttahjOD1KRw4BN87kp0HLgLjzATR5z7AxNyxLBCDA=="/>
-            <sparkle:deltas>
-                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.0.5/CrateDigger88-87.delta" sparkle:deltaFrom="87" length="724490" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="NZu335fKkGVhRihj38/MdhKftU2nI4ZauGRPyQyzoQut0nnQebCpGlLZvUZcullD2CwHka7hYDDnW+D3/aKRDw=="/>
-                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.0.5/CrateDigger88-86.delta" sparkle:deltaFrom="86" length="769338" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="LSjIRxEzPvx4V09wswRXWPu2DOc8V+aILp83bWRuD8QxRW8YkjpLB2uqiolpmsWUHMXw2mGGdkmcbb7GMiJUCA=="/>
-                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.0.5/CrateDigger88-85.delta" sparkle:deltaFrom="85" length="2016714" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="IacsskzG2JHGLZkeZ2y+Z1cuILSBPWSf/S7en27pGLLnv0qeFypNwCNjSHb0tuaOEu4Jk/EtHAgIlmIqWOj8CQ=="/>
-                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.0.5/CrateDigger88-84.delta" sparkle:deltaFrom="84" length="2113634" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="G1zKJV7vPXozOCIYhSq/ZyCzjZqcCg4WVsJ7SJ6PeSOoGsclPTv7guOYvMbRImiuX8/hXUHGPm/ujOuDdiGxAQ=="/>
-                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.0.5/CrateDigger88-83.delta" sparkle:deltaFrom="83" length="2121870" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="KRTGpKXTjlWdv2si6/vxJLjbUoCeXXv2NPkxPjlHN1Su5cCC4CDP1jglWhsddL8u6k25NAVGIQjF9qsrWbvhBA=="/>
             </sparkle:deltas>
         </item>
     </channel>
