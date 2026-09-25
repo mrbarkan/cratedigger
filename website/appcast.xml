@@ -3,6 +3,40 @@
     <channel>
         <title>CrateDigger</title>
         <item>
+            <title>2.2.2</title>
+            <pubDate>Fri, 25 Sep 2026 18:00:26 -0300</pubDate>
+            <link>https://cratedigger.mrbarkan.com/</link>
+            <sparkle:fullReleaseNotesLink>https://github.com/mrbarkan/cratedigger/releases</sparkle:fullReleaseNotesLink>
+            <sparkle:version>97</sparkle:version>
+            <sparkle:shortVersionString>2.2.2</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description sparkle:format="markdown"><![CDATA[
+Dragging works again on macOS 27.
+
+### Fixed
+
+- **Records drag out of the browser again.** On macOS 27, dragging an artist,
+  album or track to a crate or a playlist moved the whole window instead.
+  The window now moves only by its top edge, beside the window buttons.
+- **The mini player can be moved again.** On macOS 27 it stayed where it
+  opened. Drag it from anywhere that isn't a control; the progress bar and
+  reordering Up Next keep their own drags.
+- **Double-clicking a header key no longer resizes the window.** Pressing
+  VIEW twice zoomed the window. Double-clicking the top edge still does,
+  following your Desktop & Dock setting.
+
+]]></description>
+            <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.2/CrateDigger-2.2.2.dmg" length="72015970" type="application/octet-stream" sparkle:edSignature="TFtOYsetnfJOQ6eXu+V/tgBTzC2HBEJPL1PReutsxFxr0amC+Jtxv9dwKM0Tf7xUXlGpXx0SJPQibBmXFfr3Dw=="/>
+            <sparkle:deltas>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.2/CrateDigger97-96.delta" sparkle:deltaFrom="96" length="713114" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="NmbckvgPBG+SVFDkt42kGjWxRUrQ4/0YjlMw7NDFH3aqI4HyXGnLAmsbKF7yweQxl4upGDT9lD8KYXyhzlveDQ=="/>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.2/CrateDigger97-95.delta" sparkle:deltaFrom="95" length="885898" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="Q2pcbwWwUJQ1kbYOQ++DQdq03NTrvteMhDODMFdzDnakYwG+hNt8BD7f4EqO75vPWRsNG8zY4YTu+7kjsaqWBg=="/>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.2/CrateDigger97-90.delta" sparkle:deltaFrom="90" length="3147502" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="pZK35aAjwsswGChzA81xh0AT/JlVJHbFl75bs4vlgmmILzVWrLL2ZL5sIEo+PYqfmvnlMF4unoLqfAN/a2FFAw=="/>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.2/CrateDigger97-89.delta" sparkle:deltaFrom="89" length="3563222" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="e1OUXFsHfMKlOATay5pEQ3CHTJwZI+Qo21um4RSA7UPJnO9iS98U3IVzmPXRoG7pHyE7b5526aKrn2hq6HaCAQ=="/>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.2/CrateDigger97-88.delta" sparkle:deltaFrom="88" length="3694298" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="uZ9yLYgowKsBrUQCYOPySKy731rdJdhiAyo9hf25yuJDQO4QH+HD1Tw1NHEMt+zBao/GiSVlaXqvK7jK4pU7Aw=="/>
+            </sparkle:deltas>
+        </item>
+        <item>
             <title>2.2.1</title>
             <pubDate>Wed, 23 Sep 2026 13:50:00 -0300</pubDate>
             <link>https://cratedigger.mrbarkan.com/</link>
@@ -184,35 +218,6 @@ Playing widget.
                 <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.0/CrateDigger95-88.delta" sparkle:deltaFrom="88" length="3688642" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="dl8AzTedUE1b8CHwgr3pYFbQpb1Wltdvyoj10LU/f4TnDr542/3xOZeF8mD6RuZ+akY9flXfzV+O27Ld+wHiDg=="/>
                 <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.0/CrateDigger95-87.delta" sparkle:deltaFrom="87" length="3685934" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="hkCiQTrDQukTaZXaZPJz6VQzqvDxD91bGffsRvvR9e9pEK57sZ52g5FJlIGACyK3ZVUsy+Ig04d/qEJivwJDCA=="/>
                 <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.0/CrateDigger95-86.delta" sparkle:deltaFrom="86" length="3700430" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="GqAZcbCHU0SSiyUnhpCGQPW0tvN6mnREJ9/Ow8J5E/NHSZTE4UXonaTXfmNhAIW5z+tE5HAgW04Ddh4FVPtuCg=="/>
-            </sparkle:deltas>
-        </item>
-        <item>
-            <title>2.1.1</title>
-            <pubDate>Tue, 15 Sep 2026 19:01:24 -0300</pubDate>
-            <link>https://cratedigger.mrbarkan.com/</link>
-            <sparkle:fullReleaseNotesLink>https://github.com/mrbarkan/cratedigger/releases</sparkle:fullReleaseNotesLink>
-            <sparkle:version>90</sparkle:version>
-            <sparkle:shortVersionString>2.1.1</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
-            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[
-Ready for macOS 27 Golden Gate.
-
-### Changed
-
-- **Built for macOS 27.** CrateDigger is now built with the macOS 27 SDK.
-- **Updates keep working on macOS 27.** The in-app updater moves to Sparkle
-  2.10.0, which fixes a macOS 27 problem with the smaller patch updates
-  CrateDigger downloads between versions.
-
-]]></description>
-            <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.1.1/CrateDigger-2.1.1.dmg" length="72016728" type="application/octet-stream" sparkle:edSignature="kG5lD6P/NfUdawFN8moKNhski13E/yVq8qnqVhHgT+zHwJyMmJU8/MadcJi4tGaeAwVgL17YDG52dfORsgzWBw=="/>
-            <sparkle:deltas>
-                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.1.1/CrateDigger90-89.delta" sparkle:deltaFrom="89" length="494174" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="w+uqsbD3ucIHKzFp7VjRbsL2dRxwXFrvQxJ+8Cc6t5YakU3gSOOMtKoIMmWHzSQoFlOR9usVPYEdDoEIphMDBg=="/>
-                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.1.1/CrateDigger90-88.delta" sparkle:deltaFrom="88" length="1682910" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="Nn9NOuRPS6KA+4P8LzfyhXGlPP1cWZAZ+Gi7OBHPF4VaVw9xOLbDnioxniKeqkbjBKfHLR8ZzOjtiLuTALaYBg=="/>
-                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.1.1/CrateDigger90-87.delta" sparkle:deltaFrom="87" length="1739006" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="HSGgXX7dVjJ6xZ2SU3MTpsQM/fHU/KPLqVd+0jWy2DnIlbZnTCAzHk7htq7nizs6RDB4fYL0gwrRJPfrk90aDA=="/>
-                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.1.1/CrateDigger90-86.delta" sparkle:deltaFrom="86" length="1782782" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="XOvFxTKmKd4O0jFHmTgbNltDXuO8jGFeLqHgJ0BLMfRWY4Jgq5AbfChPPAVm64FSmP2tXECzOXDpf0/WlEbjDA=="/>
-                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.1.1/CrateDigger90-85.delta" sparkle:deltaFrom="85" length="2743234" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="jJMe0l6ctB+QZQqlEY4h0bwMafiv0QrLyyqDky3iRlYKgRAXQ9pUo/8GJ9krhxX/A+LByJMAHW97Obo8RQBbDQ=="/>
             </sparkle:deltas>
         </item>
     </channel>
