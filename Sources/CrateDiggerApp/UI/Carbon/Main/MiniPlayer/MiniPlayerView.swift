@@ -98,6 +98,7 @@ struct MiniPlayerView: View {
             .frame(width: Self.width, height: max(window.size.height, 1), alignment: .top)
         }
         .frame(width: Self.width)
+        .modifier(WindowBackgroundDrag())
         .carbonThemed(mode: AppearanceMode(rawValue: rawMode) ?? .system)
         .onAppear {
             guard !appeared else { return }

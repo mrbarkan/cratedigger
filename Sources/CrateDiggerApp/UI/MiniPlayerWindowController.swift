@@ -19,7 +19,10 @@ final class MiniPlayerWindowController: NSWindowController {
 
         let window = MiniPlayerWindow(contentViewController: hosting)
         window.styleMask = [.borderless]
-        window.isMovableByWindowBackground = true
+        // macOS 15+ moves it with `WindowDragGesture` in MiniPlayerView: on
+        // macOS 27 AppKit's background drag does nothing over SwiftUI content
+        // in a borderless window, so the player could not be moved at all.
+        if #unavailable(macOS 15) { window.isMovableByWindowBackground = true }
         window.level = .floating
         window.backgroundColor = .clear
         window.isOpaque = false

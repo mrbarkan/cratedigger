@@ -12,6 +12,21 @@ struct WindowDragGuard: NSViewRepresentable {
     func updateNSView(_ nsView: NSView, context: Context) {}
 }
 
+/// Drags the window from anywhere a control hasn't claimed the mouse. Controls
+/// keep their own clicks and drags (child gestures win), rows keep `.draggable`.
+/// Below macOS 15 the window falls back to `isMovableByWindowBackground`.
+struct WindowBackgroundDrag: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(macOS 15, *) {
+            // Activation events: the floating player drags on the first click
+            // even while another app is in front.
+            content.gesture(WindowDragGesture()).allowsWindowActivationEvents(true)
+        } else {
+            content
+        }
+    }
+}
+
 /// CRT-style horizontal scan-line texture: a 1px line every `spacing` points at
 /// the given white `opacity`. Never hit-tests.
 struct Scanlines: View {

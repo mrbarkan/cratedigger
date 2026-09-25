@@ -12,7 +12,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     init() {
         let styleMask: NSWindow.StyleMask = [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView]
-        let window = CarbonWindow(
+        let window = NSWindow(
             contentRect: NSRect(origin: .zero, size: WindowFramePlanner.targetSize),
             styleMask: styleMask,
             backing: .buffered,
@@ -26,7 +26,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.toolbarStyle = .unified
-        window.isMovableByWindowBackground = true
+        // Not movable by background: on macOS 27 a titled window claims every
+        // drag over SwiftUI content for itself, rows' `.draggable` included, so
+        // nothing in the browser could be dragged to a crate or playlist. The
+        // titlebar strip still drags, and double-clicks per the system setting.
+        window.isMovableByWindowBackground = false
         window.isRestorable = false
 
         super.init(window: window)
