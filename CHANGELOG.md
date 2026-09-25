@@ -4,6 +4,22 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 2.2.2 (97), 2026-09-25
+
+Dragging works again on macOS 27.
+
+### Fixed
+
+- **Records drag out of the browser again.** On macOS 27, dragging an artist,
+  album or track to a crate or a playlist moved the whole window instead.
+  The window now moves only by its top edge, beside the window buttons.
+- **The mini player can be moved again.** On macOS 27 it stayed where it
+  opened. Drag it from anywhere that isn't a control; the progress bar and
+  reordering Up Next keep their own drags.
+- **Double-clicking a header key no longer resizes the window.** Pressing
+  VIEW twice zoomed the window. Double-clicking the top edge still does,
+  following your Desktop & Dock setting.
+
 ## 2.2.1 (96), 2026-09-23
 
 Safer crates and cleanup: nothing you curated disappears without asking.
