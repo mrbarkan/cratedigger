@@ -49,7 +49,17 @@ let package = Package(
                 // Sparkle.framework is embedded in Contents/Frameworks by
                 // scripts/package-app.sh; SwiftPM only knows how to link it,
                 // not where it lives inside a .app.
-                .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])
+                .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"]),
+                // Stamp the SDK we actually build with. Xcode 27's Swift Build
+                // links through clang with --sysroot and no SDKROOT, so clang
+                // can't read the SDK version and ld recorded "sdk 13.0". SwiftUI
+                // then ran in its macOS 13 compatibility mode, where a Button
+                // never starts a `.draggable` drag: no browser row could be
+                // dragged to a crate or playlist. The last -platform_version wins.
+                // ponytail: hardcoded SDK version; package-app.sh fails the
+                // build when it stops matching `xcrun --show-sdk-version`.
+                .unsafeFlags(["-Xlinker", "-platform_version", "-Xlinker", "macos",
+                              "-Xlinker", "13.0", "-Xlinker", "27.0"])
             ]
         ),
         // What the app writes and the Now Playing widget reads: one Codable

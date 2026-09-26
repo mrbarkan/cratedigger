@@ -362,6 +362,18 @@ if [[ ! -f "${BINARY_PATH}" ]]; then
   exit 1
 fi
 
+# SwiftUI picks its compatibility behaviour from the SDK version stamped in the
+# binary. Package.swift hardcodes it (Swift Build can't find it on its own), so
+# a new Xcode leaves it stale: 2.2.2 shipped stamped 13.0, and in that mode no
+# browser row could be dragged. Bump the version in Package.swift when this fires.
+STAMPED_SDK="$(otool -l "${BINARY_PATH}" | awk '/LC_BUILD_VERSION/ {f=1} f && $1 == "sdk" {print $2; exit}')"
+ACTUAL_SDK="$(xcrun --show-sdk-version)"
+if [[ "${STAMPED_SDK}" != "${ACTUAL_SDK}" && "${STAMPED_SDK}.0" != "${ACTUAL_SDK}" && "${STAMPED_SDK}" != "${ACTUAL_SDK}.0" ]]; then
+  echo "error: binary is stamped sdk ${STAMPED_SDK} but was built with the ${ACTUAL_SDK} SDK." >&2
+  echo "Update the -platform_version flag in Package.swift to ${ACTUAL_SDK}." >&2
+  exit 1
+fi
+
 cp "${BINARY_PATH}" "${APP_BUNDLE}/Contents/MacOS/CrateDiggerApp"
 cp "${INFO_PLIST_SOURCE}" "${APP_BUNDLE}/Contents/Info.plist"
 cp "${ICON_SOURCE}" "${APP_BUNDLE}/Contents/Resources/CrateDigger.icns"
