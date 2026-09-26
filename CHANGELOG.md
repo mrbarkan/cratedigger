@@ -4,6 +4,19 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 2.2.4 (99), 2026-09-26
+
+Beta 1. RIP asks how before it rips.
+
+### Changed
+
+- **RIP lives above the disc's tracks.** It sits beside RE-IDENTIFY and
+  CLEAR in the bar that names the disc, instead of under the disc in Sources.
+- **RIP asks for its settings first.** Pressing it opens Rip Options, where
+  you pick the format, bitrate, sample rate, artwork size and folder layout
+  for the disc. Before, the rip used whatever the Patch Bay last had, with
+  nowhere to check it from the disc.
+
 ## 2.2.3 (98), 2026-09-26
 
 Put a CD in and it's ready to dub; records drag for real this time.
