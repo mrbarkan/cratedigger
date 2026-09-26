@@ -4,6 +4,31 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 2.2.3 (98), 2026-09-26
+
+Put a CD in and it's ready to dub; records drag for real this time.
+
+### Added
+
+- **A CD opens itself.** Put an audio CD in the drive, or start CrateDigger
+  with one already there, and the disc opens on the DUB screen and starts
+  looking itself up. Nothing to click before you can pick the pressing and
+  press RIP.
+- **DUB is on the DISPLAY key and in the View menu** (Command-6). It used to
+  be reachable only by clicking the disc in Sources. With a disc in the
+  drive, DUB shows it even while you browse your library.
+
+### Fixed
+
+- **Artists, albums, tracks and crates drag again.** 2.2.2 fixed the window
+  stealing the drag, but on macOS 27 the rows still wouldn't start one. They
+  now drag to crates, playlists and other apps.
+- **A second CD gets its own tags.** Swapping discs kept the first disc's
+  identification, so the next one skipped its lookup and could rip under the
+  wrong album. Ejecting a disc now forgets it.
+- **Lossless rips ignore the lossy bitrate.** Ripping to ALAC or FLAC no
+  longer passes along the kbps setting the Patch Bay remembers for MP3 and AAC.
+
 ## 2.2.2 (97), 2026-09-25
 
 Dragging works again on macOS 27.
