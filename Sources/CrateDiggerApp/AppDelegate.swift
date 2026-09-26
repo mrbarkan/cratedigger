@@ -1350,6 +1350,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             (.nowPlaying, "1"),
             (.conversion, "2"),
             (.scan, "3"),
+            // ⌘6, not a renumber: DEV and STATS keep the keys people know.
+            (.dub, "6"),
             (.devices, "4"),
             (.stats, "5")
         ]

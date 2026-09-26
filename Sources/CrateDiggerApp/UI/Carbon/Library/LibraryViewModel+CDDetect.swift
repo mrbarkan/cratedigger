@@ -92,11 +92,23 @@ extension LibraryViewModel {
 
     /// Forget the match and go back to the raw disc.
     func clearDiscMatch(for info: AudioCDInfo) {
+        resetDiscMatch()
+        rebuildCDIndex(for: info)
+    }
+
+    func resetDiscMatch() {
         cdMatchedRelease = nil
         cdDetectionState = .idle
         cdDiscMatches = []
         cdCoverArtwork = nil
-        rebuildCDIndex(for: info)
+    }
+
+    /// Putting a disc in the drive is asking to dub it: open it on the DUB
+    /// screen, which also starts the lookup. Only discs macOS wrote a TOC for,
+    /// so a drive that merely has AIFFs at its root never takes over the browser.
+    func selectInsertedCD(excluding known: Set<String> = []) {
+        guard let cd = mountedCDs.first(where: { $0.toc != nil && !known.contains($0.volumeURL.path) }) else { return }
+        selectSource(.cd(volumePath: cd.volumeURL.path))
     }
 
     /// The tracks the CD source shows: the matched release's titles when we have

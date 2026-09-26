@@ -1493,7 +1493,9 @@ private struct DubPane: View {
             TimelineView(.periodic(from: .now, by: 1)) { _ in
                 rippingBody
             }
-        } else if let cd = model.currentAudioCD {
+        } else if let cd = model.currentAudioCD ?? model.mountedCDs.first {
+            // A disc in the drive is worth showing even while the browser is
+            // on the library, or DUB says NOTHING TO DUB with one sitting there.
             insertedBody(cd)
         } else {
             emptyBody

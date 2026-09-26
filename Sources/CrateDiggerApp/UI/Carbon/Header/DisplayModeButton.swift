@@ -44,7 +44,7 @@ struct DisplayModeButton: View {
     @Environment(\.carbonGeometry) private var geometry
     @EnvironmentObject private var model: LibraryViewModel
 
-    static let cycle: [OLEDView] = [.nowPlaying, .conversion, .scan, .devices, .stats]
+    static let cycle: [OLEDView] = [.nowPlaying, .conversion, .scan, .dub, .devices, .stats]
 
     var body: some View {
         Button(action: cycleToNext) {

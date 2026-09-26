@@ -1470,6 +1470,9 @@ final class LibraryViewModel: ObservableObject {
         recomputeOfflineVolumes()
         recomputeMissingFiles()
         fetchMissingMetadata()
+        // A disc already in the drive at launch counts as inserted. Last, so
+        // All Records is built for the widget and the resume snapshot first.
+        selectInsertedCD()
     }
 
     /// Tokens for the block-based notification observers below. The observer
@@ -2151,8 +2154,21 @@ final class LibraryViewModel: ObservableObject {
 
     // MARK: - CD Rip integration
 
+    /// Wired to the volume mount/unmount observers, plus sidebar appear.
     func refreshCDs() {
+        let before = Set(mountedCDs.map(\.volumeURL.path))
         mountedCDs = cdRipper.detectAudioCDs()
+        let after = Set(mountedCDs.map(\.volumeURL.path))
+        guard after != before else { return }
+
+        // The identification belongs to the disc that was in the drive. Kept
+        // across a swap, the next disc skipped its lookup and was ripped under
+        // the previous one's album tags.
+        resetDiscMatch()
+        if case .cd(let path) = currentSource, !after.contains(path) {
+            selectSource(.localAll)
+        }
+        selectInsertedCD(excluding: before)
     }
 
     // MARK: - External devices
@@ -2432,18 +2448,10 @@ final class LibraryViewModel: ObservableObject {
         // The rip is an ordinary conversion of the disc's tracks, so it takes
         // the Patch Bay's settings whole — including the OPTIONS tab's artwork
         // handling, which the rip's own hand-rolled preset used to ignore.
-        // `channels` stays nil (source layout) rather than forcing stereo: a
+        // Same builder as CONVERT, so a lossless rip drops the lossy bitrate
+        // the Patch Bay remembers. `channels` stays nil (source layout): a
         // quadraphonic or mono disc should rip as it was pressed.
-        let preset = ConversionPreset(
-            id: "cd_rip",
-            name: "CD Rip",
-            outputFormat: conversionSelection.outputFormat,
-            bitrateKbps: conversionSelection.bitrate,
-            sampleRateHz: conversionSelection.sampleRate,
-            channels: nil,
-            artworkMode: conversionSelection.artworkMode,
-            artworkMaxDimension: conversionSelection.artworkMaxDimension
-        )
+        let preset = makeAdHocPreset(from: conversionSelection)
 
         Task {
             do {

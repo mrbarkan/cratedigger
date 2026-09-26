@@ -561,7 +561,7 @@ extension LibraryViewModel {
         }
     }
 
-    private func makeAdHocPreset(from selection: ConversionOptionsSelection) -> ConversionPreset {
+    func makeAdHocPreset(from selection: ConversionOptionsSelection) -> ConversionPreset {
         let bitrate = selection.outputFormat.isLossless ? nil : selection.bitrate
         return ConversionPreset(
             id: "user_\(selection.outputFormat.rawValue)_\(bitrate ?? 0)",
