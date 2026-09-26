@@ -8,6 +8,9 @@ struct ConversionOptionsSheetView: View {
     let outputFormats: [OutputFormat]
     let bitrateOptions: [Int]
     let sampleRateOptions: [Int]
+    /// A CD rip: the disc is the whole scope and the rip plans its own
+    /// folders, so the scope and album-review rows would be dead controls.
+    let ripping: Bool
     let onDecision: (ConversionOptionsSelection?) -> Void
 
     @State private var batchScope: ConversionBatchScope
@@ -25,11 +28,13 @@ struct ConversionOptionsSheetView: View {
         outputFormats: [OutputFormat],
         bitrateOptions: [Int],
         sampleRateOptions: [Int],
+        ripping: Bool = false,
         onDecision: @escaping (ConversionOptionsSelection?) -> Void
     ) {
         self.outputFormats = outputFormats
         self.bitrateOptions = bitrateOptions
         self.sampleRateOptions = sampleRateOptions
+        self.ripping = ripping
         self.onDecision = onDecision
 
         _batchScope = State(initialValue: initialSelection.batchScope)
@@ -88,7 +93,7 @@ struct ConversionOptionsSheetView: View {
     private var sheetHeader: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 12) {
-                Text("CONVERSION")
+                Text(ripping ? "CD RIP" : "CONVERSION")
                     .font(CarbonFont.mono(10, weight: .bold))
                     .tracking(3)
                     .foregroundStyle(theme.orange)
@@ -96,10 +101,12 @@ struct ConversionOptionsSheetView: View {
                     .fill(theme.hair)
                     .frame(height: 1)
             }
-            Text("Conversion Options")
+            Text(ripping ? "Rip Options" : "Conversion Options")
                 .font(CarbonFont.sans(28, weight: .heavy))
                 .foregroundStyle(theme.ink)
-            Text("Configure one conversion plan for this run. These settings are the source of truth for the files about to be converted.")
+            Text(ripping
+                 ? "Choose the format and folder layout for this disc. The rip writes to your conversion destination."
+                 : "Configure one conversion plan for this run. These settings are the source of truth for the files about to be converted.")
                 .font(CarbonFont.mono(12))
                 .foregroundStyle(theme.ink2)
         }
@@ -115,7 +122,7 @@ struct ConversionOptionsSheetView: View {
             .keyboardShortcut(.cancelAction)
 
             KeyButton(style: .glowingOrange, action: { onDecision(buildSelection()) }) {
-                Text("CONTINUE")
+                Text(ripping ? "RIP" : "CONTINUE")
             }
             .frame(width: 144, height: 38)
             .keyboardShortcut(.defaultAction)
@@ -124,17 +131,19 @@ struct ConversionOptionsSheetView: View {
     }
 
     private var scopeAndFormatSection: some View {
-        sectionCard(title: "Scope + Format") {
+        sectionCard(title: ripping ? "Format" : "Scope + Format") {
             twoColumnGrid {
-                field(title: "Batch Scope") {
-                    Picker("Batch Scope", selection: $batchScope) {
-                        ForEach(ConversionBatchScope.allCases, id: \.self) { scope in
-                            Text(scope.title).tag(scope)
+                if !ripping {
+                    field(title: "Batch Scope") {
+                        Picker("Batch Scope", selection: $batchScope) {
+                            ForEach(ConversionBatchScope.allCases, id: \.self) { scope in
+                                Text(scope.title).tag(scope)
+                            }
                         }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .tint(theme.orange)
                     }
-                    .pickerStyle(.menu)
-                    .labelsHidden()
-                    .tint(theme.orange)
                 }
 
                 field(title: "Format") {
@@ -204,22 +213,26 @@ struct ConversionOptionsSheetView: View {
                     .tint(theme.orange)
                 }
 
-                field(title: "Apply Mode") {
-                    Picker("Apply Mode", selection: $applyMode) {
-                        ForEach(TemplateApplyMode.allCases, id: \.self) { mode in
-                            Text(mode.title).tag(mode)
+                if !ripping {
+                    field(title: "Apply Mode") {
+                        Picker("Apply Mode", selection: $applyMode) {
+                            ForEach(TemplateApplyMode.allCases, id: \.self) { mode in
+                                Text(mode.title).tag(mode)
+                            }
                         }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .tint(theme.orange)
+                        .disabled(!isMetadataTemplateMode)
                     }
-                    .pickerStyle(.menu)
-                    .labelsHidden()
-                    .tint(theme.orange)
-                    .disabled(!isMetadataTemplateMode)
                 }
             }
 
-            Text("Use 'Review album folders' when you want to confirm each album destination before conversion starts.")
-                .font(CarbonFont.mono(11, weight: .medium))
-                .foregroundStyle(theme.ink3)
+            if !ripping {
+                Text("Use 'Review album folders' when you want to confirm each album destination before conversion starts.")
+                    .font(CarbonFont.mono(11, weight: .medium))
+                    .foregroundStyle(theme.ink3)
+            }
         }
     }
 

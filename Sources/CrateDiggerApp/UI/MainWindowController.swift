@@ -71,10 +71,22 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             name: NSNotification.Name("CrateDiggerTransferToDevice"),
             object: nil
         )
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleRipCD(_:)),
+            name: NSNotification.Name("CrateDiggerRipCD"),
+            object: nil
+        )
     }
 
     @objc private func handleTransferToDevice(_ note: Notification) {
         presentExternalDeviceTransferSheet()
+    }
+
+    @objc private func handleRipCD(_ note: Notification) {
+        guard let info = note.object as? AudioCDInfo else { return }
+        presentRipSheet(for: info)
     }
 
     @available(*, unavailable)
@@ -140,6 +152,29 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             guard let selection, let model else { return }
             guard let host = NSApp.keyWindow?.contentViewController else { return }
             model.runConversion(selection: selection, presentingFrom: host)
+        }
+        hostingController.presentAsSheet(controller)
+    }
+
+    /// The rip settings are the Patch Bay's, so the rip asks for them through
+    /// the same sheet as CONVERT and keeps the answer as the new selection.
+    func presentRipSheet(for info: AudioCDInfo) {
+        let model = hostingController.model
+        let controller = ConversionOptionsSheetController(
+            initialSelection: model.conversionSelection,
+            outputFormats: OutputFormat.allCases,
+            bitrateOptions: [128, 160, 192, 256, 320],
+            sampleRateOptions: [44_100, 48_000, 88_200, 96_000],
+            ripping: true
+        )
+        controller.onDecision = { [weak controller, weak model] selection in
+            controller?.dismiss(nil)
+            guard let selection, let model else { return }
+            // The sheet hides the scope row, so keep the Patch Bay's own.
+            var kept = selection
+            kept.batchScope = model.conversionSelection.batchScope
+            model.conversionSelection = kept
+            model.ripCD(info: info)
         }
         hostingController.presentAsSheet(controller)
     }

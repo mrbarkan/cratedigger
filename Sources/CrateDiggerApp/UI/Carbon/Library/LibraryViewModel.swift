@@ -2433,6 +2433,13 @@ final class LibraryViewModel: ObservableObject {
         detectAudioCD(cd)
     }
 
+    /// RIP in the disc bar: ask for the rip settings first (MainWindowController
+    /// presents the sheet), then `ripCD`.
+    func requestCDRip(_ info: AudioCDInfo) {
+        guard !isConversionRunning else { return showOLEDNotice("BUSY") }
+        NotificationCenter.default.post(name: NSNotification.Name("CrateDiggerRipCD"), object: info)
+    }
+
     func ripCD(info: AudioCDInfo) {
         guard let dest = currentConversionDestinationURL else {
             self.appAlert = .error(title: "No Destination Set", message: "Choose where converted files go in Preferences.")

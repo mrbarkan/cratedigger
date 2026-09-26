@@ -96,17 +96,20 @@ final class ConversionOptionsSheetController: ThemedSheetHostingController {
     private let bitrateOptions: [Int]
     private let sampleRateOptions: [Int]
     private let initialSelection: ConversionOptionsSelection
+    private let ripping: Bool
 
     init(
         initialSelection: ConversionOptionsSelection,
         outputFormats: [OutputFormat],
         bitrateOptions: [Int],
-        sampleRateOptions: [Int]
+        sampleRateOptions: [Int],
+        ripping: Bool = false
     ) {
         self.initialSelection = initialSelection
         self.outputFormats = outputFormats
         self.bitrateOptions = bitrateOptions
         self.sampleRateOptions = sampleRateOptions
+        self.ripping = ripping
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -120,7 +123,8 @@ final class ConversionOptionsSheetController: ThemedSheetHostingController {
             initialSelection: initialSelection,
             outputFormats: outputFormats,
             bitrateOptions: bitrateOptions,
-            sampleRateOptions: sampleRateOptions
+            sampleRateOptions: sampleRateOptions,
+            ripping: ripping
         ) { [weak self] selection in
             self?.onDecision?(selection)
         }
