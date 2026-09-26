@@ -87,6 +87,22 @@ struct DiscIdentityBar: View {
         case .looking, .choosing, .unavailable:
             EmptyView()
         }
+
+        // Always offered, even for an unidentified disc (it rips under the
+        // disc's own names); held back while a lookup or pick is pending.
+        KeyButton(style: canRip ? .glowingOrange : .disabled, action: { model.requestCDRip(info) }) {
+            Text("RIP")
+                .padding(.horizontal, 8)
+        }
+        .frame(height: 22)
+        .carbonTip("Choose rip settings, then rip this disc")
+    }
+
+    private var canRip: Bool {
+        switch model.cdDetectionState {
+        case .looking, .choosing: return false
+        default: return !model.isConversionRunning
+        }
     }
 
     // MARK: - Match picker

@@ -178,28 +178,16 @@ struct SourcesSidebar: View {
                     if !model.mountedCDs.isEmpty {
                         sectionHeader("CD Drives", trailing: "")
                         sectionRows("CD Drives") {
+                        // RIP lives in the disc bar above the CD's tracks,
+                        // beside the identity it depends on.
                         ForEach(model.mountedCDs) { cd in
-                            VStack(alignment: .leading, spacing: 4) {
-                                sidebarItem(
-                                    icon: Image(systemName: "opticaldisc"),
-                                    title: cd.name,
-                                    count: "\(cd.tracks.count)",
-                                    selected: isSelectedCD(cd.volumeURL.path),
-                                    action: { model.selectSource(.cd(volumePath: cd.volumeURL.path)) }
-                                )
-                                Button(action: { model.ripCD(info: cd) }) {
-                                    Text("RIP CD")
-                                        .font(CarbonFont.mono(8, weight: .bold))
-                                        .foregroundColor(.white)
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 3)
-                                        .background(theme.orange)
-                                        .cornerRadius(4)
-                                }
-                                .buttonStyle(.carbonHover)
-                                .padding(.leading, 36)
-                                .padding(.bottom, 6)
-                            }
+                            sidebarItem(
+                                icon: Image(systemName: "opticaldisc"),
+                                title: cd.name,
+                                count: "\(cd.tracks.count)",
+                                selected: isSelectedCD(cd.volumeURL.path),
+                                action: { model.selectSource(.cd(volumePath: cd.volumeURL.path)) }
+                            )
                         }
                         }
                     }
