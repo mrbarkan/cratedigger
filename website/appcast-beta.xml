@@ -3,6 +3,36 @@
     <channel>
         <title>CrateDigger</title>
         <item>
+            <title>2.2.4</title>
+            <pubDate>Sat, 26 Sep 2026 20:16:10 -0300</pubDate>
+            <link>https://cratedigger.mrbarkan.com/</link>
+            <sparkle:fullReleaseNotesLink>https://github.com/mrbarkan/cratedigger/releases</sparkle:fullReleaseNotesLink>
+            <sparkle:version>99</sparkle:version>
+            <sparkle:shortVersionString>2.2.4</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description sparkle:format="markdown"><![CDATA[
+Beta 1. RIP asks how before it rips.
+
+### Changed
+
+- **RIP lives above the disc's tracks.** It sits beside RE-IDENTIFY and
+  CLEAR in the bar that names the disc, instead of under the disc in Sources.
+- **RIP asks for its settings first.** Pressing it opens Rip Options, where
+  you pick the format, bitrate, sample rate, artwork size and folder layout
+  for the disc. Before, the rip used whatever the Patch Bay last had, with
+  nowhere to check it from the disc.
+
+]]></description>
+            <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.4-beta.99/CrateDigger-2.2.4.dmg" length="72086290" type="application/octet-stream" sparkle:edSignature="cVurJdU4p/C6S4Q8DcsZPV2o61k9x6p/3gYDr0uM6eF9ePlEshR3G0Swf9pSfN9ZsbO8+Ix5/MoZFWn4vmp7Aw=="/>
+            <sparkle:deltas>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.4-beta.99/CrateDigger99-98.delta" sparkle:deltaFrom="98" length="699198" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="ObjU8kJH6vp/BQbxfqWhutU7RbaSXJeZNrR9QaJYbLhllDL7h9eT6iWF1+VeVY0uZG+VdPOu+EBnQ4tk/bD+Bw=="/>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.4-beta.99/CrateDigger99-97.delta" sparkle:deltaFrom="97" length="722550" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="DEFeRs9UXtoTosgZglEY9ZDhrbBN7BLNiYjtsjR4hBZcsekxfg2ZhZ+HnvG3/LlRU9Fli4lk8r6I3Tqa8KVbCg=="/>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.4-beta.99/CrateDigger99-96.delta" sparkle:deltaFrom="96" length="852530" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="OFk9XXgc4Tw7WD2zC6KvWu8cdrs77NZQkaDjH/CLVWgXvawpdOIsjrHTl0hcFiA8J/N4dW1UY5YJLFXYzcfCAg=="/>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.4-beta.99/CrateDigger99-95.delta" sparkle:deltaFrom="95" length="946162" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="pYF7LavGQ2oNpCuQRcwdaR7V1MQKjlgx0re4VvQ89GVdUMi3xJyJgfV5Z4E/4n0iNHEywq7jiRuDN6BrhC8nAw=="/>
+            </sparkle:deltas>
+        </item>
+        <item>
             <title>2.2.3</title>
             <pubDate>Sat, 26 Sep 2026 18:18:57 -0300</pubDate>
             <link>https://cratedigger.mrbarkan.com/</link>
@@ -72,52 +102,6 @@ Dragging works again on macOS 27.
             <sparkle:deltas>
                 <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.2/CrateDigger97-96.delta" sparkle:deltaFrom="96" length="713114" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="NmbckvgPBG+SVFDkt42kGjWxRUrQ4/0YjlMw7NDFH3aqI4HyXGnLAmsbKF7yweQxl4upGDT9lD8KYXyhzlveDQ=="/>
                 <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.2/CrateDigger97-95.delta" sparkle:deltaFrom="95" length="885898" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="Q2pcbwWwUJQ1kbYOQ++DQdq03NTrvteMhDODMFdzDnakYwG+hNt8BD7f4EqO75vPWRsNG8zY4YTu+7kjsaqWBg=="/>
-            </sparkle:deltas>
-        </item>
-        <item>
-            <title>2.2.1</title>
-            <pubDate>Wed, 23 Sep 2026 13:52:04 -0300</pubDate>
-            <link>https://cratedigger.mrbarkan.com/</link>
-            <sparkle:fullReleaseNotesLink>https://github.com/mrbarkan/cratedigger/releases</sparkle:fullReleaseNotesLink>
-            <sparkle:version>96</sparkle:version>
-            <sparkle:shortVersionString>2.2.1</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
-            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[
-Safer crates and cleanup: nothing you curated disappears without asking.
-
-### Fixed
-
-- **A new crate or playlist can no longer wipe an existing one.** Creating
-  one with a name already in use saved an empty list over it. The name is
-  now checked as you type, the sheet says why Create is unavailable, and
-  Return creates.
-- **Deleting a crate or a playlist asks first, and can be undone.** The list
-  goes to the Trash, where you can put it back; your music files were never
-  touched and still aren't. Deleting a playlist you aren't looking at no
-  longer sends you back to All Records.
-- **Library Cleanup's REMOVE ALL never deletes a file.** If a missing track
-  came back before you pressed it (a drive plugged in, a folder renamed
-  back), the file itself could be erased permanently. It now only forgets
-  tracks that are still missing, asks first, and says their play counts and
-  ratings go with them.
-- **Removing a downloaded stream tells the truth.** If its download was never
-  added to a crate, the offline copy goes to the Trash along with it instead
-  of being left behind where nothing could find it. Removing the stream you
-  had selected no longer starts the next one playing.
-- **What's New doesn't come back for a fix release.** Updating from 2.2.0 to
-  2.2.1 no longer shows the same list again.
-
-### Changed
-
-- **The Patch Bay's OPTIONS face lost four switches that did nothing.** Keep
-  tags, Replay-Gain, Overwrite and Eject after were never read by a
-  conversion. They return when they work.
-
-]]></description>
-            <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.1/CrateDigger-2.2.1.dmg" length="72037381" type="application/octet-stream" sparkle:edSignature="YUOl84OhEtvHCQSr8DCu+JsekRqVPUScHKzb7+9MdPEbe/wIiIkVWUPVyaMRZV4ZjMGGR5eik6vC+W9RKD64Dg=="/>
-            <sparkle:deltas>
-                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.1/CrateDigger96-95.delta" sparkle:deltaFrom="95" length="855194" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="CG+lM5o5on0S2/00ICgPVxMmrYlUMokT0OIQyG//KhMVqTx7+uufU4TB4jjZkSkcIJr8XwDrMXx3rGMOK16WBQ=="/>
             </sparkle:deltas>
         </item>
     </channel>
