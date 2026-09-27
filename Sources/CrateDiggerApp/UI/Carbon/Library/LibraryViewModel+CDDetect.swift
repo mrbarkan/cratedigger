@@ -63,6 +63,9 @@ extension LibraryViewModel {
     /// the inspector and the rip all agree before a single sector is read.
     func applyDiscMatch(_ candidate: ReleaseCandidate, to info: AudioCDInfo) {
         cdMatchedRelease = candidate
+        // Staged edits are whole tag sets made against the previous release;
+        // kept, they would pin its album and artist over this one.
+        cdStagedEdits = [:]
         cdDetectionState = .identified(candidate)
         cdDiscMatches = []
         cdCoverArtwork = nil
@@ -98,6 +101,7 @@ extension LibraryViewModel {
 
     func resetDiscMatch() {
         cdMatchedRelease = nil
+        cdStagedEdits = [:]
         cdDetectionState = .idle
         cdDiscMatches = []
         cdCoverArtwork = nil
@@ -111,54 +115,45 @@ extension LibraryViewModel {
         selectSource(.cd(volumePath: cd.volumeURL.path))
     }
 
-    /// The tracks the CD source shows: the matched release's titles when we have
-    /// one, otherwise whatever macOS gave us.
+    /// The tracks the CD source shows and the rip tags: the matched release's
+    /// tags when we have one, otherwise whatever macOS gave us, with the user's
+    /// staged edits on top. See `CDRipTagPlanner`.
     func cdTracks(for info: AudioCDInfo) -> [LoadedTrack] {
-        info.tracks.map { track in
-            let matched = cdMatchedRelease.flatMap { release in
-                release.tracks.first { $0.position == track.trackNumber && $0.discNumber == cdMatchedDiscNumber }
-            }
-            let title = matched?.title ?? track.title
-            let artist = matched?.artist ?? cdMatchedRelease?.artist ?? "Audio CD"
-            let album = cdMatchedRelease?.title ?? info.name
-
-            let audioTrack = AudioTrack(
-                fileURL: track.fileURL,
-                title: title,
-                artist: artist,
-                album: album,
-                durationSeconds: matched?.durationSeconds ?? 0,
-                formatName: "AIFF",
-                year: cdMatchedRelease?.year,
-                trackNumber: track.trackNumber,
-                trackTotal: info.tracks.count
-            )
-            let metadata = ConversionMetadata(
-                title: title,
-                artist: artist,
-                albumArtist: cdMatchedRelease?.artist,
-                album: album,
-                trackNumber: track.trackNumber,
-                trackTotal: info.tracks.count,
-                year: cdMatchedRelease?.year,
-                genre: cdMatchedRelease?.genre,
-                artwork: cdCoverArtwork
-            )
-            return LoadedTrack(track: audioTrack, metadata: metadata)
-        }
+        CDRipTagPlanner.tracks(for: info, release: cdMatchedRelease, cover: cdCoverArtwork,
+                               stagedEdits: cdStagedEdits)
     }
 
-    /// Which disc of a multi-disc release this CD is.
-    ///
-    /// A box set's disc ID resolves to the whole set, so the track list contains
-    /// every disc. The one in the drive is whichever disc has exactly this many
-    /// tracks — matching by position alone would take disc 1's titles for a
-    /// disc 3.
+    /// Which disc of a multi-disc release this CD is. See
+    /// `CDRipTagPlanner.discNumber(in:trackCount:)`.
     var cdMatchedDiscNumber: Int {
         guard let release = cdMatchedRelease, let info = currentAudioCD else { return 1 }
-        let byDisc = Dictionary(grouping: release.tracks, by: \.discNumber)
-        let exact = byDisc.filter { $0.value.count == info.tracks.count }.keys.sorted()
-        return exact.first ?? byDisc.keys.sorted().first ?? 1
+        return CDRipTagPlanner.discNumber(in: release, trackCount: info.tracks.count)
+    }
+
+    /// Tag edits aimed at a disc's tracks can't be written: the volume is
+    /// read-only, and the files are about to be ripped anyway. Stage them for
+    /// the rip instead and hand back the updates that are real files. Both
+    /// tag-write paths (the inspector's editor and FIX TAGS) start here.
+    func stagingCDEdits(
+        _ updates: [(track: LoadedTrack, metadata: ConversionMetadata)]
+    ) -> [(track: LoadedTrack, metadata: ConversionMetadata)] {
+        let discRoots = mountedCDs.map { $0.volumeURL.standardizedFileURL.path + "/" }
+        guard !discRoots.isEmpty else { return updates }
+        var rest: [(track: LoadedTrack, metadata: ConversionMetadata)] = []
+        var staged = 0
+        for update in updates {
+            let path = update.track.track.fileURL.standardizedFileURL.path
+            guard discRoots.contains(where: { path.hasPrefix($0) }) else {
+                rest.append(update)
+                continue
+            }
+            cdStagedEdits[update.track.track.fileURL.path] = update.metadata
+            staged += 1
+        }
+        guard staged > 0 else { return rest }
+        if let info = currentAudioCD { rebuildCDIndex(for: info) }
+        showOLEDNotice(staged == 1 ? "STAGED FOR RIP" : "\(staged) STAGED FOR RIP")
+        return rest
     }
 
     /// The CD currently being browsed, if any.
