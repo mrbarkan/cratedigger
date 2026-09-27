@@ -446,8 +446,10 @@ extension LibraryViewModel {
     /// `updateTrackURLsInIndex` — the per-track path pays a full store re-encode
     /// plus index rebuild per file, which locks the UI at library size.
     func updateTracksMetadata(_ updates: [(track: LoadedTrack, metadata: ConversionMetadata)]) {
+        let updates = stagingCDEdits(updates)
+        guard !updates.isEmpty else { return }
         guard !refuseWhileLibraryDisconnected() else { return }
-        guard let editor = metadataEditor, !updates.isEmpty else { return }
+        guard let editor = metadataEditor else { return }
 
         let planned = updates.map { (sourceURL: $0.track.track.fileURL,
                                      updated: Self.applying($0.metadata, to: $0.track)) }

@@ -1102,6 +1102,9 @@ final class LibraryViewModel: ObservableObject {
     @Published var cdMatchedRelease: ReleaseCandidate?
     /// Cover fetched for the identified disc, embedded by the rip.
     @Published var cdCoverArtwork: ArtworkAsset?
+    /// Tag edits made to the disc's tracks, keyed by file path on the disc,
+    /// waiting for the rip to write them. Cleared with the match.
+    @Published var cdStagedEdits: [String: ConversionMetadata] = [:]
     let discLookup: CDDiscLookup = MusicBrainzDiscClient()
 
     @Published var streamFailure: StreamFailureAdvisor.Diagnosis?
@@ -1918,7 +1921,7 @@ final class LibraryViewModel: ObservableObject {
         case .playlist(let name):
             selectPlaylist(name: name)
         case .cd(let path):
-            selectCD(volumePath: path)
+            selectCD(volumePath: path, entering: sourceChanged)
         case .device(let path):
             selectDevice(volumePath: path)
         case .offlineDevice(let profileID):
@@ -2441,7 +2444,10 @@ final class LibraryViewModel: ObservableObject {
         NotificationCenter.default.post(name: NSNotification.Name("CrateDiggerTransferToDevice"), object: nil)
     }
 
-    private func selectCD(volumePath: String) {
+    /// `entering` is false for an in-place refresh (the cover arriving, an
+    /// edit being staged), which must not pull the OLED off the Patch Bay and
+    /// with it drop a rip route.
+    private func selectCD(volumePath: String, entering: Bool) {
         guard let cd = mountedCDs.first(where: { $0.volumeURL.path == volumePath }) else { return }
         // Tags come from the identified release when the disc has been looked
         // up, and fall back to what macOS gave us when it hasn't — see
@@ -2451,7 +2457,7 @@ final class LibraryViewModel: ObservableObject {
         // The CD screen was only ever reachable *during* a rip, so a disc
         // sitting in the drive showed nothing. Selecting one is exactly when
         // its readout is useful.
-        if !conversionProgress.isRunning { oledView = .dub }
+        if entering, !conversionProgress.isRunning { oledView = .dub }
         // Selecting a disc is the moment to identify it: everything downstream
         // (browser, inspector, and the rip's tags and filenames) reads better
         // once it is, and the lookup is one throttled request.
@@ -2579,7 +2585,11 @@ final class LibraryViewModel: ObservableObject {
                     let fails = results.filter { $0.status == .failed }
                     if fails.isEmpty {
                         self.appAlert = .error(title: "CD Ripped!", message: "Successfully ripped \(info.tracks.count) tracks.")
-                        self.loadFolders([dest]) // Automatically scan destination
+                        // Import this rip, not the destination: scanning `dest`
+                        // staged every album ever converted there, and saved it
+                        // as a dig folder, so each launch re-staged it all.
+                        let written = jobs.map(\.destinationURL)
+                        self.loadFolders(CDRipTagPlanner.importFolders(forWritten: written))
                     } else {
                         self.appAlert = .error(title: "Rip Failed", message: "Failed to rip \(fails.count) tracks.")
                     }
@@ -2711,6 +2721,7 @@ final class LibraryViewModel: ObservableObject {
     }
 
     func updateTrackMetadata(_ track: LoadedTrack, newMetadata: ConversionMetadata) {
+        guard !stagingCDEdits([(track, newMetadata)]).isEmpty else { return }
         guard !refuseWhileLibraryDisconnected() else { return }
         guard let editor = metadataEditor else { return }
 
