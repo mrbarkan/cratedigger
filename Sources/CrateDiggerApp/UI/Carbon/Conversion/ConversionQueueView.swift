@@ -95,16 +95,17 @@ struct ConversionQueueView: View {
     private var crateSection: some View {
         // The scope is named in the header because all three are lists you
         // point at, and which one is live decides what CONVERT touches.
+        // A disc route lists the disc's tracks here, so the header names it.
         sectionHeader(
-            title: "CRATE QUEUE",
-            detail: "\(model.conversionSelection.batchScope.shortTitle.uppercased()) · \(summary)",
+            title: model.pendingCDRip == nil ? "CRATE QUEUE" : "AUDIO CD",
+            detail: "\(model.pendingCDRipTitle?.uppercased() ?? model.conversionSelection.batchScope.shortTitle.uppercased()) · \(summary)",
             stacked: true,
             arm: arm(for: nil, tip: "Arm this queue — the key below converts it with the settings above")
         ) {
             // Only the convert queue is ours to empty: Prep and Selection are
             // owned elsewhere, and a CLEAR that quietly emptied the Prep Crate
             // would be a very expensive surprise.
-            if model.conversionSelection.batchScope == .queue, !model.convertQueue.isEmpty {
+            if !model.cockpitIsRouted, model.conversionSelection.batchScope == .queue, !model.convertQueue.isEmpty {
                 KeyButton(style: .normal, action: { model.clearConvertQueue() }) {
                     Text("CLEAR")
                 }
@@ -144,7 +145,7 @@ struct ConversionQueueView: View {
     }
 
     private func arm(for deviceID: UUID?, tip: String) -> Arm? {
-        guard model.pendingDeviceConversion == nil else { return nil }
+        guard !model.cockpitIsRouted else { return nil }
         return Arm(
             isArmed: model.patchBayDeviceQueue?.id == deviceID,
             tip: tip,

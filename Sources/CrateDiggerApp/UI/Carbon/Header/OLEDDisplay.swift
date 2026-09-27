@@ -1018,7 +1018,8 @@ private struct ConversionPane: View {
         // A routed run says where it's going here, in the line under the
         // formats — the glass used to name the device only once the transfer
         // was already running, which is after the decision.
-        let state = model.pendingDeviceConversion.map { "To \($0.deviceName)" }
+        let state = model.pendingCDRip.map { _ in "Rip Audio CD" }
+            ?? model.pendingDeviceConversion.map { "To \($0.deviceName)" }
             ?? (count == 0 ? "Queue Idle" : "Queue Armed")
         if count == 0 { return "\(state) · \(container) · \(kind)" }
         return "\(state) · \(count) Tracks · \(container) · \(kind)"
@@ -1044,6 +1045,7 @@ private struct ConversionPane: View {
     private var scopeValue: String { "\(model.conversionQueueTracks.count) TRK" }
     private var scopeSub: String {
         // On a route the batch scope isn't what filled the queue — the browser did.
+        if model.pendingCDRip != nil { return "Audio CD" }
         if model.pendingDeviceConversion != nil { return "Device Queue" }
         switch model.conversionSelection.batchScope {
         case .queue:     return "Convert Queue"

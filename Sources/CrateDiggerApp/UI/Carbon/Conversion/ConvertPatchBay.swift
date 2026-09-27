@@ -200,7 +200,26 @@ struct ConvertPatchBay: View {
     /// while the queue quietly ignores it. Swap it for what's actually true.
     @ViewBuilder
     private var scopeRow: some View {
-        if let device = model.pendingDeviceConversion {
+        if let disc = model.pendingCDRipTitle {
+            // A rip's scope is the disc, whole; the batch scope would be a
+            // dead control here for the same reason it is on a device route.
+            cvRow("Disc") {
+                HStack(spacing: 8) {
+                    Text("\(model.conversionQueueTracks.count) TRK")
+                        .font(CarbonFont.mono(12, weight: .bold))
+                        .tracking(1.2)
+                        .foregroundStyle(theme.ink)
+                    Text(disc.uppercased())
+                        .font(CarbonFont.mono(8, weight: .bold))
+                        .tracking(1.3)
+                        .foregroundStyle(theme.ink4)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer(minLength: 0)
+                }
+                .help("Ripping \(disc) with the settings below.")
+            }
+        } else if let device = model.pendingDeviceConversion {
             cvRow("Queue") {
                 HStack(spacing: 8) {
                     Text("\(model.conversionQueueTracks.count) TRK")
@@ -469,8 +488,9 @@ struct ConvertPatchBay: View {
                         // No active job — Cancel exits convert mode back to
                         // the inspector so the user has an obvious way out. Drop
                         // any pending send-to-device hand-off (and restore the
-                        // pre-device conversion selection).
+                        // pre-device conversion selection) or disc to rip.
                         model.clearPendingDeviceConversion()
+                        model.pendingCDRip = nil
                         model.oledView = .nowPlaying
                     }
                 }
@@ -498,6 +518,7 @@ struct ConvertPatchBay: View {
     private var armReadyLabel: String {
         if model.conversionProgress.isRunning { return "● RUNNING" }
         if model.deviceSyncProgress?.isRunning == true { return "● SYNCING" }
+        if model.pendingCDRip != nil, model.cdIdentityPending { return "● PICK RELEASE" }
         if !armEnabled { return "● EMPTY" }
         return "● READY"
     }
@@ -512,7 +533,8 @@ struct ConvertPatchBay: View {
         let count = model.conversionQueueTracks.count
         let bytes = formatBytes(model.conversionEstimatedOutputBytes)
         let dur = formatHHMMSS(model.conversionQueueDurationSeconds)
-        let label = model.pendingDeviceConversion == nil ? "CRATE QUEUE" : "DEVICE QUEUE"
+        let label = model.pendingCDRip != nil ? "AUDIO CD"
+            : model.pendingDeviceConversion == nil ? "CRATE QUEUE" : "DEVICE QUEUE"
         return "\(label) · \(count) TRK · \(bytes) · \(dur)"
     }
 

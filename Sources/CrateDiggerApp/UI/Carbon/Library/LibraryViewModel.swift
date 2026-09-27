@@ -340,6 +340,10 @@ final class LibraryViewModel: ObservableObject {
 
     @Published var oledView: OLEDView = .nowPlaying {
         didSet {
+            // A disc route belongs to the cockpit; walking away from it drops
+            // the route rather than leaving RIP CD armed for a later visit.
+            // SEARCH is only a detour and comes back to the cockpit.
+            if oledView != .conversion, oledView != .search { pendingCDRip = nil }
             // SEARCH is never restored: it belongs to a query that died with
             // the session, so relaunching into it would open the app on an
             // empty screen asking about nothing.
@@ -366,7 +370,22 @@ final class LibraryViewModel: ObservableObject {
     /// Set while a "send to device (convert)" hand-off owns the CNVRT cockpit: the
     /// device folder is the destination and its tracks are the queue. Cleared when
     /// the run finishes or the user leaves convert mode.
-    @Published var pendingDeviceConversion: PendingDeviceConversion?
+    @Published var pendingDeviceConversion: PendingDeviceConversion? {
+        didSet { if pendingDeviceConversion != nil { pendingCDRip = nil } }
+    }
+
+    /// Set while RIP in the disc bar has routed the CNVRT cockpit at a disc:
+    /// its tracks are the queue, the rows above the key are the rip's
+    /// settings, and the key reads RIP CD. The rip used to fire from the
+    /// sidebar with settings nobody could see, then from a sheet that copied
+    /// the cockpit's controls; this is the cockpit itself. Cleared by CANCEL,
+    /// by the rip starting, by leaving the cockpit, and by the disc leaving
+    /// the drive. Never set alongside `pendingDeviceConversion`.
+    @Published var pendingCDRip: AudioCDInfo?
+
+    /// A route (a disc or a device hand-off) owns the cockpit's queue, so the
+    /// crate queue's own controls (arming, CLEAR) have nothing to act on.
+    var cockpitIsRouted: Bool { pendingDeviceConversion != nil || pendingCDRip != nil }
 
     /// The conversion selection to restore after a device convert-transfer, which
     /// temporarily seeds the cockpit with the device's saved format + folder layout
@@ -992,7 +1011,13 @@ final class LibraryViewModel: ObservableObject {
         allRecordsCount = LibraryViewModel.deduplicate(tracks: all).count
     }
     @Published var playlists: [Playlist] = []
-    @Published var mountedCDs: [AudioCDInfo] = []
+    @Published var mountedCDs: [AudioCDInfo] = [] {
+        didSet {
+            if let disc = pendingCDRip, !mountedCDs.contains(where: { $0.id == disc.id }) {
+                pendingCDRip = nil
+            }
+        }
+    }
     @Published var mountedDevices: [MountedDevice] = []
     @Published var deadTracks: [LoadedTrack] = []
     /// Names of `/Volumes/<name>` drives the library references that aren't
@@ -2433,11 +2458,31 @@ final class LibraryViewModel: ObservableObject {
         detectAudioCD(cd)
     }
 
-    /// RIP in the disc bar: ask for the rip settings first (MainWindowController
-    /// presents the sheet), then `ripCD`.
+    /// RIP in the disc bar: route the cockpit at the disc, so its settings are
+    /// on screen before anything is written. The cockpit's RIP CD key runs
+    /// `ripCD`. A device hand-off gives way (restoring your own settings, since
+    /// the rip is yours, not the device's).
     func requestCDRip(_ info: AudioCDInfo) {
         guard !isConversionRunning else { return showOLEDNotice("BUSY") }
-        NotificationCenter.default.post(name: NSNotification.Name("CrateDiggerRipCD"), object: info)
+        clearPendingDeviceConversion()
+        oledView = .conversion
+        pendingCDRip = info
+    }
+
+    /// A lookup or a release pick is still open, so the rip's tags and
+    /// folders aren't decided yet. Both RIP keys (disc bar and cockpit) wait.
+    var cdIdentityPending: Bool {
+        switch cdDetectionState {
+        case .looking, .choosing: return true
+        default:                  return false
+        }
+    }
+
+    /// What the cockpit calls the routed disc: the identified release when
+    /// there is one, else the volume's own name.
+    var pendingCDRipTitle: String? {
+        guard let disc = pendingCDRip else { return nil }
+        return cdMatchedRelease?.title ?? disc.name
     }
 
     func ripCD(info: AudioCDInfo) {
@@ -2446,6 +2491,7 @@ final class LibraryViewModel: ObservableObject {
             return
         }
 
+        pendingCDRip = nil
         oledView = .dub
         conversionProgress = ConversionProgressSnapshot(
             jobsCompleted: 0, jobsTotal: info.tracks.count,
@@ -3077,6 +3123,7 @@ final class LibraryViewModel: ObservableObject {
     // MARK: - Conversion patch-bay queue stats
 
     var conversionQueueTracks: [LoadedTrack] {
+        if let disc = pendingCDRip { return cdTracks(for: disc) }
         if let pending = pendingDeviceConversion { return pending.tracks }
         return tracksForBatchScope(conversionSelection.batchScope)
     }
