@@ -4,18 +4,27 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
-## 2.2.4 (99), 2026-09-26
+## 2.2.4 (100), 2026-09-26
 
-Beta 1. RIP asks how before it rips.
+Beta 2. RIP sets up in the Patch Bay, where the settings already live.
 
 ### Changed
 
 - **RIP lives above the disc's tracks.** It sits beside RE-IDENTIFY and
   CLEAR in the bar that names the disc, instead of under the disc in Sources.
-- **RIP asks for its settings first.** Pressing it opens Rip Options, where
-  you pick the format, bitrate, sample rate, artwork size and folder layout
-  for the disc. Before, the rip used whatever the Patch Bay last had, with
-  nowhere to check it from the disc.
+- **RIP opens the Patch Bay on the disc.** Pressing it shows the disc's
+  tracks as the queue, with the format, bitrate, sample rate, artwork size
+  and folder layout above the key, which now reads RIP CD. Before, the rip
+  used whatever the Patch Bay last had, with nowhere to check it from the
+  disc. (Beta 1 asked in a separate Rip Options window, which is gone.)
+  CANCEL backs out without ripping.
+- **RIP waits for the pressing.** While a disc matches several releases,
+  RIP stays off until you pick one, so the files are named for the right
+  one.
+
+### Fixed
+
+- **RIP no longer stretches across the disc bar** while you pick a release.
 
 ## 2.2.3 (98), 2026-09-26
 
