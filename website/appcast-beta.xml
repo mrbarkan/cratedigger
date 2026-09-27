@@ -7,6 +7,63 @@
             <pubDate>Sat, 26 Sep 2026 20:16:10 -0300</pubDate>
             <link>https://cratedigger.mrbarkan.com/</link>
             <sparkle:fullReleaseNotesLink>https://github.com/mrbarkan/cratedigger/releases</sparkle:fullReleaseNotesLink>
+            <sparkle:version>101</sparkle:version>
+            <sparkle:shortVersionString>2.2.4</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description sparkle:format="markdown"><![CDATA[
+Beta 3. Fix a disc's tags before you rip it, and a rip files only itself.
+
+### Added
+
+- **Edit a disc's tags before ripping.** With a CD in the drive, tag edits
+  (in the inspector, the tag editor or FIX TAGS) are kept for the rip
+  instead of being written to the disc, which can't take them. The display
+  says STAGED FOR RIP, the browser shows the new tags straight away, and the
+  ripped files carry them. Picking a different release or ejecting the disc
+  drops them.
+
+### Changed
+
+- **RIP lives above the disc's tracks.** It sits beside RE-IDENTIFY and
+  CLEAR in the bar that names the disc, instead of under the disc in Sources.
+- **RIP opens the Patch Bay on the disc.** Pressing it shows the disc's
+  tracks as the queue, with the format, bitrate, sample rate, artwork size
+  and folder layout above the key, which now reads RIP CD. Before, the rip
+  used whatever the Patch Bay last had, with nowhere to check it from the
+  disc. (Beta 1 asked in a separate Rip Options window, which is gone.)
+  CANCEL backs out without ripping.
+- **RIP waits for the pressing.** While a disc matches several releases,
+  RIP stays off until you pick one, so the files are named for the right
+  one.
+
+### Fixed
+
+- **A rip adds only itself to the Prep Crate.** It used to scan the whole
+  output folder, so every album ever converted there landed in the Prep
+  Crate, and again at every launch. If that already happened to you, Clear
+  Prep Crate once to stop it.
+- **Box sets rip with their disc numbers.** Each disc of a multi-disc
+  release now carries its disc number and disc count, so the discs no longer
+  pile into one folder as tracks with no disc.
+- **The Patch Bay keeps a disc's rip set up** when the disc's cover finishes
+  loading. It used to jump to the DUB screen and drop it.
+- **RIP no longer stretches across the disc bar** while you pick a release.
+
+]]></description>
+            <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.4-beta.101/CrateDigger-2.2.4.dmg" length="72094503" type="application/octet-stream" sparkle:edSignature="hkqDlcsRoZvR0lmU7YxqcYbi3NQiGaj5hTtkq90pPgmRP9mJ8Us44zhkXVwP2GAIHIWm/xJE6OKgR7LB25bBCw=="/>
+            <sparkle:deltas>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.4-beta.101/CrateDigger101-98.delta" sparkle:deltaFrom="98" length="940326" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="PKr/JOb7m3JxPRT12lwypXRiUolV3jxdHb67TYqTPfrX32Jxqz6IGrCrV7hCL53OXvVlJP+9ItebTPUR7ZVRDw=="/>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.4-beta.101/CrateDigger101-97.delta" sparkle:deltaFrom="97" length="974542" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="FrMC0qlAgNPj3M/q25xOmwvaMhn96Fn2sKPTYad6Q8if65L/SkqE5TA3fQIXxplG9iiz0YVA+Gfy1U0LUUBAAg=="/>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.4-beta.101/CrateDigger101-96.delta" sparkle:deltaFrom="96" length="1012330" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="V+h7Sz1PD0rnRv3DFPsMmS1tY7tQsfdWpcqP/Xd25W67jsBdqB5/5lmJe/LpPuIiqY0LDr2Uay1j2vTKqRmeAw=="/>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.4-beta.101/CrateDigger101-95.delta" sparkle:deltaFrom="95" length="1053590" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="fiiZ5lgRZt7qWfdbPabiJix+lDQ7p6ni0NXH1xaPAzn9a9I8PH9bC80H8PJMVri1WxgAEpsF23TPgrBCJ8+NCw=="/>
+            </sparkle:deltas>
+        </item>
+        <item>
+            <title>2.2.4</title>
+            <pubDate>Sat, 26 Sep 2026 20:16:10 -0300</pubDate>
+            <link>https://cratedigger.mrbarkan.com/</link>
+            <sparkle:fullReleaseNotesLink>https://github.com/mrbarkan/cratedigger/releases</sparkle:fullReleaseNotesLink>
             <sparkle:version>100</sparkle:version>
             <sparkle:shortVersionString>2.2.4</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
@@ -69,47 +126,6 @@ Beta 1. RIP asks how before it rips.
                 <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.4-beta.99/CrateDigger99-97.delta" sparkle:deltaFrom="97" length="722550" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="DEFeRs9UXtoTosgZglEY9ZDhrbBN7BLNiYjtsjR4hBZcsekxfg2ZhZ+HnvG3/LlRU9Fli4lk8r6I3Tqa8KVbCg=="/>
                 <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.4-beta.99/CrateDigger99-96.delta" sparkle:deltaFrom="96" length="852530" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="OFk9XXgc4Tw7WD2zC6KvWu8cdrs77NZQkaDjH/CLVWgXvawpdOIsjrHTl0hcFiA8J/N4dW1UY5YJLFXYzcfCAg=="/>
                 <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.4-beta.99/CrateDigger99-95.delta" sparkle:deltaFrom="95" length="946162" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="pYF7LavGQ2oNpCuQRcwdaR7V1MQKjlgx0re4VvQ89GVdUMi3xJyJgfV5Z4E/4n0iNHEywq7jiRuDN6BrhC8nAw=="/>
-            </sparkle:deltas>
-        </item>
-        <item>
-            <title>2.2.3</title>
-            <pubDate>Sat, 26 Sep 2026 18:18:57 -0300</pubDate>
-            <link>https://cratedigger.mrbarkan.com/</link>
-            <sparkle:fullReleaseNotesLink>https://github.com/mrbarkan/cratedigger/releases</sparkle:fullReleaseNotesLink>
-            <sparkle:version>98</sparkle:version>
-            <sparkle:shortVersionString>2.2.3</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
-            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[
-Put a CD in and it's ready to dub; records drag for real this time.
-
-### Added
-
-- **A CD opens itself.** Put an audio CD in the drive, or start CrateDigger
-  with one already there, and the disc opens on the DUB screen and starts
-  looking itself up. Nothing to click before you can pick the pressing and
-  press RIP.
-- **DUB is on the DISPLAY key and in the View menu** (Command-6). It used to
-  be reachable only by clicking the disc in Sources. With a disc in the
-  drive, DUB shows it even while you browse your library.
-
-### Fixed
-
-- **Artists, albums, tracks and crates drag again.** 2.2.2 fixed the window
-  stealing the drag, but on macOS 27 the rows still wouldn't start one. They
-  now drag to crates, playlists and other apps.
-- **A second CD gets its own tags.** Swapping discs kept the first disc's
-  identification, so the next one skipped its lookup and could rip under the
-  wrong album. Ejecting a disc now forgets it.
-- **Lossless rips ignore the lossy bitrate.** Ripping to ALAC or FLAC no
-  longer passes along the kbps setting the Patch Bay remembers for MP3 and AAC.
-
-]]></description>
-            <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.3/CrateDigger-2.2.3.dmg" length="72681147" type="application/octet-stream" sparkle:edSignature="aZrjpIqnOM+CrzpEupSvDCdaMPcgkVweuu1/AaHxVaRzTkDY5WDE16sybMaaMbpZZMs19nwW/XxGucYUMXXOBQ=="/>
-            <sparkle:deltas>
-                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.3/CrateDigger98-97.delta" sparkle:deltaFrom="97" length="500346" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="a3N77OaeZVekdGbkFGVsuEa1CUVeCYEF1xbxlTKUnVXN9kty12BDfxntqy6Wzz81cI/uzmZn1lF/X01DyfsIAQ=="/>
-                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.3/CrateDigger98-96.delta" sparkle:deltaFrom="96" length="760594" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="tgF4wNQP+wl+5HYbk6NmFyruojbCFWF+pYxa9+R9MUQ8X2H9CHEpiLezG2xh4bkYyuOnj/jKDftHpNJVmui5Ag=="/>
-                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.3/CrateDigger98-95.delta" sparkle:deltaFrom="95" length="897046" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="qYNHftMMVNdMuJgjVRKqC2AJ2d9G5T+fx0OkGt2lqd49iz7zBmwP7gqw4Gwgura5+myRQrPCp5cnGj3S8zsXCg=="/>
             </sparkle:deltas>
         </item>
     </channel>
