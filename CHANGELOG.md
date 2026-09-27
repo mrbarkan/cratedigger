@@ -4,9 +4,18 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
-## 2.2.4 (100), 2026-09-26
+## 2.2.4 (101), 2026-09-27
 
-Beta 2. RIP sets up in the Patch Bay, where the settings already live.
+Beta 3. Fix a disc's tags before you rip it, and a rip files only itself.
+
+### Added
+
+- **Edit a disc's tags before ripping.** With a CD in the drive, tag edits
+  (in the inspector, the tag editor or FIX TAGS) are kept for the rip
+  instead of being written to the disc, which can't take them. The display
+  says STAGED FOR RIP, the browser shows the new tags straight away, and the
+  ripped files carry them. Picking a different release or ejecting the disc
+  drops them.
 
 ### Changed
 
@@ -24,6 +33,15 @@ Beta 2. RIP sets up in the Patch Bay, where the settings already live.
 
 ### Fixed
 
+- **A rip adds only itself to the Prep Crate.** It used to scan the whole
+  output folder, so every album ever converted there landed in the Prep
+  Crate, and again at every launch. If that already happened to you, Clear
+  Prep Crate once to stop it.
+- **Box sets rip with their disc numbers.** Each disc of a multi-disc
+  release now carries its disc number and disc count, so the discs no longer
+  pile into one folder as tracks with no disc.
+- **The Patch Bay keeps a disc's rip set up** when the disc's cover finishes
+  loading. It used to jump to the DUB screen and drop it.
 - **RIP no longer stretches across the disc bar** while you pick a release.
 
 ## 2.2.3 (98), 2026-09-26
