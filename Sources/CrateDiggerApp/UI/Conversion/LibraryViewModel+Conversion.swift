@@ -845,10 +845,10 @@ extension LibraryViewModel {
     /// The device queue the key is armed on, or nil when it is the crate queue's
     /// turn. An armed device that no longer has anything waiting resolves to nil
     /// rather than to a dead key — a finished sync empties its own queue.
-    /// A hand-off (`pendingDeviceConversion`) has its own route and outranks both.
+    /// A route (a disc to rip, or a device hand-off) outranks both.
     @MainActor
     var patchBayDeviceQueue: ExternalDeviceProfile? {
-        guard pendingDeviceConversion == nil,
+        guard !cockpitIsRouted,
               let id = armedDeviceQueueID,
               let profile = prefs.savedExternalDeviceProfiles.first(where: { $0.id == id }),
               !syncQueueSummary(profileID: id).isEmpty
@@ -867,6 +867,7 @@ extension LibraryViewModel {
     var patchBayGoAction: PatchBayGoAction {
         let armed = patchBayDeviceQueue
         return PatchBayGoAction.resolve(
+            hasPendingDisc: pendingCDRip != nil,
             pendingDeviceName: pendingDeviceConversion?.deviceName,
             armedDeviceName: armed?.name,
             armedDeviceIsConnected: armed.map { isDeviceConnected(profileID: $0.id) } ?? false
@@ -880,6 +881,8 @@ extension LibraryViewModel {
         switch patchBayGoAction {
         case .convert, .sendToDevice:
             return !conversionQueueTracks.isEmpty
+        case .ripDisc:
+            return !conversionQueueTracks.isEmpty && !cdIdentityPending
         case .syncToDevice:
             return true   // patchBayDeviceQueue is non-empty by construction
         case .preConvertForDevice:
@@ -895,6 +898,9 @@ extension LibraryViewModel {
         switch patchBayGoAction {
         case .convert, .sendToDevice:
             triggerConversionFromPatchBay()
+        case .ripDisc:
+            guard let disc = pendingCDRip else { return }
+            ripCD(info: disc)
         case .syncToDevice:
             guard let profile = patchBayDeviceQueue else { return }
             syncQueuedTransfers(profileID: profile.id)

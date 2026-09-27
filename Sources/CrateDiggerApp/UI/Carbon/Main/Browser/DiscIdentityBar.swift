@@ -45,7 +45,10 @@ struct DiscIdentityBar: View {
             }
 
             Spacer(minLength: 8)
+            // KeyButton's chrome is greedy; without this a lone key (RIP while
+            // a pick is open) stretched across the whole bar.
             actions
+                .fixedSize(horizontal: true, vertical: false)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -95,15 +98,10 @@ struct DiscIdentityBar: View {
                 .padding(.horizontal, 8)
         }
         .frame(height: 22)
-        .carbonTip("Choose rip settings, then rip this disc")
+        .carbonTip("Set up the rip in the Patch Bay")
     }
 
-    private var canRip: Bool {
-        switch model.cdDetectionState {
-        case .looking, .choosing: return false
-        default: return !model.isConversionRunning
-        }
-    }
+    private var canRip: Bool { !model.cdIdentityPending && !model.isConversionRunning }
 
     // MARK: - Match picker
 

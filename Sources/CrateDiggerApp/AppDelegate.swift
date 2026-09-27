@@ -550,6 +550,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                 model.oledView = .conversion
             }
         }
+        // The same for a disc: RIP in the disc bar routes the cockpit at the
+        // first mounted audio CD. Nothing is ripped until the key is pressed.
+        if env["CRATEDIGGER_CD_ROUTE"] != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 7.5) { [weak self] in
+                guard let model = self?.mainWindowController?.model,
+                      let disc = model.mountedCDs.first
+                else { return }
+                model.selectSource(.cd(volumePath: disc.volumeURL.path))
+                model.requestCDRip(disc)
+            }
+        }
         // The device strip and the album dots need a queue, which needs an iPod
         // on the other end of a USB cable. This fakes one in memory — nothing is
         // written, so the real queue is untouched.

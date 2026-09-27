@@ -38,4 +38,16 @@ final class PatchBayGoActionTests: XCTestCase {
         XCTAssertEqual(action, .preConvertForDevice(deviceName: "iPod"))
         XCTAssertEqual(action.label, "PRE-CONVERT FOR IPOD")
     }
+
+    /// RIP in the disc bar routes the cockpit at the disc: the key rips it
+    /// with the settings above, whatever queue happens to be armed.
+    func testPendingDiscRips() {
+        let action = PatchBayGoAction.resolve(
+            hasPendingDisc: true, pendingDeviceName: nil,
+            armedDeviceName: "iPod", armedDeviceIsConnected: true
+        )
+        XCTAssertEqual(action, .ripDisc)
+        XCTAssertEqual(action.label, "RIP CD")
+        XCTAssertFalse(action.isDeviceRun)
+    }
 }
