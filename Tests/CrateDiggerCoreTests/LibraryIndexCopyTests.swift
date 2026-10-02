@@ -96,7 +96,10 @@ final class LibraryIndexCopyTests: XCTestCase {
     func testTheRecordNamesTheDriveTheLibraryCameFrom() {
         let record = LibraryIndexCopy.Record(sourcePath: "/Volumes/MUSIC/CD_CI", copiedAt: copiedAt)
         XCTAssertEqual(record.volumeName, "MUSIC")
-        XCTAssertEqual(record.sourceFolder, URL(fileURLWithPath: "/Volumes/MUSIC/CD_CI"))
+        // `isDirectory:` spelled out on both sides: without it Foundation asks
+        // the disk, so the expected URL gained its trailing slash only while a
+        // volume named MUSIC happened to be mounted.
+        XCTAssertEqual(record.sourceFolder, URL(fileURLWithPath: "/Volumes/MUSIC/CD_CI", isDirectory: true))
         XCTAssertNil(LibraryIndexCopy.Record(sourcePath: "/Users/someone/Crates", copiedAt: copiedAt).volumeName)
     }
 
