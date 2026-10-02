@@ -72,12 +72,16 @@ final class MeterDriver: ObservableObject {
         self.attackTau = attackTau
         self.releaseTau = releaseTau
         // A matrix nobody can see does not need redrawing 30 times a second.
-        // The bands keep being measured on the audio thread, so the picture is
-        // correct the moment the window comes back.
+        // The bands keep being measured on the audio thread, and the first
+        // tick back carries the whole hidden gap as its time step, so the
+        // picture is correct the moment the window comes back: the ballistics
+        // land on the current level, rings launched before the gap have
+        // expired, and a `LoudnessFollower` re-seeds instead of measuring the
+        // music against a chorus nobody saw.
         visibilitySub = AppVisibility.shared.$isVisible.sink { [weak self] visible in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                if visible { self.ensureTimer() } else { self.haltTimer() }
+                if visible { self.ensureTimer(carryingGap: true) } else { self.haltTimer() }
             }
         }
     }
@@ -108,10 +112,15 @@ final class MeterDriver: ObservableObject {
         timer = nil
     }
 
-    private func ensureTimer() {
+    /// Starts the timer if it is not running. `carryingGap` keeps the clock
+    /// from the last tick, so the first new tick's step spans the time the
+    /// timer was off; only the return from a hidden window wants that. A
+    /// start or stop restarts the clock, so the step from an idle halt is not
+    /// read as the music having run on.
+    private func ensureTimer(carryingGap: Bool = false) {
         // Nothing to drive while no window is on screen to draw the matrix.
         guard timer == nil, AppVisibility.shared.isVisible else { return }
-        lastUpdate = Date()
+        if !carryingGap { lastUpdate = Date() }
         // 30fps: segment meters with ~120ms release ballistics look identical at
         // half the invalidation rate of a 60fps tick.
         timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in

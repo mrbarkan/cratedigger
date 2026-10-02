@@ -50,6 +50,20 @@ final class SpectrumTiltTests: XCTestCase {
         }
     }
 
+    /// The other side of the window: the ceiling must be low enough that loud
+    /// music reaches the top row. Pink noise 6 dB over the calibration level,
+    /// about where a loud master's chorus sits, has to bring its hottest band
+    /// within a segment and a quarter of the top, so the transients riding
+    /// over that level light the peak. At the old −14 dB ceiling it stopped
+    /// 1.7 segments short (4.34) and the peak row stayed dark on real tracks;
+    /// at −20 it reads 4.86. Any ceiling above about −18.8 dB fails here, as
+    /// any below about −24 fails the −18 dBFS calibration above.
+    func testPinkNoiseSixDecibelsHotterBringsTheTopBandNearThePeakRow() {
+        let levels = Self.measuredPinkNoiseLevels(rmsDBFS: -12)
+        let hottest = (levels.max() ?? 0) * 6
+        XCTAssertGreaterThanOrEqual(hottest, 4.75, "hottest band at \(hottest) segments of 6 (all: \(levels.map { $0 * 6 }))")
+    }
+
     /// Silence must read as silence: the tilt adds up to +18 dB, and the floor
     /// must still sit above what digital zero produces.
     func testSilenceLightsNothing() {
@@ -67,16 +81,16 @@ final class SpectrumTiltTests: XCTestCase {
     /// Feeds deterministic pink noise through `compute` in 512-frame chunks,
     /// the size a tap callback typically delivers, and returns the segment
     /// count (out of 6) each band settles at.
-    static func measuredPinkNoiseSegments() -> [Int] {
-        let means = measuredPinkNoiseLevels()
+    static func measuredPinkNoiseSegments(rmsDBFS: Double = -18) -> [Int] {
+        let means = measuredPinkNoiseLevels(rmsDBFS: rmsDBFS)
         return means.map { Int(($0 * 6).rounded()) }
     }
 
-    static func measuredPinkNoiseLevels() -> [Double] {
+    static func measuredPinkNoiseLevels(rmsDBFS: Double = -18) -> [Double] {
         let chunk = 512
         let warmChunks = SpectrumProcessor.size / chunk   // fills the ring
         let measuredChunks = 400                          // ~4.6 s of audio
-        let samples = pinkNoise(count: (warmChunks + measuredChunks) * chunk, rmsDBFS: -18)
+        let samples = pinkNoise(count: (warmChunks + measuredChunks) * chunk, rmsDBFS: rmsDBFS)
 
         let processor = SpectrumProcessor()
         var sums = [Double](repeating: 0, count: SpectrumProcessor.bandCount)

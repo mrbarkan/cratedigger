@@ -15,11 +15,12 @@ the real audio:
    20 kHz right, rising from the bottom, with a peak segment.
 2. **Horizontal VU** — classic stereo bars: left channel on the top three
    rows, right channel on the bottom three, filling left to right.
-3. **Explosions** — light bursts from the centre: loudness sets the radius
-   of a lit core, and each bass hit launches a ring that travels outward and
-   fades.
-4. **Frame** — light closes in from the border: loudness sets how many rings
-   are lit from the edge inward, and each ring's brightness follows its own
+3. **Explosions** — light bursts from the centre: how loud the music is
+   against its own recent level sets the radius of a lit core, and each bass
+   hit launches a ring that travels outward and fades.
+4. **Frame** — light closes in from the border: how loud the music is
+   against its own recent level sets how many rings are lit from the edge
+   inward, and each ring's brightness follows its own
    part of the spectrum (outer bass, middle mids, inner treble).
 
 Clicking the **titlebar status LED** steps Vertical → Horizontal →
@@ -106,19 +107,57 @@ lit column as its peak. Heat = column / 11.
 
 **`ExplosionsAnimation`** — distance from the grid's centre (5.5, 2.5) is
 elliptical, `d = √((dx/6)² + (dy/3)²)`, clamped to 0…1, so a ring fills the
-wide grid evenly. The core lights cells with `d ≤ loudness`. A **bass hit**
-is the mean of bands 0–2 rising more than 0.15 above its own running average
-(time constant 0.3 s). Each hit spawns a ring at radius 0 that grows at
+wide grid evenly. The core lights cells with `d ≤ drive × 0.75`, the drive
+coming from its own `LoudnessFollower` (below): a typical moment is a small
+centre of eight cells, a loud one about 28, and the corners are always left
+for the rings. A **bass hit** is the mean of bands 0–2 rising more than 0.15
+above its own running average (time constant 0.3 s). 0.12 was tried: it
+added about 20 rings a minute on dense masters but made steady pink noise
+fire 4–8 a minute, which reads as flicker, so 0.15 stays. Each hit spawns a ring at radius 0 that grows at
 2.0 per second and fades linearly from 1 to 0 over 0.5 s. A ring lights
 cells within 0.18 of its radius. At most four rings exist at once; the
 oldest is dropped. A cell takes the brightest of the core and any ring.
-Heat = 1 − d. At rest when there are no rings and the loudness is zero.
+Heat = 1 − d. At rest when there are no rings and the loudness is zero; at
+rest the bass average is forgotten, and the follower forgets on that same
+zero by itself, so the first sound after a pause is measured afresh.
 
 **`FrameAnimation`** — a cell's ring is `min(c, 11 − c, r, 5 − r)`: 0 at
-the border, 2 at the centre. `depth = loudness × 3`, so rings 0 up to
-⌈depth⌉ − 1 are lit, and the innermost lit one is scaled by the fractional
-part. A lit ring's intensity is the mean of its band group: bands 0–3 for
-ring 0, 4–7 for ring 1, 8–11 for ring 2. Heat = ring / 2.
+the border, 2 at the centre. `depth = drive × 3`, the drive coming from its
+own `LoudnessFollower`, so rings 0 up to ⌈depth⌉ − 1 are lit, and the
+innermost lit one is scaled by the fractional part. A lit ring's intensity
+is the mean of its band group: bands 0–3 for ring 0, 4–7 for ring 1, 8–11
+for ring 2. Heat = ring / 2. At rest only on silence: a quiet passage can
+pull the frame dark while the follower still holds the song's level.
+
+**`LoudnessFollower`** — why the two above don't read `loudness` directly.
+The first build did, and measured on five real tracks through the real
+spectrum and the meter's ballistics, loudness hardly moved within a song
+(mean 0.3–0.56, standard deviation 0.04–0.08): Frame lit exactly two rings
+on 99–100% of frames on four of the five, and the Explosions core barely
+changed size. A master's absolute level says nothing about where its loud
+moments are, so the follower measures the song against itself. It keeps an
+exponential running mean and running mean absolute deviation of the
+loudness (time constant 2 s) and answers `0.5 + (loudness − mean) /
+(4 × spread)`, clamped to 0…1, so ±2 spreads span the range. The spread
+has a floor of 0.025: pink noise wobbles by about 0.008, music several
+times that, so a steady tone or noise reads as a calm 0.5 (Frame at two
+rings on 77–91% of frames) instead of jitter blown up to fill the range.
+Loudness under 0.02 is silence and the drive is 0, but there are two
+kinds. Exactly 0 is the meter settled after playback stopped (the driver
+snaps to 0 only then) and forgets the statistics at once. Anything else
+under the gate is a quiet moment inside the music, a stop-time break or a
+fade's tail, and holds the statistics for 0.75 s: forgetting on one tick
+under the gate made the hit ending a break read a calm 0.5 instead of 1,
+and made a fade dithering across the gate re-seed, and jump from 0 to 0.5,
+on every upward crossing. A time step longer than the 2 s time constant
+(the first tick after a hidden window) also re-seeds, since the statistics
+say nothing about the music in between. After a forget the next sound
+seeds the mean at its own level, so resuming playback reads 0.5 rather
+than pinning at 1 while a mean climbs from zero.
+For the first readings after a seed the mean is a plain average, so a first
+reading caught mid-attack can't skew it for seconds. Measured again, Frame
+spreads over 0/1/2/3 rings at about 2–7/20–33/35–41/27–34% of frames, and
+the core's median of 8 cells reaches 28 at the 95th percentile.
 
 ### Core: `SpectrumProcessor` tilt
 
@@ -127,7 +166,14 @@ dB → 0…1 mapping, where *fc* is the band's centre frequency (the geometric
 mean of its edges). That is 0 dB at 1 kHz, about −24 dB at the lowest band
 (centre ≈ 27 Hz) and about +18 dB at the highest (centre ≈ 15 kHz). The floor and ceiling are then retuned against one
 test target: **pink noise at −18 dBFS RMS lights every band to 3 ± 1
-segments.** The gains are computed once in `init`, beside the band ranges,
+segments.** The window is −70 to −20 dB. It was −70 to −14 at first, which
+met the target but left real music piled on 3–4 segments with the top row
+never lit; at −20 some band reaches the top row on 1–12% of ticks and pink
+noise still lands on 3–4. −22 held the top row a third of the time on busy
+masters, and at −24 the pink noise's treble rounds to 5 and misses the
+target. The hotter ceiling also widens the bass's swings by about 12%,
+which is what lifted the ring rate on dense masters (21 to 27 a minute on
+the densest track measured). The gains are computed once in `init`, beside the band ranges,
 so the audio thread does no extra work.
 
 `currentPlaybackSpectrum` has no other consumer, so nothing else changes.
@@ -136,6 +182,11 @@ so the audio thread does no extra work.
 
 It keeps its ballistics, its 30 fps timer, the hidden-window halt and
 `halt()`. What changes:
+
+- When the window comes back, the first tick's time step is the whole
+  hidden gap rather than one frame, so the ballistics land on the current
+  level, old rings have expired and the follower re-seeds, instead of the
+  matrix replaying a change from a chorus nobody saw.
 
 - It also smooths `left` and `right` from `currentPlaybackLevels`, using
   the same constants.
@@ -213,7 +264,18 @@ Core, XCTest (`Tests/CrateDiggerCoreTests`):
 
 - `SpectrumTiltTests` — the tilt is 0 dB at 1 kHz and +4.5 dB per octave.
   Synthesised pink noise at −18 dBFS RMS, fed through `compute`, lights
-  every band to 3 ± 1 segments.
+  every band to 3 ± 1 segments, and pink noise 6 dB hotter brings the
+  hottest band within 1.25 segments of the top (the old −14 dB ceiling
+  fails this).
+- `LoudnessFollowerTests` — a constant settles at 0.5; a step up drives
+  above 0.8 and relaxes back toward 0.5, a step down drives low; silence
+  (and a fade's tail) is 0; resuming after silence does not saturate, and a
+  low first reading is forgotten within half a second; a short dip under
+  the gate holds the song's statistics, a fade tail dithering across the
+  gate never re-seeds, a quiet spell past the hold or a settled 0 forgets,
+  and a step longer than the time constant re-seeds; a loudness swinging
+  by as little as ±0.04 spans below 0.2 to above 0.8; ±0.005 jitter stays
+  within 0.06 of 0.5.
 - `MatrixAnimationTests`:
   - every kind: silence gives `.dark` and `isAtRest`;
   - Vertical: all bands at 1 lights every cell, with row 5 as the peak;
@@ -222,7 +284,16 @@ Core, XCTest (`Tests/CrateDiggerCoreTests`):
     at all;
   - Explosions: a bass step spawns a ring; its radius grows across
     successive `dt`; it reaches rest within 0.6 s once the bass falls back;
-  - Frame: bass only lights ring 0 alone, and full bands light every ring;
+    the core is exactly the cells within `coreRadius`, its size swings with
+    a loudness that swings by only ±0.08, and it never fills the grid;
+    steady bands fire no ring after the first, and steady pink noise through
+    the real spectrum and ballistics fires at most one in thirty seconds;
+    silence forgets the song's level, and a break does not;
+  - Frame: bass only lights ring 0 alone, and full bands after a quieter
+    stretch light every ring; a swinging loudness lights 1, 2 and 3 rings
+    in turn; a quiet passage is dark but not at rest, silence is both, and
+    the next sound starts at two rings, as it does after a hidden-window
+    gap; steady pink noise stays at two;
   - Kind: `next` follows the click order, `init(persisted:)` maps nil and
     `"bogus"` to `.vertical`, and `.off.make()` is nil.
 

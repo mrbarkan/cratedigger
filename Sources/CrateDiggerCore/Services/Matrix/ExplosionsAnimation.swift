@@ -1,11 +1,11 @@
 import Foundation
 
-/// Light bursting from the centre. Loudness sets the radius of a lit core, and
-/// each bass hit launches a ring that travels outward and fades.
+/// Light bursting from the centre. How loud the music is against its own
+/// recent level (a `LoudnessFollower`'s drive) sets the radius of a lit core,
+/// and each bass hit launches a ring that travels outward and fades.
 ///
-/// The only animation with memory: rings outlive the frame that spawned them,
-/// which is why `isAtRest` waits for the last one to fade rather than for the
-/// music to stop.
+/// Rings outlive the frame that spawned them, which is why `isAtRest` waits
+/// for the last one to fade rather than for the music to stop.
 public struct ExplosionsAnimation: MatrixAnimation {
     /// A ring launched by one bass hit.
     public struct Ring: Equatable, Sendable {
@@ -25,7 +25,16 @@ public struct ExplosionsAnimation: MatrixAnimation {
     static let ringHalfWidth = 0.18
     static let maxRings = 4
     /// How far the bass must jump above its own running average to count as a hit.
+    /// Measured on real tracks and steady pink noise: 0.15 fires 27–107 rings
+    /// a minute on music (dense masters at the low end) and one to four on
+    /// noise; 0.12 adds about 20 a minute on dense material but makes noise
+    /// fire 4–8, which reads as flicker. The 6 dB hotter spectrum ceiling
+    /// already widened the bass's swings enough to lift the dense masters.
     static let hitThreshold = 0.15
+    /// The core's radius at full drive. Below 1 so that even the loudest
+    /// moment leaves the corners for the rings to cross: at a typical drive of
+    /// 0.5 the core is a small centre, and a chorus roughly doubles it.
+    static let coreReach = 0.75
     static let averageTimeConstant: TimeInterval = 0.3
     /// The core's brightness, the same step below peak as a VU meter's body.
     static let coreIntensity = VerticalVUAnimation.bodyIntensity
@@ -38,6 +47,9 @@ public struct ExplosionsAnimation: MatrixAnimation {
     /// with rings all stuck at the centre.
     private var armed = true
     private var loudness = 0.0
+    private var follower = LoudnessFollower()
+    /// The lit core's radius this frame, in the units of `distance(column:row:)`.
+    public private(set) var coreRadius = 0.0
 
     public init() {}
 
@@ -89,11 +101,19 @@ public struct ExplosionsAnimation: MatrixAnimation {
         // which would swallow the first hit after a pause.
         if isAtRest { bassAverage = 0 }
 
+        // Sized off the raw loudness, the core barely changed size within a
+        // song; the follower measures it against the song's own level. It
+        // forgets that level by itself once playback has stopped (the settled
+        // 0 that also puts this animation at rest) or after a quiet spell
+        // longer than `LoudnessFollower.silenceHold`, so the next sound is
+        // measured afresh rather than against the last song.
+        coreRadius = follower.drive(loudness: loudness, dt: input.dt) * Self.coreReach
+
         var frame = MatrixFrame.dark
         for row in 0..<MatrixFrame.rows {
             for column in 0..<MatrixFrame.columns {
                 let d = Self.distance(column: column, row: row)
-                var intensity = d <= loudness ? Self.coreIntensity : 0
+                var intensity = coreRadius > 0 && d <= coreRadius ? Self.coreIntensity : 0
                 for ring in rings where abs(d - ring.radius) <= Self.ringHalfWidth {
                     intensity = max(intensity, ring.brightness)
                 }

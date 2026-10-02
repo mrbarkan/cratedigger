@@ -2,7 +2,7 @@ import XCTest
 @testable import CrateDiggerCore
 
 /// The NOW screen's 12 × 6 matrix. Every animation is a pure function of the
-/// audio it is fed (plus its own memory, for Explosions), so each is checked
+/// audio it is fed (plus its own memory, for Explosions and Frame), so each is checked
 /// here frame by frame rather than by eye.
 final class MatrixAnimationTests: XCTestCase {
 
@@ -255,24 +255,25 @@ final class MatrixAnimationTests: XCTestCase {
         XCTAssertEqual(frame[column: 5, row: 2].intensity, 0)
     }
 
-    /// The core is exactly the cells within `loudness` of the centre, at the
-    /// body brightness, and it widens as the music gets louder. Each level
-    /// gets a fresh animation at dt = 0 so no average built over time comes
-    /// into it. The step from silence does launch a ring, but at radius 0 it
-    /// reaches only d ≤ 0.18, and the nearest cells to the centre sit at
-    /// d ≈ 0.19, so every lit cell here is core.
-    func testExplosionsCoreRadiusFollowsLoudness() {
-        var previous = Set<Int>()
+    /// The core is exactly the cells within `coreRadius` of the centre, at
+    /// the body brightness, and its radius is the follower's drive times
+    /// `coreReach`. The first sound seeds the follower, so a fresh animation's
+    /// first frame sits at drive 0.5 whatever the level. Each case is checked
+    /// at dt = 0 on that first frame, where the step from silence launches a
+    /// ring at radius 0: it reaches only d ≤ 0.18, and the nearest cells to
+    /// the centre sit at d ≈ 0.19, so every lit cell here is core.
+    func testExplosionsCoreIsTheCellsWithinItsRadius() {
         for loudness in [0.25, 0.5, 0.75] {
             var boom = ExplosionsAnimation()
             let frame = boom.frame(for: input(Array(repeating: loudness, count: 12), dt: 0))
-            var core = Set<Int>()
+            XCTAssertEqual(boom.coreRadius, 0.5 * ExplosionsAnimation.coreReach, accuracy: 1e-12, "L=\(loudness)")
+            var coreCount = 0
             for row in 0..<6 {
                 for column in 0..<12 {
                     let d = ExplosionsAnimation.distance(column: column, row: row)
                     let cell = frame[column: column, row: row]
-                    if d <= loudness {
-                        core.insert(row * 12 + column)
+                    if d <= boom.coreRadius {
+                        coreCount += 1
                         XCTAssertEqual(cell.intensity, ExplosionsAnimation.coreIntensity, "L=\(loudness) c\(column) r\(row) d=\(d)")
                         XCTAssertEqual(cell.heat, 1 - d, accuracy: 1e-9)
                     } else {
@@ -280,8 +281,62 @@ final class MatrixAnimationTests: XCTestCase {
                     }
                 }
             }
-            XCTAssertTrue(core.isStrictSuperset(of: previous), "the core should widen at L=\(loudness)")
-            previous = core
+            XCTAssertGreaterThan(coreCount, 0)
+        }
+    }
+
+    /// Loudness on ordinary masters hardly moves, so sized straight off it the
+    /// core barely changed. Measured against the song's own level, it should
+    /// grow on the loud moments and shrink on the quiet ones.
+    func testExplosionsCoreSizeSwingsWithTheMusic() {
+        var boom = ExplosionsAnimation()
+        var sizes = Set<Int>()
+        for step in 0..<(10 * 30) {
+            let level = swinging(step)
+            _ = boom.frame(for: input(Array(repeating: level, count: 12)))
+            guard step >= 3 * 30 else { continue }
+            sizes.insert(coreCells(radius: boom.coreRadius))
+        }
+        XCTAssertLessThanOrEqual(sizes.min() ?? 99, 4, "\(sizes.sorted())")
+        XCTAssertGreaterThanOrEqual(sizes.max() ?? 0, 20, "\(sizes.sorted())")
+    }
+
+    /// Never past `coreReach`: the corners are left for the rings to cross.
+    func testExplosionsCoreNeverFillsTheGrid() {
+        var boom = ExplosionsAnimation()
+        for _ in 0..<90 { _ = boom.frame(for: input(Array(repeating: 0.2, count: 12))) }
+        _ = boom.frame(for: input(Array(repeating: 1, count: 12)))
+        XCTAssertEqual(boom.coreRadius, ExplosionsAnimation.coreReach, accuracy: 1e-12)
+        XCTAssertLessThan(coreCells(radius: boom.coreRadius), 72)
+    }
+
+    /// A steady sound has no hits in it: past the step from silence, which is
+    /// one, constant bands must never launch another ring.
+    func testExplosionsSteadyBandsFireNoRingsAfterTheFirst() {
+        var boom = ExplosionsAnimation()
+        var launched = 0
+        for _ in 0..<(10 * 30) {
+            let before = boom.rings.map(\.age)
+            _ = boom.frame(for: input(Array(repeating: 0.5, count: 12)))
+            if boom.rings.contains(where: { $0.age == 0 }), before.allSatisfy({ $0 > 0 }) { launched += 1 }
+        }
+        XCTAssertEqual(launched, 1)
+    }
+
+    /// The same through the real spectrum: steady pink noise, fed in the
+    /// chunk sizes a tap delivers and smoothed with the meter's ballistics,
+    /// must not read as a beat. Music measured the same way fires 27 to 107
+    /// rings a minute; this allows noise one stray ring in thirty seconds.
+    func testExplosionsSteadyPinkNoiseFiresAlmostNoRings() {
+        for chunk in [1024, 4096] {
+            var boom = ExplosionsAnimation()
+            var launched = 0
+            Self.feedPinkNoise(seconds: 31, chunk: chunk) { bands in
+                let before = boom.rings.map(\.age)
+                _ = boom.frame(for: input(bands))
+                return boom.rings.contains(where: { $0.age == 0 }) && before.allSatisfy { $0 > 0 }
+            } counting: { launched = $0 }
+            XCTAssertLessThanOrEqual(launched, 1, "chunk \(chunk)")
         }
     }
 
@@ -345,6 +400,30 @@ final class MatrixAnimationTests: XCTestCase {
         XCTAssertEqual(boom.rings.count, 1)
     }
 
+    /// Silence (the driver's settled 0) forgets the song's level, so the next
+    /// sound starts afresh at a calm half-reach core rather than being
+    /// measured against the song before the pause.
+    func testExplosionsSilenceForgetsTheSongsLevel() {
+        var boom = ExplosionsAnimation()
+        for _ in 0..<(5 * 30) { _ = boom.frame(for: input(Array(repeating: 0.6, count: 12))) }
+        _ = boom.frame(for: input([]))
+        _ = boom.frame(for: input(Array(repeating: 0.2, count: 12)))
+        XCTAssertEqual(boom.coreRadius, 0.5 * ExplosionsAnimation.coreReach, accuracy: 1e-12)
+    }
+
+    /// A stop-time break is not silence: the core goes out through it, and
+    /// the hit that brings the band back fills it to full reach.
+    func testExplosionsCoreHoldsTheSongsLevelThroughABreak() {
+        var boom = ExplosionsAnimation()
+        for _ in 0..<(5 * 30) { _ = boom.frame(for: input(Array(repeating: 0.4, count: 12))) }
+        for _ in 0..<9 {
+            _ = boom.frame(for: input(Array(repeating: 0.01, count: 12)))
+            XCTAssertEqual(boom.coreRadius, 0)
+        }
+        _ = boom.frame(for: input(Array(repeating: 0.5, count: 12)))
+        XCTAssertEqual(boom.coreRadius, ExplosionsAnimation.coreReach, accuracy: 1e-12)
+    }
+
     // MARK: - Frame
 
     func testFrameRingIndexRunsFromTheBorderInward() {
@@ -373,9 +452,11 @@ final class MatrixAnimationTests: XCTestCase {
         }
     }
 
+    /// Full bands right after a quieter stretch drive the follower to 1, so
+    /// every ring is lit, each at its group's level.
     func testFrameFullBandsLightEveryRing() {
         var frame = FrameAnimation()
-        let out = frame.frame(for: input(Array(repeating: 1, count: 12)))
+        let out = frameAtFullDrive(&frame)
         for row in 0..<6 {
             for column in 0..<12 {
                 let cell = out[column: column, row: row]
@@ -385,13 +466,138 @@ final class MatrixAnimationTests: XCTestCase {
         }
     }
 
-    /// depth = loudness × 3 = 1.5: ring 0 whole, ring 1 at half its group's level.
+    /// The first sound seeds the follower at drive 0.5, so depth = 0.5 × 3 =
+    /// 1.5: ring 0 whole, ring 1 at half its group's level.
     func testFrameScalesTheInnermostLitRingByTheFraction() {
         var frame = FrameAnimation()
         let out = frame.frame(for: input([1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0]))
         XCTAssertEqual(out[column: 0, row: 0].intensity, 1, accuracy: 1e-12)        // ring 0: bands 0–3 mean 1
         XCTAssertEqual(out[column: 1, row: 1].intensity, 0.5 * 0.5, accuracy: 1e-12) // ring 1: mean 0.5, × 0.5
         XCTAssertEqual(out[column: 2, row: 2].intensity, 0)                         // ring 2: unlit
+    }
+
+    /// Loudness on ordinary masters hardly moves: sized straight off it, the
+    /// frame lit exactly two rings on 99–100% of frames. Against the song's
+    /// own level the count should travel.
+    func testFrameRingCountFollowsTheMusic() {
+        var frame = FrameAnimation()
+        var counts = Set<Int>()
+        for step in 0..<(10 * 30) {
+            let out = frame.frame(for: input(Array(repeating: swinging(step), count: 12)))
+            guard step >= 3 * 30 else { continue }
+            counts.insert(Set(litCells(out).map { FrameAnimation.ring(column: $0.column, row: $0.row) }).count)
+        }
+        XCTAssertTrue(counts.isSuperset(of: [1, 2, 3]), "\(counts.sorted())")
+    }
+
+    /// A quiet passage under a loud song can pull the frame dark, but that is
+    /// not rest: the song is still playing, and its statistics are kept.
+    func testFrameQuietPassageIsDarkButNotAtRest() {
+        var frame = FrameAnimation()
+        for _ in 0..<(5 * 30) { _ = frame.frame(for: input(Array(repeating: 0.6, count: 12))) }
+        let out = frame.frame(for: input(Array(repeating: 0.3, count: 12)))
+        XCTAssertEqual(out, .dark)
+        XCTAssertFalse(frame.isAtRest)
+    }
+
+    /// Silence is rest, and the next sound starts afresh at a calm two rings
+    /// rather than being measured against the song before the pause.
+    func testFrameSilenceIsDarkAndAtRestAndTheNextSoundStartsAfresh() {
+        var frame = FrameAnimation()
+        for _ in 0..<(5 * 30) { _ = frame.frame(for: input(Array(repeating: 0.6, count: 12))) }
+        XCTAssertEqual(frame.frame(for: input([])), .dark)
+        XCTAssertTrue(frame.isAtRest)
+        let resumed = frame.frame(for: input(Array(repeating: 0.2, count: 12)))
+        XCTAssertEqual(Set(litCells(resumed).map { FrameAnimation.ring(column: $0.column, row: $0.row) }), [0, 1])
+    }
+
+    /// The first tick after the window comes back carries the whole hidden
+    /// gap. The music has moved on meanwhile, so the frame starts afresh at
+    /// two rings rather than reading a quieter verse against a chorus nobody
+    /// saw and going dark.
+    func testFrameAfterAHiddenGapStartsAfresh() {
+        var frame = FrameAnimation()
+        for _ in 0..<(5 * 30) { _ = frame.frame(for: input(Array(repeating: 0.6, count: 12))) }
+        let back = frame.frame(for: input(Array(repeating: 0.3, count: 12), dt: 30))
+        XCTAssertEqual(Set(litCells(back).map { FrameAnimation.ring(column: $0.column, row: $0.row) }), [0, 1])
+    }
+
+    /// Steady pink noise through the real spectrum and the meter's
+    /// ballistics: its jitter is not dynamics, so the frame stays at about
+    /// two rings instead of flickering between none and all three.
+    func testFrameStaysCalmOnSteadyPinkNoise() {
+        for chunk in [1024, 4096] {
+            var frame = FrameAnimation()
+            var counts = [Int](repeating: 0, count: 4)
+            Self.feedPinkNoise(seconds: 31, chunk: chunk) { bands in
+                let out = frame.frame(for: input(bands))
+                counts[Set(litCells(out).map { FrameAnimation.ring(column: $0.column, row: $0.row) }).count] += 1
+                return false
+            } counting: { _ in }
+            let total = Double(counts.reduce(0, +))
+            XCTAssertEqual(counts[0], 0, "chunk \(chunk): \(counts)")
+            XCTAssertGreaterThan(Double(counts[2]) / total, 0.7, "chunk \(chunk): \(counts)")
+        }
+    }
+
+    // MARK: - Helpers
+
+    /// Loudness that swings around 0.45 by ±0.08 at 0.7 Hz: a beat-and-phrase
+    /// shape small enough that the raw loudness would have hidden it.
+    private func swinging(_ step: Int) -> Double {
+        0.45 + 0.08 * sin(2 * .pi * 0.7 * Double(step) * tick)
+    }
+
+    private func coreCells(radius: Double) -> Int {
+        var count = 0
+        for row in 0..<6 {
+            for column in 0..<12 where radius > 0 && ExplosionsAnimation.distance(column: column, row: row) <= radius {
+                count += 1
+            }
+        }
+        return count
+    }
+
+    /// Three seconds of a quieter level, then full bands: the follower reads
+    /// the jump as loud as it gets.
+    private func frameAtFullDrive(_ frame: inout FrameAnimation) -> MatrixFrame {
+        for _ in 0..<(3 * 30) { _ = frame.frame(for: input(Array(repeating: 0.2, count: 12))) }
+        return frame.frame(for: input(Array(repeating: 1, count: 12)))
+    }
+
+    /// Steady pink noise at −18 dBFS through the real `SpectrumProcessor`, in
+    /// `chunk`-frame buffers, smoothed per 30 fps tick with `MeterDriver`'s
+    /// ballistics (8 ms attack, 120 ms release). `tick` is handed each tick's
+    /// bands after the first second and answers whether it counts; the total
+    /// goes to `counting`.
+    private static func feedPinkNoise(seconds: Double, chunk: Int, tick: ([Double]) -> Bool, counting: (Int) -> Void) {
+        let rate = 44_100
+        let samples = SpectrumTiltTests.pinkNoise(count: Int(seconds * Double(rate)), rmsDBFS: -18)
+        let processor = SpectrumProcessor()
+        let tickFrames = rate / 30
+        var latest = [Double](repeating: 0, count: 12)
+        var smoothed = [Double](repeating: 0, count: 12)
+        var nextTick = tickFrames
+        var ticks = 0
+        var count = 0
+        samples.withUnsafeBufferPointer { buffer in
+            var position = 0
+            while position + chunk <= samples.count {
+                latest = processor.compute(samples: buffer.baseAddress! + position, stride: 1, count: chunk).map(Double.init)
+                position += chunk
+                while nextTick <= position {
+                    nextTick += tickFrames
+                    ticks += 1
+                    for i in smoothed.indices {
+                        let tau = latest[i] > smoothed[i] ? 0.008 : 0.12
+                        smoothed[i] += (latest[i] - smoothed[i]) * (1 - exp(-(1.0 / 30) / tau))
+                    }
+                    let counts = tick(smoothed)
+                    if ticks > 30, counts { count += 1 }
+                }
+            }
+        }
+        counting(count)
     }
 
     // MARK: - Resting heat
@@ -407,7 +613,7 @@ final class MatrixAnimationTests: XCTestCase {
         let pictures: [(MatrixAnimationKind, MatrixFrame)] = [
             (.vertical, vertical.frame(for: full)),
             (.horizontal, horizontal.frame(for: full)),
-            (.frame, frameAnimation.frame(for: full)),
+            (.frame, frameAtFullDrive(&frameAnimation)),
         ]
         for (kind, picture) in pictures {
             for row in 0..<6 {

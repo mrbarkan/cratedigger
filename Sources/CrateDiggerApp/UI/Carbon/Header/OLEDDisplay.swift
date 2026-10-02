@@ -1138,11 +1138,17 @@ private enum LibraryNowPlayingCells {
             return String(format: "%.1f MB", Double(s) / 1_048_576.0)
         }()
 
+        // With nothing loaded there is no file to call lossy or constant, so
+        // these subs go blank with their values rather than describe nothing.
+        let formatSub = track == nil ? "—" : (lossless ? "Lossless" : "Lossy")
+        let bitrateSub = track == nil ? "—" : (lossless ? "Lossless" : "Constant")
+        let sampleSub = track == nil ? "—" : (["FLAC", "ALAC"].contains(codec) ? "16-bit" : "Audio")
+
         return [
             OLEDCellData(key: "Track", value: trackVal, sub: trackSub),
-            OLEDCellData(key: "Format", value: track?.track.formatName?.uppercased() ?? "—", sub: lossless ? "Lossless" : "Lossy"),
-            OLEDCellData(key: "Bitrate", value: bitrate, sub: lossless ? "Lossless" : "Constant"),
-            OLEDCellData(key: "Sample", value: sample, sub: ["FLAC", "ALAC"].contains(codec) ? "16-bit" : "Audio"),
+            OLEDCellData(key: "Format", value: track?.track.formatName?.uppercased() ?? "—", sub: formatSub),
+            OLEDCellData(key: "Bitrate", value: bitrate, sub: bitrateSub),
+            OLEDCellData(key: "Sample", value: sample, sub: sampleSub),
             OLEDCellData(key: "Size", value: size, sub: "File Size")
         ]
     }

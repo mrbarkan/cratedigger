@@ -1,14 +1,21 @@
 import Foundation
 
-/// Light closing in from the border. Loudness sets how many rings are lit
+/// Light closing in from the border. How loud the music is against its own
+/// recent level (a `LoudnessFollower`'s drive) sets how many rings are lit
 /// from the edge inward, and each ring's brightness follows its own part of
 /// the spectrum: the outer ring the bass, the middle the mids, the inner the
 /// treble.
+///
+/// Sized off the raw loudness, the frame sat at two rings on almost every
+/// frame of almost every song, because a master's loudness hardly moves;
+/// the follower is what lets a chorus reach the centre and a breakdown pull
+/// back to the border.
 public struct FrameAnimation: MatrixAnimation {
     /// Rings 0 (the border) to 2 (the centre two rows).
     static let ringCount = 3
 
     public private(set) var isAtRest = true
+    private var follower = LoudnessFollower()
 
     public init() {}
 
@@ -24,7 +31,7 @@ public struct FrameAnimation: MatrixAnimation {
     }
 
     public mutating func frame(for input: MatrixInput) -> MatrixFrame {
-        let depth = input.loudness * Double(Self.ringCount)
+        let depth = follower.drive(loudness: input.loudness, dt: input.dt) * Double(Self.ringCount)
         // Ring k is lit by however much of it the depth covers: whole rings
         // up to ⌊depth⌋, the innermost lit one by the fractional part. Written
         // this way, a depth that lands exactly on a ring boundary lights that
@@ -52,8 +59,12 @@ public struct FrameAnimation: MatrixAnimation {
                 anyLit = true
             }
         }
-        // Stateless: nothing outlives the frame, so a dark frame is rest.
-        isAtRest = !anyLit
+        // A dark frame is rest only on silence. A quiet passage can also read
+        // dark (the drive bottoms out two spreads under the song's mean), and
+        // that is not rest. The driver only halts on the settled 0 it sends
+        // once playback has stopped, and that 0 makes the follower forget the
+        // song, so the next sound starts afresh.
+        isAtRest = !anyLit && follower.isSilent
         return frame
     }
 }

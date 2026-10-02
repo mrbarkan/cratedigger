@@ -30,8 +30,15 @@ final class SpectrumProcessor {
     // −18 dBFS RMS lights every band to 3 ± 1 segments of 6
     // (`SpectrumTiltTests`). Move them together to make the whole meter hotter
     // or deader; move them apart to make it less twitchy.
+    //
+    // The ceiling was −14 dB until real tracks showed the top segment was
+    // never reached: band levels piled up on 3–4 segments and the peak row
+    // stayed dark. At −20 a band tops out 0.1–1% of the time and some band
+    // reaches the top row on 1–12% of ticks, while pink noise still lands on
+    // 3–4. At −22 the busier masters hold the top row a third of the time,
+    // and at −24 pink noise's treble rounds to 5 and fails the calibration.
     static let floorDB: Float = -70
-    static let ceilDB: Float = -14
+    static let ceilDB: Float = -20
 
     /// Decibels added per octave above 1 kHz (and taken away below it).
     /// Music's energy falls by roughly 3–6 dB per octave, so an unweighted FFT
