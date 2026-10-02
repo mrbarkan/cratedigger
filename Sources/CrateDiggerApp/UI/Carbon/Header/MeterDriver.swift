@@ -1,27 +1,58 @@
 import Combine
+import CrateDiggerCore
 import Foundation
 
-/// Drives the NOW screen's spectrum from the frequency bands the playback
-/// engine measures (`LibraryViewModel.currentPlaybackSpectrum`).
+/// Drives the NOW screen's LED matrix from what the playback engine measures:
+/// the frequency bands (`LibraryViewModel.currentPlaybackSpectrum`) and the
+/// channel levels (`currentPlaybackLevels`).
 ///
 /// Exponential (RC-style) ballistics, a quick attack and a slower release, so
-/// the columns track the music and fade down when playback pauses instead of
-/// snapping to zero. The timer keeps ticking through the fade, then halts once
-/// the columns settle, so it costs nothing while idle.
+/// the matrix tracks the music and fades down when playback pauses instead of
+/// snapping to dark. The smoothed values go through whichever
+/// `MatrixAnimation` the view hands over, and the picture it answers with is
+/// published as `frame`. The timer keeps ticking through the fade and through
+/// anything the animation still has moving, then halts, so it costs nothing
+/// while idle.
 @MainActor
 final class MeterDriver: ObservableObject {
-    /// Smoothed 0...1 band magnitudes (low → high), quantized to whole segments.
-    @Published private(set) var bands: [Double] = Array(repeating: 0, count: 12)
+    /// The matrix as it should look now, with intensities rounded to steps of
+    /// 1/8. Published only when it changes.
+    @Published private(set) var frame = MatrixFrame.dark
 
     /// Supplies the latest 0...1 frequency bands (from the FFT). Set by the view.
     var spectrumProvider: (() -> [Double])?
+    /// Supplies the latest 0...1 left and right levels. Set by the view.
+    var levelsProvider: (() -> (left: Double, right: Double))?
+
+    /// What turns the smoothed audio into a picture. Set by the view; nil
+    /// draws nothing. Swapping it starts the new one from a dark matrix
+    /// rather than leaving the last one's picture up until the next tick.
+    var animation: (any MatrixAnimation)? {
+        get { currentAnimation }
+        set {
+            currentAnimation = newValue
+            frame = .dark
+        }
+    }
+
+    /// The stored animation, mutated in place each tick. Kept apart from
+    /// `animation` because a setter on the property the tick mutates would
+    /// run (and blank the matrix) on every frame.
+    private var currentAnimation: (any MatrixAnimation)?
+
+    /// True while the timer is ticking. For tests: the timer is the only cost
+    /// the driver has, so whether it has stopped is the promise worth pinning.
+    var isTicking: Bool { timer != nil }
 
     /// Time constants (seconds) for the ballistics: near-instant attack and a
     /// short release, so the meter feels real-time.
-    private let attackTau = 0.008
-    private let releaseTau = 0.12
-    /// Below this every column is treated as settled and the timer can stop.
+    private let attackTau: TimeInterval
+    private let releaseTau: TimeInterval
+    /// Below this every band and channel is treated as settled.
     private let restThreshold = 0.0025
+    /// A fade moves an intensity by a little each tick; comparing at this
+    /// step keeps it from republishing (and redrawing) on every one of them.
+    private let intensityQuantum = 1.0 / 8.0
 
     private var timer: Timer?
     private var lastUpdate = Date()
@@ -29,9 +60,19 @@ final class MeterDriver: ObservableObject {
     private var active = false
     private var visibilitySub: AnyCancellable?
 
-    init() {
-        // Segments nobody can see do not need redrawing 30 times a second. The
-        // bands keep being measured on the audio thread, so the columns are
+    /// Continuous ballistic state. The animation reads these; `frame` is what
+    /// it makes of them.
+    private var rawBands = Array(repeating: 0.0, count: MatrixFrame.columns)
+    private var rawLeft = 0.0
+    private var rawRight = 0.0
+
+    /// The release is a parameter so a test can make the levels settle at
+    /// once and see what else keeps the timer running.
+    init(attackTau: TimeInterval = 0.008, releaseTau: TimeInterval = 0.12) {
+        self.attackTau = attackTau
+        self.releaseTau = releaseTau
+        // A matrix nobody can see does not need redrawing 30 times a second.
+        // The bands keep being measured on the audio thread, so the picture is
         // correct the moment the window comes back.
         visibilitySub = AppVisibility.shared.$isVisible.sink { [weak self] visible in
             MainActor.assumeIsolated {
@@ -47,19 +88,19 @@ final class MeterDriver: ObservableObject {
         ensureTimer()
     }
 
-    /// Stop metering: the columns fade down smoothly, then the timer halts.
+    /// Stop metering: the matrix fades down smoothly, then the timer halts.
     func stop() {
         active = false
         ensureTimer()
     }
 
-    /// Stop at once, with no fade: the view that shows the columns is going
+    /// Stop at once, with no fade: the view that shows the matrix is going
     /// away, so nobody would see it, and a timer left behind would keep firing.
     func halt() {
         active = false
         haltTimer()
-        rawBands = Array(repeating: 0, count: rawBands.count)
-        bands = Array(repeating: 0, count: bands.count)
+        settle()
+        frame = .dark
     }
 
     private func haltTimer() {
@@ -67,16 +108,8 @@ final class MeterDriver: ObservableObject {
         timer = nil
     }
 
-    /// Continuous ballistic state. `bands` publishes quantized snapshots of it:
-    /// publishing the raw values re-rendered the meter every tick even when no
-    /// segment visibly changed.
-    private var rawBands: [Double] = Array(repeating: 0, count: 12)
-    /// One step per segment of the 6-segment columns, so a publish happens only
-    /// when a segment flips.
-    private let bandQuantum = 1.0 / 6.0
-
     private func ensureTimer() {
-        // Nothing to drive while no window is on screen to draw the columns.
+        // Nothing to drive while no window is on screen to draw the matrix.
         guard timer == nil, AppVisibility.shared.isVisible else { return }
         lastUpdate = Date()
         // 30fps: segment meters with ~120ms release ballistics look identical at
@@ -90,29 +123,55 @@ final class MeterDriver: ObservableObject {
         let now = Date()
         let dt = now.timeIntervalSince(lastUpdate)
         lastUpdate = now
+        advance(by: dt)
+    }
 
+    /// One tick's work with the time step handed in. The timer passes the
+    /// wall-clock step; tests call it directly, so what they pin (a ring
+    /// outliving a pause, a stateless animation halting at once) does not
+    /// hang on how promptly a loaded machine fires a real timer.
+    func advance(by dt: TimeInterval) {
         // The provider's bands are already meter positions; the engine applies
         // the dB curve. Do NOT re-map here, or the scale compresses into the top
-        // segments and the columns look frozen.
+        // segments and the matrix looks frozen.
         let targetBands = active ? (spectrumProvider?() ?? []) : []
         for i in rawBands.indices {
             let target = i < targetBands.count ? targetBands[i] : 0
             rawBands[i] = ballistic(current: rawBands[i], target: target, dt: dt)
         }
+        let targetLevels: (left: Double, right: Double) = active ? (levelsProvider?() ?? (0, 0)) : (0, 0)
+        rawLeft = ballistic(current: rawLeft, target: targetLevels.left, dt: dt)
+        rawRight = ballistic(current: rawRight, target: targetLevels.right, dt: dt)
 
-        let quantized = rawBands.map { quantize($0, to: bandQuantum) }
-        if quantized != bands { bands = quantized }
+        // Settled values snap to exactly zero before the animation hears them:
+        // an exponential release never gets there by itself, and an animation
+        // only calls itself at rest on a true silence.
+        let settled = !active
+            && rawLeft < restThreshold && rawRight < restThreshold
+            && rawBands.allSatisfy { $0 < restThreshold }
+        if settled { settle() }
 
-        // Once idle and faded out, stop ticking to save CPU.
-        if !active, rawBands.allSatisfy({ $0 < restThreshold }) {
-            rawBands = Array(repeating: 0, count: rawBands.count)
-            bands = Array(repeating: 0, count: bands.count)
+        if currentAnimation != nil {
+            let input = MatrixInput(bands: rawBands, left: rawLeft, right: rawRight, dt: dt)
+            if var next = currentAnimation?.frame(for: input) {
+                next.quantize(step: intensityQuantum)
+                if next != frame { frame = next }
+            }
+        }
+
+        // Once idle, faded out and with nothing still travelling across the
+        // matrix (an Explosions ring outlives the beat that launched it),
+        // stop ticking to save CPU.
+        if settled, currentAnimation?.isAtRest ?? true {
+            frame = .dark
             haltTimer()
         }
     }
 
-    private func quantize(_ value: Double, to quantum: Double) -> Double {
-        (value / quantum).rounded() * quantum
+    private func settle() {
+        for i in rawBands.indices { rawBands[i] = 0 }
+        rawLeft = 0
+        rawRight = 0
     }
 
     /// Exponential smoothing toward `target`: fast attack, slower release.

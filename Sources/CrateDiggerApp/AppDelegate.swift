@@ -190,6 +190,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         mainWindowController?.setOLEDView(view)
     }
 
+    @objc private func selectMatrixAnimation(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let kind = MatrixAnimationKind(rawValue: raw) else { return }
+        mainWindowController?.setMatrixAnimation(kind)
+    }
+
     // MARK: - Playback menu
 
     @objc private func togglePlayPause(_ sender: Any?) {
@@ -1205,6 +1211,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                 menuItem.state = (view == current) ? .on : .off
             }
             return true
+        case #selector(selectMatrixAnimation(_:)):
+            menuItem.state = (menuItem.representedObject as? String
+                == mainWindowController?.currentMatrixAnimation().rawValue) ? .on : .off
+            return true
         case #selector(setStreamEngine(_:)):
             menuItem.state = (menuItem.representedObject as? String == prefs.streamEngine) ? .on : .off
             return true
@@ -1371,6 +1381,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             item.representedObject = view.rawValue
             viewMenu.addItem(item)
         }
+        // What the NOW screen's LED matrix plays, in the order a click on the
+        // titlebar status LED steps through them, so the menu and the lamp
+        // read as one control.
+        let animationMenuItem = NSMenuItem(title: "Display Animation", action: nil, keyEquivalent: "")
+        let animationMenu = NSMenu(title: "Display Animation")
+        var kind = MatrixAnimationKind.vertical
+        repeat {
+            let item = makeItem(title: kind.label, action: #selector(selectMatrixAnimation(_:)))
+            item.representedObject = kind.rawValue
+            animationMenu.addItem(item)
+            kind = kind.next
+        } while kind != .vertical
+        animationMenuItem.submenu = animationMenu
+        viewMenu.addItem(animationMenuItem)
         viewMenu.addItem(.separator())
         // ⌘L is what Music.app binds "Go to Current Song" to — muscle memory for free.
         viewMenu.addItem(makeItem(title: "Go to Current Song", action: #selector(goToCurrentSong(_:)), key: "l"))

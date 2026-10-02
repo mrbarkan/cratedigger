@@ -41,6 +41,10 @@ struct OLEDDisplay: View {
         theme.oledMonochrome ? theme.monochromeGlass : theme
     }
 
+    /// Where the rail's NOW annunciator starts, as the rail last reported it.
+    /// The NOW pane lines its matrix up under it.
+    @State private var nowLampLeading: CGFloat?
+
     var body: some View {
         // The glass is the *background*, with the panes overlaid on it — not a
         // ZStack, which would size itself to whichever pane is tallest and let
@@ -68,6 +72,13 @@ struct OLEDDisplay: View {
                 // panes never have to know, and it stays a colour change
                 // rather than a filter over the finished screen.
                 .environment(\.carbon, glassTheme)
+                // The rail reports where NOW sits and the panes read it back
+                // through the environment. Only the rail reports, and nothing
+                // on the rail depends on the panes, so the value settles in
+                // one pass instead of feeding back into its own layout.
+                .environment(\.oledNowLampLeading, nowLampLeading)
+                .coordinateSpace(name: OLEDGlassSpace.name)
+                .onPreferenceChange(NowLampLeadingKey.self) { nowLampLeading = $0 }
             }
             // The display effects go *over* the finished screen, not under it:
             // a rake, a dot screen and a reflection are on the glass, so they
@@ -107,6 +118,33 @@ struct OLEDDisplay: View {
                 )
             )
             .depthShadow(color: Color.black.opacity(0.5), radius: 6, y: 4)
+    }
+}
+
+/// The glass's own coordinate space, so a pane can line up with something on
+/// the rail without either knowing where the other sits in the window.
+private enum OLEDGlassSpace {
+    static let name = "oledGlass"
+}
+
+/// The NOW annunciator's leading x in `OLEDGlassSpace`, reported by the rail.
+private struct NowLampLeadingKey: PreferenceKey {
+    static let defaultValue: CGFloat? = nil
+    static func reduce(value: inout CGFloat?, nextValue: () -> CGFloat?) {
+        value = nextValue() ?? value
+    }
+}
+
+private struct NowLampLeadingEnvironmentKey: EnvironmentKey {
+    static let defaultValue: CGFloat? = nil
+}
+
+private extension EnvironmentValues {
+    /// The NOW annunciator's leading x in `OLEDGlassSpace`, or nil before the
+    /// rail's first layout pass.
+    var oledNowLampLeading: CGFloat? {
+        get { self[NowLampLeadingEnvironmentKey.self] }
+        set { self[NowLampLeadingEnvironmentKey.self] = newValue }
     }
 }
 
@@ -156,6 +194,11 @@ private struct DisplayRail: View {
             // glows — see OLEDView.accent).
             HStack(spacing: 12) {
                 ann("NOW", lit: v == .nowPlaying, color: OLEDView.nowPlaying.accent(theme))
+                    // The NOW pane's matrix starts here (`NowPlayingScaffold`).
+                    .background(GeometryReader { geo in
+                        Color.clear.preference(key: NowLampLeadingKey.self,
+                                               value: geo.frame(in: .named(OLEDGlassSpace.name)).minX)
+                    })
                 ann("CNVRT", lit: v == .conversion, color: OLEDView.conversion.accent(theme))
                 ann("SCAN", lit: v == .scan, color: OLEDView.scan.accent(theme))
                 ann("SYNC", lit: v == .remoteSync, color: OLEDView.remoteSync.accent(theme))
@@ -454,82 +497,185 @@ private struct NPClock: View {
     }
 }
 
-/// The NOW screen's VU: a 12-column, 6-segment spectrum filling whatever frame
-/// the pane gives it (the right of the headline, where the big clock used to
-/// be). It owns its driver, so the timer exists only while the NOW screen is on
-/// the glass. Decorative, so VoiceOver skips it.
-///
-/// On a colour display the segments run the cyan → Meter High ramp the footer
-/// VU used before it left the shelf (`meterHot`, the accent unless a theme pins
-/// it), bottom to top, with the topmost lit segment of each column brightened
-/// as its peak. A monochrome panel has one phosphor, so there it is drawn in
-/// OLED ink, told apart by intensity alone.
-private struct OLEDSpectrum: View {
-    @Environment(\.carbon) private var theme
+/// The NOW screen's LED matrix: 12 × 6 cells filling whatever frame the pane
+/// gives it, from the NOW annunciator to the glass's right edge. It owns its
+/// driver, so the timer exists only while the matrix is on the glass. Which
+/// animation it plays is `LibraryViewModel.matrixAnimation`; a change swaps
+/// the driver's animation live, from a dark matrix. Decorative, so VoiceOver
+/// skips it.
+private struct OLEDMatrix: View {
     @EnvironmentObject private var model: LibraryViewModel
     @StateObject private var meters = MeterDriver()
 
-    private static let segments = 6
-
     var body: some View {
-        Canvas { context, size in
-            let bands = meters.bands
-            let columns = bands.count
-            guard columns > 0 else { return }
-            let gap: CGFloat = 2
-            let cellW = (size.width - CGFloat(columns - 1) * gap) / CGFloat(columns)
-            let cellH = (size.height - CGFloat(Self.segments - 1) * gap) / CGFloat(Self.segments)
-            var unlit = Path()
-            var lit = Path()
-            var peak = Path()
-            for (column, level) in bands.enumerated() {
-                let litCount = Int((min(max(level, 0), 1) * Double(Self.segments)).rounded())
-                for segment in 0..<Self.segments {
-                    let rect = CGRect(x: CGFloat(column) * (cellW + gap),
-                                      y: size.height - CGFloat(segment + 1) * cellH - CGFloat(segment) * gap,
-                                      width: cellW, height: cellH)
-                    let cell = Path(roundedRect: rect, cornerRadius: 0.75, style: .continuous)
-                    if segment == litCount - 1 { peak.addPath(cell) }
-                    else if segment < litCount { lit.addPath(cell) }
-                    else { unlit.addPath(cell) }
-                }
+        // The canvas only sees the frame and the kind (for the dark print's
+        // tint), so a view-model change that leaves the picture alone does not
+        // redraw it.
+        OLEDMatrixCanvas(frame: meters.frame, kind: model.matrixAnimation)
+            .accessibilityHidden(true)
+            .onAppear {
+                // Locals, so the providers' weak captures are the only ones.
+                let model = self.model
+                meters.spectrumProvider = { [weak model] in model?.currentPlaybackSpectrum() ?? [] }
+                meters.levelsProvider = { [weak model] in model?.currentPlaybackLevels() ?? (0, 0) }
+                meters.animation = model.matrixAnimation.make()
+                syncRunning()
             }
-
-            if theme.oledMonochrome {
-                context.fill(unlit, with: .color(oledFGo(0.07)))
-                context.fill(lit, with: .color(oledFGo(0.55)))
-                context.fill(peak, with: .color(oledFGo(0.85)))
-                return
+            .onChange(of: model.playbackState) { _ in syncRunning() }
+            .onChange(of: model.matrixAnimation) { kind in
+                meters.animation = kind.make()
+                syncRunning()
             }
-            // Low → high up each column, so a segment's colour says how loud
-            // it is wherever it sits.
-            func ramp(_ colors: [Color]) -> GraphicsContext.Shading {
-                .linearGradient(Gradient(colors: colors),
-                                startPoint: CGPoint(x: 0, y: size.height), endPoint: .zero)
-            }
-            context.fill(unlit, with: ramp([theme.cyan.opacity(0.10), theme.meterHot.opacity(0.10)]))
-            context.drawLayer { layer in
-                layer.addFilter(.shadow(color: theme.meterHot.opacity(0.5), radius: 2))
-                layer.fill(lit, with: ramp([theme.cyan, theme.meterHot]))
-            }
-            context.drawLayer { layer in
-                layer.addFilter(.shadow(color: theme.meterHot.opacity(0.8), radius: 3))
-                layer.fill(peak, with: ramp([theme.cyanGlow, theme.meterHotHi]))
-            }
-        }
-        .accessibilityHidden(true)
-        .onAppear {
-            // A local, so the provider's weak capture is the only one.
-            let model = self.model
-            meters.spectrumProvider = { [weak model] in model?.currentPlaybackSpectrum() ?? [] }
-            syncRunning()
-        }
-        .onChange(of: model.playbackState) { _ in syncRunning() }
-        .onDisappear { meters.halt() }
+            .onDisappear { meters.halt() }
     }
 
     private func syncRunning() {
         if model.playbackState == .playing { meters.start() } else { meters.stop() }
+    }
+}
+
+/// Draws one `MatrixFrame`. Each lit cell carries its own heat, the position
+/// along the cyan → Meter High ramp the footer VU used before it left the
+/// shelf (`meterHot`, the accent unless a theme pins it), so the animation,
+/// not the view, decides which way the colour runs. A lit cell glows, brighter
+/// as its intensity rises, and a cell at full intensity takes the bright end
+/// of the ramp as its peak. An unlit cell is a faint print of the colour it
+/// would light in: its heat is always 0 in the frame, so the tint comes from
+/// the kind's `restingHeat`, and the dark grid shades the same way the
+/// animation does (up a column, along a bar, in from the edge).
+///
+/// A monochrome panel has one phosphor, so there the cells are OLED ink, told
+/// apart by intensity alone.
+///
+/// Cells are filled in groups, one path per colour, not one fill per cell:
+/// the canvas redraws up to 30 times a second while music plays, and most
+/// cells share a colour with others (a whole dark row of a VU, a whole ring).
+private struct OLEDMatrixCanvas: View {
+    @Environment(\.carbon) private var theme
+    let frame: MatrixFrame
+    let kind: MatrixAnimationKind
+
+    /// The VU bars' body intensity: a cell this bright or brighter draws the
+    /// ramp at full strength, so a bar body looks as it always has, and a
+    /// fading ring dims from there.
+    private static let fullBody = 0.75
+
+    /// A lit cell's glow: where on the ramp, and how strongly.
+    private struct Glow: Hashable {
+        var heat: Double
+        var strength: Double
+    }
+
+    /// Monochrome ink for one cell: 7% unlit, and 0.55 to 0.85 when lit. A VU
+    /// bar's body (0.75) and its peak (1) land on the two ends, the levels the
+    /// meter has always used; a fading ring steps down between them and then
+    /// goes out. Nothing lit falls below 0.55, so a dim cell never passes for
+    /// a dark one on a panel with only one colour to tell them apart.
+    static func monochromeInk(_ intensity: Double) -> Double {
+        guard intensity > 0 else { return 0.07 }
+        let aboveBody = min(max((intensity - fullBody) / (1 - fullBody), 0), 1)
+        return 0.55 + (0.85 - 0.55) * aboveBody
+    }
+
+    var body: some View {
+        Canvas { context, size in
+            let columns = MatrixFrame.columns
+            let rows = MatrixFrame.rows
+            let gap: CGFloat = 2
+            let cellW = (size.width - CGFloat(columns - 1) * gap) / CGFloat(columns)
+            let cellH = (size.height - CGFloat(rows - 1) * gap) / CGFloat(rows)
+            guard cellW > 0, cellH > 0 else { return }
+
+            func cellPath(column: Int, row: Int) -> Path {
+                // Row 0 is the bottom of the matrix.
+                let rect = CGRect(x: CGFloat(column) * (cellW + gap),
+                                  y: size.height - CGFloat(row + 1) * cellH - CGFloat(row) * gap,
+                                  width: cellW, height: cellH)
+                return Path(roundedRect: rect, cornerRadius: 0.75, style: .continuous)
+            }
+
+            /// The cells `key` picks out, one path per key. Cells never
+            /// overlap, so filling a group's path paints exactly what filling
+            /// each of its cells would.
+            func grouped<Key: Hashable>(by key: (MatrixCell, Int, Int) -> Key?) -> [Key: Path] {
+                var groups: [Key: Path] = [:]
+                for row in 0..<rows {
+                    for column in 0..<columns {
+                        guard let k = key(frame[column: column, row: row], column, row) else { continue }
+                        groups[k, default: Path()].addPath(cellPath(column: column, row: row))
+                    }
+                }
+                return groups
+            }
+
+            if theme.oledMonochrome {
+                // Quantised intensities give at most nine inks.
+                for (ink, path) in grouped(by: { cell, _, _ in Self.monochromeInk(cell.intensity) }) {
+                    context.fill(path, with: .color(oledFGo(ink)))
+                }
+                return
+            }
+
+            let ramp = HeatRamp(from: theme.cyan, to: theme.meterHot)
+            let brightRamp = HeatRamp(from: theme.cyanGlow, to: theme.meterHotHi)
+            let unlit = grouped { cell, column, row in
+                cell.intensity == 0 ? kind.restingHeat(column: column, row: row) : nil
+            }
+            for (heat, path) in unlit {
+                context.fill(path, with: .color(ramp.color(at: heat).opacity(0.10)))
+            }
+            context.drawLayer { layer in
+                layer.addFilter(.shadow(color: theme.meterHot.opacity(0.5), radius: 2))
+                let lit = grouped { cell, _, _ in
+                    cell.intensity > 0 && cell.intensity < 1
+                        ? Glow(heat: cell.heat, strength: min(cell.intensity / Self.fullBody, 1))
+                        : nil
+                }
+                for (glow, path) in lit {
+                    layer.fill(path, with: .color(ramp.color(at: glow.heat).opacity(glow.strength)))
+                }
+            }
+            context.drawLayer { layer in
+                layer.addFilter(.shadow(color: theme.meterHot.opacity(0.8), radius: 3))
+                let peaks = grouped { cell, _, _ in cell.intensity >= 1 ? cell.heat : nil }
+                for (heat, path) in peaks {
+                    layer.fill(path, with: .color(brightRamp.color(at: heat)))
+                }
+            }
+        }
+    }
+}
+
+/// Two theme colours and the straight line between them in sRGB, for
+/// colouring a cell by its heat. The ends are converted once per draw; each
+/// cell is then three multiply-adds, not a colour-space conversion.
+private struct HeatRamp {
+    private let start: Color
+    private let from: (r: Double, g: Double, b: Double, a: Double)?
+    private let to: (r: Double, g: Double, b: Double, a: Double)?
+
+    init(from start: Color, to end: Color) {
+        self.start = start
+        from = Self.components(start)
+        to = Self.components(end)
+    }
+
+    func color(at heat: Double) -> Color {
+        // A colour that can't be brought into sRGB leaves the cool end, the
+        // better wrong answer than a hole in the grid.
+        guard let from, let to else { return start }
+        let t = min(max(heat, 0), 1)
+        return Color(.sRGB,
+                     red: from.r + (to.r - from.r) * t,
+                     green: from.g + (to.g - from.g) * t,
+                     blue: from.b + (to.b - from.b) * t,
+                     opacity: from.a + (to.a - from.a) * t)
+    }
+
+    private static func components(_ color: Color) -> (r: Double, g: Double, b: Double, a: Double)? {
+        guard let rgb = NSColor(color).usingColorSpace(.sRGB) else { return nil }
+        return (Double(rgb.redComponent), Double(rgb.greenComponent),
+                Double(rgb.blueComponent), Double(rgb.alphaComponent))
     }
 }
 
@@ -764,35 +910,61 @@ private struct NowPlayingPane: View {
 
 /// The NOW screen's composition, which differs from `OLEDPaneScaffold`: the
 /// titles sit top-left with a small time reading pinned under them, right on the
-/// cell rail's progress line, and the spectrum fills the whole right of the
+/// cell rail's progress line, and the LED matrix fills the right of the
 /// headline area, top to bottom. The rail above already names the screen, so
 /// the pane needs no big clock of its own.
+///
+/// The matrix starts where the NOW annunciator does, so the screen's name and
+/// its picture line up whatever the theme's fonts or the window's width do to
+/// the rail. Until the rail has reported where that is, it takes half the
+/// width. With the animation off there is no matrix at all, so no driver
+/// ticks, and the title has the whole width back.
 private struct NowPlayingScaffold<Headline: View, Reading: View>: View {
+    @EnvironmentObject private var model: LibraryViewModel
+    @Environment(\.oledNowLampLeading) private var nowLampLeading
     let cells: [OLEDCellData]
     @ViewBuilder var headline: () -> Headline
     @ViewBuilder var reading: () -> Reading
 
-    /// The width the big clock and its total used to take.
-    private var spectrumWidth: CGFloat { 176 }
+    /// Between the title and the matrix: the gap the rail keeps between its
+    /// own text and the annunciators, so both rows break at the same place.
+    private var headlineGap: CGFloat { 14 }
+
+    private var showsMatrix: Bool { model.matrixAnimation != .off }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 24) {
-                VStack(alignment: .leading, spacing: 0) {
-                    headline()
-                    Spacer(minLength: 6)
-                    reading()
+            GeometryReader { geo in
+                HStack(spacing: 0) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        headline()
+                        Spacer(minLength: 6)
+                        reading()
+                    }
+                    .padding(.trailing, showsMatrix ? headlineGap : 0)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                    if showsMatrix {
+                        OLEDMatrix()
+                            .frame(width: matrixWidth(in: geo))
+                            .frame(maxHeight: .infinity)
+                    }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-                OLEDSpectrum()
-                    .frame(width: spectrumWidth)
-                    .frame(maxHeight: .infinity)
             }
             .padding(.bottom, 6)
             OLEDCells(cells)
         }
         .padding(.top, 6)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    /// From the NOW annunciator's leading edge to the trailing edge, both read
+    /// in the glass's coordinate space; half the width before the rail has
+    /// been laid out once.
+    private func matrixWidth(in geo: GeometryProxy) -> CGFloat {
+        let width = geo.size.width
+        guard let lamp = nowLampLeading else { return width / 2 }
+        let start = lamp - geo.frame(in: .named(OLEDGlassSpace.name)).minX
+        return min(max(width - start, 0), width)
     }
 }
 

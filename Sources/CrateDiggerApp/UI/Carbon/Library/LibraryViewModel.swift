@@ -352,6 +352,18 @@ final class LibraryViewModel: ObservableObject {
         }
     }
 
+    /// What the NOW screen's LED matrix plays. The titlebar status LED steps
+    /// through the kinds and View ▸ Display Animation picks one; `.off` takes
+    /// the matrix off the glass, driver and all.
+    @Published var matrixAnimation: MatrixAnimationKind = .vertical {
+        didSet { prefs.oledMatrixAnimation = matrixAnimation.rawValue }
+    }
+
+    /// The status LED's click: the next kind in click order, Off included.
+    func cycleMatrixAnimation() {
+        matrixAnimation = matrixAnimation.next
+    }
+
     @Published var scanProgress: ScanProgress = .idle
     /// The OLED view to restore after an add-to-crate import status finishes.
     private var importStatusReturnOLED: OLEDView?
@@ -1396,6 +1408,7 @@ final class LibraryViewModel: ObservableObject {
         if let saved = prefs.savedOLEDView, let view = OLEDView(rawValue: saved) {
             oledView = view
         }
+        matrixAnimation = MatrixAnimationKind(persisted: prefs.oledMatrixAnimation)
         if let saved = prefs.savedStatsWindow, let window = ListeningWindow(rawValue: saved) {
             statsWindow = window
         }
@@ -3106,9 +3119,9 @@ final class LibraryViewModel: ObservableObject {
         playbackVolume = VolumeCurve.stepped(from: playbackVolume, by: delta)
     }
 
-    /// Latest real 0...1 VU levels (L/R) and spectrum bands, for the NOW screen's
-    /// meter and playback diagnostics,
-    /// from whichever tap can actually see the audio.
+    /// Latest real 0...1 VU levels (L/R) and spectrum bands, for the NOW
+    /// screen's matrix and playback diagnostics, from whichever tap can
+    /// actually see the audio.
     ///
     /// Local files are tapped per player-item (`AudioLevelTap`). Streams can't
     /// be: every YouTube stream resolves to HLS, and an HLS asset exposes no

@@ -4,12 +4,14 @@ import Accelerate
 /// (0…1) spanning ~20 Hz – 20 kHz, for the vertical spectrum meter.
 ///
 /// Samples are accumulated into a sliding ring buffer so the FFT window is
-/// always full (4096 pts ⇒ ~10 Hz bins) regardless of how many frames each tap
-/// callback delivers — that's what lets the low bands actually resolve 20 Hz.
+/// always full (2048 pts ⇒ ~21.5 Hz bins) regardless of how many frames each
+/// tap callback delivers — that's what lets the low bands resolve at all.
 /// Built once and reused on the audio thread; scratch is preallocated.
 ///
-/// The dB window (`floorDB`/`ceilDB`) is the knob to tune if the bars read too
-/// hot or too dead. Visual smoothing happens later in `MeterDriver`.
+/// Each band is tilted (`tiltDBPerOctave`) before the dB window maps it to
+/// 0…1, so pink noise reads flat across the meter rather than as a slope. The
+/// window (`floorDB`/`ceilDB`) is the knob to tune if the bars read too hot or
+/// too dead. Visual smoothing happens later in `MeterDriver`.
 final class SpectrumProcessor {
     static let log2n: vDSP_Length = 11
     static let size = 1 << 11            // 2048-pt FFT — ~46 ms window: snappier
@@ -21,8 +23,22 @@ final class SpectrumProcessor {
     // the tap's prepare callback if a 48 kHz mislabel ever matters; visually it
     // doesn't.
     private static let sampleRate = 44_100.0
-    private let floorDB: Float = -62
-    private let ceilDB: Float = -6
+    static let minHz = 20.0
+    static let maxHz = 20_000.0
+
+    // The dB window, after the tilt. Tuned against one target: pink noise at
+    // −18 dBFS RMS lights every band to 3 ± 1 segments of 6
+    // (`SpectrumTiltTests`). Move them together to make the whole meter hotter
+    // or deader; move them apart to make it less twitchy.
+    static let floorDB: Float = -70
+    static let ceilDB: Float = -14
+
+    /// Decibels added per octave above 1 kHz (and taken away below it).
+    /// Music's energy falls by roughly 3–6 dB per octave, so an unweighted FFT
+    /// always slopes down to the right: whatever was playing, the meter read
+    /// as a staircase growing out of the bottom-left corner, and the treble
+    /// bands rarely lit at all. Analysers compensate with a tilt like this one.
+    static let tiltDBPerOctave = 4.5
 
     private let setup: FFTSetup
     private var window = [Float](repeating: 0, count: SpectrumProcessor.size)
@@ -34,24 +50,46 @@ final class SpectrumProcessor {
     private var mags = [Float](repeating: 0, count: SpectrumProcessor.half)
     private var result = [Float](repeating: 0, count: SpectrumProcessor.bandCount)
     private let bandRanges: [(lo: Int, hi: Int)]
+    private let bandGains: [Float]
 
     init() {
         setup = vDSP_create_fftsetup(Self.log2n, FFTRadix(kFFTRadix2))!
         vDSP_hann_window(&window, vDSP_Length(Self.size), Int32(vDSP_HANN_NORM))
 
         // Log-spaced band edges across 20 Hz … 20 kHz, mapped to FFT bins.
-        let minHz = 20.0, maxHz = 20_000.0
         func bin(_ hz: Double) -> Int {
             max(1, min(Self.half - 1, Int((hz * Double(Self.size) / Self.sampleRate).rounded())))
         }
         var ranges: [(lo: Int, hi: Int)] = []
         for b in 0..<Self.bandCount {
-            let loHz = minHz * pow(maxHz / minHz, Double(b) / Double(Self.bandCount))
-            let hiHz = minHz * pow(maxHz / minHz, Double(b + 1) / Double(Self.bandCount))
-            let lo = bin(loHz)
-            ranges.append((lo, max(lo + 1, bin(hiHz))))
+            let edges = Self.bandEdgesHz(b)
+            let lo = bin(edges.lo)
+            ranges.append((lo, max(lo + 1, bin(edges.hi))))
         }
         bandRanges = ranges
+        // Computed here, beside the ranges, so the audio thread only adds them.
+        bandGains = Self.bandGainsDB
+    }
+
+    /// Band `b`'s edges in Hz: twelve equal slices of 20 Hz … 20 kHz on a log scale.
+    static func bandEdgesHz(_ b: Int) -> (lo: Double, hi: Double) {
+        let ratio = maxHz / minHz
+        return (minHz * pow(ratio, Double(b) / Double(bandCount)),
+                minHz * pow(ratio, Double(b + 1) / Double(bandCount)))
+    }
+
+    /// The tilt at a band centre: 0 dB at 1 kHz, `tiltDBPerOctave` more per
+    /// octave above it.
+    static func tiltDB(centreHz: Double) -> Double {
+        tiltDBPerOctave * log2(centreHz / 1_000)
+    }
+
+    /// Each band's tilt, taken at its centre (the geometric mean of its edges):
+    /// about −24 dB for the lowest band (≈ 27 Hz) and +18 dB for the highest
+    /// (≈ 15 kHz).
+    static let bandGainsDB: [Float] = (0..<bandCount).map { b in
+        let edges = bandEdgesHz(b)
+        return Float(tiltDB(centreHz: (edges.lo * edges.hi).squareRoot()))
     }
 
     deinit { vDSP_destroy_fftsetup(setup) }
@@ -97,8 +135,9 @@ final class SpectrumProcessor {
             }
         }
 
-        // Per band: mean power → amplitude → dB → 0…1.
+        // Per band: mean power → amplitude → dB → tilt → 0…1.
         let nf = Float(n)
+        let floorDB = Self.floorDB, ceilDB = Self.ceilDB
         for (i, range) in bandRanges.enumerated() {
             let hi = min(range.hi, Self.half)
             var level: Float = 0
@@ -108,7 +147,7 @@ final class SpectrumProcessor {
                     vDSP_sve(mp.baseAddress! + range.lo, 1, &sum, vDSP_Length(hi - range.lo))
                 }
                 let amp = sqrt(sum / Float(hi - range.lo)) / nf
-                let db = 20 * log10(amp + 1e-7)
+                let db = 20 * log10(amp + 1e-7) + bandGains[i]
                 level = min(max((db - floorDB) / (ceilDB - floorDB), 0), 1)
             }
             result[i] = level
