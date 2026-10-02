@@ -4,12 +4,23 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
-## 2.2.4 (101), 2026-09-27
+## 2.2.4 (102), 2026-10-02
 
-Beta 3. Fix a disc's tags before you rip it, and a rip files only itself.
+Beta 4. The NOW screen gets an LED matrix with four animations, and the
+meter stops leaning into one corner.
 
 ### Added
 
+- **An LED matrix on the NOW screen.** From the NOW lamp to the right edge
+  of the display, a 12 by 6 matrix plays one of four animations driven by
+  what you're hearing: Vertical VU (the spectrum, bass on the left),
+  Horizontal VU (left and right channels), Explosions (a burst from the
+  centre on every kick) and Frame (light closing in from the edges, bass on
+  the outside, treble inside). Monochrome themes draw it in their own ink.
+- **Click the status lamp to change it.** The small lamp at the top right of
+  the window steps through the four animations and Off, and View ▸ Display
+  Animation picks one directly. Your choice is kept. The lamp still glows
+  while the app is busy.
 - **Edit a disc's tags before ripping.** With a CD in the drive, tag edits
   (in the inspector, the tag editor or FIX TAGS) are kept for the rip
   instead of being written to the disc, which can't take them. The display
@@ -19,6 +30,14 @@ Beta 3. Fix a disc's tags before you rip it, and a rip files only itself.
 
 ### Changed
 
+- **NOW names itself, and the clock moves.** The top left of the display
+  reads NOW PLAYING, and the elapsed and total time sit small under the
+  artist line, right on the progress line, where the big clock used to take
+  up room. A live stream shows ON AIR and its uptime there instead.
+- **The meter no longer leans into the bottom-left corner.** Bass carries
+  most of a song's energy, so the meter used to pile up on the left and
+  leave the treble dark whatever was playing. Each band is now evened out,
+  so the whole width moves and loud moments reach the top.
 - **RIP lives above the disc's tracks.** It sits beside RE-IDENTIFY and
   CLEAR in the bar that names the disc, instead of under the disc in Sources.
 - **RIP opens the Patch Bay on the disc.** Pressing it shows the disc's
@@ -33,6 +52,10 @@ Beta 3. Fix a disc's tags before you rip it, and a rip files only itself.
 
 ### Fixed
 
+- **Apple Lossless reads LOSSLESS.** The FORMAT cell on the NOW screen
+  called ALAC files lossy.
+- **With nothing playing, the NOW screen shows dashes** under FORMAT,
+  BITRATE and SAMPLE instead of LOSSY, CONSTANT and AUDIO.
 - **A rip adds only itself to the Prep Crate.** It used to scan the whole
   output folder, so every album ever converted there landed in the Prep
   Crate, and again at every launch. If that already happened to you, Clear
