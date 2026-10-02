@@ -269,13 +269,12 @@ private struct AnnDot: View {
     }
 }
 
-/// The persistent transport strip: what's playing and how far in, then the VOL
-/// meter pinned to the right edge of the glass.
+/// The persistent transport strip: what's playing and how far in.
 ///
 /// It carries only what the rest of the screen isn't already saying. On the
-/// nowPlaying view the title and the clocks are set an inch above in 44pt, so
-/// the strip drops both — on every other view this rail is the *only* place
-/// playback is visible, so the title and the clocks come back.
+/// nowPlaying view the title and the clock are on the pane itself, so the strip
+/// just names the screen (NOW PLAYING) — on every other view this rail is the
+/// *only* place playback is visible, so the clock and the title come back.
 ///
 /// The progress bar used to live here too, squeezed between the clocks. It has
 /// moved down to the top edge of the cell rail (`OLEDProgressLine`), where it
@@ -307,16 +306,16 @@ private struct RailLive: View {
             // stays put while the title beside it changes length or yields to
             // a notice.
             if showMini {
-                HStack(spacing: 4) {
-                    Text(model.displayedCurrentTime.asClockPadded)
-                        .foregroundStyle(oledFG)
-                    Text("/")
-                        .foregroundStyle(oledFGo(0.25))
-                    Text(model.playbackDuration.asClockPadded)
-                        .foregroundStyle(oledFGo(0.4))
-                }
-                .font(CarbonFont.mono(9, weight: .bold))
-                .fixedSize()
+                OLEDTimeReading(now: model.displayedCurrentTime.asClockPadded,
+                                total: model.playbackDuration.asClockPadded)
+            } else {
+                // The NOW screen's own name, in the corner where every other
+                // view keeps its clock.
+                Text("NOW PLAYING")
+                    .font(CarbonFont.mono(9, weight: .bold))
+                    .tracking(1.08)
+                    .foregroundStyle(oledFGo(0.4))
+                    .fixedSize()
             }
 
             if showTitle {
@@ -350,6 +349,28 @@ private struct RailLive: View {
 
     private var trackTitle: String {
         (model.nowPlayingTrack?.track.title ?? model.selectedTrack?.track.title ?? "—").uppercased()
+    }
+}
+
+/// Elapsed over total as one small reading (`00:26 / 02:04`): on the rail for
+/// every view but NOW, and under the artist line on NOW itself. The slash holds
+/// the two numbers together so they don't read as loose figures.
+private struct OLEDTimeReading: View {
+    let now: String
+    let total: String
+    var size: CGFloat = 9
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Text(now)
+                .foregroundStyle(oledFG)
+            Text("/")
+                .foregroundStyle(oledFGo(0.25))
+            Text(total)
+                .foregroundStyle(oledFGo(0.4))
+        }
+        .font(CarbonFont.mono(size, weight: .bold))
+        .fixedSize()
     }
 }
 
@@ -433,12 +454,18 @@ private struct NPClock: View {
     }
 }
 
-/// The NOW screen's quiet VU: a 12-column, 6-segment spectrum beside the
-/// clock, drawn in OLED ink at low brightness so it reads as texture rather than
-/// a second readout. It owns its driver, so the timer exists only while the NOW
-/// screen is on the glass. Decorative, so VoiceOver skips it; its bottom edge
-/// sits on the clock's baseline.
+/// The NOW screen's VU: a 12-column, 6-segment spectrum filling whatever frame
+/// the pane gives it (the right of the headline, where the big clock used to
+/// be). It owns its driver, so the timer exists only while the NOW screen is on
+/// the glass. Decorative, so VoiceOver skips it.
+///
+/// On a colour display the segments run the cyan → Meter High ramp the footer
+/// VU used before it left the shelf (`meterHot`, the accent unless a theme pins
+/// it), bottom to top, with the topmost lit segment of each column brightened
+/// as its peak. A monochrome panel has one phosphor, so there it is drawn in
+/// OLED ink, told apart by intensity alone.
 private struct OLEDSpectrum: View {
+    @Environment(\.carbon) private var theme
     @EnvironmentObject private var model: LibraryViewModel
     @StateObject private var meters = MeterDriver()
 
@@ -449,24 +476,47 @@ private struct OLEDSpectrum: View {
             let bands = meters.bands
             let columns = bands.count
             guard columns > 0 else { return }
-            let gap: CGFloat = 1.5
+            let gap: CGFloat = 2
             let cellW = (size.width - CGFloat(columns - 1) * gap) / CGFloat(columns)
             let cellH = (size.height - CGFloat(Self.segments - 1) * gap) / CGFloat(Self.segments)
-            var lit = Path()
             var unlit = Path()
+            var lit = Path()
+            var peak = Path()
             for (column, level) in bands.enumerated() {
                 let litCount = Int((min(max(level, 0), 1) * Double(Self.segments)).rounded())
                 for segment in 0..<Self.segments {
                     let rect = CGRect(x: CGFloat(column) * (cellW + gap),
                                       y: size.height - CGFloat(segment + 1) * cellH - CGFloat(segment) * gap,
                                       width: cellW, height: cellH)
-                    if segment < litCount { lit.addRect(rect) } else { unlit.addRect(rect) }
+                    let cell = Path(roundedRect: rect, cornerRadius: 0.75, style: .continuous)
+                    if segment == litCount - 1 { peak.addPath(cell) }
+                    else if segment < litCount { lit.addPath(cell) }
+                    else { unlit.addPath(cell) }
                 }
             }
-            context.fill(unlit, with: .color(oledFGo(0.07)))
-            context.fill(lit, with: .color(oledFGo(0.55)))
+
+            if theme.oledMonochrome {
+                context.fill(unlit, with: .color(oledFGo(0.07)))
+                context.fill(lit, with: .color(oledFGo(0.55)))
+                context.fill(peak, with: .color(oledFGo(0.85)))
+                return
+            }
+            // Low → high up each column, so a segment's colour says how loud
+            // it is wherever it sits.
+            func ramp(_ colors: [Color]) -> GraphicsContext.Shading {
+                .linearGradient(Gradient(colors: colors),
+                                startPoint: CGPoint(x: 0, y: size.height), endPoint: .zero)
+            }
+            context.fill(unlit, with: ramp([theme.cyan.opacity(0.10), theme.meterHot.opacity(0.10)]))
+            context.drawLayer { layer in
+                layer.addFilter(.shadow(color: theme.meterHot.opacity(0.5), radius: 2))
+                layer.fill(lit, with: ramp([theme.cyan, theme.meterHot]))
+            }
+            context.drawLayer { layer in
+                layer.addFilter(.shadow(color: theme.meterHot.opacity(0.8), radius: 3))
+                layer.fill(peak, with: ramp([theme.cyanGlow, theme.meterHotHi]))
+            }
         }
-        .frame(width: 58, height: 22)
         .accessibilityHidden(true)
         .onAppear {
             // A local, so the provider's weak capture is the only one.
@@ -712,6 +762,40 @@ private struct NowPlayingPane: View {
     }
 }
 
+/// The NOW screen's composition, which differs from `OLEDPaneScaffold`: the
+/// titles sit top-left with a small time reading pinned under them, right on the
+/// cell rail's progress line, and the spectrum fills the whole right of the
+/// headline area, top to bottom. The rail above already names the screen, so
+/// the pane needs no big clock of its own.
+private struct NowPlayingScaffold<Headline: View, Reading: View>: View {
+    let cells: [OLEDCellData]
+    @ViewBuilder var headline: () -> Headline
+    @ViewBuilder var reading: () -> Reading
+
+    /// The width the big clock and its total used to take.
+    private var spectrumWidth: CGFloat { 176 }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 24) {
+                VStack(alignment: .leading, spacing: 0) {
+                    headline()
+                    Spacer(minLength: 6)
+                    reading()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                OLEDSpectrum()
+                    .frame(width: spectrumWidth)
+                    .frame(maxHeight: .infinity)
+            }
+            .padding(.bottom, 6)
+            OLEDCells(cells)
+        }
+        .padding(.top, 6)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
 /// What the NOW pane shows while nothing is playing — a little crate-digger
 /// nudge instead of leaking the browser selection onto the glass. The lines
 /// live in `NowPlayingFeed`, so the widget's phrase mode speaks with the same
@@ -732,21 +816,14 @@ private struct LibraryNowPlaying: View {
     private var isIdle: Bool { model.nowPlayingTrack == nil }
 
     var body: some View {
-        OLEDPaneScaffold {
+        NowPlayingScaffold(cells: libraryCells) {
             NPTitles(title: displayTrackTitle, sub: subtitle,
                      titleColor: isIdle ? oledFGo(0.6) : oledFG,
                      titleItalic: isIdle)
-        } readout: {
-            HStack(alignment: .firstTextBaseline, spacing: 14) {
-                if !isIdle { OLEDSpectrum() }
-                NPClock(now: isIdle ? "--:--" : model.displayedCurrentTime.asClockPadded,
-                        tot: isIdle ? "" : "/ " + model.playbackDuration.asClockPadded)
-            }
-            .fixedSize()
-        } ticker: {
-            EmptyView()
-        } cells: {
-            OLEDCells(libraryCells)
+        } reading: {
+            OLEDTimeReading(now: isIdle ? "--:--" : model.displayedCurrentTime.asClockPadded,
+                            total: isIdle ? "--:--" : model.playbackDuration.asClockPadded,
+                            size: 10)
         }
         // A fresh nudge each time playback winds down.
         .onChange(of: isIdle) { nowIdle in
@@ -785,37 +862,32 @@ private struct RadioNowPlaying: View {
     private var isNative: Bool { model.radioEngineKind == .native }
 
     var body: some View {
-        OLEDPaneScaffold {
+        NowPlayingScaffold(cells: radioCells) {
             NPTitles(title: headline.uppercased(), sub: subtitle)
-        } readout: {
-            HStack(alignment: .firstTextBaseline, spacing: 14) {
-                OLEDSpectrum()
-                radioReadout
-            }
-            .fixedSize()
-        } ticker: {
-            EmptyView()
-        } cells: {
-            OLEDCells(radioCells)
+        } reading: {
+            radioReading
         }
     }
 
+    /// A live stream has no duration to count towards, so its small reading is
+    /// how long it has been on the air instead.
     @ViewBuilder
-    private var radioReadout: some View {
+    private var radioReading: some View {
         if isLive {
-            VStack(alignment: .trailing, spacing: 8) {
-                HStack(spacing: 8) {
-                    Circle().fill(onAirRed).frame(width: 9, height: 9)
-                        .shadow(color: onAirRed.opacity(0.7), radius: 4)
-                    Text("ON AIR").font(CarbonFont.display(30, weight: .thin)).foregroundStyle(oledFG)
-                }
+            HStack(spacing: 6) {
+                Circle().fill(onAirRed).frame(width: 6, height: 6)
+                    .shadow(color: onAirRed.opacity(0.7), radius: 3)
+                Text("ON AIR")
+                    .foregroundStyle(oledFG)
                 Text("UPTIME \(uptimeString)")
-                    .font(CarbonFont.mono(10, weight: .semibold)).tracking(1.4)
-                    .foregroundStyle(oledFGo(0.5))
+                    .foregroundStyle(oledFGo(0.4))
             }
+            .font(CarbonFont.mono(10, weight: .bold))
+            .fixedSize()
         } else {
-            NPClock(now: model.displayedCurrentTime.asClockPadded,
-                    tot: "/ " + model.playbackDuration.asClockPadded)
+            OLEDTimeReading(now: model.displayedCurrentTime.asClockPadded,
+                            total: model.playbackDuration.asClockPadded,
+                            size: 10)
         }
     }
 
@@ -863,7 +935,13 @@ private enum LibraryNowPlayingCells {
         // stays off the glass (the Inspector is where selection lives).
         let track = model.nowPlayingTrack
         let ext = track?.track.fileURL.pathExtension.uppercased() ?? ""
-        let lossless = ["FLAC", "ALAC", "WAV", "AIFF"].contains(ext)
+        // The codec as well as the extension: ALAC lives in an .m4a, the same
+        // container as lossy AAC, so the extension alone called it LOSSY. The
+        // extension still has to count, because ffprobe names a WAV or AIFF
+        // codec PCM_S16LE and the like.
+        let codec = track?.track.formatName?.uppercased() ?? ""
+        let lossless = ["FLAC", "WAV", "AIFF", "AIF"].contains(ext)
+            || VersionLabel.isLossless(codec) || codec.hasPrefix("PCM")
 
         let trackVal: String
         let trackSub: String
@@ -892,7 +970,7 @@ private enum LibraryNowPlayingCells {
             OLEDCellData(key: "Track", value: trackVal, sub: trackSub),
             OLEDCellData(key: "Format", value: track?.track.formatName?.uppercased() ?? "—", sub: lossless ? "Lossless" : "Lossy"),
             OLEDCellData(key: "Bitrate", value: bitrate, sub: lossless ? "Lossless" : "Constant"),
-            OLEDCellData(key: "Sample", value: sample, sub: ["FLAC", "ALAC"].contains(ext) ? "16-bit" : "Audio"),
+            OLEDCellData(key: "Sample", value: sample, sub: ["FLAC", "ALAC"].contains(codec) ? "16-bit" : "Audio"),
             OLEDCellData(key: "Size", value: size, sub: "File Size")
         ]
     }
