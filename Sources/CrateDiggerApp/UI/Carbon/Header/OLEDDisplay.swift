@@ -24,6 +24,23 @@ func oledFGo(_ opacity: Double) -> Color { oledFG.opacity(opacity) }
 private var oledMuted: Color { ActiveOLEDPalette.muted }
 private var onAirRed: Color { ActiveOLEDPalette.onAir }
 
+// MARK: - Screen override
+
+private struct OLEDScreenOverrideKey: EnvironmentKey {
+    static let defaultValue: OLEDView? = nil
+}
+
+extension EnvironmentValues {
+    /// Pins the glass to one screen regardless of `model.oledView`. The
+    /// compact player sets `.nowPlaying`: the app keeps switching screens
+    /// underneath (scans, rips, search) and the full window shows whichever
+    /// it last chose when it comes back.
+    var oledScreenOverride: OLEDView? {
+        get { self[OLEDScreenOverrideKey.self] }
+        set { self[OLEDScreenOverrideKey.self] = newValue }
+    }
+}
+
 // MARK: - OLED display (one glass, three permanent zones)
 
 /// The OLED reads as ONE physical device screen with fixed geometry, not
@@ -114,10 +131,11 @@ struct OLEDDisplay: View {
 /// with no animation → the glass snaps like a real FL display.
 private struct DisplayContext: View {
     @EnvironmentObject private var model: LibraryViewModel
+    @Environment(\.oledScreenOverride) private var screenOverride
 
     var body: some View {
         ZStack {
-            switch model.oledView {
+            switch screenOverride ?? model.oledView {
             case .nowPlaying:  NowPlayingPane()
             case .conversion:  ConversionPane()
             case .scan:        ScanPane()
@@ -138,7 +156,9 @@ private struct DisplayRail: View {
     @Environment(\.carbon) private var theme
     @EnvironmentObject private var model: LibraryViewModel
 
-    private var v: OLEDView { model.oledView }
+    @Environment(\.oledScreenOverride) private var screenOverride
+
+    private var v: OLEDView { screenOverride ?? model.oledView }
     private var radioLive: Bool { model.isRadioMode || model.isStreamActive }
 
     var body: some View {
@@ -290,7 +310,9 @@ private struct RailLive: View {
     // Playback time lives on the isolated clock; observe it to keep ticking.
     @ObservedObject var clock: PlaybackClock
 
-    private var showMini: Bool { model.oledView != .nowPlaying }
+    @Environment(\.oledScreenOverride) private var screenOverride
+
+    private var showMini: Bool { (screenOverride ?? model.oledView) != .nowPlaying }
 
     /// The centred notice owns the middle of the rail while it's up, and the
     /// mini title is the only element long enough to run under it. Yield rather
