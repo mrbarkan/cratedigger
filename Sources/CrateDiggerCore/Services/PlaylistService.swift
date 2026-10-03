@@ -111,6 +111,21 @@ public final class PlaylistService {
 }
 
 public extension Playlist {
+    /// `existing` with every new local file in `adding` appended, in the order
+    /// given. Entries already in the playlist, repeats within `adding`, and
+    /// non-file URLs (a remote stream has no path an M3U can hold) are skipped,
+    /// so adding the same album twice is harmless.
+    static func appending(_ adding: [URL], to existing: [URL]) -> [URL] {
+        var seen = Set(existing.map(\.standardizedFileURL.path))
+        var result = existing
+        for url in adding where url.isFileURL {
+            if seen.insert(url.standardizedFileURL.path).inserted {
+                result.append(url)
+            }
+        }
+        return result
+    }
+
     /// A playlist's order *is* its content, so reordering has to be exact.
     ///
     /// Returns `urls` with every entry in `moving` lifted out and reinserted

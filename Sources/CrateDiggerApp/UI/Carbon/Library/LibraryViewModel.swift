@@ -4336,23 +4336,57 @@ final class LibraryViewModel: ObservableObject {
                               treatAsImport: fromPrepCrate, fromPrepCrate: fromPrepCrate)
     }
 
-    /// Append dragged tracks/albums/artists to an M3U playlist, skipping paths
-    /// already in it.
+    /// Append dragged tracks/albums/artists to an M3U playlist.
     func addItemsToPlaylist(_ items: [String], playlistName: String) {
+        addTracksToPlaylist(tracksForDragItems(items), playlistName: playlistName)
+    }
+
+    /// Append tracks to an M3U playlist, skipping paths already in it (see
+    /// `Playlist.appending`). The one writer behind both the sidebar drop and
+    /// the context menu's Add to Playlist.
+    func addTracksToPlaylist(_ tracks: [LoadedTrack], playlistName: String) {
         guard var playlist = playlists.first(where: { $0.name == playlistName }) else { return }
-        let urls = tracksForDragItems(items).map { $0.track.fileURL }
-        guard !urls.isEmpty else { return }
+        let updated = Playlist.appending(tracks.map(\.track.fileURL), to: playlist.trackURLs)
+        let added = updated.count - playlist.trackURLs.count
+        guard added > 0 else {
+            if !tracks.isEmpty { showOLEDNotice("ALREADY IN \(playlistName.uppercased())") }
+            return
+        }
 
-        let existing = Set(playlist.trackURLs.map { $0.standardizedFileURL.path })
-        let newURLs = urls.filter { !existing.contains($0.standardizedFileURL.path) }
-        guard !newURLs.isEmpty else { return }
-
-        playlist.trackURLs.append(contentsOf: newURLs)
-        try? playlistService.savePlaylist(playlist)
+        playlist.trackURLs = updated
+        do {
+            try playlistService.savePlaylist(playlist)
+        } catch {
+            appAlert = .error(title: "Couldn’t Add to Playlist", message: error.localizedDescription)
+            return
+        }
         playlists = playlistService.listPlaylists()
         if case .playlist(let currentName) = currentSource, currentName == playlistName {
             selectPlaylist(name: playlistName)
         }
+        showOLEDNotice("ADDED \(added) TO \(playlistName.uppercased())")
+    }
+
+    /// Context menu's "New Playlist…": ask for a name, create the playlist,
+    /// then add `tracks` to it. `createPlaylist` alerts on a bad or taken name.
+    func promptNewPlaylist(adding tracks: [LoadedTrack]) {
+        let alert = NSAlert()
+        alert.messageText = "New Playlist"
+        let count = tracks.count == 1 ? "1 track" : "\(tracks.count) tracks"
+        alert.informativeText = "The new playlist starts with the \(count) you chose."
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
+        field.placeholderString = "Playlist Name"
+        alert.accessoryView = field
+        alert.window.initialFirstResponder = field
+        alert.addButton(withTitle: "Create")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        let before = Set(playlists.map(\.name))
+        guard createPlaylist(name: field.stringValue),
+              let created = playlists.first(where: { !before.contains($0.name) })
+        else { return }
+        addTracksToPlaylist(tracks, playlistName: created.name)
     }
 
     // MARK: - Album removal
