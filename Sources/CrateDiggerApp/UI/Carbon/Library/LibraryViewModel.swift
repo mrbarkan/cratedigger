@@ -473,14 +473,14 @@ final class LibraryViewModel: ObservableObject {
     @Published var galleryColumnsPerRow: Int = 1
 
     /// Tag-editor sheet target — one track (full editor) or many (batch editor).
-    /// Presented from `MainShell`, so it works from any row's context menu.
+    /// Presented from `LibraryPresentations`, so it works from any row's context menu.
     @Published var tagEditTarget: TagEditTarget?
 
     /// Album whose artwork to show in the floating viewer. A transient trigger:
-    /// `MainShell` observes it, presents the viewer window, then clears it.
+    /// `LibraryPresentations` observes it, presents the viewer window, then clears it.
     @Published var artworkViewerAlbum: Album?
     /// One-shot trigger for the full-screen player (View ▸ Full Screen Player,
-    /// ⇧⌘F). `MainShell` presents it, because that is where the theme lives.
+    /// ⇧⌘F). `LibraryPresentations` presents it, because that is where the theme lives.
     @Published var fullScreenPlayerRequested = false
 
     /// Full console or compact player (`+CompactPlayer`). The window

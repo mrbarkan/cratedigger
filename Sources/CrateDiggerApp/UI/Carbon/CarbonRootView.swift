@@ -43,6 +43,7 @@ struct CarbonRootView: View {
                     .frame(height: geometry.footerHeight)
             }
         }
+        .libraryPresentations()
         // The activity lamp is a titlebar accessory (MainWindowController) so
         // it sits in the actual titlebar strip, mirroring the traffic lights.
         .environmentObject(model)

@@ -33,35 +33,6 @@ struct InspectorPane: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .animation(.easeInOut(duration: 0.22), value: model.oledView)
         .animation(.easeInOut(duration: 0.22), value: model.showingThemePicker)
-        // FIX TAGS conflict review — driven by the conflicts themselves so a
-        // repair pass with no disagreements never flashes an empty panel.
-        .carbonPanel(
-            isPresented: Binding(
-                get: { !model.metadataRepairConflicts.isEmpty },
-                set: { if !$0 { model.metadataRepairConflicts = [] } }
-            ),
-            title: "Fix Tags",
-            minSize: NSSize(width: 560, height: 400),
-            initialSize: NSSize(width: 720, height: 560),
-            maxSize: NSSize(width: 1100, height: 900),
-            autosaveName: "cratedigger.panel.fixTags"
-        ) {
-            MetadataRepairSheetView().environmentObject(model)
-        }
-        // FIX TAGS online match review — same pattern: the matches are the state.
-        .carbonPanel(
-            isPresented: Binding(
-                get: { !model.metadataMatches.isEmpty },
-                set: { if !$0 { model.cancelMatchQueue() } }
-            ),
-            title: "Match Tags Online",
-            minSize: NSSize(width: 620, height: 460),
-            initialSize: NSSize(width: 820, height: 620),
-            maxSize: NSSize(width: 1200, height: 950),
-            autosaveName: "cratedigger.panel.matchTags"
-        ) {
-            MetadataMatchSheetView().environmentObject(model)
-        }
     }
 
     @ViewBuilder
