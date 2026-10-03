@@ -34,13 +34,21 @@ struct CarbonRootView: View {
 
     var body: some View {
         ChassisLayer {
-            VStack(spacing: geometry.chassisRowGap) {
-                HeaderShell()
-                    .frame(height: geometry.headerHeight)
-                MainShell()
-                    .frame(maxHeight: .infinity)
-                FooterShell()
-                    .frame(height: geometry.footerHeight)
+            switch model.playerLayout {
+            case .full:
+                VStack(spacing: geometry.chassisRowGap) {
+                    HeaderShell()
+                        .frame(height: geometry.headerHeight)
+                    MainShell()
+                        .frame(maxHeight: .infinity)
+                    FooterShell()
+                        .frame(height: geometry.footerHeight)
+                }
+            case .compact:
+                // One rack unit: art, display, transport. Everything presented
+                // from model state hangs off `libraryPresentations()` below,
+                // so it works in both layouts.
+                CompactDeckView()
             }
         }
         .libraryPresentations()
