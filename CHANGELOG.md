@@ -4,17 +4,23 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
-## 2.2.4 (103), 2026-10-03
+## 2.2.4 (104), 2026-10-03
 
-Beta 5. The NOW screen's matrix is redrawn as real LED segments, and
-right-click can add to a playlist.
+Release candidate 1: the Vertical VU splits into stereo halves, Explosions
+burns cool at the centre, and you choose which animations the lamp steps
+through. Beta 5 redrew the matrix as real LED segments and added Add to
+Playlist to the right-click menu; beta 4 brought the LED matrix itself.
+Release candidates are offered only to people who turned on Receive beta
+updates.
 
 ### Added
 
 - **An LED matrix on the NOW screen.** Beside the title, a 12 by 6 matrix
   plays one of four animations driven by what you're hearing: Vertical VU
-  (the spectrum, bass on the left), Horizontal VU (left and right
-  channels), Explosions (a burst from the centre on every kick) and Frame
+  (the spectrum in stereo halves, left channel on the left and right on the
+  right, bass on the outer edges and treble meeting in the middle),
+  Horizontal VU (left and right channels), Explosions (a cool burst from the
+  centre on every kick, turning hot as it reaches the edges) and Frame
   (light closing in from the edges, bass on the outside, treble inside).
   Monochrome themes draw it in their own ink.
 - **The matrix sits with the title instead of fighting it.** Since beta 4
@@ -31,9 +37,13 @@ right-click can add to a playlist.
   step. A selection goes in whole, tracks already in the playlist are
   skipped, and the display confirms how many were added.
 - **Click the status lamp to change it.** The small lamp at the top right of
-  the window steps through the four animations and Off, and View ▸ Display
+  the window steps through the animations and Off, and View ▸ Display
   Animation picks one directly. Your choice is kept. The lamp still glows
   while the app is busy.
+- **Choose which animations the lamp offers.** Settings ▸ Interface ▸
+  Display Animations has a tick box for each. The lamp and the View menu
+  offer only the ticked ones, plus Off, so ticking just your favourite
+  makes the lamp a simple on and off switch for it.
 - **Edit a disc's tags before ripping.** With a CD in the drive, tag edits
   (in the inspector, the tag editor or FIX TAGS) are kept for the rip
   instead of being written to the disc, which can't take them. The display
