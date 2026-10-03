@@ -180,9 +180,6 @@ private struct MiniPlayerBody: View {
     @Environment(\.carbon) private var theme
     @Environment(\.carbonGeometry) private var geometry
 
-    /// Cover for the COVER art mode, resolved off-main like AlbumPoster.
-    @State private var coverImage: NSImage?
-
     var body: some View {
         VStack(spacing: 0) {
             topBar
@@ -198,7 +195,6 @@ private struct MiniPlayerBody: View {
         // Drawn above the drawer, and the glass is opaque, so the drawer is
         // out of sight while it is parked behind.
         .compositingGroup()
-        .task(id: coverKey) { await loadCoverImage() }
     }
 
     private func setPanel(open: Bool) {
@@ -351,48 +347,13 @@ private struct MiniPlayerBody: View {
     private var localArtContent: some View {
         switch model.miniPlayerArtMode {
         case .cover:
-            if let image = coverImage {
-                Image(nsImage: image).resizable().aspectRatio(contentMode: .fill)
-            } else {
+            NowPlayingCover(model: model) {
                 LinearGradient(colors: [Color(hex: 0xD97757), Color(hex: 0xC14A2E)],
                                startPoint: .topLeading, endPoint: .bottomTrailing)
             }
         case .disc:
             SpinningRecordView(model: model).padding(10)
         }
-    }
-
-    /// Reload key: track change or a freshly committed cover (hash change).
-    private var coverKey: String {
-        if model.isStreamActive { return "stream-\(model.selectedStreamID ?? "none")" }
-        let track = model.nowPlayingTrack?.track
-        return "\(track?.id.uuidString ?? "none")-\(track?.artworkHash ?? "")"
-    }
-
-    /// Same resolution order as AlbumPoster: album cover file on disk first,
-    /// then cached bytes by hash, then the audio file itself.
-    private func loadCoverImage() async {
-        guard let loaded = model.nowPlayingTrack else {
-            coverImage = nil
-            return
-        }
-        if let album = model.album(containing: loaded.track.id),
-           let coverURL = album.booklet?.frontCoverURL,
-           let image = await loadThumbnail(url: coverURL, maxPixelSize: 480) {
-            coverImage = image
-            return
-        }
-        if let hash = loaded.track.artworkHash,
-           let image = await model.artworkService.thumbnailAsync(artworkHash: hash, maxPixel: 480) {
-            coverImage = image
-            return
-        }
-        if loaded.track.fileURL.isFileURL,
-           let asset = await model.artworkService.resolveArtwork(trackURL: loaded.track.fileURL) {
-            coverImage = await model.artworkService.thumbnailAsync(artworkHash: asset.hash, maxPixel: 480)
-            return
-        }
-        coverImage = nil
     }
 
     private var trackTitle: String {
