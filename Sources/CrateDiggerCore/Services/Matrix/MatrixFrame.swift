@@ -4,12 +4,21 @@ import Foundation
 ///
 /// Heat travels with the lit cell, not with the view, so each animation picks
 /// its own colour direction (up a column, along a bar, out from the centre)
-/// and the view only ever maps heat onto the cyan → Meter High ramp.
+/// and the view only ever decides which of the panel's two inks it means.
 public struct MatrixCell: Equatable, Sendable {
     /// 0 = unlit, 1 = peak.
     public var intensity: Double
-    /// 0…1 along the cyan → Meter High ramp.
+    /// 0 (coolest) … 1 (hottest).
     public var heat: Double
+
+    /// The heat at and above which a cell lights in the hot ink (Meter High)
+    /// instead of the cool one (cyan). A hardware meter has colour zones, not
+    /// a gradient, and a straight blend from cyan to orange went through a
+    /// muddy grey-green on the way. At 0.75 a vertical VU's top two rows are
+    /// hot and a horizontal one's last three columns.
+    public static let hotHeat = 0.75
+
+    public static func isHot(heat: Double) -> Bool { heat >= hotHeat }
 
     public init(intensity: Double = 0, heat: Double = 0) {
         self.intensity = intensity

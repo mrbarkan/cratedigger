@@ -456,6 +456,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                 self?.mainWindowController?.model.oledView = view
             }
         }
+        // The NOW matrix's animation (a `MatrixAnimationKind` raw value), so a
+        // capture can show each one without clicking the titlebar LED.
+        if let raw = env["CRATEDIGGER_MATRIX"], let kind = MatrixAnimationKind(rawValue: raw) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+                self?.mainWindowController?.model.matrixAnimation = kind
+            }
+        }
         // The theme picker replaces the inspector, and nothing else can drive it
         // without clicking the header (which needs accessibility permission).
         if env["CRATEDIGGER_THEME_PICKER"] != nil {
