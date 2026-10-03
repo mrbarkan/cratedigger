@@ -132,6 +132,14 @@ struct ColumnList<Content: View>: View {
                         proxy.scrollTo(target, anchor: .center)
                     }
                 }
+                // Built with a selection already in place (launch, a view
+                // switch, the browser returning from the compact player):
+                // land on it rather than on the top of the list. The gallery
+                // already does the same.
+                .onAppear {
+                    guard let scrollTarget else { return }
+                    proxy.scrollTo(scrollTarget, anchor: .center)
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }

@@ -187,6 +187,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     @objc private func selectOLEDView(_ sender: NSMenuItem) {
         guard let raw = sender.representedObject as? String,
               let view = OLEDView(rawValue: raw) else { return }
+        expandIfNeeded(for: .selectDisplay)
         mainWindowController?.setOLEDView(view)
     }
 
@@ -197,6 +198,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     }
 
     @objc private func goToCurrentSong(_ sender: Any?) {
+        expandIfNeeded(for: .goToCurrentSong)
         mainWindowController?.revealNowPlaying()
     }
 
@@ -205,6 +207,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     }
 
     @objc private func findInLibrary(_ sender: Any?) {
+        expandIfNeeded(for: .find)
         mainWindowController?.focusSearch()
     }
 
@@ -354,6 +357,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         miniPlayerWindowController?.showWindow(nil)
         miniPlayerWindowController?.window?.orderFrontRegardless()
         mainWindowController?.window?.orderOut(nil)
+    }
+
+    @objc private func toggleCompactPlayer(_ sender: Any?) {
+        mainWindowController?.toggleCompactPlayer()
+    }
+
+    /// Menu actions the compact player treats differently; see
+    /// `CompactCommandPolicy`. Anything not mapped works in both layouts.
+    private static func playerCommand(for action: Selector?) -> PlayerCommand? {
+        switch action {
+        case #selector(findInLibrary(_:)):           return .find
+        case #selector(goToCurrentSong(_:)):         return .goToCurrentSong
+        case #selector(selectOLEDView(_:)):          return .selectDisplay
+        case #selector(revealSelectionInFinder(_:)): return .revealSelection
+        case #selector(convertSelected(_:)):         return .convertSelected
+        case #selector(transferToDevice(_:)):        return .transferToDevice
+        case #selector(queuePlayNext(_:)):           return .playNextSelection
+        case #selector(queuePlayLast(_:)):           return .playLastSelection
+        case #selector(setRating(_:)):               return .rate
+        default:                                     return nil
+        }
+    }
+
+    private var currentLayout: PlayerLayout {
+        (mainWindowController?.isCompact ?? false) ? .compact : .full
+    }
+
+    /// For the expand-first commands: bring the console back, then let the
+    /// action run as it always has.
+    private func expandIfNeeded(for command: PlayerCommand) {
+        guard CompactCommandPolicy.availability(command, in: currentLayout) == .expandsFirst else { return }
+        mainWindowController?.expandToFull()
     }
 
     @objc private func toggleMiniPlayer(_ sender: Any?) {
@@ -1178,7 +1213,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     }
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if let command = Self.playerCommand(for: menuItem.action),
+           CompactCommandPolicy.availability(command, in: currentLayout) == .disabled {
+            return false
+        }
         switch menuItem.action {
+        case #selector(toggleCompactPlayer(_:)):
+            menuItem.state = currentLayout == .compact ? .on : .off
+            return true
         case #selector(setSleepMode(_:)):
             if let tag = menuItem.representedObject as? String,
                let mode = Self.sleepMode(fromTag: tag) {
@@ -1512,6 +1554,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         // Uppercase key = ⇧⌘M, Music's own binding. A toggle, so the same
         // chord goes both ways from either window.
         windowMenu.addItem(makeItem(title: "Mini Player", action: #selector(toggleMiniPlayer(_:)), key: "M"))
+        let compactItem = makeItem(title: "Compact Player", action: #selector(toggleCompactPlayer(_:)), key: "m")
+        compactItem.keyEquivalentModifierMask = [.command, .option, .shift]
+        windowMenu.addItem(compactItem)
         windowMenu.addItem(.separator())
         windowMenu.addItem(makeItem(title: "Bring All to Front", action: #selector(NSApplication.arrangeInFront(_:)), target: NSApp))
         windowMenuItem.submenu = windowMenu

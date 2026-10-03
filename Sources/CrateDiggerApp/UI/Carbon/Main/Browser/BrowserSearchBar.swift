@@ -26,7 +26,17 @@ struct BrowserSearchBar: View {
             // ⌘F bumps the tick; the field takes focus from it. A tick rather
             // than a bool because focusing has to fire again on the second
             // press, when nothing about the field itself has changed.
-            .onChange(of: model.searchFocusTick) { _ in focused = true }
+            .onChange(of: model.searchFocusTick) { _ in
+                _ = model.consumeSearchFocusRequest()
+                focused = true
+            }
+            // Built after ⌘F asked (the browser returning from the compact
+            // player): there is no tick change to see, so take it from here.
+            // Deferred a turn: focus set during appear is dropped on macOS.
+            .onAppear {
+                guard model.consumeSearchFocusRequest() else { return }
+                DispatchQueue.main.async { focused = true }
+            }
     }
 
     private var row: some View {
