@@ -120,6 +120,7 @@ extension LibraryViewModel {
         browserCollapsed = false
         showSearchField = true
         showSearchScreen()
+        searchFocusPending = true
         bumpSearchFocusTick()
     }
 

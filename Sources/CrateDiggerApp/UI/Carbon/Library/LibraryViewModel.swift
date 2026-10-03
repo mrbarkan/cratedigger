@@ -463,7 +463,10 @@ final class LibraryViewModel: ObservableObject {
     @Published var showingThemePicker: Bool = false
 
     /// Release notes, shown once per version and replayable from Help.
-    @Published var showingWhatsNew: Bool = false
+    @Published var showingWhatsNew: Bool = false {
+        // A 302 pt compact window cannot host this sheet.
+        didSet { if showingWhatsNew { expandToFull() } }
+    }
     /// Columns the gallery grid is currently laying out. Published by the view
     /// (only it knows the pane width) and read by ↑/↓ arrow nav, which has to
     /// move by a whole row.
@@ -479,6 +482,15 @@ final class LibraryViewModel: ObservableObject {
     /// One-shot trigger for the full-screen player (View ▸ Full Screen Player,
     /// ⇧⌘F). `MainShell` presents it, because that is where the theme lives.
     @Published var fullScreenPlayerRequested = false
+
+    /// Full console or compact player (`+CompactPlayer`). The window
+    /// controller follows it; `CarbonRootView` draws from it.
+    @Published var playerLayout: PlayerLayout = PlayerLayout.launchLayout(
+        saved: PreferencesStore.shared.playerLayout,
+        libraryChosen: PreferencesStore.shared.cratesIndexFolderBookmark != nil
+    ) {
+        didSet { PreferencesStore.shared.playerLayout = playerLayout }
+    }
 
     /// Open the tag editor for a set of tracks (album/artist context menus pass
     /// all their tracks; the inspector passes the single selected track).
@@ -568,11 +580,15 @@ final class LibraryViewModel: ObservableObject {
     }
 
     /// First-run onboarding sheet — shown when setup hasn't completed.
-    @Published var showingOnboarding: Bool = false
+    @Published var showingOnboarding: Bool = false {
+        didSet { if showingOnboarding { expandToFull() } }
+    }
 
     /// Visual welcome tour — shown before folder setup on the very first
     /// launch, and replayable from Help ▸ Welcome Tour or Preferences.
-    @Published var showingWelcomeTour: Bool = false
+    @Published var showingWelcomeTour: Bool = false {
+        didSet { if showingWelcomeTour { expandToFull() } }
+    }
 
     private var scrubReleaseWorkItem: DispatchWorkItem?
     private var pendingSeekTargetSeconds: Double?
@@ -1693,6 +1709,17 @@ final class LibraryViewModel: ObservableObject {
 
     /// Bumping it is `requestSearchFocus`'s job, in `+Search`.
     func bumpSearchFocusTick() { searchFocusTick &+= 1 }
+
+    /// Set with every ⌘F. A field that already exists takes focus from the
+    /// tick; one that is only about to be built (the browser coming back from
+    /// the compact player) has no tick change to see, so it takes it from
+    /// this on appear. Whichever reads it first clears it.
+    var searchFocusPending = false
+
+    func consumeSearchFocusRequest() -> Bool {
+        defer { searchFocusPending = false }
+        return searchFocusPending
+    }
 
     /// Where the user was before widening the search to All Records, so
     /// narrowing puts them back. See `setSearchScope`.
