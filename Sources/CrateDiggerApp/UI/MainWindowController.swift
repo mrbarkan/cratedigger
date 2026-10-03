@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import CrateDiggerCore
 import SwiftUI
 
@@ -9,6 +10,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     var model: LibraryViewModel { hostingController.model }
     private let prefs: PreferencesStore = .shared
     private var didApplyRestoredFrame = false
+    /// The layout the window is currently sized for. Trails `model.playerLayout`
+    /// by one runloop turn, which is what lets `switchLayout` save the
+    /// outgoing frame into the outgoing layout's slot.
+    private var layout: PlayerLayout = .full
+    private var layoutObserver: AnyCancellable?
 
     init() {
         let styleMask: NSWindow.StyleMask = [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView]
@@ -69,6 +75,21 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             self,
             selector: #selector(handleTransferToDevice(_:)),
             name: NSNotification.Name("CrateDiggerTransferToDevice"),
+            object: nil
+        )
+
+        layout = hostingController.model.playerLayout
+        layoutObserver = hostingController.model.$playerLayout
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] in self?.switchLayout(to: $0) }
+
+        // A theme can change the header or footer height; the compact window
+        // is exactly that tall, so it re-plans.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleThemesDidChange),
+            name: PreferencesStore.themesDidChange,
             object: nil
         )
     }
@@ -349,7 +370,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         super.showWindow(sender)
         if !didApplyRestoredFrame {
             didApplyRestoredFrame = true
-            if prefs.savedWindowFrame != nil {
+            if layout == .compact {
+                applyLayoutPlan(restoring: true, animated: false)
+            } else if prefs.savedWindowFrame != nil {
                 applyWindowPlan(context: .clampToVisibleFrame, animated: false)
             } else {
                 applyWindowPlan(context: .initialLaunch, animated: false)
@@ -358,11 +381,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func windowDidChangeScreen(_ notification: Notification) {
-        applyWindowPlan(context: .clampToVisibleFrame, animated: false)
+        applyLayoutPlan(restoring: false, animated: false)
     }
 
     func windowDidChangeBackingProperties(_ notification: Notification) {
-        applyWindowPlan(context: .clampToVisibleFrame, animated: false)
+        applyLayoutPlan(restoring: false, animated: false)
     }
 
     func windowDidEndLiveResize(_ notification: Notification) {
@@ -379,7 +402,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     private func persistFrame() {
         guard let window else { return }
-        prefs.savedWindowFrame = window.frame
+        switch layout {
+        case .full:    prefs.savedWindowFrame = window.frame
+        case .compact: prefs.savedCompactWindowFrame = window.frame
+        }
     }
 
     @objc private func handleAppearanceDidChange() {
@@ -390,15 +416,85 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         window?.appearance = AppearanceMode.current.nsAppearance
     }
 
-    private func applyWindowPlan(context: WindowFramePlanningContext, animated: Bool) {
-        guard let window else { return }
+    // MARK: - Compact player
 
-        let visibleFrame = window.screen?.visibleFrame
+    var isCompact: Bool { hostingController.model.isCompactPlayer }
+
+    func toggleCompactPlayer() {
+        showWindow(nil)
+        hostingController.model.toggleCompactPlayer()
+    }
+
+    func expandToFull() {
+        hostingController.model.expandToFull()
+    }
+
+    private func switchLayout(to newLayout: PlayerLayout) {
+        guard newLayout != layout, let window else { return }
+        persistFrame()          // into the outgoing layout's slot
+        layout = newLayout
+        applyLayoutPlan(restoring: true, animated: window.isVisible)
+    }
+
+    /// `restoring` reads the layout's saved frame (a switch, or launch);
+    /// otherwise the current frame is re-clamped (screen or theme change).
+    private func applyLayoutPlan(restoring: Bool, animated: Bool) {
+        guard let window else { return }
+        switch layout {
+        case .full:
+            window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+            if restoring {
+                let saved = prefs.savedWindowFrame
+                applyWindowPlan(context: saved == nil ? .initialLaunch : .clampToVisibleFrame,
+                                animated: animated, baseline: saved)
+            } else {
+                applyWindowPlan(context: .clampToVisibleFrame, animated: animated)
+            }
+        case .compact:
+            let plan = WindowFramePlanner.compactPlan(
+                visibleFrame: visibleFrame(for: window),
+                savedFrame: restoring ? prefs.savedCompactWindowFrame : window.frame,
+                anchor: window.frame,
+                metrics: CompactDeckMetrics(geometry: activeGeometry())
+            )
+            // Minimum first: the full window's 1200 × 820 floor would refuse the shrink.
+            window.minSize = NSSize(width: plan.minimumSize.width, height: plan.minimumSize.height)
+            window.maxSize = NSSize(width: plan.maximumSize.width, height: plan.maximumSize.height)
+            window.setFrame(plan.frame, display: true, animate: animated)
+        }
+    }
+
+    private func visibleFrame(for window: NSWindow) -> CGRect {
+        window.screen?.visibleFrame
             ?? NSScreen.main?.visibleFrame
             ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
+    }
+
+    /// Resolved the way `CarbonRootView` resolves it.
+    private func activeGeometry() -> CarbonGeometry {
+        ThemeRegistry.shared.resolvedTheme(for: prefs.selectedThemeID)?.geometry ?? .standard
+    }
+
+    @objc private func handleThemesDidChange() {
+        guard layout == .compact else { return }
+        applyLayoutPlan(restoring: false, animated: window?.isVisible ?? false)
+    }
+
+    /// Zoom while compact means "the whole console", not a maximised strip.
+    func windowShouldZoom(_ window: NSWindow, toFrame newFrame: NSRect) -> Bool {
+        guard layout == .compact else { return true }
+        expandToFull()
+        return false
+    }
+
+    private func applyWindowPlan(context: WindowFramePlanningContext, animated: Bool, baseline override: CGRect? = nil) {
+        guard let window else { return }
+        let visibleFrame = visibleFrame(for: window)
 
         let baselineFrame: CGRect?
-        if context == .clampToVisibleFrame, prefs.savedWindowFrame != nil, !window.isVisible {
+        if let override {
+            baselineFrame = override
+        } else if context == .clampToVisibleFrame, prefs.savedWindowFrame != nil, !window.isVisible {
             // First-launch restoration path: prefer the persisted frame over
             // the (uninitialized) current frame.
             baselineFrame = prefs.savedWindowFrame ?? window.frame
