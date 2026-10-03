@@ -10,7 +10,8 @@ import SwiftUI
 /// opposite number.
 ///
 /// It is also the NOW screen's animation key: a click steps the LED matrix
-/// through its animations, Off included (`cycleMatrixAnimation`). The lamp
+/// through the animations ticked in Settings ▸ Interface, Off included
+/// (`cycleMatrixAnimation`). The lamp
 /// stays 9 pt, but the click lands anywhere in an 18 pt square around it, so
 /// it can be hit without aiming. Hover names the current animation, then
 /// what's running.

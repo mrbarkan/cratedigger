@@ -55,9 +55,11 @@ public struct ExplosionsAnimation: MatrixAnimation {
 
     public var isAtRest: Bool { rings.isEmpty && loudness == 0 }
 
-    /// Hot at the centre, cooling toward the edge.
+    /// Cool at the centre, hot toward the edge: the core glows cyan and a
+    /// ring turns to the meter's hot colour as it reaches the border, the way
+    /// a VU's top segments do.
     public static func restingHeat(column: Int, row: Int) -> Double {
-        1 - distance(column: column, row: row)
+        distance(column: column, row: row)
     }
 
     /// Distance of a cell from the grid's centre (5.5, 2.5), elliptical so a

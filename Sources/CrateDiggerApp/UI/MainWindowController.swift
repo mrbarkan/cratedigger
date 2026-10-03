@@ -251,6 +251,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         hostingController.model.matrixAnimation
     }
 
+    func enabledMatrixAnimations() -> Set<MatrixAnimationKind> {
+        hostingController.model.enabledMatrixAnimations
+    }
+
     func openThemeEditor() {
         hostingController.model.showingThemeEditor = true
     }

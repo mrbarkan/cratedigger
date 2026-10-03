@@ -31,6 +31,7 @@ public final class PreferencesStore {
         static let customFFprobePath = "cratedigger.tools.ffprobePath"
         static let oledView = "cratedigger.ui.oledView"
         static let oledMatrixAnimation = "cratedigger.ui.oledMatrixAnimation"
+        static let enabledMatrixAnimations = "cratedigger.ui.enabledMatrixAnimations"
         static let statsWindow = "cratedigger.ui.statsWindow"
         static let collapsedSourceSections = "cratedigger.sidebar.collapsedSections"
         static let shuffleEnabled = "cratedigger.playback.shuffle"
@@ -307,6 +308,20 @@ public final class PreferencesStore {
                 defaults.set(value, forKey: Key.oledView)
             } else {
                 defaults.removeObject(forKey: Key.oledView)
+            }
+        }
+    }
+
+    /// The `MatrixAnimationKind` raw values ticked in Settings ▸ Interface,
+    /// which the status LED and View ▸ Display Animation offer. nil (never
+    /// set) means all of them; read through `MatrixAnimationKind.enabled(persisted:)`.
+    public var enabledMatrixAnimations: [String]? {
+        get { defaults.stringArray(forKey: Key.enabledMatrixAnimations) }
+        set {
+            if let value = newValue {
+                defaults.set(value, forKey: Key.enabledMatrixAnimations)
+            } else {
+                defaults.removeObject(forKey: Key.enabledMatrixAnimations)
             }
         }
     }

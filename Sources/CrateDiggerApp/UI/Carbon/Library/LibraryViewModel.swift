@@ -353,15 +353,28 @@ final class LibraryViewModel: ObservableObject {
     }
 
     /// What the NOW screen's LED matrix plays. The titlebar status LED steps
-    /// through the kinds and View ▸ Display Animation picks one; `.off` takes
-    /// the matrix off the glass, driver and all.
+    /// through the enabled kinds and View ▸ Display Animation picks one;
+    /// `.off` takes the matrix off the glass, driver and all.
     @Published var matrixAnimation: MatrixAnimationKind = .vertical {
         didSet { prefs.oledMatrixAnimation = matrixAnimation.rawValue }
     }
 
-    /// The status LED's click: the next kind in click order, Off included.
+    /// The animations ticked in Settings ▸ Interface. The lamp and the menu
+    /// offer only these, plus Off. Read from the store, and re-read when
+    /// Settings posts `CrateDiggerMatrixAnimationsChanged`.
+    @Published private(set) var enabledMatrixAnimations = Set(MatrixAnimationKind.animations)
+
+    /// The status LED's click: the next enabled kind in click order, else Off.
     func cycleMatrixAnimation() {
-        matrixAnimation = matrixAnimation.next
+        matrixAnimation = matrixAnimation.next(enabled: enabledMatrixAnimations)
+    }
+
+    /// Re-read the enabled set, and move off an animation that was just
+    /// unticked rather than keep playing something the user turned off.
+    func reloadEnabledMatrixAnimations() {
+        enabledMatrixAnimations = MatrixAnimationKind.enabled(persisted: prefs.enabledMatrixAnimations)
+        let settled = matrixAnimation.settled(enabled: enabledMatrixAnimations)
+        if settled != matrixAnimation { matrixAnimation = settled }
     }
 
     @Published var scanProgress: ScanProgress = .idle
@@ -1409,6 +1422,7 @@ final class LibraryViewModel: ObservableObject {
             oledView = view
         }
         matrixAnimation = MatrixAnimationKind(persisted: prefs.oledMatrixAnimation)
+        reloadEnabledMatrixAnimations()
         if let saved = prefs.savedStatsWindow, let window = ListeningWindow(rawValue: saved) {
             statsWindow = window
         }
@@ -1493,6 +1507,7 @@ final class LibraryViewModel: ObservableObject {
         setupAudioDeviceObserver()
         setupGaplessObserver()
         setupCDSpeedObserver()
+        setupMatrixAnimationsObserver()
         setupKeyboardShortcutsMonitor()
         setupLibraryOperationsObservers()
         setupVolumeObservers()
@@ -1557,6 +1572,14 @@ final class LibraryViewModel: ObservableObject {
             let enabled = notification.object as? Bool ?? true
             Task { @MainActor [weak self] in
                 self?.playback.gaplessEnabled = enabled
+            }
+        }
+    }
+
+    private func setupMatrixAnimationsObserver() {
+        observe("CrateDiggerMatrixAnimationsChanged") { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.reloadEnabledMatrixAnimations()
             }
         }
     }

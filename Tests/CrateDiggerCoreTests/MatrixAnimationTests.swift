@@ -134,23 +134,67 @@ final class MatrixAnimationTests: XCTestCase {
         }
     }
 
-    func testVerticalHalfBassLightsThreeCellsInTheFirstColumnOnly() {
+    /// Bass sits on both outer edges, mirrored, with centred (equal) levels.
+    func testVerticalHalfBassLightsThreeCellsOnEachOuterEdge() {
         var vu = VerticalVUAnimation()
-        let frame = vu.frame(for: input(bands([0: 0.5])))
+        let frame = vu.frame(for: input(bands([0: 0.5]), left: 0.6, right: 0.6))
         let lit = litCells(frame)
-        XCTAssertEqual(lit.count, 3)
-        XCTAssertTrue(lit.allSatisfy { $0.column == 0 })
-        XCTAssertEqual(frame[column: 0, row: 2].intensity, 1)     // the peak
-        XCTAssertEqual(frame[column: 0, row: 0].intensity, 0.75)
-        XCTAssertEqual(frame[column: 0, row: 1].intensity, 0.75)
-        XCTAssertEqual(frame[column: 0, row: 3], MatrixCell(intensity: 0, heat: 0))
+        XCTAssertEqual(lit.count, 6)
+        XCTAssertEqual(Set(lit.map(\.column)), [0, 11])
+        for column in [0, 11] {
+            XCTAssertEqual(frame[column: column, row: 2].intensity, 1)     // the peak
+            XCTAssertEqual(frame[column: column, row: 0].intensity, 0.75)
+            XCTAssertEqual(frame[column: column, row: 1].intensity, 0.75)
+            XCTAssertEqual(frame[column: column, row: 3], MatrixCell(intensity: 0, heat: 0))
+        }
+    }
+
+    /// Treble meets in the middle: the top band pair lands on columns 5 and 6.
+    func testVerticalTrebleMeetsInTheMiddle() {
+        var vu = VerticalVUAnimation()
+        let frame = vu.frame(for: input(bands([11: 1]), left: 0.5, right: 0.5))
+        XCTAssertEqual(Set(litCells(frame).map(\.column)), [5, 6])
+    }
+
+    /// Each column shows the louder band of its pair.
+    func testVerticalFoldsBandPairsByTheirLouderBand() {
+        var vu = VerticalVUAnimation()
+        let frame = vu.frame(for: input(bands([2: 0.2, 3: 0.5]), left: 1, right: 1))
+        XCTAssertEqual(litCells(frame).filter { $0.column == 1 }.count, 3)
+        XCTAssertEqual(litCells(frame).filter { $0.column == 10 }.count, 3)
+    }
+
+    /// A channel at half the other's level draws its half at half height.
+    func testVerticalScalesEachHalfByItsChannel() {
+        var vu = VerticalVUAnimation()
+        let frame = vu.frame(for: input(Array(repeating: 1, count: 12), left: 0.8, right: 0.4))
+        for column in 0..<6 {
+            XCTAssertEqual(litCells(frame).filter { $0.column == column }.count, 6, "left c\(column)")
+        }
+        for column in 6..<12 {
+            XCTAssertEqual(litCells(frame).filter { $0.column == column }.count, 3, "right c\(column)")
+        }
+    }
+
+    /// A hard-panned left channel leaves the right half dark.
+    func testVerticalHardLeftLeavesTheRightHalfDark() {
+        var vu = VerticalVUAnimation()
+        let frame = vu.frame(for: input(Array(repeating: 1, count: 12), left: 0.7, right: 0))
+        XCTAssertTrue(litCells(frame).allSatisfy { $0.column < 6 })
+        XCTAssertFalse(litCells(frame).isEmpty)
+    }
+
+    /// With no channel levels at all, both halves draw the spectrum.
+    func testVerticalWithoutLevelsDrawsBothHalves() {
+        XCTAssertEqual(VerticalVUAnimation.channelWeights(left: 0, right: 0).left, 1)
+        XCTAssertEqual(VerticalVUAnimation.channelWeights(left: 0, right: 0).right, 1)
     }
 
     func testVerticalRoundsToWholeSegments() {
         var vu = VerticalVUAnimation()
         // 0.08 × 6 = 0.48 → 0 segments; 0.09 × 6 = 0.54 → 1 segment.
-        let frame = vu.frame(for: input(bands([0: 0.08, 1: 0.09])))
-        XCTAssertEqual(litCells(frame).map(\.column), [1])
+        let frame = vu.frame(for: input(bands([0: 0.08, 2: 0.09]), left: 1, right: 1))
+        XCTAssertEqual(Set(litCells(frame).map(\.column)), [1, 10])
         XCTAssertEqual(frame[column: 1, row: 0].intensity, 1)
     }
 
@@ -249,7 +293,7 @@ final class MatrixAnimationTests: XCTestCase {
             XCTAssertLessThanOrEqual(abs(d - 0.6), 0.18 + 1e-9)
             let cell = frame[column: column, row: row]
             XCTAssertEqual(cell.intensity, 0.4, accuracy: 1e-9)       // 1 − 0.3/0.5
-            XCTAssertEqual(cell.heat, 1 - d, accuracy: 1e-9)
+            XCTAssertEqual(cell.heat, d, accuracy: 1e-9)
         }
         // The centre (d ≈ 0.19) is well inside the ring and stays dark.
         XCTAssertEqual(frame[column: 5, row: 2].intensity, 0)
@@ -275,7 +319,7 @@ final class MatrixAnimationTests: XCTestCase {
                     if d <= boom.coreRadius {
                         coreCount += 1
                         XCTAssertEqual(cell.intensity, ExplosionsAnimation.coreIntensity, "L=\(loudness) c\(column) r\(row) d=\(d)")
-                        XCTAssertEqual(cell.heat, 1 - d, accuracy: 1e-9)
+                        XCTAssertEqual(cell.heat, d, accuracy: 1e-9)
                     } else {
                         XCTAssertEqual(cell, MatrixCell(), "L=\(loudness) c\(column) r\(row) d=\(d)")
                     }
@@ -630,9 +674,9 @@ final class MatrixAnimationTests: XCTestCase {
         XCTAssertEqual(MatrixAnimationKind.vertical.restingHeat(column: 4, row: 5), 1)
         XCTAssertEqual(MatrixAnimationKind.horizontal.restingHeat(column: 0, row: 3), 0)
         XCTAssertEqual(MatrixAnimationKind.horizontal.restingHeat(column: 11, row: 3), 1)
-        XCTAssertEqual(MatrixAnimationKind.explosions.restingHeat(column: 0, row: 0), 0)        // corner, d = 1
+        XCTAssertEqual(MatrixAnimationKind.explosions.restingHeat(column: 0, row: 0), 1)        // corner, d = 1
         XCTAssertEqual(MatrixAnimationKind.explosions.restingHeat(column: 5, row: 2),
-                       1 - ExplosionsAnimation.distance(column: 5, row: 2), accuracy: 1e-12)
+                       ExplosionsAnimation.distance(column: 5, row: 2), accuracy: 1e-12)
         XCTAssertEqual(MatrixAnimationKind.frame.restingHeat(column: 0, row: 3), 0)
         XCTAssertEqual(MatrixAnimationKind.frame.restingHeat(column: 1, row: 1), 0.5)
         XCTAssertEqual(MatrixAnimationKind.frame.restingHeat(column: 5, row: 2), 1)
@@ -684,6 +728,42 @@ final class MatrixAnimationTests: XCTestCase {
         XCTAssertEqual(MatrixAnimationKind.frame.next, .off)
         XCTAssertEqual(MatrixAnimationKind.off.next, .vertical)
         XCTAssertEqual(MatrixAnimationKind.allCases, [.vertical, .horizontal, .explosions, .frame, .off])
+    }
+
+    /// Off is always in the cycle; disabled kinds are skipped.
+    func testKindNextSkipsDisabledKinds() {
+        let onlyVertical: Set<MatrixAnimationKind> = [.vertical]
+        XCTAssertEqual(MatrixAnimationKind.vertical.next(enabled: onlyVertical), .off)
+        XCTAssertEqual(MatrixAnimationKind.off.next(enabled: onlyVertical), .vertical)
+        let two: Set<MatrixAnimationKind> = [.horizontal, .frame]
+        XCTAssertEqual(MatrixAnimationKind.off.next(enabled: two), .horizontal)
+        XCTAssertEqual(MatrixAnimationKind.horizontal.next(enabled: two), .frame)
+        XCTAssertEqual(MatrixAnimationKind.frame.next(enabled: two), .off)
+        XCTAssertEqual(MatrixAnimationKind.off.next(enabled: []), .off)
+        let all = Set(MatrixAnimationKind.animations)
+        for kind in MatrixAnimationKind.allCases {
+            XCTAssertEqual(kind.next(enabled: all), kind.next, "\(kind)")
+        }
+    }
+
+    func testKindSettlesOntoAnEnabledKindOrOff() {
+        XCTAssertEqual(MatrixAnimationKind.explosions.settled(enabled: [.explosions]), .explosions)
+        XCTAssertEqual(MatrixAnimationKind.explosions.settled(enabled: [.frame, .vertical]), .frame)
+        XCTAssertEqual(MatrixAnimationKind.frame.settled(enabled: [.vertical]), .off)
+        XCTAssertEqual(MatrixAnimationKind.horizontal.settled(enabled: []), .off)
+        XCTAssertEqual(MatrixAnimationKind.off.settled(enabled: []), .off)
+    }
+
+    func testKindCycleListsEnabledInClickOrderThenOff() {
+        XCTAssertEqual(MatrixAnimationKind.cycle(enabled: [.frame, .vertical]), [.vertical, .frame, .off])
+        XCTAssertEqual(MatrixAnimationKind.cycle(enabled: []), [.off])
+        XCTAssertEqual(MatrixAnimationKind.animations, [.vertical, .horizontal, .explosions, .frame])
+    }
+
+    func testKindEnabledPersistedValue() {
+        XCTAssertEqual(MatrixAnimationKind.enabled(persisted: nil), Set(MatrixAnimationKind.animations))
+        XCTAssertEqual(MatrixAnimationKind.enabled(persisted: []), [])
+        XCTAssertEqual(MatrixAnimationKind.enabled(persisted: ["frame", "bogus", "off"]), [.frame])
     }
 
     func testKindPersistedValueFallsBackToVertical() {

@@ -33,6 +33,37 @@ public enum MatrixAnimationKind: String, CaseIterable, Sendable {
         }
     }
 
+    /// Every kind that draws something, in click order: all of them but Off.
+    public static let animations: [MatrixAnimationKind] = allCases.filter { $0 != .off }
+
+    /// The status LED's click when only `enabled` may play: the next enabled
+    /// kind in click order, else Off. Off is always in the cycle, so ticking a
+    /// single animation in Settings makes the lamp a switch between it and Off.
+    public func next(enabled: Set<MatrixAnimationKind>) -> MatrixAnimationKind {
+        var kind = next
+        while kind != .off && !enabled.contains(kind) { kind = kind.next }
+        return kind
+    }
+
+    /// What should be playing once `enabled` has changed: this kind while it
+    /// is still enabled (or Off), else the next one that is.
+    public func settled(enabled: Set<MatrixAnimationKind>) -> MatrixAnimationKind {
+        self == .off || enabled.contains(self) ? self : next(enabled: enabled)
+    }
+
+    /// The choices the lamp and View ▸ Display Animation offer: the enabled
+    /// animations in click order, then Off.
+    public static func cycle(enabled: Set<MatrixAnimationKind>) -> [MatrixAnimationKind] {
+        animations.filter(enabled.contains) + [.off]
+    }
+
+    /// The enabled set as saved: nil (never set) means every animation, and a
+    /// name this build no longer knows is dropped. Off is never in the set.
+    public static func enabled(persisted: [String]?) -> Set<MatrixAnimationKind> {
+        guard let persisted else { return Set(animations) }
+        return Set(persisted.compactMap(Self.init(rawValue:)).filter { $0 != .off })
+    }
+
     public var label: String {
         switch self {
         case .vertical: return "Vertical VU"

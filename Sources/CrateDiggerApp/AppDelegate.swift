@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     private let prefs: PreferencesStore = .shared
     private var openRecentMenu: NSMenu?
     private var appearanceMenu: NSMenu?
+    private var matrixAnimationMenu: NSMenu?
     private var recentFolderURLs: [URL] = []
     private var spaceKeyMonitor: Any?
 
@@ -1174,6 +1175,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         if menu === appearanceMenu { rebuildAppearanceMenu() }
+        if menu === matrixAnimationMenu { rebuildMatrixAnimationMenu() }
+    }
+
+    private func rebuildMatrixAnimationMenu() {
+        guard let menu = matrixAnimationMenu else { return }
+        menu.removeAllItems()
+        // Before the window exists, the store is the answer the model will load.
+        let enabled = mainWindowController?.enabledMatrixAnimations()
+            ?? MatrixAnimationKind.enabled(persisted: prefs.enabledMatrixAnimations)
+        for kind in MatrixAnimationKind.cycle(enabled: enabled) {
+            let item = makeItem(title: kind.label, action: #selector(selectMatrixAnimation(_:)))
+            item.representedObject = kind.rawValue
+            menu.addItem(item)
+        }
     }
 
     @objc private func selectTheme(_ sender: NSMenuItem) {
@@ -1388,18 +1403,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             item.representedObject = view.rawValue
             viewMenu.addItem(item)
         }
-        // What the NOW screen's LED matrix plays, in the order a click on the
-        // titlebar status LED steps through them, so the menu and the lamp
-        // read as one control.
+        // What the NOW screen's LED matrix plays: the animations ticked in
+        // Settings, in the order a click on the titlebar status LED steps
+        // through them, then Off, so the menu and the lamp read as one
+        // control. Rebuilt on open, so it follows Settings with no observer.
         let animationMenuItem = NSMenuItem(title: "Display Animation", action: nil, keyEquivalent: "")
         let animationMenu = NSMenu(title: "Display Animation")
-        var kind = MatrixAnimationKind.vertical
-        repeat {
-            let item = makeItem(title: kind.label, action: #selector(selectMatrixAnimation(_:)))
-            item.representedObject = kind.rawValue
-            animationMenu.addItem(item)
-            kind = kind.next
-        } while kind != .vertical
+        animationMenu.delegate = self
+        matrixAnimationMenu = animationMenu
+        rebuildMatrixAnimationMenu()
         animationMenuItem.submenu = animationMenu
         viewMenu.addItem(animationMenuItem)
         viewMenu.addItem(.separator())
