@@ -12,6 +12,10 @@ public enum PlayerCommand: CaseIterable, Sendable {
     case playNextSelection
     case playLastSelection
     case rate
+    /// Arrow-key navigation of the browser columns (a key monitor, not a menu item).
+    case browserKeyboard
+    /// ⌘A, which reaches the hosting controller through the responder chain.
+    case selectAll
 }
 
 public enum CommandAvailability: Sendable, Equatable {
@@ -29,7 +33,8 @@ public enum CompactCommandPolicy {
         case .find, .goToCurrentSong, .selectDisplay:
             return .expandsFirst
         case .revealSelection, .convertSelected, .transferToDevice,
-             .playNextSelection, .playLastSelection, .rate:
+             .playNextSelection, .playLastSelection, .rate,
+             .browserKeyboard, .selectAll:
             return .disabled
         }
     }

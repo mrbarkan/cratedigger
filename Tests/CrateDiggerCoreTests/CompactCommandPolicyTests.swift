@@ -17,15 +17,24 @@ final class CompactCommandPolicyTests: XCTestCase {
 
     func testSelectionCommandsAreDisabledInCompact() {
         let selection: [PlayerCommand] = [.revealSelection, .convertSelected, .transferToDevice,
-                                          .playNextSelection, .playLastSelection, .rate]
+                                          .playNextSelection, .playLastSelection, .rate,
+                                          .browserKeyboard, .selectAll]
         for command in selection {
             XCTAssertEqual(CompactCommandPolicy.availability(command, in: .compact), .disabled, "\(command)")
         }
     }
 
+    /// Arrows and ⌘A move the browser selection through the key monitor and
+    /// the responder chain, not a menu item, so they need the policy too.
+    func testBrowserKeyboardAndSelectAllAreDisabledInCompact() {
+        XCTAssertEqual(CompactCommandPolicy.availability(.browserKeyboard, in: .compact), .disabled)
+        XCTAssertEqual(CompactCommandPolicy.availability(.selectAll, in: .compact), .disabled)
+        XCTAssertEqual(CompactCommandPolicy.availability(.browserKeyboard, in: .full), .available)
+    }
+
     func testEveryCommandIsClassified() {
         // A new case must land in one of the two compact lists above.
-        XCTAssertEqual(PlayerCommand.allCases.count, 9)
+        XCTAssertEqual(PlayerCommand.allCases.count, 11)
     }
 }
 #endif

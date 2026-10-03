@@ -66,9 +66,12 @@ extension LibraryViewModel {
     }
 
     /// True when the main window is key (not a sheet, the mini-player, or the
-    /// booklet/artwork windows — those have their own key handling) and no text
-    /// field is editing, so arrows belong to the browser.
+    /// booklet/artwork windows — those have their own key handling), the
+    /// browser is on screen (not the compact player, where arrows would move a
+    /// selection nobody can see) and no text field is editing, so arrows
+    /// belong to the browser.
     private func isBrowserKeyContext() -> Bool {
+        guard CompactCommandPolicy.availability(.browserKeyboard, in: playerLayout) == .available else { return false }
         guard let key = NSApp.keyWindow, key === NSApp.mainWindow else { return false }
         return !isEditingText()
     }

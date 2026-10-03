@@ -1,4 +1,5 @@
 import AppKit
+import CrateDiggerCore
 import SwiftUI
 
 final class CarbonHostingController: NSHostingController<CarbonRootView> {
@@ -27,6 +28,20 @@ final class CarbonHostingController: NSHostingController<CarbonRootView> {
     /// album (or every track, in the flat track layout) so the whole source can be
     /// batch-added to a crate.
     override func selectAll(_ sender: Any?) {
+        // The compact player has no browser: selecting everything there would
+        // arm a selection the user cannot see.
+        guard CompactCommandPolicy.availability(.selectAll, in: model.playerLayout) == .available else { return }
         model.selectAllInSource()
+    }
+}
+
+extension CarbonHostingController: NSMenuItemValidation {
+    /// Greys Select All out in the compact player rather than leaving a menu
+    /// item that does nothing.
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(selectAll(_:)) {
+            return CompactCommandPolicy.availability(.selectAll, in: model.playerLayout) == .available
+        }
+        return true
     }
 }
