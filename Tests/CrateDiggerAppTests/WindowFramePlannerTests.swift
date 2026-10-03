@@ -143,5 +143,16 @@ final class WindowFramePlannerTests: XCTestCase {
             metrics: CompactDeckMetrics(geometry: .standard))
         XCTAssertEqual(plan.frame.width, 1174, accuracy: 0.001)
     }
+
+    func testResizeClampHoldsTheCompactWindowToItsLimits() {
+        let minimum = CGSize(width: 1174, height: 302)
+        let maximum = CGSize(width: 1512, height: 302)
+        XCTAssertEqual(WindowFramePlanner.clampedSize(CGSize(width: 545, height: 302), minimum: minimum, maximum: maximum),
+                       CGSize(width: 1174, height: 302))
+        XCTAssertEqual(WindowFramePlanner.clampedSize(CGSize(width: 1300, height: 600), minimum: minimum, maximum: maximum),
+                       CGSize(width: 1300, height: 302))
+        XCTAssertEqual(WindowFramePlanner.clampedSize(CGSize(width: 4000, height: 100), minimum: minimum, maximum: maximum),
+                       CGSize(width: 1512, height: 302))
+    }
 }
 #endif

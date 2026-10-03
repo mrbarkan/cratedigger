@@ -15,6 +15,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     /// outgoing frame into the outgoing layout's slot.
     private var layout: PlayerLayout = .full
     private var layoutObserver: AnyCancellable?
+    /// The compact plan's size limits, kept here for `windowWillResize`.
+    private var compactLimits: (minimum: CGSize, maximum: CGSize)?
 
     init() {
         let styleMask: NSWindow.StyleMask = [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView]
@@ -420,6 +422,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     var isCompact: Bool { hostingController.model.isCompactPlayer }
 
+    /// A full-screen window cannot fold into the compact player.
+    var isInFullScreen: Bool { window?.styleMask.contains(.fullScreen) ?? false }
+
     func toggleCompactPlayer() {
         showWindow(nil)
         hostingController.model.toggleCompactPlayer()
@@ -440,6 +445,16 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     /// otherwise the current frame is re-clamped (screen or theme change).
     private func applyLayoutPlan(restoring: Bool, animated: Bool) {
         guard let window else { return }
+        // The green button is full screen on a titled window, and a strip one
+        // rack unit tall must not go full screen. Without full-screen support
+        // the button zooms instead, and zoom while compact expands
+        // (`windowShouldZoom`).
+        if layout == .compact {
+            window.collectionBehavior.remove(.fullScreenPrimary)
+            window.collectionBehavior.insert(.fullScreenNone)
+        } else {
+            window.collectionBehavior.remove(.fullScreenNone)
+        }
         switch layout {
         case .full:
             window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
@@ -460,6 +475,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             // Minimum first: the full window's 1200 × 820 floor would refuse the shrink.
             window.minSize = NSSize(width: plan.minimumSize.width, height: plan.minimumSize.height)
             window.maxSize = NSSize(width: plan.maximumSize.width, height: plan.maximumSize.height)
+            compactLimits = (plan.minimumSize, plan.maximumSize)
             window.setFrame(plan.frame, display: true, animate: animated)
         }
     }
@@ -478,6 +494,17 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     @objc private func handleThemesDidChange() {
         guard layout == .compact else { return }
         applyLayoutPlan(restoring: false, animated: window?.isVisible ?? false)
+    }
+
+    /// Holds the compact window to its fixed height and minimum width; the
+    /// footer and display clip below it. Clamps to the limits the plan
+    /// produced rather than `sender.minSize`/`maxSize`: by the time a live
+    /// resize starts, AppKit has reset those to zero and unbounded (measured;
+    /// the full window has the same problem on `main`, where it can be
+    /// dragged down to 645 pt despite its 1200 pt minimum).
+    func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
+        guard layout == .compact, let limits = compactLimits else { return frameSize }
+        return WindowFramePlanner.clampedSize(frameSize, minimum: limits.minimum, maximum: limits.maximum)
     }
 
     /// Zoom while compact means "the whole console", not a maximised strip.

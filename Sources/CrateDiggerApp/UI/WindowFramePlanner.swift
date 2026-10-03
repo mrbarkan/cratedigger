@@ -98,6 +98,16 @@ enum WindowFramePlanner {
         )
     }
 
+    /// A user resize held to the window's limits. `NSWindow.minSize` is not
+    /// enforced against the hosting view's layout during a live resize, so
+    /// the compact window applies its own limits in `windowWillResize`.
+    static func clampedSize(_ size: CGSize, minimum: CGSize, maximum: CGSize) -> CGSize {
+        CGSize(
+            width: min(max(size.width, minimum.width), maximum.width),
+            height: min(max(size.height, minimum.height), maximum.height)
+        )
+    }
+
     private static func centeredOrigin(for size: CGSize, in visibleFrame: CGRect) -> CGPoint {
         CGPoint(
             x: visibleFrame.midX - (size.width / 2),

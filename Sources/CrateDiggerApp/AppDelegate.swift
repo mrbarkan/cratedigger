@@ -531,6 +531,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                 if view.isValid { self?.mainWindowController?.model.browserView = view }
             }
         }
+        // The compact player, so a capture can show it. "1" folds the window
+        // at 5 s (the 8 s "late" snap shows it), "play" also starts the first
+        // track on disk; "roundtrip" folds at 4.5 s and
+        // expands again at 6 s, logging the frame after each step, so the
+        // per-layout frames can be checked from the command line.
+        if let raw = env["CRATEDIGGER_COMPACT"] {
+            func logFrame(_ label: String) {
+                guard let frame = self.mainWindowController?.window?.frame else { return }
+                NSLog("[CompactPlayer] %@ frame=%@", label, NSStringFromRect(frame))
+            }
+            let foldAt: Double = raw == "roundtrip" ? 4.5 : 5.0
+            DispatchQueue.main.asyncAfter(deadline: .now() + foldAt) { [weak self] in
+                guard let model = self?.mainWindowController?.model else { return }
+                // "play": something on the deck, so the art well has a cover.
+                // CRATEDIGGER_AUTOPLAY fires at 3 s, before a large demo index
+                // has loaded.
+                if raw == "play", model.nowPlayingTrack == nil {
+                    // `playTrack(id:)` only plays what the browser's leaf
+                    // holds; a queue plays whatever it is given.
+                    let onDisk = model.index.allTracks.filter { FileManager.default.fileExists(atPath: $0.track.fileURL.path) }
+                    if !onDisk.isEmpty { model.startQueue(Array(onDisk.prefix(5)), at: 0) }
+                }
+                model.playerLayout = .compact
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + foldAt + 0.8) { logFrame("compact") }
+            if raw == "roundtrip" {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) { [weak self] in
+                    self?.mainWindowController?.model.expandToFull()
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 6.8) { logFrame("full") }
+            }
+        }
         if env["CRATEDIGGER_WHATS_NEW"] != nil {
             DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) { [weak self] in
                 self?.mainWindowController?.model.startWhatsNew()
@@ -1220,7 +1252,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         switch menuItem.action {
         case #selector(toggleCompactPlayer(_:)):
             menuItem.state = currentLayout == .compact ? .on : .off
-            return true
+            return !(mainWindowController?.isInFullScreen ?? false)
         case #selector(setSleepMode(_:)):
             if let tag = menuItem.representedObject as? String,
                let mode = Self.sleepMode(fromTag: tag) {
