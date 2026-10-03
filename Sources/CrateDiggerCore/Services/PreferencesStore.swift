@@ -23,6 +23,8 @@ public final class PreferencesStore {
 
     private enum Key {
         static let windowFrame = "cratedigger.window.frame"
+        static let compactWindowFrame = "cratedigger.window.compactFrame"
+        static let playerLayout = "cratedigger.ui.playerLayout"
         static let libraryFolderBookmarks = "cratedigger.library.folderBookmarks"
         static let outputDestinationBookmark = "cratedigger.conversion.outputBookmark"
         static let externalDeviceProfiles = "cratedigger.externalDevices.profiles"
@@ -101,6 +103,36 @@ public final class PreferencesStore {
                 defaults.set(data, forKey: Key.windowFrame)
             } else {
                 defaults.removeObject(forKey: Key.windowFrame)
+            }
+        }
+    }
+
+    /// The compact player's frame, kept apart from `savedWindowFrame` so each
+    /// layout reopens where it was left.
+    public var savedCompactWindowFrame: CGRect? {
+        get {
+            guard let data = defaults.data(forKey: Key.compactWindowFrame) else { return nil }
+            return try? decoder.decode(CGRect.self, from: data)
+        }
+        set {
+            if let value = newValue, let data = try? encoder.encode(value) {
+                defaults.set(data, forKey: Key.compactWindowFrame)
+            } else {
+                defaults.removeObject(forKey: Key.compactWindowFrame)
+            }
+        }
+    }
+
+    // MARK: - Player layout
+
+    /// Nil when never set or when the stored value is not a known layout.
+    public var playerLayout: PlayerLayout? {
+        get { defaults.string(forKey: Key.playerLayout).flatMap(PlayerLayout.init(rawValue:)) }
+        set {
+            if let value = newValue {
+                defaults.set(value.rawValue, forKey: Key.playerLayout)
+            } else {
+                defaults.removeObject(forKey: Key.playerLayout)
             }
         }
     }
