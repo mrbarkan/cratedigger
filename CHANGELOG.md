@@ -4,19 +4,32 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
-## 2.2.4 (102), 2026-10-02
+## 2.2.4 (103), 2026-10-03
 
-Beta 4. The NOW screen gets an LED matrix with four animations, and the
-meter stops leaning into one corner.
+Beta 5. The NOW screen's matrix is redrawn as real LED segments, and
+right-click can add to a playlist.
 
 ### Added
 
-- **An LED matrix on the NOW screen.** From the NOW lamp to the right edge
-  of the display, a 12 by 6 matrix plays one of four animations driven by
-  what you're hearing: Vertical VU (the spectrum, bass on the left),
-  Horizontal VU (left and right channels), Explosions (a burst from the
-  centre on every kick) and Frame (light closing in from the edges, bass on
-  the outside, treble inside). Monochrome themes draw it in their own ink.
+- **An LED matrix on the NOW screen.** Beside the title, a 12 by 6 matrix
+  plays one of four animations driven by what you're hearing: Vertical VU
+  (the spectrum, bass on the left), Horizontal VU (left and right
+  channels), Explosions (a burst from the centre on every kick) and Frame
+  (light closing in from the edges, bass on the outside, treble inside).
+  Monochrome themes draw it in their own ink.
+- **The matrix sits with the title instead of fighting it.** Since beta 4
+  it is drawn as separate LED segments with gaps between them, like a
+  hardware graphic equalizer, so a wider window spaces the columns out
+  rather than stretching the lights into bricks. It lines up with the row
+  of facts below it and stands as tall as the title's capitals. It lights
+  in two colours, cyan and the theme's meter colour for the top of the
+  meter, with no muddy blend in between, and its unlit grid fades back
+  when the music is quiet.
+- **Add to Playlist from the right-click menu.** Tracks, albums and
+  artists now offer Add to Playlist beside Add to Crate, listing your
+  playlists and New Playlist…, which names a playlist and fills it in one
+  step. A selection goes in whole, tracks already in the playlist are
+  skipped, and the display confirms how many were added.
 - **Click the status lamp to change it.** The small lamp at the top right of
   the window steps through the four animations and Off, and View ▸ Display
   Animation picks one directly. Your choice is kept. The lamp still glows
@@ -52,6 +65,8 @@ meter stops leaning into one corner.
 
 ### Fixed
 
+- **Dropping tracks on a playlist reports a failed save** instead of
+  silently doing nothing.
 - **Apple Lossless reads LOSSLESS.** The FORMAT cell on the NOW screen
   called ALAC files lossy.
 - **With nothing playing, the NOW screen shows dashes** under FORMAT,
