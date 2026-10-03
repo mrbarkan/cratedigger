@@ -1,7 +1,7 @@
 # Compact Player — design
 
 **Release line:** 2.3 (`v2.3`, cut from `main` on 2026-10-03)
-**Status:** approved in conversation, awaiting written-spec review
+**Status:** approved 2026-10-03. Amended the same day while planning, see "Amendments" at the end.
 
 ## Intent
 
@@ -261,3 +261,45 @@ Manual, in the running app (build, run `.build/debug/CrateDiggerApp`):
 10. Drag the window to its minimum width: nothing clips. Check the Mini Player
     still shows its cover as before.
 11. Take screenshots of compact, light and dark.
+
+## Amendments (found while writing the plan, 2026-10-03)
+
+Reading the code for the plan turned up six things the conversation could not
+see. Where they conflict with the sections above, these win.
+
+1. **Art size and the expand key.** The window draws under a transparent
+   titlebar (`.fullSizeContentView`), so the traffic lights sit inside the
+   chassis's top 32 pt, the band `HeaderKeyMetrics.topInset` keeps the brand
+   column clear of. The art column copies the brand column's grid:
+   - a 20 pt brand row (a small `BrandLockup` with the expand pip key at its
+     right end, the mirror of the brand block's Mini Player pip) sits at
+     `topInset`;
+   - the art fills the rest, so its side is
+     `headerHeight + chassisRowGap + footerHeight − topInset − brandRowHeight − rowGap`,
+     which is **230 pt** with standard geometry.
+
+   The expand key moves out of the OLED glass, where the rail's annunciators
+   already occupy the top-right corner. The minimum window width becomes
+   **1174**, and the height stays 302.
+2. **Display shortcuts.** View ▸ *x* Display (⌘1…⌘8) **expands first**, then
+   switches the screen. Asking for a screen is asking to see it.
+3. **The command list is narrower than §2.** Select All goes to the first
+   responder, so it disables itself in compact without help. Edit Tags and Edit
+   Artwork have no menu items. The disabled set is exactly Reveal Selection,
+   Convert Selected, Transfer to Device, Play Next, Play Last and Rate.
+4. **Model-driven panels move to the root too.** `carbonPanel` closes its window
+   when the host view disappears but leaves the model's flag set. After a round
+   trip through compact, Edit Tags, Fix Tags and Match Tags Online could then
+   never reopen, because their `onChange` would not fire again. These panels move
+   to the shared root along with every sheet `MainShell` presents:
+   - from `MainShell`: Add Stream, Record Divider, Onboarding, Welcome Tour,
+     What's New, Edit Tags and EQ, plus the art-viewer and full-screen
+     triggers;
+   - from `InspectorPane`: the Fix Tags and Match Tags Online panels.
+5. **Large sheets expand first.** When Onboarding, the Welcome Tour or What's New
+   is raised while compact (including What's New on the first launch after an
+   update), the window expands first. A 302 pt window cannot host them.
+6. **The browser lands on its selection when rebuilt.** `ColumnList` scrolls to
+   its target on appear, as the gallery already does. Expanding from compact
+   therefore shows the selected rows rather than the top of each column, which
+   recovers most of the scroll position the rebuild loses.
