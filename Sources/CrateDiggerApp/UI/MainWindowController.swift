@@ -10,6 +10,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     var model: LibraryViewModel { hostingController.model }
     private let prefs: PreferencesStore = .shared
     private var didApplyRestoredFrame = false
+    /// One saved frame per layout; inert until the launch frame is restored.
+    private var frameMemory = WindowFrameMemory(prefs: .shared)
     /// The layout the window is currently sized for. Trails `model.playerLayout`
     /// by one runloop turn, which is what lets `switchLayout` save the
     /// outgoing frame into the outgoing layout's slot.
@@ -372,13 +374,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         super.showWindow(sender)
         if !didApplyRestoredFrame {
             didApplyRestoredFrame = true
-            if layout == .compact {
-                applyLayoutPlan(restoring: true, animated: false)
-            } else if prefs.savedWindowFrame != nil {
-                applyWindowPlan(context: .clampToVisibleFrame, animated: false)
-            } else {
-                applyWindowPlan(context: .initialLaunch, animated: false)
-            }
+            // Through the layout plan for both layouts: it passes the saved
+            // frame as an explicit baseline. Re-deriving it from `isVisible`
+            // here read the window as already visible (super.showWindow ran
+            // first), so the full window never got its saved frame back.
+            applyLayoutPlan(restoring: true, animated: false)
+            frameMemory.arm()
         }
     }
 
@@ -404,10 +405,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     private func persistFrame() {
         guard let window else { return }
-        switch layout {
-        case .full:    prefs.savedWindowFrame = window.frame
-        case .compact: prefs.savedCompactWindowFrame = window.frame
-        }
+        frameMemory.record(window.frame, for: layout)
     }
 
     @objc private func handleAppearanceDidChange() {
@@ -459,7 +457,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         case .full:
             window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
             if restoring {
-                let saved = prefs.savedWindowFrame
+                let saved = frameMemory.saved(for: .full)
                 applyWindowPlan(context: saved == nil ? .initialLaunch : .clampToVisibleFrame,
                                 animated: animated, baseline: saved)
             } else {
@@ -468,7 +466,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         case .compact:
             let plan = WindowFramePlanner.compactPlan(
                 visibleFrame: visibleFrame(for: window),
-                savedFrame: restoring ? prefs.savedCompactWindowFrame : window.frame,
+                savedFrame: restoring ? frameMemory.saved(for: .compact) : window.frame,
                 anchor: window.frame,
                 metrics: CompactDeckMetrics(geometry: activeGeometry())
             )
