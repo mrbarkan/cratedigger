@@ -10,6 +10,12 @@ struct PlannedWindowFrame: Equatable {
     let minimumSize: CGSize
 }
 
+struct CompactWindowPlan: Equatable {
+    let frame: CGRect
+    let minimumSize: CGSize
+    let maximumSize: CGSize
+}
+
 enum WindowFramePlanner {
     static let outerMargin: CGFloat = 28
     static let targetSize = CGSize(width: 1400, height: 920)
@@ -54,6 +60,41 @@ enum WindowFramePlanner {
         return PlannedWindowFrame(
             frame: CGRect(origin: plannedOrigin, size: plannedSize),
             minimumSize: adaptiveMinimumSize
+        )
+    }
+
+    /// The compact player's frame: a fixed height from the theme's geometry,
+    /// a width between the deck's minimum and the screen, placed where it was
+    /// last left (`savedFrame`), else folded up under the full window's
+    /// top-left corner (`anchor`), else centred — and always clamped on screen.
+    static func compactPlan(
+        visibleFrame: CGRect,
+        savedFrame: CGRect?,
+        anchor: CGRect?,
+        metrics: CompactDeckMetrics
+    ) -> CompactWindowPlan {
+        let availableWidth = max(1, visibleFrame.width - (outerMargin * 2))
+        let height = min(metrics.windowHeight, max(1, visibleFrame.height))
+        let minWidth = min(metrics.minWindowWidth, availableWidth)
+        let maxWidth = max(minWidth, visibleFrame.width)
+
+        let wanted = savedFrame?.width ?? anchor?.width ?? targetSize.width
+        let width = min(max(wanted, minWidth), max(minWidth, availableWidth))
+        let size = CGSize(width: width, height: height)
+
+        let origin: CGPoint
+        if let savedFrame {
+            origin = savedFrame.origin
+        } else if let anchor {
+            origin = CGPoint(x: anchor.minX, y: anchor.maxY - height)
+        } else {
+            origin = centeredOrigin(for: size, in: visibleFrame)
+        }
+
+        return CompactWindowPlan(
+            frame: CGRect(origin: clampedOrigin(for: CGRect(origin: origin, size: size), in: visibleFrame), size: size),
+            minimumSize: CGSize(width: minWidth, height: height),
+            maximumSize: CGSize(width: maxWidth, height: height)
         )
     }
 

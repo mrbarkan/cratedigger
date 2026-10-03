@@ -50,7 +50,7 @@ struct VolumeKnob: View {
         }
         .padding(.vertical, 9)   // matches the other footer pod so their labels align
         .padding(.horizontal, 12)
-        .frame(minWidth: 184, maxWidth: 380, minHeight: 64, maxHeight: 64)   // same travel as POSITION, like a mixer
+        .frame(minWidth: FooterMetrics.podMinWidth, maxWidth: 380, minHeight: 64, maxHeight: 64)   // same travel as POSITION, like a mixer
         // No pod: the fader sits straight in the shelf, like a mixer's.
         .accessibilityLabel("Volume")
         .accessibilityValue(VolumeCurve.readout(forPosition: value, unit: .percent).replacingOccurrences(of: "VOL  ", with: ""))
