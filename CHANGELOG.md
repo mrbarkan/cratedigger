@@ -4,6 +4,43 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 2.3.0 (106), 2026-10-03
+
+Beta 1: a compact player. This section collects everything in the 2.3 line so
+far. Betas are offered only to people who turned on Receive beta updates.
+
+### Added
+
+- **A compact player.** Window ▸ Compact Player (⌥⇧⌘M) folds the main
+  window into one slim unit, like a piece of hi-fi: the playing album's cover
+  on the left, the full display on the NOW screen with its LED matrix, and the
+  transport and volume underneath. No sources, browser or inspector. Press
+  the same keys, the small expand key beside the cover, or the green window
+  button to get the whole console back.
+- **Click the cover to see the artwork.** In the compact player, clicking the
+  cover opens the album's artwork viewer, booklet pages and all.
+- **Each size remembers its place.** The compact player and the full window
+  each reopen where you left them, and CrateDigger reopens in whichever one
+  you quit in.
+- **Browser shortcuts bring the console back.** Find (⌘F), Go to Current
+  Song (⌘L) and the display shortcuts (⌘1 to ⌘8) open the full window first,
+  then do what they always do. Commands that act on a selection you can't
+  see from the compact player, such as Convert Selected, Play Next and
+  ratings, are greyed out there, and the arrow keys leave the hidden browser
+  alone.
+
+### Changed
+
+- **Columns open on their selection.** When the browser is rebuilt, for
+  example coming back from the compact player or switching views, each
+  column scrolls to its selected row instead of starting at the top.
+
+### Fixed
+
+- **The window reopens where you left it.** CrateDigger was putting the main
+  window back in the middle of the screen at every launch instead of where
+  you last had it.
+
 ## 2.2.4 (105), 2026-10-03
 
 The NOW screen gets an LED matrix that dances to the music, playlists take
