@@ -26,15 +26,15 @@ scripts/package-app.sh           # assemble dist/CrateDigger.app (bundles ffmpeg
 
 ## Two release lines (read before committing anything)
 
-**2.2.0 shipped from `main` on 2026-09-23** (build 95). `main` is the stable
+**2.2.4 shipped from `main` on 2026-10-03** (build 105). `main` is the stable
 line, now 2.2.x: it is what the public downloads and what every installed copy
 auto-updates from. Fixes for 2.2.x land on `main`.
 
-**No beta line is open.** `v2.2` carried the 2.2 cycle (betas 91 to 93, RC 94)
-and was fast-forwarded into `main` for 2.2.0, as `v2.1` was for 2.1.0; like
-`v2`, which carried the whole 2.0 cycle, all three are kept for history only.
-**Do not branch new work from `v2`, `v2.1` or `v2.2`.** The 2.3 cycle gets its
-own `v2.3` branch, following the steps at the end of this section. A beta branch works like this: `AppVersion.channel` is `"BETA"`
+**The 2.3 beta line is open on `v2.3`**, cut from `main` on 2026-10-03; 2.3.0
+beta 1 is build 106 and brings the compact player. `v2.2` carried the 2.2 cycle
+and then the 2.2.x betas and RCs (2.2.4 RC 104 was merged into `main` for GA);
+like `v2` and `v2.1` it is kept for history only. **Do not branch new work from
+`v2`, `v2.1` or `v2.2`.** A beta branch works like this: `AppVersion.channel` is `"BETA"`
 there, betas are tagged `v<version>-beta.<build>` and published as GitHub
 prereleases, their only audience is stable users who turned on Receive beta
 updates, `main` is merged in before each beta so the beta never lacks a stable
@@ -62,11 +62,11 @@ The mechanism that keeps the two lines apart:
   `SUFeedURL` ever stops matching `UpdateFeed.stable`. **Do not "simplify"
   `UpdateFeed.override` into the plist.**
 - `scripts/update-appcast.sh` generates each feed only on the branch that
-  owns it (`appcast.xml` on `main`, `appcast-beta.xml` on `BETA_BRANCH`, `v2.2` for
-  the 2.2 cycle) and refuses a DMG whose major version differs from what is
+  owns it (`appcast.xml` on `main`, `appcast-beta.xml` on `BETA_BRANCH`, `v2.3` for
+  the 2.3 cycle) and refuses a DMG whose major version differs from what is
   already staged in `dist/updates*/`. When 2.1 started, the 2.0.0 beta DMG was
   moved to `dist/updates-beta/old_updates`; when 2.2 started, the 2.1.0 DMG
-  followed it. Existing feed entries keep the download URL they were published
+  followed it. When 2.3 started, the 2.2.x DMGs did. Existing feed entries keep the download URL they were published
   with, looked up by build in the committed feed: deriving it from the new tag
   would have pointed the 2.1.0 GA entry at a `v2.1.0-beta.89` that never existed.
 - A stable build with Receive beta updates on reads **only** the beta feed, so

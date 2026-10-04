@@ -83,9 +83,9 @@ fi
 
 # Each feed is generated on the branch that owns it. GitHub Pages serves
 # website/ from main, so the stable feed is written there; the beta feed is
-# written on the beta branch (BETA_BRANCH, v2.2 for the 2.2 cycle), whose
+# written on the beta branch (BETA_BRANCH, v2.3 for the 2.3 cycle), whose
 # CHANGELOG carries the beta's notes, and then carried across with
-# `git checkout v2.2 -- website/appcast-beta.xml`.
+# `git checkout v2.3 -- website/appcast-beta.xml`.
 #
 # Right script, wrong branch is silent and destructive both ways, and both
 # happened while testing the guard above (during the 2.0 cycle, on v2):
@@ -94,7 +94,7 @@ fi
 #     notes. The script only warns about missing notes and carries on.
 #   - stable feed from the beta branch: rewrites the appcast every stable
 #     copy reads, with the beta branch's notes and version history.
-BETA_BRANCH="v2.2"
+BETA_BRANCH="v2.3"
 BRANCH="$(git -C "${ROOT_DIR}" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
 case "$(basename "${APPCAST}")" in
   appcast.xml)      EXPECTED_BRANCH="main" ;;
