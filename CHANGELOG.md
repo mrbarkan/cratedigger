@@ -4,14 +4,11 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
-## 2.2.4 (104), 2026-10-03
+## 2.2.4 (105), 2026-10-03
 
-Release candidate 1: the Vertical VU splits into stereo halves, Explosions
-burns cool at the centre, and you choose which animations the lamp steps
-through. Beta 5 redrew the matrix as real LED segments and added Add to
-Playlist to the right-click menu; beta 4 brought the LED matrix itself.
-Release candidates are offered only to people who turned on Receive beta
-updates.
+The NOW screen gets an LED matrix that dances to the music, playlists take
+tracks from the right-click menu, and a disc's tags can be fixed before you
+rip it.
 
 ### Added
 
@@ -23,8 +20,8 @@ updates.
   centre on every kick, turning hot as it reaches the edges) and Frame
   (light closing in from the edges, bass on the outside, treble inside).
   Monochrome themes draw it in their own ink.
-- **The matrix sits with the title instead of fighting it.** Since beta 4
-  it is drawn as separate LED segments with gaps between them, like a
+- **The matrix sits with the title instead of fighting it.** It is drawn
+  as separate LED segments with gaps between them, like a
   hardware graphic equalizer, so a wider window spaces the columns out
   rather than stretching the lights into bricks. It lines up with the row
   of facts below it and stands as tall as the title's capitals. It lights
@@ -67,8 +64,7 @@ updates.
   tracks as the queue, with the format, bitrate, sample rate, artwork size
   and folder layout above the key, which now reads RIP CD. Before, the rip
   used whatever the Patch Bay last had, with nowhere to check it from the
-  disc. (Beta 1 asked in a separate Rip Options window, which is gone.)
-  CANCEL backs out without ripping.
+  disc. CANCEL backs out without ripping.
 - **RIP waits for the pressing.** While a disc matches several releases,
   RIP stays off until you pick one, so the files are named for the right
   one.
