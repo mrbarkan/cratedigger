@@ -3,6 +3,108 @@
     <channel>
         <title>CrateDigger</title>
         <item>
+            <title>2.2.4</title>
+            <pubDate>Sat, 03 Oct 2026 22:08:18 -0300</pubDate>
+            <link>https://cratedigger.mrbarkan.com/</link>
+            <sparkle:fullReleaseNotesLink>https://github.com/mrbarkan/cratedigger/releases</sparkle:fullReleaseNotesLink>
+            <sparkle:version>105</sparkle:version>
+            <sparkle:shortVersionString>2.2.4</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description sparkle:format="markdown"><![CDATA[
+The NOW screen gets an LED matrix that dances to the music, playlists take
+tracks from the right-click menu, and a disc's tags can be fixed before you
+rip it.
+
+### Added
+
+- **An LED matrix on the NOW screen.** Beside the title, a 12 by 6 matrix
+  plays one of four animations driven by what you're hearing: Vertical VU
+  (the spectrum in stereo halves, left channel on the left and right on the
+  right, bass on the outer edges and treble meeting in the middle),
+  Horizontal VU (left and right channels), Explosions (a cool burst from the
+  centre on every kick, turning hot as it reaches the edges) and Frame
+  (light closing in from the edges, bass on the outside, treble inside).
+  Monochrome themes draw it in their own ink.
+- **The matrix sits with the title instead of fighting it.** It is drawn
+  as separate LED segments with gaps between them, like a
+  hardware graphic equalizer, so a wider window spaces the columns out
+  rather than stretching the lights into bricks. It lines up with the row
+  of facts below it and stands as tall as the title's capitals. It lights
+  in two colours, cyan and the theme's meter colour for the top of the
+  meter, with no muddy blend in between, and its unlit grid fades back
+  when the music is quiet.
+- **Add to Playlist from the right-click menu.** Tracks, albums and
+  artists now offer Add to Playlist beside Add to Crate, listing your
+  playlists and New Playlist…, which names a playlist and fills it in one
+  step. A selection goes in whole, tracks already in the playlist are
+  skipped, and the display confirms how many were added.
+- **Click the status lamp to change it.** The small lamp at the top right of
+  the window steps through the animations and Off, and View ▸ Display
+  Animation picks one directly. Your choice is kept. The lamp still glows
+  while the app is busy.
+- **Choose which animations the lamp offers.** Settings ▸ Interface ▸
+  Display Animations has a tick box for each. The lamp and the View menu
+  offer only the ticked ones, plus Off, so ticking just your favourite
+  makes the lamp a simple on and off switch for it.
+- **Edit a disc's tags before ripping.** With a CD in the drive, tag edits
+  (in the inspector, the tag editor or FIX TAGS) are kept for the rip
+  instead of being written to the disc, which can't take them. The display
+  says STAGED FOR RIP, the browser shows the new tags straight away, and the
+  ripped files carry them. Picking a different release or ejecting the disc
+  drops them.
+
+### Changed
+
+- **NOW names itself, and the clock moves.** The top left of the display
+  reads NOW PLAYING, and the elapsed and total time sit small under the
+  artist line, right on the progress line, where the big clock used to take
+  up room. A live stream shows ON AIR and its uptime there instead.
+- **The meter no longer leans into the bottom-left corner.** Bass carries
+  most of a song's energy, so the meter used to pile up on the left and
+  leave the treble dark whatever was playing. Each band is now evened out,
+  so the whole width moves and loud moments reach the top.
+- **RIP lives above the disc's tracks.** It sits beside RE-IDENTIFY and
+  CLEAR in the bar that names the disc, instead of under the disc in Sources.
+- **RIP opens the Patch Bay on the disc.** Pressing it shows the disc's
+  tracks as the queue, with the format, bitrate, sample rate, artwork size
+  and folder layout above the key, which now reads RIP CD. Before, the rip
+  used whatever the Patch Bay last had, with nowhere to check it from the
+  disc. CANCEL backs out without ripping.
+- **RIP waits for the pressing.** While a disc matches several releases,
+  RIP stays off until you pick one, so the files are named for the right
+  one.
+
+### Fixed
+
+- **Dropping tracks on a playlist reports a failed save** instead of
+  silently doing nothing.
+- **Apple Lossless reads LOSSLESS.** The FORMAT cell on the NOW screen
+  called ALAC files lossy.
+- **With nothing playing, the NOW screen shows dashes** under FORMAT,
+  BITRATE and SAMPLE instead of LOSSY, CONSTANT and AUDIO.
+- **A rip adds only itself to the Prep Crate.** It used to scan the whole
+  output folder, so every album ever converted there landed in the Prep
+  Crate, and again at every launch. If that already happened to you, Clear
+  Prep Crate once to stop it.
+- **Box sets rip with their disc numbers.** Each disc of a multi-disc
+  release now carries its disc number and disc count, so the discs no longer
+  pile into one folder as tracks with no disc.
+- **The Patch Bay keeps a disc's rip set up** when the disc's cover finishes
+  loading. It used to jump to the DUB screen and drop it.
+- **RIP no longer stretches across the disc bar** while you pick a release.
+
+]]></description>
+            <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.4/CrateDigger-2.2.4.dmg" length="72124047" type="application/octet-stream" sparkle:edSignature="Xao0PAlOrWp4DMfRxGETnHyFCzP9i5FAhPWqRr058z57WC/CHeym/KqRw4T7PZMbrdG2AgiVntxeesMWW1BfCg=="/>
+            <sparkle:deltas>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.4/CrateDigger105-98.delta" sparkle:deltaFrom="98" length="1352242" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="/uoLfBGLBAJpuyojbXd5l6PeZbUV6/x+qkfWYf6gxJ45P76jTUXwbvfazj9S5+RCN4W/NzenFC/ixKmbe6LBAg=="/>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.4/CrateDigger105-97.delta" sparkle:deltaFrom="97" length="1329050" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="MbCkcw2LdMENoT5V6hTemWM5vfizFao9lMuWlkDnDCNV5YkravFzPw2GU//IV6DqFuVGFkPHR5pCPugJF5nKCQ=="/>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.4/CrateDigger105-96.delta" sparkle:deltaFrom="96" length="1385126" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="zWL727vf8Y5oZB3wzdGwuYdrPU9Vhg64tk0s1cCpYiPeGABf8b9kbgFm7aSTO0gN5toWv5uSUxBy699kn39YBw=="/>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.4/CrateDigger105-95.delta" sparkle:deltaFrom="95" length="1381146" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="o2FfAk8lJpeYqEHgnou6qO1y2QMyKAWd1CPrL1WQ8Y85EZM+iG52RvJPCQZNgHWM4410ckVlvEDEiC2+KR+SDg=="/>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.4/CrateDigger105-90.delta" sparkle:deltaFrom="90" length="3259042" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="OFU0zZ3GVDfqfMcy+4ZymREy4vxNT5z4uogTdonmASY4WlvJn/fuNZo5bx4AN3fMW4ZDDC9wvR64K5sB/AU/CQ=="/>
+            </sparkle:deltas>
+        </item>
+        <item>
             <title>2.2.3</title>
             <pubDate>Sat, 26 Sep 2026 17:34:02 -0300</pubDate>
             <link>https://cratedigger.mrbarkan.com/</link>
@@ -77,56 +179,6 @@ Dragging works again on macOS 27.
                 <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.2/CrateDigger97-90.delta" sparkle:deltaFrom="90" length="3147502" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="pZK35aAjwsswGChzA81xh0AT/JlVJHbFl75bs4vlgmmILzVWrLL2ZL5sIEo+PYqfmvnlMF4unoLqfAN/a2FFAw=="/>
                 <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.2/CrateDigger97-89.delta" sparkle:deltaFrom="89" length="3563222" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="e1OUXFsHfMKlOATay5pEQ3CHTJwZI+Qo21um4RSA7UPJnO9iS98U3IVzmPXRoG7pHyE7b5526aKrn2hq6HaCAQ=="/>
                 <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.2/CrateDigger97-88.delta" sparkle:deltaFrom="88" length="3694298" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="uZ9yLYgowKsBrUQCYOPySKy731rdJdhiAyo9hf25yuJDQO4QH+HD1Tw1NHEMt+zBao/GiSVlaXqvK7jK4pU7Aw=="/>
-            </sparkle:deltas>
-        </item>
-        <item>
-            <title>2.2.1</title>
-            <pubDate>Wed, 23 Sep 2026 13:50:00 -0300</pubDate>
-            <link>https://cratedigger.mrbarkan.com/</link>
-            <sparkle:fullReleaseNotesLink>https://github.com/mrbarkan/cratedigger/releases</sparkle:fullReleaseNotesLink>
-            <sparkle:version>96</sparkle:version>
-            <sparkle:shortVersionString>2.2.1</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
-            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[
-Safer crates and cleanup: nothing you curated disappears without asking.
-
-### Fixed
-
-- **A new crate or playlist can no longer wipe an existing one.** Creating
-  one with a name already in use saved an empty list over it. The name is
-  now checked as you type, the sheet says why Create is unavailable, and
-  Return creates.
-- **Deleting a crate or a playlist asks first, and can be undone.** The list
-  goes to the Trash, where you can put it back; your music files were never
-  touched and still aren't. Deleting a playlist you aren't looking at no
-  longer sends you back to All Records.
-- **Library Cleanup's REMOVE ALL never deletes a file.** If a missing track
-  came back before you pressed it (a drive plugged in, a folder renamed
-  back), the file itself could be erased permanently. It now only forgets
-  tracks that are still missing, asks first, and says their play counts and
-  ratings go with them.
-- **Removing a downloaded stream tells the truth.** If its download was never
-  added to a crate, the offline copy goes to the Trash along with it instead
-  of being left behind where nothing could find it. Removing the stream you
-  had selected no longer starts the next one playing.
-- **What's New doesn't come back for a fix release.** Updating from 2.2.0 to
-  2.2.1 no longer shows the same list again.
-
-### Changed
-
-- **The Patch Bay's OPTIONS face lost four switches that did nothing.** Keep
-  tags, Replay-Gain, Overwrite and Eject after were never read by a
-  conversion. They return when they work.
-
-]]></description>
-            <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.1/CrateDigger-2.2.1.dmg" length="72037381" type="application/octet-stream" sparkle:edSignature="YUOl84OhEtvHCQSr8DCu+JsekRqVPUScHKzb7+9MdPEbe/wIiIkVWUPVyaMRZV4ZjMGGR5eik6vC+W9RKD64Dg=="/>
-            <sparkle:deltas>
-                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.1/CrateDigger96-95.delta" sparkle:deltaFrom="95" length="855194" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="CG+lM5o5on0S2/00ICgPVxMmrYlUMokT0OIQyG//KhMVqTx7+uufU4TB4jjZkSkcIJr8XwDrMXx3rGMOK16WBQ=="/>
-                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.1/CrateDigger96-90.delta" sparkle:deltaFrom="90" length="3148878" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="JMQYpDSUYn+IdGxe1UhyuhIhjM0B92MtwLVi5XA510NAMYAk4mc/CdahLxVJmDxq13W6YNR7nNfh6/MTHpRZDQ=="/>
-                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.1/CrateDigger96-89.delta" sparkle:deltaFrom="89" length="3576590" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="fYtx7zUbMn1R9GotuvkDZFzNok+3Q1N642LFqCVVFJPBeOCpOnqQiCmKkrLv6WGOZK8agSFgInM3Yhm+NiS/Dw=="/>
-                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.1/CrateDigger96-88.delta" sparkle:deltaFrom="88" length="3687454" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="uuHQg34lHqEWKatF/FJcb02nDLF1YsIpcqgQeVHhzg1WJITb/Sz6aiX7m7yF9Rup6ZOq7ri55dQE9eGr27GGBw=="/>
-                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.1/CrateDigger96-87.delta" sparkle:deltaFrom="87" length="3698562" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="fyw+xTfqCDH9p5z1opclUk0LWgE3y88kGwrfhg8Nu8/cUl2wFFIgvoiylywifsUayQdjlmcysTQ32AIA2SpsAg=="/>
             </sparkle:deltas>
         </item>
     </channel>

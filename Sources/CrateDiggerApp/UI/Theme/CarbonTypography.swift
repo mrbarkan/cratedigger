@@ -129,7 +129,23 @@ public enum CarbonFont {
         return capHeight
     }
 
+    /// Ascent of the current display face, in ems: from the top of a line of
+    /// display type to its baseline. With `displayCapHeight` it says where the
+    /// capitals start inside the line, which the NOW pane needs to stand its
+    /// matrix exactly as tall as the title.
+    public static var displayAscent: CGFloat {
+        let name = displayFaceName
+        if let cached = ascentCache[name] { return cached }
+        let probe: CGFloat = 1000
+        let font = CTFontCreateWithName(name as CFString, probe, nil)
+        // Never below the cap height, or the inset it feeds would go negative.
+        let ascent = max(CTFontGetAscent(font) / probe, displayCapHeight)
+        ascentCache[name] = ascent
+        return ascent
+    }
+
     /// Only ever touched from view bodies on the main thread, same as
     /// `ActiveThemeFonts.overrides` above it.
     private nonisolated(unsafe) static var capHeightCache: [String: CGFloat] = [:]
+    private nonisolated(unsafe) static var ascentCache: [String: CGFloat] = [:]
 }

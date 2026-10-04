@@ -285,6 +285,8 @@ private struct InterfacePreferencesView: View {
     @State private var showHoverTips: Bool = PreferencesStore.shared.showHoverTips
     @State private var cdAnimationSpeed: CDAnimationSpeed = PreferencesStore.shared.cdAnimationSpeed
     @State private var showTourAtLaunch: Bool = !PreferencesStore.shared.hasSeenWelcomeTour
+    @State private var enabledAnimations: Set<MatrixAnimationKind> =
+        MatrixAnimationKind.enabled(persisted: PreferencesStore.shared.enabledMatrixAnimations)
 
     var body: some View {
         Form {
@@ -319,6 +321,15 @@ private struct InterfacePreferencesView: View {
                 }
             }
 
+            Section("Display Animations") {
+                ForEach(MatrixAnimationKind.animations, id: \.self) { kind in
+                    Toggle(kind.label, isOn: animationBinding(kind))
+                }
+                Text("The ones the status lamp at the top right of the window steps through, with Off, and that View ▸ Display Animation lists. Tick just one to make the lamp a switch between it and Off.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             WidgetPreferencesSection()
 
             Section("Welcome Tour") {
@@ -342,6 +353,21 @@ private struct InterfacePreferencesView: View {
         .onAppear { refresh() }
     }
 
+    /// Ticking or unticking one animation saves the whole set (in click
+    /// order, so the stored list reads sensibly) and tells the model.
+    private func animationBinding(_ kind: MatrixAnimationKind) -> Binding<Bool> {
+        Binding(
+            get: { enabledAnimations.contains(kind) },
+            set: { isOn in
+                if isOn { enabledAnimations.insert(kind) } else { enabledAnimations.remove(kind) }
+                PreferencesStore.shared.enabledMatrixAnimations =
+                    MatrixAnimationKind.animations.filter(enabledAnimations.contains).map(\.rawValue)
+                NotificationCenter.default.post(
+                    name: NSNotification.Name("CrateDiggerMatrixAnimationsChanged"), object: nil)
+            }
+        )
+    }
+
     /// Re-read everything from the store: the window controller is cached
     /// across opens, so @State would otherwise go stale after e.g. a
     /// Reset Preferences from the Advanced tab.
@@ -351,6 +377,7 @@ private struct InterfacePreferencesView: View {
         showHoverTips = prefs.showHoverTips
         cdAnimationSpeed = prefs.cdAnimationSpeed
         showTourAtLaunch = !prefs.hasSeenWelcomeTour
+        enabledAnimations = MatrixAnimationKind.enabled(persisted: prefs.enabledMatrixAnimations)
     }
 }
 

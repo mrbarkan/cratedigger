@@ -48,6 +48,12 @@ enum BrowserContextMenu {
             moveToCrateMenu(for: usesSelection ? model.selectedTracksForCrateAdd() : artist.albums.flatMap { $0.tracks },
                             model: model)
         }
+        addToPlaylistMenu(
+            for: model.selectedArtistIDs.count > 1 && model.selectedArtistIDs.contains(artist.id)
+                ? model.selectedTracksForCrateAdd()
+                : artist.albums.flatMap { $0.tracks },
+            model: model
+        )
         Button("Select All") { model.selectAllArtists() }
 
         Divider()
@@ -156,6 +162,12 @@ enum BrowserContextMenu {
             }
             moveToCrateMenu(for: usesSelection ? model.selectedTracksForCrateAdd() : album.tracks, model: model)
         }
+        addToPlaylistMenu(
+            for: model.selectedAlbumIDs.count > 1 && model.selectedAlbumIDs.contains(album.id)
+                ? model.selectedTracksForCrateAdd()
+                : album.tracks,
+            model: model
+        )
         Button("Select All") { model.selectAllAlbums() }
 
         if model.canGroupSelectionAnyKind {
@@ -214,6 +226,7 @@ enum BrowserContextMenu {
             }
             moveToCrateMenu(for: usesSelection ? model.selectedTracksForCrateAdd() : [loaded], model: model)
         }
+        addToPlaylistMenu(for: model.queueTargets(forClicked: [loaded]), model: model)
         Button("Select All") { model.selectAllTracks() }
 
         Divider()
@@ -341,6 +354,24 @@ enum BrowserContextMenu {
                         Button(crate) { model.moveTracksToCrate(tracks, toCrate: crate) }
                     }
                 }
+            }
+        }
+    }
+
+    /// "Add to Playlist" submenu — every playlist except the one on screen, then
+    /// New Playlist…, which names a playlist and fills it in one step. Hidden for
+    /// sources whose tracks have no file an M3U could point at (remote streams).
+    @ViewBuilder
+    static func addToPlaylistMenu(for tracks: [LoadedTrack], model: LibraryViewModel) -> some View {
+        if tracks.contains(where: { $0.track.fileURL.isFileURL }) {
+            let current: String? = { if case .playlist(let name) = model.currentSource { return name } else { return nil } }()
+            let targets = model.playlists.filter { $0.name != current }
+            Menu(tracks.count > 1 ? "Add \(tracks.count) to Playlist" : "Add to Playlist") {
+                ForEach(targets) { playlist in
+                    Button(playlist.name) { model.addTracksToPlaylist(tracks, playlistName: playlist.name) }
+                }
+                if !targets.isEmpty { Divider() }
+                Button("New Playlist…") { model.promptNewPlaylist(adding: tracks) }
             }
         }
     }

@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     private let prefs: PreferencesStore = .shared
     private var openRecentMenu: NSMenu?
     private var appearanceMenu: NSMenu?
+    private var matrixAnimationMenu: NSMenu?
     private var recentFolderURLs: [URL] = []
     private var spaceKeyMonitor: Any?
 
@@ -189,6 +190,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
               let view = OLEDView(rawValue: raw) else { return }
         expandIfNeeded(for: .selectDisplay)
         mainWindowController?.setOLEDView(view)
+    }
+
+    @objc private func selectMatrixAnimation(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let kind = MatrixAnimationKind(rawValue: raw) else { return }
+        mainWindowController?.setMatrixAnimation(kind)
     }
 
     // MARK: - Playback menu
@@ -483,6 +490,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         if let raw = env["CRATEDIGGER_OLED"], let view = OLEDView(rawValue: raw) {
             DispatchQueue.main.asyncAfter(deadline: .now() + 7.0) { [weak self] in
                 self?.mainWindowController?.model.oledView = view
+            }
+        }
+        // The NOW matrix's animation (a `MatrixAnimationKind` raw value), so a
+        // capture can show each one without clicking the titlebar LED.
+        if let raw = env["CRATEDIGGER_MATRIX"], let kind = MatrixAnimationKind(rawValue: raw) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+                self?.mainWindowController?.model.matrixAnimation = kind
             }
         }
         // The theme picker replaces the inspector, and nothing else can drive it
@@ -1228,6 +1242,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         if menu === appearanceMenu { rebuildAppearanceMenu() }
+        if menu === matrixAnimationMenu { rebuildMatrixAnimationMenu() }
+    }
+
+    private func rebuildMatrixAnimationMenu() {
+        guard let menu = matrixAnimationMenu else { return }
+        menu.removeAllItems()
+        // Before the window exists, the store is the answer the model will load.
+        let enabled = mainWindowController?.enabledMatrixAnimations()
+            ?? MatrixAnimationKind.enabled(persisted: prefs.enabledMatrixAnimations)
+        for kind in MatrixAnimationKind.cycle(enabled: enabled) {
+            let item = makeItem(title: kind.label, action: #selector(selectMatrixAnimation(_:)))
+            item.representedObject = kind.rawValue
+            menu.addItem(item)
+        }
     }
 
     @objc private func selectTheme(_ sender: NSMenuItem) {
@@ -1278,6 +1306,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                let current = mainWindowController?.currentOLEDView() {
                 menuItem.state = (view == current) ? .on : .off
             }
+            return true
+        case #selector(selectMatrixAnimation(_:)):
+            menuItem.state = (menuItem.representedObject as? String
+                == mainWindowController?.currentMatrixAnimation().rawValue) ? .on : .off
             return true
         case #selector(setStreamEngine(_:)):
             menuItem.state = (menuItem.representedObject as? String == prefs.streamEngine) ? .on : .off
@@ -1445,6 +1477,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             item.representedObject = view.rawValue
             viewMenu.addItem(item)
         }
+        // What the NOW screen's LED matrix plays: the animations ticked in
+        // Settings, in the order a click on the titlebar status LED steps
+        // through them, then Off, so the menu and the lamp read as one
+        // control. Rebuilt on open, so it follows Settings with no observer.
+        let animationMenuItem = NSMenuItem(title: "Display Animation", action: nil, keyEquivalent: "")
+        let animationMenu = NSMenu(title: "Display Animation")
+        animationMenu.delegate = self
+        matrixAnimationMenu = animationMenu
+        rebuildMatrixAnimationMenu()
+        animationMenuItem.submenu = animationMenu
+        viewMenu.addItem(animationMenuItem)
         viewMenu.addItem(.separator())
         // ⌘L is what Music.app binds "Go to Current Song" to — muscle memory for free.
         viewMenu.addItem(makeItem(title: "Go to Current Song", action: #selector(goToCurrentSong(_:)), key: "l"))

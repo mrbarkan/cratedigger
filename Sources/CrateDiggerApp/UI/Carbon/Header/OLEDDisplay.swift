@@ -289,13 +289,12 @@ private struct AnnDot: View {
     }
 }
 
-/// The persistent transport strip: what's playing and how far in, then the VOL
-/// meter pinned to the right edge of the glass.
+/// The persistent transport strip: what's playing and how far in.
 ///
 /// It carries only what the rest of the screen isn't already saying. On the
-/// nowPlaying view the title and the clocks are set an inch above in 44pt, so
-/// the strip drops both — on every other view this rail is the *only* place
-/// playback is visible, so the title and the clocks come back.
+/// nowPlaying view the title and the clock are on the pane itself, so the strip
+/// just names the screen (NOW PLAYING) — on every other view this rail is the
+/// *only* place playback is visible, so the clock and the title come back.
 ///
 /// The progress bar used to live here too, squeezed between the clocks. It has
 /// moved down to the top edge of the cell rail (`OLEDProgressLine`), where it
@@ -329,16 +328,16 @@ private struct RailLive: View {
             // stays put while the title beside it changes length or yields to
             // a notice.
             if showMini {
-                HStack(spacing: 4) {
-                    Text(model.displayedCurrentTime.asClockPadded)
-                        .foregroundStyle(oledFG)
-                    Text("/")
-                        .foregroundStyle(oledFGo(0.25))
-                    Text(model.playbackDuration.asClockPadded)
-                        .foregroundStyle(oledFGo(0.4))
-                }
-                .font(CarbonFont.mono(9, weight: .bold))
-                .fixedSize()
+                OLEDTimeReading(now: model.displayedCurrentTime.asClockPadded,
+                                total: model.playbackDuration.asClockPadded)
+            } else {
+                // The NOW screen's own name, in the corner where every other
+                // view keeps its clock.
+                Text("NOW PLAYING")
+                    .font(CarbonFont.mono(9, weight: .bold))
+                    .tracking(1.08)
+                    .foregroundStyle(oledFGo(0.4))
+                    .fixedSize()
             }
 
             if showTitle {
@@ -375,6 +374,28 @@ private struct RailLive: View {
     }
 }
 
+/// Elapsed over total as one small reading (`00:26 / 02:04`): on the rail for
+/// every view but NOW, and under the artist line on NOW itself. The slash holds
+/// the two numbers together so they don't read as loose figures.
+private struct OLEDTimeReading: View {
+    let now: String
+    let total: String
+    var size: CGFloat = 9
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Text(now)
+                .foregroundStyle(oledFG)
+            Text("/")
+                .foregroundStyle(oledFGo(0.25))
+            Text(total)
+                .foregroundStyle(oledFGo(0.4))
+        }
+        .font(CarbonFont.mono(size, weight: .bold))
+        .fixedSize()
+    }
+}
+
 // MARK: - Pane scaffold + shared parts
 
 /// Every pane shares one composition: a headline row (titles left / numeric
@@ -406,7 +427,7 @@ private struct NPTitles: View {
     let title: String
     let sub: String
     var titleColor: Color = oledFG
-    var titleSize: CGFloat = 44
+    var titleSize: CGFloat = Self.defaultTitleSize
     /// System messages (the idle nudge) render oblique so they can never be
     /// mistaken for a track title.
     var titleItalic: Bool = false
@@ -427,6 +448,15 @@ private struct NPTitles: View {
                 .foregroundStyle(oledMuted)
                 .lineLimit(1)
         }
+    }
+
+    static let defaultTitleSize: CGFloat = 44
+
+    /// From the top of the title's line to the top of its capitals, in the
+    /// display face the theme is drawing with: where something set beside the
+    /// title has to start to stand as tall as its type.
+    static func capTopInset(titleSize: CGFloat = defaultTitleSize) -> CGFloat {
+        (CarbonFont.displayAscent - CarbonFont.displayCapHeight) * titleSize
     }
 }
 
@@ -455,53 +485,192 @@ private struct NPClock: View {
     }
 }
 
-/// The NOW screen's quiet VU: a 12-column, 6-segment spectrum beside the
-/// clock, drawn in OLED ink at low brightness so it reads as texture rather than
-/// a second readout. It owns its driver, so the timer exists only while the NOW
-/// screen is on the glass. Decorative, so VoiceOver skips it; its bottom edge
-/// sits on the clock's baseline.
-private struct OLEDSpectrum: View {
+/// The NOW screen's LED matrix: 12 × 6 segments laid out by `MatrixLayout` in
+/// whatever frame the pane gives it (see `NowPlayingScaffold`). It owns its
+/// driver, so the timer exists only while the matrix is on the glass. Which
+/// animation it plays is `LibraryViewModel.matrixAnimation`; a change swaps
+/// the driver's animation live, from a dark matrix. Decorative, so VoiceOver
+/// skips it.
+private struct OLEDMatrix: View {
     @EnvironmentObject private var model: LibraryViewModel
     @StateObject private var meters = MeterDriver()
 
-    private static let segments = 6
-
     var body: some View {
-        Canvas { context, size in
-            let bands = meters.bands
-            let columns = bands.count
-            guard columns > 0 else { return }
-            let gap: CGFloat = 1.5
-            let cellW = (size.width - CGFloat(columns - 1) * gap) / CGFloat(columns)
-            let cellH = (size.height - CGFloat(Self.segments - 1) * gap) / CGFloat(Self.segments)
-            var lit = Path()
-            var unlit = Path()
-            for (column, level) in bands.enumerated() {
-                let litCount = Int((min(max(level, 0), 1) * Double(Self.segments)).rounded())
-                for segment in 0..<Self.segments {
-                    let rect = CGRect(x: CGFloat(column) * (cellW + gap),
-                                      y: size.height - CGFloat(segment + 1) * cellH - CGFloat(segment) * gap,
-                                      width: cellW, height: cellH)
-                    if segment < litCount { lit.addRect(rect) } else { unlit.addRect(rect) }
-                }
+        // The canvas only sees the frame and the kind (for the dark print's
+        // tint), so a view-model change that leaves the picture alone does not
+        // redraw it.
+        OLEDMatrixCanvas(frame: meters.frame, kind: model.matrixAnimation)
+            .accessibilityHidden(true)
+            .onAppear {
+                // Locals, so the providers' weak captures are the only ones.
+                let model = self.model
+                meters.spectrumProvider = { [weak model] in model?.currentPlaybackSpectrum() ?? [] }
+                meters.levelsProvider = { [weak model] in model?.currentPlaybackLevels() ?? (0, 0) }
+                meters.animation = model.matrixAnimation.make()
+                syncRunning()
             }
-            context.fill(unlit, with: .color(oledFGo(0.07)))
-            context.fill(lit, with: .color(oledFGo(0.55)))
-        }
-        .frame(width: 58, height: 22)
-        .accessibilityHidden(true)
-        .onAppear {
-            // A local, so the provider's weak capture is the only one.
-            let model = self.model
-            meters.spectrumProvider = { [weak model] in model?.currentPlaybackSpectrum() ?? [] }
-            syncRunning()
-        }
-        .onChange(of: model.playbackState) { _ in syncRunning() }
-        .onDisappear { meters.halt() }
+            .onChange(of: model.playbackState) { _ in syncRunning() }
+            .onChange(of: model.matrixAnimation) { kind in
+                meters.animation = kind.make()
+                syncRunning()
+            }
+            .onDisappear { meters.halt() }
     }
 
     private func syncRunning() {
         if model.playbackState == .playing { meters.start() } else { meters.stop() }
+    }
+}
+
+/// Draws one `MatrixFrame` as LED segments (`MatrixLayout`). The panel has
+/// two inks, the way a hardware meter has colour zones: a cell is cyan below
+/// `MatrixCell.hotHeat` and Meter High (`meterHot`, the accent unless a theme
+/// pins it) at or above it, never a blend of the two. Each animation decides
+/// which way the heat runs (up a column, along a bar, in from the edge), so
+/// the view only ever asks which ink a cell means.
+///
+/// A lit cell glows in its own ink, brighter as its intensity rises, and a
+/// cell at full intensity is the peak, its ink lifted a step towards the
+/// theme's bright version of it. An unlit cell is a faint print of the ink it
+/// would light in: its heat is always 0 in the frame, so the ink comes from
+/// the kind's `restingHeat`, which is what lets the dark grid shade the same
+/// way the animation does.
+///
+/// A monochrome panel has one phosphor, so there the cells are OLED ink, told
+/// apart by intensity alone.
+///
+/// Cells are filled in groups, one path per colour, not one fill per cell:
+/// the canvas redraws up to 30 times a second while music plays, and most
+/// cells share a colour with others (a whole dark row of a VU, a whole ring).
+private struct OLEDMatrixCanvas: View {
+    @Environment(\.carbon) private var theme
+    let frame: MatrixFrame
+    let kind: MatrixAnimationKind
+
+    /// The VU bars' body intensity: a cell this bright or brighter draws its
+    /// ink at full body strength, and a fading ring dims from there.
+    private static let fullBody = 0.75
+    /// How strongly a bar's body draws, below the peak's full ink, so the
+    /// peak reads as a cap without changing colour.
+    private static let bodyOpacity = 0.82
+    /// The dark grid's print. Faint enough that in a quiet passage the matrix
+    /// recedes instead of sitting beside the title as a rectangle.
+    private static let restingOpacity = 0.05
+    /// How far a peak's ink moves towards the theme's bright version of it.
+    private static let peakLift = 0.35
+
+    /// A lit cell's glow: which ink, and how strongly.
+    private struct Glow: Hashable {
+        var hot: Bool
+        var strength: Double
+    }
+
+    /// Monochrome ink for one cell: 7% unlit, and 0.55 to 0.85 when lit. A VU
+    /// bar's body (0.75) and its peak (1) land on the two ends, the levels the
+    /// meter has always used; a fading ring steps down between them and then
+    /// goes out. Nothing lit falls below 0.55, so a dim cell never passes for
+    /// a dark one on a panel with only one colour to tell them apart.
+    static func monochromeInk(_ intensity: Double) -> Double {
+        guard intensity > 0 else { return 0.07 }
+        let aboveBody = min(max((intensity - fullBody) / (1 - fullBody), 0), 1)
+        return 0.55 + (0.85 - 0.55) * aboveBody
+    }
+
+    var body: some View {
+        Canvas { context, size in
+            let layout = MatrixLayout(size: size)
+            guard !layout.isEmpty else { return }
+            let radius = min(layout.segment.height * 0.18, 2)
+
+            /// The cells `key` picks out, one path per key. Segments never
+            /// overlap, so filling a group's path paints exactly what filling
+            /// each of its cells would.
+            func grouped<Key: Hashable>(by key: (MatrixCell, Int, Int) -> Key?) -> [Key: Path] {
+                var groups: [Key: Path] = [:]
+                for row in 0..<MatrixFrame.rows {
+                    for column in 0..<MatrixFrame.columns {
+                        guard let k = key(frame[column: column, row: row], column, row) else { continue }
+                        groups[k, default: Path()].addPath(
+                            Path(roundedRect: layout.rect(column: column, row: row),
+                                 cornerRadius: radius, style: .continuous))
+                    }
+                }
+                return groups
+            }
+
+            if theme.oledMonochrome {
+                // Quantised intensities give at most nine inks.
+                for (ink, path) in grouped(by: { cell, _, _ in Self.monochromeInk(cell.intensity) }) {
+                    context.fill(path, with: .color(oledFGo(ink)))
+                }
+                return
+            }
+
+            func ink(hot: Bool) -> Color { hot ? theme.meterHot : theme.cyan }
+            let coolPeak = HeatRamp(from: theme.cyan, to: theme.cyanGlow).color(at: Self.peakLift)
+            let hotPeak = HeatRamp(from: theme.meterHot, to: theme.meterHotHi).color(at: Self.peakLift)
+
+            let unlit = grouped { cell, column, row in
+                cell.intensity == 0 ? MatrixCell.isHot(heat: kind.restingHeat(column: column, row: row)) : nil
+            }
+            for (hot, path) in unlit {
+                context.fill(path, with: .color(ink(hot: hot).opacity(Self.restingOpacity)))
+            }
+
+            // One layer per ink, so each glows in its own colour rather than
+            // a cyan bar haloed in orange.
+            let lit = grouped { cell, _, _ in
+                cell.intensity > 0 && cell.intensity < 1
+                    ? Glow(hot: MatrixCell.isHot(heat: cell.heat),
+                           strength: min(cell.intensity / Self.fullBody, 1) * Self.bodyOpacity)
+                    : nil
+            }
+            let peaks = grouped { cell, _, _ in cell.intensity >= 1 ? MatrixCell.isHot(heat: cell.heat) : nil }
+            for hot in [false, true] {
+                context.drawLayer { layer in
+                    layer.addFilter(.shadow(color: ink(hot: hot).opacity(0.55), radius: 3))
+                    for (glow, path) in lit where glow.hot == hot {
+                        layer.fill(path, with: .color(ink(hot: hot).opacity(glow.strength)))
+                    }
+                    if let path = peaks[hot] {
+                        layer.fill(path, with: .color(hot ? hotPeak : coolPeak))
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Two theme colours and the straight line between them in sRGB, for
+/// colouring a cell by its heat. The ends are converted once per draw; each
+/// cell is then three multiply-adds, not a colour-space conversion.
+private struct HeatRamp {
+    private let start: Color
+    private let from: (r: Double, g: Double, b: Double, a: Double)?
+    private let to: (r: Double, g: Double, b: Double, a: Double)?
+
+    init(from start: Color, to end: Color) {
+        self.start = start
+        from = Self.components(start)
+        to = Self.components(end)
+    }
+
+    func color(at heat: Double) -> Color {
+        // A colour that can't be brought into sRGB leaves the cool end, the
+        // better wrong answer than a hole in the grid.
+        guard let from, let to else { return start }
+        let t = min(max(heat, 0), 1)
+        return Color(.sRGB,
+                     red: from.r + (to.r - from.r) * t,
+                     green: from.g + (to.g - from.g) * t,
+                     blue: from.b + (to.b - from.b) * t,
+                     opacity: from.a + (to.a - from.a) * t)
+    }
+
+    private static func components(_ color: Color) -> (r: Double, g: Double, b: Double, a: Double)? {
+        guard let rgb = NSColor(color).usingColorSpace(.sRGB) else { return nil }
+        return (Double(rgb.redComponent), Double(rgb.greenComponent),
+                Double(rgb.blueComponent), Double(rgb.alphaComponent))
     }
 }
 
@@ -531,14 +700,27 @@ private struct OLEDCells: View {
     }
 
     /// Column count and rail height are the panel's geometry, not the content's.
-    private static let columns = 5
+    static let columns = 5
     private static let railHeight: CGFloat = 42
+    /// Space between a divider and the text on either side of it.
+    static let cellPadding: CGFloat = 10
+    private static let dividerWidth: CGFloat = 1
+
+    /// Where column `index`'s text starts, from the rail's leading edge, in a
+    /// rail `width` wide. The HStack below offers every cell the same share of
+    /// what the dividers leave, so this is exact rather than estimated; the NOW
+    /// pane uses it to hang its matrix off the same verticals.
+    static func textLeading(ofColumn index: Int, in width: CGFloat) -> CGFloat {
+        guard index > 0 else { return 0 }
+        let cellWidth = (width - CGFloat(columns - 1) * dividerWidth) / CGFloat(columns)
+        return CGFloat(index) * (cellWidth + dividerWidth) + cellPadding
+    }
 
     var body: some View {
         HStack(spacing: 0) {
             ForEach(0..<max(Self.columns, cells.count), id: \.self) { i in
                 if i > 0 {
-                    Rectangle().fill(oledFGo(0.12)).frame(width: 1).padding(.vertical, 1)
+                    Rectangle().fill(oledFGo(0.12)).frame(width: Self.dividerWidth).padding(.vertical, 1)
                 }
                 if i < cells.count {
                     cell(cells[i], leading: i > 0)
@@ -571,8 +753,8 @@ private struct OLEDCells: View {
                 .lineLimit(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.trailing, 10)
-        .padding(.leading, leading ? 10 : 0)
+        .padding(.trailing, Self.cellPadding)
+        .padding(.leading, leading ? Self.cellPadding : 0)
     }
 }
 
@@ -734,6 +916,60 @@ private struct NowPlayingPane: View {
     }
 }
 
+/// The NOW screen's composition, which differs from `OLEDPaneScaffold`: the
+/// titles sit top-left with a small time reading pinned under them, right on the
+/// cell rail's progress line, and the LED matrix shares the headline area with
+/// them as an equal. The rail above already names the screen, so the pane
+/// needs no big clock of its own.
+///
+/// Both blocks hang off the cell rail's grid below: the titles start where the
+/// first cell's text does and the matrix where the fourth cell's text does, so
+/// the screen has one set of verticals rather than two that nearly agree. The
+/// matrix's top is the title's cap height and its bottom the reading's, so it
+/// stands exactly as tall as the type beside it. With the animation off there
+/// is no matrix at all, so no driver ticks, and the title has the whole width
+/// back.
+private struct NowPlayingScaffold<Headline: View, Reading: View>: View {
+    @EnvironmentObject private var model: LibraryViewModel
+    let cells: [OLEDCellData]
+    @ViewBuilder var headline: () -> Headline
+    @ViewBuilder var reading: () -> Reading
+
+    /// The cell whose text the matrix starts at.
+    private static var matrixColumn: Int { 3 }
+
+    private var showsMatrix: Bool { model.matrixAnimation != .off }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            GeometryReader { geo in
+                let matrixLeading = OLEDCells.textLeading(ofColumn: Self.matrixColumn, in: geo.size.width)
+                HStack(spacing: 0) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        headline()
+                        Spacer(minLength: 6)
+                        reading()
+                    }
+                    // The rail's own gutter: a cell's text stops this far short
+                    // of the next divider, and so does the title.
+                    .padding(.trailing, showsMatrix ? OLEDCells.cellPadding * 2 : 0)
+                    .frame(width: showsMatrix ? matrixLeading : geo.size.width,
+                           height: geo.size.height, alignment: .leading)
+                    if showsMatrix {
+                        OLEDMatrix()
+                            .padding(.top, NPTitles.capTopInset())
+                            .frame(width: max(geo.size.width - matrixLeading, 0), height: geo.size.height)
+                    }
+                }
+            }
+            .padding(.bottom, 6)
+            OLEDCells(cells)
+        }
+        .padding(.top, 6)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
 /// What the NOW pane shows while nothing is playing — a little crate-digger
 /// nudge instead of leaking the browser selection onto the glass. The lines
 /// live in `NowPlayingFeed`, so the widget's phrase mode speaks with the same
@@ -754,21 +990,14 @@ private struct LibraryNowPlaying: View {
     private var isIdle: Bool { model.nowPlayingTrack == nil }
 
     var body: some View {
-        OLEDPaneScaffold {
+        NowPlayingScaffold(cells: libraryCells) {
             NPTitles(title: displayTrackTitle, sub: subtitle,
                      titleColor: isIdle ? oledFGo(0.6) : oledFG,
                      titleItalic: isIdle)
-        } readout: {
-            HStack(alignment: .firstTextBaseline, spacing: 14) {
-                if !isIdle { OLEDSpectrum() }
-                NPClock(now: isIdle ? "--:--" : model.displayedCurrentTime.asClockPadded,
-                        tot: isIdle ? "" : "/ " + model.playbackDuration.asClockPadded)
-            }
-            .fixedSize()
-        } ticker: {
-            EmptyView()
-        } cells: {
-            OLEDCells(libraryCells)
+        } reading: {
+            OLEDTimeReading(now: isIdle ? "--:--" : model.displayedCurrentTime.asClockPadded,
+                            total: isIdle ? "--:--" : model.playbackDuration.asClockPadded,
+                            size: 10)
         }
         // A fresh nudge each time playback winds down.
         .onChange(of: isIdle) { nowIdle in
@@ -807,37 +1036,32 @@ private struct RadioNowPlaying: View {
     private var isNative: Bool { model.radioEngineKind == .native }
 
     var body: some View {
-        OLEDPaneScaffold {
+        NowPlayingScaffold(cells: radioCells) {
             NPTitles(title: headline.uppercased(), sub: subtitle)
-        } readout: {
-            HStack(alignment: .firstTextBaseline, spacing: 14) {
-                OLEDSpectrum()
-                radioReadout
-            }
-            .fixedSize()
-        } ticker: {
-            EmptyView()
-        } cells: {
-            OLEDCells(radioCells)
+        } reading: {
+            radioReading
         }
     }
 
+    /// A live stream has no duration to count towards, so its small reading is
+    /// how long it has been on the air instead.
     @ViewBuilder
-    private var radioReadout: some View {
+    private var radioReading: some View {
         if isLive {
-            VStack(alignment: .trailing, spacing: 8) {
-                HStack(spacing: 8) {
-                    Circle().fill(onAirRed).frame(width: 9, height: 9)
-                        .shadow(color: onAirRed.opacity(0.7), radius: 4)
-                    Text("ON AIR").font(CarbonFont.display(30, weight: .thin)).foregroundStyle(oledFG)
-                }
+            HStack(spacing: 6) {
+                Circle().fill(onAirRed).frame(width: 6, height: 6)
+                    .shadow(color: onAirRed.opacity(0.7), radius: 3)
+                Text("ON AIR")
+                    .foregroundStyle(oledFG)
                 Text("UPTIME \(uptimeString)")
-                    .font(CarbonFont.mono(10, weight: .semibold)).tracking(1.4)
-                    .foregroundStyle(oledFGo(0.5))
+                    .foregroundStyle(oledFGo(0.4))
             }
+            .font(CarbonFont.mono(10, weight: .bold))
+            .fixedSize()
         } else {
-            NPClock(now: model.displayedCurrentTime.asClockPadded,
-                    tot: "/ " + model.playbackDuration.asClockPadded)
+            OLEDTimeReading(now: model.displayedCurrentTime.asClockPadded,
+                            total: model.playbackDuration.asClockPadded,
+                            size: 10)
         }
     }
 
@@ -885,7 +1109,13 @@ private enum LibraryNowPlayingCells {
         // stays off the glass (the Inspector is where selection lives).
         let track = model.nowPlayingTrack
         let ext = track?.track.fileURL.pathExtension.uppercased() ?? ""
-        let lossless = ["FLAC", "ALAC", "WAV", "AIFF"].contains(ext)
+        // The codec as well as the extension: ALAC lives in an .m4a, the same
+        // container as lossy AAC, so the extension alone called it LOSSY. The
+        // extension still has to count, because ffprobe names a WAV or AIFF
+        // codec PCM_S16LE and the like.
+        let codec = track?.track.formatName?.uppercased() ?? ""
+        let lossless = ["FLAC", "WAV", "AIFF", "AIF"].contains(ext)
+            || VersionLabel.isLossless(codec) || codec.hasPrefix("PCM")
 
         let trackVal: String
         let trackSub: String
@@ -910,11 +1140,17 @@ private enum LibraryNowPlayingCells {
             return String(format: "%.1f MB", Double(s) / 1_048_576.0)
         }()
 
+        // With nothing loaded there is no file to call lossy or constant, so
+        // these subs go blank with their values rather than describe nothing.
+        let formatSub = track == nil ? "—" : (lossless ? "Lossless" : "Lossy")
+        let bitrateSub = track == nil ? "—" : (lossless ? "Lossless" : "Constant")
+        let sampleSub = track == nil ? "—" : (["FLAC", "ALAC"].contains(codec) ? "16-bit" : "Audio")
+
         return [
             OLEDCellData(key: "Track", value: trackVal, sub: trackSub),
-            OLEDCellData(key: "Format", value: track?.track.formatName?.uppercased() ?? "—", sub: lossless ? "Lossless" : "Lossy"),
-            OLEDCellData(key: "Bitrate", value: bitrate, sub: lossless ? "Lossless" : "Constant"),
-            OLEDCellData(key: "Sample", value: sample, sub: ["FLAC", "ALAC"].contains(ext) ? "16-bit" : "Audio"),
+            OLEDCellData(key: "Format", value: track?.track.formatName?.uppercased() ?? "—", sub: formatSub),
+            OLEDCellData(key: "Bitrate", value: bitrate, sub: bitrateSub),
+            OLEDCellData(key: "Sample", value: sample, sub: sampleSub),
             OLEDCellData(key: "Size", value: size, sub: "File Size")
         ]
     }

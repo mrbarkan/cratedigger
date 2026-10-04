@@ -352,6 +352,31 @@ final class LibraryViewModel: ObservableObject {
         }
     }
 
+    /// What the NOW screen's LED matrix plays. The titlebar status LED steps
+    /// through the enabled kinds and View ▸ Display Animation picks one;
+    /// `.off` takes the matrix off the glass, driver and all.
+    @Published var matrixAnimation: MatrixAnimationKind = .vertical {
+        didSet { prefs.oledMatrixAnimation = matrixAnimation.rawValue }
+    }
+
+    /// The animations ticked in Settings ▸ Interface. The lamp and the menu
+    /// offer only these, plus Off. Read from the store, and re-read when
+    /// Settings posts `CrateDiggerMatrixAnimationsChanged`.
+    @Published private(set) var enabledMatrixAnimations = Set(MatrixAnimationKind.animations)
+
+    /// The status LED's click: the next enabled kind in click order, else Off.
+    func cycleMatrixAnimation() {
+        matrixAnimation = matrixAnimation.next(enabled: enabledMatrixAnimations)
+    }
+
+    /// Re-read the enabled set, and move off an animation that was just
+    /// unticked rather than keep playing something the user turned off.
+    func reloadEnabledMatrixAnimations() {
+        enabledMatrixAnimations = MatrixAnimationKind.enabled(persisted: prefs.enabledMatrixAnimations)
+        let settled = matrixAnimation.settled(enabled: enabledMatrixAnimations)
+        if settled != matrixAnimation { matrixAnimation = settled }
+    }
+
     @Published var scanProgress: ScanProgress = .idle
     /// The OLED view to restore after an add-to-crate import status finishes.
     private var importStatusReturnOLED: OLEDView?
@@ -1412,6 +1437,8 @@ final class LibraryViewModel: ObservableObject {
         if let saved = prefs.savedOLEDView, let view = OLEDView(rawValue: saved) {
             oledView = view
         }
+        matrixAnimation = MatrixAnimationKind(persisted: prefs.oledMatrixAnimation)
+        reloadEnabledMatrixAnimations()
         if let saved = prefs.savedStatsWindow, let window = ListeningWindow(rawValue: saved) {
             statsWindow = window
         }
@@ -1496,6 +1523,7 @@ final class LibraryViewModel: ObservableObject {
         setupAudioDeviceObserver()
         setupGaplessObserver()
         setupCDSpeedObserver()
+        setupMatrixAnimationsObserver()
         setupKeyboardShortcutsMonitor()
         setupLibraryOperationsObservers()
         setupVolumeObservers()
@@ -1560,6 +1588,14 @@ final class LibraryViewModel: ObservableObject {
             let enabled = notification.object as? Bool ?? true
             Task { @MainActor [weak self] in
                 self?.playback.gaplessEnabled = enabled
+            }
+        }
+    }
+
+    private func setupMatrixAnimationsObserver() {
+        observe("CrateDiggerMatrixAnimationsChanged") { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.reloadEnabledMatrixAnimations()
             }
         }
     }
@@ -3133,9 +3169,9 @@ final class LibraryViewModel: ObservableObject {
         playbackVolume = VolumeCurve.stepped(from: playbackVolume, by: delta)
     }
 
-    /// Latest real 0...1 VU levels (L/R) and spectrum bands, for the NOW screen's
-    /// meter and playback diagnostics,
-    /// from whichever tap can actually see the audio.
+    /// Latest real 0...1 VU levels (L/R) and spectrum bands, for the NOW
+    /// screen's matrix and playback diagnostics, from whichever tap can
+    /// actually see the audio.
     ///
     /// Local files are tapped per player-item (`AudioLevelTap`). Streams can't
     /// be: every YouTube stream resolves to HLS, and an HLS asset exposes no
@@ -4350,23 +4386,57 @@ final class LibraryViewModel: ObservableObject {
                               treatAsImport: fromPrepCrate, fromPrepCrate: fromPrepCrate)
     }
 
-    /// Append dragged tracks/albums/artists to an M3U playlist, skipping paths
-    /// already in it.
+    /// Append dragged tracks/albums/artists to an M3U playlist.
     func addItemsToPlaylist(_ items: [String], playlistName: String) {
+        addTracksToPlaylist(tracksForDragItems(items), playlistName: playlistName)
+    }
+
+    /// Append tracks to an M3U playlist, skipping paths already in it (see
+    /// `Playlist.appending`). The one writer behind both the sidebar drop and
+    /// the context menu's Add to Playlist.
+    func addTracksToPlaylist(_ tracks: [LoadedTrack], playlistName: String) {
         guard var playlist = playlists.first(where: { $0.name == playlistName }) else { return }
-        let urls = tracksForDragItems(items).map { $0.track.fileURL }
-        guard !urls.isEmpty else { return }
+        let updated = Playlist.appending(tracks.map(\.track.fileURL), to: playlist.trackURLs)
+        let added = updated.count - playlist.trackURLs.count
+        guard added > 0 else {
+            if !tracks.isEmpty { showOLEDNotice("ALREADY IN \(playlistName.uppercased())") }
+            return
+        }
 
-        let existing = Set(playlist.trackURLs.map { $0.standardizedFileURL.path })
-        let newURLs = urls.filter { !existing.contains($0.standardizedFileURL.path) }
-        guard !newURLs.isEmpty else { return }
-
-        playlist.trackURLs.append(contentsOf: newURLs)
-        try? playlistService.savePlaylist(playlist)
+        playlist.trackURLs = updated
+        do {
+            try playlistService.savePlaylist(playlist)
+        } catch {
+            appAlert = .error(title: "Couldn’t Add to Playlist", message: error.localizedDescription)
+            return
+        }
         playlists = playlistService.listPlaylists()
         if case .playlist(let currentName) = currentSource, currentName == playlistName {
             selectPlaylist(name: playlistName)
         }
+        showOLEDNotice("ADDED \(added) TO \(playlistName.uppercased())")
+    }
+
+    /// Context menu's "New Playlist…": ask for a name, create the playlist,
+    /// then add `tracks` to it. `createPlaylist` alerts on a bad or taken name.
+    func promptNewPlaylist(adding tracks: [LoadedTrack]) {
+        let alert = NSAlert()
+        alert.messageText = "New Playlist"
+        let count = tracks.count == 1 ? "1 track" : "\(tracks.count) tracks"
+        alert.informativeText = "The new playlist starts with the \(count) you chose."
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
+        field.placeholderString = "Playlist Name"
+        alert.accessoryView = field
+        alert.window.initialFirstResponder = field
+        alert.addButton(withTitle: "Create")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        let before = Set(playlists.map(\.name))
+        guard createPlaylist(name: field.stringValue),
+              let created = playlists.first(where: { !before.contains($0.name) })
+        else { return }
+        addTracksToPlaylist(tracks, playlistName: created.name)
     }
 
     // MARK: - Album removal

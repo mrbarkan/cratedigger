@@ -32,6 +32,8 @@ public final class PreferencesStore {
         static let customFFmpegPath = "cratedigger.tools.ffmpegPath"
         static let customFFprobePath = "cratedigger.tools.ffprobePath"
         static let oledView = "cratedigger.ui.oledView"
+        static let oledMatrixAnimation = "cratedigger.ui.oledMatrixAnimation"
+        static let enabledMatrixAnimations = "cratedigger.ui.enabledMatrixAnimations"
         static let statsWindow = "cratedigger.ui.statsWindow"
         static let collapsedSourceSections = "cratedigger.sidebar.collapsedSections"
         static let shuffleEnabled = "cratedigger.playback.shuffle"
@@ -338,6 +340,34 @@ public final class PreferencesStore {
                 defaults.set(value, forKey: Key.oledView)
             } else {
                 defaults.removeObject(forKey: Key.oledView)
+            }
+        }
+    }
+
+    /// The `MatrixAnimationKind` raw values ticked in Settings ▸ Interface,
+    /// which the status LED and View ▸ Display Animation offer. nil (never
+    /// set) means all of them; read through `MatrixAnimationKind.enabled(persisted:)`.
+    public var enabledMatrixAnimations: [String]? {
+        get { defaults.stringArray(forKey: Key.enabledMatrixAnimations) }
+        set {
+            if let value = newValue {
+                defaults.set(value, forKey: Key.enabledMatrixAnimations)
+            } else {
+                defaults.removeObject(forKey: Key.enabledMatrixAnimations)
+            }
+        }
+    }
+
+    /// `MatrixAnimationKind.rawValue` the NOW screen's matrix was last playing.
+    /// Kept as a string, not the enum, so a value this build no longer knows
+    /// reaches `MatrixAnimationKind(persisted:)` and falls back there.
+    public var oledMatrixAnimation: String? {
+        get { defaults.string(forKey: Key.oledMatrixAnimation) }
+        set {
+            if let value = newValue {
+                defaults.set(value, forKey: Key.oledMatrixAnimation)
+            } else {
+                defaults.removeObject(forKey: Key.oledMatrixAnimation)
             }
         }
     }

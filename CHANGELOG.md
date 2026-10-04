@@ -4,6 +4,90 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 2.2.4 (105), 2026-10-03
+
+The NOW screen gets an LED matrix that dances to the music, playlists take
+tracks from the right-click menu, and a disc's tags can be fixed before you
+rip it.
+
+### Added
+
+- **An LED matrix on the NOW screen.** Beside the title, a 12 by 6 matrix
+  plays one of four animations driven by what you're hearing: Vertical VU
+  (the spectrum in stereo halves, left channel on the left and right on the
+  right, bass on the outer edges and treble meeting in the middle),
+  Horizontal VU (left and right channels), Explosions (a cool burst from the
+  centre on every kick, turning hot as it reaches the edges) and Frame
+  (light closing in from the edges, bass on the outside, treble inside).
+  Monochrome themes draw it in their own ink.
+- **The matrix sits with the title instead of fighting it.** It is drawn
+  as separate LED segments with gaps between them, like a
+  hardware graphic equalizer, so a wider window spaces the columns out
+  rather than stretching the lights into bricks. It lines up with the row
+  of facts below it and stands as tall as the title's capitals. It lights
+  in two colours, cyan and the theme's meter colour for the top of the
+  meter, with no muddy blend in between, and its unlit grid fades back
+  when the music is quiet.
+- **Add to Playlist from the right-click menu.** Tracks, albums and
+  artists now offer Add to Playlist beside Add to Crate, listing your
+  playlists and New Playlist…, which names a playlist and fills it in one
+  step. A selection goes in whole, tracks already in the playlist are
+  skipped, and the display confirms how many were added.
+- **Click the status lamp to change it.** The small lamp at the top right of
+  the window steps through the animations and Off, and View ▸ Display
+  Animation picks one directly. Your choice is kept. The lamp still glows
+  while the app is busy.
+- **Choose which animations the lamp offers.** Settings ▸ Interface ▸
+  Display Animations has a tick box for each. The lamp and the View menu
+  offer only the ticked ones, plus Off, so ticking just your favourite
+  makes the lamp a simple on and off switch for it.
+- **Edit a disc's tags before ripping.** With a CD in the drive, tag edits
+  (in the inspector, the tag editor or FIX TAGS) are kept for the rip
+  instead of being written to the disc, which can't take them. The display
+  says STAGED FOR RIP, the browser shows the new tags straight away, and the
+  ripped files carry them. Picking a different release or ejecting the disc
+  drops them.
+
+### Changed
+
+- **NOW names itself, and the clock moves.** The top left of the display
+  reads NOW PLAYING, and the elapsed and total time sit small under the
+  artist line, right on the progress line, where the big clock used to take
+  up room. A live stream shows ON AIR and its uptime there instead.
+- **The meter no longer leans into the bottom-left corner.** Bass carries
+  most of a song's energy, so the meter used to pile up on the left and
+  leave the treble dark whatever was playing. Each band is now evened out,
+  so the whole width moves and loud moments reach the top.
+- **RIP lives above the disc's tracks.** It sits beside RE-IDENTIFY and
+  CLEAR in the bar that names the disc, instead of under the disc in Sources.
+- **RIP opens the Patch Bay on the disc.** Pressing it shows the disc's
+  tracks as the queue, with the format, bitrate, sample rate, artwork size
+  and folder layout above the key, which now reads RIP CD. Before, the rip
+  used whatever the Patch Bay last had, with nowhere to check it from the
+  disc. CANCEL backs out without ripping.
+- **RIP waits for the pressing.** While a disc matches several releases,
+  RIP stays off until you pick one, so the files are named for the right
+  one.
+
+### Fixed
+
+- **Dropping tracks on a playlist reports a failed save** instead of
+  silently doing nothing.
+- **Apple Lossless reads LOSSLESS.** The FORMAT cell on the NOW screen
+  called ALAC files lossy.
+- **With nothing playing, the NOW screen shows dashes** under FORMAT,
+  BITRATE and SAMPLE instead of LOSSY, CONSTANT and AUDIO.
+- **A rip adds only itself to the Prep Crate.** It used to scan the whole
+  output folder, so every album ever converted there landed in the Prep
+  Crate, and again at every launch. If that already happened to you, Clear
+  Prep Crate once to stop it.
+- **Box sets rip with their disc numbers.** Each disc of a multi-disc
+  release now carries its disc number and disc count, so the discs no longer
+  pile into one folder as tracks with no disc.
+- **The Patch Bay keeps a disc's rip set up** when the disc's cover finishes
+  loading. It used to jump to the DUB screen and drop it.
+- **RIP no longer stretches across the disc bar** while you pick a release.
+
 ## 2.2.3 (98), 2026-09-26
 
 Put a CD in and it's ready to dub; records drag for real this time.
