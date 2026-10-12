@@ -58,10 +58,9 @@ struct DisplayModeButton: View {
                 )
                 .padding(.horizontal, 10)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(ChromeChassis(theme: theme, cornerRadius: geometry.keyCornerRadius))
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.carbonHover)
+        .buttonStyle(.chassisKey)
         .carbonTip("DISPLAY — \(currentLabel). Click to cycle the OLED screen; the strip glows in the active screen's color.")
     }
 
@@ -90,9 +89,23 @@ struct DisplayModeButton: View {
 }
 
 /// Shared glass-chrome treatment used by compact control surfaces.
+///
+/// A cap lit from above: brighter at the top, a highlight on the top edge and
+/// shade on the bottom one, and a tight contact shadow that says it rests on
+/// the surface. (A wide soft drop shadow, which this used to cast, reads as
+/// a tile hovering over the panel.)
+///
+/// `skirt` and `pressed` are for `ChassisKeyButtonStyle`. The skirt is the
+/// cap's front face, a darker band along the bottom under a lit top edge:
+/// it is what gives a key height, where a gradient alone gives a tile. A
+/// pressed cap is down in its socket, so the skirt hides, the shadow
+/// collapses and the top light dims. Both default to the flat chip the
+/// other callers draw.
 struct ChromeChassis: View {
     let theme: CarbonTheme
     var cornerRadius: CGFloat = 7
+    var skirt: CGFloat = 0
+    var pressed = false
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
@@ -102,30 +115,64 @@ struct ChromeChassis: View {
                 shape.fill(
                     LinearGradient(
                         colors: [
-                            theme.metalHi.opacity(theme.isDark ? 0.42 : 0.68),
-                            theme.metal.opacity(theme.isDark ? 0.34 : 0.46),
-                            theme.metalLo.opacity(theme.isDark ? 0.42 : 0.38)
+                            theme.metalHi.opacity(theme.isDark ? (pressed ? 0.24 : 0.40) : (pressed ? 0.45 : 0.70)),
+                            theme.metal.opacity(theme.isDark ? 0.30 : 0.40),
+                            theme.metalLo.opacity(theme.isDark ? 0.46 : 0.42)
                         ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
+                        startPoint: .top,
+                        endPoint: .bottom
                     )
                 )
             )
+            .overlay {
+                if skirt > 0 {
+                    skirtBand(shape)
+                }
+            }
+            // Top edge catches the light.
             .overlay(
-                shape.strokeBorder(Color.white.opacity(theme.isDark ? 0.16 : 0.70), lineWidth: 0.7)
+                shape.strokeBorder(
+                    LinearGradient(
+                        colors: [Color.white.opacity(theme.isDark ? 0.20 : (pressed ? 0.55 : 0.90)), .clear],
+                        startPoint: .top,
+                        endPoint: .center
+                    ),
+                    lineWidth: 0.8
+                )
             )
+            // Bottom edge falls into shade.
             .overlay(
-                shape
-                    .strokeBorder(Color.black.opacity(theme.isDark ? 0.34 : 0.10), lineWidth: 0.5)
-                    .blur(radius: 0.5)
-                    .mask(
-                        LinearGradient(
-                            colors: [Color.clear, Color.black],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
+                shape.strokeBorder(
+                    LinearGradient(
+                        colors: [.clear, Color.black.opacity(theme.isDark ? 0.45 : 0.16)],
+                        startPoint: .center,
+                        endPoint: .bottom
+                    ),
+                    lineWidth: 0.8
+                )
             )
-            .depthShadow(color: Color.black.opacity(theme.isDark ? 0.48 : 0.14), radius: 5, y: 2)
+            .depthShadow(
+                color: Color.black.opacity(theme.isDark ? 0.55 : (pressed ? 0.10 : 0.20)),
+                radius: pressed ? 0.3 : 0.8,
+                y: pressed ? 0.3 : 1
+            )
+    }
+
+    /// The front face: the bottom `skirt` points of the cap, shaded, with a
+    /// hairline of light where the top face turns down into it.
+    private func skirtBand(_ shape: RoundedRectangle) -> some View {
+        let depth = pressed ? skirt * 0.25 : skirt
+        return ZStack {
+            shape
+                .fill(theme.metalLo.opacity(theme.isDark ? 0.8 : 0.32))
+                .mask(alignment: .bottom) {
+                    Rectangle().frame(height: depth)
+                }
+            shape
+                .fill(Color.white.opacity(theme.isDark ? 0.10 : 0.55))
+                .mask(alignment: .bottom) {
+                    Rectangle().frame(height: 0.5).padding(.bottom, depth)
+                }
+        }
     }
 }

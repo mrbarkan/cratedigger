@@ -47,21 +47,23 @@ struct CompactDeckView: View {
         .padding(.top, HeaderKeyMetrics.topInset)
     }
 
-    /// pip.exit: the same switch as the brand block's compact pip, the other
-    /// way — back to the whole console.
+    /// rectangle.expand: the same switch as the brand block's compact key,
+    /// the other way — back to the whole console.
     private var expandKey: some View {
         Button {
             ClickPlayer.shared.play(.key)
             model.expandToFull()
         } label: {
-            Image(systemName: "pip.exit")
+            Image(systemName: "rectangle.expand.vertical")
                 .font(.system(size: 9, weight: .bold))
                 .foregroundStyle(theme.chassisInk)
                 .padding(.horizontal, 6)
-                .frame(height: 20)
-                .background(ChromeChassis(theme: theme, cornerRadius: geometry.keyCornerRadius))
+                // The style's socket adds its lip outside this; the key keeps
+                // the brand row's 20pt.
+                .frame(height: 20 - 2 * ChassisKeyMetrics.seat)
+                .contentShape(Rectangle())
         }
-        .buttonStyle(.carbonHover)
+        .buttonStyle(.chassisKey)
         .carbonTip("Full console (⌥⇧⌘M)")
         .accessibilityLabel("Expand to the full console")
     }

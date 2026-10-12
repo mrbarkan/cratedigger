@@ -5,64 +5,69 @@ struct BrandBlock: View {
     @EnvironmentObject private var model: LibraryViewModel
 
     var body: some View {
-        // Brand column: brand-row (name → settings cog, locate key, and the
-        // compact-player pip at far right), then four full-width library keys. On the same grid as
-        // the switcher column opposite (`HeaderKeyMetrics`): the row clears the
-        // traffic lights, and the keys stretch so the last one meets the
-        // OLED's bottom edge.
+        // Brand column: the name alone on the brand row, then a 2 × 4 grid of
+        // icon keys. On the same grid as the switcher column opposite
+        // (`HeaderKeyMetrics`): the row clears the traffic lights, and the
+        // grid's four rows line up with that column's four keys, the last one
+        // meeting the OLED's bottom edge.
         VStack(alignment: .leading, spacing: HeaderKeyMetrics.rowGap) {
-            HStack(spacing: 8) {
-                // The brand column is a fixed width, but a theme can set any
-                // display face — a wider one wrapped "CrateDigger" onto two
-                // lines and pushed the cog and pip out of the row. Scaling down
-                // is the right failure: the name stays whole and the row keeps
-                // its height. Same contract `KeyButton` already applies to
-                // every other themed label, and `BrandLockup` carries it.
-                //
-                // 11pt is what the shipped face fits beside the three pips in
-                // a 156pt column, packed at 3pt rather than the row's 8pt.
-                // Widening `brandWidth` would buy room, at the OLED's expense.
-                BrandLockup(typeSize: 11)
-                Spacer(minLength: 0)
-                HStack(spacing: 3) {
-                    LibButton(style: .pip, title: "", systemImage: "gearshape",
-                              tip: "Settings") {
-                        // Same route the ⌘, menu item takes — up the responder chain to AppDelegate.
-                        NSApp.sendAction(Selector(("showPreferences:")), to: nil, from: nil)
+            // The name gets the whole row. A theme can set any display face,
+            // and a wide one could not share 156pt with keys even scaled down;
+            // with the row to itself, scaling (`BrandLockup`'s contract) is
+            // only ever a last resort.
+            BrandLockup(typeSize: 11)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(height: HeaderKeyMetrics.brandRowHeight)
+
+            // Icon-only, so every key carries its name in the tooltip and to
+            // VoiceOver. Each column is one group read top to bottom, and it is
+            // built column by column so VoiceOver reads it that way too. Left,
+            // the library: the four wide keys this grid replaced, in their old
+            // order, so a hand that knew them still finds them. Right, the
+            // player and the app, most used first, Settings in the corner.
+            // Every key fills its cell, so the two columns split the height
+            // into the same four rows and stay level with each other.
+            HStack(spacing: HeaderKeyMetrics.rowGap) {
+                VStack(spacing: HeaderKeyMetrics.rowGap) {
+                    LibButton(name: "Dig Crate", systemImage: "folder",
+                              tip: "Dig Crate — scan a folder of audio. New tracks land in the Prep Crate.") {
+                        model.openFolderViaPanel()
                     }
-                    // Go to Current Song: moved up from the transport, where it
-                    // was the one key that made the two sides of PLAY unequal.
-                    LibButton(style: .pip, title: "", systemImage: "scope",
+                    LibButton(name: "Rescan", systemImage: "arrow.clockwise", spinsOnPress: true,
+                              tip: "Rescan — re-read your library folders (or the selected device) to pick up changes.") {
+                        model.refreshLibrary()
+                    }
+                    LibButton(name: "Add to Crate", systemImage: "tray.and.arrow.down.fill",
+                              tip: addToCrateTip, highlighted: canAddToCrate) {
+                        model.addSelectionToCrate(crateName: model.targetCrateName)
+                    }
+                    LibButton(name: "Transfer To", systemImage: "arrow.up.forward.square",
+                              tip: "Transfer the current selection to an external device") {
+                        model.requestExternalDeviceTransfer()
+                    }
+                }
+                VStack(spacing: HeaderKeyMetrics.rowGap) {
+                    LibButton(name: "Go to Current Song", systemImage: "scope",
                               tip: "Go to Current Song (⌘L)") {
                         model.revealNowPlaying()
                     }
+                    // The key style dims the legend; the key itself stays put.
                     .disabled(model.nowPlayingTrack == nil)
-                    .opacity(model.nowPlayingTrack == nil ? 0.45 : 1)
-                    // pip.enter here, pip.exit on the compact player's art column:
-                    // one switch, two ends, both at the column's trailing edge.
-                    // The Mini Player window stays on Window ▸ Mini Player (⇧⌘M).
-                    LibButton(style: .pip, title: "", systemImage: "pip.enter",
+                    // rectangle.compress here, rectangle.expand on the compact
+                    // player's art column: one switch, two ends.
+                    LibButton(name: "Compact Player", systemImage: "rectangle.compress.vertical",
                               tip: "Compact player (⌥⇧⌘M)") {
                         // Same route as the menu item, so the window comes forward
                         // and the full-screen refusal applies.
                         NSApp.sendAction(Selector(("toggleCompactPlayer:")), to: nil, from: nil)
                     }
-                }
-            }
-            .frame(height: HeaderKeyMetrics.brandRowHeight)
-
-            VStack(alignment: .leading, spacing: HeaderKeyMetrics.rowGap) {
-                LibButton(style: .wide, title: "DIG CRATE", systemImage: "folder",
-                          tip: "Dig Crate — scan a folder of audio. New tracks land in the Prep Crate.") { model.openFolderViaPanel() }
-                LibButton(style: .wide, title: "RESCAN", systemImage: "arrow.clockwise",
-                          tip: "Rescan — re-read your library folders (or the selected device) to pick up changes.") { model.refreshLibrary() }
-                LibButton(style: .wide, title: "ADD TO CRATE", systemImage: "tray.and.arrow.down.fill",
-                          tip: addToCrateTip, highlighted: canAddToCrate) {
-                    model.addSelectionToCrate(crateName: model.targetCrateName)
-                }
-                LibButton(style: .wide, title: "TRANSFER TO", systemImage: "arrow.up.forward.square",
-                          tip: "Transfer the current selection to an external device") {
-                    model.requestExternalDeviceTransfer()
+                    LibButton(name: "Mini Player", systemImage: "pip.enter", tip: "Mini player (⇧⌘M)") {
+                        NotificationCenter.default.post(name: NSNotification.Name("CrateDiggerShowMiniPlayer"), object: nil)
+                    }
+                    LibButton(name: "Settings", systemImage: "gearshape", tip: "Settings (⌘,)") {
+                        // Same route the ⌘, menu item takes — up the responder chain to AppDelegate.
+                        NSApp.sendAction(Selector(("showPreferences:")), to: nil, from: nil)
+                    }
                 }
             }
         }
@@ -82,62 +87,49 @@ struct BrandBlock: View {
     }
 }
 
-/// Small metal-chrome control button. `.wide` fills its column left-aligned
-/// and takes the row height the header grid hands it (the 4-row library
-/// column); `.pip` is a compact 20pt icon-only chip (settings, locate and the
-/// compact-player key on the brand row). When `highlighted` it lights up amber (ADD TO CRATE when a
-/// selection is ready).
-private enum LibButtonStyle { case normal, wide, pip }
-
+/// An icon-only chassis key (`ChassisKeyButtonStyle`) that fills the grid cell
+/// it is given. When
+/// `highlighted` its icon lights up amber (ADD TO CRATE when a selection is
+/// ready).
 private struct LibButton: View {
     @Environment(\.carbon) private var theme
     @Environment(\.carbonGeometry) private var geometry
-    var style: LibButtonStyle = .normal
-    let title: String
+    /// The key's name, for VoiceOver; the tooltip says more.
+    let name: String
     let systemImage: String
-    var tip: String? = nil
-    var highlighted: Bool = false
+    /// One turn of the icon on press (RESCAN).
+    var spinsOnPress = false
+    let tip: String
+    var highlighted = false
     let action: () -> Void
 
     @State private var spinning = false
 
-    private var height: CGFloat? { style == .wide ? nil : (style == .pip ? 20 : 24) }
-    private var horizPad: CGFloat { style == .pip ? 6 : 9 }
-
     var body: some View {
         Button(action: {
             ClickPlayer.shared.play(.key)
-            if systemImage == "arrow.clockwise" {
+            if spinsOnPress {
                 spinning = true
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { spinning = false }
             }
             action()
         }) {
-            HStack(spacing: title.isEmpty ? 0 : 5) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 9, weight: .bold))
-                    .rotationEffect(.degrees(spinning ? 360 : 0))
-                    .animation(spinning ? .linear(duration: 0.9).repeatForever(autoreverses: false) : .default, value: spinning)
-                if !title.isEmpty {
-                    Text(title)
-                        .font(CarbonFont.mono(8, weight: .bold))
-                        .tracking(1.4)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                }
-            }
-            .foregroundStyle(highlighted ? theme.orange : theme.chassisInk)
-            .padding(.horizontal, horizPad)
-            .frame(maxWidth: style == .wide ? .infinity : nil,
-                   alignment: .leading)
-            .frame(height: height)
-            .frame(maxHeight: style == .wide ? .infinity : nil)
-            // Highlight lights the *label*, not the chassis — the button reads
-            // as ready without the whole key turning into a lamp.
-            .background(ChromeChassis(theme: theme, cornerRadius: geometry.keyCornerRadius))
+            Image(systemName: systemImage)
+                .font(.system(size: 12, weight: .medium))
+                .rotationEffect(.degrees(spinning ? 360 : 0))
+                .animation(spinning ? .linear(duration: 0.9).repeatForever(autoreverses: false) : .default, value: spinning)
+                .foregroundStyle(highlighted ? theme.orange : theme.chassisInk)
+                // A lit legend glows a little, like the lamps on the switcher
+                // keys opposite. Emission, not depth, so a flat theme keeps it.
+                .shadow(color: highlighted ? theme.orange.opacity(0.45) : .clear, radius: 3)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // Highlight lights the icon, not the chassis — the key reads
+                // as ready without the whole key turning into a lamp.
+                .contentShape(Rectangle())
         }
-        .buttonStyle(.carbonHover)
-        .carbonTip(tip ?? title.capitalized)
+        .buttonStyle(.chassisKey)
+        .carbonTip(tip)
+        .accessibilityLabel(name)
         .animation(.easeInOut(duration: 0.18), value: highlighted)
     }
 }

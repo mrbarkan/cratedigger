@@ -139,9 +139,9 @@ private struct SwitchButton: View {
             }
             .padding(.horizontal, Self.horizontalPadding)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(ChromeChassis(theme: theme, cornerRadius: geometry.keyCornerRadius))
+            .contentShape(Rectangle())
         }
-        .buttonStyle(.carbonHover)
+        .buttonStyle(.chassisKey)
         .carbonTip(tip ?? "\(name): tap to change")
     }
 
