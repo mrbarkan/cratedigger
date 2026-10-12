@@ -27,6 +27,8 @@ struct KeyButton<Label: View>: View {
         RoundedRectangle(cornerRadius: geometry.keyCornerRadius, style: .continuous)
     }
 
+    private static var tracking: CGFloat { 1.2 }
+
     var body: some View {
         Button(action: {
             guard style != .disabled else { return }
@@ -37,7 +39,12 @@ struct KeyButton<Label: View>: View {
                 background
                 label()
                     .font(CarbonFont.mono(9, weight: .bold))
-                    .tracking(1.2)
+                    .tracking(Self.tracking)
+                    // Tracking is added after every glyph, the last one too,
+                    // so the label carries a trailing space of one tracking
+                    // and sits left of centre. A matching leading inset
+                    // balances it (most visible on a short word like RIP).
+                    .padding(.leading, Self.tracking)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)   // long titles shrink rather than wrap
                     .foregroundStyle(textColor)
