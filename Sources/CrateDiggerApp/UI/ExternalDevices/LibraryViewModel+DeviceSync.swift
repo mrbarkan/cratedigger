@@ -316,7 +316,9 @@ extension LibraryViewModel {
 
             let outcome: (synced: Int, skipped: Int, failed: Int, lines: [String]) =
                 await withCheckedContinuation { continuation in
-                    Task.detached(priority: .userInitiated) { [weak self] in
+                    // No weak capture: the enclosing task holds `self` for the
+                    // whole sync anyway, awaiting this continuation.
+                    Task.detached(priority: .userInitiated) {
                         let store = DeviceSyncQueueStore()
                         let fm = FileManager.default
                         var synced = 0, skipped = 0, failed = 0
@@ -431,8 +433,8 @@ extension LibraryViewModel {
                             let done = i + 1
                             let failedSoFar = failed
                             let nextPath = done < total ? entries[done].destinationRelativePath : nil
-                            Task { @MainActor [weak self] in
-                                self?.deviceSyncProgress = DeviceSyncProgressSnapshot(
+                            Task { @MainActor in
+                                self.deviceSyncProgress = DeviceSyncProgressSnapshot(
                                     profileName: profileName,
                                     currentRelativePath: nextPath,
                                     completed: done, total: total, failed: failedSoFar,

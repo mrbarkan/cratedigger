@@ -580,7 +580,7 @@ extension LibraryViewModel {
                 self.runRepairCommand(
                     executablePath: exe, arguments: args,
                     notice: "UPDATING YT-DLP…", label: ([exe] + args).joined(separator: " ")
-                ) { [weak self] in self?.confirmYtDlpMoved(from: before) }
+                ) { self.confirmYtDlpMoved(from: before) }
             }
         case .useWebViewEngine:
             prefs.streamEngine = "webview"

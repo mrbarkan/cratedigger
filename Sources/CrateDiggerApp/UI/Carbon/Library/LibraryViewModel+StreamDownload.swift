@@ -153,7 +153,7 @@ extension LibraryViewModel {
 
         let folder = fileURL.deletingLastPathComponent()
         let thumbnail = stream.thumbnailURL.flatMap(URL.init(string:))
-        Task { [weak self] in
+        Task {
             // Folder art is resolveArtwork's second rung; embedding a thumbnail in
             // m4a needs yt-dlp extras we cannot count on. Only useful once the
             // file is filed into a crate, but the thumbnail URL expires, so it

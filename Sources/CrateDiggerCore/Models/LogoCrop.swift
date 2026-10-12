@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 /// How a source image sits in the header's logo slot: how much it's enlarged

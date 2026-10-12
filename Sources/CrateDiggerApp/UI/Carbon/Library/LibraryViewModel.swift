@@ -1556,7 +1556,7 @@ final class LibraryViewModel: ObservableObject {
 
     /// Observe a cross-cutting app notification, keeping the token so `deinit`
     /// can actually drop it. Use this rather than `NotificationCenter` directly.
-    private func observe(_ name: String, using block: @escaping (Notification) -> Void) {
+    private func observe(_ name: String, using block: @escaping @Sendable (Notification) -> Void) {
         notificationObservers.append(
             NotificationCenter.default.addObserver(
                 forName: NSNotification.Name(name), object: nil, queue: .main, using: block
