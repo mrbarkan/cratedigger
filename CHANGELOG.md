@@ -4,15 +4,26 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
-## 2.3.0 (108), 2026-10-12
+## 2.3.0 (109), 2026-10-12
 
-Beta 3: a new key panel, keys that press like hardware, and smoother motion
-everywhere. Beta 2 brought rip settings by medium and beta 1 a compact player.
-This section collects everything in the 2.3 line so far. Betas are offered only to people
+Release candidate 1: Secure Mode for ripping CDs. The betas brought a compact
+player, rip settings by medium, a new key panel, keys that press like
+hardware, and smoother motion everywhere. This section collects everything
+in 2.3.0. Betas and release candidates are offered only to people
 who turned on Receive beta updates.
 
 ### Added
 
+- **Secure Mode for ripping CDs.** Turn on SECURE in the rip settings and
+  CrateDigger reads every track twice, straight from the disc, and compares
+  the two reads sector by sector. Anything that doesn't match, or that the
+  drive flags as an error, is read again until two clean reads agree. When
+  the rip finishes it tells you whether every track was verified, and if a
+  spot never read the same way twice, which track and how far in, so you
+  can clean the disc and rip that track again. It takes about twice as long
+  as a normal rip, so it is off unless you turn it on. If your drive can't
+  report read errors, Secure Mode says so before it starts instead of
+  ripping anything unverified.
 - **A key for the compact player.** The key panel at the top left now has a
   Compact Player key, so the slim player is one click away. The expand key
   beside the cover brings the full console back.
@@ -83,6 +94,8 @@ who turned on Receive beta updates.
 
 ### Fixed
 
+- **A CD rip can be cancelled.** The cancel key did nothing during a rip, so
+  the only way to stop one was to wait it out.
 - **Searching felt slower than it should.** Typing in the search field
   animated the whole browser list on every keystroke; it now updates at once.
 - **Folding into the compact player.** The app no longer ignores clicks while
