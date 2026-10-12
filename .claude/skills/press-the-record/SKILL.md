@@ -77,7 +77,7 @@ describe the shipping stable release, which is still 2.1.x.
 - Then commit the version bump + copy as:
   `chore(release): <marketing> (build <build>)`
 - End every commit message with the required trailer:
-  `Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>`
+  `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`
 
 ## 5. Push
 - `git fetch origin` then `git push origin <branch>` — `main` for a stable
