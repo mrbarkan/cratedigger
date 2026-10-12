@@ -41,6 +41,14 @@ updates, `main` is merged in before each beta so the beta never lacks a stable
 fix, and at GA the branch is merged into `main` with `channel` set back to
 `""`.
 
+**`v2.4` is open for development, not for releases yet.** It was cut from
+`v2.3` (not `main`) on 2026-10-12, while 2.3.0 was at RC 1 (build 109), so 2.4
+work (native Stock iPod support, `docs/superpowers/specs/2026-10-12-stock-ipod-design.md`)
+builds on 2.3 instead of on 2.2.4. Merge `v2.3` into it whenever 2.3 takes a fix.
+`BETA_BRANCH`, the skill's beta column and `dist/updates-beta/` still belong to
+`v2.3`: flip them to `v2.4` only after 2.3.0 ships GA, or the next 2.3 RC can't
+publish its feed. The marketing version moves to 2.4.0 at the first 2.4 beta.
+
 The mechanism that keeps the two lines apart:
 
 - `SUFeedURL` in `Info.plist` points at the stable `website/appcast.xml` and
