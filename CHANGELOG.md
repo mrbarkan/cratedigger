@@ -4,12 +4,27 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
-## 2.3.0 (106), 2026-10-03
+## 2.3.0 (107), 2026-10-12
 
-Beta 1: a compact player. This section collects everything in the 2.3 line so
-far. Betas are offered only to people who turned on Receive beta updates.
+Beta 2: rip settings by medium. Beta 1 brought a compact player. This section
+collects everything in the 2.3 line so far. Betas are offered only to people
+who turned on Receive beta updates.
 
 ### Added
+
+- **Pick the medium, then how much of it to keep.** The conversion panel has
+  a new MEDIUM menu (CD, MiniDisc, SACD, DVD-Audio, Blu-ray, Blu-ray Audio,
+  Vinyl, Tape, or Any Source) and three TIER keys: 1:1 writes an
+  uncompressed copy at the medium's own resolution, Lossless compresses it
+  without loss, Lossy makes small files. A CD is ripped at 16-bit/44.1 kHz,
+  an SACD's DSD becomes 24-bit/88.2 kHz, and vinyl and tape captures keep
+  the resolution you recorded them at. The FORMAT and BITRATE rows still
+  choose the codec within a tier (ALAC instead of FLAC, MP3 instead of AAC),
+  and a lit key goes dark once you edit the settings away from it. Starting
+  a CD rip sets the medium to CD.
+- **Bit depth and FLAC level.** Lossless formats get a DEPTH row (Source, 16
+  or 24 bit), and FLAC a LEVEL row (Fast, Standard, Max). Every level is
+  lossless; a higher one only takes longer to make a smaller file.
 
 - **A compact player.** Window ▸ Compact Player (⌥⇧⌘M) folds the main
   window into one slim unit, like a piece of hi-fi: the playing album's cover
@@ -31,12 +46,26 @@ far. Betas are offered only to people who turned on Receive beta updates.
 
 ### Changed
 
+- **No bitrate for lossless formats.** ALAC, FLAC, WAV and AIFF have no
+  bitrate to choose, so the BITRATE row now only appears for MP3, AAC and
+  Opus. The display shows the bit depth for lossless output instead, and the
+  size estimate follows each file's own sample rate.
 - **Columns open on their selection.** When the browser is rebuilt, for
   example coming back from the compact player or switching views, each
   column scrolls to its selected row instead of starting at the top.
 
 ### Fixed
 
+- **Lossless conversions kept their sample rate.** The SAMPLE row had no
+  way to keep the source's rate, so converting a 96 kHz recording to FLAC or
+  ALAC quietly brought it down to 44.1 kHz. It now has a Source setting.
+- **WAV and AIFF kept 24-bit audio.** They were always written at 16 bits,
+  cutting off the bottom of a 24-bit capture. Bringing 24-bit audio down to
+  16 is now dithered rather than truncated.
+- **Opus conversions work.** The Opus encoder only runs at 48 kHz and turned
+  down the 44.1 kHz the panel asked for, so every Opus conversion failed.
+- **The older Conversion Options sheet** showed a blank bitrate when 96 kbps
+  was picked in the panel, and could not choose Source for the sample rate.
 - **The window reopens where you left it.** CrateDigger was putting the main
   window back in the middle of the screen at every launch instead of where
   you last had it.
