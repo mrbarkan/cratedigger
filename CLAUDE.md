@@ -31,7 +31,11 @@ line, now 2.2.x: it is what the public downloads and what every installed copy
 auto-updates from. Fixes for 2.2.x land on `main`.
 
 **The 2.3 beta line is open on `v2.3`**, cut from `main` on 2026-10-03; 2.3.0
-beta 1 is build 106 and brings the compact player. `v2.2` carried the 2.2 cycle
+beta 1 is build 106 and brings the compact player. 2.3.0 reached RC 1 (build
+109) but never shipped GA: on 2026-10-12 the line moved to **2.3.1** (2.3.1
+beta 1, build 110, tag `v2.3.1-beta.110`), so the marketing version on `v2.3`
+is now 2.3.1 and its CHANGELOG section is `## 2.3.1`. Release candidates on a
+beta line set `channel = "RC"` and are tagged `v<version>-rc.<build>`. `v2.2` carried the 2.2 cycle
 and then the 2.2.x betas and RCs (2.2.4 RC 104 was merged into `main` for GA);
 like `v2` and `v2.1` it is kept for history only. **Do not branch new work from
 `v2`, `v2.1` or `v2.2`.** A beta branch works like this: `AppVersion.channel` is `"BETA"`
