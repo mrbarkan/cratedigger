@@ -679,6 +679,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                 ArtworkViewerPresenter.float(album: album, theme: resolved.theme, model: model, index: 0)
             }
         }
+        // Artwork Search opens from the ART tab's FIND ART key, out of reach of
+        // the command line. "1" picks the first album with art; any other
+        // value picks the first album whose title or artist contains it. The panel is
+        // its own window, captured as "search-album-artwork". MusicBrainz and
+        // the image counts take a few seconds, so this adds two later snaps
+        // ("search" at 14 s, "search2" at 20 s) to the usual two.
+        if let raw = env["CRATEDIGGER_ARTWORK_SEARCH"] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4.5) { [weak self] in
+                guard let model = self?.mainWindowController?.model else { return }
+                let albums = model.index.artists.flatMap(\.albums)
+                let wanted = raw == "1" ? nil : raw.lowercased()
+                guard let album = albums.first(where: { album in
+                    if let wanted {
+                        return album.title.lowercased().contains(wanted)
+                            || album.artistName.lowercased().contains(wanted)
+                    }
+                    return album.tracks.contains { $0.track.artworkHash != nil }
+                }) ?? albums.first else { return }
+                model.revealAlbum(album)
+                model.inspectorTab = .art
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                    NotificationCenter.default.post(name: ArtworkInspectorView.debugFindArtNotification, object: nil)
+                }
+            }
+        }
         if env["CRATEDIGGER_CHECK_STREAM"] != nil {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
                 self?.mainWindowController?.model.checkYouTubeStreaming()
@@ -720,6 +745,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) { snap("") }
         DispatchQueue.main.asyncAfter(deadline: .now() + 8.0) { snap("late") }
+        if env["CRATEDIGGER_ARTWORK_SEARCH"] != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 14.0) { snap("search") }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 20.0) { snap("search2") }
+        }
         if env["CRATEDIGGER_SHOT_LIST"] != nil {
             runMarketingShotList(into: URL(fileURLWithPath: path).deletingLastPathComponent())
         }

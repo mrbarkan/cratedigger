@@ -60,4 +60,13 @@ public enum ArtworkQuality {
 
 public extension ArtworkDimensions {
     var longEdge: Int { max(width, height) }
+
+    /// What the artwork search badges "HD": at least 1000 px on the *short*
+    /// side. The release list used to measure the long edge and the grid the
+    /// short one, so a 1400 × 700 scan was HD in one and not the other.
+    var isHighResolution: Bool { min(width, height) >= ArtworkQuality.highResolutionShortEdge }
+}
+
+public extension ArtworkQuality {
+    static let highResolutionShortEdge = 1000
 }

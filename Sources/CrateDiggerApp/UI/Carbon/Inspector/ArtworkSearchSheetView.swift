@@ -66,20 +66,43 @@ struct ArtworkSearchSheetView: View {
     // Search state
     @State private var searching = false
     @State private var mbReleases: [MBReleaseCandidate] = []
+    /// A search that failed (network, MusicBrainz busy). Kept apart from a
+    /// search that worked and found nothing, which `searchedEmpty` says.
     @State private var searchError: String? = nil
+    @State private var searchedEmpty = false
+    /// The search in flight. A new search, or closing the sheet, cancels it,
+    /// so a slow old query can't land over the results of a newer one.
+    @State private var searchTask: Task<Void, Never>? = nil
+    /// The remembered release opens by itself on the first search only. Doing
+    /// it on every search threw the user back into the grid each time they
+    /// searched again from the list.
+    @State private var didOpenRemembered = false
 
-    // Cover Art Archive state
-    @State private var loadingArt = false
+    // Cover Art Archive counts for the release list
+    /// Per release: counting, counted, or couldn't be counted. Filled a release
+    /// group at a time from MusicBrainz, not a row at a time from archive.org.
+    @State private var coverArtCounts: [String: CoverArtCount] = [:]
+    @State private var countTask: Task<Void, Never>? = nil
+    @State private var counting = false
+    /// Front-cover size per release, measured as rows come on screen, and only
+    /// for releases MusicBrainz says have a front.
+    @State private var frontSizes: [String: ArtworkDimensions] = [:]
+    @State private var frontProbeTask: Task<Void, Never>? = nil
+
+    // The picked release's scans
     @State private var selectedReleaseID: String? = nil
     @State private var selectedReleaseTitle: String = ""
     @State private var caaImages: [RemoteArtworkImage] = []
     /// Image id → the original's true pixel size, filled in as probes land.
     @State private var imageDimensions: [String: ArtworkDimensions] = [:]
-    @State private var artError: String? = nil
-    /// Stage two of the image load. Discogs takes a MusicBrainz relation lookup,
-    /// then a search, then the release — seconds, not milliseconds — so the grid
-    /// says it's still coming instead of sprouting tiles unannounced.
-    @State private var loadingDiscogs = false
+    /// Each source's progress for the picked release. The two load side by
+    /// side: Discogs takes a MusicBrainz relation lookup, then a search, then
+    /// the release, and the archive is served from archive.org, which can
+    /// take twenty seconds. Neither waits for the other any more.
+    @State private var archiveLoad: ArtworkSourceLoad = .idle
+    @State private var discogsLoad: ArtworkSourceLoad = .idle
+    /// The load in flight. BACK, another release, or closing cancels it.
+    @State private var loadTask: Task<Void, Never>? = nil
     /// Session filter over the loaded images.
     @State private var sourceFilter: RemoteArtworkSource? = nil
     /// Off skips the Discogs stage entirely — no wait, no tiles. Persisted,
@@ -98,19 +121,11 @@ struct ArtworkSearchSheetView: View {
     // Result filtering / sorting / grouping (the release list).
     @State private var mediaFilter: String? = nil
     @State private var countryFilter: String? = nil
-    @State private var sortByYear = false
+    /// Relevance, year, or BEST ART: the art a release actually carries,
+    /// which is the reason you are in this sheet at all.
+    @State private var releaseSort: ArtworkReleaseSort = .relevance
     @State private var groupByRelease = false
 
-    /// Cover Art Archive image count per release, probed lazily as rows become
-    /// visible. Missing key = probe not finished; value nil = probe failed
-    /// (network), shown as nothing rather than a false "no images".
-    @State private var imageCounts: [String: Int?] = [:]
-    /// Front-cover size per release, probed like the counts. Nil value = probed
-    /// and it has no front, so the row can say so rather than stay blank.
-    @State private var coverSizes: [String: ArtworkDimensions?] = [:]
-    /// Order releases by the art they carry rather than by MusicBrainz's
-    /// relevance — the reason you are in this sheet at all.
-    @State private var sortByArt = false
     /// The release this album's artwork already came from, read from the
     /// manifest when the sheet opens.
     @State private var rememberedReleaseID: String?
@@ -150,13 +165,28 @@ struct ArtworkSearchSheetView: View {
                 .releaseMBID
             executeSearch()
         }
+        // Nothing this sheet started outlives it: a closed panel used to keep
+        // probing and writing into state nobody could see.
+        .onDisappear(perform: cancelAllWork)
+        // The fade is scoped to the overlay. On the whole sheet it put the
+        // release list and the grid inside any transaction that happened to
+        // coincide with opening or closing the preview.
         .overlay {
-            if let preview = previewImage {
-                imagePreviewOverlay(preview)
-                    .transition(.opacity)
+            ZStack {
+                if let preview = previewImage {
+                    imagePreviewOverlay(preview)
+                        .transition(.opacity)
+                }
             }
+            .animation(CarbonMotion.state, value: previewImage?.id)
         }
-        .animation(CarbonMotion.state, value: previewImage?.id)
+    }
+
+    private func cancelAllWork() {
+        searchTask?.cancel()
+        countTask?.cancel()
+        frontProbeTask?.cancel()
+        loadTask?.cancel()
     }
 
     private func imagePreviewOverlay(_ img: RemoteArtworkImage) -> some View {
@@ -166,18 +196,17 @@ struct ArtworkSearchSheetView: View {
                 .onTapGesture { previewImage = nil }
 
             VStack(spacing: 14) {
-                AsyncImage(url: img.imageURL) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image.resizable().aspectRatio(contentMode: .fit)
-                    case .failure:
-                        Image(systemName: "exclamationmark.triangle")
-                            .font(.system(size: 40))
-                            .foregroundColor(.white.opacity(0.6))
-                    default:
-                        ProgressView().controlSize(.large)
-                    }
+                // A large derivative where the archive has one, not the
+                // original: the overlay is at most 560pt wide, and an original
+                // can be a 5000px, multi-megabyte scan.
+                ArtworkSearchImage(image: img, url: img.bestPreviewURL, maxPixelSize: 1200) {
+                    ProgressView().controlSize(.large)
+                } failure: {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 40))
+                        .foregroundColor(.white.opacity(0.6))
                 }
+                .aspectRatio(contentMode: .fit)
                 .frame(maxWidth: 560, maxHeight: 480)
                 .cornerRadius(6)
                 .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(0.14), lineWidth: 1))
@@ -236,12 +265,7 @@ struct ArtworkSearchSheetView: View {
             Spacer()
             
             if showsGrid {
-                KeyButton(style: .normal, action: {
-                    self.selectedReleaseID = nil
-                    self.caaImages = []
-                    self.selectedImages = []
-                    self.imageRoles = [:]
-                }) {
+                KeyButton(style: .normal, action: leaveGrid) {
                     HStack(spacing: 4) {
                         Image(systemName: "chevron.left")
                             .font(.system(size: 8, weight: .bold))
@@ -279,7 +303,7 @@ struct ArtworkSearchSheetView: View {
 
             toggleChip("DISCOGS", isOn: includeDiscogs) { includeDiscogs.toggle() }
                 .padding(.bottom, 1)
-                .carbonTip("Include Discogs scans of the pressing you pick. They cover far more of a physical release — back, labels, inserts — but the lookup takes a few seconds. Off skips it entirely.")
+                .carbonTip("Include Discogs scans of the pressing you pick. They cover far more of a physical release, like the back, labels and inserts, but the lookup takes a few seconds. Off skips it entirely.")
         }
     }
 
@@ -299,6 +323,8 @@ struct ArtworkSearchSheetView: View {
                 .foregroundStyle(theme.ink3)
             TextField(placeholder, text: text)
                 .textFieldStyle(.plain)
+                // Return searches, as in every other search field.
+                .onSubmit(executeSearch)
                 .font(CarbonFont.sans(12))
                 .lineLimit(1)
                 .frame(height: 16)
@@ -312,12 +338,14 @@ struct ArtworkSearchSheetView: View {
 
     /// One presentation for every "nothing to show yet" state in this sheet —
     /// searching, empty, failed. They were five hand-rolled stacks that had
-    /// already drifted apart in size and tone.
+    /// already drifted apart in size and tone. `retry` adds a TRY AGAIN key,
+    /// for the states a second attempt can actually change.
     private func statusPanel(icon: String? = nil,
                              spinner: Bool = false,
                              tint: Color? = nil,
                              title: String,
-                             detail: String) -> some View {
+                             detail: String,
+                             retry: (() -> Void)? = nil) -> some View {
         VStack(spacing: 10) {
             if spinner {
                 ProgressView().controlSize(.small)
@@ -335,6 +363,13 @@ struct ArtworkSearchSheetView: View {
                 .foregroundStyle(theme.ink3)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 340)
+            if let retry {
+                KeyButton(style: .normal, action: retry) {
+                    Text("TRY AGAIN")
+                }
+                .frame(width: 96, height: 22)
+                .padding(.top, 4)
+            }
         }
         .padding(28)
     }
@@ -364,57 +399,96 @@ struct ArtworkSearchSheetView: View {
                             detail: "Looking for releases that match this album.")
             } else if let error = searchError {
                 statusPanel(icon: "exclamationmark.triangle.fill", tint: theme.orange,
-                            title: "No results", detail: error)
+                            title: "Search failed", detail: error, retry: executeSearch)
+            } else if searchedEmpty {
+                statusPanel(icon: "magnifyingglass", title: "No releases found",
+                            detail: "MusicBrainz has nothing under this artist and album. Try a shorter title, or check the spelling.")
             } else if mbReleases.isEmpty {
                 statusPanel(icon: "music.note.list", title: "Nothing searched yet",
                             detail: "Enter an artist and album above, then press SEARCH.")
             } else {
-                VStack(spacing: 0) {
-                    filterBar
-                    Divider().background(theme.isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.1))
-                    ScrollView {
-                        LazyVStack(spacing: 0) {
-                            if groupByRelease {
-                                ForEach(groupedReleases, id: \.0) { group in
-                                    groupHeaderRow(group.0, count: group.1.count)
-                                    ForEach(group.1) { release in
-                                        releaseRow(release)
-                                        Divider().background(theme.isDark ? Color.white.opacity(0.05) : Color.black.opacity(0.05))
-                                    }
-                                }
-                            } else {
-                                ForEach(displayedReleases) { release in
-                                    releaseRow(release)
-                                    Divider().background(theme.isDark ? Color.white.opacity(0.05) : Color.black.opacity(0.05))
-                                }
-                            }
-                        }
-                    }
-                }
+                releaseList
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    // MARK: - Filter / sort / group
-
-    private var filterBar: some View {
-        HStack(spacing: 10) {
-            filterMenu(label: "MEDIA", selection: $mediaFilter, options: distinctFormats)
-            filterMenu(label: "COUNTRY", selection: $countryFilter, options: distinctCountries)
-            Spacer()
-            toggleChip("SORT BY YEAR", isOn: sortByYear) {
-                sortByYear.toggle()
-                if sortByYear { sortByArt = false }
-            }
-            toggleChip("BEST ART", isOn: sortByArt) {
-                sortByArt.toggle()
-                if sortByArt {
-                    sortByYear = false
-                    probeAllCovers()
+    /// The list itself. What it draws is worked out once per render, in Core,
+    /// rather than once per row.
+    private var releaseList: some View {
+        let displayed = ArtworkReleaseList.displayed(mbReleases, media: mediaFilter, country: countryFilter,
+                                                     sort: releaseSort, counts: coverArtCounts,
+                                                     frontSizes: frontSizes)
+        let bestID = ArtworkReleaseList.bestMatchID(in: displayed, albumTitle: album.title,
+                                                    albumYear: album.year, albumMedia: album.mediaFormat)
+        return VStack(spacing: 0) {
+            filterBar(shown: displayed.count)
+            Divider().background(theme.isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.1))
+            if displayed.isEmpty {
+                statusPanel(icon: "line.3.horizontal.decrease.circle", title: "Nothing matches the filters",
+                            detail: "None of the \(mbReleases.count) releases matches both filters. Set MEDIA or COUNTRY back to All.")
+                    .frame(maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        if groupByRelease {
+                            ForEach(ArtworkReleaseList.grouped(displayed), id: \.edition) { group in
+                                groupHeaderRow(group.edition, count: group.releases.count)
+                                releaseRows(group.releases, bestID: bestID)
+                            }
+                        } else {
+                            releaseRows(displayed, bestID: bestID)
+                        }
+                    }
                 }
             }
-            .carbonTip("Order releases by the front cover they actually carry, biggest first.")
+        }
+    }
+
+    private func releaseRows(_ releases: [MBReleaseCandidate], bestID: String?) -> some View {
+        ForEach(releases) { release in
+            ArtworkReleaseRow(
+                release: release,
+                count: coverArtCounts[release.id] ?? .pending,
+                frontSize: frontSizes[release.id],
+                isBest: release.id == bestID,
+                isRemembered: release.id == rememberedReleaseID,
+                probeFront: { await probeFront(release.id) },
+                open: { loadReleaseArtwork(release) }
+            )
+            .equatable()
+            Divider().background(theme.isDark ? Color.white.opacity(0.05) : Color.black.opacity(0.05))
+        }
+    }
+
+    // MARK: - Filter / sort / group
+
+    private func filterBar(shown: Int) -> some View {
+        HStack(spacing: 10) {
+            filterMenu(label: "MEDIA", selection: $mediaFilter, options: ArtworkReleaseList.formats(in: mbReleases))
+            filterMenu(label: "COUNTRY", selection: $countryFilter, options: ArtworkReleaseList.countries(in: mbReleases))
+            Text(shown == mbReleases.count ? "\(shown) RELEASES" : "\(shown) OF \(mbReleases.count)")
+                .font(CarbonFont.mono(8.5, weight: .semibold))
+                .foregroundStyle(theme.ink4)
+            if counting {
+                HStack(spacing: 5) {
+                    ProgressView().controlSize(.mini)
+                    Text("COUNTING IMAGES")
+                        .font(CarbonFont.mono(8, weight: .bold))
+                        .tracking(1)
+                        .foregroundStyle(theme.ink4)
+                }
+                .carbonTip("Asking MusicBrainz how many Cover Art Archive images each release has.")
+            }
+            Spacer()
+            toggleChip("SORT BY YEAR", isOn: releaseSort == .year) {
+                releaseSort = releaseSort == .year ? .relevance : .year
+            }
+            toggleChip("BEST ART", isOn: releaseSort == .art) {
+                releaseSort = releaseSort == .art ? .relevance : .art
+                if releaseSort == .art { probeAllFronts() }
+            }
+            .carbonTip("Order releases by the art they carry: the biggest front cover first, then the most images.")
             toggleChip("GROUP", isOn: groupByRelease) { groupByRelease.toggle() }
         }
         .padding(.horizontal, 18)
@@ -465,16 +539,6 @@ struct ArtworkSearchSheetView: View {
         .opacity(options.isEmpty ? 0.4 : 1)
     }
 
-    /// Best art first: releases whose front cover measured largest, then those
-    /// with the most images, then the unprobed. Probing is lazy per row, so
-    /// this improves as rows scroll into view.
-    private func byArtQuality(_ lhs: MBReleaseCandidate, _ rhs: MBReleaseCandidate) -> Bool {
-        let left = (coverSizes[lhs.id] ?? nil)?.longEdge ?? 0
-        let right = (coverSizes[rhs.id] ?? nil)?.longEdge ?? 0
-        if left != right { return left > right }
-        return ((imageCounts[lhs.id] ?? nil) ?? 0) > ((imageCounts[rhs.id] ?? nil) ?? 0)
-    }
-
     private func toggleChip(_ title: String, isOn: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
@@ -506,302 +570,92 @@ struct ArtworkSearchSheetView: View {
         .background(theme.chassisHi.opacity(0.5))
     }
 
-    private var distinctFormats: [String] {
-        Array(Set(mbReleases.compactMap { $0.format })).sorted()
-    }
+    // MARK: - Counts and cover sizes
 
-    private var distinctCountries: [String] {
-        Array(Set(mbReleases.compactMap { $0.country })).sorted()
-    }
-
-    /// `mbReleases` after media/country filters and optional year sort.
-    private var displayedReleases: [MBReleaseCandidate] {
-        var releases = mbReleases
-        if let media = mediaFilter { releases = releases.filter { $0.format == media } }
-        if let country = countryFilter { releases = releases.filter { $0.country == country } }
-        if sortByArt {
-            releases.sort(by: byArtQuality)
-        } else if sortByYear {
-            releases.sort { (yearValue($0) ?? Int.max) < (yearValue($1) ?? Int.max) }
-        }
-        return releases
-    }
-
-    /// Displayed releases grouped by edition, "Standard" first then alphabetical.
-    private var groupedReleases: [(String, [MBReleaseCandidate])] {
-        Dictionary(grouping: displayedReleases, by: { edition(of: $0) })
-            .sorted { lhs, rhs in
-                if lhs.key == "Standard" { return true }
-                if rhs.key == "Standard" { return false }
-                return lhs.key < rhs.key
+    /// Count every result's images, a release group at a time, merging each
+    /// batch in one write so the list redraws once per group, not per row.
+    private func startCounting(_ releases: [MBReleaseCandidate]) {
+        countTask?.cancel()
+        var pending = coverArtCounts
+        for release in releases where pending[release.id] == nil { pending[release.id] = .pending }
+        coverArtCounts = pending
+        counting = true
+        let service = model.remoteArtworkService
+        countTask = Task {
+            for await batch in service.coverArtSummaries(for: releases) {
+                guard !Task.isCancelled else { return }
+                var merged = coverArtCounts
+                for (id, summary) in batch { merged[id] = CoverArtCount(lookup: summary) }
+                coverArtCounts = merged
+                if releaseSort == .art { probeAllFronts() }
             }
-            .map { ($0.key, $0.value) }
-    }
-
-    private func yearValue(_ release: MBReleaseCandidate) -> Int? {
-        guard let year = release.date?.split(separator: "-").first else { return nil }
-        return Int(year)
-    }
-
-    /// A coarse edition label from the title + disambiguation keywords. Order
-    /// matters — "super deluxe" before "deluxe", "remaster" catches remastered.
-    private func edition(of release: MBReleaseCandidate) -> String {
-        let hay = (release.title + " " + (release.disambiguation ?? "")).lowercased()
-        let map: [(String, String)] = [
-            ("anniversary", "Anniversary"),
-            ("super deluxe", "Deluxe"),
-            ("deluxe", "Deluxe"),
-            ("remaster", "Remastered"),
-            ("expanded", "Expanded"),
-            ("special", "Special Edition"),
-            ("collector", "Collector's"),
-            ("limited", "Limited"),
-            ("bonus", "Bonus"),
-            ("reissue", "Reissue"),
-            ("mono", "Mono")
-        ]
-        for (needle, label) in map where hay.contains(needle) { return label }
-        return "Standard"
-    }
-
-    /// The release that best matches the album we're finding art for — badged so
-    /// the user reaches for the right edition. Scored on metadata only (title,
-    /// official status, format, year); Cover Art Archive image counts aren't in
-    /// the MusicBrainz search response, so factoring them in would cost a fetch
-    /// per edition. Nil unless something scores a real title match.
-    private var bestReleaseID: String? {
-        guard let best = displayedReleases.max(by: { releaseScore($0) < releaseScore($1) }),
-              releaseScore(best) >= 40 else { return nil }
-        return best.id
-    }
-
-    private func releaseScore(_ r: MBReleaseCandidate) -> Int {
-        var score = 0
-        let want = album.title.lowercased().trimmingCharacters(in: .whitespaces)
-        let got = r.title.lowercased().trimmingCharacters(in: .whitespaces)
-        if got == want {
-            score += 100
-        } else if !want.isEmpty && (got.contains(want) || want.contains(got)) {
-            score += 40
-        }
-        if r.status == "Official" { score += 30 }
-        if let fmt = r.format?.lowercased() {
-            switch album.mediaFormat {
-            case .some(.cd) where fmt.contains("cd"): score += 20
-            case .some(.vinyl) where fmt.contains("vinyl") || fmt.contains("lp"): score += 20
-            default: break
-            }
-        }
-        if let y = album.year, let ry = yearValue(r) {
-            if ry == y { score += 25 } else if abs(ry - y) <= 1 { score += 10 }
-        }
-        return score
-    }
-
-    private func releaseRow(_ release: MBReleaseCandidate) -> some View {
-        let isBest = release.id == bestReleaseID
-        return HStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 8) {
-                    if isBest {
-                        Text("★ BEST")
-                            .font(CarbonFont.mono(8, weight: .bold))
-                            .tracking(0.5)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1.5)
-                            .background(theme.orange)
-                            .foregroundColor(.white)
-                            .cornerRadius(3)
-                            .carbonTip("Closest match to this album's title, format and year")
-                    }
-                    Text(release.title)
-                        .font(CarbonFont.sans(12, weight: .bold))
-                        .foregroundStyle(theme.ink)
-                    if let format = release.format {
-                        Text(format.uppercased())
-                            .font(CarbonFont.mono(8, weight: .bold))
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 1.5)
-                            .background(theme.orange.opacity(0.15))
-                            .foregroundColor(theme.orange)
-                            .cornerRadius(3)
-                    }
-                    if let status = release.status, status != "Official" {
-                        Text(status.uppercased())
-                            .font(CarbonFont.mono(8, weight: .bold))
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 1.5)
-                            .background(theme.ink4.opacity(0.15))
-                            .foregroundColor(theme.ink3)
-                            .cornerRadius(3)
-                    }
-                }
-                
-                HStack(spacing: 12) {
-                    if let date = release.date {
-                        Text(date)
-                            .font(CarbonFont.mono(9, weight: .medium))
-                            .foregroundStyle(theme.ink3)
-                    }
-                    if let country = release.country {
-                        Text("Country: \(country)")
-                            .font(CarbonFont.mono(9, weight: .medium))
-                            .foregroundStyle(theme.ink3)
-                    }
-                    if let tracks = release.trackCount {
-                        Text("\(tracks) Tracks")
-                            .font(CarbonFont.mono(9, weight: .medium))
-                            .foregroundStyle(theme.ink3)
-                    }
-                    if let barcode = release.barcode {
-                        Text("Barcode: \(barcode)")
-                            .font(CarbonFont.mono(9, weight: .medium))
-                            .foregroundStyle(theme.ink4)
-                    }
-                }
-                
-                if let disambiguation = release.disambiguation {
-                    Text(disambiguation)
-                        .font(CarbonFont.sans(9.5, weight: .regular))
-                        .foregroundStyle(theme.ink3)
-                        .italic()
-                }
-            }
-            
-            Spacer()
-
-            if release.id == rememberedReleaseID {
-                Text("USED")
-                    .font(CarbonFont.mono(7.5, weight: .bold))
-                    .tracking(0.8)
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 1.5)
-                    .background(Capsule().fill(theme.cyan))
-                    .carbonTip("This album's artwork already came from this release.")
-            }
-
-            coverSizeBadge(release)
-            imageCountBadge(release)
-
-            KeyButton(style: .normal, action: {
-                loadReleaseArtwork(release)
-            }) {
-                Text("GET ARTWORK")
-            }
-            .frame(width: 96, height: 22)
-        }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 10)
-        .background(isBest ? theme.orange.opacity(0.06) : Color.clear)
-        // Probe the CAA image count only once this row is on screen (LazyVStack)
-        // — a full result set would otherwise fire 30 requests up front.
-        .task(id: release.id) {
-            guard !imageCounts.keys.contains(release.id) else { return }
-            let count = await model.remoteArtworkService.coverArtImageCount(releaseMBID: release.id)
-            imageCounts[release.id] = count
-            await probeCover(release.id)
+            guard !Task.isCancelled else { return }
+            counting = false
         }
     }
 
     /// The front cover's true pixel size, straight off the archive's `/front`
-    /// redirect — a header read, not a download, so a whole result set costs
-    /// about as much as the count probes already do.
-    private func probeCover(_ releaseID: String) async {
-        guard !coverSizes.keys.contains(releaseID),
-              let url = URL(string: "https://coverartarchive.org/release/\(releaseID)/front")
+    /// redirect: a header read, not a download. The service caps how many run
+    /// at once and remembers failures briefly, so rows scrolling past don't
+    /// pile up requests.
+    private func probeFront(_ releaseID: String) async {
+        guard frontSizes[releaseID] == nil,
+              let size = await model.remoteArtworkService.frontCoverDimensions(releaseMBID: releaseID)
         else { return }
-        let size = await model.remoteArtworkService.probeDimensions(of: url)
-        coverSizes[releaseID] = size
+        frontSizes[releaseID] = size
     }
 
-    /// Sorting by art needs every row measured, not just the visible ones.
-    private func probeAllCovers() {
-        let pending = displayedReleases.map(\.id).filter { !coverSizes.keys.contains($0) }
+    /// BEST ART sorts on the front's size, so it needs every front measured,
+    /// not just the rows on screen. Only releases MusicBrainz says have a
+    /// front are asked about.
+    private func probeAllFronts() {
+        let pending = mbReleases.map(\.id).filter { id in
+            frontSizes[id] == nil && coverArtCounts[id]?.summary.map { $0.hasFront && !$0.darkened } == true
+        }
         guard !pending.isEmpty else { return }
-        Task {
+        frontProbeTask?.cancel()
+        frontProbeTask = Task {
             await withTaskGroup(of: Void.self) { group in
-                for id in pending { group.addTask { await probeCover(id) } }
+                for id in pending { group.addTask { await probeFront(id) } }
             }
-        }
-    }
-
-    /// The front cover's size, once known. "HD" reads faster than the numbers
-    /// when you're scanning a list for the one worth opening.
-    @ViewBuilder
-    private func coverSizeBadge(_ release: MBReleaseCandidate) -> some View {
-        if let probed = coverSizes[release.id], let size = probed {
-            let isHiRes = size.longEdge >= 1000
-            Text(isHiRes ? "HD" : "\(size.longEdge)px")
-                .font(CarbonFont.mono(7.5, weight: .bold))
-                .tracking(0.5)
-                .foregroundColor(.white)
-                .padding(.horizontal, 5)
-                .padding(.vertical, 1.5)
-                .background(Capsule().fill(isHiRes ? theme.cyan : theme.ink3))
-                .carbonTip("Front cover is \(size.width)×\(size.height) pixels")
-        }
-    }
-
-    /// "N IMAGES" per release so the user knows which edition is worth opening.
-    /// "…" while the probe is in flight; silent if the lookup failed.
-    @ViewBuilder
-    private func imageCountBadge(_ release: MBReleaseCandidate) -> some View {
-        if let probed = imageCounts[release.id] {
-            if let count = probed {
-                Text(count == 0 ? "NO IMAGES" : "\(count) IMAGE\(count == 1 ? "" : "S")")
-                    .font(CarbonFont.mono(8, weight: .bold))
-                    .tracking(0.5)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 1.5)
-                    .background(count == 0 ? theme.ink4.opacity(0.12) : theme.cyan.opacity(0.15))
-                    .foregroundColor(count == 0 ? theme.ink4 : theme.cyan)
-                    .cornerRadius(3)
-                    .carbonTip(count == 0
-                        ? "The Cover Art Archive has no scans for this release"
-                        : "Scans available in the Cover Art Archive")
-            }
-        } else {
-            Text("…")
-                .font(CarbonFont.mono(8, weight: .bold))
-                .foregroundStyle(theme.ink4)
         }
     }
 
     // Artwork grid section
     @ViewBuilder
     private var artworkGridSection: some View {
-        ZStack {
-            if loadingArt {
-                statusPanel(spinner: true, title: "Fetching scans",
-                            detail: "Reading this release from the Cover Art Archive.")
-            } else if let error = artError {
-                statusPanel(icon: "exclamationmark.triangle.fill", tint: theme.orange,
-                            title: "Nothing found", detail: error)
-            } else if caaImages.isEmpty {
-                statusPanel(icon: "photo.on.rectangle", title: "No scans",
-                            detail: "This release has no artwork on the Cover Art Archive.")
-            } else {
-                VStack(spacing: 0) {
-                    gridToolbar
-
-                    ScrollView {
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 140, maximum: 180), spacing: 16)], spacing: 16) {
-                            ForEach(displayedImages) { img in
-                                artworkCell(img)
-                            }
+        // Decided from both sources at once, so the grid never says "no scans"
+        // while one of them is still looking.
+        switch ArtworkGridStatus.resolve(imageCount: caaImages.count, archive: archiveLoad, discogs: discogsLoad) {
+        case .grid:
+            VStack(spacing: 0) {
+                gridToolbar
+                ScrollView {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 140, maximum: 180), spacing: 16)], spacing: 16) {
+                        ForEach(displayedImages) { img in
+                            artworkCell(img)
                         }
-                        .padding(18)
                     }
+                    .padding(18)
                 }
             }
+        case .loading(let detail):
+            statusPanel(spinner: true, title: "Fetching scans", detail: detail)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        case .empty(let detail):
+            statusPanel(icon: "photo.on.rectangle", title: "No scans", detail: detail)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        case .failed(let detail):
+            statusPanel(icon: "exclamationmark.triangle.fill", tint: theme.orange,
+                        title: "Couldn't fetch scans", detail: detail, retry: retrySelectedRelease)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    /// Source chips, the Discogs stage, and the selection controls. Discogs
-    /// results land in this same grid rather than a place of their own — they
-    /// are more scans of the pressing you already picked, not a second search.
+    /// Source chips, each source's progress, and the selection controls.
+    /// Discogs results land in this same grid rather than a place of their
+    /// own: they are more scans of the pressing you already picked, not a
+    /// second search.
     private var gridToolbar: some View {
         HStack(spacing: 8) {
             sourceChip(nil, label: "ALL", count: caaImages.count)
@@ -810,16 +664,10 @@ struct ArtworkSearchSheetView: View {
                            count: caaImages.filter { $0.source == source }.count)
             }
 
-            if loadingDiscogs {
-                HStack(spacing: 5) {
-                    ProgressView().controlSize(.mini)
-                    Text("DISCOGS…")
-                        .font(CarbonFont.mono(8, weight: .bold))
-                        .tracking(1)
-                        .foregroundStyle(theme.ink4)
-                }
-                .carbonTip("Looking this pressing up on Discogs — its scans will join the grid.")
-            }
+            sourceProgress("CAA", load: archiveLoad,
+                           loadingTip: "Reading this release from the Cover Art Archive. Its scans will join the grid.")
+            sourceProgress("DISCOGS", load: discogsLoad,
+                           loadingTip: "Looking this pressing up on Discogs. Its scans will join the grid.")
 
             KeyButton(style: .normal, action: addFilesFromDisk) {
                 HStack(spacing: 4) {
@@ -848,6 +696,37 @@ struct ArtworkSearchSheetView: View {
         .padding(.vertical, 8)
         .background(theme.chassisHi.opacity(0.3))
         .overlay(Rectangle().fill(Color.black.opacity(0.08)).frame(height: 1), alignment: .bottom)
+    }
+
+    /// A source still loading shows a spinner; one that failed says so and
+    /// offers another try, instead of quietly contributing nothing.
+    @ViewBuilder
+    private func sourceProgress(_ label: String, load: ArtworkSourceLoad, loadingTip: String) -> some View {
+        switch load {
+        case .loading:
+            HStack(spacing: 5) {
+                ProgressView().controlSize(.mini)
+                Text("\(label)…")
+                    .font(CarbonFont.mono(8, weight: .bold))
+                    .tracking(1)
+                    .foregroundStyle(theme.ink4)
+            }
+            .carbonTip(loadingTip)
+        case .failed(let message):
+            Button(action: retrySelectedRelease) {
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.clockwise").font(.system(size: 8, weight: .bold))
+                    Text("\(label) FAILED")
+                        .font(CarbonFont.mono(8, weight: .bold))
+                        .tracking(1)
+                }
+                .foregroundStyle(theme.orange)
+            }
+            .buttonStyle(.carbonHover)
+            .carbonTip("\(message) Click to try again.")
+        case .idle, .loaded:
+            EmptyView()
+        }
     }
 
     private func sourceChip(_ source: RemoteArtworkSource?, label: String, count: Int) -> some View {
@@ -880,30 +759,17 @@ struct ArtworkSearchSheetView: View {
         let isSelected = selectedImages.contains(img.id)
         return VStack(spacing: 6) {
             Button(action: { handleImageTap(img) }) {
-                AsyncImage(url: img.thumbnailURL) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(width: 130, height: 130)
-                            .clipped()
-                    case .failure:
-                        Rectangle()
-                            .fill(Color.gray.opacity(0.2))
-                            .frame(width: 130, height: 130)
-                            .overlay(
-                                Image(systemName: "photo")
-                                    .font(.system(size: 22))
-                                    .foregroundColor(.gray.opacity(0.55))
-                            )
-                    default:
-                        Rectangle()
-                            .fill(Color.gray.opacity(0.2))
-                            .frame(width: 130, height: 130)
-                            .overlay(ProgressView().controlSize(.small))
-                    }
+                ArtworkSearchImage(image: img, url: img.thumbnailURL, maxPixelSize: 300) {
+                    ProgressView().controlSize(.small)
+                } failure: {
+                    Image(systemName: "photo")
+                        .font(.system(size: 22))
+                        .foregroundColor(.gray.opacity(0.55))
                 }
+                .aspectRatio(contentMode: .fill)
+                .frame(width: 130, height: 130)
+                .background(Color.gray.opacity(0.2))
+                .clipped()
                 .cornerRadius(4)
                 .overlay(
                     RoundedRectangle(cornerRadius: 4)
@@ -920,12 +786,12 @@ struct ArtworkSearchSheetView: View {
                             .padding(.vertical, 1.5)
                             .background(Capsule().fill(theme.indigo.opacity(0.9)))
                             .padding(5)
-                            .carbonTip("Scan from Discogs. It holds far more of a physical release — back, labels, inserts — but doesn't say which is which, so pick the role yourself.")
+                            .carbonTip("Scan from Discogs. It holds far more of a physical release, like the back, labels and inserts, but doesn't say which is which, so pick the role yourself.")
                     }
                 }
                 .overlay(alignment: .bottomTrailing) {
                     if let size = imageDimensions[img.id] {
-                        let isHiRes = min(size.width, size.height) >= 1000
+                        let isHiRes = size.isHighResolution
                         Text(isHiRes ? "HD" : "\(size.width)×\(size.height)")
                             .font(CarbonFont.mono(7.5, weight: .bold))
                             .tracking(0.5)
@@ -934,7 +800,7 @@ struct ArtworkSearchSheetView: View {
                             .padding(.vertical, 1.5)
                             .background(Capsule().fill(isHiRes ? theme.cyan : Color.black.opacity(0.55)))
                             .padding(5)
-                            .carbonTip("Original is \(size.width)×\(size.height) pixels")
+                            .carbonTip("The original is \(size.width) × \(size.height) pixels")
                     }
                 }
             }
@@ -1104,7 +970,7 @@ struct ArtworkSearchSheetView: View {
                     Text("STAGE \(downloads.count) IMAGE\(downloads.count == 1 ? "" : "S")")
                 }
                 .frame(width: 140, height: geometry.keyHeight)
-                .help("Fetches in the background — carry on browsing, the ART tab shows the progress")
+                .help("Fetches in the background. Carry on browsing; the ART tab shows the progress.")
             }
         }
         .padding(14)
@@ -1126,7 +992,7 @@ struct ArtworkSearchSheetView: View {
         panel.allowsMultipleSelection = true
         panel.allowedContentTypes = [.image, .folder]
         panel.title = "Add artwork"
-        panel.message = "Pick images or a folder of scans. Roles are read from the filenames — "
+        panel.message = "Pick images or a folder of scans. Roles are read from the filenames; "
             + "anything unrecognised becomes a booklet page, or the cover if it's the only image."
         panel.prompt = "Add Artwork"
 
@@ -1190,122 +1056,159 @@ struct ArtworkSearchSheetView: View {
 
     // Actions
     private func executeSearch() {
+        searchTask?.cancel()
+        countTask?.cancel()
+        leaveGrid()
         searching = true
         mbReleases = []
         searchError = nil
-        selectedReleaseID = nil
-        caaImages = []
-        // New result set → drop filters that may no longer have matches.
+        searchedEmpty = false
+        counting = false
+        // New result set: drop filters that may no longer have matches, and
+        // counts for releases that are no longer listed. The service keeps
+        // its own cache, so a release that comes back is counted at once.
         mediaFilter = nil
         countryFilter = nil
-        
+        coverArtCounts = [:]
+
         let artist = artistQuery
         let albumTitle = albumQuery
-        
-        Task {
+        let service = model.remoteArtworkService
+        let opensRemembered = !didOpenRemembered
+        didOpenRemembered = true
+
+        searchTask = Task {
             do {
-                let results = try await model.remoteArtworkService.searchMusicBrainzReleases(
-                    artist: artist,
-                    album: albumTitle
-                )
-                await MainActor.run {
-                    self.mbReleases = results
-                    self.searching = false
-                    if results.isEmpty {
-                        self.searchError = "No releases found on MusicBrainz. Try adjusting artist or album name."
-                    }
-                    // Straight back to the pressing this album's art came from,
-                    // if it's still in the results. BACK TO RELEASES is one key
-                    // away when it isn't the one you want this time.
-                    if let remembered = self.rememberedReleaseID,
-                       let match = results.first(where: { $0.id == remembered }) {
-                        self.loadReleaseArtwork(match)
-                    }
+                let results = try await service.searchMusicBrainzReleases(artist: artist, album: albumTitle)
+                guard !Task.isCancelled else { return }
+                mbReleases = results
+                searching = false
+                searchedEmpty = results.isEmpty
+                startCounting(results)
+                // Straight back to the pressing this album's art came from,
+                // if it's still in the results. BACK TO RELEASES is one key
+                // away when it isn't the one you want this time.
+                if opensRemembered, let remembered = rememberedReleaseID,
+                   let match = results.first(where: { $0.id == remembered }) {
+                    loadReleaseArtwork(match)
                 }
             } catch {
-                await MainActor.run {
-                    self.searching = false
-                    self.searchError = error.localizedDescription
-                }
+                guard !Task.isCancelled else { return }
+                searching = false
+                searchError = error.localizedDescription
             }
         }
+    }
+
+    /// Back to the release list: stop whatever the grid was loading and drop
+    /// its images, selection and filter.
+    private func leaveGrid() {
+        loadTask?.cancel()
+        loadTask = nil
+        selectedReleaseID = nil
+        selectedReleaseTitle = ""
+        caaImages = []
+        imageDimensions = [:]
+        selectedImages = []
+        imageRoles = [:]
+        selectionAnchorID = nil
+        sourceFilter = nil
+        previewImage = nil
+        archiveLoad = .idle
+        discogsLoad = .idle
+    }
+
+    private func retrySelectedRelease() {
+        guard let id = selectedReleaseID, let release = mbReleases.first(where: { $0.id == id }) else { return }
+        loadReleaseArtwork(release)
     }
 
     private func loadReleaseArtwork(_ release: MBReleaseCandidate) {
+        leaveGrid()
         selectedReleaseID = release.id
         selectedReleaseTitle = release.title + (release.disambiguation.map { " (\($0))" } ?? "")
-        loadingArt = true
-        loadingDiscogs = includeDiscogs
-        caaImages = []
-        imageDimensions = [:]
-        artError = nil
-        selectedImages = []
-        imageRoles = [:]
-        sourceFilter = nil
+        archiveLoad = .loading
+        discogsLoad = includeDiscogs ? .loading : .idle
 
-        Task {
-            do {
-                let service = model.remoteArtworkService
-                // Settings can change the token between lookups.
-                await service.setDiscogsToken(PreferencesStore.shared.discogsToken)
+        let service = model.remoteArtworkService
+        let artist = artistQuery
+        let wantsDiscogs = includeDiscogs
+        let token = PreferencesStore.shared.discogsToken
 
-                // Two stages, not one call. Finding a release on Discogs can
-                // take several seconds (a MusicBrainz relation lookup, then a
-                // search, then the release itself), and the archive's images
-                // are usually one fast request away — so they go on screen
-                // straight away rather than behind the slower source.
-                let archive = try await service.fetchCoverArtArchiveImages(releaseMBID: release.id)
-                await MainActor.run {
-                    self.caaImages = archive
-                    self.loadingArt = false
-                }
-                await probeDimensions(for: archive, using: service)
-
-                // The whole candidate, not just its id: its barcode and year are
-                // what find this pressing on Discogs when MusicBrainz hasn't
-                // linked the two. A Discogs miss is not an error — the archive's
-                // images still stand on their own.
-                guard includeDiscogs else {
-                    await MainActor.run {
-                        if self.caaImages.isEmpty {
-                            self.artError = "The Cover Art Archive has no images for this release."
-                        }
-                    }
-                    return
-                }
-
-                let known = Set(archive.map(\.id))
-                let discogs = await service.discogsImages(for: release, artist: artistQuery)
-                    .filter { !known.contains($0.id) }
-                await MainActor.run {
-                    guard self.selectedReleaseID == release.id else { return }   // moved on already
-                    self.loadingDiscogs = false
-                    self.caaImages.append(contentsOf: discogs)
-                    if self.caaImages.isEmpty {
-                        self.artError = "Neither the Cover Art Archive nor Discogs has images for this release."
-                    }
-                }
-                await probeDimensions(for: discogs, using: service)
-            } catch {
-                await MainActor.run {
-                    self.loadingArt = false
-                    self.loadingDiscogs = false
-                    self.artError = error.localizedDescription
-                }
-            }
+        // Both sources at once, each landing as it answers. They used to run
+        // one after the other, so Discogs waited out archive.org's 10 to 20
+        // seconds, and an archive error skipped Discogs altogether.
+        loadTask = Task {
+            // Settings can change the token between lookups.
+            await service.setDiscogsToken(token)
+            async let archive: Void = loadArchive(release, using: service)
+            async let discogs: Void = wantsDiscogs ? loadDiscogs(release, artist: artist, using: service) : ()
+            _ = await (archive, discogs)
         }
     }
 
-    /// Header-only probes, in parallel — the grid fills its size badges in as
-    /// they land.
+    /// True while `release` is still the one on screen and this load hasn't
+    /// been superseded. Picking another release, BACK, or picking the same
+    /// one again all cancel the old load first.
+    private func isCurrent(_ release: MBReleaseCandidate) -> Bool {
+        !Task.isCancelled && selectedReleaseID == release.id
+    }
+
+    private func loadArchive(_ release: MBReleaseCandidate, using service: RemoteArtworkService) async {
+        do {
+            let images = try await service.fetchCoverArtArchiveImages(releaseMBID: release.id)
+            guard isCurrent(release) else { return }
+            // After any files from disk, ahead of any Discogs scans that got
+            // here first: the archive's images are typed and come first.
+            let known = Set(caaImages.map(\.id))
+            let fresh = images.filter { !known.contains($0.id) }
+            let insertAt = caaImages.firstIndex { $0.source == .discogs } ?? caaImages.count
+            caaImages.insert(contentsOf: fresh, at: insertAt)
+            archiveLoad = .loaded(count: images.count)
+            await probeDimensions(for: fresh, using: service)
+        } catch {
+            guard isCurrent(release) else { return }
+            archiveLoad = .failed(Self.archiveFailureMessage(error))
+        }
+    }
+
+    private func loadDiscogs(_ release: MBReleaseCandidate, artist: String,
+                             using service: RemoteArtworkService) async {
+        // The whole candidate, not just its id: its barcode and year are what
+        // find this pressing on Discogs when MusicBrainz hasn't linked the
+        // two. A Discogs miss is not an error; the archive's images still
+        // stand on their own.
+        let images = await service.discogsImages(for: release, artist: artist)
+        guard isCurrent(release) else { return }
+        let known = Set(caaImages.map(\.id))
+        let fresh = images.filter { !known.contains($0.id) }
+        caaImages.append(contentsOf: fresh)
+        discogsLoad = .loaded(count: images.count)
+        await probeDimensions(for: fresh, using: service)
+    }
+
+    /// The archive's failures in words a person can act on. A timeout is the
+    /// common one: the archive is served from archive.org, which can be slow.
+    private static func archiveFailureMessage(_ error: Error) -> String {
+        if case let RemoteArtworkService.FetchError.networkFailure(urlError) = error,
+           urlError.code == .timedOut {
+            return "The Cover Art Archive didn't answer in time. It is served from archive.org, which is sometimes slow."
+        }
+        return error.localizedDescription
+    }
+
+    /// Header-only probes; the service runs a few at a time, and the grid
+    /// fills its size badges in as they land. Stops when the load is
+    /// cancelled.
     private func probeDimensions(for images: [RemoteArtworkImage], using service: RemoteArtworkService) async {
+        let remote = images.filter { $0.source != .localFile }
         await withTaskGroup(of: (String, ArtworkDimensions?).self) { group in
-            for img in images {
+            for img in remote {
                 group.addTask { (img.id, await service.probeDimensions(of: img.imageURL)) }
             }
             for await (id, dimensions) in group {
-                guard let dimensions else { continue }
-                await MainActor.run { self.imageDimensions[id] = dimensions }
+                guard !Task.isCancelled else { return }
+                if let dimensions { imageDimensions[id] = dimensions }
             }
         }
     }
