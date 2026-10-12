@@ -3,23 +3,14 @@ import SwiftUI
 struct TransportCluster: View {
     @Environment(\.carbonGeometry) private var geometry
     @EnvironmentObject private var model: LibraryViewModel
-    var showsLocate: Bool = true
 
-    /// Keys either side of the PLAY dome. The footer centres the dome from
-    /// this, and the compact player sizes itself from it.
-    static func keyCounts(showsLocate: Bool) -> (left: Int, right: Int) {
-        (left: showsLocate ? 4 : 3, right: 3)
-    }
+    /// Keys either side of the PLAY dome. Equal, so the dome is the cluster's
+    /// own centre; the locate key that once made the left side longer lives
+    /// on the brand row now. The compact player sizes itself from this.
+    static let keysPerSide = 3
 
     var body: some View {
         HStack(alignment: .center, spacing: FooterMetrics.transportKeySpacing) {
-            if showsLocate {
-                transportButton(systemName: "scope", label: "Go to Current Song (⌘L)") {
-                    model.revealNowPlaying()
-                }
-                .disabled(model.nowPlayingTrack == nil)
-                .opacity(model.nowPlayingTrack == nil ? 0.45 : 1)
-            }
             toggleButton(systemName: "shuffle", on: model.shuffleEnabled, label: "Shuffle") {
                 model.toggleShuffle()
             }

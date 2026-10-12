@@ -25,7 +25,7 @@ struct CompactDeckView: View {
                     .frame(maxWidth: .infinity)
                     .frame(height: geometry.headerHeight)
                     .environment(\.oledScreenOverride, .nowPlaying)
-                FooterShell(showsLocate: false)
+                FooterShell()
                     .frame(height: geometry.footerHeight)
             }
         }
@@ -47,8 +47,8 @@ struct CompactDeckView: View {
         .padding(.top, HeaderKeyMetrics.topInset)
     }
 
-    /// pip.exit: the same switch as the brand block's Mini Player pip, the
-    /// other way — back to the whole console.
+    /// pip.exit: the same switch as the brand block's compact pip, the other
+    /// way — back to the whole console.
     private var expandKey: some View {
         Button {
             ClickPlayer.shared.play(.key)

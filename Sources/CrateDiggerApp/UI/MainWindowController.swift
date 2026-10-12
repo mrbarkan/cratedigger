@@ -19,6 +19,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private var layoutObserver: AnyCancellable?
     /// The compact plan's size limits, kept here for `windowWillResize`.
     private var compactLimits: (minimum: CGSize, maximum: CGSize)?
+    /// The status LED in the full layout's titlebar trailing corner.
+    private let ledAccessory = NSTitlebarAccessoryViewController()
+    /// The same LED for the compact layout, over the art column (see
+    /// `CompactDeckMetrics.statusLampCenterX`): the trailing corner would put
+    /// it on the display's glass. Built on first use.
+    private var compactLEDView: NSView?
 
     init() {
         let styleMask: NSWindow.StyleMask = [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView]
@@ -50,7 +56,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         // sits in the real titlebar strip at the same height as the buttons.
         // It is a button too (it steps the NOW matrix's animation), so it is
         // hosted in a view that keeps its clicks from becoming window drags.
-        let ledAccessory = NSTitlebarAccessoryViewController()
+        // Compact moves it over the art column (`placeStatusLED`).
         let ledView = TitlebarButtonHostingView(rootView: TitlebarStatusLED(model: hostingController.model))
         // Accessory layout uses the view's frame at add time — an unset frame
         // renders as zero-size (invisible LED).
@@ -440,6 +446,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     var isInFullScreen: Bool { window?.styleMask.contains(.fullScreen) ?? false }
 
     func toggleCompactPlayer() {
+        // The menu item is disabled in full screen; the brand-row key sends
+        // the same action unvalidated, so the refusal lives here too.
+        guard !isInFullScreen else { NSSound.beep(); return }
         showWindow(nil)
         hostingController.model.toggleCompactPlayer()
     }
@@ -492,6 +501,50 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             compactLimits = (plan.minimumSize, plan.maximumSize)
             window.setFrame(plan.frame, display: true, animate: animated)
         }
+        placeStatusLED()
+    }
+
+    /// Shows the status LED where the current layout has room for it: the
+    /// titlebar's trailing corner in full, over the art column in compact.
+    /// The compact lamp is a subview of the titlebar view itself (the traffic
+    /// lights' superview), so it shares their strip, their drag exemption and
+    /// their vertical centre exactly, whatever height this macOS gives the
+    /// titlebar. Re-run on every layout plan, which covers theme changes.
+    private func placeStatusLED() {
+        guard let window else { return }
+        let compact = layout == .compact
+        // The accessory's own `isHidden` only collapses its slot (animated,
+        // and not before the next titlebar layout); hiding the view is what
+        // takes the lamp off the glass at once.
+        ledAccessory.isHidden = compact
+        ledAccessory.view.isHidden = compact
+        guard compact else {
+            compactLEDView?.isHidden = true
+            return
+        }
+        guard let closeButton = window.standardWindowButton(.closeButton),
+              let titlebar = closeButton.superview else {
+            // No titlebar to sit in: drop the lamp rather than float it on the glass.
+            compactLEDView?.isHidden = true
+            return
+        }
+        let side = CompactDeckMetrics.statusLampHitSide
+        let led: NSView
+        if let existing = compactLEDView {
+            led = existing
+        } else {
+            led = TitlebarButtonHostingView(rootView: CompactTitlebarStatusLED(model: hostingController.model))
+            compactLEDView = led
+        }
+        if led.superview !== titlebar {
+            // AppKit can rebuild the titlebar view; follow it.
+            led.removeFromSuperview()
+            titlebar.addSubview(led)
+        }
+        let metrics = CompactDeckMetrics(geometry: activeGeometry())
+        let centerX = titlebar.convert(NSPoint(x: metrics.statusLampCenterX, y: 0), from: nil).x
+        led.frame = NSRect(x: centerX - side / 2, y: closeButton.frame.midY - side / 2, width: side, height: side)
+        led.isHidden = false
     }
 
     private func visibleFrame(for window: NSWindow) -> CGRect {
@@ -551,5 +604,19 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
         window.minSize = NSSize(width: plan.minimumSize.width, height: plan.minimumSize.height)
         window.setFrame(NSRect(origin: plan.frame.origin, size: plan.frame.size), display: true, animate: animated)
+    }
+}
+
+/// `TitlebarStatusLED` without its trailing-corner padding: just the 18 pt
+/// hit square, so the compact window can centre the lamp on a point. Hosted
+/// outside `CarbonRootView`'s environment, so it reads the appearance itself.
+private struct CompactTitlebarStatusLED: View {
+    @AppStorage(AppearanceMode.userDefaultsKey) private var appearanceModeRaw: String = AppearanceMode.system.rawValue
+    let model: LibraryViewModel
+
+    var body: some View {
+        StatusLED()
+            .environmentObject(model)
+            .carbonThemed(mode: AppearanceMode(rawValue: appearanceModeRaw) ?? .system)
     }
 }

@@ -24,10 +24,9 @@ struct CompactDeckMetrics: Equatable {
         rowHeight - HeaderKeyMetrics.topInset - HeaderKeyMetrics.brandRowHeight - HeaderKeyMetrics.rowGap
     }
 
-    /// The transport without the locate key.
+    /// The transport: three keys either side of the PLAY dome.
     var transportWidth: CGFloat {
-        let keys = TransportCluster.keyCounts(showsLocate: false)
-        let sideKeys = CGFloat(keys.left + keys.right)
+        let sideKeys = CGFloat(2 * TransportCluster.keysPerSide)
         return sideKeys * geometry.transportButtonSize
             + geometry.playButtonSize
             + sideKeys * FooterMetrics.transportKeySpacing
@@ -48,5 +47,21 @@ struct CompactDeckMetrics: Equatable {
 
     var minWindowWidth: CGFloat {
         2 * geometry.chassisInsetH + artSide + geometry.mainGap + footerMinWidth
+    }
+
+    /// `StatusLED`'s lamp, which is 9 pt across inside an 18 pt hit square.
+    static let statusLampDiameter: CGFloat = 9
+    static let statusLampHitSide: CGFloat = 18
+
+    /// Where the titlebar status LED's lamp is centred in compact, measured
+    /// in from the window's leading edge. The full layout puts the lamp in the
+    /// titlebar's trailing corner, above the logo column; compact has no
+    /// column there and the display runs out to the margin, so the corner
+    /// lamp would sit on the glass. Here it moves over the art column, the
+    /// traffic lights' opposite number across that column: in the titlebar
+    /// strip, level with them, its edge flush with the column's trailing
+    /// edge and so with the expand key under it.
+    var statusLampCenterX: CGFloat {
+        geometry.chassisInsetH + artSide - Self.statusLampDiameter / 2
     }
 }

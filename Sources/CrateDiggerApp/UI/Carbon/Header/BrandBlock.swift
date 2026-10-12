@@ -5,8 +5,8 @@ struct BrandBlock: View {
     @EnvironmentObject private var model: LibraryViewModel
 
     var body: some View {
-        // Brand column: brand-row (name → settings cog + mini-player pip at
-        // far right), then four full-width library keys. On the same grid as
+        // Brand column: brand-row (name → settings cog, locate key, and the
+        // compact-player pip at far right), then four full-width library keys. On the same grid as
         // the switcher column opposite (`HeaderKeyMetrics`): the row clears the
         // traffic lights, and the keys stretch so the last one meets the
         // OLED's bottom edge.
@@ -19,20 +19,34 @@ struct BrandBlock: View {
                 // its height. Same contract `KeyButton` already applies to
                 // every other themed label, and `BrandLockup` carries it.
                 //
-                // 11pt is what the shipped face fits beside both pips in a
-                // 156pt column. Widening `brandWidth` would buy a step, at the
-                // OLED's expense — not worth it for one point.
+                // 11pt is what the shipped face fits beside the three pips in
+                // a 156pt column, packed at 3pt rather than the row's 8pt.
+                // Widening `brandWidth` would buy room, at the OLED's expense.
                 BrandLockup(typeSize: 11)
                 Spacer(minLength: 0)
-                LibButton(style: .pip, title: "", systemImage: "gearshape",
-                          tip: "Settings") {
-                    // Same route the ⌘, menu item takes — up the responder chain to AppDelegate.
-                    NSApp.sendAction(Selector(("showPreferences:")), to: nil, from: nil)
-                }
-                // pip.enter here, pip.exit on the mini player: one switch, two ends.
-                LibButton(style: .pip, title: "", systemImage: "pip.enter",
-                          tip: "Mini player (⇧⌘M)") {
-                    NotificationCenter.default.post(name: NSNotification.Name("CrateDiggerShowMiniPlayer"), object: nil)
+                HStack(spacing: 3) {
+                    LibButton(style: .pip, title: "", systemImage: "gearshape",
+                              tip: "Settings") {
+                        // Same route the ⌘, menu item takes — up the responder chain to AppDelegate.
+                        NSApp.sendAction(Selector(("showPreferences:")), to: nil, from: nil)
+                    }
+                    // Go to Current Song: moved up from the transport, where it
+                    // was the one key that made the two sides of PLAY unequal.
+                    LibButton(style: .pip, title: "", systemImage: "scope",
+                              tip: "Go to Current Song (⌘L)") {
+                        model.revealNowPlaying()
+                    }
+                    .disabled(model.nowPlayingTrack == nil)
+                    .opacity(model.nowPlayingTrack == nil ? 0.45 : 1)
+                    // pip.enter here, pip.exit on the compact player's art column:
+                    // one switch, two ends, both at the column's trailing edge.
+                    // The Mini Player window stays on Window ▸ Mini Player (⇧⌘M).
+                    LibButton(style: .pip, title: "", systemImage: "pip.enter",
+                              tip: "Compact player (⌥⇧⌘M)") {
+                        // Same route as the menu item, so the window comes forward
+                        // and the full-screen refusal applies.
+                        NSApp.sendAction(Selector(("toggleCompactPlayer:")), to: nil, from: nil)
+                    }
                 }
             }
             .frame(height: HeaderKeyMetrics.brandRowHeight)
@@ -70,8 +84,8 @@ struct BrandBlock: View {
 
 /// Small metal-chrome control button. `.wide` fills its column left-aligned
 /// and takes the row height the header grid hands it (the 4-row library
-/// column); `.pip` is a compact 20pt icon-only chip (the mini-player button on
-/// the brand row). When `highlighted` it lights up amber (ADD TO CRATE when a
+/// column); `.pip` is a compact 20pt icon-only chip (settings, locate and the
+/// compact-player key on the brand row). When `highlighted` it lights up amber (ADD TO CRATE when a
 /// selection is ready).
 private enum LibButtonStyle { case normal, wide, pip }
 

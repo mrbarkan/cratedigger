@@ -14,11 +14,34 @@ final class CompactDeckMetricsTests: XCTestCase {
         XCTAssertEqual(m.minWindowWidth, 1174, accuracy: 0.001)  // 2×18 + 230 + 12 + 896
     }
 
-    func testLocateKeyIsTheOnlyAsymmetry() {
-        XCTAssertEqual(TransportCluster.keyCounts(showsLocate: true).left, 4)
-        XCTAssertEqual(TransportCluster.keyCounts(showsLocate: true).right, 3)
-        XCTAssertEqual(TransportCluster.keyCounts(showsLocate: false).left, 3)
-        XCTAssertEqual(TransportCluster.keyCounts(showsLocate: false).right, 3)
+    /// The titlebar LED's compact spot: flush with the art column's trailing
+    /// edge, and its whole hit square clear of the display, which starts one
+    /// `mainGap` further right. A theme that widens the gap or the margins
+    /// must not put the lamp back on the glass.
+    func testStatusLampSitsOverTheArtColumnClearOfTheDisplay() {
+        for geometry in [CarbonGeometry.standard, wideMarginGeometry()] {
+            let m = CompactDeckMetrics(geometry: geometry)
+            let artTrailing = geometry.chassisInsetH + m.artSide
+            let displayLeading = artTrailing + geometry.mainGap
+            XCTAssertEqual(m.statusLampCenterX + CompactDeckMetrics.statusLampDiameter / 2, artTrailing, accuracy: 0.001)
+            XCTAssertLessThanOrEqual(m.statusLampCenterX + CompactDeckMetrics.statusLampHitSide / 2, displayLeading)
+            XCTAssertGreaterThan(m.statusLampCenterX - CompactDeckMetrics.statusLampHitSide / 2, geometry.chassisInsetH)
+        }
+        XCTAssertEqual(CompactDeckMetrics(geometry: .standard).statusLampCenterX, 243.5, accuracy: 0.001) // 18 + 230 - 4.5
+    }
+
+    private func wideMarginGeometry() -> CarbonGeometry {
+        var geometry = CarbonGeometry.standard
+        geometry.chassisInsetH = 30
+        geometry.mainGap = 6
+        return geometry
+    }
+
+    /// The full footer and the compact one share one transport: no key
+    /// either side of PLAY that the other lacks, so the dome is centred
+    /// without padding.
+    func testTransportIsSymmetric() {
+        XCTAssertEqual(TransportCluster.keysPerSide, 3)
     }
 }
 #endif

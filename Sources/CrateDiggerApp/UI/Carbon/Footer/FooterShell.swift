@@ -20,9 +20,6 @@ struct FooterShell: View {
     @EnvironmentObject private var model: LibraryViewModel
     @Environment(\.carbon) private var theme
     @Environment(\.carbonGeometry) private var geometry
-    /// The locate key reveals the playing track in the browser; the compact
-    /// player has no browser, so it leaves the key out.
-    var showsLocate: Bool = true
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: geometry.wellCornerRadius, style: .continuous)
@@ -50,19 +47,12 @@ struct FooterShell: View {
             // of being pinned to the shelf's ends, where a wide window left
             // them stranded in bare chassis. The halves are equal, so both
             // pods grow into their half by the same amount, like a mixer's
-            // two faders. The transport itself is not symmetric though (see
-            // the trailing padding below), so it is the dome, not the
-            // cluster's own bounds, that lands dead centre.
+            // two faders, and the transport has as many keys either side of
+            // PLAY, so the dome lands dead centre with even gaps around it.
             HStack(alignment: .center, spacing: FooterMetrics.podGap) {
                 PositionDial(clock: model.playbackClock)
                     .frame(maxWidth: .infinity, alignment: .trailing)
-                TransportCluster(showsLocate: showsLocate)
-                    // PLAY lands dead centre when both sides of the dome are
-                    // the same width: pad the short side by the keys it lacks.
-                    // With the locate key there are four keys left of PLAY and
-                    // three right; without it (the compact player) the two
-                    // sides match and this is zero.
-                    .padding(.trailing, transportCentringPadding)
+                TransportCluster()
                 VolumeKnob(value: $model.playbackVolume)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -71,8 +61,4 @@ struct FooterShell: View {
         .compositingGroup()
     }
 
-    private var transportCentringPadding: CGFloat {
-        let keys = TransportCluster.keyCounts(showsLocate: showsLocate)
-        return CGFloat(keys.left - keys.right) * (geometry.transportButtonSize + FooterMetrics.transportKeySpacing)
-    }
 }
