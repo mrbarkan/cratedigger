@@ -1259,8 +1259,11 @@ private struct ConversionPane: View {
         [
             OLEDCellData(key: "Scope", value: scopeValue, sub: scopeSub),
             OLEDCellData(key: "Format", value: formatValue, sub: formatSub),
-            OLEDCellData(key: "Bitrate", value: bitrateValue, sub: "kbps · CBR"),
-            OLEDCellData(key: "Sample", value: sampleValue + " kHz", sub: "16-bit"),
+            // Lossless has no bitrate to show; its resolution is the depth.
+            model.isLosslessSelectedFormat
+                ? OLEDCellData(key: "Depth", value: depthValue, sub: depthSub)
+                : OLEDCellData(key: "Bitrate", value: bitrateValue, sub: "kbps"),
+            OLEDCellData(key: "Sample", value: sampleValue, sub: sampleSub),
             OLEDCellData(key: "Output", value: outputValue, sub: outputSub)
         ]
     }
@@ -1329,15 +1332,32 @@ private struct ConversionPane: View {
         }
     }
 
+    /// What will actually be encoded, not what the selection remembers for
+    /// knobs this format ignores.
+    private var encoding: AudioEncodingSettings { model.conversionSelection.encoding.normalized() }
+
     private var bitrateValue: String {
-        if model.isLosslessSelectedFormat { return "—" }
-        return "\(model.conversionSelection.bitrate ?? 192)"
+        "\(encoding.bitrateKbps ?? OutputFormat.defaultBitrateKbps)"
+    }
+
+    private var depthValue: String {
+        encoding.bitDepth.map { "\($0)-bit" } ?? "SOURCE"
+    }
+
+    private var depthSub: String {
+        guard let level = encoding.flacCompressionLevel else { return "Lossless" }
+        return "Lossless · Level \(level)"
     }
 
     private var sampleValue: String {
-        let hz = model.conversionSelection.sampleRate ?? 44_100
-        if hz % 1000 == 0 { return "\(hz / 1000)" }
-        return String(format: "%.1f", Double(hz) / 1000.0)
+        guard let hz = encoding.sampleRateHz ?? encoding.format.fixedSampleRateHz else { return "SOURCE" }
+        if hz % 1000 == 0 { return "\(hz / 1000) kHz" }
+        return String(format: "%.1f kHz", Double(hz) / 1000.0)
+    }
+
+    private var sampleSub: String {
+        if encoding.sampleRateHz != nil { return "Output rate" }
+        return encoding.format.fixedSampleRateHz == nil ? "Kept per file" : "Opus native"
     }
 
     private var outputValue: String {
@@ -1953,11 +1973,11 @@ private struct DubPane: View {
     }
 
     private var outputSub: String {
-        let format = model.conversionSelection.outputFormat
-        if !format.isLossless, let bitrate = model.conversionSelection.bitrate {
+        let encoding = model.conversionSelection.encoding.normalized()
+        if let bitrate = encoding.bitrateKbps {
             return "\(bitrate) kbps"
         }
-        return format.isLossless ? "Lossless" : "Lossy"
+        return encoding.bitDepth.map { "Lossless · \($0)-bit" } ?? "Lossless"
     }
 
     /// The real destination, not a hardcoded "~/Music/CrateDigger Library/".

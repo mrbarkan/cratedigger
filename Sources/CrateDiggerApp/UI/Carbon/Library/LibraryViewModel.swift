@@ -2534,6 +2534,8 @@ final class LibraryViewModel: ObservableObject {
     func requestCDRip(_ info: AudioCDInfo) {
         guard !isConversionRunning else { return showOLEDNotice("BUSY") }
         clearPendingDeviceConversion()
+        // A disc in the drive is a CD whatever the cockpit last ripped.
+        conversionSelection.setMedium(.cd)
         oledView = .conversion
         pendingCDRip = info
     }
@@ -3206,10 +3208,15 @@ final class LibraryViewModel: ObservableObject {
         conversionQueueTracks.reduce(0) { $0 + $1.track.durationSeconds }
     }
 
+    /// Per track, because a lossless output's size follows each source's own
+    /// sample rate when the settings keep it.
     var conversionEstimatedOutputBytes: Int64 {
-        let bitrate = conversionSelection.bitrate ?? 192
-        let effective = isLosslessSelectedFormat ? bitrate * 5 : bitrate
-        return Int64(conversionQueueDurationSeconds * Double(effective) * 1000.0 / 8.0)
+        let encoding = conversionSelection.encoding
+        let bits = conversionQueueTracks.reduce(0.0) { total, loaded in
+            let kbps = encoding.estimatedKbps(sourceSampleRateHz: loaded.track.sampleRateHz)
+            return total + loaded.track.durationSeconds * kbps * 1000.0
+        }
+        return Int64(bits / 8.0)
     }
 
     var isLosslessSelectedFormat: Bool { conversionSelection.outputFormat.isLossless }

@@ -9,6 +9,8 @@ struct ConversionOptionsSheetView: View {
     let bitrateOptions: [Int]
     let sampleRateOptions: [Int]
     let onDecision: (ConversionOptionsSelection?) -> Void
+    /// This sheet has no depth or FLAC level controls; carry the Patch Bay's.
+    private let initialSelection: ConversionOptionsSelection
 
     @State private var batchScope: ConversionBatchScope
     @State private var outputFormat: OutputFormat
@@ -31,6 +33,7 @@ struct ConversionOptionsSheetView: View {
         self.bitrateOptions = bitrateOptions
         self.sampleRateOptions = sampleRateOptions
         self.onDecision = onDecision
+        self.initialSelection = initialSelection
 
         _batchScope = State(initialValue: initialSelection.batchScope)
         _outputFormat = State(initialValue: initialSelection.outputFormat)
@@ -148,16 +151,18 @@ struct ConversionOptionsSheetView: View {
                     .tint(theme.orange)
                 }
 
-                field(title: "Bitrate") {
-                    Picker("Bitrate", selection: $bitrateTag) {
-                        ForEach(bitrateOptions, id: \.self) { option in
-                            Text(option < 0 ? "Auto" : "\(option) kbps").tag(option)
+                // Lossless formats have no bitrate to choose.
+                if !outputFormat.isLossless {
+                    field(title: "Bitrate") {
+                        Picker("Bitrate", selection: $bitrateTag) {
+                            ForEach(bitrateOptions, id: \.self) { option in
+                                Text(option < 0 ? "Auto" : "\(option) kbps").tag(option)
+                            }
                         }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .tint(theme.orange)
                     }
-                    .pickerStyle(.menu)
-                    .labelsHidden()
-                    .tint(theme.orange)
-                    .disabled(outputFormat.isLossless)
                 }
 
                 field(title: "Sample Rate") {
@@ -263,7 +268,7 @@ struct ConversionOptionsSheetView: View {
     }
 
     private func buildSelection() -> ConversionOptionsSelection {
-        ConversionOptionsSelection(
+        var selection = ConversionOptionsSelection(
             batchScope: batchScope,
             outputFormat: outputFormat,
             bitrate: bitrateTag > 0 ? bitrateTag : nil,
@@ -274,6 +279,9 @@ struct ConversionOptionsSheetView: View {
             templatePreset: templatePreset,
             tokenOrder: FolderTokenOrder.normalize(tokenOrder)
         )
+        selection.bitDepth = initialSelection.bitDepth
+        selection.flacCompressionLevel = initialSelection.flacCompressionLevel
+        return selection
     }
 
     @ViewBuilder

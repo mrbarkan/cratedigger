@@ -53,6 +53,12 @@ struct ConversionOptionsSelection: Codable {
     var outputFormat: OutputFormat
     var bitrate: Int?
     var sampleRate: Int?
+    /// Lossless output depth; nil keeps the source's. See `AudioEncodingSettings`.
+    var bitDepth: Int? = nil
+    /// FLAC's 0–8 speed/size dial; nil is ffmpeg's default.
+    var flacCompressionLevel: Int? = nil
+    /// The physical source the TIER keys encode for. See `PhysicalMedium`.
+    var medium: PhysicalMedium = .anySource
     /// How album art is carried into the output. Previously inferred from
     /// whether `artworkMaxDimension` was set, which made "keep the original art
     /// but cap its size" and "drop the art" impossible to express.
@@ -77,6 +83,9 @@ extension ConversionOptionsSelection {
         outputFormat = try c.decode(OutputFormat.self, forKey: .outputFormat)
         bitrate = try c.decodeIfPresent(Int.self, forKey: .bitrate)
         sampleRate = try c.decodeIfPresent(Int.self, forKey: .sampleRate)
+        bitDepth = try c.decodeIfPresent(Int.self, forKey: .bitDepth)
+        flacCompressionLevel = try c.decodeIfPresent(Int.self, forKey: .flacCompressionLevel)
+        medium = (try? c.decodeIfPresent(PhysicalMedium.self, forKey: .medium)) ?? .anySource
         artworkMaxDimension = try c.decodeIfPresent(Int.self, forKey: .artworkMaxDimension)
         // Selections saved before the mode existed encoded it in the dimension.
         artworkMode = try c.decodeIfPresent(ArtworkMode.self, forKey: .artworkMode)
@@ -86,6 +95,46 @@ extension ConversionOptionsSelection {
         templatePreset = try c.decode(TemplatePreset.self, forKey: .templatePreset)
         tokenOrder = try c.decode([FolderToken].self, forKey: .tokenOrder)
         separators = try c.decodeIfPresent([FolderSeparator].self, forKey: .separators) ?? []
+    }
+
+    /// The audio settings as Core sees them. Raw, not normalized: the
+    /// selection keeps what you last picked for knobs the current format
+    /// ignores, so switching formats and back doesn't reset them. Read
+    /// `encoding.normalized()` for what will actually be encoded.
+    var encoding: AudioEncodingSettings {
+        get {
+            AudioEncodingSettings(
+                format: outputFormat,
+                bitrateKbps: bitrate,
+                sampleRateHz: sampleRate,
+                bitDepth: bitDepth,
+                flacCompressionLevel: flacCompressionLevel
+            )
+        }
+        set {
+            outputFormat = newValue.format
+            bitrate = newValue.bitrateKbps
+            sampleRate = newValue.sampleRateHz
+            bitDepth = newValue.bitDepth
+            flacCompressionLevel = newValue.flacCompressionLevel
+        }
+    }
+
+    /// The TIER key that describes the current settings, if any.
+    var tier: RipTier? { RipTier.matching(encoding, medium: medium) }
+
+    /// Writes a tier's audio settings for the current medium, leaving scope,
+    /// folders and artwork alone.
+    mutating func apply(_ tier: RipTier) {
+        encoding = tier.settings(for: medium, keeping: encoding)
+    }
+
+    /// Switches the medium, carrying a lit tier across: CD Lossless becomes
+    /// SACD Lossless, not CD-resolution audio labelled SACD.
+    mutating func setMedium(_ newMedium: PhysicalMedium) {
+        let lit = tier
+        medium = newMedium
+        if let lit { apply(lit) }
     }
 }
 

@@ -58,6 +58,11 @@ public struct ConversionPreset: Identifiable, Hashable, Sendable {
     public let tagMode: TagMode
     public let artworkMode: ArtworkMode
     public let artworkMaxDimension: Int?
+    /// Output bit depth for lossless formats; `nil` keeps the source's (FLAC,
+    /// ALAC) or the format's 16-bit default (WAV, AIFF). Ignored when lossy.
+    public let bitDepth: Int?
+    /// FLAC's 0–8 speed/size dial; `nil` leaves ffmpeg's default (5).
+    public let flacCompressionLevel: Int?
 
     public init(
         id: String,
@@ -70,7 +75,9 @@ public struct ConversionPreset: Identifiable, Hashable, Sendable {
         deviceProfile: DeviceProfile = .generic,
         tagMode: TagMode = .auto,
         artworkMode: ArtworkMode = .compatReembed,
-        artworkMaxDimension: Int? = nil
+        artworkMaxDimension: Int? = nil,
+        bitDepth: Int? = nil,
+        flacCompressionLevel: Int? = nil
     ) {
         self.id = id
         self.name = name
@@ -83,6 +90,8 @@ public struct ConversionPreset: Identifiable, Hashable, Sendable {
         self.tagMode = tagMode
         self.artworkMode = artworkMode
         self.artworkMaxDimension = artworkMaxDimension
+        self.bitDepth = bitDepth
+        self.flacCompressionLevel = flacCompressionLevel
     }
 
     public var outputExtension: String {

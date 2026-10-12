@@ -159,8 +159,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let controller = ConversionOptionsSheetController(
             initialSelection: model.makeInitialConversionSelection(),
             outputFormats: OutputFormat.allCases,
-            bitrateOptions: [128, 160, 192, 256, 320],
-            sampleRateOptions: [44_100, 48_000, 88_200, 96_000]
+            // The Patch Bay's own lists, so a value picked there (96 kbps)
+            // isn't a blank picker here. -1 is the sheet's "Source" tag.
+            bitrateOptions: OutputFormat.bitrateOptions,
+            sampleRateOptions: [-1, 44_100, 48_000, 88_200, 96_000]
         )
         controller.onDecision = { [weak controller, weak model] selection in
             controller?.dismiss(nil)

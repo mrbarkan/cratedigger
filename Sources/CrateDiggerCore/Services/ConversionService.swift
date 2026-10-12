@@ -552,26 +552,54 @@ public final class ConversionService {
     }
 
     private func applyCodecArguments(to arguments: inout [String], preset: ConversionPreset) {
-        switch preset.outputFormat {
+        let format = preset.outputFormat
+        let bitDepth = format.isLossless ? preset.bitDepth : nil
+
+        switch format {
         case .mp3:
             arguments.append(contentsOf: ["-c:a", "libmp3lame"])
         case .aac:
             arguments.append(contentsOf: ["-c:a", "aac", "-profile:a", "aac_low"])
         case .alac:
             arguments.append(contentsOf: ["-c:a", "alac"])
+            // The ALAC encoder reads its depth off the planar sample format:
+            // s32p is written as 24-bit. Without one it follows the source.
+            switch bitDepth {
+            case 16: arguments.append(contentsOf: ["-sample_fmt", "s16p"])
+            case 24: arguments.append(contentsOf: ["-sample_fmt", "s32p"])
+            default: break
+            }
         case .flac:
             arguments.append(contentsOf: ["-c:a", "flac"])
+            switch bitDepth {
+            case 16: arguments.append(contentsOf: ["-sample_fmt", "s16"])
+            case 24: arguments.append(contentsOf: ["-sample_fmt", "s32", "-bits_per_raw_sample", "24"])
+            default: break
+            }
+            if let level = preset.flacCompressionLevel {
+                arguments.append(contentsOf: ["-compression_level", "\(level)"])
+            }
         case .wav:
-            arguments.append(contentsOf: ["-c:a", "pcm_s16le"])
+            arguments.append(contentsOf: ["-c:a", bitDepth == 24 ? "pcm_s24le" : "pcm_s16le"])
         case .aiff:
-            arguments.append(contentsOf: ["-c:a", "pcm_s16be"])
+            arguments.append(contentsOf: ["-c:a", bitDepth == 24 ? "pcm_s24be" : "pcm_s16be"])
         case .ogg:
             arguments.append(contentsOf: ["-c:a", "libvorbis"])
         case .opus:
             arguments.append(contentsOf: ["-c:a", "libopus"])
         }
 
-        if let bitrate = preset.bitrateKbps {
+        // Cutting 24-bit audio down to 16 truncates by default; dither turns
+        // the quantization error into benign noise instead. swresample only
+        // applies it when it actually reduces the sample format, so a 16-bit
+        // source passes through untouched.
+        if bitDepth == 16 {
+            arguments.append(contentsOf: ["-dither_method", "triangular"])
+        }
+
+        // A lossless encoder has no bitrate to set; passing one is ignored at
+        // best, so it is never sent.
+        if format.usesBitrate, let bitrate = preset.bitrateKbps {
             arguments.append(contentsOf: ["-b:a", "\(bitrate)k"])
         }
 
@@ -579,7 +607,9 @@ public final class ConversionService {
             arguments.append(contentsOf: ["-write_xing", "0"])
         }
 
-        if let sampleRateHz = preset.sampleRateHz {
+        // libopus only accepts 48 kHz (and lower speech rates): asking it for
+        // 44.1 kHz fails the whole job, so Opus always lets ffmpeg choose.
+        if let sampleRateHz = preset.sampleRateHz, format != .opus {
             arguments.append(contentsOf: ["-ar", "\(sampleRateHz)"])
         }
 
@@ -747,7 +777,9 @@ public final class ConversionService {
                 deviceProfile: overrideDeviceProfile,
                 tagMode: preset.tagMode,
                 artworkMode: preset.artworkMode,
-                artworkMaxDimension: preset.artworkMaxDimension
+                artworkMaxDimension: preset.artworkMaxDimension,
+                bitDepth: preset.bitDepth,
+                flacCompressionLevel: preset.flacCompressionLevel
             )
         }
 

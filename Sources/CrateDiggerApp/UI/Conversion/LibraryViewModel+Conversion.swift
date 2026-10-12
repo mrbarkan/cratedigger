@@ -562,19 +562,23 @@ extension LibraryViewModel {
     }
 
     func makeAdHocPreset(from selection: ConversionOptionsSelection) -> ConversionPreset {
-        let bitrate = selection.outputFormat.isLossless ? nil : selection.bitrate
+        // Normalized, so a knob the format ignores (a bitrate under FLAC, a
+        // 44.1 kHz rate under Opus) never reaches ffmpeg.
+        let encoding = selection.encoding.normalized()
         return ConversionPreset(
-            id: "user_\(selection.outputFormat.rawValue)_\(bitrate ?? 0)",
+            id: "user_\(encoding.format.rawValue)_\(encoding.bitrateKbps ?? 0)",
             name: "User selection",
-            outputFormat: selection.outputFormat,
-            bitrateKbps: bitrate,
-            sampleRateHz: selection.sampleRate,
+            outputFormat: encoding.format,
+            bitrateKbps: encoding.bitrateKbps,
+            sampleRateHz: encoding.sampleRateHz,
             channels: nil,
             constantBitrate: false,
             deviceProfile: .generic,
             tagMode: .auto,
             artworkMode: selection.artworkMode,
-            artworkMaxDimension: selection.artworkMaxDimension
+            artworkMaxDimension: selection.artworkMaxDimension,
+            bitDepth: encoding.bitDepth,
+            flacCompressionLevel: encoding.flacCompressionLevel
         )
     }
 

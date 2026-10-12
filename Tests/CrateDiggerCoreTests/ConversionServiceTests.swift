@@ -645,6 +645,80 @@ final class ConversionServiceTests: XCTestCase {
         XCTAssertFalse(args.contains("-t"))
     }
 
+    // MARK: - Lossless depth, FLAC level, Opus rate
+
+    private func codecArguments(for preset: ConversionPreset, output: String) throws -> [String] {
+        let service = try makeService(artworkPreparer: PassThroughArtworkPreparer(), presets: [preset])
+        let sourceURL = temporaryDirectory.appendingPathComponent("source.wav")
+        let outputURL = temporaryDirectory.appendingPathComponent(output)
+        let queued = try service.enqueue([ConversionJob(sourceURL: sourceURL, destinationURL: outputURL)], presetID: preset.id).first!
+        return try service.preparedCommand(for: queued).arguments
+    }
+
+    func testLosslessNeverSendsABitrate() throws {
+        let preset = ConversionPreset(id: "t", name: "t", outputFormat: .flac, bitrateKbps: 320, sampleRateHz: nil, channels: nil)
+        let args = try codecArguments(for: preset, output: "out.flac")
+        XCTAssertFalse(args.contains("-b:a"))
+    }
+
+    func testFLACSourceResolutionLeavesSampleFormatAndRateAlone() throws {
+        let preset = ConversionPreset(id: "t", name: "t", outputFormat: .flac, bitrateKbps: nil, sampleRateHz: nil, channels: nil,
+                                      flacCompressionLevel: 8)
+        let args = try codecArguments(for: preset, output: "out.flac")
+        XCTAssertFalse(args.contains("-sample_fmt"))
+        XCTAssertFalse(args.contains("-ar"))
+        XCTAssertTrue(argumentPairs(args).contains(ArgPair(flag: "-compression_level", value: "8")))
+    }
+
+    func testFLAC16BitIsDithered() throws {
+        let preset = ConversionPreset(id: "t", name: "t", outputFormat: .flac, bitrateKbps: nil, sampleRateHz: 44_100, channels: nil,
+                                      bitDepth: 16)
+        let pairs = argumentPairs(try codecArguments(for: preset, output: "out.flac"))
+        XCTAssertTrue(pairs.contains(ArgPair(flag: "-sample_fmt", value: "s16")))
+        XCTAssertTrue(pairs.contains(ArgPair(flag: "-dither_method", value: "triangular")))
+        XCTAssertTrue(pairs.contains(ArgPair(flag: "-ar", value: "44100")))
+    }
+
+    func testFLAC24BitWritesA24BitStream() throws {
+        let preset = ConversionPreset(id: "t", name: "t", outputFormat: .flac, bitrateKbps: nil, sampleRateHz: nil, channels: nil,
+                                      bitDepth: 24)
+        let args = try codecArguments(for: preset, output: "out.flac")
+        let pairs = argumentPairs(args)
+        XCTAssertTrue(pairs.contains(ArgPair(flag: "-sample_fmt", value: "s32")))
+        XCTAssertTrue(pairs.contains(ArgPair(flag: "-bits_per_raw_sample", value: "24")))
+        XCTAssertFalse(args.contains("-dither_method"))
+    }
+
+    func testALACDepthUsesPlanarSampleFormats() throws {
+        let sixteen = ConversionPreset(id: "a16", name: "t", outputFormat: .alac, bitrateKbps: nil, sampleRateHz: nil, channels: nil, bitDepth: 16)
+        let twentyFour = ConversionPreset(id: "a24", name: "t", outputFormat: .alac, bitrateKbps: nil, sampleRateHz: nil, channels: nil, bitDepth: 24)
+        XCTAssertTrue(argumentPairs(try codecArguments(for: sixteen, output: "a.m4a")).contains(ArgPair(flag: "-sample_fmt", value: "s16p")))
+        XCTAssertTrue(argumentPairs(try codecArguments(for: twentyFour, output: "b.m4a")).contains(ArgPair(flag: "-sample_fmt", value: "s32p")))
+    }
+
+    func testPCMDepthPicksTheCodec() throws {
+        let wav24 = ConversionPreset(id: "w", name: "t", outputFormat: .wav, bitrateKbps: nil, sampleRateHz: nil, channels: nil, bitDepth: 24)
+        let aiff16 = ConversionPreset(id: "a", name: "t", outputFormat: .aiff, bitrateKbps: nil, sampleRateHz: nil, channels: nil)
+        XCTAssertTrue(argumentPairs(try codecArguments(for: wav24, output: "o.wav")).contains(ArgPair(flag: "-c:a", value: "pcm_s24le")))
+        XCTAssertTrue(argumentPairs(try codecArguments(for: aiff16, output: "o.aiff")).contains(ArgPair(flag: "-c:a", value: "pcm_s16be")))
+    }
+
+    /// Regression: libopus rejects 44.1 kHz ("Specified sample rate 44100 is
+    /// not supported") and the Patch Bay defaulted to it, so Opus failed.
+    func testOpusNeverPassesASampleRate() throws {
+        let preset = ConversionPreset(id: "t", name: "t", outputFormat: .opus, bitrateKbps: 160, sampleRateHz: 44_100, channels: nil)
+        let args = try codecArguments(for: preset, output: "out.opus")
+        XCTAssertFalse(args.contains("-ar"))
+        XCTAssertTrue(argumentPairs(args).contains(ArgPair(flag: "-b:a", value: "160k")))
+    }
+
+    func testLossyIgnoresBitDepth() throws {
+        let preset = ConversionPreset(id: "t", name: "t", outputFormat: .aac, bitrateKbps: 256, sampleRateHz: 44_100, channels: nil, bitDepth: 16)
+        let args = try codecArguments(for: preset, output: "out.m4a")
+        XCTAssertFalse(args.contains("-sample_fmt"))
+        XCTAssertFalse(args.contains("-dither_method"))
+    }
+
     private func makeService(
         artworkPreparer: ArtworkPreparing,
         presets: [ConversionPreset] = ConversionPreset.defaultPresets,

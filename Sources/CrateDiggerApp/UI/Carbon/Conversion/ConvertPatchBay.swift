@@ -85,9 +85,25 @@ struct ConvertPatchBay: View {
         case .settings:
             scopeRow
             presetChipRow
+            mediumRow
+            tierRow
             formatRow
-            bitrateRow
-            sampleRow
+            // Only the knobs this format has. A lossless encoder has no
+            // bitrate (its size is whatever the audio compresses to), so the
+            // row it would take shows the bit depth instead.
+            Group {
+                if encoding.format.usesBitrate {
+                    bitrateRow
+                } else {
+                    depthRow
+                }
+                if !encoding.format.compressionLevelOptions.isEmpty {
+                    levelRow
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+                sampleRow
+            }
+            .animation(.easeInOut(duration: 0.18), value: encoding.format)
             layoutRow
             // PATTERN is CUSTOM's editor. It used to sit there dimmed and dead
             // in every other mode, taking a row's height to say nothing.
@@ -277,6 +293,105 @@ struct ConvertPatchBay: View {
         }
     }
 
+    /// What will be encoded: the selection with every knob the format
+    /// ignores cleared. Rows read this, so FLAC never shows a stale bitrate.
+    private var encoding: AudioEncodingSettings {
+        model.conversionSelection.encoding.normalized()
+    }
+
+    /// The physical source being ripped. It sets the resolution the TIER
+    /// keys encode at: 16/44.1 for a CD, the capture's own for vinyl, DSD as
+    /// 24/88.2 for an SACD.
+    private var mediumRow: some View {
+        cvRow("Medium") {
+            Menu {
+                Picker("Medium", selection: mediumBinding) {
+                    ForEach(PhysicalMedium.grouped, id: \.group) { group in
+                        Section(group.group.title) {
+                            ForEach(group.media, id: \.self) { medium in
+                                Button {} label: {
+                                    Text(medium.title)
+                                    Text(medium.nativeSpec)
+                                }
+                                .tag(medium)
+                            }
+                        }
+                    }
+                }
+                .pickerStyle(.inline)
+                .labelsHidden()
+            } label: {
+                MenuStrip(
+                    name: model.conversionSelection.medium.title,
+                    summary: model.conversionSelection.medium.nativeSpec
+                )
+            }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .carbonTip(mediumTip)
+        }
+    }
+
+    private var mediumBinding: Binding<PhysicalMedium> {
+        Binding(
+            get: { model.conversionSelection.medium },
+            set: { model.conversionSelection.setMedium($0) }
+        )
+    }
+
+    private var mediumTip: String {
+        let medium = model.conversionSelection.medium
+        return [medium.nativeSpec + ".", medium.note].compactMap { $0 }.joined(separator: " ")
+    }
+
+    /// 1:1, LOSSLESS, LOSSY: how much of the medium to keep. A key writes its
+    /// settings into the rows below and the lamp reads them back, so editing
+    /// a row away from all three leaves none lit.
+    private var tierRow: some View {
+        cvRow("Tier") {
+            // Three flexible keys rather than a PatchBayBank: a bank falls
+            // back to one cycle key when the inspector is narrow, and the
+            // point of this row is seeing all three choices at once.
+            HStack(spacing: 6) {
+                ForEach(RipTier.allCases, id: \.self) { tier in
+                    KeyButton(style: model.conversionSelection.tier == tier ? .selected : .normal,
+                              action: { model.conversionSelection.apply(tier) }) {
+                        VStack(spacing: 1) {
+                            Text(tier.title.uppercased())
+                            if let sub = tierSub(tier) {
+                                Text(sub)
+                                    .font(CarbonFont.mono(7, weight: .semibold))
+                                    .opacity(0.7)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 34)
+                    .accessibilityLabel(Text(tier.title))
+                    .accessibilityAddTraits(model.conversionSelection.tier == tier ? [.isSelected, .isButton] : [.isButton])
+                }
+            }
+            .carbonTip(tierTip)
+        }
+    }
+
+    /// What pressing the key would write: the codec it keeps or picks.
+    private func tierSub(_ tier: RipTier) -> String? {
+        let selection = model.conversionSelection
+        let target = tier.settings(for: selection.medium, keeping: selection.encoding)
+        if let kbps = target.bitrateKbps { return "\(target.format.displayName.uppercased()) \(kbps)" }
+        return target.format.displayName.uppercased()
+    }
+
+    private var tierTip: String {
+        if let tier = model.conversionSelection.tier {
+            return "\(tier.title): \(tier.explanation) FORMAT and BITRATE below pick the codec within it."
+        }
+        return "1:1 copies the medium uncompressed, LOSSLESS compresses it without loss, LOSSY trades fidelity for size. The rows below have been edited away from all three."
+    }
+
     private var formatRow: some View {
         cvRow("Format") {
             PatchBayBank(
@@ -293,12 +408,38 @@ struct ConvertPatchBay: View {
         cvRow("Bitrate") {
             PatchBayBank(
                 label: "Bitrate",
-                options: bitrateOptions,
+                options: OutputFormat.bitrateOptions,
                 selection: bitrateBinding,
                 size: .small,
-                isDisabled: { _ in model.isLosslessSelectedFormat },
                 displayText: { "\($0)" }
             )
+        }
+    }
+
+    private var depthRow: some View {
+        cvRow("Depth") {
+            PatchBayBank(
+                label: "Depth",
+                options: encoding.format.bitDepthOptions,
+                selection: depthBinding,
+                size: .small,
+                displayText: depthLabel
+            )
+            .carbonTip("Bit depth. SRC keeps each file's own (16-bit for a CD, usually 24 for a vinyl or tape capture). Reducing 24 to 16 is dithered.")
+        }
+    }
+
+    private var levelRow: some View {
+        cvRow("Level") {
+            PatchBayBank(
+                label: "Level",
+                options: encoding.format.compressionLevelOptions,
+                selection: levelBinding,
+                size: .small,
+                displayText: levelLabel,
+                subText: { "L\($0)" }
+            )
+            .carbonTip("FLAC compression. Every level is lossless: a higher one only spends more encoding time to make a smaller file.")
         }
     }
 
@@ -306,12 +447,20 @@ struct ConvertPatchBay: View {
         cvRow("Sample") {
             PatchBayBank(
                 label: "Sample",
-                options: sampleRateOptions,
+                options: encoding.format.sampleRateOptions,
                 selection: sampleBinding,
                 size: .small,
                 displayText: sampleLabel
             )
+            .carbonTip(sampleTip)
         }
+    }
+
+    private var sampleTip: String {
+        if encoding.format.fixedSampleRateHz != nil {
+            return "Opus always encodes at 48 kHz."
+        }
+        return "Sample rate. SRC keeps each file's own, which is what an archive of a hi-res capture wants."
     }
 
     /// The four folder plans the FOLDERS row offers.
@@ -579,16 +728,33 @@ struct ConvertPatchBay: View {
 
     // MARK: - Bindings (Optional → required for binding)
 
+    // Each getter reads the normalized value (what will be encoded); each
+    // setter writes the raw selection, which normalizing reads back.
+
     private var bitrateBinding: Binding<Int> {
         Binding(
-            get: { model.conversionSelection.bitrate ?? 192 },
+            get: { encoding.bitrateKbps ?? OutputFormat.defaultBitrateKbps },
             set: { model.conversionSelection.bitrate = $0 }
         )
     }
 
-    private var sampleBinding: Binding<Int> {
+    private var depthBinding: Binding<Int?> {
         Binding(
-            get: { model.conversionSelection.sampleRate ?? 44_100 },
+            get: { encoding.bitDepth },
+            set: { model.conversionSelection.bitDepth = $0 }
+        )
+    }
+
+    private var levelBinding: Binding<Int> {
+        Binding(
+            get: { encoding.flacCompressionLevel ?? OutputFormat.defaultFLACCompressionLevel },
+            set: { model.conversionSelection.flacCompressionLevel = $0 }
+        )
+    }
+
+    private var sampleBinding: Binding<Int?> {
+        Binding(
+            get: { encoding.sampleRateHz },
             set: { model.conversionSelection.sampleRate = $0 }
         )
     }
@@ -596,8 +762,6 @@ struct ConvertPatchBay: View {
     // MARK: - Selection options
 
     private let formatOptions: [OutputFormat] = [.mp3, .aac, .alac, .flac, .wav, .opus]
-    private let bitrateOptions: [Int] = [96, 128, 160, 192, 256, 320]
-    private let sampleRateOptions: [Int] = [32_000, 44_100, 48_000, 96_000]
 
     // MARK: - Display strings
 
@@ -630,9 +794,24 @@ struct ConvertPatchBay: View {
         }
     }
 
-    private func sampleLabel(_ hz: Int) -> String {
+    /// `nil` is the source's rate, except for Opus, whose only option is
+    /// the 48 kHz it always encodes at.
+    private func sampleLabel(_ hz: Int?) -> String {
+        guard let hz = hz ?? encoding.format.fixedSampleRateHz else { return "SRC" }
         if hz % 1000 == 0 { return "\(hz / 1000)K" }
         return String(format: "%.1fK", Double(hz) / 1000.0)
+    }
+
+    private func depthLabel(_ bits: Int?) -> String {
+        bits.map { "\($0)" } ?? "SRC"
+    }
+
+    private func levelLabel(_ level: Int) -> String {
+        switch level {
+        case 0:  return "FAST"
+        case 8:  return "MAX"
+        default: return "STD"
+        }
     }
 
     private func layoutLabel(_ mode: FolderStructureMode) -> String {
@@ -667,6 +846,48 @@ private struct PatchContentHeightKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = max(value, nextValue())
+    }
+}
+
+// MARK: - Menu strip
+
+/// A menu row's face (MEDIUM): the choice over a line about it, drawn like
+/// the destination strip so the two read as the same kind of control.
+private struct MenuStrip: View {
+    @Environment(\.carbon) private var theme
+    let name: String
+    let summary: String
+
+    var body: some View {
+        HStack(spacing: 7) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(name.uppercased())
+                    .font(CarbonFont.mono(9.5, weight: .bold))
+                    .tracking(1.2)
+                    .foregroundStyle(theme.ink)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                Text(summary.uppercased())
+                    .font(CarbonFont.mono(7.5, weight: .semibold))
+                    .tracking(1.1)
+                    .foregroundStyle(theme.ink4)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Image(systemName: "chevron.up.chevron.down")
+                .font(.system(size: 8, weight: .bold))
+                .foregroundStyle(theme.ink4)
+        }
+        .padding(.horizontal, 8)
+        .frame(height: 30)
+        .contentShape(Rectangle())
+        .background(
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(theme.isDark ? Color.white.opacity(0.04) : Color.black.opacity(0.04))
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text("\(name), \(summary)"))
     }
 }
 

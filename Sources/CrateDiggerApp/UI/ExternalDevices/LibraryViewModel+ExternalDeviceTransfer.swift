@@ -230,6 +230,10 @@ extension LibraryViewModel {
         selection.outputFormat = settings.outputFormat
         selection.bitrate = settings.bitrateKbps
         selection.sampleRate = settings.sampleRateHz
+        // A device profile stores no depth or FLAC level, so don't let the
+        // last archival pick ride along onto a player: keep the source's.
+        selection.bitDepth = nil
+        selection.flacCompressionLevel = nil
         selection.artworkMaxDimension = settings.artworkMaxDimension
         selection.folderStructureMode = settings.folderStructureMode
         selection.templatePreset = settings.templateConfig.preset
