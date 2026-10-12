@@ -4,14 +4,22 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
-## 2.3.0 (107), 2026-10-12
+## 2.3.0 (108), 2026-10-12
 
-Beta 2: rip settings by medium. Beta 1 brought a compact player. This section
-collects everything in the 2.3 line so far. Betas are offered only to people
+Beta 3: a new key panel, keys that press like hardware, and smoother motion
+everywhere. Beta 2 brought rip settings by medium and beta 1 a compact player.
+This section collects everything in the 2.3 line so far. Betas are offered only to people
 who turned on Receive beta updates.
 
 ### Added
 
+- **A key for the compact player.** The key panel at the top left now has a
+  Compact Player key, so the slim player is one click away. The expand key
+  beside the cover brings the full console back.
+- **Reduce Motion is respected.** With Reduce Motion turned on in System
+  Settings, panes and panels stop sliding and fade or switch at once instead,
+  the spinning record and the Rescan arrow hold still, and lists jump to the
+  selection rather than gliding. Lights and fades still glow as usual.
 - **Pick the medium, then how much of it to keep.** The conversion panel has
   a new MEDIUM menu (CD, MiniDisc, SACD, DVD-Audio, Blu-ray, Blu-ray Audio,
   Vinyl, Tape, or Any Source) and three TIER keys: 1:1 writes an
@@ -46,6 +54,25 @@ who turned on Receive beta updates.
 
 ### Changed
 
+- **A new key panel, top left.** The library keys are now icons in two
+  columns: Dig Crate, Rescan, Add to Crate and Transfer To on the left, and
+  Go to Current Song, Compact Player, Mini Player and Settings on the right.
+  Hover over a key to see its name. The CrateDigger name has a row of its own,
+  so a theme with a wide typeface no longer cuts it short.
+- **Keys you can press.** The header keys sit in sockets in the panel and go
+  down when you press them, and the transport keys now travel too, instead of
+  only changing shade.
+- **Go to Current Song moved** from the transport to the key panel. The
+  transport now has three keys either side of Play, so it sits centred with
+  even gaps, the same in the full window and the compact player.
+- **Smoother motion throughout.** The whole app now moves to one set of
+  timings. Lights come on quickly and fade a little slower, panes and panels
+  move on the same gentle spring, the spinning record speeds up and coasts to
+  a stop, album covers fade in when they load, and the full-screen player and
+  the artwork viewer fade in and out instead of appearing in a flash.
+- **Clicking a row no longer scrolls it.** Browser columns and the artwork
+  gallery only scroll when the selection is off screen. Go to Current Song
+  still brings the playing track to the middle.
 - **No bitrate for lossless formats.** ALAC, FLAC, WAV and AIFF have no
   bitrate to choose, so the BITRATE row now only appears for MP3, AAC and
   Opus. The display shows the bit depth for lossless output instead, and the
@@ -56,6 +83,17 @@ who turned on Receive beta updates.
 
 ### Fixed
 
+- **Searching felt slower than it should.** Typing in the search field
+  animated the whole browser list on every keystroke; it now updates at once.
+- **Folding into the compact player.** The app no longer ignores clicks while
+  the window resizes, the player stays pinned to the top of the window instead
+  of drifting up through it, and moving to another display halfway through no
+  longer leaves the window stuck half folded.
+- **The compact player's status light** sat on top of the display's corner.
+  It now sits above the cover.
+- **The Rescan arrow spun backwards** for a moment when it stopped.
+- **Button labels are centred.** Short labels such as RIP sat slightly left of
+  centre.
 - **Lossless conversions kept their sample rate.** The SAMPLE row had no
   way to keep the source's rate, so converting a 96 kHz recording to FLAC or
   ALAC quietly brought it down to 44.1 kHz. It now has a Source setting.
