@@ -7,8 +7,8 @@ build, which is monotonic across every release.
 ## 2.3.1 (110), 2026-10-12
 
 Beta 1: Search Album Artwork works properly again. Everything in 2.3.0 is
-included; its notes follow below. Betas are offered only to people who turned
-on Receive beta updates.
+included as well. Betas are offered only to people who turned on Receive beta
+updates.
 
 ### Fixed
 
