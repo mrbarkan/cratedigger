@@ -4,6 +4,41 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 2.3.1 (110), 2026-10-12
+
+Beta 1: Search Album Artwork works properly again. Everything in 2.3.0 is
+included; its notes follow below. Betas are offered only to people who turned
+on Receive beta updates.
+
+### Fixed
+
+- **Each result shows how many images it has again.** The count beside
+  every release had stopped appearing, or said NO IMAGES for releases that
+  have plenty, because the archive it came from has been answering slowly or
+  not at all. The counts now come from MusicBrainz and appear about a second
+  after the results.
+- **The right artwork for the release you picked.** Picking one release,
+  going back and picking another could show the first one's images under
+  the second.
+- **Honest messages.** A busy MusicBrainz no longer reads as "No releases
+  found", the archive being down no longer reads as "No images", and "No
+  scans" no longer appears while Discogs is still loading. Each source shows
+  its own progress, with TRY AGAIN when it fails.
+- **Searching stops when you move on.** Closing the panel, going back or
+  starting a new search stops what was still loading, so an old search can no
+  longer replace newer results.
+- **Discogs no longer waits for the archive.** Both load at the same time.
+- **The MEDIA filter sees every disc in a set,** so a CD and DVD release
+  appears under DVD too, and HD means the same thing in the list and in the
+  grid.
+- **Return runs the search** from either field.
+
+### Changed
+
+- **Lighter on your Mac and on MusicBrainz.** The preview loads a 1200 pixel
+  image instead of originals of up to 5000, your own files are shrunk for the
+  grid in the background, and requests to MusicBrainz keep to one a second.
+
 ## 2.3.0 (109), 2026-10-12
 
 Release candidate 1: Secure Mode for ripping CDs. The betas brought a compact
