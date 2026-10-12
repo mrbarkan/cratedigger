@@ -408,6 +408,23 @@ final class LibraryViewModel: ObservableObject {
     /// the drive. Never set alongside `pendingDeviceConversion`.
     @Published var pendingCDRip: AudioCDInfo?
 
+    /// The Patch Bay's SECURE row: rip CDs from raw, verified sector reads
+    /// (`SecureRipEngine`) rather than from cddafs's `.aiff` files.
+    var secureRipEnabled: Bool {
+        get { prefs.secureRipEnabled }
+        set {
+            objectWillChange.send()
+            prefs.secureRipEnabled = newValue
+        }
+    }
+
+    /// Secure Mode's read phase while it runs, so DUB says what is really
+    /// happening (reading and re-reading the disc) instead of "ripping".
+    /// Nil outside that phase, including while its WAVs are being converted.
+    @Published var secureRipProgress: SecureDiscRip.Progress?
+    /// The read phase polls this between reads; `cancelConversion` sets it.
+    var secureRipCancellation: SecureRipCancellation?
+
     /// A route (a disc or a device hand-off) owns the cockpit's queue, so the
     /// crate queue's own controls (arming, CLEAR) have nothing to act on.
     var cockpitIsRouted: Bool { pendingDeviceConversion != nil || pendingCDRip != nil }
@@ -2577,9 +2594,73 @@ final class LibraryViewModel: ObservableObject {
         // quadraphonic or mono disc should rip as it was pressed.
         let preset = makeAdHocPreset(from: conversionSelection)
 
+        // Decided once, at the press: flipping SECURE mid-rip must not change
+        // what this rip promised.
+        let secure = secureRipEnabled
+        let cancellation = SecureRipCancellation()
+        // Only a secure rip has a read phase to cancel; a normal one leaving
+        // this set would keep a dead flag around until the next rip.
+        secureRipCancellation = secure ? cancellation : nil
+
+        /// A Secure Mode failure, already worded for the alert. Kept apart from
+        /// conversion errors so it is never reported as an ordinary rip error.
+        struct SecureReadFailure: Error { let message: String }
+
         Task {
+            // Secure Mode's verified WAVs live here until the conversion has
+            // read them, and go however the rip ends.
+            var workingFolder: URL?
+            defer {
+                if let workingFolder { try? FileManager.default.removeItem(at: workingFolder) }
+            }
+            @MainActor func finishSecurePhase() {
+                self.secureRipCancellation = nil
+                self.secureRipProgress = nil
+            }
+
             do {
                 let service = try ConversionService(presets: [preset])
+                self.activeConversionService = service
+
+                // cddafs `.aiff` path → its verified WAV.
+                var verifiedSources: [String: URL] = [:]
+                var secureResults: [SecureRipTrackResult] = []
+                if secure {
+                    do {
+                        let folder = FileManager.default.temporaryDirectory
+                            .appendingPathComponent("CrateDigger-SecureRip-\(UUID().uuidString)", isDirectory: true)
+                        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                        workingFolder = folder
+                        let outputs = try await Self.readDiscSecurely(info, into: folder, cancellation: cancellation) { progress in
+                            // Progress is posted from the reading thread; one
+                            // that lands after the phase ended is dropped.
+                            DispatchQueue.main.async {
+                                guard self.secureRipCancellation === cancellation else { return }
+                                self.secureRipProgress = progress
+                            }
+                        }
+                        for output in outputs {
+                            verifiedSources[output.plan.sourceURL.path] = output.wavURL
+                            let r = output.result
+                            AppLog.conversion.info("Secure rip track \(r.trackNumber, privacy: .public): verified=\(r.verified, privacy: .public) retried=\(r.retriedSectors, privacy: .public) rereads=\(r.rereads, privacy: .public) c2=\(r.c2Sectors, privacy: .public) suspicious=\(r.suspiciousSectors.count, privacy: .public) pass1=\(r.timing.pass1, privacy: .public)s pass2=\(r.timing.pass2, privacy: .public)s retry=\(r.timing.retry, privacy: .public)s")
+                        }
+                        secureResults = outputs.map(\.result)
+                    } catch is CancellationError {
+                        throw CancellationError()
+                    } catch {
+                        AppLog.conversion.error("Secure rip failed: \(error.localizedDescription, privacy: .public)")
+                        throw SecureReadFailure(message: SecureDiscRip.failureMessage(for: error))
+                    }
+                    finishSecurePhase()
+                    if cancellation.isCancelled { throw CancellationError() }
+                    // The conversion's speed and elapsed time are its own, not
+                    // the read's.
+                    self.conversionProgress = ConversionProgressSnapshot(
+                        jobsCompleted: 0, jobsTotal: info.tracks.count,
+                        currentFilename: nil, isRunning: true, startedAt: Date()
+                    )
+                }
+
                 var jobs: [ConversionJob] = []
 
                 // Tags and destinations come from the identified release when
@@ -2614,8 +2695,19 @@ final class LibraryViewModel: ObservableObject {
                         albumKey: albumKeys[loaded.track.id]
                     )
                     reserved.insert(plan.destinationURL.standardizedFileURL.resolvingSymlinksInPath().path)
+                    // Tags and destination are planned from the disc's track
+                    // either way; Secure Mode only swaps where the audio is
+                    // read from. A track with no verified copy is refused, not
+                    // quietly ripped from cddafs while SECURE is on.
+                    var source = loaded.track.fileURL
+                    if secure {
+                        guard let wav = verifiedSources[loaded.track.fileURL.path] else {
+                            throw SecureReadFailure(message: "Secure Mode has no verified copy of \(loaded.track.fileURL.lastPathComponent), so it won't rip that track unverified. Turn Secure Mode off to rip normally.")
+                        }
+                        source = wav
+                    }
                     jobs.append(ConversionJob(
-                        sourceURL: loaded.track.fileURL,
+                        sourceURL: source,
                         destinationURL: plan.destinationURL,
                         metadata: loaded.metadata
                     ))
@@ -2645,11 +2737,20 @@ final class LibraryViewModel: ObservableObject {
                 }.value
 
                 await MainActor.run {
+                    self.activeConversionService = nil
                     self.oledView = .nowPlaying
                     self.conversionProgress = .idle
                     let fails = results.filter { $0.status == .failed }
-                    if fails.isEmpty {
-                        self.appAlert = .error(title: "CD Ripped!", message: "Successfully ripped \(info.tracks.count) tracks.")
+                    if results.contains(where: \.wasCancelled) {
+                        self.showOLEDNotice("RIP CANCELLED")
+                    } else if fails.isEmpty {
+                        var title = "CD Ripped!"
+                        var message = "Successfully ripped \(info.tracks.count) tracks."
+                        if secure {
+                            message += "\n\n" + SecureRipReport.summary(secureResults)
+                            if !secureResults.allSatisfy(\.verified) { title = "CD Ripped, Not Fully Verified" }
+                        }
+                        self.appAlert = .error(title: title, message: message)
                         // Import this rip, not the destination: scanning `dest`
                         // staged every album ever converted there, and saved it
                         // as a dig folder, so each launch re-staged it all.
@@ -2661,12 +2762,46 @@ final class LibraryViewModel: ObservableObject {
                 }
             } catch {
                 await MainActor.run {
+                    finishSecurePhase()
+                    self.activeConversionService = nil
                     self.oledView = .nowPlaying
                     self.conversionProgress = .idle
-                    self.appAlert = .error(title: "Rip Error", message: error.localizedDescription)
+                    switch error {
+                    case is CancellationError:
+                        self.showOLEDNotice("RIP CANCELLED")
+                    case let failure as SecureReadFailure:
+                        // Not "couldn't read": a full startup disk and a
+                        // missing TOC land here too, and their messages say so.
+                        self.appAlert = .error(title: "Secure Mode Couldn't Rip the Disc", message: failure.message)
+                    default:
+                        self.appAlert = .error(title: "Rip Error", message: error.localizedDescription)
+                    }
                 }
             }
         }
+    }
+
+    /// Secure Mode's read phase, off the main thread: every track of `info`
+    /// read raw and verified into WAVs in `folder`.
+    private nonisolated static func readDiscSecurely(
+        _ info: AudioCDInfo,
+        into folder: URL,
+        cancellation: SecureRipCancellation,
+        progress: @escaping @Sendable (SecureDiscRip.Progress) -> Void
+    ) async throws -> [SecureDiscRip.Output] {
+        try await Task.detached(priority: .userInitiated) {
+            guard let toc = info.toc else { throw SecureRipTrackPlan.PlanError.noTableOfContents }
+            let plans = try SecureRipTrackPlan.plans(for: info.tracks, toc: toc)
+            let device = try RawCDDevice(volumeURL: info.volumeURL)
+            return try SecureDiscRip.run(
+                plans: plans,
+                audioArea: toc.audioLBARange,
+                engine: SecureRipEngine(reader: device),
+                into: folder,
+                isCancelled: { cancellation.isCancelled },
+                progress: progress
+            )
+        }.value
     }
 
     // MARK: - Playlist Actions

@@ -1822,7 +1822,11 @@ private struct DubPane: View {
         } else if model.conversionProgress.isRunning {
             // A rip is the only thing that ticks, so only it drives a clock.
             TimelineView(.periodic(from: .now, by: 1)) { _ in
-                rippingBody
+                if let secure = model.secureRipProgress {
+                    secureReadingBody(secure)
+                } else {
+                    rippingBody
+                }
             }
         } else if let cd = model.currentAudioCD ?? model.mountedCDs.first {
             // A disc in the drive is worth showing even while the browser is
@@ -1939,6 +1943,77 @@ private struct DubPane: View {
                              sub: "Remaining")
             ])
         }
+    }
+
+    // MARK: - Secure Mode's read phase
+    //
+    // Before a Secure Mode rip converts anything it reads the disc raw, every
+    // track at least twice. That can take longer than the conversion, and
+    // showing it as RIPPING 01/14 with no speed would look stuck, so the screen
+    // says which track, which pass, and how much re-reading the disc has
+    // needed: the number that tells you whether it is in good shape.
+
+    private func secureReadingBody(_ secure: SecureDiscRip.Progress) -> some View {
+        OLEDPaneScaffold {
+            NPTitles(title: "SECURE READ", sub: rippingSubtitle)
+        } readout: {
+            VStack(alignment: .trailing, spacing: 6) {
+                NPClock(now: String(format: "%02d", secure.trackOrdinal),
+                        tot: "/ \(String(format: "%02d", secure.trackCount))")
+                ScanBar(style: .orange(secureOverall(secure))).frame(width: 150)
+            }
+            .fixedSize()
+        } ticker: {
+            DSPTicker(
+                prefix: String(format: "SECURE READ · TRACK %d/%d · %@ · %02d%%",
+                               secure.trackOrdinal, secure.trackCount,
+                               securePhaseLabel(secure.track.phase),
+                               Int((secure.track.fraction * 100).rounded(.down))),
+                path: AttributedString(destinationPath)
+            )
+        } cells: {
+            OLEDCells([
+                OLEDCellData(key: "Disc", value: "CDDA", sub: "Raw sectors"),
+                OLEDCellData(key: "Mode", value: "SECURE", sub: securePhaseSub(secure.track.phase),
+                             valueColor: theme.cyan),
+                OLEDCellData(key: "Re-reads", value: "\(secure.discRereads)", sub: "Sectors so far",
+                             valueColor: secure.discRereads > 0 ? theme.sun : oledFG),
+                OLEDCellData(key: "Elapsed", value: elapsedLabel, sub: "This Disc"),
+                secure.trackCount > secure.trackOrdinal
+                    ? OLEDCellData(key: "Remain", value: "\(secure.trackCount - secure.trackOrdinal) TRK", sub: "To read")
+                    : OLEDCellData(key: "Remain", value: "LAST", sub: "Track")
+            ])
+        }
+    }
+
+    private func securePhaseLabel(_ phase: SecureRipEngine.Phase) -> String {
+        switch phase {
+        case .pass1: return "PASS 1"
+        case .pass2: return "PASS 2"
+        case .retry: return "RE-READ"
+        }
+    }
+
+    private func securePhaseSub(_ phase: SecureRipEngine.Phase) -> String {
+        switch phase {
+        case .pass1: return "Pass 1 of 2"
+        case .pass2: return "Pass 2 of 2"
+        case .retry: return "Re-reading"
+        }
+    }
+
+    /// The bar across the disc. The two passes take about the same time, so
+    /// each is half a track; re-reading has no predictable length, so it gets
+    /// the last sliver rather than a share the bar would then sit on.
+    private func secureOverall(_ secure: SecureDiscRip.Progress) -> Double {
+        let within: Double
+        switch secure.track.phase {
+        case .pass1: within = secure.track.fraction * 0.48
+        case .pass2: within = 0.48 + secure.track.fraction * 0.48
+        case .retry: within = 0.96 + secure.track.fraction * 0.04
+        }
+        let done = Double(secure.trackOrdinal - 1) + within
+        return min(max(done / Double(max(secure.trackCount, 1)), 0), 1)
     }
 
     private var emptyBody: some View {

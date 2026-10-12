@@ -75,6 +75,7 @@ public final class PreferencesStore {
         static let playlistBrowserLayout = "cratedigger.browser.playlistLayout"
         static let scrubLock = "cratedigger.transport.scrubLock"
         static let gaplessPlayback = "cratedigger.transport.gapless"
+        static let secureRip = "cratedigger.cd.secureRip"
         static let widgetIdleMode = "cratedigger.widget.idleMode"
         static let widgetPlayingMode = "cratedigger.widget.playingMode"
         static let miniPlayerArtMode = "cratedigger.miniplayer.artMode"
@@ -661,6 +662,14 @@ public final class PreferencesStore {
             return defaults.bool(forKey: Key.gaplessPlayback)
         }
         set { defaults.set(newValue, forKey: Key.gaplessPlayback) }
+    }
+
+    /// Rip audio CDs in Secure Mode: every sector read twice, compared, and
+    /// re-read until it agrees (see `SecureRipEngine`). Off unless chosen: it
+    /// takes at least twice as long, and most discs read cleanly the first time.
+    public var secureRipEnabled: Bool {
+        get { defaults.bool(forKey: Key.secureRip) }
+        set { defaults.set(newValue, forKey: Key.secureRip) }
     }
 
     /// The Now Playing widget's modes, as raw values. The types live in the

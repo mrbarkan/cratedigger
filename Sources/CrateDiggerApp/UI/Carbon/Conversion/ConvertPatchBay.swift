@@ -99,6 +99,11 @@ struct ConvertPatchBay: View {
                 .frame(minHeight: 220)
         case .settings:
             scopeRow
+            // How the disc is read, not how it's encoded, so it sits with the
+            // disc rather than among the format rows.
+            if model.pendingCDRip != nil {
+                secureRow
+            }
             presetChipRow
             mediumRow
             tierRow
@@ -280,6 +285,37 @@ struct ConvertPatchBay: View {
                 )
             }
         }
+    }
+
+    /// Secure Mode for a routed disc. Two keys rather than a toggle, like
+    /// TIER, so both choices and what each costs are on screen at once.
+    private var secureRow: some View {
+        cvRow("Secure") {
+            HStack(spacing: 6) {
+                secureKey(false, title: "OFF", sub: "FAST")
+                secureKey(true, title: "ON", sub: "VERIFIED")
+            }
+            .carbonTip("Secure Mode reads every sector at least twice and re-reads any that disagree or report errors until they match, so a scratch can't slip into the rip unnoticed.")
+        }
+    }
+
+    private func secureKey(_ on: Bool, title: String, sub: String) -> some View {
+        let selected = model.secureRipEnabled == on
+        return KeyButton(style: selected ? .selected : .normal,
+                         action: { model.secureRipEnabled = on }) {
+            VStack(spacing: 1) {
+                Text(title)
+                Text(sub)
+                    .font(CarbonFont.mono(7, weight: .semibold))
+                    .opacity(0.7)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 34)
+        .disabled(model.isConversionRunning)
+        .accessibilityLabel(Text(on ? "Secure Mode on" : "Secure Mode off"))
+        .accessibilityAddTraits(selected ? [.isSelected, .isButton] : [.isButton])
     }
 
     /// The format rows below belong to the device while a route is set — they
@@ -735,6 +771,11 @@ struct ConvertPatchBay: View {
                 .font(CarbonFont.mono(8, weight: .bold))
                 .tracking(1.4)
                 .foregroundStyle(theme.ink4)
+                // One line, shrinking a hair if it must: at this width
+                // "FOLDERS" wrapped to "FOLDER" over a lone "S". Widening the
+                // column would take the room from the controls beside it.
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
                 .frame(width: 46, alignment: .trailing)
             content()
                 .frame(maxWidth: .infinity, alignment: .leading)

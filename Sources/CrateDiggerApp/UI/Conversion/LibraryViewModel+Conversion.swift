@@ -449,6 +449,8 @@ extension LibraryViewModel {
 
     @MainActor
     func cancelConversion() {
+        // A Secure Mode rip's read phase runs before any conversion exists.
+        secureRipCancellation?.cancel()
         activeConversionService?.cancel()
         conversionTask?.cancel()
         AppLog.conversion.notice("User requested conversion cancellation")
