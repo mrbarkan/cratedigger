@@ -106,7 +106,7 @@ struct SpecRows: View {
                 .padding(.vertical, -3)
         )
         .onHover { hoveringCustom = $0 }
-        .animation(.easeInOut(duration: 0.12), value: hoveringCustom)
+        .animation(CarbonMotion.hover, value: hoveringCustom)
         .carbonTip("Click to choose what this row shows")
     }
 

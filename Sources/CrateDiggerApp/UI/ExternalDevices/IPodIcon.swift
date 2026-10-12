@@ -234,7 +234,9 @@ struct DeviceIconPicker: View {
             .clipped()
 
             Button {
-                withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() }
+                // The grid grows and the chevron turns: a panel opening, and
+                // a dissolve under Reduce Motion.
+                withCarbonMovement(CarbonMotion.panel) { expanded.toggle() }
             } label: {
                 HStack(spacing: 4) {
                     Text(expanded ? "Show fewer" : "More icons")

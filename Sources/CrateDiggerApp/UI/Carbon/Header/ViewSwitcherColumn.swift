@@ -76,6 +76,15 @@ private struct SwitchButton: View {
     let action: () -> Void
 
     @State private var dashLit = false
+    /// Which press the dash's acknowledgement belongs to, so a quick second
+    /// press isn't cut short by the first one's timer.
+    @State private var dashFlash = 0
+
+    /// A lamp's animation: up at `state` speed, down at `lampOff`, like a
+    /// filament.
+    private static func lamp(_ on: Bool) -> Animation {
+        on ? CarbonMotion.state : CarbonMotion.lampOff
+    }
 
     // The column is a fixed 110pt (`CarbonLayout.viewSwitchWidth`), so the two
     // halves of the button get an explicit share each rather than competing for
@@ -118,10 +127,14 @@ private struct SwitchButton: View {
                 if dotCount > 0 {
                     HStack(spacing: dotSpacing) {
                         ForEach(0..<dotCount, id: \.self) { i in
+                            let on = i == activeIndex
                             Circle()
-                                .fill(i == activeIndex ? theme.keyLamp : theme.ink4.opacity(0.4))
+                                .fill(on ? theme.keyLamp : theme.ink4.opacity(0.4))
                                 .frame(width: dotSize, height: dotSize)
-                                .shadow(color: i == activeIndex ? theme.keyLamp.opacity(0.7) : .clear, radius: 2.5)
+                                .shadow(color: on ? theme.keyLamp.opacity(0.7) : .clear, radius: 2.5)
+                                // Per lamp, so moving the selection lights the
+                                // new one quickly while the old one dies away.
+                                .animation(Self.lamp(on), value: on)
                         }
                     }
                     .frame(width: Self.lampBudget, alignment: .trailing)
@@ -132,6 +145,7 @@ private struct SwitchButton: View {
                         .fill(on ? theme.keyLamp : theme.ink4.opacity(0.4))
                         .frame(width: 14, height: 4)
                         .shadow(color: on ? theme.keyLamp.opacity(0.7) : .clear, radius: 3)
+                        .animation(Self.lamp(on), value: on)
                         // Same budget as the lamp rows, so THEME's trailing edge
                         // lines up with VIEW's and EQ's.
                         .frame(width: Self.lampBudget, alignment: .trailing)
@@ -147,9 +161,13 @@ private struct SwitchButton: View {
 
     private func fire() {
         if dash {
+            // Held for as long as the lamp takes to come up, then let go; the
+            // lamp's own animation fades it out.
             dashLit = true
+            dashFlash += 1
+            let flash = dashFlash
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
-                withAnimation(.easeOut(duration: 0.4)) { dashLit = false }
+                if flash == dashFlash { dashLit = false }
             }
         }
         action()

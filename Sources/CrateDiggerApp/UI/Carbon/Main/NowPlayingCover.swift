@@ -17,13 +17,30 @@ struct NowPlayingCover<Placeholder: View>: View {
         Group {
             if model.isStreamActive, let stream = model.selectedStream {
                 StreamThumbnail(stream: stream)
-            } else if let image = coverImage {
-                Image(nsImage: image).resizable().aspectRatio(contentMode: .fill)
             } else {
-                placeholder()
+                // A ZStack, so the outgoing picture is still there to dissolve
+                // into the incoming one: each image is its own identity, and a
+                // track change crossfades the sleeves instead of cutting. The
+                // cover loads after the title has already changed, and the cut
+                // made the art look late; a dissolve reads as the art arriving.
+                ZStack {
+                    if let image = coverImage {
+                        Image(nsImage: image).resizable().aspectRatio(contentMode: .fill)
+                            .id(ObjectIdentifier(image))
+                            .transition(.opacity)
+                    } else {
+                        placeholder()
+                            .transition(.opacity)
+                    }
+                }
             }
         }
         .task(id: coverKey) { await loadCoverImage() }
+    }
+
+    /// Opacity only, so Reduce Motion keeps it.
+    private func show(_ image: NSImage?) {
+        withAnimation(CarbonMotion.state) { coverImage = image }
     }
 
     /// Reload key: track change or a freshly committed cover (hash change).
@@ -35,25 +52,25 @@ struct NowPlayingCover<Placeholder: View>: View {
 
     private func loadCoverImage() async {
         guard let loaded = model.nowPlayingTrack else {
-            coverImage = nil
+            show(nil)
             return
         }
         if let album = model.album(containing: loaded.track.id),
            let coverURL = album.booklet?.frontCoverURL,
            let image = await loadThumbnail(url: coverURL, maxPixelSize: maxPixel) {
-            coverImage = image
+            show(image)
             return
         }
         if let hash = loaded.track.artworkHash,
            let image = await model.artworkService.thumbnailAsync(artworkHash: hash, maxPixel: maxPixel) {
-            coverImage = image
+            show(image)
             return
         }
         if loaded.track.fileURL.isFileURL,
            let asset = await model.artworkService.resolveArtwork(trackURL: loaded.track.fileURL) {
-            coverImage = await model.artworkService.thumbnailAsync(artworkHash: asset.hash, maxPixel: maxPixel)
+            show(await model.artworkService.thumbnailAsync(artworkHash: asset.hash, maxPixel: maxPixel))
             return
         }
-        coverImage = nil
+        show(nil)
     }
 }

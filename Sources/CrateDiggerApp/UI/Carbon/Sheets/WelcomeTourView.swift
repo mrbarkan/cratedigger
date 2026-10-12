@@ -25,7 +25,10 @@ struct WelcomeTourView: View {
         }
         .padding(28)
         .frame(width: 680, height: 540)
-        .animation(.spring(response: 0.34, dampingFraction: 0.9), value: page)
+        // Pages crossfade in place; nothing travels, so this is the state
+        // curve and Reduce Motion has nothing to take away. The old spring
+        // was a movement token spent on a dissolve.
+        .animation(CarbonMotion.state, value: page)
     }
 
     // MARK: - Illustration
@@ -618,6 +621,7 @@ private struct TourArtConvert: View {
 private struct TourArtPlay: View {
     @Environment(\.carbon) private var theme
     @Environment(\.carbonGeometry) private var geometry
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var spinning = false
 
     var body: some View {
@@ -645,8 +649,13 @@ private struct TourArtPlay: View {
                     .offset(y: -38)
             }
             .rotationEffect(.degrees(spinning ? 360 : 0))
-            .animation(.linear(duration: 5).repeatForever(autoreverses: false), value: spinning)
-            .onAppear { spinning = true }
+            // nil when stopping: a repeating animation on the way back to 0°
+            // would spin the record backwards forever.
+            .animation(spinning ? .linear(duration: 5).repeatForever(autoreverses: false) : nil, value: spinning)
+            // A record that turns forever is pure motion; under Reduce Motion
+            // it sits still, its stripe still showing it is a record.
+            .onAppear { spinning = !reduceMotion }
+            .onChange(of: reduceMotion) { reduced in spinning = !reduced }
 
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 11) {

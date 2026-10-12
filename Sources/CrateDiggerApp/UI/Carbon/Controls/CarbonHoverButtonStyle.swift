@@ -22,7 +22,12 @@ struct CarbonHoverButtonStyle: ButtonStyle {
         var body: some View {
             configuration.label
                 .brightness(brightness)
-                .animation(.easeOut(duration: 0.12), value: hovering)
+                // The lift follows the cursor. The press dip is not animated:
+                // an animation keyed on `isPressed` here would wrap the whole
+                // label, so whatever a click changes on release (a row's
+                // selection, a tab's lamp) would ride the 0.07 s press curve
+                // instead of its own.
+                .animation(CarbonMotion.hover, value: hovering)
                 .onHover { hovering = $0 && isEnabled }
         }
 

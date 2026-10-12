@@ -19,6 +19,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private var layoutObserver: AnyCancellable?
     /// The compact plan's size limits, kept here for `windowWillResize`.
     private var compactLimits: (minimum: CGSize, maximum: CGSize)?
+    /// Where an in-flight fold or unfold is taking the window. A frame saved
+    /// while the window is still travelling must record where it is going,
+    /// not a half-folded frame: folding back mid-flight saves the outgoing
+    /// layout's frame, and that would otherwise be whatever size the
+    /// animation had reached.
+    private var frameInFlight: CGRect?
+    /// Bumped per animated frame change, so a superseded animation's
+    /// completion cannot clear the newer one's target.
+    private var frameAnimationGeneration = 0
     /// The status LED in the full layout's titlebar trailing corner.
     private let ledAccessory = NSTitlebarAccessoryViewController()
     /// The same LED for the compact layout, over the art column (see
@@ -418,6 +427,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func windowDidMove(_ notification: Notification) {
+        // A move while a fold is in flight (a drag that catches the window
+        // mid-travel) must not record a half-folded frame; the animation's
+        // completion records where it landed.
+        guard frameInFlight == nil else { return }
         persistFrame()
     }
 
@@ -427,7 +440,16 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     private func persistFrame() {
         guard let window else { return }
-        frameMemory.record(window.frame, for: layout)
+        frameMemory.record(restingFrame(of: window), for: layout)
+    }
+
+    /// The frame the window is at, or is on its way to while a fold is in
+    /// flight. Anything that re-plans from "the current frame" reads this: a
+    /// screen or backing change mid-fold (the unfolding window crossing onto
+    /// another display) would otherwise clamp the half-folded frame and leave
+    /// the window stuck at it.
+    private func restingFrame(of window: NSWindow) -> CGRect {
+        frameInFlight ?? window.frame
     }
 
     @objc private func handleAppearanceDidChange() {
@@ -491,15 +513,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         case .compact:
             let plan = WindowFramePlanner.compactPlan(
                 visibleFrame: visibleFrame(for: window),
-                savedFrame: restoring ? frameMemory.saved(for: .compact) : window.frame,
-                anchor: window.frame,
+                savedFrame: restoring ? frameMemory.saved(for: .compact) : restingFrame(of: window),
+                anchor: restingFrame(of: window),
                 metrics: CompactDeckMetrics(geometry: activeGeometry())
             )
             // Minimum first: the full window's 1200 × 820 floor would refuse the shrink.
             window.minSize = NSSize(width: plan.minimumSize.width, height: plan.minimumSize.height)
             window.maxSize = NSSize(width: plan.maximumSize.width, height: plan.maximumSize.height)
             compactLimits = (plan.minimumSize, plan.maximumSize)
-            window.setFrame(plan.frame, display: true, animate: animated)
+            setWindowFrame(plan.frame, animated: animated)
         }
         placeStatusLED()
     }
@@ -593,7 +615,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             // the (uninitialized) current frame.
             baselineFrame = prefs.savedWindowFrame ?? window.frame
         } else {
-            baselineFrame = window.frame
+            baselineFrame = restingFrame(of: window)
         }
 
         let plan = WindowFramePlanner.plan(
@@ -603,7 +625,53 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         )
 
         window.minSize = NSSize(width: plan.minimumSize.width, height: plan.minimumSize.height)
-        window.setFrame(NSRect(origin: plan.frame.origin, size: plan.frame.size), display: true, animate: animated)
+        setWindowFrame(NSRect(origin: plan.frame.origin, size: plan.frame.size), animated: animated)
+    }
+
+    // The fold runs for `CarbonMotion.windowResize` in an NSAnimationContext.
+    // AppKit's own `setFrame(_:display:animate:)` picks a time from the
+    // distance (0.35 s for a full-to-compact fold) and holds the main thread
+    // until it ends, so a click during the fold was lost.
+
+    /// Moves the window to `frame`, travelling there when `animated` and the
+    /// user has not asked for reduced motion. Never blocks: the animation
+    /// runs through the window's animator, and input keeps flowing.
+    private func setWindowFrame(_ frame: CGRect, animated: Bool) {
+        guard let window else { return }
+        guard animated, !CarbonMotion.prefersReducedMotion else {
+            if frameInFlight != nil {
+                // Something is already animating the frame; a plain setFrame
+                // would be overwritten by its next tick. A zero-length
+                // animation retargets it instead.
+                frameInFlight = nil
+                frameAnimationGeneration += 1
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = 0
+                    window.animator().setFrame(frame, display: true)
+                }
+                // A frame set through the animator never posts
+                // `windowDidMove` (measured), so nothing else would record it.
+                persistFrame()
+            } else {
+                window.setFrame(frame, display: true)
+            }
+            return
+        }
+        frameAnimationGeneration += 1
+        let generation = frameAnimationGeneration
+        frameInFlight = frame
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = CarbonMotion.windowResize
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            context.allowsImplicitAnimation = false
+            window.animator().setFrame(frame, display: true)
+        }, completionHandler: { [weak self] in
+            guard let self, self.frameAnimationGeneration == generation else { return }
+            self.frameInFlight = nil
+            // AppKit posts no `windowDidMove` for a frame animated through
+            // the animator, not even on landing (measured); record it here.
+            self.persistFrame()
+        })
     }
 }
 

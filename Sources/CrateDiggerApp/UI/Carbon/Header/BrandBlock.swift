@@ -103,25 +103,42 @@ private struct LibButton: View {
     var highlighted = false
     let action: () -> Void
 
-    @State private var spinning = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Whole turns made so far. Counting up rather than flipping a flag means
+    /// every press turns the icon forward once more: the old flag version ran
+    /// a repeating spin, then on release animated 360 back to 0 and so
+    /// unwound the arrow backwards.
+    @State private var turns = 0
+
+    /// One turn that picks up speed and coasts to a stop, like the record on
+    /// the deck, rather than a constant-speed spin that starts and stops dead.
+    /// Long enough to read as one deliberate turn, short enough to be over
+    /// before the rescan it acknowledges has got going.
+    private static let spinTurn: Animation = .easeInOut(duration: 0.7)
 
     var body: some View {
         Button(action: {
             ClickPlayer.shared.play(.key)
-            if spinsOnPress {
-                spinning = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { spinning = false }
-            }
+            // A turn is motion, so Reduce Motion skips it; the click and the
+            // status LED still say the rescan started.
+            if spinsOnPress, !reduceMotion { turns += 1 }
             action()
         }) {
             Image(systemName: systemImage)
                 .font(.system(size: 12, weight: .medium))
-                .rotationEffect(.degrees(spinning ? 360 : 0))
-                .animation(spinning ? .linear(duration: 0.9).repeatForever(autoreverses: false) : .default, value: spinning)
+                .rotationEffect(.degrees(Double(turns) * 360))
+                // Keyed here, on the icon, rather than with `withAnimation`:
+                // the key style's own press animation wraps this label, and
+                // the release lands in the same update as the turn, so only
+                // an animation inside it is sure to win.
+                .animation(Self.spinTurn, value: turns)
                 .foregroundStyle(highlighted ? theme.orange : theme.chassisInk)
                 // A lit legend glows a little, like the lamps on the switcher
                 // keys opposite. Emission, not depth, so a flat theme keeps it.
                 .shadow(color: highlighted ? theme.orange.opacity(0.45) : .clear, radius: 3)
+                // The legend is a lamp: quick to light, slower to die away.
+                // Inside the key style for the same reason as the turn.
+                .animation(highlighted ? CarbonMotion.state : CarbonMotion.lampOff, value: highlighted)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 // Highlight lights the icon, not the chassis — the key reads
                 // as ready without the whole key turning into a lamp.
@@ -130,6 +147,5 @@ private struct LibButton: View {
         .buttonStyle(.chassisKey)
         .carbonTip(tip)
         .accessibilityLabel(name)
-        .animation(.easeInOut(duration: 0.18), value: highlighted)
     }
 }

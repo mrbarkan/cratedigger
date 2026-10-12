@@ -54,6 +54,9 @@ struct SpinningRecordView: View {
     /// Pointer is over the pane — the cut controls stay hidden until then, so
     /// they don't sit on the artwork the rest of the time.
     @State private var hovering = false
+    /// A turning disc is continuous motion, so Reduce Motion parks it. The
+    /// play dome's lamp already says the deck is playing.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     // Pre-rendered CD faces. The 60fps animation only rotates/crossfades these
     // cached bitmaps; the expensive gradients + motion smear are rasterized
@@ -152,11 +155,13 @@ struct SpinningRecordView: View {
         .onHover { hovering = $0 }
         .onAppear {
             updateDiscData()
+            animator.reduceMotion = reduceMotion
             animator.start(model: model)
         }
         .onDisappear {
             animator.stop()
         }
+        .onChange(of: reduceMotion) { animator.reduceMotion = $0 }
         // Tray semantics: only a queue change swaps the disc — browsing
         // (selection changes) never touches the tray, which also stops the
         // per-selection manifest re-reads this view used to do.
@@ -499,7 +504,31 @@ final class RecordAnimator: ObservableObject {
     private let speedQuantum = 0.05
 
     var isVinyl: Bool = false
-    
+
+    /// Reduce Motion: the disc coasts to rest and stays there. Flipping it
+    /// while the view is up restarts the tick, so the change is seen at once
+    /// (a spinning disc coasts down; a parked one spins back up).
+    var reduceMotion = false {
+        didSet {
+            guard reduceMotion != oldValue, model != nil else { return }
+            ensureTimer()
+        }
+    }
+
+    /// Spin-up and coast-down, as time constants, in seconds. A platter has
+    /// mass: it takes a moment to reach speed (95% after about three time
+    /// constants, ~0.6 s) and longer to run down. These were per-frame
+    /// factors before, which put spin-up at ~0.06 s, a disc that started
+    /// dead, and left the coast's exponential tail creeping for well over a
+    /// second at speeds too slow to read as turning.
+    private static let spinUpTau: TimeInterval = 0.2
+    private static let coastTau: TimeInterval = 0.45
+    /// Bearing friction during the coast, in degrees per frame lost each
+    /// second, on top of the exponential drag. It is what brings the disc to
+    /// a definite stop instead of an endless crawl: from the fast preset the
+    /// coast now lasts about two seconds, from the slow one under one.
+    private static let coastFriction = 1.5
+
     private weak var model: LibraryViewModel?
     private var timer: Timer?
     private var lastUpdateTime: Date?
@@ -565,7 +594,7 @@ final class RecordAnimator: ObservableObject {
         lastUpdateTime = now
         
         let targetSpeed: Double
-        if model.playbackState == .playing {
+        if model.playbackState == .playing, !reduceMotion {
             if isVinyl {
                 targetSpeed = 1.2
             } else {
@@ -574,14 +603,19 @@ final class RecordAnimator: ObservableObject {
         } else {
             targetSpeed = 0.0
         }
-        
+
+        // Speeds are degrees per 60 Hz frame; `factor` turns them into this
+        // tick's share of rotation.
         let factor = dt / 0.016
 
         if rawSpeed < targetSpeed {
-            rawSpeed += (targetSpeed - rawSpeed) * min(1.0, factor * 0.25)
+            // Motor torque: quick off the line, easing into speed.
+            rawSpeed += (targetSpeed - rawSpeed) * (1 - exp(-dt / Self.spinUpTau))
             if abs(targetSpeed - rawSpeed) < 0.05 { rawSpeed = targetSpeed }
         } else if rawSpeed > targetSpeed {
-            rawSpeed += (targetSpeed - rawSpeed) * min(1.0, factor * 0.035)
+            // Drag plus a little constant friction, so the coast ends.
+            rawSpeed += (targetSpeed - rawSpeed) * (1 - exp(-dt / Self.coastTau))
+            rawSpeed = max(targetSpeed, rawSpeed - Self.coastFriction * dt)
             if abs(rawSpeed - targetSpeed) < 0.05 { rawSpeed = targetSpeed }
         }
 
@@ -641,13 +675,19 @@ extension SpinningRecordView {
         if adjustable, discImage != nil, discImageFile != nil {
             let shown = hovering || isAdjustingCut
             VStack(spacing: 6) {
-                if isAdjustingCut { cutStrip }
+                if isAdjustingCut {
+                    cutStrip.transition(.opacity)
+                }
                 cutToggle
             }
             .padding(.bottom, 10)
             .opacity(shown ? 1 : 0)
             .allowsHitTesting(shown)
-            .animation(.easeInOut(duration: 0.15), value: shown)
+            // Cursor-driven, so it follows the pointer at hover speed; opening
+            // the editor fades its strip in rather than popping it over the
+            // label. Both are opacity, so Reduce Motion keeps them.
+            .animation(CarbonMotion.hover, value: shown)
+            .animation(CarbonMotion.state, value: isAdjustingCut)
         }
     }
 

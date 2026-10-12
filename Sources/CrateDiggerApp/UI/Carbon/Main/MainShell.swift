@@ -5,11 +5,9 @@ struct MainShell: View {
     @Environment(\.carbon) private var theme
     @Environment(\.carbonGeometry) private var geometry
     @EnvironmentObject private var model: LibraryViewModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private static let collapsedRailWidth: CGFloat = 36
-
-    private static let collapseAnimation: Animation =
-        .spring(response: 0.36, dampingFraction: 0.92)
 
     /// Emptying the Prep Crate also drops the saved dig folders, so one stray
     /// click must not do it. The sidebar's context-menu item is a deliberate
@@ -23,10 +21,22 @@ struct MainShell: View {
             inspectorSection
         }
         .frame(maxHeight: .infinity)
-        .animation(Self.collapseAnimation, value: model.sourcesCollapsed)
-        .animation(Self.collapseAnimation, value: model.browserCollapsed)
-        .animation(Self.collapseAnimation, value: model.inspectorCollapsed)
-        .animation(.easeInOut(duration: 0.22), value: model.oledView)
+        // No implicit `.animation` out here. Keyed on the collapse flags it
+        // also animated whatever else changed in that update, and Go to
+        // Current Song and ⌘F expand the browser in the same breath as a
+        // source switch or a cleared search, so a 14k-row list re-flowed on
+        // a spring. Keyed on `oledView` it was worse: typing the first letter
+        // of a search flips the display to SEARCH, so every new query pruned
+        // the list under a 0.22 s ease. The panes move only when the user
+        // moves one (`movePanes`); the inspector animates only its own swap.
+    }
+
+    /// Collapses or expands a pane on the surface spring. Only the chevrons
+    /// and rails go through here, so only a pane change rides the animation;
+    /// the model's own expansions (⌘F, ⌘L) land at once with the content
+    /// they bring, which is what keeps the list out of the transaction.
+    private func movePanes(_ change: () -> Void) {
+        withAnimation(CarbonMotion.layout(CarbonMotion.panel, reduceMotion: reduceMotion), change)
     }
 
     // MARK: - Sources
@@ -37,13 +47,13 @@ struct MainShell: View {
                 CollapsedRail(
                     title: "Sources",
                     subtitle: sourcesCollapsedSubtitle,
-                    onExpand: { model.sourcesCollapsed = false }
+                    onExpand: { movePanes { model.sourcesCollapsed = false } }
                 )
             } else {
                 wellShell(
                     title: "Sources",
                     trailing: sourcesTrailing,
-                    trailingControl: AnyView(collapseChevron(action: { model.sourcesCollapsed = true }))
+                    trailingControl: AnyView(collapseChevron(action: { movePanes { model.sourcesCollapsed = true } }))
                 ) {
                     SourcesSidebar()
                 }
@@ -76,7 +86,7 @@ struct MainShell: View {
                     trailing: browserCollapsedTrailing,
                     trailingControl: nil
                 ) {
-                    BrowserCondensed(onExpand: { model.toggleBrowserCollapsed() })
+                    BrowserCondensed(onExpand: { movePanes { model.toggleBrowserCollapsed() } })
                 }
             } else {
                 wellShell(
@@ -96,7 +106,7 @@ struct MainShell: View {
                         if showsClearPrepCrateKey {
                             clearPrepCrateButton()
                         }
-                        collapseChevron(action: { model.toggleBrowserCollapsed() })
+                        collapseChevron(action: { movePanes { model.toggleBrowserCollapsed() } })
                     })
                 ) {
                     VStack(spacing: 0) {
@@ -138,13 +148,13 @@ struct MainShell: View {
                 CollapsedRail(
                     title: inspectorCollapsedTitle,
                     subtitle: inspectorCollapsedSubtitle,
-                    onExpand: { model.toggleInspectorCollapsed() }
+                    onExpand: { movePanes { model.toggleInspectorCollapsed() } }
                 )
             } else {
                 wellShell(
                     title: inspectorWellTitle,
                     trailing: inspectorWellTrailing,
-                    trailingControl: AnyView(collapseChevron(action: { model.toggleInspectorCollapsed() })),
+                    trailingControl: AnyView(collapseChevron(action: { movePanes { model.toggleInspectorCollapsed() } })),
                     above: showsInspectorChrome ? AnyView(InspectorTabBar()) : nil,
                     below: showsInspectorChrome ? AnyView(InspectorToolsBar()) : nil
                 ) {
@@ -154,6 +164,17 @@ struct MainShell: View {
         }
         .frame(maxWidth: inspectorMaxWidth, maxHeight: .infinity)
         .clipShape(RoundedRectangle(cornerRadius: geometry.wellCornerRadius, style: .continuous))
+        // CONVERT and THEME swap what the well holds: the tab row and tools
+        // step aside and the paper grows into their room while the content
+        // crossfades (`InspectorPane`). Keyed on the surface, not `oledView`,
+        // so NOW → SCAN → SEARCH, which leave the inspector alone, animate
+        // nothing; and scoped to this column, so the browser beside it never
+        // shares the transaction.
+        .animation(CarbonMotion.movement(CarbonMotion.panel, reduceMotion: reduceMotion), value: inspectorSurface)
+    }
+
+    private var inspectorSurface: InspectorSurface {
+        InspectorSurface(oledView: model.oledView, showingThemePicker: model.showingThemePicker)
     }
 
     /// Collapsed rail (36pt) or the fixed column width. Never flexes — a
@@ -165,7 +186,7 @@ struct MainShell: View {
     /// The patch bay and the theme picker take over the whole well, so the
     /// inspector's own tabs and tools step aside for them.
     private var showsInspectorChrome: Bool {
-        model.oledView != .conversion && !model.showingThemePicker
+        inspectorSurface == .inspector
     }
 
     private var inspectorWellTitle: String {

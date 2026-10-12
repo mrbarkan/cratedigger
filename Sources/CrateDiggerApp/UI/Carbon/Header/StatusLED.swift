@@ -5,7 +5,10 @@ import SwiftUI
 /// Tiny activity lamp: a dark unlit ember when idle, solid orange while the
 /// app is working. Deliberately static — no pulse animation; a blinking lamp
 /// calls more attention than background work deserves, and a static view
-/// costs zero GPU while idle (same rule as the Material ban). Mounted in the
+/// costs zero GPU while idle (same rule as the Material ban). Lighting and
+/// going out are the one exception, and finite: up at `CarbonMotion.state`,
+/// down at `.lampOff`, so a burst of short jobs glows rather than strobes.
+/// Mounted in the
 /// titlebar's trailing corner (see `TitlebarStatusLED`), the traffic lights'
 /// opposite number.
 ///
@@ -29,6 +32,7 @@ struct StatusLED: View {
                 .frame(width: 9, height: 9)
                 .overlay(Circle().stroke(Color.black.opacity(0.5), lineWidth: 1))
                 .shadow(color: model.isWorking ? theme.keyLamp.opacity(0.6) : .clear, radius: 3)
+                .animation(model.isWorking ? CarbonMotion.state : CarbonMotion.lampOff, value: model.isWorking)
                 .frame(width: 18, height: 18)
                 .contentShape(Rectangle())
         }

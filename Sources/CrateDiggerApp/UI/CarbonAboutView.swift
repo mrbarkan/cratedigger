@@ -217,7 +217,7 @@ private struct AboutFaceplate: View {
                 .contentShape(shape)
         }
         .buttonStyle(.carbonHover)
-        .animation(.easeInOut(duration: 0.15), value: versionCopied)
+        .animation(CarbonMotion.state, value: versionCopied)
         // Glass, like the header display — the console's grain stops at it.
         .grainFree(cornerRadius: 8)
     }

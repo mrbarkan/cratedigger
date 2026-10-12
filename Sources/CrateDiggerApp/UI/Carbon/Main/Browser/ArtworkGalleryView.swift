@@ -6,6 +6,7 @@ import CrateDiggerCore
 struct ArtworkGalleryView: View {
     @Environment(\.carbon) private var theme
     @EnvironmentObject private var model: LibraryViewModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     
     // When set, the browser pane shows the album page (cover + tracks) for this
     // album instead of the grid. Stored by id so it tracks index rebuilds (e.g.
@@ -84,19 +85,25 @@ struct ArtworkGalleryView: View {
                             .onChange(of: geo.size.width) { width in
                                 model.galleryColumnsPerRow = columnCount(for: width)
                             }
-                            // Follow the selection — arrow nav and Go to Current Song
-                            // both move it off screen otherwise. Mirrors ColumnList.
+                            // Follow the selection the way ColumnList does: a
+                            // click or an arrow key scrolls only as far as it
+                            // takes to show the tile (a nil anchor), so a
+                            // clicked tile never slides out from under the
+                            // pointer.
                             .onChange(of: model.selectedAlbumID) { target in
                                 guard let target else { return }
-                                withAnimation(.easeOut(duration: 0.16)) {
-                                    proxy.scrollTo(target, anchor: .center)
+                                withAnimation(CarbonMotion.scrollFollow(reduceMotion: reduceMotion)) {
+                                    proxy.scrollTo(target, anchor: nil)
                                 }
                             }
-                            // Same id, asked for again: the album was already
-                            // selected, just scrolled away.
+                            // A reveal (Go to Current Song, possibly of an album
+                            // already selected but scrolled away) centres the
+                            // tile. Declared after the selection follow, so on a
+                            // reveal that also moved the selection, this scroll
+                            // is the one that lands.
                             .onChange(of: model.revealTick) { _ in
                                 guard let target = model.selectedAlbumID else { return }
-                                withAnimation(.easeOut(duration: 0.16)) {
+                                withAnimation(CarbonMotion.scrollFollow(reduceMotion: reduceMotion)) {
                                     proxy.scrollTo(target, anchor: .center)
                                 }
                             }
@@ -121,8 +128,22 @@ struct ArtworkGalleryView: View {
         return model.index.album(id: id)
     }
 
-    // Hero transition for the cover growing in/out of the detail page.
-    private static let heroAnimation: Animation = .spring(response: 0.42, dampingFraction: 0.82)
+    /// The cover growing into the album page and shrinking back into its
+    /// tile. A surface taking the whole browser, so it is `reveal`; the old
+    /// local spring (damping 0.82) overshot visibly as the cover landed.
+    /// Under Reduce Motion the cover does not travel at all (`heroMatch`):
+    /// the grid and the page simply dissolve into each other.
+    private var heroAnimation: Animation {
+        CarbonMotion.movement(CarbonMotion.reveal, reduceMotion: reduceMotion)
+    }
+
+
+    /// The artwork-search overlay comes and goes as a dissolve. Set without
+    /// an animation its `.transition(.opacity)` never played: it blinked on
+    /// over the grid.
+    private func showArtworkSearch(_ album: Album?) {
+        withAnimation(CarbonMotion.state) { searchAlbum = album }
+    }
 
     /// Single-click: select the album (highlights the cover here and the row in
     /// the list browser, and drives the inspector's track list) without leaving
@@ -141,7 +162,7 @@ struct ArtworkGalleryView: View {
         // playTrack builds its queue from this album.
         model.revealAlbum(album)
         lastOpenedID = album.id
-        withAnimation(Self.heroAnimation) { detailAlbumID = album.id }
+        withAnimation(heroAnimation) { detailAlbumID = album.id }
     }
 
     // The well header already reads "Browser · GALLERY", so this bar carries the
@@ -239,7 +260,7 @@ struct ArtworkGalleryView: View {
                             .stroke(Color.black.opacity(0.12), lineWidth: 1)
                     )
                     .depthShadow(color: Color.black.opacity(0.15), radius: 4, y: 2)
-                    .matchedGeometryEffect(id: album.id, in: artNamespace)
+                    .heroMatch(id: album.id, in: artNamespace, enabled: !reduceMotion)
                     .contentShape(Rectangle())
                     // Single click selects (highlights + drives the inspector track
                     // list); double click opens the full album page.
@@ -266,7 +287,7 @@ struct ArtworkGalleryView: View {
                 // Fetch Art badge if artwork missing
                 if album.artworkHash == nil {
                     Button(action: {
-                        searchAlbum = album
+                        showArtworkSearch(album)
                         searchArtworkOnline(for: album)
                     }) {
                         Image(systemName: "magnifyingglass.circle.fill")
@@ -322,7 +343,7 @@ struct ArtworkGalleryView: View {
         Divider()
         if album.artworkHash == nil {
             Button("Search Cover Art Online…") {
-                searchAlbum = album
+                showArtworkSearch(album)
                 searchArtworkOnline(for: album)
             }
         }
@@ -382,7 +403,7 @@ struct ArtworkGalleryView: View {
 
     private func detailHeader(_ album: Album) -> some View {
         HStack {
-            Button(action: { withAnimation(Self.heroAnimation) { detailAlbumID = nil } }) {
+            Button(action: { withAnimation(heroAnimation) { detailAlbumID = nil } }) {
                 HStack(spacing: 6) {
                     Image(systemName: "chevron.left").font(.system(size: 10, weight: .bold))
                     Text("Gallery".uppercased())
@@ -412,7 +433,7 @@ struct ArtworkGalleryView: View {
             .cornerRadius(6)
             .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.black.opacity(0.15), lineWidth: 1))
             .depthShadow(color: .black.opacity(0.25), radius: 8, y: 4)
-            .matchedGeometryEffect(id: album.id, in: artNamespace)
+            .heroMatch(id: album.id, in: artNamespace, enabled: !reduceMotion)
 
         if album.booklet != nil {
             Button(action: { openBooklet(album) }) { cover }
@@ -450,7 +471,7 @@ struct ArtworkGalleryView: View {
                 }
                 if album.artworkHash == nil {
                     actionButton("SEARCH ART", systemImage: "magnifyingglass", filled: false) {
-                        searchAlbum = album
+                        showArtworkSearch(album)
                         searchArtworkOnline(for: album)
                     }
                 }
@@ -537,7 +558,7 @@ struct ArtworkGalleryView: View {
             Color.black.opacity(0.4)
                 .ignoresSafeArea()
                 .onTapGesture {
-                    searchAlbum = nil
+                    showArtworkSearch(nil)
                 }
 
             VStack(spacing: 0) {
@@ -548,7 +569,7 @@ struct ArtworkGalleryView: View {
                         .foregroundStyle(theme.ink)
                     Spacer()
                     Button("Close") {
-                        searchAlbum = nil
+                        showArtworkSearch(nil)
                     }
                 }
                 .padding(14)
@@ -660,7 +681,7 @@ struct ArtworkGalleryView: View {
     }
 
     private func downloadAndIngestArtwork(_ url: URL, for album: Album) {
-        searchAlbum = nil
+        showArtworkSearch(nil)
         Task {
             guard let (data, _) = try? await URLSession.shared.data(from: url),
                   let nsImage = NSImage(data: data) else {
@@ -739,6 +760,20 @@ struct GalleryAlbumCoverView: View {
             localImage = await model.artworkService.thumbnailAsync(artworkHash: hash, maxPixel: maxPixel)
         } else {
             localImage = nil
+        }
+    }
+}
+
+private extension View {
+    /// `matchedGeometryEffect` that can be switched off. Reduce Motion turns
+    /// the gallery's hero flight into a dissolve, and with the match gone the
+    /// tile and the page cover are simply two views crossfading.
+    @ViewBuilder
+    func heroMatch<ID: Hashable>(id: ID, in namespace: Namespace.ID, enabled: Bool) -> some View {
+        if enabled {
+            matchedGeometryEffect(id: id, in: namespace)
+        } else {
+            self
         }
     }
 }

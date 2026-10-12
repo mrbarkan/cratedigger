@@ -41,6 +41,43 @@ public final class BorderlessBookletWindow: NSWindow {
     public override var canBecomeKey: Bool {
         return true
     }
+
+    // MARK: Fading in and out
+    //
+    // A screen-sized black window appearing in one frame reads as the display
+    // flashing; the lights going down reads as entering a room. Opacity only,
+    // so Reduce Motion keeps it. Every dark room (this viewer, the booklet,
+    // the full-screen player) enters and leaves through these two.
+
+    /// Orders the window front, fading it up from transparent.
+    func presentFading() {
+        alphaValue = 0
+        makeKeyAndOrderFront(nil)
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = CarbonMotion.windowFadeIn
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            animator().alphaValue = 1
+        }
+    }
+
+    /// Fades the window out, then closes it. Clicks fall through while it
+    /// fades, so the app behind is usable the moment the viewer is dismissed.
+    func dismissFading() {
+        ignoresMouseEvents = true
+        // Hand the keyboard back now, not when the fade ends: for those
+        // 0.16 s a keystroke would otherwise land in a window that is leaving.
+        if isKeyWindow,
+           let next = NSApp.orderedWindows.first(where: { $0 !== self && $0.isVisible && $0.canBecomeKey }) {
+            next.makeKey()
+        }
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = CarbonMotion.windowFadeOut
+            context.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            animator().alphaValue = 0
+        }, completionHandler: { [self] in
+            close()
+        })
+    }
 }
 
 // MARK: - Window Manager Singleton
@@ -54,7 +91,7 @@ public final class BookletWindowManager: NSObject, @unchecked Sendable {
 
     @MainActor
     public func showBooklet(_ booklet: AlbumBooklet, albumTitle: String, artistName: String, theme: CarbonTheme) {
-        activeWindow?.close()
+        activeWindow?.dismissFading()
 
         let bookletView = AlbumBookletView(
             booklet: booklet,
@@ -67,13 +104,13 @@ public final class BookletWindowManager: NSObject, @unchecked Sendable {
         .environment(\.carbon, theme)
 
         let window = BorderlessBookletWindow(contentView: AnyView(bookletView))
-        window.makeKeyAndOrderFront(nil)
+        window.presentFading()
         self.activeWindow = window
     }
 
     @MainActor
     public func closeActiveWindow() {
-        activeWindow?.close()
+        activeWindow?.dismissFading()
         activeWindow = nil
     }
 }

@@ -50,6 +50,9 @@ struct KeyButton<Label: View>: View {
                     .foregroundStyle(textColor)
                     .padding(.horizontal, 8)
             }
+            // A tab or toggle key changing hands: fill and ink cross over at
+            // `state` speed rather than flickering. Colour only.
+            .animation(CarbonMotion.state, value: style)
             .contentShape(shape)
         }
         .buttonStyle(.carbonHover)

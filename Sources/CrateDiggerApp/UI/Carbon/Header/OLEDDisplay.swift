@@ -254,23 +254,38 @@ private enum AnnPulse { case none, breathe, flash }
 
 /// Opacity animation for a whole annunciator (dot + label). Restarts cleanly
 /// when the mode changes (loading → playing swaps flash for breathe).
+///
+/// Opacity only, so Reduce Motion leaves it on: it is the lamp's message
+/// (connecting, on the air), not decoration. It does stop while no window is
+/// on screen: ON AIR breathes for as long as a stream plays, which can be
+/// hours, and a repeating animation nobody can see still costs a redraw
+/// every frame. The same `AppVisibility` gate halts the matrix and the disc.
 private struct AnnBlink: ViewModifier {
     let mode: AnnPulse
+    @ObservedObject private var visibility = AppVisibility.shared
     @State private var dim = false
+
+    /// Half a blink: 0.44 s on-off while connecting (a little over 2 Hz, well
+    /// under the 3 Hz flash threshold), a 1.4 s breath while on the air.
+    private static let flashHalfPeriod = 0.22
+    private static let breatheHalfPeriod = 0.7
+
+    /// The pulse actually running: none while the app is out of sight.
+    private var running: AnnPulse { visibility.isVisible ? mode : .none }
 
     func body(content: Content) -> some View {
         content
-            .opacity(dim ? (mode == .flash ? 0.2 : 0.4) : 1.0)
+            .opacity(dim ? (running == .flash ? 0.2 : 0.4) : 1.0)
             .onAppear(perform: restart)
-            .onChange(of: mode) { _ in restart() }
+            .onChange(of: running) { _ in restart() }
     }
 
     private func restart() {
         var still = Transaction()
         still.disablesAnimations = true
         withTransaction(still) { dim = false }
-        guard mode != .none else { return }
-        let period = mode == .flash ? 0.22 : 0.7
+        guard running != .none else { return }
+        let period = running == .flash ? Self.flashHalfPeriod : Self.breatheHalfPeriod
         withAnimation(.easeInOut(duration: period).repeatForever(autoreverses: true)) { dim = true }
     }
 }
@@ -850,7 +865,6 @@ private struct ScanBar: View {
 
     enum Style { case rainbow(Double), orange(Double), indigoSweep, level(Color, Double) }
     let style: Style
-    @State private var sweep = false
 
     var body: some View {
         GeometryReader { proxy in
@@ -868,14 +882,7 @@ private struct ScanBar: View {
                         .frame(width: w * CGFloat(min(max(f, 0), 1)))
                         .shadow(color: theme.orange.opacity(0.34), radius: 5)
                 case .indigoSweep:
-                    Capsule()
-                        .fill(LinearGradient(colors: [theme.indigo, theme.cyan], startPoint: .leading, endPoint: .trailing))
-                        .frame(width: w * 0.24)
-                        .shadow(color: theme.indigo.opacity(0.4), radius: 5)
-                        .offset(x: sweep ? w * 0.72 : w * 0.04)
-                        .onAppear {
-                            withAnimation(.easeInOut(duration: 1.6).repeatForever(autoreverses: true)) { sweep = true }
-                        }
+                    SweepSegment(width: w)
                 // How much of the source came back, in a given colour. Not a
                 // sweep: the filter is synchronous and finished before this is
                 // drawn, so anything still moving would be claiming work that
@@ -899,6 +906,50 @@ private struct ScanBar: View {
             .mask(alignment: .leading) {
                 Capsule().frame(width: width * CGFloat(min(max(fraction, 0), 1)))
             }
+    }
+}
+
+/// The indeterminate bar's segment (`ScanBar.indigoSweep`): a scanner that
+/// rides back and forth while the work has no measurable progress.
+///
+/// Under Reduce Motion it parks in the middle and breathes instead, which
+/// still says "working" without anything travelling. Like `AnnBlink`, it
+/// stops while no window is on screen.
+private struct SweepSegment: View {
+    @Environment(\.carbon) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject private var visibility = AppVisibility.shared
+    let width: CGFloat
+    @State private var phase = false
+
+    /// One leg of the sweep, end to end. Eased at both ends, so the segment
+    /// slows into each turn like a scanner head rather than bouncing off it.
+    private static let leg = 1.6
+    private static let segment: CGFloat = 0.24
+
+    var body: some View {
+        Capsule()
+            .fill(LinearGradient(colors: [theme.indigo, theme.cyan], startPoint: .leading, endPoint: .trailing))
+            .frame(width: width * Self.segment)
+            .shadow(color: theme.indigo.opacity(0.4), radius: 5)
+            .offset(x: offset)
+            .opacity(reduceMotion && phase ? 0.4 : 1)
+            .onAppear(perform: restart)
+            .onChange(of: visibility.isVisible) { _ in restart() }
+            .onChange(of: reduceMotion) { _ in restart() }
+    }
+
+    private var offset: CGFloat {
+        if reduceMotion { return width * (1 - Self.segment) / 2 }
+        return phase ? width * 0.72 : width * 0.04
+    }
+
+    private func restart() {
+        var still = Transaction()
+        still.disablesAnimations = true
+        withTransaction(still) { phase = false }
+        guard visibility.isVisible else { return }
+        withAnimation(.easeInOut(duration: Self.leg).repeatForever(autoreverses: true)) { phase = true }
     }
 }
 

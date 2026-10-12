@@ -230,7 +230,7 @@ enum ArtworkViewerPresenter {
         // the zoom pill samples the actual black backdrop and comes out dark,
         // so one half of the bar was pale and the other half was not.
         w.appearance = NSAppearance(named: .darkAqua)
-        w.makeKeyAndOrderFront(nil)
+        w.presentFading()
         window = w
     }
 
@@ -263,7 +263,7 @@ enum ArtworkViewerPresenter {
     }
 
     private static func closeAll() {
-        window?.close(); window = nil
+        window?.dismissFading(); window = nil
         panel?.close(); panel = nil
     }
 
@@ -452,7 +452,7 @@ struct AlbumArtworkNavigator: View {
                         lineWidth: 1
                     )
                     .padding(1)
-                    .animation(.easeInOut(duration: 0.18), value: floatingHovering)
+                    .animation(CarbonMotion.hover, value: floatingHovering)
             }
         }
         .onHover { floatingHovering = $0 }

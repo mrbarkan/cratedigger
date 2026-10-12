@@ -7,6 +7,11 @@ import SwiftUI
 /// One window over the app, like the artwork viewer, so the source and the
 /// selection behind it are untouched. Esc, the CLOSE pill or a click on the
 /// backdrop leave it; Space still plays and pauses through the app's monitor.
+///
+/// The room fades in and out rather than cutting. A screen-sized black window
+/// appearing in one frame reads as the display flashing; the lights going
+/// down over a fifth of a second reads as entering a room. Opacity only, so
+/// Reduce Motion keeps it.
 @MainActor
 enum NowPlayingFullScreenPresenter {
     private static var window: BorderlessBookletWindow?
@@ -25,13 +30,16 @@ enum NowPlayingFullScreenPresenter {
         let w = BorderlessBookletWindow(contentView: AnyView(view))
         // A dark room whatever the app's Appearance says — see ArtworkViewerPresenter.
         w.appearance = NSAppearance(named: .darkAqua)
-        w.makeKeyAndOrderFront(nil)
         window = w
+        w.presentFading()
     }
 
     static func close() {
-        window?.close()
+        guard let w = window else { return }
+        // Forgotten at once, so a second Esc or a show() during the fade
+        // starts from a clean slate; the fading window only waits to close.
         window = nil
+        w.dismissFading()
     }
 }
 
@@ -96,12 +104,20 @@ struct NowPlayingFullScreenView: View {
         Color.clear
             .aspectRatio(1, contentMode: .fit)
             .overlay {
-                if let cover {
-                    Image(nsImage: cover)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                } else {
-                    EmptyMediaCase(format: album?.mediaFormat, seed: album?.id ?? "empty")
+                // Each picture its own identity, so a track change (or the
+                // full-size cover landing after the window opened on the empty
+                // case) dissolves instead of cutting. See `NowPlayingCover`.
+                ZStack {
+                    if let cover {
+                        Image(nsImage: cover)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .id(ObjectIdentifier(cover))
+                            .transition(.opacity)
+                    } else {
+                        EmptyMediaCase(format: album?.mediaFormat, seed: album?.id ?? "empty")
+                            .transition(.opacity)
+                    }
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
@@ -121,16 +137,20 @@ struct NowPlayingFullScreenView: View {
     /// The screen wants more pixels than any thumbnail the app keeps: 2000px
     /// covers a 1000pt square on a Retina display.
     private func loadCover() async {
-        guard let loaded = model.nowPlayingTrack else { cover = nil; return }
+        guard let loaded = model.nowPlayingTrack else { show(nil); return }
         if let coverURL = album?.booklet?.frontCoverURL,
            let image = await loadThumbnail(url: coverURL, maxPixelSize: 2000) {
-            cover = image
+            show(image)
         } else if let hash = loaded.track.artworkHash,
                   let image = await model.artworkService.thumbnailAsync(artworkHash: hash, maxPixel: 2000) {
-            cover = image
+            show(image)
         } else {
-            cover = nil
+            show(nil)
         }
+    }
+
+    private func show(_ image: NSImage?) {
+        withAnimation(CarbonMotion.state) { cover = image }
     }
 
     // MARK: - Titles (same three lines as the mini player)

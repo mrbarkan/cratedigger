@@ -34,22 +34,38 @@ struct CarbonRootView: View {
 
     var body: some View {
         ChassisLayer {
-            switch model.playerLayout {
-            case .full:
-                VStack(spacing: geometry.chassisRowGap) {
-                    HeaderShell()
-                        .frame(height: geometry.headerHeight)
-                    MainShell()
-                        .frame(maxHeight: .infinity)
-                    FooterShell()
-                        .frame(height: geometry.footerHeight)
+            Group {
+                switch model.playerLayout {
+                case .full:
+                    VStack(spacing: geometry.chassisRowGap) {
+                        HeaderShell()
+                            .frame(height: geometry.headerHeight)
+                        MainShell()
+                            .frame(maxHeight: .infinity)
+                        FooterShell()
+                            .frame(height: geometry.footerHeight)
+                    }
+                case .compact:
+                    // One rack unit: art, display, transport. Everything presented
+                    // from model state hangs off `libraryPresentations()` below,
+                    // so it works in both layouts.
+                    CompactDeckView()
                 }
-            case .compact:
-                // One rack unit: art, display, transport. Everything presented
-                // from model state hangs off `libraryPresentations()` below,
-                // so it works in both layouts.
-                CompactDeckView()
             }
+            // Pinned to the top for the fold and unfold. The strip hangs from
+            // the console's top edge (`WindowFramePlanner.compactPlan` anchors
+            // there when it has no saved frame), but the chassis centres what
+            // it holds: the compact deck rode up through a shrinking window,
+            // and the full console's header started half off the top and slid
+            // down into place. Pinned, the console folds up into the strip and
+            // unrolls back down out of it, wherever the window is travelling.
+            // At rest either layout fills the window, so no resting frame moves.
+            //
+            // The swap itself stays a cut, deliberately: a crossfade would keep
+            // the whole browser alive and re-laying out at every size the
+            // window passes through, and the window's own travel already says
+            // where the console went.
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .libraryPresentations()
         // The activity lamp is a titlebar accessory (MainWindowController) so

@@ -56,6 +56,10 @@ struct DisplayModeButton: View {
                     Capsule(style: .continuous)
                         .stroke(Color.black.opacity(theme.isDark ? 0.5 : 0.15), lineWidth: 0.5)
                 )
+                // The strip is a lamp in the key, not a segment on the glass:
+                // it changes colour at lamp speed while the OLED beside it
+                // snaps to the new screen.
+                .animation(CarbonMotion.state, value: model.oledView)
                 .padding(.horizontal, 10)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .contentShape(Rectangle())

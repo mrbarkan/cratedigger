@@ -19,7 +19,7 @@ struct PlayDomeButton: View {
             }
             .frame(width: geometry.playButtonSize, height: geometry.playButtonSize)
         }
-        .buttonStyle(.carbonHover)
+        .buttonStyle(.siliconeKey(shape: Circle()))
         .accessibilityLabel(isPlaying ? "Pause" : "Play")
     }
 }

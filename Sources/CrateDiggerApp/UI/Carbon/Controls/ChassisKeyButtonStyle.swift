@@ -34,8 +34,11 @@ struct ChassisKeyButtonStyle: ButtonStyle {
                 .padding(ChassisKeyMetrics.seat)
                 .background(KeySocket(theme: theme, cornerRadius: geometry.keyCornerRadius + ChassisKeyMetrics.seat))
                 .contentShape(Rectangle())
-                .animation(.easeOut(duration: 0.07), value: pressed)
-                .animation(.easeOut(duration: 0.12), value: hovering)
+                // One point of travel at key speed. Small and over in a frame
+                // or two, so it is feedback rather than motion and stays on
+                // under Reduce Motion.
+                .animation(CarbonMotion.press, value: pressed)
+                .animation(CarbonMotion.hover, value: hovering)
                 .onHover { hovering = $0 && isEnabled }
         }
 

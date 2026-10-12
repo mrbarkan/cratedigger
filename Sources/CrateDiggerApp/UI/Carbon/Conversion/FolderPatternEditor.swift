@@ -13,6 +13,7 @@ import CrateDiggerCore
 /// editor just presents the enabled tags. Any edit forks the preset to `.custom`.
 struct FolderPatternEditor: View {
     @Environment(\.carbon) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Binding var tokenOrder: [FolderToken]
     @Binding var separators: [FolderSeparator]
     @Binding var preset: TemplatePreset
@@ -159,7 +160,10 @@ struct FolderPatternEditor: View {
                 for other in chips where other != token {
                     if let center = chipCenters[other], center < dropX { destination += 1 }
                 }
-                withAnimation(.easeInOut(duration: 0.16)) {
+                // The dropped chip settles into its slot and its neighbours
+                // close up on the surface spring; under Reduce Motion they
+                // dissolve into place instead.
+                withAnimation(CarbonMotion.movement(CarbonMotion.panel, reduceMotion: reduceMotion)) {
                     draggingToken = nil
                     dragTranslation = .zero
                     if let source, source != destination {

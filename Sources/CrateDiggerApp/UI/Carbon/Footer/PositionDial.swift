@@ -31,6 +31,10 @@ struct PositionDial: View {
                     Image(systemName: model.scrubLockEnabled ? "lock.fill" : "lock.open")
                         .font(.system(size: 9, weight: .semibold))
                         .foregroundStyle(model.scrubLockEnabled ? theme.cyan : theme.ink3)
+                        // Lit cyan while scroll-to-seek is on: a lamp, so it
+                        // lights at lamp speed and dies away slower.
+                        .animation(model.scrubLockEnabled ? CarbonMotion.state : CarbonMotion.lampOff,
+                                   value: model.scrubLockEnabled)
                 }
                 .buttonStyle(.carbonHover)
                 .carbonTip(model.scrubLockEnabled

@@ -6,6 +6,7 @@ import SwiftUI
 struct InspectorPane: View {
     @Environment(\.carbon) private var theme
     @EnvironmentObject private var model: LibraryViewModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var activeTab: InspectorTab { model.inspectorTab }
 
@@ -17,22 +18,24 @@ struct InspectorPane: View {
     /// itself on hover so that's discoverable without a label.
     @State private var hoveringCover = false
 
+    /// The crossfade between surfaces rides the animation `MainShell` keys on
+    /// `InspectorSurface`, which also moves the well's tab row and tools out
+    /// of the way; one transaction, so the two can never drift apart.
     var body: some View {
         ZStack {
-            if model.oledView == .conversion {
+            switch InspectorSurface(oledView: model.oledView, showingThemePicker: model.showingThemePicker) {
+            case .patchBay:
                 ConvertPatchBay()
                     .transition(.opacity)
-            } else if model.showingThemePicker {
+            case .themePicker:
                 ThemePickerPane()
                     .transition(.opacity)
-            } else {
+            case .inspector:
                 inspectorContent
                     .transition(.opacity)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .animation(.easeInOut(duration: 0.22), value: model.oledView)
-        .animation(.easeInOut(duration: 0.22), value: model.showingThemePicker)
     }
 
     @ViewBuilder
@@ -97,7 +100,7 @@ struct InspectorPane: View {
         }
         .buttonStyle(.plain)
         .onHover { hoveringCover = $0 }
-        .animation(.easeInOut(duration: 0.18), value: hoveringCover)
+        .animation(CarbonMotion.hover, value: hoveringCover)
         .carbonTip(album?.booklet != nil ? "Open this album's digital booklet" : "View the album cover")
     }
 
@@ -170,7 +173,15 @@ struct InspectorPane: View {
                 .truncationMode(.tail)
                 .fixedSize(horizontal: false, vertical: true)
                 .contentShape(Rectangle())
-                .onTapGesture { titleExpanded.toggle() }
+                // Explicit rather than an implicit `.animation` on this block:
+                // the extra lines take their room from the cover above, and an
+                // animation scoped here would grow the text on a curve while
+                // the cover snapped smaller around it.
+                .onTapGesture {
+                    withAnimation(CarbonMotion.movement(CarbonMotion.panel, reduceMotion: reduceMotion)) {
+                        titleExpanded.toggle()
+                    }
+                }
             Text((album?.artistName ?? "—").uppercased())
                 .font(CarbonFont.mono(10, weight: .semibold))
                 .tracking(1.6)
@@ -180,7 +191,7 @@ struct InspectorPane: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .animation(.easeInOut(duration: 0.16), value: titleExpanded)
+        // A new album lands at once, so its title does too.
         .onChange(of: album?.id) { _ in titleExpanded = false }
         .overlay(
             Rectangle()
@@ -192,6 +203,24 @@ struct InspectorPane: View {
 
 }
 
+
+/// What the inspector well is holding. The Patch Bay outranks the theme
+/// picker, as it always did. Decided once, here, because the well's chrome
+/// (`MainShell`) and its content (`InspectorPane`) both switch on it and
+/// animate on its change.
+enum InspectorSurface: Equatable {
+    case inspector, patchBay, themePicker
+
+    init(oledView: OLEDView, showingThemePicker: Bool) {
+        if oledView == .conversion {
+            self = .patchBay
+        } else if showingThemePicker {
+            self = .themePicker
+        } else {
+            self = .inspector
+        }
+    }
+}
 
 /// The inspector's tab set. Top-level (not nested/private) so `LibraryViewModel`
 /// can hold the selection.

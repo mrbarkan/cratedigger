@@ -37,7 +37,7 @@ struct TransportCluster: View {
         Button(action: { ClickPlayer.shared.play(.key); action() }) {
             cap(systemName: systemName, lit: on)
         }
-        .buttonStyle(.carbonHover)
+        .buttonStyle(.siliconeKey)
         .carbonTip(label)
         .accessibilityLabel(label)
     }
@@ -46,7 +46,7 @@ struct TransportCluster: View {
         Button(action: action) {
             cap(systemName: systemName, lit: false)
         }
-        .buttonStyle(.carbonHover)
+        .buttonStyle(.siliconeKey)
         .carbonTip(label)
         .accessibilityLabel(label)
     }

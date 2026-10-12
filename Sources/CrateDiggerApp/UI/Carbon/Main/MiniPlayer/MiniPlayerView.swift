@@ -262,6 +262,8 @@ private struct MiniPlayerBody: View {
             Image(systemName: system)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(lit ? theme.orange : theme.ink3)
+                // Lit while the drawer is out, at the console's lamp speeds.
+                .animation(lit ? CarbonMotion.state : CarbonMotion.lampOff, value: lit)
                 .frame(width: 24, height: 24)
                 .background(ChromeChassis(theme: theme, cornerRadius: geometry.scaled(7, following: \.keyCornerRadius)))
         }
@@ -391,7 +393,7 @@ private struct MiniPlayerBody: View {
                 }
                 .frame(width: 54, height: 54)
             }
-            .buttonStyle(.carbonHover)
+            .buttonStyle(.siliconeKey(shape: Circle()))
             .carbonTip("Play / Pause")
             .accessibilityLabel(model.playbackState == .playing ? "Pause" : "Play")
             transportKey("forward.end.fill", tip: "Next") { model.next() }
@@ -413,7 +415,7 @@ private struct MiniPlayerBody: View {
             }
             .frame(width: 40, height: 40)
         }
-        .buttonStyle(.carbonHover)
+        .buttonStyle(.siliconeKey)
         .carbonTip(tip)
         .accessibilityLabel(tip)
     }
@@ -479,6 +481,9 @@ private struct MiniPlayerPanel: View {
             }
         }
         .padding(6)
+        // A selection changing: the lit tab hands over at `state` speed. Only
+        // the tab row; the list under it swaps at once, like the main window's.
+        .animation(CarbonMotion.state, value: tab)
         .overlay(
             Rectangle()
                 .fill(theme.hair.opacity(theme.isDark ? 0.5 : 0.8))

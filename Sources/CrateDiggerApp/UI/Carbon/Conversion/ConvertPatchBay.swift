@@ -10,6 +10,13 @@ struct ConvertPatchBay: View {
     @Environment(\.carbon) private var theme
     @Environment(\.carbonGeometry) private var geometry
     @EnvironmentObject private var model: LibraryViewModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// A row arriving or leaving pushes the rows under it: a movement, on the
+    /// surface spring the inspector itself swaps on.
+    private var rowMotion: Animation {
+        CarbonMotion.movement(CarbonMotion.panel, reduceMotion: reduceMotion)
+    }
 
     /// Measured height of the scrollable settings rows, vs. the viewport, so a
     /// discrete "more below" fade appears only when a row is scrolled out of sight.
@@ -37,6 +44,14 @@ struct ConvertPatchBay: View {
                     VStack(spacing: geometry.patchBayRowGap) {
                         tabContent
                     }
+                    // A row arriving or leaving (LEVEL with the format,
+                    // PATTERN with CUSTOM) pushes the rows under it. Keyed on
+                    // the stack the rows are inserted into: on a `Group`, as
+                    // these were, the modifier lands on each row separately,
+                    // never sees an insertion, and the transition never
+                    // played (measured).
+                    .animation(rowMotion, value: encoding.format)
+                    .animation(rowMotion, value: folderPlan.wrappedValue)
                     .padding(EdgeInsets(top: 14, leading: 14, bottom: 10, trailing: 14))
                     .frame(maxWidth: .infinity, alignment: .top)
                     .background(
@@ -90,7 +105,9 @@ struct ConvertPatchBay: View {
             formatRow
             // Only the knobs this format has. A lossless encoder has no
             // bitrate (its size is whatever the audio compresses to), so the
-            // row it would take shows the bit depth instead.
+            // row it would take shows the bit depth instead. LEVEL and
+            // PATTERN come and go on the animations keyed on the rows'
+            // stack (`body`).
             Group {
                 if encoding.format.usesBitrate {
                     bitrateRow
@@ -99,17 +116,16 @@ struct ConvertPatchBay: View {
                 }
                 if !encoding.format.compressionLevelOptions.isEmpty {
                     levelRow
-                        .transition(.opacity.combined(with: .move(edge: .top)))
+                        .transition(CarbonMotion.slide(from: .top, reduceMotion: reduceMotion))
                 }
                 sampleRow
             }
-            .animation(.easeInOut(duration: 0.18), value: encoding.format)
             layoutRow
             // PATTERN is CUSTOM's editor. It used to sit there dimmed and dead
             // in every other mode, taking a row's height to say nothing.
             if folderPlan.wrappedValue == .custom {
                 patternRow
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .transition(CarbonMotion.slide(from: .top, reduceMotion: reduceMotion))
             }
             destRow
         case .options:
@@ -559,7 +575,6 @@ struct ConvertPatchBay: View {
             )
             .carbonTip("How the converted files are foldered. MIRROR keeps your source tree's shape · FLAT puts everything in one folder · TAGS uses the standard Artist / Year Album layout · CUSTOM opens the pattern editor so you can shape it yourself.")
         }
-        .animation(.easeInOut(duration: 0.18), value: folderPlan.wrappedValue)
     }
 
     private var patternRow: some View {
@@ -980,6 +995,15 @@ private struct ArmGoButton: View {
 
     @State private var holdProgress: Double = 0
 
+    /// How long CONVERT must be held. The hazard fill runs on the same clock,
+    /// linearly, because it is a progress bar for the hold rather than an
+    /// ornament: it reaches the end exactly as the action fires. Kept under
+    /// Reduce Motion for the same reason, like any progress indicator.
+    private static let holdDuration: Double = 0.7
+    /// Letting go early drains the fill quickly but visibly, so an aborted
+    /// hold reads as aborted rather than as a glitch.
+    private static let holdRelease: Double = 0.15
+
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 6, style: .continuous)
@@ -1010,12 +1034,12 @@ private struct ArmGoButton: View {
         // minimumDistance-0 DragGesture (which the scroll view swallowed, leaving
         // Convert unresponsive). Pressing fills the hazard bar over the hold;
         // releasing early resets it.
-        .onLongPressGesture(minimumDuration: 0.7, maximumDistance: 80) {
+        .onLongPressGesture(minimumDuration: Self.holdDuration, maximumDistance: 80) {
             guard enabled else { return }
             holdProgress = 0
             action()
         } onPressingChanged: { pressing in
-            withAnimation(.linear(duration: pressing ? 0.7 : 0.15)) {
+            withAnimation(.linear(duration: pressing ? Self.holdDuration : Self.holdRelease)) {
                 holdProgress = (pressing && enabled) ? 1 : 0
             }
         }

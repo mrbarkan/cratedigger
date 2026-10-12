@@ -49,8 +49,9 @@ final class MiniPlayerWindowController: NSWindowController {
         guard abs(current.height - height) > 0.5 else { return }
         let frame = NSRect(x: current.minX, y: current.maxY - height, width: MiniPlayerView.width, height: height)
         // Before the window is on screen (the first-run "nothing playing"
-        // open) there is nothing to animate.
-        window.setFrame(frame, display: true, animate: window.isVisible)
+        // open) there is nothing to animate; under Reduce Motion the drawer
+        // opens in place rather than sliding.
+        window.setFrame(frame, display: true, animate: window.isVisible && !CarbonMotion.prefersReducedMotion)
     }
 
     /// Default the player to the top-right of the active screen.

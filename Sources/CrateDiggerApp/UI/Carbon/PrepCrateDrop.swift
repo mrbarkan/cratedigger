@@ -94,7 +94,9 @@ struct PrepCrateDropOverlay: View {
             }
         }
         .allowsHitTesting(false)
-        .animation(.easeOut(duration: 0.15), value: hint)
+        // A dissolve, never a movement: it is under the pointer mid-drag, and
+        // RECORD ↔ NOT A RECORD is one message giving way to another.
+        .animation(CarbonMotion.state, value: hint)
         .ignoresSafeArea()
     }
 

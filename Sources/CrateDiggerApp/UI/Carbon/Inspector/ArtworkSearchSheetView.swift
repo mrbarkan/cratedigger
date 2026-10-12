@@ -156,7 +156,7 @@ struct ArtworkSearchSheetView: View {
                     .transition(.opacity)
             }
         }
-        .animation(.easeInOut(duration: 0.15), value: previewImage?.id)
+        .animation(CarbonMotion.state, value: previewImage?.id)
     }
 
     private func imagePreviewOverlay(_ img: RemoteArtworkImage) -> some View {

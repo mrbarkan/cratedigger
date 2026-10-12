@@ -4,6 +4,7 @@ import SwiftUI
 struct SourcesSidebar: View {
     @Environment(\.carbon) private var theme
     @EnvironmentObject private var model: LibraryViewModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var showingPlaylistSheet = false
     @State private var newPlaylistName = ""
@@ -100,6 +101,8 @@ struct SourcesSidebar: View {
                             RoundedRectangle(cornerRadius: 6)
                                 .stroke(targetedCrate == crateName ? theme.cyan : Color.clear, lineWidth: 1.5)
                         )
+                        // A cursor-driven highlight, like every hover ring.
+                        .animation(CarbonMotion.hover, value: targetedCrate == crateName)
                         .draggable("crate::" + crateName)
                         .dropDestination(for: String.self) { items, _ in
                             // A crate dragged onto another reorders the list; any other
@@ -267,6 +270,7 @@ struct SourcesSidebar: View {
                             RoundedRectangle(cornerRadius: 6)
                                 .stroke(targetedPlaylist == pl.name ? theme.cyan : Color.clear, lineWidth: 1.5)
                         )
+                        .animation(CarbonMotion.hover, value: targetedPlaylist == pl.name)
                         .dropDestination(for: String.self) { items, _ in
                             model.addItemsToPlaylist(items, playlistName: pl.name)
                             return true
@@ -442,7 +446,11 @@ struct SourcesSidebar: View {
         .padding(.bottom, 3)
         .contentShape(Rectangle())
         .onTapGesture {
-            withAnimation(.easeOut(duration: 0.15)) { toggleSection(title) }
+            // Rows below slide to make room or close the gap: a movement,
+            // on the same spring as the panes around the sidebar.
+            withAnimation(CarbonMotion.movement(CarbonMotion.panel, reduceMotion: reduceMotion)) {
+                toggleSection(title)
+            }
         }
     }
 

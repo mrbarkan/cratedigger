@@ -23,6 +23,11 @@ struct ScrollRequest: Equatable {
 
 struct ColumnList<Content: View>: View {
     @Environment(\.carbon) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The last `revealTick` acted on, to tell a reveal (centre the row) from
+    /// a selection moved by a click or the arrow keys (scroll only if needed).
+    @State private var handledRevealTick = 0
+
     let title: String
     let trailing: String
     /// Drawn in place of the title when given — the facet menu, so a column's
@@ -109,7 +114,10 @@ struct ColumnList<Content: View>: View {
                     .frame(height: 1),
                 alignment: .bottom
             )
-            .animation(.easeOut(duration: 0.12), value: isFocused)
+            // The rail is a lamp: it lights and goes out on the state curve.
+            // Not `lampOff` going out — arrowing across columns would leave
+            // two rails lit at once and focus ambiguous for most of a second.
+            .animation(CarbonMotion.state, value: isFocused)
 
             if let subheader {
                 subheader
@@ -126,10 +134,20 @@ struct ColumnList<Content: View>: View {
                 // second closure reading `scrollTarget` gets the *previous*
                 // selection — which scrolled the column straight back to the
                 // album you were browsing, half a frame after the reveal.
+                //
+                // A reveal ("Go to Current Song", the gallery) comes from
+                // somewhere else in the list, so it centres the row with
+                // context around it. A click or an arrow key moves the
+                // selection to a row you are looking at: a nil anchor scrolls
+                // the least that shows it — nothing at all when it is already
+                // fully visible, so a clicked row never slides out from under
+                // the pointer, and arrowing past an edge steps the list along.
                 .onChange(of: ScrollRequest(target: scrollTarget, tick: revealTick)) { request in
+                    let isReveal = request.tick != handledRevealTick
+                    handledRevealTick = request.tick
                     guard let target = request.target else { return }
-                    withAnimation(.easeOut(duration: 0.16)) {
-                        proxy.scrollTo(target, anchor: .center)
+                    withAnimation(CarbonMotion.scrollFollow(reduceMotion: reduceMotion)) {
+                        proxy.scrollTo(target, anchor: isReveal ? .center : nil)
                     }
                 }
                 // Built with a selection already in place (launch, a view
@@ -137,6 +155,7 @@ struct ColumnList<Content: View>: View {
                 // land on it rather than on the top of the list. The gallery
                 // already does the same.
                 .onAppear {
+                    handledRevealTick = revealTick
                     guard let scrollTarget else { return }
                     proxy.scrollTo(scrollTarget, anchor: .center)
                 }

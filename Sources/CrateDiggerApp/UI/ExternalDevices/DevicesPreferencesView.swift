@@ -243,9 +243,10 @@ struct DevicesPreferencesView: View {
         selectedID = saved.id
         loadDraft(for: saved.id)
 
-        withAnimation { showSavedConfirmation = true }
+        // A confirmation lamp: lights on the state curve, fades like one.
+        withAnimation(CarbonMotion.state) { showSavedConfirmation = true }
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            withAnimation { showSavedConfirmation = false }
+            withAnimation(CarbonMotion.lampOff) { showSavedConfirmation = false }
         }
     }
 
