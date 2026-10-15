@@ -379,6 +379,8 @@ extension LibraryViewModel {
             currentFilename: plans.first?.sourceURL.lastPathComponent,
             isRunning: true
         )
+        // Drawn on CNVRT, where the app already shows a copy transfer.
+        let busyJob = beginBusyJob(.transfer, on: .conversion)
 
         let outcome = await withCheckedContinuation { continuation in
             let task = Task.detached(priority: .userInitiated) {
@@ -428,7 +430,13 @@ extension LibraryViewModel {
             currentFilename: nil,
             isRunning: false
         )
+        // Read before the task is dropped: the loop counts a cancelled item
+        // as a failure, so only this flag tells a cancelled partial copy from
+        // a finished one.
+        let wasCancelled = conversionTask?.isCancelled ?? false
         conversionTask = nil
+        endBusyJob(busyJob, .copyTransfer(wasCancelled: wasCancelled,
+                                          succeeded: outcome.0, failed: outcome.1))
 
         let title: String
         let statusLine: String

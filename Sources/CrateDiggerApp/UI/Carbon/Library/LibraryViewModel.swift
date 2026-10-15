@@ -2092,6 +2092,10 @@ final class LibraryViewModel: ObservableObject {
         // An explicit import jumps the OLED to Scan. Skip on launch restore so
         // we don't override the user's saved view every time the app opens.
         if !isRestore { oledView = .scan }
+        // The launch restore is housekeeping the user did not start, so it
+        // plays no Busy Signals scene. A dig that is cancelled (superseded)
+        // returns below without ending; the next `begin` retires it.
+        let busyJob = isRestore ? nil : beginBusyJob(.scan, on: .scan)
         // Playback is NOT touched: a dig merges into the Prep Crate, it doesn't
         // replace the library, and the queue holds tracks (not index positions),
         // so whatever is spinning keeps spinning while the scan runs.
@@ -2120,6 +2124,7 @@ final class LibraryViewModel: ObservableObject {
                     self.persistFolderBookmarks(urls)
                 }
                 self.handleImport(merged)
+                self.endBusyJob(busyJob, .scan(found: merged.count))
             }
         }
     }
@@ -2502,6 +2507,7 @@ final class LibraryViewModel: ObservableObject {
         let deviceName = device.name
         scanProgress = ScanProgress(folderName: deviceName, filesProbed: 0, totalCandidates: nil, isRunning: true)
         oledView = .scan
+        let busyJob = beginBusyJob(.scan, on: .scan)
         let root = device.volumeURL
         scanTask?.cancel()
         scanTask = Task { [weak self] in
@@ -2521,6 +2527,7 @@ final class LibraryViewModel: ObservableObject {
                 let built = self.buildIndex(scanned)
                 self.deviceIndexCache[volumePath] = built
                 self.scanProgress = .idle
+                self.endBusyJob(busyJob, .completed)
                 // Only adopt the result if the user is still on this device.
                 guard case .device(let current) = self.currentSource, current == volumePath else { return }
                 self.adoptDeviceIndex(built)
@@ -2631,6 +2638,9 @@ final class LibraryViewModel: ObservableObject {
         // Only a secure rip has a read phase to cancel; a normal one leaving
         // this set would keep a dead flag around until the next rip.
         secureRipCancellation = secure ? cancellation : nil
+        // A secure rip starts as a secure read and is handed over to the rip
+        // when its verified WAVs go on to be encoded (same job, same start).
+        let busyJob = beginBusyJob(secure ? .secureRead : .rip, on: .dub)
 
         /// A Secure Mode failure, already worded for the alert. Kept apart from
         /// conversion errors so it is never reported as an ordinary rip error.
@@ -2689,6 +2699,9 @@ final class LibraryViewModel: ObservableObject {
                         jobsCompleted: 0, jobsTotal: info.tracks.count,
                         currentFilename: nil, isRunning: true, startedAt: Date()
                     )
+                    // After the encode's first snapshot, so the hand-over
+                    // feeds it to the rip and arms the conversion safety net.
+                    self.handBusyJob(busyJob, to: .rip)
                 }
 
                 var jobs: [ConversionJob] = []
@@ -2767,11 +2780,16 @@ final class LibraryViewModel: ObservableObject {
                 }.value
 
                 await MainActor.run {
-                    self.activeConversionService = nil
-                    self.oledView = .nowPlaying
-                    self.conversionProgress = .idle
                     let fails = results.filter { $0.status == .failed }
-                    if results.contains(where: \.wasCancelled) {
+                    let wasCancelled = results.contains(where: \.wasCancelled)
+                    // Before `loadFolders` below, so the rip has finished
+                    // before the scan begins (the chained rip → scan case).
+                    self.endBusyJob(busyJob, .rip(cancelled: wasCancelled, failedTracks: fails.count))
+                    self.activeConversionService = nil
+                    // No jump to NOW: DUB stays put so the finished frame can
+                    // be seen (Busy Signals spec §5).
+                    self.conversionProgress = .idle
+                    if wasCancelled {
                         self.showOLEDNotice("RIP CANCELLED")
                     } else if fails.isEmpty {
                         var title = "CD Ripped!"
@@ -2792,9 +2810,10 @@ final class LibraryViewModel: ObservableObject {
                 }
             } catch {
                 await MainActor.run {
+                    self.endBusyJob(busyJob, .thrown(error))
                     finishSecurePhase()
                     self.activeConversionService = nil
-                    self.oledView = .nowPlaying
+                    // No jump to NOW: DUB stays put (Busy Signals spec §5).
                     self.conversionProgress = .idle
                     switch error {
                     case is CancellationError:
@@ -4047,6 +4066,9 @@ final class LibraryViewModel: ObservableObject {
             folderName: "Scanning dropped items…",
             filesProbed: 0, totalCandidates: nil, isRunning: true
         )
+        // A drop never leaves the screen it landed on, so this scan is the
+        // one most likely to finish elsewhere and blink its mini.
+        let busyJob = beginBusyJob(.scan, on: .scan)
         Task { [weak self] in
             guard let self else { return }
             var collected: [LoadedTrack] = []
@@ -4064,6 +4086,7 @@ final class LibraryViewModel: ObservableObject {
             await MainActor.run {
                 guard !collected.isEmpty else {
                     self.scanProgress = .idle
+                    self.endBusyJob(busyJob, .scan(found: 0))
                     self.appAlert = .error(
                         title: "Nothing to Import",
                         message: "No supported audio files were found in the dropped items."
@@ -4078,6 +4101,9 @@ final class LibraryViewModel: ObservableObject {
                     totalCandidates: staged,
                     isRunning: false
                 )
+                // Staged nothing new (every file was already filed) still
+                // found what was dropped, so it completed.
+                self.endBusyJob(busyJob, .completed)
                 self.scanForCleanup()
             }
         }
@@ -4909,6 +4935,7 @@ final class LibraryViewModel: ObservableObject {
         scanGeneration += 1
         let generation = scanGeneration
         scanProgress = ScanProgress(folderName: "Scanning dropped files...", filesProbed: 0, totalCandidates: nil, isRunning: true)
+        let busyJob = beginBusyJob(.scan, on: .scan)
 
         Task { [weak self] in
             guard let self else { return }
@@ -4929,6 +4956,9 @@ final class LibraryViewModel: ObservableObject {
             
             await MainActor.run {
                 self.scanProgress = .idle
+                // The scan ends here; the copy into the library that may
+                // follow is unstamped housekeeping on the same channel.
+                self.endBusyJob(busyJob, .scan(found: deduplicated.count))
                 // Files dropped from Finder are genuinely new to the app, so this is
                 // a real import — honor copy-on-import.
                 //
