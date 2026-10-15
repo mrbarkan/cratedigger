@@ -803,8 +803,13 @@ pixel-identical.
 With a record, the top part (headline row, spacer, ticker) is laid out the
 way `NowPlayingScaffold` lays out its band:
 
-- **The band.** A `GeometryReader` wraps the top part. Its height is what is
-  left above the 48 pt cell rail, ≈ 85 pt at the default 170 pt header.
+- **The band.** A `GeometryReader` wraps the whole pane and *measures* the
+  band: what is left above the 48 pt cell rail (`OLEDCells.footprint`) and
+  the 6 pt top inset, ≈ 85 pt at the default 170 pt header. The band is
+  never imposed on the content: the text column is the same stack as the
+  plain pane's, with the picture an overlay on it, so text taller than the
+  band overflows as today (rail pushed down, clipped at the glass) and never
+  prints over the rail.
 - **Where the picture goes.** `BusyPictureLayout.frame(bandSize:leading:topInset:)`
   places it:
   - leading at `OLEDCells.textLeading(ofColumn: 2, in: width)`, so the
@@ -826,15 +831,23 @@ way `NowPlayingScaffold` lays out its band:
     ≈ 151 pt instead of ≈ 325).
   - **Readout:** keeps its place at the right, bottom-aligned with the
     headline as today.
-  - **Ticker:** framed to the same `maxWidth` as the headline, and its pane
-    passes **`meta: nil`** while a picture is present. `DSPTicker`'s prefix
+  - **Ticker:** framed to the same `maxWidth` as the headline, and
+    `DSPTicker` drops its meta while a picture is *laid out* beside it (the
+    `busyPictureShown` environment value, set from the frame actually drawn,
+    not from the record). `DSPTicker`'s prefix
     and meta are `.fixedSize()` (:810-840), so they cannot shrink. In
     `ConversionPane.previewBody` (:1296) the prefix "PREVIEW · 01 / 12"
     (≈ 119 pt) plus the template meta "TEMPLATE · {ARTIST}/{YEAR} {ALBUM}"
     (≈ 241 pt) plus spacing come to ≈ 384 pt, more than the ≈ 325 pt left
     beside the picture, and that body still shows a finished convert picture.
     The path between them truncates from the head, as it does today. The
-    meta returns as soon as the picture leaves.
+    meta returns as soon as the picture leaves, including when it is dropped
+    for room.
+  - **Below the window minimum** (a drag past 1200 pt) the text column can
+    narrow to ≈ 260 pt, less than a long fixed-size prefix such as
+    "SECURE READ · TRACK 10/14 · RE-READ · 45%". The headline and the ticker
+    are therefore masked at the gutter: a part that cannot shrink is cut
+    there rather than drawn under the picture.
 - **Identity.** The picture is an overlay keyed by `record.id`. DubPane's
   1 s `TimelineView` re-evaluates its content every second without
   restarting the picture's own timeline.

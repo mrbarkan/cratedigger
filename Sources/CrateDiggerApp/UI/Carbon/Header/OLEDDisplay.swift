@@ -418,7 +418,7 @@ private struct OLEDTimeReading: View {
 /// data rail pinned to the bottom.
 ///
 /// A job screen's panes also pass `picture`, the Busy Signals record the
-/// ledger wants drawn there (`model.busyPicture(on:)`), and the top part then
+/// ledger wants drawn there (`model.busyPicture(on:)`), and the pane then
 /// makes room for it (`BusyPictureBand`). With nil the body is the plain
 /// composition, untouched, so every idle pane stays pixel-identical.
 private struct OLEDPaneScaffold<Headline: View, Readout: View, Ticker: View, Cells: View>: View {
@@ -430,61 +430,110 @@ private struct OLEDPaneScaffold<Headline: View, Readout: View, Ticker: View, Cel
 
     var body: some View {
         if let picture {
-            VStack(alignment: .leading, spacing: 0) {
-                BusyPictureBand(headline: headline, readout: readout, ticker: ticker) {
-                    // Keyed by the record, so a new job starts a fresh
-                    // timeline, while DubPane's 1 s TimelineView re-running
-                    // this body does not restart the one already going.
-                    BusyPictureView(recordID: picture.id)
-                        .id(picture.id)
-                }
-                cells()
+            BusyPictureBand(headline: headline, readout: readout, ticker: ticker, cells: cells) {
+                // Keyed by the record, so a new job starts a fresh timeline,
+                // while DubPane's 1 s TimelineView re-running this body does
+                // not restart the one already going.
+                BusyPictureView(recordID: picture.id)
+                    .id(picture.id)
             }
-            .padding(.top, 6)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         } else {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(alignment: .bottom, spacing: 24) {
-                    headline().frame(maxWidth: .infinity, alignment: .leading)
-                    readout()
-                }
-                Spacer(minLength: 8)
-                ticker()
-                cells()
-            }
-            .padding(.top, 6)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            OLEDPaneStack(headline: headline, readout: readout, ticker: ticker, cells: cells)
         }
     }
 }
 
-/// A job pane's top part (headline row, spacer, ticker) while it hosts a Busy
-/// Signals picture: everything above the cell rail, laid out the way
+/// The plain pane composition: headline row, spacer, ticker, cell rail. Shared
+/// by an idle pane and by a job pane whose picture was dropped, so the two can
+/// never drift apart.
+///
+/// When the content is taller than the glass (a short theme header, taller
+/// line boxes) the stack overflows as one piece, from the top: the cell rail
+/// is pushed down and clips at the glass edge, and nothing is ever drawn over
+/// it.
+private struct OLEDPaneStack<Headline: View, Readout: View, Ticker: View, Cells: View>: View {
+    @ViewBuilder var headline: () -> Headline
+    @ViewBuilder var readout: () -> Readout
+    @ViewBuilder var ticker: () -> Ticker
+    @ViewBuilder var cells: () -> Cells
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .bottom, spacing: 24) {
+                headline().frame(maxWidth: .infinity, alignment: .leading)
+                readout()
+            }
+            Spacer(minLength: 8)
+            ticker()
+            cells()
+        }
+        .padding(.top, OLEDPaneMetrics.topInset)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
+/// The pane's fixed geometry around its content.
+enum OLEDPaneMetrics {
+    /// Space between the screen rail and a pane's headline.
+    static let topInset: CGFloat = 6
+}
+
+private struct BusyPictureShownKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    /// True inside a job pane while a Busy Signals picture is actually laid
+    /// out beside its text: set by `BusyPictureBand` from the frame it drew,
+    /// never from whether a record exists, so a picture dropped for room hands
+    /// the pane its full width back. `DSPTicker` reads it to drop its
+    /// fixed-size meta, which with the prefix is wider than the room beside a
+    /// picture (spec §5).
+    var busyPictureShown: Bool {
+        get { self[BusyPictureShownKey.self] }
+        set { self[BusyPictureShownKey.self] = newValue }
+    }
+}
+
+/// A job pane while it hosts a Busy Signals picture, laid out the way
 /// `NowPlayingScaffold` lays out its band (spec §5).
 ///
+/// - **The band** is the room above the cell rail: the pane's size less its
+///   top inset and the 48 pt rail. It is *measured*, never imposed on the
+///   content: the text column is the same stack as the plain pane's, so when
+///   it does not fit it overflows the way the plain pane does, rail pushed
+///   down and clipped at the glass, never overprinted.
 /// - **The picture** hangs off the cell rail's grid, at the text edge of the
 ///   third cell, and stands from the title's cap height down to the rail, as
 ///   the NOW matrix does. `BusyPictureLayout` sizes it, and drops it when the
 ///   band is too short (a theme with a short header) or too narrow for the
-///   readout to keep its room; the band then lays out exactly as the plain
-///   scaffold does.
+///   readout to keep its room; the pane is then exactly `OLEDPaneStack`.
 /// - **The headline and the ticker** stop at the rail's own gutter before the
 ///   picture: an explicit `maxWidth`, not trailing padding, because the
 ///   readout shares the headline's row and padding would take its width a
-///   second time.
+///   second time. A part that cannot shrink that far (`DSPTicker`'s
+///   fixed-size prefix in a window dragged below its minimum) is cut at the
+///   gutter rather than drawn under the picture.
 /// - **The readout** keeps its place at the right, bottom-aligned with the
 ///   headline.
 ///
 /// Internal rather than private so the snapshot tests can render it with
 /// fixture content, without a view model.
-struct BusyPictureBand<Headline: View, Readout: View, Ticker: View, Picture: View>: View {
+struct BusyPictureBand<Headline: View, Readout: View, Ticker: View, Cells: View, Picture: View>: View {
     @ViewBuilder var headline: () -> Headline
     @ViewBuilder var readout: () -> Readout
     @ViewBuilder var ticker: () -> Ticker
+    @ViewBuilder var cells: () -> Cells
     @ViewBuilder var picture: () -> Picture
 
     /// The cell whose text the picture starts at.
     static var pictureColumn: Int { 2 }
+
+    /// The band above the cell rail in a pane this size.
+    static func bandSize(inPane paneSize: CGSize) -> CGSize {
+        CGSize(width: paneSize.width,
+               height: max(paneSize.height - OLEDPaneMetrics.topInset - OLEDCells.footprint, 0))
+    }
 
     /// Where the picture goes in a band this size, or nil when it is dropped.
     static func pictureFrame(in bandSize: CGSize) -> CGRect? {
@@ -501,35 +550,57 @@ struct BusyPictureBand<Headline: View, Readout: View, Ticker: View, Picture: Vie
 
     var body: some View {
         GeometryReader { geo in
-            if let frame = Self.pictureFrame(in: geo.size) {
-                let textWidth = Self.textWidth(beside: frame)
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack(alignment: .bottom, spacing: 0) {
-                        headline().frame(maxWidth: textWidth, alignment: .leading)
-                        Spacer(minLength: 0)
-                        readout()
-                    }
-                    Spacer(minLength: 8)
-                    ticker().frame(maxWidth: textWidth, alignment: .leading)
+            Group {
+                if let frame = Self.pictureFrame(in: Self.bandSize(inPane: geo.size)) {
+                    withPicture(at: frame)
+                } else {
+                    OLEDPaneStack(headline: headline, readout: readout, ticker: ticker, cells: cells)
                 }
-                .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
-                .overlay(alignment: .topLeading) {
-                    picture()
-                        .frame(width: frame.width, height: frame.height)
-                        .offset(x: frame.minX, y: frame.minY)
-                }
-            } else {
-                // The plain scaffold's top part.
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack(alignment: .bottom, spacing: 24) {
-                        headline().frame(maxWidth: .infinity, alignment: .leading)
-                        readout()
-                    }
-                    Spacer(minLength: 8)
-                    ticker()
-                }
-                .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
             }
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
+        }
+    }
+
+    private func withPicture(at frame: CGRect) -> some View {
+        let textWidth = Self.textWidth(beside: frame)
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .bottom, spacing: 0) {
+                headline()
+                    .frame(maxWidth: textWidth, alignment: .leading)
+                    .modifier(GutterCut(width: textWidth))
+                Spacer(minLength: 0)
+                readout()
+            }
+            Spacer(minLength: 8)
+            ticker()
+                .frame(maxWidth: textWidth, alignment: .leading)
+                .modifier(GutterCut(width: textWidth))
+            cells()
+        }
+        // The band's origin is the stack's: the picture rides with the text,
+        // so an overflowing stack moves both and the rail stays clear.
+        .overlay(alignment: .topLeading) {
+            picture()
+                .frame(width: frame.width, height: frame.height)
+                .offset(x: frame.minX, y: frame.minY)
+        }
+        .environment(\.busyPictureShown, true)
+        .padding(.top, OLEDPaneMetrics.topInset)
+    }
+}
+
+/// Cuts a text part off at the gutter before the picture. A frame's
+/// `maxWidth` cannot stop a child that refuses to shrink (it takes the
+/// child's width instead), so the cut is a mask of the exact width, with
+/// vertical slack so ascenders and glow above and below are left alone.
+private struct GutterCut: ViewModifier {
+    let width: CGFloat
+
+    func body(content: Content) -> some View {
+        content.mask(alignment: .leading) {
+            Rectangle()
+                .frame(width: width)
+                .padding(.vertical, -12)
         }
     }
 }
@@ -814,6 +885,9 @@ private struct OLEDCells: View {
     /// Column count and rail height are the panel's geometry, not the content's.
     static let columns = 5
     private static let railHeight: CGFloat = 42
+    /// How much of a pane's height the rail takes: the rail itself plus the
+    /// 6 pt gap above it, which carries the progress line.
+    static let footprint: CGFloat = railHeight + 6
     /// Space between a divider and the text on either side of it.
     static let cellPadding: CGFloat = 10
     private static let dividerWidth: CGFloat = 1
@@ -842,7 +916,7 @@ private struct OLEDCells: View {
             }
         }
         .frame(height: Self.railHeight, alignment: .top)
-        .padding(.top, 6)
+        .padding(.top, Self.footprint - Self.railHeight)
         .overlay(OLEDProgressLine(clock: model.playbackClock), alignment: .top)
     }
 
@@ -909,6 +983,9 @@ private struct DSPTicker: View {
     let path: AttributedString
     var meta: String? = nil
     var leadingInset: CGFloat = 0
+    /// The meta steps aside while a Busy Signals picture stands beside the
+    /// ticker, and comes back as soon as it leaves (spec §5).
+    @Environment(\.busyPictureShown) private var pictureShown
 
     var body: some View {
         HStack(spacing: 12) {
@@ -923,7 +1000,7 @@ private struct DSPTicker: View {
                 .lineLimit(1)
                 .truncationMode(.head)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            if let meta {
+            if let meta, !pictureShown {
                 Text(meta)
                     .font(CarbonFont.mono(9, weight: .semibold))
                     .tracking(1.7)
@@ -1365,8 +1442,7 @@ private struct ConversionPane: View {
 
     private var previewBody: some View {
         // A finished convert's picture stays here until it is seen and left.
-        let picture = model.busyPicture(on: .conversion)
-        return OLEDPaneScaffold(picture: picture) {
+        OLEDPaneScaffold(picture: model.busyPicture(on: .conversion)) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .bottom, spacing: 14) {
                     formatBlock(sourceFormatPrimary, dim: true)
@@ -1392,9 +1468,9 @@ private struct ConversionPane: View {
             }
             .fixedSize()
         } ticker: {
-            // The meta is fixed-size, and with the prefix it is wider than
-            // the room beside a picture, so it steps aside while one is up.
-            DSPTicker(prefix: tickerPrefix, path: tickerPath, meta: picture == nil ? tickerMeta : nil)
+            // The meta steps aside by itself while a picture is laid out
+            // beside it (`busyPictureShown`).
+            DSPTicker(prefix: tickerPrefix, path: tickerPath, meta: tickerMeta)
         } cells: {
             OLEDCells(cells)
         }
