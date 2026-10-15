@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import CryptoKit
 import CrateDiggerCore
 import Foundation
@@ -344,6 +345,9 @@ final class LibraryViewModel: ObservableObject {
             // the route rather than leaving RIP CD armed for a later visit.
             // SEARCH is only a detour and comes back to the cockpit.
             if oledView != .conversion, oledView != .search { pendingCDRip = nil }
+            // Before the SEARCH return: leaving a job's screen for SEARCH is
+            // still leaving it, as far as Busy Signals' "seen" rule goes.
+            noteBusyScreenChanged()
             // SEARCH is never restored: it belongs to a query that died with
             // the session, so relaunching into it would open the app on an
             // empty screen asking about nothing.
@@ -383,6 +387,24 @@ final class LibraryViewModel: ObservableObject {
     @Published var conversionProgress: ConversionProgressSnapshot = .idle
     /// Live SYNC-to-device run (DEV OLED readout). nil when no sync has run.
     @Published var deviceSyncProgress: DeviceSyncProgressSnapshot?
+
+    // MARK: Busy Signals (`+BusySignals`)
+
+    /// What is running, what has finished, and whether anyone has seen it.
+    /// Internal setter, not `private(set)`: every mutator lives in
+    /// `LibraryViewModel+BusySignals.swift`, and `private(set)` would only let
+    /// this file write it. Views only read it.
+    @Published var busy = BusyLedger(at: Date())
+    /// Sleeps until the ledger's next settle date; see `rescheduleBusySettle()`.
+    var busySettleTask: Task<Void, Never>?
+    /// The four progress-channel sinks `wireBusySignals()` installs.
+    var busyChannelCancellables: Set<AnyCancellable> = []
+    /// The record each safety-netted channel armed at its false → true edge.
+    var busySafetyArmed: [BusyChannel: BusyJobID] = [:]
+    /// The running stream download's job; extensions cannot hold storage.
+    var streamDownloadBusyJob: BusyJobID?
+    /// The running SACD import's job; extensions cannot hold storage.
+    var sacdBusyJob: BusyJobID?
 
     /// Which queue the cockpit's go key runs: a device's sync queue, or nil for
     /// the crate queue. Both are listed in the QUEUE tab and either can be
@@ -531,7 +553,11 @@ final class LibraryViewModel: ObservableObject {
         saved: PreferencesStore.shared.playerLayout,
         libraryChosen: PreferencesStore.shared.cratesIndexFolderBookmark != nil
     ) {
-        didSet { PreferencesStore.shared.playerLayout = playerLayout }
+        didSet {
+            PreferencesStore.shared.playerLayout = playerLayout
+            // Compact always shows NOW; expanding arrives on `oledView`.
+            noteBusyScreenChanged()
+        }
     }
 
     /// Open the tag editor for a set of tracks (album/artist context menus pass
@@ -1525,6 +1551,9 @@ final class LibraryViewModel: ObservableObject {
         }
 
         wirePlaybackBindings()
+        // After `oledView` and `playerLayout` are restored: it seeds the
+        // ledger's screen, which their `didSet`s do not do inside `init`.
+        wireBusySignals()
         configureNowPlaying()
         applyVolumeToEngines()
 
