@@ -97,7 +97,12 @@ final class RipSceneTests: XCTestCase {
 
     // MARK: - Disc, notes, file
 
-    func testDiscStopsWhenFinished() {
+    /// The disc stopping is the ledger's job, not the scene's: it freezes
+    /// `time` at the finish (`BusyLedgerTests.testSceneTimeIsQuantizedAndFreezesAtFinish`),
+    /// so these two inputs share one `time`. What the scene owes is that,
+    /// given that frozen clock, a finished frame does not drift with how long
+    /// ago the finish was: only the blink (`markLit`) may change it.
+    func testFinishedFrameDoesNotDriftWithTimeSinceFinish() {
         let early = RipScene.picture(Self.input(completed: 5, total: 5, time: 40.5, finished: 0.5))
         let late = RipScene.picture(Self.input(completed: 5, total: 5, time: 40.5, finished: 6))
         let disc = Array(early.shapes.prefix(9))

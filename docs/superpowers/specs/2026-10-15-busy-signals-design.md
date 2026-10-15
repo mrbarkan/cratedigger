@@ -641,7 +641,10 @@ the element moves at 8 fps whatever the progress is.
   is tested (including secureRead → handOver → first track complete).
 - **The file at fill 0** still shows one cool line, as the sketch's loop
   does (it starts at the bottom line, html:375-376 and html:284).
-- **"Tnn" label:** `completed + 1`.
+- **"Tnn" label:** `min(completed + 1, total)`. The clamp keeps the label
+  from reading one past the disc in the moment `completed` reaches `total`
+  before the finish is stamped; the sketch never shows a label past the
+  total while running.
 - **Stack:** `shown(k)` slabs, where `shown(k) = total > 5 ? ceil(k × 5 / total) : k`,
   at `slabY(j) = 85 − 5j`. The cap is **5**, the sketch's own maximum
   (html:344 `total = 5`). A sixth slab (`slabY(5) = 60`, y 60-63, x 198-226)

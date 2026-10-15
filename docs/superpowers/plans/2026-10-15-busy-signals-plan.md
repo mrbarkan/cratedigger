@@ -582,7 +582,8 @@ From html:358-389 (picture), html:357 (mini), plus `MINI.disc` and `MINI.file` (
 - **Stack.** `shown(k) = total > 5 ? Int(ceil(Double(k) × 5 / Double(total))) : k`, at `slabY(j) = 85 − j·5`. The cap is **5**, the sketch's own maximum: a sixth slab at `slabY(5) = 60` (y 60-63) would contain the check's vertex (210, 61).
 - **Falling slab** (spec §3.2): only when `k ≥ 1`, `shown(k) > shown(k − 1)` and `unitTime < 0.5`. It moves in 1/8 s steps (html:384-387) to `slabY(shown(k) − 1)`, with `shown(k) − 1` static slabs drawn meanwhile. Otherwise draw `shown(k)` static slabs and nothing falls.
 - **Finished.** OK inside the file, and the check at (205,56)–(210,61)–(221,48) when `markLit`.
-- **`keyTime`:** 1.25 (two notes in flight).
+- **`keyTime`:** 1.25 (three notes in flight: notes 0, 1 and 2, ages 1.25, 0.65 and 0.05 s).
+- **"Tnn" label:** `min(completed + 1, total)` (spec §3.2).
 - **Tests:**
   - `testStackShowsAtMostFiveSlabsAndStaysBelowTheCheck`: total 20 and completed 20 give 5 slab rects, all with `minY > 61` (the check's lowest point). Also total 6, completed 6.
   - `testCompletionThatKeepsTheShownCountDropsNothing`: total 20, completed 2, `unitTime` 0.1 draws 1 slab and no cool falling slab.
