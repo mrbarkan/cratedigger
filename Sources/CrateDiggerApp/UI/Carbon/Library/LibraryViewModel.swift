@@ -555,7 +555,8 @@ final class LibraryViewModel: ObservableObject {
     ) {
         didSet {
             PreferencesStore.shared.playerLayout = playerLayout
-            // Compact always shows NOW; expanding arrives on `oledView`.
+            // The glass shows `.other` in compact; expanding shows
+            // `oledView`'s screen again (`busyVisibleScreen`).
             noteBusyScreenChanged()
         }
     }

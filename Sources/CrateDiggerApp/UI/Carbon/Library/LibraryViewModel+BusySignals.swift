@@ -175,7 +175,7 @@ extension LibraryViewModel {
             .sink { [weak self] progress in
                 MainActor.assumeIsolated {
                     guard let self, let progress,
-                          let record = self.busy.records.last(where: { $0.isRunning && $0.kind == .secureRead })
+                          let record = self.busy.running(.secureRead, on: .dub)
                     else { return }
                     var next = record.progress
                     next.secure = BusySecureRead(progress)
@@ -276,7 +276,8 @@ extension LibraryViewModel {
     /// The safety net for one channel. At the rising edge it arms the
     /// channel's running record; at the falling edge it waits, then ends that
     /// record `.failed` (removed, never a fake success) and logs, if nothing
-    /// ended it meanwhile.
+    /// ended it meanwhile and the channel is still idle or has been re-armed
+    /// (spec §2.3's rule, widened: see the check below).
     private func trackSafetyNetEdge(_ channel: BusyChannel, isRunning: Bool, edge: BusyChannelEdge,
                                     armable: @escaping () -> BusyJobRecord?,
                                     isIdle: @escaping () -> Bool) {
@@ -288,8 +289,15 @@ extension LibraryViewModel {
             Task { @MainActor [weak self] in
                 try? await Task.sleep(nanoseconds: UInt64(Self.busySafetyNetDelay * 1_000_000_000))
                 guard let self, let record = self.busy.record(armed), record.isRunning else { return }
-                // Still idle, or already re-armed for a newer job: either way
-                // nothing is going to end this record any more.
+                // Still idle, or re-armed since: either way nothing is going
+                // to end this record any more. Re-armed means a later rising
+                // edge replaced the armed id, with a newer job's id or with
+                // nil (that edge found no stamped record: an unstamped writer,
+                // or a start site that writes its snapshot before `begin`,
+                // whose `armBusySafetyNet` then arms the new id). Nil counts
+                // too: the BUSY guards make the channel exclusive, so once it
+                // runs again this record's job is over, and nothing would ever
+                // re-arm it, leaving it running forever.
                 let reArmed = self.busySafetyArmed[channel] != armed
                 guard isIdle() || reArmed else { return }
                 AppLog.ui.warning("Busy job \(record.kind.rawValue, privacy: .public) ended by the safety net: a finish site is missing")
