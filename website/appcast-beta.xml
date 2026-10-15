@@ -7,6 +7,80 @@
             <pubDate>Mon, 12 Oct 2026 16:03:44 -0300</pubDate>
             <link>https://cratedigger.mrbarkan.com/</link>
             <sparkle:fullReleaseNotesLink>https://github.com/mrbarkan/cratedigger/releases</sparkle:fullReleaseNotesLink>
+            <sparkle:version>111</sparkle:version>
+            <sparkle:shortVersionString>2.3.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description sparkle:format="markdown"><![CDATA[
+Beta 2: Busy Signals, little animated pictures on the display while
+CrateDigger works. Beta 1 made Search Album Artwork work properly again.
+Everything in 2.3.0 is included as well. Betas are offered only to people who
+turned on Receive beta updates.
+
+### Added
+
+- **Busy Signals.** While a job runs, its screen on the display shows a small
+  line drawing of the work: the disc turning as a CD rips, the laser walking
+  the sectors in Secure Mode, files going through a press as they convert, a
+  crate of records being flipped through as a folder is scanned, a cassette
+  filling up as a stream downloads, and packets travelling down a cable to an
+  iPod. When the job is done, the picture shows a check or DONE.
+- **Jobs on the top line.** On every other screen, a running job shows as a
+  tiny "from, to" picture next to the indicators at the top of the display,
+  filling up as the job goes. Up to two show at once, with +N for more. A
+  finished job blinks there until you visit its screen, and clicking one
+  takes you to it. They show in the compact player too.
+- The pictures use your theme's colours, keep to one colour when the theme is
+  set to monochrome, and hold still when Reduce Motion is on.
+
+### Changed
+
+- **The display stays on DUB when a rip, download or SACD import finishes,**
+  so you can see that it finished. A rip still moves on to SCAN when it
+  imports what it ripped.
+- **An SACD import can no longer start while another job is running,** the
+  same as a CD rip or a download.
+
+### Fixed
+
+- **Each result shows how many images it has again.** The count beside
+  every release had stopped appearing, or said NO IMAGES for releases that
+  have plenty, because the archive it came from has been answering slowly or
+  not at all. The counts now come from MusicBrainz and appear about a second
+  after the results.
+- **The right artwork for the release you picked.** Picking one release,
+  going back and picking another could show the first one's images under
+  the second.
+- **Honest messages.** A busy MusicBrainz no longer reads as "No releases
+  found", the archive being down no longer reads as "No images", and "No
+  scans" no longer appears while Discogs is still loading. Each source shows
+  its own progress, with TRY AGAIN when it fails.
+- **Searching stops when you move on.** Closing the panel, going back or
+  starting a new search stops what was still loading, so an old search can no
+  longer replace newer results.
+- **Discogs no longer waits for the archive.** Both load at the same time.
+- **The MEDIA filter sees every disc in a set,** so a CD and DVD release
+  appears under DVD too, and HD means the same thing in the list and in the
+  grid.
+- **Return runs the search** from either field.
+
+### Changed
+
+- **Lighter on your Mac and on MusicBrainz.** The preview loads a 1200 pixel
+  image instead of originals of up to 5000, your own files are shrunk for the
+  grid in the background, and requests to MusicBrainz keep to one a second.
+
+]]></description>
+            <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.3.1-beta.111/CrateDigger-2.3.1.dmg" length="72715803" type="application/octet-stream" sparkle:edSignature="SgrrPsoe3HRAwDwWiRo5pT0ProBcg4sPJyys0dz+EbjdTMHX4hD1Y5wNo+sB/aYz49MvluwV5ahdMV5skTrfBQ=="/>
+            <sparkle:deltas>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.3.1-beta.111/CrateDigger111-109.delta" sparkle:deltaFrom="109" length="1695218" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="AnwkrshEo9DaEStBO0xpRUbt3FcA/zi+ePVrKftlpjl7zXkfw7xaD/rUgKRDxIpWEeRCgwsvO5UcCQ0JygdlAg=="/>
+            </sparkle:deltas>
+        </item>
+        <item>
+            <title>2.3.1</title>
+            <pubDate>Mon, 12 Oct 2026 16:03:44 -0300</pubDate>
+            <link>https://cratedigger.mrbarkan.com/</link>
+            <sparkle:fullReleaseNotesLink>https://github.com/mrbarkan/cratedigger/releases</sparkle:fullReleaseNotesLink>
             <sparkle:version>110</sparkle:version>
             <sparkle:shortVersionString>2.3.1</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
@@ -178,121 +252,6 @@ who turned on Receive beta updates.
 
 ]]></description>
             <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.3.0-rc.109/CrateDigger-2.3.0.dmg" length="72446054" type="application/octet-stream" sparkle:edSignature="O0nZ96pDx5mlm172sls9ETnmV+0ECzqlm3jarmNJw9xUp9vsDFGquAfuWzYMsIQ8/wVT3yWZgExwEMguevCTDA=="/>
-        </item>
-        <item>
-            <title>2.3.0</title>
-            <pubDate>Sat, 03 Oct 2026 22:20:37 -0300</pubDate>
-            <link>https://cratedigger.mrbarkan.com/</link>
-            <sparkle:fullReleaseNotesLink>https://github.com/mrbarkan/cratedigger/releases</sparkle:fullReleaseNotesLink>
-            <sparkle:version>108</sparkle:version>
-            <sparkle:shortVersionString>2.3.0</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
-            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[
-Beta 3: a new key panel, keys that press like hardware, and smoother motion
-everywhere. Beta 2 brought rip settings by medium and beta 1 a compact player.
-This section collects everything in the 2.3 line so far. Betas are offered only to people
-who turned on Receive beta updates.
-
-### Added
-
-- **A key for the compact player.** The key panel at the top left now has a
-  Compact Player key, so the slim player is one click away. The expand key
-  beside the cover brings the full console back.
-- **Reduce Motion is respected.** With Reduce Motion turned on in System
-  Settings, panes and panels stop sliding and fade or switch at once instead,
-  the spinning record and the Rescan arrow hold still, and lists jump to the
-  selection rather than gliding. Lights and fades still glow as usual.
-- **Pick the medium, then how much of it to keep.** The conversion panel has
-  a new MEDIUM menu (CD, MiniDisc, SACD, DVD-Audio, Blu-ray, Blu-ray Audio,
-  Vinyl, Tape, or Any Source) and three TIER keys: 1:1 writes an
-  uncompressed copy at the medium's own resolution, Lossless compresses it
-  without loss, Lossy makes small files. A CD is ripped at 16-bit/44.1 kHz,
-  an SACD's DSD becomes 24-bit/88.2 kHz, and vinyl and tape captures keep
-  the resolution you recorded them at. The FORMAT and BITRATE rows still
-  choose the codec within a tier (ALAC instead of FLAC, MP3 instead of AAC),
-  and a lit key goes dark once you edit the settings away from it. Starting
-  a CD rip sets the medium to CD.
-- **Bit depth and FLAC level.** Lossless formats get a DEPTH row (Source, 16
-  or 24 bit), and FLAC a LEVEL row (Fast, Standard, Max). Every level is
-  lossless; a higher one only takes longer to make a smaller file.
-
-- **A compact player.** Window ▸ Compact Player (⌥⇧⌘M) folds the main
-  window into one slim unit, like a piece of hi-fi: the playing album's cover
-  on the left, the full display on the NOW screen with its LED matrix, and the
-  transport and volume underneath. No sources, browser or inspector. Press
-  the same keys, the small expand key beside the cover, or the green window
-  button to get the whole console back.
-- **Click the cover to see the artwork.** In the compact player, clicking the
-  cover opens the album's artwork viewer, booklet pages and all.
-- **Each size remembers its place.** The compact player and the full window
-  each reopen where you left them, and CrateDigger reopens in whichever one
-  you quit in.
-- **Browser shortcuts bring the console back.** Find (⌘F), Go to Current
-  Song (⌘L) and the display shortcuts (⌘1 to ⌘8) open the full window first,
-  then do what they always do. Commands that act on a selection you can't
-  see from the compact player, such as Convert Selected, Play Next and
-  ratings, are greyed out there, and the arrow keys leave the hidden browser
-  alone.
-
-### Changed
-
-- **A new key panel, top left.** The library keys are now icons in two
-  columns: Dig Crate, Rescan, Add to Crate and Transfer To on the left, and
-  Go to Current Song, Compact Player, Mini Player and Settings on the right.
-  Hover over a key to see its name. The CrateDigger name has a row of its own,
-  so a theme with a wide typeface no longer cuts it short.
-- **Keys you can press.** The header keys sit in sockets in the panel and go
-  down when you press them, and the transport keys now travel too, instead of
-  only changing shade.
-- **Go to Current Song moved** from the transport to the key panel. The
-  transport now has three keys either side of Play, so it sits centred with
-  even gaps, the same in the full window and the compact player.
-- **Smoother motion throughout.** The whole app now moves to one set of
-  timings. Lights come on quickly and fade a little slower, panes and panels
-  move on the same gentle spring, the spinning record speeds up and coasts to
-  a stop, album covers fade in when they load, and the full-screen player and
-  the artwork viewer fade in and out instead of appearing in a flash.
-- **Clicking a row no longer scrolls it.** Browser columns and the artwork
-  gallery only scroll when the selection is off screen. Go to Current Song
-  still brings the playing track to the middle.
-- **No bitrate for lossless formats.** ALAC, FLAC, WAV and AIFF have no
-  bitrate to choose, so the BITRATE row now only appears for MP3, AAC and
-  Opus. The display shows the bit depth for lossless output instead, and the
-  size estimate follows each file's own sample rate.
-- **Columns open on their selection.** When the browser is rebuilt, for
-  example coming back from the compact player or switching views, each
-  column scrolls to its selected row instead of starting at the top.
-
-### Fixed
-
-- **Searching felt slower than it should.** Typing in the search field
-  animated the whole browser list on every keystroke; it now updates at once.
-- **Folding into the compact player.** The app no longer ignores clicks while
-  the window resizes, the player stays pinned to the top of the window instead
-  of drifting up through it, and moving to another display halfway through no
-  longer leaves the window stuck half folded.
-- **The compact player's status light** sat on top of the display's corner.
-  It now sits above the cover.
-- **The Rescan arrow spun backwards** for a moment when it stopped.
-- **Button labels are centred.** Short labels such as RIP sat slightly left of
-  centre.
-- **Lossless conversions kept their sample rate.** The SAMPLE row had no
-  way to keep the source's rate, so converting a 96 kHz recording to FLAC or
-  ALAC quietly brought it down to 44.1 kHz. It now has a Source setting.
-- **WAV and AIFF kept 24-bit audio.** They were always written at 16 bits,
-  cutting off the bottom of a 24-bit capture. Bringing 24-bit audio down to
-  16 is now dithered rather than truncated.
-- **Opus conversions work.** The Opus encoder only runs at 48 kHz and turned
-  down the 44.1 kHz the panel asked for, so every Opus conversion failed.
-- **The older Conversion Options sheet** showed a blank bitrate when 96 kbps
-  was picked in the panel, and could not choose Source for the sample rate.
-- **The window reopens where you left it.** CrateDigger was putting the main
-  window back in the middle of the screen at every launch instead of where
-  you last had it.
-
-]]></description>
-            <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.3.0-beta.108/CrateDigger-2.3.0.dmg" length="72346396" type="application/octet-stream" sparkle:edSignature="XhpQ41xDhgb1dnKJpIPKyqTeJn550ol+47JH3y4DR3u8laL701wTbuD03C/9FTweeat9rLu1HXxiUct0PoBKAA=="/>
         </item>
     </channel>
 </rss>
