@@ -87,14 +87,29 @@ struct BusyCanvas: View, Equatable {
     /// Screen points: 1.15 for a picture, 0.95 for a mini (html:950, :962).
     let lineWidth: CGFloat
 
-    /// The glow's blur, in screen points. The sketch's `shadowBlur 3` device
-    /// pixels at 2× is 1.5 pt of canvas blur, but canvas blur is twice its
-    /// Gaussian σ while GraphicsContext's `.shadow(radius:)` spreads about as
-    /// wide as its radius: at 1.5 the halo was twice the sketch's and filled
-    /// the spindle hole grey. Tuned on the Task 14 contact sheets against the
-    /// sketch rendered headless at the same scale (blur scaled to match):
-    /// 0.75 pt reproduces the sketch's halo width and intensity.
-    static let glowRadius: CGFloat = 0.75
+    /// The glow's blur, in screen points. Canvas `shadowBlur` is in device
+    /// pixels and ignores the transform, so the sketch's `shadowBlur 3` is a
+    /// Gaussian σ of 1.5 device px whatever the picture's size; SwiftUI's
+    /// `.shadow(radius:)` spreads about as wide as σ in points.
+    ///
+    /// Measured, not argued (2026-10-15): the sketch rendered headless at
+    /// device scale 3 in a 778 px window, which makes its strip exactly 720
+    /// CSS px (scale 1, so the 220 × 84 picture canvas is 660 × 252 device
+    /// px, the same grid as the contact sheet's 3× cell), against
+    /// transfer-carbon-p50. Grey above each glass (sketch 10, Carbon 5),
+    /// outward from the iPod body's left edge (unit x 163, y 50):
+    ///
+    ///     sketch   48 16  4  1  0
+    ///     0.5      50 18  5  1  0
+    ///     0.6      59 26  9  3  0
+    ///     0.75     65 37 18  7  3  1
+    ///
+    /// Summed squared error over that edge, the laptop's left edge and the
+    /// iPod's top edge (stroke cores excluded): 0.4 → 1783, 0.45 → 704,
+    /// **0.5 → 505**, 0.55 → 1067, 0.6 → 2154, 0.75 → 8186. The earlier 0.75
+    /// came from assuming the sketch was seen at 2×, where 3 device px is
+    /// 1.5 pt of blur; at 2× and scale 1 the sketch's σ would be 0.75 pt.
+    static let glowRadius: CGFloat = 0.5
 
     @Environment(\.carbon) private var theme
 

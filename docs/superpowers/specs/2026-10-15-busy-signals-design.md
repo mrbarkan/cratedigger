@@ -429,7 +429,7 @@ snapshots are deterministic.
   at 201.6 × 84.
 - **Points, not units.** Geometry is transformed into view points *before*
   stroking. Line widths (1.15 pt picture, 0.95 pt mini, html:950/962) and the
-  glow radius (`glowRadius = 0.75` pt, tuned by snapshot in Task 14) are therefore in
+  glow radius (`glowRadius = 0.5` pt, measured against the sketch, §7) are therefore in
   screen points at any scale. Caps and joins are round.
 - **Order is kept.** Background fills occlude, so shapes are never regrouped
   by ink. Consecutive shapes that share ink, style and glow are batched into
@@ -977,10 +977,21 @@ has signed off.
     `meterHot` under monochrome.
   - Under monochrome, cool, hot and foreground are one ink. What separates
     them is the dim print and intensity, as everywhere else on the glass.
-- **Glow** is the ink colour at full strength, radius 0.75 pt. The sketch's
-  `shadowBlur 3` device pixels is 1.5 pt at 2×, but canvas blur is twice its
-  σ while SwiftUI's shadow radius is about σ, so 0.75 pt is what matches. It
-  is a constant in `BusyCanvas`, tuned against the contact sheets (Task 14).
+- **Glow** is the ink colour at full strength, radius 0.5 pt, a constant in
+  `BusyCanvas`. Canvas `shadowBlur` is in device pixels and ignores the
+  transform, so the sketch's `shadowBlur 3` is a σ of 1.5 device px, while
+  SwiftUI's shadow radius is about σ in points. Settled by measurement: the
+  sketch rendered headless at device scale 3 in a 778 px window (its strip
+  is then exactly 720 CSS px, so the 220 × 84 picture is unscaled and its
+  buffer is 660 × 252, the contact sheet's 3× grid), compared with the
+  transfer cell at 0.4–0.75. Outward from the iPod's left edge, grey above
+  the glass reads 48, 16, 4, 1 in the sketch and 50, 18, 5, 1 at 0.5
+  (65, 37, 18, 7, 3 at 0.75); over three edges 0.5 has the least squared
+  error (505, against 704 at 0.45 and 1067 at 0.55). Task 14's 0.75
+  assumed the sketch was seen at 2×. Because the sketch's blur is fixed in
+  device pixels, its glow in picture points shrinks as the page zooms the
+  strip (a 1000 px strip is ×1.39) and grows at 2×; 0.5 pt is its value at
+  3× and scale 1.
 
 ## 8. Rules for finished, seen and retired jobs
 
