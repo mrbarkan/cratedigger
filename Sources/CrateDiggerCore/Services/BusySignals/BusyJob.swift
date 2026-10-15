@@ -122,11 +122,12 @@ public struct BusySecureRead: Equatable, Sendable {
     /// each is half a track; re-reading has no predictable length, so it gets
     /// the last sliver rather than a share the bar would then sit on.
     ///
-    /// Moved here verbatim from `DubPane.secureOverall` (OLEDDisplay.swift),
-    /// which keeps a private copy until the picture lands in the panes. The
-    /// one difference is upstream of the formula: `phaseFraction` is clamped
-    /// to 0…1 (NaN as 0) where the old copy read the engine's fraction raw, so
-    /// an out-of-range report moves the bar less than it used to, never more.
+    /// The one copy: DubPane's Secure Read bar reads it too, so the pane and
+    /// the scene can never disagree about how far the read has got. It was
+    /// moved here verbatim from `DubPane.secureOverall`; the one difference is
+    /// upstream of the formula: `phaseFraction` is clamped to 0…1 (NaN as 0)
+    /// where the old copy read the engine's fraction raw, so an out-of-range
+    /// report moves the bar less than it used to, never more.
     public var overall: Double {
         let within: Double
         switch phase {

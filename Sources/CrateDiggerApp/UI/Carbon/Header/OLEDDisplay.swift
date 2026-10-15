@@ -416,24 +416,121 @@ private struct OLEDTimeReading: View {
 /// Every pane shares one composition: a headline row (titles left / numeric
 /// readout right), an optional ticker just above the cell rail, and the 5-cell
 /// data rail pinned to the bottom.
+///
+/// A job screen's panes also pass `picture`, the Busy Signals record the
+/// ledger wants drawn there (`model.busyPicture(on:)`), and the top part then
+/// makes room for it (`BusyPictureBand`). With nil the body is the plain
+/// composition, untouched, so every idle pane stays pixel-identical.
 private struct OLEDPaneScaffold<Headline: View, Readout: View, Ticker: View, Cells: View>: View {
+    var picture: BusyJobRecord? = nil
     @ViewBuilder var headline: () -> Headline
     @ViewBuilder var readout: () -> Readout
     @ViewBuilder var ticker: () -> Ticker
     @ViewBuilder var cells: () -> Cells
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .bottom, spacing: 24) {
-                headline().frame(maxWidth: .infinity, alignment: .leading)
-                readout()
+        if let picture {
+            VStack(alignment: .leading, spacing: 0) {
+                BusyPictureBand(headline: headline, readout: readout, ticker: ticker) {
+                    // Keyed by the record, so a new job starts a fresh
+                    // timeline, while DubPane's 1 s TimelineView re-running
+                    // this body does not restart the one already going.
+                    BusyPictureView(recordID: picture.id)
+                        .id(picture.id)
+                }
+                cells()
             }
-            Spacer(minLength: 8)
-            ticker()
-            cells()
+            .padding(.top, 6)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        } else {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(alignment: .bottom, spacing: 24) {
+                    headline().frame(maxWidth: .infinity, alignment: .leading)
+                    readout()
+                }
+                Spacer(minLength: 8)
+                ticker()
+                cells()
+            }
+            .padding(.top, 6)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .padding(.top, 6)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
+/// A job pane's top part (headline row, spacer, ticker) while it hosts a Busy
+/// Signals picture: everything above the cell rail, laid out the way
+/// `NowPlayingScaffold` lays out its band (spec §5).
+///
+/// - **The picture** hangs off the cell rail's grid, at the text edge of the
+///   third cell, and stands from the title's cap height down to the rail, as
+///   the NOW matrix does. `BusyPictureLayout` sizes it, and drops it when the
+///   band is too short (a theme with a short header) or too narrow for the
+///   readout to keep its room; the band then lays out exactly as the plain
+///   scaffold does.
+/// - **The headline and the ticker** stop at the rail's own gutter before the
+///   picture: an explicit `maxWidth`, not trailing padding, because the
+///   readout shares the headline's row and padding would take its width a
+///   second time.
+/// - **The readout** keeps its place at the right, bottom-aligned with the
+///   headline.
+///
+/// Internal rather than private so the snapshot tests can render it with
+/// fixture content, without a view model.
+struct BusyPictureBand<Headline: View, Readout: View, Ticker: View, Picture: View>: View {
+    @ViewBuilder var headline: () -> Headline
+    @ViewBuilder var readout: () -> Readout
+    @ViewBuilder var ticker: () -> Ticker
+    @ViewBuilder var picture: () -> Picture
+
+    /// The cell whose text the picture starts at.
+    static var pictureColumn: Int { 2 }
+
+    /// Where the picture goes in a band this size, or nil when it is dropped.
+    static func pictureFrame(in bandSize: CGSize) -> CGRect? {
+        BusyPictureLayout.frame(bandSize: bandSize,
+                                leading: OLEDCells.textLeading(ofColumn: pictureColumn, in: bandSize.width),
+                                topInset: NPTitles.capTopInset())
+    }
+
+    /// How wide the headline and the ticker may run beside a picture at
+    /// `frame`: up to the rail's gutter before it, as a cell's text does.
+    static func textWidth(beside frame: CGRect) -> CGFloat {
+        max(frame.minX - OLEDCells.cellPadding * 2, 0)
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            if let frame = Self.pictureFrame(in: geo.size) {
+                let textWidth = Self.textWidth(beside: frame)
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(alignment: .bottom, spacing: 0) {
+                        headline().frame(maxWidth: textWidth, alignment: .leading)
+                        Spacer(minLength: 0)
+                        readout()
+                    }
+                    Spacer(minLength: 8)
+                    ticker().frame(maxWidth: textWidth, alignment: .leading)
+                }
+                .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
+                .overlay(alignment: .topLeading) {
+                    picture()
+                        .frame(width: frame.width, height: frame.height)
+                        .offset(x: frame.minX, y: frame.minY)
+                }
+            } else {
+                // The plain scaffold's top part.
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(alignment: .bottom, spacing: 24) {
+                        headline().frame(maxWidth: .infinity, alignment: .leading)
+                        readout()
+                    }
+                    Spacer(minLength: 8)
+                    ticker()
+                }
+                .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
+            }
+        }
     }
 }
 
@@ -1230,7 +1327,7 @@ private struct ConversionPane: View {
     // what's in scope, with no progress bar of its own to keep in sync.
 
     private var runningBody: some View {
-        OLEDPaneScaffold {
+        OLEDPaneScaffold(picture: model.busyPicture(on: .conversion)) {
             NPTitles(title: runningTitle, sub: runningSub, titleSize: 40)
         } readout: {
             VStack(alignment: .trailing, spacing: 6) {
@@ -1267,7 +1364,9 @@ private struct ConversionPane: View {
     }
 
     private var previewBody: some View {
-        OLEDPaneScaffold {
+        // A finished convert's picture stays here until it is seen and left.
+        let picture = model.busyPicture(on: .conversion)
+        return OLEDPaneScaffold(picture: picture) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .bottom, spacing: 14) {
                     formatBlock(sourceFormatPrimary, dim: true)
@@ -1293,7 +1392,9 @@ private struct ConversionPane: View {
             }
             .fixedSize()
         } ticker: {
-            DSPTicker(prefix: tickerPrefix, path: tickerPath, meta: tickerMeta)
+            // The meta is fixed-size, and with the prefix it is wider than
+            // the room beside a picture, so it steps aside while one is up.
+            DSPTicker(prefix: tickerPrefix, path: tickerPath, meta: picture == nil ? tickerMeta : nil)
         } cells: {
             OLEDCells(cells)
         }
@@ -1642,7 +1743,7 @@ private struct ScanPane: View {
     @Environment(\.carbon) private var theme
 
     var body: some View {
-        OLEDPaneScaffold {
+        OLEDPaneScaffold(picture: model.busyPicture(on: .scan)) {
             NPTitles(title: headline, sub: subtitle)
         } readout: {
             VStack(alignment: .trailing, spacing: 6) {
@@ -1845,7 +1946,7 @@ private struct DubPane: View {
     // is what decides whether you press RIP.
 
     private func insertedBody(_ cd: AudioCDInfo) -> some View {
-        OLEDPaneScaffold {
+        OLEDPaneScaffold(picture: model.busyPicture(on: .dub)) {
             NPTitles(title: discTitle(cd), sub: discSubtitle(cd))
         } readout: {
             VStack(alignment: .trailing, spacing: 6) {
@@ -1881,7 +1982,7 @@ private struct DubPane: View {
     }
 
     private func downloadingBody(_ stream: StreamSource) -> some View {
-        OLEDPaneScaffold {
+        OLEDPaneScaffold(picture: model.busyPicture(on: .dub)) {
             NPTitles(title: "DOWNLOAD",
                      sub: stream.channel.isEmpty ? stream.title : "\(stream.channel) · \(stream.title)")
         } readout: {
@@ -1919,7 +2020,7 @@ private struct DubPane: View {
     // MARK: - Ripping
 
     private var rippingBody: some View {
-        OLEDPaneScaffold {
+        OLEDPaneScaffold(picture: model.busyPicture(on: .dub)) {
             NPTitles(title: "CD-RIP", sub: rippingSubtitle)
         } readout: {
             VStack(alignment: .trailing, spacing: 6) {
@@ -1954,13 +2055,13 @@ private struct DubPane: View {
     // needed: the number that tells you whether it is in good shape.
 
     private func secureReadingBody(_ secure: SecureDiscRip.Progress) -> some View {
-        OLEDPaneScaffold {
+        OLEDPaneScaffold(picture: model.busyPicture(on: .dub)) {
             NPTitles(title: "SECURE READ", sub: rippingSubtitle)
         } readout: {
             VStack(alignment: .trailing, spacing: 6) {
                 NPClock(now: String(format: "%02d", secure.trackOrdinal),
                         tot: "/ \(String(format: "%02d", secure.trackCount))")
-                ScanBar(style: .orange(secureOverall(secure))).frame(width: 150)
+                ScanBar(style: .orange(BusySecureRead(secure).overall)).frame(width: 150)
             }
             .fixedSize()
         } ticker: {
@@ -2002,22 +2103,8 @@ private struct DubPane: View {
         }
     }
 
-    /// The bar across the disc. The two passes take about the same time, so
-    /// each is half a track; re-reading has no predictable length, so it gets
-    /// the last sliver rather than a share the bar would then sit on.
-    private func secureOverall(_ secure: SecureDiscRip.Progress) -> Double {
-        let within: Double
-        switch secure.track.phase {
-        case .pass1: within = secure.track.fraction * 0.48
-        case .pass2: within = 0.48 + secure.track.fraction * 0.48
-        case .retry: within = 0.96 + secure.track.fraction * 0.04
-        }
-        let done = Double(secure.trackOrdinal - 1) + within
-        return min(max(done / Double(max(secure.trackCount, 1)), 0), 1)
-    }
-
     private var emptyBody: some View {
-        OLEDPaneScaffold {
+        OLEDPaneScaffold(picture: model.busyPicture(on: .dub)) {
             NPTitles(title: "NOTHING TO DUB", sub: "Insert an audio CD, or download a stream for offline listening")
         } readout: {
             EmptyView()
@@ -2166,7 +2253,7 @@ private struct DevicesPane: View {
     // MARK: Sync readout (SYNC → DEVICE / SYNC COMPLETE)
 
     private func syncBody(_ sync: DeviceSyncProgressSnapshot) -> some View {
-        OLEDPaneScaffold {
+        OLEDPaneScaffold(picture: model.busyPicture(on: .devices)) {
             HStack(alignment: .bottom, spacing: 18) {
                 DevGlyph()
                 NPTitles(
@@ -2234,7 +2321,7 @@ private struct DevicesPane: View {
     // MARK: Connected device
 
     private func deviceBody(profile: ExternalDeviceProfile, device: MountedDevice) -> some View {
-        OLEDPaneScaffold {
+        OLEDPaneScaffold(picture: model.busyPicture(on: .devices)) {
             HStack(alignment: .bottom, spacing: 18) {
                 DevGlyph()
                 NPTitles(title: device.name.uppercased(),
@@ -2253,7 +2340,7 @@ private struct DevicesPane: View {
     // MARK: Empty state (nothing connected / configured)
 
     private var emptyBody: some View {
-        OLEDPaneScaffold {
+        OLEDPaneScaffold(picture: model.busyPicture(on: .devices)) {
             HStack(alignment: .bottom, spacing: 18) {
                 DevGlyph().opacity(0.4)
                 NPTitles(title: "NO DEVICE", sub: emptySub, titleSize: 40)

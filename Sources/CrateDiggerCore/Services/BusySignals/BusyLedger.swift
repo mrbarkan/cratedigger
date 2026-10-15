@@ -214,6 +214,20 @@ public struct BusyLedger: Equatable, Sendable {
                               still: still, blinking: blinking)
     }
 
+    /// When a finished record's blink stops on its own: the end of
+    /// `pictureBlinkDuration` from its arrival on its screen. Nothing in the
+    /// ledger changes at that moment (the record was seen long before), so a
+    /// view that ticks for the blink reads this to know when to stop.
+    ///
+    /// Nil while running, and for an unseen record off its screen: a mini
+    /// blinks for as long as it stays unseen, and becoming seen is a change
+    /// the ledger publishes.
+    public func blinkEnd(of record: BusyJobRecord) -> Date? {
+        guard let finishedAt = record.finishedAt else { return nil }
+        if record.seenAt == nil && record.screen != screen { return nil }
+        return max(finishedAt, screenSince).addingTimeInterval(BusySignalTiming.pictureBlinkDuration)
+    }
+
     // MARK: Private
 
     private func runningIndex(_ id: BusyJobID) -> Int? {
@@ -248,11 +262,11 @@ public struct BusyLedger: Equatable, Sendable {
     ///   holds steady.
     private func mark(of record: BusyJobRecord, at date: Date, still: Bool) -> (lit: Bool, blinking: Bool) {
         guard let finishedAt = record.finishedAt, !still else { return (true, false) }
-        if record.seenAt == nil && record.screen != screen {
+        guard let end = blinkEnd(of: record) else {
             return (BusySignalTiming.blink(date.timeIntervalSince(finishedAt)), true)
         }
-        let sinceArrival = date.timeIntervalSince(max(finishedAt, screenSince))
-        if sinceArrival < BusySignalTiming.pictureBlinkDuration {
+        if date < end {
+            let sinceArrival = date.timeIntervalSince(max(finishedAt, screenSince))
             return (BusySignalTiming.blink(sinceArrival), true)
         }
         return (true, false)

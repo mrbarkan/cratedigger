@@ -367,6 +367,27 @@ final class BusyLedgerTests: XCTestCase {
         XCTAssertTrue(input(18.5).markLit)
     }
 
+    /// The picture's blink stops on its own, with nothing in the ledger
+    /// changing (it was seen long before), so the view needs this date to
+    /// pause its timeline. It must agree with `sceneInput`'s `blinking`.
+    func testBlinkEndIsWhereThePictureStopsBlinking() {
+        var l = BusyLedger(screen: .other, at: t0)
+        let id = l.begin(.rip, on: .dub, at: at(0))
+        XCTAssertNil(l.blinkEnd(of: l.record(id)!), "a running job has no finished blink")
+        l.finish(id, .completed, at: at(10))
+        XCTAssertNil(l.blinkEnd(of: l.record(id)!), "an unseen mini blinks until it is seen")
+
+        l.show(.dub, at: at(100))
+        let end = try! XCTUnwrap(l.blinkEnd(of: l.record(id)!))
+        XCTAssertEqual(end, at(108), "counted from arrival")
+        func input(_ s: TimeInterval) -> BusySceneInput { l.sceneInput(for: l.record(id)!, at: at(s), still: false) }
+        XCTAssertTrue(input(107.9).blinking)
+        XCTAssertFalse(input(108).blinking)
+
+        _ = l.settle(at: at(102))
+        XCTAssertEqual(l.blinkEnd(of: l.record(id)!), at(108), "being seen does not move it")
+    }
+
     func testSceneInputCarriesProgressAndLabels() {
         var l = BusyLedger(at: t0)
         let progress = BusyProgress(completed: 2, total: 9, lossless: true)
