@@ -424,7 +424,7 @@ snapshots are deterministic.
   at 201.6 × 84.
 - **Points, not units.** Geometry is transformed into view points *before*
   stroking. Line widths (1.15 pt picture, 0.95 pt mini, html:950/962) and the
-  glow radius (`glowRadius = 1.5` pt, tuned by snapshot) are therefore in
+  glow radius (`glowRadius = 0.75` pt, tuned by snapshot in Task 14) are therefore in
   screen points at any scale. Caps and joins are round.
 - **Order is kept.** Background fills occlude, so shapes are never regrouped
   by ink. Consecutive shapes that share ink, style and glow are batched into
@@ -964,9 +964,10 @@ has signed off.
     `meterHot` under monochrome.
   - Under monochrome, cool, hot and foreground are one ink. What separates
     them is the dim print and intensity, as everywhere else on the glass.
-- **Glow** is the ink colour at full strength, radius 1.5 pt (the sketch's
-  `shadowBlur 3` device pixels). It is a constant in `BusyCanvas`, tuned
-  against the contact sheets.
+- **Glow** is the ink colour at full strength, radius 0.75 pt. The sketch's
+  `shadowBlur 3` device pixels is 1.5 pt at 2×, but canvas blur is twice its
+  σ while SwiftUI's shadow radius is about σ, so 0.75 pt is what matches. It
+  is a constant in `BusyCanvas`, tuned against the contact sheets (Task 14).
 
 ## 8. Rules for finished, seen and retired jobs
 

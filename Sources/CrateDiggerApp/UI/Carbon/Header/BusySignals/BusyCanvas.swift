@@ -50,11 +50,26 @@ struct BusyInkPalette: Equatable {
 /// - **Glow** follows the sketch's pen (html:187-215): strokes glow, fills
 ///   with no stroke glow (`dot`, `block`, note heads), a fill under a stroke
 ///   does not, a `.background` fill never does, and text never does.
-/// - **Background fills on the real glass.** `.background` resolves to flat
-///   `oledSurface`, though the glass behind is a gradient (OLEDDisplay's
-///   white → clear → `oledSurfaceShade` rake). Whether an occluder reads as
-///   a lighter patch is decided on the Task 14 contact sheet, and the outcome
-///   is to be recorded here.
+/// - **Background fills on the real glass: flat `oledSurface`, kept.** The
+///   glass behind is a gradient (OLEDDisplay's white → clear →
+///   `oledSurfaceShade` rake), so an occluder can differ from the glass
+///   beside it. Measured on the Task 14 contact sheets (a picture-sized
+///   window at the centre of a 720 × 150 glass): Carbon's black rake on a
+///   near-black surface is a no-op, and the glass varies by at most 3/255
+///   across the picture, so the cassette, crate, records, file and iPod
+///   bodies are indistinguishable from it. On the pale BACKLIT preset the
+///   glass runs from 1/255 lighter to 7/255 darker than `oledSurface`
+///   across the window, so an occluder's far corner reads at most ~6/255
+///   lighter than the glass just outside its outline, which the outline
+///   itself hides. The spec's fallback (`oledSurface` composited with the
+///   gradient sampled at the picture's centre) would change nothing here:
+///   the rake's middle stop is clear, and a pane's picture sits near the
+///   middle of the glass. Revisit only if a picture moves to an edge of the
+///   glass, or a theme's rake gets much stronger.
+/// - **Text** is set with `CarbonFont.monoExact`, not `mono`:
+///   `Font.custom(_:size:relativeTo:)` snaps to whole points, which drew the
+///   5.5-unit labels (4.62 pt in a 220 × 84 frame) at 5 pt, 8 % larger than
+///   the sketch. The sheets confirm size and baseline now match.
 ///
 /// `Equatable` on `(drawing, lineWidth)` and used with `.equatable()`: a
 /// timeline tick that lands in the same animation step builds an equal
@@ -65,9 +80,14 @@ struct BusyCanvas: View, Equatable {
     /// Screen points: 1.15 for a picture, 0.95 for a mini (html:950, :962).
     let lineWidth: CGFloat
 
-    /// The glow's blur, in screen points: the sketch's `shadowBlur 3` device
-    /// pixels at 2×. Tuned against the contact sheets.
-    static let glowRadius: CGFloat = 1.5
+    /// The glow's blur, in screen points. The sketch's `shadowBlur 3` device
+    /// pixels at 2× is 1.5 pt of canvas blur, but canvas blur is twice its
+    /// Gaussian σ while GraphicsContext's `.shadow(radius:)` spreads about as
+    /// wide as its radius: at 1.5 the halo was twice the sketch's and filled
+    /// the spindle hole grey. Tuned on the Task 14 contact sheets against the
+    /// sketch rendered headless at the same scale (blur scaled to match):
+    /// 0.75 pt reproduces the sketch's halo width and intensity.
+    static let glowRadius: CGFloat = 0.75
 
     @Environment(\.carbon) private var theme
 
@@ -331,7 +351,7 @@ extension BusyCanvas {
             guard case let .text(string, at, size, align, _) = shape, !string.isEmpty else { return }
             let pointSize = size * fit.scale
             guard pointSize > 0 else { return }
-            var resolved = context.resolve(Text(string).font(CarbonFont.mono(pointSize, weight: .semibold)))
+            var resolved = context.resolve(Text(string).font(CarbonFont.monoExact(pointSize, weight: .semibold)))
             resolved.shading = .color(color)
             let unbounded = CGSize(width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude)
             let measured = resolved.measure(in: unbounded)

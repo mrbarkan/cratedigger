@@ -75,6 +75,26 @@ public enum CarbonFont {
         }
     }
 
+    /// `mono` at exactly `size` points, theme override included.
+    ///
+    /// `Font.custom(_:size:relativeTo:)` snaps its size to whole points
+    /// (4.62 draws at 5, 5.5 at 6). That is invisible at interface sizes but
+    /// up to ~10 % at the few-point sizes a scaled drawing asks for, which is
+    /// why the Busy Signals renderer, whose labels are 5.5 scene units × 0.84,
+    /// uses this instead. `fixedSize` keeps the size as given.
+    public static func monoExact(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
+        if let override = ActiveThemeFonts.overrides["mono"] {
+            let drawing = override.drawing(weight)
+            return Font.custom(drawing.face, fixedSize: size).weight(drawing.synthesize)
+        }
+        switch weight {
+        case .bold, .heavy, .black: return Font.custom(monoBold, fixedSize: size)
+        case .semibold:             return Font.custom(monoSemibold, fixedSize: size)
+        case .medium:               return Font.custom(monoMedium, fixedSize: size)
+        default:                    return Font.custom(monoFamily, fixedSize: size).weight(weight)
+        }
+    }
+
     public static func sans(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
         if let override = ActiveThemeFonts.overrides["sans"] {
             let drawing = override.drawing(weight)
