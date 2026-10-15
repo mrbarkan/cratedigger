@@ -128,12 +128,17 @@ public struct BusyDrawing: Equatable, Sendable {
 ```
 
 **Clipping.** The sketch draws into a 220 × 84 canvas, so anything off the
-scene is cut at the canvas edge. The port makes that explicit in two places:
-a scene whose content legitimately leaves the scene (the scan's crate swap,
-which slides a crate 160 units sideways, html:631-633) wraps it in
-`clipped(to: CGRect(0, 0, 240, 100), radius: 0)`, and `BusyCanvas` clips every
-picture to its letterboxed scene rect, so nothing off-scene ever draws into
-the letterbox margins.
+scene is cut at the canvas edge, which is the frame, not the 201.6 × 84
+scene letterboxed inside it. The port does the same: `BusyCanvas` clips every
+picture to the view's whole frame. The one scene whose content legitimately
+leaves the scene, the scan's crate swap (it slides a crate 160 units
+sideways, html:631-633), is drawn unclipped, so the sliding crates run on
+into the margins beside the picture and are cut only at the frame's edge.
+Every other picture and mini stays inside its unit space (§11), so for them
+the frame clip and the scene clip are the same. (A unit-box clip on the scan,
+plus a letterbox clip in the canvas, cut the sliding crates with a hard
+vertical edge 9 pt inside a 220 × 84 frame and 19 pt a side inside the
+220 × 76 band; the visual review caught it.)
 
 `dot` is a filled circle and `block` is a filled rect. The sketch's
 `translate` + `scale` (html:238, the note glyph) is not a primitive: the
@@ -434,7 +439,8 @@ snapshots are deterministic.
   `at` is the baseline (the top sits at baseline − the font's ascender).
 - **Clip.** `clipBegin` / `clipEnd` push and pop a rounded-rect clip with
   `context.drawLayer { $0.clip(to:) }`. The whole drawing is also clipped to
-  its letterboxed scene rect (`size × k`), as the sketch's canvas edge did.
+  the view's frame (not the letterboxed `size × k` rect), as the sketch's
+  canvas edge did (§2.1, Clipping).
 - **Equatable.** `BusyCanvas` is `Equatable` on `(drawing, lineWidth)` and is
   used with `.equatable()`, so a timeline tick that lands in the same 1/8 s
   step produces an equal drawing and no redraw.
@@ -712,8 +718,9 @@ the element moves at 8 fps whatever the progress is.
   sketch's last crate only because the sketch stops after four; in the cyclic
   port it would make the crate jump at the finish.
 - **Off-scene crates:** the swap slides crates up to 160 units sideways
-  (html:631-633), so the crate drawing is wrapped in a clip to the 240 × 100
-  scene rect (§2.1, Clipping).
+  (html:631-633). They are drawn unclipped and cut by the canvas's frame,
+  not the scene rect, so they slide on into the margins as in the sketch
+  (§2.1, Clipping).
 
 **Download** (html:659-727)
 - **Rings, data blocks and hub spin:** from the clock.
@@ -1089,8 +1096,9 @@ explicitly.
   {0, 0.1, 0.5, 0.9, 1, nil}, running and finished:
   - the drawing's size is right, and `bounds` stays inside 240 × 100 or
     96 × 12 (≤ 0.5 unit tolerance for round caps). This relies on sweep-aware
-    arc bounds and on clip-aware bounds (the scan's sliding crates are
-    clipped to the scene, §2.1);
+    arc bounds and on clip-aware bounds. The one exception is the scan's
+    crate swap, which leaves the scene sideways on purpose (§2.1) and is
+    held only inside the scene's height;
   - deterministic: the same input gives an equal drawing;
   - two times inside one 1/8 s step give equal drawings;
   - the finished drawing differs from the running one at the same time;

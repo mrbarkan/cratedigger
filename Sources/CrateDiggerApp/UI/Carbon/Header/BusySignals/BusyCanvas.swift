@@ -38,8 +38,15 @@ struct BusyInkPalette: Equatable {
 /// SwiftUI `Canvas`, for both the pane picture and the rail minis.
 ///
 /// - **Fit.** The drawing's unit space is scaled uniformly to the frame,
-///   centred and letterboxed, never stretched (html:943), and everything is
-///   clipped to that letterboxed rect, as the sketch's canvas edge was.
+///   centred and letterboxed, never stretched (html:943). Everything is
+///   clipped to the view's whole frame, *not* to the letterboxed rect: the
+///   sketch's canvas was the 220 × 84 frame, so the scan's sliding crates
+///   ran on into the margins beside the 201.6-wide scene and were cut only
+///   at the canvas edge. Clipping to the letterbox cut them with a hard
+///   vertical edge inside the frame (19 pt a side at the 220 × 76 band). No
+///   other picture or mini draws outside its unit space (`BusySceneTests`),
+///   so for them the two clips are the same; only the glow's fringe at the
+///   scene's edge now reaches into the margin, as it did in the sketch.
 /// - **Points, not units.** Geometry is transformed into view points before
 ///   it is stroked, so `lineWidth` and `glowRadius` are screen points at any
 ///   size. Caps and joins are round.
@@ -233,7 +240,7 @@ extension BusyCanvas {
         let fit = fit(drawing.size, into: size)
         guard fit.scale > 0 else { return }
         var scene = context
-        scene.clip(to: Path(fit.rect))
+        scene.clip(to: Path(CGRect(origin: .zero, size: size)))
         let pen = Pen(fit: fit, lineWidth: lineWidth, palette: palette)
         pen.draw(drawing.shapes[...], into: &scene)
     }

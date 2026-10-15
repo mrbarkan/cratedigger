@@ -89,14 +89,25 @@ final class BusySceneTests: XCTestCase {
 
     // MARK: - Generic invariants
 
+    /// The one exception is the scan's crate swap, which slides crates
+    /// sideways past the scene's edges on purpose and leaves the canvas edge
+    /// to cut them, as the sketch did. It is held inside the scene's height,
+    /// and every other frame of the scan is held inside the scene outright.
     func testPicturesStayInsideSceneSpace() {
+        var swaps = 0
         for kind in BusyJobKind.allCases {
             for input in Self.matrix(kind) {
                 let d = BusyScenes.picture(kind, input)
                 XCTAssertEqual(d.size, BusyDrawing.sceneSize, "\(kind)")
-                XCTAssertTrue(Self.isInside(d), "\(kind) \(input): \(d.bounds)")
+                if kind == .scan, ScanScene.moment(input.time).swap != nil, !input.isFinished {
+                    swaps += 1
+                    XCTAssertTrue(Self.isInside(d, horizontally: false), "\(kind) \(input): \(d.bounds)")
+                } else {
+                    XCTAssertTrue(Self.isInside(d), "\(kind) \(input): \(d.bounds)")
+                }
             }
         }
+        XCTAssertGreaterThan(swaps, 0, "the matrix never lands in a crate swap; the exception is untested")
     }
 
     func testMinisStayInsideMiniSpace() {
@@ -320,9 +331,13 @@ final class BusySceneTests: XCTestCase {
 
     /// Inside its unit space, allowing half a unit for round caps; an empty
     /// drawing (a stub picture) trivially is.
-    static func isInside(_ d: BusyDrawing) -> Bool {
-        d.shapes.isEmpty
-            || CGRect(origin: .zero, size: d.size).insetBy(dx: -0.5, dy: -0.5).contains(d.bounds)
+    /// With `horizontally` false only the vertical extent is checked.
+    static func isInside(_ d: BusyDrawing, horizontally: Bool = true) -> Bool {
+        guard !d.shapes.isEmpty else { return true }
+        let box = CGRect(origin: .zero, size: d.size).insetBy(dx: -0.5, dy: -0.5)
+        let bounds = d.bounds
+        guard horizontally else { return bounds.minY >= box.minY && bounds.maxY <= box.maxY }
+        return box.contains(bounds)
     }
 
     static func lines(in d: BusyDrawing, _ ink: BusyInk) -> Int {

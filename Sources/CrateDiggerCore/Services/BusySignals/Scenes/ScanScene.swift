@@ -111,15 +111,20 @@ enum ScanScene {
         let looking = input.isFinished ? recordCount : now.front
         let phase = input.isFinished ? 0 : now.phase
 
-        // A swap slides the crates up to 160 units off the glass; the sketch
-        // relied on its canvas edge, the port says so.
-        d.clipped(to: CGRect(origin: .zero, size: BusyDrawing.sceneSize), radius: 0) { d in
-            if let u = now.swap, !input.isFinished {
-                crate(&d, cx: crateCentre - u * swapDistance, crate: now.crate, front: recordCount, phase: 0)
-                crate(&d, cx: crateCentre + (1 - u) * swapDistance, crate: now.crate + 1, front: 0, phase: 0)
-            } else {
-                crate(&d, cx: crateCentre, crate: crateShown, front: phase == 2 ? looking + 1 : looking, phase: phase)
-            }
+        // A swap slides the crates up to 160 units sideways, past the scene's
+        // edges. Deliberately unclipped: the sketch let its canvas edge cut
+        // them, and `BusyCanvas` clips to the view's frame, not to the
+        // letterboxed scene, so a sliding crate runs on into the margins
+        // beside the picture and is cut where the glass's picture frame ends.
+        // A unit-box clip here cut it with a hard vertical edge inside that
+        // frame (9 pt in at 220 × 84, 19 pt a side at the 220 × 76 band).
+        // The crates never leave the scene vertically; this is the one
+        // picture that leaves it at all (BusySceneTests).
+        if let u = now.swap, !input.isFinished {
+            crate(&d, cx: crateCentre - u * swapDistance, crate: now.crate, front: recordCount, phase: 0)
+            crate(&d, cx: crateCentre + (1 - u) * swapDistance, crate: now.crate + 1, front: 0, phase: 0)
+        } else {
+            crate(&d, cx: crateCentre, crate: crateShown, front: phase == 2 ? looking + 1 : looking, phase: phase)
         }
 
         pile(&d, flipped: record(crateShown, looking) + (phase == 2 ? 1 : 0))

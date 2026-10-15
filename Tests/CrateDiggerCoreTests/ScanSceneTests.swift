@@ -192,15 +192,26 @@ final class ScanSceneTests: XCTestCase {
         XCTAssertEqual(ScanScene.picture(a), ScanScene.picture(b))
     }
 
-    func testSwapIsClippedToTheScene() {
+    /// The swap is left to the canvas edge, as in the sketch: no clip in the
+    /// drawing, the outgoing crate runs off the scene's left edge, and
+    /// nothing leaves the scene's height. Outside a swap the crate stays in.
+    func testSwapRunsPastTheSceneUnclipped() {
         let d = Self.picture(19.875)
-        XCTAssertGreaterThanOrEqual(d.bounds.minX, -0.5)
-        XCTAssertLessThanOrEqual(d.bounds.maxX, 240.5)
-        guard case .clipBegin(let rect, 0) = d.shapes.first(where: {
+        XCTAssertEqual(ScanScene.moment(19.875).swap, 0.75)
+        XCTAssertFalse(d.shapes.contains {
             if case .clipBegin = $0 { return true }
             return false
-        }) else { return XCTFail("the crates are not clipped") }
-        XCTAssertEqual(rect, CGRect(x: 0, y: 0, width: 240, height: 100))
+        }, "a unit-box clip would cut the sliding crates inside the picture's frame")
+        // The outgoing crate's wall starts at 86 − 0.75 × 160 − 44 = −78, and
+        // its leaning records overhang the wall by 3.
+        XCTAssertEqual(d.bounds.minX, ScanScene.crateCentre - 0.75 * ScanScene.swapDistance - 44 - 3,
+                       accuracy: 0.01)
+        XCTAssertGreaterThanOrEqual(d.bounds.minY, -0.5)
+        XCTAssertLessThanOrEqual(d.bounds.maxY, 100.5)
+
+        let flipping = Self.picture(1.5)
+        XCTAssertTrue(CGRect(x: 0, y: 0, width: 240, height: 100).insetBy(dx: -0.5, dy: -0.5)
+            .contains(flipping.bounds), "\(flipping.bounds)")
     }
 
     func testKeyFrameShowsTheFrontRecordStandingWithItsCover() {
@@ -267,13 +278,14 @@ final class ScanSceneTests: XCTestCase {
 
     // MARK: - Helpers
 
-    /// The picked pile's records: closed, background-filled quads drawn after
-    /// the crates' clip, bottom-left then bottom-right first.
+    /// The picked pile's records: closed, background-filled quads centred on
+    /// the pile (the crates' tipping and leaning quads are centred on their
+    /// crate), bottom-left then bottom-right first.
     static func pileQuads(_ d: BusyDrawing) -> [[CGPoint]] {
-        guard let clipEnd = d.shapes.lastIndex(of: .clipEnd) else { return [] }
-        return d.shapes[clipEnd...].compactMap {
-            if case let .path(points, true, .foreground?, .background?) = $0, points.count == 4 { return points }
-            return nil
+        d.shapes.compactMap {
+            guard case let .path(points, true, .foreground?, .background?) = $0, points.count == 4 else { return nil }
+            let centre = points.map(\.x).reduce(0, +) / 4
+            return abs(centre - ScanScene.pileX) < 0.001 ? points : nil
         }
     }
 
