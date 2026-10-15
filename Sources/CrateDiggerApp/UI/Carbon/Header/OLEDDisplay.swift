@@ -161,6 +161,11 @@ private struct DisplayRail: View {
     private var v: OLEDView { screenOverride ?? model.oledView }
     private var radioLive: Bool { model.isRadioMode || model.isStreamActive }
 
+    /// The rail's and the annunciator block's measured widths, for what the
+    /// Busy Signals minis may occupy (`BusyRailSlot.available`).
+    @State private var railWidth: CGFloat = 0
+    @State private var annunciatorWidth: CGFloat = 0
+
     var body: some View {
         HStack(spacing: 0) {
             // What is playing leads the rail: the clock sits on the left edge
@@ -170,6 +175,13 @@ private struct DisplayRail: View {
             RailLive(clock: model.playbackClock)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.trailing, 14)
+
+            // Busy Signals: a mini for every job not on this screen. Its slot
+            // takes width from the title above and adds no height (see
+            // `BusyRailSlot`), so the rail never grows when a mini appears.
+            BusyRailMinis(available: BusyRailSlot.available(railWidth: railWidth,
+                                                            annunciatorWidth: annunciatorWidth,
+                                                            onNowPlaying: v == .nowPlaying))
 
             // Annunciators — every mode permanently printed on the glass, each
             // lit in its own accent (the same color the display-toggle strip
@@ -185,7 +197,11 @@ private struct DisplayRail: View {
                 ann("STAT", lit: v == .stats, color: OLEDView.stats.accent(theme))
                 ann("ON AIR", lit: radioLive, color: theme.onAir, pulse: onAirPulse)
             }
+            .background(WidthReader<AnnunciatorWidthKey>())
         }
+        .background(WidthReader<RailWidthKey>())
+        .onPreferenceChange(RailWidthKey.self) { railWidth = $0 }
+        .onPreferenceChange(AnnunciatorWidthKey.self) { annunciatorWidth = $0 }
         .padding(.bottom, 7)
         // Transient system notice (tag saves etc.) — snaps in on the rail
         // instead of interrupting the user with a modal alert.
@@ -204,6 +220,13 @@ private struct DisplayRail: View {
                     .shadow(color: theme.sun.opacity(0.55), radius: 6)
                     .lineLimit(1)
                     .fixedSize()
+                    // A backing plate: the notice occludes whatever it lands
+                    // on, Busy Signals minis included. Hiding the minis while
+                    // a notice is up instead would blink them on every volume
+                    // nudge and every FIX TAGS tick (spec §4).
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(theme.oledSurface)
                     .padding(.bottom, 7)
                     // Background work that finished while the user was
                     // elsewhere gets the annunciators' attention blink; a
@@ -245,6 +268,24 @@ private struct DisplayRail: View {
         }
         .fixedSize()
         .modifier(AnnBlink(mode: lit ? pulse : .none))
+    }
+}
+
+/// The annunciator rail's own width, and its annunciator block's.
+private struct RailWidthKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
+private struct AnnunciatorWidthKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
+/// Reports its view's width under `Key`, for a `background`.
+private struct WidthReader<Key: PreferenceKey>: View where Key.Value == CGFloat {
+    var body: some View {
+        GeometryReader { Color.clear.preference(key: Key.self, value: $0.size.width) }
     }
 }
 

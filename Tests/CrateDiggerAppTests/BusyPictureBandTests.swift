@@ -184,7 +184,7 @@ final class BusyPictureBandTests: XCTestCase {
             if c.finished { ledger.finish(id, .completed, at: now.addingTimeInterval(-0.1)) }
 
             let glass = FixtureGlass(header: c.header, title: c.title, sub: c.sub, ticker: c.ticker) {
-                BusyPictureTimeline(ledger: ledger, recordID: id)
+                BusySceneTimeline(ledger: ledger, recordID: id, style: .picture)
             }
             .environment(\.carbon, c.theme)
             let size = CGSize(width: fixtureGlassWidth, height: c.header)
