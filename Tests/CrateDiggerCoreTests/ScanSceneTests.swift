@@ -51,6 +51,53 @@ final class ScanSceneTests: XCTestCase {
         XCTAssertGreaterThan(records, 36, "records drawn behind the wall")
     }
 
+    func testRecordBottomsAreHiddenInBothCratesOfASwap() {
+        // The four swap steps of the first crate: two crates on the glass,
+        // each with its own wall at its own cx. Each crate's shapes run from
+        // its dim back rim to its wall, and nothing in that run may reach
+        // below the wall's top.
+        for step in 36..<40 {
+            let time = Double(step) / 8
+            guard let u = ScanScene.moment(time).swap else {
+                XCTFail("step \(step) is not a swap"); continue
+            }
+            let d = Self.picture(time)
+            let crates: [(name: String, cx: CGFloat, records: Int)] = [
+                ("outgoing", ScanScene.crateCentre - u * ScanScene.swapDistance, 0),
+                ("incoming", ScanScene.crateCentre + (1 - u) * ScanScene.swapDistance, ScanScene.recordCount),
+            ]
+            for crate in crates {
+                let label = "step \(step) \(crate.name) crate at \(crate.cx)"
+                let rim = d.shapes.firstIndex {
+                    if case let .line(from, to, .dim, _) = $0 {
+                        return from == CGPoint(x: crate.cx - ScanScene.backHalf, y: ScanScene.back)
+                            && to == CGPoint(x: crate.cx + ScanScene.backHalf, y: ScanScene.back)
+                    }
+                    return false
+                }
+                let wall = CGRect(x: crate.cx - ScanScene.frontHalf, y: ScanScene.front,
+                                  width: 2 * ScanScene.frontHalf, height: 20)
+                guard let rim, let wallIndex = d.shapes.firstIndex(of: .rect(wall, stroke: .foreground, fill: .background)),
+                      rim < wallIndex else {
+                    XCTFail("\(label): no back rim followed by a front wall"); continue
+                }
+                var records = 0
+                for shape in d.shapes[rim..<wallIndex] {
+                    guard let box = BusyDrawing.box(of: shape) else { continue }
+                    XCTAssertLessThanOrEqual(box.maxY, ScanScene.front + 4 + 1e-9,
+                                             "\(label): \(shape) reaches below the wall's top")
+                    switch shape {
+                    case .rect(_, _, .background?), .path(_, true, _, .background?): records += 1
+                    default: break
+                    }
+                }
+                // The outgoing crate is spent; the incoming one is full, so
+                // the bound above was checked against every one of its records.
+                XCTAssertEqual(records, crate.records, "\(label): records behind the wall")
+            }
+        }
+    }
+
     func testFlippedRecordsLeanOverTheWallAfterIt() {
         // At 4.25 s eleven records are flipped; those that were not finds
         // lean forward over the wall, drawn after it on purpose.
