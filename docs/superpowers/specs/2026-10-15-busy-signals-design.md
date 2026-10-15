@@ -764,14 +764,31 @@ the element moves at 8 fps whatever the progress is.
   - `available` is the rail width, minus the annunciator block's measured
     width (a background `GeometryReader` and a preference key), minus
     `RailLive`'s floor.
-  - That floor is the fixed part of `RailLive` plus its 14 pt trailing:
-    86 pt on NOW and in compact ("NOW PLAYING"), and 178 pt elsewhere (the
-    clock and "NOW PLAYING:"). These are the CoreText measurements from the
-    rail report, plus 8 pt of slack for a theme's mono override.
+  - That floor is the part of `RailLive` that never shrinks, plus its 14 pt
+    trailing. It is **measured, not assumed**: `RailLiveContent` lays out a
+    hidden copy of its fixed parts (the clock or the "NOW PLAYING" label,
+    the "NOW PLAYING:" prefix when a track is loaded, the 12 and 6 pt gaps,
+    and the title cut to its "…") and reports the width under
+    `RailLiveFloorKey`; `AnnunciatorRailRow` adds the 14 pt. The floor counts
+    the title even while a notice hides it, so a notice never makes a mini
+    blink in and out.
+  - The fixed 86 / 178 pt first planned here left out the 1.08 tracking and
+    a theme's mono. CoreText, with tracking: on JetBrains Mono, ≈ 85 pt on
+    NOW ("NOW PLAYING" 71.3 + 14) and ≈ 184 pt elsewhere (clock 67.4 + 12 +
+    "NOW PLAYING:" 77.8 + 6 + "…" 6.5 + 14). On Llama '97's
+    PixelOperatorMono8, a full em per glyph, ≈ 125 pt on NOW (110.9 + 14)
+    and ≈ 270 pt elsewhere (107 + 12 + 121 + 6 + 10 + 14), with an
+    annunciator block of ≈ 532 pt. The old 178 let a mini in at an 838 pt
+    rail and pushed the clock and ON AIR ≈ 32 pt past each side of the glass.
+    `BusyRailMinisTests.testTheRailRowNeverOverflowsTheGlass` lays out the
+    real row in both fonts at 838–1238 pt with one to three jobs.
   - The title keeps whatever is left, so it is the title that gives way,
     never the clock.
   - At the 1200 pt minimum window off NOW this gives two minis and no title
-    with one job over (≈ 26 pt), or one mini plus "+1" with three.
+    with one job over (≈ 26 pt), or one mini plus "+1" with three. That is
+    on Carbon; on Llama '97 the same rail has ≈ 22 pt to spare off NOW and
+    shows no minis until the window is ≈ 90 pt wider (on NOW, ≈ 181 pt: one
+    mini, or "+N" beside it once the window allows).
 - **"+N"** is mono 8 bold in `oledFGo(0.5)` (html:79).
 - **Finished minis.** The destination blinks hot at 2 Hz until the job is
   seen (§8, "seen"). A seen job leaves the rail.
@@ -983,8 +1000,9 @@ hosts the same `OLEDDisplay`, and so the same `DisplayRail`, under
 `oledScreenOverride = .nowPlaying`. The rail's screen is therefore NOW, and
 every job qualifies.
 
-- `RailLive` is narrower there (≈ 86 pt), so at the 1174 pt compact minimum
-  the rail has ≈ 359 pt free: two minis plus "+N" fit.
+- `RailLive` is narrower there (≈ 85 pt on JetBrains Mono, ≈ 125 pt on
+  Llama '97, measured), so at the 1174 pt compact minimum the rail has
+  ≈ 359 pt free on Carbon: two minis plus "+N" fit.
 - Pictures never appear in compact, because the display is pinned to NOW.
 - `busyVisibleScreen` treats compact as `.other`, even when `oledView` is
   `.dub` underneath. Expanding counts as arriving on `oledView`'s screen

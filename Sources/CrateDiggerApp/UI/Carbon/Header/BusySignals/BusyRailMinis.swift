@@ -49,20 +49,16 @@ struct BusyRailSlot: View {
     /// override.
     static let overflowLabelWidth: CGFloat = 16
 
-    /// `RailLive`'s floor: its fixed part plus its 14 pt trailing padding.
-    /// On NOW (and in compact, which is pinned to NOW) it only says "NOW
-    /// PLAYING"; elsewhere it is the clock and "NOW PLAYING:". CoreText
-    /// measurements from the rail report, plus 8 pt of slack for a theme's
-    /// mono override (spec §4). The title takes what is left, so it is the
-    /// title that gives way to the minis, never the clock.
-    static let liveFloorOnNowPlaying: CGFloat = 86
-    static let liveFloorElsewhere: CGFloat = 178
-
     /// What the cluster may occupy: the rail, less the annunciator block and
     /// `RailLive`'s floor. Never negative.
-    static func available(railWidth: CGFloat, annunciatorWidth: CGFloat, onNowPlaying: Bool) -> CGFloat {
-        let floor = onNowPlaying ? liveFloorOnNowPlaying : liveFloorElsewhere
-        return max(0, railWidth - annunciatorWidth - floor)
+    ///
+    /// `liveFloor` is measured (`RailLiveContent` reports it), trailing
+    /// padding included: on NOW (and in compact, which is pinned to NOW) the
+    /// "NOW PLAYING" label, elsewhere the clock, "NOW PLAYING:" and the
+    /// title's "…". The title takes what is left, so it is the title that
+    /// gives way to the minis, never the clock.
+    static func available(railWidth: CGFloat, annunciatorWidth: CGFloat, liveFloor: CGFloat) -> CGFloat {
+        max(0, railWidth - annunciatorWidth - liveFloor)
     }
 
     var body: some View {

@@ -22,10 +22,64 @@ final class BusyRailMinisTests: XCTestCase {
     // MARK: Width budget
 
     func testAvailableIsTheRailLessTheAnnunciatorsAndRailLivesFloor() {
-        XCTAssertEqual(BusyRailSlot.available(railWidth: 900, annunciatorWidth: 400, onNowPlaying: true), 414)
-        XCTAssertEqual(BusyRailSlot.available(railWidth: 900, annunciatorWidth: 400, onNowPlaying: false), 322)
-        XCTAssertEqual(BusyRailSlot.available(railWidth: 300, annunciatorWidth: 400, onNowPlaying: false), 0,
+        XCTAssertEqual(BusyRailSlot.available(railWidth: 900, annunciatorWidth: 400, liveFloor: 125), 375)
+        XCTAssertEqual(BusyRailSlot.available(railWidth: 300, annunciatorWidth: 400, liveFloor: 125), 0,
                        "never negative, so a rail not yet measured shows nothing")
+    }
+
+    /// The real rail row (`AnnunciatorRailRow` around `RailLiveContent`, the
+    /// slot and `RailAnnunciators`), laid out in a hosting view so its
+    /// measurements settle, never grows past the width the glass gives it:
+    /// the minis take only what the clock, the prefix, the title's "…" and
+    /// the annunciators leave. Llama '97's mono is a full em per glyph, which
+    /// is what the old fixed floors (86 / 178 pt) missed.
+    func testTheRailRowNeverOverflowsTheGlass() throws {
+        let fonts: [(String, ThemeFont?)] = [
+            ("Carbon", nil),
+            ("Llama '97", try llamaMonoThemeFont())
+        ]
+        let saved = ActiveThemeFonts.overrides
+        defer { ActiveThemeFonts.overrides = saved }
+
+        for (fontName, mono) in fonts {
+            ActiveThemeFonts.overrides = mono.map { ["mono": $0] } ?? [:]
+            for onNow in [true, false] {
+                var widestAvailable: CGFloat = 0
+                for jobs in 1 ... 3 {
+                    let ledger = ledger(kinds: Array([BusyJobKind.rip, .scan, .download].prefix(jobs)))
+                    // From ≈ 838 pt, the rail in the 1200 pt minimum window, where
+                    // an idle rail just fits in Llama '97 off NOW (≈ 816 pt).
+                    for width in stride(from: CGFloat(838), through: 1_238, by: 40) {
+                        let probe = RailProbe()
+                        let row = AnnunciatorRailRow {
+                            RailLiveContent(showsClock: !onNow, now: "00:26", total: "02:04", hasTrack: true,
+                                            showsTitle: true, title: "SO WHAT · MILES DAVIS · KIND OF BLUE")
+                                .background(probe.reader { probe.liveMinX = $0.minX })
+                        } minis: { available in
+                            BusyRailSlot(ledger: ledger, available: available, guardsWindowDrag: false,
+                                         select: { _ in })
+                                .onAppear { probe.available = available }
+                                .onChange(of: available) { probe.available = $0 }
+                        } annunciators: {
+                            RailAnnunciators(screen: onNow ? .nowPlaying : .conversion, radioLive: false,
+                                             onAirPulse: .none)
+                                .background(probe.reader { probe.annunciatorsMaxX = $0.maxX })
+                        }
+                        try layOut(row, width: width)
+                        let label = "\(fontName), \(onNow ? "NOW" : "off NOW"), \(jobs) jobs, \(width) pt"
+                        XCTAssertGreaterThan(probe.annunciatorsMaxX, 0, label)
+                        XCTAssertGreaterThanOrEqual(probe.liveMinX, -0.5, "the clock is cut off: \(label)")
+                        XCTAssertLessThanOrEqual(probe.annunciatorsMaxX, width + 0.5,
+                                                 "the annunciators are cut off: \(label)")
+                        widestAvailable = max(widestAvailable, probe.available)
+                    }
+                }
+                // The minis do get room somewhere in the sweep, or the check
+                // above would pass by showing none.
+                XCTAssertGreaterThan(widestAvailable, BusyRailCluster.miniSize.width + BusyRailCluster.trailing,
+                                     "\(fontName), \(onNow ? "NOW" : "off NOW")")
+            }
+        }
     }
 
     /// The cluster draws with its own copies of `BusyRail`'s internal sizes;
@@ -178,6 +232,30 @@ final class BusyRailMinisTests: XCTestCase {
         return Font.custom(name, size: 9)
     }
 
+    /// Llama '97's mono as a theme override, both faces registered.
+    private func llamaMonoThemeFont() throws -> ThemeFont {
+        let fonts = BusyPictureBandTests.repoRoot
+            .appendingPathComponent("Sources/CrateDiggerApp/Resources/Themes/Llama 97.cdtheme/Fonts")
+        for face in ["PixelOperatorMono8", "PixelOperatorMono8-Bold"] {
+            let url = fonts.appendingPathComponent("\(face).ttf")
+            XCTAssertTrue(FileManager.default.fileExists(atPath: url.path), url.path)
+            CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+        }
+        return ThemeFont(regular: "PixelOperatorMono8", bold: "PixelOperatorMono8-Bold")
+    }
+
+    /// Hosts `view` at `width` and lets its preference-driven state settle.
+    private func layOut(_ view: some View, width: CGFloat) throws {
+        let host = NSHostingView(rootView: view.frame(width: width, height: 30)
+            .coordinateSpace(name: RailProbe.space)
+            .environment(\.carbon, .carbon))
+        host.frame = NSRect(x: 0, y: 0, width: width, height: 30)
+        for _ in 0 ..< 6 {
+            host.layoutSubtreeIfNeeded()
+            RunLoop.main.run(until: Date().addingTimeInterval(0.005))
+        }
+    }
+
     private func render(_ view: some View, scale: CGFloat = 2) throws -> CGImage {
         let renderer = ImageRenderer(content: view)
         renderer.scale = scale
@@ -185,8 +263,30 @@ final class BusyRailMinisTests: XCTestCase {
     }
 }
 
+/// What a hosted rail row measured, read back by the test.
+private final class RailProbe {
+    var liveMinX: CGFloat = 0
+    var annunciatorsMaxX: CGFloat = 0
+    var available: CGFloat = 0
+
+    /// A background that reports its view's frame in the hosted rail.
+    func reader(_ report: @escaping (CGRect) -> Void) -> some View {
+        GeometryReader { geometry in
+            let frame = geometry.frame(in: .named(RailProbe.space))
+            Color.clear
+                .onAppear { report(frame) }
+                .onChange(of: frame) { report($0) }
+        }
+    }
+
+    static let space = "rail"
+}
+
 /// The rail's shape around the real `BusyRailSlot`: a flexible live title,
-/// the slot, a fixed annunciator block, and the notice with its plate.
+/// the slot, a fixed annunciator block, and the notice with its plate. For
+/// pictures only: `ImageRenderer` draws one pass and never settles the real
+/// row's measured widths, so this hands the slot a fixed budget. Whether the
+/// real row fits is `testTheRailRowNeverOverflowsTheGlass`'s job.
 private struct FixtureRail: View {
     let ledger: BusyLedger
     let font: Font

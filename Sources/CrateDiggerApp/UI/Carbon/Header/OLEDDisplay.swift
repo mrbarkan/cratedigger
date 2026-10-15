@@ -161,47 +161,19 @@ private struct DisplayRail: View {
     private var v: OLEDView { screenOverride ?? model.oledView }
     private var radioLive: Bool { model.isRadioMode || model.isStreamActive }
 
-    /// The rail's and the annunciator block's measured widths, for what the
-    /// Busy Signals minis may occupy (`BusyRailSlot.available`).
-    @State private var railWidth: CGFloat = 0
-    @State private var annunciatorWidth: CGFloat = 0
-
     var body: some View {
-        HStack(spacing: 0) {
+        AnnunciatorRailRow {
             // What is playing leads the rail: the clock sits on the left edge
             // where it never moves, and the title grows right into the gap.
-            // No Spacer — this block takes the whole remainder of the rail
-            // itself, so the annunciators stay pinned to the far edge.
             RailLive(clock: model.playbackClock)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.trailing, 14)
-
+        } minis: { available in
             // Busy Signals: a mini for every job not on this screen. Its slot
             // takes width from the title above and adds no height (see
             // `BusyRailSlot`), so the rail never grows when a mini appears.
-            BusyRailMinis(available: BusyRailSlot.available(railWidth: railWidth,
-                                                            annunciatorWidth: annunciatorWidth,
-                                                            onNowPlaying: v == .nowPlaying))
-
-            // Annunciators — every mode permanently printed on the glass, each
-            // lit in its own accent (the same color the display-toggle strip
-            // glows — see OLEDView.accent).
-            HStack(spacing: 12) {
-                ann("NOW", lit: v == .nowPlaying, color: OLEDView.nowPlaying.accent(theme))
-                ann("CNVRT", lit: v == .conversion, color: OLEDView.conversion.accent(theme))
-                ann("SCAN", lit: v == .scan, color: OLEDView.scan.accent(theme))
-                ann("SYNC", lit: v == .remoteSync, color: OLEDView.remoteSync.accent(theme))
-                ann("DUB", lit: v == .dub, color: OLEDView.dub.accent(theme))
-                ann("DEV", lit: v == .devices, color: OLEDView.devices.accent(theme))
-                ann("SRCH", lit: v == .search, color: OLEDView.search.accent(theme))
-                ann("STAT", lit: v == .stats, color: OLEDView.stats.accent(theme))
-                ann("ON AIR", lit: radioLive, color: theme.onAir, pulse: onAirPulse)
-            }
-            .background(WidthReader<AnnunciatorWidthKey>())
+            BusyRailMinis(available: available)
+        } annunciators: {
+            RailAnnunciators(screen: v, radioLive: radioLive, onAirPulse: onAirPulse)
         }
-        .background(WidthReader<RailWidthKey>())
-        .onPreferenceChange(RailWidthKey.self) { railWidth = $0 }
-        .onPreferenceChange(AnnunciatorWidthKey.self) { annunciatorWidth = $0 }
         .padding(.bottom, 7)
         // Transient system notice (tag saves etc.) — snaps in on the rail
         // instead of interrupting the user with a modal alert.
@@ -254,6 +226,85 @@ private struct DisplayRail: View {
         default:       return .none
         }
     }
+}
+
+/// The rail's flow: what is playing, the Busy Signals slot, and the
+/// annunciators pinned to the far edge. Model-free, so `BusyRailMinisTests`
+/// lays out exactly this row with fixture parts.
+///
+/// It measures three widths and hands the minis what is left of the rail
+/// after the annunciators and `RailLiveContent`'s floor (`RailLiveFloorKey`),
+/// so a mini only appears where it fits without pushing the row past the
+/// glass. The floor is measured rather than assumed: a theme's mono override
+/// can be far wider than JetBrains Mono (Llama '97's PixelOperatorMono8 is a
+/// full em per glyph: ≈ 270 pt off NOW against ≈ 184).
+struct AnnunciatorRailRow<Live: View, Minis: View, Annunciators: View>: View {
+    private let live: Live
+    private let minis: (CGFloat) -> Minis
+    private let annunciators: Annunciators
+
+    @State private var railWidth: CGFloat = 0
+    @State private var annunciatorWidth: CGFloat = 0
+    @State private var liveFloor: CGFloat = 0
+
+    /// `minis` receives the width it may occupy (`BusyRailSlot.available`).
+    init(@ViewBuilder live: () -> Live,
+         @ViewBuilder minis: @escaping (CGFloat) -> Minis,
+         @ViewBuilder annunciators: () -> Annunciators) {
+        self.live = live()
+        self.minis = minis
+        self.annunciators = annunciators()
+    }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            // No Spacer: this block takes the whole remainder of the rail
+            // itself, so the annunciators stay pinned to the far edge.
+            live
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.trailing, RailLiveContent.trailing)
+
+            minis(BusyRailSlot.available(railWidth: railWidth,
+                                         annunciatorWidth: annunciatorWidth,
+                                         liveFloor: liveFloor + RailLiveContent.trailing))
+
+            // Every mode permanently printed on the glass.
+            annunciators
+                .background(WidthReader<AnnunciatorWidthKey>())
+        }
+        // The width the rail is given, not the width its row takes: were the
+        // row ever to overflow, measuring the row would report the overflow
+        // as room and hand the minis more of it.
+        .frame(minWidth: 0, maxWidth: .infinity)
+        .background(WidthReader<RailWidthKey>())
+        .onPreferenceChange(RailWidthKey.self) { railWidth = $0 }
+        .onPreferenceChange(AnnunciatorWidthKey.self) { annunciatorWidth = $0 }
+        .onPreferenceChange(RailLiveFloorKey.self) { liveFloor = $0 }
+    }
+}
+
+/// Every annunciator, each lit in its own accent (the same color the
+/// display-toggle strip glows — see `OLEDView.accent`).
+struct RailAnnunciators: View {
+    let screen: OLEDView
+    let radioLive: Bool
+    let onAirPulse: AnnPulse
+
+    @Environment(\.carbon) private var theme
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ann("NOW", lit: screen == .nowPlaying, color: OLEDView.nowPlaying.accent(theme))
+            ann("CNVRT", lit: screen == .conversion, color: OLEDView.conversion.accent(theme))
+            ann("SCAN", lit: screen == .scan, color: OLEDView.scan.accent(theme))
+            ann("SYNC", lit: screen == .remoteSync, color: OLEDView.remoteSync.accent(theme))
+            ann("DUB", lit: screen == .dub, color: OLEDView.dub.accent(theme))
+            ann("DEV", lit: screen == .devices, color: OLEDView.devices.accent(theme))
+            ann("SRCH", lit: screen == .search, color: OLEDView.search.accent(theme))
+            ann("STAT", lit: screen == .stats, color: OLEDView.stats.accent(theme))
+            ann("ON AIR", lit: radioLive, color: theme.onAir, pulse: onAirPulse)
+        }
+    }
 
     /// One printed annunciator segment: ghost when inactive, lit (color + glow)
     /// when its view is active. Segments snap — no fade.
@@ -269,6 +320,13 @@ private struct DisplayRail: View {
         .fixedSize()
         .modifier(AnnBlink(mode: lit ? pulse : .none))
     }
+}
+
+/// `RailLiveContent`'s floor: the width its parts that never shrink take, so
+/// the minis leave it alone (see `AnnunciatorRailRow`).
+private struct RailLiveFloorKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
 
 /// The annunciator rail's own width, and its annunciator block's.
@@ -291,7 +349,7 @@ private struct WidthReader<Key: PreferenceKey>: View where Key.Value == CGFloat 
 
 /// How an annunciator animates: `.breathe` is the slow on-air pulse, `.flash`
 /// the fast attention blink used while a stream is still connecting.
-private enum AnnPulse { case none, breathe, flash }
+enum AnnPulse { case none, breathe, flash }
 
 /// Opacity animation for a whole annunciator (dot + label). Restarts cleanly
 /// when the mode changes (loading → playing swaps flash for breathe).
@@ -360,53 +418,65 @@ private struct AnnDot: View {
 /// it, and repeating it on the glass said nothing the fader wasn't already
 /// showing.
 private struct RailLive: View {
-    @Environment(\.carbon) private var theme
     @EnvironmentObject private var model: LibraryViewModel
     // Playback time lives on the isolated clock; observe it to keep ticking.
     @ObservedObject var clock: PlaybackClock
 
     @Environment(\.oledScreenOverride) private var screenOverride
 
-    private var showMini: Bool { (screenOverride ?? model.oledView) != .nowPlaying }
+    var body: some View {
+        RailLiveContent(
+            showsClock: (screenOverride ?? model.oledView) != .nowPlaying,
+            now: model.displayedCurrentTime.asClockPadded,
+            total: model.playbackDuration.asClockPadded,
+            // Only when something is loaded: the title falls back to the
+            // selected track, which isn't playing.
+            hasTrack: model.nowPlayingTrack != nil,
+            // The centred notice owns the middle of the rail while it's up,
+            // and the title is the only element long enough to run under it.
+            // Yield rather than overlap; the title is back a couple of
+            // seconds later.
+            showsTitle: model.oledNotice == nil,
+            title: (model.nowPlayingTrack?.track.title ?? model.selectedTrack?.track.title ?? "—").uppercased()
+        )
+    }
+}
 
-    /// The centred notice owns the middle of the rail while it's up, and the
-    /// mini title is the only element long enough to run under it. Yield rather
-    /// than overlap; the title is back a couple of seconds later.
-    private var showTitle: Bool { showMini && model.oledNotice == nil }
+/// `RailLive`'s row, model-free so the rail's layout can be tested.
+///
+/// It reports its floor under `RailLiveFloorKey`: the parts that never shrink
+/// (the clock or the "NOW PLAYING" label, the "NOW PLAYING:" prefix) with the
+/// gaps between them and the title's "…". Measured from a hidden copy of
+/// those parts, so it is right for whatever mono the theme draws with. The
+/// floor counts the title even while a notice hides it, so a notice coming
+/// and going never makes a mini appear and vanish.
+struct RailLiveContent: View {
+    /// Between the clock and the title, and between the prefix and the title.
+    static let clockGap: CGFloat = 12
+    static let prefixGap: CGFloat = 6
+    /// Before the Busy Signals slot or the annunciators.
+    static let trailing: CGFloat = 14
+
+    /// Every screen but NOW: the clock and the title. On NOW, where the pane
+    /// already shows both, only the screen's name.
+    let showsClock: Bool
+    let now: String
+    let total: String
+    /// Whether "NOW PLAYING:" prefixes the title.
+    let hasTrack: Bool
+    let showsTitle: Bool
+    let title: String
+
+    @Environment(\.carbon) private var theme
 
     var body: some View {
-        HStack(spacing: 12) {
-            // Elapsed over total, as one reading. They used to flank the
-            // progress bar; with the bar gone they'd read as two loose numbers,
-            // so the slash holds them together.
-            //
-            // First on the rail, so the clock is anchored to the left edge and
-            // stays put while the title beside it changes length or yields to
-            // a notice.
-            if showMini {
-                OLEDTimeReading(now: model.displayedCurrentTime.asClockPadded,
-                                total: model.playbackDuration.asClockPadded)
-            } else {
-                // The NOW screen's own name, in the corner where every other
-                // view keeps its clock.
-                Text("NOW PLAYING")
-                    .font(CarbonFont.mono(9, weight: .bold))
-                    .tracking(1.08)
-                    .foregroundStyle(oledFGo(0.4))
-                    .fixedSize()
-            }
+        HStack(spacing: Self.clockGap) {
+            lead
 
-            if showTitle {
-                HStack(spacing: 6) {
-                    // Only when something is loaded: the title falls back to
-                    // the selected track, which isn't playing.
-                    if model.nowPlayingTrack != nil {
-                        Text("NOW PLAYING:")
-                            .tracking(1.08)
-                            .foregroundStyle(oledFGo(0.4))
-                            .fixedSize()
-                    }
-                    Text(trackTitle)
+            if showsClock && showsTitle {
+                HStack(spacing: Self.prefixGap) {
+                    if hasTrack { prefix }
+                    Text(title)
                         .tracking(1.08)
                         .foregroundStyle(theme.orange)
                         .shadow(color: theme.orange.opacity(0.4), radius: 6)
@@ -417,16 +487,58 @@ private struct RailLive: View {
                 // Takes whatever the clock doesn't: a long title is what
                 // the spare width on this rail is *for*.
                 .frame(maxWidth: .infinity, alignment: .leading)
-            } else if showMini {
+            } else if showsClock {
                 // Hold the rail open so the annunciators don't drift inward
                 // as a notice comes and goes.
                 Spacer(minLength: 0)
             }
         }
+        .background(alignment: .leading) { floorTemplate }
     }
 
-    private var trackTitle: String {
-        (model.nowPlayingTrack?.track.title ?? model.selectedTrack?.track.title ?? "—").uppercased()
+    /// Elapsed over total, as one reading. They used to flank the progress
+    /// bar; with the bar gone they'd read as two loose numbers, so the slash
+    /// holds them together.
+    ///
+    /// First on the rail, so the clock is anchored to the left edge and stays
+    /// put while the title beside it changes length or yields to a notice.
+    @ViewBuilder private var lead: some View {
+        if showsClock {
+            OLEDTimeReading(now: now, total: total)
+        } else {
+            // The NOW screen's own name, in the corner where every other
+            // view keeps its clock.
+            Text("NOW PLAYING")
+                .font(CarbonFont.mono(9, weight: .bold))
+                .tracking(1.08)
+                .foregroundStyle(oledFGo(0.4))
+                .fixedSize()
+        }
+    }
+
+    private var prefix: some View {
+        Text("NOW PLAYING:")
+            .tracking(1.08)
+            .foregroundStyle(oledFGo(0.4))
+            .fixedSize()
+    }
+
+    /// The row at its narrowest, the title cut to its "…", never drawn.
+    private var floorTemplate: some View {
+        HStack(spacing: Self.clockGap) {
+            lead
+            if showsClock {
+                HStack(spacing: Self.prefixGap) {
+                    if hasTrack { prefix }
+                    Text("…").tracking(1.08)
+                }
+                .font(CarbonFont.mono(9, weight: .bold))
+            }
+        }
+        .fixedSize()
+        .hidden()
+        .accessibilityHidden(true)
+        .background(WidthReader<RailLiveFloorKey>())
     }
 }
 
