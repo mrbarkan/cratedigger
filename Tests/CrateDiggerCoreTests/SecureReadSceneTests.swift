@@ -150,12 +150,54 @@ final class SecureReadSceneTests: XCTestCase {
         })
     }
 
-    func testSpindleStopsWhenFinished() {
-        // The time is frozen at the finish, so two finished frames draw the
-        // same disc whatever has passed since.
+    func testFinishedPictureDropsTheSledAndHangsTheTickOnTime() {
+        // The scene does not freeze the spindle itself: the ledger stops
+        // `time` at the finish. So the finished picture must read nothing but
+        // `time` for its motion, never how long ago the finish was...
         let a = SecureReadScene.picture(Self.input(phase: .pass2, fraction: 1, time: 20, finished: 1, lit: true))
         let b = SecureReadScene.picture(Self.input(phase: .pass2, fraction: 1, time: 20, finished: 3, lit: true))
-        XCTAssertEqual(a, b)
+        XCTAssertEqual(a, b, "elapsed time since the finish changes nothing")
+
+        // ...and the index tick does follow `time`, which is what the frozen
+        // clock holds still.
+        func tick(_ d: BusyDrawing) -> CGPoint? {
+            for case let .line(_, to, .hot, _) in d.shapes { return to }
+            return nil
+        }
+        let later = SecureReadScene.picture(Self.input(phase: .pass2, fraction: 1, time: 20.1, finished: 1, lit: true))
+        XCTAssertNotNil(tick(a))
+        XCTAssertNotEqual(tick(a), tick(later), "the tick is driven by time alone")
+
+        // The sled is parked: no laser dot, no pass label, no band outlined.
+        // The same frame unfinished draws all three, so their absence is the
+        // finish's doing, not the clock's (the laser dot blinks on the step).
+        let runningInput = Self.input(phase: .pass2, fraction: 1, time: 20)
+        XCTAssertEqual(runningInput.step % 2, 0, "pick a time on the laser's lit step")
+        let running = SecureReadScene.picture(runningInput)
+        XCTAssertTrue(running.shapes.contains {
+            if case .circle(_, _, nil, .hot) = $0 { return true }
+            return false
+        })
+        XCTAssertTrue(running.shapes.contains {
+            if case .text("P2", _, _, _, _) = $0 { return true }
+            return false
+        })
+        XCTAssertTrue(running.shapes.contains {
+            if case .circle(_, _, .cool, nil) = $0 { return true }
+            return false
+        })
+        XCTAssertFalse(a.shapes.contains {
+            if case .circle(_, _, nil, .hot) = $0 { return true }
+            return false
+        }, "no laser dot")
+        XCTAssertFalse(a.shapes.contains {
+            if case let .text(s, _, _, _, _) = $0 { return ["P1", "P2", "RE"].contains(s) }
+            return false
+        }, "no sled label")
+        XCTAssertFalse(a.shapes.contains {
+            if case .circle(_, _, .cool, nil) = $0 { return true }
+            return false
+        }, "no current band")
     }
 
     // MARK: - Mini

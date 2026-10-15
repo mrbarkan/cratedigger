@@ -136,7 +136,9 @@ enum SecureReadScene {
     }
 
     /// `MINI.disc` (html:276-281): a rim, a hub dot and a hot index that
-    /// turns 30° a step, parked at 0 once finished.
+    /// turns 30° a step, parked at 0 once finished. `RipScene` draws the same
+    /// glyph; once both scenes have landed, move this into `BusyGlyphs` and
+    /// have both call it.
     static func miniDisc(_ d: inout BusyDrawing, cx: CGFloat, _ input: BusySceneInput) {
         let y = BusyGlyphs.miniCentreY
         d.circle(cx, y, 4.6, .foreground)
