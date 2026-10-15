@@ -51,7 +51,7 @@ enum TransferScene {
         // them lit (the row being sent) while running.
         d.roundedRect(10, 22, 64, 40, 2, .foreground, fill: .background)
         d.rect(14, 26, 56, 32, .dim)
-        let row = Int((input.time / rowPeriod).rounded(.down)) % rowCount
+        let row = litRow(at: input.time)
         for i in 0..<rowCount {
             let y = 31 + CGFloat(i) * 5.5
             let length = 22 + CGFloat(BusyNoise.unit(Double(i + 3))) * 24
@@ -88,6 +88,17 @@ enum TransferScene {
         d.circle(186, 64, 16, .foreground)
         d.circle(186, 64, 5.5, .foreground)
         return d
+    }
+
+    /// The library row lit at `time`: a new one every `rowPeriod`, wrapping
+    /// after `rowCount`. The sketch's local clock is never negative, but this
+    /// one is any `TimeInterval`, so a negative, non-finite or huge time reads
+    /// as row 0 (or wraps in floating point) instead of giving a negative
+    /// remainder that lights nothing, or trapping on the `Int` conversion.
+    static func litRow(at time: TimeInterval) -> Int {
+        guard time.isFinite, time > 0 else { return 0 }
+        let period = (time / rowPeriod).rounded(.down)
+        return Int(period.truncatingRemainder(dividingBy: Double(rowCount)))
     }
 
     /// The point at `u` (0…1) along the cable's quadratic Bézier.

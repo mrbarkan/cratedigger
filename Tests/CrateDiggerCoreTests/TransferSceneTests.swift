@@ -136,6 +136,18 @@ final class TransferSceneTests: XCTestCase {
         XCTAssertEqual(coolRows(TransferScene.picture(Self.finished(lit: true))), [])
     }
 
+    func testLitRowStaysInRangeForAnyClock() {
+        XCTAssertEqual(TransferScene.litRow(at: 0), 0)
+        XCTAssertEqual(TransferScene.litRow(at: 1.25), 2)
+        XCTAssertEqual(TransferScene.litRow(at: 3.0), 0)
+        // A clock the ledger never produces still lights a real row, and
+        // never traps on the Int conversion.
+        for time in [-0.1, -7.3, .nan, .infinity, -.infinity, 1e300] {
+            XCTAssertTrue((0..<TransferScene.rowCount).contains(TransferScene.litRow(at: time)), "\(time)")
+        }
+        XCTAssertEqual(TransferScene.litRow(at: -7.3), 0)
+    }
+
     // MARK: - The mini
 
     func testMiniIPodHasSolidScreenAndWheel() {
