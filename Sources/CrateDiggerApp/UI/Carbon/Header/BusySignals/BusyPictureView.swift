@@ -76,8 +76,12 @@ struct BusySceneTimeline: View {
             let blinkEnd = cadence == nil ? nil : ledger.blinkEnd(of: record)
             TimelineView(.animation(minimumInterval: cadence ?? 1,
                                     paused: cadence == nil || !visibility.isVisible)) { context in
+                // A paused timeline keeps handing out its last tick's date,
+                // which can sit inside the closed blink window (mark unlit).
+                // Once settled, draw at the probe's date instead.
+                let date = cadence == nil ? max(Date(), wokeAt) : context.date
                 BusyCanvas(drawing: style.drawing(record.kind,
-                                                  ledger.sceneInput(for: record, at: context.date,
+                                                  ledger.sceneInput(for: record, at: date,
                                                                     still: reduceMotion)),
                            lineWidth: style.lineWidth)
                     .equatable()

@@ -4058,7 +4058,11 @@ final class LibraryViewModel: ObservableObject {
     /// Finder drop anywhere on the window: scan the dropped files/folders and
     /// MERGE them into the Prep Crate. Unlike a dig (`handleImport`), a drop
     /// never replaces what's already staged.
-    func importDroppedURLs(_ urls: [URL]) {
+    ///
+    /// `stamped: false` keeps the scan off the Busy Signals ledger. The demo
+    /// seed uses it, for the same reason `loadFolders(isRestore:)` is
+    /// unstamped: setup the user never started must not leave a blinking mini.
+    func importDroppedURLs(_ urls: [URL], stamped: Bool = true) {
         guard !urls.isEmpty else { return }
         scanGeneration += 1
         let generation = scanGeneration
@@ -4068,7 +4072,7 @@ final class LibraryViewModel: ObservableObject {
         )
         // A drop never leaves the screen it landed on, so this scan is the
         // one most likely to finish elsewhere and blink its mini.
-        let busyJob = beginBusyJob(.scan, on: .scan)
+        let busyJob = stamped ? beginBusyJob(.scan, on: .scan) : nil
         Task { [weak self] in
             guard let self else { return }
             var collected: [LoadedTrack] = []

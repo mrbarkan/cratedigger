@@ -39,8 +39,8 @@ public enum BusySignalTiming {
     }
 
     /// The sketch's blink (html:234): lit while floor(t × hz) is even, so it
-    /// starts lit at t = 0 and toggles every 1/(2·hz) s, every half second at
-    /// the default 2 Hz. A non-positive or non-finite rate holds it lit.
+    /// starts lit at t = 0 and toggles every 1/hz s: every half second at the
+    /// default 2 Hz, so one full on/off cycle per second. A non-positive or non-finite rate holds it lit.
     public static func blink(_ t: TimeInterval, hz: Double = 2) -> Bool {
         guard hz.isFinite, hz > 0 else { return true }
         let phase = (sanitized(t) * hz).rounded(.down)

@@ -954,7 +954,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         model.refreshAvailableCrates()
 
         if !unfiled.isEmpty {
-            model.importDroppedURLs(unfiled)
+            model.importDroppedURLs(unfiled, stamped: false)
             var waited = 0
             while (model.scanProgress.isRunning || model.prepCrateTracks.isEmpty) && waited < 240 {
                 try? await Task.sleep(nanoseconds: 500_000_000)

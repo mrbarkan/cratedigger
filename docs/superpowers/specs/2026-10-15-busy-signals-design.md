@@ -435,7 +435,7 @@ snapshots are deterministic.
   by ink. Consecutive shapes that share ink, style and glow are batched into
   one `Path`. A glowing batch is drawn in a `drawLayer` with
   `.shadow(color: ink, radius: glowRadius)`.
-- **Text.** `CarbonFont.mono(size × k, weight: .semibold)`, placed so that
+- **Text.** `CarbonFont.monoExact(size × k, weight: .semibold)` (`mono`'s faces and theme override, but a fixed size: `Font.custom(_:size:relativeTo:)` snaps to whole points, which drew the 5.5-unit labels 8% large), placed so that
   `at` is the baseline (the top sits at baseline − the font's ascender).
 - **Clip.** `clipBegin` / `clipEnd` push and pop a rounded-rect clip with
   `context.drawLayer { $0.clip(to:) }`. The whole drawing is also clipped to
@@ -555,9 +555,13 @@ also watch their channel's `isRunning`.
 - **Armed per record.** At the channel's false → true edge, the sink stores
   the id of the matching running record in `busySafetyArmed[channel]`.
 - **Fires per record.** At the true → false edge it waits 3 s. If the armed
-  record is still running and the channel is still idle, the sink ends it
-  as **`.failed`**, which removes it silently, and logs
+  record is still running and the channel is either still idle or has been
+  re-armed since (a later rising edge stored a newer id, or nil), the sink
+  ends it as **`.failed`**, which removes it silently, and logs
   `AppLog.ui.warning("Busy job \(kind) ended by the safety net: a finish site is missing")`.
+  The re-armed case matters because the BUSY guards make the channel
+  exclusive: once it runs again, the old record's job is over, and nothing
+  would ever end it, so it would stay running forever.
 - **Why `.failed`, not `.completed`.** A missed site is as likely to be a
   failure path as a success (the download's `catch`, §3.1, was one). Ending
   it `.completed` would turn every missed failure into a blinking success

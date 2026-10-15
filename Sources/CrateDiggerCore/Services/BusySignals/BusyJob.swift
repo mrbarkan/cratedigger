@@ -9,7 +9,8 @@ import Foundation
 public enum BusyJobKind: String, CaseIterable, Sendable {
     case rip, secureRead, convert, scan, download, transfer
 
-    /// The word the rail mini and the notice plate print for this job.
+    /// The job's name as VoiceOver reads a rail mini ("CD-RIP, 40 percent").
+    /// Nothing prints it; the minis are pictures only.
     public var label: String {
         switch self {
         case .rip: return "CD-RIP"

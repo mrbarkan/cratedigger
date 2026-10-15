@@ -745,14 +745,16 @@ struct BusyPictureBand<Headline: View, Readout: View, Ticker: View, Cells: View,
 /// Cuts a text part off at the gutter before the picture. A frame's
 /// `maxWidth` cannot stop a child that refuses to shrink (it takes the
 /// child's width instead), so the cut is a mask of the exact width, with
-/// vertical slack so ascenders and glow above and below are left alone.
+/// slack above, below and to the left, so ascenders and glow (DEV's glyph
+/// starts at x = 0) are left alone; only the gutter edge cuts.
 private struct GutterCut: ViewModifier {
     let width: CGFloat
 
     func body(content: Content) -> some View {
         content.mask(alignment: .leading) {
             Rectangle()
-                .frame(width: width)
+                .frame(width: width + 12)
+                .padding(.leading, -12)
                 .padding(.vertical, -12)
         }
     }
