@@ -187,15 +187,26 @@ public struct BusyLedger: Equatable, Sendable {
             ?? records.last { $0.screen == screen }
     }
 
-    /// The frame inputs for a record at `date`. `still` is Reduce Motion: the
-    /// scene's key time, a half-done unit and steady marks, so a still frame
-    /// depends only on progress and never on when the view happened to redraw.
+    /// The frame inputs for a record at `date`. `still` is Reduce Motion: a
+    /// half-done unit and steady marks, and a scene time that never depends
+    /// on when the view happened to redraw.
+    ///
+    /// - **Running and still:** the scene's key time, so the one frame reads
+    ///   (the front record showing its cover, a file under the press).
+    /// - **Finished, still or not:** the elapsed time frozen at the finish,
+    ///   `q(finishedAt − startedAt)`. That is as fixed as the key time, and it
+    ///   is the frame the job actually ended on: the crate that was on screen
+    ///   at the finish and the whole picked pile, where the key time would
+    ///   hold the first crate and a pile of two or three.
     public func sceneInput(for record: BusyJobRecord, at date: Date, still: Bool) -> BusySceneInput {
         let q = BusySignalTiming.quantized
         let finished = record.finishedAt.map { q(date.timeIntervalSince($0)) }
-        let time = still
-            ? BusyScenes.keyTime(record.kind)
-            : q((record.finishedAt ?? date).timeIntervalSince(record.startedAt))
+        let time: TimeInterval
+        if let finishedAt = record.finishedAt {
+            time = q(finishedAt.timeIntervalSince(record.startedAt))
+        } else {
+            time = still ? BusyScenes.keyTime(record.kind) : q(date.timeIntervalSince(record.startedAt))
+        }
         let unitTime = still ? 0.5 : q(date.timeIntervalSince(record.unitStartedAt))
 
         let unitFraction: Double

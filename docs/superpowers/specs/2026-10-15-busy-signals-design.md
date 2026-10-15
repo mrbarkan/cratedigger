@@ -355,7 +355,7 @@ public enum BusyPictureLayout {
 public struct BusySceneInput: Equatable, Sendable {
     public var progress: BusyProgress
     public var labels: BusyLabels
-    public var time: TimeInterval         // quantized seconds since start; frozen at finish; keyTime when still
+    public var time: TimeInterval         // quantized seconds since start; frozen at finish (still or not); keyTime when still and running
     public var unitTime: TimeInterval     // quantized seconds since the current unit began
     public var unitFraction: Double       // estimated 0…0.95 inside the current unit (see §3, rip)
     public var finished: TimeInterval?    // quantized seconds since finish; nil while running
@@ -920,10 +920,16 @@ has signed off.
   spinning record. Because scenes are stateless, coming back draws the
   current frame directly; nothing replays.
 - **Reduce Motion** (`@Environment(\.accessibilityReduceMotion)`). Every view
-  draws the still key frame:
-  - `time = BusyScenes.keyTime(kind)`, chosen per scene so it reads (for
-    example a squashed file under the press, or the front record showing its
-    cover);
+  draws a still frame:
+  - while running, `time = BusyScenes.keyTime(kind)`, chosen per scene so it
+    reads (for example a squashed file under the press, or the front record
+    showing its cover);
+  - once finished, `time` is the elapsed time frozen at the finish,
+    `q(finishedAt − startedAt)`, exactly as with motion on. It is as fixed as
+    the key time (it never depends on when the view redraws), and it is the
+    frame the job ended on: a finished scan holds the crate that was on
+    screen and the whole picked pile, where the key time would show crate
+    A–F with a pile of two or three;
   - progress-driven parts still follow real progress, as state changes
     rather than motion;
   - **wall-clock unit inputs are fixed too.** Under `still`, `sceneInput`

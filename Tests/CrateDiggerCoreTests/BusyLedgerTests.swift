@@ -325,6 +325,45 @@ final class BusyLedgerTests: XCTestCase {
         XCTAssertEqual(finished.unitFraction, 1)
     }
 
+    /// A finished still holds the frame the job ended on, not the key frame:
+    /// a scan that ran into its fourth crate keeps that crate and the whole
+    /// pile, where the key time would show crate A–F and a pile of two or
+    /// three. Still fixed: any wall time gives the same input.
+    func testFinishedStillFreezesAtTheFinishNotTheKeyTime() {
+        var l = BusyLedger(screen: .scan, at: t0)
+        let id = l.begin(.scan, on: .scan, progress: BusyProgress(completed: 900, total: 1000), at: at(0))
+        l.finish(id, .completed, at: at(19.06))
+        let inputs = [19.5, 40, 900].map { l.sceneInput(for: l.record(id)!, at: at($0), still: true) }
+        for input in inputs {
+            XCTAssertEqual(input.time, 19, "q(finishedAt − startedAt)")
+            XCTAssertTrue(input.still)
+            XCTAssertTrue(input.markLit)
+            XCTAssertEqual(input.unitTime, 0.5)
+        }
+        XCTAssertEqual(ScanScene.picture(inputs[0]), ScanScene.picture(inputs[2]), "the same frame at any wall time")
+        XCTAssertNotEqual(inputs[0].time, BusyScenes.keyTime(.scan))
+        XCTAssertEqual(inputs[0].time, l.sceneInput(for: l.record(id)!, at: at(40), still: false).time,
+                       "the same frozen time as with motion on")
+
+        // The picture it draws: the fourth crate (T–Z) and a fuller pile
+        // than the key frame's.
+        let held = ScanScene.picture(inputs[0])
+        var key = inputs[0]
+        key.time = BusyScenes.keyTime(.scan)
+        let keyFrame = ScanScene.picture(key)
+        XCTAssertTrue(held.shapes.contains { if case .text("T–Z", _, _, _, _) = $0 { return true }; return false })
+        XCTAssertGreaterThan(Self.pileRecords(held), Self.pileRecords(keyFrame))
+    }
+
+    /// The scan's picked-pile records: closed, glass-filled quads centred on
+    /// the pile.
+    static func pileRecords(_ d: BusyDrawing) -> Int {
+        d.shapes.filter {
+            guard case let .path(points, true, .foreground?, .background?) = $0, points.count == 4 else { return false }
+            return abs(points.map(\.x).reduce(0, +) / 4 - ScanScene.pileX) < 0.001
+        }.count
+    }
+
     func testUnseenMiniBlinksFromTheFinish() {
         var l = BusyLedger(screen: .other, at: t0)
         let id = l.begin(.convert, on: .conversion, at: at(0))

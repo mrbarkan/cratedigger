@@ -10,8 +10,8 @@ import Foundation
 public struct BusySceneInput: Equatable, Sendable {
     public var progress: BusyProgress
     public var labels: BusyLabels
-    /// Quantized seconds since the job started; frozen at the finish, and the
-    /// scene's key time when `still`.
+    /// Quantized seconds since the job started, frozen at the finish (still
+    /// or not); the scene's key time when `still` and running.
     public var time: TimeInterval
     /// Quantized seconds since the current unit (track, file) began; 0.5 when
     /// `still`, so a still frame never depends on the wall clock.
@@ -88,7 +88,8 @@ public enum BusyScenes {
     /// The scene time a still (Reduce Motion) frame is drawn at, chosen per
     /// scene so the one frame reads (a squashed file under the press, the
     /// front record showing its cover). `BusyLedger.sceneInput` uses it in
-    /// place of the job's elapsed time when `still`.
+    /// place of the job's elapsed time when `still` and running; a finished
+    /// still keeps the time frozen at the finish, the frame the job ended on.
     public static func keyTime(_ kind: BusyJobKind) -> TimeInterval {
         switch kind {
         case .rip: return RipScene.keyTime

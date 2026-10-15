@@ -34,8 +34,11 @@ final class BusySceneTests: XCTestCase {
         let labels = fraction == nil ? BusyLabels() : BusyLabels(source: "FLAC", target: "MP3")
 
         if still {
+            // The ledger's rule: the key time while running, the frozen
+            // elapsed time once finished.
             return BusySceneInput(progress: progress, labels: labels,
-                                  time: BusyScenes.keyTime(kind), unitTime: 0.5, unitFraction: 0.5,
+                                  time: finished == nil ? BusyScenes.keyTime(kind) : q(time),
+                                  unitTime: 0.5, unitFraction: finished == nil ? 0.5 : 1,
                                   finished: finished.map(q), markLit: true, still: true, blinking: false)
         }
         let unitTime = q(time.truncatingRemainder(dividingBy: 1))
@@ -69,14 +72,15 @@ final class BusySceneTests: XCTestCase {
     static let times: [TimeInterval] = [0, 0.7, 3.3, 19.9]
 
     /// Every state a scene must draw sanely: running at each fraction,
-    /// finished with the mark lit and unlit, and the still key frame, each
-    /// at every time.
+    /// finished with the mark lit and unlit, the still key frame and the
+    /// finished still, each at every time.
     static func matrix(_ kind: BusyJobKind) -> [BusySceneInput] {
         times.flatMap { time -> [BusySceneInput] in
             fractions.map { input(kind, fraction: $0, time: time) } + [
                 input(kind, fraction: 1, time: time, finished: 2, lit: true),
                 input(kind, fraction: 1, time: time, finished: 2.5, lit: false),
                 input(kind, fraction: 0.5, time: time, still: true),
+                input(kind, fraction: 1, time: time, finished: 2, still: true),
             ]
         }
     }

@@ -262,14 +262,15 @@ final class BusySignalSnapshotTests: XCTestCase {
         }
 
         /// What the ledger hands a Reduce Motion view (BusyLedger.sceneInput):
-        /// the scene's key time, half a unit, steady mark.
+        /// half a unit and a steady mark; the scene's key time while running,
+        /// the time frozen at the finish once finished.
         static func still(_ kind: BusyJobKind, _ input: BusySceneInput) -> BusySceneInput {
             var input = input
-            input.time = BusyScenes.keyTime(kind)
             input.still = true
             input.markLit = true
+            input.unitTime = 0.5
             if input.finished == nil {
-                input.unitTime = 0.5
+                input.time = BusyScenes.keyTime(kind)
                 input.unitFraction = 0.5
             }
             return input
