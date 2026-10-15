@@ -114,10 +114,10 @@ main.swift  →  AppDelegate  →  MainWindowController  →  CarbonHostingContr
 
 `Sources/CrateDiggerApp/UI/Carbon/Library/LibraryViewModel.swift` (~4,900 lines) is a single `@MainActor ObservableObject` that owns **all** app state, **all** services, and **most** behavior. Almost every SwiftUI view binds to it via `@EnvironmentObject`. **When fixing app behavior, start here** — this is where the wiring lives.
 
-Behavior is split across **29 `LibraryViewModel+*.swift` extensions in three
+Behavior is split across **31 `LibraryViewModel+*.swift` extensions in three
 folders** (don't assume they are all beside the main file):
 
-- `UI/Carbon/Library/` — `+ArrowNav`, `+BatchArtwork`, `+CDDetect`, `+DeepScan`,
+- `UI/Carbon/Library/` — `+ArrowNav`, `+BatchArtwork`, `+BusySignals`, `+CDDetect`, `+CompactPlayer`, `+DeepScan`,
   `+LibraryFiles`, `+LibraryLocation`, `+Listening`, `+MetadataRepair`,
   `+MiniPlayer`, `+MissingFiles`, `+MultiSelect`, `+NowPlaying`, `+Onboarding`,
   `+Queue`, `+Radio`, `+RecordDivider`, `+Rename`, `+Resume`, `+SACDImport`,
@@ -323,6 +323,15 @@ The NOW screen's right half is a 12 × 6 **LED matrix** (`OLEDMatrix`, ticked by
   - The green traffic light is full screen, not zoom, so compact sets `.fullScreenNone` to make it zoom, and zoom expands.
   - A live resize ignores `NSWindow.minSize`/`maxSize` (AppKit has reset them to zero and unbounded by then), so the compact window clamps in `windowWillResize` to limits it stores itself. The full window still has that problem and can be dragged below 1200 pt.
 - **Showing it from the command line.** The DEBUG hook `CRATEDIGGER_COMPACT` (`1`, `play`, `roundtrip`) folds the window for a snapshot.
+
+**Busy Signals** (2.3.1): while a job runs, its OLED screen shows a line-art picture of it, and every other screen shows a 96 × 12 "source - - - destination" mini on the annunciator rail. The jobs are CD rip, secure read, convert, scan, download and transfer. The design is `docs/superpowers/specs/2026-10-15-busy-signals-design.md`; the approved sketch is in `CrateDigger_DESIGN/busy-signals/`.
+- **One truth: Core's `BusyLedger`.** It holds every job's record (kind, screen, progress, labels, started/finished, outcome, seen) and answers every question the views ask: which picture a screen shows, which minis the rail shows, whether a finished mark blinks, when the next redraw is due. The view model holds one `@Published var busy`. `LibraryViewModel+BusySignals` is the only file that writes it.
+- **Jobs are stamped, not inferred.** Every start site calls `beginBusyJob(kind, on:)` and every finish site calls `endBusyJob(id, outcome)`. Do not derive a job from `oledView` or from a progress channel: `conversionProgress` carries rip encodes, conversions and copy transfers, and `scanProgress` carries digs, drops and device scans. The channels only feed progress into a record a start site already began. **A new job needs both stamps.** Conversion and sync have a safety net: a record still running 3 s after its channel goes idle is ended `.failed` and logged as a missing finish site. Scan only logs, because unstamped work shares its channel.
+- **Scenes are stateless.** `BusyScenes.picture` and `.mini` (Core, `Services/BusySignals/Scenes/`) turn a `BusySceneInput` (progress, labels, quantized time, finished/mark state) into a `BusyDrawing` of line primitives in a unit space (240 × 100 for a picture). `BusyCanvas` replays that one drawing for both sizes. Time is quantized to 8 fps, and `BusyCanvas` is `Equatable`, so a tick that lands in the same step redraws nothing.
+- **Who ticks.** A `TimelineView` (`BusySceneTimeline`) ticks only while a picture is running or blinking. It pauses when `AppVisibility` says no window is visible, under Reduce Motion (a still key frame), and once a finished mark has stopped blinking. A finished mark blinks for 8 s after you arrive on its screen, then holds steady. A finished job counts as seen after 1.5 s on its screen, and its mini leaves the rail then.
+- **Inks.** Cyan and Meter High, and `monochromeGlass` collapses both to the OLED foreground. That is also why `monochromeGlass` now clears `meterHotOverride`: Llama '97 pins it red.
+- **The four jumps to NOW are gone.** A rip, download or SACD import no longer forces `oledView = .nowPlaying` when it ends, because DUB's finished frame could never be seen otherwise. A successful rip still moves to SCAN, because the import it chains switches the glass. `importSACDISO` now has the BUSY guard the other DUB jobs have.
+- **Checking it.** `CRATEDIGGER_BUSY_SNAPSHOTS=1 scripts/test.sh --filter BusySignalSnapshotTests/testWriteContactSheets` writes contact sheets of every scene and mini to `.build/busy-signals/`. The rows are Carbon, Llama '97 mono, BACKLIT and Reduce Motion. Compare them by eye against the sketch after any scene change. The DEBUG hook `CRATEDIGGER_BUSY=rip,scan[:done]` fakes jobs in a running app, and `CRATEDIGGER_OLED` picks the screen.
 
 **Motion goes through `CarbonMotion`** (`UI/Theme/CarbonMotion.swift`): `press`, `hover`, `state`, `lampOff` (a lamp decays slower than it lit), `panel`/`reveal` (surface springs), `scrollFollow`, and the AppKit window durations. Don't pick a curve inline. Anything that *moves* goes through `movement`/`layout`/`slide(from:)`/`withCarbonMovement` so Reduce Motion shortens it to a quick ease, a dissolve or a cut (`layout` for geometry-only changes such as a pane's width); colour and opacity changes keep their animation. Keep animations off the 14k-row browser lists: `MainShell` only animates a pane when the user moves one, never on `oledView`, because typing a search flips the display in the same update as the filter.
 
