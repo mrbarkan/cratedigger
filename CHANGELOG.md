@@ -4,11 +4,36 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
-## 2.3.1 (110), 2026-10-12
+## 2.3.1 (111), 2026-10-15
 
-Beta 1: Search Album Artwork works properly again. Everything in 2.3.0 is
-included as well. Betas are offered only to people who turned on Receive beta
-updates.
+Beta 2: Busy Signals, little animated pictures on the display while
+CrateDigger works. Beta 1 made Search Album Artwork work properly again.
+Everything in 2.3.0 is included as well. Betas are offered only to people who
+turned on Receive beta updates.
+
+### Added
+
+- **Busy Signals.** While a job runs, its screen on the display shows a small
+  line drawing of the work: the disc turning as a CD rips, the laser walking
+  the sectors in Secure Mode, files going through a press as they convert, a
+  crate of records being flipped through as a folder is scanned, a cassette
+  filling up as a stream downloads, and packets travelling down a cable to an
+  iPod. When the job is done, the picture shows a check or DONE.
+- **Jobs on the top line.** On every other screen, a running job shows as a
+  tiny "from, to" picture next to the indicators at the top of the display,
+  filling up as the job goes. Up to two show at once, with +N for more. A
+  finished job blinks there until you visit its screen, and clicking one
+  takes you to it. They show in the compact player too.
+- The pictures use your theme's colours, keep to one colour when the theme is
+  set to monochrome, and hold still when Reduce Motion is on.
+
+### Changed
+
+- **The display stays on DUB when a rip, download or SACD import finishes,**
+  so you can see that it finished. A rip still moves on to SCAN when it
+  imports what it ripped.
+- **An SACD import can no longer start while another job is running,** the
+  same as a CD rip or a download.
 
 ### Fixed
 
