@@ -43,6 +43,10 @@ final class MonochromeGlassTests: XCTestCase {
 /// sRGB components rounded to 1/1000, so two colours built different ways
 /// (a hex string, a `Color(red:…)`, an `.opacity` modifier) compare by what
 /// they draw rather than by how they were constructed.
+///
+/// Shared: `BusyInkPaletteTests` uses `RGBA` and `rgba(_:)` too, so moving
+/// or deleting this file means moving these helpers with it (Task 14 is
+/// expected to lift them into a `ColorTestSupport.swift`).
 struct RGBA: Equatable, CustomStringConvertible {
     var r, g, b, a: Double
 

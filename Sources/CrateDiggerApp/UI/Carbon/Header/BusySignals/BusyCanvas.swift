@@ -129,6 +129,16 @@ extension BusyCanvas {
         stroke == nil && ink != .background
     }
 
+    /// Whether a stroke batch in this ink is stroked shape by shape rather
+    /// than as one merged path. The sketch strokes every call on its own, so
+    /// where two translucent strokes cross their alpha (and glow) builds up;
+    /// one merged path paints a crossing once and reads lighter there. Only
+    /// `.dim` is translucent, and the opaque inks keep the single stroke,
+    /// which looks the same and costs one draw call.
+    static func strokesShapeByShape(_ ink: BusyInk) -> Bool {
+        ink == .dim
+    }
+
     enum Mode: Equatable {
         case stroke, fill, text
     }
@@ -283,11 +293,21 @@ extension BusyCanvas {
         private func paint(_ batch: Batch, _ color: Color, into context: inout GraphicsContext) {
             switch batch.key.mode {
             case .stroke:
-                var path = Path()
-                for shape in batch.shapes { BusyCanvas.addOutline(of: shape, to: &path) }
                 let style = StrokeStyle(lineWidth: lineWidth * batch.key.weight,
                                         lineCap: .round, lineJoin: .round)
-                context.stroke(path.applying(fit.transform), with: .color(color), style: style)
+                if BusyCanvas.strokesShapeByShape(batch.key.ink) {
+                    // One stroke per shape, so translucent crossings build up
+                    // as the sketch's do. The batch still shares one glow layer.
+                    for shape in batch.shapes {
+                        var path = Path()
+                        BusyCanvas.addOutline(of: shape, to: &path)
+                        context.stroke(path.applying(fit.transform), with: .color(color), style: style)
+                    }
+                } else {
+                    var path = Path()
+                    for shape in batch.shapes { BusyCanvas.addOutline(of: shape, to: &path) }
+                    context.stroke(path.applying(fit.transform), with: .color(color), style: style)
+                }
             case .fill:
                 // One fill per shape rather than one merged path: nonzero
                 // winding would cancel two overlapping polygons of opposite

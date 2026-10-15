@@ -68,6 +68,17 @@ final class BusyInkPaletteTests: XCTestCase {
         XCTAssertFalse(G.glows(stroke: .background))
     }
 
+    /// The translucent dim ink is stroked shape by shape so its crossings
+    /// build up alpha as the sketch's separate strokes do; opaque inks keep
+    /// one merged stroke per batch.
+    func testOnlyTheTranslucentInkStrokesShapeByShape() {
+        for ink in BusyInk.allCases {
+            XCTAssertEqual(BusyCanvas.strokesShapeByShape(ink), ink == .dim, "\(ink)")
+        }
+        XCTAssertLessThan(rgba(BusyInkPalette(theme: .carbon).dim).a, 1,
+                          "precondition: dim is the translucent ink")
+    }
+
     /// Fit is letterboxed, centred and never stretched (spec §2.2): a
     /// 220 × 84 frame draws the 240 × 100 scene at 201.6 × 84.
     func testFitLetterboxesTheScene() {
