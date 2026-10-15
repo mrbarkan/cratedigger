@@ -388,3 +388,31 @@ extension LibraryViewModel {
     }
     #endif
 }
+
+#if DEBUG
+/// What `CRATEDIGGER_BUSY=<kind>[,<kind>…][:done]` asks for (spec §12):
+/// `BusyJobKind` raw values, comma-separated, with one optional `:done`
+/// suffix on the whole value that finishes every job at once.
+struct BusyDebugRequest: Equatable {
+    var kinds: [BusyJobKind]
+    var finished: Bool
+    /// Tokens that name no kind. Kept rather than dropped silently so the
+    /// hook can log them: a typo (`secure` for `secureRead`) would otherwise
+    /// just leave the screen empty.
+    var unknown: [String]
+
+    /// Nil when the value names no kind at all, so the hook has nothing to
+    /// simulate and says so instead of quietly doing nothing.
+    init?(_ raw: String) {
+        var value = raw.trimmingCharacters(in: .whitespaces)
+        finished = value.hasSuffix(":done")
+        if finished { value.removeLast(":done".count) }
+        let tokens = value.split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        kinds = tokens.compactMap(BusyJobKind.init(rawValue:))
+        unknown = tokens.filter { BusyJobKind(rawValue: $0) == nil }
+        guard !kinds.isEmpty else { return nil }
+    }
+}
+#endif

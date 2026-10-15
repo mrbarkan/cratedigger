@@ -467,7 +467,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
 
     // MARK: - Dev harness (debug builds only)
     //
-    // The self-snapshot hook and the marketing shot list: fourteen CRATEDIGGER_*
+    // The self-snapshot hook and the marketing shot list: the CRATEDIGGER_*
     // environment switches that render the app's own view tree to PNGs, which is
     // how the UI gets verified without a screen-recording permission. None of it
     // belongs in a build someone downloads — left compiled in, a stray
@@ -482,8 +482,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     /// CRATEDIGGER_OLED=<rawValue> preselects an OLED view first, and
     /// CRATEDIGGER_SEARCH=<query> runs a search. Inert without the env var;
     /// used for autonomous UI verification.
+    ///
+    /// Busy Signals (spec §12):
+    /// - CRATEDIGGER_BUSY=<kind>[,<kind>…][:done] (`BusyJobKind` raw values,
+    ///   e.g. `rip,scan` or `download:done`) begins each job on its default
+    ///   screen through `debugSimulateBusyJobs`, which walks it to done over
+    ///   20 s, or finishes it at once with `:done`. Only the ledger is
+    ///   touched. Unlike everything else here it works WITHOUT a snapshot
+    ///   path, so an idle-cost run (watch `top`, minimise the window, turn on
+    ///   Reduce Motion) can frame a job and write nothing.
+    /// - CRATEDIGGER_OLED, when CRATEDIGGER_BUSY is set, is also applied at
+    ///   +1 s for that same reason; the +7 s application below stays for
+    ///   snapshot runs, where playback may have flipped the display to NOW.
+    /// - CRATEDIGGER_SNAP_EXTRA=1 adds a `late2` snap at +8.5 s: half a 2 Hz
+    ///   blink after `late`, so a blinking destination is caught in both
+    ///   phases.
     private func installSnapshotHookIfRequested() {
         let env = ProcessInfo.processInfo.environment
+        // Before the snapshot guard, which returns early without a path.
+        if let raw = env["CRATEDIGGER_BUSY"] {
+            if let request = BusyDebugRequest(raw) {
+                if !request.unknown.isEmpty {
+                    NSLog("[busy] CRATEDIGGER_BUSY ignored unknown kinds %@; known: %@",
+                          request.unknown.joined(separator: ","),
+                          BusyJobKind.allCases.map(\.rawValue).joined(separator: ","))
+                }
+                // Synchronously (launch runs on the main thread), so each job
+                // begins on the screen the launch restored: a job started on
+                // its own saved screen must not get a mini on its own rail.
+                MainActor.assumeIsolated {
+                    mainWindowController?.model.debugSimulateBusyJobs(request.kinds, finished: request.finished)
+                }
+                if let rawView = env["CRATEDIGGER_OLED"], let view = OLEDView(rawValue: rawView) {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                        self?.mainWindowController?.model.oledView = view
+                    }
+                }
+            } else {
+                NSLog("[busy] CRATEDIGGER_BUSY=%@ names no job kind; expected <kind>[,<kind>…][:done] with kinds %@",
+                      raw, BusyJobKind.allCases.map(\.rawValue).joined(separator: ","))
+            }
+        }
         guard let path = env["CRATEDIGGER_SNAPSHOT_PATH"] else { return }
         // Just before the final snap — starting playback flips the OLED to NOW
         // asynchronously, so an early set gets overridden.
@@ -745,6 +784,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) { snap("") }
         DispatchQueue.main.asyncAfter(deadline: .now() + 8.0) { snap("late") }
+        if env["CRATEDIGGER_SNAP_EXTRA"] != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 8.5) { snap("late2") }
+        }
         if env["CRATEDIGGER_ARTWORK_SEARCH"] != nil {
             DispatchQueue.main.asyncAfter(deadline: .now() + 14.0) { snap("search") }
             DispatchQueue.main.asyncAfter(deadline: .now() + 20.0) { snap("search2") }
