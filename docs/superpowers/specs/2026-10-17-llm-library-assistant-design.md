@@ -151,3 +151,25 @@ relay.
 - Result sizes capped (search 100 by default, 500 max) so one call cannot
   flood the LLM's context.
 - Prep Crate read-only in v1 (see non-goals).
+- Reads (search, albums, history) cover the library, every crate, and leave
+  out tracks that are only in the Prep Crate unless `crate: "Prep Crate"` is
+  named, the same split `library_overview` reports.
+- Numbers can be changed but not removed. The tag writer leaves a nil field
+  alone and deletes an empty one, and a number has no empty form, so a
+  proposal that removes a year or track number is refused, and an undo that
+  would have to remove one leaves it and says so. Text fields are cleared by
+  writing "". Found end to end, not in review: undo had left an added genre
+  in the file.
+- Tag writes touch only the fields that changed. The tag model fills an empty
+  tag from what the scan read (a title from the file name); writing all ten
+  would have put those into files that never had them.
+
+## Built and verified (2026-10-17)
+
+Unit tests cover the protocol, socket, config merge, every tool, the journal
+and the undo planner. End to end, on a scratch library through the real
+helper: reads, a three-crate sort and its undo from the Edit menu, a tag
+proposal reviewed in the sheet with one track unticked, the files' tags read
+back with ffprobe after APPLY and after undo, a second proposal refused while
+one is open, the "open CrateDigger" reply with the app closed, and no menu
+item or socket with the switch off.
