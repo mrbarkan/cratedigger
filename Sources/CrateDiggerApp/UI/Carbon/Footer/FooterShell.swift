@@ -4,9 +4,12 @@ import SwiftUI
 /// width (`CompactDeckMetrics`) is derived from the same numbers the footer
 /// is laid out with.
 enum FooterMetrics {
-    static let horizontalPadding: CGFloat = 26
-    /// Between each pod and the transport.
-    static let podGap: CGFloat = 28
+    /// Between the shelf's edge and each pod, and between each pod and the
+    /// transport. The two are the same number on purpose: at the narrowest
+    /// shelf, where the pods have no room to spare, they are what spaces the
+    /// rails, and two values a couple of points apart read as a mistake.
+    static let horizontalPadding: CGFloat = 28
+    static let podGap: CGFloat = horizontalPadding
     /// POSITION and VOLUME both have this floor.
     static let podMinWidth: CGFloat = 184
     /// `TransportCluster`'s own key spacing.
@@ -43,18 +46,20 @@ struct FooterShell: View {
                     shape.strokeBorder(Color.white.opacity(theme.isDark ? 0.12 : 0.62), lineWidth: 1)
                 )
 
-            // One cluster, like a deck: the two pods hug the transport instead
-            // of being pinned to the shelf's ends, where a wide window left
-            // them stranded in bare chassis. The halves are equal, so both
-            // pods grow into their half by the same amount, like a mixer's
-            // two faders, and the transport has as many keys either side of
-            // PLAY, so the dome lands dead centre with even gaps around it.
+            // Each pod sits in the middle of its half of the shelf, so the
+            // gap from the shelf's edge to a rail always equals the gap from
+            // that rail to the transport, at every window width. The pods used
+            // to hug the transport, and once they stopped growing (380 pt) a
+            // wide window piled all its spare width between the rails and the
+            // shelf's ends. The halves are equal, so both pods grow by the
+            // same amount, like a mixer's two faders, and the transport has as
+            // many keys either side of PLAY, so the dome lands dead centre.
             HStack(alignment: .center, spacing: FooterMetrics.podGap) {
                 PositionDial(clock: model.playbackClock)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .frame(maxWidth: .infinity, alignment: .center)
                 TransportCluster()
                 VolumeKnob(value: $model.playbackVolume)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: .center)
             }
             .padding(.horizontal, FooterMetrics.horizontalPadding)
         }
