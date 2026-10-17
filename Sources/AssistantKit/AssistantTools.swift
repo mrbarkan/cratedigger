@@ -70,7 +70,7 @@ public enum AssistantTool: String, CaseIterable, Sendable {
                     "genre": Self.string("Genre contains this (case-insensitive)."),
                     "year_from": Self.integer("Earliest year, inclusive."),
                     "year_to": Self.integer("Latest year, inclusive."),
-                    "crate": Self.string("Only tracks in this crate. \"Prep Crate\" is the staging area."),
+                    "crate": Self.string("Only tracks in this crate. Without it, every crate; tracks only in \"Prep Crate\" (the staging area for new imports) show only when it is named here."),
                     "min_plays": Self.integer("Only tracks played at least this many times."),
                     "missing_tag": Self.enumeration(["genre", "year", "artist", "album_artist", "album", "track_number"],
                                                      "Only tracks where this tag is empty."),
