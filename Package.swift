@@ -8,7 +8,8 @@ let package = Package(
     ],
     products: [
         .library(name: "CrateDiggerCore", targets: ["CrateDiggerCore"]),
-        .executable(name: "CrateDiggerApp", targets: ["CrateDiggerApp"])
+        .executable(name: "CrateDiggerApp", targets: ["CrateDiggerApp"]),
+        .executable(name: "CrateDiggerMCP", targets: ["CrateDiggerMCP"])
     ],
     dependencies: [
         // In-app updates. The only third-party dependency in the app: a safe
@@ -19,7 +20,24 @@ let package = Package(
     targets: [
         .target(
             name: "CrateDiggerCore",
+            dependencies: ["AssistantKit"],
             path: "Sources/CrateDiggerCore"
+        ),
+        // The library assistant's protocol layer: MCP's JSON-RPC, the tool
+        // catalogue, the unix-socket transport and the Claude Desktop config.
+        // Foundation only, because the helper below links it and nothing else.
+        .target(
+            name: "AssistantKit",
+            path: "Sources/AssistantKit"
+        ),
+        // The MCP server Claude Desktop launches (stdio). It answers the
+        // handshake and the tool list itself and forwards each tool call to
+        // the running app over AssistantKit's socket. Shipped in the bundle
+        // at Contents/MacOS/CrateDiggerMCP by scripts/package-app.sh.
+        .executableTarget(
+            name: "CrateDiggerMCP",
+            dependencies: ["AssistantKit"],
+            path: "Sources/CrateDiggerMCP"
         ),
         .executableTarget(
             name: "CrateDiggerApp",
@@ -73,7 +91,7 @@ let package = Package(
         ),
         .testTarget(
             name: "CrateDiggerCoreTests",
-            dependencies: ["CrateDiggerCore", "NowPlayingFeed"],
+            dependencies: ["CrateDiggerCore", "NowPlayingFeed", "AssistantKit"],
             path: "Tests/CrateDiggerCoreTests",
             resources: [
                 // Real captures used as golden inputs — e.g. the `.TOC.plist`
