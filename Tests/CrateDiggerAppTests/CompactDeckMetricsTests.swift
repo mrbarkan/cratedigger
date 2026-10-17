@@ -9,9 +9,9 @@ final class CompactDeckMetricsTests: XCTestCase {
         XCTAssertEqual(m.rowHeight, 274, accuracy: 0.001)        // 170 + 12 + 92
         XCTAssertEqual(m.artSide, 230, accuracy: 0.001)          // 274 - 18 - 20 - 6
         XCTAssertEqual(m.transportWidth, 420, accuracy: 0.001)   // 6×46 + 78 + 6×11
-        XCTAssertEqual(m.footerMinWidth, 896, accuracy: 0.001)   // 52 + 2×184 + 2×28 + 420
+        XCTAssertEqual(m.footerMinWidth, 900, accuracy: 0.001)   // 2×28 + 2×184 + 2×28 + 420
         XCTAssertEqual(m.windowHeight, 302, accuracy: 0.001)     // 2×14 + 274
-        XCTAssertEqual(m.minWindowWidth, 1174, accuracy: 0.001)  // 2×18 + 230 + 12 + 896
+        XCTAssertEqual(m.minWindowWidth, 1178, accuracy: 0.001)  // 2×18 + 230 + 12 + 900
     }
 
     /// The titlebar LED's compact spot: flush with the art column's trailing
