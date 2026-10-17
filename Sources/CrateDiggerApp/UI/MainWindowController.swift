@@ -676,7 +676,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 }
 
 /// `TitlebarStatusLED` without its trailing-corner padding: just the 18 pt
-/// hit square, so the compact window can centre the lamp on a point. Hosted
+/// key, so the compact window can centre it on a point. Hosted
 /// outside `CarbonRootView`'s environment, so it reads the appearance itself.
 private struct CompactTitlebarStatusLED: View {
     @AppStorage(AppearanceMode.userDefaultsKey) private var appearanceModeRaw: String = AppearanceMode.system.rawValue

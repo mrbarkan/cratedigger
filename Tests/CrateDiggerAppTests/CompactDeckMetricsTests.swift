@@ -23,11 +23,11 @@ final class CompactDeckMetricsTests: XCTestCase {
             let m = CompactDeckMetrics(geometry: geometry)
             let artTrailing = geometry.chassisInsetH + m.artSide
             let displayLeading = artTrailing + geometry.mainGap
-            XCTAssertEqual(m.statusLampCenterX + CompactDeckMetrics.statusLampDiameter / 2, artTrailing, accuracy: 0.001)
+            XCTAssertEqual(m.statusLampCenterX + CompactDeckMetrics.statusLampHitSide / 2, artTrailing, accuracy: 0.001)
             XCTAssertLessThanOrEqual(m.statusLampCenterX + CompactDeckMetrics.statusLampHitSide / 2, displayLeading)
             XCTAssertGreaterThan(m.statusLampCenterX - CompactDeckMetrics.statusLampHitSide / 2, geometry.chassisInsetH)
         }
-        XCTAssertEqual(CompactDeckMetrics(geometry: .standard).statusLampCenterX, 243.5, accuracy: 0.001) // 18 + 230 - 4.5
+        XCTAssertEqual(CompactDeckMetrics(geometry: .standard).statusLampCenterX, 239, accuracy: 0.001) // 18 + 230 - 9
     }
 
     private func wideMarginGeometry() -> CarbonGeometry {
