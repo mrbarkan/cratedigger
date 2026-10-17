@@ -4,15 +4,31 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
-## 2.3.1 (111), 2026-10-15
+## 2.3.1 (112), 2026-10-17
 
-Beta 2: Busy Signals, little animated pictures on the display while
-CrateDigger works. Beta 1 made Search Album Artwork work properly again.
-Everything in 2.3.0 is included as well. Betas are offered only to people who
-turned on Receive beta updates.
+Release Candidate 1: an easier equalizer, with six user presets, Quick EQ
+from the keyboard, and a short guide to importing a preset for your
+headphones. Beta 2 brought Busy Signals, little animated pictures on the
+display while CrateDigger works, and beta 1 made Search Album Artwork work
+properly again. Everything in 2.3.0 is included as well. Release candidates
+are offered only to people who turned on Receive beta updates.
 
 ### Added
 
+- **Six user EQ presets.** The equalizer has a full row of six user keys
+  under the built-in curves, up from three. The presets you already saved
+  stay where they were.
+- **Quick EQ.** Turn on QUICK EQ at the top of the equalizer, point at a
+  fader and press the Up and Down arrows, or W and S, to move it half a
+  decibel at a time. The fader you are pointing at lights up, and while it
+  does the arrows move it rather than the volume. Shortcuts with Command
+  still work as usual. QUICK EQ stays on until you turn it off.
+- **SQUIG.LINK in the equalizer.** A key opens squig.link in your browser,
+  where reviewers publish measurements and EQ for hundreds of headphones
+  and IEMs.
+- **How to import a headphone preset,** in three steps under the faders:
+  find your headphones on squig.link, press Auto EQ and then Export in its
+  Equalizer tab, then press IMPORT AUTOEQ and drop the file in.
 - **Busy Signals.** While a job runs, its screen on the display shows a small
   line drawing of the work: the disc turning as a CD rips, the laser walking
   the sectors in Secure Mode, files going through a press as they convert, a
@@ -37,6 +53,8 @@ turned on Receive beta updates.
 
 ### Fixed
 
+- **An imported squig.link file is named after the headphone,** the same
+  as an AutoEQ file already was, instead of ending in "Filters".
 - **Each result shows how many images it has again.** The count beside
   every release had stopped appearing, or said NO IMAGES for releases that
   have plenty, because the archive it came from has been answering slowly or
