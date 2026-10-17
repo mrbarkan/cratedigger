@@ -23,7 +23,7 @@ final class LibraryAssistantTests: XCTestCase {
         var trashedPlaylists: [String] = []
         var presented: AssistantTagProposal?
         var reviewRefusal: String?
-        var restoredTags: [UUID: AssistantTagValues] = [:]
+        var restoredTags: [UUID: AssistantTagWrite] = [:]
         var journalChanges = 0
         var writeCalls = 0
 
@@ -67,11 +67,12 @@ final class LibraryAssistantTests: XCTestCase {
             presented = proposal
             return nil
         }
-        func assistantRestoreTags(_ values: [UUID: AssistantTagValues]) throws {
-            restoredTags.merge(values) { _, new in new }
-            for (id, tags) in values {
+        func assistantRestoreTags(_ writes: [UUID: AssistantTagWrite]) throws {
+            restoredTags.merge(writes) { _, new in new }
+            for (id, write) in writes {
                 guard let (path, track) = tracksByPath.first(where: { $0.value.track.id == id }) else { continue }
-                tracksByPath[path] = LoadedTrack(track: track.track, metadata: tags.applied(to: track.metadata))
+                tracksByPath[path] = LoadedTrack(track: track.track,
+                                                 metadata: write.values.applied(to: track.metadata, fields: write.fields))
             }
         }
         func assistantJournalDidChange() { journalChanges += 1 }
@@ -79,9 +80,11 @@ final class LibraryAssistantTests: XCTestCase {
         /// Sets one track's tags, as an edit in CrateDigger would.
         func retag(_ id: UUID, _ change: (inout AssistantTagValues) -> Void) {
             guard let (path, track) = tracksByPath.first(where: { $0.value.track.id == id }) else { return }
-            var tags = AssistantTagValues(track)
+            let before = AssistantTagValues(track)
+            var tags = before
             change(&tags)
-            tracksByPath[path] = LoadedTrack(track: track.track, metadata: tags.applied(to: track.metadata))
+            tracksByPath[path] = LoadedTrack(track: track.track,
+                                             metadata: tags.applied(to: track.metadata, fields: tags.changedFields(from: before)))
         }
     }
 
@@ -388,11 +391,11 @@ final class LibraryAssistantTests: XCTestCase {
         XCTAssertTrue(assistant.journal.entries.isEmpty)            // nothing applied yet
     }
 
-    func testNullClearsAFieldAndAWrongTypeIsRefused() async throws {
-        _ = await run(.proposeTagChanges, ["summary": "x", "changes": [["track_id": id(bjork), "genre": .null, "year": 0]]])
+    func testNullClearsATextFieldAndAWrongTypeIsRefused() async throws {
+        _ = await run(.proposeTagChanges, ["summary": "x", "changes": [["track_id": id(bjork), "genre": .null, "year": 1998]]])
         let item = try XCTUnwrap(host.presented?.items.first)
         XCTAssertNil(item.proposed.genre)
-        XCTAssertNil(item.proposed.year)
+        XCTAssertEqual(item.proposed.year, 1998)
         XCTAssertEqual(item.changedFields, ["year", "genre"])
 
         let bad = await run(.proposeTagChanges, ["summary": "x", "changes": [["track_id": id(bjork), "year": "soon"]]])
@@ -420,18 +423,46 @@ final class LibraryAssistantTests: XCTestCase {
         let undo = await run(.undoLastChange)
         XCTAssertFalse(undo.isError, undo.text)
         let restored = try XCTUnwrap(host.restoredTags[bjork.track.id])
-        XCTAssertEqual(restored.genre, "Electronic; Art Pop; Trip Hop")
-        XCTAssertEqual(restored.year, 1997)
+        XCTAssertEqual(restored.fields, ["genre"])                  // the year is the user's now
+        XCTAssertEqual(restored.values.genre, "Electronic; Art Pop; Trip Hop")
         XCTAssertTrue(undo.text.contains("Left 1 tag alone"), undo.text)
     }
 
-    func testTagValuesNeverTouchArtworkOrComments() {
-        var values = AssistantTagValues(bjork)
-        values.genre = "Pop"
-        let written = values.applied(to: bjork.metadata)
+    /// Found end to end: undoing a genre the assistant added to an untagged
+    /// track left the genre in the file, because nil reads "leave alone" to
+    /// the tag writer. A cleared text field is written as "", which deletes.
+    func testUndoClearsATextTagTheChangeAddedButCantRemoveANumber() async throws {
+        let before = AssistantTagValues(aphex)
+        var after = before
+        after.genre = "Electronic"
+        after.discNumber = 1
+        host.retag(aphex.track.id) { $0 = after }
+        assistant.recordAppliedTags(summary: "Genres", edits: [.init(trackID: aphex.track.id, before: before, after: after)])
+
+        let undo = await run(.undoLastChange)
+        let restored = try XCTUnwrap(host.restoredTags[aphex.track.id])
+        XCTAssertEqual(restored.fields, ["genre"])
+        XCTAssertNil(restored.values.genre)
+        XCTAssertEqual(restored.values.applied(to: aphex.metadata, fields: restored.fields).genre, "")
+        XCTAssertTrue(undo.text.contains("Couldn't remove 1 number"), undo.text)
+    }
+
+    func testANumberCanBeChangedButNotRemoved() async {
+        for value: JSONValue in [.null, 0] {
+            let result = await run(.proposeTagChanges, ["summary": "x", "changes": [["track_id": id(bjork), "year": value]]])
+            XCTAssertTrue(result.isError, "\(value)")
+            XCTAssertTrue(result.text.contains("can be changed but not removed"), result.text)
+        }
+    }
+
+    func testTagValuesWriteOnlyTheNamedFields() {
+        var values = AssistantTagValues(loose)                      // title "untitled" is the scan's, not a tag
+        values.genre = "Field Recording"
+        let bare = ConversionMetadata(comment: "keep me")
+        let written = values.applied(to: bare, fields: ["genre"])
+        XCTAssertEqual(written.genre, "Field Recording")
+        XCTAssertNil(written.title)                                 // never invented from the file name
         XCTAssertEqual(written.comment, "keep me")
-        XCTAssertEqual(written.genre, "Pop")
-        XCTAssertEqual(written.title, "Hunter")
     }
 
     // MARK: - Journal

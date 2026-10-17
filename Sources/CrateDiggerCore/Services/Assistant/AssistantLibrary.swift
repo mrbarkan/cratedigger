@@ -189,22 +189,39 @@ public struct AssistantTagValues: Codable, Sendable, Equatable {
             discTotal: m.discTotal ?? t.discTotal)
     }
 
-    /// `metadata` with these ten fields written over it; everything else
-    /// (artwork, comment, custom tags, compilation) is left as it was.
-    public func applied(to metadata: ConversionMetadata) -> ConversionMetadata {
+    /// `metadata` with `fields` set from these values; every other field, and
+    /// everything that isn't one of the ten (artwork, comment, custom tags,
+    /// compilation), is left exactly as it was.
+    ///
+    /// Only the named fields, because `init(_:)` fills an empty tag from what
+    /// the scan read (a title from the file name): writing all ten would put
+    /// those into files that never carried them.
+    ///
+    /// The tag writer leaves a nil field alone and deletes an empty one, so a
+    /// cleared text field is written as "". A number has no empty form there
+    /// and can't be removed this way; `removableFields` is the test for that.
+    public func applied(to metadata: ConversionMetadata, fields: [String]) -> ConversionMetadata {
         var m = metadata
-        m.title = title
-        m.artist = artist
-        m.albumArtist = albumArtist
-        m.album = album
-        m.year = year
-        m.genre = genre
-        m.trackNumber = trackNumber
-        m.trackTotal = trackTotal
-        m.discNumber = discNumber
-        m.discTotal = discTotal
+        for field in fields {
+            switch field {
+            case "title": m.title = title ?? ""
+            case "artist": m.artist = artist ?? ""
+            case "album_artist": m.albumArtist = albumArtist ?? ""
+            case "album": m.album = album ?? ""
+            case "genre": m.genre = genre ?? ""
+            case "year": if let year { m.year = year }
+            case "track_number": if let trackNumber { m.trackNumber = trackNumber }
+            case "track_total": if let trackTotal { m.trackTotal = trackTotal }
+            case "disc_number": if let discNumber { m.discNumber = discNumber }
+            case "disc_total": if let discTotal { m.discTotal = discTotal }
+            default: break
+            }
+        }
         return m
     }
+
+    /// Text fields can be emptied; numbers can only be changed (see `applied`).
+    public static let removableFields: Set<String> = ["title", "artist", "album_artist", "album", "genre"]
 
     /// Tool field names, in `AssistantTool.tagFields` order.
     public static let fieldNames = ["title", "artist", "album_artist", "album", "year", "genre",

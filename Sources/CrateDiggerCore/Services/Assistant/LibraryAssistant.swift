@@ -23,7 +23,7 @@ public protocol LibraryAssistantHost: AnyObject {
     /// Shows the review sheet. nil when it is up; otherwise why it can't be.
     func assistantPresentTagReview(_ proposal: AssistantTagProposal) -> String?
     /// Writes these tags back to the tracks' files (an undo).
-    func assistantRestoreTags(_ values: [UUID: AssistantTagValues]) throws
+    func assistantRestoreTags(_ writes: [UUID: AssistantTagWrite]) throws
     /// The journal changed: refresh the Undo menu item.
     func assistantJournalDidChange()
 }
@@ -622,18 +622,20 @@ public final class LibraryAssistant {
     static func set(_ field: String, to value: JSONValue, in values: inout AssistantTagValues) throws {
         if AssistantTool.integerTagFields.contains(field) {
             let number: Int?
-            switch value {
-            case .null: number = nil
-            default:
-                guard let parsed = value.intValue else {
-                    throw AssistantToolError("\(field) must be a whole number or null, not \(value.encodedString()).")
-                }
-                let range = field == "year" ? 0...9999 : 0...999
-                guard range.contains(parsed) else {
-                    throw AssistantToolError("\(field) \(parsed) is out of range.")
-                }
-                number = parsed == 0 ? nil : parsed
+            // The tag writer can change a number but not delete one, so a
+            // proposal can't either: refused here rather than shown as a
+            // removal that would never reach the file.
+            guard value != .null, value.intValue != 0 else {
+                throw AssistantToolError("\(field) can be changed but not removed; leave it out to keep it.")
             }
+            guard let parsed = value.intValue else {
+                throw AssistantToolError("\(field) must be a whole number, not \(value.encodedString()).")
+            }
+            let range = field == "year" ? 1...9999 : 1...999
+            guard range.contains(parsed) else {
+                throw AssistantToolError("\(field) \(parsed) is out of range.")
+            }
+            number = parsed
             var source = AssistantTagValues()
             switch field {
             case "year": source.year = number

@@ -827,6 +827,10 @@ final class LibraryViewModel: ObservableObject {
     /// Presents the graphic-EQ editor sheet, opened by the header EQ key.
     @Published var showingEQEditor = false
 
+    /// Tag edits the library assistant proposed, waiting in the review sheet.
+    /// See `LibraryViewModel+Assistant`.
+    @Published var assistantTagProposal: AssistantTagProposal?
+
     /// A user slot with nothing saved in it has no curve to apply.
     func isEQSlotUsable(_ slot: EQSlot) -> Bool {
         guard case .user(let index) = slot else { return true }
@@ -1594,6 +1598,8 @@ final class LibraryViewModel: ObservableObject {
         restorePlaybackSnapshot()
         // After selectSource: the widget's idle covers come from All Records.
         startWidgetFeed()
+        // Hidden until 2.4; does nothing unless its preference is on.
+        startAssistantIfEnabled()
         recomputeOfflineVolumes()
         recomputeMissingFiles()
         fetchMissingMetadata()

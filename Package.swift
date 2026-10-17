@@ -43,6 +43,7 @@ let package = Package(
             name: "CrateDiggerApp",
             dependencies: [
                 "CrateDiggerCore",
+                "AssistantKit",
                 "NowPlayingFeed",
                 .product(name: "Sparkle", package: "Sparkle")
             ],

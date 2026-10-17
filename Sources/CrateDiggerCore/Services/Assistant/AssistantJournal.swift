@@ -11,6 +11,13 @@ public struct AssistantChange: Codable, Sendable, Equatable, Identifiable {
         public var created: Bool
         public var added: [String]
         public var removed: [String]
+
+        public init(name: String, created: Bool, added: [String], removed: [String]) {
+            self.name = name
+            self.created = created
+            self.added = added
+            self.removed = removed
+        }
     }
 
     public struct PlaylistEdit: Codable, Sendable, Equatable {
@@ -18,12 +25,24 @@ public struct AssistantChange: Codable, Sendable, Equatable, Identifiable {
         /// The playlist's paths before, or nil when this change created it.
         public var before: [String]?
         public var after: [String]
+
+        public init(name: String, before: [String]?, after: [String]) {
+            self.name = name
+            self.before = before
+            self.after = after
+        }
     }
 
     public struct TagEdit: Codable, Sendable, Equatable {
         public var trackID: UUID
         public var before: AssistantTagValues
         public var after: AssistantTagValues
+
+        public init(trackID: UUID, before: AssistantTagValues, after: AssistantTagValues) {
+            self.trackID = trackID
+            self.before = before
+            self.after = after
+        }
     }
 
     public var id: UUID
@@ -114,6 +133,17 @@ public final class AssistantJournal {
     }
 }
 
+/// Tags to write to one track: the values, and which of them to write.
+public struct AssistantTagWrite: Equatable, Sendable {
+    public var values: AssistantTagValues
+    public var fields: [String]
+
+    public init(values: AssistantTagValues, fields: [String]) {
+        self.values = values
+        self.fields = fields
+    }
+}
+
 /// What undoing one change means against the library as it is now.
 public struct AssistantUndoPlan: Equatable, Sendable {
     /// Crates to rewrite, with their whole new membership.
@@ -123,8 +153,8 @@ public struct AssistantUndoPlan: Equatable, Sendable {
     public var playlistToWrite: (name: String, paths: [String])?
     public var playlistToTrash: String?
     public var streamIDsToRemove: [String]
-    /// Per track, the tags to write back.
-    public var tagRestores: [UUID: AssistantTagValues]
+    /// Per track, the tags to write back and which fields to write.
+    public var tagRestores: [UUID: AssistantTagWrite]
     /// Things the undo left alone, for the reply.
     public var notes: [String]
 
@@ -189,22 +219,32 @@ public struct AssistantUndoPlan: Equatable, Sendable {
         plan.streamIDsToRemove = change.addedStreamIDs.filter(existingStreams.contains)
 
         var skippedTags = 0
+        var unremovable = 0
         for edit in change.tags {
             guard let track = library.track(id: edit.trackID) else { skippedTags += 1; continue }
             var restored = track.tags
-            var touched = false
+            var fields: [String] = []
             for field in edit.after.changedFields(from: edit.before) {
-                if track.tags.display(field) == edit.after.display(field) {
-                    restored.copy(field, from: edit.before)
-                    touched = true
-                } else {
+                guard track.tags.display(field) == edit.after.display(field) else {
                     skippedTags += 1
+                    continue
                 }
+                // The change added a number where there was none, and the tag
+                // writer can't take one away.
+                if edit.before.display(field) == nil, !AssistantTagValues.removableFields.contains(field) {
+                    unremovable += 1
+                    continue
+                }
+                restored.copy(field, from: edit.before)
+                fields.append(field)
             }
-            if touched { plan.tagRestores[edit.trackID] = restored }
+            if !fields.isEmpty { plan.tagRestores[edit.trackID] = AssistantTagWrite(values: restored, fields: fields) }
         }
         if skippedTags > 0 {
             plan.notes.append("Left \(skippedTags) tag\(skippedTags == 1 ? "" : "s") alone: changed again since, or the track is gone.")
+        }
+        if unremovable > 0 {
+            plan.notes.append("Couldn't remove \(unremovable) number\(unremovable == 1 ? "" : "s") (year, track or disc) that the change added: CrateDigger can change those tags but not delete them.")
         }
         return plan
     }

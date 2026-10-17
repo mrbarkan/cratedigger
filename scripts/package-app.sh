@@ -375,6 +375,28 @@ if [[ "${STAMPED_SDK}" != "${ACTUAL_SDK}" && "${STAMPED_SDK}.0" != "${ACTUAL_SDK
 fi
 
 cp "${BINARY_PATH}" "${APP_BUNDLE}/Contents/MacOS/CrateDiggerApp"
+
+# The library assistant's MCP helper (hidden until 2.4). Claude Desktop
+# launches it from Contents/MacOS, beside the app, which is where
+# AssistantController looks for it. `--product` builds one product, so it gets
+# its own build into the same folder.
+HELPER_OUTPUT="$(
+  swift build \
+    --configuration release \
+    --product CrateDiggerMCP \
+    --build-path "${BUILD_PATH}" 2>&1
+)" || {
+  printf '%s\n' "${HELPER_OUTPUT}" >&2
+  explain_build_failure "${HELPER_OUTPUT}"
+  exit 1
+}
+HELPER_PATH="${BIN_DIR}/CrateDiggerMCP"
+if [[ ! -f "${HELPER_PATH}" ]]; then
+  echo "error: could not locate release CrateDiggerMCP binary in ${BIN_DIR}" >&2
+  exit 1
+fi
+cp "${HELPER_PATH}" "${APP_BUNDLE}/Contents/MacOS/CrateDiggerMCP"
+chmod 755 "${APP_BUNDLE}/Contents/MacOS/CrateDiggerMCP"
 cp "${INFO_PLIST_SOURCE}" "${APP_BUNDLE}/Contents/Info.plist"
 cp "${ICON_SOURCE}" "${APP_BUNDLE}/Contents/Resources/CrateDigger.icns"
 
@@ -471,6 +493,7 @@ if [[ -n "${SIGN_IDENTITY}" ]]; then
     sign_distribution "${APP_BUNDLE}/Contents/Resources/fpcalc" "no"
   fi
   sign_sparkle_framework "${APP_BUNDLE}/Contents/Frameworks/Sparkle.framework"
+  sign_distribution "${APP_BUNDLE}/Contents/MacOS/CrateDiggerMCP" "no"
   codesign --force --options runtime --timestamp \
     --entitlements "${WIDGET_ENTITLEMENTS}" \
     --sign "${SIGN_IDENTITY}" \
@@ -492,6 +515,7 @@ if [[ -n "${SIGN_IDENTITY}" ]]; then
   done
 else
   echo "Ad-hoc signing (development build; not suitable for distribution)"
+  sign_adhoc "${APP_BUNDLE}/Contents/MacOS/CrateDiggerMCP"
   sign_adhoc "${APP_BUNDLE}/Contents/Resources/ffmpeg"
   sign_adhoc "${APP_BUNDLE}/Contents/Resources/ffprobe"
   if [[ -n "${FPCALC_PATH}" ]]; then

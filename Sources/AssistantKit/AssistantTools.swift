@@ -159,8 +159,8 @@ public enum AssistantTool: String, CaseIterable, Sendable {
             var change: [String: JSONValue] = ["track_id": Self.string("The track to change.")]
             for field in Self.tagFields {
                 change[field] = Self.integerTagFields.contains(field)
-                    ? ["type": ["integer", "null"], "description": "New value, or null to clear it. Leave out to keep."]
-                    : ["type": ["string", "null"], "description": "New value, or null to clear it. Leave out to keep."]
+                    ? ["type": "integer", "description": "New value. Numbers can be changed but not removed. Leave out to keep."]
+                    : ["type": ["string", "null"], "description": "New value, or null to remove the tag. Leave out to keep."]
             }
             return MCPTool(
                 name: rawValue, title: "Propose tag changes",
