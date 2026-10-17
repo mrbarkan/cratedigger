@@ -49,9 +49,9 @@ struct CompactDeckMetrics: Equatable {
         2 * geometry.chassisInsetH + artSide + geometry.mainGap + footerMinWidth
     }
 
-    /// `StatusLED`'s lamp, which is 9 pt across inside an 18 pt hit square.
-    static let statusLampDiameter: CGFloat = 9
-    static let statusLampHitSide: CGFloat = 18
+    /// `StatusLED`'s key: the lamp sits in an 18 pt cap and socket, and the
+    /// whole key is what you see and click.
+    static let statusLampHitSide: CGFloat = StatusLED.keySide
 
     /// Where the titlebar status LED's lamp is centred in compact, measured
     /// in from the window's leading edge. The full layout puts the lamp in the
@@ -59,9 +59,9 @@ struct CompactDeckMetrics: Equatable {
     /// column there and the display runs out to the margin, so the corner
     /// lamp would sit on the glass. Here it moves over the art column, the
     /// traffic lights' opposite number across that column: in the titlebar
-    /// strip, level with them, its edge flush with the column's trailing
-    /// edge and so with the expand key under it.
+    /// strip, level with them, the key's edge flush with the column's
+    /// trailing edge and so with the expand key under it.
     var statusLampCenterX: CGFloat {
-        geometry.chassisInsetH + artSide - Self.statusLampDiameter / 2
+        geometry.chassisInsetH + artSide - Self.statusLampHitSide / 2
     }
 }
