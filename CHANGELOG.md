@@ -50,6 +50,9 @@ are offered only to people who turned on Receive beta updates.
   imports what it ripped.
 - **An SACD import can no longer start while another job is running,** the
   same as a CD rip or a download.
+- **Lighter on your Mac and on MusicBrainz.** The preview loads a 1200 pixel
+  image instead of originals of up to 5000, your own files are shrunk for the
+  grid in the background, and requests to MusicBrainz keep to one a second.
 
 ### Fixed
 
@@ -75,12 +78,6 @@ are offered only to people who turned on Receive beta updates.
   appears under DVD too, and HD means the same thing in the list and in the
   grid.
 - **Return runs the search** from either field.
-
-### Changed
-
-- **Lighter on your Mac and on MusicBrainz.** The preview loads a 1200 pixel
-  image instead of originals of up to 5000, your own files are shrunk for the
-  grid in the background, and requests to MusicBrainz keep to one a second.
 
 ## 2.3.0 (109), 2026-10-12
 
