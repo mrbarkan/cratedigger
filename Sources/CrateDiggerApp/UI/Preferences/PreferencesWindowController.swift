@@ -819,6 +819,11 @@ private struct AdvancedPreferencesView: View {
                     .foregroundStyle(.secondary)
             }
 
+            // Hidden until 2.4: only with the assistant's preference on.
+            if AssistantController.shared.isEnabled {
+                AssistantSettingsSection()
+            }
+
             Section("Diagnostics") {
                 Button("Open Console for CrateDigger") { openConsole() }
                 Text("Opens Console.app; filter to com.cratedigger.app for live log inspection.")

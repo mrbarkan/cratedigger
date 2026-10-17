@@ -850,6 +850,15 @@ public final class PreferencesStore {
         set { defaults.set(newValue, forKey: Key.betaUpdates) }
     }
 
+    /// The library assistant (MCP), hidden until 2.4. There is no switch for
+    /// it in the app: it is turned on from Terminal with
+    /// `defaults write com.cratedigger.app cratedigger.labs.llm -bool YES`
+    /// and read once at launch. Off, the app opens no socket and shows no
+    /// trace of the feature.
+    public var assistantLabsEnabled: Bool {
+        defaults.bool(forKey: "cratedigger.labs.llm")
+    }
+
     public var discogsToken: String? {
         get { defaults.string(forKey: Key.discogsToken) }
         set {

@@ -87,6 +87,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             NSEvent.removeMonitor(token)
             spaceKeyMonitor = nil
         }
+        // Takes the socket file with it, so the helper reads "not open" at once.
+        MainActor.assumeIsolated { AssistantController.shared.stop() }
     }
 
     /// Before 1.1.0 the artwork cache kept a full-resolution copy of every cover
@@ -216,6 +218,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     @objc private func findInLibrary(_ sender: Any?) {
         expandIfNeeded(for: .find)
         mainWindowController?.focusSearch()
+    }
+
+    @objc private func undoAIChange(_ sender: Any?) {
+        MainActor.assumeIsolated { mainWindowController?.model.undoAssistantChange() }
     }
 
     @objc private func playNext(_ sender: Any?) {
@@ -897,7 +903,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     ///
     /// - `CRATEDIGGER_CRATES_DIR`: the demo library's own crates folder. Required:
     ///   without it the tour would seed into the real library, so it refuses.
-    /// - `CRATEDIGGER_SEED`: the music folder to import.
+    /// - `CRATEDIGGER_SEED`: the music folder to import. Without `CRATEDIGGER_TOUR`
+    ///   it only seeds the library and leaves the app running on it.
     /// - `CRATEDIGGER_SEED_CRATES`: JSON `{"Crate": ["folder name prefix", …]}`.
     ///   Everything unmatched lands in the Prep Crate.
     /// - `CRATEDIGGER_TOUR`: the output folder; `dark/` and `light/` go inside.
@@ -907,15 +914,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     /// library, no Last.fm session.
     private func installDemoTourIfRequested() {
         let env = ProcessInfo.processInfo.environment
-        guard let out = env["CRATEDIGGER_TOUR"] else { return }
+        let crates = env["CRATEDIGGER_SEED_CRATES"]
+            .flatMap { $0.data(using: .utf8) }
+            .flatMap { try? JSONDecoder().decode([String: [String]].self, from: $0) } ?? [:]
+        guard let out = env["CRATEDIGGER_TOUR"] else {
+            // CRATEDIGGER_SEED on its own seeds the scratch library and stops
+            // there, leaving the app running on it: how the library assistant
+            // is exercised end to end without going near a real library.
+            if let seed = env["CRATEDIGGER_SEED"], LibraryViewModel.debugCratesDirectory != nil {
+                Task { @MainActor [weak self] in
+                    try? await Task.sleep(nanoseconds: 2_000_000_000)
+                    guard let model = self?.mainWindowController?.model else { return }
+                    await Self.seedDemoLibrary(model: model, folder: URL(fileURLWithPath: seed, isDirectory: true), crates: crates)
+                }
+            }
+            return
+        }
         guard LibraryViewModel.debugCratesDirectory != nil else {
             NSLog("[tour] refusing to run: CRATEDIGGER_CRATES_DIR is not set, so the demo would be seeded into the real library")
             return
         }
         let folder = URL(fileURLWithPath: out, isDirectory: true)
-        let crates = env["CRATEDIGGER_SEED_CRATES"]
-            .flatMap { $0.data(using: .utf8) }
-            .flatMap { try? JSONDecoder().decode([String: [String]].self, from: $0) } ?? [:]
 
         Task { @MainActor [weak self] in
             // Let the window and the empty library settle first.
@@ -1365,6 +1384,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             return false
         }
         switch menuItem.action {
+        case #selector(undoAIChange(_:)):
+            let summary = MainActor.assumeIsolated { AssistantController.shared.lastChangeSummary }
+            menuItem.title = summary.map { "Undo AI Change: \($0)" } ?? "Undo AI Change"
+            return summary != nil
         case #selector(toggleCompactPlayer(_:)):
             menuItem.state = currentLayout == .compact ? .on : .off
             return !(mainWindowController?.isInFullScreen ?? false)
@@ -1543,6 +1566,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         editMenu.addItem(responderItem(title: "Select All", action: #selector(NSResponder.selectAll(_:)), key: "a"))
         editMenu.addItem(.separator())
         editMenu.addItem(makeItem(title: "Find", action: #selector(findInLibrary(_:)), key: "f"))
+        // The library assistant's undo (hidden until 2.4). Not ⌘Z: that is
+        // the responder chain's, for text fields. Titled per change in
+        // validateMenuItem. Needs no browser, so compact leaves it enabled.
+        if MainActor.assumeIsolated({ AssistantController.shared.isEnabled }) {
+            editMenu.addItem(.separator())
+            editMenu.addItem(makeItem(title: "Undo AI Change", action: #selector(undoAIChange(_:))))
+        }
         editMenuItem.submenu = editMenu
 
         // MARK: View menu

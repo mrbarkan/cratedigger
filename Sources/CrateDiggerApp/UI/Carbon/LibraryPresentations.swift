@@ -100,6 +100,25 @@ private struct LibraryPresentations: ViewModifier {
             ) {
                 MetadataMatchSheetView().environmentObject(model)
             }
+            // The library assistant's tag proposals (hidden until 2.4). Closing
+            // the panel discards the proposal, the same as DISCARD.
+            .carbonPanel(
+                isPresented: Binding(
+                    get: { model.assistantTagProposal != nil },
+                    set: { if !$0 { model.discardAssistantTagProposal() } }
+                ),
+                title: "Assistant Tag Review",
+                minSize: NSSize(width: 560, height: 400),
+                initialSize: NSSize(width: 760, height: 600),
+                maxSize: NSSize(width: 1200, height: 1000),
+                autosaveName: "cratedigger.panel.assistantTags"
+            ) {
+                if let proposal = model.assistantTagProposal {
+                    AssistantTagReviewSheet(proposal: proposal)
+                        .id(proposal.id)
+                        .environmentObject(model)
+                }
+            }
     }
 }
 

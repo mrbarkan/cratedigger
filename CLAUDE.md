@@ -96,6 +96,20 @@ at the top of `docs/V2_RELEASE_PREP_PLAN.md`.
 
 Plus a small third target, **`NowPlayingFeed`** (`Sources/NowPlayingFeed`): the Codable record and file store the app writes into the app-group container for the **Now Playing widget**. The widget itself (`Sources/CrateDiggerWidget`) is **not** a SwiftPM target: WidgetKit only lists extensions built as Xcode's app-extension product type (a hand-wrapped SwiftPM binary registers and launches but never reaches the gallery), so `Packaging/CrateDiggerWidget/CrateDiggerWidget.xcodeproj` builds it, compiling the NowPlayingFeed sources directly, and `package-app.sh` embeds it in Developer ID builds only. The app writes the feed from `LibraryViewModel+NowPlaying` and only when the `.appex` is in its bundle, so a `swift build` run never touches the container. What the widget shows around the track (idle: library slideshow, last cover or a phrase; playing: cover, or cover and booklet) is picked in Settings ▸ Interface and travels inside the feed; the app renders the pictures it names into the container's `pictures/` folder through Core's `WidgetSlide`, off the main thread except for the playing cover. Families: small, medium and large. **An update strands the old extension**: the process the previous build launched keeps running, and chronod rejects everything it renders (`bundleStubNotSupported`, "Bundle version did not match"), so every reload fails and the widget freezes on its last frame. In 2026-09 this froze a slideshow for five days after a Sparkle update. `endStaleWidgetExtensionIfUpdated()` in `startWidgetFeed` handles it: once per new `AppVersion.build` it `pkill`s this bundle's extension executable and asks for a reload. Ending the extension alone was verified to be enough; chronod does not need restarting. When testing by hand with `swift build`, which carries no widget, kill the installed `CrateDiggerWidget` process yourself. Design: `docs/superpowers/specs/2026-09-11-now-playing-widget-design.md`.
 
+Two more targets serve the **library assistant** (below): **`AssistantKit`** (`Sources/AssistantKit`, Foundation only: MCP's JSON-RPC, the tool catalogue, the unix-socket transport, the Claude Desktop config merge) and the **`CrateDiggerMCP`** executable that Claude Desktop launches, which links AssistantKit and nothing else. Core depends on AssistantKit.
+
+### Library assistant (MCP, hidden until 2.4)
+
+Claude Desktop (or any MCP client that launches local stdio servers) can read the library and organise it while CrateDigger is open. **Off unless** `defaults write com.cratedigger.app cratedigger.labs.llm -bool YES` (`PreferencesStore.assistantLabsEnabled`, read once at launch); off means no socket, no Edit-menu item, no Settings row. A `swift build` run reads the `CrateDiggerApp` domain instead. Design: `docs/superpowers/specs/2026-10-17-llm-library-assistant-design.md`.
+
+- **Path.** Claude Desktop → `Contents/MacOS/CrateDiggerMCP` (stdio; answers `initialize` / `tools/list` itself, so it registers with the app closed) → one JSON line per `tools/call` over `~/Library/Application Support/CrateDigger/assistant.sock` (0600) → `AssistantController` (app, owns socket + journal) → Core's `LibraryAssistant` → `LibraryViewModel+Assistant` as `LibraryAssistantHost`. The host writes through `saveCrateTracks`, `PlaylistService`, `StreamStore` and `updateTracksMetadata`, so the disconnected guard and repoints apply. **A new write needs to go through the host the same way.**
+- **IDs only, never paths.** Tools name tracks by `AudioTrack.id`; `AssistantTrack.path` exists to write membership back and must never reach a result. `LibraryAssistantTests.testNoResultEverCarriesAFilePath` guards it.
+- **Crates/playlists/streams are approved in Claude; tags are reviewed in CrateDigger.** `propose_tag_changes` only opens Assistant Tag Review (a `carbonPanel` in `LibraryPresentations`); nothing is written until APPLY. Claude Desktop's "Allow always" must never be able to skip that.
+- **The journal records what a change did, not a snapshot**, so undo (Edit ▸ Undo AI Change, or `undo_last_change`) takes back only the assistant's work: a created crate is trashed only while it holds nothing else, an edited playlist is left alone, a tag goes back only where it still reads what the assistant wrote. Entries are tied to their crates folder, newest 20 kept, in `assistant-journal.json` (or in `CRATEDIGGER_CRATES_DIR` for a debug run).
+- **The tag writer leaves a nil field alone and deletes an empty one.** `AssistantTagValues.applied(to:fields:)` writes only the named fields, a cleared text field as `""`; numbers can be changed but not removed (the writer has no empty form for them), so proposals refuse a removal and an undo that would need one says so. Found end to end: undo used to leave an added genre in the file.
+- **Prep Crate is read-only to the assistant** (filing out of it goes through import and copy-on-import). Reads leave Prep-only tracks out unless `crate: "Prep Crate"` is named.
+- **Testing it end to end** without a real library: copy the debug binary to a new name (its own prefs domain), set the flag in that domain, and launch with `CRATEDIGGER_CRATES_DIR=<scratch>` and `CRATEDIGGER_SEED=<folder of tagged files>` (seeds and stops, no tour); then drive `CrateDiggerMCP` on stdin with newline-delimited JSON-RPC.
+
 ### App launch & control flow
 
 There is no `@main` / SwiftUI App lifecycle. The chain is explicit:
@@ -114,13 +128,13 @@ main.swift  →  AppDelegate  →  MainWindowController  →  CarbonHostingContr
 
 `Sources/CrateDiggerApp/UI/Carbon/Library/LibraryViewModel.swift` (~4,900 lines) is a single `@MainActor ObservableObject` that owns **all** app state, **all** services, and **most** behavior. Almost every SwiftUI view binds to it via `@EnvironmentObject`. **When fixing app behavior, start here** — this is where the wiring lives.
 
-Behavior is split across **31 `LibraryViewModel+*.swift` extensions in three
+Behavior is split across **33 `LibraryViewModel+*.swift` extensions in three
 folders** (don't assume they are all beside the main file):
 
-- `UI/Carbon/Library/` — `+ArrowNav`, `+BatchArtwork`, `+BusySignals`, `+CDDetect`, `+CompactPlayer`, `+DeepScan`,
+- `UI/Carbon/Library/` — `+ArrowNav`, `+Assistant`, `+BatchArtwork`, `+BusySignals`, `+CDDetect`, `+CompactPlayer`, `+DeepScan`,
   `+LibraryFiles`, `+LibraryLocation`, `+Listening`, `+MetadataRepair`,
   `+MiniPlayer`, `+MissingFiles`, `+MultiSelect`, `+NowPlaying`, `+Onboarding`,
-  `+Queue`, `+Radio`, `+RecordDivider`, `+Rename`, `+Resume`, `+SACDImport`,
+  `+Queue`, `+QuickEQ`, `+Radio`, `+RecordDivider`, `+Rename`, `+Resume`, `+SACDImport`,
   `+Search`, `+Sleep`, `+Stats`, `+StreamDownload`, `+TrackActions`,
   `+Versions`, `+Widget`
 - `UI/Conversion/` — `+Conversion`
