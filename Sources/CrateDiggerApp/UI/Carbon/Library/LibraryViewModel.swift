@@ -809,6 +809,13 @@ final class LibraryViewModel: ObservableObject {
     @Published var eqGains: [Double] = Array(repeating: 0, count: EqualizerProcessor.bandCount) {
         didSet { eqDidChange() }
     }
+    /// The equalizer's Quick EQ switch. See `LibraryViewModel+QuickEQ`.
+    @Published var quickEQEnabled: Bool = false {
+        didSet { prefs.quickEQEnabled = quickEQEnabled }
+    }
+    /// The band under the pointer while Quick EQ is on, set by the editor's
+    /// hover and nil whenever no fader should take the keys.
+    @Published var quickEQBand: Int?
     /// Albums the artwork audit flagged, newest scan wins. Display only — the
     /// repair pass re-measures, so this can go stale without doing harm.
     @Published var artworkAudit: [ArtworkAuditRow] = []
@@ -872,6 +879,7 @@ final class LibraryViewModel: ObservableObject {
             ? saved
             : Array(repeating: 0, count: EqualizerProcessor.bandCount)
         eqEnabled = prefs.savedEQEnabled
+        quickEQEnabled = prefs.quickEQEnabled
     }
 
     /// How the Track column orders the currently shown album.
@@ -1687,6 +1695,10 @@ final class LibraryViewModel: ObservableObject {
     private func setupKeyboardShortcutsMonitor() {
         localEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self = self else { return event }
+
+            // Quick EQ goes first: while it holds a fader, ↑/↓ belong to that
+            // fader and not to volume, and W/S to it and not to anything else.
+            if self.handleQuickEQKey(event) { return nil }
 
             // Bare arrows navigate the browser (↑/↓ select, ←/→ switch columns)
             // when the main window is focused and no text field is editing. Takes

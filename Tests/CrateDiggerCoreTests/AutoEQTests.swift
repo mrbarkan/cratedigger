@@ -90,4 +90,10 @@ final class AutoEQTests: XCTestCase {
             XCTAssertEqual(gain * 2, (gain * 2).rounded(), accuracy: 0.0001)
         }
     }
+
+    func testSuggestedNameStripsEachSourcesSuffix() {
+        XCTAssertEqual(AutoEQParser.suggestedName(forFileNamed: "Sennheiser HD 650 ParametricEQ.txt"), "Sennheiser HD 650")
+        XCTAssertEqual(AutoEQParser.suggestedName(forFileNamed: "Moondrop Blessing 3 Filters.txt"), "Moondrop Blessing 3")
+        XCTAssertEqual(AutoEQParser.suggestedName(forFileNamed: "my_iem-eq.txt"), "my_iem-eq")
+    }
 }

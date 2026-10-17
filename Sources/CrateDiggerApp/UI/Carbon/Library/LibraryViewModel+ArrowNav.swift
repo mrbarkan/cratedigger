@@ -76,7 +76,7 @@ extension LibraryViewModel {
         return !isEditingText()
     }
 
-    private func isEditingText() -> Bool {
+    func isEditingText() -> Bool {
         guard let responder = NSApp.keyWindow?.firstResponder else { return false }
         if let textView = responder as? NSTextView { return textView.isEditable }
         return responder is NSTextField || responder is NSSearchField || responder is NSComboBox

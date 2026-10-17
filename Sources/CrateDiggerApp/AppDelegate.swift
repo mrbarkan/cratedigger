@@ -499,6 +499,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     ///   phases.
     private func installSnapshotHookIfRequested() {
         let env = ProcessInfo.processInfo.environment
+        // The equalizer, so a capture can show it. Before the snapshot guard
+        // too, so it needs no snapshot path. "quick" also turns Quick EQ
+        // on and holds a mid-band fader, as if the pointer were resting on it.
+        if let raw = env["CRATEDIGGER_EQ"] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { [weak self] in
+                guard let model = self?.mainWindowController?.model else { return }
+                model.showingEQEditor = true
+                if raw == "quick" {
+                    model.eqEnabled = true
+                    model.quickEQEnabled = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { model.quickEQBand = 6 }
+                }
+            }
+        }
         // Before the snapshot guard, which returns early without a path.
         if let raw = env["CRATEDIGGER_BUSY"] {
             if let request = BusyDebugRequest(raw) {

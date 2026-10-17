@@ -4,9 +4,12 @@ import Foundation
 /// means the slot has never been saved into, which is what the editor shows as
 /// a dashed "empty" key.
 public struct CustomEQPreset: Codable, Sendable, Equatable {
-    /// How many slots the editor offers. Fixed — three keys read as hardware,
-    /// an unbounded list reads as a file browser.
-    public static let slotCount = 3
+    /// How many slots the editor offers. Fixed — one full row of keys under
+    /// the six built-ins reads as hardware, an unbounded list reads as a file
+    /// browser. Raising it is safe: `PreferencesStore.customEQPresets` pads a
+    /// shorter stored list with empty slots, and an older build reads only the
+    /// slots it knows.
+    public static let slotCount = 6
 
     public var name: String
     public var gains: [Double]

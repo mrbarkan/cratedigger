@@ -30,9 +30,9 @@ enum EQPreset: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-/// One position the EQ can be in: a built-in preset or one of the three user
-/// slots. The header EQ key cycles through a user-chosen subset of these, so
-/// they need a single identity that survives being written to preferences.
+/// One position the EQ can be in: a built-in preset or one of the user slots.
+/// The header EQ key cycles through a user-chosen subset of these, so they
+/// need a single identity that survives being written to preferences.
 enum EQSlot: Hashable, Identifiable {
     case preset(EQPreset)
     case user(Int)

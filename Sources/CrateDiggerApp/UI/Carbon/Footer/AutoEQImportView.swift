@@ -44,7 +44,7 @@ struct AutoEQImportView: View {
                 .font(CarbonFont.mono(11, weight: .bold))
                 .tracking(2)
                 .foregroundStyle(theme.ink)
-            Text("Parametric EQ from squig.link, AutoEQ, oratory1990, Wavelet or Poweramp.")
+            Text("Drop the exported .txt in the box or paste its text. Parametric EQ from squig.link, AutoEQ, oratory1990, Wavelet or Poweramp.")
                 .font(CarbonFont.sans(11))
                 .foregroundStyle(theme.ink3)
         }
@@ -238,11 +238,8 @@ struct AutoEQImportView: View {
     private func load(_ url: URL) {
         guard let contents = try? String(contentsOf: url, encoding: .utf8) else { return }
         text = contents
-        // AutoEQ names the file after the headphone; that's the best name we get.
         if name.isEmpty {
-            name = url.deletingPathExtension().lastPathComponent
-                .replacingOccurrences(of: "ParametricEQ", with: "")
-                .trimmingCharacters(in: CharacterSet(charactersIn: " -_"))
+            name = AutoEQParser.suggestedName(forFileNamed: url.lastPathComponent)
         }
         if targetSlot == nil { targetSlot = firstEmptySlot }
     }
