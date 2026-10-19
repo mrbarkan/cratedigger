@@ -62,19 +62,26 @@ enum UpdateFeed {
     /// what a build falls back to when nothing here overrides it.
     static let stable = "https://cratedigger.mrbarkan.com/appcast.xml"
 
-    /// The 2.0 beta line. Published from the `v2` branch and deliberately a
-    /// separate file, so a beta release never rewrites the feed stable copies
-    /// read.
+    /// Betas and release candidates. Published from the open beta branch and
+    /// deliberately a separate file, so a beta release never rewrites the feed
+    /// stable copies read.
     static let beta = "https://cratedigger.mrbarkan.com/appcast-beta.xml"
+
+    /// Alphas. Handed out by link and published from whichever branch the
+    /// alpha came from; no setting leads here, so only an alpha build reads it.
+    static let nightly = "https://cratedigger.mrbarkan.com/appcast-nightly.xml"
 
     /// The feed to hand Sparkle, or `nil` to leave it on the Info.plist one.
     ///
-    /// Beta applies in exactly two cases: the build is itself a prerelease
-    /// (`AppVersion.channel` is set, so it must keep following the line it came
-    /// from), or somebody deliberately turned the setting on. A stable build
-    /// that has been left alone always returns `nil`.
+    /// An alpha build (`AppVersion.channel` is `"ALPHA"`) reads nightly
+    /// whatever the beta setting says, since betas are not what it is waiting
+    /// for. Beta applies in exactly two cases: the build is itself a beta or RC
+    /// (so it must keep following the line it came from), or somebody
+    /// deliberately turned the setting on. A stable build that has been left
+    /// alone always returns `nil`.
     static func override(channel: String, betaOptIn: Bool) -> String? {
-        (!channel.isEmpty || betaOptIn) ? beta : nil
+        if channel == "ALPHA" { return nightly }
+        return (!channel.isEmpty || betaOptIn) ? beta : nil
     }
 }
 

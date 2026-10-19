@@ -26,10 +26,33 @@ final class UpdateFeedTests: XCTestCase {
         XCTAssertEqual(UpdateFeed.override(channel: "RC", betaOptIn: false), UpdateFeed.beta)
     }
 
-    /// The two feeds must never collapse to one file, which is the property
-    /// the whole scheme rests on.
+    /// An alpha reads the nightly feed, or it could never be offered the next
+    /// alpha: the beta feed carries no alpha builds.
+    func testAlphaBuildReadsTheNightlyFeed() {
+        XCTAssertEqual(UpdateFeed.override(channel: "ALPHA", betaOptIn: false), UpdateFeed.nightly)
+    }
+
+    /// The beta setting is about betas. Turning it on must not pull an alpha
+    /// off its own feed.
+    func testAlphaBuildStaysOnTheNightlyFeedWithTheBetaSettingOn() {
+        XCTAssertEqual(UpdateFeed.override(channel: "ALPHA", betaOptIn: true), UpdateFeed.nightly)
+    }
+
+    /// The other way round matters more: alphas go out by link only, so no
+    /// build that isn't itself an alpha may ever be pointed at them.
+    func testOnlyAnAlphaBuildReadsTheNightlyFeed() {
+        for channel in ["", "BETA", "RC"] {
+            for optIn in [false, true] {
+                XCTAssertNotEqual(UpdateFeed.override(channel: channel, betaOptIn: optIn), UpdateFeed.nightly,
+                                  "channel \"\(channel)\", beta opt-in \(optIn)")
+            }
+        }
+    }
+
+    /// The feeds must never collapse to one file, which is the property the
+    /// whole scheme rests on.
     func testTheFeedsAreDifferentFiles() {
-        XCTAssertNotEqual(UpdateFeed.stable, UpdateFeed.beta)
+        XCTAssertEqual(Set([UpdateFeed.stable, UpdateFeed.beta, UpdateFeed.nightly]).count, 3)
     }
 
     /// `UpdateFeed.stable` documents what Info.plist carries; if somebody

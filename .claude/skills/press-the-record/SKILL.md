@@ -44,14 +44,17 @@ Never release from a history branch: `v2`, `v2.1`, `v2.2`.
 
 **Alpha has its own feed, `appcast-nightly.xml`, and that feed must exist in
 the app before the first alpha ships.** An `ALPHA` build has to read the nightly
-feed, or it can never be offered the next alpha. Today `UpdateFeed.override`
-(`Updates/SoftwareUpdater.swift`) sends *every* non-empty channel to the beta
-feed. So before an alpha, check that `UpdateFeed` has a `nightly` URL and that
-`override` returns it for `"ALPHA"`, with `UpdateFeedTests` covering it. If it
-doesn't, **stop**: say the plumbing is missing and offer to build it. Never ship
-an alpha into the beta feed as a stand-in, because that offers it to every beta tester.
-`scripts/update-appcast.sh` already accepts `--appcast website/appcast-nightly.xml`
-from any branch and stages it in `dist/updates-nightly/`.
+feed, or it can never be offered the next alpha. The routing landed on `v2.4`
+for 2.4.0: `UpdateFeed.override` (`Updates/SoftwareUpdater.swift`) returns
+`UpdateFeed.nightly` for `"ALPHA"`, and `UpdateFeedTests` pins it. Branches cut
+before that (`main` at 2.3.x, `v2.3`, `next/2.3.2` until it takes the change)
+still send *every* non-empty channel to the beta feed. So before an alpha,
+check that the branch's `UpdateFeed` has `nightly`. If it doesn't, **stop**: say
+so and offer to merge or cherry-pick the change. Never ship an alpha into the
+beta feed as a stand-in, because that offers it to every beta tester.
+`scripts/update-appcast.sh` accepts `--appcast website/appcast-nightly.xml` from
+any branch except `main`, which it refuses, and stages it in
+`dist/updates-nightly/`.
 
 ### Where the lines stand
 

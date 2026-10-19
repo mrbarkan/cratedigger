@@ -116,6 +116,17 @@ if [[ -n "${EXPECTED_BRANCH}" && -n "${BRANCH}" && "${BRANCH}" != "${EXPECTED_BR
   exit 1
 fi
 
+# The nightly feed carries alphas, which ship from whatever work branch they
+# were built on, so it has no single owner. It never comes from main: main is
+# the stable line, and its CHANGELOG has no section for an unreleased version.
+if [[ "$(basename "${APPCAST}")" == "appcast-nightly.xml" && "${BRANCH}" == "main" ]]; then
+  echo "error: appcast-nightly.xml carries alphas and is never generated on main." >&2
+  echo "" >&2
+  echo "Check out the branch the alpha was built from, generate the feed there, then" >&2
+  echo "carry just that file across with 'git checkout <branch> -- website/appcast-nightly.xml'." >&2
+  exit 1
+fi
+
 DMG_NAME="$(basename "${DMG_PATH}")"
 VERSION="${DMG_NAME#CrateDigger-}"
 VERSION="${VERSION%.dmg}"

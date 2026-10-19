@@ -61,18 +61,24 @@ The mechanism that keeps the two lines apart:
   `Updates/SoftwareUpdater.swift`:
 
   ```swift
-  (!channel.isEmpty || betaOptIn) ? beta : nil
+  if channel == "ALPHA" { return nightly }
+  return (!channel.isEmpty || betaOptIn) ? beta : nil
   ```
 
-  A build whose `AppVersion.channel` is non-empty follows `appcast-beta.xml`
-  automatically; a stable build reads the beta feed only if its owner turned
-  on Advanced ▸ Receive beta updates. On `main`, `channel` is `""`; a beta
-  branch sets `"BETA"`.
+  A build whose `AppVersion.channel` is `"BETA"` or `"RC"` follows
+  `appcast-beta.xml` automatically; a stable build reads the beta feed only if
+  its owner turned on Advanced ▸ Receive beta updates. An `"ALPHA"` build reads
+  `appcast-nightly.xml` whatever that setting says, and nothing else ever does:
+  alphas are handed out by link, and no setting leads to them. On `main`,
+  `channel` is `""`; a beta branch sets `"BETA"`. The nightly routing exists
+  from 2.4.0 (`v2.4`); a branch whose `UpdateFeed` has no `nightly` cannot
+  ship an alpha.
 - Keeping that decision in one pure function rather than in `Info.plist` is
   the point: there is no per-branch line to repoint, and so none to forget.
-  `UpdateFeedTests` covers all four channel/opt-in combinations and fails if
-  `SUFeedURL` ever stops matching `UpdateFeed.stable`. **Do not "simplify"
-  `UpdateFeed.override` into the plist.**
+  `UpdateFeedTests` covers the channel/opt-in combinations, pins that only an
+  alpha reads nightly, and fails if `SUFeedURL` ever stops matching
+  `UpdateFeed.stable`. **Do not "simplify" `UpdateFeed.override` into the
+  plist.**
 - `scripts/update-appcast.sh` generates each feed only on the branch that
   owns it (`appcast.xml` on `main`, `appcast-beta.xml` on `BETA_BRANCH`, `v2.3` for
   the 2.3 cycle) and refuses a DMG whose major version differs from what is
@@ -274,9 +280,11 @@ The app's **only** third-party dependency. `SoftwareUpdater` (`Updates/`) wraps
 both go through it, and it does nothing at all unless `Bundle.main` carries
 `SUFeedURL` — so a `swift build` run has no updater and the menu item greys out.
 
-There are **two** feeds, both on GitHub Pages and both regenerated per release
-by `scripts/update-appcast.sh`: `website/appcast.xml` (stable) and
-`website/appcast-beta.xml` (the 2.0 line). Which one a build reads is decided
+There are **three** feeds, all on GitHub Pages and all regenerated per release
+by `scripts/update-appcast.sh`: `website/appcast.xml` (stable),
+`website/appcast-beta.xml` (betas and RCs) and `website/appcast-nightly.xml`
+(alphas, generated on the alpha's own branch and never on `main`; the file
+first appears with the first alpha). Which one a build reads is decided
 at runtime by `UpdateFeed` / `ChannelDelegate.feedURLString(for:)`, NOT by
 `Info.plist` — see "Two release lines" above, which is the section to trust on
 this. `allowedChannels` remains only for the older `rc` convention, where
