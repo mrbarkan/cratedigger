@@ -85,7 +85,7 @@ cards — with per-device profiles and one shortcut (⌘⇧T).
 
 Grab the latest signed `.dmg` from the
 [Releases](https://github.com/mrbarkan/cratedigger/releases) page and drag
-CrateDigger to Applications. Now at the 2.2.4 release.
+CrateDigger to Applications. Now at the 2.3.1 release.
 
 Or build it yourself (below).
 
