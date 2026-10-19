@@ -3,6 +3,99 @@
     <channel>
         <title>CrateDigger</title>
         <item>
+            <title>2.3.1</title>
+            <pubDate>Mon, 19 Oct 2026 19:25:54 -0300</pubDate>
+            <link>https://cratedigger.mrbarkan.com/</link>
+            <sparkle:fullReleaseNotesLink>https://github.com/mrbarkan/cratedigger/releases</sparkle:fullReleaseNotesLink>
+            <sparkle:version>113</sparkle:version>
+            <sparkle:shortVersionString>2.3.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description sparkle:format="markdown"><![CDATA[
+CrateDigger 2.3 is here. A compact player folds the whole console into one
+slim unit, Secure Mode rips CDs with every sector read twice and checked,
+rip settings start from the medium, small pictures on the display show what
+CrateDigger is working on, and the equalizer gets six user presets and Quick
+EQ from the keyboard. 2.3.0 went out only as betas, so everything listed
+under 2.3.0 below is new in this release as well.
+
+### Added
+
+- **Six user EQ presets.** The equalizer has a full row of six user keys
+  under the built-in curves, up from three. The presets you already saved
+  stay where they were.
+- **Quick EQ.** Turn on QUICK EQ at the top of the equalizer, point at a
+  fader and press the Up and Down arrows, or W and S, to move it half a
+  decibel at a time. The fader you are pointing at lights up, and while it
+  does the arrows move it rather than the volume. Shortcuts with Command
+  still work as usual. QUICK EQ stays on until you turn it off.
+- **SQUIG.LINK in the equalizer.** A key opens squig.link in your browser,
+  where reviewers publish measurements and EQ for hundreds of headphones
+  and IEMs.
+- **How to import a headphone preset,** in three steps under the faders:
+  find your headphones on squig.link, press Auto EQ and then Export in its
+  Equalizer tab, then press IMPORT AUTOEQ and drop the file in.
+- **Busy Signals.** While a job runs, its screen on the display shows a small
+  line drawing of the work: the disc turning as a CD rips, the laser walking
+  the sectors in Secure Mode, files going through a press as they convert, a
+  crate of records being flipped through as a folder is scanned, a cassette
+  filling up as a stream downloads, and packets travelling down a cable to an
+  iPod. When the job is done, the picture shows a check or DONE.
+- **Jobs on the top line.** On every other screen, a running job shows as a
+  tiny "from, to" picture next to the indicators at the top of the display,
+  filling up as the job goes. Up to two show at once, with +N for more. A
+  finished job blinks there until you visit its screen, and clicking one
+  takes you to it. They show in the compact player too.
+- The pictures use your theme's colours, keep to one colour when the theme is
+  set to monochrome, and hold still when Reduce Motion is on.
+
+### Changed
+
+- **The display stays on DUB when a rip, download or SACD import finishes,**
+  so you can see that it finished. A rip still moves on to SCAN when it
+  imports what it ripped.
+- **An SACD import can no longer start while another job is running,** the
+  same as a CD rip or a download.
+- **Lighter on your Mac and on MusicBrainz.** The preview loads a 1200 pixel
+  image instead of originals of up to 5000, your own files are shrunk for the
+  grid in the background, and requests to MusicBrainz keep to one a second.
+
+### Fixed
+
+- **An imported squig.link file is named after the headphone,** the same
+  as an AutoEQ file already was, instead of ending in "Filters".
+- **Each result shows how many images it has again.** The count beside
+  every release had stopped appearing, or said NO IMAGES for releases that
+  have plenty, because the archive it came from has been answering slowly or
+  not at all. The counts now come from MusicBrainz and appear about a second
+  after the results.
+- **The right artwork for the release you picked.** Picking one release,
+  going back and picking another could show the first one's images under
+  the second.
+- **Honest messages.** A busy MusicBrainz no longer reads as "No releases
+  found", the archive being down no longer reads as "No images", and "No
+  scans" no longer appears while Discogs is still loading. Each source shows
+  its own progress, with TRY AGAIN when it fails.
+- **Searching stops when you move on.** Closing the panel, going back or
+  starting a new search stops what was still loading, so an old search can no
+  longer replace newer results.
+- **Discogs no longer waits for the archive.** Both load at the same time.
+- **The MEDIA filter sees every disc in a set,** so a CD and DVD release
+  appears under DVD too, and HD means the same thing in the list and in the
+  grid.
+- **Return runs the search** from either field.
+
+]]></description>
+            <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.3.1/CrateDigger-2.3.1.dmg" length="72625223" type="application/octet-stream" sparkle:edSignature="yDEV95pnRCQJKMQWeDGKeLb3n2muqix943P6OnJSUaCJU5ZzdTYb9nSFhrFHIKQCZkqHjhow+v6TH5bNMcBwDA=="/>
+            <sparkle:deltas>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.3.1/CrateDigger113-105.delta" sparkle:deltaFrom="105" length="2223946" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="+rg4MFhOniPF6y1Wc/0GwdmAhGRLmDH7woVZ8TD7IDH4bWlK3qZW35BSIKcQVPG1Rxi/gGeTPkL0SaqXfblyBQ=="/>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.3.1/CrateDigger113-98.delta" sparkle:deltaFrom="98" length="2348774" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="gTyAfLdHDqi9sc6jrOuvXRLmRjx5oIkENl3xwQvJs+oUntM5TNmyWFft/wxA/X2wfGXMfJqyeJsuK2h75ihCBw=="/>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.3.1/CrateDigger113-97.delta" sparkle:deltaFrom="97" length="2364034" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="eAp+WMt9Z1Xc2kI1xAF2cbyYK1NA78LPJvNZb6DloedHRHXBwhTojneNReSmgJDkStpbBNnTjeQ8GL78BZifCw=="/>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.3.1/CrateDigger113-96.delta" sparkle:deltaFrom="96" length="2372598" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="T12Rifyhg/DKsiSA/2DUjSFpFUHutkGGbfg2YKkv4H6+txjnZRCDb0abWZyKGpBa1iz7JU2cYZGhzn7Qy55PCQ=="/>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.3.1/CrateDigger113-95.delta" sparkle:deltaFrom="95" length="2372510" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="cQ0okoroEuupq95mAsV3LaelKbCclMw13VJ/jPfVg405XDDvQUC3ir/32KXPUWf316LTi+G84+p45pchXUFtDw=="/>
+            </sparkle:deltas>
+        </item>
+        <item>
             <title>2.2.4</title>
             <pubDate>Sat, 03 Oct 2026 22:08:18 -0300</pubDate>
             <link>https://cratedigger.mrbarkan.com/</link>
@@ -145,40 +238,6 @@ Put a CD in and it's ready to dub; records drag for real this time.
                 <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.3/CrateDigger98-95.delta" sparkle:deltaFrom="95" length="897046" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="qYNHftMMVNdMuJgjVRKqC2AJ2d9G5T+fx0OkGt2lqd49iz7zBmwP7gqw4Gwgura5+myRQrPCp5cnGj3S8zsXCg=="/>
                 <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.3/CrateDigger98-90.delta" sparkle:deltaFrom="90" length="3142206" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="ux92yyhQRaHDvWYHMx84gjKILpQnGXMxe4CnIQ/yTRSStqzhRZY2yLil94DsAl/1iK8L1Ay9u7vzC1/uBs1TBQ=="/>
                 <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.3/CrateDigger98-89.delta" sparkle:deltaFrom="89" length="3566858" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="yh6YJODOKgLhXBmTu5LWbxK44pKi+sga341RkjXwW972CD2645uPi10jx3a2cHCc0e9tYBaPW9eCA1zOGMo6Bg=="/>
-            </sparkle:deltas>
-        </item>
-        <item>
-            <title>2.2.2</title>
-            <pubDate>Fri, 25 Sep 2026 18:00:26 -0300</pubDate>
-            <link>https://cratedigger.mrbarkan.com/</link>
-            <sparkle:fullReleaseNotesLink>https://github.com/mrbarkan/cratedigger/releases</sparkle:fullReleaseNotesLink>
-            <sparkle:version>97</sparkle:version>
-            <sparkle:shortVersionString>2.2.2</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
-            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[
-Dragging works again on macOS 27.
-
-### Fixed
-
-- **Records drag out of the browser again.** On macOS 27, dragging an artist,
-  album or track to a crate or a playlist moved the whole window instead.
-  The window now moves only by its top edge, beside the window buttons.
-- **The mini player can be moved again.** On macOS 27 it stayed where it
-  opened. Drag it from anywhere that isn't a control; the progress bar and
-  reordering Up Next keep their own drags.
-- **Double-clicking a header key no longer resizes the window.** Pressing
-  VIEW twice zoomed the window. Double-clicking the top edge still does,
-  following your Desktop & Dock setting.
-
-]]></description>
-            <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.2/CrateDigger-2.2.2.dmg" length="72015970" type="application/octet-stream" sparkle:edSignature="TFtOYsetnfJOQ6eXu+V/tgBTzC2HBEJPL1PReutsxFxr0amC+Jtxv9dwKM0Tf7xUXlGpXx0SJPQibBmXFfr3Dw=="/>
-            <sparkle:deltas>
-                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.2/CrateDigger97-96.delta" sparkle:deltaFrom="96" length="713114" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="NmbckvgPBG+SVFDkt42kGjWxRUrQ4/0YjlMw7NDFH3aqI4HyXGnLAmsbKF7yweQxl4upGDT9lD8KYXyhzlveDQ=="/>
-                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.2/CrateDigger97-95.delta" sparkle:deltaFrom="95" length="885898" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="Q2pcbwWwUJQ1kbYOQ++DQdq03NTrvteMhDODMFdzDnakYwG+hNt8BD7f4EqO75vPWRsNG8zY4YTu+7kjsaqWBg=="/>
-                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.2/CrateDigger97-90.delta" sparkle:deltaFrom="90" length="3147502" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="pZK35aAjwsswGChzA81xh0AT/JlVJHbFl75bs4vlgmmILzVWrLL2ZL5sIEo+PYqfmvnlMF4unoLqfAN/a2FFAw=="/>
-                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.2/CrateDigger97-89.delta" sparkle:deltaFrom="89" length="3563222" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="e1OUXFsHfMKlOATay5pEQ3CHTJwZI+Qo21um4RSA7UPJnO9iS98U3IVzmPXRoG7pHyE7b5526aKrn2hq6HaCAQ=="/>
-                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.2/CrateDigger97-88.delta" sparkle:deltaFrom="88" length="3694298" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="uZ9yLYgowKsBrUQCYOPySKy731rdJdhiAyo9hf25yuJDQO4QH+HD1Tw1NHEMt+zBao/GiSVlaXqvK7jK4pU7Aw=="/>
             </sparkle:deltas>
         </item>
     </channel>

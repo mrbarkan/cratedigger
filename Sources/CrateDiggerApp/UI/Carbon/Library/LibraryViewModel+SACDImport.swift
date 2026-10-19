@@ -25,6 +25,11 @@ extension LibraryViewModel {
     }
 
     private func importSACDISO(at iso: URL, toolURL: URL) {
+        // Like `requestCDRip` and `downloadStream`: an import started beside a
+        // rip, convert, download or copy transfer would overwrite its
+        // `conversionProgress`, and its Busy Signals job would retire a
+        // running rip's picture on DUB.
+        guard !isConversionRunning else { return showOLEDNotice("BUSY") }
         guard SACDISOInspector.isSACDISO(iso) else {
             appAlert = .error(title: "Not an SACD ISO",
                               message: "“\(iso.lastPathComponent)” has no SACD table of contents. Only SACD images can be imported this way.")
@@ -40,13 +45,16 @@ extension LibraryViewModel {
         conversionProgress = ConversionProgressSnapshot(jobsCompleted: 0, jobsTotal: 1,
                                                         currentFilename: iso.lastPathComponent,
                                                         isRunning: true)
+        // DUB already draws an SACD import as a rip, so it plays the rip's scene.
+        sacdBusyJob = beginBusyJob(.rip, on: .dub)
         service.readDiscInfo(iso: iso) { [weak self] result in
             Task { @MainActor in
                 guard let self else { return }
                 switch result {
                 case .failure(let error):
                     self.finishSACDImport(alert: .error(title: "SACD Read Failed",
-                                                        message: error.localizedDescription))
+                                                        message: error.localizedDescription),
+                                          outcome: .failed)
                 case .success(let disc):
                     self.confirmAndExtract(disc: disc, iso: iso, service: service, destRoot: destRoot)
                 }
@@ -72,7 +80,7 @@ extension LibraryViewModel {
         alert.addButton(withTitle: "Rip")
         alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else {
-            finishSACDImport(alert: nil)
+            finishSACDImport(alert: nil, outcome: .cancelled)
             return
         }
 
@@ -98,23 +106,31 @@ extension LibraryViewModel {
                     guard let self else { return }
                     switch result {
                     case .success(let files):
+                        // Finished before the scan begins, as a CD rip is:
+                        // the rip's mini then blinks on SCAN until it's seen.
+                        self.finishSACDImport(
+                            alert: .info(
+                                title: "SACD Ripped!",
+                                message: "\(files.count) DSF tracks imported from “\(disc.albumTitle)”."),
+                            outcome: .completed)
                         // Scan the album folder in — lands in the Prep Crate
                         // like any dig, then files into a crate as usual.
                         self.loadFolders([destination])
-                        self.finishSACDImport(alert: .info(
-                            title: "SACD Ripped!",
-                            message: "\(files.count) DSF tracks imported from “\(disc.albumTitle)”."))
                     case .failure(let error):
                         self.finishSACDImport(alert: .error(title: "SACD Rip Failed",
-                                                            message: error.localizedDescription))
+                                                            message: error.localizedDescription),
+                                              outcome: .failed)
                     }
                 }
             })
     }
 
-    private func finishSACDImport(alert: AppAlert?) {
+    private func finishSACDImport(alert: AppAlert?, outcome: BusyOutcome) {
+        endBusyJob(sacdBusyJob, outcome)
+        sacdBusyJob = nil
         conversionProgress = .idle
-        if oledView == .dub { oledView = .nowPlaying }
+        // No jump to NOW: DUB stays put so the finished frame can be seen
+        // (Busy Signals spec §5).
         if let alert { appAlert = alert }
     }
 

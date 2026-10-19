@@ -4,6 +4,81 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 2.3.1 (113), 2026-10-19
+
+CrateDigger 2.3 is here. A compact player folds the whole console into one
+slim unit, Secure Mode rips CDs with every sector read twice and checked,
+rip settings start from the medium, small pictures on the display show what
+CrateDigger is working on, and the equalizer gets six user presets and Quick
+EQ from the keyboard. 2.3.0 went out only as betas, so everything listed
+under 2.3.0 below is new in this release as well.
+
+### Added
+
+- **Six user EQ presets.** The equalizer has a full row of six user keys
+  under the built-in curves, up from three. The presets you already saved
+  stay where they were.
+- **Quick EQ.** Turn on QUICK EQ at the top of the equalizer, point at a
+  fader and press the Up and Down arrows, or W and S, to move it half a
+  decibel at a time. The fader you are pointing at lights up, and while it
+  does the arrows move it rather than the volume. Shortcuts with Command
+  still work as usual. QUICK EQ stays on until you turn it off.
+- **SQUIG.LINK in the equalizer.** A key opens squig.link in your browser,
+  where reviewers publish measurements and EQ for hundreds of headphones
+  and IEMs.
+- **How to import a headphone preset,** in three steps under the faders:
+  find your headphones on squig.link, press Auto EQ and then Export in its
+  Equalizer tab, then press IMPORT AUTOEQ and drop the file in.
+- **Busy Signals.** While a job runs, its screen on the display shows a small
+  line drawing of the work: the disc turning as a CD rips, the laser walking
+  the sectors in Secure Mode, files going through a press as they convert, a
+  crate of records being flipped through as a folder is scanned, a cassette
+  filling up as a stream downloads, and packets travelling down a cable to an
+  iPod. When the job is done, the picture shows a check or DONE.
+- **Jobs on the top line.** On every other screen, a running job shows as a
+  tiny "from, to" picture next to the indicators at the top of the display,
+  filling up as the job goes. Up to two show at once, with +N for more. A
+  finished job blinks there until you visit its screen, and clicking one
+  takes you to it. They show in the compact player too.
+- The pictures use your theme's colours, keep to one colour when the theme is
+  set to monochrome, and hold still when Reduce Motion is on.
+
+### Changed
+
+- **The display stays on DUB when a rip, download or SACD import finishes,**
+  so you can see that it finished. A rip still moves on to SCAN when it
+  imports what it ripped.
+- **An SACD import can no longer start while another job is running,** the
+  same as a CD rip or a download.
+- **Lighter on your Mac and on MusicBrainz.** The preview loads a 1200 pixel
+  image instead of originals of up to 5000, your own files are shrunk for the
+  grid in the background, and requests to MusicBrainz keep to one a second.
+
+### Fixed
+
+- **An imported squig.link file is named after the headphone,** the same
+  as an AutoEQ file already was, instead of ending in "Filters".
+- **Each result shows how many images it has again.** The count beside
+  every release had stopped appearing, or said NO IMAGES for releases that
+  have plenty, because the archive it came from has been answering slowly or
+  not at all. The counts now come from MusicBrainz and appear about a second
+  after the results.
+- **The right artwork for the release you picked.** Picking one release,
+  going back and picking another could show the first one's images under
+  the second.
+- **Honest messages.** A busy MusicBrainz no longer reads as "No releases
+  found", the archive being down no longer reads as "No images", and "No
+  scans" no longer appears while Discogs is still loading. Each source shows
+  its own progress, with TRY AGAIN when it fails.
+- **Searching stops when you move on.** Closing the panel, going back or
+  starting a new search stops what was still loading, so an old search can no
+  longer replace newer results.
+- **Discogs no longer waits for the archive.** Both load at the same time.
+- **The MEDIA filter sees every disc in a set,** so a CD and DVD release
+  appears under DVD too, and HD means the same thing in the list and in the
+  grid.
+- **Return runs the search** from either field.
+
 ## 2.3.0 (109), 2026-10-12
 
 Release candidate 1: Secure Mode for ripping CDs. The betas brought a compact

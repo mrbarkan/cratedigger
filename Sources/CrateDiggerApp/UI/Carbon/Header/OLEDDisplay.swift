@@ -162,29 +162,17 @@ private struct DisplayRail: View {
     private var radioLive: Bool { model.isRadioMode || model.isStreamActive }
 
     var body: some View {
-        HStack(spacing: 0) {
+        AnnunciatorRailRow {
             // What is playing leads the rail: the clock sits on the left edge
             // where it never moves, and the title grows right into the gap.
-            // No Spacer — this block takes the whole remainder of the rail
-            // itself, so the annunciators stay pinned to the far edge.
             RailLive(clock: model.playbackClock)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.trailing, 14)
-
-            // Annunciators — every mode permanently printed on the glass, each
-            // lit in its own accent (the same color the display-toggle strip
-            // glows — see OLEDView.accent).
-            HStack(spacing: 12) {
-                ann("NOW", lit: v == .nowPlaying, color: OLEDView.nowPlaying.accent(theme))
-                ann("CNVRT", lit: v == .conversion, color: OLEDView.conversion.accent(theme))
-                ann("SCAN", lit: v == .scan, color: OLEDView.scan.accent(theme))
-                ann("SYNC", lit: v == .remoteSync, color: OLEDView.remoteSync.accent(theme))
-                ann("DUB", lit: v == .dub, color: OLEDView.dub.accent(theme))
-                ann("DEV", lit: v == .devices, color: OLEDView.devices.accent(theme))
-                ann("SRCH", lit: v == .search, color: OLEDView.search.accent(theme))
-                ann("STAT", lit: v == .stats, color: OLEDView.stats.accent(theme))
-                ann("ON AIR", lit: radioLive, color: theme.onAir, pulse: onAirPulse)
-            }
+        } minis: { available in
+            // Busy Signals: a mini for every job not on this screen. Its slot
+            // takes width from the title above and adds no height (see
+            // `BusyRailSlot`), so the rail never grows when a mini appears.
+            BusyRailMinis(available: available)
+        } annunciators: {
+            RailAnnunciators(screen: v, radioLive: radioLive, onAirPulse: onAirPulse)
         }
         .padding(.bottom, 7)
         // Transient system notice (tag saves etc.) — snaps in on the rail
@@ -204,6 +192,13 @@ private struct DisplayRail: View {
                     .shadow(color: theme.sun.opacity(0.55), radius: 6)
                     .lineLimit(1)
                     .fixedSize()
+                    // A backing plate: the notice occludes whatever it lands
+                    // on, Busy Signals minis included. Hiding the minis while
+                    // a notice is up instead would blink them on every volume
+                    // nudge and every FIX TAGS tick (spec §4).
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(theme.oledSurface)
                     .padding(.bottom, 7)
                     // Background work that finished while the user was
                     // elsewhere gets the annunciators' attention blink; a
@@ -231,6 +226,85 @@ private struct DisplayRail: View {
         default:       return .none
         }
     }
+}
+
+/// The rail's flow: what is playing, the Busy Signals slot, and the
+/// annunciators pinned to the far edge. Model-free, so `BusyRailMinisTests`
+/// lays out exactly this row with fixture parts.
+///
+/// It measures three widths and hands the minis what is left of the rail
+/// after the annunciators and `RailLiveContent`'s floor (`RailLiveFloorKey`),
+/// so a mini only appears where it fits without pushing the row past the
+/// glass. The floor is measured rather than assumed: a theme's mono override
+/// can be far wider than JetBrains Mono (Llama '97's PixelOperatorMono8 is a
+/// full em per glyph: ≈ 270 pt off NOW against ≈ 184).
+struct AnnunciatorRailRow<Live: View, Minis: View, Annunciators: View>: View {
+    private let live: Live
+    private let minis: (CGFloat) -> Minis
+    private let annunciators: Annunciators
+
+    @State private var railWidth: CGFloat = 0
+    @State private var annunciatorWidth: CGFloat = 0
+    @State private var liveFloor: CGFloat = 0
+
+    /// `minis` receives the width it may occupy (`BusyRailSlot.available`).
+    init(@ViewBuilder live: () -> Live,
+         @ViewBuilder minis: @escaping (CGFloat) -> Minis,
+         @ViewBuilder annunciators: () -> Annunciators) {
+        self.live = live()
+        self.minis = minis
+        self.annunciators = annunciators()
+    }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            // No Spacer: this block takes the whole remainder of the rail
+            // itself, so the annunciators stay pinned to the far edge.
+            live
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.trailing, RailLiveContent.trailing)
+
+            minis(BusyRailSlot.available(railWidth: railWidth,
+                                         annunciatorWidth: annunciatorWidth,
+                                         liveFloor: liveFloor + RailLiveContent.trailing))
+
+            // Every mode permanently printed on the glass.
+            annunciators
+                .background(WidthReader<AnnunciatorWidthKey>())
+        }
+        // The width the rail is given, not the width its row takes: were the
+        // row ever to overflow, measuring the row would report the overflow
+        // as room and hand the minis more of it.
+        .frame(minWidth: 0, maxWidth: .infinity)
+        .background(WidthReader<RailWidthKey>())
+        .onPreferenceChange(RailWidthKey.self) { railWidth = $0 }
+        .onPreferenceChange(AnnunciatorWidthKey.self) { annunciatorWidth = $0 }
+        .onPreferenceChange(RailLiveFloorKey.self) { liveFloor = $0 }
+    }
+}
+
+/// Every annunciator, each lit in its own accent (the same color the
+/// display-toggle strip glows — see `OLEDView.accent`).
+struct RailAnnunciators: View {
+    let screen: OLEDView
+    let radioLive: Bool
+    let onAirPulse: AnnPulse
+
+    @Environment(\.carbon) private var theme
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ann("NOW", lit: screen == .nowPlaying, color: OLEDView.nowPlaying.accent(theme))
+            ann("CNVRT", lit: screen == .conversion, color: OLEDView.conversion.accent(theme))
+            ann("SCAN", lit: screen == .scan, color: OLEDView.scan.accent(theme))
+            ann("SYNC", lit: screen == .remoteSync, color: OLEDView.remoteSync.accent(theme))
+            ann("DUB", lit: screen == .dub, color: OLEDView.dub.accent(theme))
+            ann("DEV", lit: screen == .devices, color: OLEDView.devices.accent(theme))
+            ann("SRCH", lit: screen == .search, color: OLEDView.search.accent(theme))
+            ann("STAT", lit: screen == .stats, color: OLEDView.stats.accent(theme))
+            ann("ON AIR", lit: radioLive, color: theme.onAir, pulse: onAirPulse)
+        }
+    }
 
     /// One printed annunciator segment: ghost when inactive, lit (color + glow)
     /// when its view is active. Segments snap — no fade.
@@ -248,9 +322,34 @@ private struct DisplayRail: View {
     }
 }
 
+/// `RailLiveContent`'s floor: the width its parts that never shrink take, so
+/// the minis leave it alone (see `AnnunciatorRailRow`).
+private struct RailLiveFloorKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
+/// The annunciator rail's own width, and its annunciator block's.
+private struct RailWidthKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
+private struct AnnunciatorWidthKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
+/// Reports its view's width under `Key`, for a `background`.
+private struct WidthReader<Key: PreferenceKey>: View where Key.Value == CGFloat {
+    var body: some View {
+        GeometryReader { Color.clear.preference(key: Key.self, value: $0.size.width) }
+    }
+}
+
 /// How an annunciator animates: `.breathe` is the slow on-air pulse, `.flash`
 /// the fast attention blink used while a stream is still connecting.
-private enum AnnPulse { case none, breathe, flash }
+enum AnnPulse { case none, breathe, flash }
 
 /// Opacity animation for a whole annunciator (dot + label). Restarts cleanly
 /// when the mode changes (loading → playing swaps flash for breathe).
@@ -319,53 +418,65 @@ private struct AnnDot: View {
 /// it, and repeating it on the glass said nothing the fader wasn't already
 /// showing.
 private struct RailLive: View {
-    @Environment(\.carbon) private var theme
     @EnvironmentObject private var model: LibraryViewModel
     // Playback time lives on the isolated clock; observe it to keep ticking.
     @ObservedObject var clock: PlaybackClock
 
     @Environment(\.oledScreenOverride) private var screenOverride
 
-    private var showMini: Bool { (screenOverride ?? model.oledView) != .nowPlaying }
+    var body: some View {
+        RailLiveContent(
+            showsClock: (screenOverride ?? model.oledView) != .nowPlaying,
+            now: model.displayedCurrentTime.asClockPadded,
+            total: model.playbackDuration.asClockPadded,
+            // Only when something is loaded: the title falls back to the
+            // selected track, which isn't playing.
+            hasTrack: model.nowPlayingTrack != nil,
+            // The centred notice owns the middle of the rail while it's up,
+            // and the title is the only element long enough to run under it.
+            // Yield rather than overlap; the title is back a couple of
+            // seconds later.
+            showsTitle: model.oledNotice == nil,
+            title: (model.nowPlayingTrack?.track.title ?? model.selectedTrack?.track.title ?? "—").uppercased()
+        )
+    }
+}
 
-    /// The centred notice owns the middle of the rail while it's up, and the
-    /// mini title is the only element long enough to run under it. Yield rather
-    /// than overlap; the title is back a couple of seconds later.
-    private var showTitle: Bool { showMini && model.oledNotice == nil }
+/// `RailLive`'s row, model-free so the rail's layout can be tested.
+///
+/// It reports its floor under `RailLiveFloorKey`: the parts that never shrink
+/// (the clock or the "NOW PLAYING" label, the "NOW PLAYING:" prefix) with the
+/// gaps between them and the title's "…". Measured from a hidden copy of
+/// those parts, so it is right for whatever mono the theme draws with. The
+/// floor counts the title even while a notice hides it, so a notice coming
+/// and going never makes a mini appear and vanish.
+struct RailLiveContent: View {
+    /// Between the clock and the title, and between the prefix and the title.
+    static let clockGap: CGFloat = 12
+    static let prefixGap: CGFloat = 6
+    /// Before the Busy Signals slot or the annunciators.
+    static let trailing: CGFloat = 14
+
+    /// Every screen but NOW: the clock and the title. On NOW, where the pane
+    /// already shows both, only the screen's name.
+    let showsClock: Bool
+    let now: String
+    let total: String
+    /// Whether "NOW PLAYING:" prefixes the title.
+    let hasTrack: Bool
+    let showsTitle: Bool
+    let title: String
+
+    @Environment(\.carbon) private var theme
 
     var body: some View {
-        HStack(spacing: 12) {
-            // Elapsed over total, as one reading. They used to flank the
-            // progress bar; with the bar gone they'd read as two loose numbers,
-            // so the slash holds them together.
-            //
-            // First on the rail, so the clock is anchored to the left edge and
-            // stays put while the title beside it changes length or yields to
-            // a notice.
-            if showMini {
-                OLEDTimeReading(now: model.displayedCurrentTime.asClockPadded,
-                                total: model.playbackDuration.asClockPadded)
-            } else {
-                // The NOW screen's own name, in the corner where every other
-                // view keeps its clock.
-                Text("NOW PLAYING")
-                    .font(CarbonFont.mono(9, weight: .bold))
-                    .tracking(1.08)
-                    .foregroundStyle(oledFGo(0.4))
-                    .fixedSize()
-            }
+        HStack(spacing: Self.clockGap) {
+            lead
 
-            if showTitle {
-                HStack(spacing: 6) {
-                    // Only when something is loaded: the title falls back to
-                    // the selected track, which isn't playing.
-                    if model.nowPlayingTrack != nil {
-                        Text("NOW PLAYING:")
-                            .tracking(1.08)
-                            .foregroundStyle(oledFGo(0.4))
-                            .fixedSize()
-                    }
-                    Text(trackTitle)
+            if showsClock && showsTitle {
+                HStack(spacing: Self.prefixGap) {
+                    if hasTrack { prefix }
+                    Text(title)
                         .tracking(1.08)
                         .foregroundStyle(theme.orange)
                         .shadow(color: theme.orange.opacity(0.4), radius: 6)
@@ -376,16 +487,58 @@ private struct RailLive: View {
                 // Takes whatever the clock doesn't: a long title is what
                 // the spare width on this rail is *for*.
                 .frame(maxWidth: .infinity, alignment: .leading)
-            } else if showMini {
+            } else if showsClock {
                 // Hold the rail open so the annunciators don't drift inward
                 // as a notice comes and goes.
                 Spacer(minLength: 0)
             }
         }
+        .background(alignment: .leading) { floorTemplate }
     }
 
-    private var trackTitle: String {
-        (model.nowPlayingTrack?.track.title ?? model.selectedTrack?.track.title ?? "—").uppercased()
+    /// Elapsed over total, as one reading. They used to flank the progress
+    /// bar; with the bar gone they'd read as two loose numbers, so the slash
+    /// holds them together.
+    ///
+    /// First on the rail, so the clock is anchored to the left edge and stays
+    /// put while the title beside it changes length or yields to a notice.
+    @ViewBuilder private var lead: some View {
+        if showsClock {
+            OLEDTimeReading(now: now, total: total)
+        } else {
+            // The NOW screen's own name, in the corner where every other
+            // view keeps its clock.
+            Text("NOW PLAYING")
+                .font(CarbonFont.mono(9, weight: .bold))
+                .tracking(1.08)
+                .foregroundStyle(oledFGo(0.4))
+                .fixedSize()
+        }
+    }
+
+    private var prefix: some View {
+        Text("NOW PLAYING:")
+            .tracking(1.08)
+            .foregroundStyle(oledFGo(0.4))
+            .fixedSize()
+    }
+
+    /// The row at its narrowest, the title cut to its "…", never drawn.
+    private var floorTemplate: some View {
+        HStack(spacing: Self.clockGap) {
+            lead
+            if showsClock {
+                HStack(spacing: Self.prefixGap) {
+                    if hasTrack { prefix }
+                    Text("…").tracking(1.08)
+                }
+                .font(CarbonFont.mono(9, weight: .bold))
+            }
+        }
+        .fixedSize()
+        .hidden()
+        .accessibilityHidden(true)
+        .background(WidthReader<RailLiveFloorKey>())
     }
 }
 
@@ -416,7 +569,42 @@ private struct OLEDTimeReading: View {
 /// Every pane shares one composition: a headline row (titles left / numeric
 /// readout right), an optional ticker just above the cell rail, and the 5-cell
 /// data rail pinned to the bottom.
+///
+/// A job screen's panes also pass `picture`, the Busy Signals record the
+/// ledger wants drawn there (`model.busyPicture(on:)`), and the pane then
+/// makes room for it (`BusyPictureBand`). With nil the body is the plain
+/// composition, untouched, so every idle pane stays pixel-identical.
 private struct OLEDPaneScaffold<Headline: View, Readout: View, Ticker: View, Cells: View>: View {
+    var picture: BusyJobRecord? = nil
+    @ViewBuilder var headline: () -> Headline
+    @ViewBuilder var readout: () -> Readout
+    @ViewBuilder var ticker: () -> Ticker
+    @ViewBuilder var cells: () -> Cells
+
+    var body: some View {
+        if let picture {
+            BusyPictureBand(headline: headline, readout: readout, ticker: ticker, cells: cells) {
+                // Keyed by the record, so a new job starts a fresh timeline,
+                // while DubPane's 1 s TimelineView re-running this body does
+                // not restart the one already going.
+                BusyPictureView(recordID: picture.id)
+                    .id(picture.id)
+            }
+        } else {
+            OLEDPaneStack(headline: headline, readout: readout, ticker: ticker, cells: cells)
+        }
+    }
+}
+
+/// The plain pane composition: headline row, spacer, ticker, cell rail. Shared
+/// by an idle pane and by a job pane whose picture was dropped, so the two can
+/// never drift apart.
+///
+/// When the content is taller than the glass (a short theme header, taller
+/// line boxes) the stack overflows as one piece, from the top: the cell rail
+/// is pushed down and clips at the glass edge, and nothing is ever drawn over
+/// it.
+private struct OLEDPaneStack<Headline: View, Readout: View, Ticker: View, Cells: View>: View {
     @ViewBuilder var headline: () -> Headline
     @ViewBuilder var readout: () -> Readout
     @ViewBuilder var ticker: () -> Ticker
@@ -432,8 +620,143 @@ private struct OLEDPaneScaffold<Headline: View, Readout: View, Ticker: View, Cel
             ticker()
             cells()
         }
-        .padding(.top, 6)
+        .padding(.top, OLEDPaneMetrics.topInset)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
+/// The pane's fixed geometry around its content.
+enum OLEDPaneMetrics {
+    /// Space between the screen rail and a pane's headline.
+    static let topInset: CGFloat = 6
+}
+
+private struct BusyPictureShownKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    /// True inside a job pane while a Busy Signals picture is actually laid
+    /// out beside its text: set by `BusyPictureBand` from the frame it drew,
+    /// never from whether a record exists, so a picture dropped for room hands
+    /// the pane its full width back. `DSPTicker` reads it to drop its
+    /// fixed-size meta, which with the prefix is wider than the room beside a
+    /// picture (spec §5).
+    var busyPictureShown: Bool {
+        get { self[BusyPictureShownKey.self] }
+        set { self[BusyPictureShownKey.self] = newValue }
+    }
+}
+
+/// A job pane while it hosts a Busy Signals picture, laid out the way
+/// `NowPlayingScaffold` lays out its band (spec §5).
+///
+/// - **The band** is the room above the cell rail: the pane's size less its
+///   top inset and the 48 pt rail. It is *measured*, never imposed on the
+///   content: the text column is the same stack as the plain pane's, so when
+///   it does not fit it overflows the way the plain pane does, rail pushed
+///   down and clipped at the glass, never overprinted.
+/// - **The picture** hangs off the cell rail's grid, at the text edge of the
+///   third cell, and stands from the title's cap height down to the rail, as
+///   the NOW matrix does. `BusyPictureLayout` sizes it, and drops it when the
+///   band is too short (a theme with a short header) or too narrow for the
+///   readout to keep its room; the pane is then exactly `OLEDPaneStack`.
+/// - **The headline and the ticker** stop at the rail's own gutter before the
+///   picture: an explicit `maxWidth`, not trailing padding, because the
+///   readout shares the headline's row and padding would take its width a
+///   second time. A part that cannot shrink that far (`DSPTicker`'s
+///   fixed-size prefix in a window dragged below its minimum) is cut at the
+///   gutter rather than drawn under the picture.
+/// - **The readout** keeps its place at the right, bottom-aligned with the
+///   headline.
+///
+/// Internal rather than private so the snapshot tests can render it with
+/// fixture content, without a view model.
+struct BusyPictureBand<Headline: View, Readout: View, Ticker: View, Cells: View, Picture: View>: View {
+    @ViewBuilder var headline: () -> Headline
+    @ViewBuilder var readout: () -> Readout
+    @ViewBuilder var ticker: () -> Ticker
+    @ViewBuilder var cells: () -> Cells
+    @ViewBuilder var picture: () -> Picture
+
+    /// The cell whose text the picture starts at.
+    static var pictureColumn: Int { 2 }
+
+    /// The band above the cell rail in a pane this size.
+    static func bandSize(inPane paneSize: CGSize) -> CGSize {
+        CGSize(width: paneSize.width,
+               height: max(paneSize.height - OLEDPaneMetrics.topInset - OLEDCells.footprint, 0))
+    }
+
+    /// Where the picture goes in a band this size, or nil when it is dropped.
+    static func pictureFrame(in bandSize: CGSize) -> CGRect? {
+        BusyPictureLayout.frame(bandSize: bandSize,
+                                leading: OLEDCells.textLeading(ofColumn: pictureColumn, in: bandSize.width),
+                                topInset: NPTitles.capTopInset())
+    }
+
+    /// How wide the headline and the ticker may run beside a picture at
+    /// `frame`: up to the rail's gutter before it, as a cell's text does.
+    static func textWidth(beside frame: CGRect) -> CGFloat {
+        max(frame.minX - OLEDCells.cellPadding * 2, 0)
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            Group {
+                if let frame = Self.pictureFrame(in: Self.bandSize(inPane: geo.size)) {
+                    withPicture(at: frame)
+                } else {
+                    OLEDPaneStack(headline: headline, readout: readout, ticker: ticker, cells: cells)
+                }
+            }
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
+        }
+    }
+
+    private func withPicture(at frame: CGRect) -> some View {
+        let textWidth = Self.textWidth(beside: frame)
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .bottom, spacing: 0) {
+                headline()
+                    .frame(maxWidth: textWidth, alignment: .leading)
+                    .modifier(GutterCut(width: textWidth))
+                Spacer(minLength: 0)
+                readout()
+            }
+            Spacer(minLength: 8)
+            ticker()
+                .frame(maxWidth: textWidth, alignment: .leading)
+                .modifier(GutterCut(width: textWidth))
+            cells()
+        }
+        // The band's origin is the stack's: the picture rides with the text,
+        // so an overflowing stack moves both and the rail stays clear.
+        .overlay(alignment: .topLeading) {
+            picture()
+                .frame(width: frame.width, height: frame.height)
+                .offset(x: frame.minX, y: frame.minY)
+        }
+        .environment(\.busyPictureShown, true)
+        .padding(.top, OLEDPaneMetrics.topInset)
+    }
+}
+
+/// Cuts a text part off at the gutter before the picture. A frame's
+/// `maxWidth` cannot stop a child that refuses to shrink (it takes the
+/// child's width instead), so the cut is a mask of the exact width, with
+/// slack above, below and to the left, so ascenders and glow (DEV's glyph
+/// starts at x = 0) are left alone; only the gutter edge cuts.
+private struct GutterCut: ViewModifier {
+    let width: CGFloat
+
+    func body(content: Content) -> some View {
+        content.mask(alignment: .leading) {
+            Rectangle()
+                .frame(width: width + 12)
+                .padding(.leading, -12)
+                .padding(.vertical, -12)
+        }
     }
 }
 
@@ -717,6 +1040,9 @@ private struct OLEDCells: View {
     /// Column count and rail height are the panel's geometry, not the content's.
     static let columns = 5
     private static let railHeight: CGFloat = 42
+    /// How much of a pane's height the rail takes: the rail itself plus the
+    /// 6 pt gap above it, which carries the progress line.
+    static let footprint: CGFloat = railHeight + 6
     /// Space between a divider and the text on either side of it.
     static let cellPadding: CGFloat = 10
     private static let dividerWidth: CGFloat = 1
@@ -745,7 +1071,7 @@ private struct OLEDCells: View {
             }
         }
         .frame(height: Self.railHeight, alignment: .top)
-        .padding(.top, 6)
+        .padding(.top, Self.footprint - Self.railHeight)
         .overlay(OLEDProgressLine(clock: model.playbackClock), alignment: .top)
     }
 
@@ -812,6 +1138,9 @@ private struct DSPTicker: View {
     let path: AttributedString
     var meta: String? = nil
     var leadingInset: CGFloat = 0
+    /// The meta steps aside while a Busy Signals picture stands beside the
+    /// ticker, and comes back as soon as it leaves (spec §5).
+    @Environment(\.busyPictureShown) private var pictureShown
 
     var body: some View {
         HStack(spacing: 12) {
@@ -826,7 +1155,7 @@ private struct DSPTicker: View {
                 .lineLimit(1)
                 .truncationMode(.head)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            if let meta {
+            if let meta, !pictureShown {
                 Text(meta)
                     .font(CarbonFont.mono(9, weight: .semibold))
                     .tracking(1.7)
@@ -1230,7 +1559,7 @@ private struct ConversionPane: View {
     // what's in scope, with no progress bar of its own to keep in sync.
 
     private var runningBody: some View {
-        OLEDPaneScaffold {
+        OLEDPaneScaffold(picture: model.busyPicture(on: .conversion)) {
             NPTitles(title: runningTitle, sub: runningSub, titleSize: 40)
         } readout: {
             VStack(alignment: .trailing, spacing: 6) {
@@ -1267,7 +1596,8 @@ private struct ConversionPane: View {
     }
 
     private var previewBody: some View {
-        OLEDPaneScaffold {
+        // A finished convert's picture stays here until it is seen and left.
+        OLEDPaneScaffold(picture: model.busyPicture(on: .conversion)) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .bottom, spacing: 14) {
                     formatBlock(sourceFormatPrimary, dim: true)
@@ -1293,6 +1623,8 @@ private struct ConversionPane: View {
             }
             .fixedSize()
         } ticker: {
+            // The meta steps aside by itself while a picture is laid out
+            // beside it (`busyPictureShown`).
             DSPTicker(prefix: tickerPrefix, path: tickerPath, meta: tickerMeta)
         } cells: {
             OLEDCells(cells)
@@ -1642,7 +1974,7 @@ private struct ScanPane: View {
     @Environment(\.carbon) private var theme
 
     var body: some View {
-        OLEDPaneScaffold {
+        OLEDPaneScaffold(picture: model.busyPicture(on: .scan)) {
             NPTitles(title: headline, sub: subtitle)
         } readout: {
             VStack(alignment: .trailing, spacing: 6) {
@@ -1845,7 +2177,7 @@ private struct DubPane: View {
     // is what decides whether you press RIP.
 
     private func insertedBody(_ cd: AudioCDInfo) -> some View {
-        OLEDPaneScaffold {
+        OLEDPaneScaffold(picture: model.busyPicture(on: .dub)) {
             NPTitles(title: discTitle(cd), sub: discSubtitle(cd))
         } readout: {
             VStack(alignment: .trailing, spacing: 6) {
@@ -1881,7 +2213,7 @@ private struct DubPane: View {
     }
 
     private func downloadingBody(_ stream: StreamSource) -> some View {
-        OLEDPaneScaffold {
+        OLEDPaneScaffold(picture: model.busyPicture(on: .dub)) {
             NPTitles(title: "DOWNLOAD",
                      sub: stream.channel.isEmpty ? stream.title : "\(stream.channel) · \(stream.title)")
         } readout: {
@@ -1919,7 +2251,7 @@ private struct DubPane: View {
     // MARK: - Ripping
 
     private var rippingBody: some View {
-        OLEDPaneScaffold {
+        OLEDPaneScaffold(picture: model.busyPicture(on: .dub)) {
             NPTitles(title: "CD-RIP", sub: rippingSubtitle)
         } readout: {
             VStack(alignment: .trailing, spacing: 6) {
@@ -1954,13 +2286,13 @@ private struct DubPane: View {
     // needed: the number that tells you whether it is in good shape.
 
     private func secureReadingBody(_ secure: SecureDiscRip.Progress) -> some View {
-        OLEDPaneScaffold {
+        OLEDPaneScaffold(picture: model.busyPicture(on: .dub)) {
             NPTitles(title: "SECURE READ", sub: rippingSubtitle)
         } readout: {
             VStack(alignment: .trailing, spacing: 6) {
                 NPClock(now: String(format: "%02d", secure.trackOrdinal),
                         tot: "/ \(String(format: "%02d", secure.trackCount))")
-                ScanBar(style: .orange(secureOverall(secure))).frame(width: 150)
+                ScanBar(style: .orange(BusySecureRead(secure).overall)).frame(width: 150)
             }
             .fixedSize()
         } ticker: {
@@ -2002,22 +2334,8 @@ private struct DubPane: View {
         }
     }
 
-    /// The bar across the disc. The two passes take about the same time, so
-    /// each is half a track; re-reading has no predictable length, so it gets
-    /// the last sliver rather than a share the bar would then sit on.
-    private func secureOverall(_ secure: SecureDiscRip.Progress) -> Double {
-        let within: Double
-        switch secure.track.phase {
-        case .pass1: within = secure.track.fraction * 0.48
-        case .pass2: within = 0.48 + secure.track.fraction * 0.48
-        case .retry: within = 0.96 + secure.track.fraction * 0.04
-        }
-        let done = Double(secure.trackOrdinal - 1) + within
-        return min(max(done / Double(max(secure.trackCount, 1)), 0), 1)
-    }
-
     private var emptyBody: some View {
-        OLEDPaneScaffold {
+        OLEDPaneScaffold(picture: model.busyPicture(on: .dub)) {
             NPTitles(title: "NOTHING TO DUB", sub: "Insert an audio CD, or download a stream for offline listening")
         } readout: {
             EmptyView()
@@ -2166,7 +2484,7 @@ private struct DevicesPane: View {
     // MARK: Sync readout (SYNC → DEVICE / SYNC COMPLETE)
 
     private func syncBody(_ sync: DeviceSyncProgressSnapshot) -> some View {
-        OLEDPaneScaffold {
+        OLEDPaneScaffold(picture: model.busyPicture(on: .devices)) {
             HStack(alignment: .bottom, spacing: 18) {
                 DevGlyph()
                 NPTitles(
@@ -2234,7 +2552,7 @@ private struct DevicesPane: View {
     // MARK: Connected device
 
     private func deviceBody(profile: ExternalDeviceProfile, device: MountedDevice) -> some View {
-        OLEDPaneScaffold {
+        OLEDPaneScaffold(picture: model.busyPicture(on: .devices)) {
             HStack(alignment: .bottom, spacing: 18) {
                 DevGlyph()
                 NPTitles(title: device.name.uppercased(),
@@ -2253,7 +2571,7 @@ private struct DevicesPane: View {
     // MARK: Empty state (nothing connected / configured)
 
     private var emptyBody: some View {
-        OLEDPaneScaffold {
+        OLEDPaneScaffold(picture: model.busyPicture(on: .devices)) {
             HStack(alignment: .bottom, spacing: 18) {
                 DevGlyph().opacity(0.4)
                 NPTitles(title: "NO DEVICE", sub: emptySub, titleSize: 40)

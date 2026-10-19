@@ -571,6 +571,13 @@ public extension CarbonTheme {
         ] {
             copy[keyPath: lamp] = nil
         }
+        // Meter High is a pin of the same kind: `meterHot` reads
+        // `meterHotOverride ?? orange`, so collapsing `orange` alone leaves a
+        // pinned hue standing. Llama '97 pins it red under monochrome, which
+        // would put a red hot ink on a green single-phosphor panel. The LED
+        // matrix never noticed because it branches on `oledMonochrome` before
+        // reading `meterHot`; Busy Signals reads it through its ink palette.
+        copy.meterHotOverride = nil
         return copy
     }
 }

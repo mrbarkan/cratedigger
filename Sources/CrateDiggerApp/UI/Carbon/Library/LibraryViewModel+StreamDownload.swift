@@ -70,6 +70,7 @@ extension LibraryViewModel {
         oledView = .dub
         conversionProgress = ConversionProgressSnapshot(jobsCompleted: 0, jobsTotal: 100,
                                                         currentFilename: stream.title, isRunning: true)
+        streamDownloadBusyJob = beginBusyJob(.download, on: .dub, labels: .download(channel: stream.channel))
         let ffmpeg = ExternalToolLocator().resolveOptional(.ffmpeg)?.url
         do {
             streamDownloadHandle = try StreamDownloader(ytdlpURL: ytdlp).download(
@@ -91,6 +92,9 @@ extension LibraryViewModel {
                     Task { @MainActor in self?.streamDownloadEnded(stream, plan: plan, result: result) }
                 })
         } catch {
+            // yt-dlp never started, so this path never reaches
+            // `streamDownloadEnded`: end the job here.
+            endStreamDownloadBusyJob(.failed)
             endStreamDownloadUI()
             appAlert = .error(title: "Download Failed", message: error.localizedDescription)
         }
@@ -104,6 +108,9 @@ extension LibraryViewModel {
 
     private func streamDownloadEnded(_ stream: StreamSource, plan: StreamDownloadPlan,
                                      result: Result<URL, StreamDownloadError>) {
+        var succeeded = false
+        if case .success = result { succeeded = true }
+        endStreamDownloadBusyJob(.download(succeeded: succeeded, cancelled: streamDownloadCancelled))
         endStreamDownloadUI()
         switch result {
         case .success(let fileURL):
@@ -128,11 +135,18 @@ extension LibraryViewModel {
         }
     }
 
+    /// Ends the download's Busy Signals job, once.
+    private func endStreamDownloadBusyJob(_ outcome: BusyOutcome) {
+        endBusyJob(streamDownloadBusyJob, outcome)
+        streamDownloadBusyJob = nil
+    }
+
     private func endStreamDownloadUI() {
         streamDownloadHandle = nil
         downloadingStreamID = nil
         conversionProgress = .idle
-        if oledView == .dub { oledView = .nowPlaying }
+        // No jump to NOW: DUB stays put so the finished frame can be seen
+        // (Busy Signals spec §5).
     }
 
     /// Link the file to its stream and fetch the cover. Nothing is scanned and

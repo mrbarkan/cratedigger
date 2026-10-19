@@ -9,6 +9,7 @@ the skeumorphic tool we all ~don't~ need.
 
 ![Platform: macOS 13+](https://img.shields.io/badge/platform-macOS%2013%2B-blue)
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
+[![Sponsor](https://img.shields.io/badge/sponsor-%E2%99%A5-ea4aaa)](https://github.com/sponsors/mrbarkan)
 
 <p align="center">
   <img src="website/assets/screenshot_dark.jpg" alt="CrateDigger playing an album: Sources, Browser and Inspector panes under the OLED display, transport controls and VU meters below" width="820">
@@ -84,13 +85,9 @@ cards — with per-device profiles and one shortcut (⌘⇧T).
 
 Grab the latest signed `.dmg` from the
 [Releases](https://github.com/mrbarkan/cratedigger/releases) page and drag
-CrateDigger to Applications. Now at the 2.2.4 release.
+CrateDigger to Applications. Now at the 2.3.1 release.
 
 Or build it yourself (below).
-
-If CrateDigger is useful to you, you can chip in on
-[Patreon](https://www.patreon.com/mrbarkan) or
-[GitHub Sponsors](https://github.com/sponsors/mrbarkan). 💛
 
 ## Building from source
 
@@ -263,6 +260,10 @@ disabled). To enable Last.fm in your own build:
 - Use `Review album folders` and confirm the review sheet edits destinations correctly.
 - Convert files with duplicate basenames and verify CrateDigger renames outputs instead of overwriting them.
 - Verify the bottom status area and readiness text clearly explain whether playback, metadata probing, and conversion are available.
+
+## Support
+
+CrateDigger is a side project, built on my own time to be useful, safe with your files, and nice to look at. If it's useful to you, you can chip in on [GitHub Sponsors](https://github.com/sponsors/mrbarkan) or [Patreon](https://www.patreon.com/mrbarkan). 💛
 
 ## License
 

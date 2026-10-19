@@ -83,6 +83,18 @@ public enum AutoEQParser {
         return AutoEQProfile(preampDB: preamp, filters: filters, unsupportedCount: unsupported)
     }
 
+    /// The preset name a downloaded config's file name suggests. Both sources
+    /// name the file after the headphone and add a suffix: AutoEQ writes
+    /// `<Headphone> ParametricEQ.txt`, squig.link's Export writes
+    /// `<Headphone> Filters.txt`. The headphone is the best name we get.
+    public static func suggestedName(forFileNamed fileName: String) -> String {
+        var name = (fileName as NSString).deletingPathExtension
+        for suffix in ["ParametricEQ", "Filters"] where name.hasSuffix(suffix) {
+            name.removeLast(suffix.count)
+        }
+        return name.trimmingCharacters(in: CharacterSet(charactersIn: " -_"))
+    }
+
     private static func kind(for token: String) -> AutoEQFilter.Kind? {
         switch token.uppercased() {
         case "PK", "PEQ", "MODAL":  return .peaking

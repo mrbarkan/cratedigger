@@ -9,6 +9,11 @@ public actor RemoteArtworkService {
         case noResults
         case networkFailure(URLError)
         case invalidImage
+        /// The server answered, but with an error rather than a result. Kept
+        /// apart from "nothing found": a 502 from the archive is not a release
+        /// with no scans, and a 503 from MusicBrainz is not a search with no
+        /// matches.
+        case serviceUnavailable(service: String, status: Int)
 
         public var errorDescription: String? {
             switch self {
@@ -20,11 +25,17 @@ public actor RemoteArtworkService {
                 return "Network error: \(err.localizedDescription)"
             case .invalidImage:
                 return "Couldn't read the image returned by the server."
+            case .serviceUnavailable(let service, let status):
+                return status == 503
+                    ? "\(service) is busy right now. Try again in a moment."
+                    : "\(service) didn't answer properly (error \(status)). Try again in a moment."
             }
         }
     }
 
-    private static let userAgent = "CrateDigger/1.0 (https://cratedigger.mrbarkan.com)"
+    /// Versioned and with a contact URL, which is what MusicBrainz and Discogs
+    /// both ask for. It used to say 1.0 whatever the build.
+    private static var userAgent: String { ReleaseProviderSupport.userAgent }
     private static let preferredDimension = 1200
     /// Per-request ceiling for MusicBrainz search, which is far slower than the
     /// other endpoints this service talks to.
@@ -56,8 +67,46 @@ public actor RemoteArtworkService {
     /// Image URL → true pixel size, from `probeDimensions`. Same reasoning as
     /// the list cache: reopening the sheet shouldn't re-probe every image.
     private var dimensionsByURL: [URL: ArtworkDimensions] = [:]
+    /// Image URL → when its probe last failed. A row scrolling back into view
+    /// asks again; this keeps a dead URL from being re-requested on every
+    /// scroll, while still letting a later look succeed.
+    private var dimensionFailures: [URL: Date] = [:]
+    static let dimensionRetryInterval: TimeInterval = 60
 
-    public init(session: URLSession? = nil, discogsToken: String? = nil) {
+    /// Release MBID → what MusicBrainz says the Cover Art Archive holds for it.
+    /// Filled a release group at a time, so most searches cost one request.
+    private var coverArtByRelease: [String: CoverArtSummary] = [:]
+    /// Release groups already browsed in full, so a second search over the
+    /// same album doesn't ask again.
+    private var browsedReleaseGroups: Set<String> = []
+
+    /// One Cover Art Archive index request per release at a time. GET ARTWORK
+    /// pressed twice, or BACK and the same release again while the first is
+    /// still on its way, used to send the slow archive the same request twice.
+    private var caaInFlight: [String: Task<[RemoteArtworkImage], Error>] = [:]
+
+    /// MusicBrainz asks for one request a second and answers 503 past it.
+    /// Every MusicBrainz call this service makes (search, cover-art browse,
+    /// the Discogs relation) waits for its slot here.
+    private let musicBrainzInterval: TimeInterval
+    private var nextMusicBrainzSlot = Date.distantPast
+
+    /// Header probes go to archive.org through the Cover Art Archive's
+    /// redirects. A full release used to fire one per image all at once, and a
+    /// result list one per row; a handful at a time is as fast in practice and
+    /// doesn't trip the archive's limits.
+    static let maxConcurrentProbes = 4
+    private var probesInFlight = 0
+    private var probeWaiters: [CheckedContinuation<Void, Never>] = []
+
+    /// The pause before retrying a server error (MusicBrainz's 503, the
+    /// archive's 502). Tests set it to zero.
+    private let retryDelay: TimeInterval
+
+    public init(session: URLSession? = nil, discogsToken: String? = nil,
+                musicBrainzInterval: TimeInterval = 1.05, retryDelay: TimeInterval = 1.5) {
+        self.musicBrainzInterval = musicBrainzInterval
+        self.retryDelay = retryDelay
         self.discogsToken = discogsToken.flatMap { $0.isEmpty ? nil : $0 }
         if let session {
             self.session = session
@@ -430,18 +479,28 @@ public actor RemoteArtworkService {
     }
 }
 
-public struct MBReleaseCandidate: Identifiable, Codable, Sendable {
+public struct MBReleaseCandidate: Identifiable, Codable, Sendable, Equatable {
     public let id: String
     public let title: String
     public let date: String?
     public let country: String?
     public let barcode: String?
+    /// The first medium's format, which is what the MEDIA filter used to read.
     public let format: String?
     public let status: String?
     public let disambiguation: String?
     public let trackCount: Int?
-    
-    public init(id: String, title: String, date: String?, country: String?, barcode: String?, format: String?, status: String?, disambiguation: String?, trackCount: Int?) {
+    /// The credited artist as MusicBrainz prints it ("Simon & Garfunkel").
+    public let artist: String?
+    /// The release group this pressing belongs to. One browse of the group
+    /// returns the Cover Art Archive count for every pressing in it.
+    public let releaseGroupID: String?
+    /// Every medium's format, in order: a 2-LP set is two "12\" Vinyl".
+    public let formats: [String]
+
+    public init(id: String, title: String, date: String?, country: String?, barcode: String?,
+                format: String?, status: String?, disambiguation: String?, trackCount: Int?,
+                artist: String? = nil, releaseGroupID: String? = nil, formats: [String]? = nil) {
         self.id = id
         self.title = title
         self.date = date
@@ -451,7 +510,54 @@ public struct MBReleaseCandidate: Identifiable, Codable, Sendable {
         self.status = status
         self.disambiguation = disambiguation
         self.trackCount = trackCount
+        self.artist = artist
+        self.releaseGroupID = releaseGroupID
+        self.formats = formats ?? (format.map { [$0] } ?? [])
     }
+
+    /// Leading year of the release date ("1997-06-16" → 1997).
+    public var year: Int? {
+        guard let date, date.count >= 4 else { return nil }
+        return Int(date.prefix(4))
+    }
+
+    /// The media as a collector reads them: "CD", "2×12\" Vinyl", "CD + DVD".
+    /// Nil when MusicBrainz lists no format at all.
+    public var mediaSummary: String? {
+        var order: [String] = []
+        var counts: [String: Int] = [:]
+        for format in formats {
+            if counts[format] == nil { order.append(format) }
+            counts[format, default: 0] += 1
+        }
+        guard !order.isEmpty else { return nil }
+        return order.map { format in
+            let n = counts[format] ?? 1
+            return n > 1 ? "\(n)×\(format)" : format
+        }.joined(separator: " + ")
+    }
+}
+
+/// What MusicBrainz knows about a release's Cover Art Archive holding. It comes
+/// from MusicBrainz's own database in the same response as the release, so
+/// counting a whole result list costs one request per release group, not one
+/// trip through archive.org per row.
+public struct CoverArtSummary: Equatable, Sendable {
+    public let count: Int
+    public let hasFront: Bool
+    public let hasBack: Bool
+    /// Withdrawn at the rights holder's request: listed, but not served.
+    public let darkened: Bool
+
+    public init(count: Int, hasFront: Bool, hasBack: Bool, darkened: Bool = false) {
+        self.count = count
+        self.hasFront = hasFront
+        self.hasBack = hasBack
+        self.darkened = darkened
+    }
+
+    /// What GET ARTWORK will actually be able to show.
+    public var available: Int { darkened ? 0 : count }
 }
 
 /// Where a candidate image came from. The Cover Art Archive types its images
@@ -485,9 +591,13 @@ public struct RemoteArtworkImage: Identifiable, Codable, Sendable {
     public let front: Bool
     public let back: Bool
     public let source: RemoteArtworkSource
+    /// A large derivative for the full-size preview, when the source offers
+    /// one. Nil means the original is the preview (Discogs, local files).
+    public let previewURL: URL?
 
     public init(imageURL: URL, thumbnailURL: URL, types: [String], comment: String,
-                front: Bool, back: Bool, source: RemoteArtworkSource = .coverArtArchive) {
+                front: Bool, back: Bool, source: RemoteArtworkSource = .coverArtArchive,
+                previewURL: URL? = nil) {
         self.imageURL = imageURL
         self.thumbnailURL = thumbnailURL
         self.types = types
@@ -495,7 +605,11 @@ public struct RemoteArtworkImage: Identifiable, Codable, Sendable {
         self.front = front
         self.back = back
         self.source = source
+        self.previewURL = previewURL
     }
+
+    /// What the preview overlay should load: never more than it can show.
+    public var bestPreviewURL: URL { previewURL ?? imageURL }
 }
 
 public extension RemoteArtworkService {
@@ -546,6 +660,10 @@ public extension RemoteArtworkService {
             do {
                 let releases = try await performMusicBrainzQuery(term)
                 if !releases.isEmpty { return releases }
+            } catch FetchError.serviceUnavailable(let service, 503) {
+                // Busy is busy for every rung: asking a looser query only
+                // spends more of the rate limit before saying so.
+                throw FetchError.serviceUnavailable(service: service, status: 503)
             } catch {
                 lastFailure = error
             }
@@ -561,113 +679,233 @@ public extension RemoteArtworkService {
             URLQueryItem(name: "fmt", value: "json"),
             URLQueryItem(name: "limit", value: "30")
         ]
-        
         guard let url = components.url else { return [] }
-        var request = URLRequest(url: url)
-        request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
-        request.cachePolicy = .returnCacheDataElseLoad
-        // MusicBrainz's search server is genuinely slow — a plain artist+album
+
+        // MusicBrainz's search server is genuinely slow: a plain artist+album
         // query measured over 5s on a good connection, and it goes well past
         // the session's 12s default under load. A cover search is worth waiting
         // for; timing it out at 12s reported "the request timed out" for a
         // query that was simply still running.
-        request.timeoutInterval = Self.musicBrainzTimeout
-
         let data: Data
-        let response: URLResponse
         do {
-            (data, response) = try await session.data(for: request)
-        } catch let urlError as URLError {
-            throw FetchError.networkFailure(urlError)
-        }
-
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            data = try await musicBrainzData(from: url, cachePolicy: .returnCacheDataElseLoad)
+        } catch FetchError.serviceUnavailable(_, let status) where status == 400 {
+            // A query MusicBrainz can't parse (stray Lucene syntax in a tag)
+            // finds nothing; the next rung may still find something.
             return []
         }
 
         struct MBSearchResponse: Decodable {
             let releases: [MBRelease]?
         }
-        struct MBRelease: Decodable {
-            let id: String
-            let title: String
-            let date: String?
-            let country: String?
-            let barcode: String?
-            let status: String?
-            let disambiguation: String?
-            let trackCount: Int?
-            let media: [MBMedia]?
-            
-            enum CodingKeys: String, CodingKey {
-                case id, title, date, country, barcode, status, disambiguation
-                case trackCount = "track-count"
-                case media
+        let decoded = try JSONDecoder().decode(MBSearchResponse.self, from: data)
+        return (decoded.releases ?? []).map(\.candidate)
+    }
+
+    // MARK: MusicBrainz plumbing
+
+    /// Waits for this request's turn. The slot is claimed *before* sleeping:
+    /// an actor is re-entrant across the sleep, so a throttle that only
+    /// records the time afterwards lets every caller that arrived during the
+    /// wait read the same old timestamp and fire together.
+    private func waitForMusicBrainzSlot() async throws {
+        let now = Date()
+        let slot = max(now, nextMusicBrainzSlot)
+        nextMusicBrainzSlot = slot.addingTimeInterval(musicBrainzInterval)
+        let wait = slot.timeIntervalSince(now)
+        if wait > 0 {
+            try await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
+        }
+    }
+
+    /// One MusicBrainz GET: throttled, identified, and honest about failure.
+    /// A 503 is MusicBrainz's rate limiter or a busy server, which on
+    /// 2026-10-12 came and went in bursts of several seconds, so it gets two
+    /// retries with a growing pause; any other non-2xx answer throws rather
+    /// than passing for an empty result.
+    func musicBrainzData(from url: URL,
+                         cachePolicy: URLRequest.CachePolicy = .useProtocolCachePolicy) async throws -> Data {
+        var lastStatus = 0
+        for attempt in 0..<3 {
+            try await waitForMusicBrainzSlot()
+            var request = URLRequest(url: url)
+            request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
+            request.setValue("application/json", forHTTPHeaderField: "Accept")
+            request.cachePolicy = cachePolicy
+            request.timeoutInterval = Self.musicBrainzTimeout
+
+            let data: Data
+            let response: URLResponse
+            do {
+                (data, response) = try await session.data(for: request)
+            } catch let urlError as URLError {
+                throw FetchError.networkFailure(urlError)
+            }
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            if (200..<300).contains(status) { return data }
+            lastStatus = status
+            guard status == 503, attempt < 2 else { break }
+            let pause = retryDelay * Double(attempt + 1)
+            nextMusicBrainzSlot = max(nextMusicBrainzSlot, Date().addingTimeInterval(pause))
+        }
+        throw FetchError.serviceUnavailable(service: "MusicBrainz", status: lastStatus)
+    }
+
+    // MARK: Cover Art Archive counts
+
+    /// The Cover Art Archive holding for each of `releases`, delivered a batch
+    /// at a time as MusicBrainz answers: one browse per release group (in the
+    /// order the groups first appear, so the top of the list fills first),
+    /// then one lookup for any release the browse didn't cover. A value of
+    /// `nil` means "couldn't be counted", never "has no images".
+    ///
+    /// This replaced reading each release's full image index off archive.org
+    /// just to count it. That index lives behind a redirect to archive.org,
+    /// which on 2026-10-12 answered 502 or timed out for most of a 12-row
+    /// list, and every failure read as "NO IMAGES" or as nothing at all.
+    nonisolated func coverArtSummaries(
+        for releases: [MBReleaseCandidate]
+    ) -> AsyncStream<[String: CoverArtSummary?]> {
+        AsyncStream { continuation in
+            let task = Task {
+                for batch in CoverArtCountPlan.batches(for: releases) {
+                    if Task.isCancelled { break }
+                    continuation.yield(await self.summaries(for: batch))
+                }
+                continuation.finish()
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
+    private func summaries(for batch: CoverArtCountPlan.Batch) async -> [String: CoverArtSummary?] {
+        var result: [String: CoverArtSummary?] = [:]
+        switch batch {
+        case let .releaseGroup(groupID, releaseIDs):
+            let found = try? await coverArtSummaries(releaseGroupID: groupID, wanting: Set(releaseIDs))
+            for id in releaseIDs { result[id] = found?[id] }
+        case let .release(id):
+            result[id] = try? await coverArtSummary(releaseMBID: id)
+        }
+        return result
+    }
+
+    /// Browse every pressing in a release group, a hundred at a time, until
+    /// the ones asked for have all turned up. Each page costs a MusicBrainz
+    /// second, so a group with hundreds of pressings stops at three pages.
+    func coverArtSummaries(releaseGroupID: String,
+                           wanting wanted: Set<String>) async throws -> [String: CoverArtSummary] {
+        var missing = wanted.filter { coverArtByRelease[$0] == nil }
+        if !missing.isEmpty, !browsedReleaseGroups.contains(releaseGroupID) {
+            var offset = 0
+            for _ in 0..<Self.maxBrowsePages {
+                var components = URLComponents(string: "https://musicbrainz.org/ws/2/release")!
+                components.queryItems = [
+                    URLQueryItem(name: "release-group", value: releaseGroupID),
+                    URLQueryItem(name: "fmt", value: "json"),
+                    URLQueryItem(name: "limit", value: "100"),
+                    URLQueryItem(name: "offset", value: String(offset))
+                ]
+                guard let url = components.url else { break }
+                let page = Self.parseCoverArtBrowse(try await musicBrainzData(from: url))
+                coverArtByRelease.merge(page.summaries) { _, new in new }
+                missing.subtract(page.summaries.keys)
+                offset += page.returned
+                if page.returned == 0 || offset >= page.total {
+                    browsedReleaseGroups.insert(releaseGroupID)
+                    break
+                }
+                if missing.isEmpty { break }
             }
         }
-        struct MBMedia: Decodable {
-            let format: String?
-        }
-
-        let decoded = try JSONDecoder().decode(MBSearchResponse.self, from: data)
-        guard let releases = decoded.releases else { return [] }
-
-        return releases.map { rel in
-            let format = rel.media?.first?.format
-            return MBReleaseCandidate(
-                id: rel.id,
-                title: rel.title,
-                date: rel.date,
-                country: rel.country,
-                barcode: rel.barcode,
-                format: format,
-                status: rel.status,
-                disambiguation: rel.disambiguation == "" ? nil : rel.disambiguation,
-                trackCount: rel.trackCount
-            )
-        }
+        var found: [String: CoverArtSummary] = [:]
+        for id in wanted { if let summary = coverArtByRelease[id] { found[id] = summary } }
+        return found
     }
 
-    /// Image count for the release list's "N IMAGES" badge; nil when the lookup
-    /// failed (network) so the UI can stay quiet rather than claim zero.
-    func coverArtImageCount(releaseMBID: String) async -> Int? {
-        (try? await fetchCoverArtArchiveImages(releaseMBID: releaseMBID))?.count
+    static let maxBrowsePages = 3
+
+    /// One release's holding, for a search hit with no release group.
+    func coverArtSummary(releaseMBID: String) async throws -> CoverArtSummary? {
+        if let cached = coverArtByRelease[releaseMBID] { return cached }
+        guard let url = URL(string: "https://musicbrainz.org/ws/2/release/\(releaseMBID)?fmt=json") else { return nil }
+        let data = try await musicBrainzData(from: url)
+        let summary = (try? JSONDecoder().decode(MBRelease.self, from: data))?.coverArt?.summary
+        if let summary { coverArtByRelease[releaseMBID] = summary }
+        return summary
     }
+
+    /// A MusicBrainz release browse, reduced to each release's Cover Art
+    /// Archive holding, how many releases this page carried and how many the
+    /// browse has in all.
+    static func parseCoverArtBrowse(_ data: Data) -> (summaries: [String: CoverArtSummary], returned: Int, total: Int) {
+        struct Browse: Decodable {
+            let releases: [MBRelease]?
+            let releaseCount: Int?
+            enum CodingKeys: String, CodingKey {
+                case releases
+                case releaseCount = "release-count"
+            }
+        }
+        guard let browse = try? JSONDecoder().decode(Browse.self, from: data) else { return ([:], 0, 0) }
+        let releases = browse.releases ?? []
+        var summaries: [String: CoverArtSummary] = [:]
+        for release in releases {
+            if let summary = release.coverArt?.summary { summaries[release.id] = summary }
+        }
+        return (summaries, releases.count, browse.releaseCount ?? releases.count)
+    }
+
+    // MARK: Cover Art Archive images
 
     func fetchCoverArtArchiveImages(releaseMBID: String) async throws -> [RemoteArtworkImage] {
         if let cached = caaImagesByRelease[releaseMBID] {
             return cached
         }
+        if let running = caaInFlight[releaseMBID] {
+            return try await running.value
+        }
+        let task = Task { try await self.loadCoverArtArchiveImages(releaseMBID: releaseMBID) }
+        caaInFlight[releaseMBID] = task
+        defer { caaInFlight[releaseMBID] = nil }
+        let images = try await task.value
+        caaImagesByRelease[releaseMBID] = images
+        return images
+    }
+
+    /// The archive's index for one release. It is served from archive.org
+    /// behind a redirect, and archive.org is slow (10 to 20 seconds when it
+    /// answers at all) and often answers 502 at once, so a fast server error
+    /// gets one retry, and any error that survives it throws: only a 404 means
+    /// the release has no images.
+    private func loadCoverArtArchiveImages(releaseMBID: String) async throws -> [RemoteArtworkImage] {
         guard let url = URL(string: "https://coverartarchive.org/release/\(releaseMBID)") else {
             return []
         }
-        
-        var request = URLRequest(url: url)
-        request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
-        request.cachePolicy = .returnCacheDataElseLoad
+        var lastStatus = 0
+        for attempt in 0..<2 {
+            var request = URLRequest(url: url)
+            request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
+            request.timeoutInterval = Self.musicBrainzTimeout
 
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await session.data(for: request)
-        } catch let urlError as URLError {
-            throw FetchError.networkFailure(urlError)
+            let data: Data
+            let response: URLResponse
+            do {
+                (data, response) = try await session.data(for: request)
+            } catch let urlError as URLError {
+                throw FetchError.networkFailure(urlError)
+            }
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            if status == 404 { return [] }
+            if (200..<300).contains(status) { return try Self.parseCoverArtArchiveIndex(data) }
+            lastStatus = status
+            guard (500..<600).contains(status), attempt == 0 else { break }
+            try await Task.sleep(nanoseconds: UInt64(retryDelay * 1_000_000_000))
         }
-        
-        guard let http = response as? HTTPURLResponse else {
-            return []
-        }
-        
-        if http.statusCode == 404 {
-            // A definitive "no images exist" — cacheable, unlike server errors.
-            caaImagesByRelease[releaseMBID] = []
-            return []
-        }
+        throw FetchError.serviceUnavailable(service: "The Cover Art Archive", status: lastStatus)
+    }
 
-        guard (200..<300).contains(http.statusCode) else {
-            return []
-        }
-        
+    static func parseCoverArtArchiveIndex(_ data: Data) throws -> [RemoteArtworkImage] {
         struct CAAEnvelope: Decodable {
             let images: [CAAImage]
         }
@@ -684,65 +922,221 @@ public extension RemoteArtworkService {
             let small: String?
             let size250: String?
             let size500: String?
+            let size1200: String?
 
             enum CodingKeys: String, CodingKey {
                 case large, small
                 case size250 = "250"
                 case size500 = "500"
+                case size1200 = "1200"
             }
         }
-        
+
         // Cover Art Archive hands back `http://` URLs; App Transport Security
         // blocks those, so the images would spin forever. Rewrite to https.
-        func https(_ string: String) -> URL? {
-            URL(string: string.hasPrefix("http://") ? "https://" + string.dropFirst(7) : string)
+        func https(_ string: String?) -> URL? {
+            guard let string else { return nil }
+            return URL(string: string.hasPrefix("http://") ? "https://" + string.dropFirst(7) : string)
         }
 
         let envelope = try JSONDecoder().decode(CAAEnvelope.self, from: data)
-        let images = envelope.images.compactMap { img -> RemoteArtworkImage? in
+        return envelope.images.compactMap { img -> RemoteArtworkImage? in
             guard let imageURL = https(img.image) else { return nil }
-            let thumbStr = img.thumbnails?.size250 ?? img.thumbnails?.size500 ?? img.thumbnails?.small ?? img.thumbnails?.large ?? img.image
-            guard let thumbURL = https(thumbStr) else { return nil }
-            
+            let thumbs = img.thumbnails
+            guard let thumbURL = https(thumbs?.size250 ?? thumbs?.small ?? thumbs?.size500 ?? thumbs?.large ?? img.image)
+            else { return nil }
+            // The full-size preview fills at most ~560pt; a 1200px derivative
+            // is sharp at that size on a Retina screen and a fraction of an
+            // original that can run to 5000px and several megabytes.
+            let previewURL = https(thumbs?.size1200 ?? thumbs?.large ?? thumbs?.size500)
+
             return RemoteArtworkImage(
                 imageURL: imageURL,
                 thumbnailURL: thumbURL,
                 types: img.types ?? [],
                 comment: img.comment ?? "",
                 front: img.front ?? false,
-                back: img.back ?? false
+                back: img.back ?? false,
+                previewURL: previewURL
             )
         }
-        caaImagesByRelease[releaseMBID] = images
-        return images
+    }
+
+    // MARK: Header probes
+
+    /// The front cover's true pixel size, read off the archive's `/front`
+    /// redirect. Ask only for a release MusicBrainz says has a front.
+    func frontCoverDimensions(releaseMBID: String) async -> ArtworkDimensions? {
+        guard let url = URL(string: "https://coverartarchive.org/release/\(releaseMBID)/front") else { return nil }
+        return await probeDimensions(of: url)
     }
 
     /// True pixel size of a remote image, read from its header alone.
     ///
     /// Cover Art Archive lists a "1200" thumbnail tier for every image it has
-    /// re-derived, *including* ones whose original is 600px — so the JSON can't
+    /// re-derived, *including* ones whose original is 600px, so the JSON can't
     /// be used as a resolution hint. Range-request the first 64 KB instead and
     /// let ImageIO parse the JPEG SOF / PNG IHDR marker, which lives up front.
     /// Returns nil if the server ignores the range or the header doesn't parse;
     /// callers just show no size rather than a wrong one.
+    ///
+    /// At most `maxConcurrentProbes` run at once. A failure is remembered for
+    /// a minute so a row scrolling in and out doesn't ask again each time; a
+    /// probe that was cancelled (the row scrolled away) is not a failure.
     func probeDimensions(of url: URL) async -> ArtworkDimensions? {
         if let cached = dimensionsByURL[url] { return cached }
+        if let failedAt = dimensionFailures[url],
+           Date().timeIntervalSince(failedAt) < Self.dimensionRetryInterval { return nil }
+
+        await acquireProbeSlot()
+        defer { releaseProbeSlot() }
+        if let cached = dimensionsByURL[url] { return cached }   // landed while queued
+        guard !Task.isCancelled else { return nil }
 
         var request = URLRequest(url: url)
         request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
         request.setValue("bytes=0-65535", forHTTPHeaderField: "Range")
-        guard let (data, _) = try? await session.data(for: request), !data.isEmpty else { return nil }
+        let result = try? await session.data(for: request)
+        if Task.isCancelled { return nil }
+        guard let (data, _) = result, !data.isEmpty,
+              let dimensions = Self.dimensions(ofImageHeader: data) else {
+            dimensionFailures[url] = Date()
+            return nil
+        }
+        dimensionsByURL[url] = dimensions
+        dimensionFailures[url] = nil
+        return dimensions
+    }
 
+    private static func dimensions(ofImageHeader data: Data) -> ArtworkDimensions? {
         let source = CGImageSourceCreateIncremental(nil)
         CGImageSourceUpdateData(source, data as CFData, false)
         guard let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
               let width = props[kCGImagePropertyPixelWidth] as? Int,
               let height = props[kCGImagePropertyPixelHeight] as? Int,
               width > 0, height > 0 else { return nil }
+        return ArtworkDimensions(width: width, height: height)
+    }
 
-        let dimensions = ArtworkDimensions(width: width, height: height)
-        dimensionsByURL[url] = dimensions
-        return dimensions
+    private func acquireProbeSlot() async {
+        if probesInFlight < Self.maxConcurrentProbes {
+            probesInFlight += 1
+            return
+        }
+        await withCheckedContinuation { probeWaiters.append($0) }
+    }
+
+    /// Hands the slot straight to the next waiter rather than freeing it, so a
+    /// newcomer can't overtake the queue.
+    private func releaseProbeSlot() {
+        if probeWaiters.isEmpty {
+            probesInFlight -= 1
+        } else {
+            probeWaiters.removeFirst().resume()
+        }
+    }
+}
+
+/// The order in which a result list's Cover Art Archive counts are asked for.
+public enum CoverArtCountPlan {
+    public enum Batch: Equatable, Sendable {
+        /// One browse answers for every listed pressing in the group.
+        case releaseGroup(id: String, releaseIDs: [String])
+        /// A release with no group to browse: one lookup.
+        case release(id: String)
+    }
+
+    /// Groups in the order they first appear in `releases`, so the rows at the
+    /// top of the list are counted first; ungrouped releases after them.
+    public static func batches(for releases: [MBReleaseCandidate]) -> [Batch] {
+        var groupOrder: [String] = []
+        var members: [String: [String]] = [:]
+        var loose: [String] = []
+        for release in releases {
+            guard let group = release.releaseGroupID, !group.isEmpty else {
+                if !loose.contains(release.id) { loose.append(release.id) }
+                continue
+            }
+            if members[group] == nil { groupOrder.append(group) }
+            if members[group]?.contains(release.id) != true { members[group, default: []].append(release.id) }
+        }
+        return groupOrder.map { .releaseGroup(id: $0, releaseIDs: members[$0] ?? []) }
+            + loose.map { .release(id: $0) }
+    }
+}
+
+/// The parts of a MusicBrainz release this service reads, shared by search,
+/// browse and lookup responses.
+struct MBRelease: Decodable {
+    let id: String
+    let title: String
+    let date: String?
+    let country: String?
+    let barcode: String?
+    let status: String?
+    let disambiguation: String?
+    let trackCount: Int?
+    let media: [MBMedia]?
+    let artistCredit: [MBArtistCredit]?
+    let releaseGroup: MBReleaseGroupRef?
+    let coverArt: MBCoverArt?
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, date, country, barcode, status, disambiguation, media
+        case trackCount = "track-count"
+        case artistCredit = "artist-credit"
+        case releaseGroup = "release-group"
+        case coverArt = "cover-art-archive"
+    }
+
+    var candidate: MBReleaseCandidate {
+        let formats = (media ?? []).compactMap(\.format)
+        let credit = artistCredit.map(MBArtistCredit.joined) ?? ""
+        return MBReleaseCandidate(
+            id: id,
+            title: title,
+            date: date,
+            country: country,
+            barcode: barcode == "" ? nil : barcode,
+            format: formats.first,
+            status: status,
+            disambiguation: disambiguation == "" ? nil : disambiguation,
+            trackCount: trackCount,
+            artist: credit.isEmpty ? nil : credit,
+            releaseGroupID: releaseGroup?.id,
+            formats: formats
+        )
+    }
+}
+
+struct MBMedia: Decodable {
+    let format: String?
+}
+
+struct MBReleaseGroupRef: Decodable {
+    let id: String?
+}
+
+struct MBArtistCredit: Decodable {
+    let name: String?
+    let joinphrase: String?
+
+    /// "Simon" + " & " + "Garfunkel", the way the sleeve prints it.
+    static func joined(_ credits: [MBArtistCredit]) -> String {
+        credits.map { ($0.name ?? "") + ($0.joinphrase ?? "") }.joined()
+            .trimmingCharacters(in: .whitespaces)
+    }
+}
+
+struct MBCoverArt: Decodable {
+    let count: Int?
+    let front: Bool?
+    let back: Bool?
+    let darkened: Bool?
+
+    var summary: CoverArtSummary {
+        CoverArtSummary(count: count ?? 0, hasFront: front ?? false,
+                        hasBack: back ?? false, darkened: darkened ?? false)
     }
 }
 
@@ -849,14 +1243,8 @@ public extension RemoteArtworkService {
     /// MusicBrainz every time the sheet opens.
     func discogsReleaseID(forReleaseMBID mbid: String) async -> String? {
         if let cached = discogsIDByRelease[mbid] { return cached }
-        guard let url = URL(string: "https://musicbrainz.org/ws/2/release/\(mbid)?inc=url-rels&fmt=json") else {
-            return nil
-        }
-        var request = URLRequest(url: url)
-        request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
-        guard let (data, response) = try? await session.data(for: request),
-              let http = response as? HTTPURLResponse,
-              (200..<300).contains(http.statusCode)
+        guard let url = URL(string: "https://musicbrainz.org/ws/2/release/\(mbid)?inc=url-rels&fmt=json"),
+              let data = try? await musicBrainzData(from: url)
         else {
             return nil   // not cached: a network blip should be retried, unlike a real "no link"
         }

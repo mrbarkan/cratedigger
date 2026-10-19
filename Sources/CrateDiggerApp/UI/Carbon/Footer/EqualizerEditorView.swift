@@ -1,3 +1,4 @@
+import AppKit
 import CrateDiggerCore
 import SwiftUI
 
@@ -9,9 +10,10 @@ struct EqualizerEditorView: View {
     @EnvironmentObject private var model: LibraryViewModel
     @Environment(\.dismiss) private var dismiss
 
-    private let range: ClosedRange<Double> = -12...12
+    /// The faders' travel. Quick EQ's keys clamp to the same range.
+    static let range: ClosedRange<Double> = -12...12
 
-    /// The three user slots, mirrored from `PreferencesStore` so the view can
+    /// The user slots, mirrored from `PreferencesStore` so the view can
     /// edit them; every mutation writes straight back through `saveSlots`.
     @State private var slots: [CustomEQPreset] = PreferencesStore.shared.customEQPresets
     @State private var renamingSlot: Int?
@@ -25,10 +27,16 @@ struct EqualizerEditorView: View {
             faderBank
                 .padding(.horizontal, 18)
                 .padding(.bottom, 14)
+            importGuide
             footer
         }
-        .frame(width: 640, height: 470)
+        .frame(width: 640, height: 540)
         .background(theme.chassis)
+        // A fader held by Quick EQ must not keep the keys once the editor is
+        // gone or something else is on top of it.
+        .onChange(of: showingImport) { _ in model.quickEQBand = nil }
+        .onChange(of: renamingSlot) { _ in model.quickEQBand = nil }
+        .onDisappear { model.quickEQBand = nil }
         .sheet(isPresented: $showingImport) {
             AutoEQImportView(slots: $slots).environmentObject(model)
         }
@@ -48,6 +56,13 @@ struct EqualizerEditorView: View {
                 .tracking(2)
                 .foregroundStyle(theme.ink)
             Spacer()
+            Toggle("QUICK EQ", isOn: $model.quickEQEnabled)
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .tint(theme.orange)
+                .fixedSize()
+                .carbonTip("Point at a fader and press ↑/↓ or W/S to move it 0.5 dB")
+                .padding(.trailing, 14)
             Toggle("ON", isOn: $model.eqEnabled)
                 .toggleStyle(.switch)
                 .controlSize(.small)
@@ -62,9 +77,9 @@ struct EqualizerEditorView: View {
 
     // MARK: - Presets
     //
-    // Built-ins and user slots share one six-column grid, so the three custom
-    // keys are the same size as everything else instead of being a second-class
-    // row bolted underneath.
+    // Built-ins and user slots share one six-column grid, so the six custom
+    // keys are a full row the same size as everything else instead of a
+    // second-class strip bolted underneath.
 
     private static let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 6)
 
@@ -76,7 +91,9 @@ struct EqualizerEditorView: View {
                 }
             }
 
-            Text("Right-click a user key to save, rename or clear it.")
+            Text(model.quickEQEnabled
+                 ? "Right-click a user key to save, rename or clear it. Quick EQ: point at a fader, then ↑/↓ or W/S."
+                 : "Right-click a user key to save, rename or clear it.")
                 .font(CarbonFont.mono(8.5))
                 .foregroundStyle(theme.ink4)
         }
@@ -162,17 +179,29 @@ struct EqualizerEditorView: View {
         HStack(alignment: .top, spacing: 10) {
             dBScale
             ForEach(0..<EqualizerProcessor.bandCount, id: \.self) { i in
+                let isQuickBand = model.quickEQEnabled && model.eqEnabled && model.quickEQBand == i
                 VStack(spacing: 6) {
                     Text(gainLabel(model.eqGains[i]))
                         .font(CarbonFont.mono(8, weight: .bold))
                         .foregroundStyle(model.eqEnabled ? theme.orange : theme.ink4)
                         .frame(height: 12)
-                    EQFader(gain: $model.eqGains[i], range: range, enabled: model.eqEnabled)
+                    EQFader(gain: $model.eqGains[i], range: Self.range,
+                            enabled: model.eqEnabled, isQuickBand: isQuickBand)
                         .frame(maxWidth: .infinity)
                     Text(freqLabel(i))
                         .font(CarbonFont.mono(7.5, weight: .bold))
-                        .foregroundStyle(theme.ink3)
+                        .foregroundStyle(isQuickBand ? theme.orange : theme.ink3)
                         .frame(height: 12)
+                }
+                // The whole column, readout and label included, so the pointer
+                // doesn't drop the fader when it strays off the thin track.
+                .contentShape(Rectangle())
+                .onHover { inside in
+                    if inside {
+                        if !showingImport, renamingSlot == nil { model.quickEQBand = i }
+                    } else if model.quickEQBand == i {
+                        model.quickEQBand = nil
+                    }
                 }
             }
         }
@@ -195,6 +224,39 @@ struct EqualizerEditorView: View {
         .frame(width: 26)
     }
 
+    // MARK: - Importing
+
+    /// squig.link is a family of reviewer sites with no API; its front page is
+    /// the directory of them, so that is where the key goes.
+    private static let squigLink = URL(string: "https://squig.link")!
+
+    /// Spelled out because the route crosses two apps: a measurement found in
+    /// the browser has to come back as a file before it can land on the faders.
+    /// The button names in step 2 are squig.link's own.
+    private var importGuide: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Import a headphone preset".uppercased())
+                .font(CarbonFont.mono(8.5, weight: .bold))
+                .tracking(1.5)
+                .foregroundStyle(theme.ink3)
+            ForEach(Array(Self.importSteps.enumerated()), id: \.offset) { number, step in
+                Text("\(number + 1). \(step)")
+                    .font(CarbonFont.mono(8.5))
+                    .foregroundStyle(theme.ink4)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 18)
+        .padding(.bottom, 12)
+    }
+
+    private static let importSteps = [
+        "Press SQUIG.LINK, pick a reviewer's site and find your headphones.",
+        "Open the Equalizer tab, press Auto EQ, then Export to save the filters as a .txt.",
+        "Press IMPORT AUTOEQ, drop the file in (or paste its text), choose a USER slot and Apply.",
+    ]
+
     private var footer: some View {
         HStack(spacing: 8) {
             KeyButton(style: .normal, action: {
@@ -214,6 +276,15 @@ struct EqualizerEditorView: View {
             }
             .frame(width: 170, height: 24)
             .carbonTip("Load a parametric EQ config from squig.link, AutoEQ or oratory1990 onto these faders")
+
+            KeyButton(style: .normal, action: { NSWorkspace.shared.open(Self.squigLink) }) {
+                HStack(spacing: 5) {
+                    Text("SQUIG.LINK")
+                    Image(systemName: "arrow.up.right").font(.system(size: 8, weight: .bold))
+                }
+            }
+            .frame(width: 120, height: 24)
+            .carbonTip("Open squig.link in your browser to find EQ for your headphones")
 
             Spacer()
 
@@ -245,6 +316,8 @@ private struct EQFader: View {
     @Binding var gain: Double
     let range: ClosedRange<Double>
     var enabled: Bool
+    /// Quick EQ has this fader: the keyboard moves it, so it says so.
+    var isQuickBand = false
 
     var body: some View {
         GeometryReader { geo in
@@ -259,6 +332,13 @@ private struct EQFader: View {
                     .fill(theme.wellDeep.opacity(theme.isDark ? 0.8 : 0.35))
                     .frame(width: 5)
                     .overlay(Capsule().stroke(Color.black.opacity(0.35), lineWidth: 1).frame(width: 5))
+
+                // Quick EQ's selection: a lit outline around the whole travel.
+                if isQuickBand {
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .stroke(theme.orange.opacity(0.7), lineWidth: 1)
+                        .frame(width: 26)
+                }
 
                 // 0 dB centre line.
                 Rectangle()
@@ -278,7 +358,8 @@ private struct EQFader: View {
                         LinearGradient(colors: [theme.metalHi, theme.metal, theme.metalLo],
                                        startPoint: .top, endPoint: .bottom)
                     )
-                    .overlay(RoundedRectangle(cornerRadius: 3).stroke(Color.black.opacity(0.4), lineWidth: 1))
+                    .overlay(RoundedRectangle(cornerRadius: 3)
+                        .stroke(isQuickBand ? theme.orange : Color.black.opacity(0.4), lineWidth: 1))
                     .overlay(Rectangle().fill((enabled ? theme.orange : theme.ink4).opacity(0.9)).frame(height: 1.5))
                     .frame(width: 24, height: 12)
                     .depthShadow(color: Color.black.opacity(0.4), radius: 2, y: 1)

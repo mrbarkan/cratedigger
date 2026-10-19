@@ -524,8 +524,9 @@ public final class PreferencesStore {
         set { defaults.set(newValue, forKey: "cratedigger.eq.gains") }
     }
 
-    /// The three user EQ slots. Always returns `CustomEQPreset.slotCount`
-    /// entries, so the editor can index them without bounds checks.
+    /// The user EQ slots. Always returns `CustomEQPreset.slotCount` entries,
+    /// padding a list saved when there were fewer slots, so the editor can
+    /// index them without bounds checks.
     public var customEQPresets: [CustomEQPreset] {
         get {
             guard let data = defaults.data(forKey: "cratedigger.eq.custom"),
@@ -537,6 +538,13 @@ public final class PreferencesStore {
             }
         }
         set { defaults.set(try? JSONEncoder().encode(newValue), forKey: "cratedigger.eq.custom") }
+    }
+
+    /// Quick EQ: the fader under the pointer follows ↑/↓ and W/S. Off by
+    /// default, since it takes the arrows from volume while the EQ is open.
+    public var quickEQEnabled: Bool {
+        get { defaults.bool(forKey: "cratedigger.eq.quick") }
+        set { defaults.set(newValue, forKey: "cratedigger.eq.quick") }
     }
 
     public var savedMiniPlayerArtMode: String? {

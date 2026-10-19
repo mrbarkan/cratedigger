@@ -292,6 +292,7 @@ extension LibraryViewModel {
                 currentRelativePath: entries.first?.destinationRelativePath,
                 completed: 0, total: entries.count, failed: 0, isRunning: true
             )
+            let busyJob = beginBusyJob(.transfer, on: .devices)
 
             let profileName = profile.name
             let preset = profile.transferSettings
@@ -453,6 +454,7 @@ extension LibraryViewModel {
                 completed: outcome.synced + outcome.skipped, total: total,
                 failed: outcome.failed, isRunning: false
             )
+            endBusyJob(busyJob, .sync(failed: outcome.failed, total: total))
             await writeFolderCoverArt(
                 profileID: profileID,
                 folderTracks: entries.map {

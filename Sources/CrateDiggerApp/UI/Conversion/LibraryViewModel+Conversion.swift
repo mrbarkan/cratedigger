@@ -736,6 +736,14 @@ extension LibraryViewModel {
             currentFilename: jobs.first?.sourceURL.lastPathComponent,
             isRunning: true
         )
+        // Covers the Patch Bay convert and the device pre-convert alike: both
+        // really are conversions, drawn on CNVRT.
+        let busyJob = beginBusyJob(
+            .convert, on: .conversion,
+            labels: .conversion(sourceExtensions: jobs.map { $0.sourceURL.pathExtension },
+                                target: preset.outputFormat),
+            lossless: preset.outputFormat.isLossless
+        )
 
         AppLog.conversion.info("Starting batch of \(total, privacy: .public) jobs as \(preset.outputFormat.rawValue, privacy: .public)")
 
@@ -786,6 +794,7 @@ extension LibraryViewModel {
         let cancelled = results.filter { $0.wasCancelled }.count
         let failed = results.filter { $0.status == .failed }.count - cancelled
         let warnings = results.compactMap { $0.warning }.count
+        endBusyJob(busyJob, .conversion(succeeded: succeeded, failed: failed, cancelled: cancelled))
         AppLog.conversion.info("Batch finished: \(succeeded, privacy: .public) ok, \(failed, privacy: .public) failed, \(cancelled, privacy: .public) cancelled, \(warnings, privacy: .public) with warnings")
 
         let title: String

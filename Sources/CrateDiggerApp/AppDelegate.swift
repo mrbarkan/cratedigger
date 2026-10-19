@@ -467,7 +467,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
 
     // MARK: - Dev harness (debug builds only)
     //
-    // The self-snapshot hook and the marketing shot list: fourteen CRATEDIGGER_*
+    // The self-snapshot hook and the marketing shot list: the CRATEDIGGER_*
     // environment switches that render the app's own view tree to PNGs, which is
     // how the UI gets verified without a screen-recording permission. None of it
     // belongs in a build someone downloads — left compiled in, a stray
@@ -482,8 +482,63 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     /// CRATEDIGGER_OLED=<rawValue> preselects an OLED view first, and
     /// CRATEDIGGER_SEARCH=<query> runs a search. Inert without the env var;
     /// used for autonomous UI verification.
+    ///
+    /// Busy Signals (spec §12):
+    /// - CRATEDIGGER_BUSY=<kind>[,<kind>…][:done] (`BusyJobKind` raw values,
+    ///   e.g. `rip,scan` or `download:done`) begins each job on its default
+    ///   screen through `debugSimulateBusyJobs`, which walks it to done over
+    ///   20 s, or finishes it at once with `:done`. Only the ledger is
+    ///   touched. Unlike everything else here it works WITHOUT a snapshot
+    ///   path, so an idle-cost run (watch `top`, minimise the window, turn on
+    ///   Reduce Motion) can frame a job and write nothing.
+    /// - CRATEDIGGER_OLED, when CRATEDIGGER_BUSY is set (even to a value
+    ///   naming no kind), is also applied at +1 s for that same reason; the +7 s application below stays for
+    ///   snapshot runs, where playback may have flipped the display to NOW.
+    /// - CRATEDIGGER_SNAP_EXTRA=1 adds a `late2` snap at +8.5 s: half a 2 Hz
+    ///   blink after `late`, so a blinking destination is caught in both
+    ///   phases.
     private func installSnapshotHookIfRequested() {
         let env = ProcessInfo.processInfo.environment
+        // The equalizer, so a capture can show it. Before the snapshot guard
+        // too, so it needs no snapshot path. "quick" also turns Quick EQ
+        // on and holds a mid-band fader, as if the pointer were resting on it.
+        if let raw = env["CRATEDIGGER_EQ"] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { [weak self] in
+                guard let model = self?.mainWindowController?.model else { return }
+                model.showingEQEditor = true
+                if raw == "quick" {
+                    model.eqEnabled = true
+                    model.quickEQEnabled = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { model.quickEQBand = 6 }
+                }
+            }
+        }
+        // Before the snapshot guard, which returns early without a path.
+        if let raw = env["CRATEDIGGER_BUSY"] {
+            if let request = BusyDebugRequest(raw) {
+                if !request.unknown.isEmpty {
+                    NSLog("[busy] CRATEDIGGER_BUSY ignored unknown kinds %@; known: %@",
+                          request.unknown.joined(separator: ","),
+                          BusyJobKind.allCases.map(\.rawValue).joined(separator: ","))
+                }
+                // Synchronously (launch runs on the main thread), so each job
+                // begins on the screen the launch restored: a job started on
+                // its own saved screen must not get a mini on its own rail.
+                MainActor.assumeIsolated {
+                    mainWindowController?.model.debugSimulateBusyJobs(request.kinds, finished: request.finished)
+                }
+            } else {
+                NSLog("[busy] CRATEDIGGER_BUSY=%@ names no job kind; expected <kind>[,<kind>…][:done] with kinds %@",
+                      raw, BusyJobKind.allCases.map(\.rawValue).joined(separator: ","))
+            }
+            // Whenever CRATEDIGGER_BUSY is present, valid or not (spec §12), so
+            // a mistyped kind still lands on the screen that was asked for.
+            if let rawView = env["CRATEDIGGER_OLED"], let view = OLEDView(rawValue: rawView) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                    self?.mainWindowController?.model.oledView = view
+                }
+            }
+        }
         guard let path = env["CRATEDIGGER_SNAPSHOT_PATH"] else { return }
         // Just before the final snap — starting playback flips the OLED to NOW
         // asynchronously, so an early set gets overridden.
@@ -679,6 +734,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                 ArtworkViewerPresenter.float(album: album, theme: resolved.theme, model: model, index: 0)
             }
         }
+        // Artwork Search opens from the ART tab's FIND ART key, out of reach of
+        // the command line. "1" picks the first album with art; any other
+        // value picks the first album whose title or artist contains it. The panel is
+        // its own window, captured as "search-album-artwork". MusicBrainz and
+        // the image counts take a few seconds, so this adds two later snaps
+        // ("search" at 14 s, "search2" at 20 s) to the usual two.
+        if let raw = env["CRATEDIGGER_ARTWORK_SEARCH"] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4.5) { [weak self] in
+                guard let model = self?.mainWindowController?.model else { return }
+                let albums = model.index.artists.flatMap(\.albums)
+                let wanted = raw == "1" ? nil : raw.lowercased()
+                guard let album = albums.first(where: { album in
+                    if let wanted {
+                        return album.title.lowercased().contains(wanted)
+                            || album.artistName.lowercased().contains(wanted)
+                    }
+                    return album.tracks.contains { $0.track.artworkHash != nil }
+                }) ?? albums.first else { return }
+                model.revealAlbum(album)
+                model.inspectorTab = .art
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                    NotificationCenter.default.post(name: ArtworkInspectorView.debugFindArtNotification, object: nil)
+                }
+            }
+        }
         if env["CRATEDIGGER_CHECK_STREAM"] != nil {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
                 self?.mainWindowController?.model.checkYouTubeStreaming()
@@ -720,6 +800,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) { snap("") }
         DispatchQueue.main.asyncAfter(deadline: .now() + 8.0) { snap("late") }
+        if env["CRATEDIGGER_SNAP_EXTRA"] != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 8.5) { snap("late2") }
+        }
+        if env["CRATEDIGGER_ARTWORK_SEARCH"] != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 14.0) { snap("search") }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 20.0) { snap("search2") }
+        }
         if env["CRATEDIGGER_SHOT_LIST"] != nil {
             runMarketingShotList(into: URL(fileURLWithPath: path).deletingLastPathComponent())
         }
@@ -881,7 +968,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         model.refreshAvailableCrates()
 
         if !unfiled.isEmpty {
-            model.importDroppedURLs(unfiled)
+            model.importDroppedURLs(unfiled, stamped: false)
             var waited = 0
             while (model.scanProgress.isRunning || model.prepCrateTracks.isEmpty) && waited < 240 {
                 try? await Task.sleep(nanoseconds: 500_000_000)

@@ -43,7 +43,8 @@ final class RemoteArtworkServiceTests: XCTestCase {
         super.setUp()
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [MockURLProtocol.self]
-        service = RemoteArtworkService(session: URLSession(configuration: config))
+        service = RemoteArtworkService(session: URLSession(configuration: config),
+                                       musicBrainzInterval: 0, retryDelay: 0)
         MockURLProtocol.requestCount = 0
     }
 
@@ -255,30 +256,30 @@ final class RemoteArtworkServiceTests: XCTestCase {
         XCTAssertNil(RemoteArtworkService.parseDiscogsReleaseID(Data("not json".utf8)))
     }
 
-    func testCoverArtImageCountDecodesList() async {
+    func testCoverArtArchiveIndexDecodesList() async throws {
         respond(status: 200, data: caaJSON(imageCount: 3))
-        let count = await service.coverArtImageCount(releaseMBID: "mbid-1")
-        XCTAssertEqual(count, 3)
+        let images = try await service.fetchCoverArtArchiveImages(releaseMBID: "mbid-1")
+        XCTAssertEqual(images.count, 3)
     }
 
-    func testCoverArtImageCount404IsZero() async {
+    func testCoverArtArchive404IsNoImages() async throws {
         respond(status: 404, data: nil)
-        let count = await service.coverArtImageCount(releaseMBID: "mbid-404")
-        XCTAssertEqual(count, 0)
+        let images = try await service.fetchCoverArtArchiveImages(releaseMBID: "mbid-404")
+        XCTAssertEqual(images.count, 0)
     }
 
     func testSecondFetchForSameReleaseUsesCache() async throws {
         respond(status: 200, data: caaJSON(imageCount: 2))
-        _ = await service.coverArtImageCount(releaseMBID: "mbid-cache")
+        _ = try await service.fetchCoverArtArchiveImages(releaseMBID: "mbid-cache")
         let images = try await service.fetchCoverArtArchiveImages(releaseMBID: "mbid-cache")
         XCTAssertEqual(images.count, 2)
-        XCTAssertEqual(MockURLProtocol.requestCount, 1, "count probe should prime the cache for GET ARTWORK")
+        XCTAssertEqual(MockURLProtocol.requestCount, 1, "GET ARTWORK twice must not ask the archive twice")
     }
 
-    func test404IsCachedAsEmpty() async {
+    func test404IsCachedAsEmpty() async throws {
         respond(status: 404, data: nil)
-        _ = await service.coverArtImageCount(releaseMBID: "mbid-empty")
-        _ = await service.coverArtImageCount(releaseMBID: "mbid-empty")
+        _ = try await service.fetchCoverArtArchiveImages(releaseMBID: "mbid-empty")
+        _ = try await service.fetchCoverArtArchiveImages(releaseMBID: "mbid-empty")
         XCTAssertEqual(MockURLProtocol.requestCount, 1)
     }
 
@@ -303,12 +304,273 @@ final class RemoteArtworkServiceTests: XCTestCase {
         XCTAssertEqual(size?.height, 900)
     }
 
-    func testServerErrorIsNotCached() async {
+    func testServerErrorIsNotCached() async throws {
         respond(status: 503, data: nil)
-        _ = await service.coverArtImageCount(releaseMBID: "mbid-flaky")
+        _ = try? await service.fetchCoverArtArchiveImages(releaseMBID: "mbid-flaky")
         respond(status: 200, data: caaJSON(imageCount: 1))
-        let count = await service.coverArtImageCount(releaseMBID: "mbid-flaky")
-        XCTAssertEqual(count, 1, "a 503 must not be remembered as 'no images'")
+        let images = try await service.fetchCoverArtArchiveImages(releaseMBID: "mbid-flaky")
+        XCTAssertEqual(images.count, 1, "a 503 must not be remembered as 'no images'")
+    }
+
+    // MARK: - Cover Art Archive: honest failures
+
+    /// The regression behind "I can't see the number of images any more". The
+    /// archive's index sits behind a redirect to archive.org, which on
+    /// 2026-10-12 answered 502 for most releases, and a non-2xx answer was
+    /// returned as an empty list: a release with 23 scans read NO IMAGES.
+    func testAnArchiveServerErrorThrowsRatherThanReadingAsNoImages() async {
+        respond(status: 502, data: Data("<html>502</html>".utf8))
+        do {
+            let images = try await service.fetchCoverArtArchiveImages(releaseMBID: "mbid-502")
+            XCTFail("a 502 came back as \(images.count) images")
+        } catch let RemoteArtworkService.FetchError.serviceUnavailable(_, status) {
+            XCTAssertEqual(status, 502)
+        } catch {
+            XCTFail("unexpected error \(error)")
+        }
+        XCTAssertEqual(MockURLProtocol.requestCount, 2, "a fast server error gets exactly one retry")
+    }
+
+    func testAFastServerErrorIsRetriedOnce() async throws {
+        var calls = 0
+        MockURLProtocol.requestHandler = { request in
+            calls += 1
+            let status = calls == 1 ? 502 : 200
+            return (HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!,
+                    status == 200 ? self.caaJSON(imageCount: 4) : nil)
+        }
+        let images = try await service.fetchCoverArtArchiveImages(releaseMBID: "mbid-retry")
+        XCTAssertEqual(images.count, 4)
+    }
+
+    /// GET ARTWORK, BACK, GET ARTWORK again while the slow archive is still
+    /// answering the first: one request, both callers served.
+    func testOverlappingFetchesForOneReleaseShareARequest() async throws {
+        MockURLProtocol.requestHandler = { request in
+            Thread.sleep(forTimeInterval: 0.2)
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    self.caaJSON(imageCount: 2))
+        }
+        let service = self.service!
+        async let first = service.fetchCoverArtArchiveImages(releaseMBID: "mbid-shared")
+        async let second = service.fetchCoverArtArchiveImages(releaseMBID: "mbid-shared")
+        let (a, b) = try await (first, second)
+        XCTAssertEqual(a.count, 2)
+        XCTAssertEqual(b.count, 2)
+        XCTAssertEqual(MockURLProtocol.requestCount, 1)
+    }
+
+    func testTheIndexOffersALargeDerivativeForThePreview() throws {
+        let data = Data("""
+        {"images": [{"image": "http://coverartarchive.org/release/x/1.jpg",
+          "thumbnails": {"250": "http://coverartarchive.org/release/x/1-250.jpg",
+                         "500": "http://coverartarchive.org/release/x/1-500.jpg",
+                         "1200": "http://coverartarchive.org/release/x/1-1200.jpg"},
+          "types": ["Front"], "front": true, "back": false}]}
+        """.utf8)
+        let image = try XCTUnwrap(RemoteArtworkService.parseCoverArtArchiveIndex(data).first)
+        XCTAssertEqual(image.thumbnailURL.absoluteString, "https://coverartarchive.org/release/x/1-250.jpg")
+        XCTAssertEqual(image.bestPreviewURL.absoluteString, "https://coverartarchive.org/release/x/1-1200.jpg")
+        XCTAssertEqual(image.imageURL.absoluteString, "https://coverartarchive.org/release/x/1.jpg",
+                       "the original is still what gets staged")
+    }
+
+    func testAnImageWithNoDerivativesPreviewsTheOriginal() {
+        let image = RemoteArtworkImage(imageURL: URL(string: "https://i.discogs.com/full.jpeg")!,
+                                       thumbnailURL: URL(string: "https://i.discogs.com/t150.jpeg")!,
+                                       types: [], comment: "", front: false, back: false, source: .discogs)
+        XCTAssertEqual(image.bestPreviewURL, image.imageURL)
+    }
+
+    // MARK: - Header probes
+
+    func testAFailedProbeIsNotRepeatedOnEveryScroll() async {
+        respond(status: 502, data: Data())
+        let url = URL(string: "https://coverartarchive.org/release/mbid-x/front")!
+        let first = await service.probeDimensions(of: url)
+        let second = await service.probeDimensions(of: url)
+        XCTAssertNil(first)
+        XCTAssertNil(second)
+        XCTAssertEqual(MockURLProtocol.requestCount, 1)
+    }
+
+    // MARK: - Cover Art Archive counts from MusicBrainz
+
+    /// The shape of a live MusicBrainz release browse
+    /// (`/ws/2/release?release-group=…`), trimmed to what is read.
+    private func browseJSON(total: Int, _ releases: [(String, Int, Bool)]) -> Data {
+        let body = releases.map { id, count, front in
+            #"{"id": "\#(id)", "title": "OK Computer", "cover-art-archive": {"count": \#(count), "front": \#(front), "back": false, "artwork": \#(count > 0), "darkened": false}}"#
+        }.joined(separator: ",")
+        return Data(#"{"release-count": \#(total), "release-offset": 0, "releases": [\#(body)]}"#.utf8)
+    }
+
+    private func candidate(_ id: String, group: String?) -> MBReleaseCandidate {
+        MBReleaseCandidate(id: id, title: "OK Computer", date: nil, country: nil, barcode: nil, format: nil,
+                           status: nil, disambiguation: nil, trackCount: nil, releaseGroupID: group)
+    }
+
+    func testParsesCoverArtCountsFromABrowse() {
+        let parsed = RemoteArtworkService.parseCoverArtBrowse(browseJSON(total: 39, [("a", 23, true), ("b", 0, false)]))
+        XCTAssertEqual(parsed.summaries["a"], CoverArtSummary(count: 23, hasFront: true, hasBack: false))
+        XCTAssertEqual(parsed.summaries["b"]?.count, 0)
+        XCTAssertEqual(parsed.returned, 2)
+        XCTAssertEqual(parsed.total, 39)
+    }
+
+    /// Thirty results from one release group cost one request, where the old
+    /// per-row probe cost thirty trips through archive.org.
+    func testOneBrowseCountsEveryPressingInAGroup() async {
+        MockURLProtocol.requestHandler = { request in
+            XCTAssertTrue(request.url!.absoluteString.contains("release-group=rg-1"))
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    self.browseJSON(total: 3, [("a", 23, true), ("b", 0, false), ("c", 2, true)]))
+        }
+        var counts: [String: CoverArtSummary?] = [:]
+        for await batch in service.coverArtSummaries(for: ["a", "b", "c"].map { candidate($0, group: "rg-1") }) {
+            counts.merge(batch) { _, new in new }
+        }
+        XCTAssertEqual(counts["a"]??.count, 23)
+        XCTAssertEqual(counts["b"]??.count, 0)
+        XCTAssertEqual(counts["c"]??.count, 2)
+        XCTAssertEqual(MockURLProtocol.requestCount, 1)
+    }
+
+    /// A group MusicBrainz couldn't browse leaves its rows *uncounted*, not
+    /// at zero, and doesn't stop the next group being counted.
+    func testAFailedBrowseLeavesRowsUncountedNotEmpty() async {
+        MockURLProtocol.requestHandler = { request in
+            let url = request.url!.absoluteString
+            if url.contains("rg-bad") {
+                return (HTTPURLResponse(url: request.url!, statusCode: 500, httpVersion: nil, headerFields: nil)!, nil)
+            }
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    self.browseJSON(total: 1, [("good", 5, true)]))
+        }
+        var counts: [String: CoverArtSummary?] = [:]
+        for await batch in service.coverArtSummaries(for: [candidate("bad", group: "rg-bad"),
+                                                          candidate("good", group: "rg-good")]) {
+            counts.merge(batch) { _, new in new }
+        }
+        XCTAssertEqual(counts.keys.sorted(), ["bad", "good"])
+        XCTAssertNil(counts["bad"]!, "an unanswered count is unknown, not zero")
+        XCTAssertEqual(counts["good"]??.count, 5)
+    }
+
+    func testABigGroupPagesOnlyUntilTheWantedReleasesTurnUp() async throws {
+        MockURLProtocol.requestHandler = { request in
+            let offset = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!
+                .queryItems!.first { $0.name == "offset" }!.value!
+            let page: [(String, Int, Bool)] = offset == "0"
+                ? (0..<100).map { ("p\($0)", 1, true) }
+                : [("wanted", 7, true)] + (1..<100).map { ("q\($0)", 1, true) }
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    self.browseJSON(total: 450, page))
+        }
+        let found = try await service.coverArtSummaries(releaseGroupID: "rg-big", wanting: ["wanted"])
+        XCTAssertEqual(found["wanted"]?.count, 7)
+        XCTAssertEqual(MockURLProtocol.requestCount, 2, "stops once the wanted release has turned up")
+    }
+
+    func testAReleaseWithNoGroupIsLookedUpOnItsOwn() async {
+        respond(status: 200, data: Data(#"{"id": "solo", "title": "X", "cover-art-archive": {"count": 3, "front": true, "back": true, "darkened": false}}"#.utf8))
+        var counts: [String: CoverArtSummary?] = [:]
+        for await batch in service.coverArtSummaries(for: [candidate("solo", group: nil)]) {
+            counts.merge(batch) { _, new in new }
+        }
+        XCTAssertEqual(counts["solo"] ?? nil, CoverArtSummary(count: 3, hasFront: true, hasBack: true))
+    }
+
+    func testDarkenedArtCountsAsNothingToShow() {
+        XCTAssertEqual(CoverArtSummary(count: 4, hasFront: true, hasBack: false, darkened: true).available, 0)
+        XCTAssertEqual(CoverArtSummary(count: 4, hasFront: true, hasBack: false).available, 4)
+    }
+
+    // MARK: - MusicBrainz etiquette
+
+    /// A busy MusicBrainz (503) is retried once and then reported, rather than
+    /// passing for a search that found nothing.
+    func testABusyMusicBrainzIsAnErrorNotAnEmptySearch() async {
+        respond(status: 503, data: Data(#"{"error": "busy"}"#.utf8))
+        do {
+            _ = try await service.searchMusicBrainzReleases(artist: "Radiohead", album: "OK Computer")
+            XCTFail("a busy server read as no results")
+        } catch let RemoteArtworkService.FetchError.serviceUnavailable(service, status) {
+            XCTAssertEqual(service, "MusicBrainz")
+            XCTAssertEqual(status, 503)
+        } catch {
+            XCTFail("unexpected error \(error)")
+        }
+        XCTAssertEqual(MockURLProtocol.requestCount, 3,
+                       "two retries on the first rung, and no looser rungs spent on a busy server")
+    }
+
+    func testABriefMusicBrainzBusySpellIsRiddenOut() async throws {
+        var calls = 0
+        MockURLProtocol.requestHandler = { request in
+            calls += 1
+            let busy = calls <= 2
+            return (HTTPURLResponse(url: request.url!, statusCode: busy ? 503 : 200, httpVersion: nil, headerFields: nil)!,
+                    Data(busy ? #"{"error": "busy"}"#.utf8 : #"{"releases": [{"id": "r", "title": "OK Computer"}]}"#.utf8))
+        }
+        let releases = try await service.searchMusicBrainzReleases(artist: "Radiohead", album: "OK Computer")
+        XCTAssertEqual(releases.map(\.id), ["r"])
+    }
+
+    func testRequestsIdentifyTheAppWithAVersionAndAContact() async throws {
+        var agent: String?
+        MockURLProtocol.requestHandler = { request in
+            agent = request.value(forHTTPHeaderField: "User-Agent")
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    Data(#"{"releases": []}"#.utf8))
+        }
+        _ = try await service.searchMusicBrainzReleases(artist: "Radiohead", album: "OK Computer")
+        let ua = try XCTUnwrap(agent)
+        XCTAssertTrue(ua.hasPrefix("CrateDigger/"), ua)
+        XCTAssertFalse(ua.hasPrefix("CrateDigger/1.0 "), "the version should be the build's, not a constant")
+        XCTAssertTrue(ua.contains("(https://"), "MusicBrainz asks for a contact")
+    }
+
+    /// The throttle claims its slot before sleeping. Recording the time only
+    /// after the sleep let every caller that arrived during it fire together.
+    func testConcurrentMusicBrainzCallsAreSpacedOut() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [MockURLProtocol.self]
+        let throttled = RemoteArtworkService(session: URLSession(configuration: config),
+                                             musicBrainzInterval: 0.25, retryDelay: 0)
+        let lock = NSLock()
+        var starts: [Date] = []
+        MockURLProtocol.requestHandler = { request in
+            lock.lock(); starts.append(Date()); lock.unlock()
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    Data("{}".utf8))
+        }
+        let url = URL(string: "https://musicbrainz.org/ws/2/release/x?fmt=json")!
+        await withTaskGroup(of: Void.self) { group in
+            for _ in 0..<3 { group.addTask { _ = try? await throttled.musicBrainzData(from: url) } }
+        }
+        let sorted = starts.sorted()
+        XCTAssertEqual(sorted.count, 3)
+        for (a, b) in zip(sorted, sorted.dropFirst()) {
+            XCTAssertGreaterThanOrEqual(b.timeIntervalSince(a), 0.2)
+        }
+    }
+
+    func testSearchHitsCarryArtistGroupAndEveryMedium() async throws {
+        respond(status: 200, data: Data(#"""
+        {"releases": [{"id": "r1", "title": "Bookends", "date": "1968-04-03", "country": "US",
+          "artist-credit": [{"name": "Simon", "joinphrase": " & "}, {"name": "Garfunkel"}],
+          "release-group": {"id": "rg-9"},
+          "media": [{"format": "12\" Vinyl"}, {"format": "12\" Vinyl"}]}]}
+        """#.utf8))
+        let releases = try await service.searchMusicBrainzReleases(artist: "Simon & Garfunkel", album: "Bookends")
+        let release = try XCTUnwrap(releases.first)
+        XCTAssertEqual(release.artist, "Simon & Garfunkel")
+        XCTAssertEqual(release.releaseGroupID, "rg-9")
+        XCTAssertEqual(release.formats, ["12\" Vinyl", "12\" Vinyl"])
+        XCTAssertEqual(release.format, "12\" Vinyl")
+        XCTAssertEqual(release.mediaSummary, "2×12\" Vinyl")
+        XCTAssertEqual(release.year, 1968)
     }
 }
 
