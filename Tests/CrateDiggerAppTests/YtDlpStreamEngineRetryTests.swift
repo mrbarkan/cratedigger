@@ -26,6 +26,17 @@ final class YtDlpStreamEngineRetryTests: XCTestCase {
         for _ in 0..<20 { await Task.yield() }
     }
 
+    /// Waits, bounded, until the runner has resolved `count` times. Yielding
+    /// alone is not enough under a loaded full-suite run: the detached resolve
+    /// can still be queued when the test stops the engine, which reads as zero
+    /// resolves rather than the one the test set up.
+    private func waitForResolves(_ count: Int, on runner: CountingRunner) async {
+        let deadline = Date().addingTimeInterval(2)
+        while runner.runCount < count, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 5_000_000)
+        }
+    }
+
     func testFirstPlaybackFailureReResolvesInsteadOfFailing() async {
         let (engine, runner, player) = makeEngine()
         var states: [RadioEngineState] = []
@@ -63,7 +74,7 @@ final class YtDlpStreamEngineRetryTests: XCTestCase {
     func testFailureAfterStopDoesNotResurrectTheStream() async {
         let (engine, runner, player) = makeEngine()
         engine.play(stream)
-        await settle()
+        await waitForResolves(1, on: runner)
         engine.stop()
 
         player.onError?("HTTP 403")
