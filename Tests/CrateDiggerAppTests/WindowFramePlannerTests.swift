@@ -154,5 +154,19 @@ final class WindowFramePlannerTests: XCTestCase {
         XCTAssertEqual(WindowFramePlanner.clampedSize(CGSize(width: 4000, height: 100), minimum: minimum, maximum: maximum),
                        CGSize(width: 1512, height: 302))
     }
+
+    /// The full window's floor holds during a drag, not only at launch: it
+    /// used to be draggable down to 645 pt wide.
+    func testResizeClampHoldsTheFullWindowToItsMinimum() {
+        let plan = WindowFramePlanner.plan(
+            visibleFrame: CGRect(x: 0, y: 0, width: 1728, height: 1080),
+            currentFrame: nil,
+            context: .initialLaunch)
+        let unbounded = CGSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        XCTAssertEqual(WindowFramePlanner.clampedSize(CGSize(width: 645, height: 400), minimum: plan.minimumSize, maximum: unbounded),
+                       CGSize(width: 1200, height: 820))
+        XCTAssertEqual(WindowFramePlanner.clampedSize(CGSize(width: 1500, height: 1000), minimum: plan.minimumSize, maximum: unbounded),
+                       CGSize(width: 1500, height: 1000))
+    }
 }
 #endif

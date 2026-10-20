@@ -17,8 +17,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     /// outgoing frame into the outgoing layout's slot.
     private var layout: PlayerLayout = .full
     private var layoutObserver: AnyCancellable?
-    /// The compact plan's size limits, kept here for `windowWillResize`.
-    private var compactLimits: (minimum: CGSize, maximum: CGSize)?
+    /// The current layout's size limits, kept here for `windowWillResize`.
+    private var resizeLimits: (minimum: CGSize, maximum: CGSize)?
     /// Where an in-flight fold or unfold is taking the window. A frame saved
     /// while the window is still travelling must record where it is going,
     /// not a half-folded frame: folding back mid-flight saves the outgoing
@@ -520,7 +520,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             // Minimum first: the full window's 1200 × 820 floor would refuse the shrink.
             window.minSize = NSSize(width: plan.minimumSize.width, height: plan.minimumSize.height)
             window.maxSize = NSSize(width: plan.maximumSize.width, height: plan.maximumSize.height)
-            compactLimits = (plan.minimumSize, plan.maximumSize)
+            resizeLimits = (plan.minimumSize, plan.maximumSize)
             setWindowFrame(plan.frame, animated: animated)
         }
         placeStatusLED()
@@ -585,14 +585,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         applyLayoutPlan(restoring: false, animated: window?.isVisible ?? false)
     }
 
-    /// Holds the compact window to its fixed height and minimum width; the
-    /// footer and display clip below it. Clamps to the limits the plan
-    /// produced rather than `sender.minSize`/`maxSize`: by the time a live
-    /// resize starts, AppKit has reset those to zero and unbounded (measured;
-    /// the full window has the same problem on `main`, where it can be
-    /// dragged down to 645 pt despite its 1200 pt minimum).
+    /// Holds the window to its layout's limits: the full window to its
+    /// 1200 × 820 floor (less on a small screen), the compact window to its
+    /// fixed height and minimum width. Below those the footer and display
+    /// clip. Clamps to the limits the plan produced rather than
+    /// `sender.minSize`/`maxSize`: by the time a live resize starts, AppKit
+    /// has reset those to zero and unbounded (measured: without this the full
+    /// window could be dragged down to 645 pt).
     func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
-        guard layout == .compact, let limits = compactLimits else { return frameSize }
+        guard let limits = resizeLimits else { return frameSize }
         return WindowFramePlanner.clampedSize(frameSize, minimum: limits.minimum, maximum: limits.maximum)
     }
 
@@ -625,6 +626,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         )
 
         window.minSize = NSSize(width: plan.minimumSize.width, height: plan.minimumSize.height)
+        resizeLimits = (plan.minimumSize, CGSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude))
         setWindowFrame(NSRect(origin: plan.frame.origin, size: plan.frame.size), animated: animated)
     }
 
