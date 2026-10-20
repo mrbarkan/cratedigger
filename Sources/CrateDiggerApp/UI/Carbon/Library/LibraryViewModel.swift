@@ -813,8 +813,8 @@ final class LibraryViewModel: ObservableObject {
     @Published var quickEQEnabled: Bool = false {
         didSet { prefs.quickEQEnabled = quickEQEnabled }
     }
-    /// The band under the pointer while Quick EQ is on, set by the editor's
-    /// hover and nil whenever no fader should take the keys.
+    /// The band Quick EQ's keys move, picked by the editor's hover or by
+    /// ←/→ and A/D, and nil whenever no fader should take the keys.
     @Published var quickEQBand: Int?
     /// Albums the artwork audit flagged, newest scan wins. Display only — the
     /// repair pass re-measures, so this can go stale without doing harm.
@@ -1696,8 +1696,9 @@ final class LibraryViewModel: ObservableObject {
         localEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self = self else { return event }
 
-            // Quick EQ goes first: while it holds a fader, ↑/↓ belong to that
-            // fader and not to volume, and W/S to it and not to anything else.
+            // Quick EQ goes first: while it holds a fader, the arrows belong
+            // to it and not to volume or the browser, and W/A/S/D to it and
+            // not to anything else.
             if self.handleQuickEQKey(event) { return nil }
 
             // Bare arrows navigate the browser (↑/↓ select, ←/→ switch columns)

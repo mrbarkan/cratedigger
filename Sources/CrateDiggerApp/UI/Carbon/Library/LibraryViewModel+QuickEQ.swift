@@ -1,27 +1,33 @@
 import AppKit
 import CrateDiggerCore
 
-/// Quick EQ: with the equalizer's QUICK switch on, the fader under the pointer
-/// takes ↑/↓ and W/S. The editor reports which fader that is through
-/// `quickEQBand`; this is the keyboard half, called from the one key monitor
-/// the app already has so it can win the arrows from volume reliably (two
-/// monitors run in an order AppKit does not promise).
+/// Quick EQ: with the equalizer's QUICK switch on, the selected fader takes
+/// ↑/↓ and W/S, and ←/→ and A/D select the fader beside it. The editor reports
+/// which fader the pointer selected through `quickEQBand`; this is the
+/// keyboard half, called from the one key monitor the app already has so it
+/// can win the arrows from volume and the browser reliably (two monitors run
+/// in an order AppKit does not promise).
 extension LibraryViewModel {
-    /// Moves the fader under the pointer for a Quick EQ key. Returns true when
-    /// it took the key, so the monitor swallows it.
+    /// Acts on a Quick EQ key. Returns true when it took the key, so the
+    /// monitor swallows it.
     func handleQuickEQKey(_ event: NSEvent) -> Bool {
         // Dragging is disabled with the EQ off, so the keys are too.
         guard quickEQEnabled, eqEnabled, showingEQEditor,
               let band = quickEQBand, eqGains.indices.contains(band),
               !isEditingText(),
-              let direction = QuickEQ.direction(
+              let action = QuickEQ.action(
                   keyCode: event.keyCode,
                   characters: event.charactersIgnoringModifiers,
                   hasCommandModifier: !event.modifierFlags.intersection([.command, .control, .option]).isEmpty
               )
         else { return false }
 
-        eqGains[band] = QuickEQ.nudged(eqGains[band], direction, in: EqualizerEditorView.range)
+        switch action {
+        case .nudge(let direction):
+            eqGains[band] = QuickEQ.nudged(eqGains[band], direction, in: EqualizerEditorView.range)
+        case .select(let offset):
+            quickEQBand = QuickEQ.band(band, offsetBy: offset, count: eqGains.count)
+        }
         return true
     }
 }

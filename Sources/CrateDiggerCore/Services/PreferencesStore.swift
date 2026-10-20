@@ -540,8 +540,9 @@ public final class PreferencesStore {
         set { defaults.set(try? JSONEncoder().encode(newValue), forKey: "cratedigger.eq.custom") }
     }
 
-    /// Quick EQ: the fader under the pointer follows ↑/↓ and W/S. Off by
-    /// default, since it takes the arrows from volume while the EQ is open.
+    /// Quick EQ: the fader under the pointer follows ↑/↓ and W/S, and ←/→
+    /// and A/D select its neighbour. Off by default, since it takes the
+    /// arrows from volume and the browser while the EQ is open.
     public var quickEQEnabled: Bool {
         get { defaults.bool(forKey: "cratedigger.eq.quick") }
         set { defaults.set(newValue, forKey: "cratedigger.eq.quick") }
