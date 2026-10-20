@@ -84,7 +84,7 @@ final class WindowFramePlannerTests: XCTestCase {
     func testCompactHeightFollowsGeometry() {
         let visible = CGRect(x: 0, y: 0, width: 1800, height: 1100)
         let standard = WindowFramePlanner.compactPlan(
-            visibleFrame: visible, savedFrame: nil, anchor: nil,
+            visibleFrame: visible, savedFrame: nil, fallbackWidth: nil,
             metrics: CompactDeckMetrics(geometry: .standard))
         XCTAssertEqual(standard.frame.height, 302, accuracy: 0.001)
         XCTAssertEqual(standard.minimumSize.height, 302, accuracy: 0.001)
@@ -92,29 +92,39 @@ final class WindowFramePlannerTests: XCTestCase {
 
         let tallMetrics = CompactDeckMetrics(geometry: tallGeometry())
         let tall = WindowFramePlanner.compactPlan(
-            visibleFrame: visible, savedFrame: standard.frame, anchor: nil, metrics: tallMetrics)
+            visibleFrame: visible, savedFrame: standard.frame, fallbackWidth: nil, metrics: tallMetrics)
         XCTAssertEqual(tall.frame.height, tallMetrics.windowHeight, accuracy: 0.001)
         XCTAssertGreaterThanOrEqual(tall.minimumSize.width, tallMetrics.minWindowWidth - 0.001)
     }
 
-    func testCompactPlanAnchorsToTheFullWindowsTopLeft() {
-        let visible = CGRect(x: 0, y: 0, width: 1800, height: 1100)
-        let full = CGRect(x: 100, y: 120, width: 1400, height: 920)
+    func testFoldingCentresTheCompactDeckOnScreen() {
+        let visible = CGRect(x: 0, y: 25, width: 1800, height: 1075)
+        let saved = CGRect(x: 300, y: 40, width: 1250, height: 302)
         let plan = WindowFramePlanner.compactPlan(
-            visibleFrame: visible, savedFrame: nil, anchor: full,
+            visibleFrame: visible, savedFrame: saved, fallbackWidth: 1400, centred: true,
             metrics: CompactDeckMetrics(geometry: .standard))
-        XCTAssertEqual(plan.frame.minX, full.minX, accuracy: 0.001)
-        XCTAssertEqual(plan.frame.maxY, full.maxY, accuracy: 0.001)
+        XCTAssertEqual(plan.frame.width, 1250, accuracy: 0.001)   // the saved width survives
+        XCTAssertEqual(plan.frame.midX, visible.midX, accuracy: 0.001)
+        XCTAssertEqual(plan.frame.midY, visible.midY, accuracy: 0.001)
+    }
+
+    func testFirstFoldTakesTheFullWindowsWidthAndCentres() {
+        let visible = CGRect(x: 0, y: 0, width: 1800, height: 1100)
+        let plan = WindowFramePlanner.compactPlan(
+            visibleFrame: visible, savedFrame: nil, fallbackWidth: 1400, centred: true,
+            metrics: CompactDeckMetrics(geometry: .standard))
         XCTAssertEqual(plan.frame.width, 1400, accuracy: 0.001)
+        XCTAssertEqual(plan.frame.midX, visible.midX, accuracy: 0.001)
+        XCTAssertEqual(plan.frame.midY, visible.midY, accuracy: 0.001)
         XCTAssertEqual(plan.minimumSize.width, 1178, accuracy: 0.001)
     }
 
-    func testCompactPlanRestoresSavedFrameOverAnchor() {
+    /// Launch, and a screen or theme change, leave the deck where it was.
+    func testCompactPlanRestoresSavedFrameWhenNotFolding() {
         let visible = CGRect(x: 0, y: 0, width: 1800, height: 1100)
         let saved = CGRect(x: 300, y: 40, width: 1250, height: 302)
         let plan = WindowFramePlanner.compactPlan(
-            visibleFrame: visible, savedFrame: saved,
-            anchor: CGRect(x: 0, y: 0, width: 1400, height: 920),
+            visibleFrame: visible, savedFrame: saved, fallbackWidth: 1400,
             metrics: CompactDeckMetrics(geometry: .standard))
         XCTAssertEqual(plan.frame, saved)
     }
@@ -124,7 +134,7 @@ final class WindowFramePlannerTests: XCTestCase {
         let plan = WindowFramePlanner.compactPlan(
             visibleFrame: visible,
             savedFrame: CGRect(x: 900, y: 650, width: 1300, height: 302),
-            anchor: nil,
+            fallbackWidth: nil,
             metrics: CompactDeckMetrics(geometry: .standard))
         XCTAssertGreaterThanOrEqual(plan.frame.minX, visible.minX)
         XCTAssertGreaterThanOrEqual(plan.frame.minY, visible.minY)
@@ -139,7 +149,7 @@ final class WindowFramePlannerTests: XCTestCase {
         let plan = WindowFramePlanner.compactPlan(
             visibleFrame: visible,
             savedFrame: CGRect(x: 0, y: 0, width: 600, height: 302),
-            anchor: nil,
+            fallbackWidth: nil,
             metrics: CompactDeckMetrics(geometry: .standard))
         XCTAssertEqual(plan.frame.width, 1178, accuracy: 0.001)
     }
@@ -153,6 +163,20 @@ final class WindowFramePlannerTests: XCTestCase {
                        CGSize(width: 1300, height: 302))
         XCTAssertEqual(WindowFramePlanner.clampedSize(CGSize(width: 4000, height: 100), minimum: minimum, maximum: maximum),
                        CGSize(width: 1512, height: 302))
+    }
+
+    /// The full window's floor holds during a drag, not only at launch: it
+    /// used to be draggable down to 645 pt wide.
+    func testResizeClampHoldsTheFullWindowToItsMinimum() {
+        let plan = WindowFramePlanner.plan(
+            visibleFrame: CGRect(x: 0, y: 0, width: 1728, height: 1080),
+            currentFrame: nil,
+            context: .initialLaunch)
+        let unbounded = CGSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        XCTAssertEqual(WindowFramePlanner.clampedSize(CGSize(width: 645, height: 400), minimum: plan.minimumSize, maximum: unbounded),
+                       CGSize(width: 1200, height: 820))
+        XCTAssertEqual(WindowFramePlanner.clampedSize(CGSize(width: 1500, height: 1000), minimum: plan.minimumSize, maximum: unbounded),
+                       CGSize(width: 1500, height: 1000))
     }
 }
 #endif

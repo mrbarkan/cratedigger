@@ -4,14 +4,14 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
-## 2.3.1 (112), 2026-10-17
+## 2.3.1 (113), 2026-10-19
 
-Release Candidate 1: an easier equalizer, with six user presets, Quick EQ
-from the keyboard, and a short guide to importing a preset for your
-headphones. Beta 2 brought Busy Signals, little animated pictures on the
-display while CrateDigger works, and beta 1 made Search Album Artwork work
-properly again. Everything in 2.3.0 is included as well. Release candidates
-are offered only to people who turned on Receive beta updates.
+CrateDigger 2.3 is here. A compact player folds the whole console into one
+slim unit, Secure Mode rips CDs with every sector read twice and checked,
+rip settings start from the medium, small pictures on the display show what
+CrateDigger is working on, and the equalizer gets six user presets and Quick
+EQ from the keyboard. 2.3.0 went out only as betas, so everything listed
+under 2.3.0 below is new in this release as well.
 
 ### Added
 
