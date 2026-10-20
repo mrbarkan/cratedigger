@@ -52,10 +52,10 @@ struct CarbonRootView: View {
                     CompactDeckView()
                 }
             }
-            // Pinned to the top for the fold and unfold. The strip hangs from
-            // the console's top edge (`WindowFramePlanner.compactPlan` anchors
-            // there when it has no saved frame), but the chassis centres what
-            // it holds: the compact deck rode up through a shrinking window,
+            // Pinned to the top for the fold and unfold. The window travels
+            // between the console's frame and the strip's (which a fold
+            // centres on screen, `WindowFramePlanner.compactPlan`), but the
+            // chassis centres what it holds: the compact deck rode up through a shrinking window,
             // and the full console's header started half off the top and slid
             // down into place. Pinned, the console folds up into the strip and
             // unrolls back down out of it, wherever the window is travelling.

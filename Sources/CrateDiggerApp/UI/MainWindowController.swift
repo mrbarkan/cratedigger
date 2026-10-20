@@ -483,12 +483,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         guard newLayout != layout, let window else { return }
         persistFrame()          // into the outgoing layout's slot
         layout = newLayout
-        applyLayoutPlan(restoring: true, animated: window.isVisible)
+        applyLayoutPlan(restoring: true, animated: window.isVisible, centringCompact: true)
     }
 
     /// `restoring` reads the layout's saved frame (a switch, or launch);
     /// otherwise the current frame is re-clamped (screen or theme change).
-    private func applyLayoutPlan(restoring: Bool, animated: Bool) {
+    /// `centringCompact` is a fold: the compact deck keeps its saved width
+    /// but lands in the middle of the screen. At launch it stays where it
+    /// was left.
+    private func applyLayoutPlan(restoring: Bool, animated: Bool, centringCompact: Bool = false) {
         guard let window else { return }
         // The green button is full screen on a titled window, and a strip one
         // rack unit tall must not go full screen. Without full-screen support
@@ -514,7 +517,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             let plan = WindowFramePlanner.compactPlan(
                 visibleFrame: visibleFrame(for: window),
                 savedFrame: restoring ? frameMemory.saved(for: .compact) : restingFrame(of: window),
-                anchor: restingFrame(of: window),
+                fallbackWidth: restingFrame(of: window).width,
+                centred: centringCompact,
                 metrics: CompactDeckMetrics(geometry: activeGeometry())
             )
             // Minimum first: the full window's 1200 × 820 floor would refuse the shrink.
