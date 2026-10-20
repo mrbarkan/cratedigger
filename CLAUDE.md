@@ -321,7 +321,7 @@ The NOW screen's right half is a 12 × 6 **LED matrix** (`OLEDMatrix`, ticked by
 - **Classify new menu commands.** One that acts on the browser selection, or needs the browser, goes in Core's `CompactCommandPolicy` (`.disabled` or `.expandsFirst`) and in `AppDelegate.playerCommand(for:)`.
 - **Two AppKit facts it works around.**
   - The green traffic light is full screen, not zoom, so compact sets `.fullScreenNone` to make it zoom, and zoom expands.
-  - A live resize ignores `NSWindow.minSize`/`maxSize` (AppKit has reset them to zero and unbounded by then), so the compact window clamps in `windowWillResize` to limits it stores itself. The full window still has that problem and can be dragged below 1200 pt.
+  - A live resize ignores `NSWindow.minSize`/`maxSize` (AppKit has reset them to zero and unbounded by then), so both layouts clamp in `windowWillResize` to limits `MainWindowController` stores itself (`resizeLimits`): the full window to its 1200 × 820 floor, the compact one to its plan.
 - **Showing it from the command line.** The DEBUG hook `CRATEDIGGER_COMPACT` (`1`, `play`, `roundtrip`) folds the window for a snapshot.
 
 **Busy Signals** (2.3.1): while a job runs, its OLED screen shows a line-art picture of it, and every other screen shows a 96 × 12 "source - - - destination" mini on the annunciator rail. The jobs are CD rip, secure read, convert, scan, download and transfer. The design is `docs/superpowers/specs/2026-10-15-busy-signals-design.md`; the approved sketch is in `CrateDigger_DESIGN/busy-signals/`.

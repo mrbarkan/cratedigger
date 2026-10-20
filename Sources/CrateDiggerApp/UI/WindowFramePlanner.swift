@@ -64,13 +64,16 @@ enum WindowFramePlanner {
     }
 
     /// The compact player's frame: a fixed height from the theme's geometry,
-    /// a width between the deck's minimum and the screen, placed where it was
-    /// last left (`savedFrame`), else folded up under the full window's
-    /// top-left corner (`anchor`), else centred — and always clamped on screen.
+    /// a width between the deck's minimum and the screen (the one it was last
+    /// left at, else `fallbackWidth`, the full window's), and always clamped
+    /// on screen. Folding into it (`centred`) puts it in the middle of the
+    /// screen; otherwise it stays where it was last left (`savedFrame`), and
+    /// with nowhere to stay it is centred too.
     static func compactPlan(
         visibleFrame: CGRect,
         savedFrame: CGRect?,
-        anchor: CGRect?,
+        fallbackWidth: CGFloat?,
+        centred: Bool = false,
         metrics: CompactDeckMetrics
     ) -> CompactWindowPlan {
         let availableWidth = max(1, visibleFrame.width - (outerMargin * 2))
@@ -78,15 +81,13 @@ enum WindowFramePlanner {
         let minWidth = min(metrics.minWindowWidth, availableWidth)
         let maxWidth = max(minWidth, visibleFrame.width)
 
-        let wanted = savedFrame?.width ?? anchor?.width ?? targetSize.width
+        let wanted = savedFrame?.width ?? fallbackWidth ?? targetSize.width
         let width = min(max(wanted, minWidth), max(minWidth, availableWidth))
         let size = CGSize(width: width, height: height)
 
         let origin: CGPoint
-        if let savedFrame {
+        if !centred, let savedFrame {
             origin = savedFrame.origin
-        } else if let anchor {
-            origin = CGPoint(x: anchor.minX, y: anchor.maxY - height)
         } else {
             origin = centeredOrigin(for: size, in: visibleFrame)
         }
@@ -100,7 +101,7 @@ enum WindowFramePlanner {
 
     /// A user resize held to the window's limits. `NSWindow.minSize` is not
     /// enforced against the hosting view's layout during a live resize, so
-    /// the compact window applies its own limits in `windowWillResize`.
+    /// both layouts apply their own limits in `windowWillResize`.
     static func clampedSize(_ size: CGSize, minimum: CGSize, maximum: CGSize) -> CGSize {
         CGSize(
             width: min(max(size.width, minimum.width), maximum.width),
