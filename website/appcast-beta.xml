@@ -3,6 +3,40 @@
     <channel>
         <title>CrateDigger</title>
         <item>
+            <title>2.3.2</title>
+            <pubDate>Mon, 19 Oct 2026 21:49:46 -0300</pubDate>
+            <link>https://cratedigger.mrbarkan.com/</link>
+            <sparkle:fullReleaseNotesLink>https://github.com/mrbarkan/cratedigger/releases</sparkle:fullReleaseNotesLink>
+            <sparkle:version>114</sparkle:version>
+            <sparkle:shortVersionString>2.3.2</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description sparkle:format="markdown"><![CDATA[
+A small update that tidies how the window sizes and sits on screen.
+
+### Fixed
+
+- **The window keeps its minimum size while you drag it.** It could be
+  dragged far narrower than the console fits, which cut off the controls
+  along the bottom. It now stops at 1200 by 820 points, or the size of the
+  screen if that is smaller.
+- **The compact player opens in the middle of the screen.** Folding the
+  console into the compact player used to leave it hanging from the full
+  window's top corner, or wherever you last left it. It now lands centred,
+  at the width you last gave it.
+- **POSITION and VOLUME sit evenly in the bottom bar.** On a wide window
+  the two faders used to crowd the transport keys and leave a wide empty
+  gap at each end. Each one now sits in the middle of its half, with the
+  same space to the window's edge as to the keys.
+
+]]></description>
+            <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.3.2/CrateDigger-2.3.2.dmg" length="72733140" type="application/octet-stream" sparkle:edSignature="Dhoi7GdfoOmQaZ6VM9gU4khrWgLWUrtQDIYEHArvHDMWAsXewvNLIQCSdndv1TV0evQzFtOXxtQnNyAdeOv6BA=="/>
+            <sparkle:deltas>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.3.2/CrateDigger114-113.delta" sparkle:deltaFrom="113" length="448090" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="j8rGyWUtFLCeF94oiay+A6L833j9tDMfgQ+zR33pvgAOxH7EpGBV26nKl76ouIu1+I1u/04t3rgfvbW01p6GAw=="/>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.3.2/CrateDigger114-109.delta" sparkle:deltaFrom="109" length="1732522" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="kwqsehbWgS/7tuQjOlQrQm4lVvuyzWnjiy/CNlrK8pKNDNP3T5/ND5h1U5dQ6CWfO9bVahh00x+0h9n7h25jCA=="/>
+            </sparkle:deltas>
+        </item>
+        <item>
             <title>2.3.1</title>
             <pubDate>Mon, 12 Oct 2026 16:03:44 -0300</pubDate>
             <link>https://cratedigger.mrbarkan.com/</link>
@@ -178,80 +212,6 @@ are offered only to people who turned on Receive beta updates.
             <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.3.1-rc.112/CrateDigger-2.3.1.dmg" length="72748119" type="application/octet-stream" sparkle:edSignature="RL6M5sumsFaobBwJX56ud8MOvvba8OQUhKDL1fZHyA3ZZiAaoQlWJdrChOOMYNX9TNYsTb/49GApIbyzOqttDQ=="/>
             <sparkle:deltas>
                 <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.3.1-rc.112/CrateDigger112-109.delta" sparkle:deltaFrom="109" length="1726926" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="ybCxllQNfvuNtzmJtRqjPmlxl0ps+4/GHXXOwc8x2zX74dwwsicSSh4Rfh+8ETgFsdEtwIZhND4jXd792VvHDw=="/>
-            </sparkle:deltas>
-        </item>
-        <item>
-            <title>2.3.1</title>
-            <pubDate>Mon, 12 Oct 2026 16:03:44 -0300</pubDate>
-            <link>https://cratedigger.mrbarkan.com/</link>
-            <sparkle:fullReleaseNotesLink>https://github.com/mrbarkan/cratedigger/releases</sparkle:fullReleaseNotesLink>
-            <sparkle:version>111</sparkle:version>
-            <sparkle:shortVersionString>2.3.1</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
-            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[
-Beta 2: Busy Signals, little animated pictures on the display while
-CrateDigger works. Beta 1 made Search Album Artwork work properly again.
-Everything in 2.3.0 is included as well. Betas are offered only to people who
-turned on Receive beta updates.
-
-### Added
-
-- **Busy Signals.** While a job runs, its screen on the display shows a small
-  line drawing of the work: the disc turning as a CD rips, the laser walking
-  the sectors in Secure Mode, files going through a press as they convert, a
-  crate of records being flipped through as a folder is scanned, a cassette
-  filling up as a stream downloads, and packets travelling down a cable to an
-  iPod. When the job is done, the picture shows a check or DONE.
-- **Jobs on the top line.** On every other screen, a running job shows as a
-  tiny "from, to" picture next to the indicators at the top of the display,
-  filling up as the job goes. Up to two show at once, with +N for more. A
-  finished job blinks there until you visit its screen, and clicking one
-  takes you to it. They show in the compact player too.
-- The pictures use your theme's colours, keep to one colour when the theme is
-  set to monochrome, and hold still when Reduce Motion is on.
-
-### Changed
-
-- **The display stays on DUB when a rip, download or SACD import finishes,**
-  so you can see that it finished. A rip still moves on to SCAN when it
-  imports what it ripped.
-- **An SACD import can no longer start while another job is running,** the
-  same as a CD rip or a download.
-
-### Fixed
-
-- **Each result shows how many images it has again.** The count beside
-  every release had stopped appearing, or said NO IMAGES for releases that
-  have plenty, because the archive it came from has been answering slowly or
-  not at all. The counts now come from MusicBrainz and appear about a second
-  after the results.
-- **The right artwork for the release you picked.** Picking one release,
-  going back and picking another could show the first one's images under
-  the second.
-- **Honest messages.** A busy MusicBrainz no longer reads as "No releases
-  found", the archive being down no longer reads as "No images", and "No
-  scans" no longer appears while Discogs is still loading. Each source shows
-  its own progress, with TRY AGAIN when it fails.
-- **Searching stops when you move on.** Closing the panel, going back or
-  starting a new search stops what was still loading, so an old search can no
-  longer replace newer results.
-- **Discogs no longer waits for the archive.** Both load at the same time.
-- **The MEDIA filter sees every disc in a set,** so a CD and DVD release
-  appears under DVD too, and HD means the same thing in the list and in the
-  grid.
-- **Return runs the search** from either field.
-
-### Changed
-
-- **Lighter on your Mac and on MusicBrainz.** The preview loads a 1200 pixel
-  image instead of originals of up to 5000, your own files are shrunk for the
-  grid in the background, and requests to MusicBrainz keep to one a second.
-
-]]></description>
-            <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.3.1-beta.111/CrateDigger-2.3.1.dmg" length="72715803" type="application/octet-stream" sparkle:edSignature="SgrrPsoe3HRAwDwWiRo5pT0ProBcg4sPJyys0dz+EbjdTMHX4hD1Y5wNo+sB/aYz49MvluwV5ahdMV5skTrfBQ=="/>
-            <sparkle:deltas>
-                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.3.1-beta.111/CrateDigger111-109.delta" sparkle:deltaFrom="109" length="1695218" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="AnwkrshEo9DaEStBO0xpRUbt3FcA/zi+ePVrKftlpjl7zXkfw7xaD/rUgKRDxIpWEeRCgwsvO5UcCQ0JygdlAg=="/>
             </sparkle:deltas>
         </item>
     </channel>

@@ -3,6 +3,43 @@
     <channel>
         <title>CrateDigger</title>
         <item>
+            <title>2.3.2</title>
+            <pubDate>Mon, 19 Oct 2026 21:47:47 -0300</pubDate>
+            <link>https://cratedigger.mrbarkan.com/</link>
+            <sparkle:fullReleaseNotesLink>https://github.com/mrbarkan/cratedigger/releases</sparkle:fullReleaseNotesLink>
+            <sparkle:version>114</sparkle:version>
+            <sparkle:shortVersionString>2.3.2</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description sparkle:format="markdown"><![CDATA[
+A small update that tidies how the window sizes and sits on screen.
+
+### Fixed
+
+- **The window keeps its minimum size while you drag it.** It could be
+  dragged far narrower than the console fits, which cut off the controls
+  along the bottom. It now stops at 1200 by 820 points, or the size of the
+  screen if that is smaller.
+- **The compact player opens in the middle of the screen.** Folding the
+  console into the compact player used to leave it hanging from the full
+  window's top corner, or wherever you last left it. It now lands centred,
+  at the width you last gave it.
+- **POSITION and VOLUME sit evenly in the bottom bar.** On a wide window
+  the two faders used to crowd the transport keys and leave a wide empty
+  gap at each end. Each one now sits in the middle of its half, with the
+  same space to the window's edge as to the keys.
+
+]]></description>
+            <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.3.2/CrateDigger-2.3.2.dmg" length="72733140" type="application/octet-stream" sparkle:edSignature="Dhoi7GdfoOmQaZ6VM9gU4khrWgLWUrtQDIYEHArvHDMWAsXewvNLIQCSdndv1TV0evQzFtOXxtQnNyAdeOv6BA=="/>
+            <sparkle:deltas>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.3.2/CrateDigger114-113.delta" sparkle:deltaFrom="113" length="448090" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="j8rGyWUtFLCeF94oiay+A6L833j9tDMfgQ+zR33pvgAOxH7EpGBV26nKl76ouIu1+I1u/04t3rgfvbW01p6GAw=="/>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.3.2/CrateDigger114-105.delta" sparkle:deltaFrom="105" length="2213290" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="L1JrgTkUcM6IEwhfpb6pQf+iNcFNEQcAjagHS6SWvqPbIhdFo5s1pCZ/F/zA0d+ltuGHWndWpmq5Nsf6nFksCw=="/>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.3.2/CrateDigger114-98.delta" sparkle:deltaFrom="98" length="2353122" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="efYajsQm23xn173YBpkQDIF3RP1ZhjlaAmd/JoRV0+jZFnXmGwrb1Xz+hqfXcFGxJskRN7S9bJmu1FD6Eg57Bg=="/>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.3.2/CrateDigger114-97.delta" sparkle:deltaFrom="97" length="2355790" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="/kbPf9BMMC1XazHOy/yzSiqaYu/7LLAwiqFlftPz6DbGWZMY7cFLTPIX4piDkO+Q6rZjGw/RRBxusDDRyaZtAQ=="/>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.3.2/CrateDigger114-96.delta" sparkle:deltaFrom="96" length="2380654" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="U/VoHCd8GOun9txKVbyqCNjWR/MQaT/0CRkMyv8z0oVKAfnLUWm50PzLtA9DWN/0YRTT7jZm7mc5XpeKh8paCw=="/>
+            </sparkle:deltas>
+        </item>
+        <item>
             <title>2.3.1</title>
             <pubDate>Mon, 19 Oct 2026 19:25:54 -0300</pubDate>
             <link>https://cratedigger.mrbarkan.com/</link>
@@ -195,49 +232,6 @@ rip it.
                 <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.4/CrateDigger105-96.delta" sparkle:deltaFrom="96" length="1385126" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="zWL727vf8Y5oZB3wzdGwuYdrPU9Vhg64tk0s1cCpYiPeGABf8b9kbgFm7aSTO0gN5toWv5uSUxBy699kn39YBw=="/>
                 <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.4/CrateDigger105-95.delta" sparkle:deltaFrom="95" length="1381146" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="o2FfAk8lJpeYqEHgnou6qO1y2QMyKAWd1CPrL1WQ8Y85EZM+iG52RvJPCQZNgHWM4410ckVlvEDEiC2+KR+SDg=="/>
                 <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.4/CrateDigger105-90.delta" sparkle:deltaFrom="90" length="3259042" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="OFU0zZ3GVDfqfMcy+4ZymREy4vxNT5z4uogTdonmASY4WlvJn/fuNZo5bx4AN3fMW4ZDDC9wvR64K5sB/AU/CQ=="/>
-            </sparkle:deltas>
-        </item>
-        <item>
-            <title>2.2.3</title>
-            <pubDate>Sat, 26 Sep 2026 17:34:02 -0300</pubDate>
-            <link>https://cratedigger.mrbarkan.com/</link>
-            <sparkle:fullReleaseNotesLink>https://github.com/mrbarkan/cratedigger/releases</sparkle:fullReleaseNotesLink>
-            <sparkle:version>98</sparkle:version>
-            <sparkle:shortVersionString>2.2.3</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
-            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[
-Put a CD in and it's ready to dub; records drag for real this time.
-
-### Added
-
-- **A CD opens itself.** Put an audio CD in the drive, or start CrateDigger
-  with one already there, and the disc opens on the DUB screen and starts
-  looking itself up. Nothing to click before you can pick the pressing and
-  press RIP.
-- **DUB is on the DISPLAY key and in the View menu** (Command-6). It used to
-  be reachable only by clicking the disc in Sources. With a disc in the
-  drive, DUB shows it even while you browse your library.
-
-### Fixed
-
-- **Artists, albums, tracks and crates drag again.** 2.2.2 fixed the window
-  stealing the drag, but on macOS 27 the rows still wouldn't start one. They
-  now drag to crates, playlists and other apps.
-- **A second CD gets its own tags.** Swapping discs kept the first disc's
-  identification, so the next one skipped its lookup and could rip under the
-  wrong album. Ejecting a disc now forgets it.
-- **Lossless rips ignore the lossy bitrate.** Ripping to ALAC or FLAC no
-  longer passes along the kbps setting the Patch Bay remembers for MP3 and AAC.
-
-]]></description>
-            <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.3/CrateDigger-2.2.3.dmg" length="72681147" type="application/octet-stream" sparkle:edSignature="aZrjpIqnOM+CrzpEupSvDCdaMPcgkVweuu1/AaHxVaRzTkDY5WDE16sybMaaMbpZZMs19nwW/XxGucYUMXXOBQ=="/>
-            <sparkle:deltas>
-                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.3/CrateDigger98-97.delta" sparkle:deltaFrom="97" length="500346" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="a3N77OaeZVekdGbkFGVsuEa1CUVeCYEF1xbxlTKUnVXN9kty12BDfxntqy6Wzz81cI/uzmZn1lF/X01DyfsIAQ=="/>
-                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.3/CrateDigger98-96.delta" sparkle:deltaFrom="96" length="760594" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="tgF4wNQP+wl+5HYbk6NmFyruojbCFWF+pYxa9+R9MUQ8X2H9CHEpiLezG2xh4bkYyuOnj/jKDftHpNJVmui5Ag=="/>
-                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.3/CrateDigger98-95.delta" sparkle:deltaFrom="95" length="897046" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="qYNHftMMVNdMuJgjVRKqC2AJ2d9G5T+fx0OkGt2lqd49iz7zBmwP7gqw4Gwgura5+myRQrPCp5cnGj3S8zsXCg=="/>
-                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.3/CrateDigger98-90.delta" sparkle:deltaFrom="90" length="3142206" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="ux92yyhQRaHDvWYHMx84gjKILpQnGXMxe4CnIQ/yTRSStqzhRZY2yLil94DsAl/1iK8L1Ay9u7vzC1/uBs1TBQ=="/>
-                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.2.3/CrateDigger98-89.delta" sparkle:deltaFrom="89" length="3566858" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="yh6YJODOKgLhXBmTu5LWbxK44pKi+sga341RkjXwW972CD2645uPi10jx3a2cHCc0e9tYBaPW9eCA1zOGMo6Bg=="/>
             </sparkle:deltas>
         </item>
     </channel>
