@@ -92,7 +92,7 @@ struct EqualizerEditorView: View {
             }
 
             Text(model.quickEQEnabled
-                 ? "Right-click a user key to save, rename or clear it. Quick EQ: point at a fader, then ↑/↓ or W/S."
+                 ? "Right-click a user key to save, rename or clear it. Quick EQ: point at a fader, then ↑/↓ or W/S to move it, ←/→ or A/D for the next one."
                  : "Right-click a user key to save, rename or clear it.")
                 .font(CarbonFont.mono(8.5))
                 .foregroundStyle(theme.ink4)
@@ -197,13 +197,17 @@ struct EqualizerEditorView: View {
                 // doesn't drop the fader when it strays off the thin track.
                 .contentShape(Rectangle())
                 .onHover { inside in
-                    if inside {
-                        if !showingImport, renamingSlot == nil { model.quickEQBand = i }
-                    } else if model.quickEQBand == i {
-                        model.quickEQBand = nil
-                    }
+                    if inside, !showingImport, renamingSlot == nil { model.quickEQBand = i }
                 }
             }
+        }
+        // Letting go is the bank's job, not a column's: ←/→ can move the
+        // selection away from the fader under the pointer, and leaving that
+        // fader must not drop the one the keys moved to. The gaps between
+        // columns count as inside, so crossing one keeps the selection.
+        .contentShape(Rectangle())
+        .onHover { inside in
+            if !inside { model.quickEQBand = nil }
         }
         .opacity(model.eqEnabled ? 1 : 0.5)
     }

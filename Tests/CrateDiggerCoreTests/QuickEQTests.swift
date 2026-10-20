@@ -5,34 +5,60 @@ final class QuickEQTests: XCTestCase {
 
     private let range: ClosedRange<Double> = -12...12
 
-    func testArrowsAndWSAreTheKeys() {
-        XCTAssertEqual(QuickEQ.direction(keyCode: 126, characters: nil, hasCommandModifier: false), .up)
-        XCTAssertEqual(QuickEQ.direction(keyCode: 125, characters: nil, hasCommandModifier: false), .down)
-        XCTAssertEqual(QuickEQ.direction(keyCode: 13, characters: "w", hasCommandModifier: false), .up)
-        XCTAssertEqual(QuickEQ.direction(keyCode: 1, characters: "s", hasCommandModifier: false), .down)
+    private func action(_ keyCode: UInt16, _ characters: String? = nil,
+                        command: Bool = false) -> QuickEQ.Action? {
+        QuickEQ.action(keyCode: keyCode, characters: characters, hasCommandModifier: command)
+    }
+
+    func testUpDownArrowsAndWSNudge() {
+        XCTAssertEqual(action(126), .nudge(.up))
+        XCTAssertEqual(action(125), .nudge(.down))
+        XCTAssertEqual(action(13, "w"), .nudge(.up))
+        XCTAssertEqual(action(1, "s"), .nudge(.down))
+    }
+
+    func testLeftRightArrowsAndADSelectTheNeighbour() {
+        XCTAssertEqual(action(123), .select(offset: -1))
+        XCTAssertEqual(action(124), .select(offset: 1))
+        XCTAssertEqual(action(0, "a"), .select(offset: -1))
+        XCTAssertEqual(action(2, "d"), .select(offset: 1))
     }
 
     func testCapitalLettersStillCount() {
-        XCTAssertEqual(QuickEQ.direction(keyCode: 13, characters: "W", hasCommandModifier: false), .up)
-        XCTAssertEqual(QuickEQ.direction(keyCode: 1, characters: "S", hasCommandModifier: false), .down)
+        XCTAssertEqual(action(13, "W"), .nudge(.up))
+        XCTAssertEqual(action(1, "S"), .nudge(.down))
+        XCTAssertEqual(action(0, "A"), .select(offset: -1))
+        XCTAssertEqual(action(2, "D"), .select(offset: 1))
     }
 
-    /// W and S are letters, not positions: on AZERTY the W is where Z sits on
-    /// QWERTY, and that key typing "z" must not move a fader.
+    /// The letters are letters, not positions: on AZERTY the W is where Z
+    /// sits on QWERTY and the A where Q sits, and the keys typing "z" and "q"
+    /// must not move anything.
     func testLettersFollowTheLayoutNotTheKeyPosition() {
-        XCTAssertNil(QuickEQ.direction(keyCode: 13, characters: "z", hasCommandModifier: false))
-        XCTAssertEqual(QuickEQ.direction(keyCode: 6, characters: "w", hasCommandModifier: false), .up)
+        XCTAssertNil(action(13, "z"))
+        XCTAssertNil(action(0, "q"))
+        XCTAssertEqual(action(6, "w"), .nudge(.up))
+        XCTAssertEqual(action(12, "a"), .select(offset: -1))
     }
 
     func testCommandKeysPassThrough() {
-        XCTAssertNil(QuickEQ.direction(keyCode: 13, characters: "w", hasCommandModifier: true))   // ⌘W closes
-        XCTAssertNil(QuickEQ.direction(keyCode: 126, characters: nil, hasCommandModifier: true))
+        XCTAssertNil(action(13, "w", command: true))   // ⌘W closes
+        XCTAssertNil(action(0, "a", command: true))    // ⌘A selects all
+        XCTAssertNil(action(126, command: true))
+        XCTAssertNil(action(123, command: true))
     }
 
     func testOtherKeysAreNotQuickEQ() {
-        XCTAssertNil(QuickEQ.direction(keyCode: 49, characters: " ", hasCommandModifier: false))  // Space plays
-        XCTAssertNil(QuickEQ.direction(keyCode: 123, characters: nil, hasCommandModifier: false))
-        XCTAssertNil(QuickEQ.direction(keyCode: 0, characters: "a", hasCommandModifier: false))
+        XCTAssertNil(action(49, " "))   // Space plays
+        XCTAssertNil(action(36, "\r"))  // Return
+        XCTAssertNil(action(14, "e"))
+    }
+
+    func testSelectionStepsOneFaderAndStopsAtTheEnds() {
+        XCTAssertEqual(QuickEQ.band(4, offsetBy: 1, count: 10), 5)
+        XCTAssertEqual(QuickEQ.band(4, offsetBy: -1, count: 10), 3)
+        XCTAssertEqual(QuickEQ.band(9, offsetBy: 1, count: 10), 9)
+        XCTAssertEqual(QuickEQ.band(0, offsetBy: -1, count: 10), 0)
     }
 
     func testNudgeMovesHalfADecibel() {
