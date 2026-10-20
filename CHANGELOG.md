@@ -4,6 +4,25 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 2.3.2 (114), 2026-10-19
+
+A small update that tidies how the window sizes and sits on screen.
+
+### Fixed
+
+- **The window keeps its minimum size while you drag it.** It could be
+  dragged far narrower than the console fits, which cut off the controls
+  along the bottom. It now stops at 1200 by 820 points, or the size of the
+  screen if that is smaller.
+- **The compact player opens in the middle of the screen.** Folding the
+  console into the compact player used to leave it hanging from the full
+  window's top corner, or wherever you last left it. It now lands centred,
+  at the width you last gave it.
+- **POSITION and VOLUME sit evenly in the bottom bar.** On a wide window
+  the two faders used to crowd the transport keys and leave a wide empty
+  gap at each end. Each one now sits in the middle of its half, with the
+  same space to the window's edge as to the keys.
+
 ## 2.3.1 (113), 2026-10-19
 
 CrateDigger 2.3 is here. A compact player folds the whole console into one
