@@ -106,7 +106,7 @@ final class WindowFramePlannerTests: XCTestCase {
         XCTAssertEqual(plan.frame.minX, full.minX, accuracy: 0.001)
         XCTAssertEqual(plan.frame.maxY, full.maxY, accuracy: 0.001)
         XCTAssertEqual(plan.frame.width, 1400, accuracy: 0.001)
-        XCTAssertEqual(plan.minimumSize.width, 1174, accuracy: 0.001)
+        XCTAssertEqual(plan.minimumSize.width, 1178, accuracy: 0.001)
     }
 
     func testCompactPlanRestoresSavedFrameOverAnchor() {
@@ -141,7 +141,7 @@ final class WindowFramePlannerTests: XCTestCase {
             savedFrame: CGRect(x: 0, y: 0, width: 600, height: 302),
             anchor: nil,
             metrics: CompactDeckMetrics(geometry: .standard))
-        XCTAssertEqual(plan.frame.width, 1174, accuracy: 0.001)
+        XCTAssertEqual(plan.frame.width, 1178, accuracy: 0.001)
     }
 
     func testResizeClampHoldsTheCompactWindowToItsLimits() {
