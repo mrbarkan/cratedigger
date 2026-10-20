@@ -9,9 +9,9 @@ final class CompactDeckMetricsTests: XCTestCase {
         XCTAssertEqual(m.rowHeight, 274, accuracy: 0.001)        // 170 + 12 + 92
         XCTAssertEqual(m.artSide, 230, accuracy: 0.001)          // 274 - 18 - 20 - 6
         XCTAssertEqual(m.transportWidth, 420, accuracy: 0.001)   // 6×46 + 78 + 6×11
-        XCTAssertEqual(m.footerMinWidth, 896, accuracy: 0.001)   // 52 + 2×184 + 2×28 + 420
+        XCTAssertEqual(m.footerMinWidth, 900, accuracy: 0.001)   // 2×28 + 2×184 + 2×28 + 420
         XCTAssertEqual(m.windowHeight, 302, accuracy: 0.001)     // 2×14 + 274
-        XCTAssertEqual(m.minWindowWidth, 1174, accuracy: 0.001)  // 2×18 + 230 + 12 + 896
+        XCTAssertEqual(m.minWindowWidth, 1178, accuracy: 0.001)  // 2×18 + 230 + 12 + 900
     }
 
     /// The titlebar LED's compact spot: flush with the art column's trailing
@@ -23,11 +23,11 @@ final class CompactDeckMetricsTests: XCTestCase {
             let m = CompactDeckMetrics(geometry: geometry)
             let artTrailing = geometry.chassisInsetH + m.artSide
             let displayLeading = artTrailing + geometry.mainGap
-            XCTAssertEqual(m.statusLampCenterX + CompactDeckMetrics.statusLampDiameter / 2, artTrailing, accuracy: 0.001)
+            XCTAssertEqual(m.statusLampCenterX + CompactDeckMetrics.statusLampHitSide / 2, artTrailing, accuracy: 0.001)
             XCTAssertLessThanOrEqual(m.statusLampCenterX + CompactDeckMetrics.statusLampHitSide / 2, displayLeading)
             XCTAssertGreaterThan(m.statusLampCenterX - CompactDeckMetrics.statusLampHitSide / 2, geometry.chassisInsetH)
         }
-        XCTAssertEqual(CompactDeckMetrics(geometry: .standard).statusLampCenterX, 243.5, accuracy: 0.001) // 18 + 230 - 4.5
+        XCTAssertEqual(CompactDeckMetrics(geometry: .standard).statusLampCenterX, 239, accuracy: 0.001) // 18 + 230 - 9
     }
 
     private func wideMarginGeometry() -> CarbonGeometry {
