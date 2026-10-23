@@ -1,6 +1,6 @@
 ---
 name: press-the-record
-description: CrateDigger release macro. Use when the user says "press the record" (also "press record", "cut a release", "ship a release"), optionally with a stage modifier (alpha, beta, rc, ga) and a version. Verifies the build, bumps the version, updates the changelog (and, for GA, the README and website), commits, pushes, builds the signed + notarized DMG, publishes the GitHub release, and writes the update feed(s) for that stage.
+description: CrateDigger release macro. Use when the user says "press the record" (also "press record", "cut a release", "ship a release"), optionally with a stage modifier (alpha, beta, rc, ga) and a version. Decides the stage and version itself from the branch and the release history, confirms once with a short list, then verifies the build, bumps the version, updates the changelog (and, for GA, the README and website), commits, pushes, builds the signed + notarized DMG, publishes the GitHub release, and writes the update feed(s) for that stage.
 ---
 
 # Press the Record — CrateDigger release macro
@@ -8,30 +8,125 @@ description: CrateDigger release macro. Use when the user says "press the record
 Run these steps in order. Stop and report if any step fails; never push or
 package on a red build.
 
-Invocation: `press the record [alpha|beta|rc|ga] [<version>]`, e.g.
-"press the record", "press the record rc", "press the record ga 2.3.1",
-"press the record alpha 2.3.2". The modifier picks the **stage**; everything
-below branches on it.
+Invocation: `press the record [alpha|beta|rc|ga] [<version>]`. Usually just
+"press the record": **the stage and the version are decided by the rules in
+step 0, not by asking.** The user confirms once, from a short list, and then
+the rest runs without further questions (it still stops on any failure).
 
-## 0. Work out the stage, the branch and the version
+## 0. Decide everything, then confirm once
 
-**Run `git branch --show-current` first**, then resolve the stage:
+Never ask the user to pick a stage, a version or a build. Work them out from
+the rules below, which are the decisions the user actually made for every
+release from 1.0 to 2.3.2, and put the result in one list for a yes/no.
 
-| Modifier given | On `main` | On the open beta branch | On any other branch |
+### Gather
+
+```bash
+git fetch origin --tags --quiet
+git branch --show-current
+grep -E 'static let (marketing|build|channel|channelOrdinal) ' Sources/CrateDiggerApp/AppVersion.swift
+grep '^BETA_BRANCH=' scripts/update-appcast.sh
+# Last GA anywhere, and the last release this branch contains
+git tag -l 'v[0-9]*' --sort=-version:refname | grep -vE -- '-(alpha|beta|rc)\.' | head -1
+git describe --tags --abbrev=0 --match 'v[0-9]*' HEAD
+# Since that release: features and fixes (merges left out, merged commits counted)
+git log --no-merges --format=%s <last release>..HEAD | grep -c '^feat'
+git log --no-merges --format=%s <last release>..HEAD | grep -c '^fix'
+# Fix branches with work the release branch doesn't have
+for b in $(git for-each-ref --format='%(refname:short)' refs/heads/fix/ refs/remotes/origin/fix/); do
+  n=$(git rev-list --count HEAD..$b); [ "$n" -gt 0 ] && echo "$b $n"
+done
+```
+
+"Shipped" means a tag `v<version>` (no suffix) exists. A shipped version is
+never reused.
+
+### Stage
+
+A modifier the user gave wins, within the limits in the last column. Otherwise:
+
+| Branch | Last release this branch contains | Stage | Limits on a modifier |
 |---|---|---|---|
-| none | `ga` (a stable patch) | `beta`, unless the last release on the branch was an RC: then ask whether this is the next RC or GA | ask (usually `alpha`) |
-| `alpha` | refuse: `main` is stable | allowed | allowed |
-| `beta` / `rc` | refuse, switch to the beta branch | allowed | ask: betas and RCs ship from the open beta branch |
-| `ga` | a stable patch from `main` | **promote** the beta line into `main` (see GA below) | refuse |
+| `main` | anything | `ga`, a stable patch | `alpha`, `beta`, `rc` refused |
+| `BETA_BRANCH` | a GA | `beta` 1 | |
+| `BETA_BRANCH` | a beta | the next `beta` | `rc` turns it into RC 1 |
+| `BETA_BRANCH` | an RC, no `feat` since | `ga`, promoting the line into `main` | `rc` gives the next RC |
+| `BETA_BRANCH` | an RC, `feat` commits since | `beta` 1 of the next patch | |
+| any other branch (`v2.4`, `next/*`, `feat/*`) | anything | `alpha` | `beta` opens a new beta line here (see below); `ga` refused |
+| `v2`, `v2.1`, `v2.2` | | refuse: history only | |
 
-Never release from a history branch: `v2`, `v2.1`, `v2.2`.
+- **RC is never automatic.** Betas stay betas until the user says `rc`. Every
+  RC so far went straight to GA, so after an RC the default is GA.
+- **New features after an RC restart the line** on the next patch: 2.3.0 RC 1
+  took Busy Signals and EQ presets and became 2.3.1 beta 1.
+- **`beta` from a branch other than `BETA_BRANCH` opens a new beta line** on
+  that branch. List it in the confirmation as "Opens beta line: `<old>` to
+  `<branch>`" and do the step 9 flips before building.
+
+### Version
+
+- **Build:** the current build + 1, always.
+- **Marketing**, unless the user named one:
+
+| Stage | Version | Precedent |
+|---|---|---|
+| `ga` on `main` | last GA + patch. Minor (`X.(Y+1).0`) when 10 or more `feat` commits are in the range | 2.0.1 to 2.0.5 and 2.2.1 to 2.2.3 carried 0 to 3 features; 2.1.0 carried 12 |
+| `ga` promotion | the beta line's version, unchanged | 2.2.4, 2.3.1 |
+| next `beta` or `rc` | unchanged | 2.0.0 beta 2 to 9 |
+| `beta` 1 on a branch named `vX.Y` with no `X.Y` GA yet | `X.Y.0` | 2.2.0, 2.3.0 |
+| `beta` 1 after a GA on the same line | that GA + patch | 2.2.3, then 2.2.4 beta 1 |
+| `beta` 1 after an RC plus new features | the RC's version + patch | 2.3.0 RC 1, then 2.3.1 beta 1 |
+| `alpha` on `vX.Y` | `X.Y.0` | |
+| `alpha` on `next/X.Y.Z` | `X.Y.Z` | |
+| `alpha` on any other branch | last GA + patch | |
+
+- Then, whatever the table gave: **while that version is shipped, add one to
+  the patch.** That is how `next/2.3.2` lands on 2.3.3 now that 2.3.2 shipped
+  from `main`.
+- **Major versions are never automatic.** 2.0 happened because the user named
+  it. Go to `X+1.0.0` only when the user says the number.
+- **`main` takes the next patch even when a work branch is named for it.** The
+  branch moves on (rule above), and the confirmation says so.
+- **Ordinal:** +1 within the same channel and version; a new channel or a new
+  version restarts it at `"1"` (alpha 3, then beta 1, then RC 1). For an alpha,
+  count the existing `v<ver>-alpha.*` tags. GA sets it to `""`.
+
+### What goes where
+
+- **`ga` on `main`:** every `fix/*` branch the gather step found is merged in
+  first. That is what 2.3.2 did with the window and footer fixes; a fix branch
+  left out is a fix nobody gets. `feat/*` and `next/*` never go in.
+- **`beta`, `rc`, `ga` promotion:** `main` is merged into the beta branch first
+  (step 5). Fix branches go to `main`, not straight into a beta.
+- **`alpha`:** the branch as it is.
+
+### Confirm
+
+Show this list, filled in, then ask one `AskUserQuestion` with two options,
+"Press it" and "Change something". Drop lines that don't apply.
+
+```
+Press the record: <ver> <stage + ordinal> (build <b>)
+- From: <branch>
+- Merging in: <branches, or "nothing">
+- Not included: <unmerged fix/next/feat branches worth naming, or "nothing waiting">
+- Why <ver>: <one line, e.g. "patch: 0 features, 3 fixes since 2.3.1">
+- Tag: <tag>, <prerelease | normal release, becomes the Latest download>
+- Feeds: <feed on branch>, ...
+- Copy: CHANGELOG ## <ver><, README, website footer for GA>
+- Pushes: <branches>
+- Also: <side effects, e.g. "next/2.3.2's next alpha becomes 2.3.3", "Opens beta line: v2.3 to v2.4">
+```
+
+On "Press it", run steps 1 to 10 without asking again. On "Change something",
+apply the user's change, show the list again, and ask again.
 
 ### The four stages
 
 | | alpha | beta | rc | ga |
 |---|---|---|---|---|
 | Audience | people you send the link to | stable users who turned on Receive beta updates | same as beta | everyone |
-| Branch | any work branch (ask if unclear) | open beta branch | open beta branch | `main` (patch) or the beta branch merged in (promotion) |
+| Branch | any work branch | open beta branch | open beta branch | `main` (patch) or the beta branch merged in (promotion) |
 | `AppVersion.channel` | `"ALPHA"` | `"BETA"` | `"RC"` | `""` |
 | `channelOrdinal` | alpha number | beta number | RC number | `""` |
 | Tag | `v<ver>-alpha.<build>` | `v<ver>-beta.<build>` | `v<ver>-rc.<build>` | `v<ver>` |
@@ -44,40 +139,31 @@ Never release from a history branch: `v2`, `v2.1`, `v2.2`.
 
 **Alpha has its own feed, `appcast-nightly.xml`, and that feed must exist in
 the app before the first alpha ships.** An `ALPHA` build has to read the nightly
-feed, or it can never be offered the next alpha. Today `UpdateFeed.override`
-(`Updates/SoftwareUpdater.swift`) sends *every* non-empty channel to the beta
-feed. So before an alpha, check that `UpdateFeed` has a `nightly` URL and that
-`override` returns it for `"ALPHA"`, with `UpdateFeedTests` covering it. If it
-doesn't, **stop**: say the plumbing is missing and offer to build it. Never ship
-an alpha into the beta feed as a stand-in, because that offers it to every beta tester.
-`scripts/update-appcast.sh` already accepts `--appcast website/appcast-nightly.xml`
-from any branch and stages it in `dist/updates-nightly/`.
+feed, or it can never be offered the next alpha. The routing landed on `v2.4`
+for 2.4.0: `UpdateFeed.override` (`Updates/SoftwareUpdater.swift`) returns
+`UpdateFeed.nightly` for `"ALPHA"`, and `UpdateFeedTests` pins it. Branches cut
+before that (`main` at 2.3.x, `v2.3`, `next/2.3.2` until it takes the change)
+still send *every* non-empty channel to the beta feed. So before an alpha,
+check that the branch's `UpdateFeed` has `nightly`. If it doesn't, put "Needs
+the nightly feed routing from `v2.4` merged in first" under "Also" in the
+confirmation, and merge it on "Press it". Never ship an alpha into the beta
+feed as a stand-in, because that offers it to every beta tester.
+`scripts/update-appcast.sh` accepts `--appcast website/appcast-nightly.xml` from
+any branch except `main`, which it refuses, and stages it in
+`dist/updates-nightly/`.
 
 ### Where the lines stand
 
-- **2.3.1 shipped GA on 2026-10-19 (build 113)**, promoted from `v2.3` into
-  `main`. `main` is the stable line; `v2.3` is at the same commit.
-- **The next beta line has not been chosen.** It is either 2.3.2 (the work on
-  `next/2.3.2`) or 2.4 (`v2.4`, the parked Stock iPod spec). Until the user
-  picks, ask before any beta or RC. `BETA_BRANCH` in `update-appcast.sh` still
-  says `v2.3`.
-
-### Pick the version
-
-- Read `marketing`, `build`, `channel` and `channelOrdinal` from
-  `Sources/CrateDiggerApp/AppVersion.swift`.
-- **Build:** always +1, on every stage and every branch. It is monotonic across
-  the whole project, and it is what the feeds and deltas are keyed on.
-- **Marketing:** use the version the user named. Otherwise:
-  - ga on `main`: a patch bump (`X.Y.Z` to `X.Y.(Z+1)`).
-  - ga promotion: the beta line's version, unchanged.
-  - alpha, beta, rc: keep the branch's version. A version that already shipped GA
-    can never be reused, so on a branch still carrying a shipped version, ask what
-    the next one is (e.g. 2.3.2 or 2.4.0).
-  - State the version and build you chose in your first message so the user can
-    correct them.
-- **Ordinal:** +1 within the same channel. Moving to a new channel restarts it
-  at `"1"`: alpha 3, then beta 1, then RC 1. GA sets it to `""`.
+- **2.3.2 shipped GA on 2026-10-19 (build 114)** as a stable patch from `main`
+  (window minimum size, compact deck centred on fold, footer faders centred).
+  2.3.1 (build 113) shipped earlier the same day, promoted from `v2.3`.
+- **`BETA_BRANCH` is still `v2.3`,** fast-forwarded to `main`, so a beta pressed
+  there today is 2.3.3 beta 1.
+- **`v2.4`** holds the Stock iPod spec (parked) and has `next/2.3.2` merged in.
+  The profile-decode fix (M0) must land before any 2.4 beta; put it under
+  "Also" in the confirmation if it still hasn't.
+- **`next/2.3.2`** (the hidden assistant) can no longer be 2.3.2; by the rules
+  above its next alpha is 2.3.3.
 
 ## 1. Verify green
 
@@ -312,25 +398,27 @@ In any shell chain that ends in a push or publish, gate each step with an
 explicit `|| { echo "FAIL: ..."; exit 1; }`. `set -e` has been seen not to stop
 such a chain in this environment.
 
-## 9. After a GA promotion
+## 9. Beta lines: after a GA, and opening a new one
 
-The beta line is done, so the tooling has to point at the next one. **Ask which
-branch is next** (for example `next/2.3.2` or `v2.4`), then:
+The beta line is done. **Leave `BETA_BRANCH` where it is**: the next beta
+pressed there is that line's next patch (2.2.3 GA, then 2.2.4 beta 1). The
+tooling moves only when a beta is pressed from another branch, which opens a
+new line there (step 0). Opening a line means:
 - change `BETA_BRANCH` in `scripts/update-appcast.sh`;
 - update "Where the lines stand" in this skill and the "Two release lines"
   section of `CLAUDE.md`;
 - move the shipped line's DMGs out of `dist/updates-beta/` into
   `dist/updates-beta/old_updates/` once the next line's first beta is ready
   (the script refuses a DMG whose major version differs from what is staged);
-- cut or reset the next beta branch from `main`, and set its `channel`.
+- merge `main` into the new beta branch (or cut it from `main` if it doesn't
+  exist yet), and set its `channel` to `"BETA"`.
 
 ## 10. Report
 
 Give the user: the stage, version and build; the commit hashes; which branches
 were pushed; the DMG path with its verified spctl and staple results; the
 release URL and whether it is a prerelease; each feed written, with the all-200
-check and the deployed check; and anything left open (for example the next beta
-line after a GA).
+check and the deployed check; and anything left open (for example a work branch whose next version moved).
 
 ## Notes
 
