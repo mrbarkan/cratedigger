@@ -100,6 +100,19 @@ enum PlaybackMeterScale {
         let db = 20 * log10(linear)
         return min(max((db + 48) / 48 * 0.80, 0), 1)
     }
+
+    /// Fold the player volume into the spectrum's 0…1 bands. They are already
+    /// a dB window (`SpectrumProcessor.floorDB`…`ceilDB`), so the volume comes
+    /// off in dB: −5 dB on the fader lowers every bar by 5 dB of that window.
+    /// Multiplying by the linear volume, as this used to, dropped the bars by
+    /// 42% for the same nudge and left them near dark a little lower down.
+    static func spectrum(_ bands: [Double], volume: Double) -> [Double] {
+        guard volume < 1 else { return bands }
+        guard volume > 0.000_001 else { return bands.map { _ in 0 } }
+        let window = Double(SpectrumProcessor.ceilDB - SpectrumProcessor.floorDB)
+        let drop = -20 * log10(volume) / window
+        return bands.map { max($0 - drop, 0) }
+    }
 }
 
 protocol PlaybackEngineProtocol: AnyObject {
@@ -409,10 +422,8 @@ final class AVPlayerEngine: PlaybackEngineProtocol {
     }
 
     var currentSpectrum: [Double] {
-        // Already 0...1 from the FFT's dB mapping; scale by volume so the bars
-        // fall when you turn it down, matching the level meter.
-        let v = Double(player.volume)
-        return levelTap.currentBands().map { $0 * v }
+        // Bars fall when you turn it down, matching the level meter.
+        PlaybackMeterScale.spectrum(levelTap.currentBands(), volume: Double(player.volume))
     }
 
     func setEqualizer(enabled: Bool, gains: [Double]) {
