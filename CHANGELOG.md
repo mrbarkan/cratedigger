@@ -4,6 +4,39 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 2.3.3 (115), 2026-10-23
+
+Beta 1: shuffle lets go when you turn it off, the display's animation keeps
+up when you switch desktops and turn down, and the compact player keeps its
+artwork in place. Betas are offered only to people who turned on Receive beta
+updates.
+
+### Added
+
+- **Quick EQ moves between faders.** With a fader lit, the Left and Right
+  arrows, or A and D, light the one beside it, so you can work across the
+  whole equalizer from the keyboard. It stops at the first and last band.
+
+### Fixed
+
+- **Turning shuffle off really turns it off.** Next and Previous kept
+  following the shuffled order until you played something else. Turning
+  shuffle off now puts what is playing back in its album, crate or playlist
+  order, and turning it on shuffles everything still to come. The song
+  playing carries on either way.
+- **The display's animation no longer freezes when you switch desktops.**
+  Coming back to the desktop CrateDigger is on left the LED animation stuck
+  on its last frame until the next song started.
+- **The animation follows the volume properly.** Turning the volume down a
+  little made the bars drop almost to nothing. They now fall by as much as
+  the sound does.
+- **Album art stays in its frame in the compact player.** A cover that is not
+  perfectly square, or a YouTube thumbnail, spilled out of its frame and ran
+  into the display.
+- **Quick EQ keeps hold of the fader you moved to.** Moving the pointer off
+  the fader you first pointed at no longer lets go of the one the keys moved
+  to, as long as it stays over the equalizer.
+
 ## 2.3.2 (114), 2026-10-19
 
 A small update that tidies how the window sizes and sits on screen.
