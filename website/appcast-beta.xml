@@ -3,6 +3,55 @@
     <channel>
         <title>CrateDigger</title>
         <item>
+            <title>2.3.3</title>
+            <pubDate>Fri, 23 Oct 2026 17:24:57 -0300</pubDate>
+            <link>https://cratedigger.mrbarkan.com/</link>
+            <sparkle:fullReleaseNotesLink>https://github.com/mrbarkan/cratedigger/releases</sparkle:fullReleaseNotesLink>
+            <sparkle:version>115</sparkle:version>
+            <sparkle:shortVersionString>2.3.3</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description sparkle:format="markdown"><![CDATA[
+Beta 1: shuffle lets go when you turn it off, the display's animation keeps
+up when you switch desktops and turn down, and the compact player keeps its
+artwork in place. Betas are offered only to people who turned on Receive beta
+updates.
+
+### Added
+
+- **Quick EQ moves between faders.** With a fader lit, the Left and Right
+  arrows, or A and D, light the one beside it, so you can work across the
+  whole equalizer from the keyboard. It stops at the first and last band.
+
+### Fixed
+
+- **Turning shuffle off really turns it off.** Next and Previous kept
+  following the shuffled order until you played something else. Turning
+  shuffle off now puts what is playing back in its album, crate or playlist
+  order, and turning it on shuffles everything still to come. The song
+  playing carries on either way.
+- **The display's animation no longer freezes when you switch desktops.**
+  Coming back to the desktop CrateDigger is on left the LED animation stuck
+  on its last frame until the next song started.
+- **The animation follows the volume properly.** Turning the volume down a
+  little made the bars drop almost to nothing. They now fall by as much as
+  the sound does.
+- **Album art stays in its frame in the compact player.** A cover that is not
+  perfectly square, or a YouTube thumbnail, spilled out of its frame and ran
+  into the display.
+- **Quick EQ keeps hold of the fader you moved to.** Moving the pointer off
+  the fader you first pointed at no longer lets go of the one the keys moved
+  to, as long as it stays over the equalizer.
+
+]]></description>
+            <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.3.3-beta.115/CrateDigger-2.3.3.dmg" length="72782120" type="application/octet-stream" sparkle:edSignature="Sh+DiBf7d0seyWIT2LT4Re2cdZ4QRT/fO9U4erRgUKZO3bJ1OWeiYZ90fq39a4IwHlwTrHN/Hpr6w5YedoSuAw=="/>
+            <sparkle:deltas>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.3.3-beta.115/CrateDigger115-114.delta" sparkle:deltaFrom="114" length="916034" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="7kuRky5FNrfWjVBjUar0hKH1AMILboZnAFNhGfeeJ0Styhgd1e0C5bY40BzLZp7APrMtl523/8gRnMqB/lx9CA=="/>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.3.3-beta.115/CrateDigger115-113.delta" sparkle:deltaFrom="113" length="920290" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="tkPk91/C/tSznFdi04i/wYubxpb8mhCklj2n0tVw5zEuq6gxnKWtAbiJnuBE0h+Z0F8Uwzko9qprWT+7HrrVBw=="/>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.3.3-beta.115/CrateDigger115-109.delta" sparkle:deltaFrom="109" length="1725714" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="ZcaooO9Yv9HFtCdyhfpHXaJQe0iVgX2dtMpmPQ6R+h4iDgs8ZbQ3JmAkIgeZIXA3SBSsgSPlplLVejZnh+97CA=="/>
+            </sparkle:deltas>
+        </item>
+        <item>
             <title>2.3.2</title>
             <pubDate>Mon, 19 Oct 2026 21:49:46 -0300</pubDate>
             <link>https://cratedigger.mrbarkan.com/</link>
@@ -123,95 +172,6 @@ under 2.3.0 below is new in this release as well.
             <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.3.1/CrateDigger-2.3.1.dmg" length="72625223" type="application/octet-stream" sparkle:edSignature="yDEV95pnRCQJKMQWeDGKeLb3n2muqix943P6OnJSUaCJU5ZzdTYb9nSFhrFHIKQCZkqHjhow+v6TH5bNMcBwDA=="/>
             <sparkle:deltas>
                 <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.3.1/CrateDigger113-109.delta" sparkle:deltaFrom="109" length="1722958" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="psOMS676qKqgTN3ECVhyozWwhL5abz5xBX1ningK6FSSH/+OGUCuVrLBDJF8f4YBPI9F3a3maSQCbJVMfcpqDA=="/>
-            </sparkle:deltas>
-        </item>
-        <item>
-            <title>2.3.1</title>
-            <pubDate>Mon, 12 Oct 2026 16:03:44 -0300</pubDate>
-            <link>https://cratedigger.mrbarkan.com/</link>
-            <sparkle:fullReleaseNotesLink>https://github.com/mrbarkan/cratedigger/releases</sparkle:fullReleaseNotesLink>
-            <sparkle:version>112</sparkle:version>
-            <sparkle:shortVersionString>2.3.1</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
-            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[
-Release Candidate 1: an easier equalizer, with six user presets, Quick EQ
-from the keyboard, and a short guide to importing a preset for your
-headphones. Beta 2 brought Busy Signals, little animated pictures on the
-display while CrateDigger works, and beta 1 made Search Album Artwork work
-properly again. Everything in 2.3.0 is included as well. Release candidates
-are offered only to people who turned on Receive beta updates.
-
-### Added
-
-- **Six user EQ presets.** The equalizer has a full row of six user keys
-  under the built-in curves, up from three. The presets you already saved
-  stay where they were.
-- **Quick EQ.** Turn on QUICK EQ at the top of the equalizer, point at a
-  fader and press the Up and Down arrows, or W and S, to move it half a
-  decibel at a time. The fader you are pointing at lights up, and while it
-  does the arrows move it rather than the volume. Shortcuts with Command
-  still work as usual. QUICK EQ stays on until you turn it off.
-- **SQUIG.LINK in the equalizer.** A key opens squig.link in your browser,
-  where reviewers publish measurements and EQ for hundreds of headphones
-  and IEMs.
-- **How to import a headphone preset,** in three steps under the faders:
-  find your headphones on squig.link, press Auto EQ and then Export in its
-  Equalizer tab, then press IMPORT AUTOEQ and drop the file in.
-- **Busy Signals.** While a job runs, its screen on the display shows a small
-  line drawing of the work: the disc turning as a CD rips, the laser walking
-  the sectors in Secure Mode, files going through a press as they convert, a
-  crate of records being flipped through as a folder is scanned, a cassette
-  filling up as a stream downloads, and packets travelling down a cable to an
-  iPod. When the job is done, the picture shows a check or DONE.
-- **Jobs on the top line.** On every other screen, a running job shows as a
-  tiny "from, to" picture next to the indicators at the top of the display,
-  filling up as the job goes. Up to two show at once, with +N for more. A
-  finished job blinks there until you visit its screen, and clicking one
-  takes you to it. They show in the compact player too.
-- The pictures use your theme's colours, keep to one colour when the theme is
-  set to monochrome, and hold still when Reduce Motion is on.
-
-### Changed
-
-- **The display stays on DUB when a rip, download or SACD import finishes,**
-  so you can see that it finished. A rip still moves on to SCAN when it
-  imports what it ripped.
-- **An SACD import can no longer start while another job is running,** the
-  same as a CD rip or a download.
-- **Lighter on your Mac and on MusicBrainz.** The preview loads a 1200 pixel
-  image instead of originals of up to 5000, your own files are shrunk for the
-  grid in the background, and requests to MusicBrainz keep to one a second.
-
-### Fixed
-
-- **An imported squig.link file is named after the headphone,** the same
-  as an AutoEQ file already was, instead of ending in "Filters".
-- **Each result shows how many images it has again.** The count beside
-  every release had stopped appearing, or said NO IMAGES for releases that
-  have plenty, because the archive it came from has been answering slowly or
-  not at all. The counts now come from MusicBrainz and appear about a second
-  after the results.
-- **The right artwork for the release you picked.** Picking one release,
-  going back and picking another could show the first one's images under
-  the second.
-- **Honest messages.** A busy MusicBrainz no longer reads as "No releases
-  found", the archive being down no longer reads as "No images", and "No
-  scans" no longer appears while Discogs is still loading. Each source shows
-  its own progress, with TRY AGAIN when it fails.
-- **Searching stops when you move on.** Closing the panel, going back or
-  starting a new search stops what was still loading, so an old search can no
-  longer replace newer results.
-- **Discogs no longer waits for the archive.** Both load at the same time.
-- **The MEDIA filter sees every disc in a set,** so a CD and DVD release
-  appears under DVD too, and HD means the same thing in the list and in the
-  grid.
-- **Return runs the search** from either field.
-
-]]></description>
-            <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.3.1-rc.112/CrateDigger-2.3.1.dmg" length="72748119" type="application/octet-stream" sparkle:edSignature="RL6M5sumsFaobBwJX56ud8MOvvba8OQUhKDL1fZHyA3ZZiAaoQlWJdrChOOMYNX9TNYsTb/49GApIbyzOqttDQ=="/>
-            <sparkle:deltas>
-                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.3.1-rc.112/CrateDigger112-109.delta" sparkle:deltaFrom="109" length="1726926" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="ybCxllQNfvuNtzmJtRqjPmlxl0ps+4/GHXXOwc8x2zX74dwwsicSSh4Rfh+8ETgFsdEtwIZhND4jXd792VvHDw=="/>
             </sparkle:deltas>
         </item>
     </channel>
