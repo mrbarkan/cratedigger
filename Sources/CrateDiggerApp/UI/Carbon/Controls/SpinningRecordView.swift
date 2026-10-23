@@ -534,11 +534,14 @@ final class RecordAnimator: ObservableObject {
     private var lastUpdateTime: Date?
     private var playbackStateSub: AnyCancellable?
     private var visibilitySub: AnyCancellable?
+    /// The last visibility `AppVisibility` reported; see the sink in `start`.
+    private var isVisible = true
 
     func start(model: LibraryViewModel) {
         self.model = model
 
         stop()
+        isVisible = AppVisibility.shared.isVisible
         ensureTimer()
         // The tick self-halts once the disc settles at rest (no point waking
         // the run loop 60×/s to compute a zero delta while paused) — this
@@ -554,6 +557,10 @@ final class RecordAnimator: ObservableObject {
         visibilitySub = AppVisibility.shared.$isVisible.sink { [weak self] visible in
             MainActor.assumeIsolated {
                 guard let self else { return }
+                // Kept from the emission: `@Published` sends before the value
+                // lands, so `ensureTimer` reading `AppVisibility` here would
+                // still see "hidden" and the disc would stay frozen.
+                self.isVisible = visible
                 if visible { self.ensureTimer() } else { self.haltTimer() }
             }
         }
@@ -566,7 +573,7 @@ final class RecordAnimator: ObservableObject {
     }
 
     private func ensureTimer() {
-        guard timer == nil, AppVisibility.shared.isVisible else { return }
+        guard timer == nil, isVisible else { return }
         lastUpdateTime = Date()
         let t = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {

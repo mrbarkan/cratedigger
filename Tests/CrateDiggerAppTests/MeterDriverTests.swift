@@ -47,6 +47,38 @@ final class MeterDriverTests: XCTestCase {
         XCTAssertFalse(meters.isTicking)
     }
 
+    /// Switching Spaces occludes the window and brings it back. `@Published`
+    /// announces a change before the value lands, so a driver that re-read
+    /// the visibility on the way back still saw "hidden" and never restarted:
+    /// the matrix froze on its last frame until the next track.
+    func testComingBackIntoViewRestartsTheMatrix() {
+        let visibility = FakeVisibility()
+        let meters = MeterDriver(visibility: visibility.$isVisible.eraseToAnyPublisher())
+        meters.animation = VerticalVUAnimation()
+        meters.spectrumProvider = { Array(repeating: 0.9, count: 12) }
+        meters.start()
+        XCTAssertTrue(meters.isTicking)
+
+        visibility.isVisible = false
+        XCTAssertFalse(meters.isTicking, "nobody can see it, so it stops drawing")
+
+        visibility.isVisible = true
+        XCTAssertTrue(meters.isTicking, "back on screen while playing: it runs again")
+        meters.halt()
+    }
+
+    func testStartingWhileHiddenWaitsForTheWindow() {
+        let visibility = FakeVisibility()
+        visibility.isVisible = false
+        let meters = MeterDriver(visibility: visibility.$isVisible.eraseToAnyPublisher())
+        meters.start()
+        XCTAssertFalse(meters.isTicking)
+
+        visibility.isVisible = true
+        XCTAssertTrue(meters.isTicking)
+        meters.halt()
+    }
+
     func testNoProviderStaysDark() {
         let meters = MeterDriver()
         meters.animation = VerticalVUAnimation()
@@ -148,4 +180,10 @@ final class MeterDriverTests: XCTestCase {
             RunLoop.main.run(until: Date().addingTimeInterval(0.02))
         }
     }
+}
+
+/// Stands in for `AppVisibility`, with the same `@Published` timing.
+@MainActor
+private final class FakeVisibility: ObservableObject {
+    @Published var isVisible = true
 }

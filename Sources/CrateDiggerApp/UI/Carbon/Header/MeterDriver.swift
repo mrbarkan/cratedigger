@@ -59,6 +59,12 @@ final class MeterDriver: ObservableObject {
     /// True while playing; false means release toward zero, then stop ticking.
     private var active = false
     private var visibilitySub: AnyCancellable?
+    /// The last visibility the publisher reported. Kept here rather than read
+    /// back from `AppVisibility`: `@Published` announces a change before the
+    /// value lands, so reading it inside the sink still sees the old value.
+    /// That is how switching Spaces froze the matrix — on the way back the
+    /// driver saw "hidden" and never restarted its timer.
+    private var isVisible = true
 
     /// Continuous ballistic state. The animation reads these; `frame` is what
     /// it makes of them.
@@ -68,7 +74,10 @@ final class MeterDriver: ObservableObject {
 
     /// The release is a parameter so a test can make the levels settle at
     /// once and see what else keeps the timer running.
-    init(attackTau: TimeInterval = 0.008, releaseTau: TimeInterval = 0.12) {
+    /// `visibility` is for tests; the app follows `AppVisibility`.
+    init(attackTau: TimeInterval = 0.008,
+         releaseTau: TimeInterval = 0.12,
+         visibility: AnyPublisher<Bool, Never>? = nil) {
         self.attackTau = attackTau
         self.releaseTau = releaseTau
         // A matrix nobody can see does not need redrawing 30 times a second.
@@ -78,9 +87,11 @@ final class MeterDriver: ObservableObject {
         // land on the current level, rings launched before the gap have
         // expired, and a `LoudnessFollower` re-seeds instead of measuring the
         // music against a chorus nobody saw.
-        visibilitySub = AppVisibility.shared.$isVisible.sink { [weak self] visible in
+        let visibility = visibility ?? AppVisibility.shared.$isVisible.eraseToAnyPublisher()
+        visibilitySub = visibility.sink { [weak self] visible in
             MainActor.assumeIsolated {
                 guard let self else { return }
+                self.isVisible = visible
                 if visible { self.ensureTimer(carryingGap: true) } else { self.haltTimer() }
             }
         }
@@ -119,7 +130,7 @@ final class MeterDriver: ObservableObject {
     /// read as the music having run on.
     private func ensureTimer(carryingGap: Bool = false) {
         // Nothing to drive while no window is on screen to draw the matrix.
-        guard timer == nil, AppVisibility.shared.isVisible else { return }
+        guard timer == nil, isVisible else { return }
         if !carryingGap { lastUpdate = Date() }
         // 30fps: segment meters with ~120ms release ballistics look identical at
         // half the invalidation rate of a 60fps tick.
