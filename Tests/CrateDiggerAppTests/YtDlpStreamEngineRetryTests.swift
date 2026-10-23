@@ -138,6 +138,7 @@ private final class FakePlayer: PlaybackServiceProtocol {
     func appendLast(_ items: [PlaybackQueueItem]) -> Range<Int> { 0..<0 }
     func removeFromQueue(at offsets: IndexSet) -> IndexSet { [] }
     func moveInQueue(from source: Int, to destination: Int) {}
+    func reorderQueue(_ order: [Int]) -> Int? { nil }
     var upNext: ArraySlice<PlaybackQueueItem> { queue[0..<0] }
     func play() {}
     func pause() {}

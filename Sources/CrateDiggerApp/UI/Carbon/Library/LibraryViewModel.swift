@@ -1413,6 +1413,13 @@ final class LibraryViewModel: ObservableObject {
     /// must move both together — see `LibraryViewModel+Queue`.
     @Published var playbackQueue: [LoadedTrack] = []
 
+    /// The order the playing queue's tracks had before shuffle touched them
+    /// (the album, the crate, the playlist), so switching shuffle off can put
+    /// the loaded queue back. Written by every path that loads a queue; empty
+    /// after a relaunch, when `applyShuffleToQueue` falls back to the
+    /// library's own artist ▸ album ▸ track order.
+    var playbackSourceOrder: [UUID] = []
+
     // MARK: - Sleep timer
     /// Armed sleep mode; `.off` when idle. See `LibraryViewModel+Sleep`.
     @Published var sleepMode: SleepMode = .off
@@ -3273,7 +3280,8 @@ final class LibraryViewModel: ObservableObject {
         // Remember where the queue came from: the sidebar keeps that crate on
         // screen when Local Library is collapsed.
         playingSource = currentSource
-        let queue = queue(containing: id)
+        let source = sourceQueue(containing: id)
+        let queue = shuffleEnabled ? source.shuffled() : source
         guard let startIndex = queue.firstIndex(where: { $0.track.id == id }) else { return }
         // Fail fast with an actionable prompt if the file is missing/offline,
         // rather than a dead-end playback error.
@@ -3288,6 +3296,7 @@ final class LibraryViewModel: ObservableObject {
         // Starting a track jumps the OLED to Now Playing.
         oledView = .nowPlaying
         playbackQueue = queue
+        playbackSourceOrder = source.map(\.track.id)
         let queueItems = queue.map { loaded -> PlaybackQueueItem in
             PlaybackQueueItem(
                 url: loaded.track.fileURL,
@@ -3391,7 +3400,33 @@ final class LibraryViewModel: ObservableObject {
         return conversionSelection
     }
 
-    func toggleShuffle() { shuffleEnabled.toggle() }
+    /// The key changes the queue that is playing, not only the next one built:
+    /// on deals the rest of it behind the playing track, off puts it back in
+    /// source order, and either way the playing track carries on.
+    func toggleShuffle() {
+        shuffleEnabled.toggle()
+        applyShuffleToQueue()
+    }
+
+    private func applyShuffleToQueue() {
+        guard playbackQueue.count > 1, playbackQueue.count == playback.queue.count else { return }
+        let order: [Int]
+        if shuffleEnabled {
+            order = QueueShuffle.shuffledOrder(count: playbackQueue.count, current: playback.currentIndex)
+        } else {
+            let source = playbackSourceOrder.isEmpty
+                ? index.artists.flatMap { $0.albums.flatMap(\.tracks) }.map(\.track.id)
+                : playbackSourceOrder
+            order = QueueShuffle.unshuffledOrder(ids: playbackQueue.map(\.track.id), sourceOrder: source)
+        }
+        guard order != Array(playbackQueue.indices) else { return }
+        // The service re-points its index without announcing a track change,
+        // so the mirror is moved here: same track, a different position.
+        let landed = playback.reorderQueue(order)
+        playbackQueue = order.map { playbackQueue[$0] }
+        playbackCurrentIndex = landed
+        savePlaybackSnapshot()
+    }
 
     // MARK: - Conversion patch-bay queue stats
 
@@ -3857,7 +3892,8 @@ final class LibraryViewModel: ObservableObject {
         }
     }
 
-    /// The queue a row activates into: the list that row actually belongs to.
+    /// The queue a row activates into: the list that row actually belongs to,
+    /// in its own order (`playTrack` shuffles it when shuffle is on).
     ///
     /// This used to be the album-scoped `visibleTracks` unconditionally, which
     /// is right for the three-pane browser and wrong everywhere else. A
@@ -3866,10 +3902,10 @@ final class LibraryViewModel: ObservableObject {
     /// silently did nothing — playlists could not be played at all. Choosing by
     /// where the track *is* means a row can never activate into a queue that
     /// doesn't contain it.
-    private func queue(containing id: UUID) -> [LoadedTrack] {
+    private func sourceQueue(containing id: UUID) -> [LoadedTrack] {
         let shown = browsingTracks
         let base = shown.contains { $0.track.id == id } ? shown : visibleTracks
-        return shuffleEnabled ? base.shuffled() : base
+        return base
     }
 
     // MARK: - Last.fm integration

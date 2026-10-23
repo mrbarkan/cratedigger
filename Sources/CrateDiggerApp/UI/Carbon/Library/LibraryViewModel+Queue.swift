@@ -75,13 +75,15 @@ extension LibraryViewModel {
         return next ? "\(noun) UP NEXT" : "\(noun) QUEUED"
     }
 
-    /// Replace the queue outright and start playing at `index`.
-    func startQueue(_ tracks: [LoadedTrack], at index: Int) {
+    /// Replace the queue outright and start playing at `index`. `sourceOrder`
+    /// is the order switching shuffle off restores; nil means the order given.
+    func startQueue(_ tracks: [LoadedTrack], at index: Int, sourceOrder: [UUID]? = nil) {
         guard !tracks.isEmpty else { return }
         if presentIfFileMissing(tracks[min(index, tracks.count - 1)]) { return }
         oledView = .nowPlaying
         playingSource = currentSource
         playbackQueue = tracks
+        playbackSourceOrder = sourceOrder ?? tracks.map(\.track.id)
         playback.load(queue: tracks.map(Self.queueItem), startIndex: index, autoPlay: true)
     }
 

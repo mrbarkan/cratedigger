@@ -293,6 +293,33 @@ final class PlaybackServiceTests: XCTestCase {
         XCTAssertEqual(service.currentIndex, 2, "still C")
     }
 
+    /// Turning shuffle off re-sorts the loaded queue around the playing track:
+    /// it keeps playing, and Next/Previous then follow the new order.
+    func testReorderQueueFollowsThePlayingTrackWithoutReloading() async {
+        let (service, engine) = await loadedService(["C", "A", "D", "B"], startIndex: 0)
+        let loadsBefore = engine.replacedURLs.count
+        var indexChanges = 0
+        service.onCurrentIndexChange = { _ in indexChanges += 1 }
+
+        let current = service.reorderQueue([1, 3, 0, 2])
+        await pumpMainQueue()
+
+        XCTAssertEqual(service.queue.map(\.title), ["A", "B", "C", "D"])
+        XCTAssertEqual(current, 2, "still C")
+        XCTAssertEqual(service.currentIndex, 2)
+        XCTAssertEqual(engine.replacedURLs.count, loadsBefore, "the playing item is not reloaded")
+        XCTAssertEqual(indexChanges, 0, "same track, only a different position")
+        XCTAssertEqual(service.upNext.map(\.title), ["D"])
+    }
+
+    func testReorderQueueRejectsAnythingButAPermutation() async {
+        let (service, _) = await loadedService(["A", "B", "C"], startIndex: 1)
+        XCTAssertNil(service.reorderQueue([0, 0, 1]))
+        XCTAssertNil(service.reorderQueue([0, 1]))
+        XCTAssertEqual(service.queue.map(\.title), ["A", "B", "C"])
+        XCTAssertEqual(service.currentIndex, 1)
+    }
+
     func testMoveInQueueRefusesToMoveThePlayingTrack() async {
         let (service, _) = await loadedService(["A", "B", "C"], startIndex: 1)
         service.moveInQueue(from: 1, to: 0)
