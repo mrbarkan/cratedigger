@@ -14,6 +14,19 @@ struct NowPlayingCover<Placeholder: View>: View {
     @State private var coverImage: NSImage?
 
     var body: some View {
+        // The picture fills whatever space it is offered and never asks for
+        // more. A cover that is not square (a 1.12:1 scan, a 16:9 stream
+        // thumbnail) drawn `.fill` reports a size wider than the square, and a
+        // flexible frame around it, like the compact player's art well, grows
+        // to match: the well spilled past its column into the display.
+        Color.clear
+            .overlay { picture }
+            .clipped()
+            .task(id: coverKey) { await loadCoverImage() }
+    }
+
+    @ViewBuilder
+    private var picture: some View {
         Group {
             if model.isStreamActive, let stream = model.selectedStream {
                 StreamThumbnail(stream: stream)
@@ -35,7 +48,6 @@ struct NowPlayingCover<Placeholder: View>: View {
                 }
             }
         }
-        .task(id: coverKey) { await loadCoverImage() }
     }
 
     /// Opacity only, so Reduce Motion keeps it.
