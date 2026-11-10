@@ -81,6 +81,26 @@ enum CarbonMotion {
     /// the panes inside it.
     static let windowResize: TimeInterval = 0.3
 
+    // A fold goes out of focus and back: a blurred picture of the console
+    // fades up over it, the layout is swapped and the window travels under
+    // the picture, and the picture clears on the new layout at its final
+    // size. About 0.4 s end to end; the window itself has landed by 0.27.
+
+    /// The console going out of focus.
+    static let veilClose: TimeInterval = 0.07
+    /// When the layout is swapped under the picture, from the start. Before
+    /// the picture is fully up: by then it hides the cut, and the swap's
+    /// work is out of the way sooner.
+    static let veilSwapDelay: TimeInterval = 0.05
+    /// How long after the swap the window sets off: the new layout's first
+    /// paint, which would otherwise land in the first frames of the travel.
+    static let veilHold: TimeInterval = 0.04
+    /// The window's travel under the picture. Shorter than `windowResize`:
+    /// there is only the frame to watch.
+    static let foldTravel: TimeInterval = 0.18
+    /// Coming back into focus once the window has landed.
+    static let veilOpen: TimeInterval = 0.14
+
     /// A transition that slides in from `edge`, or just fades under Reduce
     /// Motion.
     static func slide(from edge: Edge, reduceMotion: Bool) -> AnyTransition {

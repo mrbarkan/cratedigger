@@ -66,9 +66,10 @@ enum WindowFramePlanner {
     /// The compact player's frame: a fixed height from the theme's geometry,
     /// a width between the deck's minimum and the screen (the one it was last
     /// left at, else `fallbackWidth`, the full window's), and always clamped
-    /// on screen. Folding into it (`centred`) puts it in the middle of the
-    /// screen; otherwise it stays where it was last left (`savedFrame`), and
-    /// with nowhere to stay it is centred too.
+    /// on screen. Opening it (`centred`: a fold, or a launch in compact)
+    /// puts it in the middle of the screen; a re-plan of the deck already on
+    /// screen keeps its place (`savedFrame`), and with nowhere to stay it is
+    /// centred too.
     static func compactPlan(
         visibleFrame: CGRect,
         savedFrame: CGRect?,

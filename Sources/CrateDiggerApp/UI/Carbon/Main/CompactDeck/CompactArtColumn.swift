@@ -2,11 +2,11 @@ import AppKit
 import CrateDiggerCore
 import SwiftUI
 
-/// The compact player: one rack unit. Art on the left under a brand row
-/// that carries the expand key; the console's own display (pinned to NOW)
-/// over its own footer on the right. Every measure comes from
+/// The compact player's own column: the art under a brand row that carries
+/// the expand key. The display and the transport beside it are the console's
+/// own, placed by `ConsoleStageView`. Every measure comes from
 /// `CompactDeckMetrics`, which the window controller sizes the window from.
-struct CompactDeckView: View {
+struct CompactArtColumn: View {
     @Environment(\.carbon) private var theme
     @Environment(\.carbonGeometry) private var geometry
     @EnvironmentObject private var model: LibraryViewModel
@@ -17,23 +17,6 @@ struct CompactDeckView: View {
 
     var body: some View {
         let metrics = CompactDeckMetrics(geometry: geometry)
-        HStack(alignment: .top, spacing: geometry.mainGap) {
-            artColumn(metrics)
-                .frame(width: metrics.artSide)
-            VStack(spacing: geometry.chassisRowGap) {
-                OLEDDisplay()
-                    .frame(maxWidth: .infinity)
-                    .frame(height: geometry.headerHeight)
-                    .environment(\.oledScreenOverride, .nowPlaying)
-                FooterShell()
-                    .frame(height: geometry.footerHeight)
-            }
-        }
-    }
-
-    // MARK: Art column
-
-    private func artColumn(_ metrics: CompactDeckMetrics) -> some View {
         VStack(alignment: .leading, spacing: HeaderKeyMetrics.rowGap) {
             HStack(spacing: 8) {
                 BrandLockup(typeSize: 11)
@@ -45,6 +28,7 @@ struct CompactDeckView: View {
                 .frame(width: metrics.artSide, height: metrics.artSide)
         }
         .padding(.top, HeaderKeyMetrics.topInset)
+        .frame(width: metrics.artSide)
     }
 
     /// rectangle.expand: the same switch as the brand block's compact key,

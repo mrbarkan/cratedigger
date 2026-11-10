@@ -4,11 +4,15 @@ import SwiftUI
 
 final class CarbonHostingController: NSHostingController<CarbonRootView> {
     let model: LibraryViewModel
+    /// Driven by `MainWindowController` around a fold. See `ConsoleStage`.
+    let stage: ConsoleStage
 
     init() {
         let model = LibraryViewModel()
+        let stage = ConsoleStage(layout: model.playerLayout)
         self.model = model
-        super.init(rootView: CarbonRootView(model: model))
+        self.stage = stage
+        super.init(rootView: CarbonRootView(model: model, stage: stage))
         // The window owns its size; the content must never set it. By default an
         // NSHostingController pushes SwiftUI's measured size up as the window's
         // preferred content size, so anything that grew the content grew the

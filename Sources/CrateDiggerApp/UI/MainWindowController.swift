@@ -5,6 +5,10 @@ import SwiftUI
 
 final class MainWindowController: NSWindowController, NSWindowDelegate {
     private let hostingController = CarbonHostingController()
+    /// The window's content: holds the hosting view still while the window
+    /// folds or unfolds around it.
+    private lazy var container = ConsoleContainerViewController(hosting: hostingController)
+    private var stage: ConsoleStage { hostingController.stage }
 
     /// The single shared view model — also used by the mini player.
     var model: LibraryViewModel { hostingController.model }
@@ -17,6 +21,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     /// outgoing frame into the outgoing layout's slot.
     private var layout: PlayerLayout = .full
     private var layoutObserver: AnyCancellable?
+    private var layoutHoldObserver: AnyCancellable?
     /// The current layout's size limits, kept here for `windowWillResize`.
     private var resizeLimits: (minimum: CGSize, maximum: CGSize)?
     /// Where an in-flight fold or unfold is taking the window. A frame saved
@@ -37,7 +42,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     init() {
         let styleMask: NSWindow.StyleMask = [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView]
-        let window = NSWindow(
+        let window = CarbonWindow(
             contentRect: NSRect(origin: .zero, size: WindowFramePlanner.targetSize),
             styleMask: styleMask,
             backing: .buffered,
@@ -45,7 +50,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         )
 
         window.title = "CrateDigger"
-        window.contentViewController = hostingController
         window.backgroundColor = .clear
         window.isOpaque = false
         window.titlebarAppearsTransparent = true
@@ -54,11 +58,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         // Not movable by background: on macOS 27 a titled window claims every
         // drag over SwiftUI content for itself, rows' `.draggable` included, so
         // nothing in the browser could be dragged to a crate or playlist. The
-        // titlebar strip still drags, and double-clicks per the system setting.
+        // titlebar strip still drags; its double-click is `CarbonWindow`'s.
         window.isMovableByWindowBackground = false
         window.isRestorable = false
 
         super.init(window: window)
+        window.contentViewController = container
+        layout = hostingController.model.playerLayout
 
         // Activity lamp in the titlebar's trailing corner — the traffic
         // lights' opposite number. An accessory (not a content overlay) so it
@@ -99,11 +105,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             object: nil
         )
 
-        layout = hostingController.model.playerLayout
         layoutObserver = hostingController.model.$playerLayout
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] in self?.switchLayout(to: $0) }
+        // Synchronous, so the console is held and staged before SwiftUI
+        // next draws: the full console is built once, at the size it lands at.
+        layoutHoldObserver = hostingController.model.$playerLayout
+            .removeDuplicates()
+            .sink { [weak self] in self?.prepareTravel(to: $0) }
 
         // A theme can change the header or footer height; the compact window
         // is exactly that tall, so it re-plans.
@@ -409,7 +419,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             // frame as an explicit baseline. Re-deriving it from `isVisible`
             // here read the window as already visible (super.showWindow ran
             // first), so the full window never got its saved frame back.
-            applyLayoutPlan(restoring: true, animated: false)
+            // The compact deck always opens in the middle of the screen.
+            applyLayoutPlan(restoring: true, animated: false, centringCompact: true)
             frameMemory.arm()
         }
     }
@@ -479,18 +490,132 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         hostingController.model.expandToFull()
     }
 
+    // A fold or unfold, in order:
+    //
+    // 1. `prepareTravel`, as `playerLayout` changes: the hosting view is held
+    //    at the full console's size and, unfolding, the full console is
+    //    mounted under its cover.
+    // 2. `switchLayout`, a runloop turn later: the console goes out of
+    //    focus, a blurred picture of it fading up over it (`startTravel`).
+    // 3. Under the picture the arrangement is swapped and, `veilHold`
+    //    later, the window travels, the picture stretching with it.
+    // 4. `settleStage`, when the window lands: the hosting view follows the
+    //    window again, the full console is unmounted if folded, and the
+    //    picture clears on the new layout at its final size.
+    //
+    // The live console never shows while the window moves, on purpose.
+    // Measured on 8k tracks, same machine, frames delivered over the travel:
+    // the console visible and following the window, about 15 with 35 to
+    // 75 ms stalls; visible but held still, or fading in during the travel,
+    // 12 to 20; one opaque layer over it, 18 to 30 with no stall. A resizing
+    // window with the whole console showing is more than the window server
+    // composites at full rate, whatever the app does.
+
     private func switchLayout(to newLayout: PlayerLayout) {
         guard newLayout != layout, let window else { return }
         persistFrame()          // into the outgoing layout's slot
         layout = newLayout
-        applyLayoutPlan(restoring: true, animated: window.isVisible, centringCompact: true)
+        guard travels(window) else {
+            applyLayoutPlan(restoring: true, animated: false, centringCompact: true)
+            return
+        }
+        // Until the window sets off, the frame to record is the one it is
+        // heading for, exactly as while it is in flight.
+        switch newLayout {
+        case .full:
+            frameInFlight = fullWindowPlan(for: window).frame
+            // Build the console now, under the closing chassis.
+            window.contentView?.layoutSubtreeIfNeeded()
+        case .compact:
+            frameInFlight = compactWindowPlan(for: window, restoring: true, centred: true).frame
+        }
+        startTravel()
+    }
+
+    /// Whether a layout switch is animated: a visible window, and motion welcome.
+    private func travels(_ window: NSWindow) -> Bool {
+        window.isVisible && !CarbonMotion.prefersReducedMotion
+    }
+
+    /// Step 1. Runs inside the `playerLayout` change, before SwiftUI redraws.
+    private func prepareTravel(to newLayout: PlayerLayout) {
+        guard newLayout != layout, let window, travels(window) else { return }
+        // The frame the window rests at now, or was heading for if this
+        // interrupts a travel.
+        let resting = restingFrame(of: window)
+        switch newLayout {
+        case .full:
+            container.hold(size: fullWindowPlan(for: window).frame.size)
+            stage.heldCompactSize = resting.size
+            stage.mountsFullConsole = true
+        case .compact:
+            container.hold(size: stage.mountsFullConsole ? resting.size : fullWindowPlan(for: window).frame.size)
+            stage.heldCompactSize = compactWindowPlan(for: window, restoring: true, centred: true).frame.size
+        }
+    }
+
+    /// Steps 2 and 3: the console goes out of focus, the arrangement changes
+    /// under the picture, and the window travels. `settleStage` clears it.
+    private func startTravel() {
+        frameAnimationGeneration += 1
+        let generation = frameAnimationGeneration
+        container.raiseVeil(
+            cornerRadius: activeGeometry().chassisCornerRadius,
+            fallback: .windowBackgroundColor,
+            duration: CarbonMotion.veilClose
+        )
+        DispatchQueue.main.asyncAfter(deadline: .now() + CarbonMotion.veilSwapDelay) { [weak self] in
+            // A newer travel, or an unanimated re-plan, has taken over.
+            guard let self, self.frameAnimationGeneration == generation else { return }
+            self.stage.arrangement = self.layout
+            // A beat for the new arrangement to be laid out and painted
+            // before the window's animation clock starts.
+            DispatchQueue.main.asyncAfter(deadline: .now() + CarbonMotion.veilHold) { [weak self] in
+                guard let self, self.frameAnimationGeneration == generation else { return }
+                self.applyLayoutPlan(restoring: true, animated: true, centringCompact: true)
+            }
+        }
+    }
+
+    /// Step 4, and what every unanimated frame change runs too: the stage
+    /// matches the layout and the hosting view follows the window.
+    private func settleStage() {
+        container.release()
+        if stage.arrangement != layout { stage.arrangement = layout }
+        // Landed (or re-planned without a travel): back into focus.
+        container.lowerVeil(duration: CarbonMotion.veilOpen)
+        if stage.mountsFullConsole != (layout == .full) { stage.mountsFullConsole = layout == .full }
+        if stage.heldCompactSize != nil { stage.heldCompactSize = nil }
+    }
+
+    /// The full window's frame when a layout switch or launch restores it:
+    /// its saved frame clamped on screen, or the launch default.
+    private func fullWindowPlan(for window: NSWindow) -> PlannedWindowFrame {
+        let saved = frameMemory.saved(for: .full)
+        return WindowFramePlanner.plan(
+            visibleFrame: visibleFrame(for: window),
+            currentFrame: saved,
+            context: saved == nil ? .initialLaunch : .clampToVisibleFrame
+        )
+    }
+
+    /// The compact window's frame: its saved one (`restoring`) or the current
+    /// one re-clamped, centred when the deck is opening.
+    private func compactWindowPlan(for window: NSWindow, restoring: Bool, centred: Bool) -> CompactWindowPlan {
+        WindowFramePlanner.compactPlan(
+            visibleFrame: visibleFrame(for: window),
+            savedFrame: restoring ? frameMemory.saved(for: .compact) : restingFrame(of: window),
+            fallbackWidth: restingFrame(of: window).width,
+            centred: centred,
+            metrics: CompactDeckMetrics(geometry: activeGeometry())
+        )
     }
 
     /// `restoring` reads the layout's saved frame (a switch, or launch);
     /// otherwise the current frame is re-clamped (screen or theme change).
-    /// `centringCompact` is a fold: the compact deck keeps its saved width
-    /// but lands in the middle of the screen. At launch it stays where it
-    /// was left.
+    /// `centringCompact` is the compact deck opening, by a fold or at
+    /// launch: it keeps its saved width but lands in the middle of the
+    /// screen. A screen or theme change leaves it where it is.
     private func applyLayoutPlan(restoring: Bool, animated: Bool, centringCompact: Bool = false) {
         guard let window else { return }
         // The green button is full screen on a titled window, and a strip one
@@ -514,13 +639,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                 applyWindowPlan(context: .clampToVisibleFrame, animated: animated)
             }
         case .compact:
-            let plan = WindowFramePlanner.compactPlan(
-                visibleFrame: visibleFrame(for: window),
-                savedFrame: restoring ? frameMemory.saved(for: .compact) : restingFrame(of: window),
-                fallbackWidth: restingFrame(of: window).width,
-                centred: centringCompact,
-                metrics: CompactDeckMetrics(geometry: activeGeometry())
-            )
+            let plan = compactWindowPlan(for: window, restoring: restoring, centred: centringCompact)
             // Minimum first: the full window's 1200 × 820 floor would refuse the shrink.
             window.minSize = NSSize(width: plan.minimumSize.width, height: plan.minimumSize.height)
             window.maxSize = NSSize(width: plan.maximumSize.width, height: plan.maximumSize.height)
@@ -645,6 +764,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private func setWindowFrame(_ frame: CGRect, animated: Bool) {
         guard let window else { return }
         guard animated, !CarbonMotion.prefersReducedMotion else {
+            settleStage()
             if frameInFlight != nil {
                 // Something is already animating the frame; a plain setFrame
                 // would be overwritten by its next tick. A zero-length
@@ -667,13 +787,16 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let generation = frameAnimationGeneration
         frameInFlight = frame
         NSAnimationContext.runAnimationGroup({ context in
-            context.duration = CarbonMotion.windowResize
+            // Out of focus, a fold has only the frame to show, so it
+            // travels faster.
+            context.duration = self.container.isVeilRaised ? CarbonMotion.foldTravel : CarbonMotion.windowResize
             context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             context.allowsImplicitAnimation = false
             window.animator().setFrame(frame, display: true)
         }, completionHandler: { [weak self] in
             guard let self, self.frameAnimationGeneration == generation else { return }
             self.frameInFlight = nil
+            self.settleStage()
             // AppKit posts no `windowDidMove` for a frame animated through
             // the animator, not even on landing (measured); record it here.
             self.persistFrame()
