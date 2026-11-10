@@ -4,6 +4,44 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 2.3.4 (117), 2026-11-10
+
+Beta 1: themes get materials and screens. A theme can give the console a
+shell of moulded plastic, brushed metal, bead-blasted metal or carbon
+weave, and the compact player and the mini player can show the album art
+as a little LCD behind a recessed bezel, like a retro handheld. A new
+theme, Pocket, puts both together. 2.3.3 went out only as a release
+candidate, so everything listed under 2.3.3 below is new to stable users
+too. Betas are offered only to people who turned on Receive beta updates.
+
+### Added
+
+- **Pocket, a fourth built-in theme.** Handheld grey by day and console
+  purple by night, with a moulded plastic shell, a grey LCD and its own
+  logo. In the compact player and the mini player the album art sits in a
+  pixel screen set into the case.
+- **Shell materials.** The Theme Editor's SHELL MATERIAL section offers
+  Moulded Plastic, Brushed Metal, Bead-Blasted Metal and Carbon Weave
+  beside Texture Grain, each with its own strength. A theme wears one at a
+  time, and the mini player's glass wears it too.
+- **Cover screen.** The Theme Editor's COVER SCREEN section turns the album
+  art in the compact player and the mini player into an LCD: LCD Grid lays
+  a fine grid over the sharp picture, Pixel LCD redraws it in big square
+  pixels, and Handheld LCD adds the soft colours of an old handheld screen.
+  PIXEL SIZE picks how big the pixels are. A track with no art shows an
+  unlit screen. The full player, the gallery and the inspector keep the
+  plain picture.
+
+### Changed
+
+- **Carbon wears carbon weave** in place of its grain, and its selection
+  lamp in the light theme now glows the same orange as the light it
+  throws on the row.
+- **Llama '97 wears brushed metal.**
+- Themes you made that inherit from Carbon pick up the weave with it, even
+  one that sets its own grain. To keep grain, open the theme in the Theme
+  Editor, switch Texture Grain on and save.
+
 ## 2.3.3 (116), 2026-11-10
 
 Release Candidate 1: picking a track is instant again, folding into the
