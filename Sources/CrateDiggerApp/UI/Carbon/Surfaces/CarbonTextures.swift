@@ -272,8 +272,9 @@ struct GrainFreeKey: PreferenceKey {
 }
 
 /// Opaque everywhere except the reported regions, which are punched clear so
-/// the grain layers above them draw nothing at all.
-private struct GrainMask: View {
+/// the grain layers above them draw nothing at all. Shared with the shell
+/// materials (`carbonShellMaterial`), which skip the same regions.
+struct GrainMask: View {
     let holes: [(rect: CGRect, shape: AnyShape)]
 
     var body: some View {

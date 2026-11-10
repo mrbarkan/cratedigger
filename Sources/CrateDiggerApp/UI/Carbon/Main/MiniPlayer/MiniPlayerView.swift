@@ -162,6 +162,11 @@ private struct MiniPlayerGlass: View {
                     startPoint: .topLeading, endPoint: .bottomTrailing))
             )
             .overlay(shape.strokeBorder(Color.white.opacity(0.14), lineWidth: 1))
+            // The mini player is outside every `ChassisLayer`, so it would
+            // otherwise be the one shell in the app without its material.
+            // Only on this background: the art, the display and the keys are
+            // drawn over it and need no holes. Never grain (see the modifier).
+            .carbonShellMaterial(theme.shellMaterial, strength: theme.shellMaterialStrength, clippedTo: shape)
     }
 }
 

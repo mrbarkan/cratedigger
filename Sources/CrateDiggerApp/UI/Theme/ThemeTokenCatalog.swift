@@ -30,11 +30,14 @@ enum ThemeTokenCatalog {
     /// They split by *what they're on*. An interface effect sits on the
     /// console's own surface — texture grain is a property of the material.
     /// A display effect sits on the glass, where a rake, a reflection and a
-    /// dot screen belong to the screen and nothing else.
+    /// dot screen belong to the screen and nothing else. A cover effect is
+    /// the screen the small players show the cover on, and is drawn nowhere
+    /// else, so the editor gives it a section of its own.
     struct EffectDial: Identifiable {
         enum Surface: String {
             case interface
             case display
+            case cover
         }
 
         let key: String
@@ -59,6 +62,47 @@ enum ThemeTokenCatalog {
             note: "Fine grain over the console — the tooth a real surface has and a rendered one doesn't. Never over the display: that's glass, behind its own sheet.",
             max: 0.6, on: 0.2, surface: .interface, read: \.grainAmount
         ),
+        // The four shell materials. With grain they make one exclusive group
+        // (`shellMaterialDials`): `ShellMaterial.resolve` picks one winner, so
+        // a second non-zero key is ignored, not stacked.
+        EffectDial(
+            key: "shellPlastic", label: "Moulded Plastic",
+            note: "The soft orange-peel tooth of an injection-moulded case, lit from the top left. One shell material at a time; the display glass and the rubber keys stay smooth.",
+            max: 0.30, on: 0.08, surface: .interface, read: \.shellPlasticAmount
+        ),
+        EffectDial(
+            key: "shellBrushed", label: "Brushed Metal",
+            note: "Long horizontal strokes, as if the panel had been drawn across an abrasive belt, with one soft band of light across it.",
+            max: 0.50, on: 0.18, surface: .interface, read: \.shellBrushedAmount
+        ),
+        EffectDial(
+            key: "shellBlasted", label: "Bead-Blasted Metal",
+            note: "The even, matte sparkle of aluminium that has been bead-blasted before anodising, with one soft band of light across it.",
+            max: 1.00, on: 0.58, surface: .interface, read: \.shellBlastedAmount
+        ),
+        EffectDial(
+            key: "shellWeave", label: "Carbon Weave",
+            note: "A twill of carbon-fibre tows under clear lacquer, the pattern a composite panel shows when it is left bare.",
+            max: 0.40, on: 0.12, surface: .interface, read: \.shellWeaveAmount
+        ),
+        // The three cover looks: a second exclusive group (`coverLookDials`).
+        // The value is how dark the gaps between LCD pixels are. Their size is
+        // `effects.coverPixelSize`, which has no off and so is not a dial.
+        EffectDial(
+            key: "coverGrid", label: "LCD Grid",
+            note: "The cover stays sharp and sits behind the grid of a low-resolution LCD. Compact player and mini player only.",
+            max: 1.0, on: 0.55, surface: .cover, read: \.coverGridAmount
+        ),
+        EffectDial(
+            key: "coverPixel", label: "Pixel LCD",
+            note: "The cover redrawn in the LCD's own pixels, in full colour, the way a handheld shows a picture. Compact player and mini player only.",
+            max: 1.0, on: 0.55, surface: .cover, read: \.coverPixelAmount
+        ),
+        EffectDial(
+            key: "coverHandheld", label: "Handheld LCD",
+            note: "Pixel LCD with the washed, lifted colours of a colour handheld that has no backlight. Compact player and mini player only.",
+            max: 1.0, on: 0.55, surface: .cover, read: \.coverHandheldAmount
+        ),
         EffectDial(
             key: "oledScanlineOpacity", label: "Scan Lines",
             note: "The CRT rake: a hairline every 3pt across the display glass.",
@@ -78,6 +122,26 @@ enum ThemeTokenCatalog {
 
     static func effectDials(on surface: EffectDial.Surface) -> [EffectDial] {
         effectDials.filter { $0.surface == surface }
+    }
+
+    /// The shell materials, grain included, in the order the editor lists
+    /// them. Only one shows (see `ShellMaterial.resolve`), so switching one on
+    /// has to switch the rest off. Read off the Core enum so the group can't
+    /// drift from what the resolver actually considers.
+    static var shellMaterialDials: [EffectDial] {
+        dials(forKeys: ShellMaterial.allCases.map(\.effectKey))
+    }
+
+    /// The cover screen looks, in the order the editor lists them. Exclusive
+    /// for the same reason as the materials (see `CoverScreenLook.resolve`).
+    static var coverLookDials: [EffectDial] {
+        dials(forKeys: CoverScreenLook.allCases.map(\.effectKey))
+    }
+
+    /// The dials for `keys`, in that order. A key without a dial is dropped,
+    /// which `EffectDialTests` catches as a group shorter than its enum.
+    private static func dials(forKeys keys: [String]) -> [EffectDial] {
+        keys.compactMap { key in effectDials.first { $0.key == key } }
     }
 
     /// The ceiling for one effect key, for `CarbonTheme`'s clamp. An unknown

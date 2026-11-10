@@ -196,6 +196,25 @@ public struct CarbonTheme: Equatable {
     public var oledGlareAmount: Double = 0
     public var oledHalftoneAmount: Double = 0
 
+    /// The shell materials' strengths, each clamped to its dial. They and
+    /// `grainAmount` are one exclusive group: draw `shellMaterial`, never
+    /// these directly, or a theme that inherits Carbon's grain and sets a
+    /// material would get both.
+    public var shellPlasticAmount: Double = 0
+    public var shellBrushedAmount: Double = 0
+    public var shellBlastedAmount: Double = 0
+    public var shellWeaveAmount: Double = 0
+
+    /// The cover screen looks' grid strengths, clamped to their dials, and
+    /// the second exclusive group: read `coverScreenLook`.
+    public var coverGridAmount: Double = 0
+    public var coverPixelAmount: Double = 0
+    public var coverHandheldAmount: Double = 0
+
+    /// Points per LCD pixel on the cover screen, already snapped to one of
+    /// `CoverScreenLook.pixelSizes`. Only means something while a look is on.
+    public var coverPixelSize: Double = CoverScreenLook.defaultPixelSize
+
     /// Whether the chassis casts shadows. `false` (`effects.flat` = `1`) drops
     /// every depth shadow — panels, keys, the glass, artwork — and leaves the
     /// bevels, gradients and emission glows alone, so the interface reads as
@@ -265,6 +284,55 @@ public struct CarbonTheme: Equatable {
     public var logoStamp: Date?
 
     public var isDark: Bool { mode == .carbon }
+}
+
+public extension CarbonTheme {
+    /// The one material the chassis is drawn in, or nil for the bare shell.
+    /// Resolved from the clamped amounts above, never from the raw effects,
+    /// so the strength drawn is always one the dial allows.
+    var shellMaterial: ShellMaterial? { resolvedShellMaterial?.material }
+
+    /// `shellMaterial`'s strength; 0 when there is none.
+    var shellMaterialStrength: Double { resolvedShellMaterial?.strength ?? 0 }
+
+    /// The look the small players' cover screen takes, or nil for the plain
+    /// cover. Resolved from the clamped amounts, like the material.
+    var coverScreenLook: CoverScreenLook? { resolvedCoverScreenLook?.look }
+
+    /// `coverScreenLook`'s grid strength; 0 when there is none.
+    var coverScreenStrength: Double { resolvedCoverScreenLook?.strength ?? 0 }
+
+    /// The stored strength behind each material, so the resolver in Core
+    /// stays the only place that decides priority.
+    func amount(of material: ShellMaterial) -> Double {
+        switch material {
+        case .grain: return grainAmount
+        case .plastic: return shellPlasticAmount
+        case .brushed: return shellBrushedAmount
+        case .blasted: return shellBlastedAmount
+        case .weave: return shellWeaveAmount
+        }
+    }
+
+    func amount(of look: CoverScreenLook) -> Double {
+        switch look {
+        case .grid: return coverGridAmount
+        case .pixel: return coverPixelAmount
+        case .handheld: return coverHandheldAmount
+        }
+    }
+
+    private var resolvedShellMaterial: (material: ShellMaterial, strength: Double)? {
+        ShellMaterial.resolve(effects: Dictionary(uniqueKeysWithValues: ShellMaterial.allCases.map {
+            ($0.effectKey, amount(of: $0))
+        }))
+    }
+
+    private var resolvedCoverScreenLook: (look: CoverScreenLook, strength: Double)? {
+        CoverScreenLook.resolve(effects: Dictionary(uniqueKeysWithValues: CoverScreenLook.allCases.map {
+            ($0.effectKey, amount(of: $0))
+        }))
+    }
 }
 
 public extension CarbonTheme {
@@ -506,6 +574,18 @@ public extension CarbonTheme {
         grainAmount = effect("grain", resolvedBase.grainAmount)
         oledGlareAmount = effect("oledGlare", resolvedBase.oledGlareAmount)
         oledHalftoneAmount = effect("oledHalftone", resolvedBase.oledHalftoneAmount)
+        shellPlasticAmount = effect(ShellMaterial.plastic.effectKey, resolvedBase.shellPlasticAmount)
+        shellBrushedAmount = effect(ShellMaterial.brushed.effectKey, resolvedBase.shellBrushedAmount)
+        shellBlastedAmount = effect(ShellMaterial.blasted.effectKey, resolvedBase.shellBlastedAmount)
+        shellWeaveAmount = effect(ShellMaterial.weave.effectKey, resolvedBase.shellWeaveAmount)
+        coverGridAmount = effect(CoverScreenLook.grid.effectKey, resolvedBase.coverGridAmount)
+        coverPixelAmount = effect(CoverScreenLook.pixel.effectKey, resolvedBase.coverPixelAmount)
+        coverHandheldAmount = effect(CoverScreenLook.handheld.effectKey, resolvedBase.coverHandheldAmount)
+        // Raw, not through `effect`: it has no dial, so `effect` would clamp
+        // it to 0...1 and every size above 1 pt would collapse to 1.
+        coverPixelSize = CoverScreenLook.pixelSize(
+            from: definition.effects?["coverPixelSize"] ?? resolvedBase.coverPixelSize
+        )
         oledMonochrome = (definition.effects?["oledMonochrome"]
                             ?? (resolvedBase.oledMonochrome ? 1 : 0)) > 0.5
         castsShadows = (definition.effects?["flat"]

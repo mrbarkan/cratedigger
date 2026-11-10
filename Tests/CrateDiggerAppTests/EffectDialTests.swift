@@ -24,16 +24,122 @@ final class EffectDialTests: XCTestCase {
         }
     }
 
-    /// Both surfaces have to be represented, or the editor renders an empty
-    /// section header.
+    /// Every surface has to be represented, or the editor renders an empty
+    /// section header; and every dial is on one of them, or it never shows.
     func testBothSurfacesHaveDials() {
         XCTAssertFalse(ThemeTokenCatalog.effectDials(on: .interface).isEmpty)
         XCTAssertFalse(ThemeTokenCatalog.effectDials(on: .display).isEmpty)
+        XCTAssertFalse(ThemeTokenCatalog.effectDials(on: .cover).isEmpty)
         XCTAssertEqual(
             ThemeTokenCatalog.effectDials(on: .interface).count
-                + ThemeTokenCatalog.effectDials(on: .display).count,
+                + ThemeTokenCatalog.effectDials(on: .display).count
+                + ThemeTokenCatalog.effectDials(on: .cover).count,
             ThemeTokenCatalog.effectDials.count
         )
+    }
+
+    /// The two exclusive groups are read off the Core resolvers' own enums,
+    /// so a material or look added there without a dial (or a dial whose key
+    /// is misspelt) shows up here as a group shorter than its enum.
+    func testExclusiveGroupsAreExactlyTheCoreEnums() {
+        XCTAssertEqual(ThemeTokenCatalog.shellMaterialDials.map(\.key),
+                       ShellMaterial.allCases.map(\.effectKey))
+        XCTAssertEqual(ThemeTokenCatalog.coverLookDials.map(\.key),
+                       CoverScreenLook.allCases.map(\.effectKey))
+        XCTAssertTrue(ThemeTokenCatalog.shellMaterialDials.contains { $0.key == "grain" },
+                      "grain is a material: switching another on has to switch grain off")
+        XCTAssertTrue(ThemeTokenCatalog.shellMaterialDials.allSatisfy { $0.surface == .interface })
+        XCTAssertTrue(ThemeTokenCatalog.coverLookDials.allSatisfy { $0.surface == .cover })
+    }
+
+    /// The ranges the owner picked: `on` is the midpoint of each, and the
+    /// ceiling leaves room above it.
+    func testMaterialAndLookStrengths() {
+        let dials = Dictionary(uniqueKeysWithValues: ThemeTokenCatalog.effectDials.map { ($0.key, $0) })
+        let expected: [String: (max: Double, on: Double)] = [
+            "grain": (0.6, 0.2),
+            "shellPlastic": (0.30, 0.08),
+            "shellBrushed": (0.50, 0.18),
+            "shellBlasted": (1.00, 0.58),
+            "shellWeave": (0.40, 0.12),
+            "coverGrid": (1.0, 0.55),
+            "coverPixel": (1.0, 0.55),
+            "coverHandheld": (1.0, 0.55),
+        ]
+        for (key, values) in expected {
+            guard let dial = dials[key] else {
+                XCTFail("no dial for \(key)")
+                continue
+            }
+            XCTAssertEqual(dial.max, values.max, "\(key) max")
+            XCTAssertEqual(dial.on, values.on, "\(key) on")
+        }
+    }
+
+    /// A theme that inherits Carbon's grain and sets a material draws the
+    /// material alone: grain is last in the priority, and the chassis asks
+    /// for the winner rather than for `grainAmount`.
+    func testGrainAndAMaterialResolveToTheMaterialOnly() {
+        let theme = CarbonTheme(
+            definition: ThemeDefinition(id: "t", name: "T", baseAppearance: .dark,
+                                        effects: ["grain": 0.1, "shellBrushed": 0.18]),
+            resolvedBase: .carbon
+        )
+        XCTAssertEqual(theme.shellMaterial, .brushed)
+        XCTAssertEqual(theme.shellMaterialStrength, 0.18, accuracy: 0.0001)
+        XCTAssertEqual(theme.grainAmount, 0.1, accuracy: 0.0001, "the grain dial still reads its own value")
+    }
+
+    /// The resolved strength is the clamped one: a theme asking for more than
+    /// the dial allows gets the ceiling, not the raw number.
+    func testResolvedMaterialAndLookAreClamped() {
+        let theme = CarbonTheme(
+            definition: ThemeDefinition(id: "t", name: "T", baseAppearance: .dark,
+                                        effects: ["shellPlastic": 5, "coverGrid": 5]),
+            resolvedBase: .carbon
+        )
+        XCTAssertEqual(theme.shellMaterial, .plastic)
+        XCTAssertEqual(theme.shellMaterialStrength, 0.30, accuracy: 0.0001)
+        XCTAssertEqual(theme.coverScreenLook, .grid)
+        XCTAssertEqual(theme.coverScreenStrength, 1.0, accuracy: 0.0001)
+    }
+
+    func testCoverLookResolvesWithItsStrength() {
+        let theme = CarbonTheme(
+            definition: ThemeDefinition(id: "t", name: "T", baseAppearance: .dark,
+                                        effects: ["coverGrid": 0.3, "coverHandheld": 0.55]),
+            resolvedBase: .carbon
+        )
+        XCTAssertEqual(theme.coverScreenLook, .handheld)
+        XCTAssertEqual(theme.coverScreenStrength, 0.55, accuracy: 0.0001)
+    }
+
+    /// `coverPixelSize` has no dial, so it must not go through the dial clamp,
+    /// which would pass it 0...1 and turn every size into 1 pt.
+    func testCoverPixelSizeIsReadRawAndSnapped() {
+        func size(_ effects: [String: Double]) -> Double {
+            CarbonTheme(
+                definition: ThemeDefinition(id: "t", name: "T", baseAppearance: .dark, effects: effects),
+                resolvedBase: .carbon
+            ).coverPixelSize
+        }
+        XCTAssertEqual(size(["coverPixel": 0.55, "coverPixelSize": 4]), 4)
+        XCTAssertEqual(size(["coverPixel": 0.55, "coverPixelSize": 2.9]), 3)
+        XCTAssertEqual(size(["coverPixel": 0.55]), 1.5, "absent is the default")
+        XCTAssertEqual(size(["coverPixel": 0.55, "coverPixelSize": 0]), 1.5, "0 is the default")
+        XCTAssertEqual(CarbonTheme.carbon.coverPixelSize, 1.5)
+        XCTAssertEqual(CarbonTheme.linen.coverPixelSize, 1.5)
+    }
+
+    /// The built-ins resolve to exactly what they drew before: no material,
+    /// no look. (Carbon's grain lives in its bundled file, not here.)
+    func testBuiltInsResolveToNothing() {
+        for theme in [CarbonTheme.carbon, .linen] {
+            XCTAssertNil(theme.shellMaterial)
+            XCTAssertEqual(theme.shellMaterialStrength, 0)
+            XCTAssertNil(theme.coverScreenLook)
+            XCTAssertEqual(theme.coverScreenStrength, 0)
+        }
     }
 
     /// The dial's key must be the key `CarbonTheme` reads, and its `read` path
