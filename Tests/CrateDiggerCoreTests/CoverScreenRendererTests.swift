@@ -103,6 +103,48 @@ final class CoverScreenRendererTests: XCTestCase {
         XCTAssertEqual(a, b)
     }
 
+    // MARK: - The unlit panel
+
+    func testUnlitColourKeepsAPaleGlass() {
+        // Pocket light's oledSurface, #B7BBB0: an unlit reflective LCD is the
+        // colour of its glass.
+        let c = CoverScreenRenderer.unlitColor(r: 0xB7, g: 0xBB, b: 0xB0)
+        XCTAssertEqual([c.0, c.1, c.2], [0xB7, 0xBB, 0xB0])
+    }
+
+    func testUnlitColourTakesADarkGlassFortyPercentTowardBlack() {
+        let c = CoverScreenRenderer.unlitColor(r: 100, g: 50, b: 20)
+        XCTAssertEqual([c.0, c.1, c.2], [60, 30, 12])
+        let black = CoverScreenRenderer.unlitColor(r: 0, g: 0, b: 0)
+        XCTAssertEqual([black.0, black.1, black.2], [0, 0, 0])
+    }
+
+    func testUnlitColourThresholdIsHalfLuminance() {
+        // 128 grey is just over half: kept. 127 is just under: dimmed.
+        XCTAssertEqual(CoverScreenRenderer.unlitColor(r: 128, g: 128, b: 128).0, 128)
+        XCTAssertEqual(CoverScreenRenderer.unlitColor(r: 127, g: 127, b: 127).0, 76)
+    }
+
+    func testFlatSourceIsOneOpaqueColourAtTheLCDResolution() {
+        let src = CoverScreenRenderer.flatSource(r: 1, g: 2, b: 3, count: 4)
+        XCTAssertEqual(src.count, 4 * 4 * 4)
+        for i in stride(from: 0, to: src.count, by: 4) {
+            XCTAssertEqual(Array(src[i..<i + 4]), [1, 2, 3, 255])
+        }
+        XCTAssertEqual(CoverScreenRenderer.flatSource(r: 1, g: 2, b: 3, count: 0), [])
+    }
+
+    func testFlatSourceRendersThroughTheRealGrid() {
+        let l = layout
+        let src = CoverScreenRenderer.flatSource(r: 200, g: 200, b: 200, count: l.count)
+        let out = CoverScreenRenderer.render(source: src, look: .pixel, layout: l, gridStrength: 1)
+        XCTAssertEqual(out.count, l.lcdSide * l.lcdSide * 4)
+        // The last column of every cell is gap (black at strength 1); the
+        // first is lit.
+        XCTAssertEqual(px(out, side: l.lcdSide, l.cell - 1, 0), [0, 0, 0, 255])
+        XCTAssertGreaterThan(px(out, side: l.lcdSide, 0, 0)[0], 200)
+    }
+
     func testRenderSpeedAtMiniSize() {
         let l = CoverScreenLayout.plan(side: 246, scale: 2, pixelSize: 1.5)
         let src = solid(l.count, 120, 80, 200)

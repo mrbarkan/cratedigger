@@ -6,23 +6,53 @@ import SwiftUI
 /// cover — the cover file on disk, then cached bytes by hash, then the audio
 /// file's own art (same order as AlbumPoster). Shared by the Mini Player and
 /// the compact player so the two can never disagree about which picture is on.
+///
+/// With a `screen` spec (the theme has a cover screen look) it draws the LCD
+/// picture instead: the same cover run through `CoverScreenImage`, at its
+/// natural size, for a `CoverScreenBezel` to house. Without one it is exactly
+/// the view it always was.
 struct NowPlayingCover<Placeholder: View>: View {
     @ObservedObject var model: LibraryViewModel
     var maxPixel: Int = 480
+    var screen: CoverScreenSpec? = nil
     @ViewBuilder var placeholder: () -> Placeholder
 
     @State private var coverImage: NSImage?
+    /// The screen's current picture; only used with a `screen` spec.
+    @State private var lcdPicture: LCDPicture?
+
+    /// One rendered LCD picture and what it was rendered for, so a picture
+    /// made for another layout (a scale change mid-flight) is never drawn at
+    /// the wrong size, and so a crossfade has an identity to fade between.
+    private struct LCDPicture {
+        let key: String
+        let image: CGImage
+        let layout: CoverScreenLayout
+        let scale: CGFloat
+    }
+
+    /// The `.task(id:)` key with a screen: what is playing, plus everything
+    /// the picture is rendered from, so a theme edit or a scale change
+    /// re-renders once.
+    private struct ScreenTaskKey: Equatable {
+        let cover: String
+        let spec: CoverScreenSpec
+    }
 
     var body: some View {
-        // The picture fills whatever space it is offered and never asks for
-        // more. A cover that is not square (a 1.12:1 scan, a 16:9 stream
-        // thumbnail) drawn `.fill` reports a size wider than the square, and a
-        // flexible frame around it, like the compact player's art well, grows
-        // to match: the well spilled past its column into the display.
-        Color.clear
-            .overlay { picture }
-            .clipped()
-            .task(id: coverKey) { await loadCoverImage() }
+        if let screen {
+            screenBody(screen)
+        } else {
+            // The picture fills whatever space it is offered and never asks for
+            // more. A cover that is not square (a 1.12:1 scan, a 16:9 stream
+            // thumbnail) drawn `.fill` reports a size wider than the square, and a
+            // flexible frame around it, like the compact player's art well, grows
+            // to match: the well spilled past its column into the display.
+            Color.clear
+                .overlay { picture }
+                .clipped()
+                .task(id: coverKey) { await loadCoverImage() }
+        }
     }
 
     @ViewBuilder
@@ -57,32 +87,165 @@ struct NowPlayingCover<Placeholder: View>: View {
 
     /// Reload key: track change or a freshly committed cover (hash change).
     private var coverKey: String {
+        #if DEBUG
+        if Self.debugCoverURL != nil { return "debug-cover" }
+        #endif
         if model.isStreamActive { return "stream-\(model.selectedStreamID ?? "none")" }
         let track = model.nowPlayingTrack?.track
         return "\(track?.id.uuidString ?? "none")-\(track?.artworkHash ?? "")"
     }
 
     private func loadCoverImage() async {
-        guard let loaded = model.nowPlayingTrack else {
-            show(nil)
+        #if DEBUG
+        if let url = Self.debugCoverURL {
+            show(await loadThumbnail(url: url, maxPixelSize: maxPixel))
             return
         }
+        #endif
+        show(await loadCover(maxPixel: maxPixel))
+    }
+
+    /// The playing track's cover, in the order the header comment gives.
+    private func loadCover(maxPixel: Int) async -> NSImage? {
+        guard let loaded = model.nowPlayingTrack else { return nil }
         if let album = model.album(containing: loaded.track.id),
            let coverURL = album.booklet?.frontCoverURL,
            let image = await loadThumbnail(url: coverURL, maxPixelSize: maxPixel) {
-            show(image)
-            return
+            return image
         }
         if let hash = loaded.track.artworkHash,
            let image = await model.artworkService.thumbnailAsync(artworkHash: hash, maxPixel: maxPixel) {
-            show(image)
-            return
+            return image
         }
         if loaded.track.fileURL.isFileURL,
            let asset = await model.artworkService.resolveArtwork(trackURL: loaded.track.fileURL) {
-            show(await model.artworkService.thumbnailAsync(artworkHash: asset.hash, maxPixel: maxPixel))
+            return await model.artworkService.thumbnailAsync(artworkHash: asset.hash, maxPixel: maxPixel)
+        }
+        return nil
+    }
+
+    // MARK: - The cover screen
+
+    private func screenBody(_ spec: CoverScreenSpec) -> some View {
+        ZStack(alignment: .topLeading) {
+            if let lcd = lcdPicture, lcd.layout == spec.layout, lcd.scale == spec.scale {
+                // Natural size, never `.resizable()`: `lcdSide` image pixels
+                // are `lcdSide / scale` points, one per device pixel. The
+                // interpolation setting is only a backstop.
+                Image(decorative: lcd.image, scale: spec.scale)
+                    .interpolation(.none)
+                    .id(lcd.key)
+                    .transition(.opacity)
+            } else {
+                // Until the first picture lands (a few milliseconds, once per
+                // track): the panel's own colour, without its grid.
+                spec.unlitColor
+                    .transition(.opacity)
+            }
+        }
+        .frame(width: spec.lcdPoints, height: spec.lcdPoints, alignment: .topLeading)
+        .task(id: ScreenTaskKey(cover: coverKey, spec: spec)) { await loadScreen(spec) }
+    }
+
+    private func showScreen(_ image: CGImage, key: String, spec: CoverScreenSpec) {
+        if let current = lcdPicture, current.key == key, current.layout == spec.layout,
+           current.scale == spec.scale { return }
+        withAnimation(CarbonMotion.state) {
+            lcdPicture = LCDPicture(key: key, image: image, layout: spec.layout, scale: spec.scale)
+        }
+    }
+
+    /// Finds or renders the screen's picture. The cache is checked before the
+    /// cover is even loaded, so a fold back and forth, or the other player
+    /// showing the same track, costs nothing. Rendering runs off the main
+    /// thread; the previous picture stays up until the new one lands.
+    private func loadScreen(_ spec: CoverScreenSpec) async {
+        let key = "\(coverKey)|\(spec.renderKey)"
+        if let cached = CoverScreenCache.image(forKey: key) {
+            showScreen(cached, key: key, spec: spec)
             return
         }
-        show(nil)
+        if let cover = await screenSource(maxPixel: max(600, spec.layout.lcdSide)) {
+            guard !Task.isCancelled else { return }
+            let rendered = await Task.detached(priority: .userInitiated) {
+                CoverScreenImage.render(cover, spec: spec)
+            }.value
+            guard !Task.isCancelled else { return }
+            if let rendered {
+                CoverScreenCache.store(rendered, forKey: key)
+                showScreen(rendered, key: key, spec: spec)
+                return
+            }
+        }
+        guard !Task.isCancelled else { return }
+        // Anything that is not a real picture (nothing playing, a track with
+        // no art, a stream whose thumbnail is missing or unreachable) is the
+        // unlit panel. Cached under its own key, not the cover's, so a stream
+        // whose thumbnail failed once is fetched again next time.
+        let unlitKey = "unlit|\(spec.renderKey)|\(spec.unlit.r),\(spec.unlit.g),\(spec.unlit.b)"
+        if let cached = CoverScreenCache.image(forKey: unlitKey) {
+            showScreen(cached, key: unlitKey, spec: spec)
+            return
+        }
+        let unlit = await Task.detached(priority: .userInitiated) {
+            CoverScreenImage.renderUnlit(spec: spec)
+        }.value
+        guard !Task.isCancelled, let unlit else { return }
+        CoverScreenCache.store(unlit, forKey: unlitKey)
+        showScreen(unlit, key: unlitKey, spec: spec)
     }
+
+    /// The picture behind the screen: a stream's thumbnail, else the cover.
+    private func screenSource(maxPixel: Int) async -> CGImage? {
+        #if DEBUG
+        if let url = Self.debugCoverURL {
+            return await loadThumbnail(url: url, maxPixelSize: maxPixel)?
+                .cgImage(forProposedRect: nil, context: nil, hints: nil)
+        }
+        #endif
+        if model.isStreamActive {
+            // `StreamThumbnail` is an `AsyncImage`, which never hands over its
+            // image, so the screen fetches the thumbnail itself. The shared
+            // URL cache usually has it already from the radio list.
+            guard let stream = model.selectedStream,
+                  let string = stream.thumbnailURL, let url = URL(string: string) else { return nil }
+            return await Self.fetchThumbnail(url: url, maxPixel: maxPixel)
+        }
+        return await loadCover(maxPixel: maxPixel)?.cgImage(forProposedRect: nil, context: nil, hints: nil)
+    }
+
+    private static func fetchThumbnail(url: URL, maxPixel: Int) async -> CGImage? {
+        do {
+            let (data, response) = try await URLSession.shared.data(from: url)
+            if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+                NSLog("[CoverScreen] stream thumbnail %@ answered %d", url.absoluteString, http.statusCode)
+                return nil
+            }
+            return await Task.detached(priority: .userInitiated) { () -> CGImage? in
+                guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+                let options: [CFString: Any] = [
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceCreateThumbnailWithTransform: true,
+                    kCGImageSourceThumbnailMaxPixelSize: maxPixel
+                ]
+                return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+            }.value
+        } catch {
+            if !(error is CancellationError), (error as? URLError)?.code != .cancelled {
+                NSLog("[CoverScreen] stream thumbnail %@ failed: %@", url.absoluteString, error.localizedDescription)
+            }
+            return nil
+        }
+    }
+
+    #if DEBUG
+    /// `CRATEDIGGER_COVER=<image path>`: that picture in the well in place of
+    /// the playing track's art, shown even with nothing playing, so the cover
+    /// (and its screen) can be captured without making a sound. See the
+    /// hook list in `AppDelegate`.
+    static var debugCoverURL: URL? {
+        guard let path = ProcessInfo.processInfo.environment["CRATEDIGGER_COVER"], !path.isEmpty else { return nil }
+        return URL(fileURLWithPath: path)
+    }
+    #endif
 }

@@ -81,6 +81,33 @@ public enum CoverScreenRenderer {
         return out
     }
 
+    /// The colour of the unlit panel (nothing playing, no art, a stream with
+    /// no thumbnail), from the theme's display glass in sRGB. A pale glass is
+    /// used as it is: an unlit reflective LCD is the colour of its glass. A
+    /// dark one is taken 40% toward black, so the panel reads as switched off
+    /// beside the lit display rather than as a dim picture.
+    /// "Pale" is the same perceived-brightness test (> 0.5) as
+    /// `Color.themeLuminance`, which picks `oledSurfaceShade`.
+    public static func unlitColor(r: UInt8, g: UInt8, b: UInt8) -> (UInt8, UInt8, UInt8) {
+        let luminance = (0.299 * Double(r) + 0.587 * Double(g) + 0.114 * Double(b)) / 255
+        guard luminance <= 0.5 else { return (r, g, b) }
+        func dim(_ v: UInt8) -> UInt8 { UInt8((Double(v) * 0.6).rounded()) }
+        return (dim(r), dim(g), dim(b))
+    }
+
+    /// A flat `count * count` RGBA8 source of one opaque colour: what the
+    /// unlit panel is run through `render` as, so its grid is the real grid.
+    public static func flatSource(r: UInt8, g: UInt8, b: UInt8, count: Int) -> [UInt8] {
+        guard count > 0 else { return [] }
+        var source = [UInt8](repeating: 255, count: count * count * 4)
+        var i = 0
+        while i < source.count {
+            source[i] = r; source[i + 1] = g; source[i + 2] = b
+            i += 4
+        }
+        return source
+    }
+
     /// A non-backlit colour handheld's washed colour for one LCD pixel.
     public static func handheldTone(r: UInt8, g: UInt8, b: UInt8) -> (UInt8, UInt8, UInt8) {
         let k = (Int(r >> 3) << 10 | Int(g >> 3) << 5 | Int(b >> 3)) * 3

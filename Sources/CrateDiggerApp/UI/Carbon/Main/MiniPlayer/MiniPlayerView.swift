@@ -27,6 +27,14 @@ enum MiniPlayerArtMode: String, CaseIterable {
         case .cover: return "Album Cover"
         }
     }
+
+    /// Whether the art is a picture, and so takes the theme's cover screen
+    /// look. A stream always shows its thumbnail, whatever the mode (the art
+    /// key is disabled while one plays); a local track only in cover mode.
+    /// The spinning record never does: it is a record, not a screen.
+    func showsScreen(streamPlaying: Bool) -> Bool {
+        streamPlaying || self == .cover
+    }
 }
 
 /// The floating mini player: a light Carbon strip that mirrors the full app's
@@ -184,6 +192,9 @@ private struct MiniPlayerBody: View {
     let onPanelChange: (Bool) -> Void
     @Environment(\.carbon) private var theme
     @Environment(\.carbonGeometry) private var geometry
+    /// The backing scale the cover screen is planned for; see
+    /// `CompactArtColumn`.
+    @Environment(\.displayScale) private var displayScale
 
     var body: some View {
         VStack(spacing: 0) {
@@ -279,9 +290,38 @@ private struct MiniPlayerBody: View {
 
     // MARK: - Art
 
+    /// The art frame's side, and the side the cover screen is planned for.
+    static let artSide: CGFloat = 246
+
+    @ViewBuilder
     private var artFrame: some View {
-        let shape = RoundedRectangle(cornerRadius: geometry.scaled(14, following: \.paperCornerRadius),
-                                     style: .continuous)
+        if let screen = artScreen {
+            // A screen set into the card: the bezel replaces the sleeve's
+            // fill, glare, stroke and drop shadow (the shadow is what would
+            // make it float). Frame and corner stay.
+            CoverScreenBezel(spec: screen, cornerRadius: artCornerRadius) {
+                NowPlayingCover(model: model, screen: screen) { Color.clear }
+            }
+            .frame(width: Self.artSide, height: Self.artSide)
+        } else {
+            artSleeve
+        }
+    }
+
+    /// The cover screen's spec while the art is a picture and the theme has
+    /// a look; nil for the spinning record, which is a record, not a screen.
+    private var artScreen: CoverScreenSpec? {
+        let streamPlaying = model.isStreamActive && model.selectedStream != nil
+        guard model.miniPlayerArtMode.showsScreen(streamPlaying: streamPlaying) else { return nil }
+        return CoverScreenSpec(theme: theme, side: Self.artSide, scale: displayScale)
+    }
+
+    private var artCornerRadius: CGFloat {
+        geometry.scaled(14, following: \.paperCornerRadius)
+    }
+
+    private var artSleeve: some View {
+        let shape = RoundedRectangle(cornerRadius: artCornerRadius, style: .continuous)
         return ZStack {
             shape.fill(theme.wellDeep)
             artContent
@@ -290,7 +330,7 @@ private struct MiniPlayerBody: View {
                                      startPoint: .topLeading, endPoint: .center))
                 .allowsHitTesting(false)
         }
-        .frame(width: 246, height: 246)
+        .frame(width: Self.artSide, height: Self.artSide)
         .clipShape(shape)
         .overlay(shape.strokeBorder(Color.black.opacity(0.6), lineWidth: 1))
         // A sleeve laid on the card, not a tile floating over it.

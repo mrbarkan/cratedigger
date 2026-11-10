@@ -10,6 +10,9 @@ struct CompactArtColumn: View {
     @Environment(\.carbon) private var theme
     @Environment(\.carbonGeometry) private var geometry
     @EnvironmentObject private var model: LibraryViewModel
+    /// The backing scale the cover screen is planned for. From the
+    /// environment, so a move to a display of another scale re-plans it.
+    @Environment(\.displayScale) private var displayScale
 
     /// Whether the art well pushed the pointing hand, so it only ever pops
     /// its own cursor.
@@ -54,12 +57,7 @@ struct CompactArtColumn: View {
 
     private var artWell: some View {
         let clickable = model.nowPlayingAlbum != nil
-        return RecessedWell(padding: 0) {
-            // An empty well when nothing plays: the display already says so.
-            NowPlayingCover(model: model, maxPixel: 600) { Color.clear }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .clipShape(RoundedRectangle(cornerRadius: geometry.wellCornerRadius, style: .continuous))
-        }
+        return artHousing
         .contentShape(Rectangle())
         .onTapGesture {
             guard clickable else { return }
@@ -78,5 +76,24 @@ struct CompactArtColumn: View {
         .carbonTip(clickable ? "View artwork" : "")
         .accessibilityAddTraits(clickable ? .isButton : [])
         .accessibilityLabel(clickable ? "Album artwork. Opens the artwork viewer." : "Album artwork")
+    }
+
+    /// With a cover screen look, the art is an LCD set into the shell behind
+    /// its bezel; otherwise the recessed well it has always been.
+    @ViewBuilder
+    private var artHousing: some View {
+        let metrics = CompactDeckMetrics(geometry: geometry)
+        if let screen = CoverScreenSpec(theme: theme, side: metrics.artSide, scale: displayScale) {
+            CoverScreenBezel(spec: screen, cornerRadius: geometry.wellCornerRadius) {
+                NowPlayingCover(model: model, maxPixel: 600, screen: screen) { Color.clear }
+            }
+        } else {
+            RecessedWell(padding: 0) {
+                // An empty well when nothing plays: the display already says so.
+                NowPlayingCover(model: model, maxPixel: 600) { Color.clear }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipShape(RoundedRectangle(cornerRadius: geometry.wellCornerRadius, style: .continuous))
+            }
+        }
     }
 }

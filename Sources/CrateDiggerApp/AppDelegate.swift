@@ -497,8 +497,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     /// - CRATEDIGGER_SNAP_EXTRA=1 adds a `late2` snap at +8.5 s: half a 2 Hz
     ///   blink after `late`, so a blinking destination is caught in both
     ///   phases.
+    ///
+    /// The cover screen (works without a snapshot path, since the snapshot
+    /// draws blend modes as plain source-over and is no judge of the screen;
+    /// check it by window capture):
+    /// - CRATEDIGGER_COVER=<image path> puts that picture in the compact and
+    ///   mini players' art in place of the playing track's, shown even with
+    ///   nothing playing, so a cover can be captured silently. Read by
+    ///   `NowPlayingCover`'s loader, not here.
+    /// - CRATEDIGGER_MINI=1 opens the mini player at +3 s, the same path as
+    ///   Window ▸ Mini Player. Its window has no title, so a snapshot run
+    ///   writes it as `sheetN`.
     private func installSnapshotHookIfRequested() {
         let env = ProcessInfo.processInfo.environment
+        if env["CRATEDIGGER_MINI"] != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
+                self?.showMiniPlayer(nil)
+            }
+        }
         // The equalizer, so a capture can show it. Before the snapshot guard
         // too, so it needs no snapshot path. "quick" also turns Quick EQ
         // on and holds a mid-band fader, as if the pointer were resting on it.
