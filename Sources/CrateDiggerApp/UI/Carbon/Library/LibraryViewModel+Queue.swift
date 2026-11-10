@@ -155,11 +155,13 @@ extension LibraryViewModel {
     /// context menu: the multi-selection when the clicked row is part of it,
     /// otherwise just what was clicked.
     func queueTargets(forClicked tracks: [LoadedTrack]) -> [LoadedTrack] {
+        // Without a real multi-selection the answer is the clicked row, and
+        // resolving the selection is a pass over the whole source.
+        guard (browser.selection.multiSelection?.ids.count ?? 0) > 1 else { return tracks }
         let selected = selectedTracksForCrateAdd()
-        let clickedIDs = Set(tracks.map { $0.track.id })
-        let isPartOfSelection = selected.count > 1 && clickedIDs.contains { id in
-            selected.contains { $0.track.id == id }
-        }
+        guard selected.count > 1 else { return tracks }
+        let selectedIDs = Set(selected.map { $0.track.id })
+        let isPartOfSelection = tracks.contains { selectedIDs.contains($0.track.id) }
         return isPartOfSelection ? selected : tracks
     }
 }

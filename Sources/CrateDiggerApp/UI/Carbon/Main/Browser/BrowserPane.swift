@@ -293,7 +293,7 @@ private struct ArtistPane: View {
                         model.selectArtist(artist, command: false, shift: false, ordered: artists)
                     }
                 )
-                .contextMenu { BrowserContextMenu.artist(artist, model: model) }
+                .lazyContextMenu { BrowserContextMenu.artist(artist, model: model) }
                 .browserStripe(row, theme)
             }
         }
@@ -363,7 +363,7 @@ private struct AlbumPane: View {
                                   ordered: albums, flat: false)
             }
         )
-        .contextMenu { BrowserContextMenu.album(album, model: model) }
+        .lazyContextMenu { BrowserContextMenu.album(album, model: model) }
     }
 
     /// Badge shown on a grouped release row, by group kind.
@@ -399,7 +399,7 @@ private struct AlbumPane: View {
                 }
             }
         )
-        .contextMenu { BrowserContextMenu.release(release, model: model) }
+        .lazyContextMenu { BrowserContextMenu.release(release, model: model) }
     }
 
     private func versionRow(_ version: Album, in release: Album) -> some View {
@@ -410,7 +410,7 @@ private struct AlbumPane: View {
             selected: model.selectedAlbumID == version.id,
             onSelect: { model.focusedColumn = column; model.selectedAlbumID = version.id }
         )
-        .contextMenu { BrowserContextMenu.version(version, release: release, model: model) }
+        .lazyContextMenu { BrowserContextMenu.version(version, release: release, model: model) }
     }
 
     private func isPlayingAlbum(_ album: Album) -> Bool {
@@ -506,7 +506,7 @@ private struct TrackPane: View {
                             onActivate: { model.playTrack(id: loaded.track.id) }
                         )
                         .id(loaded.track.id)
-                        .contextMenu { BrowserContextMenu.track(loaded, model: model) }
+                        .lazyContextMenu { BrowserContextMenu.track(loaded, model: model) }
                         .browserStripe(row, theme)
                     } else {
                     TrackRow(
@@ -526,7 +526,7 @@ private struct TrackPane: View {
                         onActivate: { model.playTrack(id: loaded.track.id) }
                     )
                     .id(loaded.track.id)
-                    .contextMenu { BrowserContextMenu.track(loaded, model: model) }
+                    .lazyContextMenu { BrowserContextMenu.track(loaded, model: model) }
                     .browserStripe(row, theme)
                     }
                 case let .recordTrack(parent, marker, number):
@@ -630,8 +630,8 @@ private struct FacetPane: View {
                     }
                 )
                 .id(value.id)
-                .contextMenu {
-                    // Resolved on open, not per row: a genre can hold thousands.
+                .lazyContextMenu {
+                    // Lazy, so this runs on open, not per row: a genre can hold thousands.
                     let tracks = model.tracks(under: column, id: value.id)
                     BrowserContextMenu.queueButtons(for: tracks, model: model)
                     BrowserContextMenu.moveToCrateMenu(for: tracks, model: model)

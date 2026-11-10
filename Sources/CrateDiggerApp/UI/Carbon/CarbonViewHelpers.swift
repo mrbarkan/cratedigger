@@ -27,6 +27,29 @@ struct WindowBackgroundDrag: ViewModifier {
     }
 }
 
+/// A context menu whose items are built when the menu is asked for, not each
+/// time its row is drawn.
+///
+/// `contextMenu`'s builder runs with the row's body, so anything it computes
+/// is paid per visible row on every redraw. The browser's menus resolve
+/// "which tracks does this row mean", a pass over the whole source: with 8k
+/// tracks that was ~60 ms per row, and a single click redrew every visible
+/// row (measured: 1.2 s of a selection in the value columns, 0.7 s in the
+/// track column). Wrapped in a view, the builder only runs when SwiftUI
+/// resolves the menu itself.
+private struct DeferredMenuItems<Items: View>: View {
+    let items: () -> Items
+    var body: some View { items() }
+}
+
+extension View {
+    /// `contextMenu`, for a menu that is expensive to build. See
+    /// `DeferredMenuItems`.
+    func lazyContextMenu<Items: View>(@ViewBuilder _ items: @escaping () -> Items) -> some View {
+        contextMenu { DeferredMenuItems(items: items) }
+    }
+}
+
 /// CRT-style horizontal scan-line texture: a 1px line every `spacing` points at
 /// the given white `opacity`. Never hit-tests.
 struct Scanlines: View {

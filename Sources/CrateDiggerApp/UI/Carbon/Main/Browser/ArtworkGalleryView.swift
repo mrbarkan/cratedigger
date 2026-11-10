@@ -332,7 +332,7 @@ struct ArtworkGalleryView: View {
                 .lineLimit(1)
         }
         .frame(width: 120)
-        .contextMenu { albumContextMenu(album) }
+        .lazyContextMenu { albumContextMenu(album) }
     }
 
     /// Right-click on a cover: the shared album actions plus the gallery's own
@@ -533,7 +533,7 @@ struct ArtworkGalleryView: View {
         }
         .buttonStyle(.carbonHover)
         .carbonTip("Play \(loaded.track.title)")
-        .contextMenu { BrowserContextMenu.track(loaded, model: model) }
+        .lazyContextMenu { BrowserContextMenu.track(loaded, model: model) }
     }
 
     private func openBooklet(_ album: Album) {
