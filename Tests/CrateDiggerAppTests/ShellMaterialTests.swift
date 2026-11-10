@@ -7,10 +7,9 @@ import XCTest
 /// The shell materials: what each shipped theme resolves to, and the tiles
 /// they are drawn from.
 ///
-/// The themes half exists because "Carbon, Cobalt and Llama '97 look exactly
-/// as before" is the promise that ships with materials, and a theme that
-/// quietly started resolving a material (or lost its grain) would only be
-/// caught by someone squinting at the chassis.
+/// The themes half exists because a shipped theme that quietly started
+/// resolving a different material (or two) would only be caught by someone
+/// squinting at the chassis.
 final class ShellMaterialTests: XCTestCase {
 
     private var themes: [String: ThemeDefinition] = [:]
@@ -35,22 +34,22 @@ final class ShellMaterialTests: XCTestCase {
 
     // MARK: - The shipped themes
 
-    func testCarbonKeepsItsGrainAndNoLook() throws {
-        let bundledGrain = try XCTUnwrap(themes["carbon"]?.effects?["grain"], "Carbon ships grain")
-        for appearance in [ThemeDefinition.BaseAppearance.light, .dark] {
-            let theme = try render("carbon", appearance)
-            XCTAssertEqual(theme.shellMaterial, .grain, "Carbon \(appearance)")
-            XCTAssertEqual(theme.shellMaterialStrength, bundledGrain, accuracy: 0.000001)
-            XCTAssertEqual(theme.shellMaterialStrength, theme.grainAmount, "the grain dial and the drawn grain agree")
-            XCTAssertNil(theme.coverScreenLook, "Carbon \(appearance)")
-        }
-    }
-
-    func testCobaltAndLlamaGainNothing() throws {
-        for id in ["cobalt", "llama-97"] {
+    /// The materials each shipped theme was given on 2026-11-10, chosen by the
+    /// owner from live captures: Carbon traded its grain for the weave it is
+    /// named after, Llama '97 got the brushed chrome of its era, and Cobalt
+    /// stayed bare. None of them has a cover look.
+    func testShippedThemesCarryTheirChosenMaterials() throws {
+        let expected: [(id: String, material: ShellMaterial?, strength: Double)] = [
+            ("carbon", .weave, 0.14),
+            ("llama-97", .brushed, 0.16),
+            ("cobalt", nil, 0),
+        ]
+        for (id, material, strength) in expected {
             for appearance in [ThemeDefinition.BaseAppearance.light, .dark] {
                 let theme = try render(id, appearance)
-                XCTAssertNil(theme.shellMaterial, "\(id) \(appearance) resolves a material")
+                XCTAssertEqual(theme.shellMaterial, material, "\(id) \(appearance)")
+                XCTAssertEqual(theme.shellMaterialStrength, strength, accuracy: 0.000001, "\(id) \(appearance)")
+                XCTAssertEqual(theme.grainAmount, 0, "\(id) \(appearance): one material at a time")
                 XCTAssertNil(theme.coverScreenLook, "\(id) \(appearance) resolves a cover look")
             }
         }

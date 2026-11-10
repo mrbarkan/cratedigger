@@ -69,7 +69,8 @@
   "effects" : {
     "flat" : 0,
     "oledGlare" : 0,
-    "oledMonochrome" : 1
+    "oledMonochrome" : 1,
+    "shellBrushed" : 0.16
   },
   "fonts" : {
     "display" : {
