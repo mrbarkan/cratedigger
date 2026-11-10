@@ -163,6 +163,25 @@ final class BundledThemeTests: XCTestCase {
         }
     }
 
+    /// The same rule, looser, for every shipped theme: a lamp and the light it
+    /// throws stay in one colour family. Carbon's light layer once had a yellow
+    /// bulb over an orange wash. Twenty degrees allows a deliberate lean (a
+    /// deeper blue wash under a brighter blue bulb) and still catches a split.
+    func testEveryBundledThemeKeepsItsLampAndWashInOneFamily() throws {
+        for (id, definition) in themes {
+            for (name, layer) in [("light", definition.light), ("dark", definition.dark)] {
+                var colors = definition.colors ?? [:]
+                colors.merge(layer?.colors ?? [:]) { _, layered in layered }
+                let hues = try ["selectionLedCore", "selectionGlow", "selectionSpread"]
+                    .compactMap { colors[$0] }
+                    .map { try Self.hue(of: $0) }
+                guard let high = hues.max(), let low = hues.min() else { continue }
+                XCTAssertLessThanOrEqual(Self.hueDistance(high, low), 20,
+                                         "\(id) \(name): lamp hues \(hues) have split")
+            }
+        }
+    }
+
     func testPocketCarriesItsSharedEffects() throws {
         let effects = try XCTUnwrap(try XCTUnwrap(themes["pocket"]).effects)
         XCTAssertEqual(effects["shellPlastic"], 0.08)
