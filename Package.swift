@@ -59,7 +59,7 @@ let package = Package(
                 // ponytail: hardcoded SDK version; package-app.sh fails the
                 // build when it stops matching `xcrun --show-sdk-version`.
                 .unsafeFlags(["-Xlinker", "-platform_version", "-Xlinker", "macos",
-                              "-Xlinker", "13.0", "-Xlinker", "27.0"])
+                              "-Xlinker", "13.0", "-Xlinker", "27.2"])
             ]
         ),
         // What the app writes and the Now Playing widget reads: one Codable
