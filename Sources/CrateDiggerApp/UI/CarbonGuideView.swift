@@ -87,7 +87,7 @@ private struct GuideContent: View {
                     }
 
                     section("MAKING IT YOURS", accent: theme.orange) {
-                        bullet("Carbon, Cobalt and Llama '97 ship with the app. The THEME key cycles them; Appearance ▸ Theme Editor… builds your own.")
+                        bullet("Carbon, Cobalt, Llama '97 and Pocket ship with the app. The THEME key cycles them; Appearance ▸ Theme Editor… builds your own.")
                         bullet("A theme carries colours, geometry, fonts and its own logo for the header, in light and dark. Drop a .cdtheme folder in the Themes folder to install one.")
                     }
 
