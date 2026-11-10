@@ -4,12 +4,16 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
-## 2.3.3 (115), 2026-10-23
+## 2.3.3 (116), 2026-11-10
 
-Beta 1: shuffle lets go when you turn it off, the display's animation keeps
-up when you switch desktops and turn down, and the compact player keeps its
-artwork in place. Betas are offered only to people who turned on Receive beta
-updates.
+Release Candidate 1: picking a track is instant again, folding into the
+compact player and back is a smooth blur, double-clicking the top edge
+of the window zooms it again, and the compact player always opens in the
+middle of the screen. Beta
+1 made shuffle let go when you turn it off, kept the display's animation up
+when you switch desktops and turn down, and kept the compact player's artwork
+in place. Release candidates are offered only to people who turned on Receive
+beta updates.
 
 ### Added
 
@@ -17,8 +21,24 @@ updates.
   arrows, or A and D, light the one beside it, so you can work across the
   whole equalizer from the keyboard. It stops at the first and last band.
 
+### Changed
+
+- **Folding into the compact player goes out of focus and back.** The
+  console blurs, the window changes size, and the new view comes into focus
+  already at its final size. The window no longer jumps part of the way or
+  stutters when you unfold it.
+- **The compact player opens in the middle of the screen.** Folding into it
+  already did; starting CrateDigger in the compact player now does too,
+  wherever you last left it.
+
 ### Fixed
 
+- **Selecting is instant again.** Clicking a track, an album or an artist, or
+  moving with the arrow keys, could take most of a second to respond in a
+  large library.
+- **Double-clicking the top edge of the window works again.** On macOS 27 it
+  did nothing. It now zooms the window, or expands the compact player to the
+  full console, following your Desktop & Dock setting.
 - **Turning shuffle off really turns it off.** Next and Previous kept
   following the shuffled order until you played something else. Turning
   shuffle off now puts what is playing back in its album, crate or playlist
