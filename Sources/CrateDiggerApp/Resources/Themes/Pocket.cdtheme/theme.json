@@ -1,0 +1,131 @@
+{
+  "//" : "A handheld console in your pocket: a grey case with a grey LCD and magenta keys by day, an indigo shell with black glass and lavender type by night. The screen runs one colour, the cover art is dithered to match, and the case wears a faint plastic sheen.",
+  "author" : "CrateDigger",
+  "baseAppearance" : "dark",
+  "colors" : {
+    "selectionInk" : "#FFFFFF"
+  },
+  "dark" : {
+    "colors" : {
+      "backgroundBase" : "#171233",
+      "backgroundGradientEnd" : "#0E0B22",
+      "backgroundGradientStart" : "#3A3172",
+      "chassis" : "#3B3273",
+      "chassisDeep" : "#0F0C24",
+      "chassisHi" : "#5B50A3",
+      "chassisLo" : "#251F4D",
+      "cyan" : "#3CCFB4",
+      "cyanGlow" : "#BDF5EA",
+      "hair" : "#4A4085",
+      "indigo" : "#9C8CFF",
+      "ink" : "#F3F0FF",
+      "ink2" : "#CFC8EE",
+      "ink3" : "#9A90C8",
+      "ink4" : "#6A6199",
+      "metal" : "#4F4592",
+      "metalDeep" : "#100D26",
+      "metalHi" : "#7568C2",
+      "metalLo" : "#2E2760",
+      "oledForeground" : "#EDE8FF",
+      "oledForegroundMuted" : "#EDE8FF8C",
+      "oledStrokeInner" : "#0D0A1C",
+      "oledSurface" : "#06050C",
+      "onAir" : "#FF5A5F",
+      "orange" : "#E8454A",
+      "orangeHi" : "#F47C80",
+      "orangeLo" : "#B62A30",
+      "paper" : "#1E1842",
+      "paper2" : "#171236",
+      "red" : "#FF5A5F",
+      "selectionGlow" : "#3CCFB4",
+      "selectionLedCore" : "#3CCFB4",
+      "selectionSpread" : "#3CCFB48D",
+      "sun" : "#F7C92C",
+      "sunHi" : "#FFE27A",
+      "sunLo" : "#C29A12",
+      "well" : "#2A2356",
+      "wellDeep" : "#17123A"
+    },
+    "logo" : "logo-dark.pdf",
+    "shadows" : {
+      "shadow1" : {
+        "color" : "#00000085",
+        "radius" : 12,
+        "x" : 0,
+        "y" : 3
+      },
+      "shadow2" : {
+        "color" : "#000000B8",
+        "radius" : 54,
+        "x" : 0,
+        "y" : 24
+      }
+    }
+  },
+  "effects" : {
+    "coverPixel" : 0.55,
+    "coverPixelSize" : 1.5,
+    "oledMonochrome" : 1,
+    "shellPlastic" : 0.08
+  },
+  "id" : "pocket",
+  "light" : {
+    "colors" : {
+      "backgroundBase" : "#B9B6AF",
+      "backgroundGradientEnd" : "#A5A29B",
+      "backgroundGradientStart" : "#D9D6CF",
+      "chassis" : "#C9C6BE",
+      "chassisDeep" : "#6D6A64",
+      "chassisHi" : "#E7E4DD",
+      "chassisLo" : "#AAA79F",
+      "cyan" : "#2F3699",
+      "cyanGlow" : "#A9AEEA",
+      "hair" : "#A9A69F",
+      "indigo" : "#3A46B5",
+      "ink" : "#1B1B22",
+      "ink2" : "#3A3A45",
+      "ink3" : "#5F5E66",
+      "ink4" : "#8D8B8C",
+      "metal" : "#CFCBC4",
+      "metalDeep" : "#5C5953",
+      "metalHi" : "#EDEAE4",
+      "metalLo" : "#A29E97",
+      "oledForeground" : "#1F2326",
+      "oledForegroundMuted" : "#1F2326A6",
+      "oledStrokeInner" : "#5A5C66",
+      "oledSurface" : "#B7BBB0",
+      "onAir" : "#1F2326",
+      "orange" : "#A12A5E",
+      "orangeHi" : "#C4487C",
+      "orangeLo" : "#7A1C45",
+      "paper" : "#E4E1DA",
+      "paper2" : "#D2CFC7",
+      "red" : "#D2362B",
+      "selectionGlow" : "#E24C8B",
+      "selectionLedCore" : "#F0589A",
+      "selectionSpread" : "#D2437F",
+      "sun" : "#E0A21A",
+      "sunHi" : "#F3C861",
+      "sunLo" : "#A87508",
+      "well" : "#B8B5AD",
+      "wellDeep" : "#8F8C85"
+    },
+    "logo" : "logo-light.pdf",
+    "shadows" : {
+      "shadow1" : {
+        "color" : "#0F0F0F1A",
+        "radius" : 10,
+        "x" : 0,
+        "y" : 3
+      },
+      "shadow2" : {
+        "color" : "#0D0D0D3D",
+        "radius" : 48,
+        "x" : 0,
+        "y" : 22
+      }
+    }
+  },
+  "name" : "Pocket",
+  "version" : "1.0"
+}
