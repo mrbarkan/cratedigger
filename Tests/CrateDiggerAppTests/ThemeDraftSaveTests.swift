@@ -357,6 +357,35 @@ final class ThemeDraftSaveTests: XCTestCase {
         )
     }
 
+    /// The editor writes a material, a cover look and a pixel size straight
+    /// into `effects`. The save path minimises the draft against its parent, so
+    /// this pins that those keys (the pixel size above all, which is not a dial)
+    /// reach the file and come back as the rendered theme.
+    func testShellMaterialAndCoverScreenSurviveSave() throws {
+        let previousSelection = PreferencesStore.shared.selectedThemeID
+        defer { PreferencesStore.shared.selectedThemeID = previousSelection }
+
+        registry.beginEditing(try manifest("base-theme"))
+        var effects = registry.draft?.effects ?? [:]
+        effects = ThemeTokenCatalog.settingExclusive(
+            "shellBrushed", to: 0.18, among: ShellMaterial.allCases.map(\.effectKey), in: effects)
+        effects = ThemeTokenCatalog.settingExclusive(
+            "coverPixel", to: 0.55, among: CoverScreenLook.allCases.map(\.effectKey), in: effects)
+        effects["coverPixelSize"] = 3
+        registry.draft?.effects = effects
+
+        _ = try registry.saveDraft()
+
+        let saved = try XCTUnwrap(registry.manifest(for: "base-theme")?.definition)
+        XCTAssertEqual(saved.effects?["shellBrushed"], 0.18)
+        XCTAssertEqual(saved.effects?["coverPixel"], 0.55)
+        XCTAssertEqual(saved.effects?["coverPixelSize"], 3)
+        let theme = CarbonTheme(definition: saved, resolvedBase: .carbon)
+        XCTAssertEqual(theme.shellMaterial, .brushed)
+        XCTAssertEqual(theme.coverScreenLook, .pixel)
+        XCTAssertEqual(theme.coverPixelSize, 3)
+    }
+
     /// The real-world failure: a hand-authored theme whose *folder* is named
     /// for its display name while its `id` is a slug. Saving must rewrite that
     /// file, not create `<id>.cdtheme` beside it — two files sharing an id make

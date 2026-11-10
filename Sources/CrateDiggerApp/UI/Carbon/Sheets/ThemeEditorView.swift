@@ -308,7 +308,40 @@ struct ThemeEditorView: View {
                         .padding(.bottom, 6)
                     VStack(spacing: 6) {
                         flatSwitch
-                        ForEach(ThemeTokenCatalog.effectDials(on: .interface)) { effectRow($0) }
+                        // Shell materials are one choice, so they get a group of
+                        // their own; any other interface dial keeps a plain row.
+                        ForEach(ThemeTokenCatalog.effectDials(on: .interface).filter { !shellMaterialKeys.contains($0.key) }) {
+                            effectRow($0)
+                        }
+                        groupLabel("Shell Material")
+                        ForEach(ThemeTokenCatalog.shellMaterialDials) { dial in
+                            effectRow(
+                                dial,
+                                on: theme.shellMaterial?.effectKey == dial.key,
+                                group: shellMaterialKeys
+                            )
+                        }
+                    }
+                }
+
+                if showCover {
+                    sectionLabel("Cover Screen")
+                        .padding(.top, 16)
+                        .padding(.bottom, 2)
+                    Text("Compact player and mini player.")
+                        .font(CarbonFont.mono(8))
+                        .foregroundStyle(theme.ink4)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.bottom, 6)
+                    VStack(spacing: 6) {
+                        ForEach(ThemeTokenCatalog.coverLookDials) { dial in
+                            effectRow(
+                                dial,
+                                on: theme.coverScreenLook?.effectKey == dial.key,
+                                group: coverLookKeys
+                            )
+                        }
+                        coverPixelSizeRow
                     }
                 }
 
@@ -348,7 +381,7 @@ struct ThemeEditorView: View {
                     }
                 }
 
-                if visibleColorGroups.isEmpty && visibleGeometryGroups.isEmpty && !showFonts && !showInterface && !showBrand {
+                if visibleColorGroups.isEmpty && visibleGeometryGroups.isEmpty && !showFonts && !showInterface && !showCover && !showBrand {
                     Text("No tokens match “\(filter)”")
                         .font(CarbonFont.mono(10))
                         .foregroundStyle(theme.ink4)
@@ -396,17 +429,30 @@ struct ThemeEditorView: View {
     /// The switch exists because every effect ships off: a lone slider sitting
     /// at zero reads as broken, and finding the strength where an effect starts
     /// to show shouldn't be the first thing you have to do.
-    private func effectRow(_ dial: ThemeTokenCatalog.EffectDial) -> some View {
+    ///
+    /// A dial in an exclusive `group` reads ON only when it is the resolved
+    /// winner (`on`), not merely non-zero: a draft carrying two keys draws one
+    /// of them, and the row must say which. Switching it on zeroes the rest of
+    /// the group in the same assignment; its slider moves only its own key.
+    private func effectRow(
+        _ dial: ThemeTokenCatalog.EffectDial,
+        on: Bool? = nil,
+        group: [String]? = nil
+    ) -> some View {
         let value = theme[keyPath: dial.read]
-        let on = value > 0
+        let on = on ?? (value > 0)
         return HStack(spacing: 6) {
             KeyButton(
                 style: on ? .selected : .normal,
-                action: { setEffect(dial, on ? 0 : dial.on) }
+                action: { setEffect(dial, on ? 0 : dial.on, group: group) }
             ) {
+                // The longest label ("Bead-Blasted Metal") does not fit the
+                // key at full size; shrink rather than lose the ON/OFF state.
                 Text("\(dial.label.uppercased()) · \(on ? "ON" : "OFF")")
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
             }
-            .frame(width: 132, height: 20)
+            .frame(width: 156, height: 20)
             .carbonTip(dial.note)
 
             Slider(
@@ -424,9 +470,62 @@ struct ThemeEditorView: View {
         }
     }
 
-    private func setEffect(_ dial: ThemeTokenCatalog.EffectDial, _ value: Double) {
+    private var shellMaterialKeys: [String] { ShellMaterial.allCases.map(\.effectKey) }
+    private var coverLookKeys: [String] { CoverScreenLook.allCases.map(\.effectKey) }
+
+    /// `group` is passed only by a switch: it makes this key the group's one
+    /// non-zero entry. A slider passes none and only moves its own key.
+    private func setEffect(_ dial: ThemeTokenCatalog.EffectDial, _ value: Double, group: [String]? = nil) {
+        let clamped = min(max(value, 0), dial.max)
+        let effects = registry.draft?.effects ?? [:]
+        registry.draft?.effects = group.map {
+            ThemeTokenCatalog.settingExclusive(dial.key, to: clamped, among: $0, in: effects)
+        } ?? effects.merging([dial.key: clamped]) { _, new in new }
+    }
+
+    /// A small heading inside a section, in the same style as the section
+    /// labels but quieter, so a group of rows reads as one choice.
+    private func groupLabel(_ text: String) -> some View {
+        Text(text.uppercased())
+            .font(CarbonFont.mono(8, weight: .bold))
+            .tracking(1.4)
+            .foregroundStyle(theme.ink4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 6)
+    }
+
+    /// The LCD's pixel size, one key per size `CoverScreenLook` snaps to. It
+    /// has no off of its own, so it is only enabled while a look is on, and
+    /// writes its key directly like the monochrome switch.
+    private var coverPixelSizeRow: some View {
+        let hasLook = theme.coverScreenLook != nil
+        return HStack(spacing: 6) {
+            Text("PIXEL SIZE")
+                .font(CarbonFont.mono(8, weight: .semibold))
+                .foregroundStyle(theme.ink4)
+                .frame(width: 60, alignment: .leading)
+            ForEach(CoverScreenLook.pixelSizes, id: \.self) { size in
+                KeyButton(
+                    style: !hasLook ? .disabled : (theme.coverPixelSize == size ? .selected : .normal),
+                    action: { setCoverPixelSize(size) }
+                ) {
+                    Text("\(Self.pointsText(size)) PT")
+                }
+                .frame(height: 20)
+                .carbonTip("LCD pixel size: \(Self.pointsText(size)) pt. Whole device pixels at every size, never smaller than 3.")
+            }
+        }
+    }
+
+    /// "1.5", not the locale's "1,5": these are the same numbers the theme file
+    /// and the docs use.
+    private static func pointsText(_ size: Double) -> String {
+        String(format: "%g", size)
+    }
+
+    private func setCoverPixelSize(_ size: Double) {
         var effects = registry.draft?.effects ?? [:]
-        effects[dial.key] = min(max(value, 0), dial.max)
+        effects["coverPixelSize"] = size
         registry.draft?.effects = effects
     }
 
@@ -819,7 +918,7 @@ struct ThemeEditorView: View {
                 .font(CarbonFont.mono(7.5))
                 .foregroundStyle(named.count == 1 ? theme.sun : theme.ink4)
                 .lineLimit(1)
-                .minimumScaleFactor(0.75)
+                .minimumScaleFactor(0.7)
                 .frame(maxWidth: .infinity, alignment: .trailing)
         }
     }
@@ -1066,9 +1165,18 @@ struct ThemeEditorView: View {
     /// The console's own effects, shadows included — everything that happens
     /// to the hardware rather than to the screen in it.
     private var showInterface: Bool {
-        matches("flat", "shadow", "depth", "shadows", "surfaces", "interface")
+        matches("flat", "shadow", "depth", "shadows", "surfaces", "interface", "shell", "material")
             || ThemeTokenCatalog.effectDials(on: .interface).contains {
                 matches($0.key, $0.label, $0.note, "interface")
+            }
+    }
+
+    /// The cover screen section: its own heading, the pixel-size control and
+    /// the three looks. Matches the words someone would type for it.
+    private var showCover: Bool {
+        matches("cover", "screen", "lcd", "pixel", "handheld", "grid", "compact player", "mini player")
+            || ThemeTokenCatalog.effectDials(on: .cover).contains {
+                matches($0.key, $0.label, $0.note, "cover screen")
             }
     }
 

@@ -138,6 +138,24 @@ enum ThemeTokenCatalog {
         dials(forKeys: CoverScreenLook.allCases.map(\.effectKey))
     }
 
+    /// The edit behind every row of an exclusive group (shell materials, cover
+    /// looks). Switching `key` on to a positive strength writes that strength
+    /// and 0 to every other key of `group`, in one dictionary, so the editor
+    /// can assign it to the draft once and one undo restores the previous
+    /// choice. A hand-written or inherited draft carrying two non-zero keys
+    /// ends with one. A value of 0 (or less) switches `key` off and clears the
+    /// rest of the group too, so a switch-off leaves the group all zero rather
+    /// than promoting a stray inherited key to winner. Keys outside `group`
+    /// are never touched. Sliders do not use this: they move only their own key.
+    static func settingExclusive(
+        _ key: String, to value: Double, among group: [String], in effects: [String: Double]
+    ) -> [String: Double] {
+        var result = effects
+        for other in group where other != key { result[other] = 0 }
+        result[key] = max(value, 0)
+        return result
+    }
+
     /// The dials for `keys`, in that order. A key without a dial is dropped,
     /// which `EffectDialTests` catches as a group shorter than its enum.
     private static func dials(forKeys keys: [String]) -> [EffectDial] {

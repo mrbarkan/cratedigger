@@ -185,5 +185,36 @@ final class EffectDialTests: XCTestCase {
             }
         }
     }
+
+    // MARK: - Exclusive groups
+
+    func testSwitchingOneMaterialOnZeroesTheRestAndLeavesOtherKeysAlone() {
+        let group = ShellMaterial.allCases.map(\.effectKey)
+        let before: [String: Double] = ["grain": 0.2, "flat": 1, "oledGlare": 0.16, "coverPixel": 0.55, "coverPixelSize": 2]
+        let after = ThemeTokenCatalog.settingExclusive("shellBrushed", to: 0.18, among: group, in: before)
+        XCTAssertEqual(after["shellBrushed"], 0.18)
+        for key in group where key != "shellBrushed" { XCTAssertEqual(after[key] ?? 0, 0, key) }
+        XCTAssertEqual(after["flat"], 1)
+        XCTAssertEqual(after["oledGlare"], 0.16)
+        XCTAssertEqual(after["coverPixel"], 0.55)
+        XCTAssertEqual(after["coverPixelSize"], 2)
+        XCTAssertEqual(ShellMaterial.resolve(effects: after)?.material, .brushed)
+    }
+
+    func testSwitchingTheWinnerOffLeavesTheGroupAllZero() {
+        let group = ShellMaterial.allCases.map(\.effectKey)
+        let on = ThemeTokenCatalog.settingExclusive("shellWeave", to: 0.12, among: group, in: ["grain": 0.1])
+        let off = ThemeTokenCatalog.settingExclusive("shellWeave", to: 0, among: group, in: on)
+        for key in group { XCTAssertEqual(off[key] ?? 0, 0, key) }
+        XCTAssertNil(ShellMaterial.resolve(effects: off))
+    }
+
+    func testADraftWithTwoNonZeroKeysEndsWithOne() {
+        let group = CoverScreenLook.allCases.map(\.effectKey)
+        let dirty: [String: Double] = ["coverGrid": 0.4, "coverHandheld": 0.3]
+        let after = ThemeTokenCatalog.settingExclusive("coverPixel", to: 0.55, among: group, in: dirty)
+        XCTAssertEqual(group.filter { (after[$0] ?? 0) > 0 }, ["coverPixel"])
+        XCTAssertEqual(CoverScreenLook.resolve(effects: after)?.look, .pixel)
+    }
 }
 #endif
