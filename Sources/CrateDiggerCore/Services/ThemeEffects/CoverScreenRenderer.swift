@@ -11,8 +11,13 @@ public enum CoverScreenRenderer {
     /// `lcdSide * lcdSide`, opaque. A source of the wrong size, or a layout
     /// with no screen, returns an opaque black image of the layout's size
     /// (empty when `count == 0`).
+    ///
+    /// `isCancelled` is asked once per output row; when it answers true the
+    /// render stops and returns an empty array, which no caller can mistake
+    /// for a picture.
     public static func render(source: [UInt8], look: CoverScreenLook,
-                              layout: CoverScreenLayout, gridStrength: Double) -> [UInt8] {
+                              layout: CoverScreenLayout, gridStrength: Double,
+                              isCancelled: () -> Bool = { false }) -> [UInt8] {
         let side = layout.lcdSide
         let count = layout.count
         let cell = layout.cell
@@ -44,11 +49,12 @@ public enum CoverScreenRenderer {
         }
         let gapR = gap.0, gapG = gap.1, gapB = gap.2
 
-        source.withUnsafeBufferPointer { src in
+        let finished: Bool = source.withUnsafeBufferPointer { src in
             out.withUnsafeMutableBufferPointer { dst in
                 litWeight.withUnsafeBufferPointer { lw in
                     gapWeight.withUnsafeBufferPointer { gw in
                         for y in 0..<side {
+                            if isCancelled() { return false }
                             let cy = y % cell
                             let ly = y / cell
                             for x in 0..<side {
@@ -74,11 +80,12 @@ public enum CoverScreenRenderer {
                                 dst[d + 3] = 255
                             }
                         }
+                        return true
                     }
                 }
             }
         }
-        return out
+        return finished ? out : []
     }
 
     /// The colour of the unlit panel (nothing playing, no art, a stream with

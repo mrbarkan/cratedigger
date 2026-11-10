@@ -81,9 +81,11 @@ struct CoverScreenSpec: Equatable {
 /// Turns a cover into the LCD picture. Pure CoreGraphics, safe off the main
 /// thread; `NowPlayingCover` runs it in a detached task and caches the result.
 enum CoverScreenImage {
-    /// The cover on the screen, or nil if it could not be drawn.
+    /// The cover on the screen, or nil if it could not be drawn or the task
+    /// running it was cancelled (checked between stages and per row).
     static func render(_ cover: CGImage, spec: CoverScreenSpec) -> CGImage? {
-        guard let source = resample(cover, side: spec.sourceSide) else { return nil }
+        guard !Task.isCancelled, let source = resample(cover, side: spec.sourceSide),
+              !Task.isCancelled else { return nil }
         return picture(from: source, spec: spec)
     }
 
@@ -96,13 +98,15 @@ enum CoverScreenImage {
         // same at either resolution, so the pixel look stands in for it.
         let look: CoverScreenLook = spec.look == .grid ? .pixel : spec.look
         let pixels = CoverScreenRenderer.render(source: source, look: look, layout: spec.layout,
-                                                gridStrength: spec.strength)
+                                                gridStrength: spec.strength,
+                                                isCancelled: { Task.isCancelled })
         return makeImage(rgba: pixels, side: spec.layout.lcdSide)
     }
 
     private static func picture(from source: [UInt8], spec: CoverScreenSpec) -> CGImage? {
         let pixels = CoverScreenRenderer.render(source: source, look: spec.look, layout: spec.layout,
-                                                gridStrength: spec.strength)
+                                                gridStrength: spec.strength,
+                                                isCancelled: { Task.isCancelled })
         return makeImage(rgba: pixels, side: spec.layout.lcdSide)
     }
 
@@ -151,7 +155,8 @@ enum CoverScreenImage {
 
 /// The rendered pictures, shared by both players. Keyed by what the picture
 /// shows (`NowPlayingCover`'s cover key: the track and its artwork hash, or
-/// the stream) plus `CoverScreenSpec.renderKey`; never by the `NSImage`'s
+/// the stream and its thumbnail URL; plus the booklet front cover's identity
+/// on disk) and `CoverScreenSpec.renderKey`; never by the `NSImage`'s
 /// identity, since the loaders hand back a fresh image for the same art and a
 /// freed image's identifier can be reused by another cover. Small: one
 /// picture per track, and a fold back and forth only needs the last one.

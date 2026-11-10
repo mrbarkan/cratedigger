@@ -433,7 +433,8 @@ struct ThemeEditorView: View {
     /// A dial in an exclusive `group` reads ON only when it is the resolved
     /// winner (`on`), not merely non-zero: a draft carrying two keys draws one
     /// of them, and the row must say which. Switching it on zeroes the rest of
-    /// the group in the same assignment; its slider moves only its own key.
+    /// the group in the same assignment; its slider moves only its own key,
+    /// until it reaches 0 (`ThemeTokenCatalog.sliding`).
     private func effectRow(
         _ dial: ThemeTokenCatalog.EffectDial,
         on: Bool? = nil,
@@ -456,7 +457,7 @@ struct ThemeEditorView: View {
             .carbonTip(dial.note)
 
             Slider(
-                value: Binding(get: { value }, set: { setEffect(dial, $0) }),
+                value: Binding(get: { value }, set: { slideEffect(dial, $0, group: group) }),
                 in: 0...dial.max
             )
             .controlSize(.small)
@@ -473,14 +474,23 @@ struct ThemeEditorView: View {
     private var shellMaterialKeys: [String] { ShellMaterial.allCases.map(\.effectKey) }
     private var coverLookKeys: [String] { CoverScreenLook.allCases.map(\.effectKey) }
 
-    /// `group` is passed only by a switch: it makes this key the group's one
-    /// non-zero entry. A slider passes none and only moves its own key.
+    /// A switch. With a `group` it makes this key the group's one non-zero
+    /// entry (or, switched off, leaves the group all zero).
     private func setEffect(_ dial: ThemeTokenCatalog.EffectDial, _ value: Double, group: [String]? = nil) {
         let clamped = min(max(value, 0), dial.max)
         let effects = registry.draft?.effects ?? [:]
         registry.draft?.effects = group.map {
             ThemeTokenCatalog.settingExclusive(dial.key, to: clamped, among: $0, in: effects)
         } ?? effects.merging([dial.key: clamped]) { _, new in new }
+    }
+
+    /// A slider: moves only its own key, except that in a group 0 is the
+    /// switch's OFF (see `ThemeTokenCatalog.sliding`).
+    private func slideEffect(_ dial: ThemeTokenCatalog.EffectDial, _ value: Double, group: [String]?) {
+        let clamped = min(max(value, 0), dial.max)
+        registry.draft?.effects = ThemeTokenCatalog.sliding(
+            dial.key, to: clamped, among: group, in: registry.draft?.effects ?? [:]
+        )
     }
 
     /// A small heading inside a section, in the same style as the section

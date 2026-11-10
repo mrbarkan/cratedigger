@@ -85,14 +85,18 @@ struct NowPlayingCover<Placeholder: View>: View {
         withAnimation(CarbonMotion.state) { coverImage = image }
     }
 
-    /// Reload key: track change or a freshly committed cover (hash change).
+    /// Reload key: track change or a freshly committed cover (hash change),
+    /// or for a stream its id and thumbnail URL (see `NowPlayingCoverKey`).
     private var coverKey: String {
         #if DEBUG
         if Self.debugCoverURL != nil { return "debug-cover" }
         #endif
-        if model.isStreamActive { return "stream-\(model.selectedStreamID ?? "none")" }
+        if model.isStreamActive {
+            let stream = model.selectedStream
+            return NowPlayingCoverKey.stream(id: model.selectedStreamID, thumbnailURL: stream?.thumbnailURL)
+        }
         let track = model.nowPlayingTrack?.track
-        return "\(track?.id.uuidString ?? "none")-\(track?.artworkHash ?? "")"
+        return NowPlayingCoverKey.track(id: track?.id, artworkHash: track?.artworkHash)
     }
 
     private func loadCoverImage() async {
@@ -158,18 +162,26 @@ struct NowPlayingCover<Placeholder: View>: View {
     /// Finds or renders the screen's picture. The cache is checked before the
     /// cover is even loaded, so a fold back and forth, or the other player
     /// showing the same track, costs nothing. Rendering runs off the main
-    /// thread; the previous picture stays up until the new one lands.
+    /// thread; the previous picture stays up until the new one lands, except
+    /// when a stream takes over (below).
     private func loadScreen(_ spec: CoverScreenSpec) async {
-        let key = "\(coverKey)|\(spec.renderKey)"
+        let cover = coverKey
+        let key = "\(cover)|\(frontCoverStamp())|\(spec.renderKey)"
         if let cached = CoverScreenCache.image(forKey: key) {
             showScreen(cached, key: key, spec: spec)
             return
         }
-        if let cover = await screenSource(maxPixel: max(600, spec.layout.lcdSide)) {
+        // A stream's thumbnail comes over the network and can take seconds,
+        // and the picture still up is the last track's cover, which reads as
+        // that album playing. Go dark first, unless the picture up is already
+        // this stream's (a theme edit or a scale change re-rendering it).
+        if isStreamScreen, lcdPicture?.key.hasPrefix(cover + "|") != true {
+            await showUnlit(spec)
             guard !Task.isCancelled else { return }
-            let rendered = await Task.detached(priority: .userInitiated) {
-                CoverScreenImage.render(cover, spec: spec)
-            }.value
+        }
+        if let source = await screenSource(maxPixel: max(600, spec.layout.lcdSide)) {
+            guard !Task.isCancelled else { return }
+            let rendered = await Self.renderOffMain { CoverScreenImage.render(source, spec: spec) }
             guard !Task.isCancelled else { return }
             if let rendered {
                 CoverScreenCache.store(rendered, forKey: key)
@@ -178,21 +190,63 @@ struct NowPlayingCover<Placeholder: View>: View {
             }
         }
         guard !Task.isCancelled else { return }
-        // Anything that is not a real picture (nothing playing, a track with
-        // no art, a stream whose thumbnail is missing or unreachable) is the
-        // unlit panel. Cached under its own key, not the cover's, so a stream
-        // whose thumbnail failed once is fetched again next time.
+        await showUnlit(spec)
+    }
+
+    /// Anything that is not a real picture (nothing playing, a track with no
+    /// art, a stream whose thumbnail is missing, unreachable or still on its
+    /// way) is the unlit panel. Cached under its own key, not the cover's, so
+    /// a stream whose thumbnail failed once is fetched again next time.
+    private func showUnlit(_ spec: CoverScreenSpec) async {
         let unlitKey = "unlit|\(spec.renderKey)|\(spec.unlit.r),\(spec.unlit.g),\(spec.unlit.b)"
         if let cached = CoverScreenCache.image(forKey: unlitKey) {
             showScreen(cached, key: unlitKey, spec: spec)
             return
         }
-        let unlit = await Task.detached(priority: .userInitiated) {
-            CoverScreenImage.renderUnlit(spec: spec)
-        }.value
+        let unlit = await Self.renderOffMain { CoverScreenImage.renderUnlit(spec: spec) }
         guard !Task.isCancelled, let unlit else { return }
         CoverScreenCache.store(unlit, forKey: unlitKey)
         showScreen(unlit, key: unlitKey, spec: spec)
+    }
+
+    /// Whether the screen shows a stream's thumbnail rather than a cover.
+    private var isStreamScreen: Bool {
+        #if DEBUG
+        if Self.debugCoverURL != nil { return false }
+        #endif
+        return model.isStreamActive
+    }
+
+    /// Runs a render off the main thread, cancelled with the task awaiting
+    /// it: a slider drag in the theme editor cancels each step's task as the
+    /// next begins, and without this every intermediate picture was still
+    /// drawn to the end. A cancelled render returns nil, and the callers
+    /// check `Task.isCancelled` before storing or showing anything, so a
+    /// stale picture is never used.
+    private static func renderOffMain(_ work: @escaping @Sendable () -> CGImage?) async -> CGImage? {
+        let task = Task.detached(priority: .userInitiated, operation: work)
+        return await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
+    }
+
+    /// The booklet front cover's identity on disk, for the screen's cache
+    /// key. Saving artwork can replace that file without changing the track's
+    /// `artworkHash` (the hash is the track's own art, and a SAVE leaves it
+    /// alone), so the key alone would keep serving the cached picture of the
+    /// old file. The plain cover re-reads the file whenever it appears; with
+    /// this the screen does too. Empty when there is no booklet cover.
+    private func frontCoverStamp() -> String {
+        guard !isStreamScreen, let loaded = model.nowPlayingTrack,
+              let url = model.album(containing: loaded.track.id)?.booklet?.frontCoverURL else { return "" }
+        // FileManager rather than `URL.resourceValues`, which caches on the
+        // URL object, and this URL lives in the album for as long as it does.
+        let attributes = (try? FileManager.default.attributesOfItem(atPath: url.path)) ?? [:]
+        let modified = (attributes[.modificationDate] as? Date)?.timeIntervalSinceReferenceDate ?? 0
+        let file = (attributes[.systemFileNumber] as? NSNumber)?.uint64Value ?? 0
+        return "\(url.path)@\(modified)#\(file)"
     }
 
     /// The picture behind the screen: a stream's thumbnail, else the cover.
@@ -214,9 +268,14 @@ struct NowPlayingCover<Placeholder: View>: View {
         return await loadCover(maxPixel: maxPixel)?.cgImage(forProposedRect: nil, context: nil, hints: nil)
     }
 
+    /// How long a stream thumbnail may take. URLSession's default is 60 s, and
+    /// the screen is unlit for as long as the fetch runs.
+    private static var thumbnailTimeout: TimeInterval { 10 }
+
     private static func fetchThumbnail(url: URL, maxPixel: Int) async -> CGImage? {
         do {
-            let (data, response) = try await URLSession.shared.data(from: url)
+            let request = URLRequest(url: url, timeoutInterval: thumbnailTimeout)
+            let (data, response) = try await URLSession.shared.data(for: request)
             if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
                 NSLog("[CoverScreen] stream thumbnail %@ answered %d", url.absoluteString, http.statusCode)
                 return nil
@@ -243,9 +302,33 @@ struct NowPlayingCover<Placeholder: View>: View {
     /// the playing track's art, shown even with nothing playing, so the cover
     /// (and its screen) can be captured without making a sound. See the
     /// hook list in `AppDelegate`.
-    static var debugCoverURL: URL? {
+    static var debugCoverURL: URL? { NowPlayingCoverKey.debugCoverURL }
+    #endif
+}
+
+/// What `NowPlayingCover` reloads on. Outside the view (which is generic, so
+/// it can hold no static storage) and pure, so the keys can be tested.
+enum NowPlayingCoverKey {
+    /// A stream: its id and its thumbnail URL. A pasted link starts playing
+    /// before its metadata names a thumbnail, so without the URL the key never
+    /// changed when it arrived and the screen stayed unlit for the whole play;
+    /// and a thumbnail that changed later kept the old cached picture.
+    static func stream(id: String?, thumbnailURL: String?) -> String {
+        "stream-\(id ?? "none")|\(thumbnailURL ?? "")"
+    }
+
+    /// A track: its id and its artwork hash, so a freshly committed cover
+    /// (a hash change) reloads.
+    static func track(id: UUID?, artworkHash: String?) -> String {
+        "\(id?.uuidString ?? "none")-\(artworkHash ?? "")"
+    }
+
+    #if DEBUG
+    /// Read once: the key is computed on every body pass, and the process
+    /// environment does not change while the app runs.
+    static let debugCoverURL: URL? = {
         guard let path = ProcessInfo.processInfo.environment["CRATEDIGGER_COVER"], !path.isEmpty else { return nil }
         return URL(fileURLWithPath: path)
-    }
+    }()
     #endif
 }

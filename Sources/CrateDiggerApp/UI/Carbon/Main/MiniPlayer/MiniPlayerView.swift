@@ -293,19 +293,25 @@ private struct MiniPlayerBody: View {
     /// The art frame's side, and the side the cover screen is planned for.
     static let artSide: CGFloat = 246
 
-    @ViewBuilder
     private var artFrame: some View {
-        if let screen = artScreen {
-            // A screen set into the card: the bezel replaces the sleeve's
-            // fill, glare, stroke and drop shadow (the shadow is what would
-            // make it float). Frame and corner stay.
-            CoverScreenBezel(spec: screen, cornerRadius: artCornerRadius) {
-                NowPlayingCover(model: model, screen: screen) { Color.clear }
+        Group {
+            if let screen = artScreen {
+                // A screen set into the card: the bezel replaces the sleeve's
+                // fill, glare, stroke and drop shadow (the shadow is what would
+                // make it float). Frame and corner stay.
+                CoverScreenBezel(spec: screen, cornerRadius: artCornerRadius) {
+                    NowPlayingCover(model: model, screen: screen) { Color.clear }
+                }
+                .frame(width: Self.artSide, height: Self.artSide)
+            } else {
+                artSleeve
             }
-            .frame(width: Self.artSide, height: Self.artSide)
-        } else {
-            artSleeve
         }
+        // One labelled element in every mode. The screen is a decorative
+        // image and shapes, which VoiceOver skips, so without this the art
+        // vanished from it whenever a cover look was on.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(model.isStreamActive ? "Stream thumbnail" : "Album artwork")
     }
 
     /// The cover screen's spec while the art is a picture and the theme has

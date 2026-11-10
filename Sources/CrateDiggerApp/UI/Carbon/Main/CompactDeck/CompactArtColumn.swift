@@ -61,8 +61,7 @@ struct CompactArtColumn: View {
         .contentShape(Rectangle())
         .onTapGesture {
             guard clickable else { return }
-            ClickPlayer.shared.play(.key)
-            model.showNowPlayingArtwork()
+            openArtwork()
         }
         .onHover { inside in
             if inside, clickable, !pushedCursor {
@@ -74,8 +73,23 @@ struct CompactArtColumn: View {
             }
         }
         .carbonTip(clickable ? "View artwork" : "")
+        // One element whatever is inside. With a cover screen the housing
+        // holds only a decorative image and shapes, which VoiceOver skips,
+        // so a label on their container had nothing to hang on.
+        .accessibilityElement(children: .ignore)
         .accessibilityAddTraits(clickable ? .isButton : [])
         .accessibilityLabel(clickable ? "Album artwork. Opens the artwork viewer." : "Album artwork")
+        // Spelled out, so VoiceOver's activate opens the viewer on the new
+        // element rather than relying on the tap gesture underneath it.
+        .accessibilityAction {
+            guard clickable else { return }
+            openArtwork()
+        }
+    }
+
+    private func openArtwork() {
+        ClickPlayer.shared.play(.key)
+        model.showNowPlayingArtwork()
     }
 
     /// With a cover screen look, the art is an LCD set into the shell behind

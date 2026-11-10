@@ -146,7 +146,8 @@ enum ThemeTokenCatalog {
     /// ends with one. A value of 0 (or less) switches `key` off and clears the
     /// rest of the group too, so a switch-off leaves the group all zero rather
     /// than promoting a stray inherited key to winner. Keys outside `group`
-    /// are never touched. Sliders do not use this: they move only their own key.
+    /// are never touched. Sliders go through `sliding`, which uses this only
+    /// at 0.
     static func settingExclusive(
         _ key: String, to value: Double, among group: [String], in effects: [String: Double]
     ) -> [String: Double] {
@@ -154,6 +155,22 @@ enum ThemeTokenCatalog {
         for other in group where other != key { result[other] = 0 }
         result[key] = max(value, 0)
         return result
+    }
+
+    /// The edit behind an effect row's slider. Above 0 it moves only `key`,
+    /// so dragging the winner never rewrites the rest of its group. At 0 in a
+    /// `group` it is the switch's OFF (`settingExclusive`): writing 0 to
+    /// `key` alone would hand the win, mid-drag, to any other non-zero key
+    /// the draft carries, hand-written or inherited (a material over
+    /// Carbon's grain).
+    static func sliding(
+        _ key: String, to value: Double, among group: [String]?, in effects: [String: Double]
+    ) -> [String: Double] {
+        let value = max(value, 0)
+        if let group, value == 0 {
+            return settingExclusive(key, to: 0, among: group, in: effects)
+        }
+        return effects.merging([key: value]) { _, new in new }
     }
 
     /// The dials for `keys`, in that order. A key without a dial is dropped,

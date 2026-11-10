@@ -192,7 +192,7 @@ public struct CarbonTheme: Equatable {
     /// `var` with a default rather than plain `let`: it keeps them out of the
     /// two built-in theme literals, which would otherwise gain a line apiece
     /// for a value that is always 0.
-    public var grainAmount: Double = 0
+    public var grainAmount: Double = 0 { didSet { resolveExclusiveGroups() } }
     public var oledGlareAmount: Double = 0
     public var oledHalftoneAmount: Double = 0
 
@@ -200,16 +200,37 @@ public struct CarbonTheme: Equatable {
     /// `grainAmount` are one exclusive group: draw `shellMaterial`, never
     /// these directly, or a theme that inherits Carbon's grain and sets a
     /// material would get both.
-    public var shellPlasticAmount: Double = 0
-    public var shellBrushedAmount: Double = 0
-    public var shellBlastedAmount: Double = 0
-    public var shellWeaveAmount: Double = 0
+    ///
+    /// Every amount in the two groups re-resolves its group when written, so
+    /// the stored winners below can never disagree with them. (An
+    /// initializer's own writes do not run observers; the initializers
+    /// resolve once at their end instead.)
+    public var shellPlasticAmount: Double = 0 { didSet { resolveExclusiveGroups() } }
+    public var shellBrushedAmount: Double = 0 { didSet { resolveExclusiveGroups() } }
+    public var shellBlastedAmount: Double = 0 { didSet { resolveExclusiveGroups() } }
+    public var shellWeaveAmount: Double = 0 { didSet { resolveExclusiveGroups() } }
 
     /// The cover screen looks' grid strengths, clamped to their dials, and
     /// the second exclusive group: read `coverScreenLook`.
-    public var coverGridAmount: Double = 0
-    public var coverPixelAmount: Double = 0
-    public var coverHandheldAmount: Double = 0
+    public var coverGridAmount: Double = 0 { didSet { resolveExclusiveGroups() } }
+    public var coverPixelAmount: Double = 0 { didSet { resolveExclusiveGroups() } }
+    public var coverHandheldAmount: Double = 0 { didSet { resolveExclusiveGroups() } }
+
+    /// The one material the chassis is drawn in, or nil for the bare shell.
+    /// Resolved from the clamped amounts above, never from the raw effects,
+    /// so the strength drawn is always one the dial allows.
+    ///
+    /// Stored, not computed: the chassis, the mini player's glass and both
+    /// cover screens read these in their bodies, and resolving builds a
+    /// dictionary per read. Written only by `resolveExclusiveGroups()`.
+    public private(set) var shellMaterial: ShellMaterial?
+    /// `shellMaterial`'s strength; 0 when there is none.
+    public private(set) var shellMaterialStrength: Double = 0
+    /// The look the small players' cover screen takes, or nil for the plain
+    /// cover. Resolved from the clamped amounts, like the material.
+    public private(set) var coverScreenLook: CoverScreenLook?
+    /// `coverScreenLook`'s grid strength; 0 when there is none.
+    public private(set) var coverScreenStrength: Double = 0
 
     /// Points per LCD pixel on the cover screen, already snapped to one of
     /// `CoverScreenLook.pixelSizes`. Only means something while a look is on.
@@ -287,21 +308,6 @@ public struct CarbonTheme: Equatable {
 }
 
 public extension CarbonTheme {
-    /// The one material the chassis is drawn in, or nil for the bare shell.
-    /// Resolved from the clamped amounts above, never from the raw effects,
-    /// so the strength drawn is always one the dial allows.
-    var shellMaterial: ShellMaterial? { resolvedShellMaterial?.material }
-
-    /// `shellMaterial`'s strength; 0 when there is none.
-    var shellMaterialStrength: Double { resolvedShellMaterial?.strength ?? 0 }
-
-    /// The look the small players' cover screen takes, or nil for the plain
-    /// cover. Resolved from the clamped amounts, like the material.
-    var coverScreenLook: CoverScreenLook? { resolvedCoverScreenLook?.look }
-
-    /// `coverScreenLook`'s grid strength; 0 when there is none.
-    var coverScreenStrength: Double { resolvedCoverScreenLook?.strength ?? 0 }
-
     /// The stored strength behind each material, so the resolver in Core
     /// stays the only place that decides priority.
     func amount(of material: ShellMaterial) -> Double {
@@ -322,16 +328,25 @@ public extension CarbonTheme {
         }
     }
 
-    private var resolvedShellMaterial: (material: ShellMaterial, strength: Double)? {
-        ShellMaterial.resolve(effects: Dictionary(uniqueKeysWithValues: ShellMaterial.allCases.map {
-            ($0.effectKey, amount(of: $0))
-        }))
-    }
+}
 
-    private var resolvedCoverScreenLook: (look: CoverScreenLook, strength: Double)? {
-        CoverScreenLook.resolve(effects: Dictionary(uniqueKeysWithValues: CoverScreenLook.allCases.map {
+extension CarbonTheme {
+    /// Sets `shellMaterial`, `coverScreenLook` and their strengths from the
+    /// amounts, through Core's resolvers, which stay the only place that
+    /// decides priority. Called at the end of every initializer that sets
+    /// amounts, and by the amounts' observers. The built-in literals set none,
+    /// so their defaults (nothing, 0) are already resolved.
+    mutating func resolveExclusiveGroups() {
+        let material = ShellMaterial.resolve(effects: Dictionary(uniqueKeysWithValues: ShellMaterial.allCases.map {
             ($0.effectKey, amount(of: $0))
         }))
+        shellMaterial = material?.material
+        shellMaterialStrength = material?.strength ?? 0
+        let look = CoverScreenLook.resolve(effects: Dictionary(uniqueKeysWithValues: CoverScreenLook.allCases.map {
+            ($0.effectKey, amount(of: $0))
+        }))
+        coverScreenLook = look?.look
+        coverScreenStrength = look?.strength ?? 0
     }
 }
 
@@ -611,6 +626,9 @@ public extension CarbonTheme {
                 return "\(role)=\(faces.joined(separator: "/"))"
             }
             .joined(separator: ",")
+
+        // Last: the amounts' observers do not run inside an initializer.
+        resolveExclusiveGroups()
     }
 }
 

@@ -172,5 +172,30 @@ final class CoverScreenTests: XCTestCase {
         CoverScreenCache.store(image, forKey: key)
         XCTAssertTrue(CoverScreenCache.image(forKey: key) === image)
     }
+
+    // MARK: - What the cover reloads on
+
+    /// A pasted link plays before its metadata names a thumbnail. The key
+    /// has to change when the URL arrives, or the screen stays unlit; and
+    /// again if the URL changes, or the cache serves the old picture.
+    func testStreamKeyFollowsItsThumbnailURL() {
+        let none = NowPlayingCoverKey.stream(id: "u1", thumbnailURL: nil)
+        let first = NowPlayingCoverKey.stream(id: "u1", thumbnailURL: "https://i.ytimg.com/vi/a/hq.jpg")
+        let second = NowPlayingCoverKey.stream(id: "u1", thumbnailURL: "https://i.ytimg.com/vi/a/max.jpg")
+        XCTAssertNotEqual(none, first)
+        XCTAssertNotEqual(first, second)
+        XCTAssertEqual(first, NowPlayingCoverKey.stream(id: "u1", thumbnailURL: "https://i.ytimg.com/vi/a/hq.jpg"))
+        XCTAssertNotEqual(first, NowPlayingCoverKey.stream(id: "u2", thumbnailURL: "https://i.ytimg.com/vi/a/hq.jpg"))
+        XCTAssertNotEqual(NowPlayingCoverKey.stream(id: nil, thumbnailURL: nil), none)
+    }
+
+    func testTrackKeyFollowsTheTrackAndItsArtworkHash() {
+        let id = UUID()
+        let key = NowPlayingCoverKey.track(id: id, artworkHash: "abc")
+        XCTAssertEqual(key, NowPlayingCoverKey.track(id: id, artworkHash: "abc"))
+        XCTAssertNotEqual(key, NowPlayingCoverKey.track(id: id, artworkHash: "def"))
+        XCTAssertNotEqual(key, NowPlayingCoverKey.track(id: UUID(), artworkHash: "abc"))
+        XCTAssertNotEqual(key, NowPlayingCoverKey.stream(id: id.uuidString, thumbnailURL: nil))
+    }
 }
 #endif

@@ -52,6 +52,67 @@ final class CoverScreenRendererTests: XCTestCase {
         XCTAssertLessThan(px(out, side: l.lcdSide, 6, 3)[0], px(out, side: l.lcdSide, 3, 3)[0]) // darker than the middle
     }
 
+    /// Cell 12 is the first size with a two-pixel gap (round(12/6) = 2):
+    /// columns and rows 10 and 11 are gap, 9 and 0 are shoulders.
+    func testTwoPixelGapAtCellTwelve() {
+        let l = CoverScreenLayout.plan(side: 100, scale: 2, pixelSize: 6)
+        XCTAssertEqual(l.cell, 12)
+        XCTAssertGreaterThanOrEqual(l.count, 2)
+        let out = CoverScreenRenderer.render(source: solid(l.count, 255, 255, 255), look: .pixel, layout: l, gridStrength: 1)
+        let side = l.lcdSide
+        let black: [UInt8] = [0, 0, 0, 255]
+        for gap in [10, 11, 22, 23] {
+            XCTAssertEqual(px(out, side: side, gap, 4), black, "column \(gap)")
+            XCTAssertEqual(px(out, side: side, 4, gap), black, "row \(gap)")
+        }
+        let middle = px(out, side: side, 4, 4)[0]
+        XCTAssertEqual(middle, 255)
+        for shoulder in [9, 0, 12, 21] {
+            let value = px(out, side: side, shoulder, 4)[0]
+            XCTAssertGreaterThan(value, 0, "column \(shoulder) is a shoulder, not gap")
+            XCTAssertLessThan(value, middle, "column \(shoulder) is darker than the middle")
+        }
+        // Only two columns of gap: the one before them is lit.
+        XCTAssertNotEqual(px(out, side: side, 9, 4), black)
+    }
+
+    /// A source of the wrong size for its look renders opaque black at the
+    /// layout's size, for every look, rather than reading out of bounds.
+    func testWrongSizeSourceGivesOpaqueBlack() {
+        let l = layout
+        for look in CoverScreenLook.allCases {
+            let right = look == .grid ? l.lcdSide : l.count
+            for source in [solid(right - 1, 200, 200, 200), solid(right + 1, 200, 200, 200), []] {
+                let out = CoverScreenRenderer.render(source: source, look: look, layout: l, gridStrength: 0.5)
+                XCTAssertEqual(out.count, l.lcdSide * l.lcdSide * 4, "\(look)")
+                for i in stride(from: 0, to: out.count, by: 4) where out[i] != 0 || out[i + 1] != 0
+                    || out[i + 2] != 0 || out[i + 3] != 255 {
+                    XCTFail("\(look): pixel \(i / 4) is \(out[i..<i + 4]), not opaque black")
+                    break
+                }
+            }
+        }
+        // The pixel looks' source handed to the grid look is the wrong size too.
+        let mixed = CoverScreenRenderer.render(source: solid(l.count, 200, 200, 200), look: .grid, layout: l, gridStrength: 0.5)
+        XCTAssertEqual(px(mixed, side: l.lcdSide, l.lcdSide / 2, l.lcdSide / 2), [0, 0, 0, 255])
+    }
+
+    /// A cancelled render stops and returns nothing, never a partial picture.
+    func testCancelledRenderReturnsEmpty() {
+        let l = layout
+        let src = solid(l.count, 120, 80, 200)
+        XCTAssertEqual(CoverScreenRenderer.render(source: src, look: .pixel, layout: l, gridStrength: 0.5,
+                                                  isCancelled: { true }), [])
+        var asked = 0
+        let midway = CoverScreenRenderer.render(source: src, look: .pixel, layout: l, gridStrength: 0.5,
+                                                isCancelled: { asked += 1; return asked > 10 })
+        XCTAssertEqual(midway, [], "cancelled after ten rows")
+        XCTAssertEqual(asked, 11, "asked once per row, and stopped at the first yes")
+        let whole = CoverScreenRenderer.render(source: src, look: .pixel, layout: l, gridStrength: 0.5,
+                                               isCancelled: { false })
+        XCTAssertEqual(whole.count, l.lcdSide * l.lcdSide * 4)
+    }
+
     func testZeroStrengthPixelReproducesSource() {
         let l = layout
         var src = [UInt8]()
