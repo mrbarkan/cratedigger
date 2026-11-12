@@ -31,6 +31,29 @@ too. Betas are offered only to people who turned on Receive beta updates.
   PIXEL SIZE picks how big the pixels are. A track with no art shows an
   unlit screen. The full player, the gallery and the inspector keep the
   plain picture.
+- **Sending to a device looks at what is already there.** Before anything
+  is written, CrateDigger compares the albums you are sending with the
+  device. Tracks it already has are skipped, missing tracks of a partly
+  copied album are filled in beside the rest of it, and new albums go over
+  as usual. This is the same for copy devices, converting devices and the
+  offline queue with SYNC, and an MP3 you replace with a FLAC is recognised
+  as the same track, not copied in beside it.
+- **An "Already on" sheet for albums that differ.** When an album on the
+  device is a different quality, has different cover art or is another
+  release of the same name, one sheet lists them side by side with what
+  would be sent. Choose Replace, Keep both or Leave it for each album, or
+  set them all at once. Nothing is chosen for you, and Cancel sends
+  nothing. Albums you leave alone stop coming back; the sheet can show them
+  again, and Preferences > Devices can forget them all.
+- **Folder Art is a switch.** Preferences > Devices has a Folder Art option
+  for each device, and the Convert panel has a Folder Art row, so a
+  cover.jpg beside the tracks can be combined with keeping, re-embedding or
+  stripping the art inside the files. Rockbox iPods keep their old
+  default (cover.jpg on, art inside the files stripped). Each device also
+  remembers its own art setting. Ordinary conversions have the switch too,
+  off by default.
+- The Devices screen's Artwork cell says when a cover.jpg is written as
+  well as art inside the files.
 
 ### Changed
 
@@ -41,6 +64,25 @@ too. Betas are offered only to people who turned on Receive beta updates.
 - Themes you made that inherit from Carbon pick up the weave with it, even
   one that sets its own grain. To keep grain, open the theme in the Theme
   Editor, switch Texture Grain on and save.
+
+### Fixed
+
+- **Device transfers no longer leave half-written files.** Each file is
+  written under a temporary name and moved into place when it is complete,
+  so a failed or cancelled send keeps the old file, and an unplugged drive
+  does not leave a track that stops halfway.
+- **Replacing an album never leaves it empty.** The new files are written
+  first and the old ones removed only when every new file arrived. Cancel
+  keeps the old files.
+- **Nothing is written or removed outside the device's music folder**, so
+  backups and an iPod's own database are left alone.
+- **The device's contents stay up to date after a send.** The browser and
+  the offline queue see what was just copied, replaced or removed without a
+  rescan. Copy-mode devices no longer silently write "(2)" copies, and
+  SYNC no longer converts a file more than once.
+- Cancel and the busy light now follow a device send, SYNC or conversion
+  all the way to the end, including the final renames, deletions and cover
+  files.
 
 ## 2.3.3 (116), 2026-11-10
 
