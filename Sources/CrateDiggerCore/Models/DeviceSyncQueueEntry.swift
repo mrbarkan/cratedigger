@@ -18,6 +18,11 @@ public struct DeviceSyncQueueEntry: Codable, Hashable, Sendable, Identifiable {
     /// Source file mtime captured at bake time — the staleness guard.
     public var sourceModifiedAt: Date
     public var queuedAt: Date
+    /// What the user chose for this track's album when it was queued against a
+    /// device copy that differs. nil: no decision recorded (a new album, or a
+    /// queue saved before decisions existed), so SYNC asks if the device
+    /// turns out to hold a differing copy.
+    public var decision: DeviceAlbumDecision?
 
     public init(
         id: UUID = UUID(),
@@ -25,7 +30,8 @@ public struct DeviceSyncQueueEntry: Codable, Hashable, Sendable, Identifiable {
         destinationRelativePath: String,
         isStaged: Bool,
         sourceModifiedAt: Date,
-        queuedAt: Date = Date()
+        queuedAt: Date = Date(),
+        decision: DeviceAlbumDecision? = nil
     ) {
         self.id = id
         self.track = track
@@ -33,5 +39,6 @@ public struct DeviceSyncQueueEntry: Codable, Hashable, Sendable, Identifiable {
         self.isStaged = isStaged
         self.sourceModifiedAt = sourceModifiedAt
         self.queuedAt = queuedAt
+        self.decision = decision
     }
 }

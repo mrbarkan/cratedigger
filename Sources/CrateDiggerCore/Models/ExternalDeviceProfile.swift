@@ -40,16 +40,30 @@ public struct ExternalDeviceTransferSettings: Codable, Hashable, Sendable {
     public var bitrateKbps: Int?
     public var sampleRateHz: Int?
     public var artworkMaxDimension: Int?
+    /// What happens to the art inside the files a convert-mode transfer writes:
+    /// Keep (`.preserve`), Re-embed (`.compatReembed`, resized to
+    /// `artworkMaxDimension`) or Strip (`.none`). Copy mode copies files as
+    /// they are and ignores it.
+    public var artworkMode: ArtworkMode
+    /// Write a `cover.jpg` beside the tracks in each album folder the transfer
+    /// writes into, whatever `artworkMode` does inside the files. See
+    /// `ExternalDeviceProfile.usesFolderCoverArt`.
+    public var writesFolderCoverArt: Bool
     public var deviceProfile: DeviceProfile
     public var folderStructureMode: FolderStructureMode
     public var templateConfig: FolderTemplateConfig
 
+    /// `artworkMode` is not optional on purpose: `artworkMode: .none` against
+    /// an optional would read as nil, not Strip. Its default, Re-embed, is
+    /// what the default 1024 px cap always meant.
     public init(
         mode: ExternalDeviceTransferMode = .convertDuringTransfer,
         outputFormat: OutputFormat = .aac,
         bitrateKbps: Int? = 192,
         sampleRateHz: Int? = 44_100,
         artworkMaxDimension: Int? = 1024,
+        artworkMode: ArtworkMode = .compatReembed,
+        writesFolderCoverArt: Bool = false,
         deviceProfile: DeviceProfile = .generic,
         folderStructureMode: FolderStructureMode = .metadataTemplate,
         templateConfig: FolderTemplateConfig = FolderTemplateConfig(
@@ -62,9 +76,44 @@ public struct ExternalDeviceTransferSettings: Codable, Hashable, Sendable {
         self.bitrateKbps = bitrateKbps
         self.sampleRateHz = sampleRateHz
         self.artworkMaxDimension = artworkMaxDimension
+        self.artworkMode = artworkMode
+        self.writesFolderCoverArt = writesFolderCoverArt
         self.deviceProfile = deviceProfile
         self.folderStructureMode = folderStructureMode
         self.templateConfig = templateConfig
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case mode, outputFormat, bitrateKbps, sampleRateHz, artworkMaxDimension
+        case artworkMode, writesFolderCoverArt
+        case deviceProfile, folderStructureMode, templateConfig
+    }
+
+    /// Settings saved before `artworkMode` and `writesFolderCoverArt` existed
+    /// decode to what such a device did then, as far as the settings alone
+    /// can tell: the mode follows the cap, and no cover is written. The device
+    /// kind also mattered (a Rockbox iPod stripped the files and wrote a
+    /// cover), and only the profile knows it: `ExternalDeviceProfile.init(from:)`
+    /// finishes the job.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        mode = try container.decode(ExternalDeviceTransferMode.self, forKey: .mode)
+        outputFormat = try container.decode(OutputFormat.self, forKey: .outputFormat)
+        bitrateKbps = try container.decodeIfPresent(Int.self, forKey: .bitrateKbps)
+        sampleRateHz = try container.decodeIfPresent(Int.self, forKey: .sampleRateHz)
+        artworkMaxDimension = try container.decodeIfPresent(Int.self, forKey: .artworkMaxDimension)
+        artworkMode = try container.decodeIfPresent(ArtworkMode.self, forKey: .artworkMode)
+            ?? Self.artworkMode(forCap: artworkMaxDimension)
+        writesFolderCoverArt = try container.decodeIfPresent(Bool.self, forKey: .writesFolderCoverArt) ?? false
+        deviceProfile = try container.decode(DeviceProfile.self, forKey: .deviceProfile)
+        folderStructureMode = try container.decode(FolderStructureMode.self, forKey: .folderStructureMode)
+        templateConfig = try container.decode(FolderTemplateConfig.self, forKey: .templateConfig)
+    }
+
+    /// The embedded-art mode a device had before the mode was stored: the cap
+    /// was the switch.
+    private static func artworkMode(forCap cap: Int?) -> ArtworkMode {
+        cap == nil ? .preserve : .compatReembed
     }
 
     /// One-line human summary of what a transfer does to the files —
@@ -79,14 +128,10 @@ public struct ExternalDeviceTransferSettings: Codable, Hashable, Sendable {
         return "\(name) \(kbps) kbps"
     }
 
+    /// The preset a convert-mode transfer writes with, nil in copy mode. Art
+    /// inside the files follows `artworkMode`; a folder cover is written
+    /// beside them separately and never changes the preset.
     public var conversionPreset: ConversionPreset? {
-        conversionPreset(embeddingArtwork: true)
-    }
-
-    /// `embeddingArtwork: false` strips the picture from the written files —
-    /// used by devices that read a `cover.jpg` sidecar instead (see
-    /// `ExternalDeviceProfile.usesFolderCoverArt`).
-    public func conversionPreset(embeddingArtwork: Bool) -> ConversionPreset? {
         guard mode == .convertDuringTransfer else {
             return nil
         }
@@ -102,7 +147,7 @@ public struct ExternalDeviceTransferSettings: Codable, Hashable, Sendable {
             constantBitrate: outputFormat == .mp3 && deviceProfile == .ipodLegacySafe,
             deviceProfile: deviceProfile,
             tagMode: Self.defaultTagMode(for: outputFormat, deviceProfile: deviceProfile),
-            artworkMode: embeddingArtwork ? (artworkMaxDimension == nil ? .preserve : .compatReembed) : .none,
+            artworkMode: artworkMode,
             artworkMaxDimension: artworkMaxDimension
         )
     }
@@ -143,6 +188,39 @@ public struct ExternalDeviceProfile: Identifiable, Codable, Hashable, Sendable {
     public var transferSettings: ExternalDeviceTransferSettings
     public var createdAt: Date
     public var updatedAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, kind, rootBookmark, rootDisplayPath, volumeUUID
+        case musicDirectorySubpath, iconID, transferSettings, createdAt, updatedAt
+    }
+
+    /// Decodes like the synthesised conformance, plus one migration only the
+    /// profile can do: a Rockbox iPod saved before its art settings were
+    /// stored stripped the files and wrote a `cover.jpg`, because that was
+    /// tied to the kind. Settings that carry the keys keep what they say.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        kind = try container.decode(ExternalDeviceKind.self, forKey: .kind)
+        rootBookmark = try container.decodeIfPresent(Data.self, forKey: .rootBookmark)
+        rootDisplayPath = try container.decodeIfPresent(String.self, forKey: .rootDisplayPath)
+        volumeUUID = try container.decodeIfPresent(String.self, forKey: .volumeUUID)
+        musicDirectorySubpath = try container.decode(String.self, forKey: .musicDirectorySubpath)
+        iconID = try container.decodeIfPresent(String.self, forKey: .iconID)
+        transferSettings = try container.decode(ExternalDeviceTransferSettings.self, forKey: .transferSettings)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+
+        if kind == .rockboxIPod {
+            let stored = try container.nestedContainer(
+                keyedBy: ExternalDeviceTransferSettings.CodingKeys.self,
+                forKey: .transferSettings
+            )
+            if !stored.contains(.artworkMode) { transferSettings.artworkMode = .none }
+            if !stored.contains(.writesFolderCoverArt) { transferSettings.writesFolderCoverArt = true }
+        }
+    }
 
     public init(
         id: UUID = UUID(),
@@ -208,6 +286,10 @@ public struct ExternalDeviceProfile: Identifiable, Codable, Hashable, Sendable {
                 bitrateKbps: 192,
                 sampleRateHz: 44_100,
                 artworkMaxDimension: 600,
+                // Rockbox greys out a large embedded cover once it scales it
+                // down, so the art travels as a small cover.jpg instead.
+                artworkMode: .none,
+                writesFolderCoverArt: true,
                 deviceProfile: .generic,
                 folderStructureMode: .metadataTemplate,
                 templateConfig: FolderTemplateConfig(
@@ -245,16 +327,17 @@ public struct ExternalDeviceProfile: Identifiable, Codable, Hashable, Sendable {
         )
     }
 
-    /// Ship the cover as a `cover.jpg` beside the tracks and leave it out of the
-    /// files, rather than embedding it in each one.
+    /// Ship the cover as a `cover.jpg` beside the tracks, in every album folder
+    /// a transfer writes into.
     ///
     /// Rockbox reads folder art first and renders a large *embedded* cover in
     /// greyscale once its decoder has to scale the image down to the theme's art
     /// size — a 500 px cover on a 146 px theme comes out grey. A small sidecar
     /// avoids both problems, and every other player that reads folder art picks
-    /// it up too. Tied to the device kind: it's what a Rockbox iPod wants, so
-    /// choosing that kind is the switch.
-    public var usesFolderCoverArt: Bool { kind == .rockboxIPod }
+    /// it up too. A per-device switch (`writesFolderCoverArt`), independent of
+    /// what `artworkMode` does inside the files; Rockbox profiles start with it
+    /// on and the files stripped.
+    public var usesFolderCoverArt: Bool { transferSettings.writesFolderCoverArt }
 
     /// The saved profile a mounted `device` belongs to, or nil for an unknown
     /// volume. A stored `volumeUUID` is authoritative when both the profile and the

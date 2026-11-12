@@ -197,6 +197,11 @@ extension LibraryViewModel {
         settings.bitrateKbps = selection.bitrate
         settings.sampleRateHz = selection.sampleRate
         settings.artworkMaxDimension = selection.artworkMaxDimension
+        // Until the cockpit edits the stored art mode, keep it following the
+        // cap the way it did before the mode was stored. Strip stays Strip.
+        if settings.artworkMode != .none {
+            settings.artworkMode = selection.artworkMaxDimension == nil ? .preserve : .compatReembed
+        }
         settings.folderStructureMode = selection.folderStructureMode
         settings.templateConfig = FolderTemplateConfig(
             preset: selection.templatePreset,

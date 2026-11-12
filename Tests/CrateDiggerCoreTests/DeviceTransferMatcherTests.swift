@@ -196,6 +196,7 @@ final class DeviceTransferMatcherTests: XCTestCase {
     func testConvertModeWithoutCapKeepsOnlyEmbeddedArt() {
         var keep = convertSettings
         keep.artworkMaxDimension = nil
+        keep.artworkMode = .preserve
         let sending = album("/Src/Kind of Blue", numbers: [1], art: 1400, artSource: .folderImage)
         let device = album("/Device/Music/Kind of Blue", numbers: [1], art: nil)
 
@@ -215,6 +216,117 @@ final class DeviceTransferMatcherTests: XCTestCase {
 
         XCTAssertEqual(result.map(\.status), [.present])
         XCTAssertEqual(result[0].sentArtPixels, 120)
+    }
+
+    // MARK: - Art mode and folder art
+
+    func testRockboxStripPlusFolderArtMatchesTheDeviceCover() {
+        // Strip writes nothing inside the files; the 400 px cover.jpg beside
+        // them is what a scan of the device finds.
+        let rockbox = ExternalDeviceProfile.rockboxIPod().transferSettings
+        let sending = album("/Src/Kind of Blue", numbers: [1, 2], art: 1400)
+        let device = album("/Device/Music/Kind of Blue", numbers: [1, 2], art: 400, artSource: .folderImage)
+
+        let result = compare(sending, device, settings: rockbox)
+
+        XCTAssertEqual(result.map(\.status), [.present])
+        XCTAssertEqual(result[0].sentArtPixels, 400)
+    }
+
+    func testFolderCoverIsNeverLargerThanTheSource() {
+        let rockbox = ExternalDeviceProfile.rockboxIPod().transferSettings
+        let sending = album("/Src/Kind of Blue", numbers: [1], art: 300)
+        let device = album("/Device/Music/Kind of Blue", numbers: [1], art: 300, artSource: .folderImage)
+
+        let result = compare(sending, device, settings: rockbox)
+
+        XCTAssertEqual(result.map(\.status), [.present])
+        XCTAssertEqual(result[0].sentArtPixels, 300)
+    }
+
+    func testStripWithoutFolderArtSendsNoArt() {
+        var strip = convertSettings
+        strip.artworkMode = .none
+        let sending = album("/Src/Kind of Blue", numbers: [1], art: 1400)
+        let device = album("/Device/Music/Kind of Blue", numbers: [1], art: nil)
+
+        let result = compare(sending, device, settings: strip)
+
+        XCTAssertEqual(result.map(\.status), [.present])
+        XCTAssertNil(result[0].sentArtPixels)
+    }
+
+    func testKeepCountsOnlyTheSourcesEmbeddedArtAndIgnoresTheCap() {
+        // Keep copies the file's own picture stream as it is: no resize, and
+        // a cover the library found in a folder is not in the file.
+        var keep = convertSettings
+        keep.artworkMode = .preserve
+        let embedded = album("/Src/Kind of Blue", numbers: [1], art: 1400)
+        let folder = album("/Src/Kind of Blue", numbers: [1], art: 1400, artSource: .folderImage)
+        let device = album("/Device/Music/Kind of Blue", numbers: [1], art: 1400)
+
+        XCTAssertEqual(compare(embedded, device, settings: keep)[0].sentArtPixels, 1400)
+        XCTAssertNil(compare(folder, device, settings: keep)[0].sentArtPixels)
+    }
+
+    func testReembedCountsArtOfAnySourceUnderTheCap() {
+        var reembed = convertSettings
+        reembed.artworkMode = .compatReembed
+        reembed.artworkMaxDimension = 600
+        let folder = album("/Src/Kind of Blue", numbers: [1], art: 1400, artSource: .folderImage)
+        let remote = album("/Src/Kind of Blue", numbers: [1], art: 1400, artSource: .remote)
+        let device = album("/Device/Music/Kind of Blue", numbers: [1], art: 600)
+
+        XCTAssertEqual(compare(folder, device, settings: reembed).map(\.status), [.present])
+        XCTAssertEqual(compare(remote, device, settings: reembed)[0].sentArtPixels, 600)
+    }
+
+    func testReembedWithoutCapResizesOnlyForTheLegacySafeProfile() {
+        // `ArtworkService.prepareCompatibleArtwork`: no cap leaves the picture
+        // alone, except on the legacy-safe profile, which always goes to 600.
+        var reembed = convertSettings
+        reembed.artworkMode = .compatReembed
+        reembed.artworkMaxDimension = nil
+        let sending = album("/Src/Kind of Blue", numbers: [1], art: 1400)
+        let device = album("/Device/Music/Kind of Blue", numbers: [1], art: 600)
+
+        XCTAssertEqual(compare(sending, device, settings: reembed)[0].sentArtPixels, 1400)
+        reembed.deviceProfile = .ipodLegacySafe
+        XCTAssertEqual(compare(sending, device, settings: reembed)[0].sentArtPixels, 600)
+    }
+
+    func testFolderArtOnACopyDevice() {
+        var copyWithCovers = copySettings
+        copyWithCovers.writesFolderCoverArt = true
+        // A file without embedded art gets the cover beside it…
+        let folderOnly = album("/Src/Kind of Blue", numbers: [1], art: 1400, artSource: .folderImage)
+        let deviceCover = album("/Device/Music/Kind of Blue", numbers: [1], art: 400, artSource: .folderImage)
+        let present = compare(folderOnly, deviceCover, settings: copyWithCovers)
+        XCTAssertEqual(present.map(\.status), [.present])
+        XCTAssertEqual(present[0].sentArtPixels, 400)
+
+        // …and a file with its own art keeps it, which is what a device scan reads first.
+        let embedded = album("/Src/Kind of Blue", numbers: [1], art: 1400)
+        let deviceEmbedded = album("/Device/Music/Kind of Blue", numbers: [1], art: 1400)
+        let copied = compare(embedded, deviceEmbedded, settings: copyWithCovers)
+        XCTAssertEqual(copied.map(\.status), [.present])
+        XCTAssertEqual(copied[0].sentArtPixels, 1400)
+    }
+
+    func testEmbeddedArtOutranksTheFolderCoverEvenWhenSmaller() {
+        // A device scan reads embedded art before a cover.jpg, so a 300 px
+        // embedded picture is what the catalog holds, even beside a 400 px cover.
+        var small = convertSettings
+        small.artworkMode = .compatReembed
+        small.artworkMaxDimension = 300
+        small.writesFolderCoverArt = true
+        let sending = album("/Src/Kind of Blue", numbers: [1], art: 1400)
+        let device = album("/Device/Music/Kind of Blue", numbers: [1], art: 300)
+
+        let result = compare(sending, device, settings: small)
+
+        XCTAssertEqual(result.map(\.status), [.present])
+        XCTAssertEqual(result[0].sentArtPixels, 300)
     }
 
     func testSameArtSizeDifferentHashIsSame() {

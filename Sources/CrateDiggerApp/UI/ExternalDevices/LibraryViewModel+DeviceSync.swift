@@ -145,9 +145,9 @@ extension LibraryViewModel {
         guard let host = presentationHostViewController else { return }
         guard !isConversionRunning, deviceSyncProgress?.isRunning != true else { return }
         guard let profile = prefs.savedExternalDeviceProfiles.first(where: { $0.id == profileID }),
-              // Folder-art devices carry the cover as a cover.jpg sidecar the
-              // sync writes onto the device, so the baked files hold none.
-              let preset = profile.transferSettings.conversionPreset(embeddingArtwork: !profile.usesFolderCoverArt)
+              // The profile's art mode decides what the baked files hold; a
+              // folder cover is written onto the device by the sync itself.
+              let preset = profile.transferSettings.conversionPreset
         else { return }
 
         let entries = syncQueueStore.load(profileID: profileID)
@@ -295,8 +295,7 @@ extension LibraryViewModel {
             let busyJob = beginBusyJob(.transfer, on: .devices)
 
             let profileName = profile.name
-            let preset = profile.transferSettings
-                .conversionPreset(embeddingArtwork: !profile.usesFolderCoverArt)
+            let preset = profile.transferSettings.conversionPreset
             let ffmpegURL = customFFmpegExecutableURL()
             let total = entries.count
 

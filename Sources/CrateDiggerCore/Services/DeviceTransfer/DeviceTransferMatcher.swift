@@ -332,42 +332,23 @@ public struct DeviceTransferMatcher {
 
     // MARK: - Art
 
-    /// The longest side of the art the transfer would put on the device.
-    ///
-    /// `artworkDimensions` describes the art the library resolved (embedded,
-    /// else a folder image, else cached remote art), not what is in the file,
-    /// so what counts depends on what the transfer actually writes:
-    /// - Copy mode copies the audio file's bytes, so only embedded art lands.
-    /// - Convert mode with a cap re-embeds `ConversionMetadata.artwork`, the
-    ///   resolved art whatever its source (`ConversionService`, `.compatReembed`),
-    ///   resized like `ArtworkService.prepareCompatibleArtwork`: `max(120, cap)`.
-    /// - Convert mode without a cap keeps the source's own art stream
-    ///   (`.preserve` maps `0:v?`), so again only embedded art lands.
+    /// The longest side of the art the device would show for this album once
+    /// the transfer wrote it: `DeviceWrittenArt` under the settings' art mode
+    /// (copy mode: the files' own art) and folder-art switch.
     private func sentArtPixels(_ sent: [LoadedTrack], settings: ExternalDeviceTransferSettings) -> Int? {
-        // Task 2: read settings.artworkMode (Strip sends no embedded art) and,
-        // when settings.writesFolderCoverArt is on, take the max with
-        // min(source, FolderCoverArtWriter.defaultMaxDimension).
-        guard settings.mode == .convertDuringTransfer, let cap = settings.artworkMaxDimension else {
-            return Self.longestSide(of: sent, from: [.embedded])
-        }
-        guard let source = Self.longestSide(of: sent, from: nil) else { return nil }
-        return min(source, max(120, cap))
+        DeviceWrittenArt.readBack(
+            of: sent,
+            artworkMode: settings.mode == .copyOriginals ? nil : settings.artworkMode,
+            cap: settings.artworkMaxDimension,
+            deviceProfile: settings.deviceProfile,
+            writesFolderCoverArt: settings.writesFolderCoverArt
+        )?.side
     }
 
     /// The device copy's art: embedded, or a folder image beside it (a Rockbox
     /// `cover.jpg`). Remote art cached by the scan is not on the device.
     private static func deviceArtPixels(_ tracks: [LoadedTrack]) -> Int? {
-        longestSide(of: tracks, from: [.embedded, .folderImage])
-    }
-
-    /// Longest side of the first track in the list that carries art
-    /// dimensions from one of `sources` (nil: any source).
-    private static func longestSide(of tracks: [LoadedTrack], from sources: Set<ArtworkSource>?) -> Int? {
-        tracks.lazy
-            .filter { sources?.contains($0.track.artworkSource) ?? true }
-            .compactMap(\.track.artworkDimensions)
-            .first
-            .map { max($0.width, $0.height) }
+        DeviceWrittenArt.longestSide(of: tracks, from: [.embedded, .folderImage])
     }
 
     // MARK: - Display
