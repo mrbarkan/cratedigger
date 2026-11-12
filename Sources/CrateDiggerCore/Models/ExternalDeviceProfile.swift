@@ -116,6 +116,25 @@ public struct ExternalDeviceTransferSettings: Codable, Hashable, Sendable {
         cap == nil ? .preserve : .compatReembed
     }
 
+    /// These settings once a profile's kind changes from `old` to `new`. Only
+    /// a move to or from a Rockbox iPod touches anything, and only the art:
+    /// becoming one takes its defaults (Strip inside the files, a cover.jpg
+    /// beside them); leaving it drops the cover and takes the mode the cap
+    /// implies (Keep without one, Re-embed with one). The cap itself, and
+    /// every other change, stay what the user chose.
+    public func adjustedForKind(from old: ExternalDeviceKind, to new: ExternalDeviceKind) -> ExternalDeviceTransferSettings {
+        guard old != new else { return self }
+        var settings = self
+        if new == .rockboxIPod {
+            settings.artworkMode = .none
+            settings.writesFolderCoverArt = true
+        } else if old == .rockboxIPod {
+            settings.artworkMode = Self.artworkMode(forCap: artworkMaxDimension)
+            settings.writesFolderCoverArt = false
+        }
+        return settings
+    }
+
     /// One-line human summary of what a transfer does to the files —
     /// "AAC 192 kbps", "FLAC (lossless)", "Copy originals (no conversion)".
     /// Shown wherever a queue/stage decision is confirmed, so the user sees

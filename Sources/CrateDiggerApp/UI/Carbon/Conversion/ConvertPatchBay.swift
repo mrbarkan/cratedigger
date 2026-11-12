@@ -136,6 +136,7 @@ struct ConvertPatchBay: View {
         case .options:
             artworkRow
             artworkSizeRow
+            folderArtRow
         }
     }
 
@@ -158,7 +159,7 @@ struct ConvertPatchBay: View {
         cvRow("Art Size") {
             PatchBayBank(
                 label: "Art Size",
-                options: Self.artworkDimensions,
+                options: artworkDimensions,
                 selection: artworkDimensionBinding,
                 size: .medium,
                 displayText: artworkDimensionLabel
@@ -168,8 +169,36 @@ struct ConvertPatchBay: View {
         }
     }
 
-    /// 0 stands for "original" — the bank needs a non-optional value.
-    private static let artworkDimensions = [0, 500, 800, 1000, 1400]
+    /// A `cover.jpg` beside the tracks in every album folder, independent of
+    /// the Art row: a Rockbox iPod strips the files and reads the cover, a
+    /// player that shows both can have both. On a device route it is the
+    /// device's switch, seeded from it and saved back with the other rows.
+    private var folderArtRow: some View {
+        cvRow("Folder Art", lines: 2) {
+            PatchBayBank(
+                label: "Folder Art",
+                options: [true, false],
+                selection: $model.conversionSelection.writesFolderCoverArt,
+                size: .medium,
+                displayText: { $0 ? "On" : "Off" },
+                subText: { $0 ? "COVER.JPG" : nil }
+            )
+            .carbonTip("Writes a cover.jpg of \(FolderCoverArtWriter.defaultMaxDimension) px into each album folder, beside the tracks, whatever the Art row does inside the files. Players that read folder art (Rockbox among them) show it.")
+        }
+    }
+
+    /// 0 stands for "original" — the bank needs a non-optional value. A size
+    /// the selection already holds that isn't one of these (a device seeded
+    /// at 600 or 1024) joins them, or the bank would read "Original" over a
+    /// run that writes 600.
+    private var artworkDimensions: [Int] {
+        var sizes = [0, 500, 800, 1000, 1400]
+        if let current = model.conversionSelection.artworkMaxDimension, !sizes.contains(current) {
+            sizes.append(current)
+            sizes.sort()
+        }
+        return sizes
+    }
 
     private var artworkDimensionBinding: Binding<Int> {
         Binding(
@@ -763,7 +792,9 @@ struct ConvertPatchBay: View {
     // MARK: - Row scaffolding
 
     @ViewBuilder
-    private func cvRow<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
+    /// `lines`: 2 lets a two-word label ("FOLDER ART") stack rather than
+    /// truncate in the narrow label column.
+    private func cvRow<Content: View>(_ label: String, lines: Int = 1, @ViewBuilder content: () -> Content) -> some View {
         HStack(alignment: .center, spacing: 10) {
             // No divider rule: the label sits close enough to its control to
             // belong to it, which is what the rule was standing in for.
@@ -774,7 +805,8 @@ struct ConvertPatchBay: View {
                 // One line, shrinking a hair if it must: at this width
                 // "FOLDERS" wrapped to "FOLDER" over a lone "S". Widening the
                 // column would take the room from the controls beside it.
-                .lineLimit(1)
+                .lineLimit(lines)
+                .multilineTextAlignment(.trailing)
                 .minimumScaleFactor(0.8)
                 .frame(width: 46, alignment: .trailing)
             content()

@@ -94,6 +94,38 @@ final class DeviceSelectionSettingsTests: XCTestCase {
         XCTAssertEqual(settings.deviceProfile, .ipodLegacySafe)
     }
 
+    /// The Folder Art row is seeded from the device and goes back to it: what
+    /// the review compares (the stored switch) is what the cockpit showed.
+    func testFolderArtSwitchSeedsAndReturns() {
+        let base = deviceSettings()
+        var selection = userSelection().seeded(from: base)
+        XCTAssertTrue(selection.writesFolderCoverArt)
+
+        selection.writesFolderCoverArt = false
+        XCTAssertFalse(selection.deviceTransferSettings(over: base).writesFolderCoverArt)
+
+        var off = base
+        off.writesFolderCoverArt = false
+        XCTAssertFalse(userSelection().seeded(from: off).writesFolderCoverArt)
+    }
+
+    /// A selection saved before the switch existed decodes with it off, and
+    /// one saved with it keeps it.
+    func testSelectionDecodesWithoutTheFolderArtKey() throws {
+        var selection = userSelection()
+        selection.writesFolderCoverArt = true
+        let encoded = try JSONEncoder().encode(selection)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        XCTAssertEqual(object["writesFolderCoverArt"] as? Bool, true)
+        XCTAssertTrue(try JSONDecoder().decode(ConversionOptionsSelection.self, from: encoded).writesFolderCoverArt)
+
+        object.removeValue(forKey: "writesFolderCoverArt")
+        let legacy = try JSONSerialization.data(withJSONObject: object)
+        let decoded = try JSONDecoder().decode(ConversionOptionsSelection.self, from: legacy)
+        XCTAssertFalse(decoded.writesFolderCoverArt)
+        XCTAssertEqual(decoded.outputFormat, .flac)
+    }
+
     /// A run from the cockpit always converts, whatever the stored mode says
     /// by the time Go is pressed: the planner then names files by the output
     /// format, as the jobs write them.

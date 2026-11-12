@@ -179,33 +179,33 @@ extension LibraryViewModel {
             // settings belong to the device and never reach this point.)
             prefs.saveLastConversionSelection(selection)
 
-            let report = await runConversionQueue(service: service, jobs: finalJobs, preset: preset).report
-            presentSummary(report: report, presentingFrom: host)
+            let outcome = await runConversionQueue(service: service, jobs: finalJobs, preset: preset)
+            // Folder Art: a cover.jpg in each album folder something landed in.
+            if selection.writesFolderCoverArt {
+                writeFolderCoverArt(
+                    landings: finalJobs
+                        .filter { outcome.succeededDestinationPaths.contains($0.destinationURL.path) }
+                        .map { (folder: $0.destinationURL.deletingLastPathComponent().standardizedFileURL,
+                                artwork: $0.metadata?.artwork) },
+                    for: destinationRoot.path
+                )
+            }
+            presentSummary(report: outcome.report, presentingFrom: host)
         }
     }
 
-    /// Write the format + folder layout the user just used back onto the device
-    /// profile, so the next transfer to it defaults to the same pattern. Called
-    /// on both exits from a device route — a completed send and a cancel — since
-    /// the panel tells the user those rows belong to the device.
+    /// Write the format, art and folder layout the user just used back onto
+    /// the device profile, so the next transfer to it defaults to the same
+    /// pattern. Called on both exits from a device route — a completed send
+    /// and a cancel — since the panel tells the user those rows belong to the
+    /// device. The art mode and the folder-art switch are stored as chosen
+    /// (Strip chosen for an iPod is stored as Strip): the device review
+    /// compares against them, so they must be what the cockpit showed. The
+    /// transfer mode stays the device's: the cockpit has no row for it.
     func persistSelectionToDevice(_ selection: ConversionOptionsSelection, profileID: UUID) {
         guard var profile = prefs.savedExternalDeviceProfiles.first(where: { $0.id == profileID }) else { return }
-        var settings = profile.transferSettings
-        settings.outputFormat = selection.outputFormat
-        settings.bitrateKbps = selection.bitrate
-        settings.sampleRateHz = selection.sampleRate
-        settings.artworkMaxDimension = selection.artworkMaxDimension
-        // Until the cockpit edits the stored art mode, keep it following the
-        // cap the way it did before the mode was stored. Strip stays Strip.
-        if settings.artworkMode != .none {
-            settings.artworkMode = selection.artworkMaxDimension == nil ? .preserve : .compatReembed
-        }
-        settings.folderStructureMode = selection.folderStructureMode
-        settings.templateConfig = FolderTemplateConfig(
-            preset: selection.templatePreset,
-            tokenOrder: FolderTokenOrder.normalize(selection.tokenOrder),
-            separators: selection.separators
-        )
+        var settings = selection.deviceTransferSettings(over: profile.transferSettings)
+        settings.mode = profile.transferSettings.mode
         profile.transferSettings = settings
         prefs.upsertExternalDeviceProfile(profile)
     }
@@ -228,6 +228,7 @@ extension ConversionOptionsSelection {
         selection.flacCompressionLevel = nil
         selection.artworkMode = settings.artworkMode
         selection.artworkMaxDimension = settings.artworkMaxDimension
+        selection.writesFolderCoverArt = settings.writesFolderCoverArt
         selection.folderStructureMode = settings.folderStructureMode
         selection.templatePreset = settings.templateConfig.preset
         selection.tokenOrder = FolderTokenOrder.normalize(settings.templateConfig.tokenOrder)
@@ -237,9 +238,9 @@ extension ConversionOptionsSelection {
 
     /// The settings a device run from the cockpit writes with: `base` (the
     /// device's own) with this selection's format, art and folder layout, the
-    /// inverse of `seeded(from:)`. What the cockpit has no row for (folder
-    /// art, the device kind's art rules) stays the device's. Always a convert
-    /// run, since that is what the cockpit does.
+    /// inverse of `seeded(from:)`. What the cockpit has no row for (the
+    /// compatibility profile) stays the device's. Always a convert run, since
+    /// that is what the cockpit does.
     func deviceTransferSettings(over base: ExternalDeviceTransferSettings) -> ExternalDeviceTransferSettings {
         var settings = base
         settings.mode = .convertDuringTransfer
@@ -248,6 +249,7 @@ extension ConversionOptionsSelection {
         settings.sampleRateHz = sampleRate
         settings.artworkMode = artworkMode
         settings.artworkMaxDimension = artworkMaxDimension
+        settings.writesFolderCoverArt = writesFolderCoverArt
         settings.folderStructureMode = folderStructureMode
         settings.templateConfig = FolderTemplateConfig(
             preset: templatePreset,
@@ -550,13 +552,15 @@ extension LibraryViewModel {
             cancelled: cancelledCount
         ))
 
-        // A cover only where something actually landed.
+        // A cover only where something actually landed. The plan lists cover
+        // folders only when the run's Folder Art switch is on, which may not
+        // be stored on the device yet (it is saved below).
         let landed = Set(outcome.written.map { $0.destinationURL.deletingLastPathComponent().standardizedFileURL })
-        await writeFolderCoverArt(
-            profileID: profile.id,
+        writeFolderCoverArt(
             landings: plan.coverFolders
                 .filter { landed.contains($0.key) }
-                .map { (folder: $0.key, artwork: $0.value.metadata.artwork) }
+                .map { (folder: $0.key, artwork: $0.value.metadata.artwork) },
+            for: profile.name
         )
         await patchDeviceCatalog(
             for: device,

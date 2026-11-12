@@ -64,6 +64,11 @@ struct ConversionOptionsSelection: Codable {
     /// but cap its size" and "drop the art" impossible to express.
     var artworkMode: ArtworkMode = .preserve
     var artworkMaxDimension: Int?
+    /// Write a `cover.jpg` (`FolderCoverArtWriter`, 400 px) into each album
+    /// folder the run writes into, whatever `artworkMode` does inside the
+    /// files. Off for ordinary conversions until switched on; a device run is
+    /// seeded with the device's own switch.
+    var writesFolderCoverArt: Bool = false
     var folderStructureMode: FolderStructureMode
     var applyMode: TemplateApplyMode
     var templatePreset: TemplatePreset
@@ -75,7 +80,8 @@ struct ConversionOptionsSelection: Codable {
 
 extension ConversionOptionsSelection {
     /// Back-compatible decode: selections persisted before `separators` existed
-    /// omit the key and decode as `[]` (all-`/`, unchanged). Placing this in an
+    /// omit the key and decode as `[]` (all-`/`, unchanged); before
+    /// `writesFolderCoverArt`, as off. Placing this in an
     /// extension keeps the synthesized memberwise initializer available.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -90,6 +96,7 @@ extension ConversionOptionsSelection {
         // Selections saved before the mode existed encoded it in the dimension.
         artworkMode = try c.decodeIfPresent(ArtworkMode.self, forKey: .artworkMode)
             ?? (artworkMaxDimension == nil ? .preserve : .compatReembed)
+        writesFolderCoverArt = try c.decodeIfPresent(Bool.self, forKey: .writesFolderCoverArt) ?? false
         folderStructureMode = try c.decode(FolderStructureMode.self, forKey: .folderStructureMode)
         applyMode = try c.decode(TemplateApplyMode.self, forKey: .applyMode)
         templatePreset = try c.decode(TemplatePreset.self, forKey: .templatePreset)

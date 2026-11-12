@@ -118,15 +118,14 @@ extension LibraryViewModel {
 
     // MARK: - Folder cover art (cover.jpg sidecars)
 
-    /// Write one `cover.jpg` per album folder this transfer wrote into, for
-    /// devices that read folder art instead of embedded pictures. Returns the
-    /// number of covers written (0 for every other device, so callers can wire
-    /// this in unconditionally).
+    /// Write one `cover.jpg` per album folder this transfer wrote into, when
+    /// the device's folder-art switch is on. Returns the number of covers
+    /// written (0 when it is off, so callers can wire this in unconditionally).
     ///
     /// `landings` is one entry per written file: the folder it landed in and
     /// the artwork of the track that produced it. Hydration is the caller's
     /// job for paths that don't already carry the bytes — see
-    /// `writeFolderCoverArt(profileID:tracks:root:relativePath:)`.
+    /// `writeFolderCoverArt(profileID:folderTracks:)`.
     @MainActor
     @discardableResult
     func writeFolderCoverArt(profileID: UUID?, landings: [(folder: URL, artwork: ArtworkAsset?)]) async -> Int {
@@ -134,7 +133,16 @@ extension LibraryViewModel {
               let profile = prefs.savedExternalDeviceProfiles.first(where: { $0.id == profileID }),
               profile.usesFolderCoverArt
         else { return 0 }
+        return writeFolderCoverArt(landings: landings, for: profile.name)
+    }
 
+    /// The writing itself, for a caller that already decided covers are
+    /// wanted: a conversion whose Folder Art switch is on, or a device run
+    /// whose plan only lists cover folders when the run's switch is on.
+    /// `destinationName` only names the destination in the log.
+    @MainActor
+    @discardableResult
+    func writeFolderCoverArt(landings: [(folder: URL, artwork: ArtworkAsset?)], for destinationName: String) -> Int {
         var covers: [URL: ArtworkAsset] = [:]
         for landing in landings {
             guard let artwork = landing.artwork, !artwork.data.isEmpty else { continue }
@@ -142,7 +150,7 @@ extension LibraryViewModel {
         }
         guard !covers.isEmpty else { return 0 }
         let written = FolderCoverArtWriter(preparer: artworkService).write(covers)
-        AppLog.conversion.notice("Wrote \(written) cover.jpg sidecar(s) for \(profile.name, privacy: .public)")
+        AppLog.conversion.notice("Wrote \(written) cover.jpg sidecar(s) for \(destinationName, privacy: .public)")
         return written
     }
 

@@ -736,6 +736,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                     destinationRoot: URL(fileURLWithPath: profile.rootDisplayPath ?? "/Volumes/\(profile.name)"),
                     tracks: Array(Self.previewTracks(from: model).prefix(11))
                 )
+                // Seeded from the device as the real route does, so the
+                // cockpit shows the device's settings (and Cancel saves those
+                // back, not the user's own).
+                if model.conversionSelectionBeforeDevice == nil {
+                    model.conversionSelectionBeforeDevice = model.conversionSelection
+                }
+                model.conversionSelection = model.conversionSelection.seeded(from: profile.transferSettings)
                 model.oledView = .conversion
             }
         }
