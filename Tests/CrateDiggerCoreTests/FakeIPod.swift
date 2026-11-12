@@ -142,29 +142,66 @@ final class FakeIPod {
     }
 
     /// Every file and folder in the protected trees, plus the root
-    /// `.scrobbler.log`: relative path -> "size:sha256:mtime" (folders read "dir").
+    /// `.scrobbler.log`: relative path -> "size:sha256:mtime" (folders read
+    /// "dir", symlinks "link:<destination>").
     func manifest() throws -> [String: String] {
         var result: [String: String] = [:]
-        let fm = FileManager.default
         for tree in Self.protectedTrees {
-            let treeURL = root.appendingPathComponent(tree, isDirectory: true)
-            var isDirectory: ObjCBool = false
-            guard fm.fileExists(atPath: treeURL.path, isDirectory: &isDirectory) else { continue }
-            result[tree] = isDirectory.boolValue ? "dir" : try Self.fingerprint(treeURL)
-            guard isDirectory.boolValue,
-                  let walker = fm.enumerator(at: treeURL, includingPropertiesForKeys: [.isDirectoryKey])
-            else { continue }
-            for case let url as URL in walker {
-                let relative = tree + "/" + Self.relative(url.path, under: treeURL.path)
-                let isDir = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
-                result[relative] = isDir == true ? "dir" : try Self.fingerprint(url)
-            }
+            try record(tree, into: &result)
         }
-        let scrobbler = root.appendingPathComponent(".scrobbler.log")
-        if fm.fileExists(atPath: scrobbler.path) {
-            result[".scrobbler.log"] = try Self.fingerprint(scrobbler)
+        if FileManager.default.fileExists(atPath: root.appendingPathComponent(".scrobbler.log").path) {
+            try record(".scrobbler.log", into: &result)
         }
         return result
+    }
+
+    /// Every path under `relativeFolder` (default: the whole volume), `._`
+    /// files included, without following symlinks. Sorted.
+    func allRelativePaths(under relativeFolder: String = "") -> [String] {
+        let folder = relativeFolder.isEmpty ? root.path : root.appendingPathComponent(relativeFolder).path
+        var paths: [String] = []
+        for name in Self.entryNames(inFolder: folder) {
+            let relative = relativeFolder.isEmpty ? name : relativeFolder + "/" + name
+            paths.append(relative)
+            var info = stat()
+            if lstat(root.appendingPathComponent(relative).path, &info) == 0, (info.st_mode & S_IFMT) == S_IFDIR {
+                paths += allRelativePaths(under: relative)
+            }
+        }
+        return paths.sorted()
+    }
+
+    /// Walks with `readdir`, because Foundation's `contentsOfDirectory` and
+    /// its enumerators leave `._` files out on macOS, and a `._` file the
+    /// manifest cannot see is exactly what a broken sweep would touch.
+    private func record(_ relative: String, into result: inout [String: String]) throws {
+        let url = root.appendingPathComponent(relative)
+        var info = stat()
+        guard lstat(url.path, &info) == 0 else { return }
+        switch info.st_mode & S_IFMT {
+        case S_IFDIR:
+            result[relative] = "dir"
+            for name in Self.entryNames(inFolder: url.path) {
+                try record(relative + "/" + name, into: &result)
+            }
+        case S_IFLNK:
+            result[relative] = "link:" + ((try? FileManager.default.destinationOfSymbolicLink(atPath: url.path)) ?? "?")
+        default:
+            result[relative] = try Self.fingerprint(url)
+        }
+    }
+
+    private static func entryNames(inFolder path: String) -> [String] {
+        guard let folder = opendir(path) else { return [] }
+        defer { closedir(folder) }
+        var names: [String] = []
+        while let entry = readdir(folder) {
+            let name = withUnsafeBytes(of: entry.pointee.d_name) { raw in
+                String(cString: raw.bindMemory(to: CChar.self).baseAddress!)
+            }
+            if name != ".", name != ".." { names.append(name) }
+        }
+        return names
     }
 
     /// Fails the calling test when anything in the protected trees was added,
@@ -184,11 +221,6 @@ final class FakeIPod {
         let changed = Set(before.keys).intersection(after.keys).filter { before[$0] != after[$0] }.sorted()
         XCTFail("The player's own files changed. Added: \(added) Removed: \(removed) Changed: \(changed)",
                 file: file, line: line)
-    }
-
-    private static func relative(_ path: String, under base: String) -> String {
-        let prefix = base.hasSuffix("/") ? base : base + "/"
-        return path.hasPrefix(prefix) ? String(path.dropFirst(prefix.count)) : path
     }
 
     private static func fingerprint(_ url: URL) throws -> String {

@@ -32,6 +32,21 @@ final class FakeIPodTests: XCTestCase {
         }
     }
 
+    /// Foundation's directory listings hide `._` files on macOS; the manifest
+    /// must not, or a sweep that deleted one in `.rockbox` would go unseen.
+    func testManifestSeesAppleDoubleFilesInProtectedTrees() throws {
+        let iPod = try FakeIPod()
+        try iPod.addFile(".rockbox/themes/._scrim.cfg", FakeIPod.appleDoubleBytes())
+        let before = try iPod.manifest()
+        XCTAssertNotNil(before[".rockbox/themes/._scrim.cfg"])
+        XCTAssertTrue(iPod.allRelativePaths().contains(".rockbox/themes/._scrim.cfg"))
+
+        try FileManager.default.removeItem(at: iPod.root.appendingPathComponent(".rockbox/themes/._scrim.cfg"))
+        XCTExpectFailure("A removed ._ file in .rockbox must fail the check") {
+            iPod.assertPlayerStateUntouched(since: before)
+        }
+    }
+
     func testAppleDoubleBytesHaveMagicAndVersion() {
         let bytes = FakeIPod.appleDoubleBytes()
         XCTAssertEqual(bytes.count, 4096)
