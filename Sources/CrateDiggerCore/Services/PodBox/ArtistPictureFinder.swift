@@ -39,9 +39,15 @@ public enum ArtistPictureMatcher {
     public static func verdict(_ candidate: ArtistPictureCandidate, name: String,
                                deviceAlbumTitles: [String]) -> ArtistPictureVerdict {
         guard PodBoxArtName.matches(candidate.name, name) else { return .noMatch }
-        let ours = Set(deviceAlbumTitles.compactMap { telling($0, name: name) })
-        return candidate.albumTitles.contains { telling($0, name: name).map(ours.contains) ?? false }
-            ? .confident : .uncertain
+        return sharesTellingTitle(candidate.albumTitles, with: deviceAlbumTitles, name: name) ? .confident : .uncertain
+    }
+
+    /// Whether one of `theirs` is one of `ours` once both are reduced to
+    /// titles that can tell this act from another of the same `name`. The
+    /// album half of the rule; `ArtistIdentityMatcher` applies it to MusicBrainz.
+    static func sharesTellingTitle(_ theirs: [String], with ours: [String], name: String) -> Bool {
+        let keys = Set(ours.compactMap { telling($0, name: name) })
+        return theirs.contains { telling($0, name: name).map(keys.contains) ?? false }
     }
 
     /// The folded title without its trailing `(…)` and `[…]` groups.

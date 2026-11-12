@@ -50,16 +50,18 @@ public enum ArtistPictureSourceError: Error, Equatable, Sendable {
 /// names the app and its public site; it never holds a user name, an
 /// e-mail, a path or a device name.
 ///
-/// Only the sources' own hosts are fetched from, over HTTPS, redirects
-/// included, and a body is read as it arrives and abandoned past 32 MB.
+/// Only the sources' own hosts (and Wikipedia, for artist bios) are fetched
+/// from, over HTTPS, redirects included, and a body is read as it arrives and
+/// abandoned past 32 MB.
 public struct URLSessionPictureFetcher: ArtistPictureFetching {
     public static let timeout: TimeInterval = 15
     /// The services the sources use, and the hosts their pictures come from.
     static let allowedHosts: Set<String> = [
         "api.deezer.com", "musicbrainz.org", "www.wikidata.org", "commons.wikimedia.org", "upload.wikimedia.org",
     ]
-    /// Deezer's picture CDN (`e-cdns-images.dzcdn.net`, `cdn-images.dzcdn.net`).
-    static let allowedHostSuffixes = [".dzcdn.net"]
+    /// Deezer's picture CDN (`e-cdns-images.dzcdn.net`, `cdn-images.dzcdn.net`),
+    /// and every language's Wikipedia (`en.wikipedia.org`), for artist bios.
+    static let allowedHostSuffixes = [".dzcdn.net", ".wikipedia.org"]
 
     private let session: URLSession
 

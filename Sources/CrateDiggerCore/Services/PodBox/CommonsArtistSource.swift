@@ -155,12 +155,12 @@ public struct CommonsArtistSource: ArtistPictureSource {
         candidate.albumTitles
     }
 
-    /// `https://musicbrainz.org/ws/2/artist?query=artist:"<name>"&fmt=json&limit=5`,
+    /// `https://musicbrainz.org/ws/2/artist?query=artist:"<name>"&fmt=json&limit=<limit>`,
     /// the name escaped for MusicBrainz's query syntax.
-    static func searchURL(name: String) -> URL {
+    static func searchURL(name: String, limit: Int = 5) -> URL {
         let escaped = name.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
         let query = ArtistPictureURLText.encoded("artist:\"\(escaped)\"")
-        return URL(string: "https://musicbrainz.org/ws/2/artist?query=\(query)&fmt=json&limit=5")!
+        return URL(string: "https://musicbrainz.org/ws/2/artist?query=\(query)&fmt=json&limit=\(limit)")!
     }
 
     /// The `+` stays as it is: MusicBrainz separates `inc` values with it.

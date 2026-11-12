@@ -20,11 +20,21 @@ public actor MusicBrainzGate {
         self.interval = interval
     }
 
+    /// Who is asking: a lookup the owner started (`foreground`), or work the
+    /// app does on its own in the background.
+    public enum Lane: Sendable {
+        case foreground, background
+    }
+
+    /// Slots handed out per lane, for tests.
+    private(set) var issued: [Lane: Int] = [:]
+
     /// Returns when this caller's slot has come.
-    public func wait() async throws {
+    public func wait(lane: Lane = .foreground) async throws {
         let now = ContinuousClock.now
         let slot = max(now, next ?? now)
         next = slot + interval
+        issued[lane, default: 0] += 1
         if slot > now { try await Task.sleep(until: slot, clock: .continuous) }
     }
 
