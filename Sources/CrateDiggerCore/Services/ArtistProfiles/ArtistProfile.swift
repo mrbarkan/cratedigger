@@ -193,13 +193,18 @@ public struct ArtistProfile: Codable, Hashable, Sendable {
     /// `checkedAt`, the background lookup's cursor, so a search never makes
     /// the lookup think it ran.
     public var photoSearchedAt: Date?
+    /// When the owner last said who this artist is ("Is this them?", "None
+    /// of these", "Not This Artist", a pasted id, Look Up Again's reset).
+    /// A lookup never sets it. Merging two writers' saves lets the newer of
+    /// these beat any lookup, whatever the lookups' `checkedAt` say.
+    public var identityChangedByOwnerAt: Date?
 
     public init(foldedKey: String, displayName: String, identity: Identity = .unknown,
                 rejectedMusicBrainzIDs: [String] = [], fetched: ArtistFacts? = nil, owner: ArtistFacts? = nil,
                 photos: [ArtistPhoto] = [], photoCandidates: [ArtistPictureRecord.HeldCandidate] = [],
                 rejectedPhotoSources: [String] = [], defaultPhoto: String? = nil, defaultPickedByOwner: Bool = false,
                 noPhoto: Bool = false, notOnIPod: Bool = false, checkedAt: Date? = nil,
-                photoSearchedAt: Date? = nil) {
+                photoSearchedAt: Date? = nil, identityChangedByOwnerAt: Date? = nil) {
         self.foldedKey = foldedKey
         self.displayName = displayName
         self.identity = identity
@@ -215,6 +220,7 @@ public struct ArtistProfile: Codable, Hashable, Sendable {
         self.notOnIPod = notOnIPod
         self.checkedAt = checkedAt
         self.photoSearchedAt = photoSearchedAt
+        self.identityChangedByOwnerAt = identityChangedByOwnerAt
     }
 
     /// What the page shows: the owner's value over the fetched one, field by
@@ -263,6 +269,7 @@ public struct ArtistProfile: Codable, Hashable, Sendable {
         notOnIPod = c.lenient(Bool.self, .notOnIPod) ?? false
         checkedAt = c.lenient(Date.self, .checkedAt)
         photoSearchedAt = c.lenient(Date.self, .photoSearchedAt)
+        identityChangedByOwnerAt = c.lenient(Date.self, .identityChangedByOwnerAt)
     }
 }
 

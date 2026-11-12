@@ -243,4 +243,43 @@ final class ArtistProfileMigrationTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: bakFile.path))
         XCTAssertEqual(pictureStore().allRecords().map(\.displayName), ["Air"], "the old records are all still there")
     }
+
+    /// Every crates folder on the Mac shares the old prepared-picture cache:
+    /// migrating one deletes only the files it carried, so a second folder
+    /// still holding `library.cdartists` migrates with its bytes, owner picks
+    /// included.
+    func testMigratingOneFolderLeavesTheSharedCacheToTheOthers() throws {
+        let cache = folder.appendingPathComponent("SharedArtistImages", isDirectory: true)
+        let first = folder.appendingPathComponent("LibraryA", isDirectory: true)
+        let second = folder.appendingPathComponent("LibraryB", isDirectory: true)
+        for directory in [first, second] {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        let air = try prepared(shade: 0.2), beck = try prepared(shade: 0.7)
+        let one = ArtistPictureStore(indexDirectory: first, imageDirectory: cache)
+        try one.set(record("Air", .found, source: .deezer, sourceID: "1"), prepared: air)
+        try one.save()
+        let two = ArtistPictureStore(indexDirectory: second, imageDirectory: cache)
+        try two.set(record("Beck", .found, source: .userFile, sourceID: "beck.jpg", picked: true), prepared: beck)
+        try two.save()
+        func cached(_ data: Data) -> URL {
+            cache.appendingPathComponent(ArtistProfileStore.sha256(data) + ".jpg")
+        }
+
+        let a = ArtistProfileStore(indexDirectory: first)
+        XCTAssertTrue(try ArtistProfileMigration.migrate(pictures: one, into: a, indexDirectory: first,
+                                                         legacyCache: cache))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: cached(air).path), "carried, saved: gone")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: cached(beck).path), "the other folder's stays")
+
+        let b = ArtistProfileStore(indexDirectory: second)
+        XCTAssertTrue(try ArtistProfileMigration.migrate(pictures: ArtistPictureStore(indexDirectory: second,
+                                                                                      imageDirectory: cache),
+                                                         into: b, indexDirectory: second, legacyCache: cache))
+        let profile = try XCTUnwrap(b.profile(forName: "Beck"))
+        XCTAssertEqual(profile.defaultPhoto, ArtistProfileStore.sha256(beck))
+        XCTAssertTrue(profile.defaultPickedByOwner)
+        XCTAssertNotNil(b.photoData(hash: ArtistProfileStore.sha256(beck)))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: cache.path), "empty once both are carried")
+    }
 }

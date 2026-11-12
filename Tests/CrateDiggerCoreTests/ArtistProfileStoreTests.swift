@@ -732,6 +732,90 @@ final class ArtistProfileStoreTests: XCTestCase {
         XCTAssertEqual(makeStore().profile(forName: "Air")?.owner?.origin, "Marseille")
     }
 
+    /// The owner's word on who an artist is, given on one Mac, against a
+    /// lookup that landed on the other with a newer `checkedAt`: the owner
+    /// wins whichever Mac saves first, for every owner identity action.
+    func testAnOwnersIdentityChoiceBeatsTheOtherMacsLookupInBothSaveOrders() throws {
+        let old = Date(timeIntervalSinceReferenceDate: 1_000)
+        let lookupDate = Date(timeIntervalSinceReferenceDate: 9_000)
+        let ownerDate = Date(timeIntervalSinceReferenceDate: 5_000)
+        typealias Action = (name: String, act: (inout ArtistProfile) -> Void, expected: ArtistProfile.Identity)
+        let actions: [Action] = [
+            ("None of these", { $0.rejectCandidates(at: ownerDate) }, .rejected),
+            ("Is this them?", { $0.confirmIdentity(musicBrainzID: "mb-picked", at: ownerDate) },
+             .confirmed(musicBrainzID: "mb-picked", wikidataID: nil)),
+            ("Not This Artist", { $0.rejectConfirmedIdentity(at: ownerDate) }, .unknown),
+        ]
+        for ownerSavesFirst in [true, false] {
+            for action in actions {
+                let label = "\(action.name), owner saves \(ownerSavesFirst ? "first" : "second")"
+                try? FileManager.default.removeItem(at: storeFile)
+                let seed = makeStore()
+                seed.update(name: "Boston") { _ in }
+                seed.applyFetched(name: "Boston", facts: ArtistFacts(kind: "Group"),
+                                  identity: .confirmed(musicBrainzID: "mb-old", wikidataID: nil), at: old)
+                try seed.save()
+
+                let owners = makeStore(), lookups = makeStore()
+                owners.update(name: "Boston", action.act)
+                // The other Mac's background lookup lands later, finding the old id again.
+                lookups.applyFetched(name: "Boston", facts: ArtistFacts(kind: "Group", bio: "Found."),
+                                     identity: .confirmed(musicBrainzID: "mb-old", wikidataID: "Q1"), at: lookupDate)
+                if ownerSavesFirst {
+                    try owners.save()
+                    try lookups.save()
+                } else {
+                    try lookups.save()
+                    try owners.save()
+                }
+                let merged = try XCTUnwrap(makeStore().profile(forName: "Boston"), label)
+                XCTAssertEqual(merged.identity, action.expected, label)
+                XCTAssertEqual(merged.identityChangedByOwnerAt, ownerDate, label)
+                XCTAssertNotEqual(merged.fetched?.bio, "Found.", label)
+                if case .confirmed(let id, _) = merged.identity {
+                    XCTAssertFalse(merged.rejectedMusicBrainzIDs.contains(id), label)
+                }
+            }
+        }
+
+        // Both Macs' owners spoke: the newer word wins.
+        try? FileManager.default.removeItem(at: storeFile)
+        try makeStore().save()
+        let first = makeStore(), second = makeStore()
+        first.update(name: "Air") { $0.rejectCandidates(at: Date(timeIntervalSinceReferenceDate: 7_000)) }
+        second.update(name: "Air") {
+            $0.confirmIdentity(musicBrainzID: "mb-air", at: Date(timeIntervalSinceReferenceDate: 6_000))
+        }
+        try first.save()
+        try second.save()
+        XCTAssertEqual(makeStore().profile(forName: "Air")?.identity, .rejected)
+    }
+
+    func testAConfirmedIDTheMergeAlsoRejectsFallsBackToUnknown() throws {
+        let seed = makeStore()
+        seed.applyFetched(name: "Low", facts: ArtistFacts(kind: "Group"),
+                          identity: .confirmed(musicBrainzID: "mb-x", wikidataID: nil),
+                          at: Date(timeIntervalSinceReferenceDate: 1_000))
+        try seed.save()
+        // One Mac says "Not This Artist" (mb-x rejected); the other, later,
+        // pastes mb-x back: the newer owner word wins, but the merged
+        // rejected list still holds mb-x, so the artist is asked again.
+        let here = makeStore(), there = makeStore()
+        here.update(name: "Low") { $0.rejectConfirmedIdentity(at: Date(timeIntervalSinceReferenceDate: 2_000)) }
+        there.update(name: "Low") { profile in
+            profile.rejectedMusicBrainzIDs = []
+            profile.identity = .confirmed(musicBrainzID: "mb-x", wikidataID: nil)
+            profile.identityChangedByOwnerAt = Date(timeIntervalSinceReferenceDate: 3_000)
+        }
+        try here.save()
+        try there.save()
+        let low = try XCTUnwrap(makeStore().profile(forName: "Low"))
+        XCTAssertEqual(low.rejectedMusicBrainzIDs, ["mb-x"])
+        XCTAssertEqual(low.identity, .unknown)
+        XCTAssertNil(low.fetched)
+        XCTAssertNil(low.checkedAt)
+    }
+
     func testMigratedFlagIsSavedInTheFile() throws {
         let store = makeStore()
         XCTAssertFalse(store.picturesMigrated)

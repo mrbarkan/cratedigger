@@ -643,14 +643,18 @@ extension ArtistProfileStore {
     public func lookUpAgain(name: String, resetFirst: Bool, at date: Date,
                             _ lookUp: (ArtistProfile?) async throws -> ArtistLookupResult) async throws {
         let before = profile(forName: name)?.identity ?? .unknown
-        if resetFirst { resetIdentity(name: name) }
+        let ownerBefore = profile(forName: name)?.identityChangedByOwnerAt
+        if resetFirst { resetIdentity(name: name, at: date) }
         do {
             let result = try await lookUp(profile(forName: name))
             try result.apply(to: self, name: name, at: date)
             try save()
         } catch {
             if resetFirst, before != .unknown {
-                update(name: name, ifIdentityIs: .unknown) { $0.identity = before }
+                update(name: name, ifIdentityIs: .unknown) { profile in
+                    profile.identity = before
+                    profile.identityChangedByOwnerAt = ownerBefore
+                }
             }
             // Whatever did land (a result applied before a photo failed) is kept.
             try? save()

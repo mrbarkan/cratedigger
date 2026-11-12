@@ -218,14 +218,16 @@ public final class ArtistProfileStore: @unchecked Sendable {
 
     /// Look Up Again: the identity goes back to `.unknown`, so the next
     /// lookup's answer is taken even after "None of these". The ids the
-    /// owner said are "Not This Artist" stay rejected.
-    public func resetIdentity(name: String) {
+    /// owner said are "Not This Artist" stay rejected. The owner's word,
+    /// so it is dated (`identityChangedByOwnerAt`).
+    public func resetIdentity(name: String, at date: Date = Date()) {
         let key = PodBoxArtName.folded(name)
         guard !key.isEmpty else { return }
         lock.lock()
         defer { lock.unlock() }
         guard var profile = byKey[key], profile.identity != .unknown else { return }
         profile.identity = .unknown
+        profile.identityChangedByOwnerAt = Self.wholeSecond(date)
         put(profile, at: key)
     }
 
@@ -628,6 +630,7 @@ public final class ArtistProfileStore: @unchecked Sendable {
             result.identity = second.identity
             result.fetched = second.fetched
             result.checkedAt = second.checkedAt
+            result.identityChangedByOwnerAt = second.identityChangedByOwnerAt
         }
         return result
     }
@@ -642,9 +645,14 @@ public final class ArtistProfileStore: @unchecked Sendable {
     /// field by field: **a field this store changed since it read the file
     /// wins; any other field is the file's.** When both changed the same
     /// field, this save is the newer edit and wins. The owner's facts merge
-    /// field by field the same way. The lookup's state (identity, fetched
-    /// facts, `checkedAt`) moves as one: the side whose `checkedAt` is newer
-    /// (this store on a tie). Lists (photos, candidates, rejected ids and
+    /// field by field the same way. Who the artist is (identity, fetched
+    /// facts, `checkedAt`, `identityChangedByOwnerAt`) moves as one: when
+    /// the owner said who it is on either side since the base, the side
+    /// whose owner word is newer (this store on a tie), so a lookup never
+    /// undoes the owner, whatever its `checkedAt`; else the side whose
+    /// lookup is newer by `checkedAt` (this store on a tie). A confirmed id
+    /// the merged `rejectedMusicBrainzIDs` holds (one Mac confirmed it, the
+    /// other said "Not This Artist") falls back to `.unknown`, looked up again. Lists (photos, candidates, rejected ids and
     /// sources) take the file's list with this store's own additions and
     /// removals applied. The default photo and whether the owner picked it
     /// move together; a default no longer among the photos falls to the
@@ -689,15 +697,30 @@ public final class ArtistProfileStore: @unchecked Sendable {
         lists(\.photoCandidates)
         lists(\.rejectedPhotoSources)
 
-        let lookupChangedHere = mine.identity != base.identity || mine.fetched != base.fetched
-            || mine.checkedAt != base.checkedAt
-        let lookupChangedThere = disk.identity != base.identity || disk.fetched != base.fetched
-            || disk.checkedAt != base.checkedAt
-        if lookupChangedHere,
-           !lookupChangedThere || (mine.checkedAt ?? .distantPast) >= (disk.checkedAt ?? .distantPast) {
+        let ownerHere = mine.identityChangedByOwnerAt != base.identityChangedByOwnerAt
+        let ownerThere = disk.identityChangedByOwnerAt != base.identityChangedByOwnerAt
+        let takeMine: Bool
+        if ownerHere || ownerThere {
+            takeMine = ownerHere && (!ownerThere || (mine.identityChangedByOwnerAt ?? .distantPast)
+                >= (disk.identityChangedByOwnerAt ?? .distantPast))
+        } else {
+            let lookupHere = mine.identity != base.identity || mine.fetched != base.fetched
+                || mine.checkedAt != base.checkedAt
+            let lookupThere = disk.identity != base.identity || disk.fetched != base.fetched
+                || disk.checkedAt != base.checkedAt
+            takeMine = lookupHere
+                && (!lookupThere || (mine.checkedAt ?? .distantPast) >= (disk.checkedAt ?? .distantPast))
+        }
+        if takeMine {
             result.identity = mine.identity
             result.fetched = mine.fetched
             result.checkedAt = mine.checkedAt
+            result.identityChangedByOwnerAt = mine.identityChangedByOwnerAt
+        }
+        if case .confirmed(let id, _) = result.identity, result.rejectedMusicBrainzIDs.contains(id) {
+            result.identity = .unknown
+            result.fetched = nil
+            result.checkedAt = nil
         }
         result.owner = mergedFacts(mine: mine.owner, base: base.owner, disk: disk.owner)
 

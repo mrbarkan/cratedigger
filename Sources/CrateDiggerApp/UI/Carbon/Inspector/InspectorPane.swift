@@ -6,6 +6,9 @@ import SwiftUI
 struct InspectorPane: View {
     @Environment(\.carbon) private var theme
     @EnvironmentObject private var model: LibraryViewModel
+    /// Observed for the INFO tab's choice of page: outside the local library
+    /// an artist known only by a profile gets one as soon as it loads.
+    @EnvironmentObject private var artistProfiles: ArtistProfilesModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var activeTab: InspectorTab { model.inspectorTab }
@@ -45,7 +48,7 @@ struct InspectorPane: View {
         case .info:
             if model.isRadioMode, let stream = model.selectedStream {
                 RadioInfoView(stream: stream)
-            } else if let artist = model.inspectedArtistName {
+            } else if let artist = model.inspectedArtistName(knownBy: artistProfiles) {
                 // The browser is on an artist (its column has focus, or
                 // "Show Artist"): their page, not their first album's.
                 ArtistPageView(name: artist)

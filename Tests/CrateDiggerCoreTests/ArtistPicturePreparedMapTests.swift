@@ -116,15 +116,3 @@ final class ArtistPicturePreparedMapTests: XCTestCase {
         XCTAssertEqual(prepared, ["Air"], "an artist the iPod already shows is never prepared")
     }
 }
-
-extension ArtistPicturePreparedMapTests {
-    func testTheLegacyCacheIsRemovedOnce() throws {
-        let legacy = FileManager.default.temporaryDirectory
-            .appendingPathComponent("ArtistImages-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: legacy, withIntermediateDirectories: true)
-        try Data("x".utf8).write(to: legacy.appendingPathComponent(String(repeating: "a", count: 64) + ".jpg"))
-        XCTAssertTrue(ArtistPicturePreparedCache.removeLegacyCache(at: legacy))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: legacy.path))
-        XCTAssertFalse(ArtistPicturePreparedCache.removeLegacyCache(at: legacy), "nothing left to remove")
-    }
-}

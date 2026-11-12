@@ -81,11 +81,15 @@ extension LibraryViewModel {
     /// The artist INFO shows a page for, or nil for the album page. Outside
     /// the local library (a device, a playlist) only an artist the library
     /// knows gets a page.
-    var inspectedArtistName: String? {
+    var inspectedArtistName: String? { inspectedArtistName(knownBy: artistProfilesModel) }
+
+    /// The same, read from `profiles`, which a view passes when it observes
+    /// that model, so a profile loaded later changes the page at once.
+    func inspectedArtistName(knownBy profiles: ArtistProfilesModel) -> String? {
         guard let name = artistPage.artistName else { return nil }
         if currentSource.isLocalLibrary { return name }
         let key = PodBoxArtName.folded(name)
-        return artistSummaries[key] != nil || artistProfiles[key] != nil ? name : nil
+        return artistSummaries[key] != nil || profiles.profiles[key] != nil ? name : nil
     }
 
     func artistProfile(named name: String) -> ArtistProfile? {
@@ -283,9 +287,10 @@ extension LibraryViewModel {
     /// old file, which nothing reads again. Runs when the crates folder
     /// resolves (at launch, and for a folder chosen later), never while the
     /// library is disconnected. A failure is logged and tried again next time.
-    /// Once a folder's pictures are in its profiles, the old prepared-picture
-    /// cache (`ArtistPicturePreparedCache.legacyDirectory`), which only the
-    /// migration read, is deleted. The background worker waits for this to
+    /// Once a folder's pictures are in its saved profiles, the files it
+    /// carried are deleted from the old prepared-picture cache
+    /// (`ArtistPicturePreparedCache.legacyDirectory`), never the rest: every
+    /// crates folder on this Mac shares it. The background worker waits for this to
     /// settle (`artistMigrationSettled`): it succeeded, or there was nothing
     /// to carry over.
     func migrateArtistPicturesIfNeeded() {
@@ -296,12 +301,6 @@ extension LibraryViewModel {
         else {
             artistMigrationSettled = true
             startArtistLookupWorkerIfWanted()
-            Task {
-                let store = await currentArtistProfileStore()
-                await Task.detached(priority: .utility) {
-                    if store.picturesMigrated { ArtistPicturePreparedCache.removeLegacyCache() }
-                }.value
-            }
             return
         }
         artistMigrationSettled = false
@@ -311,8 +310,8 @@ extension LibraryViewModel {
                 let directory = store.indexDirectory
                 do {
                     try ArtistProfileMigration.migrate(pictures: ArtistPictureStore(indexDirectory: directory),
-                                                       into: store, indexDirectory: directory)
-                    ArtistPicturePreparedCache.removeLegacyCache()
+                                                       into: store, indexDirectory: directory,
+                                                       legacyCache: ArtistPicturePreparedCache.legacyDirectory)
                     return nil
                 } catch {
                     return Self.logCase(error)
