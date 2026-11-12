@@ -65,6 +65,13 @@ public final class DeviceCatalogWriter: @unchecked Sendable {
         }
     }
 
+    /// `DeviceCatalogStore.discardOlderFormats`, under the write lock. Run
+    /// once at launch, before any catalog is read.
+    @discardableResult
+    public func discardOlderFormats() -> Int {
+        writeLock.withLock { store.discardOlderFormats() }
+    }
+
     private func advance(_ key: String) {
         tokenLock.withLock { tokens[key, default: 0] += 1 }
     }

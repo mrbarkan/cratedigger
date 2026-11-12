@@ -140,8 +140,14 @@ extension LibraryViewModel {
 
     /// Remembers the sheet's Leave it answers for this device and forgets an
     /// album left alone before that the user now answered otherwise. Called
-    /// once a send is going ahead (or turned out to need nothing).
-    func rememberDeviceAnswers(_ answers: [DeviceAlbumIdentity: DeviceAlbumDecision], profileID: UUID) {
-        DeviceLeftAloneStore().record(answers, profileID: profileID)
+    /// once a send is going ahead (or turned out to need nothing). A Leave it
+    /// for a name taken by an unknown file is not remembered (see
+    /// `DeviceLeftAloneStore.record`), hence the review.
+    func rememberDeviceAnswers(
+        _ answers: [DeviceAlbumIdentity: DeviceAlbumDecision],
+        of review: DeviceTransferReview,
+        profileID: UUID
+    ) {
+        DeviceLeftAloneStore().record(answers, kinds: review.differenceKinds, profileID: profileID)
     }
 }

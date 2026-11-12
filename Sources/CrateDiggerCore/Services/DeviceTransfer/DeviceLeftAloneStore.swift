@@ -49,8 +49,18 @@ public struct DeviceLeftAloneStore {
     /// Applies the review sheet's answers: a Leave it is remembered, any other
     /// answer forgets the album (the user changed their mind about one left
     /// alone before). Albums not answered keep whatever was remembered.
-    public func record(_ answers: [DeviceAlbumIdentity: DeviceAlbumDecision], profileID: UUID) {
-        let leave = Set(answers.filter { $0.value == .leave }.keys)
+    ///
+    /// `kinds` are the review's (`DeviceTransferReview.differenceKinds`). A
+    /// Leave it for an album whose only difference is a taken name is not
+    /// remembered: it says nothing about the album, and remembering it would
+    /// silently leave alone a later real upgrade of it. Such an answer
+    /// changes nothing stored.
+    public func record(
+        _ answers: [DeviceAlbumIdentity: DeviceAlbumDecision],
+        kinds: [DeviceAlbumIdentity: DeviceDifferenceKind],
+        profileID: UUID
+    ) {
+        let leave = Set(answers.filter { $0.value == .leave && kinds[$0.key] != .pathTaken }.keys)
         let other = Set(answers.filter { $0.value != .leave }.keys)
         guard !leave.isEmpty || !other.isEmpty else { return }
         let current = load(profileID: profileID)

@@ -36,6 +36,56 @@ public struct DeviceCatalogStore {
         try? fileManager.removeItem(at: url(for: key))
     }
 
+    // MARK: - Format
+
+    /// What the saved catalogs can be trusted to describe. Version 2: every
+    /// write a transfer makes patches the catalog, and art sizes are pixels.
+    /// Before it, copy and convert transfers left the catalog as it was (so
+    /// it lacked what they wrote, which the first review would show as names
+    /// taken by unknown files) and art sizes were points.
+    public static let formatVersion = 2
+
+    private var formatMarkerURL: URL {
+        directory.appendingPathComponent("format-version")
+    }
+
+    /// Drops every saved catalog written by an older format, once: the next
+    /// browse or transfer walks the device instead. Records the current
+    /// format either way, so later launches keep their catalogs. Returns how
+    /// many catalogs were dropped.
+    @discardableResult
+    public func discardOlderFormats() -> Int {
+        let recorded = (try? String(contentsOf: formatMarkerURL, encoding: .utf8))
+            .flatMap { Int($0.trimmingCharacters(in: .whitespacesAndNewlines)) } ?? 1
+        guard recorded < Self.formatVersion else { return 0 }
+        let catalogs = ((try? fileManager.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? [])
+            .filter { $0.pathExtension == "cdtracks" }
+        var dropped = 0
+        for url in catalogs where (try? fileManager.removeItem(at: url)) != nil {
+            dropped += 1
+        }
+        do {
+            try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+            try String(Self.formatVersion).write(to: formatMarkerURL, atomically: true, encoding: .utf8)
+        } catch {
+            // Not recorded: the next launch drops again, which only costs a walk.
+            AppLog.library.warning("Could not record the device catalog format: \(error.localizedDescription, privacy: .public)")
+        }
+        return dropped
+    }
+
+    /// Whether a saved catalog describes the device mounted at `volume`:
+    /// every record lies on it. Catalogs hold absolute paths, so one saved
+    /// while the device mounted elsewhere (`/Volumes/IPOD` and now
+    /// `/Volumes/IPOD 1`) points at nothing there; treated as missing, the
+    /// device is walked again rather than every track filtered out of the
+    /// review as outside it. An empty catalog fits any mount.
+    public static func describes(_ catalog: [LoadedTrack], deviceAt volume: URL) -> Bool {
+        let root = pathKey(volume)
+        let prefix = root == "/" ? "/" : root + "/"
+        return catalog.allSatisfy { pathKey($0.track.fileURL).hasPrefix(prefix) }
+    }
+
     /// Bring a saved catalog up to date after a write: drop the records at
     /// `removingPaths`, then add `adding`, each replacing any record already
     /// at its path (an overwrite in place). Paths compare case-insensitively,

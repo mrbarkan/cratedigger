@@ -83,7 +83,7 @@ extension LibraryViewModel {
                 kinds: review.differenceKinds,
                 queued: current
             )
-            rememberDeviceAnswers(answers, profileID: profile.id)
+            rememberDeviceAnswers(answers, of: review, profileID: profile.id)
             if !newEntries.isEmpty {
                 syncQueueStore.save(current + newEntries, profileID: profile.id)
                 refreshSyncQueueCounts()
@@ -325,7 +325,7 @@ extension LibraryViewModel {
 
             guard !plan.copies.isEmpty || !plan.deletions.isEmpty || !plan.unplanned.isEmpty else {
                 // Nothing to write is a finished sync: its answers stand.
-                rememberDeviceAnswers(answers, profileID: profileID)
+                rememberDeviceAnswers(answers, of: review, profileID: profileID)
                 dropSettledEntries(settled, profileID: profileID)
                 appAlert = .info(
                     title: "Nothing to sync",
@@ -383,7 +383,7 @@ extension LibraryViewModel {
             // progress ends before the deletions, covers and patch do.
             isDeviceTransferRunning = true
             defer { isDeviceTransferRunning = false }
-            rememberDeviceAnswers(answers, profileID: profileID)
+            rememberDeviceAnswers(answers, of: review, profileID: profileID)
 
             // SYNC reads as running from here until the catalog is patched,
             // deletions and covers included: that is what keeps ⌘. and the

@@ -1327,7 +1327,16 @@ final class LibraryViewModel: ObservableObject {
     /// On-disk per-device catalogs so a device opens instantly across launches
     /// (rescan only on RESCAN). Every write goes through it, so a scan that
     /// ends after a transfer's patch can't put the older catalog back.
-    private let deviceCatalogs = DeviceCatalogWriter()
+    /// Catalogs from an older format are dropped once, before any is read:
+    /// the transfers that wrote them never patched them in.
+    private let deviceCatalogs: DeviceCatalogWriter = {
+        let writer = DeviceCatalogWriter()
+        let dropped = writer.discardOlderFormats()
+        if dropped > 0 {
+            AppLog.library.notice("Dropped \(dropped) device catalog(s) from an older format; devices are walked again")
+        }
+        return writer
+    }()
     /// Per-profile pre-transfer sync queues + their staging trees.
     let syncQueueStore = DeviceSyncQueueStore()
     /// Per-profile queued-track counts for sidebar badges. Refreshed on queue
@@ -2500,12 +2509,15 @@ final class LibraryViewModel: ObservableObject {
         let key = device.catalogKey
         let volumePath = device.volumeURL.path
         let catalogs = deviceCatalogs
-        if let saved = await Task.detached(priority: .userInitiated, operation: {
+        let stored = await Task.detached(priority: .userInitiated, operation: {
             catalogs.load(key: key)
-        }).value {
-            return saved
+        }).value
+        // A catalog saved while the device mounted elsewhere is no picture
+        // of it here: walked again below, as if there were none.
+        if let stored, DeviceCatalogStore.describes(stored, deviceAt: device.volumeURL) {
+            return stored
         }
-        if let cached = deviceIndexCache[volumePath] {
+        if stored == nil, let cached = deviceIndexCache[volumePath] {
             // A browse scan whose save hasn't landed: save it now, so the
             // transfer's patch has a catalog to correct. The cache is kept
             // current by every patch, so it is the latest picture.
@@ -2543,7 +2555,10 @@ final class LibraryViewModel: ObservableObject {
             // Compare with the newer catalog when there is one; otherwise the
             // walk is still the best picture, and a later patch finds no
             // catalog and has the device walked again.
-            return catalogs.load(key: key) ?? scanned
+            let newer = catalogs.load(key: key).flatMap {
+                DeviceCatalogStore.describes($0, deviceAt: device.volumeURL) ? $0 : nil
+            }
+            return newer ?? scanned
         }
         let built = buildIndex(scanned)
         deviceIndexCache[volumePath] = built
@@ -2624,8 +2639,10 @@ final class LibraryViewModel: ObservableObject {
             adoptDeviceIndex(cached)
             return
         }
-        // Persisted catalog from a previous scan/launch → open instantly, no walk.
-        if !forceRescan, let saved = deviceCatalogs.load(key: key) {
+        // Persisted catalog from a previous scan/launch → open instantly, no
+        // walk, unless it was saved while the device mounted elsewhere.
+        if !forceRescan, let saved = deviceCatalogs.load(key: key),
+           DeviceCatalogStore.describes(saved, deviceAt: device.volumeURL) {
             let built = buildIndex(saved)
             deviceIndexCache[volumePath] = built
             oledView = .scan

@@ -40,6 +40,58 @@ final class DeviceCatalogStoreTests: XCTestCase {
         }
     }
 
+    // MARK: - Catalogs from an older format
+
+    /// Transfers before format 2 never patched the catalog, so what they
+    /// wrote would read as names taken by unknown files: the first launch of
+    /// this build drops those catalogs, once.
+    func testCatalogsFromAnOlderFormatAreDroppedOnce() throws {
+        try withTemporaryDirectory(prefix: "catalog-store") { dir in
+            let old = DeviceCatalogStore(directory: dir)
+            old.save([track(named: "One")], key: "IPOD-UUID")
+            old.save([track(named: "Two")], key: "SD-UUID")
+
+            XCTAssertEqual(DeviceCatalogStore(directory: dir).discardOlderFormats(), 2)
+            XCTAssertNil(old.load(key: "IPOD-UUID"))
+            XCTAssertNil(old.load(key: "SD-UUID"))
+
+            // Saved by this build: kept on every later launch.
+            old.save([track(named: "One")], key: "IPOD-UUID")
+            XCTAssertEqual(DeviceCatalogStore(directory: dir).discardOlderFormats(), 0)
+            XCTAssertNotNil(old.load(key: "IPOD-UUID"))
+        }
+    }
+
+    func testFirstLaunchWithNoCatalogsRecordsTheFormat() throws {
+        try withTemporaryDirectory(prefix: "catalog-store") { dir in
+            let fresh = dir.appendingPathComponent("DeviceCatalogs", isDirectory: true)
+            XCTAssertEqual(DeviceCatalogStore(directory: fresh).discardOlderFormats(), 0)
+
+            DeviceCatalogStore(directory: fresh).save([track(named: "One")], key: "K")
+            XCTAssertEqual(DeviceCatalogStore(directory: fresh).discardOlderFormats(), 0)
+            XCTAssertNotNil(DeviceCatalogStore(directory: fresh).load(key: "K"))
+        }
+    }
+
+    // MARK: - Where the device is mounted
+
+    /// Saved at /Volumes/IPOD, mounted now at /Volumes/IPOD 1: the catalog
+    /// points at nothing there and is treated as missing (walked again).
+    func testACatalogDescribesOnlyTheMountItWasSavedAt() {
+        let catalog = [track(named: "One"), track(named: "Two")]
+
+        XCTAssertTrue(DeviceCatalogStore.describes(catalog, deviceAt: URL(fileURLWithPath: "/Volumes/IPOD")))
+        XCTAssertFalse(DeviceCatalogStore.describes(catalog, deviceAt: URL(fileURLWithPath: "/Volumes/IPOD 1")))
+        XCTAssertTrue(DeviceCatalogStore.describes(catalog, deviceAt: URL(fileURLWithPath: "/Volumes/ipod")),
+                      "a FAT path compares without case")
+        XCTAssertTrue(DeviceCatalogStore.describes([], deviceAt: URL(fileURLWithPath: "/Volumes/IPOD 1")))
+
+        var moved = track(named: "Three").track
+        moved = moved.withFileURL(URL(fileURLWithPath: "/Volumes/IPOD 1/Music/Three.mp3"))
+        let mixed = catalog + [LoadedTrack(track: moved, metadata: ConversionMetadata(title: "Three"))]
+        XCTAssertFalse(DeviceCatalogStore.describes(mixed, deviceAt: URL(fileURLWithPath: "/Volumes/IPOD 1")))
+    }
+
     // MARK: - The name is not ours
 
     func testAVolumeNamedLikeATraversalStaysInsideTheDirectory() throws {

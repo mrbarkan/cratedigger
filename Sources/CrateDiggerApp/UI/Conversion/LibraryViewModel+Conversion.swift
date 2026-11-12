@@ -441,7 +441,7 @@ extension LibraryViewModel {
             )
             return
         }
-        guard let (reviewed, _, answers) = await reviewedDevicePlan(
+        guard let (reviewed, review, answers) = await reviewedDevicePlan(
             tracks: whole,
             profile: runProfile,
             mountedRoot: mountedRoot,
@@ -474,7 +474,7 @@ extension LibraryViewModel {
             // Nothing is missing: the send is done, so the cockpit stays on
             // the device without these tracks, as after a send, and its
             // answers stand.
-            rememberDeviceAnswers(answers, profileID: profile.id)
+            rememberDeviceAnswers(answers, of: review, profileID: profile.id)
             persistSelectionToDevice(selection, profileID: profile.id)
             removeFromPendingDeviceQueue(taken, profileID: profile.id)
             appAlert = .info(
@@ -510,7 +510,7 @@ extension LibraryViewModel {
         // progress ends before the renames, deletions, covers and patch do.
         isDeviceTransferRunning = true
         defer { isDeviceTransferRunning = false }
-        rememberDeviceAnswers(answers, profileID: profile.id)
+        rememberDeviceAnswers(answers, of: review, profileID: profile.id)
 
         // ffmpeg writes each file to a hidden partial beside its destination
         // (its -y would replace whatever is at the real name); Core decides

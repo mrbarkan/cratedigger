@@ -271,7 +271,7 @@ extension LibraryViewModel {
                 )
                 return
             }
-            guard let (plan, _, answers) = await reviewedDevicePlan(
+            guard let (plan, review, answers) = await reviewedDevicePlan(
                 tracks: sourceTracks,
                 profile: resolved,
                 mountedRoot: mountedRoot,
@@ -281,7 +281,7 @@ extension LibraryViewModel {
 
             guard !plan.copies.isEmpty || !plan.deletions.isEmpty || !plan.unplanned.isEmpty else {
                 // Nothing to write is a finished send: its answers stand.
-                rememberDeviceAnswers(answers, profileID: resolved.id)
+                rememberDeviceAnswers(answers, of: review, profileID: resolved.id)
                 appAlert = .info(
                     title: "Nothing to transfer",
                     message: "\(resolved.name) needs nothing from this selection: "
@@ -313,7 +313,7 @@ extension LibraryViewModel {
             // progress ends before the deletions, covers and patch do.
             isDeviceTransferRunning = true
             defer { isDeviceTransferRunning = false }
-            rememberDeviceAnswers(answers, profileID: resolved.id)
+            rememberDeviceAnswers(answers, of: review, profileID: resolved.id)
 
             let (report, outcome) = await runCopyTransferQueue(plan: plan, deviceName: resolved.name)
 
