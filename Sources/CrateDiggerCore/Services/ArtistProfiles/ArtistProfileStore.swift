@@ -121,17 +121,29 @@ public final class ArtistProfileStore: @unchecked Sendable {
     /// under the store's lock, so it must not call the store, and it cannot
     /// move the profile to another key.
     public func update(name: String, _ change: (inout ArtistProfile) -> Void) {
+        update(name: name, ifIdentityIs: nil, change)
+    }
+
+    /// `update`, only while the profile's identity (`.unknown` when there is
+    /// no profile) is `expected`, checked under the same lock as the write,
+    /// so a lookup's result cannot land on an identity the owner has changed
+    /// since. Returns whether the change ran; nil `expected` always runs it.
+    @discardableResult
+    public func update(name: String, ifIdentityIs expected: ArtistProfile.Identity?,
+                       _ change: (inout ArtistProfile) -> Void) -> Bool {
         let key = PodBoxArtName.folded(name)
-        guard !key.isEmpty else { return }
+        guard !key.isEmpty else { return false }
         lock.lock()
         defer { lock.unlock() }
         let before = byKey[key]
+        if let expected, (before?.identity ?? .unknown) != expected { return false }
         var profile = before ?? ArtistProfile(foldedKey: key, displayName: name)
         change(&profile)
         profile.foldedKey = key
-        guard profile != before else { return }
+        guard profile != before else { return true }
         byKey[key] = profile
         isDirty = true
+        return true
     }
 
     /// A lookup's result: replaces the fetched facts, the identity and
@@ -146,18 +158,36 @@ public final class ArtistProfileStore: @unchecked Sendable {
     @discardableResult
     public func applyFetched(name: String, facts: ArtistFacts?, identity: ArtistProfile.Identity,
                              at date: Date) -> Bool {
+        applyFetchedLocked(name: name, facts: facts, identity: identity, at: date, expected: nil) != nil
+    }
+
+    /// `applyFetched`, only while the profile's identity (`.unknown` when
+    /// there is no profile) is still `expected`, the one the lookup started
+    /// from: checked under the same lock as the write, so a refresh that
+    /// was running when the owner pasted an id or picked a candidate never
+    /// undoes it. Returns the identity written (an uncertain list loses the
+    /// owner's rejected ids, so it can differ from `identity`), for the
+    /// result's later writes to guard on; nil when nothing was applied.
+    public func applyFetched(name: String, facts: ArtistFacts?, identity: ArtistProfile.Identity, at date: Date,
+                             ifIdentityIs expected: ArtistProfile.Identity) -> ArtistProfile.Identity? {
+        applyFetchedLocked(name: name, facts: facts, identity: identity, at: date, expected: expected)
+    }
+
+    private func applyFetchedLocked(name: String, facts: ArtistFacts?, identity: ArtistProfile.Identity, at date: Date,
+                                    expected: ArtistProfile.Identity?) -> ArtistProfile.Identity? {
         let key = PodBoxArtName.folded(name)
-        guard !key.isEmpty else { return false }
+        guard !key.isEmpty else { return nil }
         lock.lock()
         defer { lock.unlock() }
+        if let expected, (byKey[key]?.identity ?? .unknown) != expected { return nil }
         var profile = byKey[key] ?? ArtistProfile(foldedKey: key, displayName: name)
         let rejectedIDs = Set(profile.rejectedMusicBrainzIDs)
         var identity = identity
         switch identity {
         case _ where profile.identity == .rejected && identity != .rejected:
-            return false
+            return nil
         case .confirmed(let id, _) where rejectedIDs.contains(id):
-            return false
+            return nil
         case .uncertain(let candidates):
             let kept = candidates.filter { !rejectedIDs.contains($0.musicBrainzID) }
             identity = kept.isEmpty ? .notFound : .uncertain(kept)
@@ -172,7 +202,7 @@ public final class ArtistProfileStore: @unchecked Sendable {
             byKey[key] = profile
             isDirty = true
         }
-        return true
+        return identity
     }
 
     /// Look Up Again: the identity goes back to `.unknown`, so the next
@@ -201,6 +231,21 @@ public final class ArtistProfileStore: @unchecked Sendable {
     @discardableResult
     public func addPhoto(name: String, data: Data, source: ArtistPhoto.Source, sourceID: String?,
                          credit: ArtistPictureCredit?) throws -> ArtistPhoto {
+        // A decision that always keeps the photo never refuses: nil cannot come back.
+        try addPhoto(name: name, data: data, source: source, sourceID: sourceID, credit: credit) { _, _, _ in true }!
+    }
+
+    /// `addPhoto`, decided under the store's lock, so a lookup's photo
+    /// lands only on the profile it was meant for. `decide` gets the profile
+    /// as it is (nil when there is none), the profile with the photo added
+    /// (or unchanged, when the same bytes were already one of its photos),
+    /// which it may change further (a swap), and the photo. It must not call
+    /// the store. When it returns false nothing is written, not even the
+    /// file, and nil comes back. Throws as `addPhoto` does.
+    public func addPhoto(name: String, data: Data, source: ArtistPhoto.Source, sourceID: String?,
+                         credit: ArtistPictureCredit?,
+                         if decide: (_ before: ArtistProfile?, _ after: inout ArtistProfile, _ photo: ArtistPhoto) -> Bool)
+        throws -> ArtistPhoto? {
         let key = PodBoxArtName.folded(name)
         guard !key.isEmpty else { throw ArtistProfileStoreError.unnamedArtist(name: name) }
         try checkWritable()
@@ -209,8 +254,27 @@ public final class ArtistProfileStore: @unchecked Sendable {
 
         lock.lock()
         defer { lock.unlock() }
-        var profile = byKey[key] ?? ArtistProfile(foldedKey: key, displayName: name)
-        if let existing = profile.photos.first(where: { $0.hash == hash }) { return existing }
+        let before = byKey[key]
+        var profile = before ?? ArtistProfile(foldedKey: key, displayName: name)
+        if let existing = profile.photos.first(where: { $0.hash == hash }) {
+            guard decide(before, &profile, existing) else { return nil }
+            profile.foldedKey = key
+            if profile != before {
+                byKey[key] = profile
+                isDirty = true
+            }
+            return existing
+        }
+
+        let photo = ArtistPhoto(hash: hash, source: source, sourceID: sourceID, credit: credit,
+                                pixelWidth: stored.pixelWidth, pixelHeight: stored.pixelHeight,
+                                added: Self.wholeSecond(Date()))
+        if !profile.photos.contains(where: { $0.hash == profile.defaultPhoto }) {
+            profile.defaultPhoto = hash
+        }
+        profile.photos.append(photo)
+        guard decide(before, &profile, photo) else { return nil }
+        profile.foldedKey = key
 
         let url = photosDirectory.appendingPathComponent(hash + "." + stored.fileExtension)
         if !fileManager.fileExists(atPath: url.path) {
@@ -221,13 +285,6 @@ public final class ArtistProfileStore: @unchecked Sendable {
             }
             try stored.data.write(to: url, options: .atomic)
         }
-        let photo = ArtistPhoto(hash: hash, source: source, sourceID: sourceID, credit: credit,
-                                pixelWidth: stored.pixelWidth, pixelHeight: stored.pixelHeight,
-                                added: Self.wholeSecond(Date()))
-        if !profile.photos.contains(where: { $0.hash == profile.defaultPhoto }) {
-            profile.defaultPhoto = hash
-        }
-        profile.photos.append(photo)
         byKey[key] = profile
         isDirty = true
         return photo

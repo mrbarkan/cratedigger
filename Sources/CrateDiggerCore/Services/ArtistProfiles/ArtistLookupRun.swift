@@ -382,50 +382,48 @@ public struct ArtistLookupRun: Sendable {
 extension ArtistLookupResult {
     /// Writes this result into `store` for `name`, checked against the
     /// profile as it is now, since the owner may have acted while the
-    /// lookup ran. A stale result (the identity is no longer `basedOn`:
-    /// the owner picked a candidate, pasted an id, or a Look Up Again
-    /// started over) writes nothing. Otherwise the identity and fetched
-    /// facts go through `applyFetched`; when it refuses (the owner's "None
-    /// of these", or a confirmed id the owner rejected), nothing else is
-    /// applied either. Each photo step reads the profile again as it lands:
-    /// the default photo is added only while there is still no default, no
-    /// "no photo" and no rejection of its source; the migrated original
-    /// replaces its photo in place only while that photo is still the
-    /// default, not picked by the owner; candidates are added when new and
-    /// not rejected, and not at all under "no photo". A photo added in the
-    /// moment the owner acted is taken out again. Owner facts, owner photos,
-    /// an owner-picked default, `noPhoto`, `notOnIPod` and the rejected ids
-    /// are never changed. Does not save. Store I/O and image work: call it
-    /// off the main actor, after `refuseWhileLibraryDisconnected`. Returns
+    /// lookup ran. Every write is a compare-and-apply under the store's
+    /// lock, so nothing the owner does in between can be overwritten.
+    ///
+    /// The identity and fetched facts land only while the identity is still
+    /// `basedOn` (a stale result, after the owner picked a candidate, pasted
+    /// an id or pressed Look Up Again, writes nothing), and only where
+    /// `applyFetched` allows (not over "None of these", not a confirmed id
+    /// the owner rejected). Each later write lands only while the identity
+    /// is still the one just written: the default photo while there is no
+    /// default, no "no photo" and no rejection of its source; the migrated
+    /// original, in the migrated photo's place, while that photo is still
+    /// the default and not the owner's pick; candidates when new, not
+    /// rejected, and not under "no photo". Owner facts, owner photos, an
+    /// owner-picked default, `noPhoto`, `notOnIPod` and the rejected ids are
+    /// never changed. Does not save. Store I/O and image work: call it off
+    /// the main actor, after `refuseWhileLibraryDisconnected`. Returns
     /// whether the identity and facts were applied.
     @discardableResult
     public func apply(to store: ArtistProfileStore, name: String, at date: Date) throws -> Bool {
-        guard (store.profile(forName: name)?.identity ?? .unknown) == basedOn,
-              store.applyFetched(name: name, facts: facts, identity: identity, at: date) else { return false }
+        guard let written = store.applyFetched(name: name, facts: facts, identity: identity, at: date,
+                                               ifIdentityIs: basedOn) else { return false }
 
-        if let photo = defaultPhoto, let profile = store.profile(forName: name), Self.mayAddDefault(to: profile, photo) {
-            if let added = try Self.add(photo.data, source: photo.source, sourceID: photo.sourceID,
-                                        credit: photo.credit, to: store, name: name, profile: profile) {
-                store.update(name: name) { profile in
-                    // The owner asked for no photo, or removed this one, as it landed: it goes again.
-                    guard !added.existed,
-                          profile.noPhoto || added.photo.rejectionKey.map(profile.rejectedPhotoSources.contains) == true
-                    else { return }
-                    profile.photos.removeAll { $0.hash == added.photo.hash }
-                    if profile.defaultPhoto == added.photo.hash { profile.defaultPhoto = nil }
+        if let photo = defaultPhoto {
+            let rejection = Self.key(photo.source, photo.sourceID)
+            try Self.keeping {
+                try store.addPhoto(name: name, data: photo.data, source: photo.source, sourceID: photo.sourceID,
+                                   credit: photo.credit) { before, _, _ in
+                    guard let before, before.identity == written, !before.noPhoto,
+                          !before.photos.contains(where: { $0.hash == before.defaultPhoto }) else { return false }
+                    return rejection.map(before.rejectedPhotoSources.contains) != true
                 }
             }
         }
 
-        if let replacement = replacementForMigrated, let profile = store.profile(forName: name),
-           Self.mayReplace(replacement.hash, in: profile),
-           let old = profile.photos.first(where: { $0.hash == replacement.hash }) {
-            try replace(old, with: replacement.data, in: store, name: name, profile: profile)
+        if let replacement = replacementForMigrated,
+           let old = store.profile(forName: name)?.photos.first(where: { $0.hash == replacement.hash }) {
+            try replace(old, with: replacement.data, in: store, name: name, identity: written)
         }
 
         let candidates = photoCandidates
         if !candidates.isEmpty {
-            store.update(name: name) { profile in
+            store.update(name: name, ifIdentityIs: written) { profile in
                 guard !profile.noPhoto else { return }
                 var known = Set(profile.rejectedPhotoSources).union(profile.photos.compactMap(\.rejectionKey))
                 known.formUnion(profile.photoCandidates.map(ArtistLookupRun.rejectionKey))
@@ -437,40 +435,31 @@ extension ArtistLookupResult {
         return true
     }
 
-    private static func mayAddDefault(to profile: ArtistProfile,
-                                      _ photo: (data: Data, source: ArtistPhoto.Source, sourceID: String?,
-                                                credit: ArtistPictureCredit?)) -> Bool {
-        !profile.noPhoto && !profile.photos.contains(where: { $0.hash == profile.defaultPhoto })
-            && key(photo.source, photo.sourceID).map(profile.rejectedPhotoSources.contains) != true
-    }
-
     private static func mayReplace(_ hash: String, in profile: ArtistProfile) -> Bool {
         !profile.noPhoto && !profile.defaultPickedByOwner && profile.defaultPhoto == hash
             && profile.photos.first(where: { $0.hash == hash })?.source == .migrated
     }
 
-    /// `addPhoto`, saying whether the bytes were already one of the
-    /// profile's photos; nil for bytes the store will not keep.
-    private static func add(_ data: Data, source: ArtistPhoto.Source, sourceID: String?, credit: ArtistPictureCredit?,
-                            to store: ArtistProfileStore, name: String,
-                            profile: ArtistProfile) throws -> (photo: ArtistPhoto, existed: Bool)? {
+    /// Runs a photo write; bytes the store will not keep are no photo.
+    private static func keeping(_ write: () throws -> ArtistPhoto?) throws {
         do {
-            let photo = try store.addPhoto(name: name, data: data, source: source, sourceID: sourceID, credit: credit)
-            return (photo, profile.photos.contains { $0.hash == photo.hash })
+            _ = try write()
         } catch ArtistProfileStoreError.unreadablePhoto, ArtistProfileStoreError.photoTooLarge {
-            return nil // not a picture the store keeps: the profile goes without
+            // Not a picture the store keeps: the profile goes without.
         }
     }
 
     /// The original takes the migrated photo's place and its role as
     /// default, under the source the migrated id names (`deezer:42` becomes
-    /// Deezer's `42`). When the profile already held the original's bytes,
-    /// that entry moves into the migrated photo's place; nothing else moves.
-    /// The old entry is dropped without being remembered as removed, so its
-    /// source stays welcome; its file goes at the next save. When the owner
-    /// acted as it landed, the profile is left as the owner left it.
+    /// Deezer's `42`), in one write. When the profile already held the
+    /// original's bytes, that entry moves into the migrated photo's place;
+    /// nothing else moves. The old entry is dropped without being remembered
+    /// as removed, so its source stays welcome; its file goes at the next
+    /// save. Nothing is written unless, as it lands, the identity is still
+    /// `identity` and the migrated photo is still the default, not the
+    /// owner's pick, under no "no photo".
     private func replace(_ old: ArtistPhoto, with data: Data, in store: ArtistProfileStore, name: String,
-                         profile: ArtistProfile) throws {
+                         identity: ArtistProfile.Identity) throws {
         var source = ArtistPhoto.Source.migrated
         var sourceID = old.sourceID
         if let parts = old.sourceID?.split(separator: ":", maxSplits: 1), parts.count == 2,
@@ -478,21 +467,19 @@ extension ArtistLookupResult {
             source = named
             sourceID = String(parts[1])
         }
-        guard let added = try Self.add(data, source: source, sourceID: sourceID, credit: old.credit, to: store,
-                                       name: name, profile: profile),
-              added.photo.hash != old.hash else { return }
-        let new = added.photo
-        store.update(name: name) { profile in
-            guard Self.mayReplace(old.hash, in: profile) else {
-                if !added.existed { profile.photos.removeAll { $0.hash == new.hash } }
-                return
+        try Self.keeping {
+            try store.addPhoto(name: name, data: data, source: source, sourceID: sourceID,
+                               credit: old.credit) { before, after, new in
+                guard let before, before.identity == identity, new.hash != old.hash,
+                      Self.mayReplace(old.hash, in: before) else { return false }
+                // The original's entry out first, then the migrated photo
+                // found again: removing an entry before it moves it down by one.
+                after.photos.removeAll { $0.hash == new.hash }
+                guard let at = after.photos.firstIndex(where: { $0.hash == old.hash }) else { return false }
+                after.photos[at] = new
+                after.defaultPhoto = new.hash
+                return true
             }
-            // The original's entry out first, then the migrated photo found
-            // again: removing an entry before it moves it down by one.
-            profile.photos.removeAll { $0.hash == new.hash }
-            guard let at = profile.photos.firstIndex(where: { $0.hash == old.hash }) else { return }
-            profile.photos[at] = new
-            profile.defaultPhoto = new.hash
         }
     }
 
