@@ -504,10 +504,13 @@ extension LibraryViewModel {
             rememberDeviceAnswers(answers, of: review, profileID: profile.id)
             persistSelectionToDevice(selection, profileID: profile.id)
             removeFromPendingDeviceQueue(taken, profileID: profile.id)
+            let closing = await finishSessionWithNothingSent(device: device, profile: profile)
             appAlert = .info(
                 title: "Nothing to transfer",
-                message: "\(profile.name) needs nothing from this selection: "
-                    + DeviceTransferSummary.statusLine(for: plan, outcome: .init()) + "."
+                message: Self.nothingWrittenMessage(
+                    "\(profile.name) needs nothing from this selection: "
+                        + DeviceTransferSummary.statusLine(for: plan, outcome: .init()) + ".",
+                    closing: closing)
             )
             return
         }

@@ -233,6 +233,25 @@ extension LibraryViewModel {
         return lines
     }
 
+    /// A send, convert or SYNC that found nothing to write is still a session
+    /// the owner started: the artist pictures it would have ended with go
+    /// now. Before this, re-sending albums already on the iPod stopped at
+    /// "Nothing to transfer" and an iPod with pictures switched on never got
+    /// one. Joins `isDeviceBusy` like any picture write, and says nothing
+    /// (no lines) when pictures are off or another device job is running.
+    @MainActor
+    func finishSessionWithNothingSent(device: MountedDevice, profile: ExternalDeviceProfile) async -> [String] {
+        guard profile.podBoxPreferences.artistPictures != .off, !isDeviceBusy else { return [] }
+        isWritingArtistPictures = true
+        defer { isWritingArtistPictures = false }
+        return await finishDeviceSession(device: device, profile: profile, written: [], deleted: [], changes: [])
+    }
+
+    /// The "nothing to write" alert, with what the closing session did.
+    static func nothingWrittenMessage(_ base: String, closing lines: [String]) -> String {
+        ([base] + lines).joined(separator: " ")
+    }
+
     /// `report` with the session's closing lines and an Eject key for `device`.
     @MainActor
     func deviceReport(_ report: ConversionReport, nextSteps: [String], device: MountedDevice) -> ConversionReport {

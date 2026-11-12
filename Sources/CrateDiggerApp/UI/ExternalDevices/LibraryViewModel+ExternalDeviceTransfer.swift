@@ -342,10 +342,13 @@ extension LibraryViewModel {
             guard !plan.copies.isEmpty || !plan.deletions.isEmpty || !plan.unplanned.isEmpty else {
                 // Nothing to write is a finished send: its answers stand.
                 rememberDeviceAnswers(answers, of: review, profileID: resolved.id)
+                let closing = await finishSessionWithNothingSent(device: device, profile: resolved)
                 appAlert = .info(
                     title: "Nothing to transfer",
-                    message: "\(resolved.name) needs nothing from this selection: "
-                        + DeviceTransferSummary.statusLine(for: plan, outcome: .init()) + "."
+                    message: Self.nothingWrittenMessage(
+                        "\(resolved.name) needs nothing from this selection: "
+                            + DeviceTransferSummary.statusLine(for: plan, outcome: .init()) + ".",
+                        closing: closing)
                 )
                 return
             }

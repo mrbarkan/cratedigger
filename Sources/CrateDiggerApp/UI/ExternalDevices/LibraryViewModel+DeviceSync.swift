@@ -327,11 +327,14 @@ extension LibraryViewModel {
                 // Nothing to write is a finished sync: its answers stand.
                 rememberDeviceAnswers(answers, of: review, profileID: profileID)
                 dropSettledEntries(settled, profileID: profileID)
+                let closing = await finishSessionWithNothingSent(device: device, profile: profile)
                 appAlert = .info(
                     title: "Nothing to sync",
-                    message: "\(profile.name) needs nothing from the queue: "
-                        + DeviceTransferSummary.statusLine(for: plan, outcome: .init())
-                        + ". Those tracks have left the queue."
+                    message: Self.nothingWrittenMessage(
+                        "\(profile.name) needs nothing from the queue: "
+                            + DeviceTransferSummary.statusLine(for: plan, outcome: .init())
+                            + ". Those tracks have left the queue.",
+                        closing: closing)
                 )
                 return
             }
