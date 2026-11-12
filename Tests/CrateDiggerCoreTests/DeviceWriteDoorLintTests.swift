@@ -36,6 +36,10 @@ final class DeviceWriteDoorLintTests: XCTestCase {
         ("Sources/CrateDiggerCore/Services/DeviceTransfer", excluding: []),
         ("Sources/CrateDiggerCore/Services/FolderCoverArtWriter.swift", excluding: []),
         ("Sources/CrateDiggerApp/UI/ExternalDevices", excluding: []),
+        // The convert-to-device path and the view model's own device wiring
+        // (catalog writes, the convert hand-off) live outside that folder.
+        ("Sources/CrateDiggerApp/UI/Conversion/LibraryViewModel+Conversion.swift", excluding: []),
+        ("Sources/CrateDiggerApp/UI/Carbon/Library/LibraryViewModel.swift", excluding: []),
     ]
 
     /// Rule 2: where the door's mutators may be called (and are defined).
@@ -85,6 +89,56 @@ final class DeviceWriteDoorLintTests: XCTestCase {
         // ordinary conversion's cover takes this default.
         ("Services/FolderCoverArtWriter.swift", "try data.write(to: destination, options: .atomic)",
          "an ordinary (non-device) conversion's cover, in the destination folder the user chose"),
+        // The convert hand-off: ffmpeg converts into a staging folder on the
+        // Mac, and the door copies the results over.
+        ("Conversion/LibraryViewModel+Conversion.swift",
+         "defer { try? FileManager.default.removeItem(at: stagingRoot) }",
+         "removes a device send's staging folder in the Mac's temporary folder"),
+        // The ordinary conversion's preflight. A device run never calls it
+        // (it uses deviceWritabilityProblem, which writes nothing).
+        ("Conversion/LibraryViewModel+Conversion.swift",
+         "try fm.createDirectory(at: destinationRoot, withIntermediateDirectories: true)",
+         "an ordinary conversion makes the output folder the user chose; device runs use deviceWritabilityProblem"),
+        ("Conversion/LibraryViewModel+Conversion.swift", "try Data().write(to: probe)",
+         "an ordinary conversion's writability probe in the output folder the user chose, never a device run's"),
+        ("Conversion/LibraryViewModel+Conversion.swift", "try? fm.removeItem(at: probe)",
+         "removes that probe again, in the same ordinary output folder"),
+        // The view model: CD rips, artwork, the library index.
+        ("Library/LibraryViewModel.swift",
+         "if let workingFolder { try? FileManager.default.removeItem(at: workingFolder) }",
+         "removes Secure Mode's verified WAVs from the Mac's temporary folder"),
+        ("Library/LibraryViewModel.swift",
+         "try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)",
+         "makes Secure Mode's working folder in the Mac's temporary folder"),
+        ("Library/LibraryViewModel.swift", "return (try? data.write(to: destination, options: .atomic)) != nil",
+         "fetches chosen artwork into ArtworkStaging, which is in the Mac's Caches folder"),
+        ("Library/LibraryViewModel.swift",
+         "if (try? small.data.write(to: tmp, options: .atomic)) != nil { embedURL = tmp; tempURL = tmp }",
+         "art embed's temporary cover beside the album: on a browsed device too, a known gap the owner keeps outside this wave"),
+        ("Library/LibraryViewModel.swift", "if let tempURL { try? FileManager.default.removeItem(at: tempURL) }",
+         "removes that temporary embed cover again (same known gap)"),
+        ("Library/LibraryViewModel.swift", "try? fm.createDirectory(at: dir, withIntermediateDirectories: true)",
+         "DEBUG: makes the CRATEDIGGER_CRATES_DIR library index folder on the Mac"),
+        ("Library/LibraryViewModel.swift", "try? fm.createDirectory(at: folder, withIntermediateDirectories: true)",
+         "makes the library index folder the user chose"),
+        ("Library/LibraryViewModel.swift", "try? fm.createDirectory(at: cratesDir, withIntermediateDirectories: true)",
+         "makes the fallback library index folder in Application Support"),
+        ("Library/LibraryViewModel.swift", "try FileManager.default.trashItem(at: fileURL, resultingItemURL: nil)",
+         "Delete Crate moves a .cdcrate in the library index folder to the Trash"),
+        ("Library/LibraryViewModel.swift", "try data.write(to: url, options: .atomic)",
+         "saves a crate's .cdcrate in the library index folder"),
+        ("Library/LibraryViewModel.swift", "try? membership.write(to: crateURL, options: .atomic)",
+         "the legacy .cdlib migration writes its .cdcrate in the library index folder"),
+        ("Library/LibraryViewModel.swift", "try? fm.removeItem(at: backup)",
+         "the legacy migration replaces an older .cdlib.bak in the library index folder"),
+        ("Library/LibraryViewModel.swift", "try? fm.moveItem(at: url, to: backup)",
+         "the legacy migration renames a .cdlib to .cdlib.bak in the library index folder"),
+        ("Library/LibraryViewModel.swift",
+         "try fm.moveItem(at: file, to: newURL.appendingPathComponent(file.lastPathComponent))",
+         "moves the library index files to the folder the user chose"),
+        ("Library/LibraryViewModel.swift",
+         "try? fm.moveItem(at: newURL.appendingPathComponent(file.lastPathComponent), to: file)",
+         "rolls that index move back after a failure"),
     ]
 
     // MARK: Rules
