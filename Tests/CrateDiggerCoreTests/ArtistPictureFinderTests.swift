@@ -42,9 +42,24 @@ final class ArtistPictureFinderTests: XCTestCase {
     }
 
     private func finder(perArtist: Duration = .seconds(8), perRun: Duration = .seconds(120),
-                        sources: [ArtistPictureSource]? = nil) -> ArtistPictureFinder {
-        ArtistPictureFinder(sources: sources ?? [DeezerArtistSource(fetcher: fetcher, spacing: .zero, backoff: [])],
-                            fetcher: fetcher, perArtist: perArtist, perRun: perRun)
+                        sources: [ArtistPictureSource]? = nil, quotaBackoff: [Duration] = []) -> ArtistPictureFinder {
+        ArtistPictureFinder(sources: sources ?? [DeezerArtistSource(fetcher: fetcher, spacing: .zero)],
+                            fetcher: fetcher, perArtist: perArtist, perRun: perRun, quotaBackoff: quotaBackoff)
+    }
+
+    /// A second source with fixed candidates.
+    private struct FixedSource: ArtistPictureSource {
+        let id: ArtistPictureSourceID
+        let offered: [ArtistPictureCandidate]
+        func candidates(for name: String) async throws -> [ArtistPictureCandidate] { offered }
+        func albumTitles(for candidate: ArtistPictureCandidate) async throws -> [String] { candidate.albumTitles }
+    }
+
+    private func outcome(_ finding: ArtistPictureFinding?) -> ArtistPictureFinding.Outcome? { finding?.outcome }
+
+    private func isFailed(_ finding: ArtistPictureFinding?) -> Bool {
+        if case .failed? = finding?.outcome { return true }
+        return false
     }
 
     private func found(_ finding: ArtistPictureFinding?, file: StaticString = #filePath, line: UInt = #line)
@@ -128,14 +143,52 @@ final class ArtistPictureFinderTests: XCTestCase {
         XCTAssertEqual(result.map(\.outcome), [.notFound])
     }
 
-    func testUnusableImageFallsToNextCandidate() async throws {
-        deezer("Nirvana", [(415, "Nirvana", ["Nevermind"], FakePictureFetcher.jpeg(width: 120, height: 120)),
-                           (416, "Nirvana", ["Nevermind"], Data("<html>gone</html>".utf8)),
-                           (417, "Nirvana", ["Nevermind"], nil), // its picture answers 404
+    /// Review I4: two candidates both confirmed by an album are two acts
+    /// that look right; neither is taken without the owner.
+    func testTwoConfidentCandidatesAreHeld() async throws {
+        deezer("Nirvana", [(415, "Nirvana", ["Nevermind"], FakePictureFetcher.jpeg()),
                            (418, "Nirvana", ["Nevermind"], FakePictureFetcher.jpeg())])
-
         let result = await finder().find([("Nirvana", ["Nevermind"], nil)])
-        XCTAssertEqual(try XCTUnwrap(found(result.first)).candidate?.sourceID, "418")
+        guard case .uncertain(let held)? = outcome(result.first) else { return XCTFail("expected held") }
+        XCTAssertEqual(held.map(\.sourceID), ["415", "418"])
+        XCTAssertFalse(fetcher.requests.contains { $0.host == Self.imageHost })
+    }
+
+    /// Review I4: two acts named Boston. Only the one sharing a telling album
+    /// is taken; a shared self-titled album proves nothing.
+    func testTwoActsNamedBoston() async throws {
+        deezer("Boston", [(1, "Boston", ["Boston", "Don't Look Back", "Third Stage"], FakePictureFetcher.jpeg()),
+                          (2, "Boston", ["Boston", "Live", "Greatest Hits"], FakePictureFetcher.jpeg())])
+        let sure = await finder().find([("Boston", ["Boston", "Don't Look Back (Remastered)"], nil)])
+        XCTAssertEqual(try XCTUnwrap(found(sure.first)).candidate?.sourceID, "1")
+
+        let onlyGeneric = await finder().find([("Boston", ["Boston", "Live", "Greatest Hits"], nil)])
+        guard case .uncertain(let held)? = outcome(onlyGeneric.first) else { return XCTFail("expected held") }
+        XCTAssertEqual(Set(held.map(\.sourceID)), ["1", "2"])
+    }
+
+    /// Review I4: an artist whose only album is self-titled is held, not accepted.
+    func testSelfTitledOnlyIsHeld() async throws {
+        deezer("Weezer", [(9, "Weezer", ["Weezer", "Pinkerton"], FakePictureFetcher.jpeg())])
+        let result = await finder().find([("Weezer", ["Weezer (Blue Album)"], nil)])
+        guard case .uncertain(let held)? = outcome(result.first) else { return XCTFail("expected held") }
+        XCTAssertEqual(held.map(\.sourceID), ["9"])
+    }
+
+    /// The one confident candidate's picture is unusable: held, and the next source is asked.
+    func testUnusableImageFallsToTheNextSource() async throws {
+        deezer("Nirvana", [(415, "Nirvana", ["Nevermind"], FakePictureFetcher.jpeg(width: 120, height: 120))])
+        let commonsURL = URL(string: "https://upload.wikimedia.org/nirvana.jpg")!
+        fetcher.answer(commonsURL, data: FakePictureFetcher.jpeg())
+        let second = FixedSource(id: .commons, offered: [ArtistPictureCandidate(
+            name: "Nirvana", source: .commons, sourceID: "mb-1", imageURL: commonsURL, albumTitles: ["Nevermind"])])
+        let result = await finder(sources: [DeezerArtistSource(fetcher: fetcher, spacing: .zero), second])
+            .find([("Nirvana", ["Nevermind"], nil)])
+        let hit = try XCTUnwrap(found(result.first))
+        XCTAssertEqual(hit.source, .commons)
+
+        let alone = await finder().find([("Nirvana", ["Nevermind"], nil)])
+        guard case .uncertain? = outcome(alone.first) else { return XCTFail("an unusable picture is held, not found") }
     }
 
     func testQuotaStopsTheRunAndKeepsEarlierResults() async throws {
@@ -152,28 +205,71 @@ final class ArtistPictureFinderTests: XCTestCase {
         XCTAssertFalse(fetcher.requests.contains(DeezerArtistParser.searchURL(name: "Air")))
     }
 
-    func testQuotaIsRetriedAfterABackOff() async throws {
+    /// Review I6: the quota surfaces at once and the run pauses, outside the
+    /// artist's own budget (the pauses here are longer than that budget).
+    func testQuotaBacksOffForTheRunOutsideTheArtistTimer() async throws {
         let quota = Data("{\"error\":{\"code\":4,\"message\":\"Quota limit exceeded\"}}".utf8)
         deezer("Daft Punk", [(27, "Daft Punk", ["Discovery"], FakePictureFetcher.jpeg())])
         let search = DeezerArtistParser.searchURL(name: "Daft Punk")
         let ok = try await fetcher.data(from: search)
         fetcher.answer(search, with: [.success(quota), .success(quota), .success(ok)])
-        let source = DeezerArtistSource(fetcher: fetcher, spacing: .zero, backoff: [.milliseconds(1), .milliseconds(1)])
 
-        let result = await finder(sources: [source]).find([("Daft Punk", ["Discovery"], nil)])
+        let started = ContinuousClock.now
+        let result = await finder(perArtist: .milliseconds(150), quotaBackoff: [.milliseconds(200), .milliseconds(200)])
+            .find([("Daft Punk", ["Discovery"], nil)])
         XCTAssertNotNil(found(result.first))
-        XCTAssertEqual(fetcher.requests.filter { $0 == search }.count, 4, "the probe above, then two quotas and a hit")
+        XCTAssertGreaterThanOrEqual(ContinuousClock.now - started, .milliseconds(400))
+        let times = zip(fetcher.requests, fetcher.requestTimes).filter { $0.0 == search }.map(\.1).suffix(3)
+        XCTAssertEqual(times.count, 3, "two quotas, then the answer")
+        for (earlier, later) in zip(times, times.dropFirst()) {
+            XCTAssertGreaterThanOrEqual(later - earlier, .milliseconds(200), "no request during a pause")
+        }
     }
 
-    func testOneArtistsErrorDoesNotStopTheRun() async throws {
-        fetcher.answer(DeezerArtistParser.searchURL(name: "Broken"), with: [.failure(ArtistPictureSourceError.http(500))])
+    func testQuotaPastTheLastPauseStopsTheRun() async {
+        let quota = "{\"error\":{\"code\":4}}"
+        fetcher.answer(DeezerArtistParser.searchURL(name: "Justice"), json: quota)
+        deezer("Air", [(3, "Air", ["Moon Safari"], FakePictureFetcher.jpeg())])
+        let result = await finder(quotaBackoff: [.milliseconds(5), .milliseconds(5)])
+            .find([("Justice", ["Cross"], nil), ("Air", ["Moon Safari"], nil)])
+        XCTAssertEqual(result.map(\.name), [])
+        XCTAssertEqual(fetcher.requests, Array(repeating: DeezerArtistParser.searchURL(name: "Justice"), count: 3))
+    }
+
+    /// Review I3: offline, nothing is learned, so nothing may be stored, and
+    /// the run stops instead of failing every remaining name.
+    func testOfflineRunStopsAndStoresNothing() async {
+        fetcher.answer(DeezerArtistParser.searchURL(name: "Daft Punk"),
+                       with: [.failure(URLError(.notConnectedToInternet))])
+        deezer("Air", [(3, "Air", ["Moon Safari"], FakePictureFetcher.jpeg())])
+        let result = await finder().find([("Daft Punk", ["Discovery"], nil), ("Air", ["Moon Safari"], nil)])
+        XCTAssertEqual(result.map(\.name), ["Daft Punk"])
+        XCTAssertTrue(isFailed(result.first))
+        XCTAssertFalse(result.contains { $0.outcome.isStorable }, "an offline run stores nothing")
+        XCTAssertFalse(fetcher.requests.contains(DeezerArtistParser.searchURL(name: "Air")))
+    }
+
+    func testServerErrorStopsTheRun() async {
+        fetcher.answer(DeezerArtistParser.searchURL(name: "Broken"), with: [.failure(ArtistPictureSourceError.http(503))])
+        deezer("Air", [(3, "Air", ["Moon Safari"], FakePictureFetcher.jpeg())])
+        let result = await finder().find([("Broken", [], nil), ("Air", ["Moon Safari"], nil)])
+        XCTAssertEqual(result.map(\.name), ["Broken"])
+        XCTAssertTrue(isFailed(result.first))
+    }
+
+    /// Review I3: a broken answer or a picture that would not download is a
+    /// failure for that name, never "not found", and the run goes on.
+    func testOneArtistsFailureIsNotNotFound() async throws {
         fetcher.answer(DeezerArtistParser.searchURL(name: "Garbled"), json: "<html>oops</html>")
+        deezer("Gone", [(5, "Gone", ["Away"], nil)]) // its picture answers 404
         deezer("Air", [(3, "Air", ["Moon Safari"], FakePictureFetcher.jpeg())])
 
-        let result = await finder().find([("Broken", [], nil), ("Garbled", [], nil), ("Air", ["Moon Safari"], nil)])
+        let result = await finder().find([("Garbled", [], nil), ("Gone", ["Away"], nil), ("Air", ["Moon Safari"], nil)])
 
-        XCTAssertEqual(result.map(\.name), ["Broken", "Garbled", "Air"])
-        XCTAssertEqual(result.prefix(2).map(\.outcome), [.notFound, .notFound])
+        XCTAssertEqual(result.map(\.name), ["Garbled", "Gone", "Air"])
+        XCTAssertTrue(isFailed(result[0]))
+        XCTAssertTrue(isFailed(result[1]))
+        XCTAssertFalse(result[0].outcome.isStorable)
         XCTAssertNotNil(found(result.last))
     }
 
@@ -220,6 +316,48 @@ final class ArtistPictureFinderTests: XCTestCase {
         }
     }
 
+    /// Review M6: only the sources' own hosts, over HTTPS, by name.
+    func testFetcherOnlyFetchesTheSourcesOwnHosts() async {
+        for allowed in ["https://api.deezer.com/search/artist", "https://e-cdns-images.dzcdn.net/images/artist/x.jpg",
+                        "https://musicbrainz.org/ws/2/artist", "https://upload.wikimedia.org/a.jpg"] {
+            XCTAssertTrue(URLSessionPictureFetcher.isAllowed(URL(string: allowed)), allowed)
+        }
+        for refused in ["http://api.deezer.com/search/artist", "https://evil.example/x.jpg", "https://192.168.1.10/x.jpg",
+                        "https://127.0.0.1/x.jpg", "https://dzcdn.net.evil.example/x.jpg", "https://api.deezer.com:8443/x",
+                        "https://user@api.deezer.com/x", "file:///etc/passwd"] {
+            XCTAssertFalse(URLSessionPictureFetcher.isAllowed(URL(string: refused)), refused)
+        }
+        do {
+            _ = try await URLSessionPictureFetcher().data(from: URL(string: "https://evil.example/x.jpg")!)
+            XCTFail("an unknown host is refused before any request")
+        } catch {
+            XCTAssertEqual(error as? ArtistPictureSourceError, .refusedURL)
+        }
+    }
+
+    /// Review M5 and M6, through a stub protocol (no network): a body is cut
+    /// off past 32 MB as it arrives, and a redirect off the allowed hosts is not followed.
+    func testFetcherStopsAtTheCapAndRefusesForeignRedirects() async {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [StubProtocol.self]
+        let fetcher = URLSessionPictureFetcher(session: URLSession(configuration: configuration))
+        do {
+            _ = try await fetcher.data(from: URL(string: "https://api.deezer.com/huge")!)
+            XCTFail("a body past the cap is refused")
+        } catch {
+            XCTAssertEqual(error as? ArtistPictureSourceError, .malformed)
+        }
+        XCTAssertLessThan(StubProtocol.servedBytes, 40 * 1024 * 1024, "reading stopped near the cap")
+        do {
+            _ = try await fetcher.data(from: URL(string: "https://e-cdns-images.dzcdn.net/redirect")!)
+            XCTFail("a redirect to another host is not followed")
+        } catch {
+            XCTAssertEqual(error as? ArtistPictureSourceError, .http(302))
+        }
+        let small = try? await fetcher.data(from: URL(string: "https://api.deezer.com/small")!)
+        XCTAssertEqual(small, Data("ok".utf8))
+    }
+
     func testFetcherSendsAGenericClientNameAndNoCookies() {
         let session = URLSessionPictureFetcher.makeSession()
         let configuration = session.configuration
@@ -232,4 +370,44 @@ final class ArtistPictureFinderTests: XCTestCase {
         XCTAssertTrue(agent?.hasPrefix("CrateDigger") == true)
         XCTAssertEqual(request.allHTTPHeaderFields?.keys.sorted(), ["Accept", "User-Agent"])
     }
+}
+
+/// Serves fixed answers for the fetcher tests, so nothing reaches the network.
+final class StubProtocol: URLProtocol {
+    nonisolated(unsafe) static var servedBytes = 0
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        guard let url = request.url, let client else { return }
+        switch url.path {
+        case "/huge":
+            client.urlProtocol(self, didReceive: HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil,
+                                                                 headerFields: [:])!,
+                               cacheStoragePolicy: .notAllowed)
+            let chunk = Data(count: 1024 * 1024)
+            Self.servedBytes = 0
+            for _ in 0..<36 {
+                Self.servedBytes += chunk.count
+                client.urlProtocol(self, didLoad: chunk)
+            }
+            client.urlProtocolDidFinishLoading(self)
+        case "/redirect":
+            let response = HTTPURLResponse(url: url, statusCode: 302, httpVersion: nil,
+                                           headerFields: ["Location": "https://evil.example/x.jpg"])!
+            client.urlProtocol(self, wasRedirectedTo: URLRequest(url: URL(string: "https://evil.example/x.jpg")!),
+                               redirectResponse: response)
+            client.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client.urlProtocolDidFinishLoading(self)
+        default:
+            client.urlProtocol(self, didReceive: HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil,
+                                                                 headerFields: [:])!,
+                               cacheStoragePolicy: .notAllowed)
+            client.urlProtocol(self, didLoad: Data("ok".utf8))
+            client.urlProtocolDidFinishLoading(self)
+        }
+    }
+
+    override func stopLoading() {}
 }

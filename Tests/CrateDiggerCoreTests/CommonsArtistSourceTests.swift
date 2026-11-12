@@ -33,8 +33,14 @@ final class CommonsArtistSourceTests: XCTestCase {
     }
 
     private func source(spacing: Duration = .zero) -> CommonsArtistSource {
-        CommonsArtistSource(fetcher: fetcher, musicBrainzSpacing: spacing)
+        CommonsArtistSource(fetcher: fetcher, musicBrainzGate: MusicBrainzGate(interval: spacing))
     }
+
+    static let imageInfoJSON = """
+    {"batchcomplete":"","query":{"pages":{"123":{"pageid":123,"ns":6,"title":"File:Björk 2015.jpg","imageinfo":[{"extmetadata":{\
+    "LicenseShortName":{"value":"CC BY-SA 4.0","source":"commons-desc-page"},\
+    "Artist":{"value":"<a href=\\"//commons.wikimedia.org/wiki/User:Someone\\" title=\\"User:Someone\\">Someone &amp; Co</a>","source":"commons-desc-page"}}}]}}}}
+    """
 
     private func answerBjork(wikidata: String? = "Q42", image: String? = "Björk 2015.jpg") {
         fetcher.answer(CommonsArtistSource.searchURL(name: "Björk"),
@@ -44,6 +50,9 @@ final class CommonsArtistSourceTests: XCTestCase {
                                              releaseGroups: ["Debut", "Post", "Homogenic"]))
         if let wikidata {
             fetcher.answer(CommonsArtistSource.entityURL(id: wikidata), json: Self.entityJSON(id: wikidata, image: image))
+        }
+        if let image {
+            fetcher.answer(CommonsArtistSource.imageInfoURL(fileName: image), json: Self.imageInfoJSON)
         }
     }
 
@@ -115,7 +124,8 @@ final class CommonsArtistSourceTests: XCTestCase {
         XCTAssertEqual(candidates, [ArtistPictureCandidate(
             name: "Björk", source: .commons, sourceID: Self.bjorkID,
             imageURL: CommonsArtistParser.imageURL(fileName: "Björk 2015.jpg"),
-            albumTitles: ["Debut", "Post", "Homogenic"])])
+            albumTitles: ["Debut", "Post", "Homogenic"],
+            credit: ArtistPictureCredit(fileName: "Björk 2015.jpg", licence: "CC BY-SA 4.0", author: "Someone & Co"))])
         let titles = try await source().albumTitles(for: candidates[0])
         XCTAssertEqual(titles, ["Debut", "Post", "Homogenic"])
         XCTAssertEqual(source().id, .commons)
@@ -127,6 +137,38 @@ final class CommonsArtistSourceTests: XCTestCase {
         let times = zip(fetcher.requests, fetcher.requestTimes).filter { $0.0.host == "musicbrainz.org" }.map(\.1)
         XCTAssertEqual(times.count, 2)
         XCTAssertGreaterThanOrEqual(times[1] - times[0], .milliseconds(50))
+    }
+
+    /// Review M11: the file name stays even when Commons gives no licence.
+    func testCreditFallsBackToTheFileName() async throws {
+        answerBjork()
+        fetcher.answer(CommonsArtistSource.imageInfoURL(fileName: "Björk 2015.jpg"),
+                       with: [.failure(ArtistPictureSourceError.http(404))])
+        let candidates = try await source().candidates(for: "Björk")
+        XCTAssertEqual(candidates.first?.credit, ArtistPictureCredit(fileName: "Björk 2015.jpg"))
+        XCTAssertEqual(CommonsArtistSource.imageInfoURL(fileName: "Björk 2015.jpg").absoluteString,
+                       "https://commons.wikimedia.org/w/api.php?action=query&format=json&prop=imageinfo&iiprop=extmetadata&titles=File%3ABj%C3%B6rk_2015.jpg")
+    }
+
+    /// Review I5: two sources (and anything else) waiting at one gate never
+    /// send MusicBrainz two requests closer than its interval.
+    func testTwoSourcesShareOneMusicBrainzGate() async throws {
+        answerBjork()
+        let gate = MusicBrainzGate(interval: .milliseconds(60))
+        let first = CommonsArtistSource(fetcher: fetcher, musicBrainzGate: gate)
+        let second = CommonsArtistSource(fetcher: fetcher, musicBrainzGate: gate)
+        async let a = first.candidates(for: "Björk")
+        async let b = second.candidates(for: "Björk")
+        _ = try await (a, b)
+        let times = zip(fetcher.requests, fetcher.requestTimes).filter { $0.0.host == "musicbrainz.org" }.map(\.1).sorted()
+        XCTAssertEqual(times.count, 4)
+        // Slots are 60 ms apart; a request is recorded when its task wakes, so allow for scheduling.
+        for (earlier, later) in zip(times, times.dropFirst()) {
+            XCTAssertGreaterThanOrEqual(later - earlier, .milliseconds(30))
+        }
+        if let first = times.first, let last = times.last {
+            XCTAssertGreaterThanOrEqual(last - first, .milliseconds(170))
+        }
     }
 
     func test503IsRetriedOnce() async throws {

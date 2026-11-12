@@ -61,6 +61,26 @@ public enum CommonsArtistParser {
         return URL(string: "https://commons.wikimedia.org/wiki/Special:FilePath/\(name)?width=\(width)")!
     }
 
+    /// The credit Commons states for a file (`prop=imageinfo&iiprop=extmetadata`):
+    /// its short licence name and its author, HTML tags removed.
+    public static func credit(fromImageInfo data: Data, fileName: String) throws -> ArtistPictureCredit {
+        guard let pages = (try object(data)["query"] as? [String: Any])?["pages"] as? [String: Any] else {
+            throw ArtistPictureSourceError.malformed
+        }
+        let page = pages.values.first as? [String: Any]
+        let info = (page?["imageinfo"] as? [Any])?.first as? [String: Any]
+        let meta = info?["extmetadata"] as? [String: Any]
+        func field(_ key: String) -> String? {
+            guard let raw = (meta?[key] as? [String: Any])?["value"] as? String else { return nil }
+            let plain = raw.replacingOccurrences(of: "<[^>]*>", with: "", options: .regularExpression)
+                .replacingOccurrences(of: "&amp;", with: "&").replacingOccurrences(of: "&quot;", with: "\"")
+                .replacingOccurrences(of: "&#39;", with: "'").replacingOccurrences(of: "&nbsp;", with: " ")
+                .split(whereSeparator: \.isWhitespace).joined(separator: " ")
+            return plain.isEmpty ? nil : plain
+        }
+        return ArtistPictureCredit(fileName: fileName, licence: field("LicenseShortName"), author: field("Artist"))
+    }
+
     // MARK: Private
 
     static func isEntityID(_ text: String) -> Bool {
@@ -86,10 +106,12 @@ public enum CommonsArtistParser {
 /// album titles of the D2 cross-check), then the item's image (P18). An
 /// artist with no Wikidata relation or no image gives no candidate.
 ///
-/// MusicBrainz asks for at most one request a second: its calls here are at
-/// least `musicBrainzSpacing` apart, the slot claimed before sleeping, and a
-/// 503 (its rate limiter) is tried once more after the spacing. Used only by
-/// the background job and the Artist Pictures sheet, never inside a transfer.
+/// MusicBrainz asks for at most one request a second per client: its calls
+/// here wait at `MusicBrainzGate.shared`, the gate every MusicBrainz caller
+/// in the app shares, and a 503 (its rate limiter) is tried once more after
+/// its next slot. Each candidate carries its Commons file name, licence and
+/// author. Used only by the background job and the Artist Pictures sheet,
+/// never inside a transfer.
 public struct CommonsArtistSource: ArtistPictureSource {
     public var id: ArtistPictureSourceID { .commons }
 
@@ -97,11 +119,11 @@ public struct CommonsArtistSource: ArtistPictureSource {
     static let lookedUp = 3
 
     private let fetcher: ArtistPictureFetching
-    private let musicBrainz: RequestSpacer
+    private let musicBrainz: MusicBrainzGate
 
-    public init(fetcher: ArtistPictureFetching, musicBrainzSpacing: Duration = .seconds(1)) {
+    public init(fetcher: ArtistPictureFetching, musicBrainzGate: MusicBrainzGate = .shared) {
         self.fetcher = fetcher
-        musicBrainz = RequestSpacer(spacing: musicBrainzSpacing)
+        musicBrainz = musicBrainzGate
     }
 
     public func candidates(for name: String) async throws -> [ArtistPictureCandidate] {
@@ -121,7 +143,8 @@ public struct CommonsArtistSource: ArtistPictureSource {
             candidates.append(ArtistPictureCandidate(
                 name: artist.name, source: .commons, sourceID: artist.id,
                 imageURL: CommonsArtistParser.imageURL(fileName: file),
-                albumTitles: try CommonsArtistParser.releaseGroupTitles(fromArtist: details)))
+                albumTitles: try CommonsArtistParser.releaseGroupTitles(fromArtist: details),
+                credit: try await credit(for: file)))
         }
         return candidates
     }
@@ -143,6 +166,27 @@ public struct CommonsArtistSource: ArtistPictureSource {
     /// The `+` stays as it is: MusicBrainz separates `inc` values with it.
     static func artistURL(id: String) -> URL {
         URL(string: "https://musicbrainz.org/ws/2/artist/\(ArtistPictureURLText.encoded(id))?inc=url-rels+release-groups&fmt=json")!
+    }
+
+    /// `https://commons.wikimedia.org/w/api.php?action=query&format=json&prop=imageinfo&iiprop=extmetadata&titles=File:<name>`.
+    static func imageInfoURL(fileName: String) -> URL {
+        let title = ArtistPictureURLText.encoded("File:" + fileName.replacingOccurrences(of: " ", with: "_"))
+        return URL(string: "https://commons.wikimedia.org/w/api.php?action=query&format=json&prop=imageinfo&iiprop=extmetadata&titles=\(title)")!
+    }
+
+    /// The file's credit. An answer that is missing or not what Commons
+    /// documents keeps the file name alone; a failure that stops the run
+    /// (offline, a 5xx) is thrown.
+    private func credit(for fileName: String) async throws -> ArtistPictureCredit {
+        let bare = ArtistPictureCredit(fileName: fileName)
+        let data: Data
+        do {
+            data = try await fetcher.data(from: Self.imageInfoURL(fileName: fileName))
+        } catch {
+            if let source = ArtistPictureSourceError.reading(error), !source.stopsTheRun { return bare }
+            throw error
+        }
+        return (try? CommonsArtistParser.credit(fromImageInfo: data, fileName: fileName)) ?? bare
     }
 
     static func entityURL(id: String) -> URL {

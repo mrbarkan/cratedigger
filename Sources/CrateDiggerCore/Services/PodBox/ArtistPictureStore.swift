@@ -9,6 +9,20 @@ public enum ArtistPictureSourceID: String, Codable, Sendable {
 /// What CrateDigger knows about one artist's picture, whatever device it
 /// ends up on. Keyed by `PodBoxArtName.folded`, so every spelling the player
 /// treats as one person (`The Beatles`, `Beatles, The`) shares one record.
+/// Where a picture came from, for showing the owner its credit: the source's
+/// own file name, its licence and its author, as the source states them.
+public struct ArtistPictureCredit: Codable, Hashable, Sendable {
+    public var fileName: String
+    public var licence: String?
+    public var author: String?
+
+    public init(fileName: String, licence: String? = nil, author: String? = nil) {
+        self.fileName = fileName
+        self.licence = licence
+        self.author = author
+    }
+}
+
 public struct ArtistPictureRecord: Codable, Hashable, Sendable {
     public enum Outcome: String, Codable, Sendable { case found, notFound, uncertain, rejected }
 
@@ -22,9 +36,12 @@ public struct ArtistPictureRecord: Codable, Hashable, Sendable {
     public var preparedHash: String?                   // SHA-256 of the exact bytes to write
     public var pickedByUser: Bool
     public var checkedAt: Date
+    /// The picture's credit (a Commons file name, licence and author); absent in older files.
+    public var credit: ArtistPictureCredit?
 
     public init(foldedKey: String, displayName: String, outcome: Outcome, source: ArtistPictureSourceID? = nil,
-                sourceID: String? = nil, preparedHash: String? = nil, pickedByUser: Bool = false, checkedAt: Date) {
+                sourceID: String? = nil, preparedHash: String? = nil, pickedByUser: Bool = false, checkedAt: Date,
+                credit: ArtistPictureCredit? = nil) {
         self.foldedKey = foldedKey
         self.displayName = displayName
         self.outcome = outcome
@@ -33,6 +50,7 @@ public struct ArtistPictureRecord: Codable, Hashable, Sendable {
         self.preparedHash = preparedHash
         self.pickedByUser = pickedByUser
         self.checkedAt = checkedAt
+        self.credit = credit
     }
 
     /// A "not found" older than 30 days is worth asking again. Nothing else

@@ -45,6 +45,18 @@ final class DeezerArtistParserTests: XCTestCase {
         XCTAssertEqual(try DeezerArtistParser.artists(Data(json.utf8)).map(\.name), ["Real Face"])
     }
 
+    /// Review M6: a picture is taken only from Deezer's own CDN over HTTPS.
+    func testPicturesOnlyFromDeezersCDN() throws {
+        let json = """
+        {"data":[\(Self.artistJSON(id: 1, name: "Elsewhere", xl: "https://evil.example/images/artist/abc/1000x1000.jpg")),\
+        \(Self.artistJSON(id: 2, name: "Plain", xl: "http://e-cdns-images.dzcdn.net/images/artist/abc/1000x1000.jpg")),\
+        \(Self.artistJSON(id: 3, name: "Address", xl: "https://10.0.0.1/images/artist/abc/1000x1000.jpg")),\
+        \(Self.artistJSON(id: 4, name: "Lookalike", xl: "https://dzcdn.net.evil.example/images/artist/abc/x.jpg")),\
+        \(Self.artistJSON(id: 5, name: "Real", xl: Self.daftPunkXL))],"total":5}
+        """
+        XCTAssertEqual(try DeezerArtistParser.artists(Data(json.utf8)).map(\.name), ["Real"])
+    }
+
     func testEmptyResult() throws {
         XCTAssertEqual(try DeezerArtistParser.artists(Data("{\"data\":[],\"total\":0}".utf8)), [])
         XCTAssertEqual(try DeezerArtistParser.albumTitles(Data("{\"data\":[],\"total\":0}".utf8)), [])

@@ -39,6 +39,23 @@ final class ArtistPictureMatcherTests: XCTestCase {
         XCTAssertEqual(verdict(candidate("Radiohead", albums: ["!!!"]), "Radiohead", ["???"]), .uncertain)
     }
 
+    /// Review I4: a self-titled album or a generic title says nothing about which act it is.
+    func testSelfTitledAndGenericTitlesNeverConfirm() {
+        XCTAssertEqual(verdict(candidate("Boston", albums: ["Boston"]), "Boston", ["Boston"]), .uncertain)
+        XCTAssertEqual(verdict(candidate("The Beatles", albums: ["Beatles"]), "Beatles", ["The Beatles"]), .uncertain)
+        for generic in ["Greatest Hits", "The Best Of", "Best of Boston", "Live", "Live (1985)", "Gold", "Anthology",
+                        "The Collection", "Singles", "Remixes", "MTV Unplugged", "Essentials", "The Essential Boston",
+                        "Boston's Greatest Hits Vol. 2"] {
+            XCTAssertEqual(verdict(candidate("Boston", albums: [generic]), "Boston", [generic]), .uncertain, generic)
+        }
+        XCTAssertEqual(verdict(candidate("Boston", albums: ["Live (2003)"]), "Boston", ["Live (1985)"]), .uncertain)
+        // Titles that only start like a generic word still count.
+        XCTAssertEqual(verdict(candidate("Kacey Musgraves", albums: ["Golden Hour"]), "Kacey Musgraves", ["Golden Hour"]),
+                       .confident)
+        XCTAssertEqual(verdict(candidate("Hole", albums: ["Live Through This"]), "Hole", ["Live Through This"]),
+                       .confident)
+    }
+
     func testTwoNirvanasOnlyTheOneWithOurAlbumIsConfident() {
         let grunge = candidate("Nirvana", albums: ["Bleach", "Nevermind", "In Utero"], id: "415")
         let sixties = candidate("Nirvana", albums: ["The Story of Simon Simopath", "All of Us"], id: "9001")

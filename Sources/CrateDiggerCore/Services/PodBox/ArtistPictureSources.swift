@@ -12,10 +12,35 @@ public enum ArtistPictureSourceError: Error, Equatable, Sendable {
     /// The service said it has had enough for now (Deezer's error code 4).
     case quota
     /// The answer was not what the service documents: HTML, other JSON, an
-    /// error object, a URL that is not HTTPS, a body far too large.
+    /// error object, a body far too large.
     case malformed
     /// A non-2xx status.
     case http(Int)
+    /// The request never got an answer: offline, timed out, refused, cut off.
+    case transport(String)
+    /// A URL CrateDigger does not fetch from: not HTTPS, or not one of the
+    /// sources' own hosts.
+    case refusedURL
+
+    /// Errors that say the service, or the network, is not answering now:
+    /// asking again for the next artist would only fail the same way, so
+    /// the run stops. Nothing learned from them may be stored as "not found".
+    public var stopsTheRun: Bool {
+        switch self {
+        case .transport: return true
+        case .http(let status): return status == 0 || status == 429 || status >= 500
+        case .quota, .malformed, .refusedURL: return false
+        }
+    }
+
+    /// Any error, read as a source error: a `URLError` is a transport failure.
+    static func reading(_ error: Error) -> ArtistPictureSourceError? {
+        if let error = error as? ArtistPictureSourceError { return error }
+        if let error = error as? URLError {
+            return error.code == .cancelled ? nil : .transport(error.localizedDescription)
+        }
+        return nil
+    }
 }
 
 /// Plain HTTPS GETs that carry nothing about the person asking: an
@@ -24,8 +49,17 @@ public enum ArtistPictureSourceError: Error, Equatable, Sendable {
 /// MusicBrainz and Wikimedia ask for a descriptive one, which is why it
 /// names the app and its public site; it never holds a user name, an
 /// e-mail, a path or a device name.
+///
+/// Only the sources' own hosts are fetched from, over HTTPS, redirects
+/// included, and a body is read as it arrives and abandoned past 32 MB.
 public struct URLSessionPictureFetcher: ArtistPictureFetching {
     public static let timeout: TimeInterval = 15
+    /// The services the sources use, and the hosts their pictures come from.
+    static let allowedHosts: Set<String> = [
+        "api.deezer.com", "musicbrainz.org", "www.wikidata.org", "commons.wikimedia.org", "upload.wikimedia.org",
+    ]
+    /// Deezer's picture CDN (`e-cdns-images.dzcdn.net`, `cdn-images.dzcdn.net`).
+    static let allowedHostSuffixes = [".dzcdn.net"]
 
     private let session: URLSession
 
@@ -55,20 +89,46 @@ public struct URLSessionPictureFetcher: ArtistPictureFetching {
         return request
     }
 
+    /// HTTPS to one of the allowed hosts, by name (never an address), on the default port.
+    static func isAllowed(_ url: URL?) -> Bool {
+        guard let url, url.scheme?.lowercased() == "https", url.port == nil || url.port == 443,
+              url.user == nil, let host = url.host?.lowercased() else { return false }
+        return allowedHosts.contains(host) || allowedHostSuffixes.contains { host.hasSuffix($0) }
+    }
+
     public func data(from url: URL) async throws -> Data {
-        guard url.scheme?.lowercased() == "https" else { throw ArtistPictureSourceError.malformed }
-        let (data, response) = try await session.data(for: Self.request(for: url))
-        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        guard (200..<300).contains(status) else { throw ArtistPictureSourceError.http(status) }
-        guard data.count <= ArtistPictureImage.maximumSourceBytes else { throw ArtistPictureSourceError.malformed }
-        return data
+        guard Self.isAllowed(url) else { throw ArtistPictureSourceError.refusedURL }
+        let limit = ArtistPictureImage.maximumSourceBytes
+        do {
+            let (bytes, response) = try await session.bytes(for: Self.request(for: url), delegate: RedirectGuard())
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            guard (200..<300).contains(status) else { throw ArtistPictureSourceError.http(status) }
+            guard response.expectedContentLength <= Int64(limit) else { throw ArtistPictureSourceError.malformed }
+            var data = Data()
+            if response.expectedContentLength > 0 { data.reserveCapacity(Int(response.expectedContentLength)) }
+            for try await byte in bytes {
+                data.append(byte)
+                if data.count > limit { throw ArtistPictureSourceError.malformed }
+            }
+            return data
+        } catch {
+            throw ArtistPictureSourceError.reading(error) ?? error
+        }
+    }
+
+    /// Follows a redirect only to another allowed host over HTTPS.
+    private final class RedirectGuard: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+        func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+                        newRequest request: URLRequest) async -> URLRequest? {
+            URLSessionPictureFetcher.isAllowed(request.url) ? request : nil
+        }
     }
 }
 
-/// Keeps one service's requests at least `spacing` apart. The slot is
-/// claimed before sleeping, as `RemoteArtworkService`'s MusicBrainz gate
-/// does: an actor is re-entrant across the sleep, so a gate that only
-/// recorded the time afterwards would let every waiting caller fire at once.
+/// Keeps one service's requests at least `spacing` apart (Deezer; for
+/// MusicBrainz see `MusicBrainzGate`). The slot is claimed before sleeping:
+/// an actor is re-entrant across the sleep, so a gate that only recorded the
+/// time afterwards would let every waiting caller fire at once.
 actor RequestSpacer {
     private let spacing: Duration
     private var next: ContinuousClock.Instant?
@@ -104,14 +164,18 @@ public struct ArtistPictureCandidate: Hashable, Sendable {
     public let name: String, source: ArtistPictureSourceID, sourceID: String
     public let imageURL: URL
     public var albumTitles: [String]
+    /// Who made the picture and under what licence, when the source says
+    /// (Commons): kept with the stored record so the owner can be shown it.
+    public var credit: ArtistPictureCredit?
 
     public init(name: String, source: ArtistPictureSourceID, sourceID: String, imageURL: URL,
-                albumTitles: [String] = []) {
+                albumTitles: [String] = [], credit: ArtistPictureCredit? = nil) {
         self.name = name
         self.source = source
         self.sourceID = sourceID
         self.imageURL = imageURL
         self.albumTitles = albumTitles
+        self.credit = credit
     }
 }
 
@@ -131,12 +195,16 @@ public enum DeezerArtistParser {
     /// The `picture_xl` Deezer gives an artist with no picture: its hash is empty.
     static let placeholderMarker = "/images/artist//"
     static let quotaCode = 4
+    /// Deezer's own picture CDN; a picture anywhere else is not taken.
+    static let pictureHostSuffix = ".dzcdn.net"
 
     public static func artists(_ data: Data) throws -> [ArtistPictureCandidate] {
         try rows(data).compactMap { row in
             guard let name = text(row["name"]), let id = identifier(row["id"]),
                   let picture = text(row["picture_xl"]), !picture.contains(placeholderMarker),
-                  let url = URL(string: picture), url.scheme == "https", url.host != nil
+                  let url = URL(string: picture), url.scheme == "https",
+                  url.host?.lowercased().hasSuffix(pictureHostSuffix) == true,
+                  URLSessionPictureFetcher.isAllowed(url)
             else { return nil }
             return ArtistPictureCandidate(name: name, source: .deezer, sourceID: id, imageURL: url)
         }
@@ -188,21 +256,18 @@ public enum DeezerArtistParser {
     private static func encoded(_ text: String) -> String { ArtistPictureURLText.encoded(text) }
 }
 
-/// Deezer as a source: serial requests at least `spacing` apart, and on a
-/// quota answer a pause of each `backoff` delay in turn before trying
-/// again; after the last it gives up with `.quota`, which stops the run.
+/// Deezer as a source: serial requests at least `spacing` apart. A quota
+/// answer is thrown at once: the finder backs off for the whole run, outside
+/// any one artist's time budget, rather than this source retrying inside it.
 public struct DeezerArtistSource: ArtistPictureSource {
     public var id: ArtistPictureSourceID { .deezer }
 
     private let fetcher: ArtistPictureFetching
     private let spacer: RequestSpacer
-    private let backoff: [Duration]
 
-    public init(fetcher: ArtistPictureFetching, spacing: Duration = .milliseconds(200),
-                backoff: [Duration] = [.seconds(1), .seconds(2), .seconds(4)]) {
+    public init(fetcher: ArtistPictureFetching, spacing: Duration = .milliseconds(200)) {
         self.fetcher = fetcher
         spacer = RequestSpacer(spacing: spacing)
-        self.backoff = backoff
     }
 
     public func candidates(for name: String) async throws -> [ArtistPictureCandidate] {
@@ -214,16 +279,8 @@ public struct DeezerArtistSource: ArtistPictureSource {
     }
 
     private func read<T>(_ url: URL, _ parse: (Data) throws -> T) async throws -> T {
-        var pauses = backoff[...]
-        while true {
-            try await spacer.wait()
-            do {
-                return try parse(try await fetcher.data(from: url))
-            } catch ArtistPictureSourceError.quota {
-                guard let pause = pauses.popFirst() else { throw ArtistPictureSourceError.quota }
-                try await Task.sleep(for: pause)
-            }
-        }
+        try await spacer.wait()
+        return try parse(try await fetcher.data(from: url))
     }
 }
 

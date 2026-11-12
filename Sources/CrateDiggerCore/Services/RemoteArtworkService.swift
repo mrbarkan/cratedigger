@@ -87,9 +87,8 @@ public actor RemoteArtworkService {
 
     /// MusicBrainz asks for one request a second and answers 503 past it.
     /// Every MusicBrainz call this service makes (search, cover-art browse,
-    /// the Discogs relation) waits for its slot here.
-    private let musicBrainzInterval: TimeInterval
-    private var nextMusicBrainzSlot = Date.distantPast
+    /// the Discogs relation) waits at the app-wide gate.
+    private let musicBrainzGate: MusicBrainzGate
 
     /// Header probes go to archive.org through the Cover Art Archive's
     /// redirects. A full release used to fire one per image all at once, and a
@@ -104,8 +103,8 @@ public actor RemoteArtworkService {
     private let retryDelay: TimeInterval
 
     public init(session: URLSession? = nil, discogsToken: String? = nil,
-                musicBrainzInterval: TimeInterval = 1.05, retryDelay: TimeInterval = 1.5) {
-        self.musicBrainzInterval = musicBrainzInterval
+                musicBrainzGate: MusicBrainzGate = .shared, retryDelay: TimeInterval = 1.5) {
+        self.musicBrainzGate = musicBrainzGate
         self.retryDelay = retryDelay
         self.discogsToken = discogsToken.flatMap { $0.isEmpty ? nil : $0 }
         if let session {
@@ -701,18 +700,9 @@ public extension RemoteArtworkService {
 
     // MARK: MusicBrainz plumbing
 
-    /// Waits for this request's turn. The slot is claimed *before* sleeping:
-    /// an actor is re-entrant across the sleep, so a throttle that only
-    /// records the time afterwards lets every caller that arrived during the
-    /// wait read the same old timestamp and fire together.
+    /// Waits for this request's turn at the app-wide MusicBrainz gate.
     private func waitForMusicBrainzSlot() async throws {
-        let now = Date()
-        let slot = max(now, nextMusicBrainzSlot)
-        nextMusicBrainzSlot = slot.addingTimeInterval(musicBrainzInterval)
-        let wait = slot.timeIntervalSince(now)
-        if wait > 0 {
-            try await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
-        }
+        try await musicBrainzGate.wait()
     }
 
     /// One MusicBrainz GET: throttled, identified, and honest about failure.
@@ -743,7 +733,7 @@ public extension RemoteArtworkService {
             lastStatus = status
             guard status == 503, attempt < 2 else { break }
             let pause = retryDelay * Double(attempt + 1)
-            nextMusicBrainzSlot = max(nextMusicBrainzSlot, Date().addingTimeInterval(pause))
+            await musicBrainzGate.holdOff(.milliseconds(Int(pause * 1_000)))
         }
         throw FetchError.serviceUnavailable(service: "MusicBrainz", status: lastStatus)
     }
