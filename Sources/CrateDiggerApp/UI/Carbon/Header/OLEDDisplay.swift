@@ -2564,7 +2564,7 @@ private struct DevicesPane: View {
         } ticker: {
             DSPTicker(prefix: "MUSIC DIR", path: musicDirPath(profile, device), leadingInset: 62)
         } cells: {
-            OLEDCells(cells(for: profile))
+            OLEDCells(cells(for: profile, device: device))
         }
     }
 
@@ -2659,7 +2659,7 @@ private struct DevicesPane: View {
 
     // MARK: Cells
 
-    private func cells(for profile: ExternalDeviceProfile) -> [OLEDCellData] {
+    private func cells(for profile: ExternalDeviceProfile, device: MountedDevice) -> [OLEDCellData] {
         let s = profile.transferSettings
         let transfer = s.mode == .copyOriginals ? ("COPY", "Originals") : ("CONVERT", "During Copy")
         let fmt = s.outputFormat.fileExtension.uppercased()
@@ -2671,8 +2671,11 @@ private struct DevicesPane: View {
             maxDimension: s.artworkMaxDimension,
             folderArt: profile.usesFolderCoverArt
         )
+        // A PodBox iPod says so, with its model; anything else reads its profile kind.
+        let kind = model.firmware(for: device).flatMap { $0.flavour == .podBox ? ("PODBOX", $0.modelName) : nil }
+            ?? kindCell(profile.kind)
         return [
-            OLEDCellData(key: "Kind", value: kindCell(profile.kind).0, sub: kindCell(profile.kind).1, valueColor: theme.cyan),
+            OLEDCellData(key: "Kind", value: kind.0, sub: kind.1, valueColor: theme.cyan),
             OLEDCellData(key: "Transfer", value: transfer.0, sub: transfer.1),
             OLEDCellData(key: "Format", value: fmt, sub: fmtSub),
             OLEDCellData(key: "Artwork", value: artwork.0, sub: artwork.1),

@@ -3,6 +3,11 @@ import CrateDiggerCore
 import SwiftUI
 
 struct DevicesPreferencesView: View {
+    /// The running app's view of mounted devices. Read, never observed: the
+    /// model publishes far more than this pane needs, so the pane refreshes
+    /// on `deviceFirmwareChangedNotification` instead.
+    let model: LibraryViewModel?
+
     @State private var profiles: [ExternalDeviceProfile] = []
     @State private var selectedID: UUID?
     @State private var draft = EditableExternalDeviceProfile()
@@ -11,6 +16,8 @@ struct DevicesPreferencesView: View {
     /// How many albums the review sheet was told to leave alone on the
     /// selected device. Read when a profile is selected; the button clears it.
     @State private var leftAloneCount = 0
+    /// What the selected profile's mounted device runs, when it has `.rockbox`.
+    @State private var firmware: DeviceFirmware?
 
     var body: some View {
         // spacing 0 and no .top alignment: the divider has to run the full
@@ -24,6 +31,9 @@ struct DevicesPreferencesView: View {
         }
         .frame(minWidth: 720, minHeight: 500)
         .onAppear(perform: reload)
+        .onReceive(NotificationCenter.default.publisher(for: LibraryViewModel.deviceFirmwareChangedNotification)) { _ in
+            refreshMountedState()
+        }
         .alert("Remove device profile?", isPresented: $deleteConfirmationShown) {
             Button("Remove", role: .destructive) { deleteSelectedProfile() }
             Button("Cancel", role: .cancel) {}
@@ -168,6 +178,8 @@ struct DevicesPreferencesView: View {
                     Text("Leave blank for direct-file players that expect tracks at the device root.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+
+                    firmwareRows
                 }
 
                 Section("Transfer") {
@@ -212,6 +224,25 @@ struct DevicesPreferencesView: View {
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 12)
+            }
+        }
+    }
+
+    /// Read-only, and only while the device is mounted and has `.rockbox`:
+    /// what the mount-time probe found.
+    @ViewBuilder
+    private var firmwareRows: some View {
+        if let firmware {
+            LabeledContent("Firmware") {
+                Text(firmware.summaryLine)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .textSelection(.enabled)
+            }
+            if let notice = firmware.layoutNotice {
+                Text(notice + ".")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -348,10 +379,21 @@ struct DevicesPreferencesView: View {
         guard let id, let profile = profiles.first(where: { $0.id == id }) else {
             draft = EditableExternalDeviceProfile()
             leftAloneCount = 0
+            firmware = nil
             return
         }
         draft = EditableExternalDeviceProfile(profile: profile)
         leftAloneCount = DeviceLeftAloneStore().load(profileID: id).count
+        refreshMountedState()
+    }
+
+    /// The selected profile's mounted device, as the app sees it now.
+    private func refreshMountedState() {
+        guard let model, let selectedID, let device = model.mountedDevice(forProfileID: selectedID) else {
+            firmware = nil
+            return
+        }
+        firmware = model.firmware(for: device)
     }
 
     private func chooseMountedRoot() {

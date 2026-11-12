@@ -452,7 +452,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
 
     @objc private func showPreferences(_ sender: Any?) {
         if preferencesWindowController == nil {
-            preferencesWindowController = PreferencesWindowController()
+            preferencesWindowController = PreferencesWindowController(model: mainWindowController?.model)
         }
         preferencesWindowController?.showWindow(self)
         preferencesWindowController?.window?.makeKeyAndOrderFront(self)

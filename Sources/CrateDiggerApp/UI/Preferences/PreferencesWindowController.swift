@@ -3,7 +3,9 @@ import CrateDiggerCore
 import SwiftUI
 
 final class PreferencesWindowController: NSWindowController {
-    convenience init() {
+    /// `model` feeds Preferences ▸ Devices what only the running app knows:
+    /// which devices are mounted and what their firmware probe found.
+    convenience init(model: LibraryViewModel?) {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 780, height: 580),
             styleMask: [.titled, .closable, .miniaturizable],
@@ -16,7 +18,7 @@ final class PreferencesWindowController: NSWindowController {
         window.center()
         window.setFrameAutosaveName("CrateDiggerPreferences")
 
-        let host = NSHostingController(rootView: PreferencesView())
+        let host = NSHostingController(rootView: PreferencesView(model: model))
         window.contentViewController = host
 
         self.init(window: window)
@@ -27,6 +29,8 @@ final class PreferencesWindowController: NSWindowController {
 /// (Interface), how it plays (Playback), external accounts (Integrations),
 /// transfer targets (Devices), and the sharp tools (Advanced).
 private struct PreferencesView: View {
+    let model: LibraryViewModel?
+
     var body: some View {
         TabView {
             GeneralPreferencesView()
@@ -37,7 +41,7 @@ private struct PreferencesView: View {
                 .tabItem { Label("Playback", systemImage: "speaker.wave.2") }
             IntegrationsPreferencesView()
                 .tabItem { Label("Integrations", systemImage: "point.3.connected.trianglepath.dotted") }
-            DevicesPreferencesView()
+            DevicesPreferencesView(model: model)
                 .tabItem { Label("Devices", systemImage: "externaldrive") }
             AdvancedPreferencesView()
                 .tabItem { Label("Advanced", systemImage: "wrench.and.screwdriver") }

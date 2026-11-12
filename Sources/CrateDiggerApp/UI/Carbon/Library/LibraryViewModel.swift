@@ -1117,6 +1117,14 @@ final class LibraryViewModel: ObservableObject {
         }
     }
     @Published var mountedDevices: [MountedDevice] = []
+    /// What the read-only probe found on each mounted device's `.rockbox`
+    /// folder (`LibraryViewModel+PodBox`). Probed at mount, never saved, and
+    /// dropped when the device goes. A device with no `.rockbox` has no entry.
+    @Published var deviceFirmware: [MountedDevice.ID: DeviceFirmware] = [:] {
+        didSet {
+            NotificationCenter.default.post(name: Self.deviceFirmwareChangedNotification, object: nil)
+        }
+    }
     @Published var deadTracks: [LoadedTrack] = []
     /// Names of `/Volumes/<name>` drives the library references that aren't
     /// currently mounted. Drives the "offline" row badge. Recomputed only on
@@ -2356,7 +2364,11 @@ final class LibraryViewModel: ObservableObject {
     func refreshDevices() {
         let detected = detectSavedDevices()
         backfillVolumeUUIDs(for: detected)
-        if detected != mountedDevices { mountedDevices = detected }
+        if detected != mountedDevices {
+            mountedDevices = detected
+            // The one thing a mount does to a device: read it.
+            refreshDeviceFirmware()
+        }
         // Drop cached scans for devices that are no longer mounted.
         let mountedPaths = Set(detected.map { $0.volumeURL.path })
         deviceIndexCache = deviceIndexCache.filter { mountedPaths.contains($0.key) }
