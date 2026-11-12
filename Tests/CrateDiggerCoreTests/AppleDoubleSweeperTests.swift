@@ -34,6 +34,19 @@ final class AppleDoubleSweeperTests: XCTestCase {
                        "never into the player's trees")
     }
 
+    func testCleanupFolderIsTheAlbumsOwnNeverAWiderAncestor() {
+        func u(_ p: String) -> URL { URL(fileURLWithPath: p, isDirectory: true) }
+        XCTAssertEqual(AppleDoubleSweeper.cleanupFolder(forTrackFolders: [u("/V/Music/A/B"), u("/V/Music/A/B")])?.path,
+                       "/V/Music/A/B")
+        XCTAssertEqual(AppleDoubleSweeper.cleanupFolder(forTrackFolders: [u("/V/Music/A/B/CD1"), u("/V/Music/A/B/CD2")])?.path,
+                       "/V/Music/A/B", "disc folders directly in the album folder")
+        XCTAssertEqual(AppleDoubleSweeper.cleanupFolder(forTrackFolders: [u("/V/Music/A/B"), u("/V/Music/A/B/CD2")])?.path,
+                       "/V/Music/A/B")
+        XCTAssertNil(AppleDoubleSweeper.cleanupFolder(forTrackFolders: [u("/V/Music/A/B"), u("/V/Music/C/D")]),
+                     "scattered: never widened to Music")
+        XCTAssertNil(AppleDoubleSweeper.cleanupFolder(forTrackFolders: []))
+    }
+
     // MARK: Helpers
 
     private func plan(scope: [String]? = nil) -> AppleDoubleSweepPlan {

@@ -211,7 +211,7 @@ enum BrowserContextMenu {
            model.capabilities(for: device).contains(.appleDoubleSweep),
            let folder = model.deviceFolder(of: album) {
             Button("Clean Up Mac Files in This Folder…") { model.cleanUpMacFiles(device: device, inFolder: folder) }
-                .disabled(model.isCleaningDeviceFiles || model.isConversionRunning)
+                .disabled(model.isDeviceBusy)
         }
     }
 

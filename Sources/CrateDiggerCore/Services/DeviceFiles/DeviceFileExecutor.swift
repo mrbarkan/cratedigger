@@ -139,11 +139,14 @@ public struct DeviceFileExecutor {
             return ops.map { _ in .refusedWrongVolume }
         }
 
-        // Temp paths a crashed earlier session on this volume may have left;
-        // only these are ever cleaned up as stale.
-        let earlierIntents = Set(journal.records
-            .filter { $0.kind == .tempIntent && DeviceWriteJournal.sameVolume($0.volumeUUID, sessionVolumeUUID) }
-            .map(\.relativeKey))
+        // Only temps an earlier (crashed) session on this volume announced
+        // are ever cleaned up as stale: asked of the journal's index per
+        // path, never by filtering the whole journal.
+        let journal = self.journal
+        let volume = sessionVolumeUUID
+        let earlierIntents = { (key: String) in
+            journal.hasTempIntent(forKey: key, volumeUUID: volume, otherThan: sessionID)
+        }
         recordTempIntents(for: ops, sessionID: sessionID)
 
         var outcomes: [DeviceFileOutcome] = []
@@ -175,7 +178,7 @@ public struct DeviceFileExecutor {
 
     private func write(_ path: String, role: DeviceFileRole, contents: DeviceFileContents, replacesForeign: Bool,
                        userReplace: Bool = false, subject: String?,
-                       sessionID: UUID, earlierIntents: Set<String>) -> DeviceFileOutcome {
+                       sessionID: UUID, earlierIntents: (String) -> Bool) -> DeviceFileOutcome {
         // (2) The file and the temp it lands through, as given and as resolved.
         let tempPath = path + DeviceFileIO.tempSuffix
         let target: URL
@@ -222,7 +225,7 @@ public struct DeviceFileExecutor {
         case .other:
             return .refusedForeign
         case .regular:
-            guard earlierIntents.contains(DeviceWritePolicy.key(forRelativePath: tempPath)),
+            guard earlierIntents(DeviceWritePolicy.key(forRelativePath: tempPath)),
                   (try? policy.checkDelete(tempPath, reason: .staleTemp)) != nil
             else { return .refusedForeign }
             staleTemp = true
@@ -291,7 +294,7 @@ public struct DeviceFileExecutor {
     // MARK: - Delete
 
     private func delete(_ path: String, reason: DeviceDeleteReason, sessionID: UUID,
-                        earlierIntents: Set<String>) -> DeviceFileOutcome {
+                        earlierIntents: (String) -> Bool) -> DeviceFileOutcome {
         let target: URL
         switch resolve(path, check: { try policy.checkDelete($0, reason: reason) }) {
         case .success(let url): target = url
@@ -310,7 +313,7 @@ public struct DeviceFileExecutor {
         case .userReplace:
             break // the user chose this; no proof and no backup (duplicates spec)
         case .staleTemp:
-            guard earlierIntents.contains(DeviceWritePolicy.key(forRelativePath: path)) else { return .refusedForeign }
+            guard earlierIntents(DeviceWritePolicy.key(forRelativePath: path)) else { return .refusedForeign }
         case .ownedByCrateDigger:
             do {
                 guard try isOwned(path, at: target, size: size) else { return .refusedForeign }

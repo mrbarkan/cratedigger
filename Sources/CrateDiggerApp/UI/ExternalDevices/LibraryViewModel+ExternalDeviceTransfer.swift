@@ -22,9 +22,9 @@ extension LibraryViewModel {
     func transferToDevice(profileID: UUID, tracks rawTracks: [LoadedTrack]) {
         guard let host = presentationHostViewController else { return }
 
-        guard !isConversionRunning else {
-            AppLog.conversion.warning("Transfer requested while conversion/transfer is already running")
-            return
+        guard !isDeviceBusy else {
+            AppLog.conversion.warning("Transfer requested while a device is busy")
+            return showDeviceBusyAlert("Send to the device")
         }
 
         guard let profile = prefs.savedExternalDeviceProfiles.first(where: { $0.id == profileID }) else {
@@ -205,23 +205,27 @@ extension LibraryViewModel {
         return (profile, device)
     }
 
-    var canFixDeviceAlbumArt: Bool { browsedMountedDevice != nil && !isFixingDeviceArt }
+    var canFixDeviceAlbumArt: Bool { browsedMountedDevice != nil && !isDeviceBusy }
 
     /// Write a `cover.jpg` beside every album already on the device, taken from
     /// the tracks sitting there. Repairs everything transferred before folder
     /// art existed, without touching the audio files.
     @MainActor
     func fixDeviceAlbumArt() {
-        guard let (profile, device) = browsedMountedDevice, !isFixingDeviceArt else { return }
+        guard let (profile, device) = browsedMountedDevice else { return }
+        guard !isDeviceBusy else { return showDeviceBusyAlert("Fix the art") }
         let root = ExternalDeviceTransferPlanner().destinationRoot(for: profile, mountedAt: device.volumeURL)
-        // Every cover goes through the write door, like a transfer's.
-        guard let door = makeTransferDoor(for: profile, device: device, musicFolder: root) else { return }
         isFixingDeviceArt = true
         oledView = .devices
         showOLEDNotice("FIXING ART")
         let deviceName = profile.name
 
         Task { @MainActor in
+            // Every cover goes through the write door, like a transfer's.
+            guard let door = await makeTransferDoor(for: profile, device: device, musicFolder: root) else {
+                isFixingDeviceArt = false
+                return
+            }
             // All of it off the main actor: the walk is a deep read of a USB
             // volume and each cover is a decode + JPEG encode. Its own
             // ArtworkService — nothing is shared with the app's, so nothing
@@ -321,10 +325,10 @@ extension LibraryViewModel {
                 appAlert = problem
                 return
             }
-            guard let door = makeTransferDoor(for: resolved, device: device, musicFolder: destinationRoot) else { return }
+            guard let door = await makeTransferDoor(for: resolved, device: device, musicFolder: destinationRoot) else { return }
             // The scan and the sheet can take a while; another job may have
             // started on the conversion channel meanwhile.
-            guard !isConversionRunning else {
+            guard !isDeviceBusy else {
                 appAlert = .error(
                     title: "Another transfer is running",
                     message: "Nothing was sent to \(resolved.name). Send again once it finishes."
@@ -337,7 +341,7 @@ extension LibraryViewModel {
             defer { isDeviceTransferRunning = false }
             rememberDeviceAnswers(answers, of: review, profileID: resolved.id)
 
-            let (report, outcome) = await runCopyTransferQueue(plan: plan, deviceName: resolved.name, door: door)
+            let (report, outcome, endJob) = await runCopyTransferQueue(plan: plan, deviceName: resolved.name, door: door)
 
             // A cover only where something actually landed, and never over
             // one a Gaps fill found there.
@@ -364,6 +368,8 @@ extension LibraryViewModel {
                 written: outcome.written.map(\.destinationURL), deleted: outcome.deleted,
                 changes: outcome.changes(coversWritten: covers)
             )
+            // The busy job spans the covers, the patch and the cleanup too.
+            endJob()
             presentSummary(report: deviceReport(report, nextSteps: nextSteps, device: device), presentingFrom: host)
         }
     }
@@ -448,7 +454,7 @@ extension LibraryViewModel {
         plan: DeviceTransferFilePlan,
         deviceName: String,
         door: DeviceTransferDoor
-    ) async -> (report: ConversionReport, outcome: DeviceTransferExecutor.Outcome) {
+    ) async -> (report: ConversionReport, outcome: DeviceTransferExecutor.Outcome, endJob: () -> Void) {
         let copies = plan.copies
         let total = copies.count
         oledView = .conversion
@@ -475,7 +481,9 @@ extension LibraryViewModel {
                                 jobsTotal: total,
                                 currentFilename: completed < total
                                     ? copies[completed].source.track.fileURL.lastPathComponent : nil,
-                                isRunning: completed < total
+                                // Still running after the last copy: the
+                                // deletions, covers, patch and cleanup follow.
+                                isRunning: true
                             )
                         }
                     }
@@ -485,16 +493,16 @@ extension LibraryViewModel {
             self.conversionTask = task
         }
 
-        conversionProgress = ConversionProgressSnapshot(
-            jobsCompleted: total,
-            jobsTotal: total,
-            currentFilename: nil,
-            isRunning: false
-        )
         conversionTask = nil
         let failed = DeviceTransferSummary.failedCount(for: plan, outcome: outcome)
-        endBusyJob(busyJob, .copyTransfer(wasCancelled: outcome.wasCancelled,
-                                          succeeded: outcome.written.count, failed: failed))
+        // Called by the caller once the covers, patch and session finish are done.
+        let endJob = { [weak self] in
+            guard let self else { return }
+            self.conversionProgress = ConversionProgressSnapshot(
+                jobsCompleted: total, jobsTotal: total, currentFilename: nil, isRunning: false)
+            self.endBusyJob(busyJob, .copyTransfer(wasCancelled: outcome.wasCancelled,
+                                                   succeeded: outcome.written.count, failed: failed))
+        }
 
         let title: String
         let tone: StatusTone
@@ -516,6 +524,6 @@ extension LibraryViewModel {
             tone: tone,
             showsDetailsButton: !outcome.lines.isEmpty
         )
-        return (report, outcome)
+        return (report, outcome, endJob)
     }
 }

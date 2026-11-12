@@ -85,6 +85,29 @@ public struct DeviceTransferDoor: @unchecked Sendable {
         for destination in destinations { try checkAudioDestination(destination) }
     }
 
+    /// Throws `.outsideVolume` or `.forbidden` when the audio file at `url`
+    /// may not be deleted as a Replace. Reads nothing but the path.
+    public func checkReplacedAudioRemoval(_ url: URL) throws {
+        guard let path = relativePath(of: url) else { throw DeviceTransferDoorError.outsideVolume(url.path) }
+        do {
+            try policy.checkDelete(path, reason: .userReplace)
+        } catch DeviceWritePolicyError.forbidden(let reason) {
+            throw DeviceTransferDoorError.forbidden(reason)
+        }
+    }
+
+    /// What to tell the user about a path the policy refuses: for a name
+    /// ending in a dot or a space (one an older version could write, such as
+    /// "R.E.M."), which one to rename; otherwise the policy's own reason.
+    public func refusalMessage(for url: URL, error: Error) -> String {
+        let components = relativePath(of: url)?.split(separator: "/").map(String.init) ?? []
+        if let name = components.first(where: { $0.hasSuffix(".") || $0.hasSuffix(" ") }) {
+            let ending = name.hasSuffix(".") ? "a dot" : "a space"
+            return "Rename \"\(name)\" on the device so it does not end in \(ending), then send again"
+        }
+        return error.localizedDescription
+    }
+
     // MARK: - Writes
 
     /// Copies the bytes of `source` (a file on the Mac) to `destination` on

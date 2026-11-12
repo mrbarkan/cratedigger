@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 /// One thing CrateDigger did to one file on a device.
@@ -68,6 +69,25 @@ public final class DeviceWriteJournal: @unchecked Sendable {
     private var allRecords: [DeviceFileRecord] = []
     /// Every non-`tempIntent` record per key, oldest first.
     private var historyByKey: [String: [DeviceFileRecord]] = [:]
+    /// Every `tempIntent` per key: which volume and session announced it.
+    private var intentsByKey: [String: [(volumeUUID: String?, sessionID: UUID)]] = [:]
+
+    /// One instance per profile and folder for the whole app, so every
+    /// writer sees every record the others appended.
+    private static let sharedLock = NSLock()
+    private static var sharedJournals: [String: DeviceWriteJournal] = [:]
+
+    /// The app's one journal for `profileID` (loaded on first use, so call
+    /// it off the main actor the first time).
+    public static func shared(profileID: UUID, directory: URL? = nil) -> DeviceWriteJournal {
+        let folder = (directory ?? defaultDirectory).appendingPathComponent(profileID.uuidString, isDirectory: true)
+        sharedLock.lock()
+        defer { sharedLock.unlock() }
+        if let journal = sharedJournals[folder.path] { return journal }
+        let journal = DeviceWriteJournal(profileID: profileID, directory: directory)
+        sharedJournals[folder.path] = journal
+        return journal
+    }
 
     public static var defaultDirectory: URL {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
@@ -116,7 +136,21 @@ public final class DeviceWriteJournal: @unchecked Sendable {
         records.filter { $0.sessionID == sessionID }
     }
 
-    /// Appended and flushed to disk before returning.
+    /// Whether a session other than `sessionID` said it would make a temp at
+    /// `key` on this volume (`sameVolume`): only such a temp is ever cleared
+    /// as stale. Indexed, so a long journal costs nothing per write.
+    public func hasTempIntent(forKey key: String, volumeUUID: String?, otherThan sessionID: UUID) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return (intentsByKey[DeviceWritePolicy.key(forRelativePath: key)] ?? []).contains {
+            $0.sessionID != sessionID && Self.sameVolume($0.volumeUUID, volumeUUID)
+        }
+    }
+
+    /// Appended and flushed to disk before returning. The file is opened
+    /// with `O_APPEND` and each call's lines go in one `write`, so two
+    /// writers (two instances, or another process) can never interleave
+    /// inside a line or overwrite each other.
     public func append(_ records: [DeviceFileRecord]) throws {
         guard !records.isEmpty else { return }
         let encoder = JSONEncoder()
@@ -132,24 +166,26 @@ public final class DeviceWriteJournal: @unchecked Sendable {
         defer { lock.unlock() }
         try fileManager.createDirectory(at: folder, withIntermediateDirectories: true)
         let url = journalURL
-        if !fileManager.fileExists(atPath: url.path) {
-            // The journal lives on the Mac, never on the device.
-            guard fileManager.createFile(atPath: url.path, contents: nil) else {
-                throw CocoaError(.fileWriteUnknown, userInfo: [NSFilePathErrorKey: url.path])
-            }
-        }
-        let handle = try FileHandle(forUpdating: url) // read too: checks the last byte
-        defer { try? handle.close() }
-        let end = try handle.seekToEnd()
-        if end > 0 {
+        // On the Mac, never on the device. Read too: checks the last byte.
+        let fd = open(url.path, O_RDWR | O_APPEND | O_CREAT, 0o644)
+        guard fd >= 0 else { throw Self.posixError(url) }
+        defer { close(fd) }
+        var info = stat()
+        guard fstat(fd, &info) == 0 else { throw Self.posixError(url) }
+        if info.st_size > 0 {
             // A crash can leave a last line without its newline; start ours on a fresh line.
-            try handle.seek(toOffset: end - 1)
-            if try handle.read(upToCount: 1) != Data([0x0a]) { payload.insert(0x0a, at: 0) }
-            try handle.seekToEnd()
+            var last: UInt8 = 0
+            if pread(fd, &last, 1, off_t(info.st_size - 1)) == 1, last != 0x0a { payload.insert(0x0a, at: 0) }
         }
-        try handle.write(contentsOf: payload)
-        try handle.synchronize()
+        let written = payload.withUnsafeBytes { Darwin.write(fd, $0.baseAddress, $0.count) }
+        guard written == payload.count else { throw Self.posixError(url) }
+        guard fsync(fd) == 0 else { throw Self.posixError(url) }
         for record in records { remember(record) }
+    }
+
+    private static func posixError(_ url: URL) -> CocoaError {
+        CocoaError(.fileWriteUnknown, userInfo: [NSFilePathErrorKey: url.path,
+                                                 NSUnderlyingErrorKey: POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)])
     }
 
     /// Keeps `data` on the Mac under `backups/<sessionID>/<relativePath>` and
@@ -200,7 +236,11 @@ public final class DeviceWriteJournal: @unchecked Sendable {
 
     private func remember(_ record: DeviceFileRecord) {
         allRecords.append(record)
-        guard record.kind != .tempIntent else { return }
+        guard record.kind != .tempIntent else {
+            intentsByKey[DeviceWritePolicy.key(forRelativePath: record.relativeKey), default: []]
+                .append((record.volumeUUID, record.sessionID))
+            return
+        }
         historyByKey[DeviceWritePolicy.key(forRelativePath: record.relativeKey), default: []].append(record)
     }
 }

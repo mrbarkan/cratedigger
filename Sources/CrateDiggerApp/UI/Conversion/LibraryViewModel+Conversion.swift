@@ -526,10 +526,10 @@ extension LibraryViewModel {
             appAlert = problem
             return
         }
-        guard let door = makeTransferDoor(for: runProfile, device: device, musicFolder: musicFolder) else { return }
+        guard let door = await makeTransferDoor(for: runProfile, device: device, musicFolder: musicFolder) else { return }
         // The scan and the sheet can take a while; another job may have
-        // started on the conversion channel meanwhile.
-        guard !isConversionRunning else {
+        // started on the conversion channel, or on the device, meanwhile.
+        guard !isDeviceBusy else {
             appAlert = .error(
                 title: "Another transfer is running",
                 message: "Nothing was sent to \(profile.name). Send again once it finishes."
@@ -562,7 +562,7 @@ extension LibraryViewModel {
                 for: plan,
                 stagingRoot: stagingRoot,
                 slices: slices.jobs,
-                stagingBytesAvailable: fm.temporaryDirectory.volumeFreeBytes,
+                stagingBytesAvailable: stagingRoot.volumeFreeBytesNearby,
                 estimatedBytes: { copy in
                     let size = ((try? fm.attributesOfItem(atPath: copy.source.track.fileURL.path))?[.size]
                         as? NSNumber)?.int64Value ?? 0
@@ -603,7 +603,8 @@ extension LibraryViewModel {
                         self.conversionProgress = ConversionProgressSnapshot(
                             jobsCompleted: completed, jobsTotal: total,
                             currentFilename: completed < total ? copies[completed].destinationURL.lastPathComponent : nil,
-                            isRunning: completed < total
+                            // Running on through the covers, patch and cleanup.
+                            isRunning: true
                         )
                     }
                 },
@@ -614,15 +615,7 @@ extension LibraryViewModel {
                 }
             )
         }.value
-        conversionProgress = ConversionProgressSnapshot(
-            jobsCompleted: copies.count, jobsTotal: copies.count, currentFilename: nil, isRunning: false
-        )
         let cancelledCount = outcome.failed.filter { $0.reason == ConversionQueueOutcome.cancelledReason }.count
-        endBusyJob(ran?.busyJob, .conversion(
-            succeeded: outcome.written.count,
-            failed: outcome.failed.count - cancelledCount,
-            cancelled: cancelledCount
-        ))
 
         // A cover only where something actually landed, and never over one
         // a Gaps fill found there. The plan lists cover folders only when the
@@ -652,6 +645,15 @@ extension LibraryViewModel {
             written: outcome.written.map(\.destinationURL), deleted: outcome.deleted,
             changes: outcome.changes(coversWritten: covers)
         )
+        // The busy job spans the covers, the patch and the cleanup too.
+        conversionProgress = ConversionProgressSnapshot(
+            jobsCompleted: copies.count, jobsTotal: copies.count, currentFilename: nil, isRunning: false
+        )
+        endBusyJob(ran?.busyJob, .conversion(
+            succeeded: outcome.written.count,
+            failed: outcome.failed.count - cancelledCount,
+            cancelled: cancelledCount
+        ))
 
         // Remember any format/folder tweaks on the device profile and stay
         // routed to it: the next album you send needs no setup.
@@ -770,7 +772,9 @@ extension LibraryViewModel {
         }
         guard totalSourceBytes > 0 else { return nil }
 
-        guard let available = destinationRoot.volumeFreeBytes, available > 0 else { return nil }
+        // The nearest existing folder answers for one not made yet (a
+        // device's music folder before its first transfer).
+        guard let available = destinationRoot.volumeFreeBytesNearby, available > 0 else { return nil }
 
         let estimatedNeed = Int64(Double(totalSourceBytes) * estimateFactor)
         guard available < estimatedNeed else { return nil }
@@ -1263,7 +1267,7 @@ extension LibraryViewModel {
     /// Nothing to press when the run it names has no work in it.
     @MainActor
     var patchBayGoEnabled: Bool {
-        guard !isConversionRunning, deviceSyncProgress?.isRunning != true else { return false }
+        guard !isDeviceBusy else { return false }
         switch patchBayGoAction {
         case .convert, .sendToDevice:
             return !conversionQueueTracks.isEmpty

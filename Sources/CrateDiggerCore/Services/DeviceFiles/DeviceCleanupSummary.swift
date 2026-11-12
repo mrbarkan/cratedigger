@@ -78,7 +78,14 @@ public enum DeviceSessionFinish {
         public let changes: DeviceWriteChanges
     }
 
-    /// `sweeps`: the volume has the `appleDoubleSweep` capability. The scope
+    /// Whether a session's finish sweeps at all: only on a FAT or exFAT
+    /// volume, and only once the owner has turned the device's automatic
+    /// cleanup on (off by default, behind checks M3 and M4).
+    public static func sweepsAfterTransfer(capabilities: DeviceCapabilities, preferences: PodBoxPreferences) -> Bool {
+        capabilities.contains(.appleDoubleSweep) && preferences.appleDoubleCleanup
+    }
+
+    /// `sweeps`: `sweepsAfterTransfer` said yes. The scope
     /// is exactly the parent folders of `written` and `deleted`, listed
     /// non-recursively.
     public static func finish(

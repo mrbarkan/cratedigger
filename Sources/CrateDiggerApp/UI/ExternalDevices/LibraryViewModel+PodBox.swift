@@ -12,6 +12,24 @@ extension LibraryViewModel {
     /// which is not a view of the model.
     static let deviceFirmwareChangedNotification = Notification.Name("CrateDiggerDeviceFirmwareChanged")
 
+    // MARK: - Busy
+
+    /// One truth for "a device is being written": a send or convert run
+    /// (through its catalog patch and session finish), SYNC, Clean Up Mac
+    /// Files and FIX ART. Every device writer checks it before it starts, and
+    /// both Eject paths do. A new device writer (artist pictures, playlists)
+    /// sets its own flag and joins it here.
+    var isDeviceBusy: Bool {
+        isConversionRunning || deviceSyncProgress?.isRunning == true || isCleaningDeviceFiles || isFixingDeviceArt
+    }
+
+    /// The alert a refused start shows.
+    @MainActor
+    func showDeviceBusyAlert(_ action: String) {
+        appAlert = .info(title: "A device is busy",
+                         message: "\(action) once the current transfer, sync, cleanup or FIX ART has finished.")
+    }
+
     // MARK: - Firmware
 
     /// Probes every mounted device off the main actor and keeps what each
@@ -102,9 +120,11 @@ extension LibraryViewModel {
     /// nil, with an alert, when the music folder is not on that volume or the
     /// session gate refuses (it never does for a user action today, but the
     /// gate is where that decision lives).
+    /// The journal is the app's one instance for this profile
+    /// (`DeviceWriteJournal.shared`), loaded off the main actor.
     @MainActor
     func makeTransferDoor(for profile: ExternalDeviceProfile, device: MountedDevice,
-                          musicFolder: URL) -> DeviceTransferDoor? {
+                          musicFolder: URL) async -> DeviceTransferDoor? {
         guard DeviceSessionGate.allows(.transferAudio, trigger: .userAction,
                                        matchedByUUID: isMatchedByUUID(device, profile)) else {
             appAlert = .error(title: "Nothing was sent to \(profile.name)",
@@ -118,8 +138,14 @@ extension LibraryViewModel {
         }
         let policy = DeviceWritePolicy(musicSubpath: subpath,
                                        playlistDirectory: firmware(for: device)?.config.playlistDirectory ?? "Playlists")
+        let journal = await Self.sharedJournal(for: profile.id)
         return DeviceTransferDoor(volumeRoot: device.volumeURL, expectedVolumeUUID: device.volumeUUID,
-                                  policy: policy, journal: DeviceWriteJournal(profileID: profile.id))
+                                  policy: policy, journal: journal)
+    }
+
+    /// The profile's one journal, loaded (on first use) off the main actor.
+    nonisolated static func sharedJournal(for profileID: UUID) async -> DeviceWriteJournal {
+        await Task.detached(priority: .userInitiated) { DeviceWriteJournal.shared(profileID: profileID) }.value
     }
 
     /// Whether `folder` on a device can be written, found out without writing
@@ -153,7 +179,10 @@ extension LibraryViewModel {
     func finishDeviceSession(device: MountedDevice, profile: ExternalDeviceProfile,
                              written: [URL], deleted: [URL], changes: DeviceWriteChanges) async -> [String] {
         let firmware = firmware(for: device)
-        let sweeps = capabilities(for: device).contains(.appleDoubleSweep)
+        // Only once the owner has turned this device's automatic cleanup on
+        // (checks M3 and M4); prevention needs no switch.
+        let sweeps = DeviceSessionFinish.sweepsAfterTransfer(capabilities: capabilities(for: device),
+                                                             preferences: profile.podBoxPreferences)
             && DeviceSessionGate.allows(.sweep, trigger: .userAction, matchedByUUID: isMatchedByUUID(device, profile))
         let policy = devicePolicy(for: profile, firmware: firmware)
         let volume = device.volumeURL
@@ -161,7 +190,7 @@ extension LibraryViewModel {
         let profileID = profile.id
         let result = await Task.detached(priority: .userInitiated) { () -> DeviceSessionFinish.Result in
             let executor = DeviceFileExecutor(volumeRoot: volume, expectedVolumeUUID: uuid, policy: policy,
-                                              journal: DeviceWriteJournal(profileID: profileID))
+                                              journal: DeviceWriteJournal.shared(profileID: profileID))
             return DeviceSessionFinish.finish(written: written, deleted: deleted, changes: changes,
                                               firmware: firmware, sweeps: sweeps, volumeRoot: volume,
                                               executor: executor)
@@ -189,14 +218,17 @@ extension LibraryViewModel {
     /// whole volume; otherwise exactly these folders, each listed on its own.
     @MainActor
     func cleanUpMacFiles(device: MountedDevice, scope: [URL]?) {
-        guard let profile = deviceProfile(for: device) else { return }
-        guard DeviceSessionGate.allows(.sweep, trigger: .userAction, matchedByUUID: isMatchedByUUID(device, profile))
-        else { return }
-        guard !isCleaningDeviceFiles, !isConversionRunning, deviceSyncProgress?.isRunning != true else {
-            appAlert = .info(title: "\(device.name) is busy",
-                             message: "Clean up Mac files once the current transfer has finished.")
+        guard let profile = deviceProfile(for: device) else {
+            appAlert = .error(title: "Nothing was cleaned up",
+                              message: "\(device.name) has no device profile. Add it in Preferences > Devices first.")
             return
         }
+        guard DeviceSessionGate.allows(.sweep, trigger: .userAction, matchedByUUID: isMatchedByUUID(device, profile))
+        else {
+            appAlert = .error(title: "Nothing was cleaned up", message: "Cleaning up \(device.name) is not allowed now.")
+            return
+        }
+        guard !isDeviceBusy else { return showDeviceBusyAlert("Clean up Mac files") }
         isCleaningDeviceFiles = true
         let scanJob = beginBusyJob(.scan, on: .devices)
         let volume = device.volumeURL
@@ -235,23 +267,18 @@ extension LibraryViewModel {
         }
     }
 
-    /// The album folder of `album` on a browsed device: the deepest folder
-    /// holding all its tracks.
+    /// The album's own folder on a browsed device (`AppleDoubleSweeper.cleanupFolder`),
+    /// or nil when its tracks are scattered: then the item is not offered.
     func deviceFolder(of album: Album) -> URL? {
-        let folders = album.tracks.map { $0.track.fileURL.deletingLastPathComponent().standardizedFileURL.pathComponents }
-        guard var common = folders.first else { return nil }
-        for parts in folders.dropFirst() {
-            common = Array(zip(common, parts).prefix { $0 == $1 }.map(\.0))
-        }
-        guard common.count > 1 else { return nil }
-        return URL(fileURLWithPath: NSString.path(withComponents: common), isDirectory: true)
+        AppleDoubleSweeper.cleanupFolder(forTrackFolders: album.tracks.map { $0.track.fileURL.deletingLastPathComponent() })
     }
 
     @MainActor
     private func removeMacFiles(_ plan: AppleDoubleSweepPlan, device: MountedDevice, profile: ExternalDeviceProfile) {
-        guard !isConversionRunning, !isCleaningDeviceFiles else { return }
+        // Its own busy state, not isDeviceTransferRunning: the Patch Bay's
+        // Cancel key has nothing to stop here.
+        guard !isDeviceBusy else { return showDeviceBusyAlert("Clean up Mac files") }
         isCleaningDeviceFiles = true
-        isDeviceTransferRunning = true
         let job = beginBusyJob(.transfer, on: .devices)
         let firmware = firmware(for: device)
         let policy = devicePolicy(for: profile, firmware: firmware)
@@ -261,13 +288,12 @@ extension LibraryViewModel {
         Task { @MainActor in
             let outcomes = await Task.detached(priority: .userInitiated) { () -> [DeviceFileOutcome] in
                 DeviceFileExecutor(volumeRoot: volume, expectedVolumeUUID: uuid, policy: policy,
-                                   journal: DeviceWriteJournal(profileID: profileID))
+                                   journal: DeviceWriteJournal.shared(profileID: profileID))
                     .apply(plan.operations, sessionID: UUID())
             }.value
             let removed = outcomes.filter { $0 == .deleted }.count
             let refused = outcomes.count - removed - outcomes.filter { $0 == .alreadyGone }.count
             endBusyJob(job, removed == 0 && refused > 0 ? .failed : .completed)
-            isDeviceTransferRunning = false
             isCleaningDeviceFiles = false
             AppLog.conversion.notice("Clean Up Mac Files on \(device.name, privacy: .public): removed \(removed), refused \(refused)")
 
@@ -287,10 +313,7 @@ extension LibraryViewModel {
     /// is flushed as it is written). A failure shows the system's own words.
     @MainActor
     func ejectDevice(_ device: MountedDevice) {
-        guard !isConversionRunning, !isCleaningDeviceFiles, deviceSyncProgress?.isRunning != true else {
-            appAlert = .info(title: "\(device.name) is busy", message: "Eject it once the current transfer has finished.")
-            return
-        }
+        guard !isDeviceBusy else { return showDeviceBusyAlert("Eject \(device.name)") }
         let volume = device.volumeURL
         Task { @MainActor in
             let failure = await Task.detached(priority: .userInitiated) { () -> String? in

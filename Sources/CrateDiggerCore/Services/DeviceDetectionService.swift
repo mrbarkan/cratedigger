@@ -40,6 +40,21 @@ public struct MountedDevice: Sendable, Identifiable, Hashable {
     }
 }
 
+public extension MountedDevice {
+    /// The mounted device `url` lies on, when that device belongs to a saved
+    /// profile (`ExternalDeviceProfile.match`); nil for a file on the Mac or
+    /// on a volume no profile names. What a writer outside the device door
+    /// (an ordinary conversion pointed at a device, a library action on a
+    /// browsed device) asks before it writes there.
+    static func profileDevice(holding url: URL, in devices: [MountedDevice],
+                              profiles: [ExternalDeviceProfile]) -> MountedDevice? {
+        guard let device = containing(url, in: devices),
+              ExternalDeviceProfile.match(device, in: profiles) != nil
+        else { return nil }
+        return device
+    }
+}
+
 /// Detects mounted removable/ejectable volumes (excluding the internal boot
 /// disk and network shares) so they can appear as Sources.
 public struct DeviceDetectionService {

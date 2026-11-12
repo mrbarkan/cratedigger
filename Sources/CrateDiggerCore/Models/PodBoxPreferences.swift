@@ -14,6 +14,12 @@ public enum ArtistPictureDestination: String, Codable, Sendable {
 /// check M5 on the real iPod; nothing turns it on by default.
 public struct PodBoxPreferences: Codable, Hashable, Sendable {
     public var sweepsAppleDouble: Bool
+    /// Remove proven macOS `._` twins automatically at the end of every
+    /// transfer, in the folders it wrote to. Off until the owner has run
+    /// checks M3 and M4 on this device (spec "Manual checks"); the
+    /// user-started Clean Up Mac Files is the M4 tool and works either way.
+    /// Preventing new twins (data-only copies) is always on.
+    public var appleDoubleCleanup: Bool
     public var artistPictures: ArtistPictureDestination
     public var findsArtistPicturesAutomatically: Bool
     /// Display only: the firmware last seen on the device.
@@ -23,6 +29,7 @@ public struct PodBoxPreferences: Codable, Hashable, Sendable {
 
     public init() {
         sweepsAppleDouble = true
+        appleDoubleCleanup = false
         artistPictures = .off
         findsArtistPicturesAutomatically = true
         lastSeenFirmware = nil
@@ -30,7 +37,8 @@ public struct PodBoxPreferences: Codable, Hashable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case sweepsAppleDouble, artistPictures, findsArtistPicturesAutomatically, lastSeenFirmware, passedChecks
+        case sweepsAppleDouble, appleDoubleCleanup, artistPictures, findsArtistPicturesAutomatically, lastSeenFirmware,
+             passedChecks
     }
 
     public init(from decoder: Decoder) throws {
@@ -38,6 +46,8 @@ public struct PodBoxPreferences: Codable, Hashable, Sendable {
         let defaults = PodBoxPreferences()
         sweepsAppleDouble = try container.decodeIfPresent(Bool.self, forKey: .sweepsAppleDouble)
             ?? defaults.sweepsAppleDouble
+        appleDoubleCleanup = (try? container.decodeIfPresent(Bool.self, forKey: .appleDoubleCleanup))
+            .flatMap { $0 } ?? defaults.appleDoubleCleanup
         artistPictures = try container.decodeIfPresent(ArtistPictureDestination.self, forKey: .artistPictures)
             ?? defaults.artistPictures
         findsArtistPicturesAutomatically = try container.decodeIfPresent(

@@ -259,6 +259,22 @@ struct DevicesPreferencesView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
+        Toggle("Clean up after each transfer", isOn: automaticCleanupBinding)
+        Text("Removes the ._ files macOS left in the folders a transfer wrote to, keeping a copy on this Mac. Off until you have checked a cleanup on this device; new copies never make them either way.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+    }
+
+    /// The profile's automatic `._` cleanup (off by default; saved with Save).
+    private var automaticCleanupBinding: Binding<Bool> {
+        Binding(
+            get: { draft.podBox?.appleDoubleCleanup ?? false },
+            set: { isOn in
+                var preferences = draft.podBox ?? PodBoxPreferences()
+                preferences.appleDoubleCleanup = isOn
+                draft.podBox = preferences
+            }
+        )
     }
 
     private var cleanUpCaption: String {
@@ -478,7 +494,8 @@ private struct EditableExternalDeviceProfile {
     /// compatibility) and the art are edited inline; the format+folder core is
     /// edited via the Patch Bay (which edits the art too).
     var settings = ExternalDeviceTransferSettings()
-    /// Not edited here yet; carried through so saving the draft keeps it.
+    /// Carried through so saving the draft keeps it; only the automatic
+    /// cleanup switch is edited here.
     var podBox: PodBoxPreferences?
 
     init() {}

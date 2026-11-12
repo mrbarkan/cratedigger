@@ -305,6 +305,45 @@ final class DeviceTransferExecutorTests: XCTestCase {
         XCTAssertEqual(outcome.deletionsSkipped, [bitchesBrew])
     }
 
+    // MARK: - Albums the policy refuses as a whole
+
+    /// An album an older version filed under "R.E.M." (a trailing dot the
+    /// policy refuses): a Gaps fill into it fails as a whole, with one
+    /// message naming the folder, and nothing of it is written.
+    func testAlbumInARefusedFolderFailsAsAWholeBeforeAnythingIsWritten() throws {
+        let rem = DeviceAlbumIdentity(artist: "R.E.M.", album: "Document")
+        let gap = try copyItem("02 Exhuming.flac", to: "R.E.M./Document/02 Exhuming.flac", album: rem)
+        let fine = try copyItem("01 So What.flac", to: "Miles Davis/Kind of Blue/01 So What.flac", album: kindOfBlue)
+        var asked: [DeviceAlbumIdentity] = []
+
+        let outcome = executor.run(plan([gap, fine]), source: { copy in
+            asked.append(copy.album)
+            return try self.copySource(copy)
+        })
+
+        XCTAssertEqual(asked, [kindOfBlue], "nothing is spent on the refused album")
+        XCTAssertEqual(outcome.written, [fine])
+        XCTAssertEqual(outcome.failed.first?.reason,
+                       "Rename \"R.E.M.\" on the device so it does not end in a dot, then send again")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: gap.destinationURL.path))
+    }
+
+    /// A Replace whose old files sit in a refused folder: the new copies do
+    /// not land either, so it never ends half replaced.
+    func testReplaceWithARefusedDeletionWritesNothing() throws {
+        let rem = DeviceAlbumIdentity(artist: "R.E.M.", album: "Document")
+        let old = try file(device, "R.E.M./Document/01 Finest Worksong.mp3", "old")
+        let new = try copyItem("01 Finest Worksong.flac", to: "R.E.M/Document/01 Finest Worksong.flac", album: rem)
+
+        let outcome = executor.run(plan([new], deletions: [rem: [old]]), source: copySource)
+
+        XCTAssertTrue(outcome.written.isEmpty)
+        XCTAssertEqual(outcome.failed.map(\.copy), [new])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: new.destinationURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: old.path), "the old album stays whole")
+        XCTAssertTrue(outcome.deleted.isEmpty)
+    }
+
     func testUnplannedTracksAreListedAsFailures() throws {
         let lost = track(at: source.appendingPathComponent("lost.flac"))
         let plan = DeviceTransferFilePlan(

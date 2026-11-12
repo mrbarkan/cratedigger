@@ -79,6 +79,32 @@ public struct DeviceTransferExecutor {
         self.fileManager = fileManager
     }
 
+    // MARK: - Albums refused as a whole
+
+    /// Albums the write policy refuses as a whole, with one message each:
+    /// any of the album's copy destinations or Replace deletions it may not
+    /// write or delete (an album already on the device in a folder such as
+    /// "R.E.M.", which ends in a dot). Decided before anything of the album
+    /// is written, so a Replace can never end with its copies landed and a
+    /// deletion refused: the whole album fails and nothing of it changes.
+    public func refusedAlbums(in plan: DeviceTransferFilePlan) -> [DeviceAlbumIdentity: String] {
+        var refused: [DeviceAlbumIdentity: String] = [:]
+        for copy in plan.copies where refused[copy.album] == nil {
+            do { try door.checkAudioDestination(copy.destinationURL) } catch {
+                refused[copy.album] = door.refusalMessage(for: copy.destinationURL, error: error)
+            }
+        }
+        for (album, urls) in plan.deletionsByAlbum where refused[album] == nil {
+            for url in urls {
+                do { try door.checkReplacedAudioRemoval(url) } catch {
+                    refused[album] = door.refusalMessage(for: url, error: error)
+                    break
+                }
+            }
+        }
+        return refused
+    }
+
     // MARK: - Running a plan
 
     /// Copies, then deletions. `source` returns the file on the Mac whose
@@ -107,11 +133,15 @@ public struct DeviceTransferExecutor {
     ) -> Outcome {
         var outcome = Outcome()
         Self.listUnplanned(plan, in: &outcome)
+        let refused = refusedAlbums(in: plan)
 
         let total = plan.copies.count
         for (index, item) in plan.copies.enumerated() {
             let name = item.source.track.fileURL.lastPathComponent
-            if isCancelled() {
+            if let reason = refused[item.album] {
+                outcome.failed.append(Failure(copy: item, reason: reason))
+                outcome.lines.append("[FAILED] \(name)\n    \(reason)")
+            } else if isCancelled() {
                 outcome.wasCancelled = true
                 outcome.failed.append(Failure(copy: item, reason: "Cancelled"))
                 outcome.lines.append("[FAILED] \(name)\n    Cancelled")
@@ -144,9 +174,15 @@ public struct DeviceTransferExecutor {
         isCancelled: () -> Bool = { false }
     ) {
         let allowed = Set(plan.deletions(afterFailing: outcome.failed.map(\.copy)).map(\.path))
+        let refused = refusedAlbums(in: plan)
         for album in Self.albumOrder(of: plan) {
             let urls = (plan.deletionsByAlbum[album] ?? []).filter { allowed.contains($0.path) }
             guard !urls.isEmpty else { continue }
+            if let reason = refused[album] {
+                // An album with only deletions: still nothing of it changes.
+                outcome.lines.append("[kept] \(urls[0].deletingLastPathComponent().path)\n    \(reason)")
+                continue
+            }
             if outcome.wasCancelled || isCancelled() {
                 outcome.wasCancelled = true
                 outcome.deletionsSkipped.append(album)

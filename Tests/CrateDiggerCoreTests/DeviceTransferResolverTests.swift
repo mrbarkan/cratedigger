@@ -154,6 +154,23 @@ final class DeviceTransferResolverTests: XCTestCase {
         XCTAssertEqual(second.skippedPresent, 2)
     }
 
+    /// "What?" and "What" are two tracks; made device-safe both read
+    /// "What". The sanitising must not merge them into one name.
+    func testNamesThatSanitiseAlikeStayApart() throws {
+        let profile = copyProfile()
+        let sending = ["What?", "What"].enumerated().map { (offset: Int, title: String) -> LoadedTrack in
+            track(album: "Kind of Blue", number: offset + 1, title: title,
+                  path: scratch.appendingPathComponent("Src/Kind of Blue/\(title).flac").path, year: 1959)
+        }
+        let review = resolver.review(sending: sending, catalog: [], profile: profile, mountedAt: device, leftAlone: [])
+        XCTAssertEqual(review.albums.map(\.status), [.new], "no clash to ask about")
+        let plan = try resolver.resolve(review, decisions: [:], profile: profile, mountedAt: device)
+        XCTAssertEqual(Set(relative(plan.copies)), [
+            "Music/Miles Davis/1959/Kind of Blue/What.flac",
+            "Music/Miles Davis/1959/Kind of Blue/What (2).flac"
+        ])
+    }
+
     // MARK: - Replace
 
     func testReplaceSameReleaseSwapsOnlyMatchedTracks() throws {

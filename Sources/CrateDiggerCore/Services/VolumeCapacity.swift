@@ -18,4 +18,16 @@ public extension URL {
         }
         return values.volumeAvailableCapacity.map(Int64.init)
     }
+
+    /// `volumeFreeBytes` of this URL, or of the nearest folder on the way to
+    /// it that exists: a destination not made yet (a device's music folder
+    /// before the first transfer, a staging folder) still has a volume to ask.
+    var volumeFreeBytesNearby: Int64? {
+        var url = standardizedFileURL
+        while url.path != "/", !FileManager.default.fileExists(atPath: url.path) {
+            url = url.deletingLastPathComponent()
+        }
+        return url.volumeFreeBytes
+    }
 }
+

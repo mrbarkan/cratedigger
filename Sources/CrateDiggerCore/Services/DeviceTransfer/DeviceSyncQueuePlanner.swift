@@ -217,3 +217,43 @@ private final class StagingBlindFileManager: FileManager, @unchecked Sendable {
         path.precomposedStringWithCanonicalMapping.lowercased()
     }
 }
+
+// MARK: - Converting on the way
+
+public extension DeviceSyncQueuePlanner {
+    /// Where SYNC converts one copy on the way over: inside this run's
+    /// staging folder on the Mac, one folder per copy, under the
+    /// destination's own name. The extension is the destination's, never the
+    /// queued bake's: ffmpeg picks its muxer from it, and the device's format
+    /// may have changed since the entry was queued (an `.m4a` bake, an `.mp3`
+    /// device now).
+    static func conversionStagingURL(for copy: DeviceTransferFilePlan.Copy, index: Int, in root: URL) -> URL {
+        root.appendingPathComponent(String(index), isDirectory: true)
+            .appendingPathComponent(copy.destinationURL.lastPathComponent)
+    }
+
+    /// One conversion on the way over, judged by its own result:
+    /// `ConversionService.runSingle` into `conversionStagingURL`. Returns
+    /// that file; the caller copies it through the door and removes it
+    /// however the entry ends. Throws ffmpeg's last log line on failure.
+    static func convertOnTheWay(
+        _ copy: DeviceTransferFilePlan.Copy,
+        index: Int,
+        source: URL,
+        metadata: ConversionMetadata,
+        stagingRoot: URL,
+        service: ConversionService,
+        preset: ConversionPreset
+    ) throws -> URL {
+        let output = conversionStagingURL(for: copy, index: index, in: stagingRoot)
+        let result = service.runSingle(
+            ConversionJob(sourceURL: source, destinationURL: output, metadata: metadata), preset: preset)
+        guard result.status == .completed else {
+            let detail = result.log.split(whereSeparator: \.isNewline).last.map(String.init)
+            throw NSError(domain: "CrateDigger.DeviceSync", code: 1, userInfo: [
+                NSLocalizedDescriptionKey: detail.map { "Conversion failed: \($0)" } ?? "Conversion failed",
+            ])
+        }
+        return output
+    }
+}

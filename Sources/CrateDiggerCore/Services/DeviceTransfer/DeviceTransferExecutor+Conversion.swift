@@ -55,8 +55,13 @@ extension DeviceTransferExecutor {
     ) -> StagedJobs {
         var result = StagedJobs()
         var budget = stagingBytesAvailable.map { $0 - Self.stagingSpaceMargin }
+        let refused = refusedAlbums(in: plan)
         for (index, copy) in plan.copies.enumerated() {
             let path = copy.destinationURL.path
+            if let reason = refused[copy.album] {
+                result.heldBack[path] = reason
+                continue
+            }
             do {
                 try door.checkAudioDestination(copy.destinationURL)
             } catch {

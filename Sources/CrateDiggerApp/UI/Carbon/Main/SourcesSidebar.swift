@@ -210,10 +210,10 @@ struct SourcesSidebar: View {
                                 .lazyContextMenu {
                                     Button("Clean Up Mac Files…") { model.cleanUpMacFiles(device: device, scope: nil) }
                                         .disabled(!model.capabilities(for: device).contains(.appleDoubleSweep)
-                                                  || model.isCleaningDeviceFiles || model.isConversionRunning)
+                                                  || model.isDeviceBusy)
                                     Divider()
                                     Button("Eject") { model.ejectDevice(device) }
-                                        .disabled(model.isCleaningDeviceFiles || model.isConversionRunning)
+                                        .disabled(model.isDeviceBusy)
                                 }
                                 if let profile = model.deviceProfile(for: device),
                                    let queued = model.syncQueueCounts[profile.id], queued > 0 {

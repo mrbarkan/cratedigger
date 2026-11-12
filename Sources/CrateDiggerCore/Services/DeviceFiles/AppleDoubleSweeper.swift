@@ -147,6 +147,24 @@ public struct AppleDoubleSweeper {
         return result
     }
 
+    /// The one folder "Clean Up Mac Files in This Folder" may cover for an
+    /// album whose tracks sit in `trackFolders`: their folder when they share
+    /// one, or the folder holding them when each is it or a disc folder
+    /// directly in it (`CD1`, `CD2`). nil for tracks scattered more widely,
+    /// so the cleanup is never widened to some common ancestor.
+    public static func cleanupFolder(forTrackFolders trackFolders: [URL]) -> URL? {
+        let folders = trackFolders.map { $0.standardizedFileURL.pathComponents }
+        guard let shallowest = folders.min(by: { $0.count < $1.count }) else { return nil }
+        for candidate in [shallowest, Array(shallowest.dropLast())] where candidate.count > 1 {
+            if folders.allSatisfy({ $0 == candidate || Array($0.dropLast()) == candidate }) { return url(candidate) }
+        }
+        return nil
+    }
+
+    private static func url(_ components: [String]) -> URL {
+        URL(fileURLWithPath: NSString.path(withComponents: components), isDirectory: true)
+    }
+
     private static func isDenied(_ relativePath: String) -> Bool {
         relativePath.split(separator: "/").contains {
             deniedKeys.contains(DeviceWritePolicy.key(forRelativePath: String($0)))

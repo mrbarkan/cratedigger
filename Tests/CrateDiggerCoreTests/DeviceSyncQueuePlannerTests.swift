@@ -358,5 +358,57 @@ final class DeviceSyncQueuePlannerTests: XCTestCase {
         )
         return LoadedTrack(track: audio, metadata: metadata)
     }
+
+    // MARK: - Converting on the way
+
+    /// Queued as .m4a; the device now takes .mp3. The conversion must be
+    /// written under the destination's extension, or ffmpeg picks the wrong
+    /// muxer (an MP3 stream in an MP4 file, landing as .mp3).
+    func testConversionOnTheWayUsesTheDestinationsExtension() throws {
+        let ffmpeg = scratch.appendingPathComponent("ffmpeg")
+        try Data("#!/bin/sh\nexit 0\n".utf8).write(to: ffmpeg)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: ffmpeg.path)
+        let runner = OutputRecordingRunner()
+        let service = try ConversionService(ffmpegExecutableURL: ffmpeg, commandRunner: runner)
+        let preset = try XCTUnwrap(ConversionPreset.defaultPresets.first { $0.outputFormat == .mp3 })
+
+        let sourceURL = scratch.appendingPathComponent("Library/01 So What.flac")
+        try FileManager.default.createDirectory(at: sourceURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("flac".utf8).write(to: sourceURL)
+        let track = LoadedTrack(track: AudioTrack(fileURL: sourceURL, title: "So What"),
+                                metadata: ConversionMetadata(title: "So What"))
+        let entry = DeviceSyncQueueEntry(track: track, destinationRelativePath: "Music/Miles Davis/Kind of Blue/01 So What.m4a",
+                                         isStaged: true, sourceModifiedAt: Date())
+        let copy = DeviceTransferFilePlan.Copy(
+            source: track, destinationURL: deviceRoot.appendingPathComponent("Music/Miles Davis/Kind of Blue/01 So What.mp3"),
+            overwrites: false, kind: .new, album: DeviceAlbumIdentity(artist: "Miles Davis", album: "Kind of Blue"))
+        let source = DeviceSyncQueuePlanner.source(
+            for: entry, stagedURL: staging.appendingPathComponent(entry.destinationRelativePath),
+            destination: copy.destinationURL, converts: true, stagedFileExists: true, sourceModifiedAt: Date())
+        XCTAssertEqual(source, .convert, "the bake's extension no longer matches the device")
+
+        let runRoot = scratch.appendingPathComponent("SyncRun", isDirectory: true)
+        let output = try DeviceSyncQueuePlanner.convertOnTheWay(
+            copy, index: 3, source: sourceURL, metadata: track.metadata, stagingRoot: runRoot,
+            service: service, preset: preset)
+
+        XCTAssertEqual(output.pathExtension, "mp3")
+        XCTAssertTrue(output.path.hasPrefix(runRoot.path), "on the Mac, in this run's folder")
+        XCTAssertEqual(runner.outputs.count, 1)
+        XCTAssertTrue(runner.outputs.allSatisfy { $0.hasSuffix(".mp3") }, "\(runner.outputs)")
+        XCTAssertFalse(runner.outputs.contains { $0.hasSuffix(".m4a") })
+    }
+}
+
+/// Records the output path (ffmpeg's last argument) of every run.
+private final class OutputRecordingRunner: CommandRunning, @unchecked Sendable {
+    private let lock = NSLock()
+    private var recorded: [String] = []
+    var outputs: [String] { lock.withLock { recorded } }
+
+    func run(executableURL: URL, arguments: [String]) throws -> CommandOutput {
+        lock.withLock { recorded.append(arguments.last ?? "") }
+        return CommandOutput(terminationStatus: 0, standardOutput: "", standardError: "")
+    }
 }
 #endif

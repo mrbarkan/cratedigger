@@ -131,4 +131,19 @@ final class DeviceCleanupSummaryTests: XCTestCase {
         XCTAssertEqual(DeviceCleanupSummary.nothingFoundDetail(deviceName: "IPOD", leftAlone: ["not media": 2]),
                        "Nothing on IPOD needs removing. 2 other files are left alone.")
     }
+
+    func testAutomaticCleanupIsOffUntilTurnedOn() throws {
+        var preferences = PodBoxPreferences()
+        XCTAssertFalse(preferences.appleDoubleCleanup)
+        let old = try JSONDecoder().decode(PodBoxPreferences.self, from: Data(#"{"sweepsAppleDouble":true}"#.utf8))
+        XCTAssertFalse(old.appleDoubleCleanup, "a profile saved before the switch reads it as off")
+        XCTAssertFalse(DeviceSessionFinish.sweepsAfterTransfer(capabilities: .appleDoubleSweep, preferences: preferences))
+        preferences.appleDoubleCleanup = true
+        XCTAssertTrue(DeviceSessionFinish.sweepsAfterTransfer(capabilities: .appleDoubleSweep, preferences: preferences))
+        XCTAssertFalse(DeviceSessionFinish.sweepsAfterTransfer(capabilities: [], preferences: preferences),
+                       "never on a volume that is not FAT or exFAT")
+        let round = try JSONDecoder().decode(PodBoxPreferences.self, from: JSONEncoder().encode(preferences))
+        XCTAssertTrue(round.appleDoubleCleanup)
+    }
 }
+

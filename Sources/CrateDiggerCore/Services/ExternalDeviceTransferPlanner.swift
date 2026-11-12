@@ -43,9 +43,11 @@ public struct PlannedExternalDeviceTransfer: Hashable, Sendable {
 
 public struct ExternalDeviceTransferPlanner {
     private let pathPlanner: OutputPathPlanner
+    private let fileManager: FileManager
 
     public init(fileManager: FileManager = .default) {
         self.pathPlanner = OutputPathPlanner(fileManager: fileManager)
+        self.fileManager = fileManager
     }
 
     public func destinationRoot(for profile: ExternalDeviceProfile, mountedAt mountedRoot: URL) -> URL {
@@ -83,9 +85,17 @@ public struct ExternalDeviceTransferPlanner {
         var reserved = reservedDestinationPaths
         var plannedTransfers: [PlannedExternalDeviceTransfer] = []
         plannedTransfers.reserveCapacity(tracks.count)
+        /// Device-safe path key -> the raw planned path that produced it.
+        var producedBy: [String: String] = [:]
+        func key(_ url: URL) -> String {
+            url.standardizedFileURL.path.precomposedStringWithCanonicalMapping.lowercased()
+        }
 
         for track in tracks {
             let destinationExtension = preset?.outputExtension ?? track.track.fileURL.pathExtension
+            // Natural names first; collisions are avoided below, after the
+            // names are made device-safe, so two names that become the same
+            // ("What?" and "What") still end up apart.
             let plannedPath = pathPlanner.planDestination(
                 for: track,
                 preset: planningPreset,
@@ -94,14 +104,31 @@ public struct ExternalDeviceTransferPlanner {
                 folderMode: profile.transferSettings.folderStructureMode,
                 templateConfig: profile.transferSettings.templateConfig,
                 reviewedAlbumFolders: reviewedAlbumFolders,
-                reservedDestinationPaths: naturalNames ? [] : reserved,
+                reservedDestinationPaths: [],
                 destinationFileExtension: destinationExtension,
-                avoidExistingFiles: !naturalNames,
+                avoidExistingFiles: false,
                 albumKey: albumKeys[track.track.id]
             )
             // Names a device can hold and the write policy passes, before
             // anything compares or reserves them.
-            let destinationURL = Self.deviceSafeURL(plannedPath.destinationURL, under: destinationRoot)
+            let raw = key(plannedPath.destinationURL)
+            let safe = Self.deviceSafeURL(plannedPath.destinationURL, under: destinationRoot)
+            var destinationURL = safe
+            var attempt = 1
+            while true {
+                let candidate = key(destinationURL)
+                let clashesInBatch = producedBy[candidate].map { naturalNames ? $0 != raw : true } ?? false
+                let takenOnDisk = !naturalNames
+                    && (reserved.contains(destinationURL.standardizedFileURL.resolvingSymlinksInPath().path)
+                        || fileManager.fileExists(atPath: destinationURL.path))
+                // Natural names keep a genuine clash (the same name twice) for
+                // the review to ask about; only a clash the sanitising made is
+                // stepped past here.
+                guard clashesInBatch || takenOnDisk else { break }
+                attempt += 1
+                destinationURL = Self.suffixed(safe, attempt: attempt)
+            }
+            producedBy[key(destinationURL)] = raw
             if !naturalNames {
                 reserved.insert(destinationURL.standardizedFileURL.resolvingSymlinksInPath().path)
             }
@@ -151,6 +178,14 @@ public struct ExternalDeviceTransferPlanner {
             result.appendPathComponent(safe, isDirectory: !isFile)
         }
         return result
+    }
+
+    /// `url` with " (n)" before its extension.
+    static func suffixed(_ url: URL, attempt: Int) -> URL {
+        let ext = url.pathExtension
+        let base = url.deletingPathExtension().lastPathComponent
+        let named = url.deletingLastPathComponent().appendingPathComponent("\(base) (\(attempt))")
+        return ext.isEmpty ? named : named.appendingPathExtension(ext)
     }
 
     /// `~` followed by a digit becomes `-`: such a name can be taken for a

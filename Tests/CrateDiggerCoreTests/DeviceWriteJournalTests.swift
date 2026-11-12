@@ -157,4 +157,51 @@ final class DeviceWriteJournalTests: XCTestCase {
         XCTAssertEqual(j.records, [])
         XCTAssertFalse(FileManager.default.fileExists(atPath: dir.path)) // loading creates nothing
     }
+
+    // MARK: Two writers
+
+    /// Two instances on one file, appending at once from two threads: every
+    /// line lands whole (O_APPEND, one write per call), none is lost.
+    func testTwoWritersNeverInterleave() throws {
+        let first = journal()
+        let second = journal()
+        let group = DispatchGroup()
+        for (writer, prefix) in [(first, "A"), (second, "B")] {
+            group.enter()
+            DispatchQueue.global().async {
+                for index in 0..<200 {
+                    try? writer.append([self.record("Music/\(prefix)/\(index).jpg", .created)])
+                }
+                group.leave()
+            }
+        }
+        group.wait()
+
+        let reloaded = journal()
+        XCTAssertEqual(reloaded.records.count, 400)
+        XCTAssertEqual(Set(reloaded.records.map(\.relativePath)).count, 400)
+        let text = try String(contentsOf: reloaded.folder.appendingPathComponent(DeviceWriteJournal.fileName),
+                              encoding: .utf8)
+        XCTAssertEqual(text.split(separator: "\n").count, 400, "no line was split or merged")
+    }
+
+    func testSharedJournalIsOneInstancePerProfile() {
+        let a = DeviceWriteJournal.shared(profileID: profileID, directory: dir)
+        let b = DeviceWriteJournal.shared(profileID: profileID, directory: dir)
+        XCTAssertTrue(a === b)
+        XCTAssertFalse(a === DeviceWriteJournal.shared(profileID: UUID(), directory: dir))
+    }
+
+    func testTempIntentIndexIgnoresTheAskingSessionAndOtherVolumes() throws {
+        let j = journal()
+        let crashed = UUID()
+        try j.append([DeviceFileRecord(relativePath: "Music/A/01.m4a.cdtmp", kind: .tempIntent, role: "temp",
+                                       volumeUUID: "VOL", sessionID: crashed)])
+        XCTAssertTrue(j.hasTempIntent(forKey: "music/a/01.m4a.cdtmp", volumeUUID: "VOL", otherThan: session))
+        XCTAssertFalse(j.hasTempIntent(forKey: "music/a/01.m4a.cdtmp", volumeUUID: "VOL", otherThan: crashed))
+        XCTAssertFalse(j.hasTempIntent(forKey: "music/a/01.m4a.cdtmp", volumeUUID: "OTHER", otherThan: session))
+        XCTAssertTrue(journal().hasTempIntent(forKey: "Music/A/01.m4a.cdtmp", volumeUUID: "VOL", otherThan: session),
+                      "rebuilt on load")
+    }
 }
+

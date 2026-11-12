@@ -50,10 +50,8 @@ final class DeviceWriteDoorLintTests: XCTestCase {
         // The journal: everything it writes is on the Mac.
         ("DeviceFiles/DeviceWriteJournal.swift", "fileManager.createDirectory(at: folder",
          "makes the journal's own folder in Application Support, on the Mac"),
-        ("DeviceFiles/DeviceWriteJournal.swift", "fileManager.createFile(atPath: url.path",
-         "creates journal.jsonl in the journal folder, on the Mac"),
-        ("DeviceFiles/DeviceWriteJournal.swift", "FileHandle(forUpdating: url)",
-         "appends to journal.jsonl on the Mac; opened for update to read its last byte"),
+        ("DeviceFiles/DeviceWriteJournal.swift", "open(url.path, O_RDWR | O_APPEND | O_CREAT, 0o644)",
+         "creates or appends to journal.jsonl on the Mac (O_APPEND: writers never interleave)"),
         ("DeviceFiles/DeviceWriteJournal.swift", "try data.write(to: url)",
          "writes a backup into the journal folder on the Mac"),
         ("DeviceFiles/DeviceWriteJournal.swift", "fileManager.createDirectory(at: directory",
@@ -78,6 +76,11 @@ final class DeviceWriteDoorLintTests: XCTestCase {
         ("ExternalDevices/LibraryViewModel+DeviceSync.swift",
          "try? FileManager.default.createDirectory(at: stagingRoot",
          "makes the sync staging folder, which is on the Mac"),
+        ("ExternalDevices/LibraryViewModel+DeviceSync.swift", "defer { try? fm.removeItem(at: runRoot) }",
+         "removes this SYNC's conversion folder in the Mac's temporary folder"),
+        ("ExternalDevices/LibraryViewModel+DeviceSync.swift",
+         "defer { if let converted { try? fm.removeItem(at: converted.deletingLastPathComponent()) } }",
+         "removes one entry's converted file (and its folder) from that temporary folder on the Mac"),
         // Covers: a device run passes DeviceTransferDoor.writeCover; only an
         // ordinary conversion's cover takes this default.
         ("Services/FolderCoverArtWriter.swift", "try data.write(to: destination, options: .atomic)",

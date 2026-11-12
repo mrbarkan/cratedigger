@@ -68,7 +68,7 @@ final class DeviceTransferExecutorConversionTests: XCTestCase {
     }
 
     func testStagedJobsHoldBackWhatThePolicyRefusesAndWhatTheMacCannotHold() throws {
-        let refused = try copyItem("01 A.flac", to: "Vol./01 A.mp3", album: kindOfBlue)
+        let refused = try copyItem("01 A.flac", to: "Vol./01 A.mp3", album: bitchesBrew)   // its own album: refused whole
         let fits = try copyItem("02 B.flac", to: "Album/02 B.mp3", album: kindOfBlue)
         let tooMuch = try copyItem("03 C.flac", to: "Album/03 C.mp3", album: kindOfBlue)
         let margin = DeviceTransferExecutor.stagingSpaceMargin
@@ -77,7 +77,7 @@ final class DeviceTransferExecutorConversionTests: XCTestCase {
                                        stagingBytesAvailable: margin + 150, estimatedBytes: { _ in 100 })
 
         XCTAssertEqual(jobs.heldBack[refused.destinationURL.path],
-                       "CrateDigger does not write there: a name ending in a dot or a space")
+                       "Rename \"Vol.\" on the device so it does not end in a dot, then send again")
         XCTAssertEqual(jobs.heldBack[tooMuch.destinationURL.path], DeviceTransferExecutor.stagingSpaceReason)
         XCTAssertEqual(jobs.jobs.count, 1)
         XCTAssertNotNil(jobs.staged[fits.destinationURL.path])
