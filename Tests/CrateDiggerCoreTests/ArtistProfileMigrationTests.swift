@@ -148,10 +148,15 @@ final class ArtistProfileMigrationTests: XCTestCase {
         XCTAssertEqual(reloaded.allProfiles(), store.allProfiles(), "the profiles were saved before the rename")
         XCTAssertEqual(reloaded.allProfiles().count, 1)
 
-        // A backup from an earlier migration is never written over.
+        XCTAssertTrue(reloaded.picturesMigrated)
+
+        // A backup from an earlier migration is never written over (here the
+        // owner has thrown the profiles away, so the migration runs again).
+        try FileManager.default.removeItem(at: folder.appendingPathComponent(ArtistProfileStore.fileName))
         try FileManager.default.copyItem(at: bakFile, to: oldFile)
         let earlier = try Data(contentsOf: bakFile)
-        XCTAssertTrue(try ArtistProfileMigration.migrate(pictures: pictureStore(), into: reloaded,
+        XCTAssertTrue(try ArtistProfileMigration.migrate(pictures: pictureStore(),
+                                                         into: ArtistProfileStore(indexDirectory: folder),
                                                          indexDirectory: folder))
         XCTAssertEqual(try Data(contentsOf: bakFile), earlier)
         XCTAssertTrue(FileManager.default.fileExists(
@@ -185,6 +190,47 @@ final class ArtistProfileMigrationTests: XCTestCase {
                                                           indexDirectory: empty))
         XCTAssertFalse(FileManager.default.fileExists(
             atPath: empty.appendingPathComponent(ArtistProfileStore.fileName).path))
+    }
+
+    /// Review I1: the app still writes `library.cdartists` until the iPod
+    /// side reads profiles, so the file can come back. A second migration
+    /// must not undo anything the owner did since the first.
+    func testOwnerChoicesSurviveTheOldFileComingBack() throws {
+        let (store, _) = try migrate([
+            (record("Air", .found, source: .deezer, sourceID: "7"), try prepared(shade: 0.1)),
+            (record("Beck", .found, source: .commons, sourceID: "mb-beck"), try prepared(shade: 0.2)),
+            (record("Boston", .rejected), nil),
+        ])
+        let air = try XCTUnwrap(store.profile(forName: "Air")?.photos.first)
+        store.removePhoto(name: "Air", hash: air.hash)
+        let own = try store.addPhoto(name: "Beck", data: try prepared(shade: 0.9), source: .owner, sourceID: nil,
+                                     credit: nil)
+        store.setDefault(name: "Beck", hash: own.hash)
+        store.update(name: "Boston") { $0.notOnIPod = false }
+        try store.save()
+        let afterOwner = store.allProfiles()
+
+        // The old file reappears (written again by the Artist Pictures sheet).
+        try FileManager.default.copyItem(at: bakFile, to: oldFile)
+        let reopened = ArtistProfileStore(indexDirectory: folder)
+        XCTAssertTrue(reopened.picturesMigrated)
+        XCTAssertFalse(try ArtistProfileMigration.migrate(pictures: pictureStore(), into: reopened,
+                                                          indexDirectory: folder))
+        XCTAssertEqual(reopened.allProfiles(), afterOwner)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: oldFile.path), "left alone for the app that wrote it")
+    }
+
+    func testProfilesThatAlreadyExistAreNotTouched() throws {
+        let profiles = ArtistProfileStore(indexDirectory: folder)
+        profiles.update(name: "Air") { $0.owner = ArtistFacts(origin: "Versailles") }
+        let before = try XCTUnwrap(profiles.profile(forName: "Air"))
+        try migrate([
+            (record("Air", .found, source: .deezer, sourceID: "7", picked: true), try prepared(shade: 0.1)),
+            (record("Beck", .rejected), nil),
+        ], into: profiles)
+        XCTAssertEqual(profiles.profile(forName: "Air"), before)
+        XCTAssertEqual(profiles.profile(forName: "Beck")?.notOnIPod, true)
+        XCTAssertTrue(profiles.picturesMigrated)
     }
 
     func testSaveFailureKeepsOldFile() throws {

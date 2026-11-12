@@ -392,13 +392,165 @@ final class ArtistProfileStoreTests: XCTestCase {
         blocked.update(name: "Air") { $0.notOnIPod = true }
         XCTAssertThrowsError(try blocked.save())
 
-        // No file at all is an empty store that saves.
-        let fresh = ArtistProfileStore(indexDirectory: folder.appendingPathComponent("Fresh", isDirectory: true))
+        // No file in a folder that is there is an empty store that saves.
+        let freshFolder = folder.appendingPathComponent("Fresh", isDirectory: true)
+        try FileManager.default.createDirectory(at: freshFolder, withIntermediateDirectories: true)
+        let fresh = ArtistProfileStore(indexDirectory: freshFolder)
         XCTAssertEqual(fresh.allProfiles(), [])
-        try FileManager.default.createDirectory(at: folder.appendingPathComponent("Fresh"),
-                                                withIntermediateDirectories: true)
         fresh.update(name: "Air") { $0.notOnIPod = true }
         XCTAssertNoThrow(try fresh.save())
+    }
+
+    /// Review I3: a store made while the library drive is away must never
+    /// save a near-empty file over the real one once the drive is back.
+    func testMissingIndexFolderBlocksSave() throws {
+        let away = folder.appendingPathComponent("Unplugged/Crates", isDirectory: true)
+        let store = ArtistProfileStore(indexDirectory: away)
+        XCTAssertEqual(store.allProfiles(), [])
+        store.update(name: "Air") { $0.notOnIPod = true }
+        XCTAssertThrowsError(try store.save()) { error in
+            XCTAssertEqual(error as? ArtistProfileStoreError, .unreachableIndexFolder(path: away.path))
+        }
+        XCTAssertThrowsError(try store.addPhoto(name: "Air", data: image(400, 400), source: .owner, sourceID: nil,
+                                                credit: nil))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: away.path), "nothing made in its place")
+
+        // The drive comes back with the real file: this store still refuses.
+        try FileManager.default.createDirectory(at: away, withIntermediateDirectories: true)
+        let real = Data(#"{"picturesMigrated":true,"profiles":[{"displayName":"Beck","foldedKey":"beck"}]}"#.utf8)
+        try real.write(to: away.appendingPathComponent(ArtistProfileStore.fileName))
+        XCTAssertThrowsError(try store.save())
+        XCTAssertEqual(try Data(contentsOf: away.appendingPathComponent(ArtistProfileStore.fileName)), real)
+        XCTAssertEqual(ArtistProfileStore(indexDirectory: away).allProfiles().map(\.foldedKey), ["beck"])
+    }
+
+    // MARK: - The owner's word on identity
+
+    /// Review I2: a lookup already running cannot undo "None of these" or
+    /// "Not This Artist".
+    func testLookupCannotUndoTheOwnersIdentityChoice() throws {
+        let store = makeStore()
+        let when = Date(timeIntervalSinceReferenceDate: 800_000_000)
+        store.update(name: "Boston") { $0.identity = .rejected }
+        XCTAssertFalse(store.applyFetched(name: "Boston", facts: ArtistFacts(kind: "Group"),
+                                          identity: .confirmed(musicBrainzID: "mb-1", wikidataID: nil), at: when))
+        XCTAssertEqual(store.profile(forName: "Boston"), ArtistProfile(foldedKey: "boston", displayName: "Boston",
+                                                                      identity: .rejected))
+
+        store.update(name: "Air") { $0.rejectedMusicBrainzIDs = ["mb-wrong"] }
+        XCTAssertFalse(store.applyFetched(name: "Air", facts: ArtistFacts(origin: "Somewhere else"),
+                                          identity: .confirmed(musicBrainzID: "mb-wrong", wikidataID: nil), at: when))
+        XCTAssertNil(store.profile(forName: "Air")?.fetched)
+        XCTAssertEqual(store.profile(forName: "Air")?.identity, .unknown)
+
+        let wrong = ArtistIdentityCandidate(musicBrainzID: "mb-wrong", name: "Air")
+        let right = ArtistIdentityCandidate(musicBrainzID: "mb-right", name: "Air", disambiguation: "French duo")
+        XCTAssertTrue(store.applyFetched(name: "Air", facts: nil, identity: .uncertain([wrong, right]), at: when))
+        XCTAssertEqual(store.profile(forName: "Air")?.identity, .uncertain([right]))
+        XCTAssertTrue(store.applyFetched(name: "Air", facts: nil, identity: .uncertain([wrong]), at: when))
+        XCTAssertEqual(store.profile(forName: "Air")?.identity, .notFound, "no candidate left to ask about")
+
+        // Look Up Again clears "None of these" first; the rejected ids stay rejected.
+        store.update(name: "Air") { $0.identity = .rejected }
+        store.resetIdentity(name: "Air")
+        XCTAssertEqual(store.profile(forName: "Air")?.identity, .unknown)
+        XCTAssertEqual(store.profile(forName: "Air")?.rejectedMusicBrainzIDs, ["mb-wrong"])
+        XCTAssertTrue(store.applyFetched(name: "Air", facts: ArtistFacts(kind: "Group"),
+                                         identity: .confirmed(musicBrainzID: "mb-right", wikidataID: "Q1"), at: when))
+        XCTAssertEqual(store.profile(forName: "Air")?.identity, .confirmed(musicBrainzID: "mb-right", wikidataID: "Q1"))
+        store.resetIdentity(name: "Nobody")
+        XCTAssertNil(store.profile(forName: "Nobody"), "resetting makes no profile")
+    }
+
+    // MARK: - Hand-edited and damaged files
+
+    func testRecordsForOneArtistAreMerged() throws {
+        let a = String(repeating: "a", count: 64), b = String(repeating: "b", count: 64)
+        func photo(_ hash: String) -> String {
+            #"{"hash":"\#(hash)","source":"owner","pixelWidth":400,"pixelHeight":400,"added":"2026-01-01T00:00:00Z"}"#
+        }
+        let json = """
+        [
+          {"foldedKey":"beatles","displayName":"The Beatles","photos":[\(photo(a))],"defaultPhoto":"\(a)",
+           "owner":{"origin":"Liverpool"},"identity":{"state":"confirmed","musicBrainzID":"mb-old"},
+           "checkedAt":"2026-01-01T00:00:00Z","rejectedPhotoSources":["deezer:1"]},
+          {"foldedKey":"beatles","displayName":"Beatles, The","photos":[\(photo(a)),\(photo(b))],"defaultPhoto":"\(b)",
+           "defaultPickedByOwner":true,"notOnIPod":true,"owner":{"origin":"Elsewhere","bio":"Mine."},
+           "identity":{"state":"confirmed","musicBrainzID":"mb-new"},"checkedAt":"2026-06-01T00:00:00Z",
+           "rejectedPhotoSources":["deezer:2"]}
+        ]
+        """
+        try Data(json.utf8).write(to: storeFile)
+        let store = makeStore()
+        let beatles = try XCTUnwrap(store.profile(forName: "The Beatles"))
+        XCTAssertEqual(store.allProfiles().count, 1)
+        XCTAssertEqual(beatles.displayName, "The Beatles")
+        XCTAssertEqual(beatles.photos.map(\.hash), [a, b])
+        XCTAssertEqual(beatles.defaultPhoto, b, "the owner's pick wins")
+        XCTAssertTrue(beatles.defaultPickedByOwner)
+        XCTAssertTrue(beatles.notOnIPod)
+        XCTAssertEqual(beatles.owner?.origin, "Liverpool")
+        XCTAssertEqual(beatles.owner?.bio, "Mine.")
+        XCTAssertEqual(beatles.rejectedPhotoSources, ["deezer:1", "deezer:2"])
+        XCTAssertEqual(beatles.identity, .confirmed(musicBrainzID: "mb-new", wikidataID: nil), "the newer lookup")
+    }
+
+    func testLossyLoadKeepsOneBackupOfTheFileAsRead() throws {
+        let backup = folder.appendingPathComponent(ArtistProfileStore.backupFileName)
+        let clean = makeStore()
+        clean.update(name: "Air") { $0.notOnIPod = true }
+        try clean.save()
+        let second = makeStore()
+        second.update(name: "Air") { $0.noPhoto = true }
+        try second.save()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: backup.path), "a whole load needs no backup")
+
+        let damaged = Data(#"[{"displayName":"Air","photos":[{"hash":"x"}]},{"displayName":7}]"#.utf8)
+        try damaged.write(to: storeFile)
+        let store = makeStore()
+        XCTAssertEqual(store.allProfiles().map(\.foldedKey), ["air"])
+        try store.save()
+        XCTAssertEqual(try Data(contentsOf: backup), damaged)
+        XCTAssertNotEqual(try Data(contentsOf: storeFile), damaged, "the repaired file is written back")
+
+        // Once: a later damaged load keeps the first backup.
+        try Data(#"[{"displayName":"Beck","identity":{"state":"future"}}]"#.utf8).write(to: storeFile)
+        let again = makeStore()
+        again.update(name: "Beck") { $0.notOnIPod = true }
+        try again.save()
+        XCTAssertEqual(try Data(contentsOf: backup), damaged)
+    }
+
+    func testSaveSweepsPhotoFilesNoProfileNames() throws {
+        let store = makeStore()
+        let kept = try store.addPhoto(name: "Air", data: image(400, 400, shade: 0.1), source: .owner, sourceID: nil,
+                                      credit: nil)
+        let edited = try store.addPhoto(name: "Air", data: image(400, 400, shade: 0.2), source: .owner,
+                                        sourceID: nil, credit: nil)
+        let stray = photosDirectory.appendingPathComponent(String(repeating: "c", count: 64) + ".jpg")
+        let named = String(repeating: "d", count: 64)
+        let namedByBackup = photosDirectory.appendingPathComponent(named + ".png")
+        let ownersFile = photosDirectory.appendingPathComponent("notes.txt")
+        for file in [stray, namedByBackup, ownersFile] { try Data("x".utf8).write(to: file) }
+        try Data(#"[{"defaultPhoto":"\#(named)"}]"#.utf8)
+            .write(to: folder.appendingPathComponent(ArtistProfileStore.backupFileName))
+
+        // An edit that drops a photo without removePhoto: its file still goes.
+        store.update(name: "Air") { $0.photos.removeAll { $0.hash == edited.hash } }
+        try store.save()
+        let names = Set(try FileManager.default.contentsOfDirectory(atPath: photosDirectory.path))
+        XCTAssertEqual(names, [kept.hash + ".jpg", named + ".png", "notes.txt"])
+    }
+
+    func testMigratedFlagIsSavedInTheFile() throws {
+        let store = makeStore()
+        XCTAssertFalse(store.picturesMigrated)
+        store.markPicturesMigrated()
+        try store.save()
+        XCTAssertTrue(makeStore().picturesMigrated)
+        let object = try JSONSerialization.jsonObject(with: Data(contentsOf: storeFile)) as? [String: Any]
+        XCTAssertEqual(object?["picturesMigrated"] as? Bool, true)
+        XCTAssertNotNil(object?["profiles"] as? [Any])
     }
 
     func testEmptyKeyIsIgnored() {

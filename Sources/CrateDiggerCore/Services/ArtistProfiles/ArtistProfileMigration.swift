@@ -9,9 +9,16 @@ import Foundation
 /// whose original the record can still name gets `replaceFromURL`, so the
 /// background worker can swap the 400 px copy for a full-size one. "No
 /// Picture" (`.rejected`) becomes `notOnIPod`, which hides nothing in the
-/// app. Held candidates and credits carry over. Once the profiles are saved,
-/// `library.cdartists` is renamed `library.cdartists.bak` (never deleted),
-/// which is also what marks the migration as done.
+/// app. Held candidates and credits carry over. The profiles are saved
+/// with `picturesMigrated` set, and then `library.cdartists` is renamed
+/// `library.cdartists.bak` (never deleted).
+///
+/// The flag in the profiles file is what marks it done: until the iPod
+/// side reads profiles, the app still writes `library.cdartists`, so the
+/// file can come back, and a rename can fail after the save. Even a run
+/// that gets past the flag never touches a profile that existed before it,
+/// never re-adds a photo the owner removed, and never moves a default the
+/// owner picked.
 ///
 /// Reads images and writes files: run it off the main actor, after
 /// `refuseWhileLibraryDisconnected`.
@@ -20,16 +27,19 @@ public enum ArtistProfileMigration {
     @discardableResult
     public static func migrate(pictures: ArtistPictureStore, into profiles: ArtistProfileStore,
                                indexDirectory: URL, fileManager: FileManager = .default) throws -> Bool {
+        guard !profiles.picturesMigrated else { return false }
         let oldFile = indexDirectory.appendingPathComponent(ArtistPictureStore.fileName)
-        // No file: it already ran, or there never were pictures. An empty or
-        // unreadable file reads as no records; it is left where it is.
+        // No file: there never were pictures. An empty or unreadable file
+        // reads as no records; it is left where it is.
         guard fileManager.fileExists(atPath: oldFile.path) else { return false }
         let records = pictures.allRecords()
         guard !records.isEmpty else { return false }
 
-        for record in records {
+        let existing = Set(profiles.allProfiles().map(\.foldedKey))
+        for record in records where !existing.contains(PodBoxArtName.folded(record.displayName)) {
             try carry(record, from: pictures, into: profiles)
         }
+        profiles.markPicturesMigrated()
         try profiles.save()
         try fileManager.moveItem(at: oldFile, to: backupURL(for: oldFile, fileManager: fileManager))
         return true
@@ -40,11 +50,14 @@ public enum ArtistProfileMigration {
     private static func carry(_ record: ArtistPictureRecord, from pictures: ArtistPictureStore,
                               into profiles: ArtistProfileStore) throws {
         let name = record.displayName
-        if let bytes = pictures.preparedData(for: record) {
+        let sourceID = migratedSourceID(record)
+        let removedByOwner = sourceID.map { profiles.profile(forName: name)?.rejectedPhotoSources.contains($0) == true }
+            ?? false
+        if !removedByOwner, let bytes = pictures.preparedData(for: record) {
             let photo: ArtistPhoto?
             do {
                 photo = try profiles.addPhoto(name: name, data: bytes, source: .migrated,
-                                              sourceID: migratedSourceID(record), credit: record.credit)
+                                              sourceID: sourceID, credit: record.credit)
             } catch ArtistProfileStoreError.unreadablePhoto, ArtistProfileStoreError.photoTooLarge {
                 // A cached picture that no longer reads: the background
                 // worker finds one again. Anything else (a disk that will
@@ -58,11 +71,9 @@ public enum ArtistProfileMigration {
                        profile.photos[index].replaceFromURL == nil {
                         profile.photos[index].replaceFromURL = replaceFrom
                     }
-                    if record.pickedByUser {
+                    if !profile.defaultPickedByOwner {
                         profile.defaultPhoto = photo.hash
-                        profile.defaultPickedByOwner = true
-                    } else if !profile.defaultPickedByOwner {
-                        profile.defaultPhoto = photo.hash
+                        profile.defaultPickedByOwner = record.pickedByUser
                     }
                 }
             }

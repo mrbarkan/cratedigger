@@ -49,6 +49,15 @@ public struct ArtistFacts: Codable, Hashable, Sendable {
     }
 }
 
+extension ArtistFacts {
+    /// These facts, with each field that is nil here taken from `other`.
+    func filling(from other: ArtistFacts) -> ArtistFacts {
+        ArtistFacts(kind: kind ?? other.kind, origin: origin ?? other.origin, begin: begin ?? other.begin,
+                    end: end ?? other.end, bio: bio ?? other.bio, bioSourceURL: bioSourceURL ?? other.bioSourceURL,
+                    members: members ?? other.members, genres: genres ?? other.genres, links: links ?? other.links)
+    }
+}
+
 /// One member of a group, from MusicBrainz's member-of-band relations.
 public struct ArtistMember: Codable, Hashable, Sendable {
     public var name: String
@@ -260,6 +269,7 @@ extension ArtistProfile.Identity: Codable {
         switch c.lenient(String.self, .state) {
         case "confirmed":
             guard let id = c.lenient(String.self, .musicBrainzID), !id.isEmpty else {
+                DecodingLosses.note(in: decoder)
                 self = .unknown
                 return
             }
@@ -268,7 +278,10 @@ extension ArtistProfile.Identity: Codable {
             self = .uncertain(c.lossyArray(ArtistIdentityCandidate.self, .candidates) ?? [])
         case "notFound": self = .notFound
         case "rejected": self = .rejected
-        default: self = .unknown
+        case "unknown": self = .unknown
+        default:
+            DecodingLosses.note(in: decoder)
+            self = .unknown
         }
     }
 
@@ -294,11 +307,33 @@ extension ArtistProfile.Identity: Codable {
 
 // MARK: - Lenient decoding
 
+/// Counts what a lenient decode had to leave out, so the store knows to
+/// keep a copy of the file it read before writing over it.
+final class DecodingLosses: @unchecked Sendable {
+    var count = 0
+
+    static func note(in decoder: Decoder) {
+        (decoder.userInfo[.decodingLosses] as? DecodingLosses)?.count += 1
+    }
+}
+
+extension CodingUserInfoKey {
+    static let decodingLosses = CodingUserInfoKey(rawValue: "CrateDigger.decodingLosses")!
+}
+
 /// Decodes as nil instead of throwing, so one bad element of an array is
 /// skipped while the container still moves on to the next.
 struct LossyElement<Value: Decodable>: Decodable {
     let value: Value?
-    init(from decoder: Decoder) throws { value = try? Value(from: decoder) }
+
+    init(from decoder: Decoder) throws {
+        do {
+            value = try Value(from: decoder)
+        } catch {
+            value = nil
+            DecodingLosses.note(in: decoder)
+        }
+    }
 }
 
 extension KeyedDecodingContainer {
