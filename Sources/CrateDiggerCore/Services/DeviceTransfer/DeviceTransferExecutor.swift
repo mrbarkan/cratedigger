@@ -221,3 +221,14 @@ public struct DeviceTransferExecutor {
         return order
     }
 }
+
+public extension DeviceTransferExecutor.Outcome {
+    /// What this run changed on the device, for the next steps: audio when
+    /// a file landed or an old one went, covers when any cover's bytes changed.
+    func changes(coversWritten: Int) -> DeviceWriteChanges {
+        var changes: DeviceWriteChanges = []
+        if !written.isEmpty || !deleted.isEmpty { changes.insert(.audio) }
+        if coversWritten > 0 { changes.insert(.covers) }
+        return changes
+    }
+}

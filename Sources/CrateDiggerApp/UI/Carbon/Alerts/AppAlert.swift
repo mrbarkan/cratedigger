@@ -15,6 +15,8 @@ struct AppAlert: Identifiable {
     /// the update alerts' link to the GitHub releases page.
     var linkTitle: String?
     var linkURL: URL?
+    /// The button beside the action that only closes the alert.
+    var cancelTitle: String = "Cancel"
 
     static func info(
         title: String,
@@ -34,11 +36,12 @@ struct AppAlert: Identifiable {
         title: String,
         message: String,
         actionTitle: String,
+        cancelTitle: String = "Cancel",
         linkTitle: String? = nil,
         linkURL: URL? = nil,
         action: @escaping () -> Void
     ) -> AppAlert {
         AppAlert(title: title, message: message, actionTitle: actionTitle, action: action,
-                 linkTitle: linkTitle, linkURL: linkURL)
+                 linkTitle: linkTitle, linkURL: linkURL, cancelTitle: cancelTitle)
     }
 }

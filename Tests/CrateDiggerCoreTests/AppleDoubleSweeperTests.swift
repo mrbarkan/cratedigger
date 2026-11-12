@@ -21,6 +21,19 @@ final class AppleDoubleSweeperTests: XCTestCase {
         iPod = nil
     }
 
+    func testFoldersUnderAFolderMakeARecursiveScope() throws {
+        try addTwin("\(album)/CD1/._01.m4a")
+        try addTwin("\(album)/CD2/._01.m4a")
+        try addTwin("Music/Classics/Other/._01.m4a")
+        let folders = AppleDoubleSweeper.folders(under: iPod.root.appendingPathComponent(album, isDirectory: true))
+        XCTAssertEqual(folders.map { $0.lastPathComponent }, ["2010 Teen Dream", "CD1", "CD2"])
+        let scoped = sweeper.plan(volumeRoot: iPod.root, scope: folders,
+                                  mediaExtensions: AppleDoubleSweeper.defaultMediaExtensions)
+        XCTAssertEqual(scoped.candidates, ["\(album)/CD1/._01.m4a", "\(album)/CD2/._01.m4a"])
+        XCTAssertEqual(AppleDoubleSweeper.folders(under: iPod.root).filter { $0.lastPathComponent == ".rockbox" }, [],
+                       "never into the player's trees")
+    }
+
     // MARK: Helpers
 
     private func plan(scope: [String]? = nil) -> AppleDoubleSweepPlan {

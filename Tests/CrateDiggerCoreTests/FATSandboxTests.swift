@@ -374,6 +374,36 @@ final class FATSandboxTests: XCTestCase {
         finding("Door", ["audio copy, exclusive refusal, Replace, dotted-name refusal, cover and Replace delete on FAT: no twins, no temps"])
     }
 
+    /// P1 Task 10 on real FAT: twins macOS itself made (a Finder-style copy
+    /// of a file with an attribute) in a folder a session wrote to are
+    /// removed by the session's finish, with a copy on the Mac; a twin in a
+    /// folder the session did not touch stays.
+    func testSessionFinishSweepsRealTwinsOnFAT() throws {
+        let album = run.appendingPathComponent("Music/A/B", isDirectory: true)
+        let untouched = run.appendingPathComponent("Music/C/D", isDirectory: true)
+        for folder in [album, untouched] {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        }
+        // FileManager.copyItem carries the attribute, so macOS writes a twin (S1).
+        try FileManager.default.copyItem(at: try macSource("old.m4a"), to: album.appendingPathComponent("01.m4a"))
+        try FileManager.default.copyItem(at: try macSource("other.m4a"), to: untouched.appendingPathComponent("01.m4a"))
+        XCTAssertTrue(hasTwin(album.appendingPathComponent("01.m4a")), "the setup needs a real twin")
+
+        let journal = DeviceWriteJournal(profileID: UUID(), directory: mac.appendingPathComponent("journal"))
+        let executor = DeviceFileExecutor(volumeRoot: run, expectedVolumeUUID: DeviceFileExecutor.systemVolumeUUID(run),
+                                          policy: DeviceWritePolicy(musicSubpath: "Music"), journal: journal,
+                                          rootMustBeMountPoint: false)
+        let result = DeviceSessionFinish.finish(written: [album.appendingPathComponent("02.m4a")], deleted: [],
+                                                changes: .audio, firmware: nil, sweeps: true, volumeRoot: run,
+                                                executor: executor)
+
+        XCTAssertEqual(result.removed, 1)
+        XCTAssertFalse(hasTwin(album.appendingPathComponent("01.m4a")))
+        XCTAssertTrue(hasTwin(untouched.appendingPathComponent("01.m4a")))
+        XCTAssertEqual(journal.records.filter { $0.kind == .deleted }.compactMap(\.backupFile).count, 1)
+        finding("Finish", ["a session's finish removed the macOS twin in the folder it wrote to and kept the other: \(result.lines.joined(separator: " "))"])
+    }
+
     /// I4 on real FAT, where a file written into a freed directory slot can
     /// come back with the old inode number: a twin swapped between its backup
     /// and its removal must survive, and the inode seen is recorded.

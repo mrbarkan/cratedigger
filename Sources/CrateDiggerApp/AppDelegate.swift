@@ -566,6 +566,61 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                 }
             }
         }
+        // PodBox UI, for a window capture without the owner's iPod:
+        // CRATEDIGGER_PODBOX_UI=<mount point> names a FAT disk image attached
+        // (browsable, so detection sees it) OUTSIDE /Volumes, holding a
+        // FakeIPod-like .rockbox. It saves a device profile for it, browses it
+        // on DEVICES, then opens Preferences ▸ Devices. It refuses /Volumes,
+        // and refuses to run unless CFFIXED_USER_HOME points the preferences
+        // at a scratch home, so the profile never reaches the real ones.
+        // CRATEDIGGER_DEVICE_SUMMARY=1 presents a fabricated device summary
+        // with next steps and an Eject key that only logs. Nothing is written
+        // to any device by either.
+        if let raw = env["CRATEDIGGER_PODBOX_UI"] {
+            let path = URL(fileURLWithPath: raw, isDirectory: true).resolvingSymlinksInPath().path
+            if path == "/Volumes" || path.hasPrefix("/Volumes/") || env["CFFIXED_USER_HOME"] == nil {
+                NSLog("[podbox-ui] refusing: the path must be outside /Volumes and CFFIXED_USER_HOME must be set")
+            } else {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+                    guard let model = self?.mainWindowController?.model else { return }
+                    let device = DeviceDetectionService().detectDevices()
+                        .first { $0.volumeURL.resolvingSymlinksInPath().path == path }
+                    guard let device else { return NSLog("[podbox-ui] no detected device at %@", path) }
+                    if model.deviceProfile(for: device) == nil {
+                        var profile = DeviceProfileSuggester.suggestedProfile(for: device)
+                        profile.kind = .rockboxIPod
+                        PreferencesStore.shared.upsertExternalDeviceProfile(profile)
+                    }
+                    model.refreshDevices()
+                    model.selectSource(.device(volumePath: device.volumeURL.path))
+                    model.oledView = .devices
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+                        PreferencesWindowController.initialTab = "devices"
+                        self?.showPreferences(nil)
+                    }
+                }
+            }
+        }
+        if env["CRATEDIGGER_DEVICE_SUMMARY"] != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) { [weak self] in
+                guard let model = self?.mainWindowController?.model,
+                      let host = self?.mainWindowController?.window?.contentViewController
+                else { return }
+                var report = ConversionReport(
+                    title: "Sent to IPOD",
+                    statusLine: "2 copied · 1 already there",
+                    details: "[ok] 01 - Zebra.m4a -> /Volumes/IPOD/Music/Beach House/2010 Teen Dream/01 - Zebra.m4a\n[ok] 02 - Silver Soul.m4a -> /Volumes/IPOD/Music/Beach House/2010 Teen Dream/02 - Silver Soul.m4a",
+                    tone: .success,
+                    showsDetailsButton: true
+                )
+                report.nextSteps = ["Removed 2 Mac metadata files."]
+                    + PodBoxNextSteps.after([.audio, .covers, .cleanup],
+                                            firmware: DeviceFirmware(flavour: .podBox, layout: 5, build: nil))
+                report.eject = { NSLog("[device-summary] Eject pressed (fabricated, nothing ejected)") }
+                NSApp.activate(ignoringOtherApps: true)
+                model.presentSummary(report: report, presentingFrom: host)
+            }
+        }
         // Before the snapshot guard, which returns early without a path.
         if let raw = env["CRATEDIGGER_BUSY"] {
             if let request = BusyDebugRequest(raw) {

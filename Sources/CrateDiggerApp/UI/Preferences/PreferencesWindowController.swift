@@ -3,6 +3,10 @@ import CrateDiggerCore
 import SwiftUI
 
 final class PreferencesWindowController: NSWindowController {
+    /// The tab the window opens on. A DEBUG capture hook sets it before the
+    /// window is first made; otherwise General, as before.
+    static var initialTab = "general"
+
     /// `model` feeds Preferences ▸ Devices what only the running app knows:
     /// which devices are mounted and what their firmware probe found.
     convenience init(model: LibraryViewModel?) {
@@ -30,21 +34,28 @@ final class PreferencesWindowController: NSWindowController {
 /// transfer targets (Devices), and the sharp tools (Advanced).
 private struct PreferencesView: View {
     let model: LibraryViewModel?
+    @State private var tab = PreferencesWindowController.initialTab
 
     var body: some View {
-        TabView {
+        TabView(selection: $tab) {
             GeneralPreferencesView()
                 .tabItem { Label("General", systemImage: "gearshape") }
+                .tag("general")
             InterfacePreferencesView()
                 .tabItem { Label("Interface", systemImage: "paintbrush") }
+                .tag("interface")
             PlaybackPreferencesView()
                 .tabItem { Label("Playback", systemImage: "speaker.wave.2") }
+                .tag("playback")
             IntegrationsPreferencesView()
                 .tabItem { Label("Integrations", systemImage: "point.3.connected.trianglepath.dotted") }
+                .tag("integrations")
             DevicesPreferencesView(model: model)
                 .tabItem { Label("Devices", systemImage: "externaldrive") }
+                .tag("devices")
             AdvancedPreferencesView()
                 .tabItem { Label("Advanced", systemImage: "wrench.and.screwdriver") }
+                .tag("advanced")
         }
         .frame(width: 780, height: 580)
     }

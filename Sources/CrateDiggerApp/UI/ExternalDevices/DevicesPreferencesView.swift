@@ -18,6 +18,10 @@ struct DevicesPreferencesView: View {
     @State private var leftAloneCount = 0
     /// What the selected profile's mounted device runs, when it has `.rockbox`.
     @State private var firmware: DeviceFirmware?
+    /// The selected profile's device, while it is mounted.
+    @State private var mountedDevice: MountedDevice?
+    /// It is FAT or exFAT, where macOS leaves `._` files.
+    @State private var canCleanUpMacFiles = false
 
     var body: some View {
         // spacing 0 and no .top alignment: the divider has to run the full
@@ -229,7 +233,8 @@ struct DevicesPreferencesView: View {
     }
 
     /// Read-only, and only while the device is mounted and has `.rockbox`:
-    /// what the mount-time probe found.
+    /// what the mount-time probe found. Then, while it is mounted, the
+    /// cleanup of the Mac's `._` files, which runs only when pressed.
     @ViewBuilder
     private var firmwareRows: some View {
         if let firmware {
@@ -245,6 +250,24 @@ struct DevicesPreferencesView: View {
                     .foregroundStyle(.secondary)
             }
         }
+        if let mountedDevice, let model {
+            LabeledContent("Mac files") {
+                Button("Clean Up Mac Files…") { model.cleanUpMacFiles(device: mountedDevice, scope: nil) }
+                    .disabled(!canCleanUpMacFiles)
+            }
+            Text(cleanUpCaption)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var cleanUpCaption: String {
+        guard canCleanUpMacFiles else {
+            return "Only FAT and exFAT devices collect the hidden ._ files macOS leaves beside each file."
+        }
+        let hint = DeviceCleanupSummary.mountHint(count: firmware?.unreadableAppleDoubleCount ?? 0)
+        return (hint.map { $0 + " " } ?? "")
+            + "Removes the hidden ._ files macOS leaves beside each file. A copy is kept on this Mac."
     }
 
     /// What a transfer does with the art: inside the files (convert mode
@@ -380,6 +403,8 @@ struct DevicesPreferencesView: View {
             draft = EditableExternalDeviceProfile()
             leftAloneCount = 0
             firmware = nil
+            mountedDevice = nil
+            canCleanUpMacFiles = false
             return
         }
         draft = EditableExternalDeviceProfile(profile: profile)
@@ -391,9 +416,13 @@ struct DevicesPreferencesView: View {
     private func refreshMountedState() {
         guard let model, let selectedID, let device = model.mountedDevice(forProfileID: selectedID) else {
             firmware = nil
+            mountedDevice = nil
+            canCleanUpMacFiles = false
             return
         }
         firmware = model.firmware(for: device)
+        mountedDevice = device
+        canCleanUpMacFiles = model.capabilities(for: device).contains(.appleDoubleSweep)
     }
 
     private func chooseMountedRoot() {

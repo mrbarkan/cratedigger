@@ -207,6 +207,14 @@ struct SourcesSidebar: View {
                                     selected: isSelectedDevice(device.volumeURL.path),
                                     action: { model.selectSource(.device(volumePath: device.volumeURL.path)) }
                                 )
+                                .lazyContextMenu {
+                                    Button("Clean Up Mac Files…") { model.cleanUpMacFiles(device: device, scope: nil) }
+                                        .disabled(!model.capabilities(for: device).contains(.appleDoubleSweep)
+                                                  || model.isCleaningDeviceFiles || model.isConversionRunning)
+                                    Divider()
+                                    Button("Eject") { model.ejectDevice(device) }
+                                        .disabled(model.isCleaningDeviceFiles || model.isConversionRunning)
+                                }
                                 if let profile = model.deviceProfile(for: device),
                                    let queued = model.syncQueueCounts[profile.id], queued > 0 {
                                     Button(action: { model.syncQueuedTransfers(profileID: profile.id) }) {

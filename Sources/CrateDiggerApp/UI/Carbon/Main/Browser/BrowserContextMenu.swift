@@ -198,8 +198,21 @@ enum BrowserContextMenu {
         let usesSel = model.selectedAlbumIDs.count > 1 && model.selectedAlbumIDs.contains(album.id)
         transferToDeviceMenu(for: usesSel ? model.selectedTracksForCrateAdd() : album.tracks, model: model)
         showInFinderButton(for: album.tracks)
+        deviceCleanUpButton(for: album, model: model)
 
         removalItems(forAlbum: album, model: model)
+    }
+
+    /// On a browsed device: clean the Mac's `._` files out of this album's
+    /// folder and the folders below it. Only on FAT and exFAT.
+    @ViewBuilder
+    private static func deviceCleanUpButton(for album: Album, model: LibraryViewModel) -> some View {
+        if let (_, device) = model.browsedMountedDevice,
+           model.capabilities(for: device).contains(.appleDoubleSweep),
+           let folder = model.deviceFolder(of: album) {
+            Button("Clean Up Mac Files in This Folder…") { model.cleanUpMacFiles(device: device, inFolder: folder) }
+                .disabled(model.isCleaningDeviceFiles || model.isConversionRunning)
+        }
     }
 
     /// Menu for a single track. Mirrors the album menu's selection-aware Add and

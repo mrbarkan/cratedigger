@@ -628,7 +628,7 @@ extension LibraryViewModel {
         // a Gaps fill found there. The plan lists cover folders only when the
         // run's Folder Art switch is on, which may not be stored on the
         // device yet (it is saved below).
-        writeFolderCoverArt(
+        let covers = writeFolderCoverArt(
             landings: plan.coverFolders(after: outcome.written, hasCover: { FolderCoverArtWriter.hasCover(in: $0) })
                 .map { (folder: $0.key, artwork: $0.value.metadata.artwork) },
             for: profile.name,
@@ -647,11 +647,19 @@ extension LibraryViewModel {
             removingPaths: outcome.removedPaths
         )
 
+        let nextSteps = await finishDeviceSession(
+            device: device, profile: runProfile,
+            written: outcome.written.map(\.destinationURL), deleted: outcome.deleted,
+            changes: outcome.changes(coversWritten: covers)
+        )
+
         // Remember any format/folder tweaks on the device profile and stay
         // routed to it: the next album you send needs no setup.
         persistSelectionToDevice(selection, profileID: profile.id)
         removeFromPendingDeviceQueue(taken, profileID: profile.id)
-        presentSummary(report: deviceSendReport(plan: plan, outcome: outcome, deviceName: profile.name), presentingFrom: host)
+        presentSummary(report: deviceReport(deviceSendReport(plan: plan, outcome: outcome, deviceName: profile.name),
+                                            nextSteps: nextSteps, device: device),
+                       presentingFrom: host)
     }
 
     /// The summary of a device send, worded like the copy path's.

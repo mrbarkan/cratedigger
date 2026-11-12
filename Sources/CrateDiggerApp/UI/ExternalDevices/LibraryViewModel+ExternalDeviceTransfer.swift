@@ -341,7 +341,7 @@ extension LibraryViewModel {
 
             // A cover only where something actually landed, and never over
             // one a Gaps fill found there.
-            await writeFolderCoverArt(
+            let covers = await writeFolderCoverArt(
                 profileID: resolved.id,
                 folderTracks: plan.coverFolders(after: outcome.written, hasCover: { FolderCoverArtWriter.hasCover(in: $0) })
                     .map { (folder: $0.key, track: $0.value) },
@@ -359,7 +359,12 @@ extension LibraryViewModel {
                 },
                 removingPaths: outcome.removedPaths
             )
-            presentSummary(report: report, presentingFrom: host)
+            let nextSteps = await finishDeviceSession(
+                device: device, profile: resolved,
+                written: outcome.written.map(\.destinationURL), deleted: outcome.deleted,
+                changes: outcome.changes(coversWritten: covers)
+            )
+            presentSummary(report: deviceReport(report, nextSteps: nextSteps, device: device), presentingFrom: host)
         }
     }
 

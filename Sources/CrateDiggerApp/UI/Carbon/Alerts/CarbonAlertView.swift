@@ -40,7 +40,7 @@ struct CarbonAlertView: View {
                 }
                 Spacer()
                 if let actionTitle = alert.actionTitle, let action = alert.action {
-                    Button("Cancel") { dismiss() }
+                    Button(alert.cancelTitle) { dismiss() }
                         .keyboardShortcut(.cancelAction)
                     Button(actionTitle) {
                         action()

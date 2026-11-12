@@ -25,6 +25,9 @@ struct ConversionSummarySheetView: View {
             } else {
                 Spacer(minLength: 0)
             }
+            if !report.nextSteps.isEmpty {
+                nextSteps
+            }
             footer
         }
         .frame(minWidth: 620, idealWidth: 660, minHeight: 380, idealHeight: 460)
@@ -115,11 +118,43 @@ struct ConversionSummarySheetView: View {
         .padding(.horizontal, 22)
     }
 
+    // MARK: - Next steps
+
+    /// What is left to do on the device, in reading order.
+    private var nextSteps: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("NEXT")
+                .font(CarbonFont.mono(8.5, weight: .bold))
+                .tracking(2.2)
+                .foregroundStyle(theme.ink4)
+            ForEach(Array(report.nextSteps.enumerated()), id: \.offset) { _, step in
+                Text(step)
+                    .font(CarbonFont.sans(12))
+                    .foregroundStyle(theme.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 22)
+        .padding(.top, 14)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Next: " + report.nextSteps.joined(separator: " "))
+    }
+
     // MARK: - Footer
 
     private var footer: some View {
-        HStack {
+        HStack(spacing: 10) {
             Spacer(minLength: 0)
+            if let eject = report.eject {
+                KeyButton(style: .normal, action: {
+                    onClose()
+                    eject()
+                }) { Text("EJECT") }
+                    .frame(width: 104, height: geometry.keyHeight)
+                    .accessibilityHint("Close the summary and eject the device.")
+            }
             KeyButton(style: .glowingFilled, action: onClose) { Text("CLOSE") }
                 .frame(width: 104, height: geometry.keyHeight)
                 .keyboardShortcut(.defaultAction)

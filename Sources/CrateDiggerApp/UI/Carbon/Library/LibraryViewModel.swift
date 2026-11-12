@@ -1125,6 +1125,8 @@ final class LibraryViewModel: ObservableObject {
             NotificationCenter.default.post(name: Self.deviceFirmwareChangedNotification, object: nil)
         }
     }
+    /// A Clean Up Mac Files run is planning or removing (`LibraryViewModel+PodBox`).
+    @Published var isCleaningDeviceFiles = false
     @Published var deadTracks: [LoadedTrack] = []
     /// Names of `/Volumes/<name>` drives the library references that aren't
     /// currently mounted. Drives the "offline" row badge. Recomputed only on
@@ -1600,6 +1602,8 @@ final class LibraryViewModel: ObservableObject {
         self.playlists = playlistService.listPlaylists()
         self.mountedCDs = cdRipper.detectAudioCDs()
         self.mountedDevices = detectSavedDevices()
+        // Devices already plugged in at launch are probed too (read-only).
+        refreshDeviceFirmware()
 
         if let outputUID = prefs.selectedOutputDeviceUID {
             playback.setOutputDeviceUID(outputUID)

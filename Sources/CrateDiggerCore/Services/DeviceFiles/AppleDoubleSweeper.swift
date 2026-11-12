@@ -132,6 +132,21 @@ public struct AppleDoubleSweeper {
                                     sizeHistogram: walk.sizeHistogram)
     }
 
+    /// `folder` and every folder below it, for a scoped plan that covers a
+    /// whole subtree (a scope is listed non-recursively). Read with
+    /// `readdir`; never follows a symlink, never enters the player's trees.
+    public static func folders(under folder: URL) -> [URL] {
+        var result: [URL] = [folder]
+        guard let names = entryNames(inFolder: folder.path) else { return result }
+        for name in names.sorted() where !deniedKeys.contains(DeviceWritePolicy.key(forRelativePath: name)) {
+            let child = folder.appendingPathComponent(name, isDirectory: true)
+            var info = stat()
+            guard lstat(child.path, &info) == 0, (info.st_mode & S_IFMT) == S_IFDIR else { continue }
+            result += folders(under: child)
+        }
+        return result
+    }
+
     private static func isDenied(_ relativePath: String) -> Bool {
         relativePath.split(separator: "/").contains {
             deniedKeys.contains(DeviceWritePolicy.key(forRelativePath: String($0)))

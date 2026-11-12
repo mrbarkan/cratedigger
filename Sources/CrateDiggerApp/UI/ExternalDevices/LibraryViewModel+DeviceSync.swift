@@ -452,7 +452,7 @@ extension LibraryViewModel {
 
             // A cover only where something actually landed, and never over
             // one a Gaps fill found there.
-            await writeFolderCoverArt(
+            let covers = await writeFolderCoverArt(
                 profileID: profileID,
                 folderTracks: plan.coverFolders(after: outcome.written, hasCover: { FolderCoverArtWriter.hasCover(in: $0) })
                     .map { (folder: $0.key, track: $0.value) },
@@ -469,6 +469,12 @@ extension LibraryViewModel {
                     )
                 },
                 removingPaths: outcome.removedPaths
+            )
+            // Once, after the queue has drained.
+            let nextSteps = await finishDeviceSession(
+                device: device, profile: profile,
+                written: outcome.written.map(\.destinationURL), deleted: outcome.deleted,
+                changes: outcome.changes(coversWritten: covers)
             )
             deviceSyncProgress = DeviceSyncProgressSnapshot(
                 profileName: profileName, currentRelativePath: nil,
@@ -489,13 +495,13 @@ extension LibraryViewModel {
                 tone = .warning
             }
             presentSummary(
-                report: ConversionReport(
+                report: deviceReport(ConversionReport(
                     title: title,
                     statusLine: DeviceTransferSummary.statusLine(for: plan, outcome: outcome),
                     details: outcome.lines.joined(separator: "\n"),
                     tone: tone,
                     showsDetailsButton: !outcome.lines.isEmpty
-                ),
+                ), nextSteps: nextSteps, device: device),
                 presentingFrom: host
             )
         }

@@ -140,4 +140,173 @@ extension LibraryViewModel {
         }
         return nil
     }
+
+    // MARK: - Finishing a session
+
+    /// Called by every device write path right after `patchDeviceCatalog`.
+    /// On FAT and exFAT, removes the proven macOS `._` twins in the folders
+    /// the session wrote or deleted in (through the executor: re-proven at
+    /// the moment of deletion, a copy kept on the Mac), then returns the
+    /// lines the summary ends with: what was cleaned, and what to do next on
+    /// the device. It never fails the transfer; a problem is one line.
+    @MainActor
+    func finishDeviceSession(device: MountedDevice, profile: ExternalDeviceProfile,
+                             written: [URL], deleted: [URL], changes: DeviceWriteChanges) async -> [String] {
+        let firmware = firmware(for: device)
+        let sweeps = capabilities(for: device).contains(.appleDoubleSweep)
+            && DeviceSessionGate.allows(.sweep, trigger: .userAction, matchedByUUID: isMatchedByUUID(device, profile))
+        let policy = devicePolicy(for: profile, firmware: firmware)
+        let volume = device.volumeURL
+        let uuid = device.volumeUUID
+        let profileID = profile.id
+        let result = await Task.detached(priority: .userInitiated) { () -> DeviceSessionFinish.Result in
+            let executor = DeviceFileExecutor(volumeRoot: volume, expectedVolumeUUID: uuid, policy: policy,
+                                              journal: DeviceWriteJournal(profileID: profileID))
+            return DeviceSessionFinish.finish(written: written, deleted: deleted, changes: changes,
+                                              firmware: firmware, sweeps: sweeps, volumeRoot: volume,
+                                              executor: executor)
+        }.value
+        if result.removed > 0 {
+            AppLog.conversion.notice("Removed \(result.removed) Mac metadata file(s) after the transfer to \(profile.name, privacy: .public)")
+        }
+        return result.lines
+    }
+
+    /// `report` with the session's closing lines and an Eject key for `device`.
+    @MainActor
+    func deviceReport(_ report: ConversionReport, nextSteps: [String], device: MountedDevice) -> ConversionReport {
+        var finished = report
+        finished.nextSteps = nextSteps
+        finished.eject = { [weak self] in self?.ejectDevice(device) }
+        return finished
+    }
+
+    // MARK: - Clean Up Mac Files
+
+    /// Plan (a scan on DEVICES), confirm with the counts, remove through the
+    /// executor (a transfer on DEVICES), report, offer Eject. Only ever
+    /// started by the user: nothing here runs at mount. `scope` nil is the
+    /// whole volume; otherwise exactly these folders, each listed on its own.
+    @MainActor
+    func cleanUpMacFiles(device: MountedDevice, scope: [URL]?) {
+        guard let profile = deviceProfile(for: device) else { return }
+        guard DeviceSessionGate.allows(.sweep, trigger: .userAction, matchedByUUID: isMatchedByUUID(device, profile))
+        else { return }
+        guard !isCleaningDeviceFiles, !isConversionRunning, deviceSyncProgress?.isRunning != true else {
+            appAlert = .info(title: "\(device.name) is busy",
+                             message: "Clean up Mac files once the current transfer has finished.")
+            return
+        }
+        isCleaningDeviceFiles = true
+        let scanJob = beginBusyJob(.scan, on: .devices)
+        let volume = device.volumeURL
+        Task { @MainActor in
+            let plan = await Task.detached(priority: .userInitiated) {
+                AppleDoubleSweeper().plan(volumeRoot: volume, scope: scope)
+            }.value
+            endBusyJob(scanJob, .completed)
+            isCleaningDeviceFiles = false
+            if let refusal = plan.refusal {
+                appAlert = .info(title: "Nothing to clean up on \(device.name)",
+                                 message: "Its file system (\(refusal)) keeps no Mac metadata files.")
+                return
+            }
+            guard !plan.candidates.isEmpty else {
+                appAlert = .info(title: DeviceCleanupSummary.nothingFound,
+                                 message: DeviceCleanupSummary.nothingFoundDetail(deviceName: device.name,
+                                                                                  leftAlone: plan.leftAlone))
+                return
+            }
+            let text = DeviceCleanupSummary.confirmation(plan, deviceName: device.name)
+            appAlert = .actionable(title: text.title, message: text.message, actionTitle: "Remove") { [weak self] in
+                self?.removeMacFiles(plan, device: device, profile: profile)
+            }
+        }
+    }
+
+    /// The folder and every folder below it, for Clean Up Mac Files in This Folder.
+    @MainActor
+    func cleanUpMacFiles(device: MountedDevice, inFolder folder: URL) {
+        Task { @MainActor in
+            let folders = await Task.detached(priority: .userInitiated) {
+                AppleDoubleSweeper.folders(under: folder)
+            }.value
+            cleanUpMacFiles(device: device, scope: folders)
+        }
+    }
+
+    /// The album folder of `album` on a browsed device: the deepest folder
+    /// holding all its tracks.
+    func deviceFolder(of album: Album) -> URL? {
+        let folders = album.tracks.map { $0.track.fileURL.deletingLastPathComponent().standardizedFileURL.pathComponents }
+        guard var common = folders.first else { return nil }
+        for parts in folders.dropFirst() {
+            common = Array(zip(common, parts).prefix { $0 == $1 }.map(\.0))
+        }
+        guard common.count > 1 else { return nil }
+        return URL(fileURLWithPath: NSString.path(withComponents: common), isDirectory: true)
+    }
+
+    @MainActor
+    private func removeMacFiles(_ plan: AppleDoubleSweepPlan, device: MountedDevice, profile: ExternalDeviceProfile) {
+        guard !isConversionRunning, !isCleaningDeviceFiles else { return }
+        isCleaningDeviceFiles = true
+        isDeviceTransferRunning = true
+        let job = beginBusyJob(.transfer, on: .devices)
+        let firmware = firmware(for: device)
+        let policy = devicePolicy(for: profile, firmware: firmware)
+        let volume = device.volumeURL
+        let uuid = device.volumeUUID
+        let profileID = profile.id
+        Task { @MainActor in
+            let outcomes = await Task.detached(priority: .userInitiated) { () -> [DeviceFileOutcome] in
+                DeviceFileExecutor(volumeRoot: volume, expectedVolumeUUID: uuid, policy: policy,
+                                   journal: DeviceWriteJournal(profileID: profileID))
+                    .apply(plan.operations, sessionID: UUID())
+            }.value
+            let removed = outcomes.filter { $0 == .deleted }.count
+            let refused = outcomes.count - removed - outcomes.filter { $0 == .alreadyGone }.count
+            endBusyJob(job, removed == 0 && refused > 0 ? .failed : .completed)
+            isDeviceTransferRunning = false
+            isCleaningDeviceFiles = false
+            AppLog.conversion.notice("Clean Up Mac Files on \(device.name, privacy: .public): removed \(removed), refused \(refused)")
+
+            let lines = [DeviceCleanupSummary.result(removed: removed, refused: refused, leftAlone: plan.leftAlone)]
+                + PodBoxNextSteps.after(removed > 0 ? .cleanup : [], firmware: firmware)
+            appAlert = .actionable(title: "Cleaned up \(device.name)", message: lines.joined(separator: " "),
+                                   actionTitle: "Eject", cancelTitle: "OK") { [weak self] in
+                self?.ejectDevice(device)
+            }
+        }
+    }
+
+    // MARK: - Eject
+
+    /// Unmounts and ejects `device` off the main thread. Every write session
+    /// has saved its journal by the time its summary offers this (each record
+    /// is flushed as it is written). A failure shows the system's own words.
+    @MainActor
+    func ejectDevice(_ device: MountedDevice) {
+        guard !isConversionRunning, !isCleaningDeviceFiles, deviceSyncProgress?.isRunning != true else {
+            appAlert = .info(title: "\(device.name) is busy", message: "Eject it once the current transfer has finished.")
+            return
+        }
+        let volume = device.volumeURL
+        Task { @MainActor in
+            let failure = await Task.detached(priority: .userInitiated) { () -> String? in
+                do {
+                    try NSWorkspace.shared.unmountAndEjectDevice(at: volume)
+                    return nil
+                } catch {
+                    return error.localizedDescription
+                }
+            }.value
+            if let failure {
+                appAlert = .error(title: "Couldn't eject \(device.name)", message: failure)
+            } else {
+                showOLEDNotice("EJECTED")
+            }
+        }
+    }
 }
+
