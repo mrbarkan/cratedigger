@@ -214,6 +214,18 @@ extension LibraryViewModel {
 
             isFixingDeviceArt = false
             AppLog.conversion.notice("FIX ART wrote \(outcome.covers) of \(outcome.albums) covers")
+            // FIX ART changes art only, never which files are on the device,
+            // so there is nothing for a patch to add or remove. But the
+            // catalog records each track's art size, which is what a
+            // transfer's review compares; left as it was, every album given a
+            // cover would read as differing in art. So it is dropped, as SYNC
+            // does, and walked again now if the device is on screen.
+            if outcome.covers > 0 {
+                invalidateDeviceCatalog(for: device)
+                if case .device(let path) = currentSource, path == device.volumeURL.path {
+                    refreshLibrary()
+                }
+            }
             appAlert = .error(
                 title: outcome.covers > 0 ? "Album art fixed" : "No covers written",
                 message: outcome.covers > 0
@@ -243,6 +255,11 @@ extension LibraryViewModel {
 
     // MARK: - Copy path
 
+    /// Copy originals to a mounted copy-mode device: only what it doesn't
+    /// have. Albums already there are skipped, missing tracks fill in their
+    /// album's folder, and albums that differ are asked about once in the
+    /// review sheet. Copies run first, then the deletions a Replace earned,
+    /// then the album covers, then the catalog is patched.
     @MainActor
     private func runExternalDeviceCopy(
         profile: ExternalDeviceProfile,
@@ -255,35 +272,78 @@ extension LibraryViewModel {
                 AppLog.conversion.notice("User cancelled device root selection")
                 return
             }
+            guard let device = mountedDevices.first(where: { deviceProfile(for: $0)?.id == resolved.id }) else {
+                appAlert = .error(
+                    title: "\(resolved.name) isn't connected",
+                    message: "Nothing was sent. Connect the device and send again."
+                )
+                return
+            }
+            guard let catalog = await currentDeviceCatalog(for: device) else {
+                appAlert = .error(
+                    title: "Couldn't read \(resolved.name)",
+                    message: "CrateDigger could not see what is already on the device, so nothing was sent. Check that it is still connected and send again."
+                )
+                return
+            }
+            guard let (plan, _) = await reviewedDevicePlan(
+                tracks: sourceTracks,
+                profile: resolved,
+                mountedRoot: mountedRoot,
+                catalog: catalog,
+                presentingFrom: host
+            ) else { return }
 
-            let planner = ExternalDeviceTransferPlanner()
-            let destinationRoot = planner.destinationRoot(for: resolved, mountedAt: mountedRoot)
-            let plans = planner.planTransfers(tracks: sourceTracks, profile: resolved, mountedAt: mountedRoot)
-
-            guard !plans.isEmpty else {
+            guard !plan.copies.isEmpty || !plan.deletions.isEmpty || !plan.unplanned.isEmpty else {
                 appAlert = .info(
                     title: "Nothing to transfer",
-                    message: "CrateDigger could not build any transfer jobs for the selected device."
+                    message: "\(resolved.name) needs nothing from this selection: "
+                        + DeviceTransferSummary.statusLine(for: plan, outcome: .init()) + "."
                 )
                 return
             }
 
-            if let problem = validateDeviceTransferPreflight(destinationRoot: destinationRoot, sourceTracks: sourceTracks) {
+            // Only what will be written counts against the free space; what
+            // a Replace frees is not credited, so the check stays conservative.
+            let destinationRoot = ExternalDeviceTransferPlanner().destinationRoot(for: resolved, mountedAt: mountedRoot)
+            if let problem = validateDeviceTransferPreflight(
+                destinationRoot: destinationRoot,
+                sourceTracks: plan.copies.map(\.source)
+            ) {
                 appAlert = problem
                 return
             }
+            // The scan and the sheet can take a while; another job may have
+            // started on the conversion channel meanwhile.
+            guard !isConversionRunning else {
+                appAlert = .error(
+                    title: "Another transfer is running",
+                    message: "Nothing was sent to \(resolved.name). Send again once it finishes."
+                )
+                return
+            }
 
-            let report = await runCopyTransferQueue(plans: plans, deviceName: resolved.name)
-            let trackBySourcePath = Dictionary(
-                sourceTracks.map { ($0.track.fileURL.path, $0) },
-                uniquingKeysWith: { first, _ in first }
-            )
+            let (report, outcome) = await runCopyTransferQueue(plan: plan, deviceName: resolved.name)
+
+            // A cover only where something actually landed.
+            let landed = Set(outcome.written.map { $0.destinationURL.deletingLastPathComponent().standardizedFileURL })
             await writeFolderCoverArt(
                 profileID: resolved.id,
-                folderTracks: plans.compactMap { plan in
-                    trackBySourcePath[plan.sourceURL.path]
-                        .map { (plan.destinationURL.deletingLastPathComponent(), $0) }
-                }
+                folderTracks: plan.coverFolders
+                    .filter { landed.contains($0.key) }
+                    .map { (folder: $0.key, track: $0.value) }
+            )
+            await patchDeviceCatalog(
+                for: device,
+                adding: outcome.written.map {
+                    DeviceCatalogStore.writtenTrack(
+                        source: $0.source,
+                        destination: $0.destinationURL,
+                        preset: nil,
+                        writesFolderCoverArt: resolved.usesFolderCoverArt
+                    )
+                },
+                removingPaths: outcome.removedPaths
             )
             presentSummary(report: report, presentingFrom: host)
         }
@@ -366,17 +426,20 @@ extension LibraryViewModel {
         )
     }
 
+    /// Runs a reviewed plan's byte copies, then its deletions, through Core's
+    /// `DeviceTransferExecutor`, with progress on CNVRT.
     @MainActor
     private func runCopyTransferQueue(
-        plans: [PlannedExternalDeviceTransfer],
+        plan: DeviceTransferFilePlan,
         deviceName: String
-    ) async -> ConversionReport {
-        let total = plans.count
+    ) async -> (report: ConversionReport, outcome: DeviceTransferExecutor.Outcome) {
+        let copies = plan.copies
+        let total = copies.count
         oledView = .conversion
         conversionProgress = ConversionProgressSnapshot(
             jobsCompleted: 0,
             jobsTotal: total,
-            currentFilename: plans.first?.sourceURL.lastPathComponent,
+            currentFilename: copies.first?.source.track.fileURL.lastPathComponent,
             isRunning: true
         )
         // Drawn on CNVRT, where the app already shows a copy transfer.
@@ -385,41 +448,25 @@ extension LibraryViewModel {
         let outcome = await withCheckedContinuation { continuation in
             let task = Task.detached(priority: .userInitiated) {
                 let fileManager = FileManager.default
-                var succeeded = 0
-                var failed = 0
-                var lines: [String] = []
-
-                for (index, plan) in plans.enumerated() {
-                    if Task.isCancelled {
-                        failed += 1
-                        lines.append("[FAILED] \(plan.sourceURL.lastPathComponent)\n    Cancelled")
-                    } else {
-                        do {
-                            let directory = plan.destinationURL.deletingLastPathComponent()
-                            if !fileManager.fileExists(atPath: directory.path) {
-                                try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-                            }
-                            try fileManager.copyItem(at: plan.sourceURL, to: plan.destinationURL)
-                            succeeded += 1
-                            lines.append("[ok] \(plan.sourceURL.lastPathComponent) -> \(plan.destinationURL.path)")
-                        } catch {
-                            failed += 1
-                            lines.append("[FAILED] \(plan.sourceURL.lastPathComponent)\n    \(error.localizedDescription)")
+                let outcome = DeviceTransferExecutor(fileManager: fileManager).run(
+                    plan,
+                    copy: { item in
+                        try fileManager.copyItem(at: item.source.track.fileURL, to: item.destinationURL)
+                    },
+                    isCancelled: { Task.isCancelled },
+                    onProgress: { completed, total in
+                        Task { @MainActor in
+                            self.conversionProgress = ConversionProgressSnapshot(
+                                jobsCompleted: completed,
+                                jobsTotal: total,
+                                currentFilename: completed < total
+                                    ? copies[completed].source.track.fileURL.lastPathComponent : nil,
+                                isRunning: completed < total
+                            )
                         }
                     }
-
-                    let completed = index + 1
-                    Task { @MainActor in
-                        self.conversionProgress = ConversionProgressSnapshot(
-                            jobsCompleted: completed,
-                            jobsTotal: total,
-                            currentFilename: completed < total ? plans[completed].sourceURL.lastPathComponent : nil,
-                            isRunning: completed < total
-                        )
-                    }
-                }
-
-                continuation.resume(returning: (succeeded, failed, lines))
+                )
+                continuation.resume(returning: outcome)
             }
             self.conversionTask = task
         }
@@ -430,37 +477,31 @@ extension LibraryViewModel {
             currentFilename: nil,
             isRunning: false
         )
-        // Read before the task is dropped: the loop counts a cancelled item
-        // as a failure, so only this flag tells a cancelled partial copy from
-        // a finished one.
-        let wasCancelled = conversionTask?.isCancelled ?? false
         conversionTask = nil
-        endBusyJob(busyJob, .copyTransfer(wasCancelled: wasCancelled,
-                                          succeeded: outcome.0, failed: outcome.1))
+        let failed = DeviceTransferSummary.failedCount(for: plan, outcome: outcome)
+        endBusyJob(busyJob, .copyTransfer(wasCancelled: outcome.wasCancelled,
+                                          succeeded: outcome.written.count, failed: failed))
 
         let title: String
-        let statusLine: String
         let tone: StatusTone
-        if outcome.1 == 0 {
-            title = "Transfer complete"
-            statusLine = "\(outcome.0) file\(outcome.0 == 1 ? "" : "s") copied to \(deviceName)"
+        if failed == 0 {
+            title = "Sent to \(deviceName)"
             tone = .success
-        } else if outcome.0 == 0 {
+        } else if outcome.written.isEmpty {
             title = "Transfer failed"
-            statusLine = "\(outcome.1) file\(outcome.1 == 1 ? "" : "s") could not be copied"
             tone = .error
         } else {
             title = "Transfer finished with errors"
-            statusLine = "\(outcome.0) copied, \(outcome.1) failed"
             tone = .warning
         }
 
-        return ConversionReport(
+        let report = ConversionReport(
             title: title,
-            statusLine: statusLine,
-            details: outcome.2.joined(separator: "\n"),
+            statusLine: DeviceTransferSummary.statusLine(for: plan, outcome: outcome),
+            details: outcome.lines.joined(separator: "\n"),
             tone: tone,
-            showsDetailsButton: !outcome.2.isEmpty
+            showsDetailsButton: !outcome.lines.isEmpty
         )
+        return (report, outcome)
     }
 }

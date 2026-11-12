@@ -44,10 +44,20 @@ public struct DeviceCatalogStore {
     /// whole device.
     public func patch(key: String, adding: [LoadedTrack], removingPaths: Set<String>) {
         guard let catalog = load(key: key) else { return }
-        let gone = Set(removingPaths.map { Self.pathKey(URL(fileURLWithPath: $0)) })
-            .union(adding.map { Self.pathKey($0.track.fileURL) })
-        let kept = catalog.filter { !gone.contains(Self.pathKey($0.track.fileURL)) }
-        save(kept + adding, key: key)
+        save(Self.patched(catalog, adding: adding, removingPaths: removingPaths), key: key)
+    }
+
+    /// `patch` on a catalog in memory, for a caller that also keeps the
+    /// patched result (the browser's index of the device).
+    public static func patched(
+        _ catalog: [LoadedTrack],
+        adding: [LoadedTrack],
+        removingPaths: Set<String>
+    ) -> [LoadedTrack] {
+        let gone = Set(removingPaths.map { pathKey(URL(fileURLWithPath: $0)) })
+            .union(adding.map { pathKey($0.track.fileURL) })
+        let kept = catalog.filter { !gone.contains(pathKey($0.track.fileURL)) }
+        return kept + adding
     }
 
     /// A catalog record for a file this app just wrote: the source's tags, the

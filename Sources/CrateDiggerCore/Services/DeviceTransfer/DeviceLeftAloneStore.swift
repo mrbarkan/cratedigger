@@ -46,6 +46,18 @@ public struct DeviceLeftAloneStore {
         save(load(profileID: profileID).subtracting(ids), profileID: profileID)
     }
 
+    /// Applies the review sheet's answers: a Leave it is remembered, any other
+    /// answer forgets the album (the user changed their mind about one left
+    /// alone before). Albums not answered keep whatever was remembered.
+    public func record(_ answers: [DeviceAlbumIdentity: DeviceAlbumDecision], profileID: UUID) {
+        let leave = Set(answers.filter { $0.value == .leave }.keys)
+        let other = Set(answers.filter { $0.value != .leave }.keys)
+        guard !leave.isEmpty || !other.isEmpty else { return }
+        let current = load(profileID: profileID)
+        let updated = current.union(leave).subtracting(other)
+        if updated != current { save(updated, profileID: profileID) }
+    }
+
     /// Forget every album left alone on this device.
     public func clear(profileID: UUID) {
         try? fileManager.removeItem(at: url(for: profileID))

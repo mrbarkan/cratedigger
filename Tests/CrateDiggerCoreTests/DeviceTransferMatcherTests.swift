@@ -329,6 +329,37 @@ final class DeviceTransferMatcherTests: XCTestCase {
         XCTAssertEqual(result[0].sentArtPixels, 300)
     }
 
+    func testArtEmbeddedInSomeTracksMatchesWhatTheCatalogPatchRecords() {
+        // Track 1's art is a folder image (none in the file), track 2 carries
+        // its own. With folder art on, the copy leaves a 400 px cover beside
+        // track 1 and track 2's 1400 px picture inside it, and the catalog
+        // patch records each track that way. The matcher must read the album
+        // the same way, or it differs from what was just sent.
+        var copyWithCovers = copySettings
+        copyWithCovers.writesFolderCoverArt = true
+        let sending = [
+            track(album: "Kind of Blue", number: 1, title: "Track 1", path: "/Src/Kind of Blue/01 Track 1.flac",
+                  art: 1400, artSource: .folderImage),
+            track(album: "Kind of Blue", number: 2, title: "Track 2", path: "/Src/Kind of Blue/02 Track 2.flac",
+                  art: 1400, artSource: .embedded)
+        ]
+        let catalog = sending.map {
+            DeviceCatalogStore.writtenTrack(
+                source: $0,
+                destination: URL(fileURLWithPath: "/Device/Music/Kind of Blue")
+                    .appendingPathComponent($0.track.fileURL.lastPathComponent),
+                preset: nil,
+                writesFolderCoverArt: true
+            )
+        }
+
+        let result = compare(sending, catalog, settings: copyWithCovers)
+
+        XCTAssertEqual(result.map(\.status), [.present])
+        XCTAssertEqual(result[0].sentArtPixels, result[0].deviceArtPixels)
+        XCTAssertEqual(result[0].sentArtPixels, 400)
+    }
+
     func testSameArtSizeDifferentHashIsSame() {
         var sending = album("/Src/Kind of Blue", numbers: [1, 2], art: 600)
         sending = sending.map { withArtHash($0, "source-hash") }

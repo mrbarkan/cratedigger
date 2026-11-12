@@ -144,6 +144,18 @@ final class DeviceCatalogStoreTests: XCTestCase {
         }
     }
 
+    func testPatchedWorksOnACatalogInMemory() {
+        let catalog = [track(named: "One"), track(named: "Two")]
+
+        let patched = DeviceCatalogStore.patched(
+            catalog,
+            adding: [track(named: "Three"), track(named: "ONE")],
+            removingPaths: ["/Volumes/IPOD/Music/Two.mp3"]
+        )
+
+        XCTAssertEqual(patched.map(\.track.title), ["Three", "ONE"])
+    }
+
     func testPatchWithoutCatalogIsNoOp() throws {
         try withTemporaryDirectory(prefix: "catalog-store") { dir in
             let store = DeviceCatalogStore(directory: dir)

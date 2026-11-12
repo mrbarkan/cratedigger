@@ -69,6 +69,23 @@ final class DeviceLeftAloneStoreTests: XCTestCase {
         }
     }
 
+    func testRecordRemembersLeaveItAndForgetsAChangedAnswer() throws {
+        try withTemporaryDirectory(prefix: "left-alone") { dir in
+            let store = DeviceLeftAloneStore(directory: dir)
+            let profile = UUID()
+            store.insert([kindOfBlue, inRainbows], profileID: profile)
+
+            // Kind of Blue was left alone before and is now replaced; Bitches
+            // Brew is left alone for the first time; In Rainbows is not answered.
+            store.record([kindOfBlue: .replace, bitchesBrew: .leave], profileID: profile)
+
+            XCTAssertEqual(store.load(profileID: profile), [bitchesBrew, inRainbows])
+
+            store.record([bitchesBrew: .keepBoth], profileID: profile)
+            XCTAssertEqual(store.load(profileID: profile), [inRainbows])
+        }
+    }
+
     func testUnreadableFileLoadsEmpty() throws {
         try withTemporaryDirectory(prefix: "left-alone") { dir in
             let profile = UUID()

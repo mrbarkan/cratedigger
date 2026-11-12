@@ -24,7 +24,11 @@ import Foundation
 /// (whatever the player itself prefers to draw).
 enum DeviceWrittenArt {
     /// Longest side and source of the art a scan reads back after writing
-    /// `tracks` (the first one carrying usable art decides), or nil for none.
+    /// `tracks`, or nil for none. Each track is read back on its own, the way
+    /// the catalog patch records it, and the first that yields art decides:
+    /// an album whose art is embedded in only some files then reads the same
+    /// here as its patched catalog records do, where the matcher takes the
+    /// first track carrying art.
     static func readBack(
         of tracks: [LoadedTrack],
         artworkMode: ArtworkMode?,
@@ -32,6 +36,21 @@ enum DeviceWrittenArt {
         deviceProfile: DeviceProfile,
         writesFolderCoverArt: Bool
     ) -> (side: Int, source: ArtworkSource)? {
+        tracks.lazy.compactMap {
+            readBack(of: $0, artworkMode: artworkMode, cap: cap,
+                     deviceProfile: deviceProfile, writesFolderCoverArt: writesFolderCoverArt)
+        }.first
+    }
+
+    /// One track's art as a scan reads it back after the write.
+    private static func readBack(
+        of track: LoadedTrack,
+        artworkMode: ArtworkMode?,
+        cap: Int?,
+        deviceProfile: DeviceProfile,
+        writesFolderCoverArt: Bool
+    ) -> (side: Int, source: ArtworkSource)? {
+        let tracks = [track]
         let embedded: Int?
         switch artworkMode {
         case nil, .preserve?:
