@@ -32,15 +32,22 @@ public enum DeviceFileOutcome: Equatable, Sendable {
 /// operation is checked against the volume, the policy and the journal, and
 /// only then handed to `DeviceFileIO`.
 ///
-/// For a write: (1) the volume is still the one planned for (I7), (2) the
-/// policy allows the path, both as given and after resolving symlinks (I2),
-/// (3) there is room for it plus `freeSpaceMargin`, (4) an existing file with
-/// identical bytes is left alone (I5); one the journal proves ours is backed
-/// up and replaced; anything else is foreign and refused (I3), (5)-(6) the
-/// bytes land through a flushed temp and a rename, attributes and a proven
-/// `._` twin removed (I8), (7) the journal records it. A delete needs the
-/// journal's proof for `ownedByCrateDigger`, re-proves an AppleDouble twin at
-/// the moment of deletion (I4), and backs up either first.
+/// The volume (I7): at init the executor captures the root's identity (device
+/// and inode from `stat`) and its volume UUID. Before the plan and before each
+/// operation the root must still be that same mount point, a mount point at
+/// all, and report the expected UUID when one was given. "Whatever is at that
+/// path now" is never enough. Journal records from another volume UUID are
+/// not ours here.
+///
+/// For a write: (1) the volume, (2) the policy, for the file and for its
+/// `.cdtmp`, both as given and after resolving symlinks (I2), (3) an existing
+/// file with identical bytes is left alone (I5), (4) there is room for it plus
+/// `freeSpaceMargin`, (5) a file the journal proves ours is backed up and
+/// replaced, anything else is foreign and refused (I3), (6) the bytes land
+/// through a flushed temp and a rename, attributes stripped (I8), (7) the
+/// journal records it. A delete needs the journal's proof for
+/// `ownedByCrateDigger`, re-proves an AppleDouble twin at the moment of
+/// deletion (I4), and backs up either first.
 public struct DeviceFileExecutor {
     /// Room left on the device after any write.
     public static let freeSpaceMargin: Int64 = 8 * 1024 * 1024
@@ -52,11 +59,29 @@ public struct DeviceFileExecutor {
     private let fileManager: FileManager
     private let volumeUUID: (URL) -> String?
     private let freeSpace: (URL) -> Int64?
+    private let rootMustBeMountPoint: Bool
+    /// The root as it was when the session was planned.
+    private let capturedIdentity: VolumeIdentity?
+    /// The UUID journal records are matched and written against: the expected
+    /// one, else what the volume reported at init.
+    private let sessionVolumeUUID: String?
 
     public init(volumeRoot: URL, expectedVolumeUUID: String?, policy: DeviceWritePolicy,
                 journal: DeviceWriteJournal, fileManager: FileManager = .default,
                 volumeUUID: @escaping (URL) -> String? = DeviceFileExecutor.systemVolumeUUID,
                 freeSpace: @escaping (URL) -> Int64? = DeviceFileExecutor.systemFreeSpace) {
+        self.init(volumeRoot: volumeRoot, expectedVolumeUUID: expectedVolumeUUID, policy: policy,
+                  journal: journal, fileManager: fileManager, volumeUUID: volumeUUID, freeSpace: freeSpace,
+                  rootMustBeMountPoint: true)
+    }
+
+    /// Tests only: `rootMustBeMountPoint: false` lets a temp folder stand in
+    /// for a device. Every other volume check still applies.
+    init(volumeRoot: URL, expectedVolumeUUID: String?, policy: DeviceWritePolicy,
+         journal: DeviceWriteJournal, fileManager: FileManager = .default,
+         volumeUUID: @escaping (URL) -> String? = DeviceFileExecutor.systemVolumeUUID,
+         freeSpace: @escaping (URL) -> Int64? = DeviceFileExecutor.systemFreeSpace,
+         rootMustBeMountPoint: Bool) {
         self.volumeRoot = volumeRoot
         self.expectedVolumeUUID = expectedVolumeUUID
         self.policy = policy
@@ -64,6 +89,9 @@ public struct DeviceFileExecutor {
         self.fileManager = fileManager
         self.volumeUUID = volumeUUID
         self.freeSpace = freeSpace
+        self.rootMustBeMountPoint = rootMustBeMountPoint
+        capturedIdentity = VolumeIdentity(of: volumeRoot)
+        sessionVolumeUUID = expectedVolumeUUID ?? (capturedIdentity == nil ? nil : volumeUUID(volumeRoot))
     }
 
     public static func systemVolumeUUID(_ root: URL) -> String? {
@@ -74,6 +102,20 @@ public struct DeviceFileExecutor {
         (try? root.resourceValues(forKeys: [.volumeAvailableCapacityKey]).volumeAvailableCapacity).map(Int64.init)
     }
 
+    /// True when `root` is where a file system is mounted (its real path is
+    /// the mount point `statfs` reports), not a folder on some other disk.
+    public static func isMountPoint(_ root: URL) -> Bool {
+        guard let real = realpath(root.path, nil) else { return false }
+        let path = String(cString: real)
+        free(real)
+        var info = statfs()
+        guard statfs(path, &info) == 0 else { return false }
+        let mountedOn = withUnsafeBytes(of: info.f_mntonname) {
+            String(cString: $0.bindMemory(to: CChar.self).baseAddress!)
+        }
+        return mountedOn == path
+    }
+
     /// Applies `ops` in order. The outcomes are index-aligned with `ops`.
     /// `progress` gets (operations done, total) after each one.
     public func apply(_ ops: [DeviceFileOperation], sessionID: UUID,
@@ -82,9 +124,11 @@ public struct DeviceFileExecutor {
             return ops.map { _ in .refusedWrongVolume }
         }
 
-        // Temp paths a crashed earlier session may have left; only these are
-        // ever cleaned up as stale.
-        let earlierIntents = Set(journal.records.filter { $0.kind == .tempIntent }.map(\.relativeKey))
+        // Temp paths a crashed earlier session on this volume may have left;
+        // only these are ever cleaned up as stale.
+        let earlierIntents = Set(journal.records
+            .filter { $0.kind == .tempIntent && DeviceWriteJournal.sameVolume($0.volumeUUID, sessionVolumeUUID) }
+            .map(\.relativeKey))
         recordTempIntents(for: ops, sessionID: sessionID)
 
         var outcomes: [DeviceFileOutcome] = []
@@ -112,8 +156,13 @@ public struct DeviceFileExecutor {
 
     private func write(_ path: String, role: DeviceFileRole, contents: DeviceFileContents, replacesForeign: Bool,
                        sessionID: UUID, earlierIntents: Set<String>) -> DeviceFileOutcome {
+        // (2) The file and the temp it lands through, as given and as resolved.
+        let tempPath = path + DeviceFileIO.tempSuffix
         let target: URL
-        switch resolve(path, check: { try policy.checkWrite($0, role: role) }) {
+        switch resolve(path, check: { resolved in
+            try policy.checkWrite(resolved, role: role)
+            try policy.checkWrite(resolved + DeviceFileIO.tempSuffix, role: .temp)
+        }) {
         case .success(let url): target = url
         case .failure(let refusal): return refusal.outcome
         }
@@ -127,14 +176,25 @@ public struct DeviceFileExecutor {
             }
             incomingSize = size
         }
+
+        // (3) Identical bytes need nothing, not even room. Hashed only when the sizes agree.
+        let existing = fileState(target)
+        if case .regular(let size) = existing, size == incomingSize {
+            do {
+                if try DeviceFileIO.sha256(of: target) == hash(of: contents) { return .unchanged }
+            } catch {
+                return .failed("Could not read \(target.lastPathComponent): \(describe(error))")
+            }
+        }
+
+        // (4) Room.
         if let available = freeSpace(volumeRoot), available < incomingSize + Self.freeSpaceMargin {
             return .refusedNoSpace
         }
 
-        // A leftover temp is ours to clear only when an earlier session said
-        // it would make one. Decided before anything is touched or backed up.
+        // A leftover temp is ours to clear only when an earlier session on this
+        // volume said it would make one. Decided before anything is touched.
         let temp = DeviceFileIO.tempURL(for: target)
-        let tempPath = path + DeviceFileIO.tempSuffix
         var staleTemp = false
         switch fileState(temp) {
         case .missing:
@@ -148,19 +208,17 @@ public struct DeviceFileExecutor {
             staleTemp = true
         }
 
-        // (4) What is there already.
+        // (5) What is there already.
         var kind = DeviceFileRecord.Kind.created
         var backupFile: String?
-        switch fileState(target) {
+        switch existing {
         case .missing:
             break
         case .other:
             return .refusedForeign
         case .regular(let size):
             do {
-                let existingHash = try DeviceFileIO.sha256(of: target)
-                if size == incomingSize, existingHash == (try hash(of: contents)) { return .unchanged }
-                let owned = isOwned(path, size: size, sha256: existingHash)
+                let owned = try isOwned(path, at: target, size: size)
                 guard owned || (replacesForeign && role == .cover) else { return .refusedForeign }
                 backupFile = try journal.backUp(fileAt: target, relativePath: path, sessionID: sessionID)
                 kind = .replaced
@@ -169,7 +227,7 @@ public struct DeviceFileExecutor {
             }
         }
 
-        // (5)-(6) Folders only for a path the policy passed, then the bytes.
+        // (6) Folders only for a path the policy passed, then the bytes.
         do {
             if staleTemp { try DeviceFileIO.remove(temp) }
             let folder = target.deletingLastPathComponent()
@@ -184,11 +242,12 @@ public struct DeviceFileExecutor {
             return .failed(describe(error))
         }
 
-        // (7) The journal: no hash for audio (spec D18).
+        // (7) The journal: no hash for audio (spec D18). A hash that cannot be
+        // read leaves the record without one, so the file reads as not ours.
         let written = regularFileSize(target)
         let sha = role == .audio ? nil : try? DeviceFileIO.sha256(of: target)
         let record = DeviceFileRecord(relativePath: path, kind: kind, role: role.rawValue, size: written,
-                                      sha256: sha, backupFile: backupFile, volumeUUID: expectedVolumeUUID,
+                                      sha256: sha, backupFile: backupFile, volumeUUID: sessionVolumeUUID,
                                       sessionID: sessionID)
         do {
             try journal.append([record])
@@ -216,7 +275,6 @@ public struct DeviceFileExecutor {
         }
 
         var backupFile: String?
-        var sha: String?
         switch reason {
         case .userReplace:
             break // the user chose this; no proof and no backup (duplicates spec)
@@ -224,15 +282,14 @@ public struct DeviceFileExecutor {
             guard earlierIntents.contains(DeviceWritePolicy.key(forRelativePath: path)) else { return .refusedForeign }
         case .ownedByCrateDigger:
             do {
-                let current = try DeviceFileIO.sha256(of: target)
-                guard isOwned(path, size: size, sha256: current) else { return .refusedForeign }
-                sha = current
+                guard try isOwned(path, at: target, size: size) else { return .refusedForeign }
                 backupFile = try journal.backUp(fileAt: target, relativePath: path, sessionID: sessionID)
             } catch {
                 return .failed("Could not keep a copy of \(target.lastPathComponent) before removing it: \(describe(error))")
             }
         case .appleDouble:
             // The proof again, now: the file may have changed since the plan.
+            // (The policy above has re-checked that it is the twin of a media file.)
             guard DeviceFileIO.isProvenAppleDouble(target) else { return .refusedNotAppleDouble }
             do {
                 backupFile = try journal.backUp(fileAt: target, relativePath: path, sessionID: sessionID)
@@ -244,8 +301,7 @@ public struct DeviceFileExecutor {
         do { try DeviceFileIO.remove(target) } catch { return .failed(describe(error)) }
 
         let record = DeviceFileRecord(relativePath: path, kind: .deleted, role: reason.rawValue, size: size,
-                                      sha256: sha, backupFile: backupFile, volumeUUID: expectedVolumeUUID,
-                                      sessionID: sessionID)
+                                      backupFile: backupFile, volumeUUID: sessionVolumeUUID, sessionID: sessionID)
         do {
             try journal.append([record])
         } catch {
@@ -260,8 +316,8 @@ public struct DeviceFileExecutor {
         let outcome: DeviceFileOutcome
     }
 
-    /// The policy, run on the path as given and again on the path its folder
-    /// really resolves to, so a symlink cannot carry a write out of its area.
+    /// `check`, run on the path as given and again on the path its folder
+    /// really resolves to, so a symlink cannot carry an operation out of its area.
     private func resolve(_ path: String, check: (String) throws -> Void) -> Result<URL, Refusal> {
         do {
             try check(path)
@@ -282,22 +338,28 @@ public struct DeviceFileExecutor {
         return .success(target)
     }
 
+    /// The same mount point the session was planned on: same device and
+    /// inode as at init, a folder, a mount point (unless a test allowed a
+    /// plain folder), and the expected UUID when there is one.
     private func isExpectedVolume() -> Bool {
+        guard let capturedIdentity, VolumeIdentity(of: volumeRoot) == capturedIdentity else { return false }
         var isDirectory: ObjCBool = false
-        guard fileManager.fileExists(atPath: volumeRoot.path, isDirectory: &isDirectory),
-              isDirectory.boolValue
+        guard fileManager.fileExists(atPath: volumeRoot.path, isDirectory: &isDirectory), isDirectory.boolValue
         else { return false }
+        if rootMustBeMountPoint, !Self.isMountPoint(volumeRoot) { return false }
         guard let expectedVolumeUUID else { return true }
         return volumeUUID(volumeRoot) == expectedVolumeUUID
     }
 
-    /// Ours only when the journal's last act here was a write and the size
-    /// and hash it recorded are what is on disk now (I3).
-    private func isOwned(_ path: String, size: Int64, sha256: String) -> Bool {
-        guard let record = journal.ownedRecord(forKey: DeviceWritePolicy.key(forRelativePath: path)),
-              let recordedHash = record.sha256
+    /// Ours only when the journal's last act here, on this volume, was a write
+    /// and the size and hash it recorded are what is on disk now (I3). The
+    /// file is hashed only when the size already agrees.
+    private func isOwned(_ path: String, at url: URL, size: Int64) throws -> Bool {
+        guard let record = journal.ownedRecord(forKey: DeviceWritePolicy.key(forRelativePath: path),
+                                               volumeUUID: sessionVolumeUUID),
+              let recordedHash = record.sha256, record.size == size
         else { return false }
-        return record.size == size && recordedHash == sha256
+        return try DeviceFileIO.sha256(of: url) == recordedHash
     }
 
     /// One `tempIntent` per `.cdtmp` the writes in `ops` may leave, before
@@ -305,13 +367,28 @@ public struct DeviceFileExecutor {
     /// crash leaves behind, which then reads as foreign: the safe way round.
     private func recordTempIntents(for ops: [DeviceFileOperation], sessionID: UUID) {
         let intents: [DeviceFileRecord] = ops.compactMap { op in
-            guard case let .write(path, role, _, _) = op, (try? policy.checkWrite(path, role: role)) != nil
+            guard case let .write(path, role, _, _) = op,
+                  (try? policy.checkWrite(path, role: role)) != nil,
+                  (try? policy.checkWrite(path + DeviceFileIO.tempSuffix, role: .temp)) != nil
             else { return nil }
             return DeviceFileRecord(relativePath: path + DeviceFileIO.tempSuffix, kind: .tempIntent,
-                                    role: DeviceFileRole.temp.rawValue, volumeUUID: expectedVolumeUUID,
+                                    role: DeviceFileRole.temp.rawValue, volumeUUID: sessionVolumeUUID,
                                     sessionID: sessionID)
         }
         try? journal.append(intents)
+    }
+
+    /// Which file system object the root is: device and inode, from `stat`.
+    private struct VolumeIdentity: Equatable {
+        let device: Int64
+        let inode: UInt64
+
+        init?(of url: URL) {
+            var info = stat()
+            guard stat(url.path, &info) == 0 else { return nil }
+            device = Int64(info.st_dev)
+            inode = UInt64(info.st_ino)
+        }
     }
 
     private enum FileState {

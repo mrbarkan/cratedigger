@@ -41,6 +41,21 @@ final class DeviceWriteJournalTests: XCTestCase {
         XCTAssertEqual(j.ownedRecord(forKey: "music/a/cover.jpg")?.kind, .replaced)
     }
 
+    func testOwnershipIsPerVolume() throws {
+        let j = journal()
+        try j.append([DeviceFileRecord(relativePath: "Music/A/cover.jpg", kind: .created, role: "cover", size: 3,
+                                       sha256: "abc", volumeUUID: "IPOD-A", sessionID: session)])
+        XCTAssertNotNil(j.ownedRecord(forKey: "music/a/cover.jpg", volumeUUID: "IPOD-A"))
+        XCTAssertNil(j.ownedRecord(forKey: "music/a/cover.jpg", volumeUUID: "IPOD-B"))
+        XCTAssertNotNil(j.ownedRecord(forKey: "music/a/cover.jpg")) // no UUID to tell them apart
+
+        // A delete on the other iPod does not end ownership on this one.
+        try j.append([DeviceFileRecord(relativePath: "Music/A/cover.jpg", kind: .deleted, role: "ownedByCrateDigger",
+                                       volumeUUID: "IPOD-B", sessionID: session)])
+        XCTAssertNotNil(j.ownedRecord(forKey: "music/a/cover.jpg", volumeUUID: "IPOD-A"))
+        XCTAssertNil(j.ownedRecord(forKey: "music/a/cover.jpg", volumeUUID: "IPOD-B"))
+    }
+
     func testDeletedAfterCreatedIsNotOwned() throws {
         let j = journal()
         try j.append([record("Music/A/cover.jpg", .created)])

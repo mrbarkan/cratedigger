@@ -46,13 +46,15 @@ final class DeviceFileExecutorTests: XCTestCase {
         DeviceWriteJournal(profileID: profileID, directory: directory ?? journalDir)
     }
 
-    private func executor(journal: DeviceWriteJournal? = nil, uuid: String? = nil,
-                          free: Int64? = 1 << 40) -> DeviceFileExecutor {
+    /// The FakeIPod is a temp folder, not a mount point: tests opt out of that one check.
+    private func executor(journal: DeviceWriteJournal? = nil, uuid: String? = nil, expected: String?? = nil,
+                          free: Int64? = 1 << 40,
+                          policy: DeviceWritePolicy = DeviceWritePolicy(musicSubpath: "Music")) -> DeviceFileExecutor {
         let reported = uuid ?? volume
-        return DeviceFileExecutor(volumeRoot: iPod.root, expectedVolumeUUID: volume,
-                                  policy: DeviceWritePolicy(musicSubpath: "Music"),
-                                  journal: journal ?? self.journal(),
-                                  volumeUUID: { _ in reported }, freeSpace: { _ in free })
+        return DeviceFileExecutor(volumeRoot: iPod.root, expectedVolumeUUID: expected ?? volume,
+                                  policy: policy, journal: journal ?? self.journal(),
+                                  volumeUUID: { _ in reported }, freeSpace: { _ in free },
+                                  rootMustBeMountPoint: false)
     }
 
     private func url(_ relative: String) -> URL { iPod.root.appendingPathComponent(relative) }
@@ -227,7 +229,8 @@ final class DeviceFileExecutorTests: XCTestCase {
                        [.refusedWrongVolume, .refusedWrongVolume])
         let noUUID = DeviceFileExecutor(volumeRoot: iPod.root, expectedVolumeUUID: volume,
                                         policy: DeviceWritePolicy(musicSubpath: "Music"), journal: j,
-                                        volumeUUID: { _ in nil }, freeSpace: { _ in nil })
+                                        volumeUUID: { _ in nil }, freeSpace: { _ in nil },
+                                        rootMustBeMountPoint: false)
         XCTAssertEqual(noUUID.apply(ops, sessionID: session), [.refusedWrongVolume, .refusedWrongVolume])
         XCTAssertEqual(j.records, [])
         XCTAssertFalse(FileManager.default.fileExists(atPath: url(coverPath).path))
@@ -257,6 +260,111 @@ final class DeviceFileExecutorTests: XCTestCase {
         }
         try FileManager.default.moveItem(at: saved, to: iPod.root) // plugged back in
         XCTAssertEqual(tempFilesOnDevice(), [])
+    }
+
+    func testPlainFolderRootIsRefusedWhenADeviceWasExpected() throws {
+        // The public initialiser insists on a mount point: a folder on the Mac's disk is not an iPod.
+        let ops: [DeviceFileOperation] = [
+            .write(relativePath: coverPath, role: .cover, contents: .data(Data("x".utf8))),
+            .delete(relativePath: "\(album)/01 - Zebra.m4a", reason: .userReplace),
+        ]
+        let withUUID = DeviceFileExecutor(volumeRoot: iPod.root, expectedVolumeUUID: volume,
+                                          policy: DeviceWritePolicy(musicSubpath: "Music"), journal: journal(),
+                                          volumeUUID: { _ in self.volume }, freeSpace: { _ in 1 << 40 })
+        XCTAssertEqual(withUUID.apply(ops, sessionID: session), [.refusedWrongVolume, .refusedWrongVolume])
+        let withoutUUID = DeviceFileExecutor(volumeRoot: iPod.root, expectedVolumeUUID: nil,
+                                             policy: DeviceWritePolicy(musicSubpath: "Music"), journal: journal(),
+                                             freeSpace: { _ in 1 << 40 })
+        XCTAssertEqual(withoutUUID.apply(ops, sessionID: session), [.refusedWrongVolume, .refusedWrongVolume])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url(coverPath).path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url("\(album)/01 - Zebra.m4a").path))
+        // The real root of the Mac's disk is a mount point; a folder in the temp dir is not.
+        XCTAssertTrue(DeviceFileExecutor.isMountPoint(URL(fileURLWithPath: "/")))
+        XCTAssertFalse(DeviceFileExecutor.isMountPoint(iPod.root))
+    }
+
+    func testSessionIsBoundToTheRootItCaptured() throws {
+        // No expected UUID: the session still refuses a different folder put at the same path.
+        let ex = executor(expected: .some(nil))
+        let saved = journalDir.appendingPathComponent("saved-root", isDirectory: true)
+        try FileManager.default.moveItem(at: iPod.root, to: saved)
+        try FileManager.default.createDirectory(at: iPod.root.appendingPathComponent(album),
+                                                withIntermediateDirectories: true)
+        let outcome = ex.apply([.write(relativePath: coverPath, role: .cover, contents: .data(Data("x".utf8)))],
+                               sessionID: session)
+        XCTAssertEqual(outcome, [.refusedWrongVolume])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url(coverPath).path))
+        try FileManager.default.removeItem(at: iPod.root)
+        try FileManager.default.moveItem(at: saved, to: iPod.root)
+        XCTAssertEqual(ex.apply([.write(relativePath: coverPath, role: .cover, contents: .data(Data("x".utf8)))],
+                                sessionID: session), [.written])
+    }
+
+    func testIdenticalFileFromAnotherVolumeIsNotOurs() throws {
+        // The same profile wrote this exact file to another iPod: here it proves nothing.
+        let j = journal()
+        let otherIPod = executor(journal: j, uuid: "VOLUME-UUID-2", expected: "VOLUME-UUID-2")
+        XCTAssertEqual(writeCover(Data("cover v1".utf8), with: otherIPod), .written)
+        XCTAssertEqual(j.records.last?.volumeUUID, "VOLUME-UUID-2")
+
+        let thisIPod = executor(journal: j)
+        XCTAssertEqual(writeCover(Data("cover v2".utf8), with: thisIPod), .refusedForeign)
+        XCTAssertEqual(thisIPod.apply([.delete(relativePath: coverPath, reason: .ownedByCrateDigger)],
+                                      sessionID: session), [.refusedForeign])
+        XCTAssertEqual(try bytes(coverPath), Data("cover v1".utf8))
+    }
+
+    func testTempIntentFromAnotherVolumeDoesNotLicenseCleanup() throws {
+        let j = journal()
+        try j.append([DeviceFileRecord(relativePath: coverPath + ".cdtmp", kind: .tempIntent, role: "temp",
+                                       volumeUUID: "VOLUME-UUID-2", sessionID: UUID())])
+        try iPod.addFile(coverPath + ".cdtmp", Data("someone else's".utf8))
+        let outcome = executor(journal: j).apply(
+            [.write(relativePath: coverPath, role: .cover, contents: .data(Data("cover".utf8))),
+             .delete(relativePath: coverPath + ".cdtmp", reason: .staleTemp)], sessionID: session)
+        XCTAssertEqual(outcome, [.refusedForeign, .refusedForeign])
+        XCTAssertEqual(try bytes(coverPath + ".cdtmp"), Data("someone else's".utf8))
+    }
+
+    func testTempThePolicyRefusesRefusesTheWrite() throws {
+        // known_artists.txt is the one file allowed under .rockbox; its temp is not.
+        let j = journal()
+        let knownArtists = DeviceWritePolicy(musicSubpath: "Music", enabledRoles: [.knownArtists, .temp])
+        let outcome = executor(journal: j, policy: knownArtists).apply(
+            [.write(relativePath: ".rockbox/library/user/known_artists.txt", role: .knownArtists,
+                    contents: .data(Data("Guest\n".utf8)))], sessionID: session)
+        guard case .refusedPolicy = outcome[0] else { return XCTFail("expected a policy refusal, got \(outcome)") }
+        XCTAssertEqual(j.records, [])
+
+        // A policy without the temp role cannot write anything, since every write lands through a temp.
+        let noTemp = DeviceWritePolicy(musicSubpath: "Music", enabledRoles: [.cover])
+        guard case .refusedPolicy = writeCover(Data("x".utf8), with: executor(policy: noTemp)) else {
+            return XCTFail("expected a policy refusal")
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url(coverPath).path))
+    }
+
+    func testIdenticalBytesWinOverNoSpaceAndAForeignTemp() throws {
+        XCTAssertEqual(writeCover(Data("cover".utf8)), .written)
+        XCTAssertEqual(writeCover(Data("cover".utf8), with: executor(free: 1024)), .unchanged)
+        try iPod.addFile(coverPath + ".cdtmp", Data("someone else's".utf8))
+        XCTAssertEqual(writeCover(Data("cover".utf8)), .unchanged)
+    }
+
+    func testTargetOfAnotherSizeIsNotRead() throws {
+        // An unreadable foreign file of a different size: refused as foreign without being opened.
+        try iPod.addFile(coverPath, Data("the owner's, unreadable".utf8))
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: url(coverPath).path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: url(coverPath).path) }
+        XCTAssertEqual(writeCover(Data("ours".utf8)), .refusedForeign)
+    }
+
+    func testAppleDoubleDeleteOfANonMediaTwinIsRefused() throws {
+        try iPod.addFile("Notes/._todo.txt", FakeIPod.appleDoubleBytes())
+        let outcome = executor().apply([.delete(relativePath: "Notes/._todo.txt", reason: .appleDouble)],
+                                       sessionID: session)
+        guard case .refusedPolicy = outcome[0] else { return XCTFail("expected a policy refusal, got \(outcome)") }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url("Notes/._todo.txt").path))
     }
 
     func testNoSpaceRefusesBeforeWriting() throws {

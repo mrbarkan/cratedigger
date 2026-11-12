@@ -28,7 +28,9 @@ public struct DeviceFileIOError: Error, Equatable, LocalizedError {
 /// Every write lands in `<name>.cdtmp` beside its target, is flushed with
 /// `fsync` and renamed over the target (I8), so the player never sees half a
 /// file. Nothing here carries extended attributes onto the device, which is
-/// what makes macOS write a `._` twin beside each file on FAT.
+/// what makes macOS write a `._` twin beside each file on FAT. These
+/// primitives only prevent twins; they never delete one. Removing a twin is
+/// the sweep's job, through the executor, which proves it and backs it up first.
 public enum DeviceFileIO {
     public static let tempSuffix = ".cdtmp"
     /// The AppleDouble magic `00 05 16 07` and version `00 02 00 00`.
@@ -38,9 +40,10 @@ public enum DeviceFileIO {
     static let twinSizeRange: ClosedRange<Int64> = 26...(128 * 1024)
 
     /// `copyfile(COPYFILE_DATA)` to "<dest>.cdtmp", fsync, rename, restore the
-    /// source's modification date, strip attributes, remove a proven "._"
-    /// twin. Creates no directories. On a failure before the rename the temp
-    /// is removed and the error rethrown.
+    /// source's modification date, strip attributes. Creates no directories.
+    /// On a failure before the rename the temp is removed and the error
+    /// rethrown. Once the rename has landed the write has succeeded: failing
+    /// to restore the date or strip an attribute is logged, never thrown.
     public static func copyDataOnly(from source: URL, to destination: URL,
                                     fileManager: FileManager = .default) throws {
         let temp = tempURL(for: destination)
@@ -54,15 +57,18 @@ public enum DeviceFileIO {
             discardTemp(temp)
             throw error
         }
-        let sourceDate = try fileManager.attributesOfItem(atPath: source.path)[.modificationDate] as? Date
-        if let sourceDate {
-            try fileManager.setAttributes([.modificationDate: sourceDate], ofItemAtPath: destination.path)
+        do {
+            if let sourceDate = try fileManager.attributesOfItem(atPath: source.path)[.modificationDate] as? Date {
+                try fileManager.setAttributes([.modificationDate: sourceDate], ofItemAtPath: destination.path)
+            }
+        } catch {
+            AppLog.library.warning(
+                "Copied \(destination.lastPathComponent, privacy: .public) but kept the copy's own date: \(String(describing: error), privacy: .public)")
         }
         stripExtendedAttributes(at: destination)
-        removeProvenTwin(of: destination)
     }
 
-    /// Same-folder temp, fsync, rename, strip, twin. Never `Data.write(.atomic)`,
+    /// Same-folder temp, fsync, rename, strip. Never `Data.write(.atomic)`,
     /// which stages through a folder of its own on some volumes.
     public static func writeAtomically(_ data: Data, to destination: URL,
                                        fileManager: FileManager = .default) throws {
@@ -75,10 +81,10 @@ public enum DeviceFileIO {
             throw error
         }
         stripExtendedAttributes(at: destination)
-        removeProvenTwin(of: destination)
     }
 
-    /// Removes every extended attribute, without following a symlink.
+    /// Removes every extended attribute, without following a symlink. Best
+    /// effort: an attribute that will not go is logged.
     public static func stripExtendedAttributes(at url: URL) {
         let path = url.path
         let size = listxattr(path, nil, 0, XATTR_NOFOLLOW)
@@ -88,19 +94,10 @@ public enum DeviceFileIO {
         guard read > 0 else { return }
         let names = buffer.prefix(read).split(separator: 0)
             .map { String(decoding: $0.map { UInt8(bitPattern: $0) }, as: UTF8.self) }
-        for name in names {
-            removexattr(path, name, XATTR_NOFOLLOW)
+        for name in names where removexattr(path, name, XATTR_NOFOLLOW) != 0 {
+            AppLog.library.warning(
+                "Could not remove attribute \(name, privacy: .public) from \(url.lastPathComponent, privacy: .public): errno \(errno)")
         }
-    }
-
-    /// Deletes `._<name>` beside `url` only when it is a regular file of 26
-    /// bytes to 128 KB that starts with the AppleDouble header. Returns
-    /// whether it deleted.
-    @discardableResult
-    public static func removeProvenTwin(of url: URL) -> Bool {
-        let twin = url.deletingLastPathComponent().appendingPathComponent("._" + url.lastPathComponent)
-        guard isProvenAppleDouble(twin) else { return false }
-        return unlink(twin.path) == 0
     }
 
     /// `unlink`; a missing file is not an error.
@@ -140,9 +137,14 @@ public extension DeviceFileIO {
         guard lstat(url.path, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG,
               twinSizeRange.contains(Int64(info.st_size))
         else { return false }
-        let fd = open(url.path, O_RDONLY | O_NOFOLLOW)
+        // Never blocks on a FIFO or follows a symlink swapped in since the lstat.
+        let fd = open(url.path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK)
         guard fd >= 0 else { return false }
         defer { close(fd) }
+        var opened = stat()
+        guard fstat(fd, &opened) == 0, (opened.st_mode & S_IFMT) == S_IFREG,
+              twinSizeRange.contains(Int64(opened.st_size))
+        else { return false }
         var header = [UInt8](repeating: 0, count: appleDoubleHeader.count)
         guard Darwin.read(fd, &header, header.count) == header.count else { return false }
         return header == appleDoubleHeader

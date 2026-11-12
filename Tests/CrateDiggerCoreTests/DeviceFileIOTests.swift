@@ -107,46 +107,57 @@ final class DeviceFileIOTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: fresh), Data())
     }
 
-    func testCopyRemovesProvenTwinOfDestination() throws {
+    func testCopyAndWriteNeverDeleteATwin() throws {
+        // Removing twins is the sweep's job (backed up first), never a side effect of a write.
         let source = try file("src/a.m4a", Data("x".utf8))
         let destination = try file("a.m4a", Data("old".utf8))
         let twin = try file("._a.m4a", FakeIPod.appleDoubleBytes())
         try DeviceFileIO.copyDataOnly(from: source, to: destination)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: twin.path))
+        XCTAssertEqual(try Data(contentsOf: twin), FakeIPod.appleDoubleBytes())
+
+        let cover = try file("cover.jpg", Data("old".utf8))
+        let coverTwin = try file("._cover.jpg", FakeIPod.appleDoubleBytes())
+        try DeviceFileIO.writeAtomically(Data("new".utf8), to: cover)
+        XCTAssertEqual(try Data(contentsOf: coverTwin), FakeIPod.appleDoubleBytes())
     }
 
-    func testRemoveProvenTwinDeletesRealTwin() throws {
-        let audio = try file("x.m4a", Data("ftyp".utf8))
-        let twin = try file("._x.m4a", FakeIPod.appleDoubleBytes())
-        XCTAssertTrue(DeviceFileIO.removeProvenTwin(of: audio))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: twin.path))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: audio.path))
-        XCTAssertFalse(DeviceFileIO.removeProvenTwin(of: audio)) // nothing left to remove
+    func testDateFailureAfterRenameIsNotAFailedWrite() throws {
+        final class NoDates: FileManager {
+            override func setAttributes(_ attributes: [FileAttributeKey: Any], ofItemAtPath path: String) throws {
+                throw CocoaError(.fileWriteNoPermission)
+            }
+        }
+        let source = try file("src/a.m4a", Data("audio".utf8))
+        let destination = dir.appendingPathComponent("a.m4a")
+        XCTAssertNoThrow(try DeviceFileIO.copyDataOnly(from: source, to: destination, fileManager: NoDates()))
+        XCTAssertEqual(try Data(contentsOf: destination), Data("audio".utf8))
+        XCTAssertEqual(tempFiles(), [])
     }
 
-    func testRemoveProvenTwinKeepsLookAlike() throws {
-        let audio = try file("x.m4a", Data("ftyp".utf8))
+    func testProvenAppleDoubleAcceptsARealTwin() throws {
+        XCTAssertTrue(DeviceFileIO.isProvenAppleDouble(try file("._x.m4a", FakeIPod.appleDoubleBytes())))
+        XCTAssertTrue(DeviceFileIO.isProvenAppleDouble(try file("._y.m4a", FakeIPod.appleDoubleBytes(size: 26))))
+        XCTAssertTrue(DeviceFileIO.isProvenAppleDouble(try file("._z.m4a", FakeIPod.appleDoubleBytes(size: 128 * 1024))))
+    }
+
+    func testProvenAppleDoubleRefusesLookAlike() throws {
         let twin = try file("._x.m4a", Data([0, 0, 0, 0x20]) + Data("ftypM4A ".utf8) + Data(count: 64))
-        XCTAssertFalse(DeviceFileIO.removeProvenTwin(of: audio))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: twin.path))
+        XCTAssertFalse(DeviceFileIO.isProvenAppleDouble(twin))
     }
 
-    func testRemoveProvenTwinKeepsOversize() throws {
-        let audio = try file("x.m4a", Data("ftyp".utf8))
-        let twin = try file("._x.m4a", FakeIPod.appleDoubleBytes(size: 129 * 1024))
-        XCTAssertFalse(DeviceFileIO.removeProvenTwin(of: audio))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: twin.path))
+    func testProvenAppleDoubleRefusesOversize() throws {
+        XCTAssertFalse(DeviceFileIO.isProvenAppleDouble(try file("._x.m4a", FakeIPod.appleDoubleBytes(size: 129 * 1024))))
     }
 
-    func testRemoveProvenTwinKeepsTinyAndSymlink() throws {
-        let audio = try file("x.m4a", Data("ftyp".utf8))
-        let twin = try file("._x.m4a", FakeIPod.appleDoubleBytes(size: 10))
-        XCTAssertFalse(DeviceFileIO.removeProvenTwin(of: audio))
-        try FileManager.default.removeItem(at: twin)
+    func testProvenAppleDoubleRefusesTinySymlinkAndFifo() throws {
+        XCTAssertFalse(DeviceFileIO.isProvenAppleDouble(try file("._x.m4a", FakeIPod.appleDoubleBytes(size: 10))))
         let real = try file("real", FakeIPod.appleDoubleBytes())
-        try FileManager.default.createSymbolicLink(at: twin, withDestinationURL: real)
-        XCTAssertFalse(DeviceFileIO.removeProvenTwin(of: audio))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: real.path))
+        let link = dir.appendingPathComponent("._link.m4a")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: real)
+        XCTAssertFalse(DeviceFileIO.isProvenAppleDouble(link))
+        let fifo = dir.appendingPathComponent("._fifo.m4a")
+        XCTAssertEqual(mkfifo(fifo.path, 0o644), 0)
+        XCTAssertFalse(DeviceFileIO.isProvenAppleDouble(fifo))
     }
 
     func testRemoveMissingFileIsNotAnError() throws {

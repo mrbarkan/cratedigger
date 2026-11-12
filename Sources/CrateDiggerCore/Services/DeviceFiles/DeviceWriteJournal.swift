@@ -62,8 +62,8 @@ public final class DeviceWriteJournal: @unchecked Sendable {
     private let fileManager: FileManager
     private let lock = NSLock()
     private var allRecords: [DeviceFileRecord] = []
-    /// The last non-`tempIntent` record per key.
-    private var lastByKey: [String: DeviceFileRecord] = [:]
+    /// Every non-`tempIntent` record per key, oldest first.
+    private var historyByKey: [String: [DeviceFileRecord]] = [:]
 
     public static var defaultDirectory: URL {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
@@ -80,14 +80,25 @@ public final class DeviceWriteJournal: @unchecked Sendable {
 
     var journalURL: URL { folder.appendingPathComponent(Self.fileName) }
 
-    /// The latest record for `key`, if our last act there was a write.
-    public func ownedRecord(forKey key: String) -> DeviceFileRecord? {
+    /// The latest record for `key`, if our last act there was a write. With
+    /// a `volumeUUID`, records made on another volume are not ours here: a
+    /// profile can match two devices, and the same path on each is a
+    /// different file. A record or a caller with no UUID cannot tell, and
+    /// matches.
+    public func ownedRecord(forKey key: String, volumeUUID: String? = nil) -> DeviceFileRecord? {
         lock.lock()
         defer { lock.unlock() }
-        guard let record = lastByKey[DeviceWritePolicy.key(forRelativePath: key)],
+        let history = historyByKey[DeviceWritePolicy.key(forRelativePath: key)] ?? []
+        guard let record = history.last(where: { Self.sameVolume($0.volumeUUID, volumeUUID) }),
               record.kind == .created || record.kind == .replaced
         else { return nil }
         return record
+    }
+
+    /// True unless both UUIDs are known and differ.
+    public static func sameVolume(_ a: String?, _ b: String?) -> Bool {
+        guard let a, let b else { return true }
+        return a == b
     }
 
     /// Every record, in the order written (temp intents included).
@@ -186,6 +197,6 @@ public final class DeviceWriteJournal: @unchecked Sendable {
     private func remember(_ record: DeviceFileRecord) {
         allRecords.append(record)
         guard record.kind != .tempIntent else { return }
-        lastByKey[DeviceWritePolicy.key(forRelativePath: record.relativeKey)] = record
+        historyByKey[DeviceWritePolicy.key(forRelativePath: record.relativeKey), default: []].append(record)
     }
 }

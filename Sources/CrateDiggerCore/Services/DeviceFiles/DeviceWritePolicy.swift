@@ -37,9 +37,12 @@ public enum DeviceWritePolicyError: Error, Equatable, LocalizedError {
 /// (spec invariant I2). Pure: `checkWrite` and `checkDelete` never touch the
 /// file system. Paths are relative to the volume root.
 ///
-/// Comparison is by key: NFC, case-folded, each component trimmed of trailing
-/// dots and spaces, because FAT ignores case and drops those characters, so
-/// `.ROCKBOX` and `.rockbox.` are the player's folder too.
+/// Comparison is by key: NFC, case-folded through upper case (so `ı` and `ſ`
+/// fold as FAT's upper-casing would), each component trimmed of trailing dots
+/// and spaces, because FAT ignores case and drops those characters. Paths are
+/// stricter than keys: a component ending in a dot or a space, or holding a
+/// FAT short name's `~<digit>`, is refused outright, since it may name a
+/// different file on the device than it does here (`.rockbox.`, `ROCKBO~1`).
 public struct DeviceWritePolicy: Sendable {
     /// Folders that are never written or deleted in, whatever the profile says.
     public static let deniedTrees = [
@@ -49,6 +52,13 @@ public struct DeviceWritePolicy: Sendable {
     static let scrobblerLogKey = ".scrobbler.log"
     /// The single exception to the denied trees (phase 5, behind M13).
     static let knownArtistsKey = ".rockbox/library/user/known_artists.txt"
+
+    /// What a `._` twin may belong to for an AppleDouble delete (spec D21):
+    /// audio, pictures, playlists, lyrics and documents PodBox reads. The
+    /// policy's own audio extensions count too. Other twins are not ours to tidy.
+    public static let appleDoubleMediaExtensions: Set<String> = LibraryScanService.defaultSupportedExtensions.union([
+        "jpg", "jpeg", "png", "bmp", "gif", "webp", "m3u", "m3u8", "lrc", "lrc8", "snc", "epub", "pdf", "cue",
+    ])
 
     private static let deniedKeys = Set(deniedTrees.map(componentKey))
     private static let tempSuffix = ".cdtmp"
@@ -100,6 +110,10 @@ public struct DeviceWritePolicy: Sendable {
         case .appleDouble:
             let name = relativePath.split(separator: "/").last.map(String.init) ?? ""
             guard name.hasPrefix("._"), name.count > 2 else { throw forbidden("not a ._ file") }
+            let twinOf = (String(name.dropFirst(2)) as NSString).pathExtension.lowercased()
+            guard Self.appleDoubleMediaExtensions.contains(twinOf) || audioExtensions.contains(twinOf) else {
+                throw forbidden("only the macOS twins of media files are removed")
+            }
         case .ownedByCrateDigger:
             let passes = enabledRoles.contains { (try? checkWrite(relativePath, role: $0)) != nil }
             guard passes else { throw forbidden("no enabled writer may own that path") }
@@ -149,7 +163,7 @@ public struct DeviceWritePolicy: Sendable {
     private func forbidden(_ reason: String) -> DeviceWritePolicyError { .forbidden(reason) }
 
     private static func componentKey(_ component: String) -> String {
-        var key = component.precomposedStringWithCanonicalMapping.lowercased()
+        var key = component.precomposedStringWithCanonicalMapping.uppercased().lowercased()
         while let last = key.last, last == "." || last == " " { key.removeLast() }
         return key
     }
@@ -158,8 +172,10 @@ public struct DeviceWritePolicy: Sendable {
         path.split(separator: "/", omittingEmptySubsequences: true).map { componentKey(String($0)) }
     }
 
-    /// Refuses empty and absolute paths, empty components, `.` and `..`, and a
-    /// component FAT would store as nothing (`...`). Returns the component keys.
+    /// Refuses empty and absolute paths, empty components, `.` and `..`, a
+    /// component ending in a dot or a space (FAT drops those, so it would name
+    /// another file), and one holding `~<digit>` (a FAT short name such as
+    /// `ROCKBO~1` can be an alias of a protected folder). Returns the component keys.
     private static func validatedKeys(_ path: String) throws -> [String] {
         guard !path.isEmpty else { throw DeviceWritePolicyError.forbidden("empty path") }
         guard !path.hasPrefix("/") else { throw DeviceWritePolicyError.forbidden("absolute path") }
@@ -168,11 +184,22 @@ public struct DeviceWritePolicy: Sendable {
             if component == "." || component == ".." {
                 throw DeviceWritePolicyError.forbidden("path leaves its folder")
             }
+            if component.hasSuffix(".") || component.hasSuffix(" ") {
+                throw DeviceWritePolicyError.forbidden("a name ending in a dot or a space")
+            }
+            if hasShortNameMarker(component) {
+                throw DeviceWritePolicyError.forbidden("a FAT short name (~ and a digit)")
+            }
             if componentKey(component).isEmpty {
                 throw DeviceWritePolicyError.forbidden("empty path component")
             }
         }
         return components.map(componentKey)
+    }
+
+    private static func hasShortNameMarker(_ component: String) -> Bool {
+        let scalars = Array(component.unicodeScalars)
+        return scalars.indices.dropLast().contains { scalars[$0] == "~" && ("0"..."9").contains(scalars[$0 + 1]) }
     }
 
     /// The denied trees, on every component (a `Music/.rockbox` folder is

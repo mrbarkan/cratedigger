@@ -80,7 +80,9 @@ final class DeviceWritePolicyTests: XCTestCase {
     func testDeniesTrailingDotSpaceAndCaseAliases() {
         let rootPolicy = DeviceWritePolicy(musicSubpath: "", enabledRoles: allRoles)
         for path in [".ROCKBOX/config.cfg", ".rockbox./x.mp3", ".rockbox /x.mp3", "IPOD_CONTROL/x.mp3",
-                     ".Rockbox. ./x.mp3", "iPod_Control./Music/F00/x.mp3"] {
+                     ".Rockbox. ./x.mp3", "iPod_Control./Music/F00/x.mp3",
+                     // Folds FAT upper-cases into the same name, and a FAT short name.
+                     "\u{0131}Pod_Control/x.mp3", ".Tra\u{017F}hes/x.mp3", "ROCKBO~1/x.mp3", ".ROCKB~12/x.mp3"] {
             for role in allRoles { assertDenied(path, role, policy: rootPolicy) }
             for reason in allReasons { XCTAssertFalse(deleteAllowed(path, reason, policy: rootPolicy), path) }
         }
@@ -167,13 +169,34 @@ final class DeviceWritePolicyTests: XCTestCase {
     }
 
     func testAppleDoubleDeleteAnywhereOutsideDeniedTrees() {
-        XCTAssertTrue(deleteAllowed("Notes/._a.txt", .appleDouble))
         XCTAssertTrue(deleteAllowed("Music/A/._01.m4a", .appleDouble))
-        XCTAssertTrue(deleteAllowed("._Music", .appleDouble))
+        XCTAssertTrue(deleteAllowed("Books/._Moby Dick.EPUB", .appleDouble))
+        XCTAssertTrue(deleteAllowed("Playlists/._Mix.m3u8", .appleDouble))
         XCTAssertFalse(deleteAllowed(".rockbox/themes/._x.cfg", .appleDouble))
         XCTAssertFalse(deleteAllowed("._", .appleDouble))
         XCTAssertFalse(deleteAllowed("Music/._", .appleDouble))
         XCTAssertFalse(deleteAllowed("Music/A/01.m4a", .appleDouble))
+    }
+
+    func testAppleDoubleDeleteOnlyForTwinsOfMediaFiles() {
+        // Spec D21: the owner's Notes and Contacts are not ours to tidy.
+        XCTAssertFalse(deleteAllowed("Notes/._a.txt", .appleDouble))
+        XCTAssertFalse(deleteAllowed("._Music", .appleDouble))
+        XCTAssertFalse(deleteAllowed("Contacts/._card.vcf", .appleDouble))
+        XCTAssertTrue(deleteAllowed("Notes/._scan.pdf", .appleDouble))
+        // The policy's own audio extensions count too.
+        let custom = DeviceWritePolicy(musicSubpath: "Music", audioExtensions: ["wv"])
+        XCTAssertTrue(deleteAllowed("Music/._01.wv", .appleDouble, policy: custom))
+    }
+
+    func testNamesFATWouldChangeAreRefused() {
+        for path in ["Music/A./01.m4a", "Music/A /01.m4a", "Music/A/01.m4a.", "Music/A/01.m4a ",
+                     "Music/TRACK~1.M4A", "Music/A~9/01.m4a"] {
+            assertDenied(path, .audio)
+            XCTAssertFalse(deleteAllowed(path, .userReplace), path)
+        }
+        assertAllowed("Music/A~B/01 ~ Live.m4a", .audio) // a tilde alone is fine
+        assertAllowed("Music/Vol. 2/01.m4a", .audio)
     }
 
     func testUserReplaceOnlyAudioUnderMusic() {
@@ -194,6 +217,8 @@ final class DeviceWritePolicyTests: XCTestCase {
         let nfd = "Music/Gdan\u{0301}sk/01.m4a"
         let nfc = "Music/Gda\u{0144}sk/01.m4a"
         XCTAssertEqual(DeviceWritePolicy.key(forRelativePath: nfd), DeviceWritePolicy.key(forRelativePath: nfc))
+        XCTAssertEqual(DeviceWritePolicy.key(forRelativePath: "\u{0131}Pod_Control"), "ipod_control")
+        XCTAssertEqual(DeviceWritePolicy.key(forRelativePath: ".Tra\u{017F}hes"), ".trashes")
         XCTAssertEqual(DeviceWritePolicy.key(forRelativePath: "MUSIC/A./B /01.M4A"), "music/a/b/01.m4a")
         XCTAssertEqual(DeviceWritePolicy.key(forRelativePath: ".ROCKBOX. "), ".rockbox")
     }

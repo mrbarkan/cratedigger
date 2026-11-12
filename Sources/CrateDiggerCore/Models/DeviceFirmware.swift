@@ -95,11 +95,19 @@ public struct PodBoxConfig: Equatable, Sendable {
         value("play log").flatMap { PlayLogMode(rawValue: $0.lowercased()) } ?? .on
     }
 
-    /// Relative to the volume root, without the leading "/".
-    public var playlistDirectory: String {
+    /// Relative to the volume root, without the leading "/"; "" is the root
+    /// itself. nil when the device's setting is not a plain folder on that
+    /// volume: it must start with one "/" and hold no `.`, `..`, empty or
+    /// `<volume>` component, since it is read from a file anyone can edit.
+    public var playlistDirectory: String? {
         let raw = value("playlist catalog directory") ?? "/Playlists"
-        let trimmed = raw.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        return trimmed.isEmpty && raw.isEmpty ? "Playlists" : trimmed
+        guard raw.hasPrefix("/"), !raw.hasPrefix("//") else { return nil }
+        var parts = raw.dropFirst().split(separator: "/", omittingEmptySubsequences: false)
+        if parts.last == "" { parts.removeLast() } // one trailing "/" is fine
+        guard !parts.contains(where: { $0.isEmpty || $0 == "." || $0 == ".." || $0.hasPrefix("<") }) else {
+            return nil
+        }
+        return parts.joined(separator: "/")
     }
 
     /// Colon separated in the setting, as Rockbox stores its path lists.
@@ -217,8 +225,8 @@ public struct DeviceCapabilities: OptionSet, Sendable {
             // File features: they depend on the firmware, not on its library
             // layout, so a newer or not-yet-started PodBox keeps them.
             caps.insert(.centralPeopleArtwork)
-            if firmware.playerPathPrefix != nil,
-               !Self.isInDeniedTree(firmware.config.playlistDirectory) {
+            if firmware.playerPathPrefix != nil, let playlists = firmware.config.playlistDirectory,
+               !Self.isInDeniedTree(playlists) {
                 caps.insert(.playlistCatalog)
             }
             // Read-back and lyrics are proven only against layout 5.

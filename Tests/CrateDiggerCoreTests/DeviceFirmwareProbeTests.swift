@@ -93,6 +93,31 @@ final class DeviceFirmwareProbeTests: XCTestCase {
         XCTAssertEqual(config.value("playlist engine"), "off")
     }
 
+    func testPlaylistDirectoryFromConfigIsValidated() {
+        func folder(_ value: String) -> String? {
+            PodBoxConfig(defaultConfig: nil, config: "playlist catalog directory: \(value)\n").playlistDirectory
+        }
+        XCTAssertEqual(folder("/Playlists"), "Playlists")
+        XCTAssertEqual(folder("/My Lists/Road/"), "My Lists/Road")
+        XCTAssertEqual(folder("/"), "")
+        for bad in ["/../Users", "/Playlists/../..", "/./Playlists", "//Volumes/Other", "Playlists",
+                    "/<HDD0>/Playlists", "/a//b"] {
+            XCTAssertNil(folder(bad), bad)
+        }
+    }
+
+    func testProbeDoesNotFollowPlaylistFolderOffTheVolume() throws {
+        let iPod = try FakeIPod()
+        try iPod.addFile(".rockbox/library/user/playback.log", Data("# Started\n".utf8))
+        try FileManager.default.removeItem(at: iPod.root.appendingPathComponent("Playlists"))
+        let elsewhere = try FakeIPod(flavour: .noRockbox)
+        try elsewhere.addFile("Lists/Pl.m3u8", Data(FakeIPod.playlistLine.utf8))
+        try FileManager.default.createSymbolicLink(at: iPod.root.appendingPathComponent("Playlists"),
+                                                   withDestinationURL: elsewhere.root.appendingPathComponent("Lists"))
+        let firmware = try XCTUnwrap(DeviceFirmwareProbe.probe(volumeRoot: iPod.root))
+        XCTAssertNil(firmware.playerPathPrefix)
+    }
+
     // MARK: path prefix
 
     func testPrefixFromPlaylistLine() {

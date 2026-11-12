@@ -270,8 +270,10 @@ final class FATSandboxTests: XCTestCase {
         let source = try macSource("zebra.m4a", Data(repeating: 0x42, count: 200_000))
         let journal = DeviceWriteJournal(profileID: UUID(), directory: mac.appendingPathComponent("journal"))
         let uuid = DeviceFileExecutor.systemVolumeUUID(run)
+        // `run` is a folder on the FAT image, not its mount point, so the test opts out of that one check.
         let executor = DeviceFileExecutor(volumeRoot: run, expectedVolumeUUID: uuid,
-                                          policy: DeviceWritePolicy(musicSubpath: "Music"), journal: journal)
+                                          policy: DeviceWritePolicy(musicSubpath: "Music"), journal: journal,
+                                          rootMustBeMountPoint: false)
         let session = UUID()
 
         // Create.

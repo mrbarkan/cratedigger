@@ -42,9 +42,8 @@ public struct AppleDoubleSweeper {
     public static let maximumSize = 128 * 1024
 
     /// Audio, pictures, playlists, lyrics and documents PodBox reads.
-    public static let defaultMediaExtensions: Set<String> = LibraryScanService.defaultSupportedExtensions.union([
-        "jpg", "jpeg", "png", "bmp", "gif", "webp", "m3u", "m3u8", "lrc", "lrc8", "snc", "epub", "pdf", "cue",
-    ])
+    /// The policy's list, so the plan never lists a twin the executor would refuse.
+    public static let defaultMediaExtensions: Set<String> = DeviceWritePolicy.appleDoubleMediaExtensions
 
     /// Why a `._` file stays. Checked in this order, so "too large" and "not
     /// media" only ever describe a file that does carry the AppleDouble header.

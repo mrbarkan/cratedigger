@@ -60,7 +60,7 @@ final class DeviceCapabilitiesTests: XCTestCase {
     }
 
     func testPlaylistFolderInsideRockboxGivesNoCapability() {
-        for folder in ["/.rockbox/playlists", "/.ROCKBOX./lists", "/iPod_Control/Lists"] {
+        for folder in ["/.rockbox/playlists", "/.ROCKBOX./lists", "/iPod_Control/Lists", "/../Lists", "//x"] {
             let caps = DeviceCapabilities(
                 firmware: firmware(config: "playlist catalog directory: \(folder)\n"), fileSystem: "msdos")
             XCTAssertFalse(caps.contains(.playlistCatalog), folder)

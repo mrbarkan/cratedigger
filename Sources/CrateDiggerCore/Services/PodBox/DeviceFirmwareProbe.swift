@@ -50,8 +50,8 @@ public enum DeviceFirmwareProbe {
                                   config: text("config.cfg", cap: configCap))
 
         var playerLines: [String] = []
-        if let playlist = firstPlayerPlaylist(in: volumeRoot.appendingPathComponent(config.playlistDirectory),
-                                              fileManager: fileManager),
+        if let directory = config.playlistDirectory,
+           let playlist = firstPlayerPlaylist(in: volumeRoot, relativeFolder: directory, fileManager: fileManager),
            let body = readCapped(playlist, cap: playerFileCap, fileManager: fileManager) {
             playerLines += lines(String(decoding: body, as: UTF8.self))
         }
@@ -170,8 +170,13 @@ public enum DeviceFirmwareProbe {
 
     /// The first `*.m3u8` in the player's playlist folder by name. Hidden
     /// files (`._` twins among them) are skipped.
-    private static func firstPlayerPlaylist(in folder: URL, fileManager: FileManager) -> URL? {
-        guard let names = try? fileManager.contentsOfDirectory(atPath: folder.path) else { return nil }
+    /// A folder whose real path leaves the volume (a symlink) is not read.
+    private static func firstPlayerPlaylist(in volumeRoot: URL, relativeFolder: String,
+                                            fileManager: FileManager) -> URL? {
+        let folder = relativeFolder.isEmpty ? volumeRoot : volumeRoot.appendingPathComponent(relativeFolder)
+        guard DeviceWritePolicy.relativePath(of: folder, under: volumeRoot) != nil,
+              let names = try? fileManager.contentsOfDirectory(atPath: folder.path)
+        else { return nil }
         return names
             .filter { !$0.hasPrefix(".") && ($0 as NSString).pathExtension.lowercased() == "m3u8" }
             .sorted()

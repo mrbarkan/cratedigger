@@ -313,7 +313,8 @@ final class AppleDoubleSweeperTests: XCTestCase {
         let journal = DeviceWriteJournal(profileID: UUID(), directory: journalDir)
         let executor = DeviceFileExecutor(volumeRoot: iPod.root, expectedVolumeUUID: "V",
                                           policy: DeviceWritePolicy(musicSubpath: "Music"), journal: journal,
-                                          volumeUUID: { _ in "V" }, freeSpace: { _ in 1 << 40 })
+                                          volumeUUID: { _ in "V" }, freeSpace: { _ in 1 << 40 },
+                                          rootMustBeMountPoint: false) // the FakeIPod is a temp folder
         let filesBefore = Set(allFiles())
         let session = UUID()
         let outcomes = executor.apply(result.operations, sessionID: session)
@@ -355,7 +356,8 @@ final class AppleDoubleSweeperTests: XCTestCase {
         let executor = DeviceFileExecutor(volumeRoot: iPod.root, expectedVolumeUUID: nil,
                                           policy: DeviceWritePolicy(musicSubpath: "Music"),
                                           journal: DeviceWriteJournal(profileID: UUID(), directory: journalDir),
-                                          freeSpace: { _ in 1 << 40 })
+                                          freeSpace: { _ in 1 << 40 },
+                                          rootMustBeMountPoint: false) // the FakeIPod is a temp folder
         XCTAssertEqual(executor.apply(result.operations, sessionID: UUID()),
                        [.refusedNotAppleDouble, .refusedNotAppleDouble, .deleted])
         XCTAssertEqual(try Data(contentsOf: iPod.root.appendingPathComponent("Music/A/._1.mp3")), real)
