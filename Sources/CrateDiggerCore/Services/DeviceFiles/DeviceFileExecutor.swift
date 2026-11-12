@@ -53,9 +53,13 @@ public enum DeviceFileOutcome: Equatable, Sendable {
 /// file with identical bytes is left alone (I5), (4) there is room for it plus
 /// `freeSpaceMargin`, (5) a file the journal proves ours is backed up and
 /// replaced, anything else is foreign and refused (I3), (6) the bytes land
-/// through a flushed temp and a rename, attributes stripped (I8), (7) the
-/// journal records it. A delete needs the journal's proof for
-/// `ownedByCrateDigger` and backs the file up first. An AppleDouble twin is
+/// through a flushed temp and a rename, attributes stripped (I8), and on FAT
+/// or exFAT the `._` twin macOS made for the file's (and each new folder's)
+/// unremovable `com.apple.provenance` is taken away again
+/// (`DeviceFileIO.removeProvenanceTwins`: only a twin that was not there
+/// before and holds nothing else; not journalled), (7) the journal records
+/// it. A delete needs the journal's proof for `ownedByCrateDigger` and backs
+/// the file up first. An AppleDouble twin is
 /// proven and read through one descriptor, backed up from those bytes, and
 /// deleted only if the path still holds that very file, checked again
 /// immediately before the `unlink` (I4).
@@ -79,6 +83,14 @@ public struct DeviceFileExecutor {
     /// Tests only: runs between an AppleDouble twin's backup and its removal,
     /// so a test can swap the file in that gap.
     private let beforeAppleDoubleRemoval: ((URL) -> Void)?
+    /// The volume keeps attributes in `._` files (FAT, exFAT), so a write
+    /// takes away the provenance twins it caused. Read once at init: the
+    /// volume is pinned by device and inode for the whole session.
+    private let keepsAttributesInTwins: Bool
+    /// Tests only: runs on each folder the write created and on the landed
+    /// file, before their provenance twins are settled, so a test can stand
+    /// in for the kernel making one.
+    private let afterLanding: ((URL) -> Void)?
 
     public init(volumeRoot: URL, expectedVolumeUUID: String?, policy: DeviceWritePolicy,
                 journal: DeviceWriteJournal, fileManager: FileManager = .default,
@@ -90,12 +102,15 @@ public struct DeviceFileExecutor {
     }
 
     /// Tests only: `rootMustBeMountPoint: false` lets a temp folder stand in
-    /// for a device. Every other volume check still applies.
+    /// for a device. Every other volume check still applies. `fileSystemType`
+    /// lets an APFS folder stand in for FAT.
     init(volumeRoot: URL, expectedVolumeUUID: String?, policy: DeviceWritePolicy,
          journal: DeviceWriteJournal, fileManager: FileManager = .default,
          volumeUUID: @escaping (URL) -> String? = DeviceFileExecutor.systemVolumeUUID,
          freeSpace: @escaping (URL) -> Int64? = DeviceFileExecutor.systemFreeSpace,
-         rootMustBeMountPoint: Bool, beforeAppleDoubleRemoval: ((URL) -> Void)? = nil) {
+         fileSystemType: (URL) -> String? = AppleDoubleSweeper.systemFileSystemType,
+         rootMustBeMountPoint: Bool, beforeAppleDoubleRemoval: ((URL) -> Void)? = nil,
+         afterLanding: ((URL) -> Void)? = nil) {
         self.volumeRoot = volumeRoot
         self.expectedVolumeUUID = expectedVolumeUUID
         self.policy = policy
@@ -105,6 +120,8 @@ public struct DeviceFileExecutor {
         self.freeSpace = freeSpace
         self.rootMustBeMountPoint = rootMustBeMountPoint
         self.beforeAppleDoubleRemoval = beforeAppleDoubleRemoval
+        self.afterLanding = afterLanding
+        keepsAttributesInTwins = fileSystemType(volumeRoot).map(AppleDoubleSweeper.sweptFileSystems.contains) ?? false
         capturedIdentity = VolumeIdentity(of: volumeRoot)
         sessionVolumeUUID = expectedVolumeUUID ?? (capturedIdentity == nil ? nil : volumeUUID(volumeRoot))
     }
@@ -262,13 +279,21 @@ public struct DeviceFileExecutor {
         // file that was not there must still not be there at the rename
         // (`exclusive`): one that appeared since is not ours. Folders this
         // write made are removed again when it fails and leaves them empty.
+        // On FAT the provenance twins each step caused are settled right
+        // after it, the new folders' first (outermost first), and noted
+        // before it, so a twin that was already there is never touched.
         let folder = target.deletingLastPathComponent()
-        let createdFolder = firstMissingFolder(for: target)
+        let newFolders = missingFolders(for: target)
+        let createdFolder = newFolders.first
+        var fileTwins: ProvenanceTwins?
         do {
             if staleTemp { try DeviceFileIO.remove(temp) }
-            if createdFolder != nil {
+            if !newFolders.isEmpty {
+                let folderTwins = keepsAttributesInTwins ? ProvenanceTwins.beforeCreating(newFolders) : nil
                 try DeviceFileIO.createDirectory(folder, fileManager: fileManager)
+                settle(folderTwins, landed: newFolders)
             }
+            fileTwins = keepsAttributesInTwins ? ProvenanceTwins.beforeWriting(target, through: temp) : nil
             let exclusive = kind == .created
             switch contents {
             case .data(let data):
@@ -276,7 +301,10 @@ public struct DeviceFileExecutor {
             case .file(let source):
                 try DeviceFileIO.copyDataOnly(from: source, to: target, exclusive: exclusive, fileManager: fileManager)
             }
+            settle(fileTwins, landed: [target])
         } catch {
+            // A temp the failure left behind may have left its twin too.
+            if let fileTwins { DeviceFileIO.removeProvenanceTwins(fileTwins) }
             if let createdFolder { DeviceFileIO.removeEmptyFolders(from: folder, upTo: createdFolder) }
             if let failure = error as? DeviceFileIOError, failure.code == EEXIST { return .refusedForeign }
             return .failed(describe(error))
@@ -463,20 +491,27 @@ public struct DeviceFileExecutor {
         return .regular(size: Int64(info.st_size))
     }
 
-    /// The outermost folder on the way to `target` that does not exist yet
-    /// (within the volume), or nil when its folder is there.
+    /// The folders on the way to `target` that do not exist yet (within the
+    /// volume), outermost first; empty when its folder is there.
     /// The target is the root with components appended, so a plain prefix
     /// of its path is the root's (no standardising: Foundation rewrites
     /// `/private/tmp` as `/tmp` for one URL and not another).
-    private func firstMissingFolder(for target: URL) -> URL? {
+    private func missingFolders(for target: URL) -> [URL] {
         let rootPath = volumeRoot.path.hasSuffix("/") ? String(volumeRoot.path.dropLast()) : volumeRoot.path
-        var missing: URL?
+        var missing: [URL] = []
         var folder = target.deletingLastPathComponent()
         while folder.path.hasPrefix(rootPath + "/"), !fileManager.fileExists(atPath: folder.path) {
-            missing = folder
+            missing.insert(folder, at: 0)
             folder = folder.deletingLastPathComponent()
         }
         return missing
+    }
+
+    /// The test hook on what landed, then the twins it caused (nil: not a
+    /// volume that keeps attributes in `._` files). Never fails the write.
+    private func settle(_ twins: ProvenanceTwins?, landed: [URL]) {
+        for url in landed { afterLanding?(url) }
+        if let twins { DeviceFileIO.removeProvenanceTwins(twins) }
     }
 
     private func regularFileSize(_ url: URL) -> Int64? {

@@ -44,8 +44,10 @@ final class DeviceTransferDoorTests: XCTestCase {
         try XCTUnwrap(FileManager.default.attributesOfItem(atPath: url(relative).path)[.modificationDate] as? Date)
     }
 
-    private func attributeCount(_ url: URL) -> Int {
-        max(0, listxattr(url.path, nil, 0, XATTR_NOFOLLOW))
+    /// Attribute names other than `com.apple.provenance`, which a tagged
+    /// (assessed) test process puts on everything it creates.
+    private func attributesBesidesProvenance(_ url: URL) -> [String] {
+        DeviceFileIO.attributeNames(at: url).filter { $0 != AppleDoubleFile.provenanceAttribute }
     }
 
     // MARK: Audio
@@ -58,7 +60,8 @@ final class DeviceTransferDoorTests: XCTestCase {
         try door.copyAudio(from: source, to: destination)
 
         XCTAssertEqual(try Data(contentsOf: destination), Data("audio bytes".utf8))
-        XCTAssertEqual(attributeCount(destination), 0, "data only: nothing for macOS to keep in a ._ twin")
+        XCTAssertEqual(attributesBesidesProvenance(destination), [],
+                       "data only: nothing but provenance, which the door's FAT clean-up handles")
         XCTAssertFalse(iPod.allRelativePaths(under: album).contains { $0.contains("/._") })
         XCTAssertFalse(iPod.allRelativePaths(under: album).contains { $0.hasSuffix(DeviceFileIO.tempSuffix) })
         XCTAssertEqual(door.journal.records(sessionID: door.sessionID).filter { $0.kind == .created }.map(\.relativePath),
@@ -121,7 +124,7 @@ final class DeviceTransferDoorTests: XCTestCase {
 
         try door.copyAudio(from: staged, to: destination)
 
-        XCTAssertEqual(attributeCount(destination), 0)
+        XCTAssertEqual(attributesBesidesProvenance(destination), [])
         XCTAssertFalse(FileManager.default.fileExists(atPath: url("\(album)/._02 - Silver Soul.mp3").path))
     }
 

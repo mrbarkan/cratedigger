@@ -23,6 +23,13 @@ final class DeviceFileIOTests: XCTestCase {
         return url
     }
 
+    /// Attribute names other than `com.apple.provenance`, which macOS puts
+    /// on every file a tagged (assessed) process creates and never lets go:
+    /// a test run from a tagged build sees it on everything it writes.
+    private func attributesBesidesProvenance(_ url: URL) -> [String] {
+        DeviceFileIO.attributeNames(at: url).filter { $0 != AppleDoubleFile.provenanceAttribute }
+    }
+
     private func tempFiles() -> [String] {
         let walker = FileManager.default.enumerator(atPath: dir.path)
         return (walker?.allObjects as? [String] ?? []).filter { $0.hasSuffix(DeviceFileIO.tempSuffix) }
@@ -51,7 +58,7 @@ final class DeviceFileIOTests: XCTestCase {
 
         try DeviceFileIO.copyDataOnly(from: source, to: destination)
 
-        XCTAssertEqual(listxattr(destination.path, nil, 0, XATTR_NOFOLLOW), 0)
+        XCTAssertEqual(attributesBesidesProvenance(destination), [])
     }
 
     func testStripExtendedAttributesRemovesAll() throws {
@@ -59,8 +66,14 @@ final class DeviceFileIOTests: XCTestCase {
         for name in ["com.example.one", "com.example.two", "com.example.caf\u{E9}"] {
             _ = Data("v".utf8).withUnsafeBytes { setxattr(url.path, name, $0.baseAddress, 1, 0, 0) }
         }
+        // As a tagged process's file carries from birth (an untagged one may set it).
+        _ = AppleDoubleFixture.provenanceValue.withUnsafeBytes {
+            setxattr(url.path, AppleDoubleFile.provenanceAttribute, $0.baseAddress, $0.count, 0, 0)
+        }
+        XCTAssertEqual(Set(DeviceFileIO.attributeNames(at: url)).subtracting([AppleDoubleFile.provenanceAttribute]),
+                       ["com.example.one", "com.example.two", "com.example.caf\u{E9}"])
         DeviceFileIO.stripExtendedAttributes(at: url)
-        XCTAssertEqual(listxattr(url.path, nil, 0, 0), 0)
+        XCTAssertEqual(attributesBesidesProvenance(url), [])
     }
 
     func testCopyLeavesNoTempFile() throws {
@@ -108,7 +121,9 @@ final class DeviceFileIOTests: XCTestCase {
     }
 
     func testCopyAndWriteNeverDeleteATwin() throws {
-        // Removing twins is the sweep's job (backed up first), never a side effect of a write.
+        // The primitives never delete a twin. Removing one is the sweep's job
+        // (backed up first), or, for the provenance twin a write on FAT just
+        // made, the executor's, through `removeProvenanceTwins`.
         let source = try file("src/a.m4a", Data("x".utf8))
         let destination = try file("a.m4a", Data("old".utf8))
         let twin = try file("._a.m4a", FakeIPod.appleDoubleBytes())

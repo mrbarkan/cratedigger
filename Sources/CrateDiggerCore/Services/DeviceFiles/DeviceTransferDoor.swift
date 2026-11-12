@@ -31,8 +31,9 @@ public enum DeviceTransferDoorError: Error, Equatable, LocalizedError {
 /// goes through one `DeviceFileExecutor` (the guarded door, spec invariant
 /// I1), so it is checked against the volume, the write policy and the
 /// journal, lands through a flushed temp and a rename, and carries no
-/// extended attributes, which is what stops macOS leaving a `._` twin beside
-/// it on FAT. Nothing here writes a byte itself.
+/// extended attributes but the `com.apple.provenance` macOS will not let go;
+/// on FAT the executor then takes away the `._` twin that one leaves (see
+/// `DeviceFileIO.removeProvenanceTwins`). Nothing here writes a byte itself.
 ///
 /// One door is one session: one session ID in the journal for everything it
 /// does. Synchronous; callers run it off the main actor.

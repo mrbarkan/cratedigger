@@ -29,9 +29,15 @@ public struct DeviceFileIOError: Error, Equatable, LocalizedError {
 /// Every write lands in `<name>.cdtmp` beside its target, is flushed with
 /// `fsync` and renamed over the target (I8), so the player never sees half a
 /// file. Nothing here carries extended attributes onto the device, which is
-/// what makes macOS write a `._` twin beside each file on FAT. These
-/// primitives only prevent twins; they never delete one. Removing a twin is
-/// the sweep's job, through the executor, which proves it and backs it up first.
+/// what makes macOS write a `._` twin beside each file on FAT.
+///
+/// That alone is not enough in a notarized build: macOS tags everything such
+/// an app creates with `com.apple.provenance`, which cannot be removed, so on
+/// FAT each file and folder the door writes still gets a `._` twin holding
+/// only that attribute. `ProvenanceTwins` and `removeProvenanceTwins` take
+/// exactly those away again, and only those: a twin that was not there
+/// before the write and holds nothing but provenance. Every other `._` file
+/// is the sweep's job, through the executor, which proves it and backs it up first.
 public enum DeviceFileIO {
     public static let tempSuffix = ".cdtmp"
     /// The AppleDouble magic `00 05 16 07` and version `00 02 00 00`.
@@ -98,18 +104,14 @@ public enum DeviceFileIO {
         stripExtendedAttributes(at: destination)
     }
 
-    /// Removes every extended attribute, without following a symlink. Best
-    /// effort: an attribute that will not go is logged.
+    /// Removes every extended attribute, without following a symlink, except
+    /// `com.apple.provenance`, which the kernel will not let go (on FAT its
+    /// twin is `removeProvenanceTwins`' business). Best effort: any other
+    /// attribute that will not go is logged.
     static func stripExtendedAttributes(at url: URL) {
         let path = url.path
-        let size = listxattr(path, nil, 0, XATTR_NOFOLLOW)
-        guard size > 0 else { return }
-        var buffer = [CChar](repeating: 0, count: size)
-        let read = listxattr(path, &buffer, size, XATTR_NOFOLLOW)
-        guard read > 0 else { return }
-        let names = buffer.prefix(read).split(separator: 0)
-            .map { String(decoding: $0.map { UInt8(bitPattern: $0) }, as: UTF8.self) }
-        for name in names where removexattr(path, name, XATTR_NOFOLLOW) != 0 {
+        for name in attributeNames(at: url) where name != AppleDoubleFile.provenanceAttribute
+            && removexattr(path, name, XATTR_NOFOLLOW) != 0 {
             AppLog.library.warning(
                 "Could not remove attribute \(name, privacy: .public) from \(url.lastPathComponent, privacy: .private): errno \(errno)")
         }
@@ -165,6 +167,115 @@ public extension DeviceFileIO {
 
     static func tempURL(for destination: URL) -> URL {
         destination.deletingLastPathComponent().appendingPathComponent(destination.lastPathComponent + tempSuffix)
+    }
+
+    /// The `._<name>` sibling where FAT and exFAT keep the attributes of the
+    /// file or folder at `url`.
+    static func twinURL(of url: URL) -> URL {
+        url.deletingLastPathComponent().appendingPathComponent("._" + url.lastPathComponent)
+    }
+
+    /// The extended attribute names on `url`, without following a symlink;
+    /// empty when there are none or they cannot be read.
+    static func attributeNames(at url: URL) -> [String] {
+        let size = listxattr(url.path, nil, 0, XATTR_NOFOLLOW)
+        guard size > 0 else { return [] }
+        var buffer = [CChar](repeating: 0, count: size)
+        let read = listxattr(url.path, &buffer, size, XATTR_NOFOLLOW)
+        guard read > 0 else { return [] }
+        return buffer.prefix(read).split(separator: 0)
+            .map { String(decoding: $0.map { UInt8(bitPattern: $0) }, as: UTF8.self) }
+    }
+}
+
+/// The `._` twins one write may leave on FAT, noted before the write starts:
+/// for each, whether the door may take it away afterwards. A twin that was
+/// already there (anything at that name, of any kind) never may.
+struct ProvenanceTwins: Equatable {
+    /// In the order they are settled after the write.
+    let removable: [URL]
+
+    /// Before writing `target` through `temp`: `._<temp>`, and `._<target>`.
+    /// The rename that lands the file moves the temp's twin onto the
+    /// target's, so `._<target>` is removable only when neither was there.
+    static func beforeWriting(_ target: URL, through temp: URL) -> ProvenanceTwins {
+        let targetTwin = DeviceFileIO.twinURL(of: target)
+        let tempTwin = DeviceFileIO.twinURL(of: temp)
+        let tempTwinExisted = exists(tempTwin)
+        var removable: [URL] = []
+        if !exists(targetTwin), !tempTwinExisted { removable.append(targetTwin) }
+        if !tempTwinExisted { removable.append(tempTwin) }
+        return ProvenanceTwins(removable: removable)
+    }
+
+    /// Before creating `folders` (outermost first): each folder's own twin,
+    /// settled in the same order, the deepest last.
+    static func beforeCreating(_ folders: [URL]) -> ProvenanceTwins {
+        ProvenanceTwins(removable: folders.map(DeviceFileIO.twinURL(of:)).filter { !exists($0) })
+    }
+
+    private static func exists(_ url: URL) -> Bool {
+        var info = stat()
+        return lstat(url.path, &info) == 0 || errno != ENOENT
+    }
+}
+
+/// What `DeviceFileIO.removeProvenanceTwin` found at one twin's name.
+enum ProvenanceTwinRemoval: Equatable {
+    case removed
+    /// Nothing there: the write left no twin.
+    case absent
+    /// Something is there that is not a provenance-only AppleDouble twin
+    /// (another attribute, Finder info, a resource fork, not AppleDouble, not
+    /// a regular file, out of size), or it changed before the `unlink`. Kept.
+    case kept
+    case failed(String)
+}
+
+extension DeviceFileIO {
+    /// After a write on FAT or exFAT: removes each twin `twins` noted as
+    /// removable that holds nothing but `com.apple.provenance`. Never throws
+    /// and never journals (the twin is the write's own by-product); each
+    /// removal or refusal is logged at debug level.
+    @discardableResult
+    static func removeProvenanceTwins(_ twins: ProvenanceTwins) -> [ProvenanceTwinRemoval] {
+        twins.removable.map { twin in
+            let result = removeProvenanceTwin(twin)
+            switch result {
+            case .absent:
+                break
+            case .removed:
+                AppLog.library.debug("Removed the macOS provenance file \(twin.lastPathComponent, privacy: .private) the write left")
+            case .kept:
+                AppLog.library.debug("Left \(twin.lastPathComponent, privacy: .private) alone: it is not only the write's provenance")
+            case .failed(let reason):
+                AppLog.library.debug("Could not remove \(twin.lastPathComponent, privacy: .private): \(reason, privacy: .private)")
+            }
+            return result
+        }
+    }
+
+    /// The whole rule for one twin, read at the moment of asking: the
+    /// AppleDouble proof (`lstat` a regular file, 26 bytes to 128 KB, the
+    /// header, all read through one descriptor), then `AppleDoubleFile`
+    /// says it holds only provenance, then `removeProvenAppleDouble`
+    /// re-checks the bytes, device, inode and size right before `unlink`.
+    /// Whether the twin is new is the caller's (`ProvenanceTwins`).
+    static func removeProvenanceTwin(_ twin: URL) -> ProvenanceTwinRemoval {
+        var info = stat()
+        guard lstat(twin.path, &info) == 0 else { return errno == ENOENT ? .absent : .kept }
+        guard let proof = proveAppleDouble(twin),
+              let contents = AppleDoubleFile(proof.bytes), contents.holdsOnlyProvenance
+        else { return .kept }
+        do {
+            switch try removeProvenAppleDouble(twin, proof: proof) {
+            case .removed: return .removed
+            case .gone: return .absent
+            case .changed: return .kept
+            }
+        } catch {
+            return .failed((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
+        }
     }
 }
 

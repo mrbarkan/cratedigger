@@ -14,6 +14,14 @@ import XCTest
 /// The S findings are recorded as activities and printed; they assert only
 /// what the door relies on. Each test works in a fresh folder on the image
 /// and removes it afterwards.
+///
+/// The process may or may not be tagged with `com.apple.provenance` (a build
+/// macOS has assessed is; a fresh worktree build is not), and on FAT a tagged
+/// process's every new file and folder gets a `._` twin. The door's
+/// assertions hold either way: where the run is untagged, `tagAsProvenance`
+/// stands in, so the kernel writes the very twin a tagged run would. Files
+/// and folders a test makes itself, as the owner's, go through `ownerFile`
+/// and `ownerFolder`, which take their twins away again.
 final class FATSandboxTests: XCTestCase {
     private var sandbox: URL!
     private var run: URL!
@@ -79,9 +87,62 @@ final class FATSandboxTests: XCTestCase {
     }
 
     private func setAttribute(_ url: URL, name: String = "com.example.test", value: String = "v") {
-        _ = Data(value.utf8).withUnsafeBytes {
+        setAttribute(url, name: name, bytes: Array(value.utf8))
+    }
+
+    private func setAttribute(_ url: URL, name: String, bytes: [UInt8]) {
+        _ = bytes.withUnsafeBytes {
             setxattr(url.path, name, $0.baseAddress, $0.count, 0, XATTR_NOFOLLOW)
         }
+    }
+
+    private func attributeValue(_ url: URL, _ name: String) -> [UInt8]? {
+        let size = getxattr(url.path, name, nil, 0, 0, XATTR_NOFOLLOW)
+        guard size >= 0 else { return nil }
+        var value = [UInt8](repeating: 0, count: size)
+        guard getxattr(url.path, name, &value, size, 0, XATTR_NOFOLLOW) == size else { return nil }
+        return value
+    }
+
+    private static let provenance = AppleDoubleFile.provenanceAttribute
+
+    /// Whether this test process is tagged: a file it creates on the Mac
+    /// carries `com.apple.provenance`.
+    private func processIsTagged() throws -> Bool {
+        let probe = mac.appendingPathComponent("tag-probe-\(UUID().uuidString)")
+        try Data().write(to: probe)
+        defer { try? FileManager.default.removeItem(at: probe) }
+        return DeviceFileIO.attributeNames(at: probe).contains(Self.provenance)
+    }
+
+    /// What a tagged process's file or folder carries from birth. On an
+    /// untagged run this sets it, and on FAT the kernel then writes the same
+    /// `._` twin it would for a tagged one; a tagged run's already has it.
+    private func tagAsProvenance(_ url: URL) {
+        guard !DeviceFileIO.attributeNames(at: url).contains(Self.provenance) else { return }
+        setAttribute(url, name: Self.provenance, bytes: AppleDoubleFixture.provenanceValue)
+    }
+
+    /// A file the owner put there: written, then its `._` twin (a tagged
+    /// run's) removed, so it reads as a plain file on the device.
+    private func ownerFile(_ url: URL, _ data: Data) throws {
+        try data.write(to: url)
+        _ = unlink(DeviceFileIO.twinURL(of: url).path)
+    }
+
+    /// Folders the owner made, with no twins: every component under `run`.
+    private func ownerFolder(_ url: URL) throws {
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        var folder = url
+        while folder.path.hasPrefix(run.path + "/") {
+            _ = unlink(DeviceFileIO.twinURL(of: folder).path)
+            folder = folder.deletingLastPathComponent()
+        }
+    }
+
+    /// Every `._` name under `folder`, relative, sorted.
+    private func twins(under folder: URL) -> [String] {
+        leftovers(under: folder).filter { ($0 as NSString).lastPathComponent.hasPrefix("._") }.sorted()
     }
 
     /// A Mac-side source file carrying an extended attribute, which is what
@@ -137,8 +198,11 @@ final class FATSandboxTests: XCTestCase {
         report("copyfile(COPYFILE_DATA)", viaCopyfile)
 
         let viaDoor = run.appendingPathComponent("copyDataOnly.m4a")
+        let doorTwins = ProvenanceTwins.beforeWriting(viaDoor, through: DeviceFileIO.tempURL(for: viaDoor))
         try DeviceFileIO.copyDataOnly(from: source, to: viaDoor)
-        report("DeviceFileIO.copyDataOnly", viaDoor)
+        report("DeviceFileIO.copyDataOnly (before the provenance clean-up)", viaDoor)
+        DeviceFileIO.removeProvenanceTwins(doorTwins)
+        report("DeviceFileIO.copyDataOnly then removeProvenanceTwins", viaDoor)
 
         let viaDataWrite = run.appendingPathComponent("dataWrite.jpg")
         try Data("jpeg".utf8).write(to: viaDataWrite)
@@ -175,9 +239,11 @@ final class FATSandboxTests: XCTestCase {
         DeviceFileIO.stripExtendedAttributes(at: tagged)
         lines.append("S2 stripExtendedAttributes then removes the twin: \(hasTwin(tagged) ? "no, it stays" : "YES")")
 
+        lines.insert("this test process is tagged with com.apple.provenance: \(try processIsTagged() ? "YES" : "no")", at: 0)
         finding("S1-S3", lines)
         // The door's own copy must never leave one; the rest is reported, not asserted.
         XCTAssertFalse(hasTwin(viaDoor))
+        XCTAssertEqual(DeviceFileIO.attributeNames(at: viaDoor), [])
 
         if atomicLeftStaging {
             // Ours to tidy: the sandbox image, made by this test.
@@ -188,7 +254,9 @@ final class FATSandboxTests: XCTestCase {
     func testCopyDataOnlyLeavesNoTwinOnFAT() throws {
         let source = try macSource("01 - Zebra.m4a", Data(repeating: 0x41, count: 300_000))
         let destination = run.appendingPathComponent("01 - Zebra.m4a")
+        let provenanceTwins = ProvenanceTwins.beforeWriting(destination, through: DeviceFileIO.tempURL(for: destination))
         try DeviceFileIO.copyDataOnly(from: source, to: destination)
+        DeviceFileIO.removeProvenanceTwins(provenanceTwins)
 
         XCTAssertEqual(try Data(contentsOf: destination), try Data(contentsOf: source))
         XCTAssertLessThanOrEqual(attributeCount(destination), 0)
@@ -199,7 +267,9 @@ final class FATSandboxTests: XCTestCase {
     func testWriteAtomicallyLeavesNoTemporaryItemsFolder() throws {
         let hadTemporaryItems = temporaryItemsExists()
         let cover = run.appendingPathComponent("cover.jpg")
+        let provenanceTwins = ProvenanceTwins.beforeWriting(cover, through: DeviceFileIO.tempURL(for: cover))
         try DeviceFileIO.writeAtomically(Data([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]), to: cover)
+        DeviceFileIO.removeProvenanceTwins(provenanceTwins)
 
         XCTAssertEqual(try Data(contentsOf: cover), Data([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]))
         if !hadTemporaryItems {
@@ -221,7 +291,7 @@ final class FATSandboxTests: XCTestCase {
         try Data("third".utf8).write(to: other)
         XCTAssertEqual(Darwin.rename(other.path, file.path), 0, String(cString: strerror(errno)))
         XCTAssertEqual(try Data(contentsOf: file), Data("third".utf8))
-        XCTAssertEqual(names(run), ["cover.jpg"])
+        XCTAssertEqual(names(run).filter { !$0.hasPrefix("._") }, ["cover.jpg"], "a tagged run's twins aside")
     }
 
     // MARK: S5, S6: what names become
@@ -232,7 +302,7 @@ final class FATSandboxTests: XCTestCase {
         XCTAssertNotEqual(Array(nfd.utf8), Array(nfc.utf8))
         try DeviceFileIO.writeAtomically(Data("x".utf8), to: run.appendingPathComponent(nfd))
 
-        let stored = rawNames(run)
+        let stored = rawNames(run).filter { !$0.starts(with: Array("._".utf8)) } // a tagged run's twin aside
         var nfcStat = stat()
         var nfdStat = stat()
         finding("S5", [
@@ -258,7 +328,8 @@ final class FATSandboxTests: XCTestCase {
         }
         lines.append("stored names: \(rawNames(run).map { "\"\(String(decoding: $0, as: UTF8.self))\" (\(hex($0)))" }.joined(separator: ", "))")
         finding("S6", lines)
-        XCTAssertEqual(leftovers(under: run), [], "no temp may survive a refused name")
+        XCTAssertEqual(leftovers(under: run).filter { $0.hasSuffix(DeviceFileIO.tempSuffix) }, [],
+                       "no temp may survive a refused name")
     }
 
     // MARK: S7: the executor on real FAT
@@ -302,8 +373,8 @@ final class FATSandboxTests: XCTestCase {
                        Data("cover v1".utf8))
 
         // A foreign file is refused.
-        try Data("the owner's".utf8).write(to: run.appendingPathComponent("\(album)/folder.jpg"))
-        try Data("the owner's".utf8).write(to: run.appendingPathComponent("Music/Beach House/cover.jpg"))
+        try ownerFile(run.appendingPathComponent("\(album)/folder.jpg"), Data("the owner's".utf8))
+        try ownerFile(run.appendingPathComponent("Music/Beach House/cover.jpg"), Data("the owner's".utf8))
         XCTAssertEqual(executor.apply([.write(relativePath: "Music/Beach House/cover.jpg", role: .cover,
                                               contents: .data(Data("ours".utf8)))], sessionID: session),
                        [.refusedForeign])
@@ -432,5 +503,123 @@ final class FATSandboxTests: XCTestCase {
                        [.refusedNotAppleDouble])
         XCTAssertEqual(try Data(contentsOf: twinURL), replacement)
         finding("S8", ["a twin deleted and rewritten between backup and removal: inode \(before.st_ino) before, \(after.st_ino) after (\(before.st_ino == after.st_ino ? "REUSED" : "new")); refused, nothing deleted"])
+    }
+
+    // MARK: S9 and the provenance twin
+
+    /// What the kernel writes for `com.apple.provenance` on FAT is what
+    /// `AppleDoubleFixture` builds, byte for byte (the debug tag aside), and
+    /// what `AppleDoubleFile` reads as provenance only; a twin that also
+    /// carries another attribute is not. Also reports what a rename does to
+    /// twins (S9), which is the kernel's doing, not the door's.
+    func testKernelProvenanceTwinMatchesTheFixture() throws {
+        let tagged = try processIsTagged()
+        let song = run.appendingPathComponent("song.m4a")
+        try Data("hi".utf8).write(to: song)
+        tagAsProvenance(song)
+        let value = try XCTUnwrap(attributeValue(song, Self.provenance))
+        let twinURL = DeviceFileIO.twinURL(of: song)
+        var kernelTwin = try Data(contentsOf: twinURL)
+        var fixture = AppleDoubleFixture.twin(attributes: [(Self.provenance, value)])
+        kernelTwin.replaceSubrange(88..<92, with: Data(count: 4)) // the ATTR header's debug tag
+        fixture.replaceSubrange(88..<92, with: Data(count: 4))
+        XCTAssertEqual(kernelTwin, fixture)
+        XCTAssertEqual(AppleDoubleFile(kernelTwin)?.holdsOnlyProvenance, true)
+
+        let folder = run.appendingPathComponent("Folder", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
+        tagAsProvenance(folder)
+        XCTAssertEqual(AppleDoubleFile(try Data(contentsOf: DeviceFileIO.twinURL(of: folder)))?.holdsOnlyProvenance, true)
+
+        setAttribute(song)
+        let richer = try XCTUnwrap(AppleDoubleFile(try Data(contentsOf: twinURL)))
+        XCTAssertEqual(richer.attributeNames, [Self.provenance, "com.example.test"])
+        XCTAssertFalse(richer.holdsOnlyProvenance)
+
+        // S9: a rename moves the source's twin onto the destination's, and
+        // where the source has none it deletes the destination's.
+        let orphan = run.appendingPathComponent("a.jpg")
+        try FakeIPod.appleDoubleBytes().write(to: DeviceFileIO.twinURL(of: orphan))
+        let incoming = run.appendingPathComponent("a.jpg.cdtmp")
+        try ownerFile(incoming, Data("jpeg".utf8))
+        XCTAssertEqual(Darwin.rename(incoming.path, orphan.path), 0)
+        let orphanSurvived = FileManager.default.fileExists(atPath: DeviceFileIO.twinURL(of: orphan).path)
+        // A `._` file of its own: can it have a twin?
+        let twinOfTwin = run.appendingPathComponent("._b.m4a")
+        try FakeIPod.appleDoubleBytes().write(to: twinOfTwin)
+        tagAsProvenance(twinOfTwin)
+        finding("S9", [
+            "this test process is tagged with com.apple.provenance: \(tagged ? "YES" : "no")",
+            "the kernel's provenance twin matches the fixture: \(kernelTwin == fixture ? "YES" : "no")",
+            "rename onto a name whose orphan twin was there, from a source with none, keeps that twin: \(orphanSurvived ? "YES" : "no, the rename deleted it")",
+            "a `._` file gets a twin of its own: \(names(run).contains("._._b.m4a") ? "YES" : "no")",
+        ])
+    }
+
+    /// The door on real FAT with every write's provenance twin made by the
+    /// kernel (by a tagged run itself, by `tagAsProvenance` on an untagged
+    /// one): new folders, an audio copy, a Replace, covers and a second
+    /// album, and afterwards no `._` file anywhere.
+    func testDoorLeavesNoProvenanceTwinOnFAT() throws {
+        var landed: [String] = []
+        var twinsMade = 0
+        let journal = DeviceWriteJournal(profileID: UUID(), directory: mac.appendingPathComponent("journal"))
+        let executor = DeviceFileExecutor(
+            volumeRoot: run, expectedVolumeUUID: DeviceFileExecutor.systemVolumeUUID(run),
+            policy: DeviceWritePolicy(musicSubpath: "Music"), journal: journal, rootMustBeMountPoint: false,
+            afterLanding: { url in
+                self.tagAsProvenance(url)
+                landed.append(url.lastPathComponent)
+                if self.hasTwin(url) { twinsMade += 1 }
+            })
+        let door = DeviceTransferDoor(executor: executor)
+        let album = run.appendingPathComponent("Music/Beach House/2010 Teen Dream", isDirectory: true)
+        let track = album.appendingPathComponent("01 - Zebra.m4a")
+
+        try door.copyAudio(from: try macSource("zebra.m4a", Data(repeating: 0x41, count: 40_000)), to: track)
+        try door.copyAudio(from: try macSource("silver.m4a", Data(repeating: 0x42, count: 40_000)),
+                           to: album.appendingPathComponent("02 - Silver Soul.m4a"))
+        try door.copyAudio(from: try macSource("zebra2.m4a", Data(repeating: 0x43, count: 40_000)), to: track,
+                           overwrites: true)
+        XCTAssertTrue(try door.writeCover(Data("cover v1".utf8), to: album.appendingPathComponent("cover.jpg")))
+        XCTAssertTrue(try door.writeCover(Data("cover v2".utf8), to: album.appendingPathComponent("cover.jpg")))
+        XCTAssertTrue(try door.writeCover(Data("low".utf8), to: run.appendingPathComponent("Music/Low/2001 Things/cover.jpg"),
+                                          replacesExisting: false))
+
+        XCTAssertEqual(landed, ["Music", "Beach House", "2010 Teen Dream", "01 - Zebra.m4a", "02 - Silver Soul.m4a",
+                                "01 - Zebra.m4a", "cover.jpg", "cover.jpg", "Low", "2001 Things", "cover.jpg"])
+        XCTAssertEqual(twinsMade, landed.count, "the kernel made a twin for every file and folder the door wrote")
+        XCTAssertEqual(twins(under: run), [], "and the door took every one of them away")
+        XCTAssertEqual(leftovers(under: run), [])
+        XCTAssertEqual(journal.records.filter { $0.kind != .tempIntent }.map { ($0.relativePath as NSString).lastPathComponent },
+                       ["01 - Zebra.m4a", "02 - Silver Soul.m4a", "01 - Zebra.m4a", "cover.jpg", "cover.jpg", "cover.jpg"],
+                       "nothing is journalled for a twin")
+        finding("Provenance", ["\(twinsMade) provenance twins made by the kernel for door writes on FAT, \(twins(under: run).count) left"])
+    }
+
+    /// A twin that was there before the write, and a new one that carries
+    /// another attribute, are both left where they are.
+    func testDoorLeavesPreexistingAndRicherTwinsOnFAT() throws {
+        try ownerFolder(run.appendingPathComponent("Music", isDirectory: true))
+        let orphan = run.appendingPathComponent("Music/._Low")
+        try AppleDoubleFixture.provenanceOnly().write(to: orphan)
+        let executor = DeviceFileExecutor(
+            volumeRoot: run, expectedVolumeUUID: DeviceFileExecutor.systemVolumeUUID(run),
+            policy: DeviceWritePolicy(musicSubpath: "Music"),
+            journal: DeviceWriteJournal(profileID: UUID(), directory: mac.appendingPathComponent("journal")),
+            rootMustBeMountPoint: false,
+            afterLanding: { url in
+                self.tagAsProvenance(url)
+                if url.path.hasSuffix("Slowdive/cover.jpg") { self.setAttribute(url) } // something else, too
+            })
+        let door = DeviceTransferDoor(executor: executor)
+
+        XCTAssertTrue(try door.writeCover(Data("low".utf8), to: run.appendingPathComponent("Music/Low/cover.jpg")))
+        XCTAssertTrue(try door.writeCover(Data("souvlaki".utf8), to: run.appendingPathComponent("Music/Slowdive/cover.jpg")))
+
+        XCTAssertEqual(twins(under: run), ["Music/._Low", "Music/Slowdive/._cover.jpg"])
+        let richer = try XCTUnwrap(AppleDoubleFile(try Data(contentsOf: run.appendingPathComponent("Music/Slowdive/._cover.jpg"))))
+        XCTAssertTrue(richer.attributeNames?.contains("com.example.test") ?? false)
+        XCTAssertNotNil(AppleDoubleFile(try Data(contentsOf: orphan)), "the twin that was there is still there")
     }
 }

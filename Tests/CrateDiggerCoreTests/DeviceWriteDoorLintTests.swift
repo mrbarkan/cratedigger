@@ -212,6 +212,8 @@ final class DeviceWriteDoorLintTests: XCTestCase {
         Rule("copyDataOnly", notIdent + "copyDataOnly" + endIdent),
         Rule("writeAtomically", notIdent + "writeAtomically" + endIdent),
         Rule("removeProvenAppleDouble", notIdent + "removeProvenAppleDouble" + endIdent),
+        // The provenance twin a write on FAT just made: the executor's, after its own write only.
+        Rule("removeProvenanceTwin", notIdent + "removeProvenanceTwins?" + endIdent),
         Rule("stripExtendedAttributes", notIdent + "stripExtendedAttributes" + endIdent),
         Rule("writeAndSync", notIdent + "writeAndSync" + endIdent),
         Rule("discardTemp", notIdent + "discardTemp" + endIdent),
@@ -490,6 +492,8 @@ final class DeviceWriteDoorLintTests: XCTestCase {
             "try DeviceFileIO.createDirectory(url)",
             "DeviceFileIO.stripExtendedAttributes(at: url)",
             "_ = try DeviceFileIO.removeProvenAppleDouble(url, proof: p)",
+            "DeviceFileIO.removeProvenanceTwins(twins)",
+            "_ = DeviceFileIO.removeProvenanceTwin(twin)",
             "let w = DeviceFileIO.writeAtomically",
             "typealias IO = DeviceFileIO",
             "let io = DeviceFileIO.self",
@@ -500,7 +504,7 @@ final class DeviceWriteDoorLintTests: XCTestCase {
                            call)
         }
         // The executor may: that is the door.
-        for call in calls.prefix(7) {
+        for call in calls.prefix(9) {
             XCTAssertEqual(Self.hits(call, rules: Self.doorRules,
                                      file: "Sources/CrateDiggerCore/Services/DeviceFiles/DeviceFileExecutor.swift"),
                            0, call)
