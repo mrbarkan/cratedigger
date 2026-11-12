@@ -4,15 +4,18 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
-## 2.3.4 (117), 2026-11-10
+## 2.3.4 (118), 2026-11-12
 
-Beta 1: themes get materials and screens. A theme can give the console a
-shell of moulded plastic, brushed metal, bead-blasted metal or carbon
-weave, and the compact player and the mini player can show the album art
-as a little LCD behind a recessed bezel, like a retro handheld. A new
-theme, Pocket, puts both together. 2.3.3 went out only as a release
-candidate, so everything listed under 2.3.3 below is new to stable users
-too. Betas are offered only to people who turned on Receive beta updates.
+Beta 2: devices and artists. Sending to a device now looks at what is
+already there, copies only what is missing and asks once about albums that
+differ. PodBox iPods are recognised, get artist pictures and stop filling
+up with hidden Mac files. And every artist gets a page in the inspector: a
+portrait, who they are, a short bio and what your library holds of them,
+filled in quietly in the background and yours to edit. Beta 1 brought
+shell materials, the cover screen and the Pocket theme. 2.3.3 went out
+only as a release candidate, so everything listed under 2.3.3 below is new
+to stable users too. Betas are offered only to people who turned on
+Receive beta updates.
 
 ### Added
 
@@ -80,10 +83,9 @@ too. Betas are offered only to people who turned on Receive beta updates.
   has none for, either in its Artwork/People folder or as folder.jpg in
   each artist's folder. Pictures come from your own files, an artist.jpg in
   your library, Deezer, or Wikimedia Commons (found through MusicBrainz),
-  and are taken without asking only when an album title confirms the
-  artist; anything unsure waits for your pick. Only the artist's name is
-  sent, and only when you ask: it is off until you turn it on. A picture
-  you already have on the iPod is never replaced, and the ones CrateDigger
+  and are taken without asking only when your albums confirm the artist;
+  anything unsure waits for your pick. Only the artist's name is sent. A
+  picture you already have on the iPod is never replaced, and the ones CrateDigger
   added can be removed. Pictures after a transfer wait until you mark the
   check passed for that iPod.
 - **Artist pages.** Select an artist (or choose Show Artist on a track) and
@@ -147,7 +149,9 @@ too. Betas are offered only to people who turned on Receive beta updates.
   files.
 - **Sending to a device no longer leaves hidden Mac files behind.** Files
   are copied without the extra information macOS adds on a FAT disk, which
-  is what made `._` files that PodBox read as broken tracks. Converting
+  is what made `._` files that PodBox read as broken tracks, and the one
+  `._` file macOS still makes for each file and folder CrateDigger writes
+  (to hold a tag it cannot drop) is removed straight after. Converting
   devices convert on your Mac and copy the finished file over, so nothing
   is written to the device half-done.
 - **Every write to a device is checked first.** CrateDigger now writes to a
