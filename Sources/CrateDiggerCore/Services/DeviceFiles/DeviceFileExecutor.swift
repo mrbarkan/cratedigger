@@ -303,8 +303,14 @@ public struct DeviceFileExecutor {
             }
             settle(fileTwins, landed: [target])
         } catch {
-            // A temp the failure left behind may have left its twin too.
-            if let fileTwins { DeviceFileIO.removeProvenanceTwins(fileTwins) }
+            // A temp the failure left behind may have left its twin too. Only
+            // the temp's: every step that throws comes before the rename, so
+            // a `._<target>` here was made by someone else.
+            if let fileTwins {
+                let tempTwin = DeviceFileIO.twinURL(of: temp)
+                DeviceFileIO.removeProvenanceTwins(
+                    ProvenanceTwins(removable: fileTwins.removable.filter { $0 == tempTwin }))
+            }
             if let createdFolder { DeviceFileIO.removeEmptyFolders(from: folder, upTo: createdFolder) }
             if let failure = error as? DeviceFileIOError, failure.code == EEXIST { return .refusedForeign }
             return .failed(describe(error))
