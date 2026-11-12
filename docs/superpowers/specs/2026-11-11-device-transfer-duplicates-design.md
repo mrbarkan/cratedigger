@@ -109,7 +109,7 @@ number, the folded titles differ, or both sides carry a track-total tag and
 the totals differ. File counts on either side never count as a difference by
 themselves: a partial album on the device is the gap-filling case.
 
-**Several copies on the device** (e.g. `Kind of Blue` and `Kind of Blue (2)`
+**Several copies on the device** (e.g. `Kind of Blue` and `Kind of Blue [2]`
 after a Keep both). Each device album folder holding that identity is a
 separate candidate *D*. If any candidate classifies the album as Present,
 it's Present. Otherwise the candidate sharing the most matched tracks is
@@ -181,7 +181,7 @@ root so it works in the compact player.
     and the new tracks are written into the same folder. The folder's
     `cover.jpg` is replaced when folder art is on.
   - **Keep both**: the new copy goes into a sibling version folder
-    (`Kind of Blue (2)`, reusing `nextAvailableVersionFolderName`). Nothing on
+    (`Kind of Blue [2]`, reusing `nextAvailableVersionFolderName`). Nothing on
     the device is touched.
   - **Leave it**: this album is skipped entirely; the device is untouched.
 - A "Set all to…" control at the top applies one choice to every row.

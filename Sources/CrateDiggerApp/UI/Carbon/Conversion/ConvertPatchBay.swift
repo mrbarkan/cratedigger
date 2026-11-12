@@ -710,11 +710,11 @@ struct ConvertPatchBay: View {
             }
 
             HStack(spacing: 10) {
-                ArmCancelButton {
+                // A SYNC has no cancel: the key is dimmed and does nothing then.
+                ArmCancelButton(enabled: !model.isConversionRunning || model.canCancelConversion) {
                     // A device send stays running through its renames and
                     // deletions, and Cancel must stop those too, not unroute.
                     if model.isConversionRunning {
-                        // A SYNC has no cancel: the key does nothing then.
                         if model.canCancelConversion { model.cancelConversion() }
                     } else {
                         // No active job — Cancel exits convert mode back to
@@ -1043,6 +1043,7 @@ private struct DestStrip: View {
 
 private struct ArmCancelButton: View {
     @Environment(\.carbon) private var theme
+    var enabled: Bool = true
     let action: () -> Void
     var body: some View {
         Button(action: action) {
@@ -1057,6 +1058,8 @@ private struct ArmCancelButton: View {
                 .background(KeyChrome())
         }
         .buttonStyle(.carbonHover)
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.55)   // as the Go key dims
         .accessibilityLabel(Text("Cancel"))
     }
 }

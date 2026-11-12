@@ -531,6 +531,11 @@ extension LibraryViewModel {
         // progress ends before the renames, deletions, covers and patch do.
         isDeviceTransferRunning = true
         defer { isDeviceTransferRunning = false }
+        // Cancel is live from the moment the run reads as busy: a press while
+        // the partial jobs are still being planned must not be dropped. The
+        // service holds the flag, so its queue never dispatches after it.
+        activeConversionService = service
+        defer { activeConversionService = nil }
         rememberDeviceAnswers(answers, of: review, profileID: profile.id)
 
         // ffmpeg writes each file to a hidden partial beside its destination
@@ -544,9 +549,9 @@ extension LibraryViewModel {
             : await runConversionQueue(service: service, jobs: partials.jobs, preset: preset, endsBusyJob: false)
 
         // Cancel stays live through the renames and deletions: a press after
-        // the last job was dispatched still stops every deletion.
+        // the last job was dispatched still stops every deletion. The queue
+        // let go of the service when it finished, so hold it again.
         activeConversionService = service
-        defer { activeConversionService = nil }
         let succeeded = ran?.succeededDestinationPaths ?? []
         let failureReasons = ran?.failureReasons ?? [:]
         let wasCancelled = (ran?.wasCancelled ?? false) || service.isCancelled

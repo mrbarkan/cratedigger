@@ -143,7 +143,7 @@ public struct DeviceTransferMatcher {
     // MARK: - Albums
 
     /// The device's albums by identity, each split into its folders (one folder
-    /// per copy, e.g. `Kind of Blue` and `Kind of Blue (2)` after a Keep both).
+    /// per copy, e.g. `Kind of Blue` and `Kind of Blue [2]` after a Keep both).
     private func deviceCopies(of catalog: [LoadedTrack]) -> [DeviceAlbumIdentity: [DeviceCopy]] {
         let unique = Self.uniqueByPath(catalog)
         let identities = DeviceAlbumIdentity.identities(for: unique)
@@ -197,7 +197,7 @@ public struct DeviceTransferMatcher {
 
     /// A copy that makes the album Present wins; otherwise the one sharing the
     /// most tracks. A tie goes to the shorter folder path, which is the one the
-    /// planner names first (`Kind of Blue` before `Kind of Blue (2)`).
+    /// planner names first (`Kind of Blue` before `Kind of Blue [2]`).
     private static func isPreferred(_ lhs: Candidate, _ rhs: Candidate) -> Bool {
         let lhsPresent = lhs.status == .present, rhsPresent = rhs.status == .present
         if lhsPresent != rhsPresent { return lhsPresent }
