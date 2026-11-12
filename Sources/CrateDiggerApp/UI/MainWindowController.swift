@@ -176,6 +176,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         hostingController.model.isConversionRunning
     }
 
+    var canCancelConversion: Bool {
+        hostingController.model.canCancelConversion
+    }
+
     func presentConversionSheet() {
         // Reuse the same path the Cnvrt key uses so we get one entry point
         // rather than two slightly-divergent ones.

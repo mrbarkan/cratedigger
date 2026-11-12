@@ -1471,7 +1471,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             return (mainWindowController?.currentSelectionURL() != nil)
                 && !(mainWindowController?.isConversionRunning ?? false)
         case #selector(cancelConversion(_:)):
-            return mainWindowController?.isConversionRunning ?? false
+            // Not during a SYNC: it has no cancel.
+            return mainWindowController?.canCancelConversion ?? false
         case #selector(checkForUpdates(_:)):
             // Off in a development build, which has no update feed — see
             // `SoftwareUpdater`.

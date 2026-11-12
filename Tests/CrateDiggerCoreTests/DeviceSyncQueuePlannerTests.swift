@@ -132,6 +132,45 @@ final class DeviceSyncQueuePlannerTests: XCTestCase {
         XCTAssertEqual(plan.leftAlone, 1)
     }
 
+    func testQueueTimeReviewIgnoresStagedBakes() throws {
+        let profile = copyProfile()
+        // A bake of another source, staged at the name this track plans onto.
+        let staged = staging.appendingPathComponent("Music/Miles Davis/1959/Kind of Blue/01 Track 1.flac")
+        try FileManager.default.createDirectory(at: staged.deletingLastPathComponent(), withIntermediateDirectories: true)
+        FileManager.default.createFile(atPath: staged.path, contents: Data())
+        let queued = DeviceSyncQueueEntry(
+            track: track(number: 1, path: scratch.appendingPathComponent("Other/01 Track 1.flac").path),
+            destinationRelativePath: "Music/Miles Davis/1959/Kind of Blue/01 Track 1.flac",
+            isStaged: true, sourceModifiedAt: .distantPast
+        )
+        let resolver = DeviceTransferResolver(fileManager: DeviceSyncQueuePlanner.catalogOnlyFileManager(stagingRoot: staging))
+
+        let review = resolver.review(sending: sent([1]), catalog: [], profile: profile, mountedAt: staging, leftAlone: [])
+
+        // Not a device clash, so not asked about now: SYNC asks against the device.
+        XCTAssertEqual(review.albums.map(\.status), [.new])
+        XCTAssertTrue(review.needingDecision.isEmpty)
+        let plan = try resolver.resolve(review, decisions: [:], profile: profile, mountedAt: staging)
+        let entries = DeviceSyncQueuePlanner.entries(for: plan, stagingRoot: staging, decisions: [:],
+                                                     kinds: review.differenceKinds, queued: [queued])
+        XCTAssertEqual(entries.map(\.destinationRelativePath),
+                       ["Music/Miles Davis/1959/Kind of Blue/01 Track 1 (2).flac"])
+        XCTAssertEqual(entries.map(\.decision), [nil])
+    }
+
+    func testCatalogOnlyFileManagerSeesFilesOutsideTheStagingTree() throws {
+        let outside = scratch.appendingPathComponent("outside.txt")
+        FileManager.default.createFile(atPath: outside.path, contents: Data())
+        let inside = staging.appendingPathComponent("inside.txt")
+        FileManager.default.createFile(atPath: inside.path, contents: Data())
+        let fm = DeviceSyncQueuePlanner.catalogOnlyFileManager(stagingRoot: staging)
+
+        XCTAssertTrue(fm.fileExists(atPath: outside.path))
+        XCTAssertFalse(fm.fileExists(atPath: inside.path))
+        var isDirectory: ObjCBool = false
+        XCTAssertFalse(fm.fileExists(atPath: staging.path, isDirectory: &isDirectory))
+    }
+
     // MARK: - Entries
 
     func testEntriesSkipSourcesAlreadyQueued() throws {

@@ -1235,6 +1235,13 @@ extension LibraryViewModel {
         conversionProgress.isRunning || isDeviceTransferRunning
     }
 
+    /// Whether Cancel has a job to stop: anything on the conversion channel
+    /// except a device SYNC, which has no cancel. Read by the Patch Bay's
+    /// Cancel key and File > Cancel Conversion.
+    var canCancelConversion: Bool {
+        isConversionRunning && deviceSyncProgress?.isRunning != true
+    }
+
     /// The relative output path the current settings would write for one track,
     /// resolved through the same planner the conversion uses so the queue view
     /// shows the real destination rather than a guess. Nil when the format can't

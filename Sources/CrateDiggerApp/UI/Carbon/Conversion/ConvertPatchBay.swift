@@ -711,8 +711,11 @@ struct ConvertPatchBay: View {
 
             HStack(spacing: 10) {
                 ArmCancelButton {
-                    if model.conversionProgress.isRunning {
-                        model.cancelConversion()
+                    // A device send stays running through its renames and
+                    // deletions, and Cancel must stop those too, not unroute.
+                    if model.isConversionRunning {
+                        // A SYNC has no cancel: the key does nothing then.
+                        if model.canCancelConversion { model.cancelConversion() }
                     } else {
                         // No active job — Cancel exits convert mode back to
                         // the inspector so the user has an obvious way out. Drop
@@ -740,13 +743,14 @@ struct ConvertPatchBay: View {
     private var armEnabled: Bool { model.patchBayGoEnabled }
 
     private var armReadyColor: Color {
-        if model.conversionProgress.isRunning || model.deviceSyncProgress?.isRunning == true { return theme.cyan }
+        if model.isConversionRunning || model.deviceSyncProgress?.isRunning == true { return theme.cyan }
         return armEnabled ? theme.orange : theme.ink4
     }
 
     private var armReadyLabel: String {
-        if model.conversionProgress.isRunning { return "● RUNNING" }
+        // SYNC first: it also holds the device busy (`isConversionRunning`).
         if model.deviceSyncProgress?.isRunning == true { return "● SYNCING" }
+        if model.isConversionRunning { return "● RUNNING" }
         if model.pendingCDRip != nil, model.cdIdentityPending { return "● PICK RELEASE" }
         if !armEnabled { return "● EMPTY" }
         return "● READY"

@@ -537,6 +537,34 @@ final class ConversionServiceTests: XCTestCase {
         XCTAssertEqual(results[0].log, "")
     }
 
+    func testRunSingleRunsOnlyThatJobAndReturnsItsOwnResult() throws {
+        let runner = RecordingFailingRunner(failing: "out-1")
+        let service = try makeService(artworkPreparer: PassThroughArtworkPreparer(), commandRunner: runner)
+        let jobs = makeJobs(count: 2)
+
+        let first = service.runSingle(jobs[0], preset: .ipodAAC(bitrate: 192))
+        let second = service.runSingle(jobs[1], preset: .ipodAAC(bitrate: 192))
+
+        XCTAssertEqual(first.status, .completed)
+        XCTAssertEqual(second.status, .failed, "the second job's own failure, not the first job's re-run")
+        XCTAssertTrue(second.log.contains("boom out-1"))
+        XCTAssertEqual(runner.destinations.map { URL(fileURLWithPath: $0).lastPathComponent },
+                       ["out-0.m4a", "out-1.m4a"], "each job runs exactly once")
+        XCTAssertTrue(service.queue.isEmpty, "a single run leaves nothing queued")
+    }
+
+    func testRunSingleLeavesTheQueueAlone() throws {
+        let runner = RecordingFailingRunner(failing: nil)
+        let service = try makeService(artworkPreparer: PassThroughArtworkPreparer(), commandRunner: runner)
+        let jobs = makeJobs(count: 2)
+        _ = service.enqueue([jobs[0]], preset: .ipodAAC(bitrate: 192))
+
+        _ = service.runSingle(jobs[1], preset: .ipodAAC(bitrate: 192))
+
+        XCTAssertEqual(runner.destinations.map { URL(fileURLWithPath: $0).lastPathComponent }, ["out-1.m4a"])
+        XCTAssertEqual(service.queue.map(\.job.destinationURL), [jobs[0].destinationURL])
+    }
+
     func testCancelledJobsCarryCancelledOutcomeNotPlainFailure() throws {
         let service = try makeService(artworkPreparer: PassThroughArtworkPreparer())
         let jobs = makeJobs(count: 3)
@@ -831,6 +859,31 @@ private struct DelayingSelectiveFailureRunner: CommandRunning {
             return CommandOutput(terminationStatus: 1, standardOutput: "", standardError: "boom out-1")
         }
         return CommandOutput(terminationStatus: 0, standardOutput: "", standardError: "ffmpeg noise")
+    }
+}
+
+/// Records every output path it is asked to write, and fails the one whose
+/// path contains `failing`.
+private final class RecordingFailingRunner: CommandRunning, @unchecked Sendable {
+    private let failing: String?
+    private let lock = NSLock()
+    private var recorded: [String] = []
+
+    init(failing: String?) {
+        self.failing = failing
+    }
+
+    var destinations: [String] {
+        lock.withLock { recorded }
+    }
+
+    func run(executableURL: URL, arguments: [String]) throws -> CommandOutput {
+        let destination = arguments.last ?? ""
+        lock.withLock { recorded.append(destination) }
+        if let failing, destination.contains(failing) {
+            return CommandOutput(terminationStatus: 1, standardOutput: "", standardError: "boom \(failing)")
+        }
+        return CommandOutput(terminationStatus: 0, standardOutput: "", standardError: "")
     }
 }
 

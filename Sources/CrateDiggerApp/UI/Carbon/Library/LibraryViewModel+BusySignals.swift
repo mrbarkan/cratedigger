@@ -250,7 +250,12 @@ extension LibraryViewModel {
         }
         trackSafetyNetEdge(.sync, isRunning: snapshot?.isRunning ?? false, edge: edge,
                            armable: { [weak self] in self?.busy.running(.transfer, on: .devices) },
-                           isIdle: { [weak self] in !(self?.deviceSyncProgress?.isRunning ?? false) })
+                           // A SYNC keeps its job through its deletions,
+                           // covers and catalog patch (`isDeviceTransferRunning`).
+                           isIdle: { [weak self] in
+                               !(self?.deviceSyncProgress?.isRunning ?? false)
+                                   && !(self?.isDeviceTransferRunning ?? false)
+                           })
     }
 
     /// Scan: feeds progress and only ever logs. Album moves, consolidate,

@@ -35,6 +35,18 @@ public enum DeviceSyncQueuePlanner {
         }
     }
 
+    /// The file manager a queue-time review and plan use
+    /// (`DeviceTransferResolver(fileManager:)`): it sees no file under
+    /// `stagingRoot`, so the review stands on the catalog alone. The staging
+    /// tree holds only bakes of earlier entries; a name one of them uses is
+    /// not a file on the device, so it must not come to the sheet as a taken
+    /// path, nor be answered and stored for SYNC. `entries` steps a clash
+    /// with a queued path past it, and SYNC asks about any real clash
+    /// against the device. Paths elsewhere are seen as they are.
+    public static func catalogOnlyFileManager(stagingRoot: URL) -> FileManager {
+        StagingBlindFileManager(stagingRoot: stagingRoot)
+    }
+
     /// The entries a plan made against the staging tree adds to the queue:
     /// one per copy, at its path relative to `stagingRoot`, unbaked. A copy
     /// written for an album the user answered (Replace, Keep both) carries
@@ -171,6 +183,36 @@ public enum DeviceSyncQueuePlanner {
     }
 
     /// A path as a case-insensitive volume compares it.
+    private static func folded(_ path: String) -> String {
+        path.precomposedStringWithCanonicalMapping.lowercased()
+    }
+}
+
+/// `DeviceSyncQueuePlanner.catalogOnlyFileManager`: reports nothing at or
+/// below the staging root, everything else as the default manager does.
+private final class StagingBlindFileManager: FileManager, @unchecked Sendable {
+    private let hiddenPrefix: String
+    private let hiddenRoot: String
+
+    init(stagingRoot: URL) {
+        hiddenRoot = Self.folded(stagingRoot.standardizedFileURL.path)
+        hiddenPrefix = hiddenRoot + "/"
+        super.init()
+    }
+
+    override func fileExists(atPath path: String) -> Bool {
+        hides(path) ? false : super.fileExists(atPath: path)
+    }
+
+    override func fileExists(atPath path: String, isDirectory: UnsafeMutablePointer<ObjCBool>?) -> Bool {
+        hides(path) ? false : super.fileExists(atPath: path, isDirectory: isDirectory)
+    }
+
+    private func hides(_ path: String) -> Bool {
+        let key = Self.folded(URL(fileURLWithPath: path).standardizedFileURL.path)
+        return key == hiddenRoot || key.hasPrefix(hiddenPrefix)
+    }
+
     private static func folded(_ path: String) -> String {
         path.precomposedStringWithCanonicalMapping.lowercased()
     }

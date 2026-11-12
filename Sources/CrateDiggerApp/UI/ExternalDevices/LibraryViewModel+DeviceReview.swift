@@ -40,6 +40,9 @@ extension LibraryViewModel {
     /// - `alreadyDecided`: answers made before, such as ones stored on a sync
     ///   queue entry. Those albums are not asked about again; an answer given
     ///   in the sheet wins over one passed here.
+    /// - `fileManager`: what the review and plan see on disk. Queuing passes
+    ///   one blind to the staging tree (`DeviceSyncQueuePlanner`); every
+    ///   write to a mounted device uses the default.
     ///
     /// `answers` are the sheet's own answers. The caller hands them to
     /// `rememberDeviceAnswers` once the transfer is sure to go ahead (its
@@ -56,7 +59,8 @@ extension LibraryViewModel {
         catalog: [LoadedTrack],
         presentingFrom host: NSViewController,
         reviewedAlbumFolders: [AlbumFolderKey: String] = [:],
-        alreadyDecided: [DeviceAlbumIdentity: DeviceStoredDecision] = [:]
+        alreadyDecided: [DeviceAlbumIdentity: DeviceStoredDecision] = [:],
+        fileManager: FileManager = .default
     ) async -> (plan: DeviceTransferFilePlan, review: DeviceTransferReview,
                 answers: [DeviceAlbumIdentity: DeviceAlbumDecision])? {
         let leftAlone = DeviceLeftAloneStore().load(profileID: profile.id)
@@ -64,7 +68,7 @@ extension LibraryViewModel {
         // The review checks every planned destination on the device: a
         // file-system walk over USB, so off the main actor.
         let review = await Task.detached(priority: .userInitiated) {
-            DeviceTransferResolver().review(
+            DeviceTransferResolver(fileManager: fileManager).review(
                 sending: tracks,
                 catalog: catalog,
                 profile: profile,
@@ -111,7 +115,7 @@ extension LibraryViewModel {
         let plan: DeviceTransferFilePlan
         do {
             plan = try await Task.detached(priority: .userInitiated) {
-                try DeviceTransferResolver().resolve(
+                try DeviceTransferResolver(fileManager: fileManager).resolve(
                     review,
                     decisions: decisions,
                     profile: profile,

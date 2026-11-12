@@ -67,7 +67,10 @@ extension LibraryViewModel {
                 profile: profile,
                 mountedRoot: stagingRoot,
                 catalog: catalog,
-                presentingFrom: host
+                presentingFrom: host,
+                // The catalog is the device here; the staging tree's bakes
+                // are not, so a name one uses is never asked about now.
+                fileManager: DeviceSyncQueuePlanner.catalogOnlyFileManager(stagingRoot: stagingRoot)
             ) else { return }
 
             // Re-read rather than add to the snapshot: more may have been
@@ -382,12 +385,16 @@ extension LibraryViewModel {
             defer { isDeviceTransferRunning = false }
             rememberDeviceAnswers(answers, profileID: profileID)
 
+            // SYNC reads as running from here until the catalog is patched,
+            // deletions and covers included: that is what keeps ⌘. and the
+            // Patch Bay's Cancel off it (it has no cancel) and its busy job
+            // from reading as abandoned.
             let total = plan.copies.count
             oledView = .devices
             deviceSyncProgress = DeviceSyncProgressSnapshot(
                 profileName: profile.name,
                 currentRelativePath: plan.copies.first.map { Self.devicePath($0.destinationURL, under: mountedRoot) },
-                completed: 0, total: total, failed: 0, isRunning: total > 0
+                completed: 0, total: total, failed: 0, isRunning: true
             )
             let busyJob = beginBusyJob(.transfer, on: .devices)
 
@@ -431,21 +438,19 @@ extension LibraryViewModel {
                     let next = completed < total
                         ? Self.devicePath(plan.copies[completed].destinationURL, under: mountedRoot) : nil
                     Task { @MainActor in
+                        // A late hop must not revive a finished sync.
+                        guard self.deviceSyncProgress?.isRunning == true else { return }
                         self.deviceSyncProgress = DeviceSyncProgressSnapshot(
                             profileName: profileName,
                             currentRelativePath: next,
                             completed: completed, total: total, failed: failed,
-                            isRunning: completed < total
+                            isRunning: true
                         )
                     }
                 }
             }.value
 
             let failed = DeviceTransferSummary.failedCount(for: plan, outcome: outcome)
-            deviceSyncProgress = DeviceSyncProgressSnapshot(
-                profileName: profileName, currentRelativePath: nil,
-                completed: total, total: total, failed: failed, isRunning: false
-            )
             endBusyJob(busyJob, .sync(failed: failed, total: total))
 
             // A cover only where something actually landed.
@@ -467,6 +472,10 @@ extension LibraryViewModel {
                     )
                 },
                 removingPaths: outcome.removedPaths
+            )
+            deviceSyncProgress = DeviceSyncProgressSnapshot(
+                profileName: profileName, currentRelativePath: nil,
+                completed: total, total: total, failed: failed, isRunning: false
             )
             refreshSyncQueueCounts()
 
@@ -614,15 +623,21 @@ extension LibraryViewModel {
             store.removeStagedFile(for: entry, profileID: profileID)
         }
 
-        /// One ffmpeg run on the shared service, into `output`.
+        /// One ffmpeg run into `output`, judged by its own result. `runSingle`,
+        /// never enqueue + runQueuedJobs: the service lives for the whole
+        /// loop, and its queue would re-run every earlier job each time.
         func convert(_ source: URL, to output: URL, metadata: ConversionMetadata) throws {
             guard let preset = job.preset else { throw syncError("This device copies files as they are") }
             if service == nil { service = try? ConversionService(ffmpegExecutableURL: job.ffmpegURL) }
             guard let service else { throw syncError("ffmpeg wasn't found") }
-            _ = service.enqueue([ConversionJob(sourceURL: source, destinationURL: output, metadata: metadata)],
-                                preset: preset)
-            let results = service.runQueuedJobs(maxConcurrentWorkers: 1) { _, _, _ in }
-            guard results.first?.status == .completed else { throw syncError("Conversion failed") }
+            let result = service.runSingle(
+                ConversionJob(sourceURL: source, destinationURL: output, metadata: metadata),
+                preset: preset
+            )
+            guard result.status == .completed else {
+                let detail = result.log.split(whereSeparator: \.isNewline).last.map(String.init)
+                throw syncError(detail.map { "Conversion failed: \($0)" } ?? "Conversion failed")
+            }
         }
 
         for track in job.plan.unplanned {
