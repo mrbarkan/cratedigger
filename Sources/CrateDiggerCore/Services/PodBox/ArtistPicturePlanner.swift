@@ -140,8 +140,42 @@ public enum ArtistPicturePlanner {
         return "The device catalog does not match what is on the iPod (\(list)). Rescan the device first."
     }
 
+    /// The prepared iPod bytes the planner may write, asked for lazily:
+    /// `has` is a cheap "is there a picture for this artist at all", and
+    /// `bytes` is asked only for an artist the planner is about to write
+    /// (or to compare with CrateDigger's own picture already there), so a
+    /// transfer never prepares the pictures of artists the iPod already
+    /// shows. A nil from `bytes` reads as no picture yet.
+    public struct Pictures {
+        public let has: (ArtistOnDevice) -> Bool
+        public let bytes: (ArtistOnDevice) -> Data?
+
+        public init(has: @escaping (ArtistOnDevice) -> Bool, bytes: @escaping (ArtistOnDevice) -> Data?) {
+            self.has = has
+            self.bytes = bytes
+        }
+
+        /// Ready bytes by folded key.
+        public init(_ prepared: [String: Data]) {
+            func lookup(_ artist: ArtistOnDevice) -> Data? {
+                prepared[artist.foldedKey] ?? prepared[PodBoxArtName.folded(artist.name)]
+            }
+            has = { lookup($0) != nil }
+            bytes = lookup
+        }
+    }
+
     public static func plan(artists: [ArtistOnDevice], tree: DeviceArtTree,
                             prepared: [String: Data],
+                            destination: ArtistPictureDestination,
+                            ownedKeys: (String) -> DeviceFileRecord?,
+                            sha256OnDevice: (String) -> String?) -> ArtistPicturePlan {
+        plan(artists: artists, tree: tree, pictures: Pictures(prepared), destination: destination,
+             ownedKeys: ownedKeys, sha256OnDevice: sha256OnDevice)
+    }
+
+    public static func plan(artists: [ArtistOnDevice], tree: DeviceArtTree,
+                            pictures: Pictures,
                             destination: ArtistPictureDestination,
                             ownedKeys: (String) -> DeviceFileRecord?,
                             sha256OnDevice: (String) -> String?) -> ArtistPicturePlan {
@@ -177,7 +211,7 @@ public enum ArtistPicturePlanner {
                 builder.hold(name, in: \.unnameable, "cannot be named on this player")
                 continue
             }
-            guard let bytes = prepared[artist.foldedKey] ?? prepared[PodBoxArtName.folded(name)] else {
+            guard pictures.has(artist) else {
                 builder.hold(name, in: \.noPictureYet, "no picture has been found for this artist yet")
                 continue
             }
@@ -212,6 +246,10 @@ public enum ArtistPicturePlanner {
                     builder.hold(name, in: \.foreign, "\(path) was changed on the iPod after CrateDigger wrote it")
                     continue
                 }
+                guard let bytes = pictures.bytes(artist) else {
+                    builder.hold(name, in: \.noPictureYet, "no picture has been found for this artist yet")
+                    continue
+                }
                 guard SHA256.hash(data: bytes).hexString != recorded else {
                     builder.hold(name, in: \.alreadyHasPicture, "CrateDigger's picture is already on the iPod")
                     continue
@@ -222,6 +260,10 @@ public enum ArtistPicturePlanner {
                 }
 
             case .none:
+                guard let bytes = pictures.bytes(artist) else {
+                    builder.hold(name, in: \.noPictureYet, "no picture has been found for this artist yet")
+                    continue
+                }
                 let peopleTarget = DeviceArtTree.peopleFolder + "/" + stem + ".jpg"
                 let folderTarget = artistFolderTarget(for: artist, tree: working)
                 let preference: [String?] = destination == .artistFolders

@@ -262,3 +262,42 @@ final class ArtistPictureImageTests: XCTestCase {
         XCTAssertEqual(first, ArtistPictureImage.prepare(input))
     }
 }
+
+extension ArtistPictureImageTests {
+    /// A file `prepare` made is passed through as it is, so a picture already
+    /// on the iPod (or a migrated photo prepared once) hashes the same.
+    func testPrepareIsIdempotent() throws {
+        // Noise, so a second encode would not land on the same bytes by chance.
+        func noise(_ width: Int, _ height: Int) -> Data {
+            var generator = SystemRandomNumberGenerator()
+            let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                                    space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                    bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
+            for x in stride(from: 0, to: width, by: 4) {
+                for y in stride(from: 0, to: height, by: 4) {
+                    context.setFillColor(red: .random(in: 0...1, using: &generator), green: .random(in: 0...1, using: &generator),
+                                         blue: .random(in: 0...1, using: &generator), alpha: 1)
+                    context.fill(CGRect(x: x, y: y, width: 4, height: 4))
+                }
+            }
+            let output = NSMutableData()
+            let destination = CGImageDestinationCreateWithData(output, "public.jpeg" as CFString, 1, nil)!
+            CGImageDestinationAddImage(destination, context.makeImage()!, nil)
+            CGImageDestinationFinalize(destination)
+            return output as Data
+        }
+        for source in [noise(900, 600), noise(400, 400)] {
+            let once = try XCTUnwrap(ArtistPictureImage.prepare(source))
+            XCTAssertTrue(ArtistPictureImage.isOutputShaped(once))
+            XCTAssertEqual(ArtistPictureImage.prepare(once), once)
+        }
+        // A 400 px JPEG with an Exif segment is not the output yet.
+        let plain = try XCTUnwrap(ArtistPictureImage.prepare(FakePictureFetcher.jpeg(width: 400, height: 400)))
+        var withExif = [UInt8](plain)
+        withExif.insert(contentsOf: [0xFF, 0xE1, 0x00, 0x08] + Array("Exif".utf8) + [0, 0], at: 2)
+        XCTAssertFalse(ArtistPictureImage.isOutputShaped(Data(withExif)))
+        XCTAssertNotEqual(ArtistPictureImage.prepare(Data(withExif)), Data(withExif))
+        // Nor is a 500 px one.
+        XCTAssertFalse(ArtistPictureImage.isOutputShaped(FakePictureFetcher.jpeg(width: 500, height: 500)))
+    }
+}

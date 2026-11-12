@@ -233,12 +233,23 @@ extension LibraryViewModel {
     /// old file, which nothing reads again. Runs when the crates folder
     /// resolves (at launch, and for a folder chosen later), never while the
     /// library is disconnected. A failure is logged and tried again next time.
+    /// Once a folder's pictures are in its profiles, the old prepared-picture
+    /// cache (`ArtistPicturePreparedCache.legacyDirectory`), which only the
+    /// migration read, is deleted.
     func migrateArtistPicturesIfNeeded() {
         guard !isLibraryDisconnected else { return }
         // One `stat`: nearly always there is no old file, and nothing to do.
         let folder = cratesDirectoryURL
         guard FileManager.default.fileExists(atPath: folder.appendingPathComponent(ArtistPictureStore.fileName).path)
-        else { return }
+        else {
+            Task {
+                let store = await currentArtistProfileStore()
+                await Task.detached(priority: .utility) {
+                    if store.picturesMigrated { ArtistPicturePreparedCache.removeLegacyCache() }
+                }.value
+            }
+            return
+        }
         Task {
             let failure = await withArtistProfileStore { store -> String? in
                 // The store's own folder: the crates folder may have moved on since.
@@ -246,6 +257,7 @@ extension LibraryViewModel {
                 do {
                     try ArtistProfileMigration.migrate(pictures: ArtistPictureStore(indexDirectory: directory),
                                                        into: store, indexDirectory: directory)
+                    ArtistPicturePreparedCache.removeLegacyCache()
                     return nil
                 } catch {
                     return error.localizedDescription

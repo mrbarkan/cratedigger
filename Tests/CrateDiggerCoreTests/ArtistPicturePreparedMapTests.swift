@@ -29,8 +29,18 @@ final class ArtistPicturePreparedMapTests: XCTestCase {
                            source: .owner, sourceID: nil, credit: nil)
     }
 
+    private var cache: ArtistPicturePreparedCache {
+        ArtistPicturePreparedCache(directory: folder.appendingPathComponent("cache", isDirectory: true))
+    }
+
+    /// What the planner would get for each name, by folded key.
     private func prepared(_ names: [String]) -> [String: Data] {
-        ArtistPictureSession.prepared(for: names.map(artist), profiles: store)
+        let pictures = ArtistPictureSession.pictures(profiles: store, cache: cache)
+        var map: [String: Data] = [:]
+        for artist in names.map(artist) where pictures.has(artist) {
+            map[artist.foldedKey] = pictures.bytes(artist)
+        }
+        return map
     }
 
     func testPreparedComesFromDefaultPhoto() throws {
@@ -68,5 +78,53 @@ final class ArtistPicturePreparedMapTests: XCTestCase {
         XCTAssertEqual(Array(prepared(["Air", "Can", "Low"]).keys), ["low"])
         XCTAssertNotNil(store.profile(forName: "Can")?.defaultPhotoRef,
                         "not on the iPod hides nothing in the app")
+    }
+
+    func testPreparedBytesAreCachedByPhotoHash() throws {
+        let chosen = try photo("Air", side: 900, red: 0.3)
+        let first = try XCTUnwrap(prepared(["Air"])["air"])
+        let cached = cache.directory.appendingPathComponent("\(chosen.hash)-\(ArtistPictureImage.edge).jpg")
+        XCTAssertEqual(try Data(contentsOf: cached), first)
+
+        // The next transfer reads the cached file and never the original.
+        var asked = false
+        let again = cache.prepared(hash: chosen.hash) {
+            asked = true
+            return nil
+        }
+        XCTAssertEqual(again, first)
+        XCTAssertFalse(asked)
+    }
+
+    func testOnlyArtistsThePlannerWritesArePrepared() throws {
+        try photo("Air", red: 0.2)
+        try photo("Can", red: 0.6)
+        let pictures = ArtistPictureSession.pictures(profiles: store, cache: cache)
+        var prepared: [String] = []
+        let counting = ArtistPicturePlanner.Pictures(has: pictures.has, bytes: { artist in
+            prepared.append(artist.name)
+            return pictures.bytes(artist)
+        })
+        // Can already has a picture of the owner's on the iPod.
+        let tree = DeviceArtTree(peopleFiles: ["Can.jpg"], coverFiles: [], folderImages: [:],
+                                 foldersWithAudio: ["Music/Air/2000 Album", "Music/Can/2000 Album"],
+                                 artistsByFolder: [:], musicFolder: "Music")
+        let plan = ArtistPicturePlanner.plan(artists: [artist("Air"), artist("Can")], tree: tree, pictures: counting,
+                                             destination: .artworkFolder, ownedKeys: { _ in nil },
+                                             sha256OnDevice: { _ in nil })
+        XCTAssertEqual(plan.operations.count, 1)
+        XCTAssertEqual(prepared, ["Air"], "an artist the iPod already shows is never prepared")
+    }
+}
+
+extension ArtistPicturePreparedMapTests {
+    func testTheLegacyCacheIsRemovedOnce() throws {
+        let legacy = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ArtistImages-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: legacy, withIntermediateDirectories: true)
+        try Data("x".utf8).write(to: legacy.appendingPathComponent(String(repeating: "a", count: 64) + ".jpg"))
+        XCTAssertTrue(ArtistPicturePreparedCache.removeLegacyCache(at: legacy))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: legacy.path))
+        XCTAssertFalse(ArtistPicturePreparedCache.removeLegacyCache(at: legacy), "nothing left to remove")
     }
 }

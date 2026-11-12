@@ -121,7 +121,7 @@ extension LibraryViewModel {
         let plan = await Task.detached(priority: .userInitiated) { () -> ArtistPicturePlan in
             ArtistPicturePlanner.plan(
                 artists: planned.artists, tree: planned.tree,
-                prepared: ArtistPictureSession.prepared(for: planned.artists, profiles: store),
+                pictures: ArtistPictureSession.pictures(profiles: store, cache: ArtistPicturePreparedCache()),
                 destination: destination,
                 ownedKeys: { journal.ownedRecord(forKey: $0, volumeUUID: uuid) },
                 sha256OnDevice: ArtistPictureSession.deviceHash(volumeRoot: volume))

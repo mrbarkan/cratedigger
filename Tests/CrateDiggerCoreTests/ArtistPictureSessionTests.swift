@@ -150,8 +150,10 @@ final class ArtistPictureSessionTests: XCTestCase {
         XCTAssertEqual(photo.credit, credit)
         XCTAssertEqual(photo.pixelWidth, 900, "the full-size original, not the iPod's 400 px copy")
         XCTAssertFalse(profile.defaultPickedByOwner)
-        XCTAssertNotNil(ArtistPictureSession.prepared(for: [artist("Air")], profiles: store)["air"],
-                        "the planner agrees")
+        let pictures = ArtistPictureSession.pictures(
+            profiles: store, cache: ArtistPicturePreparedCache(directory: folder.appendingPathComponent("cache")))
+        XCTAssertTrue(pictures.has(artist("Air")))
+        XCTAssertNotNil(pictures.bytes(artist("Air")), "the planner agrees")
 
         // A second find never moves the default, and nothing lands under
         // "no photo" or from a source the owner removed.

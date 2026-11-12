@@ -167,23 +167,28 @@ public enum ArtistPictureSession {
 
     // MARK: - Planning and writing
 
-    /// The bytes the iPod gets for these artists, by folded key: each one's
-    /// default photo (`ArtistPictureProfiles.iPodPhoto`), prepared to the
-    /// 400 px square baseline JPEG, so the artist page and the iPod always
-    /// show the same picture. Never for an artist the owner kept off the
-    /// iPod or wants no photo for, and nothing when the photo's file cannot
-    /// be read or will not prepare. Reads and decodes images: off the main
-    /// actor.
-    public static func prepared(for artists: [ArtistOnDevice], profiles store: ArtistProfileStore) -> [String: Data] {
+    /// The pictures the iPod gets, for the planner, asked for lazily
+    /// (`ArtistPicturePlanner.Pictures`): each artist's default photo
+    /// (`ArtistPictureProfiles.iPodPhoto`), prepared to the 400 px square
+    /// baseline JPEG through `cache`, so the artist page and the iPod always
+    /// show the same picture and a photo is prepared once, not on every
+    /// transfer. Only the artists the planner will write are prepared at
+    /// all. Never for an artist the owner kept off the iPod or wants no
+    /// photo for, and nothing when the photo's file cannot be read or will
+    /// not prepare. The profiles are read once, here; the closures read and
+    /// decode images: call the planner off the main actor.
+    public static func pictures(profiles store: ArtistProfileStore,
+                                cache: ArtistPicturePreparedCache) -> ArtistPicturePlanner.Pictures {
         let profiles = ArtistPictureProfiles(store: store)
-        var result: [String: Data] = [:]
-        for artist in artists {
-            guard let photo = ArtistPictureProfiles.iPodPhoto(of: profiles.profile(forName: artist.name)),
-                  let data = store.photoData(hash: photo.hash),
-                  let prepared = ArtistPictureImage.prepare(data) else { continue }
-            result[artist.foldedKey] = prepared
+        func photo(_ artist: ArtistOnDevice) -> ArtistPhoto? {
+            ArtistPictureProfiles.iPodPhoto(of: profiles.profile(forName: artist.name))
         }
-        return result
+        return ArtistPicturePlanner.Pictures(
+            has: { artist in photo(artist).map { store.hasPhotoFile(hash: $0.hash) } ?? false },
+            bytes: { artist in
+                guard let photo = photo(artist) else { return nil }
+                return cache.prepared(hash: photo.hash) { store.photoData(hash: photo.hash) }
+            })
     }
 
     /// `base` with the two picture roles switched on, for the executor that
