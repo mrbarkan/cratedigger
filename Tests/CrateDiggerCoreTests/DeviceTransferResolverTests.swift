@@ -620,7 +620,7 @@ final class DeviceTransferResolverTests: XCTestCase {
         let review = resolver.review(sending: sent([1, 2]), catalog: onDevice, profile: profile, mountedAt: device, leftAlone: [])
         let identity = try XCTUnwrap(review.albums.first?.identity)
 
-        let applicable = DeviceTransferResolver.applicableDecisions(stored: [identity: .replace], review: review)
+        let applicable = DeviceTransferResolver.applicableDecisions(stored: [identity: DeviceStoredDecision(.replace, for: .sameRelease)], review: review)
 
         XCTAssertEqual(applicable, [identity: .replace])
         XCTAssertTrue(review.needingDecision.allSatisfy { applicable[$0.identity] != nil },
@@ -634,7 +634,7 @@ final class DeviceTransferResolverTests: XCTestCase {
         let identity = try XCTUnwrap(review.albums.first?.identity)
         XCTAssertEqual(review.albums.map(\.status), [.new])
 
-        XCTAssertEqual(DeviceTransferResolver.applicableDecisions(stored: [identity: .replace], review: review), [:])
+        XCTAssertEqual(DeviceTransferResolver.applicableDecisions(stored: [identity: DeviceStoredDecision(.replace, for: .sameRelease)], review: review), [:])
     }
 
     func testStoredDecisionDroppedWhenAlbumNowPresentOrGaps() throws {
@@ -644,7 +644,7 @@ final class DeviceTransferResolverTests: XCTestCase {
         let identity = try XCTUnwrap(review.albums.first?.identity)
         XCTAssertEqual(review.albums.map(\.status), [.gaps])
 
-        XCTAssertEqual(DeviceTransferResolver.applicableDecisions(stored: [identity: .keepBoth], review: review), [:])
+        XCTAssertEqual(DeviceTransferResolver.applicableDecisions(stored: [identity: DeviceStoredDecision(.keepBoth, for: .sameRelease)], review: review), [:])
     }
 
     func testNilDecisionOnDifferingAlbumNeedsAsking() throws {
@@ -655,10 +655,39 @@ final class DeviceTransferResolverTests: XCTestCase {
         // Another album's answer is not this one's.
         let other = DeviceAlbumIdentity(artist: "John Coltrane", album: "Blue Train")
 
-        let applicable = DeviceTransferResolver.applicableDecisions(stored: [other: .replace], review: review)
+        let applicable = DeviceTransferResolver.applicableDecisions(stored: [other: DeviceStoredDecision(.replace, for: .sameRelease)], review: review)
 
         XCTAssertEqual(applicable, [:])
         XCTAssertEqual(review.needingDecision.filter { applicable[$0.identity] == nil }.count, 1)
+    }
+
+    /// Queued as an upgrade (Replace swaps counterparts); at SYNC the device
+    /// holds another release, where Replace would remove the whole album.
+    func testStoredReplaceForAnUpgradeIsAskedAgainWhenNowAnotherRelease() throws {
+        let profile = copyProfile()
+        let onDevice = try deviceAlbum("Music/Miles Davis/Kind of Blue", numbers: [1, 2, 3, 4], titlePrefix: "Old")
+        let review = resolver.review(sending: sent([1, 2]), catalog: onDevice, profile: profile, mountedAt: device, leftAlone: [])
+        let album = try XCTUnwrap(review.albums.first)
+        XCTAssertEqual(album.differenceKind, .differentRelease)
+
+        let stored = [album.identity: DeviceStoredDecision(.replace, for: .sameRelease)]
+        XCTAssertEqual(DeviceTransferResolver.applicableDecisions(stored: stored, review: review), [:])
+
+        let sameKind = [album.identity: DeviceStoredDecision(.replace, for: .differentRelease)]
+        XCTAssertEqual(DeviceTransferResolver.applicableDecisions(stored: sameKind, review: review),
+                       [album.identity: .replace])
+    }
+
+    func testStoredDecisionWithoutAKindIsAskedAgain() throws {
+        let profile = copyProfile()
+        let onDevice = try deviceAlbum("Music/Miles Davis/Kind of Blue", numbers: [1, 2],
+                                       format: "MP3", bitrate: 128, ext: "mp3")
+        let review = resolver.review(sending: sent([1, 2]), catalog: onDevice, profile: profile, mountedAt: device, leftAlone: [])
+        let identity = try XCTUnwrap(review.albums.first?.identity)
+        XCTAssertEqual(review.differenceKinds, [identity: .sameRelease])
+
+        XCTAssertEqual(DeviceTransferResolver.applicableDecisions(
+            stored: [identity: DeviceStoredDecision(.replace, for: nil)], review: review), [:])
     }
 
     // MARK: - Fixtures

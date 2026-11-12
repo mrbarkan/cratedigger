@@ -379,16 +379,23 @@ public struct DeviceTransferResolver {
 
     /// The answers made before this review (stored on sync queue entries when
     /// they were queued) that still fit it: only an album that still differs
-    /// keeps its answer. One that is now New, Gaps or Present needs none, and
-    /// an album with no stored answer is asked about again. Answers for
-    /// albums this review does not hold are dropped.
+    /// in the same kind of way keeps its answer. One that is now New, Gaps or
+    /// Present needs none; one whose difference changed kind (an upgrade
+    /// that is now another release, where Replace would remove the whole
+    /// album) is asked about again, as is one with no stored answer or one
+    /// stored without its kind. Answers for albums this review does not hold
+    /// are dropped.
     public static func applicableDecisions(
-        stored: [DeviceAlbumIdentity: DeviceAlbumDecision],
+        stored: [DeviceAlbumIdentity: DeviceStoredDecision],
         review: DeviceTransferReview
     ) -> [DeviceAlbumIdentity: DeviceAlbumDecision] {
         var applicable: [DeviceAlbumIdentity: DeviceAlbumDecision] = [:]
-        for album in review.albums where album.status == .differs {
-            if let decision = stored[album.identity] { applicable[album.identity] = decision }
+        for album in review.albums {
+            guard let kind = album.differenceKind,
+                  let answer = stored[album.identity],
+                  answer.kind == kind
+            else { continue }
+            applicable[album.identity] = answer.decision
         }
         return applicable
     }
@@ -489,13 +496,14 @@ private struct Layout {
     private var usesAlbumFolders: Bool { settings.folderStructureMode == .metadataTemplate }
 
     func nature(of album: DeviceAlbumComparison) -> AlbumNature {
-        if album.status == .present { return .present }
-        let real = album.differences.subtracting([.pathTaken])
-        if album.status == .differs, !real.isEmpty {
-            return real.contains(.differentRelease) ? .differentRelease : .sameRelease
+        switch album.differenceKind {
+        case .sameRelease?: return .sameRelease
+        case .differentRelease?: return .differentRelease
+        case .pathTaken?, nil:
+            if album.status == .present { return .present }
+            // New or Gaps, possibly turned `.differs` by a taken path only.
+            return album.deviceTracks.isEmpty ? .new : .gaps
         }
-        // New or Gaps, possibly turned `.differs` by a taken path only.
-        return album.deviceTracks.isEmpty ? .new : .gaps
     }
 
     /// The writes the album's status calls for: New and Gaps as they are,

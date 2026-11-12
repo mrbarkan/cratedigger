@@ -77,7 +77,7 @@ final class DeviceSyncQueuePlannerTests: XCTestCase {
         XCTAssertEqual(review.albums.map(\.status), [.gaps])
 
         let plan = try DeviceTransferResolver().resolve(review, decisions: [:], profile: profile, mountedAt: staging)
-        let entries = DeviceSyncQueuePlanner.entries(for: plan, stagingRoot: staging, decisions: [:], queued: [])
+        let entries = DeviceSyncQueuePlanner.entries(for: plan, stagingRoot: staging, decisions: [:], kinds: [:], queued: [])
 
         XCTAssertEqual(entries.map(\.destinationRelativePath), ["Music/Miles Davis/Kind of Blue/03 Track 3.flac"])
         XCTAssertEqual(entries.map(\.decision), [nil])
@@ -102,13 +102,15 @@ final class DeviceSyncQueuePlannerTests: XCTestCase {
 
         let decisions: [DeviceAlbumIdentity: DeviceAlbumDecision] = [identity: .replace]
         let plan = try DeviceTransferResolver().resolve(review, decisions: decisions, profile: profile, mountedAt: staging)
-        let entries = DeviceSyncQueuePlanner.entries(for: plan, stagingRoot: staging, decisions: decisions, queued: [])
+        let entries = DeviceSyncQueuePlanner.entries(for: plan, stagingRoot: staging, decisions: decisions, kinds: review.differenceKinds, queued: [])
 
         XCTAssertEqual(entries.map(\.destinationRelativePath), [
             "Music/Miles Davis/Kind of Blue/01 Track 1.flac",
             "Music/Miles Davis/Kind of Blue/02 Track 2.flac"
         ])
         XCTAssertEqual(entries.map(\.decision), [.replace, .replace])
+        XCTAssertEqual(entries.map(\.decisionKind), [.sameRelease, .sameRelease],
+                       "the kind of difference is stored beside the answer")
     }
 
     func testLeaveItAlbumIsNotQueued() throws {
@@ -126,7 +128,7 @@ final class DeviceSyncQueuePlannerTests: XCTestCase {
         let decisions: [DeviceAlbumIdentity: DeviceAlbumDecision] = [identity: .leave]
         let plan = try DeviceTransferResolver().resolve(review, decisions: decisions, profile: profile, mountedAt: staging)
 
-        XCTAssertEqual(DeviceSyncQueuePlanner.entries(for: plan, stagingRoot: staging, decisions: decisions, queued: []), [])
+        XCTAssertEqual(DeviceSyncQueuePlanner.entries(for: plan, stagingRoot: staging, decisions: decisions, kinds: review.differenceKinds, queued: []), [])
         XCTAssertEqual(plan.leftAlone, 1)
     }
 
@@ -141,7 +143,7 @@ final class DeviceSyncQueuePlannerTests: XCTestCase {
         let queued = DeviceSyncQueueEntry(track: tracks[0], destinationRelativePath: "Music/Elsewhere/01.flac",
                                           isStaged: false, sourceModifiedAt: .distantPast)
 
-        let entries = DeviceSyncQueuePlanner.entries(for: plan, stagingRoot: staging, decisions: [:], queued: [queued])
+        let entries = DeviceSyncQueuePlanner.entries(for: plan, stagingRoot: staging, decisions: [:], kinds: [:], queued: [queued])
 
         XCTAssertEqual(entries.map(\.track.track.fileURL), [tracks[1].track.fileURL])
     }
@@ -157,7 +159,7 @@ final class DeviceSyncQueuePlannerTests: XCTestCase {
                                           destinationRelativePath: "music/miles davis/1959/kind of blue/01 Track 1.flac",
                                           isStaged: false, sourceModifiedAt: .distantPast)
 
-        let entries = DeviceSyncQueuePlanner.entries(for: plan, stagingRoot: staging, decisions: [:], queued: [queued])
+        let entries = DeviceSyncQueuePlanner.entries(for: plan, stagingRoot: staging, decisions: [:], kinds: [:], queued: [queued])
 
         XCTAssertEqual(entries.map(\.destinationRelativePath),
                        ["Music/Miles Davis/1959/Kind of Blue/01 Track 1 (2).flac"])
@@ -175,8 +177,8 @@ final class DeviceSyncQueuePlannerTests: XCTestCase {
         ]
 
         XCTAssertEqual(DeviceSyncQueuePlanner.storedDecisions(for: entries), [
-            DeviceAlbumIdentity(artist: "Miles Davis", album: "Kind of Blue"): .replace,
-            DeviceAlbumIdentity(artist: "Miles Davis", album: "Blue Train"): .keepBoth
+            DeviceAlbumIdentity(artist: "Miles Davis", album: "Kind of Blue"): DeviceStoredDecision(.replace, for: .sameRelease),
+            DeviceAlbumIdentity(artist: "Miles Davis", album: "Blue Train"): DeviceStoredDecision(.keepBoth, for: .sameRelease)
         ])
     }
 
@@ -185,6 +187,28 @@ final class DeviceSyncQueuePlannerTests: XCTestCase {
         let entries = [entry(tracks[0], .replace), entry(tracks[1], .keepBoth)]
 
         XCTAssertEqual(DeviceSyncQueuePlanner.storedDecisions(for: entries), [:])
+    }
+
+    func testSameAnswerForDifferentKindsIsAskedAgain() {
+        let tracks = sent([1, 2])
+        let entries = [entry(tracks[0], .replace, kind: .sameRelease),
+                       entry(tracks[1], .replace, kind: .differentRelease)]
+
+        XCTAssertEqual(DeviceSyncQueuePlanner.storedDecisions(for: entries), [:])
+    }
+
+    /// Queues saved before the kind was stored still load; their answers
+    /// come back without a kind, which SYNC asks about again.
+    func testEntrySavedWithoutAKindDecodes() throws {
+        let saved = entry(sent([1])[0], .replace)
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(saved)) as? [String: Any])
+        json.removeValue(forKey: "decisionKind")
+        let decoded = try JSONDecoder().decode(DeviceSyncQueueEntry.self,
+                                               from: JSONSerialization.data(withJSONObject: json))
+
+        XCTAssertEqual(decoded.decision, .replace)
+        XCTAssertNil(decoded.decisionKind)
+        XCTAssertEqual(decoded.storedDecision, DeviceStoredDecision(.replace, for: nil))
     }
 
     // MARK: - Where SYNC reads an entry
@@ -253,9 +277,14 @@ final class DeviceSyncQueuePlannerTests: XCTestCase {
         )
     }
 
-    private func entry(_ track: LoadedTrack, _ decision: DeviceAlbumDecision?) -> DeviceSyncQueueEntry {
+    private func entry(
+        _ track: LoadedTrack,
+        _ decision: DeviceAlbumDecision?,
+        kind: DeviceDifferenceKind? = .sameRelease
+    ) -> DeviceSyncQueueEntry {
         DeviceSyncQueueEntry(track: track, destinationRelativePath: track.track.fileURL.lastPathComponent,
-                             isStaged: false, sourceModifiedAt: .distantPast, decision: decision)
+                             isStaged: false, sourceModifiedAt: .distantPast, decision: decision,
+                             decisionKind: decision == nil ? nil : kind)
     }
 
     /// Library tracks being sent; their files are never read.

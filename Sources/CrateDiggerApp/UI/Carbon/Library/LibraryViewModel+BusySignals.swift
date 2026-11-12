@@ -238,7 +238,9 @@ extension LibraryViewModel {
         }
         trackSafetyNetEdge(.conversion, isRunning: snapshot.isRunning, edge: edge,
                            armable: { [weak self] in self?.conversionChannelRecord },
-                           isIdle: { [weak self] in !(self?.conversionProgress.isRunning ?? false) })
+                           // A device run keeps its job past the batch, through
+                           // its renames and deletions (`isDeviceTransferRunning`).
+                           isIdle: { [weak self] in !(self?.isConversionRunning ?? false) })
     }
 
     private func syncChannelChanged(_ snapshot: DeviceSyncProgressSnapshot?, edge: BusyChannelEdge) {

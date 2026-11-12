@@ -62,7 +62,7 @@ extension LibraryViewModel {
                 guard let deviceRoot, let saved = DeviceCatalogStore().load(key: key) else { return [] }
                 return DeviceSyncQueuePlanner.catalog(saved, rebasedFrom: deviceRoot, onto: stagingRoot)
             }.value
-            guard let (plan, _, answers) = await reviewedDevicePlan(
+            guard let (plan, review, answers) = await reviewedDevicePlan(
                 tracks: tracks,
                 profile: profile,
                 mountedRoot: stagingRoot,
@@ -77,6 +77,7 @@ extension LibraryViewModel {
                 for: plan,
                 stagingRoot: stagingRoot,
                 decisions: answers,
+                kinds: review.differenceKinds,
                 queued: current
             )
             rememberDeviceAnswers(answers, profileID: profile.id)
@@ -286,7 +287,7 @@ extension LibraryViewModel {
                 )
                 return
             }
-            guard let (plan, _, answers) = await reviewedDevicePlan(
+            guard let (plan, review, answers) = await reviewedDevicePlan(
                 tracks: entries.map(\.track),
                 profile: profile,
                 mountedRoot: mountedRoot,
@@ -404,9 +405,12 @@ extension LibraryViewModel {
 
             // An answer given in the sheet is kept on any entry whose copy
             // fails, so the next SYNC doesn't ask again.
-            var answeredBySource: [String: DeviceAlbumDecision] = [:]
+            let kinds = review.differenceKinds
+            var answeredBySource: [String: DeviceStoredDecision] = [:]
             for copy in plan.copies {
-                if let answer = answers[copy.album] { answeredBySource[copy.source.track.fileURL.path] = answer }
+                if let answer = answers[copy.album] {
+                    answeredBySource[copy.source.track.fileURL.path] = DeviceStoredDecision(answer, for: kinds[copy.album])
+                }
             }
 
             let profileName = profile.name
@@ -559,7 +563,7 @@ extension LibraryViewModel {
         /// Entries the review settled without a write; they leave the queue.
         let settledIDs: Set<UUID>
         /// Sheet answers to keep on entries that stay queued.
-        let answeredBySource: [String: DeviceAlbumDecision]
+        let answeredBySource: [String: DeviceStoredDecision]
         let profileID: UUID
         let mountedRoot: URL
         let preset: ConversionPreset?
@@ -594,7 +598,10 @@ extension LibraryViewModel {
                 .filter { !doneIDs.contains($0.id) }
                 .map { entry -> DeviceSyncQueueEntry in
                     var kept = entry
-                    if let answer = job.answeredBySource[entry.track.track.fileURL.path] { kept.decision = answer }
+                    if let answer = job.answeredBySource[entry.track.track.fileURL.path] {
+                        kept.decision = answer.decision
+                        kept.decisionKind = answer.kind
+                    }
                     return kept
                 }
             if left.isEmpty {
@@ -626,34 +633,28 @@ extension LibraryViewModel {
         for (index, copy) in job.plan.copies.enumerated() {
             let sourcePath = copy.source.track.fileURL.path
             let name = devicePath(copy.destinationURL, under: job.mountedRoot)
-            var partial: URL?
             do {
                 guard let entry = job.entryBySource[sourcePath],
                       let source = job.sources[sourcePath]
                 else { throw syncError("Not in the queue any more") }
-                // A file that appeared since the review fails this item
-                // before any bytes are spent on it.
-                if !copy.overwrites, fm.fileExists(atPath: copy.destinationURL.path) {
-                    throw syncError(DeviceTransferExecutor.appearedReason)
-                }
                 if case .unavailable(let reason) = source { throw syncError(reason) }
-                // ffmpeg picks its muxer from the extension, so a converting
-                // write's partial keeps it.
-                let target = try executor.preparePartial(for: copy.destinationURL,
-                                                          keepingExtension: source == .convert)
-                partial = target
-                switch source {
-                case .staged:
-                    try fm.copyItem(at: store.stagedFileURL(for: entry, profileID: profileID), to: target)
-                case .copy:
-                    try fm.copyItem(at: entry.track.track.fileURL, to: target)
-                case .convert:
-                    try convert(entry.track.track.fileURL, to: target,
-                                metadata: job.metadataByPath[sourcePath] ?? entry.track.metadata)
-                case .unavailable:
-                    break   // thrown above
+                // The executor's own write: the appeared-file check, the
+                // folder made only now, a hidden partial renamed into place,
+                // and nothing left behind when it fails. ffmpeg picks its
+                // muxer from the extension, so a converting write keeps it.
+                try executor.write(copy, keepingExtension: source == .convert) { _, target in
+                    switch source {
+                    case .staged:
+                        try fm.copyItem(at: store.stagedFileURL(for: entry, profileID: profileID), to: target)
+                    case .copy:
+                        try fm.copyItem(at: entry.track.track.fileURL, to: target)
+                    case .convert:
+                        try convert(entry.track.track.fileURL, to: target,
+                                    metadata: job.metadataByPath[sourcePath] ?? entry.track.metadata)
+                    case .unavailable:
+                        break   // thrown above
+                    }
                 }
-                try executor.finish(target, onto: copy.destinationURL, overwrites: copy.overwrites)
                 outcome.written.append(copy)
                 outcome.lines.append("[ok] \(name)")
                 // Landed: its staged bytes are trash now.
@@ -661,7 +662,6 @@ extension LibraryViewModel {
                 doneIDs.insert(entry.id)
                 if doneIDs.count % checkpointEvery == 0 { persistQueue() }
             } catch {
-                if let partial { executor.discardPartial(partial) }
                 outcome.failed.append(.init(copy: copy, reason: error.localizedDescription))
                 outcome.lines.append("[FAILED] \(name)\n    \(error.localizedDescription)")
             }

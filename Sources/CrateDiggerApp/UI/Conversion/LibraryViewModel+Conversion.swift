@@ -461,29 +461,20 @@ extension LibraryViewModel {
             })
         )
         let slices = await Task.detached(priority: .userInitiated) {
-            Self.deviceSlices(sliceJobs, of: divided)
+            DeviceRecordSlices(jobs: sliceJobs, of: divided)
         }.value
-        let plan = DeviceTransferFilePlan(
-            copies: reviewed.copies + slices.copies,
-            deletionsByAlbum: reviewed.deletionsByAlbum,
-            coverFolders: settings.writesFolderCoverArt
-                ? reviewed.coverFolders.merging(slices.coverFolders) { planned, _ in planned }
-                : reviewed.coverFolders,
-            skippedPresent: reviewed.skippedPresent + slices.alreadyThere,
-            leftAlone: reviewed.leftAlone,
-            replacedAlbums: reviewed.replacedAlbums,
-            keptBothAlbums: reviewed.keptBothAlbums,
-            gapAlbums: reviewed.gapAlbums,
-            unplanned: reviewed.unplanned
-        )
+        let plan = slices.merged(into: reviewed, writesFolderCoverArt: settings.writesFolderCoverArt)
+        // The tracks this run took off the device queue. Ones sent to the
+        // device while the walk or the sheet was up stay queued for the next.
+        let taken = Set(pending.tracks.map(\.track.fileURL.path))
 
         guard !plan.copies.isEmpty || !plan.deletions.isEmpty || !plan.unplanned.isEmpty else {
             // Nothing is missing: the send is done, so the cockpit stays on
-            // the device with an empty queue, as after a send, and its
+            // the device without these tracks, as after a send, and its
             // answers stand.
             rememberDeviceAnswers(answers, profileID: profile.id)
             persistSelectionToDevice(selection, profileID: profile.id)
-            emptyPendingDeviceQueue()
+            removeFromPendingDeviceQueue(taken, profileID: profile.id)
             appAlert = .info(
                 title: "Nothing to transfer",
                 message: "\(profile.name) needs nothing from this selection: "
@@ -520,33 +511,44 @@ extension LibraryViewModel {
         rememberDeviceAnswers(answers, profileID: profile.id)
 
         // ffmpeg writes each file to a hidden partial beside its destination
-        // (its -y would replace whatever is at the real name); only a job
-        // that completed is renamed into place, with the device checked
-        // again right before, so a file that appeared since the review fails
-        // that item and an overwrite that fails keeps the old file.
-        let checked = await Task.detached(priority: .userInitiated) {
-            Self.deviceJobs(for: plan, slices: slices.jobs)
+        // (its -y would replace whatever is at the real name); Core decides
+        // what is held back now and what lands afterwards.
+        let partials = await Task.detached(priority: .userInitiated) {
+            DeviceTransferExecutor().partialJobs(for: plan, slices: slices.jobs)
         }.value
-        let ran = checked.jobs.isEmpty
+        let ran = partials.jobs.isEmpty
             ? nil
-            : await runConversionQueue(service: service, jobs: checked.jobs, preset: preset)
+            : await runConversionQueue(service: service, jobs: partials.jobs, preset: preset, endsBusyJob: false)
 
-        let sliceDestinations = Set(slices.jobs.keys)
+        // Cancel stays live through the renames and deletions: a press after
+        // the last job was dispatched still stops every deletion.
+        activeConversionService = service
+        defer { activeConversionService = nil }
         let succeeded = ran?.succeededDestinationPaths ?? []
         let failureReasons = ran?.failureReasons ?? [:]
-        let wasCancelled = ran?.wasCancelled ?? false
-        // Renames, then deletions only for albums whose every file landed
-        // (none after a cancel).
+        let wasCancelled = (ran?.wasCancelled ?? false) || service.isCancelled
+        let sliceDestinations = Set(slices.jobs.keys)
         let outcome = await Task.detached(priority: .userInitiated) {
-            Self.finishDeviceJobs(
-                plan: plan,
-                checked: checked,
-                sliceDestinations: sliceDestinations,
-                succeededPartials: succeeded,
-                failureReasons: failureReasons,
-                wasCancelled: wasCancelled
+            DeviceTransferExecutor().finishConverted(
+                plan,
+                jobs: partials,
+                succeeded: succeeded,
+                reasons: failureReasons,
+                wasCancelled: wasCancelled,
+                isCancelled: { service.isCancelled },
+                name: { copy in
+                    sliceDestinations.contains(copy.destinationURL.path)
+                        ? copy.destinationURL.lastPathComponent
+                        : copy.source.track.fileURL.lastPathComponent
+                }
             )
         }.value
+        let cancelledCount = outcome.failed.filter { $0.reason == ConversionQueueOutcome.cancelledReason }.count
+        endBusyJob(ran?.busyJob, .conversion(
+            succeeded: outcome.written.count,
+            failed: outcome.failed.count - cancelledCount,
+            cancelled: cancelledCount
+        ))
 
         // A cover only where something actually landed.
         let landed = Set(outcome.written.map { $0.destinationURL.deletingLastPathComponent().standardizedFileURL })
@@ -572,151 +574,8 @@ extension LibraryViewModel {
         // Remember any format/folder tweaks on the device profile and stay
         // routed to it: the next album you send needs no setup.
         persistSelectionToDevice(selection, profileID: profile.id)
-        emptyPendingDeviceQueue()
+        removeFromPendingDeviceQueue(taken, profileID: profile.id)
         presentSummary(report: deviceSendReport(plan: plan, outcome: outcome, deviceName: profile.name), presentingFrom: host)
-    }
-
-    /// Record Divider slices on the device side: the ones whose file is not
-    /// there yet as plan copies (with the job that cuts each, by destination
-    /// path), and a count of those already there. Each slice is recorded as
-    /// its own track (title, number, length), the way a scan of it reads.
-    /// Reads the device, so callers run it off the main actor.
-    nonisolated private static func deviceSlices(
-        _ jobs: [ConversionJob],
-        of tracks: [LoadedTrack]
-    ) -> (copies: [DeviceTransferFilePlan.Copy], jobs: [String: ConversionJob],
-          coverFolders: [URL: LoadedTrack], alreadyThere: Int) {
-        let fileManager = FileManager.default
-        let sources = Dictionary(tracks.map { ($0.track.fileURL.path, $0) }, uniquingKeysWith: { first, _ in first })
-        let identities = DeviceAlbumIdentity.identities(for: tracks)
-        var copies: [DeviceTransferFilePlan.Copy] = []
-        var byPath: [String: ConversionJob] = [:]
-        var covers: [URL: LoadedTrack] = [:]
-        var alreadyThere = 0
-        for job in jobs {
-            guard let source = sources[job.sourceURL.path] else { continue }
-            guard !fileManager.fileExists(atPath: job.destinationURL.path) else {
-                alreadyThere += 1
-                continue
-            }
-            var audio = source.track
-            let metadata = job.metadata ?? source.metadata
-            audio.title = metadata.title ?? audio.title
-            audio.trackNumber = metadata.trackNumber
-            audio.trackTotal = metadata.trackTotal
-            if let start = job.startSeconds, let end = job.endSeconds { audio.durationSeconds = max(0, end - start) }
-            let slice = LoadedTrack(track: audio, metadata: metadata)
-            copies.append(.init(
-                source: slice,
-                destinationURL: job.destinationURL,
-                overwrites: false,
-                kind: .new,
-                album: identities[source.track.id]
-                    ?? DeviceAlbumIdentity(artist: source.track.artist, album: source.track.album)
-            ))
-            byPath[job.destinationURL.path] = job
-            let folder = job.destinationURL.deletingLastPathComponent().standardizedFileURL
-            if covers[folder] == nil { covers[folder] = slice }
-        }
-        return (copies, byPath, covers, alreadyThere)
-    }
-
-    /// The conversion jobs for a device plan, each writing to its
-    /// destination's hidden partial (`DeviceTransferExecutor.partialURL`,
-    /// real extension kept so ffmpeg picks the right muxer; a partial left by
-    /// a crash is removed first). A copy whose destination already exists and
-    /// was not cleared for overwriting is held back with the executor's
-    /// reason before any encode is spent on it. Partials by destination path.
-    nonisolated private static func deviceJobs(
-        for plan: DeviceTransferFilePlan,
-        slices: [String: ConversionJob]
-    ) -> DeviceJobs {
-        let fileManager = FileManager.default
-        let executor = DeviceTransferExecutor(fileManager: fileManager)
-        var result = DeviceJobs()
-        for copy in plan.copies {
-            let path = copy.destinationURL.path
-            if !copy.overwrites, fileManager.fileExists(atPath: path) {
-                result.blocked[path] = DeviceTransferExecutor.appearedReason
-                continue
-            }
-            let partial: URL
-            do {
-                partial = try executor.preparePartial(for: copy.destinationURL, keepingExtension: true)
-            } catch {
-                result.blocked[path] = error.localizedDescription
-                continue
-            }
-            result.partials[path] = partial
-            let slice = slices[path]
-            result.jobs.append(ConversionJob(
-                sourceURL: slice?.sourceURL ?? copy.source.track.fileURL,
-                destinationURL: partial,
-                metadata: slice?.metadata ?? copy.source.metadata,
-                startSeconds: slice?.startSeconds,
-                endSeconds: slice?.endSeconds
-            ))
-        }
-        return result
-    }
-
-    /// What `deviceJobs` planned: the jobs to run, each destination's partial,
-    /// and the copies held back with their reason.
-    struct DeviceJobs: Sendable {
-        var jobs: [ConversionJob] = []
-        var partials: [String: URL] = [:]
-        var blocked: [String: String] = [:]
-    }
-
-    /// After the conversions: each completed partial renamed onto its
-    /// destination (`DeviceTransferExecutor.finish`, which fails the item if
-    /// a file appeared there and it was not cleared for overwriting), each
-    /// other partial removed, then the deletions the plan earned. Writes to
-    /// the device, so callers run it off the main actor.
-    nonisolated private static func finishDeviceJobs(
-        plan: DeviceTransferFilePlan,
-        checked: DeviceJobs,
-        sliceDestinations: Set<String>,
-        succeededPartials: Set<String>,
-        failureReasons: [String: String],
-        wasCancelled: Bool
-    ) -> DeviceTransferExecutor.Outcome {
-        let executor = DeviceTransferExecutor()
-        var outcome = DeviceTransferExecutor.Outcome()
-        outcome.wasCancelled = wasCancelled
-        for track in plan.unplanned {
-            outcome.lines.append(
-                "[FAILED] \(track.track.fileURL.lastPathComponent)\n    No place on the device could be planned for it"
-            )
-        }
-        for copy in plan.copies {
-            let path = copy.destinationURL.path
-            let name = sliceDestinations.contains(path)
-                ? copy.destinationURL.lastPathComponent
-                : copy.source.track.fileURL.lastPathComponent
-            var reason = checked.blocked[path]
-            if reason == nil {
-                if let partial = checked.partials[path], succeededPartials.contains(partial.path) {
-                    do {
-                        try executor.finish(partial, onto: copy.destinationURL, overwrites: copy.overwrites)
-                    } catch {
-                        reason = error.localizedDescription
-                    }
-                } else {
-                    if let partial = checked.partials[path] { executor.discardPartial(partial) }
-                    reason = checked.partials[path].flatMap { failureReasons[$0.path] } ?? "Could not be converted"
-                }
-            }
-            if let reason {
-                outcome.failed.append(.init(copy: copy, reason: reason))
-                outcome.lines.append("[FAILED] \(name)\n    \(reason)")
-            } else {
-                outcome.written.append(copy)
-                outcome.lines.append("[ok] \(name) -> \(path)")
-            }
-        }
-        executor.runDeletions(plan, after: &outcome)
-        return outcome
     }
 
     /// The summary of a device send, worded like the copy path's.
@@ -1120,16 +979,25 @@ extension LibraryViewModel {
         /// record exactly which bakes are real.
         let succeededDestinationPaths: Set<String>
         /// Why each job that did not complete failed, by destination path:
-        /// "Cancelled", or the last line of ffmpeg's log.
+        /// `cancelledReason`, or the last line of ffmpeg's log.
         let failureReasons: [String: String]
+        /// Some job was cancelled, or Cancel was pressed at all (after the
+        /// last job was dispatched, nothing reports it).
         let wasCancelled: Bool
+        /// The batch's busy job when the caller ends it (`endsBusyJob: false`).
+        let busyJob: BusyJobID?
+
+        static let cancelledReason = "Cancelled"
     }
 
+    /// `endsBusyJob`: false for a caller with more to do after the batch (a
+    /// device run's renames and deletions); it ends `busyJob` itself.
     @MainActor
     func runConversionQueue(
         service: ConversionService,
         jobs: [ConversionJob],
-        preset: ConversionPreset
+        preset: ConversionPreset,
+        endsBusyJob: Bool = true
     ) async -> ConversionQueueOutcome {
         let total = jobs.count
         oledView = .conversion
@@ -1187,7 +1055,9 @@ extension LibraryViewModel {
                 for outcome in outcomes where outcome.status != .completed {
                     guard let path = destinationByID[outcome.queuedID] else { continue }
                     let lastLine = outcome.log.split(separator: "\n").last.map(String.init) ?? outcome.log
-                    reasons[path] = outcome.wasCancelled ? "Cancelled" : (lastLine.isEmpty ? "Could not be converted" : lastLine)
+                    reasons[path] = outcome.wasCancelled
+                        ? ConversionQueueOutcome.cancelledReason
+                        : (lastLine.isEmpty ? "Could not be converted" : lastLine)
                 }
                 continuation.resume(returning: (outcomes, paths, reasons))
             }
@@ -1206,7 +1076,9 @@ extension LibraryViewModel {
         let cancelled = results.filter { $0.wasCancelled }.count
         let failed = results.filter { $0.status == .failed }.count - cancelled
         let warnings = results.compactMap { $0.warning }.count
-        endBusyJob(busyJob, .conversion(succeeded: succeeded, failed: failed, cancelled: cancelled))
+        if endsBusyJob {
+            endBusyJob(busyJob, .conversion(succeeded: succeeded, failed: failed, cancelled: cancelled))
+        }
         AppLog.conversion.info("Batch finished: \(succeeded, privacy: .public) ok, \(failed, privacy: .public) failed, \(cancelled, privacy: .public) cancelled, \(warnings, privacy: .public) with warnings")
 
         let title: String
@@ -1242,7 +1114,8 @@ extension LibraryViewModel {
             ),
             succeededDestinationPaths: succeededPaths,
             failureReasons: failureReasons,
-            wasCancelled: cancelled > 0
+            wasCancelled: cancelled > 0 || service.isCancelled,
+            busyJob: endsBusyJob ? nil : busyJob
         )
     }
 
@@ -1306,7 +1179,7 @@ extension LibraryViewModel {
     /// Nothing to press when the run it names has no work in it.
     @MainActor
     var patchBayGoEnabled: Bool {
-        guard !conversionProgress.isRunning, deviceSyncProgress?.isRunning != true else { return false }
+        guard !isConversionRunning, deviceSyncProgress?.isRunning != true else { return false }
         switch patchBayGoAction {
         case .convert, .sendToDevice:
             return !conversionQueueTracks.isEmpty

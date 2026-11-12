@@ -474,16 +474,17 @@ final class LibraryViewModel: ObservableObject {
         }
     }
 
-    /// A finished send leaves the panel pointed at the same device with an empty
-    /// queue — filling a device album by album shouldn't mean re-choosing it
-    /// every time. CANCEL is what unroutes.
-    func emptyPendingDeviceQueue() {
-        guard let pending = pendingDeviceConversion else { return }
+    /// A finished send leaves the panel pointed at the same device, with the
+    /// tracks it took (`paths`) out of the queue — filling a device album by
+    /// album shouldn't mean re-choosing it every time. Tracks sent to the
+    /// device while the run got ready stay queued. CANCEL is what unroutes.
+    func removeFromPendingDeviceQueue(_ paths: Set<String>, profileID: UUID) {
+        guard let pending = pendingDeviceConversion, pending.profileID == profileID else { return }
         pendingDeviceConversion = PendingDeviceConversion(
             profileID: pending.profileID,
             deviceName: pending.deviceName,
             destinationRoot: pending.destinationRoot,
-            tracks: []
+            tracks: pending.tracks.filter { !paths.contains($0.track.fileURL.path) }
         )
     }
 
@@ -738,7 +739,7 @@ final class LibraryViewModel: ObservableObject {
     var isWorking: Bool {
         !activities.isEmpty
             || scanProgress.isRunning
-            || conversionProgress.isRunning
+            || isConversionRunning
             || isRepairingMetadata
             || !albumsFetchingArtwork.isEmpty
     }
@@ -2653,16 +2654,21 @@ final class LibraryViewModel: ObservableObject {
             )
             if Task.isCancelled { return }
             // Persist the catalog off-main so a big iPod doesn't hitch the UI,
-            // unless a transfer patched it (or RESCAN or SYNC dropped it)
+            // unless a transfer patched it (or RESCAN or FIX ART dropped it)
             // since this walk began: the walk may predate those writes.
             let catalogs = self.deviceCatalogs
             let saved = await Task.detached(priority: .utility) {
                 catalogs.saveScan(scanned, key: key, token: token)
             }.value
-            let current = saved ? scanned : (catalogs.load(key: key) ?? scanned)
+            let newer = saved ? nil : catalogs.load(key: key)
+            let current = newer ?? scanned
             await MainActor.run {
                 let built = self.buildIndex(current)
-                self.deviceIndexCache[volumePath] = built
+                // A refused walk with no newer catalog is shown but not
+                // cached: `currentDeviceCatalog` would save a cached index as
+                // the catalog, and this walk may predate the write that
+                // refused it. The next browse or transfer walks again.
+                self.deviceIndexCache[volumePath] = (saved || newer != nil) ? built : nil
                 self.scanProgress = .idle
                 self.endBusyJob(busyJob, .completed)
                 // Only adopt the result if the user is still on this device.

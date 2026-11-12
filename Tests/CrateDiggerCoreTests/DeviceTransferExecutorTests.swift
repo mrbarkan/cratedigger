@@ -189,7 +189,8 @@ final class DeviceTransferExecutorTests: XCTestCase {
 
     func testFinishMovesAConvertedPartialIntoPlaceAndRefusesAnAppearedFile() throws {
         let destination = device.appendingPathComponent("Miles Davis/Kind of Blue/01 So What.mp3")
-        let partial = try executor.preparePartial(for: destination, keepingExtension: true)
+        try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let partial = try executor.clearPartial(for: destination, keepingExtension: true)
         XCTAssertEqual(partial.lastPathComponent, ".cdpart.01 So What.mp3", "ffmpeg still sees .mp3")
         try "encoded".write(to: partial, atomically: true, encoding: .utf8)
 
@@ -198,7 +199,7 @@ final class DeviceTransferExecutorTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: partial.path))
 
         // A second run of the same name while a file now sits there.
-        let again = try executor.preparePartial(for: destination, keepingExtension: true)
+        let again = try executor.clearPartial(for: destination, keepingExtension: true)
         try "encoded again".write(to: again, atomically: true, encoding: .utf8)
         XCTAssertThrowsError(try executor.finish(again, onto: destination, overwrites: false)) { error in
             XCTAssertEqual(error.localizedDescription, DeviceTransferExecutor.appearedReason)
@@ -207,7 +208,7 @@ final class DeviceTransferExecutorTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: again.path))
 
         // Cleared for overwriting, the same finish replaces it.
-        let replace = try executor.preparePartial(for: destination, keepingExtension: true)
+        let replace = try executor.clearPartial(for: destination, keepingExtension: true)
         try "re-encoded".write(to: replace, atomically: true, encoding: .utf8)
         try executor.finish(replace, onto: destination, overwrites: true)
         XCTAssertEqual(try String(contentsOf: destination, encoding: .utf8), "re-encoded")

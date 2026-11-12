@@ -2,7 +2,7 @@ import Foundation
 
 /// Every write to the saved device catalogs, in one place, so a whole-volume
 /// scan that finishes late can never put back a catalog a transfer has
-/// patched since (or one a RESCAN or SYNC dropped).
+/// patched since (or one a RESCAN or FIX ART dropped).
 ///
 /// A scan takes a token when it starts. A patch or a removal moves the key's
 /// token on, and a scan's save is refused when its token is no longer the

@@ -56,7 +56,7 @@ extension LibraryViewModel {
         catalog: [LoadedTrack],
         presentingFrom host: NSViewController,
         reviewedAlbumFolders: [AlbumFolderKey: String] = [:],
-        alreadyDecided: [DeviceAlbumIdentity: DeviceAlbumDecision] = [:]
+        alreadyDecided: [DeviceAlbumIdentity: DeviceStoredDecision] = [:]
     ) async -> (plan: DeviceTransferFilePlan, review: DeviceTransferReview,
                 answers: [DeviceAlbumIdentity: DeviceAlbumDecision])? {
         let leftAlone = DeviceLeftAloneStore().load(profileID: profile.id)
@@ -74,8 +74,9 @@ extension LibraryViewModel {
             )
         }.value
 
-        // An earlier answer counts only for an album that still differs: one
-        // the device now lacks or already holds needs none.
+        // An earlier answer counts only for an album that still differs, and
+        // in the same kind of way: one the device now lacks or already holds
+        // needs none, and one that changed kind is asked again.
         let decided = DeviceTransferResolver.applicableDecisions(stored: alreadyDecided, review: review)
         var answers: [DeviceAlbumIdentity: DeviceAlbumDecision] = [:]
         let asked = review.needingDecision.filter { decided[$0.identity] == nil }

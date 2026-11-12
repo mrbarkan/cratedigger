@@ -217,8 +217,9 @@ extension LibraryViewModel {
             // so there is nothing for a patch to add or remove. But the
             // catalog records each track's art size, which is what a
             // transfer's review compares; left as it was, every album given a
-            // cover would read as differing in art. So it is dropped, as SYNC
-            // does, and walked again now if the device is on screen.
+            // cover would read as differing in art. So it is dropped (the
+            // one write that still drops it: every transfer, SYNC included,
+            // patches instead) and walked again now if the device is on screen.
             if outcome.covers > 0 {
                 invalidateDeviceCatalog(for: device)
                 if case .device(let path) = currentSource, path == device.volumeURL.path {

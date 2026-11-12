@@ -18,8 +18,13 @@ import Foundation
 /// file found at a destination the plan did not clear for overwriting fails
 /// that one item and is left alone. An old file already gone when its
 /// deletion comes is not a failure. How a file is written is the caller's: a
-/// byte copy here, an ffmpeg run for a converting path (which uses
-/// `preparePartial` and `finish` directly).
+/// byte copy here, an ffmpeg run for a converting path (`partialJobs` and
+/// `finishConverted`).
+///
+/// A folder is created only when a write into it starts, and one a failed
+/// write created is removed again while it is empty, so a cancelled or failed
+/// run leaves no empty album folders behind (a stray `Album (2)` would push
+/// the next Keep both to `(3)`).
 ///
 /// Synchronous on purpose: callers run it off the main actor.
 public struct DeviceTransferExecutor {
@@ -70,10 +75,22 @@ public struct DeviceTransferExecutor {
         }
     }
 
-    private let fileManager: FileManager
+    let fileManager: FileManager
+    /// `renamex_np(…, RENAME_EXCL)`: 0, or the errno it failed with.
+    /// Replaceable so tests can stand in for a volume without it (FAT).
+    private let renameExclusive: @Sendable (String, String) -> Int32
 
     public init(fileManager: FileManager = .default) {
+        self.init(fileManager: fileManager, renameExclusive: Self.systemRenameExclusive)
+    }
+
+    init(fileManager: FileManager, renameExclusive: @escaping @Sendable (String, String) -> Int32) {
         self.fileManager = fileManager
+        self.renameExclusive = renameExclusive
+    }
+
+    private static let systemRenameExclusive: @Sendable (String, String) -> Int32 = { from, to in
+        renamex_np(from, to, UInt32(RENAME_EXCL)) == 0 ? 0 : errno
     }
 
     // MARK: - Partial files
@@ -91,14 +108,10 @@ public struct DeviceTransferExecutor {
         return folder.appendingPathComponent(keepingExtension ? ".cdpart.\(name)" : ".\(name).cdpart")
     }
 
-    /// Readies `destination`'s folder and partial file: the folder is created
-    /// when missing, and a partial left over from an interrupted run is
-    /// removed. Returns where to write.
-    public func preparePartial(for destination: URL, keepingExtension: Bool) throws -> URL {
-        let folder = destination.deletingLastPathComponent()
-        if !fileManager.fileExists(atPath: folder.path) {
-            try fileManager.createDirectory(at: folder, withIntermediateDirectories: true)
-        }
+    /// Removes a partial of `destination` left over from an interrupted run,
+    /// and returns where to write. Creates nothing: the write that uses it
+    /// creates the folder.
+    public func clearPartial(for destination: URL, keepingExtension: Bool) throws -> URL {
         let partial = Self.partialURL(for: destination, keepingExtension: keepingExtension)
         if fileManager.fileExists(atPath: partial.path) {
             try fileManager.removeItem(at: partial)
@@ -107,18 +120,71 @@ public struct DeviceTransferExecutor {
     }
 
     /// Moves a complete partial onto its destination. Unless `overwrites`,
-    /// a file found at the destination now fails this item (the partial is
-    /// removed, the file left alone); otherwise `rename(2)` replaces it in
-    /// one step. A failed rename removes the partial too.
+    /// a file found at the destination fails this item (the partial is
+    /// removed, the file left alone): the rename itself refuses an existing
+    /// name (`RENAME_EXCL`), so nothing can slip in between a check and the
+    /// move; on a volume without it (FAT) the check runs right before.
+    /// When overwriting, `rename(2)` replaces the old file in one step. A
+    /// failed rename removes the partial too.
     public func finish(_ partial: URL, onto destination: URL, overwrites: Bool) throws {
-        if !overwrites, fileManager.fileExists(atPath: destination.path) {
+        if overwrites {
+            guard Darwin.rename(partial.path, destination.path) == 0 else {
+                throw failedMove(partial, errno: errno)
+            }
+            return
+        }
+        switch renameExclusive(partial.path, destination.path) {
+        case 0:
+            return
+        case EEXIST:
             discardPartial(partial)
             throw Self.error(Self.appearedReason)
+        case ENOTSUP:
+            if fileManager.fileExists(atPath: destination.path) {
+                discardPartial(partial)
+                throw Self.error(Self.appearedReason)
+            }
+            guard Darwin.rename(partial.path, destination.path) == 0 else {
+                throw failedMove(partial, errno: errno)
+            }
+        case let code:
+            throw failedMove(partial, errno: code)
         }
-        guard Darwin.rename(partial.path, destination.path) == 0 else {
-            let reason = String(cString: strerror(errno))
-            discardPartial(partial)
-            throw Self.error("Could not move the finished file into place: \(reason)")
+    }
+
+    private func failedMove(_ partial: URL, errno code: Int32) -> NSError {
+        let reason = String(cString: strerror(code))
+        discardPartial(partial)
+        return Self.error("Could not move the finished file into place: \(reason)")
+    }
+
+    // MARK: - Folders
+
+    /// The outermost folder on the way to `destination` that does not exist
+    /// yet, or nil when its folder is there. What a write to it would create.
+    public func firstMissingFolder(for destination: URL) -> URL? {
+        var missing: URL?
+        var folder = destination.deletingLastPathComponent().standardizedFileURL
+        while folder.path != "/", !fileManager.fileExists(atPath: folder.path) {
+            missing = folder
+            folder = folder.deletingLastPathComponent()
+        }
+        return missing
+    }
+
+    /// Removes `folder`, then each parent up to and including `top`, while
+    /// it is empty (hidden files count). Stops at the first that isn't, or
+    /// that lies outside `top`.
+    public func removeEmptyFolders(from folder: URL, upTo top: URL) {
+        let topPath = top.standardizedFileURL.path
+        var current = folder.standardizedFileURL
+        while current.path == topPath || current.path.hasPrefix(topPath + "/") {
+            guard let contents = try? fileManager.contentsOfDirectory(atPath: current.path),
+                  contents.isEmpty,
+                  (try? fileManager.removeItem(at: current)) != nil
+            else { return }
+            if current.path == topPath { return }
+            current = current.deletingLastPathComponent()
         }
     }
 
@@ -232,22 +298,37 @@ public struct DeviceTransferExecutor {
     // MARK: - Helpers
 
     /// One copy: refuse a destination that appeared since the review before
-    /// spending a write on it, write the partial, rename it into place.
-    private func write(
+    /// spending a write on it, create its folder, write the partial (`copy`
+    /// gets its URL), rename it into place. A write that fails leaves no
+    /// partial and no folder it created. `keepingExtension`: the partial ends
+    /// in the real extension, for a writer (ffmpeg) that picks its format
+    /// from it.
+    public func write(
         _ item: DeviceTransferFilePlan.Copy,
+        keepingExtension: Bool = false,
         with copy: (DeviceTransferFilePlan.Copy, URL) throws -> Void
     ) throws {
         if !item.overwrites, fileManager.fileExists(atPath: item.destinationURL.path) {
             throw Self.error(Self.appearedReason)
         }
-        let partial = try preparePartial(for: item.destinationURL, keepingExtension: false)
+        let folder = item.destinationURL.deletingLastPathComponent()
+        let created = firstMissingFolder(for: item.destinationURL)
         do {
-            try copy(item, partial)
+            if created != nil {
+                try fileManager.createDirectory(at: folder, withIntermediateDirectories: true)
+            }
+            let partial = try clearPartial(for: item.destinationURL, keepingExtension: keepingExtension)
+            do {
+                try copy(item, partial)
+            } catch {
+                discardPartial(partial)
+                throw error
+            }
+            try finish(partial, onto: item.destinationURL, overwrites: item.overwrites)
         } catch {
-            discardPartial(partial)
+            if let created { removeEmptyFolders(from: folder, upTo: created) }
             throw error
         }
-        try finish(partial, onto: item.destinationURL, overwrites: item.overwrites)
     }
 
     /// Albums in the order their deletions run (`DeviceTransferFilePlan.deletions`).
@@ -262,7 +343,7 @@ public struct DeviceTransferExecutor {
         return order
     }
 
-    private static func error(_ reason: String) -> NSError {
+    static func error(_ reason: String) -> NSError {
         NSError(domain: "CrateDigger.DeviceTransfer", code: 1, userInfo: [NSLocalizedDescriptionKey: reason])
     }
 }

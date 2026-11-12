@@ -41,6 +41,10 @@ public enum DeviceSyncQueuePlanner {
     /// that answer; New and Gaps tracks carry none. The plan's deletions are
     /// not queued: SYNC plans them again against the device itself.
     ///
+    /// `kinds` are the review's differing albums' kinds
+    /// (`DeviceTransferReview.differenceKinds`), stored beside each answer so
+    /// SYNC reuses it only while the album still differs the same way.
+    ///
     /// A copy whose source is already queued is skipped. One planned onto a
     /// path the queue already holds (another source file filed under the same
     /// name) gets the first free ` (n)` name, because the path is also where
@@ -50,6 +54,7 @@ public enum DeviceSyncQueuePlanner {
         for plan: DeviceTransferFilePlan,
         stagingRoot: URL,
         decisions: [DeviceAlbumIdentity: DeviceAlbumDecision],
+        kinds: [DeviceAlbumIdentity: DeviceDifferenceKind],
         queued: [DeviceSyncQueueEntry],
         queuedAt: Date = Date()
     ) -> [DeviceSyncQueueEntry] {
@@ -79,7 +84,8 @@ public enum DeviceSyncQueuePlanner {
                 // Stamped at bake time; until then it can't make a bake look stale.
                 sourceModifiedAt: .distantPast,
                 queuedAt: queuedAt,
-                decision: answered
+                decision: answered,
+                decisionKind: answered == nil ? nil : kinds[copy.album]
             ))
         }
         return entries
@@ -92,11 +98,12 @@ public enum DeviceSyncQueuePlanner {
     /// the review that SYNC runs on it does. An album whose entries carry
     /// different answers (queued twice, answered differently) has none, so it
     /// is asked about again; entries with no answer don't count against one.
-    public static func storedDecisions(for entries: [DeviceSyncQueueEntry]) -> [DeviceAlbumIdentity: DeviceAlbumDecision] {
+    /// Each answer keeps the kind of difference it was given for.
+    public static func storedDecisions(for entries: [DeviceSyncQueueEntry]) -> [DeviceAlbumIdentity: DeviceStoredDecision] {
         let identities = DeviceAlbumIdentity.identities(for: entries.map(\.track))
-        var answers: [DeviceAlbumIdentity: Set<DeviceAlbumDecision>] = [:]
+        var answers: [DeviceAlbumIdentity: Set<DeviceStoredDecision>] = [:]
         for entry in entries {
-            guard let decision = entry.decision else { continue }
+            guard let decision = entry.storedDecision else { continue }
             let identity = identities[entry.track.track.id]
                 ?? DeviceAlbumIdentity(artist: entry.track.track.artist, album: entry.track.track.album)
             answers[identity, default: []].insert(decision)
