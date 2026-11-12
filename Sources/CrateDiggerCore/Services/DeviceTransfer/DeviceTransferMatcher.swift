@@ -171,7 +171,9 @@ public struct DeviceTransferMatcher {
         isLeftAlone: Bool
     ) -> DeviceAlbumComparison {
         let sentArt = sentArtPixels(sent, settings: settings)
-        let candidates = copies.map { classify(sent: sent, against: $0, sentArt: sentArt, settings: settings) }
+        let candidates = copies.map {
+            classify(sent: sent, against: $0, sentArt: sentArt, settings: settings, loose: identity.isUnknownAlbum)
+        }
         let best = candidates.min(by: Self.isPreferred)
 
         return DeviceAlbumComparison(
@@ -206,20 +208,22 @@ public struct DeviceTransferMatcher {
 
     // MARK: - One copy
 
+    /// `loose`: the album is the untitled bucket (`DeviceAlbumIdentity.isUnknownAlbum`),
+    /// loose singles rather than one release. Its tracks pair by title only
+    /// (singles all carry track 1), never read as another release, and art is
+    /// compared track by track, since each single has its own cover.
     private func classify(
         sent: [LoadedTrack],
         against copy: DeviceCopy,
         sentArt: Int?,
-        settings: ExternalDeviceTransferSettings
+        settings: ExternalDeviceTransferSettings,
+        loose: Bool
     ) -> Candidate {
         let deviceArt = Self.deviceArtPixels(copy.tracks)
-        let artDiffers: Bool = {
-            guard let sentArt else { return false }
-            return deviceArt != sentArt
-        }()
+        let albumArtDiffers = Self.artDiffers(sent: sentArt, device: deviceArt)
         let comparesAudio = settings.mode == .copyOriginals
 
-        let pairs = Self.pair(sent, with: copy.tracks)
+        let pairs = Self.pair(sent, with: copy.tracks, bySlot: !loose)
         var missing: [LoadedTrack] = []
         var same: [LoadedTrack] = []
         var changed: [(sent: LoadedTrack, device: LoadedTrack)] = []
@@ -237,6 +241,9 @@ public struct DeviceTransferMatcher {
             }
             let audioDiffers = comparesAudio && AudioForm(track) != AudioForm(device)
             if audioDiffers { differences.insert(.audioForm) }
+            let artDiffers = loose
+                ? Self.artDiffers(sent: sentArtPixels([track], settings: settings), device: Self.deviceArtPixels([device]))
+                : albumArtDiffers
             if artDiffers { differences.insert(.artSize) }
 
             if audioDiffers || artDiffers {
@@ -246,7 +253,7 @@ public struct DeviceTransferMatcher {
             }
         }
 
-        if Self.trackTotalsDisagree(sent: sent, device: copy.tracks) {
+        if !loose, Self.trackTotalsDisagree(sent: sent, device: copy.tracks) {
             differences.insert(.differentRelease)
         }
 
@@ -269,37 +276,64 @@ public struct DeviceTransferMatcher {
     /// does a track left over fall back to its folded title, and only against
     /// a device track where either side has no number. Two passes, so an
     /// unnumbered track earlier in the list can never take the device track a
-    /// later numbered one needs. `bySlot` marks the slot matches, the only kind
-    /// that can reveal a different release.
+    /// later numbered one needs. `bySlot` in the result marks the slot
+    /// matches, the only kind that can reveal a different release.
+    ///
+    /// With `bySlot` false (loose singles) there is no slot pass: every track
+    /// pairs by folded title, numbered or not.
     private static func pair(
         _ sent: [LoadedTrack],
-        with deviceTracks: [LoadedTrack]
+        with deviceTracks: [LoadedTrack],
+        bySlot: Bool
     ) -> [(index: Int, bySlot: Bool)?] {
         var pairs: [(index: Int, bySlot: Bool)?] = Array(repeating: nil, count: sent.count)
         var claimed = Array(repeating: false, count: deviceTracks.count)
         let deviceSlots = deviceTracks.map(Slot.init)
 
-        for (offset, track) in sent.enumerated() {
-            let slot = Slot(track)
-            guard slot.number != nil,
-                  let index = deviceSlots.indices.first(where: { !claimed[$0] && deviceSlots[$0] == slot })
-            else { continue }
-            claimed[index] = true
-            pairs[offset] = (index, true)
+        if bySlot {
+            for (offset, track) in sent.enumerated() {
+                let slot = Slot(track)
+                guard slot.number != nil,
+                      let index = preferred(for: track, among: deviceSlots.indices.filter {
+                          !claimed[$0] && deviceSlots[$0] == slot
+                      }, in: deviceTracks)
+                else { continue }
+                claimed[index] = true
+                pairs[offset] = (index, true)
+            }
         }
 
         for (offset, track) in sent.enumerated() where pairs[offset] == nil {
-            let numbered = Slot(track).number != nil
+            let numbered = bySlot && Slot(track).number != nil
             let title = foldedTitle(track)
-            guard let index = deviceTracks.indices.first(where: {
+            guard let index = preferred(for: track, among: deviceTracks.indices.filter {
                 !claimed[$0]
                     && (!numbered || deviceSlots[$0].number == nil)
                     && foldedTitle(deviceTracks[$0]) == title
-            }) else { continue }
+            }, in: deviceTracks) else { continue }
             claimed[index] = true
             pairs[offset] = (index, false)
         }
         return pairs
+    }
+
+    /// The device track to pair with `track` when several could (an MP3 and
+    /// a FLAC of one album, both left by older upgrades): the one in the
+    /// same form first, then the same format, then the first by path, so the
+    /// answer never depends on the order the device was scanned in.
+    private static func preferred(for track: LoadedTrack, among candidates: [Int], in deviceTracks: [LoadedTrack]) -> Int? {
+        guard candidates.count > 1 else { return candidates.first }
+        let form = AudioForm(track)
+        func rank(_ index: Int) -> Int {
+            let other = AudioForm(deviceTracks[index])
+            if other == form { return 0 }
+            return other.format == form.format ? 1 : 2
+        }
+        return candidates.min { lhs, rhs in
+            let left = rank(lhs), right = rank(rhs)
+            if left != right { return left < right }
+            return deviceTracks[lhs].track.fileURL.path < deviceTracks[rhs].track.fileURL.path
+        }
     }
 
     // MARK: - Different release
@@ -343,6 +377,12 @@ public struct DeviceTransferMatcher {
             deviceProfile: settings.deviceProfile,
             writesFolderCoverArt: settings.writesFolderCoverArt
         )?.side
+    }
+
+    /// Art differs only when some would be sent and its size is not the device's.
+    private static func artDiffers(sent: Int?, device: Int?) -> Bool {
+        guard let sent else { return false }
+        return device != sent
     }
 
     /// The device copy's art: embedded, or a folder image beside it (a Rockbox

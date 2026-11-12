@@ -150,6 +150,9 @@ public struct PlannedOutputPath: Hashable, Sendable {
 }
 
 public struct OutputPathPlanner {
+    /// The album title a file with no album tag is filed under.
+    public static let defaultUnknownAlbum = "Unknown Album"
+
     private let fileManager: FileManager
     private let unknownArtist: String
     private let unknownAlbum: String
@@ -158,7 +161,7 @@ public struct OutputPathPlanner {
     public init(
         fileManager: FileManager = .default,
         unknownArtist: String = "Unknown Artist",
-        unknownAlbum: String = "Unknown Album",
+        unknownAlbum: String = OutputPathPlanner.defaultUnknownAlbum,
         unknownYear: String = "Unknown Year"
     ) {
         self.fileManager = fileManager

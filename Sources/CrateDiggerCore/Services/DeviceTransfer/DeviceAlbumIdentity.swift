@@ -31,6 +31,16 @@ public struct DeviceAlbumIdentity: Hashable, Codable, Sendable {
         self.album = Self.fold(OutputPathPlanner.strippingDiscSuffix(album))
     }
 
+    /// The bucket of files with no album tag ("Unknown Album"): loose
+    /// singles that share an artist, not a release. The matcher pairs them
+    /// by title only and never reads them as another release, so one new
+    /// single never offers to replace forty unrelated ones.
+    public var isUnknownAlbum: Bool {
+        album == Self.unknownAlbum
+    }
+
+    private static let unknownAlbum = fold(OutputPathPlanner.defaultUnknownAlbum)
+
     /// One identity per track id, reconciled across the set via
     /// `OutputPathPlanner.albumFolderKeys` (year dropped, then case/diacritic folded).
     /// Call it once per side (the tracks sent, the device catalog): reconciliation

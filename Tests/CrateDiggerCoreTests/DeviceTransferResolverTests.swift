@@ -595,6 +595,30 @@ final class DeviceTransferResolverTests: XCTestCase {
         XCTAssertEqual(relative(plan.copies).last, "Miles Davis/Milestones/02 Track 2.flac")
     }
 
+    // MARK: - Loose singles
+
+    /// Forty singles under "Unknown Album" and one new one sent: the new one
+    /// fills in beside them, and nothing is offered for deletion, whatever
+    /// the answers.
+    func testOneNewLooseSingleRemovesNothing() throws {
+        let profile = copyProfile()
+        let onDevice = try (1...40).map { number in
+            try deviceTrack("Music/Miles Davis/Unknown Album/Single \(number).flac", album: "",
+                            number: 1, title: "Single \(number)")
+        }
+        let single = track(album: "", number: 1, title: "New Single",
+                           path: scratch.appendingPathComponent("Src/Singles/New Single.flac").path)
+
+        let review = resolver.review(sending: [single], catalog: onDevice, profile: profile, mountedAt: device, leftAlone: [])
+        XCTAssertEqual(review.albums.map(\.status), [.gaps])
+        XCTAssertTrue(review.needingDecision.isEmpty)
+
+        let plan = try resolver.resolve(review, decisions: decide(review, .replace), profile: profile, mountedAt: device)
+        XCTAssertTrue(plan.deletions.isEmpty)
+        XCTAssertEqual(plan.copies.map(\.kind), [.gap])
+        XCTAssertEqual(relative(plan.copies), ["Music/Miles Davis/Unknown Album/New Single.flac"])
+    }
+
     // MARK: - Covers
 
     func testCoverFoldersFollowTheSwitch() throws {

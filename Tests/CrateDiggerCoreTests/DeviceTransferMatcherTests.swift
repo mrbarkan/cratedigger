@@ -528,6 +528,77 @@ final class DeviceTransferMatcherTests: XCTestCase {
         XCTAssertEqual(result[0].missing.map(\.track.fileURL.path), ["/Src/Kind of Blue/Track 1.mp3"])
     }
 
+    // MARK: - Slot-mates (old upgrades left two forms)
+
+    /// An MP3 and a FLAC of one track side by side: the FLAC sent pairs with
+    /// the FLAC, whichever order the scan listed them in.
+    func testSlotMatePrefersTheSentForm() {
+        let sending = album("/Src/Kind of Blue", numbers: [1, 2])
+        let flac = album("/Device/Music/Kind of Blue", numbers: [1, 2])
+        let mp3 = album("/Device/Music/Kind of Blue", numbers: [1, 2], format: "MP3", bitrate: 128, ext: "mp3")
+
+        for catalog in [mp3 + flac, flac + mp3] {
+            let result = compare(sending, catalog)
+            XCTAssertEqual(result.map(\.status), [.present])
+            XCTAssertTrue(result[0].changed.isEmpty)
+        }
+    }
+
+    func testSlotMateChoiceDoesNotDependOnScanOrder() {
+        // Neither device form is the one sent: the pick is still the same.
+        let sending = album("/Src/Kind of Blue", numbers: [1], format: "ALAC", bitrate: nil, ext: "m4a")
+        let flac = album("/Device/Music/Kind of Blue", numbers: [1])
+        let mp3 = album("/Device/Music/Kind of Blue", numbers: [1], format: "MP3", bitrate: 128, ext: "mp3")
+
+        let forward = compare(sending, mp3 + flac)
+        let backward = compare(sending, flac + mp3)
+
+        XCTAssertEqual(forward[0].changed.map(\.device.track.fileURL), backward[0].changed.map(\.device.track.fileURL))
+    }
+
+    // MARK: - Loose singles (no album tag)
+
+    /// Forty singles filed under "Unknown Album", each its own track 1: one
+    /// new single is a gap to fill, not another release of all forty.
+    func testLooseSinglesAreNotARelease() {
+        let device = (1...40).map { number in
+            track(album: "", number: 1, title: "Single \(number)",
+                  path: "/Device/Music/Miles Davis/Unknown Album/Single \(number).flac", trackTotal: 1)
+        }
+        let sending = [track(album: "", number: 1, title: "New Single", path: "/Src/Singles/New Single.flac", trackTotal: 2)]
+
+        let result = compare(sending, device)
+
+        XCTAssertEqual(result.map(\.status), [.gaps])
+        XCTAssertTrue(result[0].differences.isEmpty)
+        XCTAssertEqual(result[0].missing.map(\.track.title), ["New Single"])
+        XCTAssertEqual(result[0].deviceFolder?.path, "/Device/Music/Miles Davis/Unknown Album")
+    }
+
+    func testLooseSingleAlreadyThereIsPresentByTitle() {
+        let device = (1...5).map { number in
+            track(album: "", number: 1, title: "Single \(number)",
+                  path: "/Device/Music/Miles Davis/Unknown Album/Single \(number).flac")
+        }
+        let sending = [track(album: "", number: 1, title: "single 4", path: "/Src/Singles/Single 4.flac")]
+
+        XCTAssertEqual(compare(sending, device).map(\.status), [.present])
+    }
+
+    /// Art is each single's own: the one sent is compared with its own
+    /// counterpart, not with whichever single the device listed first.
+    func testLooseSinglesCompareArtTrackByTrack() {
+        let device = [
+            track(album: "", number: 1, title: "Single 1", path: "/Device/Music/Miles Davis/Unknown Album/Single 1.flac", art: 300),
+            track(album: "", number: 1, title: "Single 2", path: "/Device/Music/Miles Davis/Unknown Album/Single 2.flac", art: 600)
+        ]
+        let same = [track(album: "", number: 1, title: "Single 2", path: "/Src/Singles/Single 2.flac", art: 600)]
+        let bigger = [track(album: "", number: 1, title: "Single 2", path: "/Src/Singles/Single 2.flac", art: 1200)]
+
+        XCTAssertEqual(compare(same, device).map(\.status), [.present])
+        XCTAssertEqual(compare(bigger, device).first?.differences, [.artSize])
+    }
+
     func testDuplicateSourcePathsCountedOnce() {
         let one = album("/Src/Kind of Blue", numbers: [1, 2])
         let sending = one + one
