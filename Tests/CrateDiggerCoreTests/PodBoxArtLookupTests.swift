@@ -36,8 +36,9 @@ final class PodBoxArtLookupTests: XCTestCase {
                        .found("Artwork/People/Herbert, Frank.jpg"))
     }
 
-    /// The player takes any file whose name matches, and only finds out when
-    /// it decodes it; which of two it reads first is the folder's order.
+    /// The player's `aa_central_load` skips dot-names and names without a
+    /// picture extension, so these are uncertain only out of caution: a
+    /// matching name that might be a picture leaves the artist alone.
     func testPeopleFileWithWrongExtensionIsUncertain() {
         assertUncertain(lookup("Frank Herbert", [], tree(people: ["Frank Herbert.txt"])))
         assertUncertain(lookup("Frank Herbert", [], tree(people: ["Frank Herbert.jpg", "._Frank Herbert.jpg"])))
@@ -233,6 +234,85 @@ final class PodBoxArtLookupTests: XCTestCase {
         XCTAssertEqual(PodBoxArtLookup.artistPicture(for: "Sigur Rós", albumFolders: [], tree: tree),
                        .found("Artwork/People/Sigur R\u{F3}s.jpg"))
         iPod.assertPlayerStateUntouched(since: before)
+        XCTAssertEqual(tree.musicFolder, "Music")
+        XCTAssertTrue(tree.listedFolders?.isSuperset(of: ["Music", "Music/Prince", "Music/Rock/AC-DC", ""]) == true)
+    }
+
+    private func scanTrack(_ iPod: FakeIPod, _ relative: String, artist: String) -> LoadedTrack {
+        LoadedTrack(track: AudioTrack(fileURL: iPod.root.appendingPathComponent(relative), title: "t", artist: artist),
+                    metadata: ConversionMetadata(artist: artist))
+    }
+
+    private func setHidden(_ url: URL) throws {
+        var url = url
+        var values = URLResourceValues()
+        values.isHidden = true
+        try url.setResourceValues(values)
+        XCTAssertEqual(try url.resourceValues(forKeys: [.isHiddenKey]).isHidden, true, "the flag did not stick")
+    }
+
+    /// Re-review item 1: on FAT the hidden attribute is the hidden flag, and
+    /// Windows Media Player writes `Folder.jpg` hidden. The player ignores the
+    /// attribute, so the scan must too, for files and for folders.
+    func testHiddenFlagFileAndFolderAreStillSeen() throws {
+        let iPod = try FakeIPod()
+        try iPod.addFile("Music/Prince/a.mp3", Data([0, 0, 0, 0x20]))
+        try setHidden(try iPod.addFile("Music/Prince/Folder.jpg", Data([0xff, 0xd8])))
+        try iPod.addFile("Music/Weezer/Blue/01.mp3", Data([0, 0, 0, 0x20]))
+        try iPod.addFile("Music/Weezer/folder.jpg", Data([0xff, 0xd8]))
+        try setHidden(iPod.root.appendingPathComponent("Music/Weezer"))
+        let catalog = [scanTrack(iPod, "Music/Prince/a.mp3", artist: "Prince"),
+                       scanTrack(iPod, "Music/Weezer/Blue/01.mp3", artist: "Weezer")]
+
+        let tree = DeviceArtTree.scan(volumeRoot: iPod.root, musicSubpath: "Music", catalog: catalog)
+
+        XCTAssertEqual(PodBoxArtLookup.artistPicture(for: "Prince", albumFolders: ["Music/Prince"], tree: tree),
+                       .found("Music/Prince/Folder.jpg"))
+        XCTAssertEqual(PodBoxArtLookup.artistPicture(for: "Weezer", albumFolders: ["Music/Weezer/Blue"], tree: tree),
+                       .found("Music/Weezer/folder.jpg"))
+    }
+
+    /// Re-review item 2: "listed, no image" and "never listed" differ.
+    func testUnlistedFolderIsUncertain() throws {
+        let partial = tree(listed: ["Music", "Music/Air/Moon Safari"])
+        assertUncertain(lookup("Air", ["Music/Air/Moon Safari"], partial))
+        let whole = tree(listed: ["Music", "Music/Air", "Music/Air/Moon Safari"])
+        XCTAssertEqual(lookup("Air", ["Music/Air/Moon Safari"], whole), .none)
+
+        // From a real scan: a catalog track whose folder is not on the device.
+        let iPod = try FakeIPod()
+        let tree = DeviceArtTree.scan(volumeRoot: iPod.root, musicSubpath: "Music",
+                                      catalog: [scanTrack(iPod, "Music/Air/Talkie Walkie/01.mp3", artist: "Air")])
+        assertUncertain(PodBoxArtLookup.artistPicture(for: "Air", albumFolders: ["Music/Air/Talkie Walkie"], tree: tree))
+    }
+
+    private func tree(listed: Set<String>) -> DeviceArtTree {
+        DeviceArtTree(peopleFiles: [], coverFiles: [], folderImages: [:], foldersWithAudio: [],
+                      artistsByFolder: [:], libraryFolders: [], listedFolders: listed)
+    }
+
+    /// Re-review item 3: the player also gives an ebook author the picture
+    /// of a folder named for them. Books are not modelled: uncertain.
+    func testBookFolderNamedForThePersonIsUncertain() throws {
+        let iPod = try FakeIPod()
+        try iPod.addFile("Music/Leonard Cohen/Songs/01.mp3", Data([0, 0, 0, 0x20]))
+        try iPod.addFile("Books/Leonard Cohen/cover.jpg", Data([0xff, 0xd8]))
+        try iPod.addFile("Music/Patti Smith/Horses/01.mp3", Data([0, 0, 0, 0x20]))
+        try iPod.addFile("Music/Patti Smith/Just Kids.epub", Data("PK".utf8))
+        try iPod.addFile("Music/Air/Moon Safari/01.mp3", Data([0, 0, 0, 0x20]))
+        let catalog = [scanTrack(iPod, "Music/Leonard Cohen/Songs/01.mp3", artist: "Leonard Cohen"),
+                       scanTrack(iPod, "Music/Patti Smith/Horses/01.mp3", artist: "Patti Smith"),
+                       scanTrack(iPod, "Music/Air/Moon Safari/01.mp3", artist: "Air")]
+
+        let tree = DeviceArtTree.scan(volumeRoot: iPod.root, musicSubpath: "Music", catalog: catalog)
+
+        XCTAssertTrue(tree.bookFolders.isSuperset(of: ["Books", "Books/Leonard Cohen", "Music/Patti Smith"]))
+        assertUncertain(PodBoxArtLookup.artistPicture(for: "Leonard Cohen", albumFolders: ["Music/Leonard Cohen/Songs"],
+                                                      tree: tree))
+        assertUncertain(PodBoxArtLookup.artistPicture(for: "Patti Smith", albumFolders: ["Music/Patti Smith/Horses"],
+                                                      tree: tree))
+        XCTAssertEqual(PodBoxArtLookup.artistPicture(for: "Air", albumFolders: ["Music/Air/Moon Safari"], tree: tree),
+                       .none)
     }
 
     // MARK: Person

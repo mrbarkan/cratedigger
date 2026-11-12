@@ -173,7 +173,37 @@ public final class ArtistPictureStore {
             isUnreadable = true
             return
         }
-        for record in records { insert(record) }
+        // A hand-edited file may carry a wrong folded key, a name with
+        // nothing the player keys, or two records the player takes for one
+        // person. Each is put right here, and the next save writes it back.
+        for var record in records {
+            let folded = PodBoxArtName.folded(record.displayName)
+            guard !folded.isEmpty else {
+                isDirty = true
+                continue
+            }
+            if record.foldedKey != folded {
+                record.foldedKey = folded
+                isDirty = true
+            }
+            var rivals = Set(Self.playerKeys(record.displayName).compactMap { byPlayerKey[$0] })
+            if byKey[folded] != nil { rivals.insert(folded) }
+            guard !rivals.isEmpty else {
+                insert(record)
+                continue
+            }
+            isDirty = true
+            if rivals.compactMap({ byKey[$0] }).contains(where: { Self.keeps($0, over: record) }) { continue }
+            for old in rivals { forget(foldedKey: old) }
+            insert(record)
+        }
+    }
+
+    /// Of two records for one person, the owner's pick wins, then the
+    /// newer check; on a tie the one already loaded stays.
+    private static func keeps(_ kept: ArtistPictureRecord, over other: ArtistPictureRecord) -> Bool {
+        if kept.pickedByUser != other.pickedByUser { return kept.pickedByUser }
+        return kept.checkedAt >= other.checkedAt
     }
 
     private func insert(_ record: ArtistPictureRecord) {

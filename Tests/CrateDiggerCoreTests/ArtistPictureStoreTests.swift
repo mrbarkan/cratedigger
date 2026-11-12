@@ -115,6 +115,35 @@ final class ArtistPictureStoreTests: XCTestCase {
         }
     }
 
+    /// Re-review item 5: a hand-edited file with a wrong folded key, a name
+    /// with no key, and two records the player takes for one person.
+    func testHandEditedFileIsPutRightOnLoad() throws {
+        try FileManager.default.createDirectory(at: indexDirectory, withIntermediateDirectories: true)
+        let old = "2026-01-01T00:00:00Z", new = "2026-06-01T00:00:00Z"
+        func row(_ key: String, _ name: String, _ date: String, picked: Bool = false) -> String {
+            "{\"foldedKey\":\"\(key)\",\"displayName\":\"\(name)\",\"outcome\":\"found\",\"pickedByUser\":\(picked),\"checkedAt\":\"\(date)\"}"
+        }
+        let json = "[" + [
+            row("wrong", "Herbert, Frank", old),
+            row("frankherbert", "Frank Herbert", new),          // same person as above, newer
+            row("beatles", "The Beatles", new),
+            row("beatles2", "Beatles, The", old, picked: true), // the owner's pick beats the newer one
+            row("", "!!!", new),                                // nothing the player keys: dropped
+        ].joined(separator: ",") + "]"
+        let file = indexDirectory.appendingPathComponent(ArtistPictureStore.fileName)
+        try Data(json.utf8).write(to: file)
+
+        let store = ArtistPictureStore(indexDirectory: indexDirectory, imageDirectory: imageDirectory)
+        XCTAssertEqual(store.allRecords().map(\.displayName), ["Beatles, The", "Frank Herbert"])
+        XCTAssertEqual(store.allRecords().map(\.foldedKey), ["beatles", "frankherbert"])
+        XCTAssertEqual(store.record(forName: "Herbert, Frank")?.displayName, "Frank Herbert")
+        XCTAssertEqual(store.record(forName: "The Beatles")?.pickedByUser, true)
+
+        try store.save() // the repair is written back
+        let reloaded = ArtistPictureStore(indexDirectory: indexDirectory, imageDirectory: imageDirectory)
+        XCTAssertEqual(reloaded.allRecords(), store.allRecords())
+    }
+
     func testOneRecordForBothOrdersOfACommaName() throws {
         let store = try makeStore()
         try store.set(record("Herbert, Frank"), prepared: nil)

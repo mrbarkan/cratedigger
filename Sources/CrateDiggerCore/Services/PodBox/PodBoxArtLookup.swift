@@ -18,16 +18,32 @@ public struct DeviceArtTree: Sendable {
     /// (1,024): the player then treats every folder it could not note as a
     /// library folder, which this simulation cannot reproduce.
     public let libraryTableFull: Bool
+    /// Folders whose contents were read. A folder outside it was never
+    /// looked at, so "no image there" cannot be known and the lookup answers
+    /// `.uncertain`. nil (a tree built in memory): every folder counts as read.
+    public let listedFolders: Set<String>?
+    /// Folders that hold ebooks or lie under a top-level `Books` folder. The
+    /// player gives a book's author the picture of a folder named for them
+    /// too; the simulation does not model books, so a person with such a
+    /// folder is `.uncertain`.
+    public let bookFolders: Set<String>
+    /// The music folder `scan` walked (`""` is the whole volume). nil for a
+    /// tree built in memory. A writer treats a track outside it as unknown ground.
+    public let musicFolder: String?
 
     /// The player's folder table size (`AA_LIBDIR_SLOTS`).
     static let libraryTableSlots = 1_024
+    /// What the player's book index takes for an ebook (`book_index_is_book`).
+    static let ebookExtensions: Set<String> = ["epub", "fb2", "mobi", "prc", "azw", "azw3", "pdb"]
+    static let booksFolder = "books"
 
     /// `libraryFolders` nil: derived from `artistsByFolder`, a folder whose
     /// child folders are named for two or more of the artists listed under
     /// them. `scan` passes the exact set, worked out from the catalog.
     public init(peopleFiles: [String], coverFiles: [String], folderImages: [String: [String]],
                 foldersWithAudio: Set<String>, artistsByFolder: [String: Set<String>],
-                libraryFolders: Set<String>? = nil, libraryTableFull: Bool = false) {
+                libraryFolders: Set<String>? = nil, libraryTableFull: Bool = false,
+                listedFolders: Set<String>? = nil, bookFolders: Set<String> = [], musicFolder: String? = nil) {
         self.peopleFiles = peopleFiles
         self.coverFiles = coverFiles
         self.folderImages = folderImages
@@ -35,6 +51,9 @@ public struct DeviceArtTree: Sendable {
         self.artistsByFolder = artistsByFolder
         self.libraryFolders = libraryFolders ?? Self.derivedLibraryFolders(artistsByFolder)
         self.libraryTableFull = libraryTableFull
+        self.listedFolders = listedFolders
+        self.bookFolders = bookFolders
+        self.musicFolder = musicFolder
     }
 
     /// Names PodBox never gives a picture to (compared trimmed and case-folded).
@@ -42,8 +61,14 @@ public struct DeviceArtTree: Sendable {
     static let peopleFolder = "Artwork/People"
     static let coversFolder = "Artwork/Covers"
 
-    /// One walk of the music folder, a listing of each folder above it and
-    /// of /Artwork, plus the catalog. Read-only: lists folders, never opens a file.
+    /// One walk of the music folder (and of a top-level `Books` folder), a
+    /// listing of each folder above it and of /Artwork, plus the catalog.
+    /// Read-only: lists folders, never opens a file.
+    ///
+    /// The walk uses `readdir` and skips only names starting with ".", as
+    /// the player does. It must not skip files with the hidden flag: on FAT
+    /// that flag is the hidden attribute, which Windows Media Player sets on
+    /// the `Folder.jpg` it writes, and the player shows that picture anyway.
     public static func scan(volumeRoot: URL, musicSubpath: String, catalog: [LoadedTrack],
                             fileManager: FileManager = .default) -> DeviceArtTree {
         let music = nfc(trimmedSlashes(musicSubpath))
@@ -53,33 +78,66 @@ public struct DeviceArtTree: Sendable {
 
         var folderImages: [String: [String]] = [:]
         var foldersWithAudio = Set<String>()
+        var listedFolders = Set<String>()
+        var bookFolders = Set<String>()
         func note(fileNamed name: String, in folder: String) {
             let ext = (name as NSString).pathExtension.lowercased()
             if imageExtensions.contains(ext) {
                 folderImages[folder, default: []].append(name)
             } else if audioExtensions.contains(ext) {
                 foldersWithAudio.insert(folder)
+            } else if ebookExtensions.contains(ext) {
+                bookFolders.insert(folder)
+            }
+        }
+        func url(of folder: String) -> URL {
+            folder.isEmpty ? volumeRoot : volumeRoot.appendingPathComponent(folder, isDirectory: true)
+        }
+        /// Every file below `folder`, never into a dot-named folder or through a symlink.
+        func walk(_ folder: String, underBooks: Bool) {
+            guard let names = AppleDoubleSweeper.entryNames(inFolder: url(of: folder).path) else { return }
+            listedFolders.insert(folder)
+            if underBooks { bookFolders.insert(folder) }
+            for raw in names where !raw.hasPrefix(".") {
+                let name = nfc(raw)
+                let child = folder.isEmpty ? name : folder + "/" + name
+                var info = stat()
+                guard lstat(url(of: folder).appendingPathComponent(raw).path, &info) == 0 else { continue }
+                switch info.st_mode & S_IFMT {
+                case S_IFDIR:
+                    // The volume's Books folder is walked on its own below.
+                    if folder.isEmpty, name.lowercased() == booksFolder, !underBooks { continue }
+                    walk(child, underBooks: underBooks)
+                case S_IFREG:
+                    note(fileNamed: name, in: folder)
+                default:
+                    continue
+                }
             }
         }
 
-        // The music folder, recursively.
-        let musicURL = music.isEmpty ? volumeRoot : volumeRoot.appendingPathComponent(music, isDirectory: true)
-        let walker = fileManager.enumerator(at: musicURL, includingPropertiesForKeys: [.isDirectoryKey],
-                                            options: [.skipsHiddenFiles])
-        while let url = walker?.nextObject() as? URL {
-            guard (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) != true,
-                  let relative = paths.relative(url) else { continue }
-            note(fileNamed: nfc(url.lastPathComponent), in: parent(of: relative) ?? "")
-        }
+        walk(music, underBooks: false)
         // Each folder above it, the volume root included (a disc folder's
         // step up can reach it), each on its own.
         var above = parent(of: music)
         while let folder = above {
-            let url = folder.isEmpty ? volumeRoot : volumeRoot.appendingPathComponent(folder, isDirectory: true)
-            for name in files(in: url, fileManager) where !name.hasPrefix(".") {
-                note(fileNamed: name, in: folder)
+            if let names = AppleDoubleSweeper.entryNames(inFolder: url(of: folder).path) {
+                listedFolders.insert(folder)
+                for raw in names where !raw.hasPrefix(".") {
+                    var info = stat()
+                    if lstat(url(of: folder).appendingPathComponent(raw).path, &info) == 0,
+                       (info.st_mode & S_IFMT) == S_IFREG {
+                        note(fileNamed: nfc(raw), in: folder)
+                    }
+                }
             }
             above = parent(of: folder)
+        }
+        // A top-level Books folder (any case), unless the music walk was it.
+        if let names = AppleDoubleSweeper.entryNames(inFolder: volumeRoot.path),
+           let books = names.first(where: { $0.lowercased() == booksFolder }),
+           !isWithin(nfc(books), music) || music.isEmpty {
+            walk(nfc(books), underBooks: true)
         }
         for key in folderImages.keys { folderImages[key]?.sort() }
 
@@ -122,7 +180,8 @@ public struct DeviceArtTree: Sendable {
                              folderImages: folderImages, foldersWithAudio: foldersWithAudio,
                              artistsByFolder: artistsByFolder,
                              libraryFolders: Set(noted.filter { $0.value.count > 1 }.keys),
-                             libraryTableFull: noted.count > libraryTableSlots)
+                             libraryTableFull: noted.count > libraryTableSlots,
+                             listedFolders: listedFolders, bookFolders: bookFolders, musicFolder: music)
     }
 
     /// The name the player gives this track's pictures: the album artist,
@@ -178,8 +237,10 @@ public struct DeviceArtTree: Sendable {
         return Set(named.filter { $0.value.count > 1 }.keys)
     }
 
-    /// Every file in a folder, hidden ones included (the player's `readdir`
-    /// sees them all), NFC, sorted. Folders are left out.
+    /// Every file in a folder, dot-names included, NFC, sorted. Folders are
+    /// left out. The player itself skips dot-names and names without a
+    /// picture extension in /Artwork; keeping them here is only cautious: a
+    /// name that might be a picture can only ever leave an artist alone.
     private static func files(in folder: URL, _ fileManager: FileManager) -> [String] {
         guard let names = AppleDoubleSweeper.entryNames(inFolder: folder.path) else { return [] }
         return names.filter { name in
@@ -231,9 +292,17 @@ public struct DeviceArtTree: Sendable {
 /// also takes `cover`/`folder` from the folder above it.
 ///
 /// Where the answer depends on something the simulation cannot know (the
-/// order of the player's walks or of a folder listing, a full table, a file
-/// that is not a picture) the outcome is `.uncertain`, and a writer must
-/// treat that as "leave it alone".
+/// order of the player's walks or of a folder listing, a full table, a
+/// folder it never listed, an ebook author's folder) the outcome is
+/// `.uncertain`, and a writer must treat that as "leave it alone".
+///
+/// Two cautious departures from the player: a dot-name or a name without a
+/// picture extension in `/Artwork/People` that keys as the person gives
+/// `.uncertain`, although the player's `aa_central_load` skips both; and
+/// books are not modelled at all (the player notes folders named for an
+/// ebook's author as it does for tracks), so any folder holding ebooks or
+/// under a top-level `Books` folder that is named for the person gives
+/// `.uncertain`. Neither can ever make a writer hide a picture.
 public enum PodBoxArtLookup {
     public enum Outcome: Equatable, Sendable {
         /// The player finds no picture for this person: room for ours.
@@ -269,6 +338,12 @@ public enum PodBoxArtLookup {
                 return .uncertain("/Artwork/People/\(only) matches and is not a picture the player can show")
             }
             return .found(DeviceArtTree.peopleFolder + "/" + only)
+        }
+
+        // Books: the player settles an ebook author's picture with the
+        // tracks', from folders named for them. Not modelled.
+        if let book = tree.bookFolders.sorted().first(where: { namedFolder(around: $0, for: name) != nil }) {
+            return .uncertain("\(book) holds books, and the player may take its picture for \(name)")
         }
 
         let tracks = Array(Set(albumFolders.map { DeviceArtTree.nfc(DeviceArtTree.trimmedSlashes($0)) })).sorted()
@@ -352,18 +427,38 @@ public enum PodBoxArtLookup {
         return String(file[..<dot])
     }
 
-    /// The image the player takes for a folder, or `.none`.
+    /// The image the player takes for a folder, or `.none`. A folder the
+    /// scan never listed is `.uncertain`: no image there was never seen.
     private static func image(in folder: String, tree: DeviceArtTree) -> Outcome {
+        if let unlisted = unlisted(folder, tree) { return unlisted }
         if let file = named(folderImageStems, in: folder, tree: tree) {
             return .found(join(folder, file))
         }
         guard isDiscFolder(DeviceArtTree.lastComponent(folder)), let up = DeviceArtTree.parent(of: folder) else {
             return .none
         }
+        if let unlisted = unlisted(up, tree) { return unlisted }
         if let file = named(discFolderStems, in: up, tree: tree) {
             return .found(join(up, file))
         }
         return .none
+    }
+
+    private static func unlisted(_ folder: String, _ tree: DeviceArtTree) -> Outcome? {
+        guard let listed = tree.listedFolders, !listed.contains(folder) else { return nil }
+        return .uncertain("\(folder.isEmpty ? "the volume root" : folder) was not read, so its pictures are unknown")
+    }
+
+    /// `folder` or one of the three above it (never the volume root) when
+    /// its name keys as `name`: what the player notes for a file there.
+    private static func namedFolder(around folder: String, for name: String) -> String? {
+        var current: String? = folder
+        for _ in 0...3 {
+            guard let path = current, !path.isEmpty else { return nil }
+            if PodBoxArtName.matches(DeviceArtTree.lastComponent(path), name) { return path }
+            current = DeviceArtTree.parent(of: path)
+        }
+        return nil
     }
 
     /// The first `<stem>.<ext>` in the folder, stems then extensions in
