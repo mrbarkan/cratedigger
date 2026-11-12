@@ -89,15 +89,11 @@ extension LibraryViewModel {
     }
 
     func artistProfile(named name: String) -> ArtistProfile? {
-        artistProfiles[PodBoxArtName.folded(name)]
+        artistProfilesModel.profile(named: name)
     }
 
     func artistSummary(named name: String) -> ArtistLibrarySummary? {
         artistSummaries[PodBoxArtName.folded(name)]
-    }
-
-    func isLookingUpArtist(_ name: String) -> Bool {
-        artistLookupsRunning.contains(PodBoxArtName.folded(name))
     }
 
     /// "Show Artist" and the album page's artist link: the inspector shows
@@ -155,7 +151,10 @@ extension LibraryViewModel {
         if let task = artistProfileStoreTask, artistProfileStoreKey == key { return task }
         let replacing = artistProfileStoreTask != nil
         let task = Task { () -> ArtistProfileStore in
-            if replacing { await self.artistProfileStoreDrained() }
+            if replacing {
+                await self.flushArtistLookupSaves()
+                await self.artistProfileStoreDrained()
+            }
             return await Task.detached(priority: .userInitiated) { ArtistProfileStore(indexDirectory: folder) }.value
         }
         artistProfileStoreTask = task
@@ -197,13 +196,63 @@ extension LibraryViewModel {
         if let key, artistProfileStoreKey != key { return nil }
         artistProfileStoreUsers += 1
         let value = await Task.detached(priority: .userInitiated) { await work(store) }.value
+        releaseArtistProfileStore()
+        return value
+    }
+
+    /// One holder of the store is done; the drain waiters go on when none is left.
+    private func releaseArtistProfileStore() {
         artistProfileStoreUsers -= 1
         if artistProfileStoreUsers == 0 {
             let waiters = artistProfileStoreDrainWaiters
             artistProfileStoreDrainWaiters = []
             waiters.forEach { $0.resume() }
         }
-        return value
+    }
+
+    /// Writes the background lookups' results that only the store's memory
+    /// holds (`ArtistLookupSaveSchedule`), off the main actor, to the store
+    /// they landed in (never another one made since). Called when the
+    /// worker pauses or goes idle, and before the store is swapped or the
+    /// index moved.
+    func flushArtistLookupSaves() async {
+        guard let store = artistUnsavedStore else { return }
+        artistUnsavedStore = nil
+        artistLookupSaves.saved(at: .now)
+        artistProfileStoreUsers += 1
+        let failure = await Task.detached(priority: .utility) { () -> String? in
+            do {
+                try store.save()
+                return nil
+            } catch {
+                return Self.logCase(error)
+            }
+        }.value
+        releaseArtistProfileStore()
+        if let failure { AppLog.library.notice("Artist lookups not saved (\(failure, privacy: .public))") }
+    }
+
+    /// The same, now, on the main actor: at quit and before the library's
+    /// drive is ejected, when nothing can wait. One small file write.
+    func flushArtistLookupSavesNow() {
+        guard let store = artistUnsavedStore else { return }
+        artistUnsavedStore = nil
+        artistLookupSaves.saved(at: .now)
+        do {
+            try store.save()
+        } catch {
+            AppLog.library.notice("Artist lookups not saved (\(Self.logCase(error), privacy: .public))")
+        }
+    }
+
+    /// The library as the lookups read it, built once per index change (the
+    /// track store's tracks copied once, then grouped off the main actor).
+    func artistLookupLibrary() async -> ArtistLookupLibrary {
+        if let task = artistLookupLibraryTask { return await task.value }
+        let tracks = currentTrackStore().allTracks
+        let task = Task.detached(priority: .utility) { ArtistLookupLibrary(tracks: tracks) }
+        artistLookupLibraryTask = task
+        return await task.value
     }
 
     /// Returns once no writer holds a profile store.
@@ -217,6 +266,7 @@ extension LibraryViewModel {
     func freezeArtistProfileStore() async {
         artistProfileStoreFrozen = true
         await artistProfileStoreDrained()
+        await flushArtistLookupSaves()
     }
 
     /// The move is over and the folder it left in effect is the one the
@@ -281,16 +331,22 @@ extension LibraryViewModel {
         }
     }
 
-    /// Reads every profile off the main actor and publishes them. A later
-    /// reload always wins over an earlier one still reading.
+    /// Reads every profile off the main actor and publishes them, only when
+    /// they differ from what is shown (compared off the main actor too). A
+    /// later reload always wins over an earlier one still reading.
     func reloadArtistProfiles() {
         artistProfilesGeneration += 1
         let generation = artistProfilesGeneration
+        let shown = artistProfilesModel.profiles
         Task {
             let store = await currentArtistProfileStore()
-            let profiles = await Task.detached(priority: .userInitiated) { store.allProfiles() }.value
-            guard generation == artistProfilesGeneration else { return }
-            artistProfiles = Dictionary(profiles.map { ($0.foldedKey, $0) }, uniquingKeysWith: { first, _ in first })
+            let changed = await Task.detached(priority: .userInitiated) { () -> [String: ArtistProfile]? in
+                let profiles = Dictionary(store.allProfiles().map { ($0.foldedKey, $0) },
+                                          uniquingKeysWith: { first, _ in first })
+                return profiles == shown ? nil : profiles
+            }.value
+            guard generation == artistProfilesGeneration, let changed else { return }
+            artistProfilesModel.publish(changed)
         }
     }
 
@@ -595,10 +651,9 @@ extension LibraryViewModel {
         }
         artistLookupsRunning.insert(key)
         let run = foregroundArtistLookupRun()
-        let tracks = currentTrackStore().allTracks
         Task {
+            let library = await artistLookupLibrary()
             let outcome = await withArtistProfileStore { store -> Result<Void, Error> in
-                let library = ArtistLookupLibrary(tracks: tracks)
                 let titles = library.albumTitles(for: name)
                 let picture = library.picture(for: name)
                 do {
@@ -631,6 +686,40 @@ extension LibraryViewModel {
         var resetFirst = queued.resetFirst
         if case .confirmed? = artistProfile(named: queued.name)?.identity { resetFirst = false }
         runArtistLookup(queued.name, resetFirst: resetFirst)
+    }
+
+    /// What went wrong, for the log, without anything that can carry a path
+    /// or an artist's name: the error's kind and case only.
+    nonisolated static func logCase(_ error: Error) -> String {
+        switch error {
+        case let store as ArtistProfileStoreError:
+            switch store {
+            case .unreadableStore: return "profiles file unreadable"
+            case .unreachableIndexFolder: return "index folder unreachable"
+            case .unnamedArtist: return "unnamed artist"
+            case .unreadablePhoto: return "unreadable photo"
+            case .photoTooLarge: return "photo too large"
+            }
+        case let lookup as ArtistLookupError:
+            switch lookup {
+            case .notLookedUp: return "not looked up"
+            case .pictureLookupFailed: return "picture lookup failed"
+            case .timedOut: return "timed out"
+            }
+        case let source as ArtistPictureSourceError:
+            switch source {
+            case .quota: return "quota"
+            case .malformed: return "malformed answer"
+            case .http(let status): return "HTTP \(status)"
+            case .transport: return "transport"
+            case .refusedURL: return "refused URL"
+            }
+        case is CancellationError:
+            return "cancelled"
+        default:
+            let error = error as NSError
+            return "\(error.domain) \(error.code)"
+        }
     }
 
     /// Words for the owner: a service not answering is "try later", never
@@ -727,7 +816,7 @@ extension LibraryViewModel {
     /// priority names already looked up this launch, and any artist a lookup
     /// is running for.
     func nextBackgroundArtist(session: ArtistLookupSession) async -> BackgroundArtistTarget? {
-        let tracks = currentTrackStore().allTracks
+        let library = await artistLookupLibrary()
         let running = artistLookupsRunning
         let skipped = session.skipped, priorityDone = session.priorityDone
         let priority = backgroundLookupPriority().filter { name in
@@ -736,7 +825,6 @@ extension LibraryViewModel {
         }
         let store = await currentArtistProfileStore()
         return await Task.detached(priority: .utility) { () -> BackgroundArtistTarget? in
-            let library = ArtistLookupLibrary(tracks: tracks)
             let due = ArtistLookupScheduler().due(artists: library.artists, profiles: { store.profile(forName: $0) },
                                                   priority: priority, now: Date())
             guard let name = due.first(where: { name in
@@ -786,17 +874,25 @@ extension LibraryViewModel {
         guard !Task.isCancelled, !isLibraryDisconnected, prefs.artistLookupsEnabled,
               currentArtistProfileStoreKey() == storeKey else { return .discarded }
         // Waits while the index is being moved, and lands nothing if the
-        // store it would land in is no longer the one the lookup read.
-        guard let failure = await withArtistProfileStore(ifKey: storeKey, { store -> Error? in
+        // store it would land in is no longer the one the lookup read. The
+        // file is written only now and then (`ArtistLookupSaveSchedule`).
+        let saveNow = artistLookupSaves.landed(at: .now)
+        guard let landed = await withArtistProfileStore(ifKey: storeKey, { store -> (failure: Error?, store: ArtistProfileStore) in
             do {
                 try result.apply(to: store, name: target.name, at: Date())
-                try store.save()
-                return nil
+                if saveNow { try store.save() }
+                return (nil, store)
             } catch {
-                return error
+                return (error, store)
             }
         }) else { return .discarded }
+        if saveNow {
+            artistLookupSaves.saved(at: .now)
+            artistUnsavedStore = nil
+        } else {
+            artistUnsavedStore = landed.store
+        }
         reloadArtistProfiles()
-        return failure.map { .failed($0) } ?? .done(photoTimedOut: result.photoTimedOut)
+        return landed.failure.map { .failed($0) } ?? .done(photoTimedOut: result.photoTimedOut)
     }
 }

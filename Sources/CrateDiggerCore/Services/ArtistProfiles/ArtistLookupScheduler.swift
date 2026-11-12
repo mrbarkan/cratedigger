@@ -191,6 +191,38 @@ public struct ArtistLookupSession: Sendable {
     }
 }
 
+/// When the background worker writes the profiles file: a result lands in
+/// the store's memory at once (the page shows it), but the file, which a
+/// save reads again and merges with, is written at most every
+/// `interval` or every `batch` results, whichever comes first, and when the
+/// worker pauses, goes idle or the app quits (the worker's to call).
+public struct ArtistLookupSaveSchedule: Sendable {
+    public static let interval: Duration = .seconds(30)
+    public static let batch = 20
+
+    private var unsaved = 0
+    private var lastSave: ContinuousClock.Instant
+
+    public init(now: ContinuousClock.Instant = .now) {
+        lastSave = now
+    }
+
+    /// Results applied since the last save.
+    public var hasUnsaved: Bool { unsaved > 0 }
+
+    /// A result landed in memory at `now`: whether to save the file now.
+    public mutating func landed(at now: ContinuousClock.Instant) -> Bool {
+        unsaved += 1
+        return unsaved >= Self.batch || now - lastSave >= Self.interval
+    }
+
+    /// The file was saved at `now`.
+    public mutating func saved(at now: ContinuousClock.Instant) {
+        unsaved = 0
+        lastSave = now
+    }
+}
+
 /// What the background worker does after a lookup failed (spec §4,
 /// Failures). Nothing is stored for the artist in any case.
 public enum ArtistLookupFailure: Equatable, Sendable {

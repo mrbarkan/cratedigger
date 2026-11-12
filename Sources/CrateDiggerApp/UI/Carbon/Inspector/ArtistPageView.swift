@@ -8,12 +8,14 @@ import SwiftUI
 /// When the lookup could not tell same-named acts apart, "Is this them?"
 /// takes the place of the facts and the bio.
 ///
-/// Reads only what the view model has already published (profiles,
-/// summaries, the top tracks); the one thing it loads itself is the
-/// portrait's thumbnail, off the main actor.
+/// Reads only what has already been published (the profiles in
+/// `ArtistProfilesModel`; the summaries and top tracks on the view model);
+/// the one thing it loads itself is the portrait's thumbnail, off the main
+/// actor.
 struct ArtistPageView: View {
     @Environment(\.carbon) private var theme
     @EnvironmentObject private var model: LibraryViewModel
+    @EnvironmentObject private var artistProfiles: ArtistProfilesModel
     @Environment(\.openURL) private var openURL
     let name: String
 
@@ -24,11 +26,11 @@ struct ArtistPageView: View {
     /// Wider than the album page's 78, for LAST PLAYED.
     private static let keyWidth: CGFloat = 94
 
-    private var profile: ArtistProfile? { model.artistProfile(named: name) }
+    private var profile: ArtistProfile? { artistProfiles.profile(named: name) }
     private var summary: ArtistLibrarySummary? { model.artistSummary(named: name) }
     private var facts: ArtistFacts { profile?.facts ?? ArtistFacts() }
     private var isLookedUp: Bool { ArtistLookupScheduler.isLookedUp(name) }
-    private var isLookingUp: Bool { model.isLookingUpArtist(name) }
+    private var isLookingUp: Bool { artistProfiles.isLookingUp(name) }
 
     private var uncertainCandidates: [ArtistIdentityCandidate]? {
         guard case .uncertain(let candidates)? = profile?.identity, !candidates.isEmpty else { return nil }

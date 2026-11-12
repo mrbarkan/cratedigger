@@ -157,6 +157,7 @@ final class LibraryViewModel: ObservableObject {
             // rebuilt: rebuilding costs a beat at library size and most index
             // changes are not followed by a search.
             searchHaystacks = nil
+            artistLookupLibraryTask = nil
             recomputeSortedCollections()
             recomputePendingSyncMarks()
             scheduleArtistSummaries()
@@ -1196,9 +1197,13 @@ final class LibraryViewModel: ObservableObject {
 
     // MARK: Artist profiles (`LibraryViewModel+ArtistProfiles`)
 
+    /// The artist profiles and the running lookups, in a model of their own
+    /// that only the artist views observe (`ArtistProfilesModel`).
+    let artistProfilesModel = ArtistProfilesModel()
     /// Every artist profile, by folded key (`PodBoxArtName.folded`), as the
-    /// store last read off the main actor. The artist page reads this only.
-    @Published var artistProfiles: [String: ArtistProfile] = [:]
+    /// store last read off the main actor. Not published here: see
+    /// `artistProfilesModel`.
+    var artistProfiles: [String: ArtistProfile] { artistProfilesModel.profiles }
     /// What the browsed local source holds of each artist, by folded key.
     /// Rebuilt off the main actor when the index changes, never per click.
     @Published var artistSummaries: [String: ArtistLibrarySummary] = [:]
@@ -1220,8 +1225,12 @@ final class LibraryViewModel: ObservableObject {
     @Published var artistEditRequest: String?
     /// The artist whose photo viewer to present. One-shot, like `artistEditRequest`.
     @Published var artistPhotoViewerRequest: String?
-    /// Folded keys of the artists a lookup the owner asked for is running on.
-    @Published var artistLookupsRunning: Set<String> = []
+    /// Folded keys of the artists a lookup (the owner's or the worker's) is
+    /// running on. Kept in `artistProfilesModel`, which the page observes.
+    var artistLookupsRunning: Set<String> {
+        get { artistProfilesModel.running }
+        set { artistProfilesModel.setRunning(newValue) }
+    }
     /// The one profile store for the crates folder (its `save` deletes photo
     /// files its own profiles do not name, so two must never share a folder).
     /// Made off the main actor, since it reads the file; see
@@ -1238,6 +1247,14 @@ final class LibraryViewModel: ObservableObject {
     /// writer takes the store until the new folder is in effect.
     var artistProfileStoreFrozen = false
     var artistProfileStoreThawWaiters: [CheckedContinuation<Void, Never>] = []
+    /// When the background lookups' results are written to the file.
+    var artistLookupSaves = ArtistLookupSaveSchedule()
+    /// The store holding background results not yet saved, if any
+    /// (`flushArtistLookupSaves`).
+    var artistUnsavedStore: ArtistProfileStore?
+    /// The library as the artist lookups read it (`ArtistLookupLibrary`),
+    /// built once per index change, off the main actor.
+    var artistLookupLibraryTask: Task<ArtistLookupLibrary, Never>?
     /// A lookup the owner asked for while one was already running for that
     /// artist, by folded key: the name and whether to reset first, the
     /// latest ask winning. Run when the running one ends, never dropped.
@@ -4574,6 +4591,7 @@ final class LibraryViewModel: ObservableObject {
         // so stale/renamed/removed crates can't survive. Rare, non-hot path.
         crateTracksCache.removeAll()
         trackStore = nil   // rebuilt lazily for the (possibly new) folder
+        artistLookupLibraryTask = nil
         resetListeningStoreCache()
         // Decide where the index is before anything reads it. A library on an
         // unplugged drive loads read-only from the local copy, and none of the

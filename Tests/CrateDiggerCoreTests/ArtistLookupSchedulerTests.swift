@@ -163,4 +163,20 @@ final class ArtistLookupSchedulerTests: XCTestCase {
         let quick = try await ArtistLookupRun.bounded(.seconds(20)) { 7 }
         XCTAssertEqual(quick, 7)
     }
+
+    func testTheWorkerSavesEvery30SecondsOrEvery20Results() {
+        let start = ContinuousClock.now
+        var schedule = ArtistLookupSaveSchedule(now: start)
+        XCTAssertFalse(schedule.hasUnsaved)
+        // Nineteen quick results stay in memory; the twentieth saves.
+        for second in 1...19 { XCTAssertFalse(schedule.landed(at: start + .seconds(second))) }
+        XCTAssertTrue(schedule.hasUnsaved)
+        XCTAssertTrue(schedule.landed(at: start + .seconds(20)))
+        schedule.saved(at: start + .seconds(20))
+        XCTAssertFalse(schedule.hasUnsaved)
+
+        // A slow trickle saves once 30 s have passed since the last save.
+        XCTAssertFalse(schedule.landed(at: start + .seconds(45)))
+        XCTAssertTrue(schedule.landed(at: start + .seconds(50)))
+    }
 }

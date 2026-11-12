@@ -48,7 +48,9 @@ final class EditArtistSheetController: ThemedSheetHostingController {
 private struct EditArtistSheetView: View {
     @Environment(\.carbon) private var theme
     let name: String
-    @ObservedObject var model: LibraryViewModel
+    /// For its actions only: the sheet observes the profiles, not the whole view model.
+    let model: LibraryViewModel
+    @ObservedObject private var profiles: ArtistProfilesModel
     let maxBodyHeight: CGFloat
     let onClose: () -> Void
 
@@ -67,6 +69,7 @@ private struct EditArtistSheetView: View {
     init(name: String, model: LibraryViewModel, maxBodyHeight: CGFloat, onClose: @escaping () -> Void) {
         self.name = name
         self.model = model
+        profiles = model.artistProfilesModel
         self.maxBodyHeight = maxBodyHeight
         self.onClose = onClose
         let profile = model.artistProfile(named: name)
@@ -79,7 +82,7 @@ private struct EditArtistSheetView: View {
         _linksText = State(initialValue: draft.owner.links.map(ArtistEditDraft.linksText) ?? "")
     }
 
-    private var profile: ArtistProfile? { model.artistProfile(named: name) }
+    private var profile: ArtistProfile? { profiles.profile(named: name) }
     private var fetched: ArtistFacts { draft.fetched }
     private var canSave: Bool { draft != original && draft.pasteIsReadable }
 

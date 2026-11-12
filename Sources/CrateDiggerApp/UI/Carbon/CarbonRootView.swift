@@ -45,6 +45,7 @@ struct CarbonRootView: View {
         // The activity lamp is a titlebar accessory (MainWindowController) so
         // it sits in the actual titlebar strip, mirroring the traffic lights.
         .environmentObject(model)
+        .environmentObject(model.artistProfilesModel)
         .carbonThemed(mode: mode)
         // Whole-window Finder drop → straight into the Prep Crate, with a HUD
         // naming the destination while the drag hovers (and calling out

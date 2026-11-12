@@ -80,6 +80,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         // The one snapshot whose position has to be exact.
         mainWindowController?.model.savePlaybackSnapshot()
         mainWindowController?.model.clearWidgetFeed()
+        // Background artist lookups not yet written, before the copy below.
+        mainWindowController?.model.flushArtistLookupSavesNow()
         // A library kept on an external drive leaves a fresh copy of its index
         // on this Mac, so it can still be browsed next launch without the drive.
         mainWindowController?.model.refreshLibraryIndexCopyNow()

@@ -98,10 +98,13 @@ final class ArtistLookupWorker {
         while !Task.isCancelled, let library {
             if library.artistLookupPauses(offline: isOffline).isPaused
                 || (stoppedAtStore != nil && stoppedAtStore == library.artistProfileStoreKey) {
+                // What landed since the last save is written before the wait.
+                await library.flushArtistLookupSaves()
                 await nap(Self.pausedRecheck)
                 continue
             }
             guard let target = await library.nextBackgroundArtist(session: session) else {
+                await library.flushArtistLookupSaves()
                 await nap(Self.idleRecheck)
                 continue
             }

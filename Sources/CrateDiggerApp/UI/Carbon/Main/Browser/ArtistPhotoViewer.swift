@@ -13,6 +13,7 @@ enum ArtistPhotoViewerPresenter {
         close()
         let view = ArtistPhotoNavigator(name: name, onClose: { close() })
             .environmentObject(model)
+            .environmentObject(model.artistProfilesModel)
             .environment(\.carbon, theme)
         let w = BorderlessBookletWindow(contentView: AnyView(view))
         // A dark room whatever the app's Appearance says, as the album viewer
@@ -36,6 +37,7 @@ enum ArtistPhotoViewerPresenter {
 struct ArtistPhotoNavigator: View {
     @Environment(\.carbon) private var theme
     @EnvironmentObject private var model: LibraryViewModel
+    @EnvironmentObject private var artistProfiles: ArtistProfilesModel
     let name: String
     let onClose: () -> Void
 
@@ -62,7 +64,7 @@ struct ArtistPhotoNavigator: View {
 
     private static let barHeight = ArtworkBar.barHeight
 
-    private var profile: ArtistProfile? { model.artistProfile(named: name) }
+    private var profile: ArtistProfile? { artistProfiles.profile(named: name) }
     private var photos: [ArtistPhoto] { profile?.photos ?? [] }
     private var current: ArtistPhoto? { photos.indices.contains(index) ? photos[index] : nil }
     private var isDefault: Bool { current.map { $0.hash == profile?.defaultPhoto } ?? false }
