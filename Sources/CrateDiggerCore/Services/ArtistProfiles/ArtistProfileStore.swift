@@ -55,7 +55,8 @@ public final class ArtistProfileStore: @unchecked Sendable {
     /// backup is ever written over.
     public static let backupFileName = fileName + ".bak"
 
-    private let indexDirectory: URL
+    /// The library index folder this store reads and writes.
+    public let indexDirectory: URL
     private let fileURL: URL
     private let photosDirectory: URL
     private let fileManager: FileManager
@@ -342,6 +343,15 @@ public final class ArtistProfileStore: @unchecked Sendable {
         return nil
     }
 
+    /// Whether a photo's file is there, without reading it: a cheap check
+    /// for many artists at once. `photoData` is the one that proves the bytes.
+    public func hasPhotoFile(hash: String) -> Bool {
+        guard Self.isHexHash(hash) else { return false }
+        return ArtistPhotoImage.fileExtensions.contains { fileExtension in
+            fileManager.fileExists(atPath: photosDirectory.appendingPathComponent(hash + "." + fileExtension).path)
+        }
+    }
+
     /// Where a photo's file is: `<hash>.png` when that exists, else
     /// `<hash>.jpg`. Something that is not a hash names no file of ours; it
     /// gives the folder's `invalid.jpg`, which nothing writes.
@@ -529,6 +539,7 @@ public final class ArtistProfileStore: @unchecked Sendable {
         }
         result.noPhoto = first.noPhoto || second.noPhoto
         result.notOnIPod = first.notOnIPod || second.notOnIPod
+        result.photoSearchedAt = [first.photoSearchedAt, second.photoSearchedAt].compactMap { $0 }.max()
         let secondIsNewer = (second.checkedAt ?? .distantPast) > (first.checkedAt ?? .distantPast)
         let takeSecond = first.identity != .rejected && (second.identity == .rejected || secondIsNewer)
         if takeSecond {

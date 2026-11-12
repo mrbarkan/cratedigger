@@ -55,11 +55,10 @@ extension LibraryViewModel {
         refreshAvailableCrates()
         selectSource(.localAll)
 
-        let store = await currentArtistProfileStore()
         let photo = ArtistPageFixture.portraitJPEG()
         let secondPhoto = ArtistPageFixture.portraitJPEG(warmth: 0.1)
         let profiles = fixture.profiles
-        let failure = await Task.detached { () -> String? in
+        let failure = await withArtistProfileStore { store -> String? in
             do {
                 for profile in profiles {
                     store.update(name: profile.displayName) { $0 = profile }
@@ -78,7 +77,7 @@ extension LibraryViewModel {
             } catch {
                 return error.localizedDescription
             }
-        }.value
+        }
         if let failure { NSLog("[artist-page] fixture profiles not saved: %@", failure) }
         reloadArtistProfiles()
 

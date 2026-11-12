@@ -85,7 +85,9 @@ public enum ArtistPictureImage {
             : CGSize(width: width, height: height)
     }
 
-    private static func isAcceptable(_ size: CGSize) -> Bool {
+    /// Whether a picture of `size` makes a portrait the player can show. Also
+    /// read by `ArtistPictureProfiles` from a photo's recorded size.
+    static func isAcceptable(_ size: CGSize) -> Bool {
         let short = min(size.width, size.height), long = max(size.width, size.height)
         return short >= CGFloat(minimumSource)
             && long <= CGFloat(maximumSourcePixels)

@@ -543,8 +543,28 @@ private struct IntegrationsPreferencesView: View {
             SubsonicSettingsSection()
             LastFMSettingsSection()
             DiscogsSettingsSection()
+            ArtistLookupSettingsSection()
         }
         .formStyle(.grouped)
+    }
+}
+
+/// The background artist lookup (`ArtistLookupWorker`): on by default. Off
+/// stops it at once; Look Up Again on an artist page still works.
+private struct ArtistLookupSettingsSection: View {
+    @State private var enabled = PreferencesStore.shared.artistLookupsEnabled
+
+    var body: some View {
+        Section("Artist Profiles") {
+            Toggle("Look up artist info and photos", isOn: $enabled)
+                .onChange(of: enabled) { newValue in
+                    PreferencesStore.shared.artistLookupsEnabled = newValue
+                    NotificationCenter.default.post(name: ArtistLookupWorker.settingChanged, object: newValue)
+                }
+            Text("Only artist names are sent, to MusicBrainz, Wikipedia, Wikidata and Deezer.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
     }
 }
 

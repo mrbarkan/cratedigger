@@ -68,8 +68,11 @@ struct ArtistPageSelection: Equatable {
 ///
 /// One `ArtistProfileStore` per crates folder and library location, made
 /// after the folder resolves and made again when either changes (a library
-/// move, the drive going or coming back). Every writer starts with
-/// `refuseWhileLibraryDisconnected`.
+/// move, the drive going or coming back), only once every writer holding the
+/// old one is done (`withArtistProfileStore`), so two stores never overlap
+/// on one folder. Every owner action that writes starts with
+/// `refuseWhileLibraryDisconnected`; the background worker pauses instead
+/// while the library is disconnected, and drops a result that lands after.
 @MainActor
 extension LibraryViewModel {
 
@@ -118,9 +121,7 @@ extension LibraryViewModel {
     /// The artist a track belongs to, as the library groups it: the album
     /// artist, else the artist.
     nonisolated static func artistName(of loaded: LoadedTrack) -> String {
-        let albumArtist = loaded.metadata.albumArtist?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if !albumArtist.isEmpty { return albumArtist }
-        return loaded.metadata.artist ?? loaded.track.artist
+        ArtistLookupLibrary.artistName(of: loaded)
     }
 
     /// A photo's thumbnail, decoded off the main actor and kept in the
@@ -138,16 +139,87 @@ extension LibraryViewModel {
     /// The one profile store for the crates folder as it resolves now,
     /// made off the main actor (it reads its file) the first time it is
     /// asked for, and again when the folder or the library's location
-    /// changes. The folder is made first (`cratesDirectoryURL`), except the
-    /// offline copy's, which is never made here.
+    /// changes. A new store waits until every writer holding the old one is
+    /// done, so it reads what they saved and its own save never sweeps a
+    /// photo they just added. The folder is made first (`cratesDirectoryURL`),
+    /// except the offline copy's, which is never made here.
     func currentArtistProfileStore() async -> ArtistProfileStore {
+        await currentArtistProfileStoreTask().value
+    }
+
+    /// The task making (or that made) the current store; a new one when the
+    /// folder or the location changed.
+    private func currentArtistProfileStoreTask() -> Task<ArtistProfileStore, Never> {
         let folder = cratesDirectoryURL
         let key = folder.standardizedFileURL.path + "\u{0}" + Self.locationCase(libraryLocation)
-        if let task = artistProfileStoreTask, artistProfileStoreKey == key { return await task.value }
-        let task = Task.detached(priority: .userInitiated) { ArtistProfileStore(indexDirectory: folder) }
+        if let task = artistProfileStoreTask, artistProfileStoreKey == key { return task }
+        let replacing = artistProfileStoreTask != nil
+        let task = Task { () -> ArtistProfileStore in
+            if replacing { await self.artistProfileStoreDrained() }
+            return await Task.detached(priority: .userInitiated) { ArtistProfileStore(indexDirectory: folder) }.value
+        }
         artistProfileStoreTask = task
         artistProfileStoreKey = key
-        return await task.value
+        return task
+    }
+
+    /// Runs `work` off the main actor with the current profile store, held
+    /// as in use until it returns, so the store is not replaced under it.
+    /// Every writer of the store goes through here.
+    func withArtistProfileStore<T: Sendable>(_ work: @escaping @Sendable (ArtistProfileStore) async -> T) async -> T {
+        // Held only once it is still the current store with nothing awaited
+        // in between: a swap that began while this waited is never written past.
+        var store: ArtistProfileStore
+        while true {
+            let task = currentArtistProfileStoreTask()
+            store = await task.value
+            if artistProfileStoreTask == task { break }
+        }
+        artistProfileStoreUsers += 1
+        let value = await Task.detached(priority: .userInitiated) { await work(store) }.value
+        artistProfileStoreUsers -= 1
+        if artistProfileStoreUsers == 0 {
+            let waiters = artistProfileStoreDrainWaiters
+            artistProfileStoreDrainWaiters = []
+            waiters.forEach { $0.resume() }
+        }
+        return value
+    }
+
+    /// Returns once no writer holds a profile store.
+    func artistProfileStoreDrained() async {
+        guard artistProfileStoreUsers > 0 else { return }
+        await withCheckedContinuation { artistProfileStoreDrainWaiters.append($0) }
+    }
+
+    /// Carries the iPod's old artist picture records (`library.cdartists`)
+    /// into the profiles once (`ArtistProfileMigration`), then renames the
+    /// old file, which nothing reads again. Runs when the crates folder
+    /// resolves (at launch, and for a folder chosen later), never while the
+    /// library is disconnected. A failure is logged and tried again next time.
+    func migrateArtistPicturesIfNeeded() {
+        guard !isLibraryDisconnected else { return }
+        // One `stat`: nearly always there is no old file, and nothing to do.
+        let folder = cratesDirectoryURL
+        guard FileManager.default.fileExists(atPath: folder.appendingPathComponent(ArtistPictureStore.fileName).path)
+        else { return }
+        Task {
+            let failure = await withArtistProfileStore { store -> String? in
+                // The store's own folder: the crates folder may have moved on since.
+                let directory = store.indexDirectory
+                do {
+                    try ArtistProfileMigration.migrate(pictures: ArtistPictureStore(indexDirectory: directory),
+                                                       into: store, indexDirectory: directory)
+                    return nil
+                } catch {
+                    return error.localizedDescription
+                }
+            }
+            if let failure {
+                AppLog.library.error("Artist pictures not carried into profiles: \(failure, privacy: .public)")
+            }
+            reloadArtistProfiles()
+        }
     }
 
     /// The store is made again when the library's location changes case
@@ -316,8 +388,7 @@ extension LibraryViewModel {
         let files = urls.filter(\.isFileURL)
         guard !files.isEmpty else { return }
         Task {
-            let store = await currentArtistProfileStore()
-            let refused = await Task.detached(priority: .userInitiated) { () -> [String] in
+            let refused = await withArtistProfileStore { store -> [String] in
                 var refused: [String] = []
                 for url in files {
                     do {
@@ -333,7 +404,7 @@ extension LibraryViewModel {
                     refused.append(error.localizedDescription)
                 }
                 return refused
-            }.value
+            }
             reloadArtistProfiles()
             if !refused.isEmpty {
                 let title = refused.count == files.count ? "Photos Not Added" : "Some Photos Not Added"
@@ -346,10 +417,9 @@ extension LibraryViewModel {
     /// from the picture sources' own hosts), stored, and saved.
     func addArtistPhotoCandidate(_ name: String, _ candidate: ArtistPictureRecord.HeldCandidate) {
         guard !refuseWhileLibraryDisconnected() else { return }
-        let fetcher = URLSessionPictureFetcher()
+        let fetcher = artistPictureFetcher
         Task {
-            let store = await currentArtistProfileStore()
-            let failure = await Task.detached(priority: .userInitiated) { () -> String? in
+            let failure = await withArtistProfileStore { store -> String? in
                 do {
                     let data = try await fetcher.data(from: candidate.imageURL)
                     try store.addCandidatePhoto(name: name, candidate: candidate, data: data)
@@ -360,7 +430,7 @@ extension LibraryViewModel {
                 } catch {
                     return "The photo could not be downloaded. Try again in a minute."
                 }
-            }.value
+            }
             reloadArtistProfiles()
             if let failure { appAlert = .error(title: "Photo Not Added", message: failure) }
         }
@@ -385,27 +455,13 @@ extension LibraryViewModel {
         artistPhotoViewerRequest = name
     }
 
-    /// A photo at full size for the viewer, read and decoded off the main
-    /// actor. nil when its file cannot be reached.
-    func artistPhotoImage(hash: String) async -> NSImage? {
-        let store = await currentArtistProfileStore()
-        return await Task.detached(priority: .userInitiated) {
-            UncheckedSendableBox(store.photoData(hash: hash).flatMap { data -> NSImage? in
-                guard let image = NSImage(data: data) else { return nil }
-                // Decode now, here, rather than on first draw on the main thread.
-                _ = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
-                return image
-            })
-        }.value.value
-    }
-
     /// A found photo's thumbnail, fetched on demand through the picture
     /// fetcher (its sources' hosts only) and decoded off the main actor.
     /// Kept for the session; nil when it will not download.
     func artistCandidateThumbnail(_ url: URL, side: Int = 240) async -> NSImage? {
         let key = "\(side)|\(url.absoluteString)" as NSString
         if let cached = Self.artistCandidateThumbnails.object(forKey: key) { return cached }
-        let fetcher = URLSessionPictureFetcher()
+        let fetcher = artistPictureFetcher
         let image = await Task.detached(priority: .utility) { () -> CGImage? in
             guard let data = try? await fetcher.data(from: url) else { return nil }
             return ArtistPicturesSheetModel.thumbnail(data, side: side)
@@ -422,14 +478,22 @@ extension LibraryViewModel {
         return cache
     }()
 
-    /// A plain file no larger than an owner photo may be, read whole.
+    /// A picture file the owner chose, read whole when it is no larger
+    /// than an owner photo may be. An alias by symbolic link is followed to
+    /// its picture, which is what is checked. The read itself stops one byte
+    /// past the limit, so a file that grew after the check is refused too,
+    /// never read whole.
     nonisolated static func readArtistPhotoFile(_ url: URL) throws -> Data {
-        let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+        let target = url.resolvingSymlinksInPath()
+        let values = try target.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
         guard values.isRegularFile == true else { throw ArtistProfileStoreError.unreadablePhoto }
-        guard (values.fileSize ?? .max) <= ArtistPictureImage.maximumSourceBytes else {
-            throw ArtistProfileStoreError.photoTooLarge
-        }
-        return try Data(contentsOf: url)
+        let limit = ArtistPictureImage.maximumSourceBytes
+        guard (values.fileSize ?? .max) <= limit else { throw ArtistProfileStoreError.photoTooLarge }
+        let handle = try FileHandle(forReadingFrom: target)
+        defer { try? handle.close() }
+        let data = try handle.read(upToCount: limit + 1) ?? Data()
+        guard data.count <= limit else { throw ArtistProfileStoreError.photoTooLarge }
+        return data
     }
 
     /// One change to one profile, saved, then the profiles published again.
@@ -443,8 +507,7 @@ extension LibraryViewModel {
     private func changeArtistProfile(store change: @escaping @Sendable (ArtistProfileStore) -> Void,
                                      then: (@MainActor () -> Void)? = nil) {
         Task {
-            let store = await currentArtistProfileStore()
-            let failure = await Task.detached(priority: .userInitiated) { () -> String? in
+            let failure = await withArtistProfileStore { store -> String? in
                 change(store)
                 do {
                     try store.save()
@@ -452,7 +515,7 @@ extension LibraryViewModel {
                 } catch {
                     return error.localizedDescription
                 }
-            }.value
+            }
             reloadArtistProfiles()
             if let failure {
                 appAlert = .error(title: "Artist Not Saved", message: failure)
@@ -467,23 +530,29 @@ extension LibraryViewModel {
     /// One lookup for `name`, asked for by the owner: the foreground lane,
     /// the library's own album titles and folder picture, the result applied
     /// under the store's owner rules and saved. Various Artists, Unknown
-    /// Artist and nameless artists are never looked up.
+    /// Artist and nameless artists are never looked up. Asked for while a
+    /// lookup (the owner's or the background one) is running for the same
+    /// artist, it waits for that one to end and runs then, so a refresh after
+    /// the owner settled an identity is never lost; the latest ask wins.
     func runArtistLookup(_ name: String, resetFirst: Bool) {
         let key = PodBoxArtName.folded(name)
         guard ArtistLookupScheduler.isLookedUp(name) else {
             showOLEDNotice("NOTHING TO LOOK UP")
             return
         }
-        guard !artistLookupsRunning.contains(key), !refuseWhileLibraryDisconnected() else { return }
+        guard !refuseWhileLibraryDisconnected() else { return }
+        guard !artistLookupsRunning.contains(key) else {
+            artistLookupsQueued[key] = (name, resetFirst)
+            return
+        }
         artistLookupsRunning.insert(key)
         let run = foregroundArtistLookupRun()
-        let index = self.index
+        let tracks = currentTrackStore().allTracks
         Task {
-            let store = await currentArtistProfileStore()
-            let outcome = await Task.detached(priority: .userInitiated) { () -> Result<Void, Error> in
-                let titles = index.artists.filter { PodBoxArtName.folded($0.name) == key }
-                    .flatMap(\.albums).map(\.title)
-                let picture = ArtistPictureSession.LibraryFolders(tracks: index.allTracks).picture(for: name)
+            let outcome = await withArtistProfileStore { store -> Result<Void, Error> in
+                let library = ArtistLookupLibrary(tracks: tracks)
+                let titles = library.albumTitles(for: name)
+                let picture = library.picture(for: name)
                 do {
                     // A failure puts back the identity the reset replaced.
                     try await store.lookUpAgain(name: name, resetFirst: resetFirst, at: Date()) { existing in
@@ -494,14 +563,25 @@ extension LibraryViewModel {
                 } catch {
                     return .failure(error)
                 }
-            }.value
-            artistLookupsRunning.remove(key)
+            }
             reloadArtistProfiles()
+            finishArtistLookup(key)
             if case .failure(let error) = outcome {
                 AppLog.library.error("Artist lookup for \(name, privacy: .private) failed: \(String(describing: error), privacy: .public)")
                 appAlert = .error(title: "Could Not Look Up \(name)", message: Self.lookupFailureMessage(error))
             }
         }
+    }
+
+    /// A lookup for `key` ended: the one asked for meanwhile runs now. A
+    /// queued Look Up Again on an artist the ended lookup confirmed refreshes
+    /// by its id rather than resetting it, as `lookUpArtistAgain` would.
+    func finishArtistLookup(_ key: String) {
+        artistLookupsRunning.remove(key)
+        guard let queued = artistLookupsQueued.removeValue(forKey: key) else { return }
+        var resetFirst = queued.resetFirst
+        if case .confirmed? = artistProfile(named: queued.name)?.identity { resetFirst = false }
+        runArtistLookup(queued.name, resetFirst: resetFirst)
     }
 
     /// Words for the owner: a service not answering is "try later", never
@@ -518,7 +598,7 @@ extension LibraryViewModel {
     /// Commons and image requests holds across them.
     private func foregroundArtistLookupRun() -> ArtistLookupRun {
         if let run = artistForegroundLookup { return run }
-        let fetcher = URLSessionPictureFetcher()
+        let fetcher = artistPictureFetcher
         let deezer = DeezerArtistSource(fetcher: fetcher)
         let run = ArtistLookupRun(
             info: ArtistInfoClient(fetcher: fetcher),
@@ -526,5 +606,132 @@ extension LibraryViewModel {
             fetcher: fetcher, deezer: deezer)
         artistForegroundLookup = run
         return run
+    }
+}
+
+// MARK: - The background lookup (spec §4)
+
+/// One artist the background worker is about to look up, with what the
+/// library holds of them for the identity match and the first photo.
+struct BackgroundArtistTarget: Sendable {
+    let name: String
+    /// `PodBoxArtName.folded(name)`.
+    let key: String
+    let albumTitles: [String]
+    let libraryPicture: URL?
+}
+
+/// How one background lookup ended.
+enum BackgroundLookupOutcome {
+    /// Applied and saved.
+    case done
+    /// Not kept: the library went away, the switch went off, the store was
+    /// replaced or another lookup of the artist was running.
+    case discarded
+    case failed(Error)
+}
+
+@MainActor
+extension LibraryViewModel {
+    /// Starts the background worker, which waits a minute before its first lookup.
+    func startArtistLookupWorker() {
+        guard artistLookupWorker == nil else { return }
+        #if DEBUG
+        // The artist page fixture promises nothing goes on the network.
+        if ProcessInfo.processInfo.environment["CRATEDIGGER_ARTIST_PAGE"] != nil { return }
+        #endif
+        let worker = ArtistLookupWorker(library: self, fetcher: artistPictureFetcher)
+        artistLookupWorker = worker
+        worker.start()
+    }
+
+    /// Why the worker should not run now: the switch, a scan, a conversion
+    /// or device transfer, no window on screen, Low Power Mode, no network,
+    /// or the library's drive unplugged.
+    func artistLookupPauses(offline: Bool) -> ArtistLookupPauses {
+        ArtistLookupPauses(disabled: !prefs.artistLookupsEnabled, scanning: scanProgress.isRunning,
+                           transferring: isDeviceBusy || isConversionRunning,
+                           hidden: !AppVisibility.shared.isVisible,
+                           lowPower: ProcessInfo.processInfo.isLowPowerModeEnabled, offline: offline,
+                           libraryDisconnected: isLibraryDisconnected)
+    }
+
+    /// The artists that go first: the one the inspector shows, then the one
+    /// playing from the library.
+    func backgroundLookupPriority() -> [String] {
+        var names: [String] = []
+        if let inspected = inspectedArtistName { names.append(inspected) }
+        if let playing = nowPlayingTrack, playingSource?.isLocalLibrary == true {
+            names.append(Self.artistName(of: playing))
+        }
+        return names
+    }
+
+    /// The next artist the worker looks up (`ArtistLookupScheduler.due`),
+    /// worked out off the main actor from every track the library holds;
+    /// nil when nobody is due. Skips the artists this session gave up on,
+    /// priority names already looked up this launch, and any artist a lookup
+    /// is running for.
+    func nextBackgroundArtist(skipping skipped: Set<String>, priorityDone: Set<String>) async -> BackgroundArtistTarget? {
+        let tracks = currentTrackStore().allTracks
+        let running = artistLookupsRunning
+        let priority = backgroundLookupPriority().filter { name in
+            let key = PodBoxArtName.folded(name)
+            return !priorityDone.contains(key) && !skipped.contains(key)
+        }
+        let store = await currentArtistProfileStore()
+        return await Task.detached(priority: .utility) { () -> BackgroundArtistTarget? in
+            let library = ArtistLookupLibrary(tracks: tracks)
+            let due = ArtistLookupScheduler().due(artists: library.artists, profiles: { store.profile(forName: $0) },
+                                                  priority: priority, now: Date())
+            guard let name = due.first(where: { name in
+                let key = PodBoxArtName.folded(name)
+                return !skipped.contains(key) && !running.contains(key)
+            }) else { return nil }
+            return BackgroundArtistTarget(name: name, key: PodBoxArtName.folded(name),
+                                          albumTitles: library.albumTitles(for: name),
+                                          libraryPicture: library.picture(for: name))
+        }.value
+    }
+
+    /// One background lookup, in the background lane: the network part off
+    /// the main actor and cancelled with the worker, then the result applied
+    /// under the store's owner rules (`ArtistLookupResult.apply`) and saved,
+    /// unless the library went away, the switch went off or the store was
+    /// replaced while it ran. While it runs the artist counts as being looked
+    /// up, so an owner's Look Up Again waits for it rather than racing it.
+    func lookUpInBackground(_ target: BackgroundArtistTarget, run: ArtistLookupRun) async -> BackgroundLookupOutcome {
+        guard !artistLookupsRunning.contains(target.key) else { return .discarded }
+        artistLookupsRunning.insert(target.key)
+        defer { finishArtistLookup(target.key) }
+
+        let store = await currentArtistProfileStore()
+        let storeKey = artistProfileStoreKey
+        let lookup = Task.detached(priority: .utility) { () throws -> ArtistLookupResult in
+            try await run.lookUp(name: target.name, libraryAlbumTitles: target.albumTitles,
+                                 libraryPicture: target.libraryPicture, existing: store.profile(forName: target.name),
+                                 lane: .background, now: Date())
+        }
+        let result: ArtistLookupResult
+        do {
+            result = try await withTaskCancellationHandler { try await lookup.value } onCancel: { lookup.cancel() }
+        } catch {
+            return .failed(error)
+        }
+        // Silently, not `refuseWhileLibraryDisconnected`: nobody asked for
+        // this, so an unplugged drive is no reason for a notice.
+        guard !Task.isCancelled, !isLibraryDisconnected, prefs.artistLookupsEnabled,
+              artistProfileStoreKey == storeKey else { return .discarded }
+        let failure = await withArtistProfileStore { store -> Error? in
+            do {
+                try result.apply(to: store, name: target.name, at: Date())
+                try store.save()
+                return nil
+            } catch {
+                return error
+            }
+        }
+        reloadArtistProfiles()
+        return failure.map { .failed($0) } ?? .done
     }
 }

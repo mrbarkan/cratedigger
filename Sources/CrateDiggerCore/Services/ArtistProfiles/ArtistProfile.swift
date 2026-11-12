@@ -188,12 +188,18 @@ public struct ArtistProfile: Codable, Hashable, Sendable {
     public var notOnIPod: Bool
     /// When the lookup last ran for this artist; nil when it never has.
     public var checkedAt: Date?
+    /// When a picture search for the iPod (the Artist Pictures sheet's Find
+    /// Missing, or one inside a transfer) last found nothing. Kept apart from
+    /// `checkedAt`, the background lookup's cursor, so a search never makes
+    /// the lookup think it ran.
+    public var photoSearchedAt: Date?
 
     public init(foldedKey: String, displayName: String, identity: Identity = .unknown,
                 rejectedMusicBrainzIDs: [String] = [], fetched: ArtistFacts? = nil, owner: ArtistFacts? = nil,
                 photos: [ArtistPhoto] = [], photoCandidates: [ArtistPictureRecord.HeldCandidate] = [],
                 rejectedPhotoSources: [String] = [], defaultPhoto: String? = nil, defaultPickedByOwner: Bool = false,
-                noPhoto: Bool = false, notOnIPod: Bool = false, checkedAt: Date? = nil) {
+                noPhoto: Bool = false, notOnIPod: Bool = false, checkedAt: Date? = nil,
+                photoSearchedAt: Date? = nil) {
         self.foldedKey = foldedKey
         self.displayName = displayName
         self.identity = identity
@@ -208,6 +214,7 @@ public struct ArtistProfile: Codable, Hashable, Sendable {
         self.noPhoto = noPhoto
         self.notOnIPod = notOnIPod
         self.checkedAt = checkedAt
+        self.photoSearchedAt = photoSearchedAt
     }
 
     /// What the page shows: the owner's value over the fetched one, field by
@@ -255,6 +262,7 @@ public struct ArtistProfile: Codable, Hashable, Sendable {
         noPhoto = c.lenient(Bool.self, .noPhoto) ?? false
         notOnIPod = c.lenient(Bool.self, .notOnIPod) ?? false
         checkedAt = c.lenient(Date.self, .checkedAt)
+        photoSearchedAt = c.lenient(Date.self, .photoSearchedAt)
     }
 }
 

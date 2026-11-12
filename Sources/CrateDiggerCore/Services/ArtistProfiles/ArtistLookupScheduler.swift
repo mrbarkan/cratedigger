@@ -93,6 +93,56 @@ public struct ArtistLookupScheduler: Sendable {
         default: return true
         }
     }
+
+    // MARK: - Failures
+
+    /// The first pause after a failed lookup, and the longest.
+    public static let firstBackoff: Duration = .seconds(30), longestBackoff: Duration = .seconds(1_800)
+
+    /// The worker's pause before its next lookup after `failures` failed
+    /// ones in a row: none after a success (the count goes back to zero),
+    /// then 30 s, doubling each time, never more than 30 minutes.
+    public static func backoff(afterFailures failures: Int) -> Duration {
+        guard failures > 0 else { return .zero }
+        // 30 s × 2^6 is past the cap already, so the shift never overflows.
+        let pause = firstBackoff * (1 << min(failures - 1, 6))
+        return min(pause, longestBackoff)
+    }
+
+    /// What a failed lookup means for the worker; nil for cancellation (the
+    /// worker stopping, not a failure). Every failure also counts toward
+    /// `backoff`.
+    public static func failure(_ error: Error) -> ArtistLookupFailure? {
+        if error is CancellationError { return nil }
+        if let store = error as? ArtistProfileStoreError {
+            switch store {
+            case .unreadableStore, .unreachableIndexFolder: return .stopWorker
+            case .unnamedArtist, .unreadablePhoto, .photoTooLarge: return .skipArtist
+            }
+        }
+        if let lookup = error as? ArtistLookupError {
+            return lookup == .timedOut ? .retryLater : .skipArtist
+        }
+        if let source = ArtistPictureSourceError.reading(error), source == .quota || source.stopsTheRun {
+            return .retryLater
+        }
+        return .skipArtist
+    }
+}
+
+/// What the background worker does after a lookup failed (spec §4,
+/// Failures). Nothing is stored for the artist in any case.
+public enum ArtistLookupFailure: Equatable, Sendable {
+    /// The network or a service is not answering (offline, a timeout, a 5xx,
+    /// a rate limit): the same artist is asked again after the pause.
+    case retryLater
+    /// This artist's answer could not be used (a broken reply, a picture
+    /// that would not keep): the artist is not asked again this session,
+    /// so one bad record never holds the worker in a loop.
+    case skipArtist
+    /// The profile store cannot be written (its file unreadable, its folder
+    /// gone): the worker stops until the store is made again.
+    case stopWorker
 }
 
 /// Why the background worker is not running now (spec §4, Scheduling).
@@ -122,5 +172,53 @@ public struct ArtistLookupPauses: Equatable, Sendable {
 
     public var isPaused: Bool {
         disabled || scanning || transferring || hidden || lowPower || offline || libraryDisconnected
+    }
+}
+
+/// The library as the background worker reads it: each artist (the album
+/// artist, else the artist, as the inspector names a track's artist) with
+/// how many tracks they have, their album titles for the identity match,
+/// and the owner's own picture of them beside the music. Built once per
+/// pass off the main actor from every track the library holds, whichever
+/// crate is being browsed.
+public struct ArtistLookupLibrary: Sendable {
+    /// Every spelling with its track count, in no particular order: the
+    /// scheduler folds spellings together and orders them.
+    public let artists: [(name: String, trackCount: Int)]
+    private let titlesByKey: [String: [String]]
+    private let folders: ArtistPictureSession.LibraryFolders
+
+    public init(tracks: [LoadedTrack]) {
+        var counts: [String: Int] = [:]
+        var titles: [String: Set<String>] = [:]
+        for track in tracks {
+            let name = Self.artistName(of: track)
+            counts[name, default: 0] += 1
+            let album = (track.metadata.album ?? track.track.album).trimmingCharacters(in: .whitespacesAndNewlines)
+            let key = PodBoxArtName.folded(name)
+            if !album.isEmpty, !key.isEmpty { titles[key, default: []].insert(album) }
+        }
+        artists = counts.map { (name: $0.key, trackCount: $0.value) }
+        titlesByKey = titles.mapValues { $0.sorted() }
+        folders = ArtistPictureSession.LibraryFolders(tracks: tracks)
+    }
+
+    /// The album titles of every spelling that folds like `name`.
+    public func albumTitles(for name: String) -> [String] {
+        titlesByKey[PodBoxArtName.folded(name)] ?? []
+    }
+
+    /// The owner's own picture of `name` in the library's folders, if any.
+    /// Looks at files: off the main actor.
+    public func picture(for name: String) -> URL? {
+        folders.picture(for: name)
+    }
+
+    /// The artist a track belongs to, as the library groups it: the album
+    /// artist, else the artist.
+    public static func artistName(of loaded: LoadedTrack) -> String {
+        let albumArtist = loaded.metadata.albumArtist?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !albumArtist.isEmpty { return albumArtist }
+        return loaded.metadata.artist ?? loaded.track.artist
     }
 }

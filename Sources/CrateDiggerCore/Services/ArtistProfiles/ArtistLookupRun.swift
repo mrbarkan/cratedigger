@@ -68,7 +68,8 @@ public struct ArtistLookupResult: Sendable {
 /// pick must also fold equal to the confirmed artist's name, and its
 /// Commons pick must be that MusicBrainz artist's own. Sources the
 /// owner removed (`rejectedPhotoSources`) are skipped. Only the chosen
-/// photo is downloaded; the rest come back as references.
+/// photo is downloaded, once (the finder's own download of it is reused);
+/// the rest come back as references.
 ///
 /// Errors propagate and nothing is stored: a transport error, 5xx or 429
 /// from MusicBrainz, Wikidata or Wikipedia as `ArtistPictureSourceError`,
@@ -237,7 +238,17 @@ public struct ArtistLookupRun: Sendable {
             let accepted = Self.photoSource(source) != nil
                 && !excluded.contains(Self.rejectionKey(reference))
                 && Self.fits(candidate, source: source, found)
-            if accepted, let photoSource = Self.photoSource(source), let data = try await download(candidate.imageURL) {
+            // The finder already downloaded the original to prepare it: taken
+            // from the finding, never fetched a second time.
+            let original: Data?
+            if accepted, let kept = finding.original, finding.originalURL == candidate.imageURL {
+                original = kept
+            } else if accepted {
+                original = try await download(candidate.imageURL)
+            } else {
+                original = nil
+            }
+            if accepted, let photoSource = Self.photoSource(source), let data = original {
                 result.defaultPhoto = (data, photoSource, candidate.sourceID, candidate.credit)
             } else {
                 held = [reference]

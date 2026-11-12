@@ -118,8 +118,10 @@ final class ArtistLookupRunTests: XCTestCase {
         result = try await lookUp()
         XCTAssertEqual(result.defaultPhoto?.source, .deezer)
         XCTAssertEqual(result.defaultPhoto?.sourceID, "8")
-        // The original, not the iPod's 400 px copy.
+        // The original, not the iPod's 400 px copy, and downloaded once: the
+        // finder's own download is kept.
         XCTAssertEqual(result.defaultPhoto?.data, FakePictureFetcher.jpeg(width: 1000, height: 1000))
+        XCTAssertEqual(fetcher.requests.filter { $0 == deezerImage(8) }.count, 1)
     }
 
     func testUncertainGetsNoFactsButMayGetPhoto() async throws {
@@ -310,10 +312,12 @@ final class ArtistLookupRunTests: XCTestCase {
             guard case .pictureLookupFailed? = error as? ArtistLookupError else { return XCTFail("\(error)") }
         }
 
-        // A picture that will not download stops the lookup when the service is down.
+        // A picture that will not download stops the lookup when the service
+        // is down. (A Deezer pick is downloaded once, by the finder, so the
+        // run's own download is the Wikidata portrait's.)
         deezer.failure = nil
-        deezer.offered = [deezerCandidate(8, "Massive Attack", albums: ["Mezzanine"])]
-        fetcher.answer(deezerImage(8), with: [.success(FakePictureFetcher.jpeg()), .failure(ArtistPictureSourceError.http(502))])
+        answerMassiveAttack(image: true)
+        fetcher.answer(commonsImage, with: [.failure(ArtistPictureSourceError.http(502))])
         do {
             _ = try await lookUp(existing: before)
             XCTFail("a 502 became an answer")

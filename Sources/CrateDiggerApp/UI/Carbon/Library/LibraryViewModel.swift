@@ -607,7 +607,11 @@ final class LibraryViewModel: ObservableObject {
     }
 
     @Published private(set) var playbackState: PlaybackState = .idle
-    @Published private(set) var playbackCurrentIndex: Int?
+    /// A new track wakes the background artist lookup, which takes the
+    /// playing artist early.
+    @Published private(set) var playbackCurrentIndex: Int? {
+        didSet { if oldValue != playbackCurrentIndex { artistLookupWorker?.wake() } }
+    }
 
     /// The 5Hz time tick lives on its own object so it only re-renders the few
     /// views that display time (POSITION dial, OLED clock, mini player) instead
@@ -1189,11 +1193,6 @@ final class LibraryViewModel: ObservableObject {
     @Published var isWritingArtistPictures = false
     /// The Artist Pictures sheet is finding pictures online; Cancel stops it.
     @Published var isFindingArtistPictures = false
-    /// The artist picture records for the current crates folder
-    /// (`library.cdartists`), rebuilt when that folder changes. See
-    /// `currentArtistPictureStore()`.
-    var artistPictureStore: ArtistPictureStore?
-    var artistPictureStoreFolder: URL?
 
     // MARK: Artist profiles (`LibraryViewModel+ArtistProfiles`)
 
@@ -1209,8 +1208,13 @@ final class LibraryViewModel: ObservableObject {
     /// The tracks the summaries' top-five lists name, by id, so the page
     /// never walks the index to title them. Set with `artistSummaries`.
     var artistTopTracks: [UUID: LoadedTrack] = [:]
-    /// "Show Artist", and when the browser's focus ends it.
-    @Published var artistPage = ArtistPageSelection()
+    /// "Show Artist", and when the browser's focus ends it. A newly
+    /// inspected artist wakes the background lookup, which takes it first.
+    @Published var artistPage = ArtistPageSelection() {
+        didSet {
+            if oldValue.artistName != artistPage.artistName { artistLookupWorker?.wake() }
+        }
+    }
     /// The artist whose Edit sheet to present. One-shot: `LibraryPresentations`
     /// presents it and clears it.
     @Published var artistEditRequest: String?
@@ -1225,6 +1229,20 @@ final class LibraryViewModel: ObservableObject {
     var artistProfileStoreTask: Task<ArtistProfileStore, Never>?
     /// The folder and library location the store was made for.
     var artistProfileStoreKey: String?
+    /// Writers holding the profile store now (`withArtistProfileStore`). A
+    /// new store is made only once they are done, so two stores never
+    /// overlap on one folder.
+    var artistProfileStoreUsers = 0
+    var artistProfileStoreDrainWaiters: [CheckedContinuation<Void, Never>] = []
+    /// A lookup the owner asked for while one was already running for that
+    /// artist, by folded key: the name and whether to reset first, the
+    /// latest ask winning. Run when the running one ends, never dropped.
+    var artistLookupsQueued: [String: (name: String, resetFirst: Bool)] = [:]
+    /// The background lookup (`ArtistLookupWorker`), started a minute after launch.
+    var artistLookupWorker: ArtistLookupWorker?
+    /// One picture fetcher, so one URLSession, for every artist photo,
+    /// thumbnail and picture lookup the app makes.
+    let artistPictureFetcher = URLSessionPictureFetcher()
     var artistProfilesGeneration = 0
     var artistSummaryTask: Task<Void, Never>?
     /// One long-lived run for the owner's lookups, so its request spacing
@@ -1709,6 +1727,8 @@ final class LibraryViewModel: ObservableObject {
         restorePlaybackSnapshot()
         // After selectSource: the widget's idle covers come from All Records.
         startWidgetFeed()
+        // Waits a minute before its first lookup, so launch is never slowed.
+        startArtistLookupWorker()
         recomputeOfflineVolumes()
         recomputeMissingFiles()
         fetchMissingMetadata()
@@ -4570,6 +4590,8 @@ final class LibraryViewModel: ObservableObject {
         if !disconnected { backfillListeningStoreIfNeeded(knownPaths: currentTrackStore().allPaths) }
         // A new folder or location means a new profile store (made off the
         // main actor): the copy's while the drive is out, the live one back.
+        // The iPod's old picture records are carried into it first, once.
+        if !disconnected { migrateArtistPicturesIfNeeded() }
         reloadArtistProfiles()
         let fm = FileManager.default
         let cratesDir = cratesDirectoryURL
@@ -5646,10 +5668,12 @@ final class LibraryViewModel: ObservableObject {
         }
     }
 
-    /// Relocate the crate index files (`.cdcrate` membership lists +
-    /// `library.cdtracks`) to a user-chosen folder and re-point the crates-index
-    /// bookmark — the audio files stay where they are. The counterpart to
-    /// `moveLibrary()`, which moves the music and leaves the index alone.
+    /// Relocate the crate index files (`LibraryIndexFiles`: membership lists,
+    /// `library.cdtracks`, plays, artist profiles) and the artist profiles'
+    /// `ArtistPhotos` folder to a user-chosen folder and re-point the
+    /// crates-index bookmark — the audio files stay where they are. The
+    /// counterpart to `moveLibrary()`, which moves the music and leaves the
+    /// index (and so the artist photos) alone.
     func moveIndexFiles() {
         guard !refuseWhileLibraryDisconnected() else { return }
         let panel = NSOpenPanel()
@@ -5669,39 +5693,55 @@ final class LibraryViewModel: ObservableObject {
         }
 
         let fm = FileManager.default
-        let indexFiles: [URL]
+        let toMove: [URL]
         do {
             // `LibraryIndexFiles` is the whole function. Anything missing from it
             // is left behind AND cleared from the collision check below, and the
             // folder-changed notification this posts then rebuilds a fresh empty
             // store over the top of the loss. `cdplays` in particular has no
             // backup and nothing that can rebuild it. Add new index files to that
-            // list, which the local copy of the index reads as well.
-            indexFiles = try fm.contentsOfDirectory(at: currentURL, includingPropertiesForKeys: nil)
-                .filter(LibraryIndexFiles.isIndexFile)
+            // list, which the local copy of the index reads as well. The
+            // artist photos folder moves too (`LibraryIndexFiles.movedFolders`),
+            // with the profiles that name its files.
+            toMove = try LibraryIndexFiles.itemsToMove(in: currentURL)
         } catch {
             appAlert = .error(title: "Move Failed", message: "Could not read the current index folder: \(error.localizedDescription)")
             return
         }
 
+        let indexFileCount = toMove.filter(LibraryIndexFiles.isIndexFile).count
+
         // Refuse up front rather than silently overwrite a folder that already
         // holds someone's crates — that would be unrecoverable data loss.
-        if indexFiles.contains(where: { fm.fileExists(atPath: newURL.appendingPathComponent($0.lastPathComponent).path) }) {
+        if toMove.contains(where: { fm.fileExists(atPath: newURL.appendingPathComponent($0.lastPathComponent).path) }) {
             appAlert = .error(title: "Folder Already Has an Index",
                               message: "The chosen folder already contains crate index files. Pick an empty folder, or use \"Choose…\" in Preferences to switch to it without moving anything.")
             return
         }
 
         scanProgress = ScanProgress(folderName: "Moving index files...", filesProbed: 0,
-                                    totalCandidates: indexFiles.count, isRunning: true)
+                                    totalCandidates: toMove.count, isRunning: true)
 
         // Detached: with embedded artwork a .cdcrate can be big, and a
-        // cross-volume move is copy+delete — keep it off the main actor.
-        Task.detached { [weak self] in
+        // cross-volume move is copy+delete — keep it off the main actor. First
+        // every artist profile write already under way finishes, so none
+        // lands in the old folder after its files have gone (the background
+        // lookup is paused by the scan progress set above).
+        Task { [weak self] in
+            await self?.artistProfileStoreDrained()
+            Self.moveIndexItems(toMove, to: newURL, indexFileCount: indexFileCount, viewModel: self)
+        }
+    }
+
+    /// The move itself, off the main actor; everything moved is put back on
+    /// a failure, so the index never ends up split across two folders.
+    private nonisolated static func moveIndexItems(_ toMove: [URL], to newURL: URL, indexFileCount: Int,
+                                                   viewModel: LibraryViewModel?) {
+        Task.detached { [weak viewModel] in
             let fm = FileManager.default
             var moved: [URL] = []
             var failure: Error?
-            for file in indexFiles {
+            for file in toMove {
                 do {
                     try fm.moveItem(at: file, to: newURL.appendingPathComponent(file.lastPathComponent))
                     moved.append(file)
@@ -5719,22 +5759,22 @@ final class LibraryViewModel: ObservableObject {
             }
 
             let moveFailure = failure
-            let movedCount = moved.count
-            await MainActor.run { [weak self] in
-                guard let self else { return }
-                self.scanProgress = .idle
+            let movedCount = indexFileCount
+            await MainActor.run { [weak viewModel] in
+                guard let model = viewModel else { return }
+                model.scanProgress = .idle
                 if let moveFailure {
-                    self.appAlert = .error(title: "Move Failed",
+                    model.appAlert = .error(title: "Move Failed",
                                            message: "Could not move the index: \(moveFailure.localizedDescription)\nEverything was left in the current folder.")
                     return
                 }
                 do {
-                    self.prefs.cratesIndexFolderBookmark = try PreferencesStore.makeBookmark(for: newURL)
+                    model.prefs.cratesIndexFolderBookmark = try PreferencesStore.makeBookmark(for: newURL)
                     NotificationCenter.default.post(name: NSNotification.Name("CrateDiggerCratesFolderChanged"), object: newURL)
-                    self.appAlert = .info(title: "Index Moved",
+                    model.appAlert = .info(title: "Index Moved",
                                           message: "Moved \(movedCount) index file\(movedCount == 1 ? "" : "s") to: \(newURL.path)")
                 } catch {
-                    self.appAlert = .error(title: "Save Failed",
+                    model.appAlert = .error(title: "Save Failed",
                                            message: "Index files moved, but the new folder couldn't be saved as the crates index location: \(error.localizedDescription)")
                 }
             }

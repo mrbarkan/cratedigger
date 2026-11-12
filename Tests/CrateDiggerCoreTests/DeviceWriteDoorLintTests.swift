@@ -69,6 +69,11 @@ final class DeviceWriteDoorLintTests: XCTestCase {
          "writes a prepared picture into that cache, on the Mac"),
         ("PodBox/ArtistPictureStore.swift", "try data.write(to: fileURL, options: .atomic)",
          "saves library.cdartists in the library's index folder, on the Mac"),
+        // The Artist Pictures sheet's DEBUG preview keeps made-up profiles in
+        // a temporary folder of its own.
+        ("ExternalDevices/ArtistPicturesSheetController.swift",
+         "try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)",
+         "makes the DEBUG preview's profile folder in the Mac's temporary folder"),
         // Left-alone albums: a per-profile file in Application Support.
         ("DeviceTransfer/DeviceLeftAloneStore.swift", "try? fileManager.removeItem(at: url(for: profileID))",
          "forgets the left-alone list, a file in Application Support on the Mac"),

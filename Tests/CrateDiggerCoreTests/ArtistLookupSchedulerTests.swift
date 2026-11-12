@@ -103,4 +103,22 @@ final class ArtistLookupSchedulerTests: XCTestCase {
             XCTAssertTrue(pauses.isPaused, "\(path)")
         }
     }
+
+    func testLibraryCountsTheAlbumArtistElseTheArtist() {
+        func track(_ path: String, artist: String, albumArtist: String? = nil, album: String) -> LoadedTrack {
+            LoadedTrack(track: AudioTrack(fileURL: URL(fileURLWithPath: path), title: "T", artist: artist, album: album),
+                        metadata: ConversionMetadata(title: "T", artist: artist, albumArtist: albumArtist, album: album))
+        }
+        let library = ArtistLookupLibrary(tracks: [
+            track("/m/a/1.flac", artist: "Air", album: "Moon Safari"),
+            track("/m/a/2.flac", artist: "Air", album: "Talkie Walkie"),
+            track("/m/c/1.flac", artist: "Beth Gibbons", albumArtist: "Portishead", album: "Dummy"),
+        ])
+        let counts = Dictionary(uniqueKeysWithValues: library.artists.map { ($0.name, $0.trackCount) })
+        XCTAssertEqual(counts, ["Air": 2, "Portishead": 1])
+        XCTAssertEqual(library.albumTitles(for: "AIR"), ["Moon Safari", "Talkie Walkie"])
+        XCTAssertEqual(library.albumTitles(for: "Beth Gibbons"), [])
+        XCTAssertEqual(scheduler.due(artists: library.artists, profiles: { _ in nil }, priority: [], now: now),
+                       ["Air", "Portishead"])
+    }
 }

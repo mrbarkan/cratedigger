@@ -13,12 +13,13 @@ import Foundation
 /// with `picturesMigrated` set, and then `library.cdartists` is renamed
 /// `library.cdartists.bak` (never deleted).
 ///
-/// The flag in the profiles file is what marks it done: until the iPod
-/// side reads profiles, the app still writes `library.cdartists`, so the
-/// file can come back, and a rename can fail after the save. Even a run
-/// that gets past the flag never touches a profile that existed before it,
-/// never re-adds a photo the owner removed, and never moves a default the
-/// owner picked.
+/// The flag in the profiles file is what marks it done: a rename can fail
+/// after the save, and an older CrateDigger on another Mac can still write
+/// `library.cdartists` into a shared library folder, so the file can come
+/// back. Nothing in this version writes it. Even a run that gets past the
+/// flag never touches a profile that existed before it, never re-adds a
+/// photo the owner removed, and never moves a default the owner picked.
+/// The app runs it when the crates folder resolves (`refreshAvailableCrates`).
 ///
 /// Reads images and writes files: run it off the main actor, after
 /// `refuseWhileLibraryDisconnected`.

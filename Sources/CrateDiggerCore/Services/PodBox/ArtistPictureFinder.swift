@@ -119,10 +119,17 @@ public struct ArtistPictureFinding: Equatable, Sendable {
     }
 
     public let name: String, outcome: Outcome
+    /// For a found picture: the bytes it was prepared from (the download,
+    /// or the library file) and where they came from, so whoever keeps it
+    /// as an artist photo has the full-size original without fetching it a
+    /// second time. nil otherwise.
+    public let original: Data?, originalURL: URL?
 
-    public init(name: String, outcome: Outcome) {
+    public init(name: String, outcome: Outcome, original: Data? = nil, originalURL: URL? = nil) {
         self.name = name
         self.outcome = outcome
+        self.original = original
+        self.originalURL = originalURL
     }
 }
 
@@ -187,8 +194,9 @@ public struct ArtistPictureFinder: Sendable {
             let remaining = deadline - clock.now
             guard remaining > .zero, !Task.isCancelled else { break }
             switch await bounded(min(perArtist, remaining), { try await self.findOne(request, lane: lane) }) {
-            case .finished(let outcome):
-                findings.append(ArtistPictureFinding(name: request.name, outcome: outcome))
+            case .finished(let found):
+                findings.append(ArtistPictureFinding(name: request.name, outcome: found.outcome,
+                                                     original: found.original?.data, originalURL: found.original?.url))
                 pauses = quotaBackoff[...]
                 index += 1
                 progress?(index, requests.count)
@@ -209,8 +217,14 @@ public struct ArtistPictureFinder: Sendable {
 
     // MARK: - Private
 
+    /// One name's outcome, with the original bytes of a found picture.
+    private struct Found: Sendable {
+        var outcome: ArtistPictureFinding.Outcome
+        var original: (data: Data, url: URL)?
+    }
+
     private enum Step: Sendable {
-        case finished(ArtistPictureFinding.Outcome), quota, unreachable(String), timedOut
+        case finished(Found), quota, unreachable(String), timedOut
     }
 
     /// The run must stop: a quota, or a service that cannot be reached.
@@ -220,7 +234,7 @@ public struct ArtistPictureFinder: Sendable {
 
     /// Runs `work` against a timer; whichever ends first wins and the other is cancelled.
     private func bounded(_ budget: Duration,
-                         _ work: @escaping @Sendable () async throws -> ArtistPictureFinding.Outcome) async -> Step {
+                         _ work: @escaping @Sendable () async throws -> Found) async -> Step {
         await withTaskGroup(of: Step.self) { group in
             group.addTask {
                 do {
@@ -242,9 +256,10 @@ public struct ArtistPictureFinder: Sendable {
     }
 
     /// Throws only `Stop` and cancellation.
-    private func findOne(_ request: Request, lane: MusicBrainzGate.Lane) async throws -> ArtistPictureFinding.Outcome {
-        if let url = request.libraryPicture, let prepared = Self.preparedLibraryPicture(url) {
-            return .found(prepared: prepared, candidate: nil, source: .libraryFolder)
+    private func findOne(_ request: Request, lane: MusicBrainzGate.Lane) async throws -> Found {
+        if let url = request.libraryPicture, let picture = Self.libraryPicture(url) {
+            return Found(outcome: .found(prepared: picture.prepared, candidate: nil, source: .libraryFolder),
+                         original: (picture.data, url))
         }
         var held: [ArtistPictureCandidate] = []
         var failure: String?
@@ -272,8 +287,10 @@ public struct ArtistPictureFinder: Sendable {
                 continue
             case 1:
                 do {
-                    if let prepared = ArtistPictureImage.prepare(try await fetcher.data(from: confident[0].imageURL)) {
-                        return .found(prepared: prepared, candidate: confident[0], source: source.id)
+                    let data = try await fetcher.data(from: confident[0].imageURL)
+                    if let prepared = ArtistPictureImage.prepare(data) {
+                        return Found(outcome: .found(prepared: prepared, candidate: confident[0], source: source.id),
+                                     original: (data, confident[0].imageURL))
                     }
                 } catch {
                     try check(error)
@@ -284,8 +301,8 @@ public struct ArtistPictureFinder: Sendable {
             }
         }
         try Task.checkCancellation()
-        if let failure { return .failed(failure) }
-        return held.isEmpty ? .notFound : .uncertain(Array(held.prefix(Self.maximumUncertain)))
+        if let failure { return Found(outcome: .failed(failure)) }
+        return Found(outcome: held.isEmpty ? .notFound : .uncertain(Array(held.prefix(Self.maximumUncertain))))
     }
 
     /// Rethrows what must stop the run (a quota, an unreachable service) or
@@ -308,12 +325,13 @@ public struct ArtistPictureFinder: Sendable {
 
     /// A picture file in the owner's library, read on the Mac when it is a
     /// plain file no bigger than a source image may be.
-    static func preparedLibraryPicture(_ url: URL) -> Data? {
+    static func libraryPicture(_ url: URL) -> (data: Data, prepared: Data)? {
         guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]),
               values.isRegularFile == true, let size = values.fileSize,
               size <= ArtistPictureImage.maximumSourceBytes,
-              let data = try? Data(contentsOf: url)
+              let data = try? Data(contentsOf: url),
+              let prepared = ArtistPictureImage.prepare(data)
         else { return nil }
-        return ArtistPictureImage.prepare(data)
+        return (data, prepared)
     }
 }

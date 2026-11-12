@@ -76,6 +76,7 @@ public final class PreferencesStore {
         static let scrubLock = "cratedigger.transport.scrubLock"
         static let gaplessPlayback = "cratedigger.transport.gapless"
         static let secureRip = "cratedigger.cd.secureRip"
+        static let artistLookups = "cratedigger.artists.lookups"
         static let widgetIdleMode = "cratedigger.widget.idleMode"
         static let widgetPlayingMode = "cratedigger.widget.playingMode"
         static let miniPlayerArtMode = "cratedigger.miniplayer.artMode"
@@ -704,6 +705,18 @@ public final class PreferencesStore {
             return defaults.bool(forKey: Key.gaplessPlayback)
         }
         set { defaults.set(newValue, forKey: Key.gaplessPlayback) }
+    }
+
+    /// Settings ▸ Integrations ▸ "Look up artist info and photos": the
+    /// background worker that fills in artist pages from MusicBrainz,
+    /// Wikidata, Wikipedia and Deezer. On unless turned off; off stops the
+    /// worker, and Look Up Again on an artist page still works.
+    public var artistLookupsEnabled: Bool {
+        get {
+            if defaults.object(forKey: Key.artistLookups) == nil { return true }
+            return defaults.bool(forKey: Key.artistLookups)
+        }
+        set { defaults.set(newValue, forKey: Key.artistLookups) }
     }
 
     /// Rip audio CDs in Secure Mode: every sector read twice, compared, and

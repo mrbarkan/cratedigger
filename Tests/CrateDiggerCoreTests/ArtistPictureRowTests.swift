@@ -1,10 +1,11 @@
 import XCTest
 @testable import CrateDiggerCore
 
-/// What the Artist Pictures sheet shows for each artist.
+/// What the Artist Pictures sheet shows for each artist, read from the
+/// artist profiles: the iPod gets the artist's default photo.
 final class ArtistPictureRowTests: XCTestCase {
     private var folder: URL!
-    private var store: ArtistPictureStore!
+    private var store: ArtistProfileStore!
     private let now = Date(timeIntervalSince1970: 1_800_000_000)
     private let candidate = ArtistPictureCandidate(
         name: "Air", source: .commons, sourceID: "Q1", imageURL: URL(string: "https://upload.wikimedia.org/a.jpg")!,
@@ -14,7 +15,7 @@ final class ArtistPictureRowTests: XCTestCase {
         folder = FileManager.default.temporaryDirectory
             .appendingPathComponent("ArtistPictureRow-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        store = ArtistPictureStore(indexDirectory: folder, imageDirectory: folder.appendingPathComponent("Images"))
+        store = ArtistProfileStore(indexDirectory: folder)
     }
 
     override func tearDownWithError() throws {
@@ -30,15 +31,22 @@ final class ArtistPictureRowTests: XCTestCase {
                       artistsByFolder: [:])
     }
 
-    private func found(_ name: String, source: ArtistPictureSourceID, picked: Bool = false) throws {
-        try store.set(ArtistPictureRecord(foldedKey: "", displayName: name, outcome: .found, source: source,
-                                          pickedByUser: picked, checkedAt: now), prepared: Data("jpeg \(name)".utf8))
+    private func jpeg(_ name: String) -> Data {
+        FakePictureFetcher.jpeg(width: 600, height: 600, red: CGFloat(name.utf8.reduce(0) { $0 + Int($1) } % 97) / 97)
+    }
+
+    @discardableResult
+    private func found(_ name: String, source: ArtistPhoto.Source, sourceID: String? = "1",
+                       picked: Bool = false) throws -> ArtistPhoto {
+        let photo = try store.addPhoto(name: name, data: jpeg(name), source: source, sourceID: sourceID, credit: nil)
+        if picked { store.setDefault(name: name, hash: photo.hash) }
+        return photo
     }
 
     private func only(_ name: String, tree: DeviceArtTree? = nil, uncertain: [String: [ArtistPictureCandidate]] = [:],
                       edits: [String: ArtistPictureEdit] = [:]) -> ArtistPictureRow {
-        ArtistPictureRow.rows(artists: [artist(name)], tree: tree ?? self.tree(), store: store,
-                              uncertain: uncertain, edits: edits)[0]
+        ArtistPictureRow.rows(artists: [artist(name)], tree: tree ?? self.tree(), profiles: store,
+                              uncertain: uncertain, edits: edits, now: now)[0]
     }
 
     func testRowForPictureAlreadyOnDevice() throws {
@@ -51,16 +59,20 @@ final class ArtistPictureRowTests: XCTestCase {
     }
 
     func testRowReadyFromStore() throws {
-        try found("Air", source: .deezer)
+        let photo = try found("Air", source: .deezer)
         let row = only("Air")
         XCTAssertEqual(row.state, .ready)
         XCTAssertEqual(row.badge, "DEEZER")
+        XCTAssertEqual(row.photoHash, photo.hash, "the sheet shows the default photo's own bytes")
 
-        // A record whose cached picture is gone is not ready.
-        try store.set(ArtistPictureRecord(foldedKey: "", displayName: "Can", outcome: .found, source: .deezer,
-                                          preparedHash: String(repeating: "b", count: 64), checkedAt: now),
-                      prepared: nil)
+        // A default photo whose file is gone is not ready.
+        let gone = try found("Can", source: .deezer)
+        try FileManager.default.removeItem(at: store.photoURL(hash: gone.hash))
         XCTAssertEqual(only("Can").state, .none)
+        // Nor one too small for the iPod (the preparer wants 300 px).
+        try store.addPhoto(name: "Low", data: FakePictureFetcher.jpeg(width: 200, height: 200), source: .owner,
+                           sourceID: nil, credit: nil)
+        XCTAssertEqual(only("Low").state, .none)
     }
 
     func testRowCheckWhenUncertain() {
@@ -74,18 +86,27 @@ final class ArtistPictureRowTests: XCTestCase {
     func testRowNoneWhenNothingKnown() throws {
         XCTAssertEqual(only("Air").state, .none)
         XCTAssertEqual(only("Air").badge, "NONE")
-        try store.set(ArtistPictureRecord(foldedKey: "", displayName: "Air", outcome: .notFound, checkedAt: now),
-                      prepared: nil)
+        store.update(name: "Air") { $0.photoSearchedAt = self.now }
         XCTAssertEqual(only("Air").state, .none)
     }
 
     func testRowRejected() throws {
-        try store.set(ArtistPictureRecord(foldedKey: "", displayName: "Air", outcome: .rejected, pickedByUser: true,
-                                          checkedAt: now), prepared: nil)
+        store.update(name: "Air") { $0.notOnIPod = true }
         XCTAssertEqual(only("Air").state, .rejected)
-        XCTAssertEqual(only("Air").badge, "NO PICTURE")
+        XCTAssertEqual(only("Air").badge, "NOT ON IPOD")
+        // "Don't Send to iPod" keeps the photo for the app.
+        try found("Low", source: .deezer)
+        store.update(name: "Low") { $0.notOnIPod = true }
+        XCTAssertEqual(only("Low").state, .rejected)
+        XCTAssertNotNil(store.profile(forName: "Low")?.defaultPhotoRef)
+        // The owner's "No Photo" on the artist page sends nothing either.
+        try found("Yes", source: .deezer)
+        store.update(name: "Yes") { $0.noPhoto = true }
+        XCTAssertEqual(only("Yes").state, .rejected)
+        XCTAssertEqual(only("Yes").badge, "NO PICTURE")
         // The sheet's own edits win over the store until applied.
         XCTAssertEqual(only("Air", edits: ["air": .clear]).state, .none)
+        XCTAssertEqual(only("Low", edits: ["low": .clear]).state, .ready, "Clear takes back only the sheet's word")
         XCTAssertEqual(only("Can", edits: ["can": .noPicture]).state, .rejected)
     }
 
@@ -96,16 +117,17 @@ final class ArtistPictureRowTests: XCTestCase {
     }
 
     func testBadgesBySource() throws {
-        try found("Air", source: .libraryFolder)
+        try found("Air", source: .library)
         try found("Can", source: .commons)
         try found("Low", source: .deezer, picked: true)
-        try found("Yes", source: .userFile)
-        let badges = ArtistPictureRow.rows(artists: ["Air", "Can", "Low", "Yes"].map { artist($0) }, tree: tree(),
-                                           store: store, uncertain: [:])
+        try found("Yes", source: .owner, sourceID: nil)
+        try found("Dido", source: .migrated, sourceID: "deezer:5")
+        let badges = ArtistPictureRow.rows(artists: ["Air", "Can", "Low", "Yes", "Dido"].map { artist($0) },
+                                           tree: tree(), profiles: store, uncertain: [:])
             .reduce(into: [String: String]()) { $0[$1.name] = $1.badge }
-        XCTAssertEqual(badges, ["Air": "DISK", "Can": "COMMONS", "Low": "PICKED", "Yes": "PICKED"])
-        let picked = only("Tool", edits: ["tool": .picked(prepared: Data("x".utf8), source: .commons,
-                                                          candidate: candidate)])
+        XCTAssertEqual(badges, ["Air": "DISK", "Can": "COMMONS", "Low": "PICKED", "Yes": "PICKED", "Dido": "DEEZER"])
+        let picked = only("Tool", edits: ["tool": .picked(prepared: Data("x".utf8), original: Data("x".utf8),
+                                                          source: .commons, candidate: candidate)])
         XCTAssertEqual(picked.state, .ready)
         XCTAssertEqual(picked.badge, "PICKED")
         XCTAssertEqual(picked.credit?.fileName, "Air live.jpg")
@@ -114,39 +136,58 @@ final class ArtistPictureRowTests: XCTestCase {
     func testRowsSortedByTrackCount() {
         let rows = ArtistPictureRow.rows(artists: [artist("Air", tracks: 2), artist("Can", tracks: 9),
                                                    artist("Bjork", tracks: 2)],
-                                         tree: tree(), store: store, uncertain: [:])
+                                         tree: tree(), profiles: store, uncertain: [:])
         XCTAssertEqual(rows.map(\.name), ["Can", "Air", "Bjork"])
     }
 
     func testCanApplyNeedsAReadyRow() throws {
         XCTAssertFalse(ArtistPictureRow.canApply(ArtistPictureRow.rows(
-            artists: [artist("Air")], tree: tree(), store: store, uncertain: ["air": [candidate]])))
+            artists: [artist("Air")], tree: tree(), profiles: store, uncertain: ["air": [candidate]])))
         try found("Air", source: .deezer)
         XCTAssertTrue(ArtistPictureRow.canApply(ArtistPictureRow.rows(
-            artists: [artist("Air")], tree: tree(), store: store, uncertain: [:])))
+            artists: [artist("Air")], tree: tree(), profiles: store, uncertain: [:])))
     }
 
-    func testEditRecordsAreTheOwnersWord() throws {
-        let (picked, bytes) = try XCTUnwrap(ArtistPictureRow.record(
-            for: .picked(prepared: Data("x".utf8), source: .commons, candidate: candidate), name: "Air", now: now))
-        XCTAssertTrue(picked.pickedByUser)
-        XCTAssertEqual(picked.credit, candidate.credit)
-        XCTAssertEqual(bytes, Data("x".utf8))
-        let (rejected, none) = try XCTUnwrap(ArtistPictureRow.record(for: .noPicture, name: "Air", now: now))
-        XCTAssertEqual(rejected.outcome, .rejected)
-        XCTAssertNil(none)
-        XCTAssertNil(ArtistPictureRow.record(for: .clear, name: "Air", now: now))
+    func testEditsApplyAsTheOwnersWord() throws {
+        // A candidate picked in the sheet: the artist's default photo, the owner's pick.
+        try ArtistPictureRow.apply(.picked(prepared: Data("x".utf8), original: jpeg("Air"), source: .commons,
+                                           candidate: candidate), name: "Air", to: store)
+        var profile = try XCTUnwrap(store.profile(forName: "Air"))
+        XCTAssertTrue(profile.defaultPickedByOwner)
+        XCTAssertEqual(profile.defaultPhotoRef?.source, .commons)
+        XCTAssertEqual(profile.defaultPhotoRef?.sourceID, "Q1")
+        XCTAssertEqual(profile.defaultPhotoRef?.credit, candidate.credit)
 
-        try store.set(rejected, prepared: nil)
-        store.remove(forName: "AIR")
-        XCTAssertNil(store.record(forName: "Air"), "Clear forgets every spelling of the person")
+        // A file of the owner's own, kept as given and made the default.
+        let own = jpeg("own file")
+        try ArtistPictureRow.apply(.picked(prepared: Data("x".utf8), original: own, source: .userFile, candidate: nil),
+                                   name: "Air", to: store)
+        profile = try XCTUnwrap(store.profile(forName: "Air"))
+        XCTAssertEqual(profile.defaultPhotoRef?.source, .owner)
+        XCTAssertEqual(profile.photos.count, 2, "the earlier pick stays one of the artist's photos")
+        XCTAssertEqual(store.photoData(hash: try XCTUnwrap(profile.defaultPhoto)), own)
+
+        // "Don't Send to iPod" hides nothing in the app.
+        try ArtistPictureRow.apply(.noPicture, name: "Air", to: store)
+        XCTAssertEqual(store.profile(forName: "Air")?.notOnIPod, true)
+        XCTAssertNotNil(store.profile(forName: "Air")?.defaultPhotoRef)
+
+        // Clear takes it back for every spelling of the person.
+        try ArtistPictureRow.apply(.clear, name: "AIR", to: store)
+        XCTAssertEqual(store.profile(forName: "Air")?.notOnIPod, false)
+        XCTAssertEqual(store.profile(forName: "Air")?.photos.count, 2, "Clear never removes a photo")
+
+        // Picking a picture brings an artist back to the iPod.
+        try ArtistPictureRow.apply(.noPicture, name: "Air", to: store)
+        try ArtistPictureRow.apply(.picked(prepared: Data("x".utf8), original: own, source: .userFile, candidate: nil),
+                                   name: "Air", to: store)
+        XCTAssertEqual(store.profile(forName: "Air")?.notOnIPod, false)
     }
 
     // MARK: Held candidates and Find's 30-day rule
 
     func testHeldCandidatesFromTheStoreShowAsCheck() throws {
-        try store.set(ArtistPictureRecord(foldedKey: "", displayName: "Air", outcome: .uncertain, checkedAt: now,
-                                          candidates: [ArtistPictureRecord.HeldCandidate(candidate)]), prepared: nil)
+        store.update(name: "Air") { $0.photoCandidates = [ArtistPictureRecord.HeldCandidate(self.candidate)] }
         let row = only("Air")
         XCTAssertEqual(row.state, .check)
         XCTAssertEqual(row.candidates, [candidate])
@@ -158,14 +199,14 @@ final class ArtistPictureRowTests: XCTestCase {
     }
 
     func testFindSkipsAFreshNotFoundUnlessAskedToLookAgain() throws {
-        try store.set(ArtistPictureRecord(foldedKey: "", displayName: "Air", outcome: .notFound,
-                                          checkedAt: now.addingTimeInterval(-86_400)), prepared: nil)
-        try store.set(ArtistPictureRecord(foldedKey: "", displayName: "Beck", outcome: .notFound,
-                                          checkedAt: now.addingTimeInterval(-31 * 86_400)), prepared: nil)
-        try store.set(ArtistPictureRecord(foldedKey: "", displayName: "Can", outcome: .uncertain, checkedAt: now,
-                                          candidates: [ArtistPictureRecord.HeldCandidate(candidate)]), prepared: nil)
-        let rows = ArtistPictureRow.rows(artists: [artist("Air"), artist("Beck"), artist("Can"), artist("Dido")],
-                                         tree: tree(), store: store, uncertain: [:], now: now)
+        store.update(name: "Air") { $0.photoSearchedAt = self.now.addingTimeInterval(-86_400) }
+        store.update(name: "Beck") { $0.photoSearchedAt = self.now.addingTimeInterval(-31 * 86_400) }
+        store.update(name: "Can") { $0.photoCandidates = [ArtistPictureRecord.HeldCandidate(self.candidate)] }
+        // A background lookup that left no photo counts as a search too.
+        store.update(name: "Eno") { $0.checkedAt = self.now.addingTimeInterval(-2 * 86_400) }
+        let rows = ArtistPictureRow.rows(artists: [artist("Air"), artist("Beck"), artist("Can"), artist("Dido"),
+                                                   artist("Eno")],
+                                         tree: tree(), profiles: store, uncertain: [:], now: now)
         let air = try XCTUnwrap(rows.first { $0.name == "Air" })
         XCTAssertEqual(air.state, .none)
         XCTAssertEqual(air.notFoundAt, now.addingTimeInterval(-86_400))

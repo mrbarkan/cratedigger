@@ -1,18 +1,34 @@
 import Foundation
 
 /// The file types that make up a library index: crate membership lists, the
-/// shared track store, listening history, the artist picture records
-/// (`library.cdartists`; their prepared images stay in Application Support,
-/// and a missing one is simply fetched again) and the artist profiles
-/// (`library.cdartistinfo`). Moving the index and copying it both read this
-/// list, so a new index file is added here once, not in each. Top-level files
-/// only: the profiles' `ArtistPhotos` folder is not on it and needs its own
-/// handling wherever the index moves.
+/// shared track store, listening history, the old artist picture records
+/// (`library.cdartists`, read once to carry them into the profiles, then
+/// renamed `.bak`) and the artist profiles (`library.cdartistinfo`). Moving
+/// the index and copying it both read this list, so a new index file is
+/// added here once, not in each. Top-level files only: the profiles'
+/// `ArtistPhotos` folder is in `movedFolders`, which moving the index
+/// carries and the offline copy leaves out (photo bytes are too large; the
+/// page shows a placeholder for them while the drive is out).
 public enum LibraryIndexFiles {
     public static let extensions: Set<String> = ["cdcrate", "cdtracks", "cdplays", "cdartists", "cdartistinfo"]
+    /// Folders beside the index files that move with them.
+    public static let movedFolders = [ArtistProfileStore.photosFolder]
 
     public static func isIndexFile(_ url: URL) -> Bool {
         extensions.contains(url.pathExtension.lowercased())
+    }
+
+    /// What moving the index out of `folder` moves: its index files, then
+    /// the `movedFolders` that are there. Throws when the folder cannot be read.
+    public static func itemsToMove(in folder: URL, fileManager: FileManager = .default) throws -> [URL] {
+        let files = try fileManager.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
+            .filter(isIndexFile)
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+        let folders = movedFolders.map { folder.appendingPathComponent($0, isDirectory: true) }.filter { url in
+            var isFolder: ObjCBool = false
+            return fileManager.fileExists(atPath: url.path, isDirectory: &isFolder) && isFolder.boolValue
+        }
+        return files + folders
     }
 }
 
