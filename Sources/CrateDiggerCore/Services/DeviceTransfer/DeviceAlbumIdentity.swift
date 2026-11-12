@@ -11,6 +11,14 @@ import Foundation
 /// album-artist tag is one album here too (its "Various Artists" bucket), not
 /// one album per performer. Persisted (a remembered Leave it), so the stored
 /// strings are already folded and decode as they are.
+///
+/// Two known limits come with the shared key, accepted rather than worked
+/// around: `albumFolderKeys` only reconciles two or more files in one folder,
+/// so a single track sent from an untagged compilation (no album artist, no
+/// compilation flag) buckets under its own performer and reads as New against
+/// the device's Various Artists album; and two different albums sharing a
+/// title in one flat device folder are reconciled as one album (by different
+/// artists, under Various Artists), so they merge into one identity.
 public struct DeviceAlbumIdentity: Hashable, Codable, Sendable {
     /// Folded artist bucket.
     public let artist: String

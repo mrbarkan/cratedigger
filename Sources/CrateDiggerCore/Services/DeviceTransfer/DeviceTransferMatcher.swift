@@ -212,28 +212,27 @@ public struct DeviceTransferMatcher {
         sentArt: Int?,
         settings: ExternalDeviceTransferSettings
     ) -> Candidate {
-        let deviceArt = Self.longestSide(of: copy.tracks)
+        let deviceArt = Self.deviceArtPixels(copy.tracks)
         let artDiffers: Bool = {
             guard let sentArt else { return false }
             return deviceArt != sentArt
         }()
         let comparesAudio = settings.mode == .copyOriginals
 
-        var claimed = Array(repeating: false, count: copy.tracks.count)
+        let pairs = Self.pair(sent, with: copy.tracks)
         var missing: [LoadedTrack] = []
         var same: [LoadedTrack] = []
         var changed: [(sent: LoadedTrack, device: LoadedTrack)] = []
         var differences: Set<DeviceAlbumDifference> = []
 
-        for track in sent {
-            guard let (index, bySlot) = counterpart(of: track, in: copy.tracks, claimed: claimed) else {
+        for (offset, track) in sent.enumerated() {
+            guard let pair = pairs[offset] else {
                 missing.append(track)
                 continue
             }
-            claimed[index] = true
-            let device = copy.tracks[index]
+            let device = copy.tracks[pair.index]
 
-            if bySlot, Self.isDifferentRelease(track, device) {
+            if pair.bySlot, Self.isDifferentRelease(track, device) {
                 differences.insert(.differentRelease)
             }
             let audioDiffers = comparesAudio && AudioForm(track) != AudioForm(device)
@@ -265,27 +264,42 @@ public struct DeviceTransferMatcher {
         )
     }
 
-    /// The unclaimed device track at the same slot, else (when either side has
-    /// no track number) the one with the same folded title. `bySlot` is true
-    /// for a slot match, the only kind that can reveal a different release.
-    private func counterpart(
-        of track: LoadedTrack,
-        in deviceTracks: [LoadedTrack],
-        claimed: [Bool]
-    ) -> (index: Int, bySlot: Bool)? {
-        let slot = Slot(track)
-        if slot.number != nil,
-           let index = deviceTracks.indices.first(where: { !claimed[$0] && Slot(deviceTracks[$0]) == slot }) {
-            return (index, true)
+    /// Each sent track's device counterpart (index into `deviceTracks`), one
+    /// to one. Every slot match (disc, track number) is made first; only then
+    /// does a track left over fall back to its folded title, and only against
+    /// a device track where either side has no number. Two passes, so an
+    /// unnumbered track earlier in the list can never take the device track a
+    /// later numbered one needs. `bySlot` marks the slot matches, the only kind
+    /// that can reveal a different release.
+    private static func pair(
+        _ sent: [LoadedTrack],
+        with deviceTracks: [LoadedTrack]
+    ) -> [(index: Int, bySlot: Bool)?] {
+        var pairs: [(index: Int, bySlot: Bool)?] = Array(repeating: nil, count: sent.count)
+        var claimed = Array(repeating: false, count: deviceTracks.count)
+        let deviceSlots = deviceTracks.map(Slot.init)
+
+        for (offset, track) in sent.enumerated() {
+            let slot = Slot(track)
+            guard slot.number != nil,
+                  let index = deviceSlots.indices.first(where: { !claimed[$0] && deviceSlots[$0] == slot })
+            else { continue }
+            claimed[index] = true
+            pairs[offset] = (index, true)
         }
-        let title = Self.foldedTitle(track)
-        let index = deviceTracks.indices.first { index in
-            guard !claimed[index] else { return false }
-            let device = deviceTracks[index]
-            guard slot.number == nil || Slot(device).number == nil else { return false }
-            return Self.foldedTitle(device) == title
+
+        for (offset, track) in sent.enumerated() where pairs[offset] == nil {
+            let numbered = Slot(track).number != nil
+            let title = foldedTitle(track)
+            guard let index = deviceTracks.indices.first(where: {
+                !claimed[$0]
+                    && (!numbered || deviceSlots[$0].number == nil)
+                    && foldedTitle(deviceTracks[$0]) == title
+            }) else { continue }
+            claimed[index] = true
+            pairs[offset] = (index, false)
         }
-        return index.map { ($0, false) }
+        return pairs
     }
 
     // MARK: - Different release
@@ -319,19 +333,41 @@ public struct DeviceTransferMatcher {
     // MARK: - Art
 
     /// The longest side of the art the transfer would put on the device.
+    ///
+    /// `artworkDimensions` describes the art the library resolved (embedded,
+    /// else a folder image, else cached remote art), not what is in the file,
+    /// so what counts depends on what the transfer actually writes:
+    /// - Copy mode copies the audio file's bytes, so only embedded art lands.
+    /// - Convert mode with a cap re-embeds `ConversionMetadata.artwork`, the
+    ///   resolved art whatever its source (`ConversionService`, `.compatReembed`),
+    ///   resized like `ArtworkService.prepareCompatibleArtwork`: `max(120, cap)`.
+    /// - Convert mode without a cap keeps the source's own art stream
+    ///   (`.preserve` maps `0:v?`), so again only embedded art lands.
     private func sentArtPixels(_ sent: [LoadedTrack], settings: ExternalDeviceTransferSettings) -> Int? {
-        guard let source = Self.longestSide(of: sent) else { return nil }
-        guard settings.mode == .convertDuringTransfer else { return source }
         // Task 2: read settings.artworkMode (Strip sends no embedded art) and,
         // when settings.writesFolderCoverArt is on, take the max with
         // min(source, FolderCoverArtWriter.defaultMaxDimension).
-        guard let cap = settings.artworkMaxDimension else { return source }
-        return min(source, cap)
+        guard settings.mode == .convertDuringTransfer, let cap = settings.artworkMaxDimension else {
+            return Self.longestSide(of: sent, from: [.embedded])
+        }
+        guard let source = Self.longestSide(of: sent, from: nil) else { return nil }
+        return min(source, max(120, cap))
     }
 
-    /// Longest side of the first track in the list that carries art dimensions.
-    private static func longestSide(of tracks: [LoadedTrack]) -> Int? {
-        tracks.lazy.compactMap(\.track.artworkDimensions).first.map { max($0.width, $0.height) }
+    /// The device copy's art: embedded, or a folder image beside it (a Rockbox
+    /// `cover.jpg`). Remote art cached by the scan is not on the device.
+    private static func deviceArtPixels(_ tracks: [LoadedTrack]) -> Int? {
+        longestSide(of: tracks, from: [.embedded, .folderImage])
+    }
+
+    /// Longest side of the first track in the list that carries art
+    /// dimensions from one of `sources` (nil: any source).
+    private static func longestSide(of tracks: [LoadedTrack], from sources: Set<ArtworkSource>?) -> Int? {
+        tracks.lazy
+            .filter { sources?.contains($0.track.artworkSource) ?? true }
+            .compactMap(\.track.artworkDimensions)
+            .first
+            .map { max($0.width, $0.height) }
     }
 
     // MARK: - Display

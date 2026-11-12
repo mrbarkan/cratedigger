@@ -153,6 +153,70 @@ final class DeviceTransferMatcherTests: XCTestCase {
         XCTAssertEqual(differs[0].sentArtPixels, 1400)
     }
 
+    func testCopyModeIgnoresSentFolderImageArt() {
+        // The library resolved a cover.jpg; copying the audio file does not carry it.
+        let sending = album("/Src/Kind of Blue", numbers: [1, 2], art: 1400, artSource: .folderImage)
+        let device = album("/Device/Music/Kind of Blue", numbers: [1, 2], art: nil)
+
+        let result = compare(sending, device)
+
+        XCTAssertEqual(result.map(\.status), [.present])
+        XCTAssertNil(result[0].sentArtPixels)
+    }
+
+    func testDeviceRemoteArtIsIgnored() {
+        // Remote art cached by the device scan is not on the device.
+        let sending = album("/Src/Kind of Blue", numbers: [1], art: 600)
+        let device = album("/Device/Music/Kind of Blue", numbers: [1], art: 600, artSource: .remote)
+
+        let result = compare(sending, device)
+
+        XCTAssertEqual(result.map(\.status), [.differs])
+        XCTAssertEqual(result[0].differences, [.artSize])
+        XCTAssertNil(result[0].deviceArtPixels)
+    }
+
+    func testDeviceFolderImageArtCounts() {
+        let sending = album("/Src/Kind of Blue", numbers: [1], art: 600)
+        let device = album("/Device/Music/Kind of Blue", numbers: [1], art: 600, artSource: .folderImage)
+
+        XCTAssertEqual(compare(sending, device).map(\.status), [.present])
+    }
+
+    func testConvertModeWithCapReembedsResolvedArtFromAnySource() {
+        let sending = album("/Src/Kind of Blue", numbers: [1], art: 1400, artSource: .folderImage)
+        let device = album("/Device/Music/Kind of Blue", numbers: [1], art: 1024)
+
+        let result = compare(sending, device, settings: convertSettings)
+
+        XCTAssertEqual(result.map(\.status), [.present])
+        XCTAssertEqual(result[0].sentArtPixels, 1024)
+    }
+
+    func testConvertModeWithoutCapKeepsOnlyEmbeddedArt() {
+        var keep = convertSettings
+        keep.artworkMaxDimension = nil
+        let sending = album("/Src/Kind of Blue", numbers: [1], art: 1400, artSource: .folderImage)
+        let device = album("/Device/Music/Kind of Blue", numbers: [1], art: nil)
+
+        let result = compare(sending, device, settings: keep)
+
+        XCTAssertEqual(result.map(\.status), [.present])
+        XCTAssertNil(result[0].sentArtPixels)
+    }
+
+    func testConvertModeCapBelowFloorClampsTo120() {
+        var tiny = convertSettings
+        tiny.artworkMaxDimension = 50
+        let sending = album("/Src/Kind of Blue", numbers: [1], art: 1400)
+        let device = album("/Device/Music/Kind of Blue", numbers: [1], art: 120)
+
+        let result = compare(sending, device, settings: tiny)
+
+        XCTAssertEqual(result.map(\.status), [.present])
+        XCTAssertEqual(result[0].sentArtPixels, 120)
+    }
+
     func testSameArtSizeDifferentHashIsSame() {
         var sending = album("/Src/Kind of Blue", numbers: [1, 2], art: 600)
         sending = sending.map { withArtHash($0, "source-hash") }
@@ -304,6 +368,23 @@ final class DeviceTransferMatcherTests: XCTestCase {
         XCTAssertEqual(compare(sending, device).map(\.status), [.present])
     }
 
+    func testSlotMatchesBeforeTitleFallback() {
+        // The unnumbered MP3 comes first and would title-match the device's
+        // track 1 if pairing went in list order, leaving the numbered FLAC
+        // (the same form as the device copy) unmatched.
+        let loose = track(album: "Kind of Blue", number: nil, title: "Track 1", format: "MP3", bitrate: 128,
+                          path: "/Src/Kind of Blue/Track 1.mp3")
+        let numbered = track(album: "Kind of Blue", number: 1, title: "Track 1",
+                             path: "/Src/Kind of Blue/01 Track 1.flac")
+        let device = album("/Device/Music/Kind of Blue", numbers: [1])
+
+        let result = compare([loose, numbered], device)
+
+        XCTAssertEqual(result.map(\.status), [.gaps])
+        XCTAssertEqual(result[0].same.map(\.track.fileURL.path), ["/Src/Kind of Blue/01 Track 1.flac"])
+        XCTAssertEqual(result[0].missing.map(\.track.fileURL.path), ["/Src/Kind of Blue/Track 1.mp3"])
+    }
+
     func testDuplicateSourcePathsCountedOnce() {
         let one = album("/Src/Kind of Blue", numbers: [1, 2])
         let sending = one + one
@@ -358,12 +439,14 @@ final class DeviceTransferMatcherTests: XCTestCase {
         bitrate: Int? = 900,
         ext: String = "flac",
         art: Int? = nil,
+        artSource: ArtworkSource = .embedded,
         trackTotal: Int? = nil,
         year: Int? = nil
     ) -> [LoadedTrack] {
         numbers.map { number in
             track(album: album, number: number, title: "Track \(number)", format: format, bitrate: bitrate,
-                  path: "\(folder)/0\(number) Track \(number).\(ext)", art: art, trackTotal: trackTotal, year: year)
+                  path: "\(folder)/0\(number) Track \(number).\(ext)", art: art, artSource: artSource,
+                  trackTotal: trackTotal, year: year)
         }
     }
 
@@ -378,6 +461,7 @@ final class DeviceTransferMatcherTests: XCTestCase {
         bitrate: Int? = 900,
         path: String,
         art: Int? = nil,
+        artSource: ArtworkSource = .embedded,
         trackTotal: Int? = nil,
         year: Int? = nil
     ) -> LoadedTrack {
@@ -393,7 +477,7 @@ final class DeviceTransferMatcherTests: XCTestCase {
             trackNumber: number,
             trackTotal: trackTotal,
             discNumber: disc,
-            artworkSource: art == nil ? .none : .embedded,
+            artworkSource: art == nil ? .none : artSource,
             artworkDimensions: art.map { ArtworkDimensions(width: $0, height: $0) }
         )
         let metadata = ConversionMetadata(
