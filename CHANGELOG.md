@@ -86,9 +86,33 @@ too. Betas are offered only to people who turned on Receive beta updates.
   you already have on the iPod is never replaced, and the ones CrateDigger
   added can be removed. Pictures after a transfer wait until you mark the
   check passed for that iPod.
+- **Artist pages.** Select an artist (or choose Show Artist on a track) and
+  the inspector shows who they are: a portrait, where they are from, their
+  years, members and genres, the opening of their Wikipedia article (with
+  its credit and a link), and what your library holds of them, from albums
+  and formats to plays and the tracks you play most. When two acts share a
+  name, the page asks which one you mean instead of guessing.
+- **Artist info fills itself in.** A quiet background lookup finds each
+  artist on MusicBrainz, Wikidata, Wikipedia and Deezer, one at a time and
+  the one you are looking at first. It never slows a FIX TAGS or artwork
+  search you started, and it pauses while you scan, convert or copy to a
+  device, when CrateDigger is hidden, on Low Power and offline. Only artist
+  names are sent. Settings > Integrations > Look up artist info and photos
+  turns it off; Look Up Again on an artist page still works.
+- **Edit an artist and their photos.** Edit Artist lets you correct any
+  fact (what you type always wins over what was looked up), paste the
+  right MusicBrainz artist, add as many photos as you like, and choose the
+  one shown. The artist photo viewer pages through them, makes one the
+  default, and shows where each came from.
 
 ### Changed
 
+- **The iPod shows the artist's own photo.** The picture CrateDigger writes
+  for an artist on a PodBox iPod is now the default photo on their artist
+  page, so the two always agree. Picking a picture in Artist Pictures makes
+  it the artist's photo too, and No Picture is now Don't Send to iPod,
+  which keeps the photo in CrateDigger. Pictures you had already chosen
+  carry over the first time you open your library.
 - **MusicBrainz lookups share one speed limit.** Artwork search, FIX TAGS, DEEP
   SCAN, CD lookup and artist pictures wait their turn at the same gate
   instead of each keeping its own count, so using two together no longer
