@@ -110,8 +110,11 @@ the Mac first.
 4. Eject the iPod, let it rescan (or choose Update Database in its
    Maintenance menu), reconnect it. Play a track from that album.
 5. Check the iPod's unreadable-files list no longer names that folder.
-6. Look in `~/Library/Application Support/CrateDigger/DeviceJournal/<profile id>/backups/`.
-   There should be a folder per cleanup holding a copy of each removed file.
+6. In the summary, press **Show Copies in Finder** (it is dimmed when the
+   cleanup kept no copy, because it removed nothing). It opens
+   `~/Library/Application Support/CrateDigger/DeviceJournal/<profile id>/backups/<session>/`,
+   the folder for this cleanup, holding a copy of each removed file. The log
+   also names the session.
 7. Only then run **Clean Up Mac Files...** for the whole iPod (the device's
    context menu, or Preferences > Devices).
 
@@ -190,7 +193,11 @@ sheet, so CrateDigger does only what you press.
    nothing over the network). Or press **Find Missing** if you are happy for
    CrateDigger to send the artist's name to Deezer, MusicBrainz, Wikidata and
    Wikimedia Commons. Accept the picture for that artist only.
-4. Press **Apply**. Eject the iPod.
+4. Press **Apply**. Until you have marked this check passed, Apply writes
+   **one** picture only: the first one you changed in the sheet (else the
+   first ready one), and the footer says "Writing one picture first. Check it
+   on the iPod, then mark the check as passed in Preferences ▸ Devices to
+   write the rest." The other ready pictures stay ready. Eject the iPod.
 5. On the iPod: Settings > Library > Maintenance > **Update Art Cache**, then
    open that artist. Before you run Update Art Cache, look at the artist once
    and note whether the picture is already there (that is check M12).
@@ -200,17 +207,26 @@ sheet, so CrateDigger does only what you press.
 in `/Artwork/People`; the file name looks like the artist's name in plain
 letters and digits. Then, and only then, turn on **Verified on this iPod
 (M5)** in Preferences > Devices. That lets pictures be written after a
-transfer.
+transfer, and lets Apply write every ready picture, after a confirmation
+that gives the count.
 
 **Stop:** no picture shows, or something odd shows for another artist, or a
 `._` file is in the folder. Remove `/Artwork/People/<name>.jpg` (or use the
 remove button for added pictures in Preferences > Devices, which keeps a copy on the Mac), run Update Art Cache
 again, and leave the switch off.
 
-**Undo:** in Preferences > Devices there is a remove button for pictures
-CrateDigger added. It removes only files CrateDigger wrote and nobody has
-changed since, keeps a copy on the Mac, and leaves your own pictures alone.
-Or delete the one file by hand and run Update Art Cache.
+**Undo:** in the Artist Pictures sheet, the artist's DEVICE row now offers
+**Remove from iPod** (in its menu) when CrateDigger wrote that picture for
+that artist and it is unchanged; it keeps a copy on the Mac. Your own
+pictures on DEVICE rows cannot be changed from the sheet at all (the row
+says so). In Preferences > Devices there is also a remove button for every
+picture CrateDigger added, with the same rules; its summary has **Show
+Copies in Finder**. Or delete the one file by hand and run Update Art Cache.
+
+**Also in the sheet:** a CHECK row keeps its candidates after you close the
+sheet, so you can pick later. **Find Missing** skips an artist it found
+nothing for in the last 30 days; that row says when, and **Look Again** in
+its menu asks now.
 
 **If the iPod already shows pictures for most artists** (from your own
 files), that is expected: CrateDigger never writes a picture for an artist
@@ -228,6 +244,11 @@ edit it) before and after the eject. Note the result.
 
 **Either answer is fine.** It only decides whether the on-screen reminder
 says "run Update Art Cache" or "PodBox will do it".
+
+The DEVICES reminder "NEXT ON IPOD · UPDATE ART CACHE" now clears as soon as
+`stamps.dat` changes in any way from what it was when CrateDigger wrote the
+art (it notes the date then), so an iPod whose clock was never set clears it
+too.
 
 ---
 
@@ -252,6 +273,10 @@ so there is nothing to run now. They are here so the list is complete.
 
 These came out of the build and review, and some need a decision from you.
 
+- **FIX ART only adds.** It gives a `cover.jpg` to album folders that have
+  none (in any case: `Cover.JPG` counts) and leaves every existing cover as
+  it is, whoever made it. Its confirmation says how many folders get a cover
+  and how many already have one. It replaces nothing, so it keeps no copies.
 - **Folders that end in a dot.** FAT drops a trailing dot, so CrateDigger
   refuses to write anywhere whose name ends in one. New albums are written
   with the dot removed (`R.E.M` for `R.E.M.`). A folder that already ends in a
