@@ -191,7 +191,7 @@ get only a picture you chose here.
 1. Pick **one** artist on the iPod whose name has `&`, an accent, or a leading
    "The" (the three cases the name matching is built for). Make sure the iPod
    shows no picture for them now.
-2. In Preferences > Devices, select the iPod. Set **Artist pictures** to
+2. In Preferences > Devices, select the iPod. In its **PodBox** section, set **Artist pictures** to
    **In /Artwork/People**. Leave **Find missing artist pictures
    automatically** off, and leave **Verified on this iPod (M5)** off.
 3. Choose **Artist Pictures...**. Find that artist. If the row has no picture,

@@ -340,14 +340,18 @@ struct DevicesPreferencesView: View {
         draft.settings.folderStructureMode = .metadataTemplate
     }
 
-    // MARK: On the iPod
+    // MARK: PodBox
 
-    /// PodBox's own extras for this iPod: what the readiness check says,
-    /// then artist pictures. Every switch is saved with Save; nothing here
-    /// writes to the device except Remove (after a confirmation) and Apply
-    /// in the Artist Pictures sheet.
+    /// PodBox's own extras for this iPod: what PodBox is, what the readiness
+    /// check says, then artist pictures. Every switch is saved with Save;
+    /// nothing here writes to the device except Remove (after a
+    /// confirmation) and Apply in the Artist Pictures sheet.
     private var onTheIPodSection: some View {
-        Section("On the iPod") {
+        Section("PodBox") {
+            Text(podBoxIntroCaption)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
             ForEach(notes) { note in
                 VStack(alignment: .leading, spacing: 2) {
                     Text(note.text)
@@ -366,11 +370,10 @@ struct DevicesPreferencesView: View {
                 Text("In /Artwork/People").tag(ArtistPictureDestination.artworkFolder)
                 Text("In artist folders").tag(ArtistPictureDestination.artistFolders)
             }
-            if !passedM5 {
-                Text("Run the M5 check before turning this on.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            Text(artistPicturesCaption)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
             Toggle("Verified on this iPod (M5)", isOn: Binding(
                 get: { passedM5 },
                 set: { passed in
@@ -383,8 +386,12 @@ struct DevicesPreferencesView: View {
                     draft.podBox = preferences
                 }
             ))
+            Text(verifiedCaption)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
             Toggle("Find missing artist pictures automatically", isOn: podBoxBinding(\.findsArtistPicturesAutomatically))
-            Text("At the end of each transfer, looks up pictures for artists without one on Deezer, sending only the artist's name. Off until you turn it on.")
+            Text("At the end of each transfer, looks up a picture on Deezer for artists who still have no photo in CrateDigger, sending only the artist's name. Most artists already have one from the artist lookup in Settings ▸ Integrations. Off until you turn it on.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
@@ -406,6 +413,37 @@ struct DevicesPreferencesView: View {
 
     private var passedM5: Bool {
         draft.podBox?.passedChecks.contains(ArtistPictureSession.m5Check) ?? false
+    }
+
+    /// What PodBox is, and when this section applies. Shown for every
+    /// Rockbox iPod profile while the device is unplugged, so it says the
+    /// extras need PodBox rather than assuming it.
+    private var podBoxIntroCaption: String {
+        let what = "PodBox is a Rockbox firmware for the iPod that builds its own library from the files on the disk and can show a portrait for each artist."
+        return hasPeopleArtwork == true
+            ? what + " This iPod runs it, so the extras below are available."
+            : what + " The extras below are used only when this iPod runs it; connect it and CrateDigger checks."
+    }
+
+    /// What the chosen destination writes, and where, in plain words.
+    private var artistPicturesCaption: String {
+        switch draft.podBox?.artistPictures ?? .off {
+        case .off:
+            return "No artist pictures are written. \"In /Artwork/People\" puts one portrait per artist in PodBox's central People folder; \"In artist folders\" writes a folder.jpg into each artist's folder instead."
+        case .artworkFolder:
+            return "One portrait per artist goes in /Artwork/People, the iPod's own folder of people pictures, named after the artist (Björk.jpg). PodBox looks there when it shows an artist, and your music folders are not touched. The picture is the artist's default photo in CrateDigger, made into a small square. An artist the iPod already shows a picture for never gets another."
+        case .artistFolders:
+            return "A folder.jpg goes in each artist's own folder, beside their albums. PodBox uses it when /Artwork/People has nothing for that artist. The picture is the artist's default photo in CrateDigger, made into a small square. An artist the iPod already shows a picture for never gets another."
+        }
+    }
+
+    /// What marking check M5 changes. M5 is the one-picture test in
+    /// `docs/PODBOX_CHECKS.md`; until it passes, Apply writes one picture
+    /// and transfers write none (`ArtistPictureSession.mayWrite`).
+    private var verifiedCaption: String {
+        passedM5
+            ? "Pictures are written after each transfer, and Apply in Artist Pictures writes every ready one after asking."
+            : "Check one picture first: until this is on, transfers write no pictures and Apply in Artist Pictures writes just one. When that picture shows for its artist on the iPod (Settings ▸ Library ▸ Maintenance ▸ Update Art Cache), turn this on."
     }
 
     /// One PodBox preference on the draft, created with its defaults on first change.
