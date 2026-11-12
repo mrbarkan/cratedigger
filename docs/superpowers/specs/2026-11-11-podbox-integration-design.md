@@ -1,6 +1,121 @@
 # PodBox integration: one design from proposals A and B
 
-2026-11-11. Status: draft for approval. Written while the owner was away, so
+## Status
+
+Written 2026-11-12, after the build of Phases 1 and 2 on `feat/podbox`.
+The rest of this document is the design as it was written (the owner has not yet reviewed it); where the build
+decided differently, the line below says so, and the code and `CLAUDE.md`
+("PodBox and the device write door") are the authority.
+
+**Built.**
+- Phase 1: the firmware probe and capabilities, the write door (policy,
+  primitives, journal, executor, the transfer door), the `._` sweep and
+  its Clean Up Mac Files action, the session gate, FAT-safe names in the
+  planners, next steps and Eject after a transfer, the lint, `FakeIPod`,
+  the FAT sandbox, the DEBUG dry run.
+- Phase 2: `FATName`, `PodBoxArtName` with vectors from PodBox's own C,
+  the lookup simulation, the `/Artwork` budget, the picture store, the
+  Deezer and Commons sources, the finder, the planner, image preparation,
+  the Artist Pictures sheet, per-device PodBox preferences, the layout
+  preset, readiness notes and the art-cache reminder.
+- The owner's checks (`docs/PODBOX_CHECKS.md`) have **not** been run.
+  Every switch that waits on one is off.
+
+**Not built: Phases 3 to 5.** Play import and scrobbling (3), playlists,
+lyrics, names and layout beyond the preset (4), and conventions, central
+covers, ignore markers and known artists (5). Their roles exist in
+`DeviceFileRole` and the policy's tables but no writer enables them.
+
+**Built as (where the build differs from the text below).**
+- Built as: `DeviceFileIO` primitives never delete a `._` twin;
+  `removeProvenTwin` does not exist. They prevent twins (data-only copy,
+  attributes stripped) and only the sweep deletes them, after a backup.
+  This settles the spec's own contradiction on the safe side.
+- Built as: `copyDataOnly` and `writeAtomically` take `exclusive:`; a file
+  that was not there must still not be there at the rename.
+- Built as: `DeviceWriteJournal.ownedRecord(forKey:volumeUUID:)` and the
+  executor bind every record to the volume UUID; a record from another
+  volume is not ours. `DeviceFileRecord` and `DeviceFileOperation.write`
+  gained `subject`, and `DeviceFileOperation` gained `replaceAudio`.
+- Built as: the executor captures the root's device and inode at init and
+  requires a real mount point (not only a matching UUID), and checks the
+  policy on the `.cdtmp` too, as given and after resolving symlinks.
+- Built as: the policy denies the player's trees at any path component
+  (so `Music/.rockbox` is refused), refuses any component ending in a dot
+  or a space or holding `~<digit>`, and allows the `appleDouble` delete
+  only for the twin of a media file (not "anywhere outside the denied
+  trees"). Cost: twins of non-media files are left and counted.
+- Built as: the sweep refuses to plan off FAT and exFAT (`refusal`), its
+  `leftAlone` reasons also include "not a file" and "not allowed here",
+  a scope lists each folder on its own, and the deletion backs up from the
+  descriptor it proved and re-checks device, inode and size before `unlink`.
+- Built as: the automatic sweep after a transfer is
+  `PodBoxPreferences.appleDoubleCleanup`, **off by default** per device
+  until M3 and M4 pass (the spec's `sweepsAppleDouble = true` is gone).
+  `findsArtistPicturesAutomatically` is also off by default (spec: true).
+- Built as: `DeviceTransferDoor` wraps the executor for transfers; it is
+  not in the spec.
+- Built as: converting runs never let ffmpeg write onto the device. They
+  convert into a staging folder on the Mac and the result is copied
+  through the door (the spec said to policy-check ffmpeg's destinations).
+  SYNC stages under the destination's own extension.
+- Built as: `FolderCoverArtWriter` is reached by device runs through
+  `DeviceTransferDoor.writeCover`; its default writer is for ordinary,
+  non-device conversions.
+- Built as: a never-booted PodBox keeps the file features including people
+  artwork and playlists (harmless files in allowed folders).
+- Built as: every device destination is made FAT-safe in the planner
+  (`ExternalDeviceTransferPlanner.deviceSafeURL`), because the policy
+  refuses names FAT would change. Existing device folders ending in a dot
+  are refused, and a Gaps fill into one fails the album as a whole.
+- Built as: `isDeviceBusy` is the one busy truth for every device writer
+  and both Eject paths; the spec had a `transfer` busy job spanning
+  `finishDeviceSession`.
+- Built as: the lint has two rules (guarded folders may call no mutator;
+  only `DeviceFileExecutor.swift` may call the door's mutators), covers
+  spelling variants, and each allowlist entry must match exactly one line.
+- Built as: Phase 1's "one door" holds for transfers, SYNC, covers, the
+  sweep and artist pictures. Ordinary conversions, CD rips and Record
+  Divider exports pointed at a device, and Edit Tags, art embed/strip, Move
+  to Trash and artwork-manifest saves on a browsed device, still write
+  outside it (existing features, left for the owner). Core gained
+  `MountedDevice.profileDevice(holding:in:profiles:)` to route them later.
+- Built as: `PodBoxArtLookup.artistPicture(for:albumFolders:tree:)` returns
+  `Outcome` (`.none`, `.found(path)`, `.uncertain(reason)`), not `String?`,
+  and follows the player's own search (the highest folder named for the
+  person, whether or not it holds audio), not "ignore folders that hold
+  audio". **Only `.none` licenses a write.** `DeviceArtTree` carries more
+  (listed folders, book folders, the catalog-mismatch list) and a catalog
+  that disagrees with the walk refuses the whole plan.
+- Built as: `PodBoxArtworkBudget(existingNames:)` with `take(fileName:)`
+  and `remainingFiles`/`remainingNameBytes`, not `room(existingNames:)`.
+- Built as: `ArtistPicturePlan` has `alreadyHasPicture`, `noPictureYet`,
+  `overBudget`, `unnameable`, `foreign`, `uncertain`, per-name `reasons`
+  and a `refusal`. A found picture is replaced only when the journal
+  proves CrateDigger wrote it for this same person and its hash is
+  unchanged (narrower than "ours by hash"); a changed pick for a folder
+  shared by artists is not applied.
+- Built as: the picture finder returns `.found`, `.uncertain`, `.notFound`
+  or `.failed`; a failure is never stored as not found. Acceptance needs
+  exactly one confident candidate per source; self-titled and generic
+  album titles never confirm. `ArtistPictureRecord` carries a `credit`
+  (Commons file, licence, author) and has no `artworkHash`.
+- Built as: the Commons source is built (the spec's phase 2b) and shares a
+  process-wide `MusicBrainzGate` with artwork search, FIX TAGS, DEEP SCAN
+  and CD lookup, which is a change beyond PodBox: all of them now wait at
+  the same gate. fanart.tv, Discogs and TheAudioDB are IDs only, with no
+  source.
+- Built as: `PodBoxNote` carries `items`, not `albums`;
+  `deviceNotes` also takes the volume root.
+- Built as: the layout preset seeds only a new Rockbox profile whose probe
+  says PodBox, and `omitsMissingYear` is set by that preset only and is
+  encoded only when true, so every saved template keeps its old paths.
+- Built as: the DEBUG hooks are `CRATEDIGGER_PODBOX_DRYRUN` (with
+  `CRATEDIGGER_PODBOX_MUSIC`), `CRATEDIGGER_ARTIST_PICTURES`,
+  `CRATEDIGGER_DEVICE_SUMMARY` and `CRATEDIGGER_PODBOX_UI`.
+
+
+2026-11-11. Status: draft for approval (see the Status section above for what is built). Written while the owner was away, so
 every choice below that the owner has not seen is marked **design's call**.
 
 Sources: `.superpowers/podbox-research.md` ("the brief", sections cited as §

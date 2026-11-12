@@ -54,9 +54,45 @@ too. Betas are offered only to people who turned on Receive beta updates.
   off by default.
 - The Devices screen's Artwork cell says when a cover.jpg is written as
   well as art inside the files.
+- **PodBox iPods are recognised.** When a device runs the PodBox firmware,
+  Preferences > Devices shows which one (model, build and library layout),
+  the Devices screen calls it a PodBox, and CrateDigger tells you what the
+  iPod will make of your music: Mac files it reads as broken tracks, artist
+  pictures switched off, a music folder it does not scan, the play log off,
+  names it cannot match, paths that are too long, and compilations without
+  an album artist. It only reads the iPod when it is plugged in.
+- **A folder layout PodBox reads well.** "PodBox recommended" names folders
+  Artist / 2010 Album, which is how PodBox sorts albums, and leaves the year
+  out for an album that has none. It is picked in Preferences > Devices for
+  a new iPod profile; a layout you already use is never changed.
+- **Clean Up Mac Files.** Right-click a device or one of its folders, or use
+  Preferences > Devices, to remove the hidden `._` files macOS leaves on an
+  iPod's disk. Only files that are provably macOS metadata for a music,
+  picture or playlist file are removed, a copy of each is kept on your Mac,
+  and nothing happens until you confirm the count. A switch can also tidy
+  the folders a transfer just wrote into; it is off until you turn it on.
+- **Next steps and Eject after a transfer.** The summary says what to do on
+  the iPod (for PodBox: Update Database, Update Art Cache) and has an Eject
+  key. The Devices screen reminds you to update the art cache until the
+  iPod has.
+- **Artist pictures for PodBox.** The Artist Pictures sheet shows the
+  artists on your iPod and writes a small square picture for those the iPod
+  has none for, either in its Artwork/People folder or as folder.jpg in
+  each artist's folder. Pictures come from your own files, an artist.jpg in
+  your library, Deezer, or Wikimedia Commons (found through MusicBrainz),
+  and are taken without asking only when an album title confirms the
+  artist; anything unsure waits for your pick. Only the artist's name is
+  sent, and only when you ask: it is off until you turn it on. A picture
+  you already have on the iPod is never replaced, and the ones CrateDigger
+  added can be removed. Pictures after a transfer wait until you mark the
+  check passed for that iPod.
 
 ### Changed
 
+- **MusicBrainz lookups share one speed limit.** Artwork search, FIX TAGS, DEEP
+  SCAN, CD lookup and artist pictures wait their turn at the same gate
+  instead of each keeping its own count, so using two together no longer
+  gets refused by MusicBrainz.
 - **Carbon wears carbon weave** in place of its grain, and its selection
   lamp in the light theme now glows the same orange as the light it
   throws on the row.
@@ -83,6 +119,20 @@ too. Betas are offered only to people who turned on Receive beta updates.
 - Cancel and the busy light now follow a device send, SYNC or conversion
   all the way to the end, including the final renames, deletions and cover
   files.
+- **Sending to a device no longer leaves hidden Mac files behind.** Files
+  are copied without the extra information macOS adds on a FAT disk, which
+  is what made `._` files that PodBox read as broken tracks. Converting
+  devices convert on your Mac and copy the finished file over, so nothing
+  is written to the device half-done.
+- **Every write to a device is checked first.** CrateDigger now writes to a
+  device only in the places it is meant to (the music folder, covers beside
+  it, artist pictures), never in the player's own folders, and replaces or
+  removes only files it can show it wrote itself or that you chose to
+  replace. A file you added is left alone and reported. A copy of anything
+  replaced or removed is kept on your Mac.
+- **Names a FAT disk cannot hold are fixed on the way.** Folders and files
+  with characters such as ? : or a trailing dot (R.E.M.) are written with
+  the characters removed or replaced, so the album lands instead of failing.
 
 ## 2.3.3 (116), 2026-11-10
 
