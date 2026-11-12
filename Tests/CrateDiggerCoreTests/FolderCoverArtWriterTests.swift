@@ -117,6 +117,52 @@ final class FolderCoverArtWriterTests: XCTestCase {
         XCTAssertTrue(FolderCoverArtWriter.representativeAudioFiles(under: root).isEmpty)
     }
 
+    // MARK: - Cover guarantees (PodBox phase 2)
+
+    /// Seeded noise: the worst case for JPEG size.
+    private func noiseArtwork(size: Int) throws -> ArtworkAsset {
+        var state: UInt64 = 0x9E37_79B9_7F4A_7C15
+        var bytes = [UInt8](repeating: 255, count: size * size * 4)
+        for i in bytes.indices where i % 4 != 3 {
+            state = state &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+            bytes[i] = UInt8(truncatingIfNeeded: state >> 33)
+        }
+        let rep = try XCTUnwrap(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: size, pixelsHigh: size,
+                                                 bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                                 colorSpaceName: .deviceRGB, bytesPerRow: size * 4, bitsPerPixel: 32))
+        bytes.withUnsafeBufferPointer { rep.bitmapData!.update(from: $0.baseAddress!, count: $0.count) }
+        let png = try XCTUnwrap(rep.representation(using: .png, properties: [:]))
+        return ArtworkAsset(source: .embedded, hash: "noise", dimensions: ArtworkDimensions(width: size, height: size),
+                            data: png)
+    }
+
+    /// A progressive JPEG in, a baseline JPEG out: the player's decoder
+    /// handles baseline only.
+    func testCoverIsBaselineJPEG() throws {
+        let image = try XCTUnwrap(NSBitmapImageRep(data: try XCTUnwrap(sourceArtwork(size: 800).data)))
+        let progressive = try XCTUnwrap(image.representation(using: .jpeg, properties: [.progressive: true]))
+        XCTAssertTrue(Self.isProgressive(progressive), "the input must really be progressive")
+        let folder = root.appendingPathComponent("Album", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+
+        let source = ArtworkAsset(source: .embedded, hash: "progressive",
+                                  dimensions: ArtworkDimensions(width: 800, height: 800), data: progressive)
+        XCTAssertEqual(FolderCoverArtWriter().write([folder: source]), 1)
+        let cover = try Data(contentsOf: folder.appendingPathComponent("cover.jpg"))
+        XCTAssertEqual(cover.prefix(2), Data([0xFF, 0xD8]))
+        XCTAssertFalse(Self.isProgressive(cover))
+        XCTAssertFalse(cover.contains(Data([0xFF, 0xC2])), "no progressive frame marker anywhere")
+    }
+
+    func testCoverFromNoiseSourceIsUnder512KB() throws {
+        let folder = root.appendingPathComponent("Noise", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        XCTAssertEqual(FolderCoverArtWriter().write([folder: try noiseArtwork(size: 2_000)]), 1)
+        let cover = try Data(contentsOf: folder.appendingPathComponent("cover.jpg"))
+        XCTAssertLessThanOrEqual(cover.count, 512 * 1024)
+        XCTAssertFalse(Self.isProgressive(cover))
+    }
+
     // MARK: - JPEG marker helpers
 
     /// SOF2 = progressive; SOF0/SOF1 = baseline/extended sequential.
