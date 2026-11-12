@@ -21,11 +21,11 @@ import Foundation
 /// photo the owner removed, and never moves a default the owner picked.
 /// The app runs it when the crates folder resolves (`refreshAvailableCrates`).
 ///
-/// Once the profiles are saved, the old prepared-picture files this run
-/// carried over (their photos now in `ArtistPhotos`) are deleted from
-/// `legacyCache` when one is given (`ArtistPicturePreparedCache.removeLegacyFiles`);
-/// nothing else there is touched, since every crates folder on the Mac
-/// shares that folder.
+/// The old prepared-picture cache (`Application Support/CrateDigger/ArtistImages`)
+/// is never deleted, on purpose: every crates folder on the Mac shares it,
+/// two folders can share one file by hash, and another folder still holding
+/// `library.cdartists` needs its bytes (an owner's pick among them). Its
+/// files are small 400 px JPEGs.
 ///
 /// Reads images and writes files: run it off the main actor, after
 /// `refuseWhileLibraryDisconnected`.
@@ -33,8 +33,7 @@ public enum ArtistProfileMigration {
     /// Runs once: returns false when there was nothing to migrate or it already ran.
     @discardableResult
     public static func migrate(pictures: ArtistPictureStore, into profiles: ArtistProfileStore,
-                               indexDirectory: URL, legacyCache: URL? = nil,
-                               fileManager: FileManager = .default) throws -> Bool {
+                               indexDirectory: URL, fileManager: FileManager = .default) throws -> Bool {
         guard !profiles.picturesMigrated else { return false }
         let oldFile = indexDirectory.appendingPathComponent(ArtistPictureStore.fileName)
         // No file: there never were pictures. An empty or unreadable file
@@ -44,28 +43,19 @@ public enum ArtistProfileMigration {
         guard !records.isEmpty else { return false }
 
         let existing = Set(profiles.allProfiles().map(\.foldedKey))
-        var carried: Set<String> = []
         for record in records where !existing.contains(PodBoxArtName.folded(record.displayName)) {
-            if let hash = try carry(record, from: pictures, into: profiles) { carried.insert(hash) }
+            try carry(record, from: pictures, into: profiles)
         }
         profiles.markPicturesMigrated()
         try profiles.save()
         try fileManager.moveItem(at: oldFile, to: backupURL(for: oldFile, fileManager: fileManager))
-        if let legacyCache {
-            // Only what is now kept, byte for byte, in the profiles' own photos.
-            let kept = carried.filter { profiles.hasPhotoFile(hash: $0) }
-            ArtistPicturePreparedCache.removeLegacyFiles(kept, at: legacyCache, fileManager: fileManager)
-        }
         return true
     }
 
     // MARK: - Private
 
-    /// Returns the old cache's hash of the picture carried, when it became
-    /// one of the profile's photos under that same hash.
     private static func carry(_ record: ArtistPictureRecord, from pictures: ArtistPictureStore,
-                              into profiles: ArtistProfileStore) throws -> String? {
-        var carried: String?
+                              into profiles: ArtistProfileStore) throws {
         let name = record.displayName
         let sourceID = migratedSourceID(record)
         let removedByOwner = sourceID.map { profiles.profile(forName: name)?.rejectedPhotoSources.contains($0) == true }
@@ -82,7 +72,6 @@ public enum ArtistProfileMigration {
                 photo = nil
             }
             if let photo {
-                if photo.hash == record.preparedHash { carried = photo.hash }
                 let replaceFrom = replaceURL(for: record)
                 profiles.update(name: name) { profile in
                     if let index = profile.photos.firstIndex(where: { $0.hash == photo.hash }),
@@ -106,7 +95,6 @@ public enum ArtistProfileMigration {
                 }
             }
         }
-        return carried
     }
 
     /// `<source>:<id>` in the profile photo's own source names (`deezer:42`,

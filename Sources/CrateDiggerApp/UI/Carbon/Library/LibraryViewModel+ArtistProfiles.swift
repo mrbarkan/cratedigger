@@ -287,10 +287,9 @@ extension LibraryViewModel {
     /// old file, which nothing reads again. Runs when the crates folder
     /// resolves (at launch, and for a folder chosen later), never while the
     /// library is disconnected. A failure is logged and tried again next time.
-    /// Once a folder's pictures are in its saved profiles, the files it
-    /// carried are deleted from the old prepared-picture cache
-    /// (`ArtistPicturePreparedCache.legacyDirectory`), never the rest: every
-    /// crates folder on this Mac shares it. The background worker waits for this to
+    /// The old prepared-picture cache (`ArtistImages`) is left in place on
+    /// purpose: every crates folder on this Mac shares it, and one not yet
+    /// migrated needs its bytes. The background worker waits for this to
     /// settle (`artistMigrationSettled`): it succeeded, or there was nothing
     /// to carry over.
     func migrateArtistPicturesIfNeeded() {
@@ -310,8 +309,7 @@ extension LibraryViewModel {
                 let directory = store.indexDirectory
                 do {
                     try ArtistProfileMigration.migrate(pictures: ArtistPictureStore(indexDirectory: directory),
-                                                       into: store, indexDirectory: directory,
-                                                       legacyCache: ArtistPicturePreparedCache.legacyDirectory)
+                                                       into: store, indexDirectory: directory)
                     return nil
                 } catch {
                     return Self.logCase(error)

@@ -18,13 +18,6 @@ public struct ArtistPicturePreparedCache: Sendable {
         applicationSupport.appendingPathComponent("ArtistPictureCache", isDirectory: true)
     }
 
-    /// Where the iPod's prepared pictures were kept before the artist
-    /// profiles took them over (`ArtistPictureStore`, now only read by the
-    /// migration).
-    public static var legacyDirectory: URL {
-        applicationSupport.appendingPathComponent("ArtistImages", isDirectory: true)
-    }
-
     private static var applicationSupport: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
             .appendingPathComponent("CrateDigger", isDirectory: true)
@@ -46,26 +39,5 @@ public struct ArtistPicturePreparedCache: Sendable {
             // Not cached this time; the bytes are still good.
         }
         return prepared
-    }
-
-    /// Deletes from the old prepared-picture folder (`legacyDirectory`) the
-    /// files of `hashes` (`<hash>.jpg`): the pictures one index folder's
-    /// migration carried into profiles it has saved. Never the folder
-    /// itself while anything else is in it: every crates folder on this Mac
-    /// shares it, and another one not yet migrated still needs its files.
-    /// The folder goes once it is empty. Returns how many files went.
-    @discardableResult
-    public static func removeLegacyFiles(_ hashes: Set<String>, at folder: URL = legacyDirectory,
-                                         fileManager: FileManager = .default) -> Int {
-        var removed = 0
-        for hash in hashes where ArtistProfileStore.isHexHash(hash) {
-            let url = folder.appendingPathComponent(hash + ".jpg")
-            if fileManager.fileExists(atPath: url.path), (try? fileManager.removeItem(at: url)) != nil { removed += 1 }
-        }
-        if let left = try? fileManager.contentsOfDirectory(atPath: folder.path),
-           left.allSatisfy({ $0 == ".DS_Store" }) {
-            try? fileManager.removeItem(at: folder)
-        }
-        return removed
     }
 }
