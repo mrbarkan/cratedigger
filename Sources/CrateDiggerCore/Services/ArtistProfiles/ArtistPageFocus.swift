@@ -20,30 +20,20 @@ public enum ArtistPageFocus {
     }
 
     /// The artist the page is about: the explicit one when set, else the
-    /// focused artist column's anchor, by the name the browser shows for it.
-    /// nil when the page should not show, or nothing is picked there.
-    public static func artistName(view: BrowserView, state: BrowserState, index: LibraryIndex,
+    /// focused artist column's anchor, by the name its row shows. `columns`
+    /// is what the browser already drew (`BrowserCascade`), so this is one
+    /// look along one column, never a walk of the library. nil when the page
+    /// should not show, or nothing is picked there.
+    public static func artistName(view: BrowserView, state: BrowserState, columns: [ColumnContent],
                                   explicitArtist: String?) -> String? {
         if let explicit = nonBlank(explicitArtist) { return explicit }
-        guard let (column, facet) = focused(view, state.focusedColumn),
-              let anchor = state.selection.anchor(column), !anchor.isEmpty else { return nil }
-        switch facet {
-        case .artist:
-            return index.artists.first { $0.id == anchor }?.name
-        case .albumArtist:
-            // The key is the folded album artist, else artist, as the
-            // column keys it. The index's artist buckets are album artists,
-            // so the short list answers almost always; the tracks are read
-            // (their tags only, no index-wide context) for a spelling it
-            // does not hold. Cheap enough for a view body.
-            if let artist = index.artists.first(where: { BrowserFilter.fold($0.name) == anchor }) { return artist.name }
-            for loaded in index.allTracks {
-                let name = nonBlank(loaded.metadata.albumArtist) ?? nonBlank(loaded.track.artist)
-                if let name, BrowserFilter.fold(name) == anchor { return name }
-            }
-            return nil
-        default:
-            return nil
+        guard let (column, facet) = focused(view, state.focusedColumn), facet == .artist || facet == .albumArtist,
+              let anchor = state.selection.anchor(column), !anchor.isEmpty,
+              columns.indices.contains(column) else { return nil }
+        switch columns[column] {
+        case .artists(let artists): return nonBlank(artists.first { $0.id == anchor }?.name)
+        case .values(let values): return nonBlank(values.first { $0.id == anchor }?.title)
+        case .albums, .tracks: return nil
         }
     }
 

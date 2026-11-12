@@ -14,12 +14,21 @@ import UniformTypeIdentifiers
 /// fixture, not taken from Wikipedia. Nothing goes on the network.
 ///
 /// Refused unless `CRATEDIGGER_CRATES_DIR` points the library at a scratch
-/// folder: it writes crates, the track store, plays and profiles there.
+/// folder outside `/Volumes` and `CFFIXED_USER_HOME` at a scratch home: it
+/// writes crates, the track store, plays and profiles there.
 @MainActor
 extension LibraryViewModel {
     func debugSeedArtistPage(_ name: String) async {
         guard let folder = Self.debugCratesDirectory else {
             NSLog("[artist-page] refusing: CRATEDIGGER_CRATES_DIR is not set, so the fixture would go into the real library")
+            return
+        }
+        // Never onto a drive (a real iPod may be mounted), and never with the
+        // real preferences, which the fixture's crates folder would be saved in.
+        let path = folder.resolvingSymlinksInPath().path
+        guard path != "/Volumes", !path.hasPrefix("/Volumes/"),
+              ProcessInfo.processInfo.environment["CFFIXED_USER_HOME"] != nil else {
+            NSLog("[artist-page] refusing: CRATEDIGGER_CRATES_DIR must be outside /Volumes and CFFIXED_USER_HOME must be set")
             return
         }
         let fixture = ArtistPageFixture(root: folder.appendingPathComponent("FixtureMusic", isDirectory: true))

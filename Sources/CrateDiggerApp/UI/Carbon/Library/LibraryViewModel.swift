@@ -196,14 +196,18 @@ final class LibraryViewModel: ObservableObject {
             // Sorts and the filter live here too, but their setters recompute
             // themselves; this is only for the shape and the selection.
             guard !isSettlingBrowser else { return }
-            // A row the owner chose takes the inspector back from "Show Artist".
-            if oldValue.selection != browser.selection { artistPage.selectionChanged() }
             if oldValue.view != browser.view {
                 settleBrowserColumns(from: 0)
             } else if let changed = Self.firstChangedColumn(oldValue.selection, browser.selection) {
                 // A column's own content never depends on its own selection.
                 settleBrowserColumns(from: changed + 1)
             }
+            // After the settle, so the name is read from the columns as drawn,
+            // and also for a focus that moved with nothing else changing. A row
+            // the owner chose takes the inspector back from "Show Artist".
+            var page = artistPage
+            page.browserChanged(from: oldValue, to: browser, columns: browserColumns, gallery: showArtworkGallery)
+            if page != artistPage { artistPage = page }
         }
     }
 
@@ -257,6 +261,7 @@ final class LibraryViewModel: ObservableObject {
             ? BrowserCascade.selectedTracks(view: browser.view, in: browsedIndex,
                                             selection: browser.selection, context: facetContext)
             : []
+        updateArtistPage()
     }
 
     /// Every anchor back on the first row of its column — after an index was
@@ -268,6 +273,9 @@ final class LibraryViewModel: ObservableObject {
     /// The outside-in click — "Go to Current Song", the gallery, a version
     /// row's context menu: every column's anchor comes from the track.
     func revealTrack(_ loaded: LoadedTrack) {
+        // Picking a record from outside the columns ends "Show Artist", even
+        // when it is the record already selected.
+        updateArtistPage(resolving: false) { $0.selectionChanged() }
         browser.reveal(track: loaded, in: browsedIndex, context: facetContext)
         revealTick &+= 1
     }
@@ -515,7 +523,10 @@ final class LibraryViewModel: ObservableObject {
     @Published var sourcesCollapsed: Bool = false
     @Published var browserCollapsed: Bool = false
     @Published var inspectorCollapsed: Bool = false
-    @Published var showArtworkGallery: Bool = false
+    @Published var showArtworkGallery: Bool = false {
+        // The gallery has no artist column: the page shows only for "Show Artist" there.
+        didSet { updateArtistPage() }
+    }
 
     /// Which inspector tab is showing. Model state rather than view `@State` so
     /// it can be driven from outside the view tree (menus, the dev shot list).
@@ -1051,7 +1062,8 @@ final class LibraryViewModel: ObservableObject {
     var focusedColumn: Int {
         get { browser.focusedColumn }
         set {
-            artistPage.focusMoved()
+            // Resolved by `browser`'s didSet, once the focus has moved.
+            updateArtistPage(resolving: false) { $0.focusMoved() }
             browser.focusedColumn = newValue
         }
     }

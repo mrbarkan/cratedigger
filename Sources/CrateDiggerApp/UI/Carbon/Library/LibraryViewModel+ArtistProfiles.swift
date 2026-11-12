@@ -7,9 +7,16 @@ import Foundation
 /// lives with the view model: an explicit artist from a track's menu or the
 /// album page's artist link, cleared when the owner clicks a row or moves
 /// between columns, so clicking an album or a track brings the album back.
+///
+/// The artist's name is resolved here when something it depends on changes
+/// (focus, selection, the drawn columns, the gallery), and only read by the
+/// views, so a body pass never looks anything up.
 struct ArtistPageSelection: Equatable {
     /// The artist "Show Artist" asked for, until focus moves.
     private(set) var explicitArtist: String?
+    /// The artist the INFO tab is about, or nil for the album page, as of
+    /// the last `resolve`.
+    private(set) var artistName: String?
 
     mutating func show(_ name: String) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -19,21 +26,35 @@ struct ArtistPageSelection: Equatable {
     /// A row was clicked (every click sets the focused column) or an arrow
     /// moved between columns.
     mutating func focusMoved() {
-        if explicitArtist != nil { explicitArtist = nil }
+        explicitArtist = nil
     }
 
-    /// The owner chose another row in the browser.
+    /// The owner chose another row in the browser, or a record from outside
+    /// the columns (the gallery, Go to Current Song).
     mutating func selectionChanged() {
-        if explicitArtist != nil { explicitArtist = nil }
+        explicitArtist = nil
     }
 
-    /// The artist the INFO tab is about, or nil for the album page. The
-    /// gallery replaces the columns, so only "Show Artist" reaches the page
-    /// there.
-    func artistName(browser: BrowserState, index: LibraryIndex, gallery: Bool) -> String? {
-        if gallery, explicitArtist == nil { return nil }
-        return ArtistPageFocus.artistName(view: browser.view, state: browser, index: index,
-                                          explicitArtist: explicitArtist)
+    /// What `browser`'s didSet does, after it has settled the columns: a
+    /// changed selection is a row the owner chose, which ends "Show
+    /// Artist"; then the name is worked out again.
+    mutating func browserChanged(from old: BrowserState, to new: BrowserState, columns: [ColumnContent],
+                                 gallery: Bool) {
+        if old.selection != new.selection { selectionChanged() }
+        resolve(browser: new, columns: columns, gallery: gallery)
+    }
+
+    /// Works out `artistName` from the browser as drawn: the name on the
+    /// focused artist column's row (`columns` are the browser's own), or the
+    /// explicit artist. The gallery replaces the columns, so only "Show
+    /// Artist" reaches the page there.
+    mutating func resolve(browser: BrowserState, columns: [ColumnContent], gallery: Bool) {
+        if gallery, explicitArtist == nil {
+            artistName = nil
+            return
+        }
+        artistName = ArtistPageFocus.artistName(view: browser.view, state: browser, columns: columns,
+                                                explicitArtist: explicitArtist)
     }
 }
 
@@ -58,8 +79,7 @@ extension LibraryViewModel {
     /// the local library (a device, a playlist) only an artist the library
     /// knows gets a page.
     var inspectedArtistName: String? {
-        guard let name = artistPage.artistName(browser: browser, index: browsedIndex,
-                                               gallery: showArtworkGallery) else { return nil }
+        guard let name = artistPage.artistName else { return nil }
         if currentSource.isLocalLibrary { return name }
         let key = PodBoxArtName.folded(name)
         return artistSummaries[key] != nil || artistProfiles[key] != nil ? name : nil
@@ -80,9 +100,19 @@ extension LibraryViewModel {
     /// "Show Artist" and the album page's artist link: the inspector shows
     /// the page until the owner clicks a row or moves between columns.
     func showArtist(_ name: String) {
-        artistPage.show(name)
+        updateArtistPage { $0.show(name) }
         inspectorTab = .info
         if inspectorCollapsed { toggleInspectorCollapsed() }
+    }
+
+    /// Changes "Show Artist" and, unless `resolving` is false (the caller
+    /// is about to change the browser, whose didSet resolves), works out the
+    /// inspected artist again. Published only when something changed.
+    func updateArtistPage(resolving: Bool = true, _ change: (inout ArtistPageSelection) -> Void = { _ in }) {
+        var next = artistPage
+        change(&next)
+        if resolving { next.resolve(browser: browser, columns: browserColumns, gallery: showArtworkGallery) }
+        if next != artistPage { artistPage = next }
     }
 
     /// The artist a track belongs to, as the library groups it: the album
@@ -112,12 +142,23 @@ extension LibraryViewModel {
     /// offline copy's, which is never made here.
     func currentArtistProfileStore() async -> ArtistProfileStore {
         let folder = cratesDirectoryURL
-        let key = folder.standardizedFileURL.path + "\u{0}" + String(describing: libraryLocation)
+        let key = folder.standardizedFileURL.path + "\u{0}" + Self.locationCase(libraryLocation)
         if let task = artistProfileStoreTask, artistProfileStoreKey == key { return await task.value }
         let task = Task.detached(priority: .userInitiated) { ArtistProfileStore(indexDirectory: folder) }
         artistProfileStoreTask = task
         artistProfileStoreKey = key
         return await task.value
+    }
+
+    /// The store is made again when the library's location changes case
+    /// (chosen, connected, disconnected), not when a detail inside one
+    /// changes, which would make a second store for the same folder.
+    nonisolated static func locationCase(_ location: LibraryLocation) -> String {
+        switch location {
+        case .notChosen: return "notChosen"
+        case .available: return "available"
+        case .disconnected: return "disconnected"
+        }
     }
 
     /// Reads every profile off the main actor and publishes them. A later
@@ -142,24 +183,31 @@ extension LibraryViewModel {
     /// view still shows what the library holds of an artist it knows.
     func scheduleArtistSummaries(after delay: Duration = .milliseconds(150)) {
         guard currentSource.isLocalLibrary else { return }
-        artistSummaryTask?.cancel()
+        let previous = artistSummaryTask
+        previous?.cancel()
         let index = self.index
         let scope = currentSource
         let listening = currentListeningStore().allStats
         let folder = cratesDirectoryURL
         let crateNames = availableCrates
         artistSummaryTask = Task {
+            // One pass at a time: a cancelled one stops at its next check,
+            // so an import's run of index rebuilds never stacks full passes.
+            await previous?.value
             try? await Task.sleep(for: delay)
             guard !Task.isCancelled else { return }
-            let built = await Task.detached(priority: .utility) { () -> ([String: ArtistLibrarySummary], [UUID: LoadedTrack]) in
+            let pass = Task.detached(priority: .utility) { () -> ([String: ArtistLibrarySummary], [UUID: LoadedTrack])? in
                 var crates: [String: Set<String>] = [:]
                 for name in crateNames {
+                    if Task.isCancelled { return nil }
                     let url = folder.appendingPathComponent("\(name).cdcrate")
                     guard let data = try? Data(contentsOf: url),
                           let paths = try? JSONDecoder().decode([String].self, from: data) else { continue }
                     crates[name] = Set(paths)
                 }
+                if Task.isCancelled { return nil }
                 let summaries = ArtistLibrarySummary.all(index: index, listening: listening, crates: crates)
+                if Task.isCancelled { return nil }
                 let wanted = Set(summaries.values.flatMap(\.topTracks))
                 var tracks: [UUID: LoadedTrack] = [:]
                 if !wanted.isEmpty {
@@ -168,8 +216,9 @@ extension LibraryViewModel {
                     }
                 }
                 return (summaries, tracks)
-            }.value
-            guard !Task.isCancelled else { return }
+            }
+            let result = await withTaskCancellationHandler { await pass.value } onCancel: { pass.cancel() }
+            guard let built = result, !Task.isCancelled else { return }
             artistTopTracks = built.1
             artistSummaryScope = scope
             artistSummaries = built.0
@@ -265,20 +314,17 @@ extension LibraryViewModel {
         Task {
             let store = await currentArtistProfileStore()
             let outcome = await Task.detached(priority: .userInitiated) { () -> Result<Void, Error> in
+                let titles = index.artists.filter { PodBoxArtName.folded($0.name) == key }
+                    .flatMap(\.albums).map(\.title)
+                let picture = ArtistPictureSession.LibraryFolders(tracks: index.allTracks).picture(for: name)
                 do {
-                    if resetFirst { store.resetIdentity(name: name) }
-                    let titles = index.artists.filter { PodBoxArtName.folded($0.name) == key }
-                        .flatMap(\.albums).map(\.title)
-                    let picture = ArtistPictureSession.LibraryFolders(tracks: index.allTracks).picture(for: name)
-                    let result = try await run.lookUp(name: name, libraryAlbumTitles: titles, libraryPicture: picture,
-                                                      existing: store.profile(forName: name), lane: .foreground,
-                                                      now: Date())
-                    try result.apply(to: store, name: name, at: Date())
-                    try store.save()
+                    // A failure puts back the identity the reset replaced.
+                    try await store.lookUpAgain(name: name, resetFirst: resetFirst, at: Date()) { existing in
+                        try await run.lookUp(name: name, libraryAlbumTitles: titles, libraryPicture: picture,
+                                             existing: existing, lane: .foreground, now: Date())
+                    }
                     return .success(())
                 } catch {
-                    // A reset with nothing found still has to reach the file.
-                    try? store.save()
                     return .failure(error)
                 }
             }.value

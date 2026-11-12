@@ -488,3 +488,35 @@ extension ArtistLookupResult {
                     added: .distantPast).rejectionKey
     }
 }
+
+// MARK: - A lookup the owner asked for
+
+extension ArtistProfileStore {
+    /// Look Up Again, or the lookup the page runs after the owner settles an
+    /// identity: with `resetFirst` the identity goes back to `.unknown`
+    /// first, so even "None of these" is asked again; then `lookUp` is given
+    /// the profile as it is now and its result applied and saved.
+    ///
+    /// When anything throws (offline, a service down), the identity the
+    /// reset replaced comes back, as long as nothing has set another one
+    /// since, and the file is left as the owner had it: a failed Look Up
+    /// Again never loses the candidates or the owner's "None of these".
+    /// Store I/O: call it off the main actor.
+    public func lookUpAgain(name: String, resetFirst: Bool, at date: Date,
+                            _ lookUp: (ArtistProfile?) async throws -> ArtistLookupResult) async throws {
+        let before = profile(forName: name)?.identity ?? .unknown
+        if resetFirst { resetIdentity(name: name) }
+        do {
+            let result = try await lookUp(profile(forName: name))
+            try result.apply(to: self, name: name, at: date)
+            try save()
+        } catch {
+            if resetFirst, before != .unknown {
+                update(name: name, ifIdentityIs: .unknown) { $0.identity = before }
+            }
+            // Whatever did land (a result applied before a photo failed) is kept.
+            try? save()
+            throw error
+        }
+    }
+}

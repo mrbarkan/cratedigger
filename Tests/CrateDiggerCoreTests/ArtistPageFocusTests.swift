@@ -21,16 +21,21 @@ final class ArtistPageFocusTests: XCTestCase {
         return state
     }
 
+    private func columns(_ browser: BrowserState) -> [ColumnContent] {
+        BrowserCascade.columns(view: browser.view, in: library, selection: browser.selection, sorts: browser.sorts,
+                               context: FacetContext(index: library))
+    }
+
     func testArtistColumnFocusShowsArtist() throws {
         XCTAssertTrue(ArtistPageFocus.showsArtist(view: .classic, focusedColumn: 0, explicitArtist: nil))
         var browser = state(.classic, focused: 0)
         let air = try XCTUnwrap(library.artists.first { $0.name == "Air" })
         browser.selectedArtistID = air.id
-        XCTAssertEqual(ArtistPageFocus.artistName(view: browser.view, state: browser, index: library,
+        XCTAssertEqual(ArtistPageFocus.artistName(view: browser.view, state: browser, columns: columns(browser),
                                                   explicitArtist: nil), "Air")
         // Nothing picked in the artist column yet: no artist to show.
         let empty = state(.classic, focused: 0)
-        XCTAssertNil(ArtistPageFocus.artistName(view: empty.view, state: empty, index: library, explicitArtist: nil))
+        XCTAssertNil(ArtistPageFocus.artistName(view: empty.view, state: empty, columns: columns(empty), explicitArtist: nil))
     }
 
     func testAlbumArtistColumnFocusShowsArtist() {
@@ -40,8 +45,30 @@ final class ArtistPageFocusTests: XCTestCase {
         let key = BrowserFacet.albumArtist.key(of: library.allTracks.first { $0.track.album == "Mezzanine" }!,
                                                context: FacetContext(index: library))
         browser.select(column: 0, id: key, command: false, shift: false, ordered: [key])
-        XCTAssertEqual(ArtistPageFocus.artistName(view: view, state: browser, index: library, explicitArtist: nil),
+        XCTAssertEqual(ArtistPageFocus.artistName(view: view, state: browser, columns: columns(browser), explicitArtist: nil),
                        "Massive Attack")
+    }
+
+    /// A compilation's track artist with no album-artist tag has a row in
+    /// the Album Artist column but no artist bucket in the index: the name
+    /// comes from the row itself.
+    func testAlbumArtistRowWithNoBucketUsesTheRowsName() {
+        let compilation = LibraryIndex.build(from: [
+            track("/m/VA/Comp/1.flac", artist: "Horace Andy", album: "Comp"),
+            track("/m/VA/Comp/2.flac", artist: "Tricky", album: "Comp"),
+        ])
+        let view = BrowserView([.albumArtist, .album, .track])
+        let context = FacetContext(index: compilation)
+        var browser = state(view, focused: 0)
+        let tricky = compilation.allTracks.first { $0.track.artist == "Tricky" }!
+        let key = BrowserFacet.albumArtist.key(of: tricky, context: context)
+        browser.select(column: 0, id: key, command: false, shift: false, ordered: [key])
+        let drawn = BrowserCascade.columns(view: view, in: compilation, selection: browser.selection,
+                                           sorts: browser.sorts, context: context)
+        XCTAssertEqual(ArtistPageFocus.artistName(view: view, state: browser, columns: drawn, explicitArtist: nil),
+                       "Tricky")
+        XCTAssertNil(ArtistPageFocus.artistName(view: view, state: browser, columns: [], explicitArtist: nil),
+                     "no column drawn yet: nobody")
     }
 
     func testAlbumColumnFocusShowsAlbum() throws {
@@ -50,7 +77,7 @@ final class ArtistPageFocusTests: XCTestCase {
         // Clicking an artist fills the album anchor too: focus, not the anchors, decides.
         var browser = state(.classic, focused: 1)
         browser.selectedArtistID = try XCTUnwrap(library.artists.first).id
-        XCTAssertNil(ArtistPageFocus.artistName(view: browser.view, state: browser, index: library,
+        XCTAssertNil(ArtistPageFocus.artistName(view: browser.view, state: browser, columns: columns(browser),
                                                 explicitArtist: nil))
         // A focus left past the end of a narrower view reads as its last column.
         XCTAssertFalse(ArtistPageFocus.showsArtist(view: BrowserView([.album, .track]), focusedColumn: 2,
@@ -63,12 +90,12 @@ final class ArtistPageFocusTests: XCTestCase {
         XCTAssertFalse(ArtistPageFocus.showsArtist(view: view, focusedColumn: 1, explicitArtist: nil))
         XCTAssertTrue(ArtistPageFocus.showsArtist(view: view, focusedColumn: 1, explicitArtist: "Air"))
         let browser = state(view, focused: 1)
-        XCTAssertEqual(ArtistPageFocus.artistName(view: view, state: browser, index: library, explicitArtist: "Air"),
+        XCTAssertEqual(ArtistPageFocus.artistName(view: view, state: browser, columns: columns(browser), explicitArtist: "Air"),
                        "Air")
         // "Show Artist" wins over an artist column's own anchor until focus moves.
         var classic = state(.classic, focused: 0)
         classic.selectedArtistID = library.artists.first { $0.name == "Air" }?.id
-        XCTAssertEqual(ArtistPageFocus.artistName(view: .classic, state: classic, index: library,
+        XCTAssertEqual(ArtistPageFocus.artistName(view: .classic, state: classic, columns: columns(classic),
                                                   explicitArtist: "Massive Attack"), "Massive Attack")
         // An empty explicit name is no artist.
         XCTAssertFalse(ArtistPageFocus.showsArtist(view: view, focusedColumn: 1, explicitArtist: ""))
