@@ -445,31 +445,110 @@ final class ArtistLookupRunTests: XCTestCase {
         XCTAssertFalse(after.defaultPickedByOwner)
     }
 
-    func testCommonsPickMustBeTheConfirmedArtist() async throws {
+    func testConfirmedIdentityLeavesCommonsOut() async throws {
+        // Under a confirmed identity the artist's own Wikidata image is known
+        // (or there is none): any Commons pick is a namesake's, so the
+        // finder's Commons source is never asked.
         answerMassiveAttack(image: false)
         let commons = FakePictureSource(id: .commons)
         let image = URL(string: "https://commons.wikimedia.org/wiki/Special:FilePath/Namesake.jpg?width=800")!
         fetcher.answer(image, data: FakePictureFetcher.jpeg())
-        func run() -> ArtistLookupRun {
-            ArtistLookupRun(info: info, pictures: ArtistPictureFinder(sources: [commons], fetcher: fetcher,
-                                                                      quotaBackoff: []),
-                            fetcher: fetcher, preferredLanguages: ["en"], spacing: .zero)
-        }
-        // Same name, same album title, another MusicBrainz artist: a reference, never the default.
-        commons.offered = [ArtistPictureCandidate(name: "Massive Attack", source: .commons, sourceID: "mb-namesake",
-                                                  imageURL: image, albumTitles: ["Mezzanine"])]
-        var result = try await run().lookUp(name: "Massive Attack", libraryAlbumTitles: ["Mezzanine"],
-                                            libraryPicture: nil, existing: nil, lane: .background, now: now)
-        XCTAssertEqual(result.identity, .confirmed(musicBrainzID: "mb-ma", wikidataID: "Q11895"))
-        XCTAssertNil(result.defaultPhoto)
-        XCTAssertEqual(result.photoCandidates.map(\.sourceID), ["mb-namesake"])
-
         commons.offered = [ArtistPictureCandidate(name: "Massive Attack", source: .commons, sourceID: "mb-ma",
                                                   imageURL: image, albumTitles: ["Mezzanine"])]
-        result = try await run().lookUp(name: "Massive Attack", libraryAlbumTitles: ["Mezzanine"],
-                                        libraryPicture: nil, existing: nil, lane: .background, now: now)
-        XCTAssertEqual(result.defaultPhoto?.source, .commons)
-        XCTAssertEqual(result.defaultPhoto?.sourceID, "mb-ma")
+        let run = ArtistLookupRun(info: info, pictures: ArtistPictureFinder(sources: [commons], fetcher: fetcher,
+                                                                            quotaBackoff: []),
+                                  fetcher: fetcher, preferredLanguages: ["en"], spacing: .zero)
+        let result = try await run.lookUp(name: "Massive Attack", libraryAlbumTitles: ["Mezzanine"],
+                                          libraryPicture: nil, existing: nil, lane: .background, now: now)
+        XCTAssertEqual(result.identity, .confirmed(musicBrainzID: "mb-ma", wikidataID: "Q11895"))
+        XCTAssertNil(result.defaultPhoto)
+        XCTAssertTrue(result.photoCandidates.isEmpty)
+        XCTAssertEqual(commons.calls, 0)
+        XCTAssertFalse(fetcher.requests.contains(image))
+    }
+
+    func testUncertainCommonsCandidatesComeFromTheIdentitySearch() async throws {
+        info.candidates["Boston"] = .success([
+            ArtistIdentityCandidate(musicBrainzID: "mb-rock", name: "Boston"),
+            ArtistIdentityCandidate(musicBrainzID: "mb-uk", name: "Boston"),
+        ])
+        info.details["mb-rock"] = .success((ArtistFacts(kind: "Group"), "Q1", ["Third Stage", "Walk On"]))
+        info.details["mb-uk"] = .success((ArtistFacts(kind: "Group"), "Q2", ["Something Else"]))
+        fetcher.answer(CommonsArtistSource.entityURL(id: "Q1"), json: """
+            {"entities":{"Q1":{"claims":{"P18":[{"mainsnak":{"datavalue":{"value":"Boston band.jpg"}}}]}}}}
+            """)
+        let image = CommonsArtistParser.imageURL(fileName: "Boston band.jpg", width: 1_600)
+        fetcher.answer(image, data: FakePictureFetcher.jpeg(width: 700, height: 700))
+        fetcher.answer(DeezerArtistParser.searchURL(name: "Boston"), json: "{\"data\":[]}")
+        let commons = FakePictureSource(id: .commons)
+        let run = ArtistLookupRun(info: info,
+                                  pictures: ArtistPictureFinder(sources: [DeezerArtistSource(fetcher: fetcher,
+                                                                                             spacing: .zero),
+                                                                          commons],
+                                                                fetcher: fetcher, quotaBackoff: []),
+                                  fetcher: fetcher, preferredLanguages: ["en"], spacing: .zero)
+
+        let result = try await run.lookUp(name: "Boston", libraryAlbumTitles: ["Third Stage"], libraryPicture: nil,
+                                          existing: nil, lane: .background, now: now)
+        guard case .uncertain = result.identity else { return XCTFail("expected uncertain, got \(result.identity)") }
+        // The acts the identity search looked up, by their own Wikidata items:
+        // no second MusicBrainz search, no Commons source of the finder's.
+        XCTAssertEqual(commons.calls, 0)
+        XCTAssertEqual(info.candidateCalls, ["Boston"])
+        XCTAssertTrue(fetcher.requests.contains(CommonsArtistSource.entityURL(id: "Q1")))
+        XCTAssertTrue(fetcher.requests.contains(CommonsArtistSource.entityURL(id: "Q2")))
+        XCTAssertFalse(fetcher.requests.contains { $0.host == "musicbrainz.org" })
+        let offered = [result.defaultPhoto?.sourceID].compactMap { $0 } + result.photoCandidates.map(\.sourceID)
+        XCTAssertEqual(offered, ["mb-rock"])
+    }
+
+    func testASlowPhotoSearchStillLandsTheIdentityAndTheWorkerMovesOn() async throws {
+        // "Low": confirmed by its albums, no Wikidata image, and a Deezer
+        // that answers far past the photo's time.
+        info.candidates["Low"] = .success([ArtistIdentityCandidate(musicBrainzID: "mb-low", name: "Low")])
+        info.details["mb-low"] = .success((ArtistFacts(kind: "Group"), nil, ["Things We Lost in the Fire"]))
+        info.candidates["Air"] = .success([ArtistIdentityCandidate(musicBrainzID: "mb-air", name: "Air")])
+        info.details["mb-air"] = .success((ArtistFacts(kind: "Group"), nil, ["Moon Safari"]))
+        fetcher.answer(DeezerArtistParser.searchURL(name: "Air"), json: "{\"data\":[]}")
+        let slow = SlowPictureFetcher(fetcher, slow: [DeezerArtistParser.searchURL(name: "Low")], delay: .seconds(20))
+        let run = ArtistLookupRun(info: info,
+                                  pictures: ArtistPictureFinder(sources: [DeezerArtistSource(fetcher: slow,
+                                                                                             spacing: .zero)],
+                                                                fetcher: slow, perArtist: .milliseconds(300),
+                                                                quotaBackoff: []),
+                                  fetcher: slow, preferredLanguages: ["en"], spacing: .zero)
+        let store = store()
+        let library = [(name: "Low", trackCount: 40), (name: "Air", trackCount: 10)]
+        let albums = ["Low": ["Things We Lost in the Fire"], "Air": ["Moon Safari"]]
+        var session = ArtistLookupSession()
+        var looked: [String] = []
+        let started = ContinuousClock.now
+
+        // The worker's loop, as it runs: the next due artist, looked up, applied.
+        for _ in 0..<3 {
+            let due = ArtistLookupScheduler().due(artists: library, profiles: { store.profile(forName: $0) },
+                                                  priority: [], now: now)
+                .filter { !session.skipped.contains(PodBoxArtName.folded($0)) }
+            guard let name = due.first else { break }
+            looked.append(name)
+            let key = PodBoxArtName.folded(name)
+            let result = try await run.lookUp(name: name, libraryAlbumTitles: albums[name] ?? [], libraryPicture: nil,
+                                              existing: store.profile(forName: name), lane: .background, now: now,
+                                              findsPhoto: session.findsPhoto(key))
+            XCTAssertTrue(try result.apply(to: store, name: name, at: now))
+            session.succeeded(key, photoTimedOut: result.photoTimedOut)
+        }
+
+        XCTAssertEqual(looked, ["Low", "Air"], "the slow artist no longer holds the library back")
+        XCTAssertLessThan(ContinuousClock.now - started, .seconds(10))
+        let low = try XCTUnwrap(store.profile(forName: "Low"))
+        XCTAssertEqual(low.identity, .confirmed(musicBrainzID: "mb-low", wikidataID: nil))
+        XCTAssertEqual(low.fetched?.kind, "Group")
+        XCTAssertEqual(low.photos, [], "nothing about the photo is stored")
+        XCTAssertEqual(low.photoCandidates, [])
+        XCTAssertFalse(session.findsPhoto("low"), "its photo is left alone for the session")
+        XCTAssertTrue(session.findsPhoto("air"))
+        XCTAssertEqual(store.profile(forName: "Air")?.identity, .confirmed(musicBrainzID: "mb-air", wikidataID: nil))
     }
 
     func testBackgroundRunAsksMusicBrainzOnlyInTheBackground() async throws {
@@ -486,10 +565,11 @@ final class ArtistLookupRunTests: XCTestCase {
         let result = try await run.lookUp(name: "Boston", libraryAlbumTitles: ["Third Stage"], libraryPicture: nil,
                                           existing: nil, lane: .background, now: now)
         XCTAssertEqual(result.identity, .notFound)
-        XCTAssertTrue(fetcher.requests.contains(CommonsArtistSource.artistURL(id: "mb-boston")), "the finder asked")
+        // The photo search makes no second MusicBrainz search: only the identity search ran.
+        XCTAssertFalse(fetcher.requests.contains(CommonsArtistSource.searchURL(name: "Boston")))
         let issued = await gate.issued
         XCTAssertNil(issued[.foreground], "a background run made a foreground MusicBrainz request")
-        XCTAssertEqual(issued[.background], 3)
+        XCTAssertEqual(issued[.background], 1)
 
         // The finder's callers outside the lookup stay in the foreground.
         _ = await finder.find([(name: "Boston", deviceAlbumTitles: [], libraryPicture: nil)])
@@ -590,6 +670,25 @@ final class FakeArtistInfo: ArtistInfoFetching, @unchecked Sendable {
             calls.bios.append(wikidataID)
             return _bios[wikidataID]
         }
+    }
+}
+
+/// Answers through `base`, but the URLs in `slow` only after `delay`
+/// (cancellable, as a real request is).
+final class SlowPictureFetcher: ArtistPictureFetching, @unchecked Sendable {
+    private let base: FakePictureFetcher
+    private let slow: Set<URL>
+    private let delay: Duration
+
+    init(_ base: FakePictureFetcher, slow: Set<URL>, delay: Duration) {
+        self.base = base
+        self.slow = slow
+        self.delay = delay
+    }
+
+    func data(from url: URL) async throws -> Data {
+        if slow.contains(url) { try await Task.sleep(for: delay) }
+        return try await base.data(from: url)
     }
 }
 

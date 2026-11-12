@@ -158,9 +158,9 @@ public struct ArtistPictureFinder: Sendable {
 
     public static let maximumUncertain = 5
 
-    private let sources: [ArtistPictureSource]
+    let sources: [ArtistPictureSource]
     private let fetcher: ArtistPictureFetching
-    private let perArtist: Duration
+    let perArtist: Duration
     private let perRun: Duration
     private let quotaBackoff: [Duration]
 
@@ -213,6 +213,42 @@ public struct ArtistPictureFinder: Sendable {
             }
         }
         return findings
+    }
+
+    /// How one name ended when it is asked about on its own (`findSingle`).
+    public enum Single: Sendable {
+        case finding(ArtistPictureFinding)
+        /// The name's `perArtist` budget ran out (or the task was cancelled).
+        case timedOut
+        /// The service kept saying it has had enough, past every back-off.
+        case quota
+    }
+
+    /// One name, with the same rules and budget as `find`, saying why when
+    /// there is no finding: a timeout and a quota are different things to
+    /// the background lookup (no photo this time, against try again later).
+    public func findSingle(_ request: Request, lane: MusicBrainzGate.Lane = .foreground) async -> Single {
+        var pauses = quotaBackoff[...]
+        while true {
+            switch await bounded(perArtist, { try await self.findOne(request, lane: lane) }) {
+            case .finished(let found):
+                return .finding(ArtistPictureFinding(name: request.name, outcome: found.outcome,
+                                                     original: found.original?.data, originalURL: found.original?.url))
+            case .unreachable(let reason):
+                return .finding(ArtistPictureFinding(name: request.name, outcome: .failed(reason)))
+            case .quota:
+                guard let pause = pauses.popFirst() else { return .quota }
+                do { try await Task.sleep(for: pause) } catch { return .timedOut }
+            case .timedOut:
+                return .timedOut
+            }
+        }
+    }
+
+    /// The same finder asking `sources` instead of its own.
+    func asking(_ sources: [ArtistPictureSource]) -> ArtistPictureFinder {
+        ArtistPictureFinder(sources: sources, fetcher: fetcher, perArtist: perArtist, perRun: perRun,
+                            quotaBackoff: quotaBackoff)
     }
 
     // MARK: - Private

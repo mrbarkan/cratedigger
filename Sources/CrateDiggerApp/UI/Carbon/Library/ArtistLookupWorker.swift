@@ -24,6 +24,14 @@ final class ArtistLookupWorker {
     nonisolated static let idleRecheck: Duration = .seconds(30 * 60)
     /// A breath between two lookups that went well.
     nonisolated static let between: Duration = .seconds(1)
+    /// How long the photo search of one artist may take in the background.
+    /// Longer than the 8 s the owner waits for: nobody is watching, and a
+    /// common name's search takes a while at a request a second.
+    nonisolated static let photoBudget: Duration = .seconds(30)
+    /// How long one artist's whole lookup may take before it counts as
+    /// timed out (`ArtistLookupError.timedOut`); three of those in a row and
+    /// the artist is skipped for the session (`ArtistLookupSession`).
+    nonisolated static let lookupLimit: Duration = .seconds(180)
 
     /// Posted by Settings ▸ Integrations when the switch changes.
     nonisolated static let settingChanged = Notification.Name("CrateDiggerArtistLookupsChanged")
@@ -38,12 +46,9 @@ final class ArtistLookupWorker {
     private let pathMonitor = NWPathMonitor()
     private var settingObserver: NSObjectProtocol?
     private(set) var isOffline = false
-    /// Failed lookups in a row; a success sets it back to zero.
-    private var failures = 0
-    /// Folded keys whose answer could not be used: not asked again this session.
-    private var skipped: Set<String> = []
-    /// Folded keys of the priority artists already looked up this launch.
-    private var priorityDone: Set<String> = []
+    /// Failures in a row, the artists given up on, the priority artists
+    /// done and the photos left alone, for this launch (Core's rules).
+    private var session = ArtistLookupSession()
     /// The store the worker stopped on (it could not be written), until
     /// another store is made.
     private var stoppedAtStore: String?
@@ -51,11 +56,11 @@ final class ArtistLookupWorker {
     init(library: LibraryViewModel, fetcher: ArtistPictureFetching) {
         self.library = library
         let deezer = DeezerArtistSource(fetcher: fetcher)
-        // Commons asks MusicBrainz too, and gets the background lane through
-        // `find(_:lane:)` like every other source.
+        // No Commons source: the run builds its Commons candidates from the
+        // identity search itself (`ArtistLookupRun`).
         run = ArtistLookupRun(
             info: ArtistInfoClient(fetcher: fetcher),
-            pictures: ArtistPictureFinder(sources: [deezer, CommonsArtistSource(fetcher: fetcher)], fetcher: fetcher),
+            pictures: ArtistPictureFinder(sources: [deezer], fetcher: fetcher, perArtist: Self.photoBudget),
             fetcher: fetcher, deezer: deezer)
         pathMonitor.pathUpdateHandler = { [weak self] path in
             let offline = path.status != .satisfied
@@ -96,14 +101,13 @@ final class ArtistLookupWorker {
                 await nap(Self.pausedRecheck)
                 continue
             }
-            guard let target = await library.nextBackgroundArtist(skipping: skipped, priorityDone: priorityDone) else {
+            guard let target = await library.nextBackgroundArtist(session: session) else {
                 await nap(Self.idleRecheck)
                 continue
             }
-            switch await library.lookUpInBackground(target, run: run) {
-            case .done:
-                failures = 0
-                priorityDone.insert(target.key)
+            switch await library.lookUpInBackground(target, run: run, limit: Self.lookupLimit) {
+            case .done(let photoTimedOut):
+                session.succeeded(target.key, photoTimedOut: photoTimedOut)
                 await nap(Self.between)
             case .discarded:
                 // The library, the switch or the store changed under it:
@@ -112,22 +116,13 @@ final class ArtistLookupWorker {
             case .failed(let error):
                 // Cancelled: the loop ends at its next check (after a breath,
                 // so a stray cancellation can never spin it).
-                guard let failure = ArtistLookupScheduler.failure(error) else {
+                guard let failure = session.failed(target.key, error) else {
                     await nap(Self.between)
                     continue
                 }
-                failures += 1
-                switch failure {
-                case .retryLater:
-                    break
-                case .skipArtist:
-                    skipped.insert(target.key)
-                    priorityDone.insert(target.key)
-                case .stopWorker:
-                    stoppedAtStore = library.artistProfileStoreKey
-                }
-                AppLog.library.notice("Background artist lookup failed (\(String(describing: failure), privacy: .public)); next in \(ArtistLookupScheduler.backoff(afterFailures: self.failures).components.seconds, privacy: .public) s: \(String(describing: error), privacy: .public)")
-                await nap(ArtistLookupScheduler.backoff(afterFailures: failures))
+                if failure == .stopWorker { stoppedAtStore = library.artistProfileStoreKey }
+                AppLog.library.notice("Background artist lookup failed (\(String(describing: failure), privacy: .public)); next in \(self.session.backoff.components.seconds, privacy: .public) s: \(String(describing: error), privacy: .public)")
+                await nap(session.backoff)
             }
         }
     }

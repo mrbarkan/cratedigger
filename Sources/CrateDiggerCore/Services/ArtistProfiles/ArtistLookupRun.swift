@@ -8,7 +8,10 @@ public enum ArtistLookupError: Error, Equatable, Sendable {
     /// answering, an answer it could not read). Nothing is known, so
     /// nothing may be stored.
     case pictureLookupFailed(String)
-    /// The picture finder ran out of time for this artist.
+    /// The whole lookup of one artist ran past the background worker's
+    /// limit for it (`ArtistLookupWorker`). A photo search that runs out of
+    /// time is not this: the lookup returns what it found without a photo
+    /// (`ArtistLookupResult.photoTimedOut`).
     case timedOut
 }
 
@@ -29,6 +32,11 @@ public struct ArtistLookupResult: Sendable {
     /// moved on since (the owner picked a candidate or pasted an id while
     /// it ran) is stale, and `apply` writes none of it.
     public var basedOn: ArtistProfile.Identity
+    /// The photo search ran out of time: the identity and facts are here,
+    /// and nothing about a photo (no default, no candidates), so nothing
+    /// about one is stored. The background worker then leaves this artist's
+    /// photo alone for the rest of the session.
+    public var photoTimedOut = false
 
     public init(identity: ArtistProfile.Identity, facts: ArtistFacts? = nil,
                 defaultPhoto: (data: Data, source: ArtistPhoto.Source, sourceID: String?,
@@ -77,11 +85,23 @@ public struct ArtistLookupResult: Sendable {
 /// download for a reason that does not stop the run (a 404, a broken
 /// image) is simply not taken.
 ///
+/// Commons. The finder's own Commons source is never asked: it searches
+/// MusicBrainz a second time and follows each namesake's Wikidata item,
+/// which for a common name ("Low", "Genesis") ran past the time a photo
+/// gets. Under a confirmed identity it is left out altogether (the
+/// confirmed artist's own image is already known, or there is none, and
+/// any other Commons pick is a namesake's). Under any other identity the
+/// Commons candidates are built from the identity search's own lookups,
+/// which already hold each act's Wikidata id and albums.
+///
+/// A photo search that runs out of time is "no photo this time": the
+/// result keeps the identity and facts and says `photoTimedOut`.
+///
 /// Requests: every MusicBrainz request waits in `lane`, the finder's
-/// sources' included (`find(_:lane:)`), so a background run never makes a
-/// lookup the owner started wait. The run's own Wikidata, Commons and
-/// image requests are kept `spacing` apart. Keep one long-lived run (and
-/// one `info` client) so the spacing holds across artists.
+/// sources' included (`findSingle(_:lane:)`), so a background run never
+/// makes a lookup the owner started wait. The run's own Wikidata, Commons
+/// and image requests are kept `spacing` apart. Keep one long-lived run
+/// (and one `info` client) so the spacing holds across artists.
 public struct ArtistLookupRun: Sendable {
     /// Name-equal search results looked up for their release groups.
     static let detailsLooked = ArtistIdentityMatcher.maximumUncertain
@@ -104,10 +124,13 @@ public struct ArtistLookupRun: Sendable {
         spacer = RequestSpacer(spacing: spacing)
     }
 
-    /// One artist: identity, facts, bio, and a default photo when the profile has none it may keep.
+    /// One artist: identity, facts, bio, and a default photo when the
+    /// profile has none it may keep. With `findsPhoto` false (the worker,
+    /// for an artist whose photo search ran out of time earlier this
+    /// session) no photo work is done at all.
     public func lookUp(name: String, libraryAlbumTitles: [String], libraryPicture: URL?,
-                       existing: ArtistProfile?, lane: MusicBrainzGate.Lane, now: Date) async throws
-        -> ArtistLookupResult {
+                       existing: ArtistProfile?, lane: MusicBrainzGate.Lane, now: Date,
+                       findsPhoto: Bool = true) async throws -> ArtistLookupResult {
         guard ArtistLookupScheduler.isLookedUp(name) else { throw ArtistLookupError.notLookedUp(name) }
         let basedOn = existing?.identity ?? .unknown
         guard let found = try await identify(name: name, libraryAlbumTitles: libraryAlbumTitles, existing: existing,
@@ -115,6 +138,7 @@ public struct ArtistLookupRun: Sendable {
             return ArtistLookupResult(identity: .unknown, basedOn: basedOn)
         }
         var result = ArtistLookupResult(identity: found.identity, facts: found.facts, basedOn: basedOn)
+        guard findsPhoto else { return result }
 
         guard let existing else {
             try await choosePhoto(into: &result, found: found, name: name, libraryAlbumTitles: libraryAlbumTitles,
@@ -135,6 +159,25 @@ public struct ArtistLookupRun: Sendable {
         return result
     }
 
+    /// Runs `work`, cancelling it and throwing `ArtistLookupError.timedOut`
+    /// when it is still running after `limit`. Cancellation passes through.
+    public static func bounded<T: Sendable>(_ limit: Duration,
+                                            _ work: @escaping @Sendable () async throws -> T) async throws -> T {
+        try await withThrowingTaskGroup(of: T?.self) { group in
+            group.addTask { try await work() }
+            group.addTask {
+                try await Task.sleep(for: limit)
+                return nil
+            }
+            defer { group.cancelAll() }
+            guard let first = try await group.next(), let value = first else {
+                try Task.checkCancellation()
+                throw ArtistLookupError.timedOut
+            }
+            return value
+        }
+    }
+
     // MARK: - Identity
 
     private struct Identified {
@@ -144,6 +187,18 @@ public struct ArtistLookupRun: Sendable {
         var wikidataID: String?
         /// The confirmed artist's name on MusicBrainz; nil unless confirmed.
         var confirmedName: String?
+        /// The name-equal acts the search looked up, for the photo's Commons
+        /// candidates; empty for a refresh by id.
+        var acts: [Act] = []
+    }
+
+    /// One act the identity search looked up: its MusicBrainz id and name,
+    /// its Wikidata item, and its albums.
+    struct Act: Sendable {
+        var musicBrainzID: String
+        var name: String
+        var wikidataID: String?
+        var albumTitles: [String]
     }
 
     /// nil when the confirmed id is gone from MusicBrainz: the identity is lost.
@@ -188,11 +243,16 @@ public struct ArtistLookupRun: Sendable {
             .prefix(Self.detailsLooked)
         var details: [String: (facts: ArtistFacts, wikidataID: String?)] = [:]
         var scored: [(ArtistIdentityCandidate, releaseGroupTitles: [String])] = []
+        var acts: [Act] = []
         for candidate in named {
             do {
                 let detail = try await info.detail(musicBrainzID: candidate.musicBrainzID, lane: lane)
                 details[candidate.musicBrainzID] = (detail.facts, detail.wikidataID)
                 scored.append((candidate, detail.releaseGroupTitles))
+                if !rejectedIDs.contains(candidate.musicBrainzID) {
+                    acts.append(Act(musicBrainzID: candidate.musicBrainzID, name: candidate.name,
+                                    wikidataID: detail.wikidataID, albumTitles: detail.releaseGroupTitles))
+                }
             } catch ArtistPictureSourceError.http(404) {
                 continue // in the search index, gone from the database
             }
@@ -200,7 +260,7 @@ public struct ArtistLookupRun: Sendable {
         let identity = ArtistIdentityMatcher.decide(name: name, libraryAlbumTitles: libraryAlbumTitles,
                                                     candidates: scored, rejected: rejectedIDs)
         guard case .confirmed(let id, _) = identity, let detail = details[id] else {
-            return Identified(identity: identity)
+            return Identified(identity: identity, acts: acts)
         }
         return Identified(identity: .confirmed(musicBrainzID: id, wikidataID: detail.wikidataID),
                           facts: detail.facts, musicBrainzID: id, wikidataID: detail.wikidataID,
@@ -227,10 +287,26 @@ public struct ArtistLookupRun: Sendable {
             return
         }
 
-        let findings = await pictures.find([(name: name, deviceAlbumTitles: libraryAlbumTitles, libraryPicture: nil)],
-                                           lane: lane)
+        // Never the finder's own Commons source (see the type's notes).
+        var sources = pictures.sources.filter { $0.id != .commons }
+        if found.confirmedName == nil, !found.acts.isEmpty {
+            sources.append(LookupCommonsSource(acts: found.acts, run: self))
+        }
+        let finding: ArtistPictureFinding
+        switch await pictures.asking(sources).findSingle(
+            (name: name, deviceAlbumTitles: libraryAlbumTitles, libraryPicture: nil), lane: lane) {
+        case .finding(let found):
+            finding = found
+        case .timedOut:
+            // No photo this time: the identity and facts still land.
+            try Task.checkCancellation()
+            result.photoTimedOut = true
+            return
+        case .quota:
+            try Task.checkCancellation()
+            throw ArtistPictureSourceError.quota
+        }
         try Task.checkCancellation()
-        guard let finding = findings.first else { throw ArtistLookupError.timedOut }
         var held: [ArtistPictureRecord.HeldCandidate] = []
         switch finding.outcome {
         case .found(_, let candidate?, let source):
@@ -295,9 +371,9 @@ public struct ArtistLookupRun: Sendable {
         return try await download(match.imageURL)
     }
 
-    /// The image (P18) of a confirmed artist's Wikidata item, credited as
-    /// Commons states it, asked for at the size fetched photos are kept at.
-    private func wikidataPortrait(wikidataID: String, musicBrainzID: String,
+    /// The image (P18) of an artist's Wikidata item, credited as Commons
+    /// states it, asked for at the size fetched photos are kept at.
+    func wikidataPortrait(wikidataID: String, musicBrainzID: String,
                                   name: String) async throws -> ArtistPictureCandidate? {
         guard CommonsArtistParser.isEntityID(wikidataID) else { return nil }
         try await spacer.wait()
@@ -385,6 +461,35 @@ public struct ArtistLookupRun: Sendable {
     /// A library folder picture is known by its path (which never leaves the Mac).
     static func libraryKey(_ url: URL) -> String {
         "\(ArtistPhoto.Source.library.rawValue):\(url.path)"
+    }
+}
+
+// MARK: - Commons from the identity search
+
+/// Commons candidates for the acts the identity search already looked up:
+/// each act's Wikidata image (P18), with that act's albums for the finder's
+/// match rule, so no second MusicBrainz search is made. An act with no
+/// Wikidata item, or an item with no image, gives no candidate.
+struct LookupCommonsSource: ArtistPictureSource {
+    var id: ArtistPictureSourceID { .commons }
+    let acts: [ArtistLookupRun.Act]
+    let run: ArtistLookupRun
+
+    func candidates(for name: String) async throws -> [ArtistPictureCandidate] {
+        var candidates: [ArtistPictureCandidate] = []
+        for act in acts {
+            guard let wikidataID = act.wikidataID,
+                  var portrait = try await run.wikidataPortrait(wikidataID: wikidataID,
+                                                                musicBrainzID: act.musicBrainzID, name: act.name)
+            else { continue }
+            portrait.albumTitles = act.albumTitles
+            candidates.append(portrait)
+        }
+        return candidates
+    }
+
+    func albumTitles(for candidate: ArtistPictureCandidate) async throws -> [String] {
+        candidate.albumTitles
     }
 }
 

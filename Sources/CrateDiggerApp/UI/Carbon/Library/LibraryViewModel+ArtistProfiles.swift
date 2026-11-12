@@ -602,7 +602,9 @@ extension LibraryViewModel {
         let deezer = DeezerArtistSource(fetcher: fetcher)
         let run = ArtistLookupRun(
             info: ArtistInfoClient(fetcher: fetcher),
-            pictures: ArtistPictureFinder(sources: [deezer, CommonsArtistSource(fetcher: fetcher)], fetcher: fetcher),
+            // No Commons source: the run builds its Commons candidates from
+            // the identity search itself.
+            pictures: ArtistPictureFinder(sources: [deezer], fetcher: fetcher),
             fetcher: fetcher, deezer: deezer)
         artistForegroundLookup = run
         return run
@@ -619,12 +621,15 @@ struct BackgroundArtistTarget: Sendable {
     let key: String
     let albumTitles: [String]
     let libraryPicture: URL?
+    /// False once this artist's photo search ran out of time this session.
+    let findsPhoto: Bool
 }
 
 /// How one background lookup ended.
 enum BackgroundLookupOutcome {
-    /// Applied and saved.
-    case done
+    /// Applied and saved; `photoTimedOut` when it landed without a photo
+    /// because the photo search ran out of time.
+    case done(photoTimedOut: Bool)
     /// Not kept: the library went away, the switch went off, the store was
     /// replaced or another lookup of the artist was running.
     case discarded
@@ -672,9 +677,10 @@ extension LibraryViewModel {
     /// nil when nobody is due. Skips the artists this session gave up on,
     /// priority names already looked up this launch, and any artist a lookup
     /// is running for.
-    func nextBackgroundArtist(skipping skipped: Set<String>, priorityDone: Set<String>) async -> BackgroundArtistTarget? {
+    func nextBackgroundArtist(session: ArtistLookupSession) async -> BackgroundArtistTarget? {
         let tracks = currentTrackStore().allTracks
         let running = artistLookupsRunning
+        let skipped = session.skipped, priorityDone = session.priorityDone
         let priority = backgroundLookupPriority().filter { name in
             let key = PodBoxArtName.folded(name)
             return !priorityDone.contains(key) && !skipped.contains(key)
@@ -688,9 +694,10 @@ extension LibraryViewModel {
                 let key = PodBoxArtName.folded(name)
                 return !skipped.contains(key) && !running.contains(key)
             }) else { return nil }
-            return BackgroundArtistTarget(name: name, key: PodBoxArtName.folded(name),
-                                          albumTitles: library.albumTitles(for: name),
-                                          libraryPicture: library.picture(for: name))
+            let key = PodBoxArtName.folded(name)
+            return BackgroundArtistTarget(name: name, key: key, albumTitles: library.albumTitles(for: name),
+                                          libraryPicture: library.picture(for: name),
+                                          findsPhoto: session.findsPhoto(key))
         }.value
     }
 
@@ -700,7 +707,10 @@ extension LibraryViewModel {
     /// unless the library went away, the switch went off or the store was
     /// replaced while it ran. While it runs the artist counts as being looked
     /// up, so an owner's Look Up Again waits for it rather than racing it.
-    func lookUpInBackground(_ target: BackgroundArtistTarget, run: ArtistLookupRun) async -> BackgroundLookupOutcome {
+    /// A lookup still running after `limit` is cancelled and fails as
+    /// `ArtistLookupError.timedOut`.
+    func lookUpInBackground(_ target: BackgroundArtistTarget, run: ArtistLookupRun,
+                            limit: Duration) async -> BackgroundLookupOutcome {
         guard !artistLookupsRunning.contains(target.key) else { return .discarded }
         artistLookupsRunning.insert(target.key)
         defer { finishArtistLookup(target.key) }
@@ -708,9 +718,12 @@ extension LibraryViewModel {
         let store = await currentArtistProfileStore()
         let storeKey = artistProfileStoreKey
         let lookup = Task.detached(priority: .utility) { () throws -> ArtistLookupResult in
-            try await run.lookUp(name: target.name, libraryAlbumTitles: target.albumTitles,
-                                 libraryPicture: target.libraryPicture, existing: store.profile(forName: target.name),
-                                 lane: .background, now: Date())
+            try await ArtistLookupRun.bounded(limit) {
+                try await run.lookUp(name: target.name, libraryAlbumTitles: target.albumTitles,
+                                     libraryPicture: target.libraryPicture,
+                                     existing: store.profile(forName: target.name), lane: .background, now: Date(),
+                                     findsPhoto: target.findsPhoto)
+            }
         }
         let result: ArtistLookupResult
         do {
@@ -732,6 +745,6 @@ extension LibraryViewModel {
             }
         }
         reloadArtistProfiles()
-        return failure.map { .failed($0) } ?? .done
+        return failure.map { .failed($0) } ?? .done(photoTimedOut: result.photoTimedOut)
     }
 }

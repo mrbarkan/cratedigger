@@ -130,6 +130,67 @@ public struct ArtistLookupScheduler: Sendable {
     }
 }
 
+/// What the background worker remembers within one launch (spec §4,
+/// Failures): failures in a row for the back-off, the artists given up on,
+/// the priority artists already done, and the artists whose photo search
+/// ran out of time. Pure, so the worker's choices are testable.
+///
+/// A lookup that runs out of time (`ArtistLookupError.timedOut`) is tried
+/// again after the back-off like any service not answering, but after
+/// `timeoutsBeforeSkip` of them in a row for one artist that artist is
+/// skipped for the session, so one name the services cannot answer in time
+/// never holds the rest of the library back. A photo search that ran out
+/// of time is not a failure: the lookup landed, and only that artist's
+/// photo is left alone for the session (`findsPhoto`).
+public struct ArtistLookupSession: Sendable {
+    public static let timeoutsBeforeSkip = 3
+
+    /// Failed lookups in a row; a success sets it back to zero.
+    public private(set) var failures = 0
+    /// Folded keys not asked again this session.
+    public private(set) var skipped: Set<String> = []
+    /// Folded keys of the priority artists already looked up this launch.
+    public private(set) var priorityDone: Set<String> = []
+    /// Folded keys whose photo search ran out of time this session.
+    public private(set) var photoSkipped: Set<String> = []
+    private var timeouts: [String: Int] = [:]
+
+    public init() {}
+
+    /// The pause before the next lookup.
+    public var backoff: Duration { ArtistLookupScheduler.backoff(afterFailures: failures) }
+
+    /// Whether the lookup of `key` should look for a photo.
+    public func findsPhoto(_ key: String) -> Bool { !photoSkipped.contains(key) }
+
+    /// A lookup of `key` landed.
+    public mutating func succeeded(_ key: String, photoTimedOut: Bool) {
+        failures = 0
+        timeouts[key] = nil
+        priorityDone.insert(key)
+        if photoTimedOut { photoSkipped.insert(key) }
+    }
+
+    /// A lookup of `key` failed: what the worker does now, nil for a
+    /// cancellation (which counts for nothing).
+    public mutating func failed(_ key: String, _ error: Error) -> ArtistLookupFailure? {
+        guard var failure = ArtistLookupScheduler.failure(error) else { return nil }
+        failures += 1
+        if error as? ArtistLookupError == .timedOut {
+            timeouts[key, default: 0] += 1
+            if timeouts[key, default: 0] >= Self.timeoutsBeforeSkip { failure = .skipArtist }
+        } else {
+            timeouts[key] = nil
+        }
+        if failure == .skipArtist {
+            skipped.insert(key)
+            priorityDone.insert(key)
+            timeouts[key] = nil
+        }
+        return failure
+    }
+}
+
 /// What the background worker does after a lookup failed (spec §4,
 /// Failures). Nothing is stored for the artist in any case.
 public enum ArtistLookupFailure: Equatable, Sendable {

@@ -121,4 +121,46 @@ final class ArtistLookupSchedulerTests: XCTestCase {
         XCTAssertEqual(scheduler.due(artists: library.artists, profiles: { _ in nil }, priority: [], now: now),
                        ["Air", "Portishead"])
     }
+
+    // MARK: The worker's session
+
+    func testThreeTimeoutsInARowSkipTheArtistForTheSession() {
+        var session = ArtistLookupSession()
+        XCTAssertEqual(session.failed("low", ArtistLookupError.timedOut), .retryLater)
+        XCTAssertEqual(session.failed("low", ArtistLookupError.timedOut), .retryLater)
+        XCTAssertFalse(session.skipped.contains("low"))
+        XCTAssertEqual(session.failed("low", ArtistLookupError.timedOut), .skipArtist)
+        XCTAssertTrue(session.skipped.contains("low"))
+        XCTAssertTrue(session.priorityDone.contains("low"))
+        XCTAssertEqual(session.backoff, ArtistLookupScheduler.backoff(afterFailures: 3))
+
+        // Consecutive for that artist: another kind of failure starts the count over.
+        XCTAssertEqual(session.failed("air", ArtistLookupError.timedOut), .retryLater)
+        XCTAssertEqual(session.failed("air", ArtistLookupError.timedOut), .retryLater)
+        XCTAssertEqual(session.failed("air", ArtistPictureSourceError.http(503)), .retryLater)
+        XCTAssertEqual(session.failed("air", ArtistLookupError.timedOut), .retryLater)
+        XCTAssertFalse(session.skipped.contains("air"))
+
+        // A success clears the back-off; a photo that ran out of time is left alone.
+        session.succeeded("air", photoTimedOut: true)
+        XCTAssertEqual(session.backoff, .zero)
+        XCTAssertFalse(session.findsPhoto("air"))
+        XCTAssertTrue(session.findsPhoto("boston"))
+        XCTAssertNil(session.failed("boston", CancellationError()))
+        XCTAssertEqual(session.backoff, .zero, "a cancellation is not a failure")
+    }
+
+    func testALookupPastItsLimitTimesOut() async throws {
+        do {
+            _ = try await ArtistLookupRun.bounded(.milliseconds(50)) { () async throws -> Int in
+                try await Task.sleep(for: .seconds(20))
+                return 1
+            }
+            XCTFail("the limit did not hold")
+        } catch {
+            XCTAssertEqual(error as? ArtistLookupError, .timedOut)
+        }
+        let quick = try await ArtistLookupRun.bounded(.seconds(20)) { 7 }
+        XCTAssertEqual(quick, 7)
+    }
 }
