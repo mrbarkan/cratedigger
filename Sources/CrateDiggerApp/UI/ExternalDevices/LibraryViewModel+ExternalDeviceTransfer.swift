@@ -107,10 +107,9 @@ extension LibraryViewModel {
                     if conversionSelectionBeforeDevice == nil {
                         conversionSelectionBeforeDevice = conversionSelection
                     }
-                    conversionSelection = seededConversionSelection(from: resolved.transferSettings)
-                    // Folder-art devices get a cover.jpg beside the tracks
-                    // instead, so nothing goes inside the files.
-                    if resolved.usesFolderCoverArt { conversionSelection.artworkMode = .none }
+                    // The art mode comes from the device too: a Rockbox
+                    // profile stores Strip (it gets a cover.jpg instead).
+                    conversionSelection = conversionSelection.seeded(from: resolved.transferSettings)
                 }
                 oledView = .conversion
             }
@@ -233,24 +232,6 @@ extension LibraryViewModel {
                     : "Found \(outcome.albums) album folder\(outcome.albums == 1 ? "" : "s") on \(deviceName), but none of their tracks carry artwork to copy out."
             )
         }
-    }
-
-    /// Project a device's saved format + folder layout onto the current conversion
-    /// selection, so the CNVRT cockpit reflects (and applies) the device's pattern.
-    private func seededConversionSelection(from settings: ExternalDeviceTransferSettings) -> ConversionOptionsSelection {
-        var selection = conversionSelection
-        selection.outputFormat = settings.outputFormat
-        selection.bitrate = settings.bitrateKbps
-        selection.sampleRate = settings.sampleRateHz
-        // A device profile stores no depth or FLAC level, so don't let the
-        // last archival pick ride along onto a player: keep the source's.
-        selection.bitDepth = nil
-        selection.flacCompressionLevel = nil
-        selection.artworkMaxDimension = settings.artworkMaxDimension
-        selection.folderStructureMode = settings.folderStructureMode
-        selection.templatePreset = settings.templateConfig.preset
-        selection.tokenOrder = FolderTokenOrder.normalize(settings.templateConfig.tokenOrder)
-        return selection
     }
 
     // MARK: - Copy path

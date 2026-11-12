@@ -74,6 +74,20 @@ extension LibraryViewModel {
                 reviewedFolders = reviewed
             }
 
+            // A device run compares with what the device holds and asks about
+            // albums that differ, in place of the two prompts below.
+            if let deviceTransfer {
+                await runDeviceConversion(
+                    deviceTransfer,
+                    selection: selection,
+                    service: service,
+                    sourceTracks: sourceTracks,
+                    reviewedFolders: reviewedFolders,
+                    presentingFrom: host
+                )
+                return
+            }
+
             var jobs = planConversionJobs(
                 tracks: sourceTracks,
                 preset: preset,
@@ -124,7 +138,6 @@ extension LibraryViewModel {
             }
 
             if let problem = validateBatchPreflight(
-                jobs: jobs,
                 destinationRoot: destinationRoot,
                 sourceTracks: sourceTracks,
                 outputFormat: selection.outputFormat
@@ -162,29 +175,12 @@ extension LibraryViewModel {
                 }
             }
 
-            // Persist the user's selection for next launch — but a device run's
-            // settings belong to the device, not to the next folder conversion.
-            if deviceTransfer == nil {
-                prefs.saveLastConversionSelection(selection)
-            }
+            // Persist the user's selection for next launch. (A device run's
+            // settings belong to the device and never reach this point.)
+            prefs.saveLastConversionSelection(selection)
 
             let report = await runConversionQueue(service: service, jobs: finalJobs, preset: preset).report
-            // `jobs`, not `finalJobs`: a batch where the user chose Skip still
-            // wants a cover beside the tracks that were already there.
-            let covers = await writeFolderCoverArt(
-                profileID: deviceTransfer?.profileID,
-                landings: jobs.map { ($0.destinationURL.deletingLastPathComponent(), $0.metadata?.artwork) }
-            )
-            if let deviceTransfer {
-                // Remember any format/folder tweaks on the device profile and
-                // stay routed to it — the next album you send needs no setup.
-                persistSelectionToDevice(selection, profileID: deviceTransfer.profileID)
-                emptyPendingDeviceQueue()
-            }
-            presentSummary(
-                report: deviceTransfer.map { deviceReport(report, deviceName: $0.deviceName, covers: covers) } ?? report,
-                presentingFrom: host
-            )
+            presentSummary(report: report, presentingFrom: host)
         }
     }
 
@@ -213,6 +209,56 @@ extension LibraryViewModel {
         profile.transferSettings = settings
         prefs.upsertExternalDeviceProfile(profile)
     }
+}
+
+// MARK: - Device settings ↔ cockpit selection
+
+extension ConversionOptionsSelection {
+    /// This selection with a device's format, art and folder layout on it, so
+    /// the CNVRT cockpit shows (and applies) what the device is set up for.
+    /// Scope and the folder-review switch stay the user's.
+    func seeded(from settings: ExternalDeviceTransferSettings) -> ConversionOptionsSelection {
+        var selection = self
+        selection.outputFormat = settings.outputFormat
+        selection.bitrate = settings.bitrateKbps
+        selection.sampleRate = settings.sampleRateHz
+        // A device profile stores no depth or FLAC level, so don't let the
+        // last archival pick ride along onto a player: keep the source's.
+        selection.bitDepth = nil
+        selection.flacCompressionLevel = nil
+        selection.artworkMode = settings.artworkMode
+        selection.artworkMaxDimension = settings.artworkMaxDimension
+        selection.folderStructureMode = settings.folderStructureMode
+        selection.templatePreset = settings.templateConfig.preset
+        selection.tokenOrder = FolderTokenOrder.normalize(settings.templateConfig.tokenOrder)
+        selection.separators = settings.templateConfig.separators
+        return selection
+    }
+
+    /// The settings a device run from the cockpit writes with: `base` (the
+    /// device's own) with this selection's format, art and folder layout, the
+    /// inverse of `seeded(from:)`. What the cockpit has no row for (folder
+    /// art, the device kind's art rules) stays the device's. Always a convert
+    /// run, since that is what the cockpit does.
+    func deviceTransferSettings(over base: ExternalDeviceTransferSettings) -> ExternalDeviceTransferSettings {
+        var settings = base
+        settings.mode = .convertDuringTransfer
+        settings.outputFormat = outputFormat
+        settings.bitrateKbps = bitrate
+        settings.sampleRateHz = sampleRate
+        settings.artworkMode = artworkMode
+        settings.artworkMaxDimension = artworkMaxDimension
+        settings.folderStructureMode = folderStructureMode
+        settings.templateConfig = FolderTemplateConfig(
+            preset: templatePreset,
+            tokenOrder: FolderTokenOrder.normalize(tokenOrder),
+            separators: separators
+        )
+        return settings
+    }
+}
+
+extension LibraryViewModel {
 
     // MARK: - Version-folder conflicts (second pressing of an existing album)
 
@@ -335,23 +381,313 @@ extension LibraryViewModel {
         }
     }
 
-    /// Reword a conversion summary as a device transfer ("… written" → "… sent to
-    /// <device>") when the run was a send-to-device hand-off.
-    private func deviceReport(_ report: ConversionReport, deviceName: String, covers: Int = 0) -> ConversionReport {
-        ConversionReport(
-            title: report.tone == .success ? "Sent to \(deviceName)" : report.title,
-            statusLine: report.statusLine.replacingOccurrences(of: "written", with: "sent to \(deviceName)")
-                + (covers > 0 ? " · \(covers) cover.jpg" : ""),
-            details: report.details,
-            tone: report.tone,
-            showsDetailsButton: report.showsDetailsButton
+    // MARK: - Device runs (convert mode, mounted)
+
+    /// A send-to-device run from the cockpit. The cockpit's selection is the
+    /// truth for it: the device review plans with the device's settings as
+    /// that selection sets them, so what it compares is what the run writes.
+    /// Only what the device lacks is converted; albums that differ are asked
+    /// about once. Conversions run first, then the deletions a Replace earned
+    /// (an album's old files stay when any of its new ones failed), then the
+    /// album covers, then the catalog patch.
+    ///
+    /// Record Divider recordings are not reviewed: the review compares whole
+    /// tracks, and each of these becomes several files. Their slices are
+    /// planned as before; one whose file is already on the device is left
+    /// there and counted as already there, never overwritten or renamed.
+    @MainActor
+    private func runDeviceConversion(
+        _ pending: PendingDeviceConversion,
+        selection: ConversionOptionsSelection,
+        service: ConversionService,
+        sourceTracks: [LoadedTrack],
+        reviewedFolders: [AlbumFolderKey: String],
+        presentingFrom host: NSViewController
+    ) async {
+        guard var profile = prefs.savedExternalDeviceProfiles.first(where: { $0.id == pending.profileID }) else {
+            appAlert = .error(
+                title: "Device profile missing",
+                message: "The device profile could not be found. Open Preferences > Devices and choose the device again."
+            )
+            return
+        }
+        guard let mountedRoot = await resolveMountedRoot(for: &profile, presentingFrom: host) else {
+            AppLog.conversion.notice("User cancelled device root selection")
+            return
+        }
+        guard let device = mountedDevices.first(where: { deviceProfile(for: $0)?.id == profile.id }) else {
+            appAlert = .error(
+                title: "\(profile.name) isn't connected",
+                message: "Nothing was sent. Connect the device and send again."
+            )
+            return
+        }
+
+        var runProfile = profile
+        runProfile.transferSettings = selection.deviceTransferSettings(over: profile.transferSettings)
+        let settings = runProfile.transferSettings
+        let musicFolder = ExternalDeviceTransferPlanner().destinationRoot(for: runProfile, mountedAt: mountedRoot)
+        if musicFolder.standardizedFileURL.path != pending.destinationRoot.standardizedFileURL.path {
+            AppLog.conversion.notice("Device music folder moved since the hand-off; sending to \(musicFolder.path, privacy: .public)")
+        }
+        // The device's kind decides how art is prepared, as on every other
+        // device path, so what lands matches what the review predicted.
+        let preset = makeAdHocPreset(from: selection, deviceProfile: settings.deviceProfile)
+
+        let divided = sourceTracks.filter { $0.recordMarkers?.isEmpty == false }
+        let whole = sourceTracks.filter { $0.recordMarkers?.isEmpty != false }
+
+        guard let catalog = await currentDeviceCatalog(for: device) else {
+            appAlert = .error(
+                title: "Couldn't read \(profile.name)",
+                message: "CrateDigger could not see what is already on the device, so nothing was sent. Check that it is still connected and send again."
+            )
+            return
+        }
+        guard let (reviewed, _) = await reviewedDevicePlan(
+            tracks: whole,
+            profile: runProfile,
+            mountedRoot: mountedRoot,
+            catalog: catalog,
+            presentingFrom: host,
+            reviewedAlbumFolders: reviewedFolders
+        ) else { return }
+
+        // Record Divider slices, at their natural paths beside the plan's.
+        let sliceJobs = planConversionJobs(
+            tracks: divided,
+            preset: preset,
+            destinationRoot: musicFolder,
+            folderMode: settings.folderStructureMode,
+            templateConfig: settings.templateConfig,
+            reviewedAlbumFolders: reviewedFolders,
+            reservedDestinationPaths: Set(reviewed.copies.map {
+                $0.destinationURL.standardizedFileURL.resolvingSymlinksInPath().path
+            })
+        )
+        let slices = await Task.detached(priority: .userInitiated) {
+            Self.deviceSlices(sliceJobs, of: divided)
+        }.value
+        let plan = DeviceTransferFilePlan(
+            copies: reviewed.copies + slices.copies,
+            deletionsByAlbum: reviewed.deletionsByAlbum,
+            coverFolders: settings.writesFolderCoverArt
+                ? reviewed.coverFolders.merging(slices.coverFolders) { planned, _ in planned }
+                : reviewed.coverFolders,
+            skippedPresent: reviewed.skippedPresent + slices.alreadyThere,
+            leftAlone: reviewed.leftAlone,
+            replacedAlbums: reviewed.replacedAlbums,
+            keptBothAlbums: reviewed.keptBothAlbums,
+            gapAlbums: reviewed.gapAlbums,
+            unplanned: reviewed.unplanned
+        )
+
+        guard !plan.copies.isEmpty || !plan.deletions.isEmpty || !plan.unplanned.isEmpty else {
+            // Nothing is missing: the send is done, so the cockpit stays on
+            // the device with an empty queue, as after a send.
+            persistSelectionToDevice(selection, profileID: profile.id)
+            emptyPendingDeviceQueue()
+            appAlert = .info(
+                title: "Nothing to transfer",
+                message: "\(profile.name) needs nothing from this selection: "
+                    + DeviceTransferSummary.statusLine(for: plan, outcome: .init()) + "."
+            )
+            return
+        }
+
+        // Only what will be written counts against the free space; what a
+        // Replace frees is not credited, so the check stays conservative.
+        var seenSources: Set<String> = []
+        let sizedSources = plan.copies.map(\.source).filter { seenSources.insert($0.track.fileURL.path).inserted }
+        if let problem = validateBatchPreflight(
+            destinationRoot: musicFolder,
+            sourceTracks: sizedSources,
+            outputFormat: selection.outputFormat
+        ) {
+            appAlert = problem
+            return
+        }
+        // The scan and the sheet can take a while; another job may have
+        // started on the conversion channel meanwhile.
+        guard !isConversionRunning else {
+            appAlert = .error(
+                title: "Another transfer is running",
+                message: "Nothing was sent to \(profile.name). Send again once it finishes."
+            )
+            return
+        }
+
+        // The device is checked again right before the run: ffmpeg replaces
+        // whatever is at its destination, so a file that appeared at a name
+        // the review found free fails that item instead of being clobbered.
+        let checked = await Task.detached(priority: .userInitiated) {
+            Self.deviceJobs(for: plan, slices: slices.jobs)
+        }.value
+        let ran = checked.jobs.isEmpty
+            ? nil
+            : await runConversionQueue(service: service, jobs: checked.jobs, preset: preset)
+
+        var outcome = DeviceTransferExecutor.Outcome()
+        outcome.wasCancelled = ran?.wasCancelled ?? false
+        for track in plan.unplanned {
+            outcome.lines.append(
+                "[FAILED] \(track.track.fileURL.lastPathComponent)\n    No place on the device could be planned for it"
+            )
+        }
+        for copy in plan.copies {
+            let path = copy.destinationURL.path
+            let name = slices.jobs[path] == nil
+                ? copy.source.track.fileURL.lastPathComponent
+                : copy.destinationURL.lastPathComponent
+            let reason = checked.blocked[path]
+                ?? (ran?.succeededDestinationPaths.contains(path) == true
+                    ? nil
+                    : ran?.failureReasons[path] ?? "Could not be converted")
+            if let reason {
+                outcome.failed.append(.init(copy: copy, reason: reason))
+                outcome.lines.append("[FAILED] \(name)\n    \(reason)")
+            } else {
+                outcome.written.append(copy)
+                outcome.lines.append("[ok] \(name) -> \(path)")
+            }
+        }
+        // Deletions only for albums whose every conversion landed.
+        outcome = await Task.detached(priority: .userInitiated) { [outcome] in
+            var finished = outcome
+            DeviceTransferExecutor().runDeletions(plan, after: &finished)
+            return finished
+        }.value
+
+        // A cover only where something actually landed.
+        let landed = Set(outcome.written.map { $0.destinationURL.deletingLastPathComponent().standardizedFileURL })
+        await writeFolderCoverArt(
+            profileID: profile.id,
+            landings: plan.coverFolders
+                .filter { landed.contains($0.key) }
+                .map { (folder: $0.key, artwork: $0.value.metadata.artwork) }
+        )
+        await patchDeviceCatalog(
+            for: device,
+            adding: outcome.written.map {
+                DeviceCatalogStore.writtenTrack(
+                    source: $0.source,
+                    destination: $0.destinationURL,
+                    preset: preset,
+                    writesFolderCoverArt: runProfile.usesFolderCoverArt
+                )
+            },
+            removingPaths: outcome.removedPaths
+        )
+
+        // Remember any format/folder tweaks on the device profile and stay
+        // routed to it: the next album you send needs no setup.
+        persistSelectionToDevice(selection, profileID: profile.id)
+        emptyPendingDeviceQueue()
+        presentSummary(report: deviceSendReport(plan: plan, outcome: outcome, deviceName: profile.name), presentingFrom: host)
+    }
+
+    /// Record Divider slices on the device side: the ones whose file is not
+    /// there yet as plan copies (with the job that cuts each, by destination
+    /// path), and a count of those already there. Each slice is recorded as
+    /// its own track (title, number, length), the way a scan of it reads.
+    /// Reads the device, so callers run it off the main actor.
+    nonisolated private static func deviceSlices(
+        _ jobs: [ConversionJob],
+        of tracks: [LoadedTrack]
+    ) -> (copies: [DeviceTransferFilePlan.Copy], jobs: [String: ConversionJob],
+          coverFolders: [URL: LoadedTrack], alreadyThere: Int) {
+        let fileManager = FileManager.default
+        let sources = Dictionary(tracks.map { ($0.track.fileURL.path, $0) }, uniquingKeysWith: { first, _ in first })
+        let identities = DeviceAlbumIdentity.identities(for: tracks)
+        var copies: [DeviceTransferFilePlan.Copy] = []
+        var byPath: [String: ConversionJob] = [:]
+        var covers: [URL: LoadedTrack] = [:]
+        var alreadyThere = 0
+        for job in jobs {
+            guard let source = sources[job.sourceURL.path] else { continue }
+            guard !fileManager.fileExists(atPath: job.destinationURL.path) else {
+                alreadyThere += 1
+                continue
+            }
+            var audio = source.track
+            let metadata = job.metadata ?? source.metadata
+            audio.title = metadata.title ?? audio.title
+            audio.trackNumber = metadata.trackNumber
+            audio.trackTotal = metadata.trackTotal
+            if let start = job.startSeconds, let end = job.endSeconds { audio.durationSeconds = max(0, end - start) }
+            let slice = LoadedTrack(track: audio, metadata: metadata)
+            copies.append(.init(
+                source: slice,
+                destinationURL: job.destinationURL,
+                overwrites: false,
+                kind: .new,
+                album: identities[source.track.id]
+                    ?? DeviceAlbumIdentity(artist: source.track.artist, album: source.track.album)
+            ))
+            byPath[job.destinationURL.path] = job
+            let folder = job.destinationURL.deletingLastPathComponent().standardizedFileURL
+            if covers[folder] == nil { covers[folder] = slice }
+        }
+        return (copies, byPath, covers, alreadyThere)
+    }
+
+    /// The conversion jobs for a device plan, checked against the device right
+    /// before they run: a copy whose destination exists and was not cleared
+    /// for overwriting is held back with the executor's reason.
+    nonisolated private static func deviceJobs(
+        for plan: DeviceTransferFilePlan,
+        slices: [String: ConversionJob]
+    ) -> (jobs: [ConversionJob], blocked: [String: String]) {
+        let fileManager = FileManager.default
+        var jobs: [ConversionJob] = []
+        var blocked: [String: String] = [:]
+        for copy in plan.copies {
+            let path = copy.destinationURL.path
+            if !copy.overwrites, fileManager.fileExists(atPath: path) {
+                blocked[path] = DeviceTransferExecutor.appearedReason
+                continue
+            }
+            // `overwrites`: ffmpeg's -y replaces the old file in place.
+            jobs.append(slices[path] ?? ConversionJob(
+                sourceURL: copy.source.track.fileURL,
+                destinationURL: copy.destinationURL,
+                metadata: copy.source.metadata
+            ))
+        }
+        return (jobs, blocked)
+    }
+
+    /// The summary of a device send, worded like the copy path's.
+    private func deviceSendReport(
+        plan: DeviceTransferFilePlan,
+        outcome: DeviceTransferExecutor.Outcome,
+        deviceName: String
+    ) -> ConversionReport {
+        let failed = DeviceTransferSummary.failedCount(for: plan, outcome: outcome)
+        let title: String
+        let tone: StatusTone
+        if failed == 0 {
+            title = "Sent to \(deviceName)"
+            tone = .success
+        } else if outcome.written.isEmpty {
+            title = "Transfer failed"
+            tone = .error
+        } else {
+            title = "Transfer finished with errors"
+            tone = .warning
+        }
+        return ConversionReport(
+            title: title,
+            statusLine: DeviceTransferSummary.statusLine(for: plan, outcome: outcome),
+            details: outcome.lines.joined(separator: "\n"),
+            tone: tone,
+            showsDetailsButton: !outcome.lines.isEmpty
         )
     }
 
     /// Block obvious failure modes before we hand off to ffmpeg. Returns an
     /// alert to present, or nil to proceed.
     private func validateBatchPreflight(
-        jobs: [ConversionJob],
         destinationRoot: URL,
         sourceTracks: [LoadedTrack],
         outputFormat: OutputFormat
@@ -558,7 +894,12 @@ extension LibraryViewModel {
         }
     }
 
-    func makeAdHocPreset(from selection: ConversionOptionsSelection) -> ConversionPreset {
+    /// `deviceProfile`: a device run passes its device's, which decides how
+    /// re-embedded art is prepared (the legacy-safe iPod caps it at 600 px).
+    func makeAdHocPreset(
+        from selection: ConversionOptionsSelection,
+        deviceProfile: DeviceProfile = .generic
+    ) -> ConversionPreset {
         // Normalized, so a knob the format ignores (a bitrate under FLAC, a
         // 44.1 kHz rate under Opus) never reaches ffmpeg.
         let encoding = selection.encoding.normalized()
@@ -570,7 +911,7 @@ extension LibraryViewModel {
             sampleRateHz: encoding.sampleRateHz,
             channels: nil,
             constantBitrate: false,
-            deviceProfile: .generic,
+            deviceProfile: deviceProfile,
             tagMode: .auto,
             artworkMode: selection.artworkMode,
             artworkMaxDimension: selection.artworkMaxDimension,
@@ -629,11 +970,12 @@ extension LibraryViewModel {
         destinationRoot: URL,
         folderMode: FolderStructureMode,
         templateConfig: FolderTemplateConfig,
-        reviewedAlbumFolders: [AlbumFolderKey: String]
+        reviewedAlbumFolders: [AlbumFolderKey: String],
+        reservedDestinationPaths: Set<String> = []
     ) -> [ConversionJob] {
         let planner = OutputPathPlanner()
         let albumKeys = planner.albumFolderKeys(for: tracks)
-        var reserved = Set<String>()
+        var reserved = reservedDestinationPaths
         var jobs: [ConversionJob] = []
 
         // Use the deepest common ancestor of source files as the source root
@@ -715,6 +1057,10 @@ extension LibraryViewModel {
         /// Destination paths of jobs that completed — lets device-sync staging
         /// record exactly which bakes are real.
         let succeededDestinationPaths: Set<String>
+        /// Why each job that did not complete failed, by destination path:
+        /// "Cancelled", or the last line of ffmpeg's log.
+        let failureReasons: [String: String]
+        let wasCancelled: Bool
     }
 
     @MainActor
@@ -745,7 +1091,7 @@ extension LibraryViewModel {
         activeConversionService = service
         defer { activeConversionService = nil }
 
-        let (results, succeededPaths): ([ConversionExecutionResult], Set<String>) = await withCheckedContinuation { continuation in
+        let (results, succeededPaths, failureReasons): ([ConversionExecutionResult], Set<String>, [String: String]) = await withCheckedContinuation { continuation in
             let task = Task.detached(priority: .userInitiated) {
                 let queued = service.enqueue(jobs, preset: preset)
                 // Parallel workers finish in any order, so name the file that
@@ -772,7 +1118,16 @@ extension LibraryViewModel {
                 let succeededIDs = Set(outcomes.filter { $0.status == .completed }.map(\.queuedID))
                 let paths = Set(queued.filter { succeededIDs.contains($0.id) }
                     .map { $0.job.destinationURL.path })
-                continuation.resume(returning: (outcomes, paths))
+                let destinationByID = Dictionary(uniqueKeysWithValues: queued.map {
+                    ($0.id, $0.job.destinationURL.path)
+                })
+                var reasons: [String: String] = [:]
+                for outcome in outcomes where outcome.status != .completed {
+                    guard let path = destinationByID[outcome.queuedID] else { continue }
+                    let lastLine = outcome.log.split(separator: "\n").last.map(String.init) ?? outcome.log
+                    reasons[path] = outcome.wasCancelled ? "Cancelled" : (lastLine.isEmpty ? "Could not be converted" : lastLine)
+                }
+                continuation.resume(returning: (outcomes, paths, reasons))
             }
             self.conversionTask = task
         }
@@ -823,7 +1178,9 @@ extension LibraryViewModel {
                 tone: tone,
                 showsDetailsButton: !details.isEmpty
             ),
-            succeededDestinationPaths: succeededPaths
+            succeededDestinationPaths: succeededPaths,
+            failureReasons: failureReasons,
+            wasCancelled: cancelled > 0
         )
     }
 
