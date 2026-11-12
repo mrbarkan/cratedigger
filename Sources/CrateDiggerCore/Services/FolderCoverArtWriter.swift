@@ -23,8 +23,11 @@ public struct FolderCoverArtWriter {
         self.fileManager = fileManager
     }
 
-    /// Writes one `cover.jpg` per folder, replacing any file already there —
-    /// the transfer that wrote the tracks owns the cover beside them. Folders
+    /// Writes one `cover.jpg` per folder, replacing any file already there.
+    /// Which folders may be given one is decided before this:
+    /// `DeviceTransferFilePlan.coverFolders(after:hasCover:)` for a device
+    /// run (a Gaps fill keeps the cover it found), `conversionCovers` for an
+    /// ordinary conversion (never over an existing cover). Folders
     /// that don't exist (nothing landed there) are skipped. Returns the number
     /// of covers written; a cover that can't be encoded is skipped, never fatal
     /// — the music is already on the device.
@@ -48,6 +51,66 @@ public struct FolderCoverArtWriter {
             }
         }
         return written
+    }
+
+    /// Whether `folder` already holds a `cover.jpg` (any case, as a FAT
+    /// device or a default macOS volume compares names).
+    public static func hasCover(in folder: URL, fileManager: FileManager = .default) -> Bool {
+        fileManager.fileExists(atPath: folder.appendingPathComponent(filename).path)
+    }
+
+    /// One file an ordinary (non-device) conversion wrote, for deciding its
+    /// folder covers.
+    public struct ConversionLanding {
+        public let folder: URL
+        /// The album the file belongs to (`OutputPathPlanner.albumFolderKeys`).
+        public let album: AlbumFolderKey
+        public let artwork: ArtworkAsset?
+
+        public init(folder: URL, album: AlbumFolderKey, artwork: ArtworkAsset?) {
+            self.folder = folder
+            self.album = album
+            self.artwork = artwork
+        }
+    }
+
+    /// The covers an ordinary conversion with Folder Art on writes: one per
+    /// folder something landed in, from the first landing there that carries
+    /// art, except where a cover would not belong to one album the user just
+    /// converted. Skipped: a folder that already holds a `cover.jpg` (it is
+    /// the user's, and a conversion never replaces it), the destination root
+    /// itself in flat mode (every album lands there), and a folder that
+    /// `planned` puts more than one album of the batch into. `planned` is
+    /// every file of the batch, landed or not, so a failed track still
+    /// counts as its album being there.
+    public static func conversionCovers(
+        landed: [ConversionLanding],
+        planned: [ConversionLanding],
+        destinationRoot: URL,
+        folderMode: FolderStructureMode,
+        hasCover: (URL) -> Bool
+    ) -> [URL: ArtworkAsset] {
+        func key(_ url: URL) -> String { url.standardizedFileURL.path }
+        var albumsByFolder: [String: Set<AlbumFolderKey>] = [:]
+        for landing in planned + landed {
+            albumsByFolder[key(landing.folder), default: []].insert(landing.album)
+        }
+        let root = key(destinationRoot)
+        let skipped = Set(landed.map { key($0.folder) }).filter { path in
+            (folderMode == .flat && path == root)
+                || (albumsByFolder[path]?.count ?? 0) > 1
+                || hasCover(URL(fileURLWithPath: path, isDirectory: true))
+        }
+
+        var covers: [URL: ArtworkAsset] = [:]
+        for landing in landed {
+            let folder = landing.folder.standardizedFileURL
+            guard !skipped.contains(key(folder)), covers[folder] == nil,
+                  let artwork = landing.artwork, !artwork.data.isEmpty
+            else { continue }
+            covers[folder] = artwork
+        }
+        return covers
     }
 
     /// One audio file per folder under `root` — the first in name order, so a

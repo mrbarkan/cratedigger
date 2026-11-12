@@ -111,6 +111,45 @@ final class ExternalDeviceTransferSettingsArtworkTests: XCTestCase {
         }
     }
 
+    // MARK: - Changing a profile's kind
+
+    /// Becoming a Rockbox iPod takes Rockbox's art defaults, whatever the
+    /// profile had: Strip inside the files and a cover.jpg beside them.
+    func testChangingToRockboxTakesStripPlusFolderArt() {
+        let settings = ExternalDeviceTransferSettings(artworkMaxDimension: 600, artworkMode: .preserve)
+
+        let moved = settings.adjustedForKind(from: .genericExternalStorage, to: .rockboxIPod)
+
+        XCTAssertEqual(moved.artworkMode, ArtworkMode.none)
+        XCTAssertTrue(moved.writesFolderCoverArt)
+        XCTAssertEqual(moved.artworkMaxDimension, 600, "the cap is the user's; only the art defaults move")
+    }
+
+    /// Leaving Rockbox drops the cover and takes the mode the cap implies, so
+    /// a former iPod does not keep stripping art on a player that shows it.
+    func testChangingAwayFromRockboxDropsFolderArtAndFollowsTheCap() {
+        let capped = ExternalDeviceProfile.rockboxIPod().transferSettings
+        let movedCapped = capped.adjustedForKind(from: .rockboxIPod, to: .sdCard)
+        XCTAssertEqual(movedCapped.artworkMode, .compatReembed)
+        XCTAssertFalse(movedCapped.writesFolderCoverArt)
+
+        var uncapped = capped
+        uncapped.artworkMaxDimension = nil
+        let movedUncapped = uncapped.adjustedForKind(from: .rockboxIPod, to: .genericExternalStorage)
+        XCTAssertEqual(movedUncapped.artworkMode, .preserve)
+        XCTAssertFalse(movedUncapped.writesFolderCoverArt)
+    }
+
+    /// Any other change, or none, leaves what the user chose.
+    func testOtherKindChangesKeepTheArtSettings() {
+        let settings = ExternalDeviceTransferSettings(
+            artworkMaxDimension: 300, artworkMode: .none, writesFolderCoverArt: true)
+
+        XCTAssertEqual(settings.adjustedForKind(from: .sdCard, to: .directFilePlayer), settings)
+        XCTAssertEqual(settings.adjustedForKind(from: .rockboxIPod, to: .rockboxIPod), settings)
+        XCTAssertEqual(settings.adjustedForKind(from: .genericExternalStorage, to: .genericExternalStorage), settings)
+    }
+
     // MARK: - Preset
 
     func testPresetReadsArtworkMode() {

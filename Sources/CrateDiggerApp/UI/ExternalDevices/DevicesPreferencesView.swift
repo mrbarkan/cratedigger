@@ -8,6 +8,9 @@ struct DevicesPreferencesView: View {
     @State private var draft = EditableExternalDeviceProfile()
     @State private var deleteConfirmationShown = false
     @State private var showSavedConfirmation = false
+    /// How many albums the review sheet was told to leave alone on the
+    /// selected device. Read when a profile is selected; the button clears it.
+    @State private var leftAloneCount = 0
 
     var body: some View {
         // spacing 0 and no .top alignment: the divider has to run the full
@@ -134,7 +137,7 @@ struct DevicesPreferencesView: View {
             Form {
                 Section("Device") {
                     TextField("Name", text: $draft.name)
-                    Picker("Type", selection: $draft.kind) {
+                    Picker("Type", selection: kindBinding) {
                         ForEach(ExternalDeviceKind.allCases, id: \.self) { kind in
                             Text(kind.title).tag(kind)
                         }
@@ -184,6 +187,8 @@ struct DevicesPreferencesView: View {
                     }
                 }
 
+                artworkSection
+
             }
             .formStyle(.grouped)
 
@@ -209,6 +214,84 @@ struct DevicesPreferencesView: View {
             .padding(.vertical, 12)
             }
         }
+    }
+
+    /// What a transfer does with the art: inside the files (convert mode
+    /// only; copy mode writes the files as they are) and as a cover.jpg
+    /// beside them. Both are stored on the device, and the review compares
+    /// what is already there against them.
+    private var artworkSection: some View {
+        Section("Artwork") {
+            if draft.settings.mode == .convertDuringTransfer {
+                Picker("In the files", selection: $draft.settings.artworkMode) {
+                    Text("Keep").tag(ArtworkMode.preserve)
+                    Text("Re-embed").tag(ArtworkMode.compatReembed)
+                    Text("Strip").tag(ArtworkMode.none)
+                }
+                .pickerStyle(.segmented)
+
+                Picker("Size", selection: $draft.settings.artworkMaxDimension) {
+                    ForEach(artworkSizeOptions, id: \.self) { size in
+                        // Verbatim: a localized interpolation groups 1024 as "1.024".
+                        Text(verbatim: size.map { "\($0) px" } ?? "Original").tag(size)
+                    }
+                }
+                .disabled(draft.settings.artworkMode != .compatReembed)
+            }
+
+            Toggle("Folder art (cover.jpg)", isOn: $draft.settings.writesFolderCoverArt)
+            Text(folderArtCaption)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            LabeledContent("Albums left alone") {
+                HStack {
+                    Text(verbatim: leftAloneCount == 0 ? "None" : "\(leftAloneCount)")
+                        .foregroundStyle(.secondary)
+                    Button("Forget albums left alone") { forgetLeftAlone() }
+                        .disabled(leftAloneCount == 0)
+                }
+            }
+            Text("Albums you chose to leave alone when sending stop being asked about. Forget them to be asked again.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var folderArtCaption: String {
+        let size = FolderCoverArtWriter.defaultMaxDimension
+        return draft.settings.mode == .convertDuringTransfer
+            ? "Writes a \(size) px cover.jpg beside the tracks in each album folder, whatever happens to the art in the files. Rockbox shows it; a large embedded cover comes out grey there."
+            : "Writes a \(size) px cover.jpg beside the tracks in each album folder. The copied files keep their own art."
+    }
+
+    /// The sizes Re-embed offers, plus whatever the profile already stores
+    /// (the factory default is 1024), so a stored size is never shown as
+    /// another.
+    private var artworkSizeOptions: [Int?] {
+        var sizes = Set([300, 500, 600, 800, 1000, 1400])
+        if let stored = draft.settings.artworkMaxDimension { sizes.insert(stored) }
+        return [nil] + sizes.sorted().map { Optional($0) }
+    }
+
+    /// Choosing a kind moves the art defaults with it: to a Rockbox iPod,
+    /// Strip and folder art; away from one, no folder art and the mode the
+    /// size implies. Only the user's pick goes through here, never a profile
+    /// being loaded into the draft.
+    private var kindBinding: Binding<ExternalDeviceKind> {
+        Binding(
+            get: { draft.kind },
+            set: { newKind in
+                draft.settings = draft.settings.adjustedForKind(from: draft.kind, to: newKind)
+                draft.kind = newKind
+            }
+        )
+    }
+
+    private func forgetLeftAlone() {
+        guard let selectedID else { return }
+        DeviceLeftAloneStore().clear(profileID: selectedID)
+        leftAloneCount = 0
     }
 
     private var iconLabel: String {
@@ -253,8 +336,10 @@ struct DevicesPreferencesView: View {
     private func deleteSelectedProfile() {
         guard let selectedID else { return }
         PreferencesStore.shared.removeExternalDeviceProfile(id: selectedID)
-        // A deleted profile's sync queue + staged bakes are trash — drop them now.
+        // A deleted profile's sync queue + staged bakes are trash — drop them now,
+        // and the albums it was told to leave alone with them.
         DeviceSyncQueueStore().remove(profileID: selectedID)
+        DeviceLeftAloneStore().clear(profileID: selectedID)
         self.selectedID = nil
         reload()
     }
@@ -262,9 +347,11 @@ struct DevicesPreferencesView: View {
     private func loadDraft(for id: UUID?) {
         guard let id, let profile = profiles.first(where: { $0.id == id }) else {
             draft = EditableExternalDeviceProfile()
+            leftAloneCount = 0
             return
         }
         draft = EditableExternalDeviceProfile(profile: profile)
+        leftAloneCount = DeviceLeftAloneStore().load(profileID: id).count
     }
 
     private func chooseMountedRoot() {
@@ -316,8 +403,9 @@ private struct EditableExternalDeviceProfile {
     var volumeUUID: String?
     var musicDirectorySubpath: String = "Music"
     var iconID: String?
-    /// The whole transfer settings value — device-only fields (mode, compatibility)
-    /// are edited inline; the format+folder core is edited via the Patch Bay.
+    /// The whole transfer settings value — device-only fields (mode,
+    /// compatibility) and the art are edited inline; the format+folder core is
+    /// edited via the Patch Bay (which edits the art too).
     var settings = ExternalDeviceTransferSettings()
     /// Not edited here yet; carried through so saving the draft keeps it.
     var podBox: PodBoxPreferences?

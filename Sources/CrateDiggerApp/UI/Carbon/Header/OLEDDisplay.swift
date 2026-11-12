@@ -2664,9 +2664,13 @@ private struct DevicesPane: View {
         let transfer = s.mode == .copyOriginals ? ("COPY", "Originals") : ("CONVERT", "During Copy")
         let fmt = s.outputFormat.fileExtension.uppercased()
         let fmtSub = s.outputFormat.isLossless ? "Lossless" : "\(s.bitrateKbps ?? 192) kbps"
-        let artwork: (String, String) = profile.usesFolderCoverArt
-            ? ("\(FolderCoverArtWriter.defaultMaxDimension) px", "cover.jpg")
-            : (s.artworkMaxDimension.map { ("\($0) px", "Re-embed") } ?? ("KEEP", "Preserve"))
+        // Copy mode writes the files as they are, so their art is kept
+        // whatever the stored mode says.
+        let artwork = DeviceArtworkReadout.cell(
+            mode: s.mode == .copyOriginals ? .preserve : s.artworkMode,
+            maxDimension: s.artworkMaxDimension,
+            folderArt: profile.usesFolderCoverArt
+        )
         return [
             OLEDCellData(key: "Kind", value: kindCell(profile.kind).0, sub: kindCell(profile.kind).1, valueColor: theme.cyan),
             OLEDCellData(key: "Transfer", value: transfer.0, sub: transfer.1),

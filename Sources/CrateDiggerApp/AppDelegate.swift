@@ -508,6 +508,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     /// - CRATEDIGGER_MINI=1 opens the mini player at +3 s, the same path as
     ///   Window ▸ Mini Player. Its window has no title, so a snapshot run
     ///   writes it as `sheetN`.
+    ///
+    /// CRATEDIGGER_DEVICE_REVIEW=1 presents the "Already on <device>" review
+    /// sheet at +4 s with fabricated rows (`DeviceReviewSheetController.debugSample`);
+    /// `answered` opens it with every row answered and the albums left alone shown.
+    /// Works without a snapshot path; check it by window capture.
     private func installSnapshotHookIfRequested() {
         let env = ProcessInfo.processInfo.environment
         if env["CRATEDIGGER_MINI"] != nil {
@@ -526,6 +531,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                     model.eqEnabled = true
                     model.quickEQEnabled = true
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { model.quickEQBand = 6 }
+                }
+            }
+        }
+        // The "Already on <device>" sheet, with fabricated rows for each kind
+        // of difference, so it can be captured without a device plugged in.
+        // "answered" opens it with the albums left alone shown and every row
+        // answered, so the chosen and enabled states can be captured too.
+        // Before the snapshot guard: check it by window capture. Nothing is
+        // written whatever the answer.
+        if let raw = env["CRATEDIGGER_DEVICE_REVIEW"] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) { [weak self] in
+                guard let model = self?.mainWindowController?.model,
+                      let host = self?.mainWindowController?.window?.contentViewController
+                else { return }
+                let sample = DeviceReviewSheetController.debugSample()
+                var state = DeviceReviewState()
+                if raw == "answered" {
+                    let rows = DeviceReviewRow.rows(for: sample.review, settings: sample.settings, includingLeftAlone: true)
+                    state.presetLeftAlone(rows: rows)
+                    let cycle: [DeviceAlbumDecision] = [.replace, .keepBoth, .leave]
+                    for (offset, row) in rows.enumerated() where state.decisions[row.id] == nil {
+                        state.decisions[row.id] = cycle[offset % cycle.count]
+                    }
+                }
+                // Frontmost, so the controls draw active in a capture.
+                NSApp.activate(ignoringOtherApps: true)
+                Task { @MainActor in
+                    let decisions = await model.presentDeviceReview(
+                        sample.review, deviceName: "IPOD", settings: sample.settings, presentingFrom: host,
+                        initialState: state, showsLeftAlone: raw == "answered"
+                    )
+                    NSLog("[device-review] %@", decisions.map { "\($0.count) answers" } ?? "cancelled")
                 }
             }
         }
@@ -699,6 +736,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                     destinationRoot: URL(fileURLWithPath: profile.rootDisplayPath ?? "/Volumes/\(profile.name)"),
                     tracks: Array(Self.previewTracks(from: model).prefix(11))
                 )
+                // Seeded from the device as the real route does, so the
+                // cockpit shows the device's settings (and Cancel saves those
+                // back, not the user's own).
+                if model.conversionSelectionBeforeDevice == nil {
+                    model.conversionSelectionBeforeDevice = model.conversionSelection
+                }
+                model.conversionSelection = model.conversionSelection.seeded(from: profile.transferSettings)
                 model.oledView = .conversion
             }
         }
@@ -1427,7 +1471,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             return (mainWindowController?.currentSelectionURL() != nil)
                 && !(mainWindowController?.isConversionRunning ?? false)
         case #selector(cancelConversion(_:)):
-            return mainWindowController?.isConversionRunning ?? false
+            // Not during a SYNC: it has no cancel.
+            return mainWindowController?.canCancelConversion ?? false
         case #selector(checkForUpdates(_:)):
             // Off in a development build, which has no update feed — see
             // `SoftwareUpdater`.

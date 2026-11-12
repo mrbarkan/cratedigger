@@ -69,6 +69,41 @@ final class DeviceLeftAloneStoreTests: XCTestCase {
         }
     }
 
+    func testRecordRemembersLeaveItAndForgetsAChangedAnswer() throws {
+        try withTemporaryDirectory(prefix: "left-alone") { dir in
+            let store = DeviceLeftAloneStore(directory: dir)
+            let profile = UUID()
+            store.insert([kindOfBlue, inRainbows], profileID: profile)
+
+            // Kind of Blue was left alone before and is now replaced; Bitches
+            // Brew is left alone for the first time; In Rainbows is not answered.
+            store.record([kindOfBlue: .replace, bitchesBrew: .leave],
+                         kinds: [kindOfBlue: .sameRelease, bitchesBrew: .differentRelease], profileID: profile)
+
+            XCTAssertEqual(store.load(profileID: profile), [bitchesBrew, inRainbows])
+
+            store.record([bitchesBrew: .keepBoth], kinds: [bitchesBrew: .differentRelease], profileID: profile)
+            XCTAssertEqual(store.load(profileID: profile), [inRainbows])
+        }
+    }
+
+    /// A Leave it for a name taken by an unknown file says nothing about the
+    /// album: remembered, it would silently leave alone a later real upgrade.
+    func testLeaveItForATakenNameIsNotRemembered() throws {
+        try withTemporaryDirectory(prefix: "left-alone") { dir in
+            let store = DeviceLeftAloneStore(directory: dir)
+            let profile = UUID()
+            store.insert([inRainbows], profileID: profile)
+
+            store.record([kindOfBlue: .leave, inRainbows: .leave, bitchesBrew: .leave],
+                         kinds: [kindOfBlue: .pathTaken, inRainbows: .pathTaken, bitchesBrew: .sameRelease],
+                         profileID: profile)
+
+            XCTAssertEqual(store.load(profileID: profile), [bitchesBrew, inRainbows],
+                           "Kind of Blue is not remembered; In Rainbows keeps what it had")
+        }
+    }
+
     func testUnreadableFileLoadsEmpty() throws {
         try withTemporaryDirectory(prefix: "left-alone") { dir in
             let profile = UUID()
