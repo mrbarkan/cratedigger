@@ -27,7 +27,6 @@ final class PodBoxPreferencesTests: XCTestCase {
         let preferences = PodBoxPreferences()
         XCTAssertEqual(preferences.artistPictures, .off)
         XCTAssertFalse(preferences.findsArtistPicturesAutomatically, "nothing is fetched until the owner asks")
-        XCTAssertNil(preferences.lastSeenFirmware)
         XCTAssertEqual(preferences.passedChecks, [])
 
         XCTAssertNil(ExternalDeviceProfile.rockboxIPod().podBox)
@@ -39,7 +38,6 @@ final class PodBoxPreferencesTests: XCTestCase {
         let partial = try JSONDecoder().decode(PodBoxPreferences.self, from: Data(#"{"artistPictures":"artworkFolder"}"#.utf8))
         XCTAssertEqual(partial.artistPictures, .artworkFolder)
         XCTAssertFalse(partial.findsArtistPicturesAutomatically)
-        XCTAssertNil(partial.lastSeenFirmware)
         XCTAssertEqual(partial.passedChecks, [])
 
         let empty = try JSONDecoder().decode(PodBoxPreferences.self, from: Data("{}".utf8))
@@ -74,11 +72,18 @@ final class PodBoxPreferencesTests: XCTestCase {
         XCTAssertFalse(String(decoding: try JSONEncoder().encode(old), as: UTF8.self).contains("sweepsAppleDouble"))
     }
 
+    /// `lastSeenFirmware` was never read or written; a profile that carries it still reads.
+    func testRetiredLastSeenFirmwareKeyIsIgnored() throws {
+        let old = try JSONDecoder().decode(PodBoxPreferences.self,
+                                           from: Data(#"{"lastSeenFirmware":"PodBox layout 5","passedChecks":["M5"]}"#.utf8))
+        XCTAssertEqual(old.passedChecks, ["M5"])
+        XCTAssertFalse(String(decoding: try JSONEncoder().encode(old), as: UTF8.self).contains("lastSeenFirmware"))
+    }
+
     func testRoundTrip() throws {
         var preferences = PodBoxPreferences()
         preferences.artistPictures = .artistFolders
         preferences.findsArtistPicturesAutomatically = true
-        preferences.lastSeenFirmware = "PodBox layout 5"
         preferences.passedChecks = ["M5", "M12"]
         var profile = ExternalDeviceProfile.rockboxIPod()
         profile.podBox = preferences

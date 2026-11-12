@@ -266,6 +266,30 @@ final class DeviceFileExecutorTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: url("\(album)/01 - Zebra.m4a").path))
     }
 
+    /// The volume's UUID is asked for again before every operation, never
+    /// remembered: another iPod at the same mount point mid-plan stops the rest.
+    func testVolumeUUIDIsReadAgainBeforeEveryOperation() throws {
+        var reported = volume
+        var asked = 0
+        let executor = DeviceFileExecutor(volumeRoot: iPod.root, expectedVolumeUUID: volume,
+                                          policy: DeviceWritePolicy(musicSubpath: "Music"), journal: journal(),
+                                          volumeUUID: { _ in asked += 1; return reported }, freeSpace: { _ in 1 << 40 },
+                                          rootMustBeMountPoint: false)
+        let ops: [DeviceFileOperation] = [
+            .write(relativePath: coverPath, role: .cover, contents: .data(Data("x".utf8))),
+            .write(relativePath: "\(album)/02 - Silver Soul.m4a", role: .audio, contents: .data(Data("y".utf8))),
+        ]
+        let before = asked
+        let outcomes = executor.apply(ops, sessionID: session) { done, _ in
+            if done == 1 { reported = "ANOTHER-IPOD" }
+        }
+        XCTAssertEqual(outcomes, [.written, .refusedWrongVolume])
+        XCTAssertGreaterThanOrEqual(asked - before, 3, "once for the plan and once before each operation")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url("\(album)/02 - Silver Soul.m4a").path))
+        XCTAssertNotNil(DeviceFileExecutor.systemVolumeUUID(URL(fileURLWithPath: "/", isDirectory: true)),
+                        "the system reader answers for the boot volume")
+    }
+
     func testRootVanishedMidApplyFailsRemainingOps() throws {
         // The device's files, kept to restore the root for the teardown check.
         let saved = journalDir.appendingPathComponent("saved-root", isDirectory: true)

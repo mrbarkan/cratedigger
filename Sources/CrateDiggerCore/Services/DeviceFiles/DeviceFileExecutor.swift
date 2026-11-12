@@ -109,8 +109,14 @@ public struct DeviceFileExecutor {
         sessionVolumeUUID = expectedVolumeUUID ?? (capturedIdentity == nil ? nil : volumeUUID(volumeRoot))
     }
 
+    /// The volume UUID at `root`, read fresh every time: a new URL made from
+    /// the path, its cache emptied, so Foundation cannot answer from values
+    /// it cached on a URL the caller kept (another iPod at the same mount
+    /// point must not read as the first).
     public static func systemVolumeUUID(_ root: URL) -> String? {
-        try? root.resourceValues(forKeys: [.volumeUUIDStringKey]).volumeUUIDString
+        var fresh = URL(fileURLWithPath: root.path, isDirectory: true)
+        fresh.removeAllCachedResourceValues()
+        return try? fresh.resourceValues(forKeys: [.volumeUUIDStringKey]).volumeUUIDString
     }
 
     public static func systemFreeSpace(_ root: URL) -> Int64? {

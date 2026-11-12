@@ -1169,7 +1169,6 @@ final class LibraryViewModel: ObservableObject {
     @Published var isWritingArtistPictures = false
     /// The Artist Pictures sheet is finding pictures online; Cancel stops it.
     @Published var isFindingArtistPictures = false
-    var artistPictureFindTask: Task<Void, Never>?
     /// The artist picture records for the current crates folder
     /// (`library.cdartists`), rebuilt when that folder changes. See
     /// `currentArtistPictureStore()`.

@@ -14,7 +14,8 @@ public enum ArtistPictureDestination: String, Codable, Sendable {
 /// check M5 on the real iPod; nothing turns it on by default.
 ///
 /// A key an older build wrote and this one no longer has (`sweepsAppleDouble`,
-/// replaced by `appleDoubleCleanup`) is ignored on decode.
+/// replaced by `appleDoubleCleanup`; `lastSeenFirmware`, never read) is
+/// ignored on decode.
 public struct PodBoxPreferences: Codable, Hashable, Sendable {
     /// Remove proven macOS `._` twins automatically at the end of every
     /// transfer, in the folders it wrote to. Off until the owner has run
@@ -27,8 +28,6 @@ public struct PodBoxPreferences: Codable, Hashable, Sendable {
     /// Off until the owner turns it on: nothing is fetched from the network
     /// without the owner asking for it.
     public var findsArtistPicturesAutomatically: Bool
-    /// Display only: the firmware last seen on the device.
-    public var lastSeenFirmware: String?
     /// Manual checks the owner has passed on this iPod ("M5", ...).
     public var passedChecks: Set<String>
 
@@ -36,13 +35,11 @@ public struct PodBoxPreferences: Codable, Hashable, Sendable {
         appleDoubleCleanup = false
         artistPictures = .off
         findsArtistPicturesAutomatically = false
-        lastSeenFirmware = nil
         passedChecks = []
     }
 
     enum CodingKeys: String, CodingKey {
-        case appleDoubleCleanup, artistPictures, findsArtistPicturesAutomatically, lastSeenFirmware,
-             passedChecks
+        case appleDoubleCleanup, artistPictures, findsArtistPicturesAutomatically, passedChecks
     }
 
     public init(from decoder: Decoder) throws {
@@ -54,7 +51,6 @@ public struct PodBoxPreferences: Codable, Hashable, Sendable {
             ?? defaults.artistPictures
         findsArtistPicturesAutomatically = try container.decodeIfPresent(
             Bool.self, forKey: .findsArtistPicturesAutomatically) ?? defaults.findsArtistPicturesAutomatically
-        lastSeenFirmware = try container.decodeIfPresent(String.self, forKey: .lastSeenFirmware)
         passedChecks = try container.decodeIfPresent(Set<String>.self, forKey: .passedChecks) ?? defaults.passedChecks
     }
 }

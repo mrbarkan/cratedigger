@@ -73,7 +73,7 @@ public enum DeviceFileIO {
             }
         } catch {
             AppLog.library.warning(
-                "Copied \(destination.lastPathComponent, privacy: .public) but kept the copy's own date: \(String(describing: error), privacy: .public)")
+                "Copied \(destination.lastPathComponent, privacy: .private) but kept the copy's own date: \(String(describing: error), privacy: .private)")
         }
         stripExtendedAttributes(at: destination)
     }
@@ -111,7 +111,7 @@ public enum DeviceFileIO {
             .map { String(decoding: $0.map { UInt8(bitPattern: $0) }, as: UTF8.self) }
         for name in names where removexattr(path, name, XATTR_NOFOLLOW) != 0 {
             AppLog.library.warning(
-                "Could not remove attribute \(name, privacy: .public) from \(url.lastPathComponent, privacy: .public): errno \(errno)")
+                "Could not remove attribute \(name, privacy: .public) from \(url.lastPathComponent, privacy: .private): errno \(errno)")
         }
     }
 
