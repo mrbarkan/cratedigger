@@ -230,14 +230,10 @@ public struct DeviceCapabilities: OptionSet, Sendable {
         self = caps
     }
 
-    private static let deniedTreeKeys: Set<String> = [
-        ".rockbox", ".rockbox_backup", ".backup", "ipod_control", ".trashes", ".spotlight-v100", ".fseventsd",
-    ]
-
+    /// The playlist folder's first component names one of the player's own trees.
     private static func isInDeniedTree(_ relativePath: String) -> Bool {
-        guard let first = relativePath.split(separator: "/").first else { return false }
-        var key = String(first).precomposedStringWithCanonicalMapping.lowercased()
-        while let last = key.last, last == "." || last == " " { key.removeLast() }
-        return deniedTreeKeys.contains(key)
+        guard let first = DeviceWritePolicy.key(forRelativePath: relativePath).split(separator: "/").first
+        else { return false }
+        return DeviceWritePolicy.deniedTrees.contains { DeviceWritePolicy.key(forRelativePath: $0) == first }
     }
 }
