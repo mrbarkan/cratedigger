@@ -105,6 +105,18 @@ final class DeviceReviewRowTests: XCTestCase {
         XCTAssertEqual(DeviceReviewRow(one, settings: copySettings).replaceEffect, "Replaces 1 of 3 tracks")
     }
 
+    func testSingleTrackAlbumReplaceEffect() {
+        let device = tracks(1...1, format: "MP3", kbps: 128, rate: 44_100, folder: "/Volumes/IPOD/A")
+        let sent = tracks(1...1, format: "flac", kbps: nil, rate: 44_100, folder: "/Library/A")
+        let single = comparison(differences: [.audioForm], sent: sent, changed: Array(zip(sent, device)), device: device)
+        XCTAssertEqual(DeviceReviewRow(single, settings: copySettings).replaceEffect, "Replaces the track")
+
+        let more = tracks(1...3, format: "flac", kbps: nil, rate: 44_100, folder: "/Library/A")
+        let filling = comparison(differences: [.audioForm], sent: more, changed: [(more[0], device[0])],
+                                 missing: Array(more.dropFirst()), device: device)
+        XCTAssertEqual(DeviceReviewRow(filling, settings: copySettings).replaceEffect, "Replaces the track, adds 2")
+    }
+
     func testTwoCopiesNote() {
         let device = tracks(1...3, format: "MP3", kbps: 128, rate: 44_100, folder: "/Volumes/IPOD/A")
         let sent = tracks(1...3, format: "flac", kbps: nil, rate: 44_100, folder: "/Library/A")
@@ -176,6 +188,21 @@ final class DeviceReviewRowTests: XCTestCase {
             ["Asked", "Remembered"]
         )
         XCTAssertEqual(DeviceReviewRow.leftAloneCount(in: review), 1)
+    }
+
+    func testSheetOnlyWhenAnAlbumNeedsAnAnswer() {
+        let device = tracks(1...2, format: "MP3", kbps: 128, rate: 44_100, folder: "/Volumes/IPOD/A")
+        let sent = tracks(1...2, format: "flac", kbps: nil, rate: 44_100, folder: "/Library/A")
+        let asked = comparison(album: "Asked", differences: [.audioForm], sent: sent, changed: Array(zip(sent, device)), device: device)
+        let remembered = comparison(album: "Remembered", differences: [.audioForm], sent: sent, changed: Array(zip(sent, device)), device: device, leftAlone: true)
+        let fresh = comparison(album: "Fresh", status: .new, differences: [], sent: sent, missing: sent, device: [], copies: 0)
+
+        XCTAssertTrue(DeviceReviewRow.needsReview(DeviceTransferReview(albums: [fresh, asked])))
+        XCTAssertFalse(DeviceReviewRow.needsReview(DeviceTransferReview(albums: [fresh])))
+        XCTAssertFalse(DeviceReviewRow.needsReview(DeviceTransferReview(albums: [])))
+        // Spec section 3: the sheet comes only for an album that Differs and is
+        // asked about; an album left alone before is reported by the summary.
+        XCTAssertFalse(DeviceReviewRow.needsReview(DeviceTransferReview(albums: [fresh, remembered])))
     }
 
     func testSummaryLine() {

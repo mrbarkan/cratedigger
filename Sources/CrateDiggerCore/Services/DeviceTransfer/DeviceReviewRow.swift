@@ -67,6 +67,13 @@ public struct DeviceReviewRow: Identifiable, Sendable {
         return (asked + remembered).map { DeviceReviewRow($0, settings: settings) }
     }
 
+    /// Whether the sheet is shown at all: only when an album Differs and is
+    /// asked about (spec section 3). Albums left alone before don't bring it
+    /// back by themselves; the transfer summary is their reminder.
+    public static func needsReview(_ review: DeviceTransferReview) -> Bool {
+        !review.needingDecision.isEmpty
+    }
+
     /// Differing albums the sheet does not ask about because the user left
     /// them alone before: the "Show N albums left alone" count.
     public static func leftAloneCount(in review: DeviceTransferReview) -> Int {
@@ -107,9 +114,12 @@ public struct DeviceReviewRow: Identifiable, Sendable {
         }
         let swapped = comparison.changed.count
         let held = comparison.deviceTracks.count
-        var text = swapped == held && held > 1
-            ? "Replaces all \(held) tracks"
-            : "Replaces \(swapped) of \(tracks(held))"
+        var text: String
+        if swapped == held {
+            text = held == 1 ? "Replaces the track" : "Replaces all \(held) tracks"
+        } else {
+            text = "Replaces \(swapped) of \(tracks(held))"
+        }
         if !comparison.missing.isEmpty {
             text += ", adds \(comparison.missing.count)"
         }

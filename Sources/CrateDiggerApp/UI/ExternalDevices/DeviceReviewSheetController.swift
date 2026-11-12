@@ -10,6 +10,9 @@ import SwiftUI
 final class DeviceReviewSheetController: ThemedSheetHostingController {
     /// The answers for the rows shown, or nil for Cancel (nothing is written).
     var onDecision: (([DeviceAlbumIdentity: DeviceAlbumDecision]?) -> Void)?
+    /// The sheet left the screen, answered or not. Separate from `onDecision`
+    /// so it can never dismiss the sheet again from inside a dismissal.
+    var onDisappear: (() -> Void)?
 
     private let review: DeviceTransferReview
     private let deviceName: String
@@ -56,6 +59,14 @@ final class DeviceReviewSheetController: ThemedSheetHostingController {
         setThemedRoot(rootView)
     }
 
+    /// The sheet went away without an answer (closed with its window,
+    /// dismissed from outside): the caller treats that as a Cancel. After
+    /// Continue or Cancel the answer was already delivered, and this is ignored.
+    override func viewDidDisappear() {
+        super.viewDidDisappear()
+        onDisappear?()
+    }
+
     /// The list scrolls rather than growing the sheet past its window: room
     /// for the header and buttons is taken off the window's height (or the
     /// screen's, whichever is smaller), never below a few rows' worth, so a
@@ -74,6 +85,11 @@ extension LibraryViewModel {
     /// Returns the answer for each album shown, or nil when the user cancels
     /// the transfer. Presented from `host`, which callers take from
     /// `presentationHostViewController`, so it works in the compact player.
+    ///
+    /// No album to ask about returns no answers at once, without a sheet.
+    /// It always returns: a host without a window is a Cancel, and so is a
+    /// sheet that goes away unanswered, or whose window closes before it
+    /// shows (a sheet presented while another is attached waits its turn).
     func presentDeviceReview(
         _ review: DeviceTransferReview,
         deviceName: String,
@@ -92,21 +108,44 @@ extension LibraryViewModel {
         initialState: DeviceReviewState,
         showsLeftAlone: Bool
     ) async -> [DeviceAlbumIdentity: DeviceAlbumDecision]? {
-        await withCheckedContinuation { continuation in
+        guard DeviceReviewRow.needsReview(review) else { return [:] }
+        guard let window = host.view.window else {
+            AppLog.library.error("Device review for \(deviceName, privacy: .public) has no window to present from; cancelling the transfer")
+            return nil
+        }
+        return await withCheckedContinuation { continuation in
             let controller = DeviceReviewSheetController(
                 review: review,
                 deviceName: deviceName,
                 settings: settings,
-                maxListHeight: DeviceReviewSheetController.maxListHeight(for: host.view.window),
+                maxListHeight: DeviceReviewSheetController.maxListHeight(for: window),
                 initialState: initialState,
                 showsLeftAlone: showsLeftAlone
             )
             var resumed = false
-            controller.onDecision = { [weak controller] decisions in
+            var windowClose: NSObjectProtocol?
+            // Resumes exactly once: the first answer wins, and the later
+            // calls (the disappear after a dismiss, a window closing) find
+            // `resumed` set.
+            func finish(_ decisions: [DeviceAlbumIdentity: DeviceAlbumDecision]?) {
                 guard !resumed else { return }
                 resumed = true
-                controller?.dismiss(nil)
+                if let windowClose { NotificationCenter.default.removeObserver(windowClose) }
+                windowClose = nil
                 continuation.resume(returning: decisions)
+            }
+            controller.onDecision = { [weak controller] decisions in
+                guard !resumed else { return }
+                // Deliver first: dismissing runs viewDidDisappear, whose
+                // Cancel must not become the answer.
+                finish(decisions)
+                controller?.dismiss(nil)
+            }
+            controller.onDisappear = { finish(nil) }
+            windowClose = NotificationCenter.default.addObserver(
+                forName: NSWindow.willCloseNotification, object: window, queue: .main
+            ) { _ in
+                MainActor.assumeIsolated { finish(nil) }
             }
             host.presentAsSheet(controller)
         }
