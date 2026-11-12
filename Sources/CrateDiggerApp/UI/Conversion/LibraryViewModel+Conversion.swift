@@ -99,7 +99,9 @@ extension LibraryViewModel {
                         break   // deliberate merge — the collision prompt below still guards file overwrites
                     case .versionFolders:
                         for conflict in conflicts {
-                            reviewedFolders[conflict.key] = nextAvailableVersionFolderName(for: conflict.existingFolder)
+                            reviewedFolders[conflict.key] = OutputPathPlanner.nextAvailableVersionFolderName(
+                                for: conflict.existingFolder
+                            )
                         }
                         jobs = planConversionJobs(
                             tracks: sourceTracks,
@@ -257,18 +259,6 @@ extension LibraryViewModel {
             }
         }
         return conflicts
-    }
-
-    /// "1997 OK Computer" → "1997 OK Computer [2]", bumping until no folder
-    /// with that name exists beside the original.
-    private func nextAvailableVersionFolderName(for existingFolder: URL) -> String {
-        let base = existingFolder.lastPathComponent
-        let parent = existingFolder.deletingLastPathComponent()
-        var n = 2
-        while FileManager.default.fileExists(atPath: parent.appendingPathComponent("\(base) [\(n)]").path) {
-            n += 1
-        }
-        return "\(base) [\(n)]"
     }
 
     @MainActor

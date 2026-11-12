@@ -57,12 +57,18 @@ public struct ExternalDeviceTransferPlanner {
         return destination
     }
 
+    /// `naturalNames`: every track gets its natural path, even when a file on
+    /// disk or another track of the batch already has it, and
+    /// `reservedDestinationPaths` is ignored. The device review
+    /// (`DeviceTransferResolver`) plans this way so it can see those clashes and
+    /// ask about them, never step past them with a silent ` (2)`.
     public func planTransfers(
         tracks: [LoadedTrack],
         profile: ExternalDeviceProfile,
         mountedAt mountedRoot: URL,
         reviewedAlbumFolders: [AlbumFolderKey: String] = [:],
-        reservedDestinationPaths: Set<String> = []
+        reservedDestinationPaths: Set<String> = [],
+        naturalNames: Bool = false
     ) -> [PlannedExternalDeviceTransfer] {
         let destinationRoot = destinationRoot(for: profile, mountedAt: mountedRoot)
         let preset = profile.transferSettings.conversionPreset
@@ -88,11 +94,14 @@ public struct ExternalDeviceTransferPlanner {
                 folderMode: profile.transferSettings.folderStructureMode,
                 templateConfig: profile.transferSettings.templateConfig,
                 reviewedAlbumFolders: reviewedAlbumFolders,
-                reservedDestinationPaths: reserved,
+                reservedDestinationPaths: naturalNames ? [] : reserved,
                 destinationFileExtension: destinationExtension,
+                avoidExistingFiles: !naturalNames,
                 albumKey: albumKeys[track.track.id]
             )
-            reserved.insert(plannedPath.destinationURL.standardizedFileURL.resolvingSymlinksInPath().path)
+            if !naturalNames {
+                reserved.insert(plannedPath.destinationURL.standardizedFileURL.resolvingSymlinksInPath().path)
+            }
 
             plannedTransfers.append(
                 PlannedExternalDeviceTransfer(

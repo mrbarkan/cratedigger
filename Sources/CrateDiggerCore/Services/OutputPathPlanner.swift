@@ -424,6 +424,28 @@ public struct OutputPathPlanner {
         return folder.standardizedFileURL.path
     }
 
+    /// The folder name for a second copy of an album beside `existingFolder`:
+    /// "1997 OK Computer" → "1997 OK Computer [2]", bumping until no folder of
+    /// that name exists beside the original and `isTaken` (a batch's own
+    /// planned folders) does not claim it either. Shared by a conversion's New
+    /// Version Folder and a device transfer's Keep both.
+    public static func nextAvailableVersionFolderName(
+        for existingFolder: URL,
+        fileManager: FileManager = .default,
+        isTaken: (URL) -> Bool = { _ in false }
+    ) -> String {
+        let base = existingFolder.lastPathComponent
+        let parent = existingFolder.deletingLastPathComponent()
+        var n = 2
+        while true {
+            let candidate = parent.appendingPathComponent("\(base) [\(n)]", isDirectory: true)
+            if !fileManager.fileExists(atPath: candidate.path) && !isTaken(candidate) {
+                return candidate.lastPathComponent
+            }
+            n += 1
+        }
+    }
+
     /// A disc folder starts with a disc number: `CD1`, `Disc 2 - Live`, Picard's
     /// `01 - Digital Media`, or a bare `1`. Three digits at most, so a year
     /// folder (`1994 - Album`) is not a disc, and a folder that merely *ends*
