@@ -151,7 +151,7 @@ extension LibraryViewModel {
     /// folder or the location changed.
     private func currentArtistProfileStoreTask() -> Task<ArtistProfileStore, Never> {
         let folder = cratesDirectoryURL
-        let key = folder.standardizedFileURL.path + "\u{0}" + Self.locationCase(libraryLocation)
+        let key = currentArtistProfileStoreKey()
         if let task = artistProfileStoreTask, artistProfileStoreKey == key { return task }
         let replacing = artistProfileStoreTask != nil
         let task = Task { () -> ArtistProfileStore in
@@ -163,18 +163,38 @@ extension LibraryViewModel {
         return task
     }
 
+    /// The folder and library location a profile store is made for, as they
+    /// resolve now (`artistProfileStoreKey` is the one the current store was
+    /// made for, which can lag behind until someone asks for the store).
+    func currentArtistProfileStoreKey() -> String {
+        cratesDirectoryURL.standardizedFileURL.path + "\u{0}" + Self.locationCase(libraryLocation)
+    }
+
     /// Runs `work` off the main actor with the current profile store, held
     /// as in use until it returns, so the store is not replaced under it.
-    /// Every writer of the store goes through here.
+    /// Every writer of the store goes through here. While the index is
+    /// being moved (`freezeArtistProfileStore`) it waits for the move.
     func withArtistProfileStore<T: Sendable>(_ work: @escaping @Sendable (ArtistProfileStore) async -> T) async -> T {
+        await withArtistProfileStore(ifKey: nil, work)!
+    }
+
+    /// `withArtistProfileStore`, only when the store it gets is the one for
+    /// `key` (the store a lookup started from); nil, with nothing run, when
+    /// the folder or location moved on meanwhile (a move, the drive going).
+    func withArtistProfileStore<T: Sendable>(ifKey key: String?,
+                                             _ work: @escaping @Sendable (ArtistProfileStore) async -> T) async -> T? {
         // Held only once it is still the current store with nothing awaited
         // in between: a swap that began while this waited is never written past.
         var store: ArtistProfileStore
         while true {
+            while artistProfileStoreFrozen {
+                await withCheckedContinuation { artistProfileStoreThawWaiters.append($0) }
+            }
             let task = currentArtistProfileStoreTask()
             store = await task.value
-            if artistProfileStoreTask == task { break }
+            if artistProfileStoreTask == task, !artistProfileStoreFrozen { break }
         }
+        if let key, artistProfileStoreKey != key { return nil }
         artistProfileStoreUsers += 1
         let value = await Task.detached(priority: .userInitiated) { await work(store) }.value
         artistProfileStoreUsers -= 1
@@ -190,6 +210,22 @@ extension LibraryViewModel {
     func artistProfileStoreDrained() async {
         guard artistProfileStoreUsers > 0 else { return }
         await withCheckedContinuation { artistProfileStoreDrainWaiters.append($0) }
+    }
+
+    /// For moving the index: no writer starts from now on, and this returns
+    /// once those already running are done. `thawArtistProfileStore` ends it.
+    func freezeArtistProfileStore() async {
+        artistProfileStoreFrozen = true
+        await artistProfileStoreDrained()
+    }
+
+    /// The move is over and the folder it left in effect is the one the
+    /// next store is made for: the writers that waited go on.
+    func thawArtistProfileStore() {
+        artistProfileStoreFrozen = false
+        let waiters = artistProfileStoreThawWaiters
+        artistProfileStoreThawWaiters = []
+        waiters.forEach { $0.resume() }
     }
 
     /// Carries the iPod's old artist picture records (`library.cdartists`)
@@ -557,7 +593,8 @@ extension LibraryViewModel {
                     // A failure puts back the identity the reset replaced.
                     try await store.lookUpAgain(name: name, resetFirst: resetFirst, at: Date()) { existing in
                         try await run.lookUp(name: name, libraryAlbumTitles: titles, libraryPicture: picture,
-                                             existing: existing, lane: .foreground, now: Date())
+                                             existing: existing, lane: .foreground, now: Date(),
+                                             photoFileExists: { store.hasPhotoFile(hash: $0) })
                     }
                     return .success(())
                 } catch {
@@ -716,13 +753,14 @@ extension LibraryViewModel {
         defer { finishArtistLookup(target.key) }
 
         let store = await currentArtistProfileStore()
-        let storeKey = artistProfileStoreKey
+        guard let storeKey = artistProfileStoreKey else { return .discarded }
         let lookup = Task.detached(priority: .utility) { () throws -> ArtistLookupResult in
             try await ArtistLookupRun.bounded(limit) {
                 try await run.lookUp(name: target.name, libraryAlbumTitles: target.albumTitles,
                                      libraryPicture: target.libraryPicture,
                                      existing: store.profile(forName: target.name), lane: .background, now: Date(),
-                                     findsPhoto: target.findsPhoto)
+                                     findsPhoto: target.findsPhoto,
+                                     photoFileExists: { store.hasPhotoFile(hash: $0) })
             }
         }
         let result: ArtistLookupResult
@@ -734,8 +772,10 @@ extension LibraryViewModel {
         // Silently, not `refuseWhileLibraryDisconnected`: nobody asked for
         // this, so an unplugged drive is no reason for a notice.
         guard !Task.isCancelled, !isLibraryDisconnected, prefs.artistLookupsEnabled,
-              artistProfileStoreKey == storeKey else { return .discarded }
-        let failure = await withArtistProfileStore { store -> Error? in
+              currentArtistProfileStoreKey() == storeKey else { return .discarded }
+        // Waits while the index is being moved, and lands nothing if the
+        // store it would land in is no longer the one the lookup read.
+        guard let failure = await withArtistProfileStore(ifKey: storeKey, { store -> Error? in
             do {
                 try result.apply(to: store, name: target.name, at: Date())
                 try store.save()
@@ -743,7 +783,7 @@ extension LibraryViewModel {
             } catch {
                 return error
             }
-        }
+        }) else { return .discarded }
         reloadArtistProfiles()
         return failure.map { .failed($0) } ?? .done(photoTimedOut: result.photoTimedOut)
     }

@@ -127,10 +127,14 @@ public struct ArtistLookupRun: Sendable {
     /// One artist: identity, facts, bio, and a default photo when the
     /// profile has none it may keep. With `findsPhoto` false (the worker,
     /// for an artist whose photo search ran out of time earlier this
-    /// session) no photo work is done at all.
+    /// session) no photo work is done at all. `photoFileExists` says
+    /// whether a stored photo's file is there (`ArtistProfileStore.hasPhotoFile`):
+    /// a default whose file has gone counts as no default and is found
+    /// again, unless the owner picked it.
     public func lookUp(name: String, libraryAlbumTitles: [String], libraryPicture: URL?,
                        existing: ArtistProfile?, lane: MusicBrainzGate.Lane, now: Date,
-                       findsPhoto: Bool = true) async throws -> ArtistLookupResult {
+                       findsPhoto: Bool = true,
+                       photoFileExists: @Sendable (String) -> Bool = { _ in true }) async throws -> ArtistLookupResult {
         guard ArtistLookupScheduler.isLookedUp(name) else { throw ArtistLookupError.notLookedUp(name) }
         let basedOn = existing?.identity ?? .unknown
         guard let found = try await identify(name: name, libraryAlbumTitles: libraryAlbumTitles, existing: existing,
@@ -146,14 +150,18 @@ public struct ArtistLookupRun: Sendable {
             return result
         }
         guard !existing.noPhoto else { return result }
-        if let current = existing.photos.first(where: { $0.hash == existing.defaultPhoto }) {
+        let current = existing.photos.first(where: { $0.hash == existing.defaultPhoto })
+        if let current, existing.defaultPickedByOwner || photoFileExists(current.hash) {
             if !existing.defaultPickedByOwner, current.source == .migrated,
                let original = try await original(of: current, name: name) {
                 result.replacementForMigrated = (current.hash, original)
             }
             return result
         }
-        let excluded = Set(existing.rejectedPhotoSources).union(existing.photos.compactMap(\.rejectionKey))
+        // No default, or one whose file has gone: found again, and its own
+        // source is welcome back (finding the same picture restores the file).
+        let excluded = Set(existing.rejectedPhotoSources)
+            .union(existing.photos.filter { $0.hash != current?.hash }.compactMap(\.rejectionKey))
         try await choosePhoto(into: &result, found: found, name: name, libraryAlbumTitles: libraryAlbumTitles,
                               libraryPicture: libraryPicture, excluded: excluded, lane: lane)
         return result
@@ -498,7 +506,8 @@ struct LookupCommonsSource: ArtistPictureSource {
 extension ArtistLookupResult {
     /// Writes this result into `store` for `name`, checked against the
     /// profile as it is now, since the owner may have acted while the
-    /// lookup ran. Every write is a compare-and-apply under the store's
+    /// lookup ran. A default photo whose file has gone counts as none
+    /// (unless the owner picked it). Every write is a compare-and-apply under the store's
     /// lock, so nothing the owner does in between can be overwritten.
     ///
     /// The identity and fetched facts land only while the identity is still
@@ -524,10 +533,15 @@ extension ArtistLookupResult {
             let rejection = Self.key(photo.source, photo.sourceID)
             try Self.keeping {
                 try store.addPhoto(name: name, data: photo.data, source: photo.source, sourceID: photo.sourceID,
-                                   credit: photo.credit) { before, _, _ in
+                                   credit: photo.credit) { before, after, new in
                     guard let before, before.identity == written, !before.noPhoto,
-                          !before.photos.contains(where: { $0.hash == before.defaultPhoto }) else { return false }
-                    return rejection.map(before.rejectedPhotoSources.contains) != true
+                          rejection.map(before.rejectedPhotoSources.contains) != true else { return false }
+                    guard let old = before.photos.first(where: { $0.hash == before.defaultPhoto }) else { return true }
+                    // A default whose file has gone, not the owner's pick, gives way.
+                    guard !before.defaultPickedByOwner, old.hash == new.hash || !store.hasPhotoFile(hash: old.hash)
+                    else { return false }
+                    after.defaultPhoto = new.hash
+                    return true
                 }
             }
         }

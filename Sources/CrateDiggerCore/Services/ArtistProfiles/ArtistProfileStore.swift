@@ -46,8 +46,14 @@ public enum ArtistProfileStoreError: LocalizedError, Equatable {
 /// `refuseWhileLibraryDisconnected` first. Safe to use from any thread:
 /// every member holds one lock, so a background lookup and the artist page
 /// can share it. Do not call it from AppKit's main thread for photo work:
-/// `addPhoto` decodes and re-encodes images. Keep one store per index
-/// folder: `save` deletes photo files its own profiles do not name.
+/// `addPhoto` decodes and re-encodes images.
+///
+/// Another writer of the same folder (a second Mac sharing the library, or
+/// a store made before this one) is not overwritten: `save` reads the file
+/// again and merges (`merging(mine:base:disk:)`), and deletes only photo
+/// files this store itself dropped that the file on disk does not name
+/// either. Keep one store per folder in one app all the same: the merge is
+/// a safety net, not a way to share edits live.
 public final class ArtistProfileStore: @unchecked Sendable {
     public static let fileName = "library.cdartistinfo", photosFolder = "ArtistPhotos"
     /// The copy of a file that did not load whole, kept beside it. Later
@@ -61,6 +67,14 @@ public final class ArtistProfileStore: @unchecked Sendable {
     private let photosDirectory: URL
     private let fileManager: FileManager
     private var byKey: [String: ArtistProfile] = [:]
+    /// The profiles as this store last read them from the file or wrote
+    /// them to it: the base the next save merges against.
+    private var base: [String: ArtistProfile] = [:]
+    /// Hashes this store took out of a profile since its last save (a photo
+    /// removed, a migrated photo replaced, what came with an identity
+    /// dropped). Only these files may be deleted, and only when nothing
+    /// names them any more.
+    private var dropped: Set<String> = []
     private var migrated = false
     private var isDirty = false
     private var isUnreadable = false
@@ -142,8 +156,7 @@ public final class ArtistProfileStore: @unchecked Sendable {
         change(&profile)
         profile.foldedKey = key
         guard profile != before else { return true }
-        byKey[key] = profile
-        isDirty = true
+        put(profile, at: key)
         return true
     }
 
@@ -199,10 +212,7 @@ public final class ArtistProfileStore: @unchecked Sendable {
         profile.fetched = facts
         profile.identity = identity
         profile.checkedAt = Self.wholeSecond(date)
-        if profile != before {
-            byKey[key] = profile
-            isDirty = true
-        }
+        if profile != before { put(profile, at: key) }
         return identity
     }
 
@@ -216,8 +226,7 @@ public final class ArtistProfileStore: @unchecked Sendable {
         defer { lock.unlock() }
         guard var profile = byKey[key], profile.identity != .unknown else { return }
         profile.identity = .unknown
-        byKey[key] = profile
-        isDirty = true
+        put(profile, at: key)
     }
 
     /// Stores a photo's bytes in `ArtistPhotos` and adds it to the end of
@@ -260,10 +269,10 @@ public final class ArtistProfileStore: @unchecked Sendable {
         if let existing = profile.photos.first(where: { $0.hash == hash }) {
             guard decide(before, &profile, existing) else { return nil }
             profile.foldedKey = key
-            if profile != before {
-                byKey[key] = profile
-                isDirty = true
-            }
+            // The same bytes again, for a photo whose file has gone (another
+            // Mac's clean-up, a hand-tidied folder): the file comes back.
+            if !hasPhotoFile(hash: hash) { try writePhotoFile(stored, hash: hash) }
+            if profile != before { put(profile, at: key) }
             return existing
         }
 
@@ -277,18 +286,21 @@ public final class ArtistProfileStore: @unchecked Sendable {
         guard decide(before, &profile, photo) else { return nil }
         profile.foldedKey = key
 
-        let url = photosDirectory.appendingPathComponent(hash + "." + stored.fileExtension)
-        if !fileManager.fileExists(atPath: url.path) {
-            // Never intermediate folders: an index folder that has gone
-            // (its drive unplugged) must not be made again on the boot disk.
-            if !fileManager.fileExists(atPath: photosDirectory.path) {
-                try fileManager.createDirectory(at: photosDirectory, withIntermediateDirectories: false)
-            }
-            try stored.data.write(to: url, options: .atomic)
-        }
-        byKey[key] = profile
-        isDirty = true
+        try writePhotoFile(stored, hash: hash)
+        put(profile, at: key)
         return photo
+    }
+
+    /// Writes a photo's file unless it is there already. Never intermediate
+    /// folders: an index folder that has gone (its drive unplugged) must not
+    /// be made again on the boot disk.
+    private func writePhotoFile(_ stored: ArtistPhotoImage.Stored, hash: String) throws {
+        let url = photosDirectory.appendingPathComponent(hash + "." + stored.fileExtension)
+        guard !fileManager.fileExists(atPath: url.path) else { return }
+        if !fileManager.fileExists(atPath: photosDirectory.path) {
+            try fileManager.createDirectory(at: photosDirectory, withIntermediateDirectories: false)
+        }
+        try stored.data.write(to: url, options: .atomic)
     }
 
     /// Removes a photo from the profile. A looked-up photo is remembered in
@@ -312,8 +324,7 @@ public final class ArtistProfileStore: @unchecked Sendable {
             profile.defaultPhoto = index < profile.photos.count ? profile.photos[index].hash : profile.photos.last?.hash
             profile.defaultPickedByOwner = false
         }
-        byKey[key] = profile
-        isDirty = true
+        put(profile, at: key)
     }
 
     /// The owner's choice of default photo, which no lookup changes. A hash
@@ -327,8 +338,7 @@ public final class ArtistProfileStore: @unchecked Sendable {
               profile.defaultPhoto != hash || !profile.defaultPickedByOwner else { return }
         profile.defaultPhoto = hash
         profile.defaultPickedByOwner = true
-        byKey[key] = profile
-        isDirty = true
+        put(profile, at: key)
     }
 
     /// A photo's bytes. nil when the hash is not one, the file cannot be
@@ -345,6 +355,7 @@ public final class ArtistProfileStore: @unchecked Sendable {
 
     /// Whether a photo's file is there, without reading it: a cheap check
     /// for many artists at once. `photoData` is the one that proves the bytes.
+    /// Takes no lock, so an `addPhoto` decision may call it.
     public func hasPhotoFile(hash: String) -> Bool {
         guard Self.isHexHash(hash) else { return false }
         return ArtistPhotoImage.fileExtensions.contains { fileExtension in
@@ -363,15 +374,22 @@ public final class ArtistProfileStore: @unchecked Sendable {
     }
 
     /// Writes `library.cdartistinfo` atomically when anything changed
-    /// (canonical bytes: sorted keys, ISO dates), then deletes every photo
-    /// file in `ArtistPhotos` that no profile names (a removed photo, or one
-    /// left by a crash between `addPhoto` and `save`). Throws, writing
-    /// nothing, when the file on disk could not be read or the index folder
-    /// was not there. After a load that left something out, the file as it
-    /// was read is first copied to a backup (`library.cdartistinfo.bak`, or
-    /// the next numbered one when that exists), and this store deletes no
-    /// photo files at all. Photos any backup names are never deleted, so
-    /// restoring one brings them back.
+    /// (canonical bytes: sorted keys, ISO dates), merged with the file as it
+    /// is on disk now (`merging(mine:base:disk:)`), so profiles another Mac
+    /// added or changed since this store read the file are kept. Then
+    /// deletes the photo files this store dropped (`dropped`) that no
+    /// profile names, neither in memory nor in the file as it reads after
+    /// the write, nor in any backup. Nothing else in `ArtistPhotos` is ever
+    /// deleted: a file this store never knew may be another Mac's new photo.
+    ///
+    /// Throws, writing nothing, when the file on disk could not be read
+    /// (now or when the store was made) or the index folder was not there.
+    /// After a load that left something out, the file as it was read is
+    /// first copied to a backup (`library.cdartistinfo.bak`, or the next
+    /// numbered one when that exists), and this store deletes no photo
+    /// files at all; the same when the file read again here loses something.
+    /// Photos any backup names are never deleted, so restoring one brings
+    /// them back.
     public func save() throws {
         lock.lock()
         defer { lock.unlock() }
@@ -381,14 +399,19 @@ public final class ArtistProfileStore: @unchecked Sendable {
             needsBackup = false
         }
         if isDirty {
+            if let disk = try readFileAgain() {
+                byKey = Self.merging(mine: byKey, base: base, disk: disk.profiles)
+                migrated = migrated || disk.migrated
+            }
             let encoder = JSONEncoder()
             encoder.outputFormatting = .sortedKeys
             encoder.dateEncodingStrategy = .iso8601
             let contents = StoredFile(picturesMigrated: migrated, profiles: sortedProfiles())
             try encoder.encode(contents).write(to: fileURL, options: .atomic)
+            base = byKey
             isDirty = false
         }
-        if !loadWasLossy { sweepUnusedPhotos() }
+        if !loadWasLossy { sweepDroppedPhotos() }
     }
 
     // MARK: - Private
@@ -408,20 +431,59 @@ public final class ArtistProfileStore: @unchecked Sendable {
         byKey.keys.sorted().compactMap { byKey[$0] }
     }
 
-    /// Deletes `<hash>.jpg|png` files no profile names. Only names that are
-    /// a hash and one of our extensions are touched; anything else the owner
-    /// put in the folder stays.
-    private func sweepUnusedPhotos() {
-        guard let names = try? fileManager.contentsOfDirectory(atPath: photosDirectory.path) else { return }
-        var used = Set(byKey.values.flatMap { $0.photos.map(\.hash) })
-        used.formUnion(hashesNamedByBackups())
-        for name in names {
-            let file = URL(fileURLWithPath: name)
-            let hash = file.deletingPathExtension().lastPathComponent
-            guard ArtistPhotoImage.fileExtensions.contains(file.pathExtension), Self.isHexHash(hash),
-                  !used.contains(hash) else { continue }
-            try? fileManager.removeItem(at: photosDirectory.appendingPathComponent(name))
+    /// Sets a changed profile, noting the photos it no longer names. Lock held.
+    private func put(_ profile: ArtistProfile, at key: String) {
+        if let before = byKey[key] {
+            dropped.formUnion(Set(before.photos.map(\.hash)).subtracting(profile.photos.map(\.hash)))
         }
+        byKey[key] = profile
+        isDirty = true
+    }
+
+    /// Deletes the `<hash>.jpg|png` files of the photos this store dropped,
+    /// unless a profile in memory, the profiles file as it reads now (read
+    /// again just before, so another Mac's latest save counts) or a backup
+    /// names them. Nothing else in the folder is touched.
+    private func sweepDroppedPhotos() {
+        guard !dropped.isEmpty else { return }
+        var used = Set(byKey.values.flatMap { $0.photos.map(\.hash) })
+        used.formUnion(hashesNamed(byFilesWhere: { $0 == Self.fileName || Self.isBackupName($0) }))
+        for hash in dropped where !used.contains(hash) && Self.isHexHash(hash) {
+            for fileExtension in ArtistPhotoImage.fileExtensions {
+                let url = photosDirectory.appendingPathComponent(hash + "." + fileExtension)
+                if fileManager.fileExists(atPath: url.path) { try? fileManager.removeItem(at: url) }
+            }
+        }
+        dropped = []
+    }
+
+    /// `library.cdartistinfo.bak` and the numbered ones.
+    public static func isBackupName(_ name: String) -> Bool {
+        name.hasPrefix(fileName + ".") && name.hasSuffix(".bak")
+    }
+
+    /// The profiles file as it is on disk now, for `save` to merge with;
+    /// nil when there is none. Throws when it is there and will not read.
+    /// A file that reads with losses (a record a newer version wrote) is
+    /// first kept as a backup, and this store stops deleting photo files.
+    private func readFileAgain() throws -> (profiles: [String: ArtistProfile], migrated: Bool)? {
+        let data: Data
+        do {
+            data = try Data(contentsOf: fileURL)
+        } catch CocoaError.fileReadNoSuchFile {
+            return nil
+        } catch {
+            throw ArtistProfileStoreError.unreadableStore(path: fileURL.path)
+        }
+        guard let read = Self.decodeFile(data) else {
+            throw ArtistProfileStoreError.unreadableStore(path: fileURL.path)
+        }
+        // A store whose own load was lossy has kept that file already.
+        if read.losses > 0, !loadWasLossy {
+            try fileManager.copyItem(at: fileURL, to: nextBackupURL())
+            loadWasLossy = true
+        }
+        return (read.profiles, read.migrated)
     }
 
     /// `library.cdartistinfo.bak`, else `.2.bak`, `.3.bak`: the first free one.
@@ -435,10 +497,10 @@ public final class ArtistProfileStore: @unchecked Sendable {
         return candidate
     }
 
-    /// Every 64-hex-digit string in every backup (`library.cdartistinfo.bak`
-    /// and the numbered ones), read as text: whatever a backup names stays
-    /// restorable even where its records would not decode.
-    private func hashesNamedByBackups() -> Set<String> {
+    /// Every 64-hex-digit string in the index folder's files whose names
+    /// pass `wanted` (the profiles file, its backups), read as text: whatever
+    /// they name stays, even where their records would not decode.
+    private func hashesNamed(byFilesWhere wanted: (String) -> Bool) -> Set<String> {
         let names = (try? fileManager.contentsOfDirectory(atPath: indexDirectory.path)) ?? []
         var hashes: Set<String> = []
         var run: [UInt8] = []
@@ -446,7 +508,7 @@ public final class ArtistProfileStore: @unchecked Sendable {
             if run.count == 64 { hashes.insert(String(decoding: run, as: UTF8.self)) }
             run.removeAll(keepingCapacity: true)
         }
-        for name in names where name.hasPrefix(Self.fileName + ".") && name.hasSuffix(".bak") {
+        for name in names where wanted(name) {
             guard let data = try? Data(contentsOf: indexDirectory.appendingPathComponent(name)) else { continue }
             for byte in data {
                 if (48...57).contains(byte) || (97...102).contains(byte) { run.append(byte) } else { flush() }
@@ -476,20 +538,44 @@ public final class ArtistProfileStore: @unchecked Sendable {
             isUnreadable = true
             return
         }
+        guard let read = Self.decodeFile(data) else {
+            isUnreadable = true
+            return
+        }
+        byKey = read.profiles
+        base = read.profiles
+        migrated = read.migrated
+        if read.rekeyed { isDirty = true }
+        if read.losses > 0 {
+            needsBackup = true
+            loadWasLossy = true
+            isDirty = true
+        }
+    }
+
+    /// The profiles in a file's bytes, by folded key: nil when the bytes are
+    /// neither a list nor `{"profiles": [...]}`. Inside, a record that will
+    /// not decode or has no name is skipped and counted as a loss, a wrong
+    /// key is put right (`rekeyed`), and two records for one key are merged
+    /// (a loss too, so the file as read is kept).
+    static func decodeFile(_ data: Data)
+        -> (profiles: [String: ArtistProfile], migrated: Bool, losses: Int, rekeyed: Bool)? {
         let losses = DecodingLosses()
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         decoder.userInfo[.decodingLosses] = losses
         let rows: [LossyElement<ArtistProfile>]
+        var migrated = false
         if let list = try? decoder.decode([LossyElement<ArtistProfile>].self, from: data) {
             rows = list
         } else if let file = try? decoder.decode(LoadedFile.self, from: data) {
             rows = file.profiles
             migrated = file.picturesMigrated
         } else {
-            isUnreadable = true
-            return
+            return nil
         }
+        var profiles: [String: ArtistProfile] = [:]
+        var rekeyed = false
         for case var profile? in rows.map(\.value) {
             let key = PodBoxArtName.folded(profile.displayName)
             guard !key.isEmpty else {
@@ -498,19 +584,15 @@ public final class ArtistProfileStore: @unchecked Sendable {
             }
             if profile.foldedKey != key {
                 profile.foldedKey = key
-                isDirty = true
+                rekeyed = true
             }
-            if let earlier = byKey[key] {
-                profile = Self.merged(earlier, profile)
+            if let earlier = profiles[key] {
+                profile = merged(earlier, profile)
                 losses.count += 1
             }
-            byKey[key] = profile
+            profiles[key] = profile
         }
-        if losses.count > 0 {
-            needsBackup = true
-            loadWasLossy = true
-            isDirty = true
-        }
+        return (profiles, migrated, losses.count, rekeyed)
     }
 
     /// Two records for one artist (a hand-edited file, two spellings that
@@ -548,6 +630,119 @@ public final class ArtistProfileStore: @unchecked Sendable {
             result.checkedAt = second.checkedAt
         }
         return result
+    }
+
+    // MARK: - Merging with another writer's save
+
+    /// What `save` writes when the file changed on disk since this store
+    /// read it (`base`): a three-way merge, profile by profile.
+    ///
+    /// A profile only one side changed is that side's, whole; one only the
+    /// file has (another Mac added it) is kept. For a profile both changed,
+    /// field by field: **a field this store changed since it read the file
+    /// wins; any other field is the file's.** When both changed the same
+    /// field, this save is the newer edit and wins. The owner's facts merge
+    /// field by field the same way. The lookup's state (identity, fetched
+    /// facts, `checkedAt`) moves as one: the side whose `checkedAt` is newer
+    /// (this store on a tie). Lists (photos, candidates, rejected ids and
+    /// sources) take the file's list with this store's own additions and
+    /// removals applied. The default photo and whether the owner picked it
+    /// move together; a default no longer among the photos falls to the
+    /// first one, not as the owner's pick. `photoSearchedAt` is the later.
+    static func merging(mine: [String: ArtistProfile], base: [String: ArtistProfile],
+                        disk: [String: ArtistProfile]) -> [String: ArtistProfile] {
+        var result = disk
+        for (key, profile) in mine {
+            let original = base[key]
+            guard let theirs = disk[key] else {
+                result[key] = profile
+                continue
+            }
+            if theirs == original {
+                result[key] = profile
+            } else if profile != original {
+                result[key] = merged3(mine: profile,
+                                      base: original ?? ArtistProfile(foldedKey: key, displayName: profile.displayName),
+                                      disk: theirs)
+            }
+        }
+        return result
+    }
+
+    private static func merged3(mine: ArtistProfile, base: ArtistProfile, disk: ArtistProfile) -> ArtistProfile {
+        var result = disk
+        func take<T: Equatable>(_ path: WritableKeyPath<ArtistProfile, T>) {
+            if mine[keyPath: path] != base[keyPath: path] { result[keyPath: path] = mine[keyPath: path] }
+        }
+        func lists<T: Equatable>(_ path: WritableKeyPath<ArtistProfile, [T]>) {
+            let removed = base[keyPath: path].filter { !mine[keyPath: path].contains($0) }
+            var list = disk[keyPath: path].filter { !removed.contains($0) }
+            for item in mine[keyPath: path] where !base[keyPath: path].contains(item) && !list.contains(item) {
+                list.append(item)
+            }
+            result[keyPath: path] = list
+        }
+        take(\.displayName)
+        take(\.noPhoto)
+        take(\.notOnIPod)
+        lists(\.rejectedMusicBrainzIDs)
+        lists(\.photoCandidates)
+        lists(\.rejectedPhotoSources)
+
+        let lookupChangedHere = mine.identity != base.identity || mine.fetched != base.fetched
+            || mine.checkedAt != base.checkedAt
+        let lookupChangedThere = disk.identity != base.identity || disk.fetched != base.fetched
+            || disk.checkedAt != base.checkedAt
+        if lookupChangedHere,
+           !lookupChangedThere || (mine.checkedAt ?? .distantPast) >= (disk.checkedAt ?? .distantPast) {
+            result.identity = mine.identity
+            result.fetched = mine.fetched
+            result.checkedAt = mine.checkedAt
+        }
+        result.owner = mergedFacts(mine: mine.owner, base: base.owner, disk: disk.owner)
+
+        // Photos by hash: this store's removals and additions on the file's
+        // list; an entry this store changed (a migrated original's address)
+        // is this store's.
+        let baseHashes = Set(base.photos.map(\.hash)), mineHashes = Set(mine.photos.map(\.hash))
+        var photos = disk.photos.filter { !baseHashes.contains($0.hash) || mineHashes.contains($0.hash) }
+        for photo in mine.photos {
+            if let at = photos.firstIndex(where: { $0.hash == photo.hash }) {
+                if base.photos.first(where: { $0.hash == photo.hash }) != photo { photos[at] = photo }
+            } else if !baseHashes.contains(photo.hash) {
+                photos.append(photo)
+            }
+        }
+        result.photos = photos
+        if mine.defaultPhoto != base.defaultPhoto || mine.defaultPickedByOwner != base.defaultPickedByOwner {
+            result.defaultPhoto = mine.defaultPhoto
+            result.defaultPickedByOwner = mine.defaultPickedByOwner
+        }
+        if !result.photos.contains(where: { $0.hash == result.defaultPhoto }) {
+            result.defaultPhoto = result.photos.first?.hash
+            result.defaultPickedByOwner = false
+        }
+        result.photoSearchedAt = [mine.photoSearchedAt, disk.photoSearchedAt].compactMap { $0 }.max()
+        return result
+    }
+
+    /// The owner's facts, field by field: this store's where it changed one, else the file's.
+    private static func mergedFacts(mine: ArtistFacts?, base: ArtistFacts?, disk: ArtistFacts?) -> ArtistFacts? {
+        let m = mine ?? ArtistFacts(), b = base ?? ArtistFacts()
+        var result = disk ?? ArtistFacts()
+        func take<T: Equatable>(_ path: WritableKeyPath<ArtistFacts, T>) {
+            if m[keyPath: path] != b[keyPath: path] { result[keyPath: path] = m[keyPath: path] }
+        }
+        take(\.kind)
+        take(\.origin)
+        take(\.begin)
+        take(\.end)
+        take(\.bio)
+        take(\.bioSourceURL)
+        take(\.members)
+        take(\.genres)
+        take(\.links)
+        return result == ArtistFacts() && mine == nil && disk == nil ? nil : result
     }
 
     /// What is written: `{"picturesMigrated": ..., "profiles": [...]}`.

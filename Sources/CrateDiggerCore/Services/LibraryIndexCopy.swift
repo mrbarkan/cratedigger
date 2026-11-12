@@ -18,11 +18,14 @@ public enum LibraryIndexFiles {
         extensions.contains(url.pathExtension.lowercased())
     }
 
-    /// What moving the index out of `folder` moves: its index files, then
-    /// the `movedFolders` that are there. Throws when the folder cannot be read.
+    /// What moving the index out of `folder` moves: its index files and the
+    /// artist profiles' backups (`library.cdartistinfo.bak`, `.2.bak`...,
+    /// whose photos the store keeps for as long as a backup names them),
+    /// then the `movedFolders` that are there. Throws when the folder cannot
+    /// be read.
     public static func itemsToMove(in folder: URL, fileManager: FileManager = .default) throws -> [URL] {
         let files = try fileManager.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
-            .filter(isIndexFile)
+            .filter { isIndexFile($0) || ArtistProfileStore.isBackupName($0.lastPathComponent) }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
         let folders = movedFolders.map { folder.appendingPathComponent($0, isDirectory: true) }.filter { url in
             var isFolder: ObjCBool = false

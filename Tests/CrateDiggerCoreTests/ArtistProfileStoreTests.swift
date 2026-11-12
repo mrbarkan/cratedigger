@@ -603,16 +603,17 @@ final class ArtistProfileStoreTests: XCTestCase {
         XCTAssertTrue(exists(store.photoURL(hash: beck.hash)), "a removed photo waits for a clean store")
         XCTAssertTrue(exists(folder.appendingPathComponent(ArtistProfileStore.fileName + ".2.bak")))
 
-        // A clean load sweeps again, but keeps whatever any backup names.
+        // A clean load sweeps again what it drops, but keeps whatever any backup names.
         let clean = makeStore()
         XCTAssertEqual(clean.allProfiles().map(\.foldedKey), ["beck"])
+        clean.removePhoto(name: "Beck", hash: beck.hash)
         try clean.save()
-        XCTAssertFalse(exists(stray))
+        XCTAssertTrue(exists(stray), "a file no store dropped is never deleted")
         XCTAssertTrue(exists(store.photoURL(hash: air.hash)), "named by the second backup")
         XCTAssertTrue(exists(store.photoURL(hash: beck.hash)), "named by the first backup")
     }
 
-    func testSaveSweepsPhotoFilesNoProfileNames() throws {
+    func testSaveSweepsOnlyPhotoFilesThisStoreDropped() throws {
         let store = makeStore()
         let kept = try store.addPhoto(name: "Air", data: image(400, 400, shade: 0.1), source: .owner, sourceID: nil,
                                       credit: nil)
@@ -627,10 +628,108 @@ final class ArtistProfileStoreTests: XCTestCase {
             .write(to: folder.appendingPathComponent(ArtistProfileStore.backupFileName))
 
         // An edit that drops a photo without removePhoto: its file still goes.
+        // A file this store never knew (another Mac's, a crash's leftover) stays.
         store.update(name: "Air") { $0.photos.removeAll { $0.hash == edited.hash } }
         try store.save()
         let names = Set(try FileManager.default.contentsOfDirectory(atPath: photosDirectory.path))
-        XCTAssertEqual(names, [kept.hash + ".jpg", named + ".png", "notes.txt"])
+        XCTAssertEqual(names, [kept.hash + ".jpg", stray.lastPathComponent, named + ".png", "notes.txt"])
+    }
+
+    // MARK: - Two Macs sharing one library folder
+
+    func testASaveKeepsWhatAnotherMacAddedMeanwhile() throws {
+        let here = makeStore()
+        // The other Mac adds an artist and a photo after this store read the file.
+        let there = makeStore()
+        let theirs = try there.addPhoto(name: "Beck", data: image(400, 400, shade: 0.2), source: .owner,
+                                        sourceID: nil, credit: nil)
+        try there.save()
+
+        let mine = try here.addPhoto(name: "Air", data: image(400, 400, shade: 0.1), source: .owner, sourceID: nil,
+                                     credit: nil)
+        try here.save()
+
+        let reread = makeStore()
+        XCTAssertEqual(reread.allProfiles().map(\.foldedKey), ["air", "beck"])
+        XCTAssertEqual(reread.profile(forName: "Beck")?.defaultPhoto, theirs.hash)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: reread.photoURL(hash: theirs.hash).path),
+                      "the other Mac's new photo is not swept")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: reread.photoURL(hash: mine.hash).path))
+        XCTAssertNotNil(here.profile(forName: "Beck"), "the merge is what this store holds now")
+    }
+
+    func testADroppedPhotoStaysWhileTheFileOnDiskStillNamesIt() throws {
+        let seed = makeStore()
+        let shared = try seed.addPhoto(name: "Air", data: image(400, 400, shade: 0.3), source: .owner, sourceID: nil,
+                                       credit: nil)
+        try seed.save()
+
+        let here = makeStore()
+        let there = makeStore()
+        // The other Mac gives the same picture to another artist and saves.
+        _ = try there.addPhoto(name: "Beck", data: image(400, 400, shade: 0.3), source: .owner, sourceID: nil,
+                               credit: nil)
+        try there.save()
+        // This store removes it from Air: the file is still named, so it stays.
+        here.removePhoto(name: "Air", hash: shared.hash)
+        try here.save()
+        XCTAssertTrue(FileManager.default.fileExists(atPath: here.photoURL(hash: shared.hash).path))
+        XCTAssertEqual(makeStore().profile(forName: "Beck")?.photos.map(\.hash), [shared.hash])
+        XCTAssertEqual(makeStore().profile(forName: "Air")?.photos, [])
+
+        // Once nothing names it, the store that dropped it deletes it.
+        here.removePhoto(name: "Beck", hash: shared.hash)
+        try here.save()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: here.photoURL(hash: shared.hash).path))
+    }
+
+    func testBothMacsChangingOneArtistMergeFieldByField() throws {
+        let seed = makeStore()
+        seed.update(name: "Air") { profile in
+            profile.owner = ArtistFacts(kind: "Duo", origin: "Paris")
+            profile.rejectedPhotoSources = ["deezer:1"]
+        }
+        seed.applyFetched(name: "Air", facts: ArtistFacts(bio: "Old."), identity: .notFound,
+                          at: Date(timeIntervalSinceReferenceDate: 1_000))
+        try seed.save()
+
+        let here = makeStore(), there = makeStore()
+        // There: the owner's kind, No Photo, a removed source, and a newer lookup.
+        there.update(name: "Air") { profile in
+            profile.owner?.kind = "Band"
+            profile.noPhoto = true
+            profile.rejectedPhotoSources.append("deezer:2")
+        }
+        there.applyFetched(name: "Air", facts: ArtistFacts(bio: "Newer."),
+                           identity: .confirmed(musicBrainzID: "mb-air", wikidataID: nil),
+                           at: Date(timeIntervalSinceReferenceDate: 3_000))
+        try there.save()
+        // Here: the owner's origin, another removed source, and an older lookup.
+        here.update(name: "Air") { profile in
+            profile.owner?.origin = "Versailles"
+            profile.rejectedPhotoSources.append("deezer:3")
+        }
+        here.applyFetched(name: "Air", facts: ArtistFacts(bio: "Older."), identity: .notFound,
+                          at: Date(timeIntervalSinceReferenceDate: 2_000))
+        try here.save()
+
+        let air = try XCTUnwrap(makeStore().profile(forName: "Air"))
+        XCTAssertEqual(air.owner?.kind, "Band", "a field only the other Mac changed is the other Mac's")
+        XCTAssertEqual(air.owner?.origin, "Versailles", "a field this Mac changed is this Mac's")
+        XCTAssertTrue(air.noPhoto)
+        XCTAssertEqual(air.rejectedPhotoSources, ["deezer:1", "deezer:2", "deezer:3"])
+        // The lookup's state moves as one, the newer checkedAt winning.
+        XCTAssertEqual(air.identity, .confirmed(musicBrainzID: "mb-air", wikidataID: nil))
+        XCTAssertEqual(air.fetched?.bio, "Newer.")
+        XCTAssertEqual(air.checkedAt, Date(timeIntervalSinceReferenceDate: 3_000))
+
+        // Both changing the same owner field: this save is the newer edit.
+        let a = makeStore(), b = makeStore()
+        b.update(name: "Air") { $0.owner?.origin = "Lyon" }
+        try b.save()
+        a.update(name: "Air") { $0.owner?.origin = "Marseille" }
+        try a.save()
+        XCTAssertEqual(makeStore().profile(forName: "Air")?.owner?.origin, "Marseille")
     }
 
     func testMigratedFlagIsSavedInTheFile() throws {

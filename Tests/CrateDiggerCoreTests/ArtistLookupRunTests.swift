@@ -284,6 +284,39 @@ final class ArtistLookupRunTests: XCTestCase {
         XCTAssertNil(result.replacementForMigrated)
     }
 
+    func testADefaultWhoseFileHasGoneIsFoundAgain() async throws {
+        answerMassiveAttack()
+        let store = store()
+        let name = "Massive Attack"
+        let lost = try store.addPhoto(name: name, data: FakePictureFetcher.jpeg(red: 0.2), source: .deezer,
+                                      sourceID: "3", credit: nil)
+        try store.save()
+        try FileManager.default.removeItem(at: store.photoURL(hash: lost.hash))
+
+        let result = try await run().lookUp(name: name, libraryAlbumTitles: ["Mezzanine"], libraryPicture: nil,
+                                            existing: store.profile(forName: name), lane: .background, now: now,
+                                            photoFileExists: { store.hasPhotoFile(hash: $0) })
+        XCTAssertEqual(result.defaultPhoto?.source, .commons, "counted as no default")
+        XCTAssertTrue(try result.apply(to: store, name: name, at: now))
+        let after = try XCTUnwrap(store.profile(forName: name))
+        XCTAssertNotEqual(after.defaultPhoto, lost.hash)
+        XCTAssertTrue(store.hasPhotoFile(hash: try XCTUnwrap(after.defaultPhoto)))
+        XCTAssertFalse(after.defaultPickedByOwner)
+
+        // The owner's pick stays a pick: the placeholder shows, the reference is kept.
+        let picked = try store.addPhoto(name: "Air", data: FakePictureFetcher.jpeg(red: 0.4), source: .owner,
+                                        sourceID: nil, credit: nil)
+        store.setDefault(name: "Air", hash: picked.hash)
+        try FileManager.default.removeItem(at: store.photoURL(hash: picked.hash))
+        info.candidates["Air"] = .success([])
+        let again = try await run().lookUp(name: "Air", libraryAlbumTitles: [], libraryPicture: nil,
+                                           existing: store.profile(forName: "Air"), lane: .background, now: now,
+                                           photoFileExists: { store.hasPhotoFile(hash: $0) })
+        XCTAssertNil(again.defaultPhoto)
+        XCTAssertEqual(deezer.calls, 0)
+        XCTAssertEqual(store.profile(forName: "Air")?.defaultPhoto, picked.hash)
+    }
+
     // MARK: Failures
 
     func testFailureStoresNothing() async throws {

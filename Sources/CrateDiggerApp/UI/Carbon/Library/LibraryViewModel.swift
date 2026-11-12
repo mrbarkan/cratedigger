@@ -1234,6 +1234,10 @@ final class LibraryViewModel: ObservableObject {
     /// overlap on one folder.
     var artistProfileStoreUsers = 0
     var artistProfileStoreDrainWaiters: [CheckedContinuation<Void, Never>] = []
+    /// Set while the index files are being moved (`moveIndexFiles`): no
+    /// writer takes the store until the new folder is in effect.
+    var artistProfileStoreFrozen = false
+    var artistProfileStoreThawWaiters: [CheckedContinuation<Void, Never>] = []
     /// A lookup the owner asked for while one was already running for that
     /// artist, by folded key: the name and whether to reset first, the
     /// latest ask winning. Run when the running one ends, never dropped.
@@ -5724,11 +5728,12 @@ final class LibraryViewModel: ObservableObject {
 
         // Detached: with embedded artwork a .cdcrate can be big, and a
         // cross-volume move is copy+delete — keep it off the main actor. First
-        // every artist profile write already under way finishes, so none
-        // lands in the old folder after its files have gone (the background
-        // lookup is paused by the scan progress set above).
+        // the artist profile store is frozen: every write already under way
+        // finishes and none starts (the background lookup's included) until
+        // the new folder is in effect, so none lands in the old folder after
+        // its files have gone.
         Task { [weak self] in
-            await self?.artistProfileStoreDrained()
+            await self?.freezeArtistProfileStore()
             Self.moveIndexItems(toMove, to: newURL, indexFileCount: indexFileCount, viewModel: self)
         }
     }
@@ -5763,6 +5768,9 @@ final class LibraryViewModel: ObservableObject {
             await MainActor.run { [weak viewModel] in
                 guard let model = viewModel else { return }
                 model.scanProgress = .idle
+                // Thawed once the folder the store is made for is the one in
+                // effect: the old one on a failure, the new one on success.
+                defer { model.thawArtistProfileStore() }
                 if let moveFailure {
                     model.appAlert = .error(title: "Move Failed",
                                            message: "Could not move the index: \(moveFailure.localizedDescription)\nEverything was left in the current folder.")
@@ -5770,6 +5778,8 @@ final class LibraryViewModel: ObservableObject {
                 }
                 do {
                     model.prefs.cratesIndexFolderBookmark = try PreferencesStore.makeBookmark(for: newURL)
+                    let location = model.resolveLibraryLocation()
+                    if location != model.libraryLocation { model.libraryLocation = location }
                     NotificationCenter.default.post(name: NSNotification.Name("CrateDiggerCratesFolderChanged"), object: newURL)
                     model.appAlert = .info(title: "Index Moved",
                                           message: "Moved \(movedCount) index file\(movedCount == 1 ? "" : "s") to: \(newURL.path)")
