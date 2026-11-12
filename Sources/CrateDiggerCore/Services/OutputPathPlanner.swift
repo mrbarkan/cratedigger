@@ -194,18 +194,25 @@ public struct OutputPathPlanner {
 
         // Group token values into folder levels: a `/` after a token ends the
         // current folder; a `space` keeps the next token in the same folder.
-        var levels: [[String]] = [[]]
+        var levels: [[(token: FolderToken, value: String)]] = [[]]
         for (i, token) in tokenOrder.enumerated() {
             if let value = tokenValue(for: token, loadedTrack: loadedTrack, albumKey: albumKey) {
-                levels[levels.count - 1].append(value)
+                levels[levels.count - 1].append((token, value))
             }
             if i < tokenOrder.count - 1 {
                 let separator = i < separators.count ? separators[i] : .slash
                 if separator == .slash { levels.append([]) }
             }
         }
+        // A missing year that shares its folder with other tokens is left
+        // out ("Teen Dream", not "Unknown Year Teen Dream"); a year folder
+        // of its own keeps the fallback, as it always has.
+        let missingYear = PathComponentSanitizer.sanitize("", fallback: unknownYear)
         let components = levels
-            .map { $0.joined(separator: " ") }
+            .map { level in
+                level.count > 1 ? level.filter { !($0.token == .year && $0.value == missingYear) } : level
+            }
+            .map { $0.map(\.value).joined(separator: " ") }
             .filter { !$0.isEmpty }
 
         let fallbackPath = [
