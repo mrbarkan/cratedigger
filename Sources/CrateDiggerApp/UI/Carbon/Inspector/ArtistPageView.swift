@@ -88,11 +88,10 @@ struct ArtistPageView: View {
 
     @ViewBuilder
     private var portraitMenu: some View {
-        // Task 8: the Edit sheet and the photo picker.
-        Button("Choose Default…") {}
-            .disabled(true)
-        Button("Add Photos…") {}
-            .disabled(true)
+        // The Edit sheet shows every photo, to pick the default from.
+        Button("Choose Default…") { model.editArtist(name) }
+            .disabled((profile?.photos.count ?? 0) < 2)
+        Button("Add Photos…") { model.chooseArtistPhotos(name) }
         Divider()
         Button("Look Up Again") { model.lookUpArtistAgain(name) }
             .disabled(!isLookedUp || isLookingUp)
@@ -452,13 +451,12 @@ struct ArtistPageView: View {
                 .carbonTip("Open in your browser")
             }
             Spacer(minLength: 0)
-            // Task 8: opens the Edit Artist sheet.
-            Button("EDIT…") {}
+            Button("EDIT…") { model.editArtist(name) }
                 .buttonStyle(.plain)
                 .font(CarbonFont.mono(9, weight: .bold))
                 .tracking(1.4)
-                .foregroundStyle(theme.ink4)
-                .disabled(true)
+                .foregroundStyle(theme.ink2)
+                .carbonTip("Correct the facts, the match and the photos")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
@@ -531,6 +529,7 @@ private struct ArtistPortrait<MenuItems: View>: View {
 
     @State private var image: NSImage?
     @State private var hovering = false
+    @State private var dropTargeted = false
 
     var body: some View {
         // Task 9: a click opens the artist photo viewer.
@@ -549,13 +548,17 @@ private struct ArtistPortrait<MenuItems: View>: View {
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
                         .fill(theme.orange)
                         .blur(radius: 14)
-                        .opacity(hovering && image != nil ? 0.55 : 0)
+                        .opacity((hovering && image != nil) || dropTargeted ? 0.55 : 0)
                 )
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .animation(CarbonMotion.hover, value: hovering)
         .contextMenu { menu() }
+        // Pictures dropped here become the owner's photos of the artist.
+        .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { providers in
+            ArtistPhotoDrop.load(providers) { model.addArtistPhotos(name, urls: $0) }
+        }
         .task(id: photo?.hash) {
             guard let hash = photo?.hash else {
                 image = nil

@@ -271,14 +271,161 @@ extension LibraryViewModel {
         runArtistLookup(name, resetFirst: !confirmed)
     }
 
+    // MARK: - Editing (spec §5)
+
+    /// Edit Artist: the sheet, presented from the root (`LibraryPresentations`),
+    /// so it opens in the compact player too.
+    func editArtist(_ name: String) {
+        // A name that folds to nothing has no profile to keep the edits under.
+        guard !PodBoxArtName.folded(name).isEmpty, !refuseWhileLibraryDisconnected() else { return }
+        artistEditRequest = name
+    }
+
+    /// The Edit sheet's Save: the owner's facts and any identity change, as
+    /// one store write (`ArtistEditDraft.apply`). A new identity is looked
+    /// up at once, as from the page.
+    func saveArtistEdit(_ name: String, draft: ArtistEditDraft) {
+        guard !refuseWhileLibraryDisconnected() else { return }
+        let changesIdentity = draft.changesIdentity(of: artistProfile(named: name)
+            ?? ArtistProfile(foldedKey: PodBoxArtName.folded(name), displayName: name))
+        changeArtistProfile(name) { draft.apply(to: &$0) } then: { [weak self] in
+            if changesIdentity { self?.runArtistLookup(name, resetFirst: false) }
+        }
+    }
+
+    /// Add Photos…: the file picker, several at once.
+    func chooseArtistPhotos(_ name: String) {
+        guard !refuseWhileLibraryDisconnected() else { return }
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = [.image]
+        panel.title = "Add photos of \(name)"
+        panel.prompt = "Add"
+        guard panel.runModal() == .OK, !panel.urls.isEmpty else { return }
+        addArtistPhotos(name, urls: panel.urls)
+    }
+
+    /// The owner's own photos (the picker, or a drop on the portrait), kept
+    /// as given up to 32 MB and 50 MP, added after the others; the default
+    /// stays where it is unless there is none. Read, checked and stored off
+    /// the main actor, saved once; anything refused is said in one alert.
+    func addArtistPhotos(_ name: String, urls: [URL]) {
+        guard !refuseWhileLibraryDisconnected() else { return }
+        let files = urls.filter(\.isFileURL)
+        guard !files.isEmpty else { return }
+        Task {
+            let store = await currentArtistProfileStore()
+            let refused = await Task.detached(priority: .userInitiated) { () -> [String] in
+                var refused: [String] = []
+                for url in files {
+                    do {
+                        try store.addPhoto(name: name, data: try Self.readArtistPhotoFile(url), source: .owner,
+                                           sourceID: nil, credit: nil)
+                    } catch {
+                        refused.append("\(url.lastPathComponent): \(error.localizedDescription)")
+                    }
+                }
+                do {
+                    try store.save()
+                } catch {
+                    refused.append(error.localizedDescription)
+                }
+                return refused
+            }.value
+            reloadArtistProfiles()
+            if !refused.isEmpty {
+                let title = refused.count == files.count ? "Photos Not Added" : "Some Photos Not Added"
+                appAlert = .error(title: title, message: refused.joined(separator: "\n"))
+            }
+        }
+    }
+
+    /// A photo the lookup found but did not download: fetched now (only
+    /// from the picture sources' own hosts), stored, and saved.
+    func addArtistPhotoCandidate(_ name: String, _ candidate: ArtistPictureRecord.HeldCandidate) {
+        guard !refuseWhileLibraryDisconnected() else { return }
+        let fetcher = URLSessionPictureFetcher()
+        Task {
+            let store = await currentArtistProfileStore()
+            let failure = await Task.detached(priority: .userInitiated) { () -> String? in
+                do {
+                    let data = try await fetcher.data(from: candidate.imageURL)
+                    try store.addCandidatePhoto(name: name, candidate: candidate, data: data)
+                    try store.save()
+                    return nil
+                } catch let error as ArtistProfileStoreError {
+                    return error.localizedDescription
+                } catch {
+                    return "The photo could not be downloaded. Try again in a minute."
+                }
+            }.value
+            reloadArtistProfiles()
+            if let failure { appAlert = .error(title: "Photo Not Added", message: failure) }
+        }
+    }
+
+    /// Remove: a looked-up photo is remembered, so no lookup brings it back.
+    /// Its file goes with the save when no profile uses it any more.
+    func removeArtistPhoto(_ name: String, hash: String) {
+        guard !refuseWhileLibraryDisconnected() else { return }
+        changeArtistProfile(store: { $0.removePhoto(name: name, hash: hash) })
+    }
+
+    /// Make Default: the owner's choice, which no lookup changes.
+    func setDefaultArtistPhoto(_ name: String, hash: String) {
+        guard !refuseWhileLibraryDisconnected() else { return }
+        changeArtistProfile(store: { $0.setDefault(name: name, hash: hash) })
+    }
+
+    /// A found photo's thumbnail, fetched on demand through the picture
+    /// fetcher (its sources' hosts only) and decoded off the main actor.
+    /// Kept for the session; nil when it will not download.
+    func artistCandidateThumbnail(_ url: URL, side: Int = 240) async -> NSImage? {
+        let key = "\(side)|\(url.absoluteString)" as NSString
+        if let cached = Self.artistCandidateThumbnails.object(forKey: key) { return cached }
+        let fetcher = URLSessionPictureFetcher()
+        let image = await Task.detached(priority: .utility) { () -> CGImage? in
+            guard let data = try? await fetcher.data(from: url) else { return nil }
+            return ArtistPicturesSheetModel.thumbnail(data, side: side)
+        }.value
+        guard let image else { return nil }
+        let thumbnail = NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
+        Self.artistCandidateThumbnails.setObject(thumbnail, forKey: key)
+        return thumbnail
+    }
+
+    private static let artistCandidateThumbnails: NSCache<NSString, NSImage> = {
+        let cache = NSCache<NSString, NSImage>()
+        cache.countLimit = 120
+        return cache
+    }()
+
+    /// A plain file no larger than an owner photo may be, read whole.
+    nonisolated static func readArtistPhotoFile(_ url: URL) throws -> Data {
+        let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+        guard values.isRegularFile == true else { throw ArtistProfileStoreError.unreadablePhoto }
+        guard (values.fileSize ?? .max) <= ArtistPictureImage.maximumSourceBytes else {
+            throw ArtistProfileStoreError.photoTooLarge
+        }
+        return try Data(contentsOf: url)
+    }
+
     /// One change to one profile, saved, then the profiles published again.
     /// Store work off the main actor; a failed save is reported.
     private func changeArtistProfile(_ name: String, _ change: @escaping @Sendable (inout ArtistProfile) -> Void,
                                      then: (@MainActor () -> Void)? = nil) {
+        changeArtistProfile(store: { $0.update(name: name, change) }, then: then)
+    }
+
+    /// The same, for a store call of its own (`removePhoto`, `setDefault`).
+    private func changeArtistProfile(store change: @escaping @Sendable (ArtistProfileStore) -> Void,
+                                     then: (@MainActor () -> Void)? = nil) {
         Task {
             let store = await currentArtistProfileStore()
             let failure = await Task.detached(priority: .userInitiated) { () -> String? in
-                store.update(name: name, change)
+                change(store)
                 do {
                     try store.save()
                     return nil

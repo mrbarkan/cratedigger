@@ -1211,6 +1211,9 @@ final class LibraryViewModel: ObservableObject {
     var artistTopTracks: [UUID: LoadedTrack] = [:]
     /// "Show Artist", and when the browser's focus ends it.
     @Published var artistPage = ArtistPageSelection()
+    /// The artist whose Edit sheet to present. One-shot: `LibraryPresentations`
+    /// presents it and clears it.
+    @Published var artistEditRequest: String?
     /// Folded keys of the artists a lookup the owner asked for is running on.
     @Published var artistLookupsRunning: Set<String> = []
     /// The one profile store for the crates folder (its `save` deletes photo

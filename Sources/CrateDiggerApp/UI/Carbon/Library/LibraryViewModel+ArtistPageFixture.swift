@@ -49,6 +49,7 @@ extension LibraryViewModel {
 
         let store = await currentArtistProfileStore()
         let photo = ArtistPageFixture.portraitJPEG()
+        let secondPhoto = ArtistPageFixture.portraitJPEG(warmth: 0.1)
         let profiles = fixture.profiles
         let failure = await Task.detached { () -> String? in
             do {
@@ -59,6 +60,10 @@ extension LibraryViewModel {
                     let added = try store.addPhoto(name: "Massive Attack", data: photo, source: .owner, sourceID: nil,
                                                    credit: nil)
                     store.setDefault(name: "Massive Attack", hash: added.hash)
+                }
+                if let secondPhoto {
+                    try store.addPhoto(name: "Massive Attack", data: secondPhoto, source: .owner, sourceID: nil,
+                                       credit: nil)
                 }
                 try store.save()
                 return nil
@@ -76,6 +81,11 @@ extension LibraryViewModel {
             selectedArtistID = artist.id
         } else {
             showArtist(name)
+        }
+        // `CRATEDIGGER_ARTIST_EDIT=1`: the Edit sheet over the page.
+        if ProcessInfo.processInfo.environment["CRATEDIGGER_ARTIST_EDIT"] == "1" {
+            try? await Task.sleep(for: .seconds(1))
+            editArtist(name)
         }
     }
 }
@@ -173,6 +183,14 @@ private struct ArtistPageFixture {
                                url: URL(string: "https://musicbrainz.org/artist/10adbe5e-a2c0-4bf3-8249-2b4cbf6e6ca8")!),
                     ArtistLink(kind: .wikipedia, url: URL(string: "https://en.wikipedia.org/wiki/Massive_Attack")!),
                 ]),
+            owner: ArtistFacts(origin: "Bristol, England, UK"),
+            // On a host the picture fetcher refuses, so no request is made.
+            photoCandidates: [
+                ArtistPictureRecord.HeldCandidate(source: .deezer, sourceID: "fixture-1",
+                                                  imageURL: URL(string: "https://fixture.invalid/1.jpg")!),
+                ArtistPictureRecord.HeldCandidate(source: .commons, sourceID: "fixture-2",
+                                                  imageURL: URL(string: "https://fixture.invalid/2.jpg")!),
+            ],
             checkedAt: checked)
         let person = ArtistProfile(
             foldedKey: "", displayName: "Björk",
@@ -204,14 +222,15 @@ private struct ArtistPageFixture {
     }
 
     /// A made-up portrait: a lit backdrop and a silhouette, as a JPEG.
-    static func portraitJPEG() -> Data? {
+    static func portraitJPEG(warmth: Double = 0) -> Data? {
         let side = 1_200
         guard let space = CGColorSpace(name: CGColorSpace.sRGB),
               let context = CGContext(data: nil, width: side, height: side, bitsPerComponent: 8, bytesPerRow: 0,
                                       space: space, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return nil }
         let full = CGRect(x: 0, y: 0, width: side, height: side)
-        let colors = [CGColor(srgbRed: 0.10, green: 0.12, blue: 0.20, alpha: 1),
-                      CGColor(srgbRed: 0.55, green: 0.18, blue: 0.16, alpha: 1)] as CFArray
+        let colors = [CGColor(srgbRed: 0.10 + warmth, green: 0.12, blue: 0.20 - warmth, alpha: 1),
+                      CGColor(srgbRed: 0.55 - warmth * 3, green: 0.18 + warmth * 2, blue: 0.16 + warmth * 3,
+                              alpha: 1)] as CFArray
         if let gradient = CGGradient(colorsSpace: space, colors: colors, locations: [0, 1]) {
             context.drawLinearGradient(gradient, start: .zero, end: CGPoint(x: side, y: side), options: [])
         }

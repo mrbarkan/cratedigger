@@ -520,3 +520,31 @@ extension ArtistProfileStore {
         }
     }
 }
+
+// MARK: - The owner picking a found photo
+
+extension ArtistProfileStore {
+    /// The owner picked one of the photos the lookup found but did not
+    /// download (the Edit sheet, the viewer): its downloaded `data` becomes
+    /// one of the profile's photos, stored as a fetched photo (1,600 px),
+    /// under the candidate's own source, id and credit, and the reference
+    /// goes from `photoCandidates`. The default stays where it is (the
+    /// owner makes this one the default separately), unless the profile has
+    /// none. Throws as `addPhoto` does, and for a candidate from a source
+    /// profiles keep no photos of. Does not save; store I/O and image work,
+    /// so off the main actor.
+    @discardableResult
+    public func addCandidatePhoto(name: String, candidate: ArtistPictureRecord.HeldCandidate,
+                                  data: Data) throws -> ArtistPhoto {
+        guard let source = ArtistLookupRun.photoSource(candidate.source) else {
+            throw ArtistProfileStoreError.unreadablePhoto
+        }
+        let key = ArtistLookupRun.rejectionKey(candidate)
+        // A decision that always keeps the photo never refuses: nil cannot come back.
+        return try addPhoto(name: name, data: data, source: source, sourceID: candidate.sourceID,
+                            credit: candidate.credit) { _, after, _ in
+            after.photoCandidates.removeAll { ArtistLookupRun.rejectionKey($0) == key }
+            return true
+        }!
+    }
+}

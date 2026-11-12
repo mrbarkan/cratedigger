@@ -78,6 +78,18 @@ private struct LibraryPresentations: ViewModifier {
                 }
                 ArtistPicturesSheetController.present(profileID: profileID, library: model, from: host)
             }
+            // Edit Artist (the artist page's EDIT…, Choose Default…): an
+            // AppKit sheet on the key window, from here so it opens in the
+            // compact player too. One-shot.
+            .onChange(of: model.artistEditRequest) { name in
+                guard let name else { return }
+                model.artistEditRequest = nil
+                guard let host = model.presentationHostViewController else {
+                    AppLog.library.error("Edit Artist has no window to present from")
+                    return
+                }
+                EditArtistSheetController.present(name: name, model: model, from: host)
+            }
             .onChange(of: model.fullScreenPlayerRequested) { requested in
                 guard requested else { return }
                 NowPlayingFullScreenPresenter.toggle(theme: theme, model: model)

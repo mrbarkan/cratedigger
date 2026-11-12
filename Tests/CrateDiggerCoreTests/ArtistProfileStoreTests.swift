@@ -49,6 +49,41 @@ final class ArtistProfileStoreTests: XCTestCase {
         return CGSize(width: width, height: height)
     }
 
+    // MARK: - Picking a found photo
+
+    func testPickingAFoundPhotoAddsItAndDropsTheReference() throws {
+        let store = makeStore()
+        let mine = try store.addPhoto(name: "Air", data: image(500, 500), source: .owner, sourceID: nil, credit: nil)
+        store.setDefault(name: "Air", hash: mine.hash)
+        let credit = ArtistPictureCredit(fileName: "Air 2007.jpg", licence: "CC BY 2.0", author: "Someone")
+        let commons = ArtistPictureRecord.HeldCandidate(source: .commons, sourceID: "mb-1",
+                                                        imageURL: URL(string: "https://upload.wikimedia.org/a.jpg")!,
+                                                        credit: credit)
+        let deezer = ArtistPictureRecord.HeldCandidate(source: .deezer, sourceID: "77",
+                                                       imageURL: URL(string: "https://e.dzcdn.net/b.jpg")!)
+        store.update(name: "Air") { $0.photoCandidates = [commons, deezer] }
+
+        let added = try store.addCandidatePhoto(name: "Air", candidate: commons, data: image(2_400, 1_800, shade: 0.6))
+
+        let profile = try XCTUnwrap(store.profile(forName: "Air"))
+        XCTAssertEqual(profile.photos.map(\.hash), [mine.hash, added.hash])
+        XCTAssertEqual(added.source, .commons)
+        XCTAssertEqual(added.sourceID, "mb-1")
+        XCTAssertEqual(added.credit, credit)
+        XCTAssertEqual(max(added.pixelWidth, added.pixelHeight), 1_600, "stored as a fetched photo")
+        XCTAssertEqual(profile.photoCandidates, [deezer], "the reference is now a photo")
+        XCTAssertEqual(profile.defaultPhoto, mine.hash, "the default is chosen separately")
+        XCTAssertTrue(profile.defaultPickedByOwner)
+    }
+
+    func testAFoundPhotoFromASourceProfilesDoNotKeepIsRefused() {
+        let store = makeStore()
+        let fanart = ArtistPictureRecord.HeldCandidate(source: .fanartTV, sourceID: "1",
+                                                       imageURL: URL(string: "https://example.com/c.jpg")!)
+        XCTAssertThrowsError(try store.addCandidatePhoto(name: "Air", candidate: fanart, data: image(500, 500)))
+        XCTAssertNil(store.profile(forName: "Air"))
+    }
+
     // MARK: - Facts
 
     func testOwnerFieldsWinFieldByField() {
