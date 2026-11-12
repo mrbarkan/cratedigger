@@ -46,8 +46,10 @@ public enum DeviceFileOutcome: Equatable, Sendable {
 /// replaced, anything else is foreign and refused (I3), (6) the bytes land
 /// through a flushed temp and a rename, attributes stripped (I8), (7) the
 /// journal records it. A delete needs the journal's proof for
-/// `ownedByCrateDigger`, re-proves an AppleDouble twin at the moment of
-/// deletion (I4), and backs up either first.
+/// `ownedByCrateDigger` and backs the file up first. An AppleDouble twin is
+/// proven and read through one descriptor, backed up from those bytes, and
+/// deleted only if the path still holds that very file, checked again
+/// immediately before the `unlink` (I4).
 public struct DeviceFileExecutor {
     /// Room left on the device after any write.
     public static let freeSpaceMargin: Int64 = 8 * 1024 * 1024
@@ -65,6 +67,9 @@ public struct DeviceFileExecutor {
     /// The UUID journal records are matched and written against: the expected
     /// one, else what the volume reported at init.
     private let sessionVolumeUUID: String?
+    /// Tests only: runs between an AppleDouble twin's backup and its removal,
+    /// so a test can swap the file in that gap.
+    private let beforeAppleDoubleRemoval: ((URL) -> Void)?
 
     public init(volumeRoot: URL, expectedVolumeUUID: String?, policy: DeviceWritePolicy,
                 journal: DeviceWriteJournal, fileManager: FileManager = .default,
@@ -81,7 +86,7 @@ public struct DeviceFileExecutor {
          journal: DeviceWriteJournal, fileManager: FileManager = .default,
          volumeUUID: @escaping (URL) -> String? = DeviceFileExecutor.systemVolumeUUID,
          freeSpace: @escaping (URL) -> Int64? = DeviceFileExecutor.systemFreeSpace,
-         rootMustBeMountPoint: Bool) {
+         rootMustBeMountPoint: Bool, beforeAppleDoubleRemoval: ((URL) -> Void)? = nil) {
         self.volumeRoot = volumeRoot
         self.expectedVolumeUUID = expectedVolumeUUID
         self.policy = policy
@@ -90,6 +95,7 @@ public struct DeviceFileExecutor {
         self.volumeUUID = volumeUUID
         self.freeSpace = freeSpace
         self.rootMustBeMountPoint = rootMustBeMountPoint
+        self.beforeAppleDoubleRemoval = beforeAppleDoubleRemoval
         capturedIdentity = VolumeIdentity(of: volumeRoot)
         sessionVolumeUUID = expectedVolumeUUID ?? (capturedIdentity == nil ? nil : volumeUUID(volumeRoot))
     }
@@ -290,15 +296,27 @@ public struct DeviceFileExecutor {
         case .appleDouble:
             // The proof again, now: the file may have changed since the plan.
             // (The policy above has re-checked that it is the twin of a media file.)
-            guard DeviceFileIO.isProvenAppleDouble(target) else { return .refusedNotAppleDouble }
+            guard let proof = DeviceFileIO.proveAppleDouble(target) else { return .refusedNotAppleDouble }
             do {
-                backupFile = try journal.backUp(fileAt: target, relativePath: path, sessionID: sessionID)
+                backupFile = try journal.backUp(proof.bytes, relativePath: path, sessionID: sessionID)
             } catch {
                 return .failed("Could not keep a copy of \(target.lastPathComponent) before removing it: \(describe(error))")
             }
+            beforeAppleDoubleRemoval?(target)
+            do {
+                switch try DeviceFileIO.removeProvenAppleDouble(target, proof: proof) {
+                case .removed: break
+                case .changed: return .refusedNotAppleDouble // the backup stays on the Mac, unused
+                case .gone: return .alreadyGone
+                }
+            } catch {
+                return .failed(describe(error))
+            }
         }
 
-        do { try DeviceFileIO.remove(target) } catch { return .failed(describe(error)) }
+        if reason != .appleDouble {
+            do { try DeviceFileIO.remove(target) } catch { return .failed(describe(error)) }
+        }
 
         let record = DeviceFileRecord(relativePath: path, kind: .deleted, role: reason.rawValue, size: size,
                                       backupFile: backupFile, volumeUUID: sessionVolumeUUID, sessionID: sessionID)

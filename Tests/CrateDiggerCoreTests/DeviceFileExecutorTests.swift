@@ -468,6 +468,95 @@ final class DeviceFileExecutorTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: j.folder.appendingPathComponent(backup)), FakeIPod.appleDoubleBytes())
     }
 
+    // MARK: The gap between a twin's backup and its removal (I4)
+
+    /// Runs one AppleDouble delete of `twin` with `swap` run after the backup
+    /// and before the removal.
+    private func sweepTwin(_ twin: String, swap: @escaping (URL) throws -> Void) -> (DeviceFileOutcome, DeviceWriteJournal) {
+        let j = journal()
+        let executor = DeviceFileExecutor(volumeRoot: iPod.root, expectedVolumeUUID: volume,
+                                          policy: DeviceWritePolicy(musicSubpath: "Music"), journal: j,
+                                          volumeUUID: { [volume] _ in volume }, freeSpace: { _ in 1 << 40 },
+                                          rootMustBeMountPoint: false,
+                                          beforeAppleDoubleRemoval: { url in
+                                              do { try swap(url) } catch { XCTFail("the swap failed: \(error)") }
+                                          })
+        let outcome = executor.apply([.delete(relativePath: twin, reason: .appleDouble)], sessionID: session)[0]
+        return (outcome, j)
+    }
+
+    private let twin = "Music/Classics/Beach House/2010 Teen Dream/._01 - Zebra.m4a"
+
+    func testTwinSwappedForAnotherFileAfterBackupIsNotDeleted() throws {
+        try iPod.addFile(twin, FakeIPod.appleDoubleBytes())
+        // Same size and the same header, but another file: a new inode.
+        var replacement = FakeIPod.appleDoubleBytes()
+        replacement[100] = 0x7f
+        let (outcome, j) = sweepTwin(twin) { url in
+            try FileManager.default.removeItem(at: url)
+            try replacement.write(to: url)
+        }
+        XCTAssertEqual(outcome, .refusedNotAppleDouble)
+        XCTAssertEqual(try bytes(twin), replacement)
+        XCTAssertEqual(j.records.filter { $0.kind == .deleted }, [])
+    }
+
+    func testTwinRenamedOverAfterBackupIsNotDeleted() throws {
+        try iPod.addFile(twin, FakeIPod.appleDoubleBytes())
+        let other = try iPod.addFile("Music/Classics/other.bin", FakeIPod.appleDoubleBytes()) // identical bytes
+        let (outcome, _) = sweepTwin(twin) { url in
+            XCTAssertEqual(Darwin.rename(other.path, url.path), 0)
+        }
+        XCTAssertEqual(outcome, .refusedNotAppleDouble, "same bytes, but not the file that was proven")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url(twin).path))
+    }
+
+    func testTwinRewrittenInPlaceAfterBackupIsNotDeleted() throws {
+        try iPod.addFile(twin, FakeIPod.appleDoubleBytes())
+        let audio = Data([0, 0, 0, 0x20]) + Data("ftypM4A ".utf8) + Data(count: 4096 - 12)
+        let (outcome, _) = sweepTwin(twin) { url in
+            // Same inode, same size, other bytes.
+            let handle = try FileHandle(forUpdating: url)
+            try handle.write(contentsOf: audio)
+            try handle.close()
+        }
+        XCTAssertEqual(outcome, .refusedNotAppleDouble)
+        XCTAssertEqual(try bytes(twin), audio)
+    }
+
+    func testTwinReplacedByAFolderOrSymlinkAfterBackupIsNotDeleted() throws {
+        try iPod.addFile(twin, FakeIPod.appleDoubleBytes())
+        let target = try iPod.addFile("Music/Classics/elsewhere.bin", FakeIPod.appleDoubleBytes())
+        let (outcome, _) = sweepTwin(twin) { url in
+            try FileManager.default.removeItem(at: url)
+            try FileManager.default.createSymbolicLink(at: url, withDestinationURL: target)
+        }
+        XCTAssertEqual(outcome, .refusedNotAppleDouble)
+        XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: url(twin).path), target.path)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: target.path))
+    }
+
+    func testTwinRemovedAfterBackupIsAlreadyGone() throws {
+        try iPod.addFile(twin, FakeIPod.appleDoubleBytes())
+        let (outcome, _) = sweepTwin(twin) { url in try FileManager.default.removeItem(at: url) }
+        XCTAssertEqual(outcome, .alreadyGone)
+    }
+
+    func testUntouchedTwinIsBackedUpFromTheProvenBytesAndDeleted() throws {
+        try iPod.addFile(twin, FakeIPod.appleDoubleBytes(size: 777))
+        // The same folder sweepTwin's journal uses.
+        let backup = journal().folder.appendingPathComponent("backups/\(session.uuidString)/\(twin)")
+        var backupSeenBeforeRemoval: Data?
+        let (outcome, j) = sweepTwin(twin) { _ in backupSeenBeforeRemoval = try Data(contentsOf: backup) }
+        XCTAssertEqual(outcome, .deleted)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url(twin).path))
+        XCTAssertEqual(backupSeenBeforeRemoval, FakeIPod.appleDoubleBytes(size: 777))
+        let record = try XCTUnwrap(j.records.last)
+        XCTAssertEqual(record.kind, .deleted)
+        XCTAssertEqual(try Data(contentsOf: j.folder.appendingPathComponent(try XCTUnwrap(record.backupFile))),
+                       FakeIPod.appleDoubleBytes(size: 777))
+    }
+
     func testDeleteOfMissingFileIsAlreadyGone() {
         XCTAssertEqual(executor().apply([.delete(relativePath: "\(album)/._gone.m4a", reason: .appleDouble),
                                          .delete(relativePath: "\(album)/gone.m4a", reason: .userReplace)],

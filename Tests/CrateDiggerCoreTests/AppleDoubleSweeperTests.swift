@@ -24,10 +24,13 @@ final class AppleDoubleSweeperTests: XCTestCase {
     // MARK: Helpers
 
     private func plan(scope: [String]? = nil) -> AppleDoubleSweepPlan {
-        AppleDoubleSweeper().plan(volumeRoot: iPod.root,
+        sweeper.plan(volumeRoot: iPod.root,
                                   scope: scope?.map { iPod.root.appendingPathComponent($0, isDirectory: true) },
                                   mediaExtensions: AppleDoubleSweeper.defaultMediaExtensions)
     }
+
+    /// The FakeIPod is a temp folder on APFS; the sweep is told it is FAT.
+    private let sweeper = AppleDoubleSweeper(fileSystemType: { _ in "msdos" })
 
     private func addTwin(_ relativePath: String, _ data: Data = FakeIPod.appleDoubleBytes()) throws {
         try iPod.addFile(relativePath, data)
@@ -201,7 +204,31 @@ final class AppleDoubleSweeperTests: XCTestCase {
         try addTwin("Music/.../._x.mp3")
         XCTAssertThrowsError(try DeviceWritePolicy(musicSubpath: "Music")
             .checkDelete("Music/.../._x.mp3", reason: .appleDouble))
-        XCTAssertEqual(plan().candidates, [])
+        let result = plan()
+        XCTAssertEqual(result.candidates, [])
+        XCTAssertEqual(result.leftAlone, ["not allowed here": 1])
+    }
+
+    // MARK: Which volumes
+
+    func testRefusesToPlanOffFATAndExFAT() throws {
+        try addTwin("Music/A/._x.mp3")
+        // The real file system of the temp folder: APFS.
+        let real = AppleDoubleSweeper().plan(volumeRoot: iPod.root, scope: nil)
+        XCTAssertEqual(AppleDoubleSweeper.systemFileSystemType(iPod.root), "apfs")
+        XCTAssertEqual(real.candidates, [])
+        XCTAssertEqual(real.leftAlone, [:])
+        XCTAssertNotNil(real.refusal)
+        for type in ["hfs", "apfs", "smbfs", nil] as [String?] {
+            let result = AppleDoubleSweeper(fileSystemType: { _ in type }).plan(volumeRoot: iPod.root, scope: nil)
+            XCTAssertEqual(result.candidates, [], String(describing: type))
+            XCTAssertNotNil(result.refusal, String(describing: type))
+        }
+        for type in ["msdos", "exfat"] {
+            let result = AppleDoubleSweeper(fileSystemType: { _ in type }).plan(volumeRoot: iPod.root, scope: nil)
+            XCTAssertEqual(result.candidates, ["Music/A/._x.mp3"], type)
+            XCTAssertNil(result.refusal, type)
+        }
     }
 
     func testUnreadableTwinIsLeftAlone() throws {
@@ -247,7 +274,7 @@ final class AppleDoubleSweeperTests: XCTestCase {
         try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: outside) }
         try FakeIPod.appleDoubleBytes().write(to: outside.appendingPathComponent("._x.mp3"))
-        let result = AppleDoubleSweeper().plan(volumeRoot: iPod.root, scope: [outside],
+        let result = sweeper.plan(volumeRoot: iPod.root, scope: [outside],
                                                mediaExtensions: AppleDoubleSweeper.defaultMediaExtensions)
         XCTAssertEqual(result.candidates, [])
     }
@@ -291,7 +318,7 @@ final class AppleDoubleSweeperTests: XCTestCase {
     }
 
     func testMissingVolumeGivesEmptyPlan() {
-        let result = AppleDoubleSweeper().plan(volumeRoot: iPod.root.appendingPathComponent("gone"), scope: nil,
+        let result = sweeper.plan(volumeRoot: iPod.root.appendingPathComponent("gone"), scope: nil,
                                                mediaExtensions: AppleDoubleSweeper.defaultMediaExtensions)
         XCTAssertEqual(result.candidates, [])
         XCTAssertEqual(result.leftAlone, [:])

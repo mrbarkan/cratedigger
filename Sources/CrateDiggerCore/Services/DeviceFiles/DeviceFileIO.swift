@@ -21,9 +21,10 @@ public struct DeviceFileIOError: Error, Equatable, LocalizedError {
 }
 
 /// The only code in the repo that mutates a device path (spec invariant I1;
-/// `DeviceWriteDoorLintTests` enforces it). It does no policy checking:
-/// callers run `DeviceWritePolicy` first, and PodBox writers go through
-/// `DeviceFileExecutor`, which does both and keeps the journal.
+/// `DeviceWriteDoorLintTests` enforces it). It does no policy checking, so
+/// its mutators are internal to Core and the lint allows them to be called
+/// from `DeviceFileExecutor` only, which checks the volume, the policy and
+/// the journal first.
 ///
 /// Every write lands in `<name>.cdtmp` beside its target, is flushed with
 /// `fsync` and renamed over the target (I8), so the player never sees half a
@@ -44,8 +45,8 @@ public enum DeviceFileIO {
     /// On a failure before the rename the temp is removed and the error
     /// rethrown. Once the rename has landed the write has succeeded: failing
     /// to restore the date or strip an attribute is logged, never thrown.
-    public static func copyDataOnly(from source: URL, to destination: URL,
-                                    fileManager: FileManager = .default) throws {
+    static func copyDataOnly(from source: URL, to destination: URL,
+                             fileManager: FileManager = .default) throws {
         let temp = tempURL(for: destination)
         do {
             guard copyfile(source.path, temp.path, nil, copyfile_flags_t(COPYFILE_DATA)) == 0 else {
@@ -70,8 +71,8 @@ public enum DeviceFileIO {
 
     /// Same-folder temp, fsync, rename, strip. Never `Data.write(.atomic)`,
     /// which stages through a folder of its own on some volumes.
-    public static func writeAtomically(_ data: Data, to destination: URL,
-                                       fileManager: FileManager = .default) throws {
+    static func writeAtomically(_ data: Data, to destination: URL,
+                                fileManager: FileManager = .default) throws {
         let temp = tempURL(for: destination)
         do {
             try writeAndSync(data, to: temp) // closed before the rename
@@ -85,7 +86,7 @@ public enum DeviceFileIO {
 
     /// Removes every extended attribute, without following a symlink. Best
     /// effort: an attribute that will not go is logged.
-    public static func stripExtendedAttributes(at url: URL) {
+    static func stripExtendedAttributes(at url: URL) {
         let path = url.path
         let size = listxattr(path, nil, 0, XATTR_NOFOLLOW)
         guard size > 0 else { return }
@@ -101,13 +102,13 @@ public enum DeviceFileIO {
     }
 
     /// `unlink`; a missing file is not an error.
-    public static func remove(_ url: URL) throws {
+    static func remove(_ url: URL) throws {
         guard unlink(url.path) != 0 else { return }
         guard errno != ENOENT else { return }
         throw posixError("Delete", url)
     }
 
-    public static func createDirectory(_ url: URL, fileManager: FileManager = .default) throws {
+    static func createDirectory(_ url: URL, fileManager: FileManager = .default) throws {
         try fileManager.createDirectory(at: url, withIntermediateDirectories: true)
     }
 }
@@ -133,25 +134,104 @@ public extension DeviceFileIO {
     /// `lstat` says a regular file, 26 bytes to 128 KB, and the first 8 bytes
     /// are the header. The name is the caller's business.
     static func isProvenAppleDouble(_ url: URL) -> Bool {
-        var info = stat()
-        guard lstat(url.path, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG,
-              twinSizeRange.contains(Int64(info.st_size))
-        else { return false }
-        // Never blocks on a FIFO or follows a symlink swapped in since the lstat.
-        let fd = open(url.path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK)
-        guard fd >= 0 else { return false }
-        defer { close(fd) }
-        var opened = stat()
-        guard fstat(fd, &opened) == 0, (opened.st_mode & S_IFMT) == S_IFREG,
-              twinSizeRange.contains(Int64(opened.st_size))
-        else { return false }
-        var header = [UInt8](repeating: 0, count: appleDoubleHeader.count)
-        guard Darwin.read(fd, &header, header.count) == header.count else { return false }
-        return header == appleDoubleHeader
+        proveAppleDouble(url) != nil
     }
 
     static func tempURL(for destination: URL) -> URL {
         destination.deletingLastPathComponent().appendingPathComponent(destination.lastPathComponent + tempSuffix)
+    }
+}
+
+/// A `._` file that passed the AppleDouble proof, with everything read
+/// through the one descriptor that proved it: its bytes (at most 128 KB, so
+/// the backup is written from memory, not copied over USB again) and which
+/// file it was, so the deletion can refuse anything else.
+struct AppleDoubleProof: Equatable {
+    let bytes: Data
+    let device: Int64
+    let inode: UInt64
+    let size: Int64
+}
+
+/// What `DeviceFileIO.removeProvenAppleDouble` did.
+enum AppleDoubleRemoval: Equatable {
+    case removed
+    /// Something else is at the path now (other bytes, another file, not a
+    /// regular file): nothing was deleted.
+    case changed
+    /// Nothing is at the path any more.
+    case gone
+}
+
+extension DeviceFileIO {
+    /// The proof, read from one descriptor: `lstat` a regular file of 26
+    /// bytes to 128 KB; opened without following a symlink or blocking on a
+    /// FIFO; `fstat` of that descriptor the same file, still regular and in
+    /// range; all its bytes read, the first 8 the AppleDouble header.
+    static func proveAppleDouble(_ url: URL) -> AppleDoubleProof? {
+        var info = stat()
+        guard lstat(url.path, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG,
+              twinSizeRange.contains(Int64(info.st_size))
+        else { return nil }
+        let fd = open(url.path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK)
+        guard fd >= 0 else { return nil }
+        defer { close(fd) }
+        var opened = stat()
+        guard fstat(fd, &opened) == 0, (opened.st_mode & S_IFMT) == S_IFREG,
+              opened.st_dev == info.st_dev, opened.st_ino == info.st_ino,
+              twinSizeRange.contains(Int64(opened.st_size)),
+              let bytes = readAll(fd, size: Int(opened.st_size)),
+              isAppleDoubleHeader(bytes)
+        else { return nil }
+        return AppleDoubleProof(bytes: bytes, device: Int64(opened.st_dev), inode: UInt64(opened.st_ino),
+                                size: Int64(opened.st_size))
+    }
+
+    /// Deletes the `._` file at `url` only if it is still exactly what
+    /// `proof` read. Its bytes are read again and must match, then, as the
+    /// last thing before `unlink`, `lstat` must name the same device, inode
+    /// and size. Anything else is `.changed` and nothing is touched. (Inode
+    /// alone is not enough on FAT, where a file written into a freed slot can
+    /// be given the old number; the bytes settle that.)
+    static func removeProvenAppleDouble(_ url: URL, proof: AppleDoubleProof) throws -> AppleDoubleRemoval {
+        let fd = open(url.path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK)
+        guard fd >= 0 else { return errno == ENOENT ? .gone : .changed }
+        var opened = stat()
+        let sameBytes = fstat(fd, &opened) == 0 && matches(opened, proof)
+            && readAll(fd, size: Int(proof.size)) == proof.bytes
+        close(fd)
+        guard sameBytes else { return .changed }
+
+        var now = stat()
+        guard lstat(url.path, &now) == 0 else { return errno == ENOENT ? .gone : .changed }
+        guard matches(now, proof) else { return .changed }
+        guard unlink(url.path) == 0 else {
+            if errno == ENOENT { return .gone }
+            throw posixError("Delete", url)
+        }
+        return .removed
+    }
+
+    private static func matches(_ info: stat, _ proof: AppleDoubleProof) -> Bool {
+        (info.st_mode & S_IFMT) == S_IFREG && Int64(info.st_dev) == proof.device
+            && UInt64(info.st_ino) == proof.inode && Int64(info.st_size) == proof.size
+    }
+
+    /// Exactly `size` bytes from `fd`, and nothing after them; nil otherwise.
+    private static func readAll(_ fd: Int32, size: Int) -> Data? {
+        var buffer = [UInt8](repeating: 0, count: size + 1)
+        var total = 0
+        while total < buffer.count {
+            let got = buffer.withUnsafeMutableBytes { Darwin.read(fd, $0.baseAddress! + total, $0.count - total) }
+            if got < 0 {
+                if errno == EINTR { continue }
+                return nil
+            }
+            if got == 0 { break }
+            total += got
+        }
+        guard total == size else { return nil } // shorter, or it grew since the stat
+        return Data(buffer.prefix(size))
     }
 }
 

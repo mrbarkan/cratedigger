@@ -9,11 +9,15 @@ public struct AppleDoubleSweepPlan: Sendable {
     public let leftAlone: [String: Int]
     /// Candidates by size, rounded up to a power of two -> count.
     public let sizeHistogram: [Int: Int]
+    /// Why nothing was planned at all, when the volume itself was refused
+    /// (not a FAT or exFAT file system). nil for an ordinary plan.
+    public let refusal: String?
 
-    public init(candidates: [String], leftAlone: [String: Int], sizeHistogram: [Int: Int]) {
+    public init(candidates: [String], leftAlone: [String: Int], sizeHistogram: [Int: Int], refusal: String? = nil) {
         self.candidates = candidates
         self.leftAlone = leftAlone
         self.sizeHistogram = sizeHistogram
+        self.refusal = refusal
     }
 
     /// One AppleDouble delete per candidate, in path order. The executor
@@ -33,7 +37,12 @@ public struct AppleDoubleSweepPlan: Sendable {
 /// - 26 bytes to 128 KB;
 /// - bytes 0-7 are `00 05 16 07 00 02 00 00` (AppleDouble magic and version);
 /// - the name after `._` has a media extension;
-/// - no path component is one of the player's trees.
+/// - no path component is one of the player's trees, and the write
+///   policy's AppleDouble delete rule passes.
+///
+/// Only on FAT and exFAT, where macOS stores attributes in `._` files. On
+/// APFS or HFS+ a `._` file is something a user put there, so the sweep
+/// refuses to plan.
 ///
 /// No audio, image or playlist format starts with those eight bytes, so an
 /// orphan twin (its file already gone) still qualifies: the bytes are the proof.
@@ -52,7 +61,13 @@ public struct AppleDoubleSweeper {
         case notAppleDouble = "not AppleDouble"
         case tooLarge = "too large"
         case notMedia = "not media"
+        /// A proven twin of a media file at a path the write policy will not
+        /// delete (a folder FAT stores as nothing, a name FAT would change).
+        case notAllowed = "not allowed here"
     }
+
+    /// File systems that keep attributes in `._` files (`statfs` type names).
+    public static let sweptFileSystems: Set<String> = ["msdos", "exfat"]
 
     private static let deniedKeys = Set(DeviceWritePolicy.deniedTrees.map { DeviceWritePolicy.key(forRelativePath: $0) })
     private static let twinPrefix = "._"
@@ -60,9 +75,23 @@ public struct AppleDoubleSweeper {
     private static let policy = DeviceWritePolicy(musicSubpath: "")
 
     private let fileManager: FileManager
+    private let fileSystemType: (URL) -> String?
 
     public init(fileManager: FileManager = .default) {
+        self.init(fileManager: fileManager, fileSystemType: AppleDoubleSweeper.systemFileSystemType)
+    }
+
+    /// Tests: a temp folder on APFS stands in for a FAT device.
+    init(fileManager: FileManager = .default, fileSystemType: @escaping (URL) -> String?) {
         self.fileManager = fileManager
+        self.fileSystemType = fileSystemType
+    }
+
+    /// `statfs`'s type name for the volume holding `url` ("msdos", "exfat", "apfs").
+    public static func systemFileSystemType(_ url: URL) -> String? {
+        var info = statfs()
+        guard statfs(url.path, &info) == 0 else { return nil }
+        return withUnsafeBytes(of: info.f_fstypename) { String(cString: $0.bindMemory(to: CChar.self).baseAddress!) }
     }
 
     /// 8 bytes: `00 05 16 07 00 02 00 00`.
@@ -80,6 +109,11 @@ public struct AppleDoubleSweeper {
         var isFolder: ObjCBool = false
         guard fileManager.fileExists(atPath: volumeRoot.path, isDirectory: &isFolder), isFolder.boolValue else {
             return AppleDoubleSweepPlan(candidates: [], leftAlone: [:], sizeHistogram: [:])
+        }
+        let type = fileSystemType(volumeRoot)
+        guard let type, Self.sweptFileSystems.contains(type) else {
+            return AppleDoubleSweepPlan(candidates: [], leftAlone: [:], sizeHistogram: [:],
+                                        refusal: "\(type ?? "an unknown file system") keeps no macOS metadata files to clean up")
         }
         if let scope {
             var seen = Set<String>()
@@ -170,8 +204,10 @@ public struct AppleDoubleSweeper {
                 return keep(.notMedia)
             }
             // Never list what the executor's policy would refuse (a path through a
-            // folder FAT stores as nothing, such as "..."); it is not ours to count either.
-            guard (try? AppleDoubleSweeper.policy.checkDelete(relative, reason: .appleDouble)) != nil else { return }
+            // folder FAT stores as nothing, such as "..."); counted, so the totals reconcile.
+            guard (try? AppleDoubleSweeper.policy.checkDelete(relative, reason: .appleDouble)) != nil else {
+                return keep(.notAllowed)
+            }
             candidates.append(relative)
             sizeHistogram[AppleDoubleSweeper.roundedUpToPowerOfTwo(size), default: 0] += 1
         }

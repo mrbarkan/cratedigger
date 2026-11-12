@@ -328,4 +328,34 @@ final class FATSandboxTests: XCTestCase {
         finding("S7", ["executor create, unchanged, replace, foreign, sweep and delete on FAT: as on APFS",
                        "volume UUID reported for the image: \(uuid ?? "none")"])
     }
+
+    /// I4 on real FAT, where a file written into a freed directory slot can
+    /// come back with the old inode number: a twin swapped between its backup
+    /// and its removal must survive, and the inode seen is recorded.
+    func testTwinSwappedAfterBackupIsNotDeletedOnFAT() throws {
+        let twin = "Music/A/._01.m4a"
+        let twinURL = run.appendingPathComponent(twin)
+        try FileManager.default.createDirectory(at: twinURL.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        try FakeIPod.appleDoubleBytes().write(to: twinURL)
+        var before = stat()
+        XCTAssertEqual(lstat(twinURL.path, &before), 0)
+        var replacement = FakeIPod.appleDoubleBytes()
+        replacement[200] = 0x55 // same size, same header, other bytes
+        var after = stat()
+        let executor = DeviceFileExecutor(
+            volumeRoot: run, expectedVolumeUUID: DeviceFileExecutor.systemVolumeUUID(run),
+            policy: DeviceWritePolicy(musicSubpath: "Music"),
+            journal: DeviceWriteJournal(profileID: UUID(), directory: mac.appendingPathComponent("journal")),
+            rootMustBeMountPoint: false,
+            beforeAppleDoubleRemoval: { url in
+                try? FileManager.default.removeItem(at: url)
+                try? replacement.write(to: url)
+                _ = lstat(url.path, &after)
+            })
+        XCTAssertEqual(executor.apply([.delete(relativePath: twin, reason: .appleDouble)], sessionID: UUID()),
+                       [.refusedNotAppleDouble])
+        XCTAssertEqual(try Data(contentsOf: twinURL), replacement)
+        finding("S8", ["a twin deleted and rewritten between backup and removal: inode \(before.st_ino) before, \(after.st_ino) after (\(before.st_ino == after.st_ino ? "REUSED" : "new")); refused, nothing deleted"])
+    }
 }
