@@ -476,6 +476,10 @@ extension LibraryViewModel {
                     isCancelled: { Task.isCancelled },
                     onProgress: { completed, total in
                         Task { @MainActor in
+                            // A hop landing after the job ended must not
+                            // mark it running again: the device would read
+                            // as busy until relaunch.
+                            guard self.conversionProgress.isRunning else { return }
                             self.conversionProgress = ConversionProgressSnapshot(
                                 jobsCompleted: completed,
                                 jobsTotal: total,

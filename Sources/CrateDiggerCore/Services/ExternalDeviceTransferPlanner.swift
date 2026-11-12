@@ -180,6 +180,30 @@ public struct ExternalDeviceTransferPlanner {
         return result
     }
 
+    /// Device-safe destinations for jobs planned at their natural names (a
+    /// Record Divider's slices): each made safe first (`deviceSafeURL`), and
+    /// only then stepped past ` (n)` where it lands on a path in `reserved`
+    /// or on an earlier one in the list, compared as FAT does (case and
+    /// Unicode form folded). Sanitising after avoiding collisions would let
+    /// two names that become one ("What?" and "What") collide again.
+    public static func deviceSafeUnique(_ urls: [URL], under root: URL, reserved: Set<String>) -> [URL] {
+        func key(_ url: URL) -> String {
+            url.standardizedFileURL.resolvingSymlinksInPath().path.precomposedStringWithCanonicalMapping.lowercased()
+        }
+        var taken = Set(reserved.map { key(URL(fileURLWithPath: $0)) })
+        return urls.map { url in
+            let safe = deviceSafeURL(url, under: root)
+            var candidate = safe
+            var attempt = 1
+            while taken.contains(key(candidate)) {
+                attempt += 1
+                candidate = suffixed(safe, attempt: attempt)
+            }
+            taken.insert(key(candidate))
+            return candidate
+        }
+    }
+
     /// `url` with " (n)" before its extension.
     static func suffixed(_ url: URL, attempt: Int) -> URL {
         let ext = url.pathExtension

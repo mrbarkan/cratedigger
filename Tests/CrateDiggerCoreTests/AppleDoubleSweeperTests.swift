@@ -34,17 +34,43 @@ final class AppleDoubleSweeperTests: XCTestCase {
                        "never into the player's trees")
     }
 
-    func testCleanupFolderIsTheAlbumsOwnNeverAWiderAncestor() {
+    func testCleanupFoldersAreTheTracksOwnNeverAWiderAncestor() {
         func u(_ p: String) -> URL { URL(fileURLWithPath: p, isDirectory: true) }
-        XCTAssertEqual(AppleDoubleSweeper.cleanupFolder(forTrackFolders: [u("/V/Music/A/B"), u("/V/Music/A/B")])?.path,
-                       "/V/Music/A/B")
-        XCTAssertEqual(AppleDoubleSweeper.cleanupFolder(forTrackFolders: [u("/V/Music/A/B/CD1"), u("/V/Music/A/B/CD2")])?.path,
-                       "/V/Music/A/B", "disc folders directly in the album folder")
-        XCTAssertEqual(AppleDoubleSweeper.cleanupFolder(forTrackFolders: [u("/V/Music/A/B"), u("/V/Music/A/B/CD2")])?.path,
-                       "/V/Music/A/B")
-        XCTAssertNil(AppleDoubleSweeper.cleanupFolder(forTrackFolders: [u("/V/Music/A/B"), u("/V/Music/C/D")]),
-                     "scattered: never widened to Music")
-        XCTAssertNil(AppleDoubleSweeper.cleanupFolder(forTrackFolders: []))
+        func paths(_ folders: [URL]) -> [String] { AppleDoubleSweeper.cleanupFolders(forTrackFolders: folders).map(\.path) }
+        XCTAssertEqual(paths([u("/V/Music/A/B"), u("/V/Music/A/B")]), ["/V/Music/A/B"])
+        XCTAssertEqual(paths([u("/V/Music/A/B/CD1"), u("/V/Music/A/B/CD2")]), ["/V/Music/A/B"],
+                       "disc folders stand for their album folder")
+        XCTAssertEqual(paths([u("/V/Music/A/B"), u("/V/Music/A/B/CD2")]), ["/V/Music/A/B"])
+        XCTAssertEqual(paths([]), [])
+    }
+
+    /// Two sibling album folders are two folders, never their artist folder.
+    func testSiblingAlbumsAreListedEachNotWidenedToTheirParent() {
+        func u(_ p: String) -> URL { URL(fileURLWithPath: p, isDirectory: true) }
+        XCTAssertEqual(AppleDoubleSweeper.cleanupFolders(forTrackFolders: [u("/V/Music/A/C"), u("/V/Music/A/B")]).map(\.path),
+                       ["/V/Music/A/B", "/V/Music/A/C"])
+        XCTAssertEqual(AppleDoubleSweeper.cleanupFolders(forTrackFolders: [u("/V/Music/A/B"), u("/V/Music/C/D")]).map(\.path),
+                       ["/V/Music/A/B", "/V/Music/C/D"], "scattered: each folder, never Music")
+        let plan = AppleDoubleSweepPlan(candidates: ["a", "b"], leftAlone: [:], sizeHistogram: [:])
+        XCTAssertEqual(DeviceCleanupSummary.confirmation(plan, deviceName: "IPOD",
+                                                         folders: ["Music/A/B", "Music/A/C"]).message,
+                       "2 Mac metadata files found. They are not music. A copy is kept on this Mac. In: Music/A/B, Music/A/C.")
+        XCTAssertFalse(DeviceCleanupSummary.confirmation(plan, deviceName: "IPOD", folders: ["Music/A/B"]).message
+            .contains("In:"), "one folder is not listed")
+    }
+
+    /// A flat layout keeps its tracks in the music folder itself: the scope is
+    /// that folder alone (and its disc folders), never every album below it.
+    func testFlatLayoutCoversTheMusicFolderAloneNotItsTree() throws {
+        let music = iPod.root.appendingPathComponent("Music", isDirectory: true)
+        for folder in ["Music/Some Artist/Some Album", "Music/CD1"] {
+            try FileManager.default.createDirectory(at: iPod.root.appendingPathComponent(folder),
+                                                    withIntermediateDirectories: true)
+        }
+        let folders = AppleDoubleSweeper.cleanupFolders(forTrackFolders: [music, music])
+        XCTAssertEqual(folders.map(\.lastPathComponent), ["Music"])
+        XCTAssertEqual(AppleDoubleSweeper.withDiscFolders(folders).map(\.lastPathComponent), ["Music", "CD1"],
+                       "its disc folder, and nothing deeper")
     }
 
     // MARK: Helpers

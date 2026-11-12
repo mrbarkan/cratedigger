@@ -472,20 +472,23 @@ extension LibraryViewModel {
         ) else { return }
 
         // Record Divider slices, at their natural paths beside the plan's,
-        // named as the device can hold them (as the review names its own).
-        let sliceJobs = planConversionJobs(
+        // named as the device can hold them (as the review names its own):
+        // made safe first, then kept apart from the plan's copies and each
+        // other, as the planner does.
+        let naturalSlices = planConversionJobs(
             tracks: divided,
             preset: preset,
             destinationRoot: musicFolder,
             folderMode: settings.folderStructureMode,
             templateConfig: settings.templateConfig,
-            reviewedAlbumFolders: reviewedFolders,
-            reservedDestinationPaths: Set(reviewed.copies.map {
-                $0.destinationURL.standardizedFileURL.resolvingSymlinksInPath().path
-            })
-        ).map { job in
-            ConversionJob(sourceURL: job.sourceURL,
-                          destinationURL: ExternalDeviceTransferPlanner.deviceSafeURL(job.destinationURL, under: musicFolder),
+            reviewedAlbumFolders: reviewedFolders
+        )
+        let safeDestinations = ExternalDeviceTransferPlanner.deviceSafeUnique(
+            naturalSlices.map(\.destinationURL), under: musicFolder,
+            reserved: Set(reviewed.copies.map { $0.destinationURL.standardizedFileURL.resolvingSymlinksInPath().path })
+        )
+        let sliceJobs = zip(naturalSlices, safeDestinations).map { job, destination in
+            ConversionJob(sourceURL: job.sourceURL, destinationURL: destination,
                           metadata: job.metadata, startSeconds: job.startSeconds, endSeconds: job.endSeconds)
         }
         let slices = await Task.detached(priority: .userInitiated) {

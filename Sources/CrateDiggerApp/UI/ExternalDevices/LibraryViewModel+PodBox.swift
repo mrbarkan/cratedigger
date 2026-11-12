@@ -216,8 +216,9 @@ extension LibraryViewModel {
     /// executor (a transfer on DEVICES), report, offer Eject. Only ever
     /// started by the user: nothing here runs at mount. `scope` nil is the
     /// whole volume; otherwise exactly these folders, each listed on its own.
+    /// `scopeNames` are the folders as the confirmation lists them.
     @MainActor
-    func cleanUpMacFiles(device: MountedDevice, scope: [URL]?) {
+    func cleanUpMacFiles(device: MountedDevice, scope: [URL]?, scopeNames: [String] = []) {
         guard let profile = deviceProfile(for: device) else {
             appAlert = .error(title: "Nothing was cleaned up",
                               message: "\(device.name) has no device profile. Add it in Preferences > Devices first.")
@@ -249,28 +250,31 @@ extension LibraryViewModel {
                                                                                   leftAlone: plan.leftAlone))
                 return
             }
-            let text = DeviceCleanupSummary.confirmation(plan, deviceName: device.name)
+            let text = DeviceCleanupSummary.confirmation(plan, deviceName: device.name, folders: scopeNames)
             appAlert = .actionable(title: text.title, message: text.message, actionTitle: "Remove") { [weak self] in
                 self?.removeMacFiles(plan, device: device, profile: profile)
             }
         }
     }
 
-    /// The folder and every folder below it, for Clean Up Mac Files in This Folder.
+    /// Clean Up Mac Files in This Folder: exactly the folders the selected
+    /// tracks are in and the disc folders directly in them
+    /// (`AppleDoubleSweeper.cleanupFolders`), never an ancestor.
     @MainActor
-    func cleanUpMacFiles(device: MountedDevice, inFolder folder: URL) {
+    func cleanUpMacFiles(device: MountedDevice, inFolders folders: [URL]) {
+        let names = folders.map { DeviceWritePolicy.relativePath(of: $0, under: device.volumeURL) ?? $0.path }
         Task { @MainActor in
-            let folders = await Task.detached(priority: .userInitiated) {
-                AppleDoubleSweeper.folders(under: folder)
+            let scope = await Task.detached(priority: .userInitiated) {
+                AppleDoubleSweeper.withDiscFolders(folders)
             }.value
-            cleanUpMacFiles(device: device, scope: folders)
+            cleanUpMacFiles(device: device, scope: scope, scopeNames: names)
         }
     }
 
-    /// The album's own folder on a browsed device (`AppleDoubleSweeper.cleanupFolder`),
-    /// or nil when its tracks are scattered: then the item is not offered.
-    func deviceFolder(of album: Album) -> URL? {
-        AppleDoubleSweeper.cleanupFolder(forTrackFolders: album.tracks.map { $0.track.fileURL.deletingLastPathComponent() })
+    /// The folders an album's tracks are in on a browsed device, a disc
+    /// folder standing for its album folder. Empty for an album with no tracks.
+    func deviceFolders(of album: Album) -> [URL] {
+        AppleDoubleSweeper.cleanupFolders(forTrackFolders: album.tracks.map { $0.track.fileURL.deletingLastPathComponent() })
     }
 
     @MainActor

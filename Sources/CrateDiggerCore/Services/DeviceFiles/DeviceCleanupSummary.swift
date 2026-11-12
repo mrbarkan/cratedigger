@@ -14,11 +14,16 @@ public enum DeviceCleanupSummary {
     }
 
     /// The confirmation before anything is removed.
-    public static func confirmation(_ plan: AppleDoubleSweepPlan, deviceName: String) -> (title: String, message: String) {
+    /// `folders`: the folders a scoped cleanup covers, as the owner reads
+    /// them; listed when there is more than one, so a selection spanning
+    /// albums says exactly where it will look.
+    public static func confirmation(_ plan: AppleDoubleSweepPlan, deviceName: String,
+                                    folders: [String] = []) -> (title: String, message: String) {
         let count = plan.candidates.count
         var message = count == 1
             ? "1 Mac metadata file found. It is not music. A copy is kept on this Mac."
             : "\(number(count)) Mac metadata files found. They are not music. A copy is kept on this Mac."
+        if folders.count > 1 { message += " In: " + folders.joined(separator: ", ") + "." }
         if let left = leftAloneLine(plan.leftAlone) { message += " " + left }
         return ("Remove Mac files from \(deviceName)?", message)
     }

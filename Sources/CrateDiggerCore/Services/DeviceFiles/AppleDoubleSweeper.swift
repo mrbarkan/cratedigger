@@ -147,18 +147,41 @@ public struct AppleDoubleSweeper {
         return result
     }
 
-    /// The one folder "Clean Up Mac Files in This Folder" may cover for an
-    /// album whose tracks sit in `trackFolders`: their folder when they share
-    /// one, or the folder holding them when each is it or a disc folder
-    /// directly in it (`CD1`, `CD2`). nil for tracks scattered more widely,
-    /// so the cleanup is never widened to some common ancestor.
-    public static func cleanupFolder(forTrackFolders trackFolders: [URL]) -> URL? {
-        let folders = trackFolders.map { $0.standardizedFileURL.pathComponents }
-        guard let shallowest = folders.min(by: { $0.count < $1.count }) else { return nil }
-        for candidate in [shallowest, Array(shallowest.dropLast())] where candidate.count > 1 {
-            if folders.allSatisfy({ $0 == candidate || Array($0.dropLast()) == candidate }) { return url(candidate) }
+    /// The folders "Clean Up Mac Files in This Folder" covers for tracks in
+    /// `trackFolders`: each folder a track is in, a disc folder (`CD1`)
+    /// standing for the album folder holding it. Distinct and sorted. Never
+    /// an ancestor beyond that: two sibling album folders are two folders,
+    /// not their artist folder, and tracks lying loose in the music folder
+    /// give the music folder alone, never the tree below it. Pair with
+    /// `withDiscFolders` for the scope.
+    public static func cleanupFolders(forTrackFolders trackFolders: [URL]) -> [URL] {
+        var seen = Set<String>()
+        return trackFolders.map { folder -> URL in
+            let standard = folder.standardizedFileURL
+            return PodBoxArtLookup.isDiscFolder(standard.lastPathComponent) && standard.pathComponents.count > 2
+                ? standard.deletingLastPathComponent() : standard
         }
-        return nil
+        .filter { seen.insert($0.path).inserted }
+        .sorted { $0.path < $1.path }
+        .map { URL(fileURLWithPath: $0.path, isDirectory: true) }
+    }
+
+    /// Each folder, then the disc folders (`CD1`, `Disc 2`) directly in it.
+    /// A scope is listed non-recursively, so nothing deeper is touched.
+    /// Read with `readdir`; never follows a symlink.
+    public static func withDiscFolders(_ folders: [URL]) -> [URL] {
+        var result: [URL] = []
+        var seen = Set<String>()
+        func add(_ url: URL) { if seen.insert(url.standardizedFileURL.path).inserted { result.append(url) } }
+        for folder in folders {
+            add(folder)
+            for name in (entryNames(inFolder: folder.path) ?? []).sorted() where PodBoxArtLookup.isDiscFolder(name) {
+                let child = folder.appendingPathComponent(name, isDirectory: true)
+                var info = stat()
+                if lstat(child.path, &info) == 0, (info.st_mode & S_IFMT) == S_IFDIR { add(child) }
+            }
+        }
+        return result
     }
 
     private static func url(_ components: [String]) -> URL {

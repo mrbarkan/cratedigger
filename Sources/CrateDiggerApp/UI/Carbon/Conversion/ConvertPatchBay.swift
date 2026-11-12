@@ -782,7 +782,11 @@ struct ConvertPatchBay: View {
         }
         guard let device = model.pendingDeviceConversion else { return nil }
         let name = device.deviceName.uppercased()
-        guard let free = device.destinationRoot.volumeFreeBytes else {
+        // A fresh device has no music folder yet: ask the folder nearest it
+        // on the way down, but only while a mounted device holds it, or
+        // the Mac's own disk would read as the device.
+        guard MountedDevice.containing(device.destinationRoot, in: model.mountedDevices) != nil,
+              let free = device.destinationRoot.volumeFreeBytesNearby else {
             return "→ \(name) · NOT CONNECTED"
         }
         return "→ \(name) · \(formatBytes(free)) FREE"

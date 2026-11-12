@@ -364,8 +364,12 @@ extension LibraryViewModel {
                 )
                 return
             }
-            // The scan and the sheet can take a while; another job may have
-            // started meanwhile.
+            let musicFolder = ExternalDeviceTransferPlanner().destinationRoot(for: profile, mountedAt: mountedRoot)
+            guard let door = await makeTransferDoor(for: profile, device: device, musicFolder: musicFolder) else { return }
+            // The scan, the sheet and the door can take a while; another job
+            // may have started meanwhile. Checked after the last await and
+            // set with no suspension between, so two writers can never both
+            // pass it.
             guard !isDeviceBusy else {
                 appAlert = .error(
                     title: "Another transfer is running",
@@ -373,8 +377,6 @@ extension LibraryViewModel {
                 )
                 return
             }
-            let musicFolder = ExternalDeviceTransferPlanner().destinationRoot(for: profile, mountedAt: mountedRoot)
-            guard let door = await makeTransferDoor(for: profile, device: device, musicFolder: musicFolder) else { return }
             // Busy from here until the catalog is patched: the copies'
             // progress ends before the deletions, covers and patch do.
             isDeviceTransferRunning = true

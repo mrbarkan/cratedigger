@@ -203,14 +203,16 @@ enum BrowserContextMenu {
         removalItems(forAlbum: album, model: model)
     }
 
-    /// On a browsed device: clean the Mac's `._` files out of this album's
-    /// folder and the folders below it. Only on FAT and exFAT.
+    /// On a browsed device: clean the Mac's `._` files out of the folders
+    /// this album's tracks are in (and their disc folders). Only on FAT and exFAT.
     @ViewBuilder
     private static func deviceCleanUpButton(for album: Album, model: LibraryViewModel) -> some View {
         if let (_, device) = model.browsedMountedDevice,
            model.capabilities(for: device).contains(.appleDoubleSweep),
-           let folder = model.deviceFolder(of: album) {
-            Button("Clean Up Mac Files in This Folder…") { model.cleanUpMacFiles(device: device, inFolder: folder) }
+           case let folders = model.deviceFolders(of: album), !folders.isEmpty {
+            Button(folders.count == 1 ? "Clean Up Mac Files in This Folder…" : "Clean Up Mac Files in These Folders…") {
+                model.cleanUpMacFiles(device: device, inFolders: folders)
+            }
                 .disabled(model.isDeviceBusy)
         }
     }

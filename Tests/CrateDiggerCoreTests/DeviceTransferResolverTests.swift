@@ -154,6 +154,35 @@ final class DeviceTransferResolverTests: XCTestCase {
         XCTAssertEqual(second.skippedPresent, 2)
     }
 
+    /// An album an older version filed under "R.E.M." (a folder the policy
+    /// refuses) gets its gaps planned into that very folder, never into a
+    /// FAT-safe sibling "R.E.M", which would split the album in two. The door
+    /// then fails the whole album before anything is written, with the
+    /// rename message a Replace gets.
+    func testGapsIntoARefusedDeviceFolderStayThereAndAreRefused() throws {
+        let profile = copyProfile()
+        func rem(_ number: Int, path: String) -> LoadedTrack {
+            track(album: "Document", artist: "R.E.M.", number: number, title: "Track \(number)", path: path, year: 1987)
+        }
+        let onDevice = try [1, 2].map { number in
+            rem(number, path: try makeFile("Music/R.E.M./Document/0\(number) Track \(number).flac").path)
+        }
+        let sending = [1, 2, 3].map { rem($0, path: scratch.appendingPathComponent("Src/REM/0\($0) Track \($0).flac").path) }
+
+        let review = resolver.review(sending: sending, catalog: onDevice, profile: profile, mountedAt: device, leftAlone: [])
+        XCTAssertEqual(review.albums.map(\.status), [.gaps])
+        let plan = try resolver.resolve(review, decisions: [:], profile: profile, mountedAt: device)
+        XCTAssertEqual(relative(plan.copies), ["Music/R.E.M./Document/03 Track 3.flac"])
+
+        let journal = DeviceWriteJournal(profileID: UUID(), directory: scratch.appendingPathComponent("Journal"))
+        let executor = DeviceFileExecutor(volumeRoot: device, expectedVolumeUUID: nil,
+                                          policy: DeviceWritePolicy(musicSubpath: "Music"), journal: journal,
+                                          rootMustBeMountPoint: false)
+        let refused = DeviceTransferExecutor(door: DeviceTransferDoor(executor: executor)).refusedAlbums(in: plan)
+        XCTAssertEqual(refused[DeviceAlbumIdentity(artist: "R.E.M.", album: "Document")],
+                       "Rename \"R.E.M.\" on the device so it does not end in a dot, then send again")
+    }
+
     /// "What?" and "What" are two tracks; made device-safe both read
     /// "What". The sanitising must not merge them into one name.
     func testNamesThatSanitiseAlikeStayApart() throws {
