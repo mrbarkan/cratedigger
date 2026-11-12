@@ -48,7 +48,15 @@ struct ArtistPhotoNavigator: View {
     @State private var confirmingRemove = false
     @State private var dropTargeted = false
     /// Photos whose file could not be read (the library drive unplugged).
+    /// Cleared when the library is available again.
     @State private var unreachable: Set<String> = []
+    /// Bumped to load the pictures again (the drive came back).
+    @State private var reloadToken = 0
+    /// Open while the viewer's own file picker runs, so its keys stay its own.
+    @State private var modal = ModalGate()
+    /// What went wrong with an add or a download, shown here: the main
+    /// window's alert would sit under this floating viewer.
+    @State private var notice: String?
     /// The album viewer's own dim, so the two rooms are as dark as each other.
     @AppStorage("artworkBackdropDim") private var backdropDim = 0.55
 
@@ -79,17 +87,36 @@ struct ArtistPhotoNavigator: View {
         }
         // Pictures dropped anywhere on the viewer become the owner's photos.
         .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { providers in
-            ArtistPhotoDrop.load(providers) { model.addArtistPhotos(name, urls: $0) }
+            ArtistPhotoDrop.load(providers) { urls in
+                guard libraryIsWritable() else { return }
+                model.addArtistPhotos(name, urls: urls)
+            }
         }
         .onAppear {
             if let start = photos.firstIndex(where: { $0.hash == profile?.defaultPhoto }) { index = start }
-            eventMonitor = ArtworkKeys.install(blocked: { confirmingRemove }, close: onClose, step: step)
+            // The Remove confirmation and the file picker own the keyboard
+            // while they are up: Esc and the arrows are theirs, not the viewer's.
+            let gate = modal
+            eventMonitor = ArtworkKeys.install(blocked: { confirmingRemove || gate.isOpen }, close: onClose,
+                                               step: step)
         }
         .onDisappear {
             if let monitor = eventMonitor { NSEvent.removeMonitor(monitor) }
             eventMonitor = nil
         }
-        .task(id: current?.hash) { await loadCurrent() }
+        .task(id: "\(current?.hash ?? "")|\(photos.count)|\(reloadToken)") { await loadAround() }
+        // The drive came back: what could not be reached may be there now.
+        .onChange(of: model.libraryLocation) { location in
+            guard case .available = location, !unreachable.isEmpty else { return }
+            unreachable = []
+            reloadToken += 1
+        }
+        // An artist photo add or download that failed while this is open.
+        .onChange(of: model.appAlert?.id) { _ in
+            guard let alert = model.appAlert, Self.photoAlertTitles.contains(alert.title) else { return }
+            notice = "\(alert.title). \(alert.message)"
+            model.appAlert = nil
+        }
         .onChange(of: current?.hash) { _ in pan = ArtworkPan() }
         // A photo removed (here or in the Edit sheet): stay on the one that
         // took its place, or the last.
@@ -167,6 +194,23 @@ struct ArtistPhotoNavigator: View {
             .tracking(1.4)
             .lineLimit(1)
 
+            if let notice {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(notice)
+                        .font(CarbonFont.mono(10.5, weight: .semibold))
+                        .foregroundStyle(theme.orange)
+                        .lineLimit(4)
+                        .multilineTextAlignment(.center)
+                        .textSelection(.enabled)
+                    Button { self.notice = nil } label: {
+                        Image(systemName: "xmark.circle.fill").foregroundStyle(.white.opacity(0.6))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Dismiss")
+                }
+                .frame(maxWidth: 640)
+            }
+
             if showingCredit, let line = creditLine {
                 Text(line)
                     .font(CarbonFont.mono(10.5))
@@ -231,7 +275,7 @@ struct ArtistPhotoNavigator: View {
                     .opacity(current == nil ? 0.35 : 1)
                     .help("Make this the photo the artist page shows and the iPod gets")
                 }
-                ArtworkBar.icon("plus", size: Self.barHeight) { model.chooseArtistPhotos(name) }
+                ArtworkBar.icon("plus", size: Self.barHeight) { choosePhotos() }
                     .help("Add photos of \(name)")
                 ArtworkBar.icon("trash", size: Self.barHeight) { confirmingRemove = true }
                     .disabled(current == nil)
@@ -283,19 +327,94 @@ struct ArtistPhotoNavigator: View {
 
     // MARK: - Behaviour
 
+    /// The alerts the artist photo actions raise, caught while the viewer is
+    /// up and shown in it instead.
+    private static let photoAlertTitles: Set<String> = [
+        "Photos Not Added", "Some Photos Not Added", "Photo Not Added", "Artist Not Saved",
+    ]
+
+    /// Add Photos…: the picker runs modal, so the gate is open exactly as
+    /// long as it is on screen.
+    private func choosePhotos() {
+        guard libraryIsWritable() else { return }
+        notice = nil
+        modal.isOpen = true
+        model.chooseArtistPhotos(name)
+        modal.isOpen = false
+    }
+
+    /// Says so here, where it can be seen, when the library's drive is
+    /// out; the view model refuses as well.
+    private func libraryIsWritable() -> Bool {
+        if case .disconnected(let volume, _) = model.libraryLocation {
+            notice = "\(volume ?? "The library's drive") is disconnected, so photos cannot be added. "
+                + "Connect it and try again."
+            return false
+        }
+        notice = nil
+        return true
+    }
+
     private func step(_ delta: Int) {
         guard !photos.isEmpty else { return }
         index = (index + delta + photos.count) % photos.count
     }
 
-    /// The whole photo, decoded off the main actor, for 100% and 200% to
-    /// show real detail. Neighbours are not preloaded.
-    private func loadCurrent() async {
-        guard let hash = current?.hash, images[hash] == nil else { return }
-        if let image = await model.artistPhotoImage(hash: hash) {
-            images[hash] = image
-        } else {
-            unreachable.insert(hash)
+    /// The current photo and its neighbours, and nothing else, decoded off
+    /// the main actor to at most twice the screen's backing size: enough for
+    /// 200%, never a 50 MP original held for the session.
+    private func loadAround() async {
+        guard !photos.isEmpty else {
+            images = [:]
+            return
         }
+        let order = [index, index + 1, index - 1]
+            .map { (($0 % photos.count) + photos.count) % photos.count }
+        var wanted: [String] = []
+        for position in order where !wanted.contains(photos[position].hash) { wanted.append(photos[position].hash) }
+        images = images.filter { wanted.contains($0.key) }
+        let side = ArtistPhotoDecode.side(for: NSScreen.main)
+        let store = await model.currentArtistProfileStore()
+        for hash in wanted where images[hash] == nil && !unreachable.contains(hash) {
+            let decoded = await Task.detached(priority: .userInitiated) {
+                UncheckedSendableBox(ArtistPhotoDecode.image(store.photoData(hash: hash), maxPixel: side))
+            }.value.value
+            guard !Task.isCancelled else { return }
+            if let decoded { images[hash] = decoded } else { unreachable.insert(hash) }
+        }
+    }
+}
+
+/// Open while a modal the viewer started is on screen. A class, so the key
+/// monitor's closure reads the live value while `runModal` blocks.
+private final class ModalGate {
+    var isOpen = false
+}
+
+/// The viewer's decode: ImageIO's downscaled decode with orientation, done
+/// once, off the main actor.
+enum ArtistPhotoDecode {
+    /// About twice the screen's longest side in pixels.
+    static func side(for screen: NSScreen?) -> Int {
+        let frame = screen?.frame.size ?? CGSize(width: 1_920, height: 1_080)
+        let scale = screen?.backingScaleFactor ?? 2
+        return Int(max(frame.width, frame.height) * scale * 2)
+    }
+
+    static func image(_ data: Data?, maxPixel: Int) -> NSImage? {
+        guard let data, let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixel,
+            kCGImageSourceShouldCacheImmediately: true,
+        ]
+        guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
+        // A bitmap rep, as `NSImage(contentsOf:)` gives the album viewer, so
+        // its pixel count is the decoded one and 100% means what it says.
+        let rep = NSBitmapImageRep(cgImage: cg)
+        let image = NSImage(size: NSSize(width: cg.width, height: cg.height))
+        image.addRepresentation(rep)
+        return image
     }
 }

@@ -156,6 +156,21 @@ final class ArtistEditDraftTests: XCTestCase {
         XCTAssertEqual(profile, before)
     }
 
+    func testPastingAnIDOnAnUncertainArtistDropsPhotosFoundByName() {
+        var profile = confirmedProfile()
+        profile.identity = .notFound
+        profile.fetched = nil
+        profile.defaultPickedByOwner = false
+        profile.defaultPhoto = "c"
+        profile.photos.append(photo("d", .library, id: "/m/MA/artist.jpg"))
+        var draft = ArtistEditDraft(profile: profile)
+        draft.pastedMusicBrainz = newID
+        draft.apply(to: &profile)
+        XCTAssertEqual(profile.photos.map(\.hash), ["b", "d"])
+        XCTAssertEqual(profile.defaultPhoto, "b", "the next photo left takes over")
+        XCTAssertFalse(profile.defaultPickedByOwner)
+    }
+
     func testPastingAnIDTheOwnerRejectedTakesItBack() {
         var profile = confirmedProfile()
         profile.identity = .rejected

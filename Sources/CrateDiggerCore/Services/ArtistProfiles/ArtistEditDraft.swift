@@ -79,11 +79,9 @@ public struct ArtistEditDraft: Equatable, Sendable {
     }
 
     private func applyIdentity(to profile: inout ArtistProfile) {
-        let before = profile.identity
         if rejectsIdentity { profile.rejectConfirmedIdentity() }
+        // Drops the old identity's facts and the photos found for the name.
         if let id = pastedMusicBrainzID { profile.confirmIdentity(musicBrainzID: id) }
-        // A new identity's facts are looked up by its id; none of the old one's stay.
-        if profile.identity != before { profile.fetched = nil }
     }
 
     private static func trimmed(_ facts: ArtistFacts) -> ArtistFacts {

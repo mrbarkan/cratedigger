@@ -5,17 +5,18 @@ import Foundation
 /// `ArtistProfileStore.update`; none touches the owner's facts, the owner's
 /// photos, an owner-picked default, `noPhoto` or `notOnIPod`.
 extension ArtistProfile {
-    /// "Is this them?": the owner picked this candidate. The identity is
-    /// confirmed with no Wikidata id and no check date, so the next lookup
-    /// (run at once by the page) fetches its facts by the id. An id the owner
-    /// once said is "Not This Artist" is taken back. The photos stay: an
-    /// unsettled artist's default came from the picture finder's own rule,
-    /// not from an identity; the held candidates are dropped, to be found
-    /// again for the confirmed artist. Picking the identity already
-    /// confirmed changes nothing.
+    /// "Is this them?", or an id pasted in the Edit sheet: the owner named
+    /// who this is. The identity is confirmed with no Wikidata id and no
+    /// check date, so the next lookup (run at once) fetches its facts by the
+    /// id. An id the owner once said is "Not This Artist" is taken back.
+    /// Whatever the identity was before (confirmed, uncertain, not found,
+    /// rejected), what was found for the name goes (`discardIdentityData`):
+    /// a Deezer or Commons photo found by the name alone may be of the very
+    /// act the owner is correcting. Picking the identity already confirmed
+    /// changes nothing.
     public mutating func confirmIdentity(musicBrainzID: String) {
         if case .confirmed(let current, _) = identity, current == musicBrainzID { return }
-        if case .confirmed = identity { discardIdentityData() }
+        discardIdentityData()
         identity = .confirmed(musicBrainzID: musicBrainzID, wikidataID: nil)
         rejectedMusicBrainzIDs.removeAll { $0 == musicBrainzID }
         photoCandidates = []
@@ -45,7 +46,11 @@ extension ArtistProfile {
         checkedAt = nil
     }
 
-    /// Drops the fetched facts and the photos a confirmed identity brought.
+    /// Drops the fetched facts, the held candidates and the Deezer and
+    /// Commons photos, found for the old identity or for the name alone. The
+    /// owner's photos, the library folder's picture, migrated photos and an
+    /// owner-picked default stay; when the default goes, the first photo
+    /// left takes over, as a default the owner has not picked.
     private mutating func discardIdentityData() {
         fetched = nil
         photoCandidates = []

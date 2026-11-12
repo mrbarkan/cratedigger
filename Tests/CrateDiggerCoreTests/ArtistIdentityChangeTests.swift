@@ -27,12 +27,38 @@ final class ArtistIdentityChangeTests: XCTestCase {
 
     func testPickingACandidateConfirmsIt() {
         var profile = ArtistProfile(foldedKey: "air", displayName: "Air", identity: .uncertain(candidates),
-                                    photos: [photo("c", .deezer, id: "9")], defaultPhoto: "c", checkedAt: date)
+                                    photos: [photo("c", .deezer, id: "9"), photo("d", .library, id: "/m/Air/a.jpg")],
+                                    defaultPhoto: "c", checkedAt: date)
         profile.confirmIdentity(musicBrainzID: "mb-2")
         XCTAssertEqual(profile.identity, .confirmed(musicBrainzID: "mb-2", wikidataID: nil))
         XCTAssertNil(profile.checkedAt, "due at once, so its facts are looked up by the id")
-        XCTAssertEqual(profile.photos.map(\.hash), ["c"], "an uncertain artist's photo was not the identity's")
-        XCTAssertEqual(profile.defaultPhoto, "c")
+        XCTAssertEqual(profile.photos.map(\.hash), ["d"],
+                       "a photo found by the name alone may be of the act the owner is correcting")
+        XCTAssertEqual(profile.defaultPhoto, "d")
+        XCTAssertFalse(profile.defaultPickedByOwner)
+    }
+
+    /// Whatever the old state, a new id drops Deezer and Commons photos and
+    /// keeps the owner's, the library folder's, migrated ones and an
+    /// owner-picked default.
+    func testANewIDDropsNamedPhotosFromEveryState() {
+        let states: [ArtistProfile.Identity] = [.unknown, .uncertain(candidates), .notFound, .rejected,
+                                               .confirmed(musicBrainzID: "mb-1", wikidataID: "Q1")]
+        for state in states {
+            var profile = ArtistProfile(
+                foldedKey: "air", displayName: "Air", identity: state,
+                photos: [photo("a", .commons, id: "mb-1"), photo("b", .owner), photo("c", .deezer, id: "9"),
+                         photo("d", .library, id: "/m/Air/a.jpg"), photo("e", .migrated, id: "deezer:7"),
+                         photo("f", .deezer, id: "10")],
+                photoCandidates: [ArtistPictureRecord.HeldCandidate(source: .deezer, sourceID: "11",
+                                                                    imageURL: URL(string: "https://e.dzcdn.net/x.jpg")!)],
+                defaultPhoto: "f", defaultPickedByOwner: true)
+            profile.confirmIdentity(musicBrainzID: "mb-2")
+            XCTAssertEqual(profile.photos.map(\.hash), ["b", "d", "e", "f"], "\(state)")
+            XCTAssertEqual(profile.defaultPhoto, "f", "the owner's pick stays, \(state)")
+            XCTAssertTrue(profile.defaultPickedByOwner)
+            XCTAssertTrue(profile.photoCandidates.isEmpty)
+        }
     }
 
     func testPickingAnIDTheOwnerRejectedTakesItBack() {
