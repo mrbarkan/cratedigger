@@ -254,7 +254,7 @@ public struct DeviceArtTree: Sendable {
 
     /// Turns absolute URLs into device-relative NFC paths, accepting both the
     /// root as given and its resolved form (`/var` against `/private/var`).
-    private struct DevicePaths {
+    struct DevicePaths {
         let prefixes: [String]
 
         init(root: URL) {
