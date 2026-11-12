@@ -513,12 +513,68 @@ final class ArtistProfileStoreTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: backup), damaged)
         XCTAssertNotEqual(try Data(contentsOf: storeFile), damaged, "the repaired file is written back")
 
-        // Once: a later damaged load keeps the first backup.
-        try Data(#"[{"displayName":"Beck","identity":{"state":"future"}}]"#.utf8).write(to: storeFile)
+        // A later damaged load gets its own numbered backup; none is written over.
+        let later = Data(#"[{"displayName":"Beck","identity":{"state":"future"}}]"#.utf8)
+        try later.write(to: storeFile)
         let again = makeStore()
         again.update(name: "Beck") { $0.notOnIPod = true }
         try again.save()
         XCTAssertEqual(try Data(contentsOf: backup), damaged)
+        XCTAssertEqual(try Data(contentsOf: folder.appendingPathComponent(ArtistProfileStore.fileName + ".2.bak")),
+                       later)
+        let third = Data(#"[{"displayName":5}]"#.utf8)
+        try third.write(to: storeFile)
+        try makeStore().save()
+        XCTAssertEqual(try Data(contentsOf: folder.appendingPathComponent(ArtistProfileStore.fileName + ".3.bak")),
+                       third)
+    }
+
+    /// Re-review: a second lossy load (after the owner restored or edited
+    /// the file) must not lose the photos of the record it drops. A store
+    /// that could not read everything deletes no photo files at all, and
+    /// every backup's photos stay restorable.
+    func testLossyLoadNeverDeletesPhotos() throws {
+        let store = makeStore()
+        let air = try store.addPhoto(name: "Air", data: image(400, 400, shade: 0.1), source: .owner, sourceID: nil,
+                                     credit: nil)
+        let beck = try store.addPhoto(name: "Beck", data: image(400, 400, shade: 0.2), source: .owner, sourceID: nil,
+                                      credit: nil)
+        try store.save()
+        let whole = try String(contentsOf: storeFile, encoding: .utf8)
+        let stray = photosDirectory.appendingPathComponent(String(repeating: "c", count: 64) + ".jpg")
+        try Data("x".utf8).write(to: stray)
+        func damaging(_ name: String, in text: String) throws -> Data {
+            let damaged = text.replacingOccurrences(of: "\"displayName\":\"\(name)\"", with: "\"displayName\":7")
+            XCTAssertNotEqual(damaged, text)
+            return Data(damaged.utf8)
+        }
+        func exists(_ url: URL) -> Bool { FileManager.default.fileExists(atPath: url.path) }
+
+        // First lossy load: Beck's record is dropped.
+        try damaging("Beck", in: whole).write(to: storeFile)
+        let first = makeStore()
+        XCTAssertNil(first.profile(forName: "Beck"))
+        try first.save()
+        XCTAssertTrue(exists(store.photoURL(hash: beck.hash)))
+        XCTAssertTrue(exists(stray), "a lossy store sweeps nothing, not even a plain orphan")
+
+        // The owner restores the whole file, then an edit breaks Air instead.
+        try damaging("Air", in: whole).write(to: storeFile)
+        let second = makeStore()
+        XCTAssertNil(second.profile(forName: "Air"))
+        second.removePhoto(name: "Beck", hash: beck.hash)
+        try second.save()
+        XCTAssertTrue(exists(store.photoURL(hash: air.hash)))
+        XCTAssertTrue(exists(store.photoURL(hash: beck.hash)), "a removed photo waits for a clean store")
+        XCTAssertTrue(exists(folder.appendingPathComponent(ArtistProfileStore.fileName + ".2.bak")))
+
+        // A clean load sweeps again, but keeps whatever any backup names.
+        let clean = makeStore()
+        XCTAssertEqual(clean.allProfiles().map(\.foldedKey), ["beck"])
+        try clean.save()
+        XCTAssertFalse(exists(stray))
+        XCTAssertTrue(exists(store.photoURL(hash: air.hash)), "named by the second backup")
+        XCTAssertTrue(exists(store.photoURL(hash: beck.hash)), "named by the first backup")
     }
 
     func testSaveSweepsPhotoFilesNoProfileNames() throws {

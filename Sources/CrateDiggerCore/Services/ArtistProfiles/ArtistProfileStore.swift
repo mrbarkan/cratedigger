@@ -50,7 +50,9 @@ public enum ArtistProfileStoreError: LocalizedError, Equatable {
 /// folder: `save` deletes photo files its own profiles do not name.
 public final class ArtistProfileStore: @unchecked Sendable {
     public static let fileName = "library.cdartistinfo", photosFolder = "ArtistPhotos"
-    /// The one-time copy of a file that did not load whole, kept beside it.
+    /// The copy of a file that did not load whole, kept beside it. Later
+    /// ones are numbered (`library.cdartistinfo.2.bak`, `.3.bak`), so no
+    /// backup is ever written over.
     public static let backupFileName = fileName + ".bak"
 
     private let indexDirectory: URL
@@ -66,6 +68,10 @@ public final class ArtistProfileStore: @unchecked Sendable {
     /// decode, a nameless record, two records merged): the next save first
     /// keeps a copy of the file as it was read.
     private var needsBackup = false
+    /// The same loss, for the store's whole life: a store that could not read
+    /// every record never deletes photo files, since the records it dropped
+    /// may name them.
+    private var loadWasLossy = false
     private let lock = NSLock()
 
     public init(indexDirectory: URL, fileManager: FileManager = .default) {
@@ -295,18 +301,16 @@ public final class ArtistProfileStore: @unchecked Sendable {
     /// left by a crash between `addPhoto` and `save`). Throws, writing
     /// nothing, when the file on disk could not be read or the index folder
     /// was not there. After a load that left something out, the file as it
-    /// was read is first copied to `library.cdartistinfo.bak` (once: an
-    /// existing backup is kept), and photos that backup names are never
-    /// deleted, so restoring it brings them back.
+    /// was read is first copied to a backup (`library.cdartistinfo.bak`, or
+    /// the next numbered one when that exists), and this store deletes no
+    /// photo files at all. Photos any backup names are never deleted, so
+    /// restoring one brings them back.
     public func save() throws {
         lock.lock()
         defer { lock.unlock() }
         try checkWritableLocked()
         if needsBackup {
-            let backup = indexDirectory.appendingPathComponent(Self.backupFileName)
-            if !fileManager.fileExists(atPath: backup.path) {
-                try fileManager.copyItem(at: fileURL, to: backup)
-            }
+            try fileManager.copyItem(at: fileURL, to: nextBackupURL())
             needsBackup = false
         }
         if isDirty {
@@ -317,7 +321,7 @@ public final class ArtistProfileStore: @unchecked Sendable {
             try encoder.encode(contents).write(to: fileURL, options: .atomic)
             isDirty = false
         }
-        sweepUnusedPhotos()
+        if !loadWasLossy { sweepUnusedPhotos() }
     }
 
     // MARK: - Private
@@ -343,7 +347,7 @@ public final class ArtistProfileStore: @unchecked Sendable {
     private func sweepUnusedPhotos() {
         guard let names = try? fileManager.contentsOfDirectory(atPath: photosDirectory.path) else { return }
         var used = Set(byKey.values.flatMap { $0.photos.map(\.hash) })
-        used.formUnion(hashesNamedByBackup())
+        used.formUnion(hashesNamedByBackups())
         for name in names {
             let file = URL(fileURLWithPath: name)
             let hash = file.deletingPathExtension().lastPathComponent
@@ -353,21 +357,35 @@ public final class ArtistProfileStore: @unchecked Sendable {
         }
     }
 
-    /// Every 64-hex-digit string in the backup file, read as text: whatever
-    /// it names stays restorable even where its records would not decode.
-    private func hashesNamedByBackup() -> Set<String> {
-        let backup = indexDirectory.appendingPathComponent(Self.backupFileName)
-        guard let data = try? Data(contentsOf: backup) else { return [] }
+    /// `library.cdartistinfo.bak`, else `.2.bak`, `.3.bak`: the first free one.
+    private func nextBackupURL() -> URL {
+        var candidate = indexDirectory.appendingPathComponent(Self.backupFileName)
+        var number = 2
+        while fileManager.fileExists(atPath: candidate.path) {
+            candidate = indexDirectory.appendingPathComponent("\(Self.fileName).\(number).bak")
+            number += 1
+        }
+        return candidate
+    }
+
+    /// Every 64-hex-digit string in every backup (`library.cdartistinfo.bak`
+    /// and the numbered ones), read as text: whatever a backup names stays
+    /// restorable even where its records would not decode.
+    private func hashesNamedByBackups() -> Set<String> {
+        let names = (try? fileManager.contentsOfDirectory(atPath: indexDirectory.path)) ?? []
         var hashes: Set<String> = []
         var run: [UInt8] = []
         func flush() {
             if run.count == 64 { hashes.insert(String(decoding: run, as: UTF8.self)) }
             run.removeAll(keepingCapacity: true)
         }
-        for byte in data {
-            if (48...57).contains(byte) || (97...102).contains(byte) { run.append(byte) } else { flush() }
+        for name in names where name.hasPrefix(Self.fileName + ".") && name.hasSuffix(".bak") {
+            guard let data = try? Data(contentsOf: indexDirectory.appendingPathComponent(name)) else { continue }
+            for byte in data {
+                if (48...57).contains(byte) || (97...102).contains(byte) { run.append(byte) } else { flush() }
+            }
+            flush()
         }
-        flush()
         return hashes
     }
 
@@ -423,6 +441,7 @@ public final class ArtistProfileStore: @unchecked Sendable {
         }
         if losses.count > 0 {
             needsBackup = true
+            loadWasLossy = true
             isDirty = true
         }
     }
