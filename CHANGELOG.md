@@ -4,9 +4,13 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
-## 2.3.4 (118), 2026-11-12
+## 2.3.4 (119), 2026-11-12
 
-Beta 2: devices and artists. Sending to a device now looks at what is
+Beta 3: artist pictures reach the iPod even when there is nothing new to
+send, Preferences explains what PodBox and its People folder are, a band
+whose name has no letters (such as "@") gets an artist page, and adding a
+cover to an album no longer leaves a stray "track" behind. Beta 2 brought
+devices and artists. Sending to a device now looks at what is
 already there, copies only what is missing and asks once about albums that
 differ. PodBox iPods are recognised, get artist pictures and stop filling
 up with hidden Mac files. And every artist gets a page in the inspector: a
@@ -106,9 +110,20 @@ Receive beta updates.
   right MusicBrainz artist, add as many photos as you like, and choose the
   one shown. The artist photo viewer pages through them, makes one the
   default, and shows where each came from.
+- **Artists whose name has no letters get a page.** A band called "@" or
+  "!!!" now has an artist page, photos and edits of its own. They are not
+  looked up automatically, since a search for "@" finds other acts.
 
 ### Changed
 
+- **Preferences explains PodBox.** The iPod's section in Preferences >
+  Devices is now called PodBox and says what it is, what "In
+  /Artwork/People" means (one portrait per artist in the iPod's own
+  People folder, named after the artist, which PodBox looks at first), what
+  "In artist folders" writes, and what Verified on this iPod unlocks.
+- **Artist Pictures says why some artists can't have one.** PodBox cannot
+  show a picture for a name with no letters or digits, wherever the file
+  is, and the sheet now says so instead of a vague "cannot be named".
 - **The iPod shows the artist's own photo.** The picture CrateDigger writes
   for an artist on a PodBox iPod is now the default photo on their artist
   page, so the two always agree. Picking a picture in Artist Pictures makes
@@ -131,6 +146,17 @@ Receive beta updates.
 
 ### Fixed
 
+- **Artist pictures go to the iPod even when nothing else needs sending.**
+  Sending albums the iPod already has stopped at "Nothing to transfer"
+  before the pictures, so an iPod with pictures switched on could go
+  without any. They are now written then, and the message says how many.
+- **Adding a cover to an album no longer leaves a stray track.** Embedding
+  the cover into each file used a temporary file named like a song beside
+  it; quitting while that was still running left an empty one, which
+  CrateDigger and PodBox both listed as a track by Unknown Artist. The
+  temporary file is now hidden and named so nothing reads it as music,
+  quitting waits for the covers to finish, and a track that could not be
+  updated is named in a message instead of silently keeping its old art.
 - **Device transfers no longer leave half-written files.** Each file is
   written under a temporary name and moved into place when it is complete,
   so a failed or cancelled send keeps the old file, and an unplugged drive
