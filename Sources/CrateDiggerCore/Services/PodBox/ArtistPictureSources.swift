@@ -85,6 +85,16 @@ actor RequestSpacer {
     }
 }
 
+enum ArtistPictureURLText {
+    /// Everything but RFC 3986's unreserved characters percent-encoded, so
+    /// `&`, `+`, `/`, `=` and `?` in a name stay inside its one value.
+    static func encoded(_ text: String) -> String {
+        var allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+        allowed.insert(charactersIn: "-._~")
+        return text.addingPercentEncoding(withAllowedCharacters: allowed) ?? ""
+    }
+}
+
 // MARK: - Candidates and sources
 
 /// One picture a source offers for a name, with the albums it lists for
@@ -175,13 +185,7 @@ public enum DeezerArtistParser {
         return text(value)
     }
 
-    /// Everything but RFC 3986's unreserved characters percent-encoded, so
-    /// `&`, `+`, `/` and `=` in a name stay inside its one value.
-    static func encoded(_ text: String) -> String {
-        var allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
-        allowed.insert(charactersIn: "-._~")
-        return text.addingPercentEncoding(withAllowedCharacters: allowed) ?? ""
-    }
+    private static func encoded(_ text: String) -> String { ArtistPictureURLText.encoded(text) }
 }
 
 /// Deezer as a source: serial requests at least `spacing` apart, and on a
