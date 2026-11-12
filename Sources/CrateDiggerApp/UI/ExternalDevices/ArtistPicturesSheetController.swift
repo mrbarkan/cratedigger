@@ -853,7 +853,11 @@ private struct ArtistPictureCell: View {
                 ? "No photo, as you chose on the artist page."
                 : "Not sent to the iPod, as you chose. The artist page still shows the photo."
         case .unnameable:
-            return "PodBox cannot match a picture to this name."
+            // PodBox keys a name with no letter or digit 0 and never shows a
+            // picture for it (see `ArtistPicturePlanner`); the artist page can.
+            return PodBoxArtName.key(row.name) == 0 && PodBoxArtName.altKey(row.name) == 0
+                ? "PodBox shows no picture for a name with no letters or digits. The artist page in CrateDigger still can."
+                : "PodBox cannot match a picture to this name."
         }
     }
 

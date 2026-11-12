@@ -208,7 +208,15 @@ public enum ArtistPicturePlanner {
             for key in keys { firstByKey[key] = name }
 
             guard let stem = PodBoxArtName.fileStem(for: name) else {
-                builder.hold(name, in: \.unnameable, "cannot be named on this player")
+                // A name with no letter or digit (`@`, `!!!`) keys 0, and the
+                // player's art cache never takes a person keyed 0: it skips
+                // such files in /Artwork/People, never notes such a person
+                // and never matches a folder by such a name (`art_cache.c`,
+                // `aa_track_note`, `aa_central_load`, `aa_keys_match`). No
+                // file of any name or place would show; say so plainly.
+                builder.hold(name, in: \.unnameable, keys.isEmpty
+                    ? "PodBox shows no picture for a name with no letters or digits"
+                    : "cannot be named on this player")
                 continue
             }
             guard pictures.has(artist) else {

@@ -135,7 +135,8 @@ final class ArtistPicturePlannerTests: XCTestCase {
         let plan = plan([:], artists: found) // unnameable is reported before "no picture yet"
         XCTAssertEqual(plan.operations.count, 0)
         XCTAssertEqual(Set(plan.unnameable), ["!!!", "Hot \u{1F3B8} Band"])
-        XCTAssertEqual(plan.reasons["!!!"], "cannot be named on this player")
+        XCTAssertEqual(plan.reasons["!!!"], "PodBox shows no picture for a name with no letters or digits")
+        XCTAssertEqual(plan.reasons["Hot \u{1F3B8} Band"], "cannot be named on this player")
     }
 
     func testVariousArtistsNeverPlanned() throws {
