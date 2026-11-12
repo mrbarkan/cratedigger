@@ -301,3 +301,30 @@ final class FolderCoverArtWriterTests: XCTestCase {
         return nil
     }
 }
+
+extension FolderCoverArtWriterTests {
+    func testHasCoverIgnoresCase() throws {
+        let folder = root.appendingPathComponent("Album", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        XCTAssertFalse(FolderCoverArtWriter.hasCover(in: folder))
+        try Data("x".utf8).write(to: folder.appendingPathComponent("Cover.JPG"))
+        XCTAssertTrue(FolderCoverArtWriter.hasCover(in: folder))
+        XCTAssertFalse(FolderCoverArtWriter.hasCover(in: root.appendingPathComponent("Missing")))
+    }
+
+    func testFixArtPlanKeepsCoveredFoldersOut() {
+        let a = URL(fileURLWithPath: "/d/A", isDirectory: true), b = URL(fileURLWithPath: "/d/B", isDirectory: true)
+        let plan = FolderCoverArtWriter.fixArtPlan(
+            representatives: [a: a.appendingPathComponent("1.mp3"), b: b.appendingPathComponent("1.mp3")],
+            hasCover: { $0 == b })
+        XCTAssertEqual(plan.needsCover, [a: a.appendingPathComponent("1.mp3")])
+        XCTAssertEqual(plan.alreadyCovered, [b])
+        XCTAssertEqual(plan.albumCount, 2)
+
+        XCTAssertEqual(FolderCoverArtWriter.FixArtText.nothingToAdd(
+            FolderCoverArtWriter.FixArtPlan(needsCover: [:], alreadyCovered: [a, b]), deviceName: "IPOD").message,
+                       "All 2 album folders on IPOD already have a cover.jpg. FIX ART only adds covers where there are none, so nothing was changed.")
+        XCTAssertEqual(FolderCoverArtWriter.FixArtText.confirmation(plan, deviceName: "IPOD").message,
+                       "1 album folder on IPOD has no cover.jpg. It gets one made from its tracks' artwork, where they carry any. 1 album folder already has one and is left as it is.")
+    }
+}

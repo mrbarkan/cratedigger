@@ -207,9 +207,12 @@ extension LibraryViewModel {
 
     var canFixDeviceAlbumArt: Bool { browsedMountedDevice != nil && !isDeviceBusy }
 
-    /// Write a `cover.jpg` beside every album already on the device, taken from
-    /// the tracks sitting there. Repairs everything transferred before folder
-    /// art existed, without touching the audio files.
+    /// Add a `cover.jpg` to every album folder on the device that has none,
+    /// taken from the tracks sitting there. Repairs everything transferred
+    /// before folder art existed, without touching the audio files, and never
+    /// replaces a cover already there (`FolderCoverArtWriter.fixArtPlan`): a
+    /// 400 px re-encode of a cover is only a worse copy of it. Walks first (a
+    /// scan on DEVICES), then confirms with the counts, then writes.
     @MainActor
     func fixDeviceAlbumArt() {
         guard let (profile, device) = browsedMountedDevice else { return }
@@ -217,34 +220,64 @@ extension LibraryViewModel {
         let root = ExternalDeviceTransferPlanner().destinationRoot(for: profile, mountedAt: device.volumeURL)
         isFixingDeviceArt = true
         oledView = .devices
+        let scanJob = beginBusyJob(.scan, on: .devices)
+        Task { @MainActor in
+            // A deep read of a USB volume: off the main actor.
+            let plan = await Task.detached(priority: .userInitiated) {
+                FolderCoverArtWriter.fixArtPlan(representatives: FolderCoverArtWriter.representativeAudioFiles(under: root),
+                                                hasCover: { FolderCoverArtWriter.hasCover(in: $0) })
+            }.value
+            endBusyJob(scanJob, .completed)
+            isFixingDeviceArt = false
+            guard !plan.needsCover.isEmpty else {
+                let text = FolderCoverArtWriter.FixArtText.nothingToAdd(plan, deviceName: profile.name)
+                appAlert = .info(title: text.title, message: text.message)
+                return
+            }
+            let text = FolderCoverArtWriter.FixArtText.confirmation(plan, deviceName: profile.name)
+            appAlert = .actionable(title: text.title, message: text.message, actionTitle: "Add Covers") { [weak self] in
+                self?.addMissingCovers(plan, profile: profile, device: device, root: root)
+            }
+        }
+    }
+
+    @MainActor
+    private func addMissingCovers(_ plan: FolderCoverArtWriter.FixArtPlan, profile: ExternalDeviceProfile,
+                                  device: MountedDevice, root: URL) {
+        guard !isDeviceBusy else { return showDeviceBusyAlert("Fix the art") }
+        isFixingDeviceArt = true
         showOLEDNotice("FIXING ART")
+        let job = beginBusyJob(.transfer, on: .devices)
         let deviceName = profile.name
 
         Task { @MainActor in
             // Every cover goes through the write door, like a transfer's.
             guard let door = await makeTransferDoor(for: profile, device: device, musicFolder: root) else {
+                endBusyJob(job, .failed)
                 isFixingDeviceArt = false
                 return
             }
-            // All of it off the main actor: the walk is a deep read of a USB
-            // volume and each cover is a decode + JPEG encode. Its own
-            // ArtworkService — nothing is shared with the app's, so nothing
-            // crosses actors.
-            let outcome = await Task.detached(priority: .userInitiated) { () -> (albums: Int, covers: Int) in
+            // Each cover is a decode + JPEG encode: off the main actor, with
+            // its own ArtworkService, so nothing crosses actors.
+            let outcome = await Task.detached(priority: .userInitiated) {
+                () -> (counts: FolderCoverArtWriter.WriteCounts, noArtwork: Int) in
                 let artwork = ArtworkService()
-                let files = FolderCoverArtWriter.representativeAudioFiles(under: root)
                 var covers: [URL: ArtworkAsset] = [:]
-                for (folder, file) in files {
-                    if let asset = await artwork.resolveArtwork(trackURL: file) {
-                        covers[folder] = asset
-                    }
+                for (folder, file) in plan.needsCover {
+                    if let asset = await artwork.resolveArtwork(trackURL: file) { covers[folder] = asset }
                 }
-                let writer = FolderCoverArtWriter(preparer: artwork, writeData: { try door.writeCover($0, to: $1) })
-                return (files.count, writer.write(covers))
+                // Never over a cover, whoever wrote it: one that appeared since the walk is left.
+                let writer = FolderCoverArtWriter(preparer: artwork, writeData: {
+                    try door.writeCover($0, to: $1, replacesExisting: false)
+                })
+                return (writer.writeCounting(covers), plan.needsCover.count - covers.count)
             }.value
 
+            let counts = outcome.counts
+            endBusyJob(job, counts.written == 0 && counts.failed > 0 ? .failed : .completed)
             isFixingDeviceArt = false
-            AppLog.conversion.notice("FIX ART wrote \(outcome.covers) of \(outcome.albums) covers")
+            AppLog.conversion.notice("FIX ART added \(counts.written) of \(plan.needsCover.count) covers, \(plan.alreadyCovered.count) folders already had one, \(counts.failed) failed")
+            logSessionBackups(journal: door.journal, sessionID: door.sessionID, what: "FIX ART")
             // FIX ART changes art only, never which files are on the device,
             // so there is nothing for a patch to add or remove. But the
             // catalog records each track's art size, which is what a
@@ -252,19 +285,21 @@ extension LibraryViewModel {
             // cover would read as differing in art. So it is dropped (the
             // one write that still drops it: every transfer, SYNC included,
             // patches instead) and walked again now if the device is on screen.
-            if outcome.covers > 0 {
-                noteArtCacheStep(profileID: profile.id, firmware: firmware(for: device), changes: .covers)
+            if counts.written > 0 {
+                noteArtCacheStep(profileID: profile.id, device: device, firmware: firmware(for: device),
+                                 changes: .covers)
                 invalidateDeviceCatalog(for: device)
                 if case .device(let path) = currentSource, path == device.volumeURL.path {
                     refreshLibrary()
                 }
             }
-            appAlert = .error(
-                title: outcome.covers > 0 ? "Album art fixed" : "No covers written",
-                message: outcome.covers > 0
-                    ? "Wrote cover.jpg into \(outcome.covers) of \(outcome.albums) album folder\(outcome.albums == 1 ? "" : "s") on \(deviceName)."
-                    : "Found \(outcome.albums) album folder\(outcome.albums == 1 ? "" : "s") on \(deviceName), but none of their tracks carry artwork to copy out."
-            )
+            let text = FolderCoverArtWriter.FixArtText.result(counts, noArtwork: outcome.noArtwork, plan: plan,
+                                                               deviceName: deviceName)
+            // FIX ART replaces nothing, so its session normally keeps no
+            // copies; the button is still the same rule as every summary's.
+            appAlert = AppAlert.info(title: text.title, message: text.message)
+                .withSecondary(Self.showCopiesTitle,
+                               action: showCopiesAction(journal: door.journal, sessionID: door.sessionID))
         }
     }
 

@@ -136,6 +136,25 @@ public final class DeviceWriteJournal: @unchecked Sendable {
         records.filter { $0.sessionID == sessionID }
     }
 
+    /// Where a session's copies of replaced or deleted files go:
+    /// `backups/<sessionID>` in this journal's folder, on the Mac.
+    public func backupFolder(sessionID: UUID) -> URL {
+        folder.appendingPathComponent(Self.backupsFolder, isDirectory: true)
+            .appendingPathComponent(sessionID.uuidString, isDirectory: true)
+    }
+
+    /// The session's backup folder when the session kept a copy of anything
+    /// (one of its records names a backup) and the folder is there; nil
+    /// otherwise, so a summary offers Show Copies in Finder only when there
+    /// is something to show.
+    public func backupFolderIfUsed(sessionID: UUID) -> URL? {
+        guard records(sessionID: sessionID).contains(where: { $0.backupFile != nil }) else { return nil }
+        let url = backupFolder(sessionID: sessionID)
+        var isFolder: ObjCBool = false
+        guard fileManager.fileExists(atPath: url.path, isDirectory: &isFolder), isFolder.boolValue else { return nil }
+        return url
+    }
+
     /// Whether a session other than `sessionID` said it would make a temp at
     /// `key` on this volume (`sameVolume`): only such a temp is ever cleared
     /// as stale. Indexed, so a long journal costs nothing per write.

@@ -190,4 +190,49 @@ final class ArtistPictureStoreTests: XCTestCase {
         XCTAssertTrue(LibraryIndexFiles.extensions.contains("cdartists"))
         XCTAssertTrue(LibraryIndexFiles.isIndexFile(URL(fileURLWithPath: "/x/library.cdartists")))
     }
+
+    // MARK: Held candidates
+
+    func testHeldCandidatesSurviveASaveAndReload() throws {
+        let store = try makeStore()
+        let held = ArtistPictureRecord.HeldCandidate(
+            source: .commons, sourceID: "Q42", imageURL: URL(string: "https://upload.wikimedia.org/a/b/Air.jpg")!,
+            credit: ArtistPictureCredit(fileName: "Air.jpg", licence: "CC BY 2.0", author: "Someone"))
+        var uncertain = record("Air", .uncertain)
+        uncertain.candidates = [held, ArtistPictureRecord.HeldCandidate(
+            source: .deezer, sourceID: "7", imageURL: URL(string: "https://e-cdns-images.dzcdn.net/x.jpg")!)]
+        try store.set(uncertain, prepared: nil)
+        try store.save()
+
+        let reloaded = ArtistPictureStore(indexDirectory: indexDirectory, imageDirectory: imageDirectory)
+        let back = try XCTUnwrap(reloaded.record(forName: "Air"))
+        XCTAssertEqual(back.candidates, uncertain.candidates)
+        XCTAssertEqual(back.heldCandidates.map(\.sourceID), ["Q42", "7"])
+        XCTAssertEqual(back.heldCandidates.first?.name, "Air")
+        XCTAssertEqual(back.heldCandidates.first?.credit?.licence, "CC BY 2.0")
+    }
+
+    /// A file written before candidates were kept reads the same, and a
+    /// record without them encodes exactly as it did.
+    func testOlderFileWithoutCandidatesDecodesAndEncodesUnchanged() throws {
+        let old = #"[{"checkedAt":"2026-11-01T10:00:00Z","displayName":"Air","foldedKey":"air","outcome":"uncertain","pickedByUser":false}]"#
+        try FileManager.default.createDirectory(at: indexDirectory, withIntermediateDirectories: true)
+        try Data(old.utf8).write(to: indexDirectory.appendingPathComponent(ArtistPictureStore.fileName))
+        let store = ArtistPictureStore(indexDirectory: indexDirectory, imageDirectory: imageDirectory)
+        let air = try XCTUnwrap(store.record(forName: "Air"))
+        XCTAssertNil(air.candidates)
+        XCTAssertEqual(air.heldCandidates, [])
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        encoder.dateEncodingStrategy = .iso8601
+        XCTAssertEqual(String(decoding: try encoder.encode([air]), as: UTF8.self), old)
+    }
+
+    func testOnlyAnUncertainRecordOffersItsCandidates() {
+        var found = record("Air", .found)
+        found.candidates = [ArtistPictureRecord.HeldCandidate(
+            source: .deezer, sourceID: "7", imageURL: URL(string: "https://e-cdns-images.dzcdn.net/x.jpg")!)]
+        XCTAssertEqual(found.heldCandidates, [])
+    }
 }

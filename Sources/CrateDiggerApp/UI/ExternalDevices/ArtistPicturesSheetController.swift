@@ -65,6 +65,15 @@ final class ArtistPicturesSheetModel: ObservableObject {
     @Published private(set) var edits: [String: ArtistPictureEdit] = [:]
     @Published private(set) var thumbnails: [String: NSImage] = [:]
     @Published private(set) var candidateThumbnails: [URL: NSImage] = [:]
+    /// Bumped whenever the thumbnails are dropped (after Apply or a removal),
+    /// so every cell's `.task` loads its picture again even when its row did
+    /// not change.
+    @Published private(set) var thumbnailGeneration = 0
+    /// Row id -> device path of the DEVICE rows whose picture CrateDigger
+    /// wrote (journal-proven for that person): the only ones Remove from iPod acts on.
+    @Published private(set) var crateDiggerPictures: [String: String] = [:]
+    /// Asked before Apply writes every ready picture (check M5 passed).
+    @Published var pendingConfirmation: (title: String, message: String)?
 
     /// A made-up sheet (the DEBUG hook): no device, no network, nothing written.
     let isPreview: Bool
@@ -78,6 +87,11 @@ final class ArtistPicturesSheetModel: ObservableObject {
     private var store: ArtistPictureStore?
     private var findTask: Task<Void, Never>?
     private let fetcher = URLSessionPictureFetcher()
+    /// The names the owner gave a picture in this sheet session, in the
+    /// order they did: before check M5, Apply writes the first of these.
+    private var changedNames: [String] = []
+    /// Rows the owner asked to look up again despite a fresh "not found".
+    private var lookAgain: Set<String> = []
 
     init(profileID: UUID, library: LibraryViewModel) {
         self.profileID = profileID
@@ -110,7 +124,7 @@ final class ArtistPicturesSheetModel: ObservableObject {
     }
 
     var canFind: Bool {
-        !isPreview && !isFinding && !isApplying && rows.contains { $0.state == .none || $0.state == .check }
+        !isPreview && !isFinding && !isApplying && !ArtistPictureRow.findTargets(rows, lookAgain: lookAgain).isEmpty
     }
 
     // MARK: Loading
@@ -132,6 +146,7 @@ final class ArtistPicturesSheetModel: ObservableObject {
             deviceRoot = context.device?.volumeURL
             artists = context.artists
             tree = context.tree
+            crateDiggerPictures = context.crateDiggerPictures
             store = library.currentArtistPictureStore()
             await recompute()
             if artists.isEmpty {
@@ -269,6 +284,8 @@ final class ArtistPicturesSheetModel: ObservableObject {
     private func pick(_ prepared: Data, source: ArtistPictureSourceID, candidate: ArtistPictureCandidate?,
                       for row: ArtistPictureRow) async {
         edits[row.id] = .picked(prepared: prepared, source: source, candidate: candidate)
+        changedNames.removeAll { $0 == row.name }
+        changedNames.append(row.name)
         thumbnails[row.id] = await Task.detached(priority: .utility) { Self.thumbnail(prepared) }.value
             .map { NSImage(cgImage: $0, size: NSSize(width: $0.width, height: $0.height)) }
         await recompute()
@@ -276,7 +293,10 @@ final class ArtistPicturesSheetModel: ObservableObject {
 
     func noPicture(for row: ArtistPictureRow) {
         guard !isPreview else { return previewOnly() }
+        // Never on a DEVICE row: nothing here covers a picture already on the iPod.
+        guard row.state != .onDevice else { return }
         edits[row.id] = .noPicture
+        changedNames.removeAll { $0 == row.name }
         thumbnails[row.id] = nil
         Task { await recompute() }
     }
@@ -284,6 +304,7 @@ final class ArtistPicturesSheetModel: ObservableObject {
     func clear(_ row: ArtistPictureRow) {
         guard !isPreview else { return previewOnly() }
         edits[row.id] = .clear
+        changedNames.removeAll { $0 == row.name }
         thumbnails[row.id] = nil
         Task { await recompute() }
     }
@@ -294,16 +315,38 @@ final class ArtistPicturesSheetModel: ObservableObject {
 
     // MARK: Find Missing and Apply
 
+    /// Find Missing: every row to check or without a picture, except those
+    /// a lookup found nothing for in the last 30 days (`findTargets`).
     func find() {
-        guard canFind, let library else { return }
-        let wanted = Set(rows.filter { $0.state == .none || $0.state == .check }.map(\.id))
+        guard canFind else { return }
+        find(ArtistPictureRow.findTargets(rows, lookAgain: lookAgain))
+    }
+
+    /// Look Again, on a row with a fresh "not found": that artist, now.
+    func lookAgain(_ row: ArtistPictureRow) {
+        guard !isPreview else { return previewOnly() }
+        guard !isFinding, !isApplying else { return }
+        lookAgain.insert(row.id)
+        find([row])
+    }
+
+    private func find(_ wantedRows: [ArtistPictureRow]) {
+        guard let library else { return }
+        let wanted = Set(wantedRows.map(\.id))
         let targets = artists.filter { wanted.contains($0.foldedKey.isEmpty ? $0.name : $0.foldedKey) }
+        guard !targets.isEmpty else { return }
         isFinding = true
         progress = (0, targets.count)
         footer = nil
         findTask = Task {
-            let findings = await library.findArtistPicturesForSheet(targets) { [weak self] done, total in
+            let result = await library.findArtistPicturesForSheet(targets) { [weak self] done, total in
                 self?.progress = (done, total)
+            }
+            guard let findings = result else {
+                isFinding = false
+                findTask = nil
+                footer = "The library is disconnected, so nothing was looked up."
+                return
             }
             var found = 0, toCheck = 0, none = 0, failed = 0
             for finding in findings {
@@ -316,6 +359,7 @@ final class ArtistPicturesSheetModel: ObservableObject {
                 case .notFound: none += 1
                 case .failed: failed += 1
                 }
+                lookAgain.remove(key)
             }
             isFinding = false
             findTask = nil
@@ -337,18 +381,64 @@ final class ArtistPicturesSheetModel: ObservableObject {
         isApplying = true
         let names = Dictionary(rows.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
         let edits = edits
+        let changed = changedNames
         Task {
-            footer = await library.applyArtistPictureEdits(edits, names: names, profileID: profileID)
+            let step = await library.applyArtistPictureEdits(edits, names: names, profileID: profileID,
+                                                             changedNames: changed)
             self.edits = [:]
-            isApplying = false
-            // What the device and the store hold now.
-            if let context = await library.artistPicturesContext(profileID: profileID) {
-                tree = context.tree
-                artists = context.artists
+            switch step {
+            case .finished(let line):
+                footer = line
+                isApplying = false
+                await reloadFromDevice()
+            case let .confirm(title, message):
+                footer = "Pictures are saved."
+                await recompute()
+                // Still applying: the buttons stay off until the owner answers.
+                pendingConfirmation = (title, message)
             }
-            thumbnails = [:]
-            await recompute()
         }
+    }
+
+    /// The owner's answer to `pendingConfirmation`.
+    func answerConfirmation(write: Bool) {
+        pendingConfirmation = nil
+        guard write, let library, let profileID else {
+            footer = "Pictures are saved. Nothing was written to the iPod."
+            isApplying = false
+            return
+        }
+        let changed = changedNames
+        Task {
+            footer = await library.writeArtistPicturesFromSheet(profileID: profileID, changedNames: changed)
+            isApplying = false
+            await reloadFromDevice()
+        }
+    }
+
+    /// Remove from iPod, on a DEVICE row whose picture CrateDigger wrote.
+    func removeFromIPod(_ row: ArtistPictureRow) {
+        guard !isPreview else { return previewOnly() }
+        guard let library, let profileID, let path = crateDiggerPictures[row.id], !isApplying, !isFinding else { return }
+        isApplying = true
+        Task {
+            footer = await library.removeArtistPicture(profileID: profileID, name: row.name, path: path)
+            isApplying = false
+            await reloadFromDevice()
+        }
+    }
+
+    /// What the device and the store hold now, with every thumbnail loaded
+    /// again (a row whose state did not change would otherwise keep none).
+    private func reloadFromDevice() async {
+        if let library, let profileID, let context = await library.artistPicturesContext(profileID: profileID) {
+            tree = context.tree
+            artists = context.artists
+            crateDiggerPictures = context.crateDiggerPictures
+        }
+        thumbnails = [:]
+        thumbnailGeneration += 1
+        await recompute()
     }
 
     // MARK: Preview
@@ -459,6 +549,15 @@ private struct ArtistPicturesSheetView: View {
         .padding(20)
         .frame(width: Self.sheetWidth)
         .background(theme.chassis)
+        .alert(sheet.pendingConfirmation?.title ?? "",
+               isPresented: Binding(get: { sheet.pendingConfirmation != nil },
+                                    set: { if !$0, sheet.pendingConfirmation != nil { sheet.answerConfirmation(write: false) } }),
+               presenting: sheet.pendingConfirmation.map(\.message)) { _ in
+            Button("Cancel", role: .cancel) { sheet.answerConfirmation(write: false) }
+            Button("Write") { sheet.answerConfirmation(write: true) }
+        } message: { message in
+            Text(message)
+        }
     }
 
     // MARK: Header
@@ -551,7 +650,7 @@ private struct ArtistPicturesSheetView: View {
                 .keyboardShortcut(.defaultAction)
                 .tint(theme.orange)
                 .disabled(!sheet.canApply)
-                .help("Saves your choices, and writes the ready pictures to the iPod when artist pictures are on for it.")
+                .help("Saves your choices, and writes the ready pictures to the iPod when artist pictures are on for it: one picture until you mark check M5 passed in Preferences ▸ Devices, then all of them.")
         }
     }
 
@@ -599,7 +698,9 @@ private struct ArtistPictureCell: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(theme.paper))
         .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(theme.hair.opacity(0.5), lineWidth: 1))
-        .task(id: "\(row.id)|\(row.state.rawValue)|\(row.badge)") { await sheet.loadThumbnail(for: row) }
+        .task(id: "\(row.id)|\(row.state.rawValue)|\(row.badge)|\(sheet.thumbnailGeneration)") {
+            await sheet.loadThumbnail(for: row)
+        }
     }
 
     private var picture: some View {
@@ -684,9 +785,19 @@ private struct ArtistPictureCell: View {
             Button("Choose File…") { sheet.chooseFile(for: row) }
                 .disabled(row.state == .unnameable || row.state == .onDevice)
             Button("No Picture") { sheet.noPicture(for: row) }
-                .disabled(row.state == .unnameable || row.state == .rejected)
+                .disabled(row.state == .unnameable || row.state == .rejected || row.state == .onDevice)
             Button("Clear") { sheet.clear(row) }
                 .disabled(row.state == .unnameable || row.state == .onDevice || row.state == .none)
+            if row.state == .none, row.notFoundAt != nil {
+                Divider()
+                Button("Look Again") { sheet.lookAgain(row) }
+                    .disabled(sheet.isFinding || sheet.isApplying)
+            }
+            if row.state == .onDevice, sheet.isMounted, sheet.crateDiggerPictures[row.id] != nil {
+                Divider()
+                Button("Remove from iPod") { sheet.removeFromIPod(row) }
+                    .disabled(sheet.isFinding || sheet.isApplying)
+            }
         } label: {
             Image(systemName: "ellipsis.circle")
         }
@@ -700,14 +811,23 @@ private struct ArtistPictureCell: View {
     private var note: String? {
         switch row.state {
         case .onDevice:
-            return row.devicePath.map { "On the iPod: \($0)" } ?? "The iPod may already show a picture."
+            guard let path = row.devicePath else {
+                return "The iPod may already show a picture, so CrateDigger leaves this artist alone."
+            }
+            if sheet.crateDiggerPictures[row.id] != nil {
+                return "On the iPod: \(path). CrateDigger wrote it; Remove from iPod takes it off."
+            }
+            return "On the iPod: \(path). CrateDigger never covers a picture already there."
         case .ready:
             return row.credit.map { "Commons: " + Self.creditLine($0) }
         case .check:
             let credited = row.candidates.compactMap(\.credit).first
             return "Pick the right one." + (credited.map { " Commons: " + Self.creditLine($0) } ?? "")
         case .none:
-            return nil
+            return row.notFoundAt.map {
+                "Nothing found on \($0.formatted(date: .abbreviated, time: .omitted)). Find Missing skips it "
+                    + "for 30 days; Look Again asks now."
+            }
         case .rejected:
             return "No picture, as you chose."
         case .unnameable:

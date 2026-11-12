@@ -84,7 +84,7 @@ public enum ArtistPictureSession {
                 case .rejected, .uncertain:
                     return false
                 case .notFound:
-                    if !record.isStale(now: now) { return false }
+                    if record.isFreshNotFound(now: now) { return false }
                 case .found:
                     if record.pickedByUser || store.preparedData(for: record) != nil { return false }
                 }
@@ -107,8 +107,12 @@ public enum ArtistPictureSession {
                 sourceID: candidate?.sourceID, preparedHash: SHA256.hash(data: prepared).hexString,
                 pickedByUser: false, checkedAt: now, credit: candidate?.credit)
             return (record, prepared)
-        case .uncertain:
-            return (ArtistPictureRecord(foldedKey: "", displayName: finding.name, outcome: .uncertain, checkedAt: now),
+        case .uncertain(let candidates):
+            // The candidates are kept with the record, so the sheet can offer
+            // them again after it is closed (the source, its id, the image
+            // URL and the credit; never the image itself).
+            return (ArtistPictureRecord(foldedKey: "", displayName: finding.name, outcome: .uncertain, checkedAt: now,
+                                        candidates: candidates.prefix(5).map(ArtistPictureRecord.HeldCandidate.init)),
                     nil)
         case .notFound:
             return (ArtistPictureRecord(foldedKey: "", displayName: finding.name, outcome: .notFound, checkedAt: now),
@@ -175,6 +179,43 @@ public enum ArtistPictureSession {
         if waiting > 0 { parts.append("\(waiting) waiting for a pick") }
         if didNotFit > 0 { parts.append("\(didNotFit) did not fit") }
         return parts.joined(separator: ", ") + "."
+    }
+
+    // MARK: - Apply in the Artist Pictures sheet
+
+    /// The footer while check M5 has not been marked passed on this iPod.
+    public static let oneFirstFooter = "Writing one picture first. Check it on the iPod, then mark the check as "
+        + "passed in Preferences ▸ Devices to write the rest."
+
+    /// What Apply writes of a plan. Until the owner has marked M5 passed
+    /// (`passedM5`), at most one artist's picture: the first ready one the
+    /// owner changed in this sheet session (`changedNames`, in the order
+    /// they were changed), else the first ready one in the sheet's order
+    /// (most tracks first); the rest stay ready. After M5, every ready one.
+    public static func applySelection(_ plan: ArtistPicturePlan, artists: [ArtistOnDevice], changedNames: [String],
+                                      passedM5: Bool) -> (operations: [DeviceFileOperation], heldBack: Int) {
+        guard !passedM5 else { return (plan.operations, 0) }
+        let bySubject = Dictionary(plan.operations.compactMap { op -> (String, DeviceFileOperation)? in
+            guard case let .write(_, _, _, _, subject?) = op else { return nil }
+            return (subject, op)
+        }, uniquingKeysWith: { first, _ in first })
+        func operation(for name: String) -> DeviceFileOperation? {
+            [PodBoxArtName.key(name), PodBoxArtName.altKey(name)].filter { $0 != 0 }
+                .lazy.compactMap { bySubject[String($0)] }.first
+        }
+        let ordered = artists.sorted { ($0.trackCount, $1.name) > ($1.trackCount, $0.name) }.map(\.name)
+        guard let chosen = (changedNames + ordered).lazy.compactMap(operation(for:)).first else {
+            return ([], plan.operations.count)
+        }
+        return ([chosen], plan.operations.count - 1)
+    }
+
+    /// Asked before Apply writes every ready picture (M5 passed).
+    public static func applyConfirmation(count: Int, deviceName: String) -> (title: String, message: String) {
+        let pictures = count == 1 ? "1 artist picture" : "\(count) artist pictures"
+        return ("Write \(pictures) to \(deviceName)?",
+                "\(count == 1 ? "It goes" : "They go") where PodBox looks for them. A picture already on the iPod "
+                    + "is never covered, and anything CrateDigger replaces of its own is kept on the Mac.")
     }
 
     // MARK: - The art cache reminder

@@ -48,9 +48,37 @@ public enum PodBoxNextSteps {
         return lines
     }
 
-    /// The player has done the step when the file it rewrites is newer than
-    /// our write by more than a minute (FAT keeps times to 2 seconds, and the
-    /// two clocks are not the same clock).
+    /// What CrateDigger noted when it last changed art on an iPod: when, and
+    /// what the player's stamp file looked like then, so the reminder to
+    /// rebuild the art cache can tell when the player has done it.
+    public struct ArtCacheMark: Codable, Equatable, Sendable {
+        public var wroteAt: Date
+        /// The stamp's modification date at the write; nil when it was not there.
+        public var stampAtWrite: Date?
+        /// False for a mark saved before the stamp was recorded: only its date is known.
+        public var recordedStamp: Bool
+
+        public init(wroteAt: Date, stampAtWrite: Date?, recordedStamp: Bool = true) {
+            self.wroteAt = wroteAt
+            self.stampAtWrite = stampAtWrite
+            self.recordedStamp = recordedStamp
+        }
+    }
+
+    /// The player has rebuilt its art cache when its stamp file is there and
+    /// differs in any way from what it was at our write. Only the iPod's own
+    /// clock is compared with itself, so an iPod whose clock was never set
+    /// (it stamps 2000 or 1970) still clears the reminder. A mark saved
+    /// before the stamp was recorded falls back to the date rule.
+    public static func isDone(_ mark: ArtCacheMark?, stampNow: Date?) -> Bool {
+        guard let mark, let stampNow else { return false }
+        guard mark.recordedStamp else { return isDone(lastWrite: mark.wroteAt, playerFileModified: stampNow) }
+        return stampNow != mark.stampAtWrite
+    }
+
+    /// The old rule, for a mark with no recorded stamp: the file the player
+    /// rewrites is newer than our write by more than a minute (FAT keeps
+    /// times to 2 seconds, and the two clocks are not the same clock).
     public static func isDone(lastWrite: Date?, playerFileModified: Date?) -> Bool {
         guard let lastWrite, let playerFileModified else { return false }
         return playerFileModified > lastWrite.addingTimeInterval(60)

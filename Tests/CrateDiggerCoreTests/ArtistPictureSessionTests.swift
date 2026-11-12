@@ -149,6 +149,9 @@ final class ArtistPictureSessionTests: XCTestCase {
         XCTAssertEqual(record.outcome, .uncertain)
         XCTAssertNil(record.preparedHash)
         XCTAssertNil(data)
+        XCTAssertEqual(record.candidates, [ArtistPictureRecord.HeldCandidate(candidate)],
+                       "the candidates are held with the record, not only in the sheet")
+        XCTAssertEqual(record.heldCandidates, [candidate])
         XCTAssertNil(ArtistPictureSession.record(from: ArtistPictureFinding(name: "Air", outcome: .failed("offline")),
                                                  now: now), "a failure is never stored")
     }
@@ -205,5 +208,69 @@ final class ArtistPictureSessionTests: XCTestCase {
         XCTAssertNil(folders.picture(for: "Can"))
         let requests = ArtistPictureSession.requests(for: [artist("Air")], library: folders)
         XCTAssertEqual(requests.first?.libraryPicture?.lastPathComponent, "artist.jpg")
+    }
+
+    // MARK: Apply before and after M5
+
+    private func picturePlan(_ names: [String]) -> ArtistPicturePlan {
+        let ops = names.map { name -> DeviceFileOperation in
+            .write(relativePath: "Artwork/People/\(name).jpg", role: .artistPicture, contents: .data(Data(name.utf8)),
+                   subject: String(PodBoxArtName.key(name)))
+        }
+        return ArtistPicturePlan(operations: ops, alreadyHasPicture: [], noPictureYet: [], overBudget: [],
+                                 unnameable: [], foreign: [], uncertain: [], reasons: [:], refusal: nil)
+    }
+
+    private func tracks(_ name: String, _ count: Int) -> ArtistOnDevice {
+        ArtistOnDevice(name: name, albumFolders: ["Music/\(name)/2000 Album"], trackCount: count)
+    }
+
+    func testBeforeM5ApplyWritesOnlyTheFirstPictureTheOwnerChanged() {
+        let artists = [tracks("Air", 30), tracks("Beck", 20), tracks("Can", 10)]
+        let selection = ArtistPictureSession.applySelection(
+            picturePlan(["Air", "Beck", "Can"]), artists: artists, changedNames: ["Can", "Beck"], passedM5: false)
+        XCTAssertEqual(selection.operations.map(\.relativePath), ["Artwork/People/Can.jpg"])
+        XCTAssertEqual(selection.heldBack, 2, "the rest stay ready")
+    }
+
+    func testBeforeM5ApplySkipsAChangedNameWithNothingToWrite() {
+        let artists = [tracks("Air", 30), tracks("Beck", 20)]
+        let selection = ArtistPictureSession.applySelection(
+            picturePlan(["Beck"]), artists: artists, changedNames: ["Air", "Beck"], passedM5: false)
+        XCTAssertEqual(selection.operations.map(\.relativePath), ["Artwork/People/Beck.jpg"])
+        XCTAssertEqual(selection.heldBack, 0)
+    }
+
+    func testBeforeM5ApplyWithNoChangeWritesTheFirstReadyInSheetOrder() {
+        let artists = [tracks("Can", 10), tracks("Beck", 20), tracks("Air", 5)]
+        let selection = ArtistPictureSession.applySelection(
+            picturePlan(["Air", "Can"]), artists: artists, changedNames: [], passedM5: false)
+        XCTAssertEqual(selection.operations.map(\.relativePath), ["Artwork/People/Can.jpg"], "most tracks first")
+        XCTAssertEqual(selection.heldBack, 1)
+    }
+
+    func testAChangedSpellingFindsItsPerson() {
+        let artists = [tracks("The Beatles", 30), tracks("Air", 40)]
+        let selection = ArtistPictureSession.applySelection(
+            picturePlan(["Air", "The Beatles"]), artists: artists, changedNames: ["Beatles, The"], passedM5: false)
+        XCTAssertEqual(selection.operations.map(\.relativePath), ["Artwork/People/The Beatles.jpg"])
+    }
+
+    func testAfterM5ApplyWritesEveryReadyPicture() {
+        let artists = [tracks("Air", 30), tracks("Beck", 20), tracks("Can", 10)]
+        let selection = ArtistPictureSession.applySelection(
+            picturePlan(["Air", "Beck", "Can"]), artists: artists, changedNames: ["Can"], passedM5: true)
+        XCTAssertEqual(selection.operations.count, 3)
+        XCTAssertEqual(selection.heldBack, 0)
+        let text = ArtistPictureSession.applyConfirmation(count: 3, deviceName: "IPOD")
+        XCTAssertEqual(text.title, "Write 3 artist pictures to IPOD?")
+        XCTAssertFalse((text.title + text.message + ArtistPictureSession.oneFirstFooter).contains("\u{2014}"))
+    }
+
+    func testNothingReadyWritesNothing() {
+        let selection = ArtistPictureSession.applySelection(picturePlan([]), artists: [tracks("Air", 1)],
+                                                            changedNames: ["Air"], passedM5: false)
+        XCTAssertTrue(selection.operations.isEmpty)
+        XCTAssertEqual(selection.heldBack, 0)
     }
 }

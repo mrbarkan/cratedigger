@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// Why the door would not write, or what went wrong when it did.
@@ -145,11 +146,14 @@ public struct DeviceTransferDoor: @unchecked Sendable {
         }
     }
 
-    /// Writes `data` as the cover at `destination`, replacing a cover already
-    /// there (spec D19; the replaced one is kept on the Mac). Whether a folder
-    /// may get a cover at all (a Gaps fill keeps the one it found) is decided
-    /// before this. Returns false when the bytes there are already these.
-    public func writeCover(_ data: Data, to destination: URL) throws -> Bool {
+    /// Writes `data` as the cover at `destination`. A transfer replaces a
+    /// cover already there (spec D19; the replaced one is kept on the Mac);
+    /// whether a folder may get a cover at all (a Gaps fill keeps the one it
+    /// found) is decided before this. With `replacesExisting` false (FIX ART)
+    /// a file already at the name is never touched, whoever wrote it: it is
+    /// `.appeared`, unless it already holds these very bytes. Returns false
+    /// when the bytes there are already these.
+    public func writeCover(_ data: Data, to destination: URL, replacesExisting: Bool = true) throws -> Bool {
         guard let path = relativePath(of: destination) else {
             throw DeviceTransferDoorError.outsideVolume(destination.path)
         }
@@ -158,7 +162,15 @@ public struct DeviceTransferDoor: @unchecked Sendable {
         } catch DeviceWritePolicyError.forbidden(let reason) {
             throw DeviceTransferDoorError.forbidden(reason)
         }
-        switch apply(.write(relativePath: path, role: .cover, contents: .data(data), replacesForeign: true)) {
+        if !replacesExisting, FileManager.default.fileExists(atPath: destination.path) {
+            // A read only. One that appears after this still meets the
+            // executor's exclusive rename, and a foreign one its refusal.
+            if let existing = try? DeviceFileIO.sha256(of: destination),
+               existing == SHA256.hash(data: data).hexString { return false }
+            throw DeviceTransferDoorError.appeared
+        }
+        switch apply(.write(relativePath: path, role: .cover, contents: .data(data),
+                            replacesForeign: replacesExisting)) {
         case .written: return true
         case .unchanged: return false
         case let outcome: throw Self.error(for: outcome)

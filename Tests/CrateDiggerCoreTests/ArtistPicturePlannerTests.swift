@@ -341,6 +341,35 @@ final class ArtistPicturePlannerTests: XCTestCase {
                        "a removed picture is not removed twice")
     }
 
+    /// The sheet's Remove from iPod: one artist, only CrateDigger's own
+    /// unchanged picture for that person.
+    func testRemovalOfOneArtistNeedsTheJournalsProofForThatPerson() throws {
+        try album("Air", folder: "1998 Moon Safari")
+        try album("Beck", folder: "1996 Odelay")
+        apply(plan(["air": picture, "beck": picture]))
+        try iPod.addFile("Artwork/People/Beck.jpg", Data("the owner's edit".utf8))
+        try iPod.addFile("Artwork/People/Can.jpg", Data("the owner's own".utf8))
+        let owned = { (path: String) in self.journal.ownedRecord(forKey: path, volumeUUID: "FAKE-UUID") }
+
+        let air = try XCTUnwrap(ArtistPicturePlanner.removal(of: "Artwork/People/Air.jpg", forArtist: "Air",
+                                                              ownedKeys: owned, sha256OnDevice: sha))
+        XCTAssertNil(ArtistPicturePlanner.removal(of: "Artwork/People/Air.jpg", forArtist: "Beck",
+                                                  ownedKeys: owned, sha256OnDevice: sha), "another person's")
+        XCTAssertNil(ArtistPicturePlanner.removal(of: "Artwork/People/Beck.jpg", forArtist: "Beck",
+                                                  ownedKeys: owned, sha256OnDevice: sha), "edited on the iPod")
+        XCTAssertNil(ArtistPicturePlanner.removal(of: "Artwork/People/Can.jpg", forArtist: "Can",
+                                                  ownedKeys: owned, sha256OnDevice: sha), "the owner's")
+        XCTAssertNil(ArtistPicturePlanner.removal(of: "Music/Air/1998 Moon Safari/cover.jpg", forArtist: "Air",
+                                                  ownedKeys: owned, sha256OnDevice: sha), "never a cover")
+
+        let session = UUID()
+        XCTAssertEqual(executor.apply([air], sessionID: session), [.deleted])
+        XCTAssertNil(bytes("Artwork/People/Air.jpg"))
+        XCTAssertEqual(bytes("Artwork/People/Beck.jpg"), Data("the owner's edit".utf8))
+        let copies = try XCTUnwrap(journal.backupFolderIfUsed(sessionID: session), "backed up first")
+        XCTAssertEqual(try Data(contentsOf: copies.appendingPathComponent("Artwork/People/Air.jpg")), picture)
+    }
+
     // MARK: Review fixes
 
     /// I1: a picture CrateDigger wrote for Prince is never handed to

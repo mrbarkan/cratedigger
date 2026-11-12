@@ -160,6 +160,93 @@ final class DeviceTransferDoorTests: XCTestCase {
     func testWriteCoverRefusesAnotherName() throws {
         XCTAssertThrowsError(try door.writeCover(Data("x".utf8), to: url("\(album)/folder.jpg")))
     }
+
+    // MARK: FIX ART: only adds
+
+    func testWriteCoverWithoutReplacingLeavesAnyCoverThere() throws {
+        try iPod.addFile("\(album)/cover.jpg", Data("theirs".utf8))
+        XCTAssertThrowsError(try door.writeCover(Data("ours".utf8), to: url("\(album)/cover.jpg"),
+                                                 replacesExisting: false)) { error in
+            XCTAssertEqual(error as? DeviceTransferDoorError, .appeared)
+        }
+        XCTAssertEqual(try Data(contentsOf: url("\(album)/cover.jpg")), Data("theirs".utf8))
+        XCTAssertEqual(door.journal.records(sessionID: door.sessionID).filter { $0.kind != .tempIntent }, [])
+    }
+
+    func testWriteCoverWithoutReplacingKeepsEvenCrateDiggersOwnCover() throws {
+        let cover = url("\(album)/cover.jpg")
+        XCTAssertTrue(try door.writeCover(Data("first".utf8), to: cover))
+        XCTAssertThrowsError(try door.writeCover(Data("second".utf8), to: cover, replacesExisting: false))
+        XCTAssertEqual(try Data(contentsOf: cover), Data("first".utf8))
+        XCTAssertFalse(try door.writeCover(Data("first".utf8), to: cover, replacesExisting: false),
+                       "the same bytes are the cover already done")
+    }
+
+    func testWriteCoverWithoutReplacingAddsWhereThereIsNone() throws {
+        XCTAssertTrue(try door.writeCover(Data("new".utf8), to: url("\(album)/cover.jpg"), replacesExisting: false))
+        XCTAssertEqual(try Data(contentsOf: url("\(album)/cover.jpg")), Data("new".utf8))
+        XCTAssertNil(door.journal.backupFolderIfUsed(sessionID: door.sessionID), "nothing was replaced")
+    }
+
+    func testReplacingACoverLeavesASessionBackupToShow() throws {
+        try iPod.addFile("\(album)/cover.jpg", Data("theirs".utf8))
+        XCTAssertNil(door.journal.backupFolderIfUsed(sessionID: door.sessionID))
+        XCTAssertTrue(try door.writeCover(Data("ours".utf8), to: url("\(album)/cover.jpg")))
+        let folder = try XCTUnwrap(door.journal.backupFolderIfUsed(sessionID: door.sessionID))
+        XCTAssertEqual(folder, door.journal.backupFolder(sessionID: door.sessionID))
+        XCTAssertEqual(try Data(contentsOf: folder.appendingPathComponent("\(album)/cover.jpg")), Data("theirs".utf8))
+        XCTAssertNil(door.journal.backupFolderIfUsed(sessionID: UUID()), "another session kept nothing")
+    }
+
+    /// FIX ART end to end on the fake iPod: the plan keeps every folder with
+    /// a cover (any case) out, and the writer, through the door without
+    /// replacing, adds covers only to the rest.
+    func testFixArtAddsCoversOnlyWhereThereAreNone() throws {
+        let bare = try iPod.addAlbum(category: "Classics", artist: "Low", folder: "2001 Things We Lost",
+                                     tracks: ["01 - Sunflower.m4a"], cover: false)
+        let covered = try iPod.addAlbum(category: "Classics", artist: "Yo La Tengo", folder: "1997 I Can Hear",
+                                        tracks: ["01 - Return.m4a"], cover: true)
+        let upper = try iPod.addAlbum(category: "Classics", artist: "Slowdive", folder: "1993 Souvlaki",
+                                      tracks: ["01 - Alison.m4a"], cover: false)
+        try iPod.addFile("Music/Classics/Slowdive/1993 Souvlaki/Cover.JPG", Data("upper".utf8))
+        let coveredBytes = try Data(contentsOf: covered.appendingPathComponent("cover.jpg"))
+        let teenDream = url(album)
+
+        let plan = FolderCoverArtWriter.fixArtPlan(
+            representatives: FolderCoverArtWriter.representativeAudioFiles(under: url("Music")),
+            hasCover: { FolderCoverArtWriter.hasCover(in: $0) })
+        XCTAssertEqual(Set(plan.needsCover.keys.map(\.standardizedFileURL)),
+                       Set([bare, teenDream].map(\.standardizedFileURL)))
+        XCTAssertEqual(plan.alreadyCovered.map(\.standardizedFileURL),
+                       [upper, covered].map(\.standardizedFileURL).sorted { $0.path < $1.path })
+
+        let asset = ArtworkAsset(source: .embedded, hash: "h", dimensions: ArtworkDimensions(width: 2, height: 2),
+                                 data: Data("art".utf8))
+        let writer = FolderCoverArtWriter(preparer: PassThroughPreparer(),
+                                          writeData: { try self.door.writeCover($0, to: $1, replacesExisting: false) })
+        let counts = writer.writeCounting(Dictionary(uniqueKeysWithValues: plan.needsCover.keys.map { ($0, asset) }))
+
+        XCTAssertEqual(counts, FolderCoverArtWriter.WriteCounts(written: 2))
+        XCTAssertEqual(try Data(contentsOf: covered.appendingPathComponent("cover.jpg")), coveredBytes)
+        XCTAssertEqual(try Data(contentsOf: upper.appendingPathComponent("Cover.JPG")), Data("upper".utf8))
+        XCTAssertEqual(try Data(contentsOf: bare.appendingPathComponent("cover.jpg")), Data("art".utf8))
+        XCTAssertNil(door.journal.backupFolderIfUsed(sessionID: door.sessionID), "FIX ART replaced nothing")
+
+        let text = FolderCoverArtWriter.FixArtText.confirmation(plan, deviceName: "IPOD")
+        XCTAssertEqual(text.title, "Add covers to 2 album folders?")
+        XCTAssertTrue(text.message.contains("2 album folders on IPOD have no cover.jpg"), text.message)
+        XCTAssertTrue(text.message.contains("2 album folders already have one and are left as they are"), text.message)
+        let result = FolderCoverArtWriter.FixArtText.result(counts, noArtwork: 1, plan: plan, deviceName: "IPOD")
+        XCTAssertEqual(result.message, "Added a cover.jpg to 2 album folders on IPOD. 2 album folders already had one and were left as they were. 1 album folder has no artwork in its tracks to copy out.")
+    }
+}
+
+/// Hands the artwork's bytes through untouched, so a test can see exactly what landed.
+private struct PassThroughPreparer: ArtworkPreparing {
+    func prepareCompatibleArtwork(asset: ArtworkAsset, profile: DeviceProfile) throws -> ArtworkAsset { asset }
+    func prepareCompatibleArtwork(asset: ArtworkAsset, profile: DeviceProfile, maxDimension: Int?) throws -> ArtworkAsset {
+        asset
+    }
 }
 
 extension DeviceTransferDoor {

@@ -278,6 +278,22 @@ public enum ArtistPicturePlanner {
             .map { .delete(relativePath: $0, reason: .ownedByCrateDigger) }
     }
 
+    /// The delete that takes one artist's picture off the iPod, from the
+    /// Artist Pictures sheet's DEVICE row: only when the journal proves
+    /// CrateDigger wrote `path` as a picture for this very person (its
+    /// `subject`, or the People file named for them) and its bytes on the
+    /// device are unchanged since. nil otherwise: the owner's own picture,
+    /// one CrateDigger wrote for someone else, or one edited on the iPod.
+    /// The executor proves ownership again and backs the file up first.
+    public static func removal(of path: String, forArtist name: String,
+                               ownedKeys: (String) -> DeviceFileRecord?,
+                               sha256OnDevice: (String) -> String?) -> DeviceFileOperation? {
+        guard let record = ownedKeys(path), let recorded = record.sha256, pictureRoles.contains(record.role),
+              isFor(record, path: path, name: name), sha256OnDevice(path) == recorded
+        else { return nil }
+        return .delete(relativePath: path, reason: .ownedByCrateDigger)
+    }
+
     // MARK: - Private
 
     static let pictureRoles: Set<String> = [DeviceFileRole.artistPicture.rawValue,

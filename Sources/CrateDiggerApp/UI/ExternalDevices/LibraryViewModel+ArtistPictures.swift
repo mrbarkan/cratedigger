@@ -42,7 +42,7 @@ extension LibraryViewModel {
                     try store.set(record, prepared: prepared)
                     count += 1
                 } catch {
-                    AppLog.library.error("Artist picture for \(finding.name, privacy: .public) not stored: \(error.localizedDescription, privacy: .public)")
+                    AppLog.library.error("Artist picture for \(finding.name, privacy: .private) not stored: \(error.localizedDescription, privacy: .private)")
                 }
             }
             do {
@@ -72,20 +72,31 @@ extension LibraryViewModel {
             passedM5: preferences.passedChecks.contains(ArtistPictureSession.m5Check))
     }
 
-    /// Writes the pictures the planner allows for `device`, and, with
+    /// One planned run of pictures for a device: the plan, and what writing
+    /// it needs. Made by `planArtistPictures`, written by `writePlannedPictures`.
+    struct PlannedArtistPictures {
+        let plan: ArtistPicturePlan
+        let artists: [ArtistOnDevice]
+        let journal: DeviceWriteJournal
+        let policy: DeviceWritePolicy
+        let volume: URL
+        let uuid: String?
+    }
+
+    /// Plans the pictures the planner allows for `device`, and, with
     /// `findMissing`, first looks up the names the store has no answer for
     /// (the owner's library folders, then Deezer; Commons is not used inside
-    /// a transfer). The caller holds the device busy. A disconnected library
-    /// finds nothing and writes what the store already holds. Never throws
-    /// and never fails the session it is part of: a problem is the line.
+    /// a transfer). Reads only. A disconnected library finds nothing and
+    /// plans from what the store already holds. nil with the reason when the
+    /// run may not write at all or the device cannot be read.
     @MainActor
-    func writeArtistPictures(device: MountedDevice, profile: ExternalDeviceProfile, findMissing: Bool,
-                             automatic: Bool = true) async -> (written: Int, line: String?) {
+    func planArtistPictures(device: MountedDevice, profile: ExternalDeviceProfile, findMissing: Bool,
+                            automatic: Bool) async -> (planned: PlannedArtistPictures?, reason: String?) {
         let permission = ArtistPictureSession.mayWrite(
             artistPictureInputs(device: device, profile: profile, automatic: automatic), trigger: .userAction)
-        guard permission.allowed else { return (0, permission.reason) }
+        guard permission.allowed else { return (nil, permission.reason) }
         guard let catalog = await currentDeviceCatalog(for: device) else {
-            return (0, "Artist pictures were not written: \(device.name) could not be read.")
+            return (nil, "Artist pictures were not written: \(device.name) could not be read.")
         }
 
         let volume = device.volumeURL
@@ -121,34 +132,72 @@ extension LibraryViewModel {
         let policy = ArtistPictureSession.picturePolicy(from: devicePolicy(for: profile, firmware: firmware(for: device)))
         let destination = profile.podBoxPreferences.artistPictures
         let planned = inputs
-        let result = await Task.detached(priority: .userInitiated) { () -> (written: Int, plan: ArtistPicturePlan) in
-            let plan = ArtistPicturePlanner.plan(
+        let plan = await Task.detached(priority: .userInitiated) { () -> ArtistPicturePlan in
+            ArtistPicturePlanner.plan(
                 artists: planned.artists, tree: planned.tree,
                 prepared: ArtistPictureSession.prepared(for: planned.artists, store: store),
                 destination: destination,
                 ownedKeys: { journal.ownedRecord(forKey: $0, volumeUUID: uuid) },
                 sha256OnDevice: ArtistPictureSession.deviceHash(volumeRoot: volume))
-            // A refused plan writes nothing; its refusal is the line.
-            guard plan.refusal == nil, !plan.operations.isEmpty else { return (0, plan) }
-            let outcomes = DeviceFileExecutor(volumeRoot: volume, expectedVolumeUUID: uuid, policy: policy,
-                                              journal: journal)
-                .apply(plan.operations, sessionID: UUID())
-            return (outcomes.filter { $0 == .written }.count, plan)
         }.value
-        AppLog.conversion.notice("Artist pictures for \(profile.name, privacy: .public): wrote \(result.written) of \(result.plan.operations.count)")
-        return (result.written, ArtistPictureSession.summaryLine(written: result.written, plan: result.plan))
+        return (PlannedArtistPictures(plan: plan, artists: planned.artists, journal: journal, policy: policy,
+                                      volume: volume, uuid: uuid), nil)
+    }
+
+    /// Writes `operations` (all or part of `planned.plan`) through the door,
+    /// one session. A refused plan writes nothing. The caller holds the device busy.
+    @MainActor
+    func writePlannedPictures(_ planned: PlannedArtistPictures,
+                              operations: [DeviceFileOperation]) async -> (written: Int, failed: Int) {
+        let session = UUID()
+        guard planned.plan.refusal == nil, !operations.isEmpty else { return (0, 0) }
+        let outcomes = await Task.detached(priority: .userInitiated) { () -> [DeviceFileOutcome] in
+            DeviceFileExecutor(volumeRoot: planned.volume, expectedVolumeUUID: planned.uuid, policy: planned.policy,
+                               journal: planned.journal)
+                .apply(operations, sessionID: session)
+        }.value
+        let written = outcomes.filter { $0 == .written }.count
+        let unchanged = outcomes.filter { $0 == .unchanged }.count
+        logSessionBackups(journal: planned.journal, sessionID: session, what: "Artist pictures")
+        return (written, outcomes.count - written - unchanged)
+    }
+
+    /// Writes every picture the planner allows for `device` (inside a
+    /// transfer: `automatic`, which needs check M5). The caller holds the
+    /// device busy. Never throws and never fails the session it is part of:
+    /// a problem is the line.
+    @MainActor
+    func writeArtistPictures(device: MountedDevice, profile: ExternalDeviceProfile, findMissing: Bool,
+                             automatic: Bool = true) async -> (written: Int, line: String?) {
+        let planning = await planArtistPictures(device: device, profile: profile, findMissing: findMissing,
+                                                automatic: automatic)
+        guard let planned = planning.planned else { return (0, planning.reason) }
+        let result = await writePlannedPictures(planned, operations: planned.plan.operations)
+        AppLog.conversion.notice("Artist pictures for \(profile.name, privacy: .private): wrote \(result.written) of \(planned.plan.operations.count), \(result.failed) failed")
+        return (result.written, ArtistPictureSession.summaryLine(written: result.written, plan: planned.plan))
     }
 
     // MARK: - The Artist Pictures sheet
 
+    /// A footer line as an error, so `Result` can carry it.
+    struct ArtistPictureLine: Error {
+        let text: String
+        init(_ text: String) { self.text = text }
+    }
+
     /// What the sheet opens on: the profile's artists from the device's
     /// catalog (walked first when mounted and never scanned; the saved
-    /// catalog otherwise), and the device's picture tree when it is mounted.
+    /// catalog otherwise), the device's picture tree when it is mounted, and
+    /// which of its pictures CrateDigger wrote.
     struct ArtistPicturesContext {
         let profile: ExternalDeviceProfile
         let device: MountedDevice?
         let artists: [ArtistOnDevice]
         let tree: DeviceArtTree
+        /// Row id -> device path, for the DEVICE rows whose picture the
+        /// journal proves CrateDigger wrote for that person, unchanged since:
+        /// the only ones the sheet offers to remove.
+        let crateDiggerPictures: [String: String]
     }
 
     /// Opens the Artist Pictures sheet for a profile, from the root
@@ -170,6 +219,8 @@ extension LibraryViewModel {
         }
         let music = musicSubpath(for: profile)
         let volume = device?.volumeURL
+        let uuid = device?.volumeUUID
+        let journal = await Self.sharedJournal(for: profileID)
         return await Task.detached(priority: .userInitiated) { () -> ArtistPicturesContext in
             // Offline, the catalog's own root is unknown; its tracks name the
             // volume they were read from, so take that volume's root.
@@ -179,7 +230,21 @@ extension LibraryViewModel {
             let tree = volume.map { DeviceArtTree.scan(volumeRoot: $0, musicSubpath: music, catalog: catalog) }
                 ?? DeviceArtTree(peopleFiles: [], coverFiles: [], folderImages: [:], foldersWithAudio: [],
                                  artistsByFolder: [:])
-            return ArtistPicturesContext(profile: profile, device: device, artists: artists, tree: tree)
+            var ours: [String: String] = [:]
+            if let volume {
+                let sha = ArtistPictureSession.deviceHash(volumeRoot: volume)
+                for artist in artists {
+                    guard case .found(let path) = PodBoxArtLookup.artistPicture(
+                        for: artist.name, albumFolders: artist.albumFolders, tree: tree),
+                          ArtistPicturePlanner.removal(of: path, forArtist: artist.name,
+                                                       ownedKeys: { journal.ownedRecord(forKey: $0, volumeUUID: uuid) },
+                                                       sha256OnDevice: sha) != nil
+                    else { continue }
+                    ours[artist.foldedKey.isEmpty ? artist.name : artist.foldedKey] = path
+                }
+            }
+            return ArtistPicturesContext(profile: profile, device: device, artists: artists, tree: tree,
+                                         crateDiggerPictures: ours)
         }.value
     }
 
@@ -193,11 +258,14 @@ extension LibraryViewModel {
     /// Find Missing, pressed in the sheet: every source (the owner's
     /// library folders, Deezer, Wikimedia Commons), a scan job on DEVICES
     /// with progress, cancelled with the task that runs it. What is found is
-    /// stored (never a failure). Returns the findings for the sheet.
+    /// stored (never a failure). Returns the findings for the sheet; nil when
+    /// the library is disconnected, checked before anything is looked up,
+    /// since nothing found could be stored.
     @MainActor
     func findArtistPicturesForSheet(_ artists: [ArtistOnDevice],
-                                    onProgress: @escaping @MainActor (Int, Int) -> Void) async -> [ArtistPictureFinding] {
+                                    onProgress: @escaping @MainActor (Int, Int) -> Void) async -> [ArtistPictureFinding]? {
         guard !artists.isEmpty, !isFindingArtistPictures else { return [] }
+        guard !refuseWhileLibraryDisconnected() else { return nil }
         isFindingArtistPictures = true
         let job = beginBusyJob(.scan, on: .devices, labels: BusyLabels(source: "WEB", target: "PICTURES"))
         let library = currentTrackStore().allTracks
@@ -224,16 +292,25 @@ extension LibraryViewModel {
         return findings
     }
 
-    /// Apply, pressed in the sheet: the owner's edits go to the store, and
-    /// then, when the device is mounted, matched by its volume UUID and has
-    /// artist pictures on, the ready pictures go to the device through the
-    /// door. Returns the sheet's footer line.
+    /// What Apply does next, for the sheet.
+    enum ArtistPictureApplyStep {
+        /// Done: the footer line.
+        case finished(String)
+        /// Every ready picture is about to be written (M5 passed): ask first.
+        case confirm(title: String, message: String)
+    }
+
+    /// Apply, pressed in the sheet: the owner's edits go to the store. Then,
+    /// when the device is mounted and may take pictures: before check M5 is
+    /// marked passed, one picture is written at once
+    /// (`ArtistPictureSession.applySelection`); after it, the sheet is asked
+    /// to confirm the count first and calls `writeArtistPicturesFromSheet`.
     @MainActor
     func applyArtistPictureEdits(_ edits: [String: ArtistPictureEdit], names: [String: String],
-                                 profileID: UUID) async -> String {
+                                 profileID: UUID, changedNames: [String]) async -> ArtistPictureApplyStep {
         if !edits.isEmpty {
             guard !refuseWhileLibraryDisconnected() else {
-                return "The library is disconnected, so nothing was saved."
+                return .finished("The library is disconnected, so nothing was saved.")
             }
             let store = currentArtistPictureStore()
             let failure = await Task.detached(priority: .userInitiated) { () -> String? in
@@ -248,30 +325,151 @@ extension LibraryViewModel {
                 do { try store.save() } catch { return error.localizedDescription }
                 return nil
             }.value
-            if let failure { return "Nothing was saved: \(failure)" }
+            if let failure { return .finished("Nothing was saved: \(failure)") }
         }
 
-        let saved = "Pictures are saved and will be written when artist pictures are on for this device."
-        guard let profile = prefs.savedExternalDeviceProfiles.first(where: { $0.id == profileID }),
-              let device = mountedDevice(forProfileID: profileID),
-              ArtistPictureSession.mayWrite(artistPictureInputs(device: device, profile: profile, automatic: false),
-                                            trigger: .userAction).allowed
-        else { return saved }
+        switch artistPictureWriteTarget(profileID: profileID) {
+        case .failure(let line):
+            return .finished(line.text)
+        case .success(let (profile, device)):
+            guard profile.podBoxPreferences.passedChecks.contains(ArtistPictureSession.m5Check) else {
+                return .finished(await writeArtistPicturesFromSheet(profileID: profileID, changedNames: changedNames))
+            }
+            // M5 passed: count what would be written, then ask. Held busy
+            // while the device is read.
+            isWritingArtistPictures = true
+            let planning = await planArtistPictures(device: device, profile: profile, findMissing: false,
+                                                    automatic: false)
+            isWritingArtistPictures = false
+            guard let planned = planning.planned else { return .finished(saved(planning.reason)) }
+            guard planned.plan.refusal == nil, !planned.plan.operations.isEmpty else {
+                return .finished(ArtistPictureSession.summaryLine(written: 0, plan: planned.plan)
+                                 ?? "Pictures are saved. Nothing new to write to \(device.name).")
+            }
+            let text = ArtistPictureSession.applyConfirmation(count: planned.plan.operations.count,
+                                                               deviceName: device.name)
+            return .confirm(title: text.title, message: text.message)
+        }
+    }
+
+    /// The footer for saved pictures that were not written, with the reason.
+    private func saved(_ reason: String?) -> String {
+        ["Pictures are saved.", reason].compactMap { $0 }.joined(separator: " ")
+    }
+
+    /// The mounted device the sheet's profile may write pictures to now, or
+    /// the footer line saying why not (the real reason, not a guess).
+    @MainActor
+    private func artistPictureWriteTarget(profileID: UUID)
+        -> Result<(ExternalDeviceProfile, MountedDevice), ArtistPictureLine> {
+        guard let profile = prefs.savedExternalDeviceProfiles.first(where: { $0.id == profileID }) else {
+            return .failure(ArtistPictureLine("This device profile is gone."))
+        }
+        guard let device = mountedDevice(forProfileID: profileID) else {
+            return .failure(ArtistPictureLine(saved("They are written when \(profile.name) is connected.")))
+        }
+        let permission = ArtistPictureSession.mayWrite(artistPictureInputs(device: device, profile: profile,
+                                                                           automatic: false), trigger: .userAction)
+        guard permission.allowed else { return .failure(ArtistPictureLine(saved(permission.reason))) }
         guard !isDeviceBusy else {
             showDeviceBusyAlert("Write artist pictures")
-            return "Pictures are saved. \(device.name) is busy, so nothing was written to it yet."
+            return .failure(ArtistPictureLine(saved("\(device.name) is busy, so nothing was written to it yet.")))
+        }
+        return .success((profile, device))
+    }
+
+    /// Plans again from the device as it is now and writes: every ready
+    /// picture once check M5 is marked passed, else at most one
+    /// (`ArtistPictureSession.applySelection`). Returns the footer line.
+    @MainActor
+    func writeArtistPicturesFromSheet(profileID: UUID, changedNames: [String]) async -> String {
+        let profile: ExternalDeviceProfile, device: MountedDevice
+        switch artistPictureWriteTarget(profileID: profileID) {
+        case .failure(let line): return line.text
+        case .success(let target): (profile, device) = target
+        }
+        let passedM5 = profile.podBoxPreferences.passedChecks.contains(ArtistPictureSession.m5Check)
+        isWritingArtistPictures = true
+        let job = beginBusyJob(.transfer, on: .devices)
+        let planning = await planArtistPictures(device: device, profile: profile, findMissing: false, automatic: false)
+        guard let planned = planning.planned else {
+            endBusyJob(job, .completed)
+            isWritingArtistPictures = false
+            return saved(planning.reason)
+        }
+        let selection = ArtistPictureSession.applySelection(planned.plan, artists: planned.artists,
+                                                            changedNames: changedNames, passedM5: passedM5)
+        let result = await writePlannedPictures(planned, operations: selection.operations)
+        endBusyJob(job, result.written == 0 && result.failed > 0 ? .failed : .completed)
+        isWritingArtistPictures = false
+        AppLog.conversion.notice("Artist pictures from the sheet for \(profile.name, privacy: .private): wrote \(result.written) of \(selection.operations.count), \(result.failed) failed, \(selection.heldBack) held until M5")
+
+        let firmware = firmware(for: device)
+        let changes: DeviceWriteChanges = result.written > 0 ? .pictures : []
+        noteArtCacheStep(profileID: profileID, device: device, firmware: firmware, changes: changes)
+        refreshDeviceNotes(for: device)
+        var lines = [ArtistPictureSession.summaryLine(written: result.written, plan: planned.plan)
+            ?? "Nothing new to write to \(device.name)."]
+        if result.failed > 0 {
+            lines.append("\(result.failed) could not be written; the log says why.")
+        }
+        if !passedM5, !planned.plan.operations.isEmpty {
+            lines.append(ArtistPictureSession.oneFirstFooter)
+        }
+        return (lines + PodBoxNextSteps.after(changes, firmware: firmware)).joined(separator: " ")
+    }
+
+    /// Remove from iPod, on a DEVICE row: the one picture CrateDigger wrote
+    /// for this artist, proven again by the journal now, deleted through the
+    /// door with a copy kept on the Mac. Returns the footer line.
+    @MainActor
+    func removeArtistPicture(profileID: UUID, name: String, path: String) async -> String {
+        guard let profile = prefs.savedExternalDeviceProfiles.first(where: { $0.id == profileID }),
+              let device = mountedDevice(forProfileID: profileID) else {
+            return "Connect the iPod first."
+        }
+        guard DeviceSessionGate.allows(.writeExtras, trigger: .userAction, matchedByUUID: isMatchedByUUID(device, profile))
+        else { return ArtistPictureSession.needsVolumeID }
+        guard !isDeviceBusy else {
+            showDeviceBusyAlert("Remove an artist picture")
+            return "\(device.name) is busy, so nothing was removed."
         }
         isWritingArtistPictures = true
         let job = beginBusyJob(.transfer, on: .devices)
-        let result = await writeArtistPictures(device: device, profile: profile, findMissing: false, automatic: false)
-        endBusyJob(job, .completed)
-        isWritingArtistPictures = false
         let firmware = firmware(for: device)
-        let changes: DeviceWriteChanges = result.written > 0 ? .pictures : []
-        noteArtCacheStep(profileID: profileID, firmware: firmware, changes: changes)
-        refreshDeviceNotes(for: device)
-        let line = result.line ?? "Nothing new to write to \(device.name)."
-        return ([line] + PodBoxNextSteps.after(changes, firmware: firmware)).joined(separator: " ")
+        let policy = ArtistPictureSession.picturePolicy(from: devicePolicy(for: profile, firmware: firmware))
+        let volume = device.volumeURL
+        let uuid = device.volumeUUID
+        let journal = await Self.sharedJournal(for: profileID)
+        let session = UUID()
+        let outcome = await Task.detached(priority: .userInitiated) { () -> DeviceFileOutcome? in
+            guard let operation = ArtistPicturePlanner.removal(
+                of: path, forArtist: name, ownedKeys: { journal.ownedRecord(forKey: $0, volumeUUID: uuid) },
+                sha256OnDevice: ArtistPictureSession.deviceHash(volumeRoot: volume)) else { return nil }
+            return DeviceFileExecutor(volumeRoot: volume, expectedVolumeUUID: uuid, policy: policy, journal: journal)
+                .apply([operation], sessionID: session).first
+        }.value
+        endBusyJob(job, outcome == .deleted || outcome == .alreadyGone ? .completed : .failed)
+        isWritingArtistPictures = false
+        logSessionBackups(journal: journal, sessionID: session, what: "Remove from iPod")
+
+        switch outcome {
+        case .deleted?:
+            noteArtCacheStep(profileID: profileID, device: device, firmware: firmware, changes: .pictures)
+            refreshDeviceNotes(for: device)
+            return (["Removed the picture of \(name) from \(device.name). A copy is kept on the Mac."]
+                    + PodBoxNextSteps.after(.pictures, firmware: firmware)).joined(separator: " ")
+        case .alreadyGone?:
+            return "The picture of \(name) is no longer on \(device.name)."
+        case nil:
+            return "The picture of \(name) is not one CrateDigger wrote for this artist, or it was changed on the iPod, so it was left."
+        case .failed(let reason)?:
+            return "The picture of \(name) was not removed: \(reason)"
+        case .refusedWrongVolume?:
+            return "\(device.name) is not the iPod this started on, so nothing was removed."
+        case .some:
+            return "The picture of \(name) was left: CrateDigger could not prove it is still the one it wrote."
+        }
     }
 
     // MARK: - Removal
@@ -299,6 +497,7 @@ extension LibraryViewModel {
         let policy = ArtistPictureSession.picturePolicy(from: devicePolicy(for: profile, firmware: firmware))
         let volume = device.volumeURL
         let uuid = device.volumeUUID
+        let session = UUID()
         Task { @MainActor in
             let journal = await Self.sharedJournal(for: profileID)
             let outcomes = await Task.detached(priority: .userInitiated) { () -> [DeviceFileOutcome] in
@@ -306,50 +505,59 @@ extension LibraryViewModel {
                     journalRecords: journal.records, volumeUUID: uuid,
                     sha256OnDevice: ArtistPictureSession.deviceHash(volumeRoot: volume))
                 return DeviceFileExecutor(volumeRoot: volume, expectedVolumeUUID: uuid, policy: policy, journal: journal)
-                    .apply(operations, sessionID: UUID())
+                    .apply(operations, sessionID: session)
             }.value
             let removed = outcomes.filter { $0 == .deleted }.count
             let refused = outcomes.count - removed - outcomes.filter { $0 == .alreadyGone }.count
             endBusyJob(job, removed == 0 && refused > 0 ? .failed : .completed)
             isWritingArtistPictures = false
-            AppLog.conversion.notice("Removed \(removed) artist picture(s) from \(device.name, privacy: .public), refused \(refused)")
+            AppLog.conversion.notice("Removed \(removed) artist picture(s) from \(device.name, privacy: .private), refused \(refused)")
+            logSessionBackups(journal: journal, sessionID: session, what: "Remove artist pictures")
 
             let changes: DeviceWriteChanges = removed > 0 ? .pictures : []
-            noteArtCacheStep(profileID: profileID, firmware: firmware, changes: changes)
+            noteArtCacheStep(profileID: profileID, device: device, firmware: firmware, changes: changes)
             refreshDeviceNotes(for: device)
             var lines = [removed == 1 ? "Removed 1 artist picture CrateDigger added."
                          : "Removed \(removed) artist pictures CrateDigger added."]
             if refused > 0 { lines.append("\(refused) could not be removed and were left.") }
             lines += PodBoxNextSteps.after(changes, firmware: firmware)
-            appAlert = .actionable(title: "Artist pictures on \(device.name)", message: lines.joined(separator: " "),
-                                   actionTitle: "Eject", cancelTitle: "OK") { [weak self] in
+            appAlert = AppAlert.actionable(title: "Artist pictures on \(device.name)", message: lines.joined(separator: " "),
+                                           actionTitle: "Eject", cancelTitle: "OK") { [weak self] in
                 self?.ejectDevice(device)
             }
+            .withSecondary(Self.showCopiesTitle, action: showCopiesAction(journal: journal, sessionID: session))
         }
     }
 
     // MARK: - The art cache reminder
 
-    /// After covers or pictures changed on PodBox: remember when, and show
-    /// "NEXT ON IPOD · UPDATE ART CACHE" until the player has rebuilt its cache.
+    /// After covers or pictures changed on PodBox: remember when, and what
+    /// the player's stamp file looked like then (one `stat`, never opened),
+    /// and show "NEXT ON IPOD · UPDATE ART CACHE" until the stamp changes.
     @MainActor
-    func noteArtCacheStep(profileID: UUID, firmware: DeviceFirmware?, changes: DeviceWriteChanges) {
+    func noteArtCacheStep(profileID: UUID, device: MountedDevice, firmware: DeviceFirmware?,
+                          changes: DeviceWriteChanges) {
         guard ArtistPictureSession.remindsToUpdateArtCache(changes: changes, firmware: firmware) else { return }
-        prefs.setPodBoxLastArtWrite(Date(), profileID: profileID)
+        // Always the stamp as it is now: if the player has not rebuilt since
+        // an earlier write it is the same stamp, and if it has, the art just
+        // written is not in that rebuild.
+        let stamp = ArtistPictureSession.artCacheStampModified(volumeRoot: device.volumeURL)
+        prefs.setPodBoxArtCacheMark(PodBoxNextSteps.ArtCacheMark(wroteAt: Date(), stampAtWrite: stamp),
+                                    profileID: profileID)
         pendingIPodStep[profileID] = ArtistPictureSession.artCacheReminder
     }
 
     /// On mount: whether each device's player has rebuilt its art cache since
-    /// CrateDigger last wrote art there (`PodBoxNextSteps.isDone` on a `stat`
-    /// of its stamp file). `stamps` were read off the main actor.
+    /// CrateDigger last wrote art there (`PodBoxNextSteps.isDone`: its stamp
+    /// file changed). `stamps` were read off the main actor.
     @MainActor
     func refreshArtCacheReminders(stamps: [MountedDevice.ID: Date]) {
         var next: [UUID: String] = [:]
         for device in mountedDevices {
             guard let profile = deviceProfile(for: device),
-                  let lastWrite = prefs.podBoxLastArtWrite(profileID: profile.id) else { continue }
-            if PodBoxNextSteps.isDone(lastWrite: lastWrite, playerFileModified: stamps[device.id]) {
-                prefs.setPodBoxLastArtWrite(nil, profileID: profile.id)
+                  let mark = prefs.podBoxArtCacheMark(profileID: profile.id) else { continue }
+            if PodBoxNextSteps.isDone(mark, stampNow: stamps[device.id]) {
+                prefs.setPodBoxArtCacheMark(nil, profileID: profile.id)
             } else {
                 next[profile.id] = ArtistPictureSession.artCacheReminder
             }

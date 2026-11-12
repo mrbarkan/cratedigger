@@ -44,16 +44,49 @@ public struct ArtistPictureRow: Identifiable, Hashable, Sendable {
     public let candidates: [ArtistPictureCandidate]
     /// Who made the picture and under what licence, when its source says (Commons).
     public let credit: ArtistPictureCredit?
+    /// For `.none`: when a lookup last found nothing, while that answer is
+    /// still trusted (30 days). Find skips the row until then, unless the
+    /// owner asks to look again.
+    public let notFoundAt: Date?
+
+    public init(id: String, name: String, trackCount: Int, state: State, badge: String, devicePath: String? = nil,
+                candidates: [ArtistPictureCandidate] = [], credit: ArtistPictureCredit? = nil,
+                notFoundAt: Date? = nil) {
+        self.id = id
+        self.name = name
+        self.trackCount = trackCount
+        self.state = state
+        self.badge = badge
+        self.devicePath = devicePath
+        self.candidates = candidates
+        self.credit = credit
+        self.notFoundAt = notFoundAt
+    }
 
     /// Most tracks first, then by name. `uncertain` holds the candidates a
-    /// Find Missing run offered this session, by folded key; `edits` are the
+    /// Find Missing run offered this session, by folded key, which win over
+    /// the candidates held in the store from an earlier one; `edits` are the
     /// sheet's unapplied changes, which win over the store.
     public static func rows(artists: [ArtistOnDevice], tree: DeviceArtTree, store: ArtistPictureStore,
                             uncertain: [String: [ArtistPictureCandidate]],
-                            edits: [String: ArtistPictureEdit] = [:]) -> [ArtistPictureRow] {
+                            edits: [String: ArtistPictureEdit] = [:], now: Date = Date()) -> [ArtistPictureRow] {
         artists
             .sorted { ($0.trackCount, $1.name) > ($1.trackCount, $0.name) }
-            .map { row(for: $0, tree: tree, store: store, uncertain: uncertain, edits: edits) }
+            .map { row(for: $0, tree: tree, store: store, uncertain: uncertain, edits: edits, now: now) }
+    }
+
+    /// The rows Find Missing looks up: every row to check, and every row
+    /// without a picture except one with a fresh "not found" (the same
+    /// 30-day rule `ArtistPictureSession.namesToFind` keeps), unless its id is
+    /// in `lookAgain`, the rows the owner asked to look again.
+    public static func findTargets(_ rows: [ArtistPictureRow], lookAgain: Set<String> = []) -> [ArtistPictureRow] {
+        rows.filter { row in
+            switch row.state {
+            case .check: return true
+            case .none: return row.notFoundAt == nil || lookAgain.contains(row.id)
+            case .onDevice, .ready, .rejected, .unnameable: return false
+            }
+        }
     }
 
     /// Apply has something to write: at least one picture ready.
@@ -95,12 +128,12 @@ public struct ArtistPictureRow: Identifiable, Hashable, Sendable {
 
     private static func row(for artist: ArtistOnDevice, tree: DeviceArtTree, store: ArtistPictureStore,
                             uncertain: [String: [ArtistPictureCandidate]],
-                            edits: [String: ArtistPictureEdit]) -> ArtistPictureRow {
+                            edits: [String: ArtistPictureEdit], now: Date) -> ArtistPictureRow {
         let key = artist.foldedKey.isEmpty ? artist.name : artist.foldedKey
         func make(_ state: State, _ badge: String, path: String? = nil, candidates: [ArtistPictureCandidate] = [],
-                  credit: ArtistPictureCredit? = nil) -> ArtistPictureRow {
+                  credit: ArtistPictureCredit? = nil, notFoundAt: Date? = nil) -> ArtistPictureRow {
             ArtistPictureRow(id: key, name: artist.name, trackCount: artist.trackCount, state: state, badge: badge,
-                             devicePath: path, candidates: candidates, credit: credit)
+                             devicePath: path, candidates: candidates, credit: credit, notFoundAt: notFoundAt)
         }
 
         guard PodBoxArtName.fileStem(for: artist.name) != nil else { return make(.unnameable, "NONE") }
@@ -134,6 +167,12 @@ public struct ArtistPictureRow: Identifiable, Hashable, Sendable {
         }
         if let offered = uncertain[key], !offered.isEmpty {
             return make(.check, "CHECK", candidates: offered)
+        }
+        if let held = record?.heldCandidates, !held.isEmpty {
+            return make(.check, "CHECK", candidates: held)
+        }
+        if let record, record.isFreshNotFound(now: now) {
+            return make(.none, "NONE", notFoundAt: record.checkedAt)
         }
         return make(.none, "NONE")
     }

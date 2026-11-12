@@ -98,4 +98,56 @@ final class PodBoxNextStepsTests: XCTestCase {
         XCTAssertFalse(PodBoxNextSteps.isDone(lastWrite: date, playerFileModified: nil))
         XCTAssertFalse(PodBoxNextSteps.isDone(lastWrite: nil, playerFileModified: nil))
     }
+
+    // MARK: The stamp recorded at write time
+
+    func testRecordedStampClearsOnAnyChangeWhateverTheClock() {
+        // An iPod whose clock was never set stamps 2000, long before our write.
+        let unsetClock = Date(timeIntervalSince1970: 946_684_800)
+        let write = Date(timeIntervalSince1970: 1_800_000_000)
+        let mark = PodBoxNextSteps.ArtCacheMark(wroteAt: write, stampAtWrite: unsetClock)
+        XCTAssertFalse(PodBoxNextSteps.isDone(mark, stampNow: unsetClock), "not rebuilt yet")
+        XCTAssertTrue(PodBoxNextSteps.isDone(mark, stampNow: unsetClock.addingTimeInterval(2)),
+                      "rebuilt: the stamp moved, even though it is still decades before the Mac's write")
+        XCTAssertTrue(PodBoxNextSteps.isDone(mark, stampNow: unsetClock.addingTimeInterval(-60)), "any change")
+        XCTAssertFalse(PodBoxNextSteps.isDone(mark, stampNow: nil), "no stamp: not rebuilt")
+        // The old rule would never have cleared it.
+        XCTAssertFalse(PodBoxNextSteps.isDone(lastWrite: write, playerFileModified: unsetClock.addingTimeInterval(2)))
+    }
+
+    func testStampThatAppearsAfterTheWriteClears() {
+        let mark = PodBoxNextSteps.ArtCacheMark(wroteAt: Date(), stampAtWrite: nil)
+        XCTAssertFalse(PodBoxNextSteps.isDone(mark, stampNow: nil))
+        XCTAssertTrue(PodBoxNextSteps.isDone(mark, stampNow: Date(timeIntervalSince1970: 0)))
+        XCTAssertFalse(PodBoxNextSteps.isDone(nil, stampNow: Date()))
+    }
+
+    func testMarkWithoutARecordedStampKeepsTheDateRule() {
+        let write = Date(timeIntervalSince1970: 1_800_000_000)
+        let legacy = PodBoxNextSteps.ArtCacheMark(wroteAt: write, stampAtWrite: nil, recordedStamp: false)
+        XCTAssertFalse(PodBoxNextSteps.isDone(legacy, stampNow: write.addingTimeInterval(30)))
+        XCTAssertTrue(PodBoxNextSteps.isDone(legacy, stampNow: write.addingTimeInterval(61)))
+    }
+
+    func testPreferencesKeepTheMarkAndReadTheOldDate() throws {
+        let suite = "PodBoxNextStepsTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let prefs = PreferencesStore(defaults: defaults)
+        let id = UUID()
+        XCTAssertNil(prefs.podBoxArtCacheMark(profileID: id))
+
+        let old = Date(timeIntervalSince1970: 1_800_000_000)
+        defaults.set(old, forKey: PreferencesStore.podBoxLastArtWriteKey(id))
+        XCTAssertEqual(prefs.podBoxArtCacheMark(profileID: id),
+                       PodBoxNextSteps.ArtCacheMark(wroteAt: old, stampAtWrite: nil, recordedStamp: false))
+
+        let mark = PodBoxNextSteps.ArtCacheMark(wroteAt: old, stampAtWrite: Date(timeIntervalSince1970: 946_684_800))
+        prefs.setPodBoxArtCacheMark(mark, profileID: id)
+        XCTAssertEqual(prefs.podBoxArtCacheMark(profileID: id), mark)
+        XCTAssertNil(defaults.object(forKey: PreferencesStore.podBoxLastArtWriteKey(id)), "the old key is dropped")
+
+        prefs.setPodBoxArtCacheMark(nil, profileID: id)
+        XCTAssertNil(prefs.podBoxArtCacheMark(profileID: id))
+    }
 }

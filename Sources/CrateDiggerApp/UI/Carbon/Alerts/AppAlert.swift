@@ -17,6 +17,20 @@ struct AppAlert: Identifiable {
     var linkURL: URL?
     /// The button beside the action that only closes the alert.
     var cancelTitle: String = "Cancel"
+    /// An optional button at the left that acts without closing the alert
+    /// (Show Copies in Finder). Shown dimmed when `secondaryAction` is nil:
+    /// the button says the feature exists, and dimmed that there is nothing
+    /// for it this time.
+    var secondaryTitle: String?
+    var secondaryAction: (() -> Void)?
+
+    /// This alert with a secondary button.
+    func withSecondary(_ title: String, action: (() -> Void)?) -> AppAlert {
+        var alert = self
+        alert.secondaryTitle = title
+        alert.secondaryAction = action
+        return alert
+    }
 
     static func info(
         title: String,

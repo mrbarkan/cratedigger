@@ -207,7 +207,7 @@ extension LibraryViewModel {
                                               executor: executor)
         }.value
         if result.removed > 0 {
-            AppLog.conversion.notice("Removed \(result.removed) Mac metadata file(s) after the transfer to \(profile.name, privacy: .public)")
+            AppLog.conversion.notice("Removed \(result.removed) Mac metadata file(s) after the transfer to \(profile.name, privacy: .private)")
         }
 
         // Artist pictures, when the owner has turned them on for this iPod
@@ -228,7 +228,7 @@ extension LibraryViewModel {
             lines.append(reason)
         }
         lines += PodBoxNextSteps.after(changes, firmware: firmware)
-        noteArtCacheStep(profileID: profile.id, firmware: firmware, changes: changes)
+        noteArtCacheStep(profileID: profile.id, device: device, firmware: firmware, changes: changes)
         refreshDeviceNotes(for: device)
         return lines
     }
@@ -321,24 +321,62 @@ extension LibraryViewModel {
         let volume = device.volumeURL
         let uuid = device.volumeUUID
         let profileID = profile.id
+        let session = UUID()
         Task { @MainActor in
+            let journal = await Self.sharedJournal(for: profileID)
             let outcomes = await Task.detached(priority: .userInitiated) { () -> [DeviceFileOutcome] in
-                DeviceFileExecutor(volumeRoot: volume, expectedVolumeUUID: uuid, policy: policy,
-                                   journal: DeviceWriteJournal.shared(profileID: profileID))
-                    .apply(plan.operations, sessionID: UUID())
+                DeviceFileExecutor(volumeRoot: volume, expectedVolumeUUID: uuid, policy: policy, journal: journal)
+                    .apply(plan.operations, sessionID: session,
+                           progress: Self.throttledProgress { [weak self] done, total in
+                               self?.reportBusyProgress(job, completed: done, total: total)
+                           })
             }.value
             let removed = outcomes.filter { $0 == .deleted }.count
             let refused = outcomes.count - removed - outcomes.filter { $0 == .alreadyGone }.count
             endBusyJob(job, removed == 0 && refused > 0 ? .failed : .completed)
             isCleaningDeviceFiles = false
-            AppLog.conversion.notice("Clean Up Mac Files on \(device.name, privacy: .public): removed \(removed), refused \(refused)")
+            AppLog.conversion.notice("Clean Up Mac Files on \(device.name, privacy: .private): removed \(removed), refused \(refused)")
+            logSessionBackups(journal: journal, sessionID: session, what: "Clean Up Mac Files")
 
             let lines = [DeviceCleanupSummary.result(removed: removed, refused: refused, leftAlone: plan.leftAlone)]
                 + PodBoxNextSteps.after(removed > 0 ? .cleanup : [], firmware: firmware)
-            appAlert = .actionable(title: "Cleaned up \(device.name)", message: lines.joined(separator: " "),
-                                   actionTitle: "Eject", cancelTitle: "OK") { [weak self] in
+            appAlert = AppAlert.actionable(title: "Cleaned up \(device.name)", message: lines.joined(separator: " "),
+                                           actionTitle: "Eject", cancelTitle: "OK") { [weak self] in
                 self?.ejectDevice(device)
             }
+            .withSecondary(Self.showCopiesTitle, action: showCopiesAction(journal: journal, sessionID: session))
+        }
+    }
+
+    // MARK: - The session's copies on the Mac
+
+    static let showCopiesTitle = "Show Copies in Finder"
+
+    /// Opens the folder holding what `sessionID` replaced or deleted, or nil
+    /// when the session kept no copy of anything (the button is then dimmed).
+    @MainActor
+    func showCopiesAction(journal: DeviceWriteJournal, sessionID: UUID) -> (() -> Void)? {
+        guard let folder = journal.backupFolderIfUsed(sessionID: sessionID) else { return nil }
+        return { NSWorkspace.shared.open(folder) }
+    }
+
+    /// Logs where a session kept its copies, when it kept any. The session ID
+    /// is public (it names the folder under the profile's journal); the path,
+    /// which holds the user's home folder, is not.
+    func logSessionBackups(journal: DeviceWriteJournal, sessionID: UUID, what: String) {
+        guard let folder = journal.backupFolderIfUsed(sessionID: sessionID) else { return }
+        AppLog.conversion.notice("\(what, privacy: .public): copies of what session \(sessionID.uuidString, privacy: .public) replaced or removed are in \(folder.path, privacy: .private)")
+    }
+
+    /// An executor `progress` callback that hands (done, total) to `report`
+    /// on the main actor about a hundred times per run, not once per file.
+    nonisolated static func throttledProgress(
+        _ report: @escaping @MainActor (Int, Int) -> Void
+    ) -> (Int, Int) -> Void {
+        { done, total in
+            let step = max(1, total / 100)
+            guard done == total || done % step == 0 else { return }
+            Task { @MainActor in report(done, total) }
         }
     }
 

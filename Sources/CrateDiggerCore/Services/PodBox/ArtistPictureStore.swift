@@ -38,10 +38,51 @@ public struct ArtistPictureRecord: Codable, Hashable, Sendable {
     public var checkedAt: Date
     /// The picture's credit (a Commons file name, licence and author); absent in older files.
     public var credit: ArtistPictureCredit?
+    /// For an `.uncertain` record: the candidates held for the owner to pick
+    /// from, so the sheet offers them again after it was closed. Absent in
+    /// older files and for every other outcome.
+    public var candidates: [HeldCandidate]?
+
+    /// One held candidate: where it is, never the image itself.
+    public struct HeldCandidate: Codable, Hashable, Sendable {
+        public var source: ArtistPictureSourceID
+        public var sourceID: String
+        public var imageURL: URL
+        public var credit: ArtistPictureCredit?
+
+        public init(source: ArtistPictureSourceID, sourceID: String, imageURL: URL, credit: ArtistPictureCredit? = nil) {
+            self.source = source
+            self.sourceID = sourceID
+            self.imageURL = imageURL
+            self.credit = credit
+        }
+
+        public init(_ candidate: ArtistPictureCandidate) {
+            self.init(source: candidate.source, sourceID: candidate.sourceID, imageURL: candidate.imageURL,
+                      credit: candidate.credit)
+        }
+
+        /// The candidate the sheet shows, named for the record's person.
+        public func candidate(named name: String) -> ArtistPictureCandidate {
+            ArtistPictureCandidate(name: name, source: source, sourceID: sourceID, imageURL: imageURL, credit: credit)
+        }
+    }
+
+    /// The held candidates as the sheet shows them; empty unless uncertain.
+    public var heldCandidates: [ArtistPictureCandidate] {
+        guard outcome == .uncertain else { return [] }
+        return (candidates ?? []).map { $0.candidate(named: displayName) }
+    }
+
+    /// A "not found" still trusted (30 days): Find skips the name unless the
+    /// owner asks to look again.
+    public func isFreshNotFound(now: Date) -> Bool {
+        outcome == .notFound && !isStale(now: now)
+    }
 
     public init(foldedKey: String, displayName: String, outcome: Outcome, source: ArtistPictureSourceID? = nil,
                 sourceID: String? = nil, preparedHash: String? = nil, pickedByUser: Bool = false, checkedAt: Date,
-                credit: ArtistPictureCredit? = nil) {
+                credit: ArtistPictureCredit? = nil, candidates: [HeldCandidate]? = nil) {
         self.foldedKey = foldedKey
         self.displayName = displayName
         self.outcome = outcome
@@ -51,6 +92,7 @@ public struct ArtistPictureRecord: Codable, Hashable, Sendable {
         self.pickedByUser = pickedByUser
         self.checkedAt = checkedAt
         self.credit = credit
+        self.candidates = candidates
     }
 
     /// A "not found" older than 30 days is worth asking again. Nothing else
