@@ -50,16 +50,18 @@ public enum ArtistPictureSourceError: Error, Equatable, Sendable {
 /// names the app and its public site; it never holds a user name, an
 /// e-mail, a path or a device name.
 ///
-/// Only the sources' own hosts are fetched from, over HTTPS, redirects
-/// included, and a body is read as it arrives and abandoned past 32 MB.
+/// Only the sources' own hosts (and Wikipedia, for artist bios) are fetched
+/// from, over HTTPS, redirects included, and a body is read as it arrives and
+/// abandoned past 32 MB.
 public struct URLSessionPictureFetcher: ArtistPictureFetching {
     public static let timeout: TimeInterval = 15
     /// The services the sources use, and the hosts their pictures come from.
     static let allowedHosts: Set<String> = [
         "api.deezer.com", "musicbrainz.org", "www.wikidata.org", "commons.wikimedia.org", "upload.wikimedia.org",
     ]
-    /// Deezer's picture CDN (`e-cdns-images.dzcdn.net`, `cdn-images.dzcdn.net`).
-    static let allowedHostSuffixes = [".dzcdn.net"]
+    /// Deezer's picture CDN (`e-cdns-images.dzcdn.net`, `cdn-images.dzcdn.net`),
+    /// and every language's Wikipedia (`en.wikipedia.org`), for artist bios.
+    static let allowedHostSuffixes = [".dzcdn.net", ".wikipedia.org"]
 
     private let session: URLSession
 
@@ -125,15 +127,20 @@ public struct URLSessionPictureFetcher: ArtistPictureFetching {
     }
 }
 
-/// Keeps one service's requests at least `spacing` apart (Deezer; for
-/// MusicBrainz see `MusicBrainzGate`). The slot is claimed before sleeping:
-/// an actor is re-entrant across the sleep, so a gate that only recorded the
-/// time afterwards would let every waiting caller fire at once.
-actor RequestSpacer {
+/// Keeps one service's requests at least `spacing` apart (Deezer, Wikimedia;
+/// for MusicBrainz see `MusicBrainzGate`). The slot is claimed before
+/// sleeping: an actor is re-entrant across the sleep, so a gate that only
+/// recorded the time afterwards would let every waiting caller fire at once.
+public actor RequestSpacer {
+    /// One request a second to Wikimedia (Wikidata, Wikipedia, Commons and
+    /// its images) across every caller in the app: the artist info client,
+    /// the lookup run and the Commons source share it.
+    public static let wikimedia = RequestSpacer(spacing: .seconds(1))
+
     private let spacing: Duration
     private var next: ContinuousClock.Instant?
 
-    init(spacing: Duration) {
+    public init(spacing: Duration) {
         self.spacing = spacing
     }
 
@@ -184,6 +191,23 @@ public protocol ArtistPictureSource: Sendable {
     /// What the service offers for `name`; each candidate's `albumTitles` may be empty.
     func candidates(for name: String) async throws -> [ArtistPictureCandidate]
     func albumTitles(for candidate: ArtistPictureCandidate) async throws -> [String]
+    /// The same, with any MusicBrainz request waiting in `lane`: the
+    /// background artist lookup passes `.background`, so a lookup the owner
+    /// started never queues behind it. A source that never asks MusicBrainz
+    /// need not implement these: they forward to the two above.
+    func candidates(for name: String, lane: MusicBrainzGate.Lane) async throws -> [ArtistPictureCandidate]
+    func albumTitles(for candidate: ArtistPictureCandidate, lane: MusicBrainzGate.Lane) async throws -> [String]
+}
+
+extension ArtistPictureSource {
+    public func candidates(for name: String, lane: MusicBrainzGate.Lane) async throws -> [ArtistPictureCandidate] {
+        try await candidates(for: name)
+    }
+
+    public func albumTitles(for candidate: ArtistPictureCandidate,
+                            lane: MusicBrainzGate.Lane) async throws -> [String] {
+        try await albumTitles(for: candidate)
+    }
 }
 
 // MARK: - Deezer

@@ -4,13 +4,15 @@ import ImageIO
 import SwiftUI
 
 /// The Artist Pictures sheet: a grid of a device's artists, most tracks
-/// first, each with the picture the player shows or would get, where it came
-/// from, and, for an uncertain match, the candidates to pick from. Per
-/// artist: Accept a candidate, Choose File…, No Picture, Clear. Find Missing
+/// first, each with the picture the player shows or would get (the artist's
+/// default photo, the same one the artist page shows), where it came from,
+/// and, for an uncertain match, the candidates to pick from. Per artist:
+/// Accept a candidate, Choose File…, Don't Send to iPod, Clear. Find Missing
 /// looks pictures up (library, Deezer, Commons) only when pressed; Apply
-/// saves the owner's picks and, when the device may take them, writes them
-/// through the door. What each row says is Core's (`ArtistPictureRow`); this
-/// draws it and keeps every image decode off the main thread.
+/// saves the owner's picks into the artist profiles and, when the device may
+/// take them, writes them through the door. What each row says is Core's
+/// (`ArtistPictureRow`); this draws it and keeps every image decode off the
+/// main thread.
 final class ArtistPicturesSheetController: ThemedSheetHostingController {
     private let sheet: ArtistPicturesSheetModel
     private let maxGridHeight: CGFloat
@@ -84,9 +86,12 @@ final class ArtistPicturesSheetModel: ObservableObject {
                                      artistsByFolder: [:])
     private var uncertain: [String: [ArtistPictureCandidate]] = [:]
     private var deviceRoot: URL?
-    private var store: ArtistPictureStore?
+    /// The DEBUG preview's own made-up profiles. A real sheet holds no
+    /// store: it asks for the current one on each action, so a library
+    /// moved or a drive unplugged while it is open is never read stale.
+    private var previewStore: ArtistProfileStore?
     private var findTask: Task<Void, Never>?
-    private let fetcher = URLSessionPictureFetcher()
+    private let fetcher: URLSessionPictureFetcher
     /// The names the owner gave a picture in this sheet session, in the
     /// order they did: before check M5, Apply writes the first of these.
     private var changedNames: [String] = []
@@ -96,14 +101,16 @@ final class ArtistPicturesSheetModel: ObservableObject {
     init(profileID: UUID, library: LibraryViewModel) {
         self.profileID = profileID
         self.library = library
+        fetcher = library.artistPictureFetcher
         isPreview = false
     }
 
-    private init(preview store: ArtistPictureStore, artists: [ArtistOnDevice], tree: DeviceArtTree,
+    private init(preview store: ArtistProfileStore, artists: [ArtistOnDevice], tree: DeviceArtTree,
                  uncertain: [String: [ArtistPictureCandidate]]) {
         profileID = nil
         isPreview = true
-        self.store = store
+        fetcher = URLSessionPictureFetcher()
+        previewStore = store
         self.artists = artists
         self.tree = tree
         self.uncertain = uncertain
@@ -115,7 +122,7 @@ final class ArtistPicturesSheetModel: ObservableObject {
         let byState = Dictionary(grouping: rows, by: \.state).mapValues(\.count)
         let parts: [(ArtistPictureRow.State, String)] = [(.onDevice, "on the iPod"), (.ready, "ready"),
                                                          (.check, "to check"), (.none, "without one"),
-                                                         (.rejected, "no picture"), (.unnameable, "unnameable")]
+                                                         (.rejected, "not sent"), (.unnameable, "unnameable")]
         return parts.compactMap { state, label in byState[state].map { "\($0) \(label)" } }.joined(separator: " · ")
     }
 
@@ -147,7 +154,6 @@ final class ArtistPicturesSheetModel: ObservableObject {
             artists = context.artists
             tree = context.tree
             crateDiggerPictures = context.crateDiggerPictures
-            store = library.currentArtistPictureStore()
             await recompute()
             if artists.isEmpty {
                 footer = isMounted ? "No artists on \(deviceName) yet." : "Connect \(deviceName) once so CrateDigger knows its artists."
@@ -155,17 +161,24 @@ final class ArtistPicturesSheetModel: ObservableObject {
         }
     }
 
-    /// Rows from Core, worked out off the main actor (it reads the image cache).
+    /// Rows from Core, worked out off the main actor (it reads the profiles
+    /// and checks photo files).
     private func recompute() async {
-        guard let store else {
+        guard let store = await currentStore() else {
             isLoading = false
             return
         }
         let artists = artists, tree = tree, uncertain = uncertain, edits = edits
         rows = await Task.detached(priority: .userInitiated) {
-            ArtistPictureRow.rows(artists: artists, tree: tree, store: store, uncertain: uncertain, edits: edits)
+            ArtistPictureRow.rows(artists: artists, tree: tree, profiles: store, uncertain: uncertain, edits: edits)
         }.value
         isLoading = false
+    }
+
+    /// The profile store as it is now: the library's current one, or the preview's.
+    private func currentStore() async -> ArtistProfileStore? {
+        if isPreview { return previewStore }
+        return await library?.currentArtistProfileStore()
     }
 
     // MARK: Images
@@ -177,14 +190,16 @@ final class ArtistPicturesSheetModel: ObservableObject {
             thumbnails[key] = thumbnails[key] ?? Self.placeholderImage(for: row.name)
             return
         }
-        if case let .picked(prepared, _, _)? = edits[key] {
+        if case let .picked(prepared, _, _, _)? = edits[key] {
             data = prepared
         } else {
-            let store = store, name = row.name, devicePath = row.devicePath, root = deviceRoot, state = row.state
+            let store = await currentStore(), photoHash = row.photoHash, devicePath = row.devicePath
+            let root = deviceRoot
+            let state = row.state
             data = await Task.detached(priority: .utility) { () -> Data? in
                 switch state {
                 case .ready:
-                    return store?.record(forName: name).flatMap { store?.preparedData(for: $0) }
+                    return photoHash.flatMap { store?.photoData(hash: $0) }
                 case .onDevice:
                     guard let root, let devicePath else { return nil }
                     return Self.readSmallFile(root.appendingPathComponent(devicePath))
@@ -242,18 +257,18 @@ final class ArtistPicturesSheetModel: ObservableObject {
         let fetcher = fetcher
         Task {
             footer = "Getting the picture for \(row.name)…"
-            let prepared = await Task.detached(priority: .userInitiated) { () -> Data?? in
-                guard let data = try? await fetcher.data(from: candidate.imageURL) else { return .none }
-                return .some(ArtistPictureImage.prepare(data))
+            let downloaded = await Task.detached(priority: .userInitiated) { () -> (original: Data, prepared: Data?)? in
+                guard let data = try? await fetcher.data(from: candidate.imageURL) else { return nil }
+                return (data, ArtistPictureImage.prepare(data))
             }.value
-            switch prepared {
-            case .none:
+            switch downloaded {
+            case nil:
                 footer = "The picture for \(row.name) could not be downloaded."
-            case .some(nil):
+            case (_, nil)?:
                 footer = Self.tooSmall
-            case .some(let bytes?):
+            case let (original, bytes?)?:
                 footer = nil
-                await pick(bytes, source: candidate.source, candidate: candidate, for: row)
+                await pick(bytes, original: original, source: candidate.source, candidate: candidate, for: row)
             }
         }
     }
@@ -269,21 +284,23 @@ final class ArtistPicturesSheetModel: ObservableObject {
         panel.prompt = "Choose"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         Task {
-            let prepared = await Task.detached(priority: .userInitiated) {
-                Self.readSmallFile(url).flatMap(ArtistPictureImage.prepare)
+            let chosen = await Task.detached(priority: .userInitiated) { () -> (original: Data, prepared: Data)? in
+                guard let data = try? LibraryViewModel.readArtistPhotoFile(url),
+                      let prepared = ArtistPictureImage.prepare(data) else { return nil }
+                return (data, prepared)
             }.value
-            guard let prepared else {
+            guard let chosen else {
                 footer = Self.tooSmall
                 return
             }
             footer = nil
-            await pick(prepared, source: .userFile, candidate: nil, for: row)
+            await pick(chosen.prepared, original: chosen.original, source: .userFile, candidate: nil, for: row)
         }
     }
 
-    private func pick(_ prepared: Data, source: ArtistPictureSourceID, candidate: ArtistPictureCandidate?,
-                      for row: ArtistPictureRow) async {
-        edits[row.id] = .picked(prepared: prepared, source: source, candidate: candidate)
+    private func pick(_ prepared: Data, original: Data, source: ArtistPictureSourceID,
+                      candidate: ArtistPictureCandidate?, for row: ArtistPictureRow) async {
+        edits[row.id] = .picked(prepared: prepared, original: original, source: source, candidate: candidate)
         changedNames.removeAll { $0 == row.name }
         changedNames.append(row.name)
         thumbnails[row.id] = await Task.detached(priority: .utility) { Self.thumbnail(prepared) }.value
@@ -445,8 +462,7 @@ final class ArtistPicturesSheetModel: ObservableObject {
 
     /// A tile drawn from the name: a hue of its own and its initials. Small,
     /// made once per name.
-    static func placeholderImage(for name: String) -> NSImage {
-        let side: CGFloat = 140
+    static func placeholderImage(for name: String, side: CGFloat = 140) -> NSImage {
         let hue = CGFloat(abs(name.hashValue % 360)) / 360
         let image = NSImage(size: NSSize(width: side, height: side))
         image.lockFocus()
@@ -455,7 +471,7 @@ final class ArtistPicturesSheetModel: ObservableObject {
             .draw(in: NSRect(x: 0, y: 0, width: side, height: side), angle: -70)
         let initials = name.split(separator: " ").prefix(2).compactMap(\.first).map(String.init).joined()
         let text = NSAttributedString(string: initials.isEmpty ? "?" : initials, attributes: [
-            .font: NSFont.systemFont(ofSize: 44, weight: .bold),
+            .font: NSFont.systemFont(ofSize: side * 0.31, weight: .bold),
             .foregroundColor: NSColor.white.withAlphaComponent(0.85),
         ])
         let size = text.size()
@@ -466,12 +482,13 @@ final class ArtistPicturesSheetModel: ObservableObject {
 
     #if DEBUG
     /// `CRATEDIGGER_ARTIST_PICTURES=1`: twelve made-up artists, one or more
-    /// in every state, from a store in a temporary folder. No device, no
-    /// network, nothing written outside that folder.
+    /// in every state, from artist profiles in a temporary folder. No device,
+    /// no network, nothing written outside that folder.
     static func debugSample() -> ArtistPicturesSheetModel {
         let folder = FileManager.default.temporaryDirectory
             .appendingPathComponent("CrateDiggerArtistPicturesPreview-\(UUID().uuidString)", isDirectory: true)
-        let store = ArtistPictureStore(indexDirectory: folder, imageDirectory: folder.appendingPathComponent("Images"))
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let store = ArtistProfileStore(indexDirectory: folder)
         func artist(_ name: String, _ tracks: Int, folder: String? = nil) -> ArtistOnDevice {
             ArtistOnDevice(name: name, albumFolders: ["Music/\(folder ?? name)/2001 Album"], trackCount: tracks)
         }
@@ -483,22 +500,20 @@ final class ArtistPicturesSheetModel: ObservableObject {
         let tree = DeviceArtTree(peopleFiles: ["Radiohead.jpg"], coverFiles: [],
                                  folderImages: ["Music/Björk": ["folder.jpg"]], foldersWithAudio: [],
                                  artistsByFolder: [:])
-        let now = Date()
-        let jpeg = placeholderJPEG()
-        let found: [(String, ArtistPictureSourceID, Bool, ArtistPictureCredit?)] = [
+        let found: [(String, ArtistPhoto.Source, Bool, ArtistPictureCredit?)] = [
             ("Massive Attack", .deezer, false, nil),
             ("Portishead", .commons, false,
              ArtistPictureCredit(fileName: "Portishead live 2013.jpg", licence: "CC BY-SA 3.0", author: "A. Photographer")),
-            ("Caetano Veloso", .libraryFolder, false, nil),
-            ("Arvo Pärt", .userFile, true, nil),
+            ("Caetano Veloso", .library, false, nil),
+            ("Arvo Pärt", .owner, true, nil),
         ]
         for (name, source, picked, credit) in found {
-            try? store.set(ArtistPictureRecord(foldedKey: "", displayName: name, outcome: .found, source: source,
-                                               pickedByUser: picked, checkedAt: now, credit: credit),
-                           prepared: jpeg + Data(name.utf8))
+            guard let photo = try? store.addPhoto(name: name, data: placeholderJPEG(for: name), source: source,
+                                                  sourceID: source == .owner ? nil : name, credit: credit)
+            else { continue }
+            if picked { store.setDefault(name: name, hash: photo.hash) }
         }
-        try? store.set(ArtistPictureRecord(foldedKey: "", displayName: "Mogwai", outcome: .rejected, pickedByUser: true,
-                                           checkedAt: now), prepared: nil)
+        store.update(name: "Mogwai") { $0.notOnIPod = true }
         func candidate(_ name: String, _ source: ArtistPictureSourceID, _ id: String,
                        credit: ArtistPictureCredit? = nil) -> ArtistPictureCandidate {
             ArtistPictureCandidate(name: name, source: source, sourceID: id,
@@ -514,9 +529,10 @@ final class ArtistPicturesSheetModel: ObservableObject {
         return ArtistPicturesSheetModel(preview: store, artists: artists, tree: tree, uncertain: uncertain)
     }
 
-    /// Any JPEG bytes: the preview's store only has to hold something to read back.
-    private static func placeholderJPEG() -> Data {
-        guard let tiff = placeholderImage(for: "CD").tiffRepresentation,
+    /// A 320 px JPEG drawn from the name: large enough for the iPod's
+    /// preparer, so the preview's profiles read as ready.
+    private static func placeholderJPEG(for name: String) -> Data {
+        guard let tiff = placeholderImage(for: name, side: 320).tiffRepresentation,
               let rep = NSBitmapImageRep(data: tiff),
               let jpeg = rep.representation(using: .jpeg, properties: [:]) else { return Data([0xFF, 0xD8]) }
         return jpeg
@@ -588,8 +604,9 @@ private struct ArtistPicturesSheetView: View {
 
     private var subtitle: String {
         let place = sheet.isMounted ? "the iPod" : "\(sheet.deviceName) when it is connected"
-        return "The picture PodBox shows for each artist. CrateDigger never covers one already on "
-            + "the iPod. Pick, or say No Picture, and Apply saves your choices and writes them to \(place)."
+        return "The picture PodBox shows for each artist, which is the artist's default photo in CrateDigger. "
+            + "CrateDigger never covers one already on the iPod. Pick one, or choose Don't Send to iPod, and "
+            + "Apply saves your choices and writes them to \(place)."
     }
 
     // MARK: Grid
@@ -784,10 +801,13 @@ private struct ArtistPictureCell: View {
             }
             Button("Choose File…") { sheet.chooseFile(for: row) }
                 .disabled(row.state == .unnameable || row.state == .onDevice)
-            Button("No Picture") { sheet.noPicture(for: row) }
+            Button("Don't Send to iPod") { sheet.noPicture(for: row) }
                 .disabled(row.state == .unnameable || row.state == .rejected || row.state == .onDevice)
+            // A stored photo is the artist's, kept on the artist page: Clear
+            // takes back only what this sheet set.
             Button("Clear") { sheet.clear(row) }
-                .disabled(row.state == .unnameable || row.state == .onDevice || row.state == .none)
+                .disabled(row.state == .unnameable || row.state == .onDevice || row.state == .none
+                          || (row.state == .ready && sheet.edits[row.id] == nil))
             if row.state == .none, row.notFoundAt != nil {
                 Divider()
                 Button("Look Again") { sheet.lookAgain(row) }
@@ -829,7 +849,9 @@ private struct ArtistPictureCell: View {
                     + "for 30 days; Look Again asks now."
             }
         case .rejected:
-            return "No picture, as you chose."
+            return row.badge == "NO PICTURE"
+                ? "No photo, as you chose on the artist page."
+                : "Not sent to the iPod, as you chose. The artist page still shows the photo."
         case .unnameable:
             return "PodBox cannot match a picture to this name."
         }

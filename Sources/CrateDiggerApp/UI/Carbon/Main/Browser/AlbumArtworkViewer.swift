@@ -179,8 +179,9 @@ private struct GlassCapsule: NSViewRepresentable {
 }
 
 /// The surface behind a bar control that is not a button, matched to the glass
-/// buttons beside it so the row reads as one set.
-private struct BarSurface: ViewModifier {
+/// buttons beside it so the row reads as one set. Shared with the artist photo
+/// viewer.
+struct BarSurface: ViewModifier {
     var cornerRadius: CGFloat = 17
 
     func body(content: Content) -> some View {
@@ -294,8 +295,9 @@ enum ArtworkViewerPresenter {
     }
 }
 
-/// How the current image is scaled in the viewport.
-private enum ArtZoom: Equatable {
+/// How the current image is scaled in the viewport. Shared with the artist
+/// photo viewer.
+enum ArtZoom: Equatable {
     case fit               // aspect-fit the viewport (default)
     case scale(CGFloat)    // multiple of the image's native pixel size (points)
 
@@ -303,6 +305,237 @@ private enum ArtZoom: Equatable {
         switch self {
         case .fit: return "FIT"
         case .scale(let s): return "\(Int((s * 100).rounded()))%"
+        }
+    }
+}
+
+// MARK: - Shared with the artist photo viewer
+
+/// The glass control bar's pieces: one height and one shape for every control,
+/// grouped by hairlines. The album navigator and the artist photo viewer both
+/// build their bars from these, so the two cannot drift apart.
+enum ArtworkBar {
+    static let barHeight: CGFloat = 34
+    /// The floating panel's bar, which sits under a small picture.
+    static let compactBarHeight: CGFloat = 28
+
+    static var divider: some View {
+        Rectangle()
+            .fill(Color.white.opacity(0.16))
+            .frame(width: 1, height: 20)
+            .padding(.horizontal, 4)
+    }
+
+    static func pill(label: String, icon: String? = nil, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            barLabel {
+                HStack(spacing: 6) {
+                    if let icon, icon == "chevron.left" { Image(systemName: icon) }
+                    Text(label).font(CarbonFont.mono(9.5, weight: .bold)).tracking(1.5)
+                    if let icon, icon == "chevron.right" { Image(systemName: icon) }
+                }
+            }
+        }
+        .artworkBarButtonStyle()
+    }
+
+    /// A square-ish icon control. Same surface as `pill`, sized by glyph
+    /// rather than by text so the two read as one family.
+    static func icon(_ systemName: String, size: CGFloat = 28, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            barLabel(compact: size <= compactBarHeight) {
+                Image(systemName: systemName)
+                    .font(.system(size: 11, weight: .bold))
+                    .frame(minWidth: size - 12)
+            }
+        }
+        .artworkBarButtonStyle()
+    }
+
+    /// One surface for every control in both bars.
+    ///
+    /// On macOS 26 the shape, the fill, the hover and the press all come from
+    /// Apple's glass button style, so the label is only content and padding —
+    /// and it deliberately does not force white, because glass picks a label
+    /// colour that stays legible against whatever it is floating over. Before
+    /// 26 it stays the hand-drawn capsule this viewer shipped with.
+    @ViewBuilder
+    static func barLabel<L: View>(compact: Bool = false, @ViewBuilder _ label: () -> L) -> some View {
+        let height = compact ? compactBarHeight : barHeight
+        if FloatingArtworkPanel.usesLiquidGlass {
+            // Less padding than the fallback on purpose: the glass style adds
+            // its own insets, and stacking the two made every control noticeably
+            // fatter than the bar it lives in.
+            label()
+                .padding(.horizontal, compact ? 2 : 8)
+                .frame(height: height)
+        } else {
+            label()
+                .foregroundStyle(.white.opacity(0.85))
+                .padding(.horizontal, compact ? 12 : 18)
+                .frame(height: height)
+                .background(Capsule().fill(Color.white.opacity(0.10)))
+        }
+    }
+
+    /// The zoom control. `compact` sizes it for the floating panel's bar.
+    ///
+    /// `.menuStyle(.button)` rather than `.borderlessButton`: the borderless
+    /// style draws a bezel of its own, which is why this control used to be a
+    /// short rounded rectangle sitting among capsules with a second, hand-added
+    /// capsule showing behind it. As a button menu it takes the same style as
+    /// every other pill and cannot drift out of step again.
+    static func zoomMenu(_ zoom: ArtZoom, compact: Bool = false, set: @escaping (ArtZoom) -> Void) -> some View {
+        let height = compact ? compactBarHeight : barHeight
+        return Menu {
+            Button("Fit to Screen") { set(.fit) }
+            Button("50%") { set(.scale(0.5)) }
+            Button("100%") { set(.scale(1.0)) }
+            Button("200%") { set(.scale(2.0)) }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: compact ? 9 : 10, weight: .bold))
+                // Fixed width: FIT, 50% and 200% are different lengths, and
+                // letting the pill resize shuffled every control beside it each
+                // time the zoom changed.
+                Text(zoom.label)
+                    .font(CarbonFont.mono(9.5, weight: .bold))
+                    .tracking(1.5)
+                    .frame(width: compact ? 34 : 38, alignment: .leading)
+            }
+            .padding(.horizontal, compact ? 10 : 14)
+            .frame(height: height)
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        // The surface is applied here, not through the glass *button* style the
+        // pills use. AppKit re-hosts a Menu's label, and the glass style's
+        // chrome does not survive that: in the full-screen bar the control kept
+        // its layout space and drew nothing at all. This is the same explicit
+        // surface the dim slider uses, which does survive.
+        .modifier(BarSurface(cornerRadius: height / 2))
+    }
+
+    /// How far the app behind the viewer is dimmed out. Was a FOCUS toggle with
+    /// two hard-coded stops; artwork on a light backdrop and artwork on black are
+    /// different pictures, so this is a knob rather than a switch.
+    static func dimControl(_ value: Binding<Double>) -> some View {
+        HStack(spacing: 9) {
+            Image(systemName: "circle.lefthalf.filled")
+                .font(.system(size: 11, weight: .bold))
+            Slider(value: value, in: 0...1)
+                .controlSize(.mini)
+                .frame(width: 88)
+                .tint(.white.opacity(0.55))
+        }
+        .padding(.horizontal, 14)
+        .frame(height: barHeight)
+        .modifier(BarSurface())
+        .help("Dim the app behind the artwork")
+    }
+}
+
+/// Where a zoomed picture has been dragged to: the settled offset plus the
+/// drag in progress.
+struct ArtworkPan: Equatable {
+    var settled: CGSize = .zero
+    var dragging: CGSize = .zero
+}
+
+/// A picture at the viewer's zoom: aspect-fit, or a multiple of its pixel size
+/// with drag-to-pan, never dragged wholly out of view.
+struct ZoomableArtwork: View {
+    let image: NSImage
+    let zoom: ArtZoom
+    @Binding var pan: ArtworkPan
+    let viewport: CGSize
+
+    var body: some View {
+        switch zoom {
+        case .fit:
+            Image(nsImage: image)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .depthShadow(color: .black.opacity(0.5), radius: 22, y: 10)
+                .onTapGesture {}   // consume so a tap on the art doesn't dismiss
+
+        case .scale(let scale):
+            let native = ArtworkGeometry.pixelSize(of: image)
+            let display = CGSize(width: native.width * scale, height: native.height * scale)
+            Image(nsImage: image)
+                .resizable()
+                .frame(width: display.width, height: display.height)
+                .offset(clampedPan(display: display))
+                .gesture(panGesture(display: display))
+        }
+    }
+
+    private func panGesture(display: CGSize) -> some Gesture {
+        DragGesture()
+            .onChanged { pan.dragging = $0.translation }
+            .onEnded { value in
+                pan.settled = clampOffset(CGSize(width: pan.settled.width + value.translation.width,
+                                                 height: pan.settled.height + value.translation.height),
+                                          display: display)
+                pan.dragging = .zero
+            }
+    }
+
+    private func clampedPan(display: CGSize) -> CGSize {
+        clampOffset(CGSize(width: pan.settled.width + pan.dragging.width,
+                           height: pan.settled.height + pan.dragging.height),
+                    display: display)
+    }
+
+    /// Keep the image within reach: you can push each edge to the viewport edge
+    /// but not drag the picture entirely out of view.
+    private func clampOffset(_ offset: CGSize, display: CGSize) -> CGSize {
+        let maxX = max(0, (display.width - viewport.width) / 2)
+        let maxY = max(0, (display.height - viewport.height) / 2)
+        return CGSize(width: min(maxX, max(-maxX, offset.width)),
+                      height: min(maxY, max(-maxY, offset.height)))
+    }
+}
+
+enum ArtworkGeometry {
+    /// The size an image occupies when aspect-fit into `viewport`.
+    static func fittedSize(of image: NSImage?, in viewport: CGSize) -> CGSize? {
+        guard let image else { return nil }
+        let px = pixelSize(of: image)
+        guard px.width > 0, px.height > 0 else { return nil }
+        let scale = min(viewport.width / px.width, viewport.height / px.height)
+        return CGSize(width: px.width * scale, height: px.height * scale)
+    }
+
+    static func pixelSize(of image: NSImage) -> CGSize {
+        var best = CGSize.zero
+        for rep in image.representations {
+            let size = CGSize(width: rep.pixelsWide, height: rep.pixelsHigh)
+            if size.width * size.height > best.width * best.height { best = size }
+        }
+        return (best.width > 0 && best.height > 0) ? best : image.size
+    }
+}
+
+/// The full-screen viewers' keys: Esc closes, ← and → page. Returns the
+/// monitor, for `NSEvent.removeMonitor`. `blocked` hands the keyboard back
+/// while a dialog of the viewer's own is up, so Esc cancels the dialog rather
+/// than closing the viewer out from under it.
+enum ArtworkKeys {
+    static func install(blocked: @escaping () -> Bool, close: @escaping () -> Void,
+                        step: @escaping (Int) -> Void) -> Any? {
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard !blocked() else { return event }
+            switch event.keyCode {
+            case 53: close(); return nil          // Esc
+            case 123: step(-1); return nil        // ←
+            case 124: step(1); return nil         // →
+            default: return event
+            }
         }
     }
 }
@@ -332,8 +565,7 @@ struct AlbumArtworkNavigator: View {
     @State private var index: Int
     @State private var images: [URL: NSImage] = [:]
     @State private var zoom: ArtZoom = .fit
-    @State private var pan: CGSize = .zero
-    @State private var dragPan: CGSize = .zero
+    @State private var pan = ArtworkPan()
     @State private var eventMonitor: Any?
     /// Pointer is over the floating panel — lights its frame.
     @State private var floatingHovering = false
@@ -514,26 +746,8 @@ struct AlbumArtworkNavigator: View {
         return CGFloat(native ?? 600)
     }
 
-    @ViewBuilder
     private func zoomableImage(_ image: NSImage, viewport: CGSize) -> some View {
-        switch zoom {
-        case .fit:
-            Image(nsImage: image)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .depthShadow(color: .black.opacity(0.5), radius: 22, y: 10)
-                .onTapGesture {}   // consume so a tap on the art doesn't dismiss
-
-        case .scale(let scale):
-            let native = pixelSize(of: image)
-            let display = CGSize(width: native.width * scale, height: native.height * scale)
-            Image(nsImage: image)
-                .resizable()
-                .frame(width: display.width, height: display.height)
-                .offset(clampedPan(display: display, viewport: viewport))
-                .gesture(panGesture(display: display, viewport: viewport))
-        }
+        ZoomableArtwork(image: image, zoom: zoom, pan: $pan, viewport: viewport)
     }
 
     /// The "CD box" tray page: inlay/tray card behind, disc on top as a circle
@@ -542,7 +756,7 @@ struct AlbumArtworkNavigator: View {
         let inlayImage = page.imageURL.flatMap { images[$0] }
         // Size the disc to ≈ the inlay's displayed height, like a CD seated in its
         // tray card — not a fixed fraction of the whole viewport.
-        let inlayHeight = fittedSize(of: inlayImage, in: viewport)?.height ?? min(viewport.width, viewport.height)
+        let inlayHeight = ArtworkGeometry.fittedSize(of: inlayImage, in: viewport)?.height ?? min(viewport.width, viewport.height)
         let disc = inlayHeight
         return ZStack {
             if let inlay = inlayImage {
@@ -579,9 +793,8 @@ struct AlbumArtworkNavigator: View {
     /// the floating panel's bar already had. Before this it was six differently
     /// sized pills in one undifferentiated row, with CLOSE wedged between BACK
     /// and FWD so the pager didn't read as a pager.
-    private static let barHeight: CGFloat = 34
-    /// The floating panel's bar, which sits under a small picture.
-    private static let compactBarHeight: CGFloat = 28
+    private static let barHeight = ArtworkBar.barHeight
+    private static let compactBarHeight = ArtworkBar.compactBarHeight
 
     private var controlCluster: some View {
         VStack(spacing: 8) {
@@ -654,109 +867,16 @@ struct AlbumArtworkNavigator: View {
         }
     }
 
-    private var barDivider: some View {
-        Rectangle()
-            .fill(Color.white.opacity(0.16))
-            .frame(width: 1, height: 20)
-            .padding(.horizontal, 4)
-    }
+    private var barDivider: some View { ArtworkBar.divider }
 
-    /// How far the app behind the viewer is dimmed out. Was a FOCUS toggle with
-    /// two hard-coded stops; artwork on a light backdrop and artwork on black are
-    /// different pictures, so this is a knob rather than a switch.
-    private var dimControl: some View {
-        HStack(spacing: 9) {
-            Image(systemName: "circle.lefthalf.filled")
-                .font(.system(size: 11, weight: .bold))
-            Slider(value: $backdropDim, in: 0...1)
-                .controlSize(.mini)
-                .frame(width: 88)
-                .tint(.white.opacity(0.55))
-        }
-        .padding(.horizontal, 14)
-        .frame(height: Self.barHeight)
-        .modifier(BarSurface())
-        .help("Dim the app behind the artwork")
-    }
+    private var dimControl: some View { ArtworkBar.dimControl($backdropDim) }
 
-    /// The zoom control. `compact` sizes it for the floating panel's bar.
-    ///
-    /// `.menuStyle(.button)` rather than `.borderlessButton`: the borderless
-    /// style draws a bezel of its own, which is why this control used to be a
-    /// short rounded rectangle sitting among capsules with a second, hand-added
-    /// capsule showing behind it. As a button menu it takes the same style as
-    /// every other pill and cannot drift out of step again.
     private func zoomMenu(compact: Bool = false) -> some View {
-        let height = compact ? Self.compactBarHeight : Self.barHeight
-        return Menu {
-            Button("Fit to Screen") { setZoom(.fit) }
-            Button("50%") { setZoom(.scale(0.5)) }
-            Button("100%") { setZoom(.scale(1.0)) }
-            Button("200%") { setZoom(.scale(2.0)) }
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: compact ? 9 : 10, weight: .bold))
-                // Fixed width: FIT, 50% and 200% are different lengths, and
-                // letting the pill resize shuffled every control beside it each
-                // time the zoom changed.
-                Text(zoom.label)
-                    .font(CarbonFont.mono(9.5, weight: .bold))
-                    .tracking(1.5)
-                    .frame(width: compact ? 34 : 38, alignment: .leading)
-            }
-            .padding(.horizontal, compact ? 10 : 14)
-            .frame(height: height)
-        }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        // The surface is applied here, not through the glass *button* style the
-        // pills use. AppKit re-hosts a Menu's label, and the glass style's
-        // chrome does not survive that: in the full-screen bar the control kept
-        // its layout space and drew nothing at all. This is the same explicit
-        // surface the dim slider uses, which does survive.
-        .modifier(BarSurface(cornerRadius: height / 2))
+        ArtworkBar.zoomMenu(zoom, compact: compact) { setZoom($0) }
     }
 
     private func pillButton(label: String, icon: String? = nil, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            barLabel {
-                HStack(spacing: 6) {
-                    if let icon, icon == "chevron.left" { Image(systemName: icon) }
-                    Text(label).font(CarbonFont.mono(9.5, weight: .bold)).tracking(1.5)
-                    if let icon, icon == "chevron.right" { Image(systemName: icon) }
-                }
-            }
-        }
-        .artworkBarButtonStyle()
-    }
-
-    /// One surface for every control in both bars.
-    ///
-    /// On macOS 26 the shape, the fill, the hover and the press all come from
-    /// Apple's glass button style, so the label is only content and padding —
-    /// and it deliberately does not force white, because glass picks a label
-    /// colour that stays legible against whatever it is floating over. Before
-    /// 26 it stays the hand-drawn capsule this viewer shipped with.
-    @ViewBuilder
-    private func barLabel<L: View>(compact: Bool = false, @ViewBuilder _ label: () -> L) -> some View {
-        let height = compact ? Self.compactBarHeight : Self.barHeight
-        if FloatingArtworkPanel.usesLiquidGlass {
-            // Less padding than the fallback on purpose: the glass style adds
-            // its own insets, and stacking the two made every control noticeably
-            // fatter than the bar it lives in.
-            label()
-                .padding(.horizontal, compact ? 2 : 8)
-                .frame(height: height)
-        } else {
-            label()
-                .foregroundStyle(.white.opacity(0.85))
-                .padding(.horizontal, compact ? 12 : 18)
-                .frame(height: height)
-                .background(Capsule().fill(Color.white.opacity(0.10)))
-        }
+        ArtworkBar.pill(label: label, icon: icon, action: action)
     }
 
     // MARK: - This page
@@ -882,17 +1002,8 @@ struct AlbumArtworkNavigator: View {
         .fixedSize()
     }
 
-    /// A square-ish icon control. Same surface as `pillButton`, sized by glyph
-    /// rather than by text so the two read as one family.
     private func iconPill(_ systemName: String, size: CGFloat = 28, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            barLabel(compact: size <= Self.compactBarHeight) {
-                Image(systemName: systemName)
-                    .font(.system(size: 11, weight: .bold))
-                    .frame(minWidth: size - 12)
-            }
-        }
-        .artworkBarButtonStyle()
+        ArtworkBar.icon(systemName, size: size, action: action)
     }
 
     // MARK: - Behavior
@@ -910,59 +1021,14 @@ struct AlbumArtworkNavigator: View {
 
     private func setZoom(_ newZoom: ArtZoom) {
         zoom = newZoom
-        pan = .zero
-        dragPan = .zero
+        pan = ArtworkPan()
     }
 
     /// Turning a page re-centres the image but keeps the zoom: comparing the
     /// same corner of two scans is the whole reason to be at 100 %, and dropping
     /// back to FIT on every step made that impossible.
     private func resetView() {
-        pan = .zero
-        dragPan = .zero
-    }
-
-    private func panGesture(display: CGSize, viewport: CGSize) -> some Gesture {
-        DragGesture()
-            .onChanged { dragPan = $0.translation }
-            .onEnded { value in
-                pan = clampOffset(CGSize(width: pan.width + value.translation.width,
-                                         height: pan.height + value.translation.height),
-                                  display: display, viewport: viewport)
-                dragPan = .zero
-            }
-    }
-
-    private func clampedPan(display: CGSize, viewport: CGSize) -> CGSize {
-        clampOffset(CGSize(width: pan.width + dragPan.width, height: pan.height + dragPan.height),
-                    display: display, viewport: viewport)
-    }
-
-    /// Keep the image within reach: you can push each edge to the viewport edge
-    /// but not drag the picture entirely out of view.
-    private func clampOffset(_ offset: CGSize, display: CGSize, viewport: CGSize) -> CGSize {
-        let maxX = max(0, (display.width - viewport.width) / 2)
-        let maxY = max(0, (display.height - viewport.height) / 2)
-        return CGSize(width: min(maxX, max(-maxX, offset.width)),
-                      height: min(maxY, max(-maxY, offset.height)))
-    }
-
-    /// The size an image occupies when aspect-fit into `viewport`.
-    private func fittedSize(of image: NSImage?, in viewport: CGSize) -> CGSize? {
-        guard let image else { return nil }
-        let px = pixelSize(of: image)
-        guard px.width > 0, px.height > 0 else { return nil }
-        let scale = min(viewport.width / px.width, viewport.height / px.height)
-        return CGSize(width: px.width * scale, height: px.height * scale)
-    }
-
-    private func pixelSize(of image: NSImage) -> CGSize {
-        var best = CGSize.zero
-        for rep in image.representations {
-            let size = CGSize(width: rep.pixelsWide, height: rep.pixelsHigh)
-            if size.width * size.height > best.width * best.height { best = size }
-        }
-        return (best.width > 0 && best.height > 0) ? best : image.size
+        pan = ArtworkPan()
     }
 
     /// Full-resolution load for the current page (and the tray's disc), so 1:1
@@ -981,17 +1047,9 @@ struct AlbumArtworkNavigator: View {
     }
 
     private func installKeyMonitor() {
-        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            // The Trash confirmation owns the keyboard while it is up: Esc must
-            // cancel the dialog, not close the viewer out from under it.
-            guard !confirmingDelete else { return event }
-            switch event.keyCode {
-            case 53: onClose(); return nil          // Esc
-            case 123: step(-1); return nil          // ←
-            case 124: step(1); return nil           // →
-            default: return event
-            }
-        }
+        // The Trash confirmation owns the keyboard while it is up: Esc must
+        // cancel the dialog, not close the viewer out from under it.
+        eventMonitor = ArtworkKeys.install(blocked: { confirmingDelete }, close: onClose, step: step)
     }
 
     private func removeKeyMonitor() {

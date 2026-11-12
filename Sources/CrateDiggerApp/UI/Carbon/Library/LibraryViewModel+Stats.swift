@@ -19,6 +19,9 @@ extension LibraryViewModel {
     func markListeningSummaryStale() {
         listeningSummaryIsStale = true
         if oledView == .stats { refreshListeningSummaryIfNeeded() }
+        // The artist page's Listening reads the same store. One pass over the
+        // index, off the main actor, after the plays settle.
+        scheduleArtistSummaries(after: .seconds(2))
     }
 
     /// Recompute if anything changed since the last pass. Called by the pane

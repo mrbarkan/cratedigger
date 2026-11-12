@@ -122,10 +122,12 @@ public enum ArtistPictureStoreError: LocalizedError, Equatable {
 }
 
 /// The artist picture records (`library.cdartists`, in the library's index
-/// folder, so it moves and is copied with the rest of the index) and their
-/// prepared JPEGs (`<preparedHash>.jpg` in Application Support, a cache:
-/// a missing one gives nil and the finder fetches it again). Everything here
-/// writes on the Mac only. Callers check `refuseWhileLibraryDisconnected`.
+/// folder) and their prepared JPEGs (`<preparedHash>.jpg` in Application
+/// Support), as CrateDigger kept them before artist profiles. Superseded:
+/// the app now only reads this, once, for `ArtistProfileMigration`, which
+/// carries the records into `ArtistProfileStore` and renames the file; the
+/// iPod's pictures come from each artist's default photo. Nothing in the app
+/// calls `set`, `remove` or `save` any more.
 /// Safe to use from any thread: every member holds one lock, so a finder
 /// run off the main actor and the Artist Pictures sheet can share it.
 public final class ArtistPictureStore: @unchecked Sendable {

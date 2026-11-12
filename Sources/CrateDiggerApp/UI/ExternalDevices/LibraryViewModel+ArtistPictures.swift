@@ -10,48 +10,33 @@ import Foundation
 /// Apply in the Artist Pictures sheet), and found online only when the owner
 /// asked for it (Find Missing, or the device's own switch, off by default).
 extension LibraryViewModel {
-    // MARK: - The store
+    // MARK: - The profiles
 
-    /// The picture records for the current crates folder, rebuilt when the
-    /// folder changes (a library move, a disconnect onto the copy).
-    func currentArtistPictureStore() -> ArtistPictureStore {
-        let folder = cratesDirectoryURL
-        if let store = artistPictureStore, artistPictureStoreFolder?.path == folder.path { return store }
-        let store = ArtistPictureStore(indexDirectory: folder)
-        artistPictureStore = store
-        artistPictureStoreFolder = folder
-        return store
-    }
-
-    /// Stores what the finder concluded: only storable findings (a failure
-    /// is asked again next time, never trusted as "not found"), each with its
-    /// source and credit. Writes the library index, so it is refused while
-    /// the library is disconnected. Returns how many records changed.
+    /// Keeps what the finder concluded in the artist profiles (the same
+    /// records the artist page shows), under the owner's rules
+    /// (`ArtistPictureSession.store`): a failure is never kept, a found
+    /// picture is a photo and the default only when there is none, and only
+    /// when `ArtistPhotoTrust` takes it (else it is held for the owner).
+    /// Writes the library index, so it is refused while the library is
+    /// disconnected. Returns the findings as they were kept
+    /// (`ArtistPictureSession.vetted`: a held pick reads as uncertain).
     @MainActor
     @discardableResult
-    func storeArtistPictureFindings(_ findings: [ArtistPictureFinding]) async -> Int {
+    func storeArtistPictureFindings(_ findings: [ArtistPictureFinding]) async -> [ArtistPictureFinding] {
         let storable = findings.filter(\.outcome.isStorable)
-        guard !storable.isEmpty else { return 0 }
-        guard !refuseWhileLibraryDisconnected() else { return 0 }
-        let store = currentArtistPictureStore()
-        let saved = await Task.detached(priority: .utility) { () -> (Int, String?) in
-            var count = 0
-            for finding in storable {
-                guard let (record, prepared) = ArtistPictureSession.record(from: finding, now: Date()) else { continue }
-                do {
-                    try store.set(record, prepared: prepared)
-                    count += 1
-                } catch {
-                    AppLog.library.error("Artist picture for \(finding.name, privacy: .private) not stored: \(error.localizedDescription, privacy: .private)")
-                }
-            }
+        guard !storable.isEmpty else { return findings }
+        guard !refuseWhileLibraryDisconnected() else { return findings }
+        let saved = await withArtistProfileStore { store -> ([ArtistPictureFinding], String?) in
+            let vetted = ArtistPictureSession.vetted(findings, profiles: store)
+            ArtistPictureSession.store(vetted, in: store, now: Date())
             do {
                 try store.save()
-                return (count, nil)
+                return (vetted, nil)
             } catch {
-                return (count, error.localizedDescription)
+                return (vetted, error.localizedDescription)
             }
-        }.value
+        }
+        reloadArtistProfiles()
         if let failure = saved.1 {
             appAlert = .error(title: "Artist pictures not saved", message: failure)
         }
@@ -83,12 +68,14 @@ extension LibraryViewModel {
         let uuid: String?
     }
 
-    /// Plans the pictures the planner allows for `device`, and, with
-    /// `findMissing`, first looks up the names the store has no answer for
+    /// Plans the pictures the planner allows for `device`, each artist's
+    /// default photo prepared for the iPod, and, with `findMissing`, first
+    /// looks up the names whose profile has no picture and no answer yet
     /// (the owner's library folders, then Deezer; Commons is not used inside
-    /// a transfer). Reads only. A disconnected library finds nothing and
-    /// plans from what the store already holds. nil with the reason when the
-    /// run may not write at all or the device cannot be read.
+    /// a transfer). Reads only, apart from keeping what a find found. A
+    /// disconnected library finds nothing and plans from the profiles as
+    /// they are. nil with the reason when the run may not write at all or
+    /// the device cannot be read.
     @MainActor
     func planArtistPictures(device: MountedDevice, profile: ExternalDeviceProfile, findMissing: Bool,
                             automatic: Bool) async -> (planned: PlannedArtistPictures?, reason: String?) {
@@ -110,16 +97,16 @@ extension LibraryViewModel {
         inputs.artists = scanned.0
         inputs.tree = scanned.1
 
-        let store = currentArtistPictureStore()
         if findMissing, !isLibraryDisconnected {
             let lookup = inputs
+            let store = await currentArtistProfileStore()
             let names = await Task.detached(priority: .utility) {
-                ArtistPictureSession.namesToFind(lookup, store: store, now: Date())
+                ArtistPictureSession.namesToFind(lookup, profiles: store, now: Date())
             }.value
             if !names.isEmpty {
                 let library = currentTrackStore().allTracks
+                let fetcher = artistPictureFetcher
                 let findings = await Task.detached(priority: .utility) { () -> [ArtistPictureFinding] in
-                    let fetcher = URLSessionPictureFetcher()
                     let finder = ArtistPictureFinder(sources: [DeezerArtistSource(fetcher: fetcher)], fetcher: fetcher)
                     let folders = ArtistPictureSession.LibraryFolders(tracks: library)
                     return await finder.find(ArtistPictureSession.requests(for: names, library: folders))
@@ -132,10 +119,12 @@ extension LibraryViewModel {
         let policy = ArtistPictureSession.picturePolicy(from: devicePolicy(for: profile, firmware: firmware(for: device)))
         let destination = profile.podBoxPreferences.artistPictures
         let planned = inputs
+        // After any find above has landed, so its pictures are in the plan.
+        let store = await currentArtistProfileStore()
         let plan = await Task.detached(priority: .userInitiated) { () -> ArtistPicturePlan in
             ArtistPicturePlanner.plan(
                 artists: planned.artists, tree: planned.tree,
-                prepared: ArtistPictureSession.prepared(for: planned.artists, store: store),
+                pictures: ArtistPictureSession.pictures(profiles: store, cache: ArtistPicturePreparedCache()),
                 destination: destination,
                 ownedKeys: { journal.ownedRecord(forKey: $0, volumeUUID: uuid) },
                 sha256OnDevice: ArtistPictureSession.deviceHash(volumeRoot: volume))
@@ -269,8 +258,8 @@ extension LibraryViewModel {
         isFindingArtistPictures = true
         let job = beginBusyJob(.scan, on: .devices, labels: BusyLabels(source: "WEB", target: "PICTURES"))
         let library = currentTrackStore().allTracks
+        let fetcher = artistPictureFetcher
         let work = Task.detached(priority: .userInitiated) { () -> [ArtistPictureFinding] in
-            let fetcher = URLSessionPictureFetcher()
             let finder = ArtistPictureFinder(
                 sources: [DeezerArtistSource(fetcher: fetcher), CommonsArtistSource(fetcher: fetcher)],
                 fetcher: fetcher, perRun: .seconds(900))
@@ -286,10 +275,11 @@ extension LibraryViewModel {
         // cancels the task awaiting here, which passes it on.
         let findings = await withTaskCancellationHandler { await work.value } onCancel: { work.cancel() }
         let cancelled = Task.isCancelled
-        await storeArtistPictureFindings(findings)
+        // As kept: a pick held for the owner comes back as one to check.
+        let kept = await storeArtistPictureFindings(findings)
         endBusyJob(job, cancelled ? .cancelled : .completed)
         isFindingArtistPictures = false
-        return findings
+        return kept
     }
 
     /// What Apply does next, for the sheet.
@@ -300,7 +290,9 @@ extension LibraryViewModel {
         case confirm(title: String, message: String)
     }
 
-    /// Apply, pressed in the sheet: the owner's edits go to the store. Then,
+    /// Apply, pressed in the sheet: the owner's edits go to the artist
+    /// profiles (`ArtistPictureRow.apply`: a pick is the artist's default
+    /// photo, "Don't Send to iPod" is `notOnIPod`). Then,
     /// when the device is mounted and may take pictures: before check M5 is
     /// marked passed, one picture is written at once
     /// (`ArtistPictureSession.applySelection`); after it, the sheet is asked
@@ -312,20 +304,21 @@ extension LibraryViewModel {
             guard !refuseWhileLibraryDisconnected() else {
                 return .finished("The library is disconnected, so nothing was saved.")
             }
-            let store = currentArtistPictureStore()
-            let failure = await Task.detached(priority: .userInitiated) { () -> String? in
+            let failure = await withArtistProfileStore { store -> String? in
+                var refused: String?
                 for (key, edit) in edits {
-                    let name = names[key] ?? key
-                    if let (record, prepared) = ArtistPictureRow.record(for: edit, name: name, now: Date()) {
-                        do { try store.set(record, prepared: prepared) } catch { return error.localizedDescription }
-                    } else {
-                        store.remove(forName: name)
+                    do {
+                        try ArtistPictureRow.apply(edit, name: names[key] ?? key, to: store)
+                    } catch {
+                        refused = refused ?? error.localizedDescription
                     }
                 }
+                // What did apply is kept even when one picture was refused.
                 do { try store.save() } catch { return error.localizedDescription }
-                return nil
-            }.value
-            if let failure { return .finished("Nothing was saved: \(failure)") }
+                return refused
+            }
+            reloadArtistProfiles()
+            if let failure { return .finished("Not every choice was saved: \(failure)") }
         }
 
         switch artistPictureWriteTarget(profileID: profileID) {

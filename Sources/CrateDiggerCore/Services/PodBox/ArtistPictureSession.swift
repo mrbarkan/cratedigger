@@ -1,4 +1,3 @@
-import CryptoKit
 import Darwin
 import Foundation
 
@@ -68,57 +67,118 @@ public enum ArtistPictureSession {
 
     // MARK: - Finding
 
-    /// Names worth looking up now: the player can key them, the store has
-    /// no fresh answer (no record, a "not found" older than 30 days, or a
-    /// found picture whose prepared bytes are gone and that the owner did not
-    /// pick), and the player finds no picture for them (`PodBoxArtLookup`
-    /// says `.none`). A rejected or uncertain record waits for the owner in
-    /// the sheet. Nothing at all when the catalog does not match the device,
-    /// since the lookup cannot be trusted then.
-    public static func namesToFind(_ inputs: Inputs, store: ArtistPictureStore, now: Date) -> [ArtistOnDevice] {
+    /// Names worth looking up now: the player can key them, their profile
+    /// has no picture for the iPod and no reason to wait (the owner kept the
+    /// artist off the iPod or chose the default, the lookup holds candidates
+    /// for the owner to pick from, or nothing was found in the last 30
+    /// days), and the player finds no picture for them (`PodBoxArtLookup`
+    /// says `.none`). A default photo whose file is gone is looked up again,
+    /// unless the owner picked it. Nothing at all when the catalog does not
+    /// match the device, since the lookup cannot be trusted then. Reads the
+    /// profile store and checks files: off the main actor.
+    public static func namesToFind(_ inputs: Inputs, profiles store: ArtistProfileStore, now: Date) -> [ArtistOnDevice] {
         guard inputs.tree.catalogMismatch.isEmpty else { return [] }
+        let profiles = ArtistPictureProfiles(store: store)
         return inputs.artists.filter { artist in
             guard PodBoxArtName.fileStem(for: artist.name) != nil else { return false }
-            if let record = store.record(forName: artist.name) {
-                switch record.outcome {
-                case .rejected, .uncertain:
+            if let profile = profiles.profile(forName: artist.name) {
+                if profile.notOnIPod || profile.noPhoto || profile.defaultPickedByOwner { return false }
+                if let photo = ArtistPictureProfiles.iPodPhoto(of: profile), store.hasPhotoFile(hash: photo.hash) {
                     return false
-                case .notFound:
-                    if record.isFreshNotFound(now: now) { return false }
-                case .found:
-                    if record.pickedByUser || store.preparedData(for: record) != nil { return false }
                 }
+                if !profile.photoCandidates.isEmpty { return false }
+                if ArtistPictureProfiles.freshNotFound(profile, now: now) != nil { return false }
             }
             return PodBoxArtLookup.artistPicture(for: artist.name, albumFolders: artist.albumFolders,
                                                  tree: inputs.tree) == .none
         }
     }
 
-    /// What to store for a finding, and the prepared bytes to cache with it.
-    /// nil for a failure, which is never stored (`isStorable`): it would
-    /// read as "not found" for 30 days. A found picture keeps its source,
-    /// the source's own id and credit, and the hash of the exact bytes.
-    public static func record(from finding: ArtistPictureFinding, now: Date) -> (ArtistPictureRecord, Data?)? {
-        guard finding.outcome.isStorable else { return nil }
-        switch finding.outcome {
-        case let .found(prepared, candidate, source):
-            let record = ArtistPictureRecord(
-                foldedKey: "", displayName: finding.name, outcome: .found, source: source,
-                sourceID: candidate?.sourceID, preparedHash: SHA256.hash(data: prepared).hexString,
-                pickedByUser: false, checkedAt: now, credit: candidate?.credit)
-            return (record, prepared)
-        case .uncertain(let candidates):
-            // The candidates are kept with the record, so the sheet can offer
-            // them again after it is closed (the source, its id, the image
-            // URL and the credit; never the image itself).
-            return (ArtistPictureRecord(foldedKey: "", displayName: finding.name, outcome: .uncertain, checkedAt: now,
-                                        candidates: candidates.prefix(5).map(ArtistPictureRecord.HeldCandidate.init)),
-                    nil)
-        case .notFound:
-            return (ArtistPictureRecord(foldedKey: "", displayName: finding.name, outcome: .notFound, checkedAt: now),
-                    nil)
-        case .failed:
-            return nil
+    /// Keeps what a picture search found in the artist profiles, under the
+    /// owner's rules, and returns how many artists it changed. A failure is
+    /// never kept: it would read as "not found" for 30 days. A found picture
+    /// becomes one of the artist's photos, from its full-size original (the
+    /// finding's, else its prepared bytes) under its own source, id and
+    /// credit; it is the default only when the profile has none, so an
+    /// owner's pick never moves. Nothing is added under "no photo", nor a
+    /// photo of a source the owner removed. Uncertain candidates are held as
+    /// references for the owner to pick from; "not found" is remembered with
+    /// its date (`photoSearchedAt`). Does not save. Store I/O and image work:
+    /// off the main actor, after `refuseWhileLibraryDisconnected`.
+    ///
+    /// A source's pick goes through `vetted` first: one `ArtistPhotoTrust`
+    /// would not take (a namesake's Commons picture under a confirmed
+    /// artist, one shared title under no confirmed identity) is held as a
+    /// candidate instead.
+    @discardableResult
+    public static func store(_ findings: [ArtistPictureFinding], in profiles: ArtistProfileStore, now: Date) -> Int {
+        let searched = Date(timeIntervalSinceReferenceDate: now.timeIntervalSinceReferenceDate.rounded(.down))
+        var changed = 0
+        for finding in vetted(findings, profiles: profiles) {
+            let name = finding.name
+            switch finding.outcome {
+            case let .found(prepared, candidate, source):
+                guard let photoSource = ArtistLookupRun.photoSource(source) else { continue }
+                let sourceID = candidate?.sourceID ?? finding.originalURL?.path
+                let rejection = ArtistPhoto(hash: "", source: photoSource, sourceID: sourceID, pixelWidth: 0,
+                                            pixelHeight: 0, added: .distantPast).rejectionKey
+                do {
+                    let added = try profiles.addPhoto(name: name, data: finding.original ?? prepared, source: photoSource,
+                                                      sourceID: sourceID, credit: candidate?.credit) { before, after, _ in
+                        guard before?.noPhoto != true,
+                              rejection.map({ before?.rejectedPhotoSources.contains($0) == true }) != true
+                        else { return false }
+                        if let candidate {
+                            let key = ArtistLookupRun.rejectionKey(ArtistPictureRecord.HeldCandidate(candidate))
+                            after.photoCandidates.removeAll { ArtistLookupRun.rejectionKey($0) == key }
+                        }
+                        return true
+                    }
+                    if added != nil { changed += 1 }
+                } catch {
+                    // Bytes the store will not keep, or a store that cannot
+                    // write: this artist goes without, the others still land.
+                    continue
+                }
+            case .uncertain(let candidates):
+                let held = candidates.prefix(ArtistPictureFinder.maximumUncertain).map(ArtistPictureRecord.HeldCandidate.init)
+                var didChange = false
+                profiles.update(name: name) { profile in
+                    guard !profile.noPhoto else { return }
+                    var known = Set(profile.rejectedPhotoSources).union(profile.photos.compactMap(\.rejectionKey))
+                    known.formUnion(profile.photoCandidates.map(ArtistLookupRun.rejectionKey))
+                    for candidate in held where known.insert(ArtistLookupRun.rejectionKey(candidate)).inserted {
+                        profile.photoCandidates.append(candidate)
+                        didChange = true
+                    }
+                }
+                if didChange { changed += 1 }
+            case .notFound:
+                profiles.update(name: name) { $0.photoSearchedAt = searched }
+                changed += 1
+            case .failed:
+                continue
+            }
+        }
+        return changed
+    }
+
+    /// `findings` with every found pick that `ArtistPhotoTrust` would not
+    /// make the default, under the identity its profile has now, turned
+    /// into an uncertain finding of that one candidate, so it is held for
+    /// the owner (a CHECK row) rather than kept as a photo. The owner's own
+    /// library picture is kept as found. Reads the profiles.
+    public static func vetted(_ findings: [ArtistPictureFinding],
+                              profiles store: ArtistProfileStore) -> [ArtistPictureFinding] {
+        let profiles = ArtistPictureProfiles(store: store)
+        return findings.map { finding in
+            guard case let .found(_, candidate?, source) = finding.outcome else { return finding }
+            let profile = profiles.profile(forName: finding.name)
+            guard !ArtistPhotoTrust.mayBecomeDefault(candidate, source: source, sharedTitles: finding.sharedTitles,
+                                                     identity: profile?.identity ?? .unknown,
+                                                     confirmedName: profile?.displayName ?? finding.name)
+            else { return finding }
+            return ArtistPictureFinding(name: finding.name, outcome: .uncertain([candidate]))
         }
     }
 
@@ -131,17 +191,28 @@ public enum ArtistPictureSession {
 
     // MARK: - Planning and writing
 
-    /// The prepared bytes the store holds for these artists, by folded key:
-    /// found records only, never a rejected or uncertain one. Reads the image
-    /// cache, so call it off the main actor.
-    public static func prepared(for artists: [ArtistOnDevice], store: ArtistPictureStore) -> [String: Data] {
-        var result: [String: Data] = [:]
-        for artist in artists {
-            guard let record = store.record(forName: artist.name), record.outcome == .found,
-                  let data = store.preparedData(for: record) else { continue }
-            result[artist.foldedKey] = data
+    /// The pictures the iPod gets, for the planner, asked for lazily
+    /// (`ArtistPicturePlanner.Pictures`): each artist's default photo
+    /// (`ArtistPictureProfiles.iPodPhoto`), prepared to the 400 px square
+    /// baseline JPEG through `cache`, so the artist page and the iPod always
+    /// show the same picture and a photo is prepared once, not on every
+    /// transfer. Only the artists the planner will write are prepared at
+    /// all. Never for an artist the owner kept off the iPod or wants no
+    /// photo for, and nothing when the photo's file cannot be read or will
+    /// not prepare. The profiles are read once, here; the closures read and
+    /// decode images: call the planner off the main actor.
+    public static func pictures(profiles store: ArtistProfileStore,
+                                cache: ArtistPicturePreparedCache) -> ArtistPicturePlanner.Pictures {
+        let profiles = ArtistPictureProfiles(store: store)
+        func photo(_ artist: ArtistOnDevice) -> ArtistPhoto? {
+            ArtistPictureProfiles.iPodPhoto(of: profiles.profile(forName: artist.name))
         }
-        return result
+        return ArtistPicturePlanner.Pictures(
+            has: { artist in photo(artist).map { store.hasPhotoFile(hash: $0.hash) } ?? false },
+            bytes: { artist in
+                guard let photo = photo(artist) else { return nil }
+                return cache.prepared(hash: photo.hash) { store.photoData(hash: photo.hash) }
+            })
     }
 
     /// `base` with the two picture roles switched on, for the executor that

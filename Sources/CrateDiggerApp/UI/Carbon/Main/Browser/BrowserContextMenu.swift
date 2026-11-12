@@ -245,6 +245,10 @@ enum BrowserContextMenu {
         Button("Select All") { model.selectAllTracks() }
 
         Divider()
+        let artist = LibraryViewModel.artistName(of: loaded)
+        if !artist.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            Button("Show Artist") { model.showArtist(artist) }
+        }
         Button("Edit Tags…") {
             if model.selectedTrackIDs.count > 1 && model.selectedTrackIDs.contains(loaded.track.id) {
                 model.editTags(for: model.selectedTracksForCrateAdd())

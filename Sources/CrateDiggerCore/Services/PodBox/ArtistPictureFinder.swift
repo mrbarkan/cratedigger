@@ -30,7 +30,13 @@ public enum ArtistPictureMatcher {
         "collection", "completecollection", "definitivecollection", "ultimatecollection", "anthology",
         "singles", "singlescollection", "remixes", "remixed", "remastered", "gold", "platinum",
         "demos", "rarities", "bsides", "bsidesandrarities", "retrospective", "compilation", "hitsalbum",
+        "demo", "demotape", "ep", "untitled", "selftitled", "st", "christmas", "split", "promo", "vol", "volume",
     ]
+    /// Folded titles that stay generic with a number after them: "Demo 2008",
+    /// "EP2", "Untitled #1", "Volume 3", "Vol. II", "Volume One".
+    static let numberedGenericStems: Set<String> = ["demo", "demos", "demotape", "ep", "promo", "split", "untitled",
+                                                     "vol", "volume", "christmas"]
+    static let numberWords: Set<String> = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"]
     /// Folded beginnings that make a title generic whatever follows ("Best of Boston").
     /// (Not `gold` or `live`: "Golden Hour" and "Live Through This" tell acts apart.)
     static let genericPrefixes = ["greatesthits", "bestof", "verybestof", "essential", "anthology",
@@ -39,9 +45,17 @@ public enum ArtistPictureMatcher {
     public static func verdict(_ candidate: ArtistPictureCandidate, name: String,
                                deviceAlbumTitles: [String]) -> ArtistPictureVerdict {
         guard PodBoxArtName.matches(candidate.name, name) else { return .noMatch }
-        let ours = Set(deviceAlbumTitles.compactMap { telling($0, name: name) })
-        return candidate.albumTitles.contains { telling($0, name: name).map(ours.contains) ?? false }
+        return sharedTellingTitles(candidate.albumTitles, with: deviceAlbumTitles, name: name) > 0
             ? .confident : .uncertain
+    }
+
+    /// How many different titles of `theirs` are also among `ours` once both
+    /// are reduced to titles that can tell this act from another of the same
+    /// `name`. The album half of the rule; `ArtistIdentityMatcher` applies it
+    /// to MusicBrainz.
+    static func sharedTellingTitles(_ theirs: [String], with ours: [String], name: String) -> Int {
+        let keys = Set(ours.compactMap { telling($0, name: name) })
+        return Set(theirs.compactMap { telling($0, name: name) }).intersection(keys).count
     }
 
     /// The folded title without its trailing `(…)` and `[…]` groups.
@@ -58,11 +72,55 @@ public enum ArtistPictureMatcher {
     /// name: nil when empty, self-titled or generic.
     static func telling(_ title: String, name: String) -> String? {
         let key = titleKey(title)
-        guard !key.isEmpty, !PodBoxArtName.matches(key, name), key != PodBoxArtName.folded(name),
+        guard key.count >= 3, !key.allSatisfy(\.isNumber), !isRomanNumber(key),
+              !PodBoxArtName.matches(key, name), key != PodBoxArtName.folded(name),
               !genericTitles.contains(key), !genericPrefixes.contains(where: key.hasPrefix),
-              !key.contains("greatesthits")
+              !key.contains("greatesthits"), !isNumberedGeneric(key)
         else { return nil }
         return key
+    }
+
+    /// I to XXXIX, the numbers albums are counted with ("III", "IV"). Only
+    /// that range, so a word that happens to be a larger numeral ("mix")
+    /// still counts.
+    static func isRomanNumber(_ key: String) -> Bool {
+        key.range(of: "^x{0,3}(ix|iv|v?i{0,3})$", options: .regularExpression) != nil
+    }
+
+    /// A generic stem followed by a number in digits, roman numerals or words.
+    static func isNumberedGeneric(_ key: String) -> Bool {
+        numberedGenericStems.contains { stem in
+            guard key.hasPrefix(stem), key.count > stem.count else { return false }
+            let number = String(key.dropFirst(stem.count))
+            return number.allSatisfy(\.isNumber) || isRomanNumber(number) || numberWords.contains(number)
+        }
+    }
+}
+
+/// Whether a picture a source offered may become an artist's default photo
+/// (and so reach the iPod) without the owner seeing it first. The finder's
+/// own rule takes one confident candidate, one shared telling album title;
+/// that is not enough once the picture becomes what an iPod shows, because
+/// two acts of one name share a title more often than that suggests.
+///
+/// Under a confirmed identity: a Commons pick only when it is that very
+/// MusicBrainz artist's (`sourceID`), any other only when its name folds
+/// equal to the confirmed artist's. Under any other identity (not looked
+/// up, uncertain, not found, "None of these"): only with at least
+/// `titlesWithoutIdentity` shared telling titles. Anything else is held as
+/// a candidate for the owner to pick. The owner's own library picture
+/// is not a source's pick and is always taken.
+public enum ArtistPhotoTrust {
+    public static let titlesWithoutIdentity = 2
+
+    public static func mayBecomeDefault(_ candidate: ArtistPictureCandidate, source: ArtistPictureSourceID,
+                                        sharedTitles: Int?, identity: ArtistProfile.Identity,
+                                        confirmedName: String?) -> Bool {
+        if case .confirmed(let id, _) = identity {
+            if source == .commons { return candidate.sourceID == id }
+            return PodBoxArtName.folded(candidate.name) == PodBoxArtName.folded(confirmedName ?? candidate.name)
+        }
+        return (sharedTitles ?? 0) >= titlesWithoutIdentity
     }
 }
 
@@ -88,10 +146,24 @@ public struct ArtistPictureFinding: Equatable, Sendable {
     }
 
     public let name: String, outcome: Outcome
+    /// For a found picture: the bytes it was prepared from (the download,
+    /// or the library file) and where they came from, so whoever keeps it
+    /// as an artist photo has the full-size original without fetching it a
+    /// second time. nil otherwise.
+    public let original: Data?, originalURL: URL?
+    /// For a source's pick: how many telling album titles it shares with
+    /// ours (`ArtistPictureMatcher.sharedTellingTitles`), which decides
+    /// whether it may become the default without the owner seeing it
+    /// (`ArtistPhotoTrust`). nil for the owner's own library picture.
+    public let sharedTitles: Int?
 
-    public init(name: String, outcome: Outcome) {
+    public init(name: String, outcome: Outcome, original: Data? = nil, originalURL: URL? = nil,
+                sharedTitles: Int? = nil) {
         self.name = name
         self.outcome = outcome
+        self.original = original
+        self.originalURL = originalURL
+        self.sharedTitles = sharedTitles
     }
 }
 
@@ -120,9 +192,9 @@ public struct ArtistPictureFinder: Sendable {
 
     public static let maximumUncertain = 5
 
-    private let sources: [ArtistPictureSource]
+    let sources: [ArtistPictureSource]
     private let fetcher: ArtistPictureFetching
-    private let perArtist: Duration
+    let perArtist: Duration
     private let perRun: Duration
     private let quotaBackoff: [Duration]
 
@@ -140,8 +212,10 @@ public struct ArtistPictureFinder: Sendable {
     /// reach a service, or when `perRun` elapses; names not reached are
     /// simply absent from the result.
     /// `progress` gets (names done, names asked for) after each name, for a
-    /// run the owner watches.
+    /// run the owner watches. `lane` is where the sources' MusicBrainz
+    /// requests wait: the background artist lookup passes `.background`.
     public func find(_ requests: [(name: String, deviceAlbumTitles: [String], libraryPicture: URL?)],
+                     lane: MusicBrainzGate.Lane = .foreground,
                      progress: (@Sendable (Int, Int) -> Void)? = nil) async
         -> [ArtistPictureFinding] {
         let clock = ContinuousClock()
@@ -153,9 +227,11 @@ public struct ArtistPictureFinder: Sendable {
             let request = requests[index]
             let remaining = deadline - clock.now
             guard remaining > .zero, !Task.isCancelled else { break }
-            switch await bounded(min(perArtist, remaining), { try await self.findOne(request) }) {
-            case .finished(let outcome):
-                findings.append(ArtistPictureFinding(name: request.name, outcome: outcome))
+            switch await bounded(min(perArtist, remaining), { try await self.findOne(request, lane: lane) }) {
+            case .finished(let found):
+                findings.append(ArtistPictureFinding(name: request.name, outcome: found.outcome,
+                                                     original: found.original?.data, originalURL: found.original?.url,
+                                                     sharedTitles: found.sharedTitles))
                 pauses = quotaBackoff[...]
                 index += 1
                 progress?(index, requests.count)
@@ -174,10 +250,54 @@ public struct ArtistPictureFinder: Sendable {
         return findings
     }
 
+    /// How one name ended when it is asked about on its own (`findSingle`).
+    public enum Single: Sendable {
+        case finding(ArtistPictureFinding)
+        /// The name's `perArtist` budget ran out (or the task was cancelled).
+        case timedOut
+        /// The service kept saying it has had enough, past every back-off.
+        case quota
+    }
+
+    /// One name, with the same rules and budget as `find`, saying why when
+    /// there is no finding: a timeout and a quota are different things to
+    /// the background lookup (no photo this time, against try again later).
+    public func findSingle(_ request: Request, lane: MusicBrainzGate.Lane = .foreground) async -> Single {
+        var pauses = quotaBackoff[...]
+        while true {
+            switch await bounded(perArtist, { try await self.findOne(request, lane: lane) }) {
+            case .finished(let found):
+                return .finding(ArtistPictureFinding(name: request.name, outcome: found.outcome,
+                                                     original: found.original?.data, originalURL: found.original?.url,
+                                                     sharedTitles: found.sharedTitles))
+            case .unreachable(let reason):
+                return .finding(ArtistPictureFinding(name: request.name, outcome: .failed(reason)))
+            case .quota:
+                guard let pause = pauses.popFirst() else { return .quota }
+                do { try await Task.sleep(for: pause) } catch { return .timedOut }
+            case .timedOut:
+                return .timedOut
+            }
+        }
+    }
+
+    /// The same finder asking `sources` instead of its own.
+    func asking(_ sources: [ArtistPictureSource]) -> ArtistPictureFinder {
+        ArtistPictureFinder(sources: sources, fetcher: fetcher, perArtist: perArtist, perRun: perRun,
+                            quotaBackoff: quotaBackoff)
+    }
+
     // MARK: - Private
 
+    /// One name's outcome, with the original bytes of a found picture.
+    private struct Found: Sendable {
+        var outcome: ArtistPictureFinding.Outcome
+        var original: (data: Data, url: URL)?
+        var sharedTitles: Int?
+    }
+
     private enum Step: Sendable {
-        case finished(ArtistPictureFinding.Outcome), quota, unreachable(String), timedOut
+        case finished(Found), quota, unreachable(String), timedOut
     }
 
     /// The run must stop: a quota, or a service that cannot be reached.
@@ -187,7 +307,7 @@ public struct ArtistPictureFinder: Sendable {
 
     /// Runs `work` against a timer; whichever ends first wins and the other is cancelled.
     private func bounded(_ budget: Duration,
-                         _ work: @escaping @Sendable () async throws -> ArtistPictureFinding.Outcome) async -> Step {
+                         _ work: @escaping @Sendable () async throws -> Found) async -> Step {
         await withTaskGroup(of: Step.self) { group in
             group.addTask {
                 do {
@@ -209,19 +329,20 @@ public struct ArtistPictureFinder: Sendable {
     }
 
     /// Throws only `Stop` and cancellation.
-    private func findOne(_ request: Request) async throws -> ArtistPictureFinding.Outcome {
-        if let url = request.libraryPicture, let prepared = Self.preparedLibraryPicture(url) {
-            return .found(prepared: prepared, candidate: nil, source: .libraryFolder)
+    private func findOne(_ request: Request, lane: MusicBrainzGate.Lane) async throws -> Found {
+        if let url = request.libraryPicture, let picture = Self.libraryPicture(url) {
+            return Found(outcome: .found(prepared: picture.prepared, candidate: nil, source: .libraryFolder),
+                         original: (picture.data, url))
         }
         var held: [ArtistPictureCandidate] = []
         var failure: String?
         sources: for source in sources {
             var scored: [(candidate: ArtistPictureCandidate, verdict: ArtistPictureVerdict)] = []
             do {
-                for var candidate in try await source.candidates(for: request.name)
+                for var candidate in try await source.candidates(for: request.name, lane: lane)
                 where PodBoxArtName.matches(candidate.name, request.name) {
                     if candidate.albumTitles.isEmpty {
-                        candidate.albumTitles = try await source.albumTitles(for: candidate)
+                        candidate.albumTitles = try await source.albumTitles(for: candidate, lane: lane)
                     }
                     scored.append((candidate, ArtistPictureMatcher.verdict(
                         candidate, name: request.name, deviceAlbumTitles: request.deviceAlbumTitles)))
@@ -239,8 +360,12 @@ public struct ArtistPictureFinder: Sendable {
                 continue
             case 1:
                 do {
-                    if let prepared = ArtistPictureImage.prepare(try await fetcher.data(from: confident[0].imageURL)) {
-                        return .found(prepared: prepared, candidate: confident[0], source: source.id)
+                    let data = try await fetcher.data(from: confident[0].imageURL)
+                    if let prepared = ArtistPictureImage.prepare(data) {
+                        let shared = ArtistPictureMatcher.sharedTellingTitles(
+                            confident[0].albumTitles, with: request.deviceAlbumTitles, name: request.name)
+                        return Found(outcome: .found(prepared: prepared, candidate: confident[0], source: source.id),
+                                     original: (data, confident[0].imageURL), sharedTitles: shared)
                     }
                 } catch {
                     try check(error)
@@ -251,8 +376,8 @@ public struct ArtistPictureFinder: Sendable {
             }
         }
         try Task.checkCancellation()
-        if let failure { return .failed(failure) }
-        return held.isEmpty ? .notFound : .uncertain(Array(held.prefix(Self.maximumUncertain)))
+        if let failure { return Found(outcome: .failed(failure)) }
+        return Found(outcome: held.isEmpty ? .notFound : .uncertain(Array(held.prefix(Self.maximumUncertain))))
     }
 
     /// Rethrows what must stop the run (a quota, an unreachable service) or
@@ -275,12 +400,13 @@ public struct ArtistPictureFinder: Sendable {
 
     /// A picture file in the owner's library, read on the Mac when it is a
     /// plain file no bigger than a source image may be.
-    static func preparedLibraryPicture(_ url: URL) -> Data? {
+    static func libraryPicture(_ url: URL) -> (data: Data, prepared: Data)? {
         guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]),
               values.isRegularFile == true, let size = values.fileSize,
               size <= ArtistPictureImage.maximumSourceBytes,
-              let data = try? Data(contentsOf: url)
+              let data = try? Data(contentsOf: url),
+              let prepared = ArtistPictureImage.prepare(data)
         else { return nil }
-        return ArtistPictureImage.prepare(data)
+        return (data, prepared)
     }
 }

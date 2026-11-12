@@ -80,6 +80,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         // The one snapshot whose position has to be exact.
         mainWindowController?.model.savePlaybackSnapshot()
         mainWindowController?.model.clearWidgetFeed()
+        // Background artist lookups not yet written, before the copy below.
+        mainWindowController?.model.flushArtistLookupSavesNow()
         // A library kept on an external drive leaves a fresh copy of its index
         // on this Mac, so it can still be browsed next launch without the drive.
         mainWindowController?.model.refreshLibraryIndexCopyNow()
@@ -543,6 +545,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         // answered, so the chosen and enabled states can be captured too.
         // Before the snapshot guard: check it by window capture. Nothing is
         // written whatever the answer.
+        // The artist page, on a made-up library of three artists seeded into
+        // the scratch crates folder (refused without CRATEDIGGER_CRATES_DIR):
+        // "Massive Attack" (a band with a photo), "Björk" (a person, no
+        // photo) or "Air" (Is this them?). No network.
+        if let name = env["CRATEDIGGER_ARTIST_PAGE"], !name.isEmpty {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
+                guard let model = self?.mainWindowController?.model else { return }
+                NSApp.activate(ignoringOtherApps: true)
+                Task { @MainActor in await model.debugSeedArtistPage(name) }
+            }
+        }
         // The Artist Pictures sheet with twelve made-up artists covering every
         // state: no device, no network, nothing written outside a temp folder.
         if env["CRATEDIGGER_ARTIST_PICTURES"] == "1" {

@@ -20,6 +20,9 @@ extension LibraryViewModel {
 
     /// Delegates to `BrowserState.selectAlbum` — the rules live there.
     func selectAlbum(_ album: Album, command: Bool, shift: Bool, ordered: [Album], flat: Bool) {
+        // A record picked in the gallery ends "Show Artist", even a re-click
+        // on the selected one, which changes no selection.
+        updateArtistPage(resolving: false) { $0.selectionChanged() }
         browser.selectAlbum(album, command: command, shift: shift, ordered: ordered, flat: flat)
     }
 

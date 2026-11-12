@@ -180,7 +180,13 @@ folder. **Changes the iPod:** adds one picture file (and removes it if you
 undo).
 
 Pictures are off until you turn them on. This check uses the Artist Pictures
-sheet, so CrateDigger does only what you press.
+sheet, so CrateDigger does only what you press. The picture CrateDigger writes
+for an artist is that artist's **default photo** in CrateDigger (the one on
+their artist page), made into a small square for the iPod. The background
+artist lookup (Settings > Integrations > Look up artist info and photos, on by
+default) may already have found one, so a row can be ready before you press
+anything; for this check, turn that switch off first if you want the iPod to
+get only a picture you chose here.
 
 1. Pick **one** artist on the iPod whose name has `&`, an accent, or a leading
    "The" (the three cases the name matching is built for). Make sure the iPod
@@ -192,7 +198,9 @@ sheet, so CrateDigger does only what you press.
    choose **Choose File...** and pick a picture of your own (this sends
    nothing over the network). Or press **Find Missing** if you are happy for
    CrateDigger to send the artist's name to Deezer, MusicBrainz, Wikidata and
-   Wikimedia Commons. Accept the picture for that artist only.
+   Wikimedia Commons. Accept the picture for that artist only. Whatever you
+   pick becomes the artist's default photo in CrateDigger as well; the artist
+   page shows it too.
 4. Press **Apply**. Until you have marked this check passed, Apply writes
    **one** picture only: the first one you changed in the sheet (else the
    first ready one), and the footer says "Writing one picture first. Check it
@@ -219,7 +227,9 @@ again, and leave the switch off.
 **Remove from iPod** (in its menu) when CrateDigger wrote that picture for
 that artist and it is unchanged; it keeps a copy on the Mac. Your own
 pictures on DEVICE rows cannot be changed from the sheet at all (the row
-says so). In Preferences > Devices there is also a remove button for every
+says so). To keep one artist off the iPod without losing their photo in
+CrateDigger, choose **Don't Send to iPod** on their row (it used to be called
+No Picture). In Preferences > Devices there is also a remove button for every
 picture CrateDigger added, with the same rules; its summary has **Show
 Copies in Finder**. Or delete the one file by hand and run Update Art Cache.
 
@@ -299,12 +309,14 @@ These came out of the build and review, and some need a decision from you.
   drops it for albums with no year. Existing layouts are left as they were so
   an album already on the iPod is not written a second time.
 - **Network use.** Artist pictures can contact Deezer, MusicBrainz, Wikidata
-  and Wikimedia Commons. Only the artist's name goes out (plus ids those
-  services return). It identifies itself as
-  `CrateDigger/<version> (https://cratedigger.mrbarkan.com)`, the same for
-  every install, which names the site's domain. Nothing is sent unless you
-  turn on "Find missing artist pictures automatically" or press **Find
-  Missing**.
+  and Wikimedia Commons, and the artist lookup also Wikipedia. Only the
+  artist's name goes out (plus ids those services return). It identifies
+  itself as `CrateDigger/<version> (https://cratedigger.mrbarkan.com)`, the
+  same for every install, which names the site's domain. The iPod side sends
+  nothing unless you turn on "Find missing artist pictures automatically" or
+  press **Find Missing**; the background artist lookup, which fills in artist
+  pages and their default photos, is on by default and is turned off in
+  Settings > Integrations > Look up artist info and photos.
 - **MusicBrainz limit now shared.** Artwork search, FIX TAGS, DEEP SCAN, CD
   lookup and artist pictures now all wait at one shared gate (about one
   request a second), so running two together is a little slower, not blocked.

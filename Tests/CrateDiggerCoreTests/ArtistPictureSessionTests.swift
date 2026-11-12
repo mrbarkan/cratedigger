@@ -1,4 +1,3 @@
-import CryptoKit
 import XCTest
 @testable import CrateDiggerCore
 
@@ -6,14 +5,14 @@ import XCTest
 /// names it looks up, what it stores, and the line the summary gets.
 final class ArtistPictureSessionTests: XCTestCase {
     private var folder: URL!
-    private var store: ArtistPictureStore!
+    private var store: ArtistProfileStore!
     private let now = Date(timeIntervalSince1970: 1_800_000_000)
 
     override func setUpWithError() throws {
         folder = FileManager.default.temporaryDirectory
             .appendingPathComponent("ArtistPictureSession-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        store = ArtistPictureStore(indexDirectory: folder, imageDirectory: folder.appendingPathComponent("Images"))
+        store = ArtistProfileStore(indexDirectory: folder)
     }
 
     override func tearDownWithError() throws {
@@ -77,33 +76,45 @@ final class ArtistPictureSessionTests: XCTestCase {
 
     // MARK: namesToFind
 
+    @discardableResult
+    private func photo(_ name: String, side: Int = 600) throws -> ArtistPhoto {
+        let red = CGFloat(name.utf8.reduce(0) { $0 + Int($1) } % 97) / 97
+        return try store.addPhoto(name: name, data: FakePictureFetcher.jpeg(width: side, height: side, red: red),
+                                  source: .deezer, sourceID: name, credit: nil)
+    }
+
     func testNamesToFindSkipsFreshNotFound() throws {
-        try store.set(ArtistPictureRecord(foldedKey: "", displayName: "Air", outcome: .notFound,
-                                          checkedAt: now.addingTimeInterval(-86_400)), prepared: nil)
+        store.update(name: "Air") { $0.photoSearchedAt = self.now.addingTimeInterval(-86_400) }
         let names = ArtistPictureSession.namesToFind(inputs(artists: [artist("Air"), artist("Can")], tree: tree()),
-                                                     store: store, now: now)
+                                                     profiles: store, now: now)
         XCTAssertEqual(names.map(\.name), ["Can"])
     }
 
     func testNamesToFindRetriesStaleNotFound() throws {
-        try store.set(ArtistPictureRecord(foldedKey: "", displayName: "Air", outcome: .notFound,
-                                          checkedAt: now.addingTimeInterval(-31 * 86_400)), prepared: nil)
-        let names = ArtistPictureSession.namesToFind(inputs(artists: [artist("Air")], tree: tree()), store: store, now: now)
+        store.update(name: "Air") { $0.photoSearchedAt = self.now.addingTimeInterval(-31 * 86_400) }
+        let names = ArtistPictureSession.namesToFind(inputs(artists: [artist("Air")], tree: tree()), profiles: store,
+                                                     now: now)
         XCTAssertEqual(names.map(\.name), ["Air"])
     }
 
     func testNamesToFindSkipsRejectedAndFound() throws {
-        try store.set(ArtistPictureRecord(foldedKey: "", displayName: "Air", outcome: .rejected, pickedByUser: true,
-                                          checkedAt: now), prepared: nil)
-        try store.set(ArtistPictureRecord(foldedKey: "", displayName: "Can", outcome: .found, source: .deezer,
-                                          checkedAt: now), prepared: Data("jpeg".utf8))
-        try store.set(ArtistPictureRecord(foldedKey: "", displayName: "Low", outcome: .uncertain, checkedAt: now),
-                      prepared: nil)
-        // A found record whose cached bytes are gone is looked up again.
-        try store.set(ArtistPictureRecord(foldedKey: "", displayName: "Tool", outcome: .found, source: .deezer,
-                                          preparedHash: String(repeating: "a", count: 64), checkedAt: now), prepared: nil)
+        // "Don't Send to iPod", a picture ready, candidates waiting for the owner.
+        store.update(name: "Air") { $0.notOnIPod = true }
+        try photo("Can")
+        store.update(name: "Low") { profile in
+            profile.photoCandidates = [ArtistPictureRecord.HeldCandidate(
+                source: .deezer, sourceID: "1", imageURL: URL(string: "https://e-cdns-images.dzcdn.net/low.jpg")!)]
+        }
+        // A default photo whose file is gone is looked up again...
+        let gone = try photo("Tool")
+        try FileManager.default.removeItem(at: store.photoURL(hash: gone.hash))
+        // ...unless the owner picked it.
+        let picked = try photo("Dido")
+        store.setDefault(name: "Dido", hash: picked.hash)
+        try FileManager.default.removeItem(at: store.photoURL(hash: picked.hash))
         let names = ArtistPictureSession.namesToFind(
-            inputs(artists: ["Air", "Can", "Low", "Tool", "Yes"].map(artist), tree: tree()), store: store, now: now)
+            inputs(artists: ["Air", "Can", "Low", "Tool", "Dido", "Yes"].map(artist), tree: tree()), profiles: store,
+            now: now)
         XCTAssertEqual(names.map(\.name), ["Tool", "Yes"])
     }
 
@@ -111,49 +122,111 @@ final class ArtistPictureSessionTests: XCTestCase {
         let tree = tree(peopleFiles: ["Air.jpg"], folderImages: ["Music/Low": ["folder.jpg"]])
         let names = ArtistPictureSession.namesToFind(
             inputs(artists: [artist("Air"), artist("Low"), artist("Can"), artist("!!!")], tree: tree),
-            store: store, now: now)
+            profiles: store, now: now)
         XCTAssertEqual(names.map(\.name), ["Can"], "the owner's People file, a named folder's image, an unnameable name")
         XCTAssertEqual(ArtistPictureSession.namesToFind(inputs(artists: [artist("Can")], tree: self.tree(mismatch: ["x"])),
-                                                        store: store, now: now), [],
+                                                        profiles: store, now: now), [],
                        "a catalog that does not match the device is not looked up against")
     }
 
-    // MARK: record
+    // MARK: Keeping what a search found
 
-    func testRecordFromFoundCarriesHashOfPreparedBytes() throws {
-        let bytes = Data("prepared jpeg".utf8)
+    func testFoundPictureBecomesTheDefaultPhoto() throws {
+        let original = FakePictureFetcher.jpeg(width: 900, height: 900)
+        let prepared = try XCTUnwrap(ArtistPictureImage.prepare(original))
         let credit = ArtistPictureCredit(fileName: "Air.jpg", licence: "CC BY-SA 4.0", author: "Someone")
         let candidate = ArtistPictureCandidate(name: "Air", source: .commons, sourceID: "Q123",
                                                imageURL: URL(string: "https://upload.wikimedia.org/a.jpg")!,
                                                credit: credit)
-        let finding = ArtistPictureFinding(name: "Air", outcome: .found(prepared: bytes, candidate: candidate,
-                                                                        source: .commons))
-        let (record, data) = try XCTUnwrap(ArtistPictureSession.record(from: finding, now: now))
-        XCTAssertEqual(record.outcome, .found)
-        XCTAssertEqual(record.preparedHash, SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined())
-        XCTAssertEqual(record.source, .commons)
-        XCTAssertEqual(record.sourceID, "Q123")
-        XCTAssertEqual(record.credit, credit)
-        XCTAssertFalse(record.pickedByUser)
-        XCTAssertEqual(data, bytes)
+        let finding = ArtistPictureFinding(name: "Air", outcome: .found(prepared: prepared, candidate: candidate,
+                                                                        source: .commons),
+                                           original: original, originalURL: candidate.imageURL, sharedTitles: 2)
+        XCTAssertEqual(ArtistPictureSession.store([finding], in: store, now: now), 1)
 
-        try store.set(record, prepared: data)
-        XCTAssertEqual(store.record(forName: "Air")?.preparedHash, record.preparedHash, "the store agrees")
+        let profile = try XCTUnwrap(store.profile(forName: "Air"))
+        let photo = try XCTUnwrap(profile.defaultPhotoRef)
+        XCTAssertEqual(photo.source, .commons)
+        XCTAssertEqual(photo.sourceID, "Q123")
+        XCTAssertEqual(photo.credit, credit)
+        XCTAssertEqual(photo.pixelWidth, 900, "the full-size original, not the iPod's 400 px copy")
+        XCTAssertFalse(profile.defaultPickedByOwner)
+        let pictures = ArtistPictureSession.pictures(
+            profiles: store, cache: ArtistPicturePreparedCache(directory: folder.appendingPathComponent("cache")))
+        XCTAssertTrue(pictures.has(artist("Air")))
+        XCTAssertNotNil(pictures.bytes(artist("Air")), "the planner agrees")
+
+        // A second find never moves the default, and nothing lands under
+        // "no photo" or from a source the owner removed.
+        let other = FakePictureFetcher.jpeg(width: 700, height: 700, red: 0.1)
+        let again = ArtistPictureFinding(
+            name: "Air", outcome: .found(prepared: try XCTUnwrap(ArtistPictureImage.prepare(other)), candidate: nil,
+                                         source: .libraryFolder),
+            original: other, originalURL: URL(fileURLWithPath: "/Music/Air/artist.jpg"))
+        ArtistPictureSession.store([again], in: store, now: now)
+        XCTAssertEqual(store.profile(forName: "Air")?.defaultPhoto, photo.hash)
+        XCTAssertEqual(store.profile(forName: "Air")?.photos.last?.sourceID, "/Music/Air/artist.jpg")
+
+        store.update(name: "Can") { $0.noPhoto = true }
+        store.update(name: "Low") { $0.rejectedPhotoSources = ["commons:Q123"] }
+        for name in ["Can", "Low"] {
+            let finding = ArtistPictureFinding(name: name, outcome: .found(prepared: prepared, candidate: candidate,
+                                                                           source: .commons), original: original,
+                                               sharedTitles: 2)
+            XCTAssertEqual(ArtistPictureSession.store([finding], in: store, now: now), 0)
+            XCTAssertEqual(store.profile(forName: name)?.photos, [], name)
+        }
     }
 
-    func testRecordFromUncertainKeepsNoImage() throws {
+    func testAPickTheTrustRuleRefusesIsHeldForTheOwner() throws {
+        let original = FakePictureFetcher.jpeg(width: 900, height: 900)
+        let prepared = try XCTUnwrap(ArtistPictureImage.prepare(original))
+        func found(_ name: String, _ source: ArtistPictureSourceID, id: String, shared: Int) -> ArtistPictureFinding {
+            let candidate = ArtistPictureCandidate(name: name, source: source, sourceID: id,
+                                                   imageURL: URL(string: "https://upload.wikimedia.org/\(id).jpg")!)
+            return ArtistPictureFinding(name: name, outcome: .found(prepared: prepared, candidate: candidate,
+                                                                    source: source),
+                                        original: original, sharedTitles: shared)
+        }
+        // Under a confirmed artist, a namesake's Commons picture (another
+        // MusicBrainz id) is held, whatever the titles say.
+        store.update(name: "Low") { $0.identity = .confirmed(musicBrainzID: "mb-low", wikidataID: nil) }
+        let namesake = found("Low", .commons, id: "mb-other", shared: 3)
+        let vetted = ArtistPictureSession.vetted([namesake], profiles: store)
+        guard case .uncertain(let held)? = vetted.first?.outcome else { return XCTFail("\(vetted)") }
+        XCTAssertEqual(held.map(\.sourceID), ["mb-other"])
+        XCTAssertEqual(ArtistPictureSession.store([namesake], in: store, now: now), 1)
+        XCTAssertEqual(store.profile(forName: "Low")?.photos, [])
+        XCTAssertEqual(store.profile(forName: "Low")?.photoCandidates.map(\.sourceID), ["mb-other"])
+        // Its own picture is taken.
+        XCTAssertEqual(ArtistPictureSession.store([found("Low", .commons, id: "mb-low", shared: 0)], in: store,
+                                                  now: now), 1)
+        XCTAssertEqual(store.profile(forName: "Low")?.defaultPhotoRef?.sourceID, "mb-low")
+
+        // With no confirmed identity, one shared title is held; two are taken.
+        ArtistPictureSession.store([found("Boston", .deezer, id: "5", shared: 1)], in: store, now: now)
+        XCTAssertEqual(store.profile(forName: "Boston")?.photos, [])
+        XCTAssertEqual(store.profile(forName: "Boston")?.photoCandidates.map(\.sourceID), ["5"])
+        ArtistPictureSession.store([found("Boston", .deezer, id: "6", shared: 2)], in: store, now: now)
+        XCTAssertEqual(store.profile(forName: "Boston")?.defaultPhotoRef?.sourceID, "6")
+    }
+
+    func testUncertainFindingHoldsCandidatesOnly() throws {
         let candidate = ArtistPictureCandidate(name: "Air", source: .deezer, sourceID: "1",
                                                imageURL: URL(string: "https://e-cdns-images.dzcdn.net/a.jpg")!)
-        let (record, data) = try XCTUnwrap(ArtistPictureSession.record(
-            from: ArtistPictureFinding(name: "Air", outcome: .uncertain([candidate])), now: now))
-        XCTAssertEqual(record.outcome, .uncertain)
-        XCTAssertNil(record.preparedHash)
-        XCTAssertNil(data)
-        XCTAssertEqual(record.candidates, [ArtistPictureRecord.HeldCandidate(candidate)],
-                       "the candidates are held with the record, not only in the sheet")
-        XCTAssertEqual(record.heldCandidates, [candidate])
-        XCTAssertNil(ArtistPictureSession.record(from: ArtistPictureFinding(name: "Air", outcome: .failed("offline")),
-                                                 now: now), "a failure is never stored")
+        ArtistPictureSession.store([ArtistPictureFinding(name: "Air", outcome: .uncertain([candidate]))], in: store,
+                                   now: now)
+        let profile = try XCTUnwrap(store.profile(forName: "Air"))
+        XCTAssertEqual(profile.photos, [], "no image is kept for an uncertain match")
+        XCTAssertEqual(profile.photoCandidates, [ArtistPictureRecord.HeldCandidate(candidate)],
+                       "the candidates are held with the profile, not only in the sheet")
+
+        XCTAssertEqual(ArtistPictureSession.store([ArtistPictureFinding(name: "Can", outcome: .failed("offline"))],
+                                                  in: store, now: now), 0)
+        XCTAssertNil(store.profile(forName: "Can"), "a failure is never stored")
+
+        ArtistPictureSession.store([ArtistPictureFinding(name: "Low", outcome: .notFound)], in: store, now: now)
+        XCTAssertEqual(store.profile(forName: "Low")?.photoSearchedAt, now)
+        XCTAssertNil(store.profile(forName: "Low")?.checkedAt, "a picture search is not the lookup's cursor")
     }
 
     // MARK: summaryLine

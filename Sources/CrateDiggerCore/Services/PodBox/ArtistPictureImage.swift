@@ -37,8 +37,53 @@ public enum ArtistPictureImage {
         return CGRect(x: (width - side) / 2, y: (height - side) / 2, width: side, height: side)
     }
 
+    /// The iPod's bytes for `data`. Bytes that already are such a file
+    /// (`isOutputShaped`: a 400 px square baseline JPEG, three channels, no
+    /// metadata, at most 100 KB, whole) come back unchanged, so
+    /// `prepare(prepare(x)) == prepare(x)`: a picture already on the iPod,
+    /// or a migrated photo that was prepared once, hashes the same and is
+    /// never rewritten for nothing.
     public static func prepare(_ data: Data) -> Data? {
-        prepare(data, reportedSize: nil)
+        if isOutputShaped(data) { return data }
+        return prepare(data, reportedSize: nil)
+    }
+
+    /// Whether `data` already is a file `prepare` would make: a JPEG of at
+    /// most `maximumBytes` whose frame is baseline (SOF0), 8-bit, three
+    /// components, `edge` × `edge`, with no APP1 to APP15 or COM segment
+    /// (so no Exif orientation, ICC profile or comment), reaching its end.
+    public static func isOutputShaped(_ data: Data) -> Bool {
+        guard data.count <= maximumBytes else { return false }
+        let bytes = [UInt8](data)
+        guard bytes.count > 4, bytes[0] == 0xFF, bytes[1] == 0xD8 else { return false }
+        var index = 2
+        var sawFrame = false
+        while index + 3 < bytes.count {
+            guard bytes[index] == 0xFF else { return false }
+            let marker = bytes[index + 1]
+            let length = Int(bytes[index + 2]) << 8 | Int(bytes[index + 3])
+            guard length >= 2, index + 2 + length <= bytes.count else { return false }
+            switch marker {
+            case 0xDA:
+                return sawFrame && jpegReachesItsEnd(bytes)
+            case 0xC0:
+                guard length >= 8 else { return false }
+                let precision = bytes[index + 4]
+                let height = Int(bytes[index + 5]) << 8 | Int(bytes[index + 6])
+                let width = Int(bytes[index + 7]) << 8 | Int(bytes[index + 8])
+                let components = bytes[index + 9]
+                guard precision == 8, width == edge, height == edge, components == 3 else { return false }
+                sawFrame = true
+            case 0xC1...0xCF where marker != 0xC4 && marker != 0xC8 && marker != 0xCC:
+                return false // not baseline: extended, progressive, lossless, arithmetic
+            case 0xE1...0xEF, 0xFE:
+                return false // metadata
+            default:
+                break
+            }
+            index += 2 + length
+        }
+        return false
     }
 
     /// `reportedSize` stands in for the size the header claims, so a test
@@ -72,7 +117,8 @@ public enum ArtistPictureImage {
     // MARK: - Private
 
     /// The pixel size the header claims, after its orientation is applied.
-    private static func headerSize(_ source: CGImageSource) -> CGSize? {
+    /// Also read by `ArtistPhotoImage` for the artist profile photos.
+    static func headerSize(_ source: CGImageSource) -> CGSize? {
         guard let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
               let width = (properties[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue,
               let height = (properties[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue,
@@ -84,7 +130,9 @@ public enum ArtistPictureImage {
             : CGSize(width: width, height: height)
     }
 
-    private static func isAcceptable(_ size: CGSize) -> Bool {
+    /// Whether a picture of `size` makes a portrait the player can show. Also
+    /// read by `ArtistPictureProfiles` from a photo's recorded size.
+    static func isAcceptable(_ size: CGSize) -> Bool {
         let short = min(size.width, size.height), long = max(size.width, size.height)
         return short >= CGFloat(minimumSource)
             && long <= CGFloat(maximumSourcePixels)
