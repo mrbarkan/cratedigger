@@ -90,6 +90,13 @@ private struct LibraryPresentations: ViewModifier {
                 }
                 EditArtistSheetController.present(name: name, model: model, from: host)
             }
+            // The artist photo viewer (the artist page's portrait). One-shot,
+            // like the artwork viewer.
+            .onChange(of: model.artistPhotoViewerRequest) { name in
+                guard let name else { return }
+                model.artistPhotoViewerRequest = nil
+                ArtistPhotoViewerPresenter.show(name: name, theme: theme, model: model)
+            }
             .onChange(of: model.fullScreenPlayerRequested) { requested in
                 guard requested else { return }
                 NowPlayingFullScreenPresenter.toggle(theme: theme, model: model)

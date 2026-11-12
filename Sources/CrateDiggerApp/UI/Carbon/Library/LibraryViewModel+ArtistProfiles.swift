@@ -379,6 +379,26 @@ extension LibraryViewModel {
         changeArtistProfile(store: { $0.setDefault(name: name, hash: hash) })
     }
 
+    /// The artist photo viewer, presented from the root (`LibraryPresentations`).
+    func showArtistPhotos(_ name: String) {
+        guard !PodBoxArtName.folded(name).isEmpty else { return }
+        artistPhotoViewerRequest = name
+    }
+
+    /// A photo at full size for the viewer, read and decoded off the main
+    /// actor. nil when its file cannot be reached.
+    func artistPhotoImage(hash: String) async -> NSImage? {
+        let store = await currentArtistProfileStore()
+        return await Task.detached(priority: .userInitiated) {
+            UncheckedSendableBox(store.photoData(hash: hash).flatMap { data -> NSImage? in
+                guard let image = NSImage(data: data) else { return nil }
+                // Decode now, here, rather than on first draw on the main thread.
+                _ = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+                return image
+            })
+        }.value.value
+    }
+
     /// A found photo's thumbnail, fetched on demand through the picture
     /// fetcher (its sources' hosts only) and decoded off the main actor.
     /// Kept for the session; nil when it will not download.

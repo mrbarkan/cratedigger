@@ -32,6 +32,14 @@ extension LibraryViewModel {
             return
         }
         let fixture = ArtistPageFixture(root: folder.appendingPathComponent("FixtureMusic", isDirectory: true))
+        // A cover and a back in each album folder (inside the scratch folder),
+        // so the album artwork viewer has pages to show.
+        for album in Set(fixture.tracks.map { $0.track.fileURL.deletingLastPathComponent() }) {
+            try? FileManager.default.createDirectory(at: album, withIntermediateDirectories: true)
+            for (file, warmth) in [("cover.jpg", 0.05), ("back.jpg", 0.12)] {
+                try? ArtistPageFixture.portraitJPEG(warmth: warmth)?.write(to: album.appendingPathComponent(file))
+            }
+        }
 
         saveCrateTracks(fixture.tracks, name: Self.personalCrateName)
         saveCrateTracks(fixture.vinyl, name: "Vinyl")
@@ -86,6 +94,11 @@ extension LibraryViewModel {
         if ProcessInfo.processInfo.environment["CRATEDIGGER_ARTIST_EDIT"] == "1" {
             try? await Task.sleep(for: .seconds(1))
             editArtist(name)
+        }
+        // `CRATEDIGGER_ARTIST_VIEWER=1`: the artist photo viewer.
+        if ProcessInfo.processInfo.environment["CRATEDIGGER_ARTIST_VIEWER"] == "1" {
+            try? await Task.sleep(for: .seconds(1))
+            showArtistPhotos(name)
         }
     }
 }

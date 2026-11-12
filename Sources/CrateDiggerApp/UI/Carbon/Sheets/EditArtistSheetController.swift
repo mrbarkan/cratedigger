@@ -376,7 +376,7 @@ private struct EditArtistSheetView: View {
                     .padding(.top, 4)
                 HStack(spacing: 8) {
                     ForEach(found.prefix(8), id: \.self) { candidate in
-                        EditArtistCandidateTile(name: name, candidate: candidate, model: model)
+                        ArtistCandidateTile(name: name, candidate: candidate, model: model)
                     }
                 }
             }
@@ -491,8 +491,9 @@ private struct EditArtistPhotoTile: View {
 }
 
 /// A photo the lookup found and did not download: its thumbnail fetched on
-/// demand; a click downloads it into the artist's photos.
-private struct EditArtistCandidateTile: View {
+/// demand; a click downloads it into the artist's photos. In the Edit sheet
+/// and the photo viewer.
+struct ArtistCandidateTile: View {
     @Environment(\.carbon) private var theme
     let name: String
     let candidate: ArtistPictureRecord.HeldCandidate

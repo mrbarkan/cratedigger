@@ -532,8 +532,7 @@ private struct ArtistPortrait<MenuItems: View>: View {
     @State private var dropTargeted = false
 
     var body: some View {
-        // Task 9: a click opens the artist photo viewer.
-        Button(action: {}) {
+        Button(action: { model.showArtistPhotos(name) }) {
             Color.clear
                 .aspectRatio(1, contentMode: .fit)
                 .overlay(content)

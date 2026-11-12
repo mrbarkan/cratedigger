@@ -1214,6 +1214,8 @@ final class LibraryViewModel: ObservableObject {
     /// The artist whose Edit sheet to present. One-shot: `LibraryPresentations`
     /// presents it and clears it.
     @Published var artistEditRequest: String?
+    /// The artist whose photo viewer to present. One-shot, like `artistEditRequest`.
+    @Published var artistPhotoViewerRequest: String?
     /// Folded keys of the artists a lookup the owner asked for is running on.
     @Published var artistLookupsRunning: Set<String> = []
     /// The one profile store for the crates folder (its `save` deletes photo
