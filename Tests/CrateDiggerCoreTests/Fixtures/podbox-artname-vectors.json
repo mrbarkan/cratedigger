@@ -1,0 +1,1512 @@
+[
+ {
+  "name": "N*E*R*D",
+  "key": 1164611180,
+  "altKey": 0
+ },
+ {
+  "name": "N.E.R.D",
+  "key": 1164611180,
+  "altKey": 0
+ },
+ {
+  "name": "NERD",
+  "key": 1164611180,
+  "altKey": 0
+ },
+ {
+  "name": "AC/DC",
+  "key": 1479507114,
+  "altKey": 0
+ },
+ {
+  "name": "AC_DC",
+  "key": 1479507114,
+  "altKey": 0
+ },
+ {
+  "name": "AC-DC",
+  "key": 1479507114,
+  "altKey": 0
+ },
+ {
+  "name": "ACDC",
+  "key": 1479507114,
+  "altKey": 0
+ },
+ {
+  "name": "Björk",
+  "key": 226127775,
+  "altKey": 0
+ },
+ {
+  "name": "Björk",
+  "key": 226127775,
+  "altKey": 0
+ },
+ {
+  "name": "Bjork",
+  "key": 226127775,
+  "altKey": 0
+ },
+ {
+  "name": "BJÖRK",
+  "key": 226127775,
+  "altKey": 0
+ },
+ {
+  "name": "The Beatles",
+  "key": 1282241441,
+  "altKey": 0
+ },
+ {
+  "name": "Beatles",
+  "key": 1282241441,
+  "altKey": 0
+ },
+ {
+  "name": "Beatles, The",
+  "key": 1282241441,
+  "altKey": 2244967242
+ },
+ {
+  "name": "the beatles",
+  "key": 1282241441,
+  "altKey": 0
+ },
+ {
+  "name": "BEATLES, THE",
+  "key": 1282241441,
+  "altKey": 2244967242
+ },
+ {
+  "name": "Simon & Garfunkel",
+  "key": 2202104125,
+  "altKey": 0
+ },
+ {
+  "name": "Simon and Garfunkel",
+  "key": 2202104125,
+  "altKey": 0
+ },
+ {
+  "name": "The The",
+  "key": 349020442,
+  "altKey": 0
+ },
+ {
+  "name": "The ",
+  "key": 349020442,
+  "altKey": 0
+ },
+ {
+  "name": "The",
+  "key": 349020442,
+  "altKey": 0
+ },
+ {
+  "name": "the",
+  "key": 349020442,
+  "altKey": 0
+ },
+ {
+  "name": "Them",
+  "key": 917843541,
+  "altKey": 0
+ },
+ {
+  "name": "Theme",
+  "key": 1329051024,
+  "altKey": 0
+ },
+ {
+  "name": ", the",
+  "key": 349020442,
+  "altKey": 349020442
+ },
+ {
+  "name": "x, the",
+  "key": 392999077,
+  "altKey": 565513542
+ },
+ {
+  "name": "x,the",
+  "key": 1782651004,
+  "altKey": 565513542
+ },
+ {
+  "name": "Herbert, Frank",
+  "key": 81076651,
+  "altKey": 2095230375
+ },
+ {
+  "name": "Frank Herbert",
+  "key": 2095230375,
+  "altKey": 0
+ },
+ {
+  "name": "Pratchett, Terry",
+  "key": 1696496452,
+  "altKey": 2396914382
+ },
+ {
+  "name": "Terry Pratchett",
+  "key": 2396914382,
+  "altKey": 0
+ },
+ {
+  "name": "a, b, c",
+  "key": 74655377,
+  "altKey": 0
+ },
+ {
+  "name": "No Comma",
+  "key": 211981495,
+  "altKey": 0
+ },
+ {
+  "name": "Comma,",
+  "key": 1884539870,
+  "altKey": 1884539870
+ },
+ {
+  "name": ",Comma",
+  "key": 1884539870,
+  "altKey": 1884539870
+ },
+ {
+  "name": "The Smiths, The",
+  "key": 3564897771,
+  "altKey": 1297686845
+ },
+ {
+  "name": "!!!",
+  "key": 0,
+  "altKey": 0
+ },
+ {
+  "name": "",
+  "key": 0,
+  "altKey": 0
+ },
+ {
+  "name": "&&&",
+  "key": 3171256138,
+  "altKey": 0
+ },
+ {
+  "name": "&",
+  "key": 627625256,
+  "altKey": 0
+ },
+ {
+  "name": "...",
+  "key": 0,
+  "altKey": 0
+ },
+ {
+  "name": " ",
+  "key": 0,
+  "altKey": 0
+ },
+ {
+  "name": "?",
+  "key": 0,
+  "altKey": 0
+ },
+ {
+  "name": "Ø",
+  "key": 543997648,
+  "altKey": 0
+ },
+ {
+  "name": "ø",
+  "key": 543997648,
+  "altKey": 0
+ },
+ {
+  "name": "Œ",
+  "key": 3224385263,
+  "altKey": 0
+ },
+ {
+  "name": "œ",
+  "key": 3224385263,
+  "altKey": 0
+ },
+ {
+  "name": "Æ",
+  "key": 3562203309,
+  "altKey": 0
+ },
+ {
+  "name": "æ",
+  "key": 3562203309,
+  "altKey": 0
+ },
+ {
+  "name": "ß",
+  "key": 3056020693,
+  "altKey": 0
+ },
+ {
+  "name": "Þ",
+  "key": 3307434715,
+  "altKey": 0
+ },
+ {
+  "name": "þ",
+  "key": 3307434715,
+  "altKey": 0
+ },
+ {
+  "name": "Ĳ",
+  "key": 2772375288,
+  "altKey": 0
+ },
+ {
+  "name": "ĳ",
+  "key": 2772375288,
+  "altKey": 0
+ },
+ {
+  "name": "ÿ",
+  "key": 376221458,
+  "altKey": 0
+ },
+ {
+  "name": "ſ",
+  "key": 476887172,
+  "altKey": 0
+ },
+ {
+  "name": "ＡＢＣ",
+  "key": 74655377,
+  "altKey": 0
+ },
+ {
+  "name": "ａｂｃ",
+  "key": 74655377,
+  "altKey": 0
+ },
+ {
+  "name": "１２３",
+  "key": 3431128801,
+  "altKey": 0
+ },
+ {
+  "name": "！",
+  "key": 0,
+  "altKey": 0
+ },
+ {
+  "name": "～",
+  "key": 0,
+  "altKey": 0
+ },
+ {
+  "name": "КИНО",
+  "key": 3287822242,
+  "altKey": 0
+ },
+ {
+  "name": "Кино",
+  "key": 3969883714,
+  "altKey": 0
+ },
+ {
+  "name": "кино",
+  "key": 1133191970,
+  "altKey": 0
+ },
+ {
+  "name": "椎名林檎",
+  "key": 2476248523,
+  "altKey": 0
+ },
+ {
+  "name": "Sigur Rós",
+  "key": 73095577,
+  "altKey": 0
+ },
+ {
+  "name": "Sigur Ros",
+  "key": 73095577,
+  "altKey": 0
+ },
+ {
+  "name": "Motörhead",
+  "key": 1278405774,
+  "altKey": 0
+ },
+ {
+  "name": "Mötley Crüe",
+  "key": 11456282,
+  "altKey": 0
+ },
+ {
+  "name": "Röyksopp",
+  "key": 3832146154,
+  "altKey": 0
+ },
+ {
+  "name": "Hüsker Dü",
+  "key": 1873931246,
+  "altKey": 0
+ },
+ {
+  "name": "Beyoncé",
+  "key": 1388779724,
+  "altKey": 0
+ },
+ {
+  "name": "Łona",
+  "key": 8526287,
+  "altKey": 0
+ },
+ {
+  "name": "Dvořák",
+  "key": 3401350412,
+  "altKey": 0
+ },
+ {
+  "name": "Antonín Dvořák",
+  "key": 994795137,
+  "altKey": 0
+ },
+ {
+  "name": "Dvořák, Antonín",
+  "key": 2097396391,
+  "altKey": 994795137
+ },
+ {
+  "name": "R.E.M.",
+  "key": 3897965953,
+  "altKey": 0
+ },
+ {
+  "name": "R.E.M",
+  "key": 3897965953,
+  "altKey": 0
+ },
+ {
+  "name": "Who's Next?",
+  "key": 3362453175,
+  "altKey": 0
+ },
+ {
+  "name": "Who's Next",
+  "key": 3362453175,
+  "altKey": 0
+ },
+ {
+  "name": "Guns N' Roses",
+  "key": 3427222506,
+  "altKey": 0
+ },
+ {
+  "name": "M83",
+  "key": 965997435,
+  "altKey": 0
+ },
+ {
+  "name": "50 Cent",
+  "key": 1624010248,
+  "altKey": 0
+ },
+ {
+  "name": "+44",
+  "key": 1887772127,
+  "altKey": 0
+ },
+ {
+  "name": "Sunn O)))",
+  "key": 2159946716,
+  "altKey": 0
+ },
+ {
+  "name": "Café Tacvba",
+  "key": 3529983029,
+  "altKey": 0
+ },
+ {
+  "name": "Café Tacvba",
+  "key": 3529983029,
+  "altKey": 0
+ },
+ {
+  "name": "Ελληνικά",
+  "key": 110731009,
+  "altKey": 0
+ },
+ {
+  "name": "עברית",
+  "key": 1325695389,
+  "altKey": 0
+ },
+ {
+  "name": "한국어",
+  "key": 2863413080,
+  "altKey": 0
+ },
+ {
+  "name": "ﾊﾝｶｸ",
+  "key": 2736644936,
+  "altKey": 0
+ },
+ {
+  "name": "a©b",
+  "key": 3444759976,
+  "altKey": 0
+ },
+ {
+  "name": "áb",
+  "key": 3444759976,
+  "altKey": 0
+ },
+ {
+  "name": "a—b",
+  "key": 3444759976,
+  "altKey": 0
+ },
+ {
+  "name": "a、b",
+  "key": 3444759976,
+  "altKey": 0
+ },
+ {
+  "name": "a️b",
+  "key": 3444759976,
+  "altKey": 0
+ },
+ {
+  "name": "ab",
+  "key": 3444759976,
+  "altKey": 0
+ },
+ {
+  "name": "a¿b",
+  "key": 3444759976,
+  "altKey": 0
+ },
+ {
+  "name": "aͯb",
+  "key": 3444759976,
+  "altKey": 0
+ },
+ {
+  "name": "a b",
+  "key": 3444759976,
+  "altKey": 0
+ },
+ {
+  "name": "a⯿b",
+  "key": 3444759976,
+  "altKey": 0
+ },
+ {
+  "name": "a　b",
+  "key": 3444759976,
+  "altKey": 0
+ },
+ {
+  "name": "a〿b",
+  "key": 3444759976,
+  "altKey": 0
+ },
+ {
+  "name": "a︀b",
+  "key": 3444759976,
+  "altKey": 0
+ },
+ {
+  "name": "aƀb",
+  "key": 218404132,
+  "altKey": 0
+ },
+ {
+  "name": "aⰀb",
+  "key": 1694377124,
+  "altKey": 0
+ },
+ {
+  "name": "a぀b",
+  "key": 852397284,
+  "altKey": 0
+ },
+ {
+  "name": "a︐b",
+  "key": 2253731476,
+  "altKey": 0
+ },
+ {
+  "name": "a｟b",
+  "key": 2317682183,
+  "altKey": 0
+ },
+ {
+  "name": "a＀b",
+  "key": 1761087396,
+  "altKey": 0
+ },
+ {
+  "name": "xÀy",
+  "key": 1247448495,
+  "altKey": 0
+ },
+ {
+  "name": "xÁy",
+  "key": 1247448495,
+  "altKey": 0
+ },
+ {
+  "name": "xÂy",
+  "key": 1247448495,
+  "altKey": 0
+ },
+ {
+  "name": "xÃy",
+  "key": 1247448495,
+  "altKey": 0
+ },
+ {
+  "name": "xÄy",
+  "key": 1247448495,
+  "altKey": 0
+ },
+ {
+  "name": "xÅy",
+  "key": 1247448495,
+  "altKey": 0
+ },
+ {
+  "name": "xÆy",
+  "key": 3664717366,
+  "altKey": 0
+ },
+ {
+  "name": "xÇy",
+  "key": 1180632209,
+  "altKey": 0
+ },
+ {
+  "name": "xÈy",
+  "key": 1112535995,
+  "altKey": 0
+ },
+ {
+  "name": "xÉy",
+  "key": 1112535995,
+  "altKey": 0
+ },
+ {
+  "name": "xÊy",
+  "key": 1112535995,
+  "altKey": 0
+ },
+ {
+  "name": "xËy",
+  "key": 1112535995,
+  "altKey": 0
+ },
+ {
+  "name": "xÌy",
+  "key": 1248728423,
+  "altKey": 0
+ },
+ {
+  "name": "xÍy",
+  "key": 1248728423,
+  "altKey": 0
+ },
+ {
+  "name": "xÎy",
+  "key": 1248728423,
+  "altKey": 0
+ },
+ {
+  "name": "xÏy",
+  "key": 1248728423,
+  "altKey": 0
+ },
+ {
+  "name": "xÐy",
+  "key": 1179793566,
+  "altKey": 0
+ },
+ {
+  "name": "xÑy",
+  "key": 1114360376,
+  "altKey": 0
+ },
+ {
+  "name": "xÒy",
+  "key": 1315441541,
+  "altKey": 0
+ },
+ {
+  "name": "xÓy",
+  "key": 1315441541,
+  "altKey": 0
+ },
+ {
+  "name": "xÔy",
+  "key": 1315441541,
+  "altKey": 0
+ },
+ {
+  "name": "xÕy",
+  "key": 1315441541,
+  "altKey": 0
+ },
+ {
+  "name": "xÖy",
+  "key": 1315441541,
+  "altKey": 0
+ },
+ {
+  "name": "x×y",
+  "key": 3155847764,
+  "altKey": 0
+ },
+ {
+  "name": "xØy",
+  "key": 1315441541,
+  "altKey": 0
+ },
+ {
+  "name": "xÙy",
+  "key": 1115095851,
+  "altKey": 0
+ },
+ {
+  "name": "xÚy",
+  "key": 1115095851,
+  "altKey": 0
+ },
+ {
+  "name": "xÛy",
+  "key": 1115095851,
+  "altKey": 0
+ },
+ {
+  "name": "xÜy",
+  "key": 1115095851,
+  "altKey": 0
+ },
+ {
+  "name": "xÝy",
+  "key": 1251288279,
+  "altKey": 0
+ },
+ {
+  "name": "xÞy",
+  "key": 1581319576,
+  "altKey": 0
+ },
+ {
+  "name": "xßy",
+  "key": 2163779406,
+  "altKey": 0
+ },
+ {
+  "name": "xày",
+  "key": 1247448495,
+  "altKey": 0
+ },
+ {
+  "name": "xáy",
+  "key": 1247448495,
+  "altKey": 0
+ },
+ {
+  "name": "xây",
+  "key": 1247448495,
+  "altKey": 0
+ },
+ {
+  "name": "xãy",
+  "key": 1247448495,
+  "altKey": 0
+ },
+ {
+  "name": "xäy",
+  "key": 1247448495,
+  "altKey": 0
+ },
+ {
+  "name": "xåy",
+  "key": 1247448495,
+  "altKey": 0
+ },
+ {
+  "name": "xæy",
+  "key": 3664717366,
+  "altKey": 0
+ },
+ {
+  "name": "xçy",
+  "key": 1180632209,
+  "altKey": 0
+ },
+ {
+  "name": "xèy",
+  "key": 1112535995,
+  "altKey": 0
+ },
+ {
+  "name": "xéy",
+  "key": 1112535995,
+  "altKey": 0
+ },
+ {
+  "name": "xêy",
+  "key": 1112535995,
+  "altKey": 0
+ },
+ {
+  "name": "xëy",
+  "key": 1112535995,
+  "altKey": 0
+ },
+ {
+  "name": "xìy",
+  "key": 1248728423,
+  "altKey": 0
+ },
+ {
+  "name": "xíy",
+  "key": 1248728423,
+  "altKey": 0
+ },
+ {
+  "name": "xîy",
+  "key": 1248728423,
+  "altKey": 0
+ },
+ {
+  "name": "xïy",
+  "key": 1248728423,
+  "altKey": 0
+ },
+ {
+  "name": "xðy",
+  "key": 1179793566,
+  "altKey": 0
+ },
+ {
+  "name": "xñy",
+  "key": 1114360376,
+  "altKey": 0
+ },
+ {
+  "name": "xòy",
+  "key": 1315441541,
+  "altKey": 0
+ },
+ {
+  "name": "xóy",
+  "key": 1315441541,
+  "altKey": 0
+ },
+ {
+  "name": "xôy",
+  "key": 1315441541,
+  "altKey": 0
+ },
+ {
+  "name": "xõy",
+  "key": 1315441541,
+  "altKey": 0
+ },
+ {
+  "name": "xöy",
+  "key": 1315441541,
+  "altKey": 0
+ },
+ {
+  "name": "x÷y",
+  "key": 3155847764,
+  "altKey": 0
+ },
+ {
+  "name": "xøy",
+  "key": 1315441541,
+  "altKey": 0
+ },
+ {
+  "name": "xùy",
+  "key": 1115095851,
+  "altKey": 0
+ },
+ {
+  "name": "xúy",
+  "key": 1115095851,
+  "altKey": 0
+ },
+ {
+  "name": "xûy",
+  "key": 1115095851,
+  "altKey": 0
+ },
+ {
+  "name": "xüy",
+  "key": 1115095851,
+  "altKey": 0
+ },
+ {
+  "name": "xýy",
+  "key": 1251288279,
+  "altKey": 0
+ },
+ {
+  "name": "xþy",
+  "key": 1581319576,
+  "altKey": 0
+ },
+ {
+  "name": "xÿy",
+  "key": 1251288279,
+  "altKey": 0
+ },
+ {
+  "name": "xĀy",
+  "key": 1247448495,
+  "altKey": 0
+ },
+ {
+  "name": "xāy",
+  "key": 1247448495,
+  "altKey": 0
+ },
+ {
+  "name": "xĂy",
+  "key": 1247448495,
+  "altKey": 0
+ },
+ {
+  "name": "xăy",
+  "key": 1247448495,
+  "altKey": 0
+ },
+ {
+  "name": "xĄy",
+  "key": 1247448495,
+  "altKey": 0
+ },
+ {
+  "name": "xąy",
+  "key": 1247448495,
+  "altKey": 0
+ },
+ {
+  "name": "xĆy",
+  "key": 1180632209,
+  "altKey": 0
+ },
+ {
+  "name": "xćy",
+  "key": 1180632209,
+  "altKey": 0
+ },
+ {
+  "name": "xĈy",
+  "key": 1180632209,
+  "altKey": 0
+ },
+ {
+  "name": "xĉy",
+  "key": 1180632209,
+  "altKey": 0
+ },
+ {
+  "name": "xĊy",
+  "key": 1180632209,
+  "altKey": 0
+ },
+ {
+  "name": "xċy",
+  "key": 1180632209,
+  "altKey": 0
+ },
+ {
+  "name": "xČy",
+  "key": 1180632209,
+  "altKey": 0
+ },
+ {
+  "name": "xčy",
+  "key": 1180632209,
+  "altKey": 0
+ },
+ {
+  "name": "xĎy",
+  "key": 1179793566,
+  "altKey": 0
+ },
+ {
+  "name": "xďy",
+  "key": 1179793566,
+  "altKey": 0
+ },
+ {
+  "name": "xĐy",
+  "key": 1179793566,
+  "altKey": 0
+ },
+ {
+  "name": "xđy",
+  "key": 1179793566,
+  "altKey": 0
+ },
+ {
+  "name": "xĒy",
+  "key": 1112535995,
+  "altKey": 0
+ },
+ {
+  "name": "xēy",
+  "key": 1112535995,
+  "altKey": 0
+ },
+ {
+  "name": "xĔy",
+  "key": 1112535995,
+  "altKey": 0
+ },
+ {
+  "name": "xĕy",
+  "key": 1112535995,
+  "altKey": 0
+ },
+ {
+  "name": "xĖy",
+  "key": 1112535995,
+  "altKey": 0
+ },
+ {
+  "name": "xėy",
+  "key": 1112535995,
+  "altKey": 0
+ },
+ {
+  "name": "xĘy",
+  "key": 1112535995,
+  "altKey": 0
+ },
+ {
+  "name": "xęy",
+  "key": 1112535995,
+  "altKey": 0
+ },
+ {
+  "name": "xĚy",
+  "key": 1112535995,
+  "altKey": 0
+ },
+ {
+  "name": "xěy",
+  "key": 1112535995,
+  "altKey": 0
+ },
+ {
+  "name": "xĜy",
+  "key": 1314161613,
+  "altKey": 0
+ },
+ {
+  "name": "xĝy",
+  "key": 1314161613,
+  "altKey": 0
+ },
+ {
+  "name": "xĞy",
+  "key": 1314161613,
+  "altKey": 0
+ },
+ {
+  "name": "xğy",
+  "key": 1314161613,
+  "altKey": 0
+ },
+ {
+  "name": "xĠy",
+  "key": 1314161613,
+  "altKey": 0
+ },
+ {
+  "name": "xġy",
+  "key": 1314161613,
+  "altKey": 0
+ },
+ {
+  "name": "xĢy",
+  "key": 1314161613,
+  "altKey": 0
+ },
+ {
+  "name": "xģy",
+  "key": 1314161613,
+  "altKey": 0
+ },
+ {
+  "name": "xĤy",
+  "key": 1315985994,
+  "altKey": 0
+ },
+ {
+  "name": "xĥy",
+  "key": 1315985994,
+  "altKey": 0
+ },
+ {
+  "name": "xĦy",
+  "key": 1315985994,
+  "altKey": 0
+ },
+ {
+  "name": "xħy",
+  "key": 1315985994,
+  "altKey": 0
+ },
+ {
+  "name": "xĨy",
+  "key": 1248728423,
+  "altKey": 0
+ },
+ {
+  "name": "xĩy",
+  "key": 1248728423,
+  "altKey": 0
+ },
+ {
+  "name": "xĪy",
+  "key": 1248728423,
+  "altKey": 0
+ },
+ {
+  "name": "xīy",
+  "key": 1248728423,
+  "altKey": 0
+ },
+ {
+  "name": "xĬy",
+  "key": 1248728423,
+  "altKey": 0
+ },
+ {
+  "name": "xĭy",
+  "key": 1248728423,
+  "altKey": 0
+ },
+ {
+  "name": "xĮy",
+  "key": 1248728423,
+  "altKey": 0
+ },
+ {
+  "name": "xįy",
+  "key": 1248728423,
+  "altKey": 0
+ },
+ {
+  "name": "xİy",
+  "key": 1248728423,
+  "altKey": 0
+ },
+ {
+  "name": "xıy",
+  "key": 1248728423,
+  "altKey": 0
+ },
+ {
+  "name": "xĲy",
+  "key": 1093034185,
+  "altKey": 0
+ },
+ {
+  "name": "xĳy",
+  "key": 1093034185,
+  "altKey": 0
+ },
+ {
+  "name": "xĴy",
+  "key": 1249169708,
+  "altKey": 0
+ },
+ {
+  "name": "xĵy",
+  "key": 1249169708,
+  "altKey": 0
+ },
+ {
+  "name": "xĶy",
+  "key": 1181912137,
+  "altKey": 0
+ },
+ {
+  "name": "xķy",
+  "key": 1181912137,
+  "altKey": 0
+ },
+ {
+  "name": "xĸy",
+  "key": 1181912137,
+  "altKey": 0
+ },
+ {
+  "name": "xĹy",
+  "key": 1181073494,
+  "altKey": 0
+ },
+ {
+  "name": "xĺy",
+  "key": 1181073494,
+  "altKey": 0
+ },
+ {
+  "name": "xĻy",
+  "key": 1181073494,
+  "altKey": 0
+ },
+ {
+  "name": "xļy",
+  "key": 1181073494,
+  "altKey": 0
+ },
+ {
+  "name": "xĽy",
+  "key": 1181073494,
+  "altKey": 0
+ },
+ {
+  "name": "xľy",
+  "key": 1181073494,
+  "altKey": 0
+ },
+ {
+  "name": "xĿy",
+  "key": 1181073494,
+  "altKey": 0
+ },
+ {
+  "name": "xŀy",
+  "key": 1181073494,
+  "altKey": 0
+ },
+ {
+  "name": "xŁy",
+  "key": 1181073494,
+  "altKey": 0
+ },
+ {
+  "name": "xły",
+  "key": 1181073494,
+  "altKey": 0
+ },
+ {
+  "name": "xŃy",
+  "key": 1114360376,
+  "altKey": 0
+ },
+ {
+  "name": "xńy",
+  "key": 1114360376,
+  "altKey": 0
+ },
+ {
+  "name": "xŅy",
+  "key": 1114360376,
+  "altKey": 0
+ },
+ {
+  "name": "xņy",
+  "key": 1114360376,
+  "altKey": 0
+ },
+ {
+  "name": "xŇy",
+  "key": 1114360376,
+  "altKey": 0
+ },
+ {
+  "name": "xňy",
+  "key": 1114360376,
+  "altKey": 0
+ },
+ {
+  "name": "xŉy",
+  "key": 1114360376,
+  "altKey": 0
+ },
+ {
+  "name": "xŊy",
+  "key": 1114360376,
+  "altKey": 0
+ },
+ {
+  "name": "xŋy",
+  "key": 1114360376,
+  "altKey": 0
+ },
+ {
+  "name": "xŌy",
+  "key": 1315441541,
+  "altKey": 0
+ },
+ {
+  "name": "xōy",
+  "key": 1315441541,
+  "altKey": 0
+ },
+ {
+  "name": "xŎy",
+  "key": 1315441541,
+  "altKey": 0
+ },
+ {
+  "name": "xŏy",
+  "key": 1315441541,
+  "altKey": 0
+ },
+ {
+  "name": "xŐy",
+  "key": 1315441541,
+  "altKey": 0
+ },
+ {
+  "name": "xőy",
+  "key": 1315441541,
+  "altKey": 0
+ },
+ {
+  "name": "xŒy",
+  "key": 1643933160,
+  "altKey": 0
+ },
+ {
+  "name": "xœy",
+  "key": 1643933160,
+  "altKey": 0
+ },
+ {
+  "name": "xŔy",
+  "key": 1250449636,
+  "altKey": 0
+ },
+ {
+  "name": "xŕy",
+  "key": 1250449636,
+  "altKey": 0
+ },
+ {
+  "name": "xŖy",
+  "key": 1250449636,
+  "altKey": 0
+ },
+ {
+  "name": "xŗy",
+  "key": 1250449636,
+  "altKey": 0
+ },
+ {
+  "name": "xŘy",
+  "key": 1250449636,
+  "altKey": 0
+ },
+ {
+  "name": "xřy",
+  "key": 1250449636,
+  "altKey": 0
+ },
+ {
+  "name": "xŚy",
+  "key": 1183192065,
+  "altKey": 0
+ },
+ {
+  "name": "xśy",
+  "key": 1183192065,
+  "altKey": 0
+ },
+ {
+  "name": "xŜy",
+  "key": 1183192065,
+  "altKey": 0
+ },
+ {
+  "name": "xŝy",
+  "key": 1183192065,
+  "altKey": 0
+ },
+ {
+  "name": "xŞy",
+  "key": 1183192065,
+  "altKey": 0
+ },
+ {
+  "name": "xşy",
+  "key": 1183192065,
+  "altKey": 0
+ },
+ {
+  "name": "xŠy",
+  "key": 1183192065,
+  "altKey": 0
+ },
+ {
+  "name": "xšy",
+  "key": 1183192065,
+  "altKey": 0
+ },
+ {
+  "name": "xŢy",
+  "key": 1182456590,
+  "altKey": 0
+ },
+ {
+  "name": "xţy",
+  "key": 1182456590,
+  "altKey": 0
+ },
+ {
+  "name": "xŤy",
+  "key": 1182456590,
+  "altKey": 0
+ },
+ {
+  "name": "xťy",
+  "key": 1182456590,
+  "altKey": 0
+ },
+ {
+  "name": "xŦy",
+  "key": 1182456590,
+  "altKey": 0
+ },
+ {
+  "name": "xŧy",
+  "key": 1182456590,
+  "altKey": 0
+ },
+ {
+  "name": "xŨy",
+  "key": 1115095851,
+  "altKey": 0
+ },
+ {
+  "name": "xũy",
+  "key": 1115095851,
+  "altKey": 0
+ },
+ {
+  "name": "xŪy",
+  "key": 1115095851,
+  "altKey": 0
+ },
+ {
+  "name": "xūy",
+  "key": 1115095851,
+  "altKey": 0
+ },
+ {
+  "name": "xŬy",
+  "key": 1115095851,
+  "altKey": 0
+ },
+ {
+  "name": "xŭy",
+  "key": 1115095851,
+  "altKey": 0
+ },
+ {
+  "name": "xŮy",
+  "key": 1115095851,
+  "altKey": 0
+ },
+ {
+  "name": "xůy",
+  "key": 1115095851,
+  "altKey": 0
+ },
+ {
+  "name": "xŰy",
+  "key": 1115095851,
+  "altKey": 0
+ },
+ {
+  "name": "xűy",
+  "key": 1115095851,
+  "altKey": 0
+ },
+ {
+  "name": "xŲy",
+  "key": 1115095851,
+  "altKey": 0
+ },
+ {
+  "name": "xųy",
+  "key": 1115095851,
+  "altKey": 0
+ },
+ {
+  "name": "xŴy",
+  "key": 1316824637,
+  "altKey": 0
+ },
+ {
+  "name": "xŵy",
+  "key": 1316824637,
+  "altKey": 0
+ },
+ {
+  "name": "xŶy",
+  "key": 1251288279,
+  "altKey": 0
+ },
+ {
+  "name": "xŷy",
+  "key": 1251288279,
+  "altKey": 0
+ },
+ {
+  "name": "xŸy",
+  "key": 1251288279,
+  "altKey": 0
+ },
+ {
+  "name": "xŹy",
+  "key": 1251832732,
+  "altKey": 0
+ },
+ {
+  "name": "xźy",
+  "key": 1251832732,
+  "altKey": 0
+ },
+ {
+  "name": "xŻy",
+  "key": 1251832732,
+  "altKey": 0
+ },
+ {
+  "name": "xży",
+  "key": 1251832732,
+  "altKey": 0
+ },
+ {
+  "name": "xŽy",
+  "key": 1251832732,
+  "altKey": 0
+ },
+ {
+  "name": "xžy",
+  "key": 1251832732,
+  "altKey": 0
+ },
+ {
+  "name": "xſy",
+  "key": 1183192065,
+  "altKey": 0
+ }
+]
