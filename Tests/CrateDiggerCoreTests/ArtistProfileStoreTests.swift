@@ -392,12 +392,15 @@ final class ArtistProfileStoreTests: XCTestCase {
           {"foldedKey":"beck","displayName":"Beck","identity":{"state":"confirmed","musicBrainzID":"mb-beck"},
            "checkedAt":"2026-02-01T00:00:00Z"},
           {"foldedKey":"wrong","displayName":"The Low"},
-          {"foldedKey":"","displayName":"!!!"}
+          {"foldedKey":"","displayName":"!!!"},
+          {"foldedKey":"","displayName":"  "}
         ]
         """
         try Data(json.utf8).write(to: storeFile)
         let lenient = makeStore()
-        XCTAssertEqual(lenient.allProfiles().map(\.foldedKey), ["air", "beck", "low"])
+        // A name with no letters keeps its profile under the name itself; an
+        // empty one has no key and is dropped.
+        XCTAssertEqual(Set(lenient.allProfiles().map(\.foldedKey)), ["air", "beck", "low", "!!!"])
         let air = try XCTUnwrap(lenient.profile(forName: "Air"))
         XCTAssertEqual(air.identity, .unknown)
         XCTAssertEqual(air.photos.map(\.pixelHeight), [20])
@@ -827,18 +830,53 @@ final class ArtistProfileStoreTests: XCTestCase {
         XCTAssertNotNil(object?["profiles"] as? [Any])
     }
 
+    /// The band "@": no letter or digit, so the player's fold is empty. It
+    /// still gets a profile and photos of its own, apart from "!!!".
+    func testNamesWithNoLettersKeepTheirOwnProfiles() throws {
+        XCTAssertEqual(ArtistProfileKey.key(for: "@"), "@")
+        XCTAssertEqual(ArtistProfileKey.key(for: " @ "), "@")
+        XCTAssertEqual(ArtistProfileKey.key(for: "The Beatles"), PodBoxArtName.folded("The Beatles"))
+        XCTAssertEqual(ArtistProfileKey.key(for: "   "), "")
+        // A key is its own key, and a fallback key never meets a folded one.
+        for name in ["@", "!!!", "...", "Beatles, The", "Björk"] {
+            let key = ArtistProfileKey.key(for: name)
+            XCTAssertEqual(ArtistProfileKey.key(for: key), key, name)
+        }
+
+        let store = makeStore()
+        let photo = try XCTUnwrap(store.addPhoto(name: "@", data: image(400, 400), source: .owner, sourceID: nil,
+                                                 credit: nil))
+        store.update(name: "!!!") { $0.owner = ArtistFacts(origin: "Sacramento") }
+        XCTAssertEqual(store.profile(forName: "@")?.photos.map(\.hash), [photo.hash])
+        XCTAssertEqual(store.profile(forName: "@")?.owner?.origin, nil)
+        XCTAssertEqual(store.profile(forName: "!!!")?.owner?.origin, "Sacramento")
+        XCTAssertEqual(store.profile(forName: "!!!")?.photos, [])
+        try store.save()
+
+        let reloaded = makeStore()
+        XCTAssertEqual(reloaded.profile(forName: "@")?.photos.map(\.hash), [photo.hash])
+        XCTAssertEqual(reloaded.profile(forName: "!!!")?.owner?.origin, "Sacramento")
+        XCTAssertEqual(Set(reloaded.allProfiles().map(\.foldedKey)), ["@", "!!!"])
+
+        // The iPod side still has no name for either: the player keys them 0.
+        let forIPod = ArtistPictureProfiles(store: reloaded)
+        XCTAssertNil(forIPod.profile(forName: "@"))
+        XCTAssertNil(PodBoxArtName.fileStem(for: "@"))
+        XCTAssertFalse(ArtistLookupScheduler.isLookedUp("@"))
+    }
+
     func testEmptyKeyIsIgnored() {
         let store = makeStore()
         var called = false
-        store.update(name: "!!!") { _ in called = true }
         store.update(name: "") { _ in called = true }
+        store.update(name: " \n") { _ in called = true }
         store.applyFetched(name: "  ", facts: ArtistFacts(kind: "Group"), identity: .notFound, at: Date())
         XCTAssertFalse(called)
         XCTAssertEqual(store.allProfiles(), [])
-        XCTAssertNil(store.profile(forName: "!!!"))
-        XCTAssertThrowsError(try store.addPhoto(name: "!!!", data: image(400, 400), source: .owner, sourceID: nil,
+        XCTAssertNil(store.profile(forName: "  "))
+        XCTAssertThrowsError(try store.addPhoto(name: "  ", data: image(400, 400), source: .owner, sourceID: nil,
                                                 credit: nil)) { error in
-            XCTAssertEqual(error as? ArtistProfileStoreError, .unnamedArtist(name: "!!!"))
+            XCTAssertEqual(error as? ArtistProfileStoreError, .unnamedArtist(name: "  "))
         }
         // The closure cannot move a profile to another key.
         store.update(name: "Air") { $0.foldedKey = "beck" }

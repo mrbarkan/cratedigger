@@ -28,7 +28,7 @@ public enum ArtistProfileStoreError: LocalizedError, Equatable {
             return "The library folder at \(path) could not be reached, so artist profiles were not saved. "
                 + "Connect the library's drive and try again."
         case .unnamedArtist(let name):
-            return "\"\(name)\" has no letters or digits to keep an artist profile under."
+            return "An artist with no name has no profile to keep this under."
         case .unreadablePhoto:
             return "That file is not a picture CrateDigger can read, or it is incomplete."
         case .photoTooLarge:
@@ -40,7 +40,7 @@ public enum ArtistProfileStoreError: LocalizedError, Equatable {
 /// The artist profiles (`library.cdartistinfo` in the library's index folder,
 /// so library moves and the offline copy carry it) and their photos (an
 /// `ArtistPhotos` folder beside it, one file per SHA-256, never inside the
-/// index file). Profiles are keyed by `PodBoxArtName.folded` of the name.
+/// index file). Profiles are keyed by `ArtistProfileKey.key(for:)` of the name.
 ///
 /// Everything here writes on the Mac only, and callers check
 /// `refuseWhileLibraryDisconnected` first. Safe to use from any thread:
@@ -115,9 +115,9 @@ public final class ArtistProfileStore: @unchecked Sendable {
 
     /// The profile for any spelling that folds to the same key
     /// (`The Beatles`, `Beatles, The`); nil when there is none, or when the
-    /// name folds to nothing.
+    /// name is empty.
     public func profile(forName name: String) -> ArtistProfile? {
-        let key = PodBoxArtName.folded(name)
+        let key = ArtistProfileKey.key(for: name)
         guard !key.isEmpty else { return nil }
         lock.lock()
         defer { lock.unlock() }
@@ -132,7 +132,7 @@ public final class ArtistProfileStore: @unchecked Sendable {
     }
 
     /// Changes the profile for `name`, creating it (named `name`) when there
-    /// is none. A name that folds to nothing is ignored. The closure runs
+    /// is none. An empty name is ignored. The closure runs
     /// under the store's lock, so it must not call the store, and it cannot
     /// move the profile to another key.
     public func update(name: String, _ change: (inout ArtistProfile) -> Void) {
@@ -146,7 +146,7 @@ public final class ArtistProfileStore: @unchecked Sendable {
     @discardableResult
     public func update(name: String, ifIdentityIs expected: ArtistProfile.Identity?,
                        _ change: (inout ArtistProfile) -> Void) -> Bool {
-        let key = PodBoxArtName.folded(name)
+        let key = ArtistProfileKey.key(for: name)
         guard !key.isEmpty else { return false }
         lock.lock()
         defer { lock.unlock() }
@@ -189,7 +189,7 @@ public final class ArtistProfileStore: @unchecked Sendable {
 
     private func applyFetchedLocked(name: String, facts: ArtistFacts?, identity: ArtistProfile.Identity, at date: Date,
                                     expected: ArtistProfile.Identity?) -> ArtistProfile.Identity? {
-        let key = PodBoxArtName.folded(name)
+        let key = ArtistProfileKey.key(for: name)
         guard !key.isEmpty else { return nil }
         lock.lock()
         defer { lock.unlock() }
@@ -221,7 +221,7 @@ public final class ArtistProfileStore: @unchecked Sendable {
     /// owner said are "Not This Artist" stay rejected. The owner's word,
     /// so it is dated (`identityChangedByOwnerAt`).
     public func resetIdentity(name: String, at date: Date = Date()) {
-        let key = PodBoxArtName.folded(name)
+        let key = ArtistProfileKey.key(for: name)
         guard !key.isEmpty else { return }
         lock.lock()
         defer { lock.unlock() }
@@ -258,7 +258,7 @@ public final class ArtistProfileStore: @unchecked Sendable {
                          credit: ArtistPictureCredit?,
                          if decide: (_ before: ArtistProfile?, _ after: inout ArtistProfile, _ photo: ArtistPhoto) -> Bool)
         throws -> ArtistPhoto? {
-        let key = PodBoxArtName.folded(name)
+        let key = ArtistProfileKey.key(for: name)
         guard !key.isEmpty else { throw ArtistProfileStoreError.unnamedArtist(name: name) }
         try checkWritable()
         let stored = try ArtistPhotoImage.stored(data, source: source)
@@ -311,7 +311,7 @@ public final class ArtistProfileStore: @unchecked Sendable {
     /// the owner's pick is cleared. The file is deleted by the next `save`
     /// when no profile uses it any more.
     public func removePhoto(name: String, hash: String) {
-        let key = PodBoxArtName.folded(name)
+        let key = ArtistProfileKey.key(for: name)
         guard !key.isEmpty else { return }
         lock.lock()
         defer { lock.unlock() }
@@ -332,7 +332,7 @@ public final class ArtistProfileStore: @unchecked Sendable {
     /// The owner's choice of default photo, which no lookup changes. A hash
     /// the profile does not hold is ignored.
     public func setDefault(name: String, hash: String) {
-        let key = PodBoxArtName.folded(name)
+        let key = ArtistProfileKey.key(for: name)
         guard !key.isEmpty else { return }
         lock.lock()
         defer { lock.unlock() }
@@ -579,7 +579,7 @@ public final class ArtistProfileStore: @unchecked Sendable {
         var profiles: [String: ArtistProfile] = [:]
         var rekeyed = false
         for case var profile? in rows.map(\.value) {
-            let key = PodBoxArtName.folded(profile.displayName)
+            let key = ArtistProfileKey.key(for: profile.displayName)
             guard !key.isEmpty else {
                 losses.count += 1
                 continue

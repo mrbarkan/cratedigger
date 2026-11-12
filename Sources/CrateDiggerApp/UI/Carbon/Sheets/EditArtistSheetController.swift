@@ -73,7 +73,7 @@ private struct EditArtistSheetView: View {
         self.maxBodyHeight = maxBodyHeight
         self.onClose = onClose
         let profile = model.artistProfile(named: name)
-            ?? ArtistProfile(foldedKey: PodBoxArtName.folded(name), displayName: name)
+            ?? ArtistProfile(foldedKey: ArtistProfileKey.key(for: name), displayName: name)
         let draft = ArtistEditDraft(profile: profile)
         original = draft
         _draft = State(initialValue: draft)

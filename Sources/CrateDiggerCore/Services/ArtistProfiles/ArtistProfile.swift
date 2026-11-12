@@ -146,7 +146,7 @@ public struct ArtistIdentityCandidate: Codable, Hashable, Sendable {
 }
 
 /// Everything CrateDigger knows about one artist, for the artist page and
-/// for a PodBox iPod. Keyed by `PodBoxArtName.folded` of the name, the key
+/// for a PodBox iPod. Keyed by `ArtistProfileKey.key(for:)` of the name, for almost every name the key
 /// the artist picture records use, so the app and the iPod share one record.
 ///
 /// Looked-up facts and the owner's are kept apart (`fetched`, `owner`); a
@@ -360,5 +360,29 @@ extension KeyedDecodingContainer {
     /// The elements that decode; nil when the key is missing or not an array.
     func lossyArray<T: Decodable>(_ type: T.Type, _ key: Key) -> [T]? {
         lenient([LossyElement<T>].self, key)?.compactMap(\.value)
+    }
+}
+
+/// The key an artist's profile is kept under.
+///
+/// For almost every name it is `PodBoxArtName.folded`, the player's own
+/// fold, so the app and the iPod share one record and spellings that fold
+/// alike (`The Beatles`, `Beatles, The`) are one artist. A name with no
+/// letter or digit (`@`, `!!!`, `...`) folds to nothing; without a key of
+/// its own it could have no page and no photo, and all such names would be
+/// one artist. Those are kept under the name itself, NFC and trimmed, so
+/// each stays apart. Such a key can never meet a folded one: it folds to
+/// nothing, and a folded key folds to itself.
+///
+/// The iPod side never uses this: the player keys those names 0, so
+/// `PodBoxArtName` stays the only authority for what a device file is named
+/// and whose picture it is. Lookups do not use it either (`isLookedUp`): a
+/// search for `@` finds other acts.
+public enum ArtistProfileKey {
+    /// Empty only for a name that is empty or all white space.
+    public static func key(for name: String) -> String {
+        let folded = PodBoxArtName.folded(name)
+        guard folded.isEmpty else { return folded }
+        return name.precomposedStringWithCanonicalMapping.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

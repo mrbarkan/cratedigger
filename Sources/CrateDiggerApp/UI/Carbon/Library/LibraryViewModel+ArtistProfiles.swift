@@ -88,7 +88,7 @@ extension LibraryViewModel {
     func inspectedArtistName(knownBy profiles: ArtistProfilesModel) -> String? {
         guard let name = artistPage.artistName else { return nil }
         if currentSource.isLocalLibrary { return name }
-        let key = PodBoxArtName.folded(name)
+        let key = ArtistProfileKey.key(for: name)
         return artistSummaries[key] != nil || profiles.profiles[key] != nil ? name : nil
     }
 
@@ -97,7 +97,7 @@ extension LibraryViewModel {
     }
 
     func artistSummary(named name: String) -> ArtistLibrarySummary? {
-        artistSummaries[PodBoxArtName.folded(name)]
+        artistSummaries[ArtistProfileKey.key(for: name)]
     }
 
     /// "Show Artist" and the album page's artist link: the inspector shows
@@ -457,8 +457,8 @@ extension LibraryViewModel {
     /// Edit Artist: the sheet, presented from the root (`LibraryPresentations`),
     /// so it opens in the compact player too.
     func editArtist(_ name: String) {
-        // A name that folds to nothing has no profile to keep the edits under.
-        guard !PodBoxArtName.folded(name).isEmpty, !refuseWhileLibraryDisconnected() else { return }
+        // An empty name has no profile to keep the edits under.
+        guard !ArtistProfileKey.key(for: name).isEmpty, !refuseWhileLibraryDisconnected() else { return }
         artistEditRequest = name
     }
 
@@ -468,7 +468,7 @@ extension LibraryViewModel {
     func saveArtistEdit(_ name: String, draft: ArtistEditDraft) {
         guard !refuseWhileLibraryDisconnected() else { return }
         let changesIdentity = draft.changesIdentity(of: artistProfile(named: name)
-            ?? ArtistProfile(foldedKey: PodBoxArtName.folded(name), displayName: name))
+            ?? ArtistProfile(foldedKey: ArtistProfileKey.key(for: name), displayName: name))
         changeArtistProfile(name) { draft.apply(to: &$0) } then: { [weak self] in
             if changesIdentity { self?.runArtistLookup(name, resetFirst: false) }
         }
@@ -560,7 +560,7 @@ extension LibraryViewModel {
 
     /// The artist photo viewer, presented from the root (`LibraryPresentations`).
     func showArtistPhotos(_ name: String) {
-        guard !PodBoxArtName.folded(name).isEmpty else { return }
+        guard !ArtistProfileKey.key(for: name).isEmpty else { return }
         artistPhotoViewerRequest = name
     }
 

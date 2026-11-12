@@ -66,7 +66,7 @@ public struct ArtistLibrarySummary: Equatable, Sendable {
         keyByPath.reserveCapacity(index.allTracks.count)
 
         for artist in index.artists {
-            let key = PodBoxArtName.folded(artist.name)
+            let key = ArtistProfileKey.key(for: artist.name)
             guard !key.isEmpty else { continue }
             var tally = tallies[key] ?? Tally()
             for album in artist.albums {

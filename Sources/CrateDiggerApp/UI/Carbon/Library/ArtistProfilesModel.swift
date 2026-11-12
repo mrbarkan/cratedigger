@@ -9,7 +9,7 @@ import Foundation
 /// compares off the main actor).
 @MainActor
 final class ArtistProfilesModel: ObservableObject {
-    /// Every artist profile, by folded key (`PodBoxArtName.folded`), as the
+    /// Every artist profile, by profile key (`ArtistProfileKey.key(for:)`), as the
     /// store last read off the main actor.
     @Published private(set) var profiles: [String: ArtistProfile] = [:]
     /// Folded keys of the artists a lookup (the owner's or the worker's) is
@@ -17,11 +17,11 @@ final class ArtistProfilesModel: ObservableObject {
     @Published private(set) var running: Set<String> = []
 
     func profile(named name: String) -> ArtistProfile? {
-        profiles[PodBoxArtName.folded(name)]
+        profiles[ArtistProfileKey.key(for: name)]
     }
 
     func isLookingUp(_ name: String) -> Bool {
-        running.contains(PodBoxArtName.folded(name))
+        running.contains(ArtistProfileKey.key(for: name))
     }
 
     func publish(_ profiles: [String: ArtistProfile]) {
