@@ -72,7 +72,8 @@ public enum ArtistPictureImage {
     // MARK: - Private
 
     /// The pixel size the header claims, after its orientation is applied.
-    private static func headerSize(_ source: CGImageSource) -> CGSize? {
+    /// Also read by `ArtistPhotoImage` for the artist profile photos.
+    static func headerSize(_ source: CGImageSource) -> CGSize? {
         guard let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
               let width = (properties[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue,
               let height = (properties[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue,

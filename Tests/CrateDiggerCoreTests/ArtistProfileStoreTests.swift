@@ -1,0 +1,448 @@
+import CoreGraphics
+import CryptoKit
+import ImageIO
+import UniformTypeIdentifiers
+import XCTest
+@testable import CrateDiggerCore
+
+final class ArtistProfileStoreTests: XCTestCase {
+    private var folder: URL!
+
+    override func setUpWithError() throws {
+        folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ArtistProfileStoreTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    }
+
+    override func tearDownWithError() throws {
+        try? FileManager.default.removeItem(at: folder)
+    }
+
+    private var photosDirectory: URL { folder.appendingPathComponent(ArtistProfileStore.photosFolder, isDirectory: true) }
+    private var storeFile: URL { folder.appendingPathComponent(ArtistProfileStore.fileName) }
+
+    private func makeStore() -> ArtistProfileStore { ArtistProfileStore(indexDirectory: folder) }
+
+    private func sha256(_ data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// A solid sRGB image encoded as `type`; `shade` makes each one's bytes differ.
+    private func image(_ width: Int, _ height: Int, shade: CGFloat = 0.3, as type: UTType = .jpeg) -> Data {
+        let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                                space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
+        context.setFillColor(CGColor(srgbRed: shade, green: 0.5, blue: 0.7, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        let output = NSMutableData()
+        let destination = CGImageDestinationCreateWithData(output, type.identifier as CFString, 1, nil)!
+        CGImageDestinationAddImage(destination, context.makeImage()!, nil)
+        XCTAssertTrue(CGImageDestinationFinalize(destination))
+        return output as Data
+    }
+
+    private func pixelSize(of data: Data) -> CGSize? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int,
+              let height = properties[kCGImagePropertyPixelHeight] as? Int else { return nil }
+        return CGSize(width: width, height: height)
+    }
+
+    // MARK: - Facts
+
+    func testOwnerFieldsWinFieldByField() {
+        var profile = ArtistProfile(foldedKey: "massiveattack", displayName: "Massive Attack")
+        profile.fetched = ArtistFacts(kind: "Group", origin: "Bristol, England", begin: "1988",
+                                      bio: "A trip hop group.",
+                                      bioSourceURL: URL(string: "https://en.wikipedia.org/wiki/Massive_Attack"),
+                                      members: [ArtistMember(name: "Robert Del Naja", begin: "1988", isCurrent: true)],
+                                      genres: ["trip hop"])
+        profile.owner = ArtistFacts(origin: "Bristol", genres: ["trip hop", "electronic"])
+        let facts = profile.facts
+        XCTAssertEqual(facts.kind, "Group")
+        XCTAssertEqual(facts.origin, "Bristol")
+        XCTAssertEqual(facts.begin, "1988")
+        XCTAssertNil(facts.end)
+        XCTAssertEqual(facts.bio, "A trip hop group.")
+        XCTAssertEqual(facts.bioSourceURL, URL(string: "https://en.wikipedia.org/wiki/Massive_Attack"))
+        XCTAssertEqual(facts.members?.map(\.name), ["Robert Del Naja"])
+        XCTAssertEqual(facts.genres, ["trip hop", "electronic"])
+
+        // A bio the owner wrote carries no Wikipedia credit, even when they paste a URL.
+        profile.owner?.bio = "My own words."
+        profile.owner?.bioSourceURL = URL(string: "https://example.com")
+        XCTAssertEqual(profile.facts.bio, "My own words.")
+        XCTAssertNil(profile.facts.bioSourceURL)
+
+        XCTAssertEqual(ArtistProfile(foldedKey: "air", displayName: "Air").facts, ArtistFacts())
+    }
+
+    func testOwnerEmptyStringClearsField() {
+        var profile = ArtistProfile(foldedKey: "air", displayName: "Air")
+        profile.fetched = ArtistFacts(kind: "Group", origin: "Versailles, France", bio: "A French duo.",
+                                      bioSourceURL: URL(string: "https://en.wikipedia.org/wiki/Air_(French_band)"),
+                                      genres: ["electronic"])
+        profile.owner = ArtistFacts(origin: "", bio: "", genres: [])
+        let facts = profile.facts
+        XCTAssertNil(facts.origin)
+        XCTAssertNil(facts.bio)
+        XCTAssertNil(facts.bioSourceURL, "a cleared bio leaves no credit behind")
+        XCTAssertEqual(facts.genres, [])
+        XCTAssertEqual(facts.kind, "Group")
+    }
+
+    func testFetchedUpdateNeverTouchesOwnerFields() throws {
+        let store = makeStore()
+        let photo = try store.addPhoto(name: "Portishead", data: image(800, 800), source: .owner, sourceID: nil,
+                                       credit: nil)
+        store.update(name: "Portishead") { profile in
+            profile.owner = ArtistFacts(origin: "Bristol", bio: "Mine.")
+            profile.defaultPickedByOwner = true
+            profile.noPhoto = true
+            profile.notOnIPod = true
+            profile.rejectedPhotoSources = ["deezer:1"]
+            profile.rejectedMusicBrainzIDs = ["mb-old"]
+        }
+        let before = try XCTUnwrap(store.profile(forName: "Portishead"))
+        let when = Date(timeIntervalSinceReferenceDate: 810_000_000)
+        let fetched = ArtistFacts(kind: "Group", origin: "Bristol, England", bio: "From Wikipedia.")
+        store.applyFetched(name: "Portishead", facts: fetched,
+                           identity: .confirmed(musicBrainzID: "mb-1", wikidataID: "Q1"), at: when)
+
+        var expected = before
+        expected.fetched = fetched
+        expected.identity = .confirmed(musicBrainzID: "mb-1", wikidataID: "Q1")
+        expected.checkedAt = when
+        XCTAssertEqual(store.profile(forName: "Portishead"), expected)
+        XCTAssertEqual(store.profile(forName: "Portishead")?.photos, [photo])
+        XCTAssertEqual(store.profile(forName: "Portishead")?.facts.bio, "Mine.")
+    }
+
+    // MARK: - Photos
+
+    func testAddPhotoStoresOncePerHash() throws {
+        let store = makeStore()
+        let bytes = image(600, 500)
+        let first = try store.addPhoto(name: "Björk", data: bytes, source: .owner, sourceID: nil, credit: nil)
+        XCTAssertEqual(first.hash, sha256(bytes), "an owner JPEG is kept exactly as given")
+        XCTAssertEqual(first.source, .owner)
+        XCTAssertEqual(first.pixelWidth, 600)
+        XCTAssertEqual(first.pixelHeight, 500)
+        XCTAssertEqual(store.photoURL(hash: first.hash),
+                       photosDirectory.appendingPathComponent(first.hash + ".jpg"))
+        XCTAssertEqual(store.photoData(hash: first.hash), bytes)
+
+        let again = try store.addPhoto(name: "Bjork", data: bytes, source: .owner, sourceID: nil, credit: nil)
+        XCTAssertEqual(again, first)
+        XCTAssertEqual(store.profile(forName: "Björk")?.photos.count, 1)
+
+        let png = image(400, 400, shade: 0.9, as: .png)
+        let second = try store.addPhoto(name: "Björk", data: png, source: .owner, sourceID: nil, credit: nil)
+        XCTAssertEqual(store.photoURL(hash: second.hash),
+                       photosDirectory.appendingPathComponent(second.hash + ".png"))
+        XCTAssertEqual(store.photoData(hash: second.hash), png)
+        XCTAssertEqual(store.profile(forName: "Björk")?.photos.map(\.hash), [first.hash, second.hash],
+                       "photos keep the order they were added in")
+        let files = try FileManager.default.contentsOfDirectory(atPath: photosDirectory.path).sorted()
+        XCTAssertEqual(files, [first.hash + ".jpg", second.hash + ".png"].sorted())
+
+        XCTAssertThrowsError(try store.addPhoto(name: "Björk", data: Data("not an image".utf8), source: .owner,
+                                                sourceID: nil, credit: nil))
+    }
+
+    func testFetchedPhotoIsCappedAt1600() throws {
+        let store = makeStore()
+        let credit = ArtistPictureCredit(fileName: "Air.jpg", licence: "CC BY 2.0", author: "Someone")
+        let photo = try store.addPhoto(name: "Air", data: image(2400, 1200), source: .commons, sourceID: "mb-air",
+                                       credit: credit)
+        XCTAssertEqual(photo.pixelWidth, 1600)
+        XCTAssertEqual(photo.pixelHeight, 800)
+        XCTAssertEqual(photo.credit, credit)
+        XCTAssertEqual(photo.sourceID, "mb-air")
+        let stored = try XCTUnwrap(store.photoData(hash: photo.hash))
+        XCTAssertEqual(pixelSize(of: stored), CGSize(width: 1600, height: 800))
+        XCTAssertEqual(store.photoURL(hash: photo.hash).pathExtension, "jpg")
+
+        // A small fetched picture is re-encoded, never enlarged.
+        let small = try store.addPhoto(name: "Air", data: image(500, 400, shade: 0.8, as: .png), source: .deezer,
+                                       sourceID: "7", credit: nil)
+        XCTAssertEqual(small.pixelWidth, 500)
+        XCTAssertEqual(small.pixelHeight, 400)
+        XCTAssertEqual(store.photoURL(hash: small.hash).pathExtension, "jpg")
+    }
+
+    func testOwnerPhotoOverCapsIsRefused() throws {
+        let store = makeStore()
+        let tooBig = Data(count: ArtistPictureImage.maximumSourceBytes + 1)
+        XCTAssertThrowsError(try store.addPhoto(name: "Air", data: tooBig, source: .owner, sourceID: nil,
+                                                credit: nil)) { error in
+            XCTAssertEqual(error as? ArtistProfileStoreError, .photoTooLarge)
+        }
+        // A header claiming more than 50 megapixels, without making such an image.
+        XCTAssertThrowsError(try ArtistPhotoImage.stored(image(400, 400), source: .owner,
+                                                         reportedSize: CGSize(width: 10_000, height: 5_001))) { error in
+            XCTAssertEqual(error as? ArtistProfileStoreError, .photoTooLarge)
+        }
+        XCTAssertNoThrow(try ArtistPhotoImage.stored(image(400, 400), source: .owner,
+                                                     reportedSize: CGSize(width: 10_000, height: 5_000)))
+        XCTAssertNil(store.profile(forName: "Air"), "a refused photo makes no profile")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: photosDirectory.path))
+    }
+
+    func testFirstPhotoBecomesDefaultNotPicked() throws {
+        let store = makeStore()
+        let first = try store.addPhoto(name: "Low", data: image(400, 400, shade: 0.1), source: .deezer,
+                                       sourceID: "1", credit: nil)
+        _ = try store.addPhoto(name: "Low", data: image(400, 400, shade: 0.2), source: .deezer, sourceID: "2",
+                               credit: nil)
+        let profile = try XCTUnwrap(store.profile(forName: "Low"))
+        XCTAssertEqual(profile.defaultPhoto, first.hash)
+        XCTAssertFalse(profile.defaultPickedByOwner)
+        XCTAssertEqual(profile.defaultPhotoRef, first)
+        XCTAssertEqual(profile.displayName, "Low")
+        XCTAssertEqual(profile.foldedKey, PodBoxArtName.folded("Low"))
+    }
+
+    func testSetDefaultMarksPickedByOwner() throws {
+        let store = makeStore()
+        _ = try store.addPhoto(name: "Low", data: image(400, 400, shade: 0.1), source: .deezer, sourceID: "1",
+                               credit: nil)
+        let second = try store.addPhoto(name: "Low", data: image(400, 400, shade: 0.2), source: .owner,
+                                        sourceID: nil, credit: nil)
+        store.update(name: "Low") { $0.noPhoto = true; $0.notOnIPod = true }
+        store.setDefault(name: "Low", hash: second.hash)
+        var profile = try XCTUnwrap(store.profile(forName: "Low"))
+        XCTAssertEqual(profile.defaultPhoto, second.hash)
+        XCTAssertTrue(profile.defaultPickedByOwner)
+        XCTAssertTrue(profile.noPhoto, "the owner's flags survive a change of default")
+        XCTAssertTrue(profile.notOnIPod)
+
+        // A hash the profile does not hold changes nothing.
+        store.setDefault(name: "Low", hash: String(repeating: "a", count: 64))
+        profile = try XCTUnwrap(store.profile(forName: "Low"))
+        XCTAssertEqual(profile.defaultPhoto, second.hash)
+    }
+
+    func testRemovingDefaultPicksNextAndClearsPicked() throws {
+        let store = makeStore()
+        let a = try store.addPhoto(name: "Low", data: image(400, 400, shade: 0.1), source: .owner, sourceID: nil,
+                                   credit: nil)
+        let b = try store.addPhoto(name: "Low", data: image(400, 400, shade: 0.2), source: .owner, sourceID: nil,
+                                   credit: nil)
+        let c = try store.addPhoto(name: "Low", data: image(400, 400, shade: 0.3), source: .owner, sourceID: nil,
+                                   credit: nil)
+        store.setDefault(name: "Low", hash: b.hash)
+        store.removePhoto(name: "Low", hash: b.hash)
+        var profile = try XCTUnwrap(store.profile(forName: "Low"))
+        XCTAssertEqual(profile.photos.map(\.hash), [a.hash, c.hash])
+        XCTAssertEqual(profile.defaultPhoto, c.hash, "the next photo takes over")
+        XCTAssertFalse(profile.defaultPickedByOwner)
+
+        store.setDefault(name: "Low", hash: c.hash)
+        store.removePhoto(name: "Low", hash: c.hash)
+        profile = try XCTUnwrap(store.profile(forName: "Low"))
+        XCTAssertEqual(profile.defaultPhoto, a.hash, "with none after it, the one before")
+        XCTAssertFalse(profile.defaultPickedByOwner)
+
+        store.removePhoto(name: "Low", hash: a.hash)
+        profile = try XCTUnwrap(store.profile(forName: "Low"))
+        XCTAssertNil(profile.defaultPhoto)
+        XCTAssertNil(profile.defaultPhotoRef)
+
+        // Removing a photo that is not the default leaves an owner's pick alone.
+        let d = try store.addPhoto(name: "Low", data: image(400, 400, shade: 0.4), source: .owner, sourceID: nil,
+                                   credit: nil)
+        let e = try store.addPhoto(name: "Low", data: image(400, 400, shade: 0.5), source: .owner, sourceID: nil,
+                                   credit: nil)
+        store.setDefault(name: "Low", hash: d.hash)
+        store.removePhoto(name: "Low", hash: e.hash)
+        profile = try XCTUnwrap(store.profile(forName: "Low"))
+        XCTAssertEqual(profile.defaultPhoto, d.hash)
+        XCTAssertTrue(profile.defaultPickedByOwner)
+    }
+
+    func testRemovedFetchedPhotoIsRemembered() throws {
+        let store = makeStore()
+        let fetched = try store.addPhoto(name: "Air", data: image(400, 400, shade: 0.1), source: .deezer,
+                                         sourceID: "42", credit: nil)
+        let commons = try store.addPhoto(name: "Air", data: image(400, 400, shade: 0.2), source: .commons,
+                                         sourceID: "mb-air", credit: nil)
+        let owner = try store.addPhoto(name: "Air", data: image(400, 400, shade: 0.3), source: .owner,
+                                       sourceID: nil, credit: nil)
+        XCTAssertEqual(fetched.rejectionKey, "deezer:42")
+        XCTAssertNil(owner.rejectionKey)
+
+        store.removePhoto(name: "Air", hash: fetched.hash)
+        store.removePhoto(name: "Air", hash: commons.hash)
+        store.removePhoto(name: "Air", hash: owner.hash)
+        store.removePhoto(name: "Air", hash: fetched.hash) // twice: remembered once
+        let profile = try XCTUnwrap(store.profile(forName: "Air"))
+        XCTAssertEqual(profile.rejectedPhotoSources, ["deezer:42", "commons:mb-air"])
+        XCTAssertEqual(profile.photos, [])
+    }
+
+    func testPhotoFileKeptWhileAnotherProfileUsesIt() throws {
+        let store = makeStore()
+        let bytes = image(400, 400)
+        let shared = try store.addPhoto(name: "Air", data: bytes, source: .owner, sourceID: nil, credit: nil)
+        _ = try store.addPhoto(name: "Beck", data: bytes, source: .owner, sourceID: nil, credit: nil)
+        let file = store.photoURL(hash: shared.hash)
+
+        store.removePhoto(name: "Air", hash: shared.hash)
+        try store.save()
+        XCTAssertTrue(FileManager.default.fileExists(atPath: file.path), "Beck still shows it")
+        XCTAssertEqual(store.photoData(hash: shared.hash), bytes)
+
+        store.removePhoto(name: "Beck", hash: shared.hash)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: file.path), "gone only once the index says so")
+        try store.save()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
+    }
+
+    func testNoPhotoHidesDefaultRef() throws {
+        let store = makeStore()
+        let photo = try store.addPhoto(name: "Air", data: image(400, 400), source: .owner, sourceID: nil,
+                                       credit: nil)
+        store.update(name: "Air") { $0.noPhoto = true }
+        let profile = try XCTUnwrap(store.profile(forName: "Air"))
+        XCTAssertNil(profile.defaultPhotoRef)
+        XCTAssertEqual(profile.defaultPhoto, photo.hash, "the choice is kept for when the owner turns it back on")
+
+        store.update(name: "Air") { $0.noPhoto = false }
+        XCTAssertEqual(store.profile(forName: "Air")?.defaultPhotoRef, photo)
+    }
+
+    // MARK: - The file
+
+    func testRoundTripAndLenientDecode() throws {
+        let store = makeStore()
+        let photo = try store.addPhoto(name: "Air", data: image(400, 400), source: .commons, sourceID: "mb-air",
+                                       credit: ArtistPictureCredit(fileName: "Air.jpg", licence: "CC BY 2.0"))
+        store.update(name: "Air") { profile in
+            profile.identity = .uncertain([ArtistIdentityCandidate(musicBrainzID: "mb-1", name: "Air",
+                                                                   disambiguation: "French duo",
+                                                                   origin: "France", releaseTitles: ["Moon Safari"])])
+            profile.owner = ArtistFacts(links: [ArtistLink(kind: .other, url: URL(string: "https://air.fr")!)])
+            profile.photoCandidates = [ArtistPictureRecord.HeldCandidate(
+                source: .deezer, sourceID: "7", imageURL: URL(string: "https://e-cdns-images.dzcdn.net/x.jpg")!)]
+            profile.photos[0].replaceFromURL = URL(string: "https://commons.wikimedia.org/wiki/Special:FilePath/Air.jpg")
+        }
+        store.applyFetched(name: "Beck", facts: ArtistFacts(kind: "Person", begin: "1970"),
+                           identity: .confirmed(musicBrainzID: "mb-beck", wikidataID: nil),
+                           at: Date(timeIntervalSinceReferenceDate: 800_000_000))
+        store.applyFetched(name: "Boston", facts: nil, identity: .notFound, at: Date(timeIntervalSinceReferenceDate: 0))
+        store.update(name: "Low") { $0.identity = .rejected }
+        try store.save()
+
+        let reloaded = makeStore()
+        XCTAssertEqual(reloaded.allProfiles(), store.allProfiles())
+        XCTAssertEqual(reloaded.allProfiles().map(\.foldedKey), ["air", "beck", "boston", "low"])
+        XCTAssertEqual(reloaded.profile(forName: "Air")?.photos, store.profile(forName: "Air")?.photos)
+        XCTAssertEqual(reloaded.photoData(hash: photo.hash), store.photoData(hash: photo.hash))
+        let text = try String(contentsOf: storeFile, encoding: .utf8)
+        XCTAssertFalse(text.contains("/9j/"), "no image bytes in the index file")
+
+        // A newer or hand-edited file: unknown fields, an unknown identity
+        // state, an unknown photo source, a broken record and a bad hash.
+        let hash = String(repeating: "b", count: 64)
+        let json = """
+        [
+          {"foldedKey":"air","displayName":"Air","identity":{"state":"somethingNew"},"futureField":1,
+           "photos":[{"hash":"\(hash)","source":"hologram","pixelWidth":1,"pixelHeight":1,"added":"2026-01-01T00:00:00Z"},
+                     {"hash":"\(hash)","source":"owner","pixelWidth":10,"pixelHeight":20,"added":"2026-01-01T00:00:00Z"}],
+           "owner":{"origin":"Paris","members":[{"name":"Nicolas Godin","isCurrent":true},{"oops":true}]},
+           "noPhoto":"yes"},
+          {"displayName":42},
+          {"foldedKey":"beck","displayName":"Beck","identity":{"state":"confirmed","musicBrainzID":"mb-beck"},
+           "checkedAt":"2026-02-01T00:00:00Z"},
+          {"foldedKey":"wrong","displayName":"The Low"},
+          {"foldedKey":"","displayName":"!!!"}
+        ]
+        """
+        try Data(json.utf8).write(to: storeFile)
+        let lenient = makeStore()
+        XCTAssertEqual(lenient.allProfiles().map(\.foldedKey), ["air", "beck", "low"])
+        let air = try XCTUnwrap(lenient.profile(forName: "Air"))
+        XCTAssertEqual(air.identity, .unknown)
+        XCTAssertEqual(air.photos.map(\.pixelHeight), [20])
+        XCTAssertEqual(air.owner?.origin, "Paris")
+        XCTAssertEqual(air.owner?.members?.map(\.name), ["Nicolas Godin"])
+        XCTAssertFalse(air.noPhoto)
+        XCTAssertEqual(lenient.profile(forName: "Beck")?.identity,
+                       .confirmed(musicBrainzID: "mb-beck", wikidataID: nil))
+        XCTAssertEqual(lenient.profile(forName: "Beck")?.checkedAt, ISO8601DateFormatter().date(from: "2026-02-01T00:00:00Z"))
+        XCTAssertEqual(lenient.profile(forName: "Low")?.displayName, "The Low")
+    }
+
+    func testUnreadableFileBlocksSave() throws {
+        try Data("not json".utf8).write(to: storeFile)
+        let store = makeStore()
+        XCTAssertEqual(store.allProfiles(), [])
+        store.update(name: "Air") { $0.notOnIPod = true }
+        XCTAssertThrowsError(try store.save()) { error in
+            XCTAssertEqual(error as? ArtistProfileStoreError, .unreadableStore(path: storeFile.path))
+        }
+        XCTAssertEqual(try Data(contentsOf: storeFile), Data("not json".utf8))
+
+        // A folder where the file should be: not "missing", so not "empty".
+        try FileManager.default.removeItem(at: storeFile)
+        try FileManager.default.createDirectory(at: storeFile, withIntermediateDirectories: true)
+        let blocked = makeStore()
+        blocked.update(name: "Air") { $0.notOnIPod = true }
+        XCTAssertThrowsError(try blocked.save())
+
+        // No file at all is an empty store that saves.
+        let fresh = ArtistProfileStore(indexDirectory: folder.appendingPathComponent("Fresh", isDirectory: true))
+        XCTAssertEqual(fresh.allProfiles(), [])
+        try FileManager.default.createDirectory(at: folder.appendingPathComponent("Fresh"),
+                                                withIntermediateDirectories: true)
+        fresh.update(name: "Air") { $0.notOnIPod = true }
+        XCTAssertNoThrow(try fresh.save())
+    }
+
+    func testEmptyKeyIsIgnored() {
+        let store = makeStore()
+        var called = false
+        store.update(name: "!!!") { _ in called = true }
+        store.update(name: "") { _ in called = true }
+        store.applyFetched(name: "  ", facts: ArtistFacts(kind: "Group"), identity: .notFound, at: Date())
+        XCTAssertFalse(called)
+        XCTAssertEqual(store.allProfiles(), [])
+        XCTAssertNil(store.profile(forName: "!!!"))
+        XCTAssertThrowsError(try store.addPhoto(name: "!!!", data: image(400, 400), source: .owner, sourceID: nil,
+                                                credit: nil)) { error in
+            XCTAssertEqual(error as? ArtistProfileStoreError, .unnamedArtist(name: "!!!"))
+        }
+        // The closure cannot move a profile to another key.
+        store.update(name: "Air") { $0.foldedKey = "beck" }
+        XCTAssertEqual(store.allProfiles().map(\.foldedKey), ["air"])
+    }
+
+    func testMissingPhotoFileReadsAsUnavailable() throws {
+        let store = makeStore()
+        let photo = try store.addPhoto(name: "Air", data: image(400, 400), source: .owner, sourceID: nil,
+                                       credit: nil)
+        try store.save()
+        try FileManager.default.removeItem(at: store.photoURL(hash: photo.hash))
+
+        let reloaded = makeStore()
+        XCTAssertNil(reloaded.photoData(hash: photo.hash))
+        let profile = try XCTUnwrap(reloaded.profile(forName: "Air"))
+        XCTAssertEqual(profile.photos, [photo])
+        XCTAssertEqual(profile.defaultPhotoRef, photo)
+
+        XCTAssertNil(reloaded.photoData(hash: "../../etc/passwd"), "only a hex hash names a file")
+        // Bytes that no longer match their name read as unavailable too.
+        try Data("tampered".utf8).write(to: reloaded.photoURL(hash: photo.hash))
+        XCTAssertNil(reloaded.photoData(hash: photo.hash))
+    }
+
+    func testIndexFilesIncludeArtistInfo() {
+        XCTAssertEqual(ArtistProfileStore.fileName, "library.cdartistinfo")
+        XCTAssertEqual(ArtistProfileStore.photosFolder, "ArtistPhotos")
+        XCTAssertTrue(LibraryIndexFiles.extensions.contains("cdartistinfo"))
+        XCTAssertTrue(LibraryIndexFiles.isIndexFile(URL(fileURLWithPath: "/x/library.cdartistinfo")))
+        XCTAssertFalse(LibraryIndexFiles.isIndexFile(URL(fileURLWithPath: "/x/ArtistPhotos")))
+    }
+}

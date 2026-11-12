@@ -1,12 +1,15 @@
 import Foundation
 
 /// The file types that make up a library index: crate membership lists, the
-/// shared track store, listening history and the artist picture records
+/// shared track store, listening history, the artist picture records
 /// (`library.cdartists`; their prepared images stay in Application Support,
-/// and a missing one is simply fetched again). Moving the index and copying it
-/// both read this list, so a new index file is added here once, not in each.
+/// and a missing one is simply fetched again) and the artist profiles
+/// (`library.cdartistinfo`). Moving the index and copying it both read this
+/// list, so a new index file is added here once, not in each. Top-level files
+/// only: the profiles' `ArtistPhotos` folder is not on it and needs its own
+/// handling wherever the index moves.
 public enum LibraryIndexFiles {
-    public static let extensions: Set<String> = ["cdcrate", "cdtracks", "cdplays", "cdartists"]
+    public static let extensions: Set<String> = ["cdcrate", "cdtracks", "cdplays", "cdartists", "cdartistinfo"]
 
     public static func isIndexFile(_ url: URL) -> Bool {
         extensions.contains(url.pathExtension.lowercased())
