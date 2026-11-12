@@ -76,6 +76,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         NSApp.terminate(nil)
     }
 
+    /// A quit while covers are still being embedded waits for them: cutting
+    /// ffmpeg off mid-file leaves that track without its new art (and, before
+    /// the temporary files were hidden, an empty "track" beside it).
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let model = mainWindowController?.model, model.artworkEmbedsRunning > 0 else { return .terminateNow }
+        model.onArtworkEmbedsFinished = { NSApp.reply(toApplicationShouldTerminate: true) }
+        // Say why the app is still open; it quits by itself when they end.
+        model.showOLEDNotice("FINISHING COVERS", seconds: 600)
+        AppLog.library.notice("Quit waits for \(model.artworkEmbedsRunning) cover embed(s) to finish")
+        return .terminateLater
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         // The one snapshot whose position has to be exact.
         mainWindowController?.model.savePlaybackSnapshot()

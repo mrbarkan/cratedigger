@@ -122,6 +122,44 @@ final class ArtworkCommitPlannerTests: XCTestCase {
         )
         XCTAssertEqual(args.firstIndex(of: "-id3v2_version").map { args[$0 + 1] }, "3")
     }
+
+    /// The temporary file must never read as a track: an empty
+    /// `cratedigger-art-edit-<UUID>.m4a` left by a quit showed up in the
+    /// browser (and on PodBox, which reads dot-files with audio extensions).
+    func testTemporaryFileIsHiddenAndNotNamedLikeAudio() {
+        let track = URL(fileURLWithPath: "/Volumes/IPOD/Music/AC-DC/Live/08 - Rocker.m4a")
+        let temp = MetadataEditorService.temporaryURL(beside: track, purpose: "art-edit")
+        XCTAssertEqual(temp.deletingLastPathComponent(), track.deletingLastPathComponent(), "same folder, so the replace is a rename")
+        XCTAssertTrue(temp.lastPathComponent.hasPrefix(".cratedigger-art-edit-"))
+        XCTAssertEqual(temp.pathExtension, "cdtmp")
+        XCTAssertFalse(LibraryScanService.defaultSupportedExtensions.contains(temp.pathExtension))
+        XCTAssertNotEqual(temp, MetadataEditorService.temporaryURL(beside: track, purpose: "art-edit"))
+    }
+
+    /// `.cdtmp` tells ffmpeg nothing, so the muxer is named: the one ffmpeg
+    /// picks from the real extension, so the output is what it always was.
+    func testTemporaryFileNamesTheMuxer() {
+        func muxer(_ ext: String) -> String? { MetadataEditorService.outputMuxer(for: URL(fileURLWithPath: "/a/b.\(ext)")) }
+        XCTAssertEqual(muxer("m4a"), "ipod")
+        XCTAssertEqual(muxer("M4A"), "ipod")
+        XCTAssertEqual(muxer("mp3"), "mp3")
+        XCTAssertEqual(muxer("flac"), "flac")
+        XCTAssertEqual(muxer("aiff"), "aiff")
+        XCTAssertNil(muxer("dsf"))
+
+        let args = MetadataEditorService.stripArtworkArguments(
+            input: URL(fileURLWithPath: "/Music/a.flac"),
+            output: URL(fileURLWithPath: "/Music/.tmp.cdtmp")
+        )
+        XCTAssertEqual(Array(args.suffix(3)), ["-f", "flac", "/Music/.tmp.cdtmp"])
+
+        // A format with no muxer here keeps its extension (ffmpeg guesses from
+        // it), still hidden.
+        let dsf = MetadataEditorService.temporaryURL(beside: URL(fileURLWithPath: "/a/b.dsf"), purpose: "edit")
+        XCTAssertEqual(dsf.pathExtension, "dsf")
+        XCTAssertTrue(dsf.lastPathComponent.hasPrefix("."))
+        XCTAssertEqual(MetadataEditorService.outputFormatArguments(for: URL(fileURLWithPath: "/a/b.dsf")), [])
+    }
 }
 
 final class ArtworkStagingSweepTests: XCTestCase {

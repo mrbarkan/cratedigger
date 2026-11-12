@@ -47,9 +47,7 @@ public final class MetadataEditorService: @unchecked Sendable {
     }
 
     private func writeMetadata(to fileURL: URL, metadata: ConversionMetadata, keepEmbeddedArtwork: Bool) throws {
-        let tempURL = fileURL.deletingLastPathComponent()
-            .appendingPathComponent("cratedigger-edit-\(UUID().uuidString)")
-            .appendingPathExtension(fileURL.pathExtension)
+        let tempURL = Self.temporaryURL(beside: fileURL, purpose: "edit")
 
         var arguments = [
             "-hide_banner",
@@ -113,6 +111,7 @@ public final class MetadataEditorService: @unchecked Sendable {
             add(pair.key, pair.value)
         }
 
+        arguments += Self.outputFormatArguments(for: fileURL)
         arguments.append(tempURL.path)
 
         let output = try commandRunner.run(executableURL: ffmpegExecutableURL, arguments: arguments)
@@ -124,14 +123,11 @@ public final class MetadataEditorService: @unchecked Sendable {
         }
 
         // Replace original file with temporary file
-        var resultingURL: NSURL?
-        try fileManager.replaceItem(at: fileURL, withItemAt: tempURL, backupItemName: nil, options: [], resultingItemURL: &resultingURL)
+        try replace(fileURL, with: tempURL)
     }
 
     public func embedArtwork(to fileURL: URL, imageURL: URL) throws {
-        let tempURL = fileURL.deletingLastPathComponent()
-            .appendingPathComponent("cratedigger-art-edit-\(UUID().uuidString)")
-            .appendingPathExtension(fileURL.pathExtension)
+        let tempURL = Self.temporaryURL(beside: fileURL, purpose: "art-edit")
 
         var arguments = [
             "-hide_banner",
@@ -150,6 +146,7 @@ public final class MetadataEditorService: @unchecked Sendable {
             arguments.append(contentsOf: ["-id3v2_version", "3"])
         }
 
+        arguments += Self.outputFormatArguments(for: fileURL)
         arguments.append(tempURL.path)
 
         let output = try commandRunner.run(executableURL: ffmpegExecutableURL, arguments: arguments)
@@ -159,8 +156,7 @@ public final class MetadataEditorService: @unchecked Sendable {
                           userInfo: [NSLocalizedDescriptionKey: "Couldn't embed the artwork — " + Self.failureReason(output)])
         }
 
-        var resultingURL: NSURL?
-        try fileManager.replaceItem(at: fileURL, withItemAt: tempURL, backupItemName: nil, options: [], resultingItemURL: &resultingURL)
+        try replace(fileURL, with: tempURL)
     }
 
     /// Strip every attached picture from a file, keeping the audio stream and
@@ -171,9 +167,7 @@ public final class MetadataEditorService: @unchecked Sendable {
     /// means the audio is not re-encoded, so this costs a file rewrite and no
     /// quality. The picture itself is gone for good afterwards.
     public func stripArtwork(from fileURL: URL) throws {
-        let tempURL = fileURL.deletingLastPathComponent()
-            .appendingPathComponent("cratedigger-art-strip-\(UUID().uuidString)")
-            .appendingPathExtension(fileURL.pathExtension)
+        let tempURL = Self.temporaryURL(beside: fileURL, purpose: "art-strip")
 
         let output = try commandRunner.run(
             executableURL: ffmpegExecutableURL,
@@ -185,8 +179,68 @@ public final class MetadataEditorService: @unchecked Sendable {
                           userInfo: [NSLocalizedDescriptionKey: "Couldn't remove the artwork — " + Self.failureReason(output)])
         }
 
+        try replace(fileURL, with: tempURL)
+    }
+
+    // MARK: - Temporary files
+
+    /// Where ffmpeg writes the rewritten file before it replaces the original:
+    /// beside it (so the replace is a rename on the same volume), hidden, and
+    /// ending `.cdtmp`, never in an audio extension.
+    ///
+    /// The old name, `cratedigger-art-edit-<UUID>.m4a`, was named like music.
+    /// A rewrite cut off by a quit left an empty one beside the album, and
+    /// both CrateDigger's scan and PodBox's took it for a track (PodBox even
+    /// reads dot-files with an audio extension, which is the whole `._`
+    /// story). A dot-name ending `.cdtmp` is neither scanner's: the library
+    /// scan skips hidden files, and nothing reads `.cdtmp` as audio. ffmpeg
+    /// cannot guess a muxer from `.cdtmp`, so `outputFormatArguments` names
+    /// it; a format it has no name for keeps the real extension, still hidden.
+    static func temporaryURL(beside fileURL: URL, purpose: String) -> URL {
+        let stem = ".cratedigger-\(purpose)-\(UUID().uuidString)"
+        let ext = outputMuxer(for: fileURL) == nil ? fileURL.pathExtension : temporaryExtension
+        return fileURL.deletingLastPathComponent().appendingPathComponent(stem).appendingPathExtension(ext)
+    }
+
+    static let temporaryExtension = "cdtmp"
+
+    /// The muxer ffmpeg would have picked from the file's own extension,
+    /// named, since the temporary file's `.cdtmp` says nothing. nil for a
+    /// format with no muxer here (the temporary file then keeps the real
+    /// extension and ffmpeg guesses, as it always did).
+    static func outputMuxer(for fileURL: URL) -> String? {
+        switch fileURL.pathExtension.lowercased() {
+        case "m4a", "m4b", "m4v": return "ipod"
+        case "mp4": return "mp4"
+        case "mov": return "mov"
+        case "mp3": return "mp3"
+        case "flac": return "flac"
+        case "ogg", "oga": return "ogg"
+        case "opus": return "opus"
+        case "wav": return "wav"
+        case "aif", "aiff", "aifc": return "aiff"
+        case "wma", "asf": return "asf"
+        case "wv": return "wv"
+        case "mka": return "matroska"
+        default: return nil
+        }
+    }
+
+    static func outputFormatArguments(for fileURL: URL) -> [String] {
+        outputMuxer(for: fileURL).map { ["-f", $0] } ?? []
+    }
+
+    /// The original replaced by the rewritten file; the temporary file is
+    /// removed when the replace fails, so a failure leaves nothing behind.
+    private func replace(_ fileURL: URL, with tempURL: URL) throws {
         var resultingURL: NSURL?
-        try fileManager.replaceItem(at: fileURL, withItemAt: tempURL, backupItemName: nil, options: [], resultingItemURL: &resultingURL)
+        do {
+            try fileManager.replaceItem(at: fileURL, withItemAt: tempURL, backupItemName: nil, options: [],
+                                        resultingItemURL: &resultingURL)
+        } catch {
+            try? fileManager.removeItem(at: tempURL)
+            throw error
+        }
     }
 
     /// Pure argument vector, so the flags that decide whether the audio
@@ -205,6 +259,7 @@ public final class MetadataEditorService: @unchecked Sendable {
         if input.pathExtension.lowercased() == "mp3" {
             arguments.append(contentsOf: ["-id3v2_version", "3"])
         }
+        arguments += outputFormatArguments(for: input)
         arguments.append(output.path)
         return arguments
     }

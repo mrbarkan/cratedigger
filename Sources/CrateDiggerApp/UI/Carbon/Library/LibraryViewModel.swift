@@ -1192,6 +1192,12 @@ final class LibraryViewModel: ObservableObject {
     /// Artist pictures are being written to or removed from a device
     /// outside a transfer (`LibraryViewModel+ArtistPictures`).
     @Published var isWritingArtistPictures = false
+    /// Background cover embeds still rewriting files
+    /// (`embedCoverIntoTracksInBackground`). Quit waits for them: one cut off
+    /// mid-file leaves that track without its art.
+    var artworkEmbedsRunning = 0
+    /// Set by a quit that is waiting for `artworkEmbedsRunning` to reach 0.
+    var onArtworkEmbedsFinished: (() -> Void)?
     /// The Artist Pictures sheet is finding pictures online; Cancel stops it.
     @Published var isFindingArtistPictures = false
 
@@ -4002,9 +4008,20 @@ final class LibraryViewModel: ObservableObject {
         let coverURL = folder.appendingPathComponent(coverName)
         guard FileManager.default.fileExists(atPath: coverURL.path) else { return }
         let tracks = album.tracks
+        let albumTitle = album.title
+        artworkEmbedsRunning += 1
 
-        Task.detached(priority: .utility) {
-            guard let data = try? Data(contentsOf: coverURL), let image = NSImage(data: data) else { return }
+        Task.detached(priority: .utility) { [weak self] in
+            // Every way out ends the job, and says which tracks kept their old art.
+            var failed: [String] = []
+            defer {
+                let names = failed
+                Task { @MainActor [weak self] in self?.finishArtworkEmbed(albumTitle: albumTitle, failed: names) }
+            }
+            guard let data = try? Data(contentsOf: coverURL), let image = NSImage(data: data) else {
+                failed = tracks.map { $0.track.fileURL.lastPathComponent }
+                return
+            }
             let hash = SHA256.hash(data: data).compactMap { String(format: "%02x", $0) }.joined()
             let asset = ArtworkAsset(
                 source: .folderImage, hash: hash,
@@ -4023,16 +4040,48 @@ final class LibraryViewModel: ObservableObject {
                 if (try? small.data.write(to: tmp, options: .atomic)) != nil { embedURL = tmp; tempURL = tmp }
             }
             let finalURL = embedURL
-            await withTaskGroup(of: Void.self) { group in
+            failed = await withTaskGroup(of: String?.self) { group in
                 var inFlight = 0
+                var failures: [String] = []
                 for track in tracks {
-                    if inFlight >= 4 { _ = await group.next(); inFlight -= 1 }
+                    if inFlight >= 4, let done = await group.next() {
+                        inFlight -= 1
+                        if let name = done { failures.append(name) }
+                    }
                     let fileURL = track.track.fileURL
-                    group.addTask { try? MetadataEditorService().embedArtwork(to: fileURL, imageURL: finalURL) }
+                    group.addTask {
+                        do {
+                            try MetadataEditorService().embedArtwork(to: fileURL, imageURL: finalURL)
+                            return nil
+                        } catch {
+                            AppLog.library.error("Cover embed failed for \(fileURL.lastPathComponent, privacy: .private): \(error.localizedDescription, privacy: .private)")
+                            return fileURL.lastPathComponent
+                        }
+                    }
                     inFlight += 1
                 }
+                for await done in group { if let name = done { failures.append(name) } }
+                return failures.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
             }
             if let tempURL { try? FileManager.default.removeItem(at: tempURL) }
+        }
+    }
+
+    /// The end of one background cover embed: a quit waiting on it may go
+    /// now, and tracks that kept their old art are named, not hidden.
+    func finishArtworkEmbed(albumTitle: String, failed: [String]) {
+        artworkEmbedsRunning = max(0, artworkEmbedsRunning - 1)
+        if !failed.isEmpty {
+            let shown = failed.prefix(5).joined(separator: ", ")
+            let more = failed.count > 5 ? " and \(failed.count - 5) more" : ""
+            appAlert = .error(
+                title: "Cover not embedded in \(failed.count) track\(failed.count == 1 ? "" : "s")",
+                message: "\(albumTitle): \(shown)\(more) kept the art they had. The cover file is unchanged; save the cover again to retry."
+            )
+        }
+        if artworkEmbedsRunning == 0, let resume = onArtworkEmbedsFinished {
+            onArtworkEmbedsFinished = nil
+            resume()
         }
     }
 
