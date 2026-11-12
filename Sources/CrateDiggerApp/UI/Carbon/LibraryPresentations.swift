@@ -66,6 +66,18 @@ private struct LibraryPresentations: ViewModifier {
                 }
                 model.artworkViewerAlbum = nil
             }
+            // Artist Pictures (a device's context menu, Preferences ▸ Devices):
+            // an AppKit sheet on the key window, from here so it opens in the
+            // compact player too. One-shot, like the artwork viewer.
+            .onChange(of: model.artistPicturesRequest) { profileID in
+                guard let profileID else { return }
+                model.artistPicturesRequest = nil
+                guard let host = model.presentationHostViewController else {
+                    AppLog.library.error("Artist Pictures has no window to present from")
+                    return
+                }
+                ArtistPicturesSheetController.present(profileID: profileID, library: model, from: host)
+            }
             .onChange(of: model.fullScreenPlayerRequested) { requested in
                 guard requested else { return }
                 NowPlayingFullScreenPresenter.toggle(theme: theme, model: model)

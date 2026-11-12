@@ -211,6 +211,10 @@ struct SourcesSidebar: View {
                                     Button("Clean Up Mac Files…") { model.cleanUpMacFiles(device: device, scope: nil) }
                                         .disabled(!model.capabilities(for: device).contains(.appleDoubleSweep)
                                                   || model.isDeviceBusy)
+                                    if model.capabilities(for: device).contains(.centralPeopleArtwork),
+                                       let profile = model.deviceProfile(for: device) {
+                                        Button("Artist Pictures…") { model.showArtistPictures(profileID: profile.id) }
+                                    }
                                     Divider()
                                     Button("Eject") { model.ejectDevice(device) }
                                         .disabled(model.isDeviceBusy)

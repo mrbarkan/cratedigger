@@ -139,6 +139,141 @@ extension LibraryViewModel {
         return (result.written, ArtistPictureSession.summaryLine(written: result.written, plan: result.plan))
     }
 
+    // MARK: - The Artist Pictures sheet
+
+    /// What the sheet opens on: the profile's artists from the device's
+    /// catalog (walked first when mounted and never scanned; the saved
+    /// catalog otherwise), and the device's picture tree when it is mounted.
+    struct ArtistPicturesContext {
+        let profile: ExternalDeviceProfile
+        let device: MountedDevice?
+        let artists: [ArtistOnDevice]
+        let tree: DeviceArtTree
+    }
+
+    /// Opens the Artist Pictures sheet for a profile, from the root
+    /// (`LibraryPresentations`), so it works in the compact player too.
+    @MainActor
+    func showArtistPictures(profileID: UUID) {
+        artistPicturesRequest = profileID
+    }
+
+    @MainActor
+    func artistPicturesContext(profileID: UUID) async -> ArtistPicturesContext? {
+        guard let profile = prefs.savedExternalDeviceProfiles.first(where: { $0.id == profileID }) else { return nil }
+        let device = mountedDevice(forProfileID: profileID)
+        let catalog: [LoadedTrack]
+        if let device {
+            catalog = await currentDeviceCatalog(for: device) ?? []
+        } else {
+            catalog = await storedDeviceCatalog(forProfile: profile) ?? []
+        }
+        let music = musicSubpath(for: profile)
+        let volume = device?.volumeURL
+        return await Task.detached(priority: .userInitiated) { () -> ArtistPicturesContext in
+            // Offline, the catalog's own root is unknown; its tracks name the
+            // volume they were read from, so take that volume's root.
+            let root = volume ?? catalog.first.flatMap { Self.volumeRoot(of: $0.track.fileURL) }
+                ?? URL(fileURLWithPath: "/Volumes", isDirectory: true)
+            let artists = ArtistOnDevice.all(in: catalog, volumeRoot: root)
+            let tree = volume.map { DeviceArtTree.scan(volumeRoot: $0, musicSubpath: music, catalog: catalog) }
+                ?? DeviceArtTree(peopleFiles: [], coverFiles: [], folderImages: [:], foldersWithAudio: [],
+                                 artistsByFolder: [:])
+            return ArtistPicturesContext(profile: profile, device: device, artists: artists, tree: tree)
+        }.value
+    }
+
+    /// `/Volumes/<name>` for a path under it.
+    nonisolated static func volumeRoot(of url: URL) -> URL? {
+        let components = url.standardizedFileURL.pathComponents
+        guard components.count > 2, components[1] == "Volumes" else { return nil }
+        return URL(fileURLWithPath: "/Volumes/" + components[2], isDirectory: true)
+    }
+
+    /// Find Missing, pressed in the sheet: every source (the owner's
+    /// library folders, Deezer, Wikimedia Commons), a scan job on DEVICES
+    /// with progress, cancelled with the task that runs it. What is found is
+    /// stored (never a failure). Returns the findings for the sheet.
+    @MainActor
+    func findArtistPicturesForSheet(_ artists: [ArtistOnDevice],
+                                    onProgress: @escaping @MainActor (Int, Int) -> Void) async -> [ArtistPictureFinding] {
+        guard !artists.isEmpty, !isFindingArtistPictures else { return [] }
+        isFindingArtistPictures = true
+        let job = beginBusyJob(.scan, on: .devices, labels: BusyLabels(source: "WEB", target: "PICTURES"))
+        let library = currentTrackStore().allTracks
+        let work = Task.detached(priority: .userInitiated) { () -> [ArtistPictureFinding] in
+            let fetcher = URLSessionPictureFetcher()
+            let finder = ArtistPictureFinder(
+                sources: [DeezerArtistSource(fetcher: fetcher), CommonsArtistSource(fetcher: fetcher)],
+                fetcher: fetcher, perRun: .seconds(900))
+            let folders = ArtistPictureSession.LibraryFolders(tracks: library)
+            return await finder.find(ArtistPictureSession.requests(for: artists, library: folders)) { done, total in
+                Task { @MainActor [weak self] in
+                    self?.reportBusyProgress(job, completed: done, total: total)
+                    onProgress(done, total)
+                }
+            }
+        }
+        // A detached task does not inherit cancellation: the sheet's Cancel
+        // cancels the task awaiting here, which passes it on.
+        let findings = await withTaskCancellationHandler { await work.value } onCancel: { work.cancel() }
+        let cancelled = Task.isCancelled
+        await storeArtistPictureFindings(findings)
+        endBusyJob(job, cancelled ? .cancelled : .completed)
+        isFindingArtistPictures = false
+        return findings
+    }
+
+    /// Apply, pressed in the sheet: the owner's edits go to the store, and
+    /// then, when the device is mounted, matched by its volume UUID and has
+    /// artist pictures on, the ready pictures go to the device through the
+    /// door. Returns the sheet's footer line.
+    @MainActor
+    func applyArtistPictureEdits(_ edits: [String: ArtistPictureEdit], names: [String: String],
+                                 profileID: UUID) async -> String {
+        if !edits.isEmpty {
+            guard !refuseWhileLibraryDisconnected() else {
+                return "The library is disconnected, so nothing was saved."
+            }
+            let store = currentArtistPictureStore()
+            let failure = await Task.detached(priority: .userInitiated) { () -> String? in
+                for (key, edit) in edits {
+                    let name = names[key] ?? key
+                    if let (record, prepared) = ArtistPictureRow.record(for: edit, name: name, now: Date()) {
+                        do { try store.set(record, prepared: prepared) } catch { return error.localizedDescription }
+                    } else {
+                        store.remove(forName: name)
+                    }
+                }
+                do { try store.save() } catch { return error.localizedDescription }
+                return nil
+            }.value
+            if let failure { return "Nothing was saved: \(failure)" }
+        }
+
+        let saved = "Pictures are saved and will be written when artist pictures are on for this device."
+        guard let profile = prefs.savedExternalDeviceProfiles.first(where: { $0.id == profileID }),
+              let device = mountedDevice(forProfileID: profileID),
+              ArtistPictureSession.mayWrite(artistPictureInputs(device: device, profile: profile, automatic: false),
+                                            trigger: .userAction).allowed
+        else { return saved }
+        guard !isDeviceBusy else {
+            showDeviceBusyAlert("Write artist pictures")
+            return "Pictures are saved. \(device.name) is busy, so nothing was written to it yet."
+        }
+        isWritingArtistPictures = true
+        let job = beginBusyJob(.transfer, on: .devices)
+        let result = await writeArtistPictures(device: device, profile: profile, findMissing: false, automatic: false)
+        endBusyJob(job, .completed)
+        isWritingArtistPictures = false
+        let firmware = firmware(for: device)
+        let changes: DeviceWriteChanges = result.written > 0 ? .pictures : []
+        noteArtCacheStep(profileID: profileID, firmware: firmware, changes: changes)
+        refreshDeviceNotes(for: device)
+        let line = result.line ?? "Nothing new to write to \(device.name)."
+        return ([line] + PodBoxNextSteps.after(changes, firmware: firmware)).joined(separator: " ")
+    }
+
     // MARK: - Removal
 
     /// "Remove artist pictures CrateDigger added": the journal's own picture

@@ -2446,6 +2446,20 @@ final class LibraryViewModel: ObservableObject {
         profile.volumeUUID ?? profile.name
     }
 
+    /// Whether a catalog of this profile's device is saved: a file check,
+    /// nothing read. For the folder layout picker's confirmation.
+    func hasDeviceCatalog(forProfile profile: ExternalDeviceProfile) -> Bool {
+        deviceCatalogs.exists(key: catalogKey(for: profile))
+    }
+
+    /// The saved catalog of a profile's device, mounted or not, read off
+    /// the main actor. Never walks the device.
+    func storedDeviceCatalog(forProfile profile: ExternalDeviceProfile) async -> [LoadedTrack]? {
+        let catalogs = deviceCatalogs
+        let key = catalogKey(for: profile)
+        return await Task.detached(priority: .utility) { catalogs.load(key: key) }.value
+    }
+
     /// Re-read every device queue: sidebar counts, the pending-path set the
     /// badges read, and the per-device summary the strip shows. Sizing stats the
     /// files, so it happens here on queue mutations — never in a view body,

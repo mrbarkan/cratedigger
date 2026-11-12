@@ -26,6 +26,11 @@ public struct DeviceCatalogStore {
         return try? JSONDecoder().decode([LoadedTrack].self, from: data)
     }
 
+    /// Whether a catalog is saved for `key`, without reading it.
+    public func exists(key: String) -> Bool {
+        fileManager.fileExists(atPath: url(for: key).path)
+    }
+
     public func save(_ tracks: [LoadedTrack], key: String) {
         try? fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         guard let data = try? JSONEncoder().encode(tracks) else { return }

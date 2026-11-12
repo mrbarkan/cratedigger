@@ -139,7 +139,10 @@ public struct ArtistPictureFinder: Sendable {
     /// Serial. Stops early on a quota past its back-off, on a failure to
     /// reach a service, or when `perRun` elapses; names not reached are
     /// simply absent from the result.
-    public func find(_ requests: [(name: String, deviceAlbumTitles: [String], libraryPicture: URL?)]) async
+    /// `progress` gets (names done, names asked for) after each name, for a
+    /// run the owner watches.
+    public func find(_ requests: [(name: String, deviceAlbumTitles: [String], libraryPicture: URL?)],
+                     progress: (@Sendable (Int, Int) -> Void)? = nil) async
         -> [ArtistPictureFinding] {
         let clock = ContinuousClock()
         let deadline = clock.now + perRun
@@ -155,6 +158,7 @@ public struct ArtistPictureFinder: Sendable {
                 findings.append(ArtistPictureFinding(name: request.name, outcome: outcome))
                 pauses = quotaBackoff[...]
                 index += 1
+                progress?(index, requests.count)
             case .unreachable(let reason):
                 findings.append(ArtistPictureFinding(name: request.name, outcome: .failed(reason)))
                 return findings
@@ -164,6 +168,7 @@ public struct ArtistPictureFinder: Sendable {
                 do { try await Task.sleep(for: pause) } catch { return findings }
             case .timedOut:
                 index += 1
+                progress?(index, requests.count)
             }
         }
         return findings

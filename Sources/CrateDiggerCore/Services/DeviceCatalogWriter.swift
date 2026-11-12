@@ -24,6 +24,10 @@ public final class DeviceCatalogWriter: @unchecked Sendable {
         store.load(key: key)
     }
 
+    public func exists(key: String) -> Bool {
+        store.exists(key: key)
+    }
+
     /// Taken when a scan starts; hand it back to `saveScan`.
     public func scanToken(key: String) -> Int {
         tokenLock.withLock { tokens[key, default: 0] }

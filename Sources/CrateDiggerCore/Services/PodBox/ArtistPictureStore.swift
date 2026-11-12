@@ -160,6 +160,21 @@ public final class ArtistPictureStore: @unchecked Sendable {
         isDirty = true
     }
 
+    /// Forgets every record the player takes for the same person as `name`
+    /// (the sheet's Clear). Its cached picture stays until the cache is
+    /// cleared; nothing names it any more.
+    public func remove(forName name: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        let folded = PodBoxArtName.folded(name)
+        guard !folded.isEmpty else { return }
+        let keys = Set(Self.playerKeys(name).compactMap { byPlayerKey[$0] } + [folded])
+        for key in keys where byKey[key] != nil {
+            forget(foldedKey: key)
+            isDirty = true
+        }
+    }
+
     /// Every record, by folded key.
     public func allRecords() -> [ArtistPictureRecord] {
         lock.lock()

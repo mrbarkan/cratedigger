@@ -513,6 +513,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     /// sheet at +4 s with fabricated rows (`DeviceReviewSheetController.debugSample`);
     /// `answered` opens it with every row answered and the albums left alone shown.
     /// Works without a snapshot path; check it by window capture.
+    /// CRATEDIGGER_ARTIST_PICTURES=1 presents the Artist Pictures sheet at
+    /// +4 s with twelve made-up artists, one or more in every state
+    /// (`ArtistPicturesSheetModel.debugSample`): no device, no network.
     private func installSnapshotHookIfRequested() {
         let env = ProcessInfo.processInfo.environment
         if env["CRATEDIGGER_MINI"] != nil {
@@ -540,6 +543,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         // answered, so the chosen and enabled states can be captured too.
         // Before the snapshot guard: check it by window capture. Nothing is
         // written whatever the answer.
+        // The Artist Pictures sheet with twelve made-up artists covering every
+        // state: no device, no network, nothing written outside a temp folder.
+        if env["CRATEDIGGER_ARTIST_PICTURES"] == "1" {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) { [weak self] in
+                guard let host = self?.mainWindowController?.window?.contentViewController else { return }
+                NSApp.activate(ignoringOtherApps: true)
+                let sheet = ArtistPicturesSheetModel.debugSample()
+                host.presentAsSheet(ArtistPicturesSheetController(
+                    sheet: sheet, maxGridHeight: DeviceReviewSheetController.maxListHeight(for: host.view.window)))
+                sheet.load()
+            }
+        }
         if let raw = env["CRATEDIGGER_DEVICE_REVIEW"] {
             DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) { [weak self] in
                 guard let model = self?.mainWindowController?.model,

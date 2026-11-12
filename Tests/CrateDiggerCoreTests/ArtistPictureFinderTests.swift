@@ -143,6 +143,27 @@ final class ArtistPictureFinderTests: XCTestCase {
         XCTAssertEqual(result.map(\.outcome), [.notFound])
     }
 
+    /// A run the owner watches hears after every name.
+    func testProgressAfterEachName() async {
+        for name in ["Nobody", "Noone"] {
+            fetcher.answer(DeezerArtistParser.searchURL(name: name), json: "{\"data\":[],\"total\":0}")
+        }
+        let seen = LockedProgress()
+        let result = await finder().find([("Nobody", [], nil), ("Noone", [], nil)]) { done, total in
+            seen.append(done, total)
+        }
+        XCTAssertEqual(result.count, 2)
+        XCTAssertEqual(seen.values.map(\.0), [1, 2])
+        XCTAssertEqual(seen.values.map(\.1), [2, 2])
+    }
+
+    private final class LockedProgress: @unchecked Sendable {
+        private let lock = NSLock()
+        private var stored: [(Int, Int)] = []
+        func append(_ done: Int, _ total: Int) { lock.withLock { stored.append((done, total)) } }
+        var values: [(Int, Int)] { lock.withLock { stored } }
+    }
+
     /// Review I4: two candidates both confirmed by an album are two acts
     /// that look right; neither is taken without the owner.
     func testTwoConfidentCandidatesAreHeld() async throws {

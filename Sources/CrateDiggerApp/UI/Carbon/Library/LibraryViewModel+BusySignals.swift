@@ -346,6 +346,13 @@ extension LibraryViewModel {
         mutateBusy { $0.update(id, progress: next, at: Date()) }
     }
 
+    /// Progress for a job that has no channel of its own (finding artist
+    /// pictures): its start site reports it here as it goes.
+    func reportBusyProgress(_ id: BusyJobID, completed: Int, total: Int) {
+        guard let record = busy.record(id), record.isRunning else { return }
+        mutateBusy { $0.update(id, progress: record.progress.with(completed: completed, total: total), at: Date()) }
+    }
+
     /// Applies a change to a copy and publishes only when it changed
     /// something, so a settle or show that is a no-op never republishes the
     /// whole view model.
