@@ -114,7 +114,9 @@ public enum CommonsArtistParser {
 /// MusicBrainz asks for at most one request a second per client: its calls
 /// here wait at `MusicBrainzGate.shared`, the gate every MusicBrainz caller
 /// in the app shares, and a 503 (its rate limiter) is tried once more after
-/// its next slot. Each candidate carries its Commons file name, licence and
+/// its next slot. They wait in the lane the caller passes
+/// (`candidates(for:lane:)`), foreground unless the background artist lookup
+/// says otherwise. Each candidate carries its Commons file name, licence and
 /// author. Used only by the background job and the Artist Pictures sheet,
 /// never inside a transfer.
 public struct CommonsArtistSource: ArtistPictureSource {
@@ -132,10 +134,15 @@ public struct CommonsArtistSource: ArtistPictureSource {
     }
 
     public func candidates(for name: String) async throws -> [ArtistPictureCandidate] {
-        let found = try CommonsArtistParser.musicBrainzArtists(try await musicBrainzData(Self.searchURL(name: name)))
+        try await candidates(for: name, lane: .foreground)
+    }
+
+    public func candidates(for name: String, lane: MusicBrainzGate.Lane) async throws -> [ArtistPictureCandidate] {
+        let found = try CommonsArtistParser.musicBrainzArtists(try await musicBrainzData(Self.searchURL(name: name),
+                                                                                         lane: lane))
         var candidates: [ArtistPictureCandidate] = []
         for artist in found.filter({ $0.score >= Self.minimumScore }).prefix(Self.lookedUp) {
-            let details = try await musicBrainzData(Self.artistURL(id: artist.id))
+            let details = try await musicBrainzData(Self.artistURL(id: artist.id), lane: lane)
             guard let item = try CommonsArtistParser.wikidataID(fromArtist: details) else { continue }
             let entity: Data
             do {
@@ -157,9 +164,13 @@ public struct CommonsArtistSource: ArtistPictureSource {
     /// lookup's `inc=release-groups`: MusicBrainz caps that at 25 with
     /// singles counted, so a prolific act's albums can fall outside it.
     public func albumTitles(for candidate: ArtistPictureCandidate) async throws -> [String] {
+        try await albumTitles(for: candidate, lane: .foreground)
+    }
+
+    public func albumTitles(for candidate: ArtistPictureCandidate, lane: MusicBrainzGate.Lane) async throws -> [String] {
         guard candidate.albumTitles.isEmpty else { return candidate.albumTitles }
         return try CommonsArtistParser.releaseGroupTitles(
-            fromArtist: try await musicBrainzData(Self.releaseGroupsURL(artistID: candidate.sourceID)))
+            fromArtist: try await musicBrainzData(Self.releaseGroupsURL(artistID: candidate.sourceID), lane: lane))
     }
 
     /// `https://musicbrainz.org/ws/2/artist?query=artist:"<name>"&fmt=json&limit=<limit>`,
@@ -206,12 +217,12 @@ public struct CommonsArtistSource: ArtistPictureSource {
         URL(string: "https://www.wikidata.org/wiki/Special:EntityData/\(ArtistPictureURLText.encoded(id)).json")!
     }
 
-    private func musicBrainzData(_ url: URL) async throws -> Data {
-        try await musicBrainz.wait()
+    private func musicBrainzData(_ url: URL, lane: MusicBrainzGate.Lane) async throws -> Data {
+        try await musicBrainz.wait(lane: lane)
         do {
             return try await fetcher.data(from: url)
         } catch ArtistPictureSourceError.http(503) {
-            try await musicBrainz.wait()
+            try await musicBrainz.wait(lane: lane)
             return try await fetcher.data(from: url)
         }
     }

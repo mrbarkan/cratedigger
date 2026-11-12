@@ -31,13 +31,17 @@ public enum ArtistPageFocus {
         case .artist:
             return index.artists.first { $0.id == anchor }?.name
         case .albumArtist:
-            // The key is the folded album artist. The index's artist buckets
-            // are album artists, so the short list answers almost always;
-            // the tracks are walked only for a spelling it does not hold.
+            // The key is the folded album artist, else artist, as the
+            // column keys it. The index's artist buckets are album artists,
+            // so the short list answers almost always; the tracks are read
+            // (their tags only, no index-wide context) for a spelling it
+            // does not hold. Cheap enough for a view body.
             if let artist = index.artists.first(where: { BrowserFilter.fold($0.name) == anchor }) { return artist.name }
-            let context = FacetContext(index: index)
-            return index.allTracks.lazy.map { BrowserFacet.albumArtist.value(of: $0, context: context) }
-                .first { $0.id == anchor }?.title
+            for loaded in index.allTracks {
+                let name = nonBlank(loaded.metadata.albumArtist) ?? nonBlank(loaded.track.artist)
+                if let name, BrowserFilter.fold(name) == anchor { return name }
+            }
+            return nil
         default:
             return nil
         }

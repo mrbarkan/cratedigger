@@ -7,6 +7,8 @@ import Foundation
 /// one (else the artist), so a compilation counts under Various Artists and
 /// a featured guest is not an artist of their own. Keyed like profiles
 /// (`PodBoxArtName.folded`), so spellings that fold alike are one artist.
+/// A version group counts every pressing's tracks and time, once each: this
+/// is what the library holds, not what the album lists.
 public struct ArtistLibrarySummary: Equatable, Sendable {
     /// The share of tracks one format needs to be "mostly" that format.
     public static let dominantShare = 0.6

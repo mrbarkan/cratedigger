@@ -186,6 +186,23 @@ public protocol ArtistPictureSource: Sendable {
     /// What the service offers for `name`; each candidate's `albumTitles` may be empty.
     func candidates(for name: String) async throws -> [ArtistPictureCandidate]
     func albumTitles(for candidate: ArtistPictureCandidate) async throws -> [String]
+    /// The same, with any MusicBrainz request waiting in `lane`: the
+    /// background artist lookup passes `.background`, so a lookup the owner
+    /// started never queues behind it. A source that never asks MusicBrainz
+    /// need not implement these: they forward to the two above.
+    func candidates(for name: String, lane: MusicBrainzGate.Lane) async throws -> [ArtistPictureCandidate]
+    func albumTitles(for candidate: ArtistPictureCandidate, lane: MusicBrainzGate.Lane) async throws -> [String]
+}
+
+extension ArtistPictureSource {
+    public func candidates(for name: String, lane: MusicBrainzGate.Lane) async throws -> [ArtistPictureCandidate] {
+        try await candidates(for: name)
+    }
+
+    public func albumTitles(for candidate: ArtistPictureCandidate,
+                            lane: MusicBrainzGate.Lane) async throws -> [String] {
+        try await albumTitles(for: candidate)
+    }
 }
 
 // MARK: - Deezer

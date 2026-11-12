@@ -171,8 +171,10 @@ public struct ArtistPictureFinder: Sendable {
     /// reach a service, or when `perRun` elapses; names not reached are
     /// simply absent from the result.
     /// `progress` gets (names done, names asked for) after each name, for a
-    /// run the owner watches.
+    /// run the owner watches. `lane` is where the sources' MusicBrainz
+    /// requests wait: the background artist lookup passes `.background`.
     public func find(_ requests: [(name: String, deviceAlbumTitles: [String], libraryPicture: URL?)],
+                     lane: MusicBrainzGate.Lane = .foreground,
                      progress: (@Sendable (Int, Int) -> Void)? = nil) async
         -> [ArtistPictureFinding] {
         let clock = ContinuousClock()
@@ -184,7 +186,7 @@ public struct ArtistPictureFinder: Sendable {
             let request = requests[index]
             let remaining = deadline - clock.now
             guard remaining > .zero, !Task.isCancelled else { break }
-            switch await bounded(min(perArtist, remaining), { try await self.findOne(request) }) {
+            switch await bounded(min(perArtist, remaining), { try await self.findOne(request, lane: lane) }) {
             case .finished(let outcome):
                 findings.append(ArtistPictureFinding(name: request.name, outcome: outcome))
                 pauses = quotaBackoff[...]
@@ -240,7 +242,7 @@ public struct ArtistPictureFinder: Sendable {
     }
 
     /// Throws only `Stop` and cancellation.
-    private func findOne(_ request: Request) async throws -> ArtistPictureFinding.Outcome {
+    private func findOne(_ request: Request, lane: MusicBrainzGate.Lane) async throws -> ArtistPictureFinding.Outcome {
         if let url = request.libraryPicture, let prepared = Self.preparedLibraryPicture(url) {
             return .found(prepared: prepared, candidate: nil, source: .libraryFolder)
         }
@@ -249,10 +251,10 @@ public struct ArtistPictureFinder: Sendable {
         sources: for source in sources {
             var scored: [(candidate: ArtistPictureCandidate, verdict: ArtistPictureVerdict)] = []
             do {
-                for var candidate in try await source.candidates(for: request.name)
+                for var candidate in try await source.candidates(for: request.name, lane: lane)
                 where PodBoxArtName.matches(candidate.name, request.name) {
                     if candidate.albumTitles.isEmpty {
-                        candidate.albumTitles = try await source.albumTitles(for: candidate)
+                        candidate.albumTitles = try await source.albumTitles(for: candidate, lane: lane)
                     }
                     scored.append((candidate, ArtistPictureMatcher.verdict(
                         candidate, name: request.name, deviceAlbumTitles: request.deviceAlbumTitles)))

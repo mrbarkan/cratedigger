@@ -29,8 +29,10 @@ public struct ArtistLookupScheduler: Sendable {
     public init() {}
 
     /// Artists due for a lookup, most tracks first, with `priority` names first.
-    /// Two spellings that fold to one key are one artist: the first of them
-    /// in that order is the name returned, with the tracks of both counted.
+    /// Two spellings that fold to one key are one artist, the tracks of both
+    /// counted: the name returned is the spelling with the most tracks (the
+    /// earlier one in `artists` on a tie). A priority name is returned as
+    /// given.
     public func due(artists: [(name: String, trackCount: Int)], profiles: (String) -> ArtistProfile?,
                     priority: [String], now: Date) -> [String] {
         var seen: Set<String> = []

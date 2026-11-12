@@ -25,17 +25,22 @@ public struct ArtistLookupResult: Sendable {
     public var photoCandidates: [ArtistPictureRecord.HeldCandidate]
     /// The full-size original of the migrated default photo `hash`.
     public var replacementForMigrated: (hash: String, data: Data)?
+    /// The identity the lookup started from. A result whose profile has
+    /// moved on since (the owner picked a candidate or pasted an id while
+    /// it ran) is stale, and `apply` writes none of it.
+    public var basedOn: ArtistProfile.Identity
 
     public init(identity: ArtistProfile.Identity, facts: ArtistFacts? = nil,
                 defaultPhoto: (data: Data, source: ArtistPhoto.Source, sourceID: String?,
                                credit: ArtistPictureCredit?)? = nil,
                 photoCandidates: [ArtistPictureRecord.HeldCandidate] = [],
-                replacementForMigrated: (hash: String, data: Data)? = nil) {
+                replacementForMigrated: (hash: String, data: Data)? = nil, basedOn: ArtistProfile.Identity = .unknown) {
         self.identity = identity
         self.facts = facts
         self.defaultPhoto = defaultPhoto
         self.photoCandidates = photoCandidates
         self.replacementForMigrated = replacementForMigrated
+        self.basedOn = basedOn
     }
 }
 
@@ -60,7 +65,8 @@ public struct ArtistLookupResult: Sendable {
 /// id through `deezer`. When there is no default: the owner's library
 /// folder picture, then (confirmed only) the artist's Wikidata image, then
 /// the finder's own rule; under a confirmed identity the finder's Deezer
-/// pick must also fold equal to the confirmed artist's name. Sources the
+/// pick must also fold equal to the confirmed artist's name, and its
+/// Commons pick must be that MusicBrainz artist's own. Sources the
 /// owner removed (`rejectedPhotoSources`) are skipped. Only the chosen
 /// photo is downloaded; the rest come back as references.
 ///
@@ -70,13 +76,11 @@ public struct ArtistLookupResult: Sendable {
 /// download for a reason that does not stop the run (a 404, a broken
 /// image) is simply not taken.
 ///
-/// Requests: MusicBrainz waits in `lane`; the run's own Wikidata, Commons
-/// and image requests are kept `spacing` apart. Keep one long-lived run
-/// (and one `info` client) so the spacing holds across artists. The
-/// finder's sources choose their own MusicBrainz lane: give a background
-/// run a finder without `CommonsArtistSource` (which waits in the
-/// foreground); a confirmed artist's Commons picture comes through
-/// Wikidata here instead.
+/// Requests: every MusicBrainz request waits in `lane`, the finder's
+/// sources' included (`find(_:lane:)`), so a background run never makes a
+/// lookup the owner started wait. The run's own Wikidata, Commons and
+/// image requests are kept `spacing` apart. Keep one long-lived run (and
+/// one `info` client) so the spacing holds across artists.
 public struct ArtistLookupRun: Sendable {
     /// Name-equal search results looked up for their release groups.
     static let detailsLooked = ArtistIdentityMatcher.maximumUncertain
@@ -104,15 +108,16 @@ public struct ArtistLookupRun: Sendable {
                        existing: ArtistProfile?, lane: MusicBrainzGate.Lane, now: Date) async throws
         -> ArtistLookupResult {
         guard ArtistLookupScheduler.isLookedUp(name) else { throw ArtistLookupError.notLookedUp(name) }
+        let basedOn = existing?.identity ?? .unknown
         guard let found = try await identify(name: name, libraryAlbumTitles: libraryAlbumTitles, existing: existing,
                                              lane: lane) else {
-            return ArtistLookupResult(identity: .unknown)
+            return ArtistLookupResult(identity: .unknown, basedOn: basedOn)
         }
-        var result = ArtistLookupResult(identity: found.identity, facts: found.facts)
+        var result = ArtistLookupResult(identity: found.identity, facts: found.facts, basedOn: basedOn)
 
         guard let existing else {
             try await choosePhoto(into: &result, found: found, name: name, libraryAlbumTitles: libraryAlbumTitles,
-                                  libraryPicture: libraryPicture, excluded: [])
+                                  libraryPicture: libraryPicture, excluded: [], lane: lane)
             return result
         }
         guard !existing.noPhoto else { return result }
@@ -125,7 +130,7 @@ public struct ArtistLookupRun: Sendable {
         }
         let excluded = Set(existing.rejectedPhotoSources).union(existing.photos.compactMap(\.rejectionKey))
         try await choosePhoto(into: &result, found: found, name: name, libraryAlbumTitles: libraryAlbumTitles,
-                              libraryPicture: libraryPicture, excluded: excluded)
+                              libraryPicture: libraryPicture, excluded: excluded, lane: lane)
         return result
     }
 
@@ -206,7 +211,8 @@ public struct ArtistLookupRun: Sendable {
     /// The default photo for a profile that has none, and the references
     /// seen on the way. Stops at the first photo taken.
     private func choosePhoto(into result: inout ArtistLookupResult, found: Identified, name: String,
-                             libraryAlbumTitles: [String], libraryPicture: URL?, excluded: Set<String>) async throws {
+                             libraryAlbumTitles: [String], libraryPicture: URL?, excluded: Set<String>,
+                             lane: MusicBrainzGate.Lane) async throws {
         if let url = libraryPicture, !excluded.contains(Self.libraryKey(url)), let data = Self.libraryPictureData(url) {
             result.defaultPhoto = (data, .library, url.path, nil)
             return
@@ -220,7 +226,8 @@ public struct ArtistLookupRun: Sendable {
             return
         }
 
-        let findings = await pictures.find([(name: name, deviceAlbumTitles: libraryAlbumTitles, libraryPicture: nil)])
+        let findings = await pictures.find([(name: name, deviceAlbumTitles: libraryAlbumTitles, libraryPicture: nil)],
+                                           lane: lane)
         try Task.checkCancellation()
         guard let finding = findings.first else { throw ArtistLookupError.timedOut }
         var held: [ArtistPictureRecord.HeldCandidate] = []
@@ -229,7 +236,7 @@ public struct ArtistLookupRun: Sendable {
             let reference = ArtistPictureRecord.HeldCandidate(candidate)
             let accepted = Self.photoSource(source) != nil
                 && !excluded.contains(Self.rejectionKey(reference))
-                && found.confirmedName.map { PodBoxArtName.folded(candidate.name) == PodBoxArtName.folded($0) } ?? true
+                && Self.fits(candidate, source: source, found)
             if accepted, let photoSource = Self.photoSource(source), let data = try await download(candidate.imageURL) {
                 result.defaultPhoto = (data, photoSource, candidate.sourceID, candidate.credit)
             } else {
@@ -244,6 +251,19 @@ public struct ArtistLookupRun: Sendable {
         }
         var seen = excluded
         result.photoCandidates = held.filter { seen.insert(Self.rejectionKey($0)).inserted }
+    }
+
+    /// Whether the finder's pick may be taken under the identity found. Any
+    /// pick when the identity is not confirmed (the finder's rule alone, as
+    /// the iPod has always had it). Under a confirmed identity, a Commons
+    /// pick only when it is that very MusicBrainz artist's picture (a
+    /// namesake's has the same name and another id), and any other only
+    /// when its name folds equal to the confirmed artist's.
+    private static func fits(_ candidate: ArtistPictureCandidate, source: ArtistPictureSourceID,
+                             _ found: Identified) -> Bool {
+        guard let id = found.musicBrainzID, let confirmedName = found.confirmedName else { return true }
+        if source == .commons { return candidate.sourceID == id }
+        return PodBoxArtName.folded(candidate.name) == PodBoxArtName.folded(confirmedName)
     }
 
     /// The full-size original of a migrated photo, or nil when it cannot be
@@ -362,44 +382,51 @@ public struct ArtistLookupRun: Sendable {
 extension ArtistLookupResult {
     /// Writes this result into `store` for `name`, checked against the
     /// profile as it is now, since the owner may have acted while the
-    /// lookup ran. The identity and fetched facts go through
-    /// `applyFetched`; when it refuses (the owner's "None of these", or a
-    /// confirmed id the owner rejected), nothing else is applied either.
-    /// The default photo is added only while the profile still has no
-    /// default, no "no photo" and no rejection of its source; the migrated
-    /// original replaces its photo in place only while that photo is still
-    /// the default and the owner has not picked one; candidates are added
-    /// when new and not rejected. Owner facts, owner photos, an owner-picked
-    /// default, `noPhoto`, `notOnIPod` and the rejected ids are never
-    /// changed. Does not save. Store I/O and image work: call it off the
-    /// main actor, after `refuseWhileLibraryDisconnected`. Returns whether
-    /// the identity and facts were applied.
+    /// lookup ran. A stale result (the identity is no longer `basedOn`:
+    /// the owner picked a candidate, pasted an id, or a Look Up Again
+    /// started over) writes nothing. Otherwise the identity and fetched
+    /// facts go through `applyFetched`; when it refuses (the owner's "None
+    /// of these", or a confirmed id the owner rejected), nothing else is
+    /// applied either. Each photo step reads the profile again as it lands:
+    /// the default photo is added only while there is still no default, no
+    /// "no photo" and no rejection of its source; the migrated original
+    /// replaces its photo in place only while that photo is still the
+    /// default, not picked by the owner; candidates are added when new and
+    /// not rejected, and not at all under "no photo". A photo added in the
+    /// moment the owner acted is taken out again. Owner facts, owner photos,
+    /// an owner-picked default, `noPhoto`, `notOnIPod` and the rejected ids
+    /// are never changed. Does not save. Store I/O and image work: call it
+    /// off the main actor, after `refuseWhileLibraryDisconnected`. Returns
+    /// whether the identity and facts were applied.
     @discardableResult
     public func apply(to store: ArtistProfileStore, name: String, at date: Date) throws -> Bool {
-        guard store.applyFetched(name: name, facts: facts, identity: identity, at: date),
-              let profile = store.profile(forName: name) else { return false }
-        let rejected = Set(profile.rejectedPhotoSources)
+        guard (store.profile(forName: name)?.identity ?? .unknown) == basedOn,
+              store.applyFetched(name: name, facts: facts, identity: identity, at: date) else { return false }
 
-        if let photo = defaultPhoto, !profile.noPhoto,
-           !profile.photos.contains(where: { $0.hash == profile.defaultPhoto }),
-           Self.key(photo.source, photo.sourceID).map(rejected.contains) != true {
-            do {
-                try store.addPhoto(name: name, data: photo.data, source: photo.source, sourceID: photo.sourceID,
-                                   credit: photo.credit)
-            } catch ArtistProfileStoreError.unreadablePhoto, ArtistProfileStoreError.photoTooLarge {
-                // Not a picture the store keeps: the profile goes without.
+        if let photo = defaultPhoto, let profile = store.profile(forName: name), Self.mayAddDefault(to: profile, photo) {
+            if let added = try Self.add(photo.data, source: photo.source, sourceID: photo.sourceID,
+                                        credit: photo.credit, to: store, name: name, profile: profile) {
+                store.update(name: name) { profile in
+                    // The owner asked for no photo, or removed this one, as it landed: it goes again.
+                    guard !added.existed,
+                          profile.noPhoto || added.photo.rejectionKey.map(profile.rejectedPhotoSources.contains) == true
+                    else { return }
+                    profile.photos.removeAll { $0.hash == added.photo.hash }
+                    if profile.defaultPhoto == added.photo.hash { profile.defaultPhoto = nil }
+                }
             }
         }
 
-        if let replacement = replacementForMigrated, !profile.noPhoto, !profile.defaultPickedByOwner,
-           profile.defaultPhoto == replacement.hash,
-           let old = profile.photos.first(where: { $0.hash == replacement.hash }), old.source == .migrated {
-            try replace(old, with: replacement.data, in: store, name: name)
+        if let replacement = replacementForMigrated, let profile = store.profile(forName: name),
+           Self.mayReplace(replacement.hash, in: profile),
+           let old = profile.photos.first(where: { $0.hash == replacement.hash }) {
+            try replace(old, with: replacement.data, in: store, name: name, profile: profile)
         }
 
         let candidates = photoCandidates
         if !candidates.isEmpty {
             store.update(name: name) { profile in
+                guard !profile.noPhoto else { return }
                 var known = Set(profile.rejectedPhotoSources).union(profile.photos.compactMap(\.rejectionKey))
                 known.formUnion(profile.photoCandidates.map(ArtistLookupRun.rejectionKey))
                 for candidate in candidates where known.insert(ArtistLookupRun.rejectionKey(candidate)).inserted {
@@ -410,11 +437,40 @@ extension ArtistLookupResult {
         return true
     }
 
+    private static func mayAddDefault(to profile: ArtistProfile,
+                                      _ photo: (data: Data, source: ArtistPhoto.Source, sourceID: String?,
+                                                credit: ArtistPictureCredit?)) -> Bool {
+        !profile.noPhoto && !profile.photos.contains(where: { $0.hash == profile.defaultPhoto })
+            && key(photo.source, photo.sourceID).map(profile.rejectedPhotoSources.contains) != true
+    }
+
+    private static func mayReplace(_ hash: String, in profile: ArtistProfile) -> Bool {
+        !profile.noPhoto && !profile.defaultPickedByOwner && profile.defaultPhoto == hash
+            && profile.photos.first(where: { $0.hash == hash })?.source == .migrated
+    }
+
+    /// `addPhoto`, saying whether the bytes were already one of the
+    /// profile's photos; nil for bytes the store will not keep.
+    private static func add(_ data: Data, source: ArtistPhoto.Source, sourceID: String?, credit: ArtistPictureCredit?,
+                            to store: ArtistProfileStore, name: String,
+                            profile: ArtistProfile) throws -> (photo: ArtistPhoto, existed: Bool)? {
+        do {
+            let photo = try store.addPhoto(name: name, data: data, source: source, sourceID: sourceID, credit: credit)
+            return (photo, profile.photos.contains { $0.hash == photo.hash })
+        } catch ArtistProfileStoreError.unreadablePhoto, ArtistProfileStoreError.photoTooLarge {
+            return nil // not a picture the store keeps: the profile goes without
+        }
+    }
+
     /// The original takes the migrated photo's place and its role as
     /// default, under the source the migrated id names (`deezer:42` becomes
-    /// Deezer's `42`). The old entry is dropped without being remembered as
-    /// removed, so its source stays welcome; its file goes at the next save.
-    private func replace(_ old: ArtistPhoto, with data: Data, in store: ArtistProfileStore, name: String) throws {
+    /// Deezer's `42`). When the profile already held the original's bytes,
+    /// that entry moves into the migrated photo's place; nothing else moves.
+    /// The old entry is dropped without being remembered as removed, so its
+    /// source stays welcome; its file goes at the next save. When the owner
+    /// acted as it landed, the profile is left as the owner left it.
+    private func replace(_ old: ArtistPhoto, with data: Data, in store: ArtistProfileStore, name: String,
+                         profile: ArtistProfile) throws {
         var source = ArtistPhoto.Source.migrated
         var sourceID = old.sourceID
         if let parts = old.sourceID?.split(separator: ":", maxSplits: 1), parts.count == 2,
@@ -422,19 +478,20 @@ extension ArtistLookupResult {
             source = named
             sourceID = String(parts[1])
         }
-        let new: ArtistPhoto
-        do {
-            new = try store.addPhoto(name: name, data: data, source: source, sourceID: sourceID, credit: old.credit)
-        } catch ArtistProfileStoreError.unreadablePhoto, ArtistProfileStoreError.photoTooLarge {
-            return
-        }
-        guard new.hash != old.hash else { return }
+        guard let added = try Self.add(data, source: source, sourceID: sourceID, credit: old.credit, to: store,
+                                       name: name, profile: profile),
+              added.photo.hash != old.hash else { return }
+        let new = added.photo
         store.update(name: name) { profile in
-            guard profile.defaultPhoto == old.hash, !profile.defaultPickedByOwner,
-                  let at = profile.photos.firstIndex(where: { $0.hash == old.hash }) else { return }
+            guard Self.mayReplace(old.hash, in: profile) else {
+                if !added.existed { profile.photos.removeAll { $0.hash == new.hash } }
+                return
+            }
+            // The original's entry out first, then the migrated photo found
+            // again: removing an entry before it moves it down by one.
             profile.photos.removeAll { $0.hash == new.hash }
-            let index = min(at, profile.photos.count - 1)
-            profile.photos[index] = new
+            guard let at = profile.photos.firstIndex(where: { $0.hash == old.hash }) else { return }
+            profile.photos[at] = new
             profile.defaultPhoto = new.hash
         }
     }

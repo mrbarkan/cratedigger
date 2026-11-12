@@ -349,6 +349,7 @@ final class ArtistLookupRunTests: XCTestCase {
         // The worst case: a result found as if the profile had nothing, with a
         // default photo, a replacement and candidates, applied on top of it.
         var result = try await lookUp(existing: nil)
+        result.basedOn = before.identity
         XCTAssertNotNil(result.defaultPhoto)
         result.replacementForMigrated = (mine.hash, FakePictureFetcher.jpeg(width: 900, height: 900))
         result.photoCandidates += [9, 7].map {
@@ -367,7 +368,7 @@ final class ArtistLookupRunTests: XCTestCase {
         XCTAssertTrue(after.notOnIPod)
         XCTAssertEqual(after.rejectedMusicBrainzIDs, ["mb-other"])
         XCTAssertEqual(after.rejectedPhotoSources, ["commons:mb-ma", "deezer:7"])
-        XCTAssertEqual(after.photoCandidates.map(\.sourceID), ["9"], "a removed source is never offered again")
+        XCTAssertEqual(after.photoCandidates, [], "no candidates under no photo")
         // Only the lookup's own fields moved.
         XCTAssertEqual(after.fetched?.bio, "Massive Attack are an English trip hop group.")
         XCTAssertEqual(after.facts.bio, "My own words.")
@@ -379,6 +380,117 @@ final class ArtistLookupRunTests: XCTestCase {
         XCTAssertTrue(try result.apply(to: store, name: name, at: now))
         XCTAssertEqual(store.profile(forName: name)?.defaultPhoto, mine.hash)
         XCTAssertEqual(store.profile(forName: name)?.photos.map(\.hash), [mine.hash, theirs.hash])
+        XCTAssertEqual(store.profile(forName: name)?.photoCandidates.map(\.sourceID), ["9"],
+                       "a removed source is never offered again")
+        XCTAssertEqual(store.profile(forName: name)?.rejectedPhotoSources, ["commons:mb-ma", "deezer:7"])
+    }
+
+    func testStaleResultIsNotApplied() async throws {
+        answerMassiveAttack()
+        let store = store()
+        let name = "Massive Attack"
+        store.update(name: name) { profile in
+            profile.identity = .confirmed(musicBrainzID: "mb-ma", wikidataID: "Q11895")
+            profile.fetched = ArtistFacts(kind: "Group", bio: "Old.")
+        }
+        // A 180-day refresh starts from the confirmed record...
+        let refresh = try await lookUp(existing: store.profile(forName: name))
+        XCTAssertEqual(refresh.basedOn, .confirmed(musicBrainzID: "mb-ma", wikidataID: "Q11895"))
+
+        // ... and the owner pastes another id before it lands.
+        store.update(name: name) { $0.identity = .confirmed(musicBrainzID: "mb-pasted", wikidataID: nil) }
+        let before = store.profile(forName: name)
+        XCTAssertFalse(try refresh.apply(to: store, name: name, at: now))
+        XCTAssertEqual(store.profile(forName: name), before)
+
+        // A search that started while the page was asking, landing after the owner picked one.
+        let held = ArtistProfile.Identity.uncertain([ArtistIdentityCandidate(musicBrainzID: "mb-ma", name: name)])
+        var search = try await lookUp(existing: nil)
+        search.basedOn = held
+        store.update(name: name) { $0.identity = .confirmed(musicBrainzID: "mb-ma", wikidataID: nil) }
+        XCTAssertFalse(try search.apply(to: store, name: name, at: now))
+        XCTAssertEqual(store.profile(forName: name)?.identity, .confirmed(musicBrainzID: "mb-ma", wikidataID: nil))
+        XCTAssertEqual(store.profile(forName: name)?.photos, [])
+    }
+
+    func testMigratedSwapKeepsThePhotosAroundIt() async throws {
+        info.candidates["Air"] = .success([])
+        let store = store()
+        let original = FakePictureFetcher.jpeg(width: 1000, height: 1000, red: 0.4)
+        // A: the original's bytes, already a photo. M: the migrated default. O: the owner's.
+        let a = try store.addPhoto(name: "Air", data: original, source: .deezer, sourceID: "42", credit: nil)
+        let m = try store.addPhoto(name: "Air", data: FakePictureFetcher.jpeg(width: 400, height: 400, red: 0.4),
+                                   source: .migrated, sourceID: "deezer:42", credit: nil)
+        let o = try store.addPhoto(name: "Air", data: FakePictureFetcher.jpeg(red: 0.1), source: .owner,
+                                   sourceID: nil, credit: nil)
+        let held = URL(string: "https://e-cdns-images.dzcdn.net/images/artist/held/1000x1000.jpg")!
+        fetcher.answer(held, data: original)
+        store.update(name: "Air") { profile in
+            profile.defaultPhoto = m.hash
+            profile.photos[1].replaceFromURL = held
+        }
+        XCTAssertEqual(store.profile(forName: "Air")?.photos.map(\.hash), [a.hash, m.hash, o.hash])
+
+        let result = try await lookUp("Air", existing: store.profile(forName: "Air"))
+        XCTAssertEqual(result.replacementForMigrated?.hash, m.hash)
+        XCTAssertTrue(try result.apply(to: store, name: "Air", at: now))
+        let after = try XCTUnwrap(store.profile(forName: "Air"))
+        XCTAssertEqual(after.photos.map(\.hash), [a.hash, o.hash], "the owner's photo is kept")
+        XCTAssertEqual(after.photos.last, o)
+        XCTAssertEqual(after.defaultPhoto, a.hash)
+        XCTAssertFalse(after.defaultPickedByOwner)
+    }
+
+    func testCommonsPickMustBeTheConfirmedArtist() async throws {
+        answerMassiveAttack(image: false)
+        let commons = FakePictureSource(id: .commons)
+        let image = URL(string: "https://commons.wikimedia.org/wiki/Special:FilePath/Namesake.jpg?width=800")!
+        fetcher.answer(image, data: FakePictureFetcher.jpeg())
+        func run() -> ArtistLookupRun {
+            ArtistLookupRun(info: info, pictures: ArtistPictureFinder(sources: [commons], fetcher: fetcher,
+                                                                      quotaBackoff: []),
+                            fetcher: fetcher, preferredLanguages: ["en"], spacing: .zero)
+        }
+        // Same name, same album title, another MusicBrainz artist: a reference, never the default.
+        commons.offered = [ArtistPictureCandidate(name: "Massive Attack", source: .commons, sourceID: "mb-namesake",
+                                                  imageURL: image, albumTitles: ["Mezzanine"])]
+        var result = try await run().lookUp(name: "Massive Attack", libraryAlbumTitles: ["Mezzanine"],
+                                            libraryPicture: nil, existing: nil, lane: .background, now: now)
+        XCTAssertEqual(result.identity, .confirmed(musicBrainzID: "mb-ma", wikidataID: "Q11895"))
+        XCTAssertNil(result.defaultPhoto)
+        XCTAssertEqual(result.photoCandidates.map(\.sourceID), ["mb-namesake"])
+
+        commons.offered = [ArtistPictureCandidate(name: "Massive Attack", source: .commons, sourceID: "mb-ma",
+                                                  imageURL: image, albumTitles: ["Mezzanine"])]
+        result = try await run().lookUp(name: "Massive Attack", libraryAlbumTitles: ["Mezzanine"],
+                                        libraryPicture: nil, existing: nil, lane: .background, now: now)
+        XCTAssertEqual(result.defaultPhoto?.source, .commons)
+        XCTAssertEqual(result.defaultPhoto?.sourceID, "mb-ma")
+    }
+
+    func testBackgroundRunAsksMusicBrainzOnlyInTheBackground() async throws {
+        let gate = MusicBrainzGate(interval: .zero)
+        let client = ArtistInfoClient(fetcher: fetcher, gate: gate, wikimediaSpacing: .zero)
+        fetcher.answer(ArtistInfoClient.searchURL(name: "Boston"), json: "{\"artists\":[]}")
+        fetcher.answer(CommonsArtistSource.searchURL(name: "Boston"),
+                       json: "{\"artists\":[{\"id\":\"mb-boston\",\"name\":\"Boston\",\"score\":100}]}")
+        fetcher.answer(CommonsArtistSource.artistURL(id: "mb-boston"), json: "{\"id\":\"mb-boston\",\"relations\":[]}")
+        let finder = ArtistPictureFinder(sources: [CommonsArtistSource(fetcher: fetcher, musicBrainzGate: gate)],
+                                         fetcher: fetcher, quotaBackoff: [])
+        let run = ArtistLookupRun(info: client, pictures: finder, fetcher: fetcher, spacing: .zero)
+
+        let result = try await run.lookUp(name: "Boston", libraryAlbumTitles: ["Third Stage"], libraryPicture: nil,
+                                          existing: nil, lane: .background, now: now)
+        XCTAssertEqual(result.identity, .notFound)
+        XCTAssertTrue(fetcher.requests.contains(CommonsArtistSource.artistURL(id: "mb-boston")), "the finder asked")
+        let issued = await gate.issued
+        XCTAssertNil(issued[.foreground], "a background run made a foreground MusicBrainz request")
+        XCTAssertEqual(issued[.background], 3)
+
+        // The finder's callers outside the lookup stay in the foreground.
+        _ = await finder.find([(name: "Boston", deviceAlbumTitles: [], libraryPicture: nil)])
+        let after = await gate.issued
+        XCTAssertEqual(after[.foreground], 2)
     }
 
     func testApplyRechecksWhatTheOwnerDidMeanwhile() async throws {
@@ -393,8 +505,9 @@ final class ArtistLookupRunTests: XCTestCase {
         XCTAssertTrue(try result.apply(to: store, name: name, at: now))
         XCTAssertEqual(store.profile(forName: name)?.photos, [])
 
-        // ... or asked for no photo.
-        store.update(name: name) { $0.rejectedPhotoSources = []; $0.noPhoto = true }
+        // ... or asked for no photo. (Each step starts the identity over: a
+        // result whose starting identity has moved on is stale.)
+        store.update(name: name) { $0.identity = .unknown; $0.rejectedPhotoSources = []; $0.noPhoto = true }
         XCTAssertTrue(try result.apply(to: store, name: name, at: now))
         XCTAssertEqual(store.profile(forName: name)?.photos, [])
         store.update(name: name) { $0.noPhoto = false }
@@ -478,7 +591,7 @@ final class FakeArtistInfo: ArtistInfoFetching, @unchecked Sendable {
 
 /// A picture source with fixed candidates (their album titles included), or a failure.
 final class FakePictureSource: ArtistPictureSource, @unchecked Sendable {
-    var id: ArtistPictureSourceID { .deezer }
+    let id: ArtistPictureSourceID
     private let lock = NSLock()
     private var _offered: [ArtistPictureCandidate] = []
     private var _failure: Error?
@@ -493,6 +606,10 @@ final class FakePictureSource: ArtistPictureSource, @unchecked Sendable {
         set { lock.withLock { _failure = newValue } }
     }
     var calls: Int { lock.withLock { _calls } }
+
+    init(id: ArtistPictureSourceID = .deezer) {
+        self.id = id
+    }
 
     func candidates(for name: String) async throws -> [ArtistPictureCandidate] {
         let (offered, failure) = lock.withLock { () -> ([ArtistPictureCandidate], Error?) in
