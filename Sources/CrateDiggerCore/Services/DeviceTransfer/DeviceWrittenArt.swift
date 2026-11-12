@@ -76,6 +76,26 @@ enum DeviceWrittenArt {
         return deviceProfile == .ipodLegacySafe ? min(side, 600) : side
     }
 
+    /// `tracks` with each cover's recorded size replaced by its true pixel
+    /// size (`ArtworkService.pixelSizes(of:)`, by hash). Library records made
+    /// before sizes were pixels carry points, which a DPI tag shrinks; the
+    /// review applies this to what it sends before the matcher reads a size,
+    /// and the plan's copies carry the measured tracks on to the catalog
+    /// patch (`DeviceCatalogStore.writtenTrack`), so the two still agree. A
+    /// hash missing from `pixelSizes` keeps its recorded size.
+    static func measured(_ tracks: [LoadedTrack], pixelSizes: [String: ArtworkDimensions]) -> [LoadedTrack] {
+        guard !pixelSizes.isEmpty else { return tracks }
+        return tracks.map { loaded in
+            guard let hash = loaded.track.artworkHash,
+                  let size = pixelSizes[hash],
+                  size != loaded.track.artworkDimensions
+            else { return loaded }
+            var audio = loaded.track
+            audio.artworkDimensions = size
+            return LoadedTrack(track: audio, metadata: loaded.metadata, recordMarkers: loaded.recordMarkers)
+        }
+    }
+
     /// Longest side of the first track in the list that carries art
     /// dimensions from one of `sources` (nil: any source).
     static func longestSide(of tracks: [LoadedTrack], from sources: Set<ArtworkSource>?) -> Int? {

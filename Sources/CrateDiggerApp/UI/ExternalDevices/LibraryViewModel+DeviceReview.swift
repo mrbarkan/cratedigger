@@ -65,6 +65,13 @@ extension LibraryViewModel {
                 answers: [DeviceAlbumIdentity: DeviceAlbumDecision])? {
         let leftAlone = DeviceLeftAloneStore().load(profileID: profile.id)
 
+        // The sizes the library recorded for the covers sent may be points
+        // (records older than pixel sizes), which a DPI tag shrinks, and the
+        // device's files are measured in pixels. Measure each cover once,
+        // from its full-resolution bytes' header, off the main actor (the
+        // service's async work runs on the global executor).
+        let artPixelSizes = await artworkService.pixelSizes(of: tracks)
+
         // The review checks every planned destination on the device: a
         // file-system walk over USB, so off the main actor.
         let review = await Task.detached(priority: .userInitiated) {
@@ -74,7 +81,8 @@ extension LibraryViewModel {
                 profile: profile,
                 mountedAt: mountedRoot,
                 leftAlone: leftAlone,
-                reviewedAlbumFolders: reviewedAlbumFolders
+                reviewedAlbumFolders: reviewedAlbumFolders,
+                artPixelSizes: artPixelSizes
             )
         }.value
 

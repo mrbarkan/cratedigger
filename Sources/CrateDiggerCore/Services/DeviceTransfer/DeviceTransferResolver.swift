@@ -208,14 +208,20 @@ public struct DeviceTransferResolver {
     /// the same batch, sends that album to the sheet as `.pathTaken`.
     /// `reviewedAlbumFolders` are the per-album folder names the user reviewed
     /// for a template layout; they shape natural (New) paths only.
+    /// `artPixelSizes` are the true pixel sizes of the covers sent, by hash
+    /// (`ArtworkService.pixelSizes(of:)`); they replace the recorded sizes of
+    /// the tracks sent before anything is compared, and the plan's copies
+    /// carry the corrected tracks to the catalog patch.
     public func review(
-        sending: [LoadedTrack],
+        sending rawSending: [LoadedTrack],
         catalog: [LoadedTrack],
         profile: ExternalDeviceProfile,
         mountedAt root: URL,
         leftAlone: Set<DeviceAlbumIdentity>,
-        reviewedAlbumFolders: [AlbumFolderKey: String] = [:]
+        reviewedAlbumFolders: [AlbumFolderKey: String] = [:],
+        artPixelSizes: [String: ArtworkDimensions] = [:]
     ) -> DeviceTransferReview {
+        let sending = DeviceWrittenArt.measured(rawSending, pixelSizes: artPixelSizes)
         let musicFolder = ExternalDeviceTransferPlanner(fileManager: fileManager)
             .destinationRoot(for: profile, mountedAt: root)
         // Only the music folder is the device's music: a backup folder or the

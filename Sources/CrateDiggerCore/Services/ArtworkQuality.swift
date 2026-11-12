@@ -49,11 +49,32 @@ public enum ArtworkQuality {
     /// The pixel size of an image file, read from its header only — no decode,
     /// so this is cheap enough to run across a whole library.
     public static func pixelSize(ofImageAt url: URL) -> ArtworkDimensions? {
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        return pixelSize(of: source)
+    }
+
+    /// The pixel size of encoded image bytes, read from the header only.
+    ///
+    /// Every recorded artwork size goes through this, never `NSImage.size`:
+    /// that is in points, so a 1400 px JPEG tagged 300 dpi reads 336, and a
+    /// device review comparing it with what a transfer writes (pixels) saw a
+    /// difference that was never there. An EXIF rotation of a quarter turn
+    /// swaps the two sides, as the picture is drawn.
+    public static func pixelSize(ofImageData data: Data) -> ArtworkDimensions? {
+        guard !data.isEmpty, let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        return pixelSize(of: source)
+    }
+
+    private static func pixelSize(of source: CGImageSource) -> ArtworkDimensions? {
+        guard let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
               let width = properties[kCGImagePropertyPixelWidth] as? Int,
-              let height = properties[kCGImagePropertyPixelHeight] as? Int
+              let height = properties[kCGImagePropertyPixelHeight] as? Int,
+              width > 0, height > 0
         else { return nil }
+        // Orientations 5 to 8 are the quarter turns.
+        if let orientation = properties[kCGImagePropertyOrientation] as? Int, (5...8).contains(orientation) {
+            return ArtworkDimensions(width: height, height: width)
+        }
         return ArtworkDimensions(width: width, height: height)
     }
 }

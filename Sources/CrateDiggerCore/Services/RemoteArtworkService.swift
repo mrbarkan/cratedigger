@@ -391,10 +391,7 @@ public actor RemoteArtworkService {
         return ArtworkAsset(
             source: .remote,
             hash: Self.sha256Hex(for: data),
-            dimensions: ArtworkDimensions(
-                width: Int(image.size.width.rounded()),
-                height: Int(image.size.height.rounded())
-            ),
+            dimensions: ArtworkService.pixelDimensions(of: data, image: image),
             data: data
         )
     }

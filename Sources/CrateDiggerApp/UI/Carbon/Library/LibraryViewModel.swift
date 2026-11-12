@@ -3824,7 +3824,7 @@ final class LibraryViewModel: ObservableObject {
             let hash = SHA256.hash(data: data).compactMap { String(format: "%02x", $0) }.joined()
             let asset = ArtworkAsset(
                 source: .folderImage, hash: hash,
-                dimensions: ArtworkDimensions(width: Int(image.size.width), height: Int(image.size.height)),
+                dimensions: ArtworkService.pixelDimensions(of: data, image: image),
                 data: data
             )
             // Device-compatible: downscale to a 600px baseline JPEG (no PNG/progressive)
