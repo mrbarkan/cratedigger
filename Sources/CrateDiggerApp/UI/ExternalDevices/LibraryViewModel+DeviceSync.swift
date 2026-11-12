@@ -3,11 +3,13 @@ import CrateDiggerCore
 import Foundation
 
 /// Pre-Transfer to Device: queue tracks for a device that isn't plugged in,
-/// then SYNC writes them at mount time. Queuing never converts — that is a
+/// then SYNC writes them at mount time. Both go through the device review
+/// (`LibraryViewModel+DeviceReview`): queuing against the device's last-known
+/// catalog, SYNC against the device itself. Queuing never converts; that is a
 /// separate, explicit step (CONVERT NOW), which bakes into a local staging tree
-/// laid out exactly like the device so the sync itself stays a dumb, restartable
-/// copy-if-absent loop. Anything left unbaked is converted on the way over
-/// instead. Every staged byte dies the moment it has served its purpose.
+/// laid out like the device, so SYNC can copy the bake. Anything left unbaked
+/// is converted on the way over instead. Every staged byte dies the moment it
+/// has served its purpose, and SYNC is restartable: failures stay queued.
 extension LibraryViewModel {
 
     /// nonisolated: the sync loop calls this from a detached task — without it,
@@ -21,13 +23,21 @@ extension LibraryViewModel {
 
     /// Queue tracks for an unplugged device.
     ///
-    /// Queuing is bookkeeping and nothing else — no ffmpeg, no staged bytes, no
-    /// waiting. It used to bake convert-mode profiles on the spot, which spent
-    /// minutes and gigabytes committing to a format before you had a chance to
-    /// look at the list or change your mind about it. The bake is now yours to
-    /// order: CONVERT NOW on the strip, or automatically as part of SYNC.
+    /// Queuing is bookkeeping and nothing else: no ffmpeg, no staged bytes. It
+    /// used to bake convert-mode profiles on the spot, which spent minutes and
+    /// gigabytes committing to a format before you had a chance to look at the
+    /// list or change your mind about it. The bake is now yours to order:
+    /// CONVERT NOW on the strip, or automatically as part of SYNC.
+    ///
+    /// What is queued goes through the same review as a send to a mounted
+    /// device, against the device's last-known catalog: tracks it already
+    /// has are not queued, missing ones are filed into its album's folder, and
+    /// albums that differ are asked about in the review sheet, their answers
+    /// stored on the entries for SYNC. A device never scanned has no catalog,
+    /// so everything queues as new and SYNC sorts it out against the device.
     @MainActor
     func stageForSync(profile: ExternalDeviceProfile, tracks rawTracks: [LoadedTrack]) {
+        guard let host = presentationHostViewController else { return }
         let existing = syncQueueStore.load(profileID: profile.id)
         let queuedPaths = Set(existing.map { $0.track.track.fileURL.path })
         let tracks = rawTracks.filter { !queuedPaths.contains($0.track.fileURL.path) }
@@ -39,65 +49,73 @@ extension LibraryViewModel {
             return
         }
 
+        // Planned against the staging tree, because that is where a bake
+        // lands; the same relative path is what SYNC writes on the device.
         let stagingRoot = syncQueueStore.stagingDirectory(for: profile.id)
-        let reserved = Set(existing.map {
-            stagingRoot.appendingPathComponent($0.destinationRelativePath)
-                .standardizedFileURL.resolvingSymlinksInPath().path
-        })
-        // Planned against the staging tree because that is where a bake would
-        // land; the same relative path is what gets written on the device.
-        let plans = ExternalDeviceTransferPlanner().planTransfers(
-            tracks: tracks,
-            profile: profile,
-            mountedAt: stagingRoot,
-            reservedDestinationPaths: reserved
-        )
-        guard !plans.isEmpty else {
-            appAlert = .info(
+        let key = catalogKey(for: profile)
+        let deviceRoot = profile.rootDisplayPath.map { URL(fileURLWithPath: $0, isDirectory: true) }
+
+        Task { @MainActor in
+            // The device is away, so its saved catalog stands in for it,
+            // moved onto the staging tree the review plans against.
+            let catalog = await Task.detached(priority: .userInitiated) { () -> [LoadedTrack] in
+                guard let deviceRoot, let saved = DeviceCatalogStore().load(key: key) else { return [] }
+                return DeviceSyncQueuePlanner.catalog(saved, rebasedFrom: deviceRoot, onto: stagingRoot)
+            }.value
+            guard let (plan, _, answers) = await reviewedDevicePlan(
+                tracks: tracks,
+                profile: profile,
+                mountedRoot: stagingRoot,
+                catalog: catalog,
+                presentingFrom: host
+            ) else { return }
+
+            // Re-read rather than add to the snapshot: more may have been
+            // queued while the sheet was up.
+            let current = syncQueueStore.load(profileID: profile.id)
+            let newEntries = DeviceSyncQueuePlanner.entries(
+                for: plan,
+                stagingRoot: stagingRoot,
+                decisions: answers,
+                queued: current
+            )
+            rememberDeviceAnswers(answers, profileID: profile.id)
+            if !newEntries.isEmpty {
+                syncQueueStore.save(current + newEntries, profileID: profile.id)
+                refreshSyncQueueCounts()
+                // Queuing while browsing this offline device: rebuild the view
+                // so the rows and badges reflect what is now waiting.
+                if case .offlineDevice(let pid) = currentSource, pid == profile.id {
+                    selectSource(currentSource)
+                }
+            }
+            appAlert = queuedAlert(newEntries: newEntries.count, plan: plan, profile: profile)
+        }
+    }
+
+    /// What queuing did: how many tracks wait, and what was not queued
+    /// because the device already has it, its album was left alone, or no
+    /// place could be planned for it.
+    private func queuedAlert(newEntries n: Int, plan: DeviceTransferFilePlan, profile: ExternalDeviceProfile) -> AppAlert {
+        var notQueued: [String] = []
+        if plan.skippedPresent > 0 { notQueued.append("\(plan.skippedPresent) already on \(profile.name)") }
+        if plan.leftAlone > 0 { notQueued.append("\(plan.leftAlone) album\(plan.leftAlone == 1 ? "" : "s") left alone") }
+        if !plan.unplanned.isEmpty { notQueued.append("\(plan.unplanned.count) with no place on the device") }
+        let notQueuedLine = notQueued.isEmpty ? "" : " Not queued: " + notQueued.joined(separator: " · ") + "."
+
+        guard n > 0 else {
+            return .info(
                 title: "Nothing to queue",
-                message: "CrateDigger could not plan any transfers for \(profile.name)."
-            )
-            return
-        }
-
-        let trackByPath = Dictionary(
-            tracks.map { ($0.track.fileURL.path, $0) },
-            uniquingKeysWith: { first, _ in first }
-        )
-        let rootPrefix = stagingRoot.standardizedFileURL.path + "/"
-        func relative(_ url: URL) -> String {
-            let p = url.standardizedFileURL.path
-            return p.hasPrefix(rootPrefix) ? String(p.dropFirst(rootPrefix.count)) : url.lastPathComponent
-        }
-        // Every entry starts unbaked. `sourceModifiedAt` is stamped at bake
-        // time, so it stays at .distantPast until then and can't make a fresh
-        // bake look stale.
-        let newEntries: [DeviceSyncQueueEntry] = plans.compactMap { plan in
-            guard let track = trackByPath[plan.sourceURL.path] else { return nil }
-            return DeviceSyncQueueEntry(
-                track: track,
-                destinationRelativePath: relative(plan.destinationURL),
-                isStaged: false,
-                sourceModifiedAt: .distantPast
+                message: "\(profile.name) needs nothing from this selection." + notQueuedLine
             )
         }
-        guard !newEntries.isEmpty else { return }
-
-        syncQueueStore.save(existing + newEntries, profileID: profile.id)
-        refreshSyncQueueCounts()
-        // Queuing while browsing this offline device: rebuild the view so the
-        // rows and badges reflect what is now waiting.
-        if case .offlineDevice(let pid) = currentSource, pid == profile.id {
-            selectSource(currentSource)
-        }
-
-        let n = newEntries.count
         let noun = "\(n) track\(n == 1 ? "" : "s")"
-        appAlert = .info(
+        return .info(
             title: "Queued for \(profile.name)",
-            message: profile.transferSettings.mode == .convertDuringTransfer
-                ? "\(noun) queued. Nothing has been converted yet — press CONVERT NOW to bake them at the current settings (\(profile.transferSettings.summary)), or just press SYNC and it happens on the way over."
-                : "\(noun) queued. They copy over as-is the next time you press SYNC."
+            message: (profile.transferSettings.mode == .convertDuringTransfer
+                ? "\(noun) queued. Nothing has been converted yet: press CONVERT NOW to bake them at the current settings (\(profile.transferSettings.summary)), or just press SYNC and it happens on the way over."
+                : "\(noun) queued. They copy over as they are the next time you press SYNC.")
+                + notQueuedLine
         )
     }
 
@@ -229,9 +247,19 @@ extension LibraryViewModel {
 
     // MARK: - Sync (device mounted)
 
-    /// Manual SYNC: copy every queued entry onto the mounted device, skipping
-    /// files already there, deleting each staged file the moment its copy
-    /// lands. Restartable by construction — failures stay queued.
+    /// Manual SYNC: write the queue onto the mounted device, through the same
+    /// review as a send to it. The device is the truth now: the queue is
+    /// compared with its catalog (scanned first when there is none), answers
+    /// stored when queuing are used while their album still differs, and the
+    /// sheet asks only about albums that differ and carry no answer. Cancel
+    /// it and nothing happens. Then every copy runs (a current bake copied, a
+    /// stale or missing one and an unbaked entry converted on the way, a
+    /// copy-mode entry copied), each through a hidden partial renamed into
+    /// place, then the deletions of the albums whose copies all landed, the
+    /// covers, and the catalog patch. An entry leaves the queue, staged bytes
+    /// and all, once its file lands or the review finds it needs none
+    /// (already there, left alone); failures stay queued, so SYNC is
+    /// restartable.
     @MainActor
     func syncQueuedTransfers(profileID: UUID) {
         guard let host = presentationHostViewController else { return }
@@ -239,7 +267,7 @@ extension LibraryViewModel {
         guard var profile = prefs.savedExternalDeviceProfiles.first(where: { $0.id == profileID }) else { return }
         let entries = syncQueueStore.load(profileID: profileID)
         guard !entries.isEmpty else { return }
-        guard let device = mountedDevices.first(where: { deviceProfile(for: $0)?.id == profileID }) else {
+        guard mountedDevices.contains(where: { deviceProfile(for: $0)?.id == profileID }) else {
             appAlert = .info(
                 title: "Device not connected",
                 message: "\(profile.name) isn't mounted. Connect it, then press SYNC."
@@ -249,6 +277,70 @@ extension LibraryViewModel {
 
         Task { @MainActor in
             guard let mountedRoot = await resolveMountedRoot(for: &profile, presentingFrom: host) else { return }
+            // The catalog reviewed and patched must be the volume written to.
+            guard let device = mountedDevice(for: profile, at: mountedRoot) else { return }
+            guard let catalog = await currentDeviceCatalog(for: device) else {
+                appAlert = .error(
+                    title: "Couldn't read \(profile.name)",
+                    message: "CrateDigger could not see what is already on the device, so nothing was synced. Check that it is still connected and press SYNC again."
+                )
+                return
+            }
+            guard let (plan, _, answers) = await reviewedDevicePlan(
+                tracks: entries.map(\.track),
+                profile: profile,
+                mountedRoot: mountedRoot,
+                catalog: catalog,
+                presentingFrom: host,
+                alreadyDecided: DeviceSyncQueuePlanner.storedDecisions(for: entries)
+            ) else { return }
+
+            // The plan covers the queue as it was when SYNC was pressed. If
+            // an entry left it since (cleared, removed), writing it anyway
+            // would be wrong, and dropping its copy alone could let a Replace
+            // delete old files nothing replaced.
+            let live = Set(syncQueueStore.load(profileID: profileID).map(\.id))
+            guard entries.allSatisfy({ live.contains($0.id) }) else {
+                appAlert = .info(
+                    title: "The queue changed",
+                    message: "Tracks left the queue for \(profile.name) while SYNC was getting ready, so nothing was written. Press SYNC again."
+                )
+                return
+            }
+
+            let entryBySource = Dictionary(
+                entries.map { ($0.track.track.fileURL.path, $0) },
+                uniquingKeysWith: { first, _ in first }
+            )
+            let written = Set(plan.copies.map(\.source.track.fileURL.path))
+            let unplanned = Set(plan.unplanned.map(\.track.fileURL.path))
+            // Already there, or left alone: these leave the queue unwritten.
+            let settled = entries.filter {
+                !written.contains($0.track.track.fileURL.path) && !unplanned.contains($0.track.track.fileURL.path)
+            }
+
+            guard !plan.copies.isEmpty || !plan.deletions.isEmpty || !plan.unplanned.isEmpty else {
+                // Nothing to write is a finished sync: its answers stand.
+                rememberDeviceAnswers(answers, profileID: profileID)
+                dropSettledEntries(settled, profileID: profileID)
+                appAlert = .info(
+                    title: "Nothing to sync",
+                    message: "\(profile.name) needs nothing from the queue: "
+                        + DeviceTransferSummary.statusLine(for: plan, outcome: .init())
+                        + ". Those tracks have left the queue."
+                )
+                return
+            }
+
+            // Where each copy's bytes come from, decided once: it sizes the
+            // free-space check and tells the loop what to do.
+            let preset = profile.transferSettings.conversionPreset
+            let store = syncQueueStore
+            let sources = await Task.detached(priority: .userInitiated) {
+                Self.syncSources(for: plan, entryBySource: entryBySource, store: store,
+                                 profileID: profileID, converts: preset != nil)
+            }.value
+
             if let problem = probeDestinationWritability(
                 mountedRoot,
                 createFailureTitle: "Can't write to device",
@@ -260,220 +352,136 @@ extension LibraryViewModel {
                 appAlert = problem
                 return
             }
-
-            // Free-space preflight on the actual bytes to copy (staged or source).
-            let fm = FileManager.default
-            let bytesNeeded: Int64 = entries.reduce(0) { sum, entry in
-                // Entries already on the device are skipped by the loop below,
-                // so counting them here false-failed a mostly-synced queue.
-                let destination = mountedRoot.appendingPathComponent(entry.destinationRelativePath)
-                guard !fm.fileExists(atPath: destination.path) else { return sum }
-                let url = entry.isStaged
-                    ? syncQueueStore.stagedFileURL(for: entry, profileID: profileID)
-                    : entry.track.track.fileURL
-                let size = ((try? fm.attributesOfItem(atPath: url.path))?[.size] as? NSNumber)?.int64Value ?? 0
-                return sum + size
-            }
+            // Only what will be written counts: a bake's own size, else the
+            // source's. What a Replace frees is not credited, so the check
+            // stays conservative.
             let free = mountedRoot.volumeFreeBytes ?? .max
-            guard bytesNeeded < free else {
+            guard sources.bytesNeeded < free else {
                 appAlert = .error(
                     title: "Not enough space on \(profile.name)",
                     message: String(
                         format: "This sync needs ~%.1f GB but the device has %.1f GB available.",
-                        Double(bytesNeeded) / 1e9, Double(free) / 1e9
+                        Double(sources.bytesNeeded) / 1e9, Double(free) / 1e9
                     )
                 )
                 return
             }
+            // The scan and the sheet can take a while; another job may have
+            // started meanwhile.
+            guard !isConversionRunning, deviceSyncProgress?.isRunning != true else {
+                appAlert = .error(
+                    title: "Another transfer is running",
+                    message: "Nothing was synced to \(profile.name). Press SYNC again once it finishes."
+                )
+                return
+            }
+            // Busy from here until the catalog is patched: the copies'
+            // progress ends before the deletions, covers and patch do.
+            isDeviceTransferRunning = true
+            defer { isDeviceTransferRunning = false }
+            rememberDeviceAnswers(answers, profileID: profileID)
 
+            let total = plan.copies.count
             oledView = .devices
             deviceSyncProgress = DeviceSyncProgressSnapshot(
                 profileName: profile.name,
-                currentRelativePath: entries.first?.destinationRelativePath,
-                completed: 0, total: entries.count, failed: 0, isRunning: true
+                currentRelativePath: plan.copies.first.map { Self.devicePath($0.destinationURL, under: mountedRoot) },
+                completed: 0, total: total, failed: 0, isRunning: total > 0
             )
             let busyJob = beginBusyJob(.transfer, on: .devices)
 
-            let profileName = profile.name
-            let preset = profile.transferSettings.conversionPreset
-            let ffmpegURL = customFFmpegExecutableURL()
-            let total = entries.count
-
-            // Entries nobody pre-converted get converted on the way over, so
-            // their artwork bytes have to be back before ffmpeg runs — the queue
-            // stores art by hash. Baked entries already carry theirs.
+            // What gets converted needs its artwork bytes back first: the
+            // queue stores art by hash.
             var metadataByPath: [String: ConversionMetadata] = [:]
-            if preset != nil {
-                let raw = entries.filter { !$0.isStaged }.map(\.track)
-                if !raw.isEmpty {
-                    metadataByPath = Dictionary(
-                        await tracksWithHydratedArtwork(raw)
-                            .map { ($0.track.fileURL.path, $0.metadata) },
-                        uniquingKeysWith: { first, _ in first }
-                    )
-                }
+            let converting = plan.copies.filter { sources.bySource[$0.source.track.fileURL.path] == .convert }
+            if !converting.isEmpty {
+                metadataByPath = Dictionary(
+                    await tracksWithHydratedArtwork(converting.map(\.source))
+                        .map { ($0.track.fileURL.path, $0.metadata) },
+                    uniquingKeysWith: { first, _ in first }
+                )
             }
 
-            let outcome: (synced: Int, skipped: Int, failed: Int, lines: [String]) =
-                await withCheckedContinuation { continuation in
-                    // No weak capture: the enclosing task holds `self` for the
-                    // whole sync anyway, awaiting this continuation.
-                    Task.detached(priority: .userInitiated) {
-                        let store = DeviceSyncQueueStore()
-                        let fm = FileManager.default
-                        var synced = 0, skipped = 0, failed = 0
-                        var lines: [String] = []
-                        var service: ConversionService?
+            // An answer given in the sheet is kept on any entry whose copy
+            // fails, so the next SYNC doesn't ask again.
+            var answeredBySource: [String: DeviceAlbumDecision] = [:]
+            for copy in plan.copies {
+                if let answer = answers[copy.album] { answeredBySource[copy.source.track.fileURL.path] = answer }
+            }
 
-                        // Checkpointing, rather than a full queue rewrite per
-                        // entry (which re-encoded the whole JSON n times for an
-                        // n-track sync). Re-reading the queue at each checkpoint
-                        // also preserves anything staged *while* this sync runs
-                        // — writing back a pre-loop snapshot silently dropped it.
-                        var doneIDs = Set<UUID>()
-                        let checkpointEvery = 25
-                        func persistQueue() {
-                            guard !doneIDs.isEmpty else { return }
-                            let left = store.load(profileID: profileID)
-                                .filter { !doneIDs.contains($0.id) }
-                            if left.isEmpty {
-                                store.remove(profileID: profileID)
-                            } else {
-                                store.save(left, profileID: profileID)
-                            }
-                        }
-
-                        for (i, entry) in entries.enumerated() {
-                            let destination = mountedRoot.appendingPathComponent(entry.destinationRelativePath)
-                            let stagedURL = store.stagedFileURL(for: entry, profileID: profileID)
-                            let sourceURL = entry.track.track.fileURL
-                            do {
-                                if fm.fileExists(atPath: destination.path) {
-                                    skipped += 1
-                                    lines.append("[skip] \(entry.destinationRelativePath) — already on device")
-                                } else {
-                                    /// One ffmpeg run, shared service. Throws with the
-                                    /// caller's reason so the failure line names it.
-                                    func convert(to output: URL, metadata: ConversionMetadata,
-                                                 failure: String) throws {
-                                        guard let preset else {
-                                            throw NSError(domain: "CrateDigger.DeviceSync", code: 4,
-                                                          userInfo: [NSLocalizedDescriptionKey: failure])
-                                        }
-                                        if service == nil {
-                                            service = try? ConversionService(ffmpegExecutableURL: ffmpegURL)
-                                        }
-                                        guard let service else {
-                                            throw NSError(domain: "CrateDigger.DeviceSync", code: 5,
-                                                          userInfo: [NSLocalizedDescriptionKey: "ffmpeg wasn't found"])
-                                        }
-                                        _ = service.enqueue(
-                                            [ConversionJob(sourceURL: sourceURL, destinationURL: output,
-                                                           metadata: metadata)],
-                                            preset: preset
-                                        )
-                                        let results = service.runQueuedJobs(maxConcurrentWorkers: 1) { _, _, _ in }
-                                        guard results.first?.status == .completed else {
-                                            throw NSError(domain: "CrateDigger.DeviceSync", code: 1,
-                                                          userInfo: [NSLocalizedDescriptionKey: failure])
-                                        }
-                                    }
-
-                                    let dir = destination.deletingLastPathComponent()
-                                    if !fm.fileExists(atPath: dir.path) {
-                                        try fm.createDirectory(at: dir, withIntermediateDirectories: true)
-                                    }
-
-                                    if entry.isStaged {
-                                        // Staleness guard: source edited since baking → re-bake
-                                        // in place (ffmpeg -y overwrites the stale file). A
-                                        // missing source is fine — the bake stands on its own.
-                                        if fm.fileExists(atPath: sourceURL.path),
-                                           Self.modificationDate(of: sourceURL) != entry.sourceModifiedAt,
-                                           preset != nil {
-                                            try convert(to: stagedURL, metadata: entry.track.metadata,
-                                                        failure: "Re-bake failed (source changed since staging)")
-                                        }
-                                        guard fm.fileExists(atPath: stagedURL.path) else {
-                                            throw NSError(
-                                                domain: "CrateDigger.DeviceSync", code: 2,
-                                                userInfo: [NSLocalizedDescriptionKey: "Staged file missing — remove from queue and re-add"])
-                                        }
-                                        try fm.copyItem(at: stagedURL, to: destination)
-                                    } else {
-                                        guard fm.fileExists(atPath: sourceURL.path) else {
-                                            throw NSError(
-                                                domain: "CrateDigger.DeviceSync", code: 3,
-                                                userInfo: [NSLocalizedDescriptionKey: "Source file missing"])
-                                        }
-                                        if preset != nil {
-                                            // Queued but never pre-converted: ffmpeg writes it
-                                            // straight onto the device, no staging round-trip.
-                                            try convert(
-                                                to: destination,
-                                                metadata: metadataByPath[sourceURL.path] ?? entry.track.metadata,
-                                                failure: "Conversion failed"
-                                            )
-                                        } else {
-                                            try fm.copyItem(at: sourceURL, to: destination)
-                                        }
-                                    }
-                                    synced += 1
-                                    lines.append("[ok] \(entry.destinationRelativePath)")
-                                }
-                                // Done (copied or already there): staged bytes are trash now.
-                                store.removeStagedFile(for: entry, profileID: profileID)
-                                doneIDs.insert(entry.id)
-                                if doneIDs.count % checkpointEvery == 0 { persistQueue() }
-                            } catch {
-                                failed += 1
-                                lines.append("[FAILED] \(entry.destinationRelativePath)\n    \(error.localizedDescription)")
-                            }
-
-                            let done = i + 1
-                            let failedSoFar = failed
-                            let nextPath = done < total ? entries[done].destinationRelativePath : nil
-                            Task { @MainActor in
-                                self.deviceSyncProgress = DeviceSyncProgressSnapshot(
-                                    profileName: profileName,
-                                    currentRelativePath: nextPath,
-                                    completed: done, total: total, failed: failedSoFar,
-                                    isRunning: done < total
-                                )
-                            }
-                        }
-
-                        persistQueue()
-                        continuation.resume(returning: (synced, skipped, failed, lines))
+            let profileName = profile.name
+            let job = QueuedSyncJob(
+                plan: plan,
+                entryBySource: entryBySource,
+                sources: sources.bySource,
+                settledIDs: Set(settled.map(\.id)),
+                answeredBySource: answeredBySource,
+                profileID: profileID,
+                mountedRoot: mountedRoot,
+                preset: preset,
+                ffmpegURL: customFFmpegExecutableURL(),
+                metadataByPath: metadataByPath
+            )
+            let outcome = await Task.detached(priority: .userInitiated) {
+                Self.runQueuedSync(job) { completed, failed in
+                    let next = completed < total
+                        ? Self.devicePath(plan.copies[completed].destinationURL, under: mountedRoot) : nil
+                    Task { @MainActor in
+                        self.deviceSyncProgress = DeviceSyncProgressSnapshot(
+                            profileName: profileName,
+                            currentRelativePath: next,
+                            completed: completed, total: total, failed: failed,
+                            isRunning: completed < total
+                        )
                     }
                 }
+            }.value
 
+            let failed = DeviceTransferSummary.failedCount(for: plan, outcome: outcome)
             deviceSyncProgress = DeviceSyncProgressSnapshot(
                 profileName: profileName, currentRelativePath: nil,
-                completed: outcome.synced + outcome.skipped, total: total,
-                failed: outcome.failed, isRunning: false
+                completed: total, total: total, failed: failed, isRunning: false
             )
-            endBusyJob(busyJob, .sync(failed: outcome.failed, total: total))
+            endBusyJob(busyJob, .sync(failed: failed, total: total))
+
+            // A cover only where something actually landed.
+            let landed = Set(outcome.written.map { $0.destinationURL.deletingLastPathComponent().standardizedFileURL })
             await writeFolderCoverArt(
                 profileID: profileID,
-                folderTracks: entries.map {
-                    (mountedRoot.appendingPathComponent($0.destinationRelativePath)
-                        .deletingLastPathComponent(), $0.track)
-                }
+                folderTracks: plan.coverFolders
+                    .filter { landed.contains($0.key) }
+                    .map { (folder: $0.key, track: $0.value) }
+            )
+            await patchDeviceCatalog(
+                for: device,
+                adding: outcome.written.map {
+                    DeviceCatalogStore.writtenTrack(
+                        source: $0.source,
+                        destination: $0.destinationURL,
+                        preset: preset,
+                        writesFolderCoverArt: profile.usesFolderCoverArt
+                    )
+                },
+                removingPaths: outcome.removedPaths
             )
             refreshSyncQueueCounts()
-            invalidateDeviceCatalog(for: device)
-            if case .device(let path) = currentSource, path == device.volumeURL.path {
-                refreshLibrary()   // re-walk + refresh the saved catalog now
-            }
 
-            let tone: StatusTone = outcome.failed == 0 ? .success : (outcome.synced == 0 ? .error : .warning)
+            let title: String
+            let tone: StatusTone
+            if failed == 0 {
+                title = "Synced to \(profileName)"
+                tone = .success
+            } else if outcome.written.isEmpty {
+                title = "Sync failed"
+                tone = .error
+            } else {
+                title = "Sync finished with errors"
+                tone = .warning
+            }
             presentSummary(
                 report: ConversionReport(
-                    title: outcome.failed == 0 ? "Synced to \(profileName)" : "Sync finished with errors",
-                    statusLine: "\(outcome.synced) synced"
-                        + (outcome.skipped > 0 ? ", \(outcome.skipped) already on device" : "")
-                        + (outcome.failed > 0 ? ", \(outcome.failed) failed" : ""),
+                    title: title,
+                    statusLine: DeviceTransferSummary.statusLine(for: plan, outcome: outcome),
                     details: outcome.lines.joined(separator: "\n"),
                     tone: tone,
                     showsDetailsButton: !outcome.lines.isEmpty
@@ -481,6 +489,193 @@ extension LibraryViewModel {
                 presentingFrom: host
             )
         }
+    }
+
+    /// Entries the review settled without writing (already there, left
+    /// alone): out of the queue, staged bytes with them.
+    @MainActor
+    private func dropSettledEntries(_ settled: [DeviceSyncQueueEntry], profileID: UUID) {
+        guard !settled.isEmpty else { return }
+        for entry in settled { syncQueueStore.removeStagedFile(for: entry, profileID: profileID) }
+        let ids = Set(settled.map(\.id))
+        let left = syncQueueStore.load(profileID: profileID).filter { !ids.contains($0.id) }
+        if left.isEmpty {
+            syncQueueStore.remove(profileID: profileID)
+        } else {
+            syncQueueStore.save(left, profileID: profileID)
+        }
+        refreshSyncQueueCounts()
+    }
+
+    /// `url` relative to the device root, for progress and detail lines.
+    nonisolated private static func devicePath(_ url: URL, under root: URL) -> String {
+        let prefix = root.standardizedFileURL.path + "/"
+        let path = url.standardizedFileURL.path
+        return path.hasPrefix(prefix) ? String(path.dropFirst(prefix.count)) : path
+    }
+
+    /// Each copy's source (`DeviceSyncQueuePlanner.source`), by source path,
+    /// and the bytes they will write. Stats local files, so off the main actor.
+    nonisolated private static func syncSources(
+        for plan: DeviceTransferFilePlan,
+        entryBySource: [String: DeviceSyncQueueEntry],
+        store: DeviceSyncQueueStore,
+        profileID: UUID,
+        converts: Bool
+    ) -> (bySource: [String: DeviceSyncQueuePlanner.SyncSource], bytesNeeded: Int64) {
+        let fm = FileManager.default
+        func size(_ url: URL) -> Int64 {
+            ((try? fm.attributesOfItem(atPath: url.path))?[.size] as? NSNumber)?.int64Value ?? 0
+        }
+        var bySource: [String: DeviceSyncQueuePlanner.SyncSource] = [:]
+        var bytes: Int64 = 0
+        for copy in plan.copies {
+            let path = copy.source.track.fileURL.path
+            guard let entry = entryBySource[path] else { continue }
+            let staged = store.stagedFileURL(for: entry, profileID: profileID)
+            let source = DeviceSyncQueuePlanner.source(
+                for: entry,
+                stagedURL: staged,
+                destination: copy.destinationURL,
+                converts: converts,
+                stagedFileExists: fm.fileExists(atPath: staged.path),
+                sourceModifiedAt: fm.fileExists(atPath: path) ? modificationDate(of: entry.track.track.fileURL) : nil
+            )
+            bySource[path] = source
+            switch source {
+            case .staged: bytes += size(staged)
+            case .convert, .copy: bytes += size(entry.track.track.fileURL)
+            case .unavailable: break
+            }
+        }
+        return (bySource, bytes)
+    }
+
+    /// Everything the sync loop needs, gathered on the main actor.
+    struct QueuedSyncJob: Sendable {
+        let plan: DeviceTransferFilePlan
+        let entryBySource: [String: DeviceSyncQueueEntry]
+        let sources: [String: DeviceSyncQueuePlanner.SyncSource]
+        /// Entries the review settled without a write; they leave the queue.
+        let settledIDs: Set<UUID>
+        /// Sheet answers to keep on entries that stay queued.
+        let answeredBySource: [String: DeviceAlbumDecision]
+        let profileID: UUID
+        let mountedRoot: URL
+        let preset: ConversionPreset?
+        let ffmpegURL: URL?
+        let metadataByPath: [String: ConversionMetadata]
+    }
+
+    /// The sync loop: each copy written to a hidden partial and renamed into
+    /// place (`DeviceTransferExecutor`), its entry out of the queue and its
+    /// staged bytes deleted once it lands, then the deletions of the albums
+    /// whose copies all landed. The queue is rewritten at checkpoints, read
+    /// fresh each time so entries queued during the sync survive it.
+    /// `onProgress` gets (copies done, failures so far). Writes to the
+    /// device, so callers run it off the main actor.
+    nonisolated private static func runQueuedSync(
+        _ job: QueuedSyncJob,
+        onProgress: (Int, Int) -> Void
+    ) -> DeviceTransferExecutor.Outcome {
+        let store = DeviceSyncQueueStore()
+        let fm = FileManager.default
+        let executor = DeviceTransferExecutor(fileManager: fm)
+        let profileID = job.profileID
+        var outcome = DeviceTransferExecutor.Outcome()
+        var service: ConversionService?
+
+        // Checkpointing, rather than a full queue rewrite per entry (which
+        // re-encoded the whole JSON n times for an n-track sync).
+        var doneIDs = job.settledIDs
+        let checkpointEvery = 25
+        func persistQueue() {
+            let left = store.load(profileID: profileID)
+                .filter { !doneIDs.contains($0.id) }
+                .map { entry -> DeviceSyncQueueEntry in
+                    var kept = entry
+                    if let answer = job.answeredBySource[entry.track.track.fileURL.path] { kept.decision = answer }
+                    return kept
+                }
+            if left.isEmpty {
+                store.remove(profileID: profileID)
+            } else {
+                store.save(left, profileID: profileID)
+            }
+        }
+        for entry in job.entryBySource.values where job.settledIDs.contains(entry.id) {
+            store.removeStagedFile(for: entry, profileID: profileID)
+        }
+
+        /// One ffmpeg run on the shared service, into `output`.
+        func convert(_ source: URL, to output: URL, metadata: ConversionMetadata) throws {
+            guard let preset = job.preset else { throw syncError("This device copies files as they are") }
+            if service == nil { service = try? ConversionService(ffmpegExecutableURL: job.ffmpegURL) }
+            guard let service else { throw syncError("ffmpeg wasn't found") }
+            _ = service.enqueue([ConversionJob(sourceURL: source, destinationURL: output, metadata: metadata)],
+                                preset: preset)
+            let results = service.runQueuedJobs(maxConcurrentWorkers: 1) { _, _, _ in }
+            guard results.first?.status == .completed else { throw syncError("Conversion failed") }
+        }
+
+        for track in job.plan.unplanned {
+            outcome.lines.append(
+                "[FAILED] \(track.track.fileURL.lastPathComponent)\n    No place on the device could be planned for it"
+            )
+        }
+        for (index, copy) in job.plan.copies.enumerated() {
+            let sourcePath = copy.source.track.fileURL.path
+            let name = devicePath(copy.destinationURL, under: job.mountedRoot)
+            var partial: URL?
+            do {
+                guard let entry = job.entryBySource[sourcePath],
+                      let source = job.sources[sourcePath]
+                else { throw syncError("Not in the queue any more") }
+                // A file that appeared since the review fails this item
+                // before any bytes are spent on it.
+                if !copy.overwrites, fm.fileExists(atPath: copy.destinationURL.path) {
+                    throw syncError(DeviceTransferExecutor.appearedReason)
+                }
+                if case .unavailable(let reason) = source { throw syncError(reason) }
+                // ffmpeg picks its muxer from the extension, so a converting
+                // write's partial keeps it.
+                let target = try executor.preparePartial(for: copy.destinationURL,
+                                                          keepingExtension: source == .convert)
+                partial = target
+                switch source {
+                case .staged:
+                    try fm.copyItem(at: store.stagedFileURL(for: entry, profileID: profileID), to: target)
+                case .copy:
+                    try fm.copyItem(at: entry.track.track.fileURL, to: target)
+                case .convert:
+                    try convert(entry.track.track.fileURL, to: target,
+                                metadata: job.metadataByPath[sourcePath] ?? entry.track.metadata)
+                case .unavailable:
+                    break   // thrown above
+                }
+                try executor.finish(target, onto: copy.destinationURL, overwrites: copy.overwrites)
+                outcome.written.append(copy)
+                outcome.lines.append("[ok] \(name)")
+                // Landed: its staged bytes are trash now.
+                store.removeStagedFile(for: entry, profileID: profileID)
+                doneIDs.insert(entry.id)
+                if doneIDs.count % checkpointEvery == 0 { persistQueue() }
+            } catch {
+                if let partial { executor.discardPartial(partial) }
+                outcome.failed.append(.init(copy: copy, reason: error.localizedDescription))
+                outcome.lines.append("[FAILED] \(name)\n    \(error.localizedDescription)")
+            }
+            onProgress(index + 1, outcome.failed.count)
+        }
+
+        // Old files go only for albums whose every copy landed.
+        executor.runDeletions(job.plan, after: &outcome)
+        persistQueue()
+        return outcome
+    }
+
+    nonisolated private static func syncError(_ reason: String) -> NSError {
+        NSError(domain: "CrateDigger.DeviceSync", code: 1, userInfo: [NSLocalizedDescriptionKey: reason])
     }
 
     // MARK: - Queue management

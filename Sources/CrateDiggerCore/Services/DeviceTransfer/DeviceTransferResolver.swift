@@ -375,6 +375,24 @@ public struct DeviceTransferResolver {
         )
     }
 
+    // MARK: - Answers made earlier
+
+    /// The answers made before this review (stored on sync queue entries when
+    /// they were queued) that still fit it: only an album that still differs
+    /// keeps its answer. One that is now New, Gaps or Present needs none, and
+    /// an album with no stored answer is asked about again. Answers for
+    /// albums this review does not hold are dropped.
+    public static func applicableDecisions(
+        stored: [DeviceAlbumIdentity: DeviceAlbumDecision],
+        review: DeviceTransferReview
+    ) -> [DeviceAlbumIdentity: DeviceAlbumDecision] {
+        var applicable: [DeviceAlbumIdentity: DeviceAlbumDecision] = [:]
+        for album in review.albums where album.status == .differs {
+            if let decision = stored[album.identity] { applicable[album.identity] = decision }
+        }
+        return applicable
+    }
+
     // MARK: - Paths
 
     /// Whether a catalog file is the device's music: inside the music folder,

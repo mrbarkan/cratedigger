@@ -2481,7 +2481,7 @@ final class LibraryViewModel: ObservableObject {
     #endif
 
     /// Force the next browse of this device to re-walk the volume. For writes
-    /// a patch can't describe (SYNC until it patches, FIX ART); a transfer
+    /// a patch can't describe (FIX ART); a transfer
     /// that knows what it wrote and removed calls `patchDeviceCatalog`.
     func invalidateDeviceCatalog(for device: MountedDevice) {
         deviceIndexCache[device.volumeURL.path] = nil

@@ -611,6 +611,56 @@ final class DeviceTransferResolverTests: XCTestCase {
         XCTAssertEqual(plan.coverFolders.first?.value.track.fileURL, tracks[0].track.fileURL)
     }
 
+    // MARK: - Stored decisions (sync queue)
+
+    func testStoredReplaceStillAppliesWhenDiffers() throws {
+        let profile = copyProfile()
+        let onDevice = try deviceAlbum("Music/Miles Davis/Kind of Blue", numbers: [1, 2],
+                                       format: "MP3", bitrate: 128, ext: "mp3")
+        let review = resolver.review(sending: sent([1, 2]), catalog: onDevice, profile: profile, mountedAt: device, leftAlone: [])
+        let identity = try XCTUnwrap(review.albums.first?.identity)
+
+        let applicable = DeviceTransferResolver.applicableDecisions(stored: [identity: .replace], review: review)
+
+        XCTAssertEqual(applicable, [identity: .replace])
+        XCTAssertTrue(review.needingDecision.allSatisfy { applicable[$0.identity] != nil },
+                      "an album answered when it was queued is not asked again")
+    }
+
+    func testStoredDecisionDroppedWhenAlbumNowNew() throws {
+        let profile = copyProfile()
+        // Queued against a catalog that held the album; the device no longer does.
+        let review = resolver.review(sending: sent([1, 2]), catalog: [], profile: profile, mountedAt: device, leftAlone: [])
+        let identity = try XCTUnwrap(review.albums.first?.identity)
+        XCTAssertEqual(review.albums.map(\.status), [.new])
+
+        XCTAssertEqual(DeviceTransferResolver.applicableDecisions(stored: [identity: .replace], review: review), [:])
+    }
+
+    func testStoredDecisionDroppedWhenAlbumNowPresentOrGaps() throws {
+        let profile = copyProfile()
+        let onDevice = try deviceAlbum("Music/Miles Davis/Kind of Blue", numbers: [1])
+        let review = resolver.review(sending: sent([1, 2]), catalog: onDevice, profile: profile, mountedAt: device, leftAlone: [])
+        let identity = try XCTUnwrap(review.albums.first?.identity)
+        XCTAssertEqual(review.albums.map(\.status), [.gaps])
+
+        XCTAssertEqual(DeviceTransferResolver.applicableDecisions(stored: [identity: .keepBoth], review: review), [:])
+    }
+
+    func testNilDecisionOnDifferingAlbumNeedsAsking() throws {
+        let profile = copyProfile()
+        let onDevice = try deviceAlbum("Music/Miles Davis/Kind of Blue", numbers: [1, 2],
+                                       format: "MP3", bitrate: 128, ext: "mp3")
+        let review = resolver.review(sending: sent([1, 2]), catalog: onDevice, profile: profile, mountedAt: device, leftAlone: [])
+        // Another album's answer is not this one's.
+        let other = DeviceAlbumIdentity(artist: "John Coltrane", album: "Blue Train")
+
+        let applicable = DeviceTransferResolver.applicableDecisions(stored: [other: .replace], review: review)
+
+        XCTAssertEqual(applicable, [:])
+        XCTAssertEqual(review.needingDecision.filter { applicable[$0.identity] == nil }.count, 1)
+    }
+
     // MARK: - Fixtures
 
     private func copyProfile(_ layout: FolderStructureMode = .metadataTemplate) -> ExternalDeviceProfile {

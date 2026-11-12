@@ -74,8 +74,11 @@ extension LibraryViewModel {
             )
         }.value
 
+        // An earlier answer counts only for an album that still differs: one
+        // the device now lacks or already holds needs none.
+        let decided = DeviceTransferResolver.applicableDecisions(stored: alreadyDecided, review: review)
         var answers: [DeviceAlbumIdentity: DeviceAlbumDecision] = [:]
-        let asked = review.needingDecision.filter { alreadyDecided[$0.identity] == nil }
+        let asked = review.needingDecision.filter { decided[$0.identity] == nil }
         if !asked.isEmpty {
             guard host.view.window != nil else {
                 AppLog.conversion.error("No window to show the device review for \(profile.name, privacy: .public)")
@@ -88,9 +91,9 @@ extension LibraryViewModel {
             // Albums already answered stay off the sheet. The sheet only
             // shows a review, so a copy of it without them is enough there;
             // the plan below is resolved from the real one.
-            let shown = alreadyDecided.isEmpty
+            let shown = decided.isEmpty
                 ? review
-                : DeviceTransferReview(albums: review.albums.filter { alreadyDecided[$0.identity] == nil })
+                : DeviceTransferReview(albums: review.albums.filter { decided[$0.identity] == nil })
             guard let chosen = await presentDeviceReview(
                 shown,
                 deviceName: profile.name,
@@ -103,7 +106,7 @@ extension LibraryViewModel {
             answers = chosen
         }
 
-        let decisions = alreadyDecided.merging(answers) { _, answered in answered }
+        let decisions = decided.merging(answers) { _, answered in answered }
         let plan: DeviceTransferFilePlan
         do {
             plan = try await Task.detached(priority: .userInitiated) {
