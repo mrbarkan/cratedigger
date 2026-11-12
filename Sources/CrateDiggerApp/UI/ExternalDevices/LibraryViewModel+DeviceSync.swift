@@ -453,12 +453,11 @@ extension LibraryViewModel {
             let failed = DeviceTransferSummary.failedCount(for: plan, outcome: outcome)
             endBusyJob(busyJob, .sync(failed: failed, total: total))
 
-            // A cover only where something actually landed.
-            let landed = Set(outcome.written.map { $0.destinationURL.deletingLastPathComponent().standardizedFileURL })
+            // A cover only where something actually landed, and never over
+            // one a Gaps fill found there.
             await writeFolderCoverArt(
                 profileID: profileID,
-                folderTracks: plan.coverFolders
-                    .filter { landed.contains($0.key) }
+                folderTracks: plan.coverFolders(after: outcome.written, hasCover: { FolderCoverArtWriter.hasCover(in: $0) })
                     .map { (folder: $0.key, track: $0.value) }
             )
             await patchDeviceCatalog(

@@ -180,15 +180,36 @@ extension LibraryViewModel {
             prefs.saveLastConversionSelection(selection)
 
             let outcome = await runConversionQueue(service: service, jobs: finalJobs, preset: preset)
-            // Folder Art: a cover.jpg in each album folder something landed in.
+            // Folder Art: a cover.jpg in each album folder something landed
+            // in, never over one already there, and never in a folder that is
+            // not one album's (Core decides: `conversionCovers`).
             if selection.writesFolderCoverArt {
-                writeFolderCoverArt(
-                    landings: finalJobs
-                        .filter { outcome.succeededDestinationPaths.contains($0.destinationURL.path) }
-                        .map { (folder: $0.destinationURL.deletingLastPathComponent().standardizedFileURL,
-                                artwork: $0.metadata?.artwork) },
-                    for: destinationRoot.path
+                let planner = OutputPathPlanner()
+                let albumKeys = planner.albumFolderKeys(for: sourceTracks)
+                let albumBySource = Dictionary(
+                    sourceTracks.map { ($0.track.fileURL.path, albumKeys[$0.track.id] ?? planner.albumFolderKey(for: $0)) },
+                    uniquingKeysWith: { first, _ in first }
                 )
+                func landing(_ job: ConversionJob) -> FolderCoverArtWriter.ConversionLanding? {
+                    albumBySource[job.sourceURL.path].map {
+                        FolderCoverArtWriter.ConversionLanding(
+                            folder: job.destinationURL.deletingLastPathComponent(),
+                            album: $0,
+                            artwork: job.metadata?.artwork
+                        )
+                    }
+                }
+                let covers = FolderCoverArtWriter.conversionCovers(
+                    landed: finalJobs
+                        .filter { outcome.succeededDestinationPaths.contains($0.destinationURL.path) }
+                        .compactMap(landing),
+                    planned: finalJobs.compactMap(landing),
+                    destinationRoot: destinationRoot,
+                    folderMode: selection.folderStructureMode,
+                    hasCover: { FolderCoverArtWriter.hasCover(in: $0) }
+                )
+                // The folder's name only: the log is not the place for a home path.
+                writeFolderCoverArt(covers, for: destinationRoot.lastPathComponent)
             }
             presentSummary(report: outcome.report, presentingFrom: host)
         }
@@ -552,13 +573,12 @@ extension LibraryViewModel {
             cancelled: cancelledCount
         ))
 
-        // A cover only where something actually landed. The plan lists cover
-        // folders only when the run's Folder Art switch is on, which may not
-        // be stored on the device yet (it is saved below).
-        let landed = Set(outcome.written.map { $0.destinationURL.deletingLastPathComponent().standardizedFileURL })
+        // A cover only where something actually landed, and never over one
+        // a Gaps fill found there. The plan lists cover folders only when the
+        // run's Folder Art switch is on, which may not be stored on the
+        // device yet (it is saved below).
         writeFolderCoverArt(
-            landings: plan.coverFolders
-                .filter { landed.contains($0.key) }
+            landings: plan.coverFolders(after: outcome.written, hasCover: { FolderCoverArtWriter.hasCover(in: $0) })
                 .map { (folder: $0.key, artwork: $0.value.metadata.artwork) },
             for: profile.name
         )

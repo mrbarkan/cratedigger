@@ -635,6 +635,37 @@ final class DeviceTransferResolverTests: XCTestCase {
         XCTAssertEqual(plan.coverFolders.first?.value.track.fileURL, tracks[0].track.fileURL)
     }
 
+    /// A Gaps fill never replaces the cover already in the device's album
+    /// folder; it writes one only where there is none. New writes its own.
+    func testGapsFillKeepsTheDeviceCover() throws {
+        var profile = copyProfile()
+        profile.transferSettings.writesFolderCoverArt = true
+        let onDevice = try deviceAlbum("Music/Miles Davis/Kind of Blue", numbers: [1], art: 1400)
+        let gapFolder = device.appendingPathComponent("Music/Miles Davis/Kind of Blue", isDirectory: true)
+        let sending = sent([1, 2], art: 1400)
+            + sent([1], folder: "Src/Bitches Brew", album: "Bitches Brew", art: 1400)
+        try Data("theirs".utf8).write(to: gapFolder.appendingPathComponent("cover.jpg"))
+
+        let review = resolver.review(sending: sending, catalog: onDevice, profile: profile, mountedAt: device, leftAlone: [])
+        XCTAssertEqual(review.albums.map(\.status), [.gaps, .new])
+        let plan = try resolver.resolve(review, decisions: [:], profile: profile, mountedAt: device)
+        XCTAssertEqual(plan.coverFolders.count, 2)
+        let newFolder = device.appendingPathComponent("Music/Miles Davis/1959/Bitches Brew", isDirectory: true)
+        try makeFile("Music/Miles Davis/1959/Bitches Brew/cover.jpg")
+        let hasCover = { FolderCoverArtWriter.hasCover(in: $0) }
+
+        let covers = plan.coverFolders(after: plan.copies, hasCover: hasCover)
+        XCTAssertEqual(covers.keys.map(\.path), [newFolder.path], "New replaces; the Gaps folder keeps its own")
+
+        try FileManager.default.removeItem(at: gapFolder.appendingPathComponent("cover.jpg"))
+        XCTAssertEqual(Set(plan.coverFolders(after: plan.copies, hasCover: hasCover).keys.map(\.path)),
+                       [newFolder.path, gapFolder.path], "with none there, the Gaps fill writes one")
+
+        let gapOnly = plan.copies.filter { $0.kind == .gap }
+        XCTAssertEqual(plan.coverFolders(after: gapOnly, hasCover: hasCover).keys.map(\.path), [gapFolder.path],
+                       "only folders something landed in")
+    }
+
     // MARK: - Stored decisions (sync queue)
 
     func testStoredReplaceStillAppliesWhenDiffers() throws {

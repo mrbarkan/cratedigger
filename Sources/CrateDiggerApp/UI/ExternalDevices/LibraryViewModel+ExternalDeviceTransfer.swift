@@ -137,9 +137,9 @@ extension LibraryViewModel {
     }
 
     /// The writing itself, for a caller that already decided covers are
-    /// wanted: a conversion whose Folder Art switch is on, or a device run
-    /// whose plan only lists cover folders when the run's switch is on.
-    /// `destinationName` only names the destination in the log.
+    /// wanted: a device run whose plan only lists cover folders when the
+    /// run's switch is on. `destinationName` only names the destination in
+    /// the log, so it is a device name, never a path.
     @MainActor
     @discardableResult
     func writeFolderCoverArt(landings: [(folder: URL, artwork: ArtworkAsset?)], for destinationName: String) -> Int {
@@ -148,6 +148,13 @@ extension LibraryViewModel {
             guard let artwork = landing.artwork, !artwork.data.isEmpty else { continue }
             if covers[landing.folder] == nil { covers[landing.folder] = artwork }   // an album has one cover
         }
+        return writeFolderCoverArt(covers, for: destinationName)
+    }
+
+    /// Writes covers already decided, one per folder, replacing any there.
+    @MainActor
+    @discardableResult
+    func writeFolderCoverArt(_ covers: [URL: ArtworkAsset], for destinationName: String) -> Int {
         guard !covers.isEmpty else { return 0 }
         let written = FolderCoverArtWriter(preparer: artworkService).write(covers)
         AppLog.conversion.notice("Wrote \(written) cover.jpg sidecar(s) for \(destinationName, privacy: .public)")
@@ -317,12 +324,11 @@ extension LibraryViewModel {
 
             let (report, outcome) = await runCopyTransferQueue(plan: plan, deviceName: resolved.name)
 
-            // A cover only where something actually landed.
-            let landed = Set(outcome.written.map { $0.destinationURL.deletingLastPathComponent().standardizedFileURL })
+            // A cover only where something actually landed, and never over
+            // one a Gaps fill found there.
             await writeFolderCoverArt(
                 profileID: resolved.id,
-                folderTracks: plan.coverFolders
-                    .filter { landed.contains($0.key) }
+                folderTracks: plan.coverFolders(after: outcome.written, hasCover: { FolderCoverArtWriter.hasCover(in: $0) })
                     .map { (folder: $0.key, track: $0.value) }
             )
             await patchDeviceCatalog(

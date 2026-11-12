@@ -147,6 +147,24 @@ public struct DeviceTransferFilePlan: Sendable {
         self.unplanned = unplanned
     }
 
+    /// The folders to write a `cover.jpg` into once the copies have run:
+    /// those of `coverFolders` that one of `written` landed in, each with the
+    /// track whose art to use. A folder that only took Gaps fills keeps the
+    /// cover it already has (`hasCover`), since the user did not choose to
+    /// change that album; with none it gets one. Folders New, Replace or
+    /// Keep both wrote into get theirs, replacing any there.
+    public func coverFolders(after written: [Copy], hasCover: (URL) -> Bool) -> [URL: LoadedTrack] {
+        var kindsByFolder: [URL: Set<Copy.Kind>] = [:]
+        for copy in written {
+            kindsByFolder[copy.destinationURL.deletingLastPathComponent().standardizedFileURL, default: []]
+                .insert(copy.kind)
+        }
+        return coverFolders.filter { folder, _ in
+            guard let kinds = kindsByFolder[folder] else { return false }
+            return !(kinds == [.gap] && hasCover(folder))
+        }
+    }
+
     /// The deletions to run once the copies are done, given the ones that
     /// failed: an album's old files go only when every copy written for it
     /// succeeded. A failed write leaves the old file in place, never neither.

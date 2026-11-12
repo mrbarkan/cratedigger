@@ -120,6 +120,64 @@ final class FolderCoverArtWriterTests: XCTestCase {
     // MARK: - JPEG marker helpers
 
     /// SOF2 = progressive; SOF0/SOF1 = baseline/extended sequential.
+    // MARK: - Ordinary conversions
+
+    private let kindOfBlue = AlbumFolderKey(artistBucket: "Miles Davis", album: "Kind of Blue", year: "1959")
+    private let bitchesBrew = AlbumFolderKey(artistBucket: "Miles Davis", album: "Bitches Brew", year: "1970")
+
+    private func landing(_ folder: String, _ album: AlbumFolderKey, art: ArtworkAsset?) -> FolderCoverArtWriter.ConversionLanding {
+        FolderCoverArtWriter.ConversionLanding(folder: root.appendingPathComponent(folder, isDirectory: true),
+                                               album: album, artwork: art)
+    }
+
+    func testConversionCoversOneAlbumFolderEach() throws {
+        let art = try sourceArtwork()
+        let landed = [
+            landing("Miles Davis/Kind of Blue", kindOfBlue, art: art),
+            landing("Miles Davis/Kind of Blue", kindOfBlue, art: art),
+            landing("Miles Davis/Bitches Brew", bitchesBrew, art: nil),
+            landing("Miles Davis/Bitches Brew", bitchesBrew, art: art)
+        ]
+
+        let covers = FolderCoverArtWriter.conversionCovers(
+            landed: landed, planned: landed, destinationRoot: root, folderMode: .metadataTemplate, hasCover: { _ in false }
+        )
+
+        XCTAssertEqual(Set(covers.keys.map(\.lastPathComponent)), ["Kind of Blue", "Bitches Brew"])
+    }
+
+    /// The user's own cover.jpg is never replaced by an ordinary conversion.
+    func testConversionNeverReplacesACoverAlreadyThere() throws {
+        let art = try sourceArtwork()
+        let folder = root.appendingPathComponent("Miles Davis/Kind of Blue", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try Data("mine".utf8).write(to: folder.appendingPathComponent("cover.jpg"))
+        let landed = [landing("Miles Davis/Kind of Blue", kindOfBlue, art: art)]
+
+        let covers = FolderCoverArtWriter.conversionCovers(
+            landed: landed, planned: landed, destinationRoot: root, folderMode: .metadataTemplate,
+            hasCover: { FolderCoverArtWriter.hasCover(in: $0) }
+        )
+
+        XCTAssertTrue(covers.isEmpty)
+    }
+
+    func testConversionSkipsTheFlatRootAndFoldersHoldingSeveralAlbums() throws {
+        let art = try sourceArtwork()
+        let flat = [landing("", kindOfBlue, art: art)]
+        XCTAssertTrue(FolderCoverArtWriter.conversionCovers(
+            landed: flat, planned: flat, destinationRoot: root, folderMode: .flat, hasCover: { _ in false }
+        ).isEmpty, "flat mode: every album lands in the root")
+
+        // Source-relative into one folder: two albums share it. Bitches Brew
+        // failed to convert but still names the folder as shared.
+        let landed = [landing("Mixed", kindOfBlue, art: art)]
+        let planned = landed + [landing("Mixed", bitchesBrew, art: art)]
+        XCTAssertTrue(FolderCoverArtWriter.conversionCovers(
+            landed: landed, planned: planned, destinationRoot: root, folderMode: .sourceRelative, hasCover: { _ in false }
+        ).isEmpty)
+    }
+
     private static func isProgressive(_ data: Data) -> Bool {
         frameHeader(data)?.marker == 0xC2
     }
