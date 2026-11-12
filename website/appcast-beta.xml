@@ -7,6 +7,209 @@
             <pubDate>Tue, 10 Nov 2026 18:15:38 -0300</pubDate>
             <link>https://cratedigger.mrbarkan.com/</link>
             <sparkle:fullReleaseNotesLink>https://github.com/mrbarkan/cratedigger/releases</sparkle:fullReleaseNotesLink>
+            <sparkle:version>119</sparkle:version>
+            <sparkle:shortVersionString>2.3.4</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description sparkle:format="markdown"><![CDATA[
+Beta 3: artist pictures reach the iPod even when there is nothing new to
+send, Preferences explains what PodBox and its People folder are, a band
+whose name has no letters (such as "@") gets an artist page, and adding a
+cover to an album no longer leaves a stray "track" behind. Beta 2 brought
+devices and artists. Sending to a device now looks at what is
+already there, copies only what is missing and asks once about albums that
+differ. PodBox iPods are recognised, get artist pictures and stop filling
+up with hidden Mac files. And every artist gets a page in the inspector: a
+portrait, who they are, a short bio and what your library holds of them,
+filled in quietly in the background and yours to edit. Beta 1 brought
+shell materials, the cover screen and the Pocket theme. 2.3.3 went out
+only as a release candidate, so everything listed under 2.3.3 below is new
+to stable users too. Betas are offered only to people who turned on
+Receive beta updates.
+
+### Added
+
+- **Pocket, a fourth built-in theme.** Handheld grey by day and console
+  purple by night, with a moulded plastic shell, a grey LCD and its own
+  logo. In the compact player and the mini player the album art sits in a
+  pixel screen set into the case.
+- **Shell materials.** The Theme Editor's SHELL MATERIAL section offers
+  Moulded Plastic, Brushed Metal, Bead-Blasted Metal and Carbon Weave
+  beside Texture Grain, each with its own strength. A theme wears one at a
+  time, and the mini player's glass wears it too.
+- **Cover screen.** The Theme Editor's COVER SCREEN section turns the album
+  art in the compact player and the mini player into an LCD: LCD Grid lays
+  a fine grid over the sharp picture, Pixel LCD redraws it in big square
+  pixels, and Handheld LCD adds the soft colours of an old handheld screen.
+  PIXEL SIZE picks how big the pixels are. A track with no art shows an
+  unlit screen. The full player, the gallery and the inspector keep the
+  plain picture.
+- **Sending to a device looks at what is already there.** Before anything
+  is written, CrateDigger compares the albums you are sending with the
+  device. Tracks it already has are skipped, missing tracks of a partly
+  copied album are filled in beside the rest of it, and new albums go over
+  as usual. This is the same for copy devices, converting devices and the
+  offline queue with SYNC, and an MP3 you replace with a FLAC is recognised
+  as the same track, not copied in beside it.
+- **An "Already on" sheet for albums that differ.** When an album on the
+  device is a different quality, has different cover art or is another
+  release of the same name, one sheet lists them side by side with what
+  would be sent. Choose Replace, Keep both or Leave it for each album, or
+  set them all at once. Nothing is chosen for you, and Cancel sends
+  nothing. Albums you leave alone stop coming back; the sheet can show them
+  again, and Preferences > Devices can forget them all.
+- **Folder Art is a switch.** Preferences > Devices has a Folder Art option
+  for each device, and the Convert panel has a Folder Art row, so a
+  cover.jpg beside the tracks can be combined with keeping, re-embedding or
+  stripping the art inside the files. Rockbox iPods keep their old
+  default (cover.jpg on, art inside the files stripped). Each device also
+  remembers its own art setting. Ordinary conversions have the switch too,
+  off by default.
+- The Devices screen's Artwork cell says when a cover.jpg is written as
+  well as art inside the files.
+- **PodBox iPods are recognised.** When a device runs the PodBox firmware,
+  Preferences > Devices shows which one (model, build and library layout),
+  the Devices screen calls it a PodBox, and CrateDigger tells you what the
+  iPod will make of your music: Mac files it reads as broken tracks, artist
+  pictures switched off, a music folder it does not scan, the play log off,
+  names it cannot match, paths that are too long, and compilations without
+  an album artist. It only reads the iPod when it is plugged in.
+- **A folder layout PodBox reads well.** "PodBox recommended" names folders
+  Artist / 2010 Album, which is how PodBox sorts albums, and leaves the year
+  out for an album that has none. It is picked in Preferences > Devices for
+  a new iPod profile; a layout you already use is never changed.
+- **Clean Up Mac Files.** Right-click a device or one of its folders, or use
+  Preferences > Devices, to remove the hidden `._` files macOS leaves on an
+  iPod's disk. Only files that are provably macOS metadata for a music,
+  picture or playlist file are removed, a copy of each is kept on your Mac,
+  and nothing happens until you confirm the count. A switch can also tidy
+  the folders a transfer just wrote into; it is off until you turn it on.
+- **Next steps and Eject after a transfer.** The summary says what to do on
+  the iPod (for PodBox: Update Database, Update Art Cache) and has an Eject
+  key. The Devices screen reminds you to update the art cache until the
+  iPod has.
+- **Artist pictures for PodBox.** The Artist Pictures sheet shows the
+  artists on your iPod and writes a small square picture for those the iPod
+  has none for, either in its Artwork/People folder or as folder.jpg in
+  each artist's folder. Pictures come from your own files, an artist.jpg in
+  your library, Deezer, or Wikimedia Commons (found through MusicBrainz),
+  and are taken without asking only when your albums confirm the artist;
+  anything unsure waits for your pick. Only the artist's name is sent. A
+  picture you already have on the iPod is never replaced, and the ones CrateDigger
+  added can be removed. Pictures after a transfer wait until you mark the
+  check passed for that iPod.
+- **Artist pages.** Select an artist (or choose Show Artist on a track) and
+  the inspector shows who they are: a portrait, where they are from, their
+  years, members and genres, the opening of their Wikipedia article (with
+  its credit and a link), and what your library holds of them, from albums
+  and formats to plays and the tracks you play most. When two acts share a
+  name, the page asks which one you mean instead of guessing.
+- **Artist info fills itself in.** A quiet background lookup finds each
+  artist on MusicBrainz, Wikidata, Wikipedia, Wikimedia Commons and Deezer,
+  one at a time and the one you are looking at first. It never slows a FIX TAGS or artwork
+  search you started, and it pauses while you scan, convert or copy to a
+  device, when CrateDigger is hidden, on Low Power and offline. Only artist
+  names are sent. Settings > Integrations > Look up artist info and photos
+  turns it off; Look Up Again on an artist page still works.
+- **Edit an artist and their photos.** Edit Artist lets you correct any
+  fact (what you type always wins over what was looked up), paste the
+  right MusicBrainz artist, add as many photos as you like, and choose the
+  one shown. The artist photo viewer pages through them, makes one the
+  default, and shows where each came from.
+- **Artists whose name has no letters get a page.** A band called "@" or
+  "!!!" now has an artist page, photos and edits of its own. They are not
+  looked up automatically, since a search for "@" finds other acts.
+
+### Changed
+
+- **Preferences explains PodBox.** The iPod's section in Preferences >
+  Devices is now called PodBox and says what it is, what "In
+  /Artwork/People" means (one portrait per artist in the iPod's own
+  People folder, named after the artist, which PodBox looks at first), what
+  "In artist folders" writes, and what Verified on this iPod unlocks.
+- **Artist Pictures says why some artists can't have one.** PodBox cannot
+  show a picture for a name with no letters or digits, wherever the file
+  is, and the sheet now says so instead of a vague "cannot be named".
+- **The iPod shows the artist's own photo.** The picture CrateDigger writes
+  for an artist on a PodBox iPod is now the default photo on their artist
+  page, so the two always agree. Picking a picture in Artist Pictures makes
+  it the artist's photo too, and No Picture is now Don't Send to iPod,
+  which keeps the photo in CrateDigger. A photo found for an artist
+  CrateDigger is not sure of waits for you to pick it before it can reach
+  the iPod. Pictures you had already chosen carry over the first time you
+  open your library.
+- **MusicBrainz lookups share one speed limit.** Artwork search, FIX TAGS, DEEP
+  SCAN, CD lookup and artist pictures wait their turn at the same gate
+  instead of each keeping its own count, so using two together no longer
+  gets refused by MusicBrainz.
+- **Carbon wears carbon weave** in place of its grain, and its selection
+  lamp in the light theme now glows the same orange as the light it
+  throws on the row.
+- **Llama '97 wears brushed metal.**
+- Themes you made that inherit from Carbon pick up the weave with it, even
+  one that sets its own grain. To keep grain, open the theme in the Theme
+  Editor, switch Texture Grain on and save.
+
+### Fixed
+
+- **Artist pictures go to the iPod even when nothing else needs sending.**
+  Sending albums the iPod already has stopped at "Nothing to transfer"
+  before the pictures, so an iPod with pictures switched on could go
+  without any. They are now written then, and the message says how many.
+- **Adding a cover to an album no longer leaves a stray track.** Embedding
+  the cover into each file used a temporary file named like a song beside
+  it; quitting while that was still running left an empty one, which
+  CrateDigger and PodBox both listed as a track by Unknown Artist. The
+  temporary file is now hidden and named so nothing reads it as music,
+  quitting waits for the covers to finish, and a track that could not be
+  updated is named in a message instead of silently keeping its old art.
+- **Device transfers no longer leave half-written files.** Each file is
+  written under a temporary name and moved into place when it is complete,
+  so a failed or cancelled send keeps the old file, and an unplugged drive
+  does not leave a track that stops halfway.
+- **Replacing an album never leaves it empty.** The new files are written
+  first and the old ones removed only when every new file arrived. Cancel
+  keeps the old files.
+- **Nothing is written or removed outside the device's music folder**, so
+  backups and an iPod's own database are left alone.
+- **The device's contents stay up to date after a send.** The browser and
+  the offline queue see what was just copied, replaced or removed without a
+  rescan. Copy-mode devices no longer silently write "(2)" copies, and
+  SYNC no longer converts a file more than once.
+- Cancel and the busy light now follow a device send, SYNC or conversion
+  all the way to the end, including the final renames, deletions and cover
+  files.
+- **Sending to a device no longer leaves hidden Mac files behind.** Files
+  are copied without the extra information macOS adds on a FAT disk, which
+  is what made `._` files that PodBox read as broken tracks, and the one
+  `._` file macOS still makes for each file and folder CrateDigger writes
+  (to hold a tag it cannot drop) is removed straight after. Converting
+  devices convert on your Mac and copy the finished file over, so nothing
+  is written to the device half-done.
+- **Every write to a device is checked first.** CrateDigger now writes to a
+  device only in the places it is meant to (the music folder, covers beside
+  it, artist pictures), never in the player's own folders, and replaces or
+  removes only files it can show it wrote itself or that you chose to
+  replace. A file you added is left alone and reported. A copy of anything
+  replaced or removed is kept on your Mac.
+- **Names a FAT disk cannot hold are fixed on the way.** Folders and files
+  with characters such as ? : or a trailing dot (R.E.M.) are written with
+  the characters removed or replaced, so the album lands instead of failing.
+
+]]></description>
+            <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.3.4-beta.119/CrateDigger-2.3.4.dmg" length="74850264" type="application/octet-stream" sparkle:edSignature="+dnt5ZY5f2/Aylbvzr3sxN/s8SyZvcjMokyIMgGZWLDQWRLYvsdp/t6gNwOjK6QhaweiAO8aH0RusS/ds2o6Bw=="/>
+            <sparkle:deltas>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.3.4-beta.119/CrateDigger119-116.delta" sparkle:deltaFrom="116" length="3644666" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="ed6iii50B2KOv+Dn1K/VRlTcjuqRA1YndQl3iL5/7tA8dYmU1iclrmPUrP2upiIKEDyuaaSOTwXMs2seI72cBQ=="/>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.3.4-beta.119/CrateDigger119-114.delta" sparkle:deltaFrom="114" length="3833978" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="49C2Zpl/OvEsS2rKLqAduIlhOlJDz0t0MRhYyXgaQN4q0B9GKlSzbYxX9zpOPwr7g136jMUXVfR5R2ORCnl7Dw=="/>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.3.4-beta.119/CrateDigger119-113.delta" sparkle:deltaFrom="113" length="3834766" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="rnd+brAngn9As/7nHcwPqQupwKlFI90byTEurpRUcvIG/NGSPo+7j6FEDFtpRFrb8RgkY01CCs2xU9TPxA9ICw=="/>
+                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.3.4-beta.119/CrateDigger119-109.delta" sparkle:deltaFrom="109" length="4171734" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="YSahvu62TNmCI/BSy8pJ/vlF886sGzARuCH8tuw6Ujfs2zgogTCVvYfFQN9Al3h1XBT1UolHt2qV8FRqO4b8AQ=="/>
+            </sparkle:deltas>
+        </item>
+        <item>
+            <title>2.3.4</title>
+            <pubDate>Tue, 10 Nov 2026 18:15:38 -0300</pubDate>
+            <link>https://cratedigger.mrbarkan.com/</link>
+            <sparkle:fullReleaseNotesLink>https://github.com/mrbarkan/cratedigger/releases</sparkle:fullReleaseNotesLink>
             <sparkle:version>118</sparkle:version>
             <sparkle:shortVersionString>2.3.4</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
@@ -232,75 +435,6 @@ too. Betas are offered only to people who turned on Receive beta updates.
                 <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.3.4-beta.117/CrateDigger117-114.delta" sparkle:deltaFrom="114" length="1796042" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="KPOLs0LtqHEqUTnPqVXJIpGnAoF++WJFr3zyCt3XP9t+oWWHFOHOjPuWr9hx3XAiUv2FPNbAjrgBPHmGLFJBCQ=="/>
                 <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.3.4-beta.117/CrateDigger117-113.delta" sparkle:deltaFrom="113" length="1793514" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="GSVquB1WhOOcIrQEPQ1zP/KAY4yw7KAkbZPsBeqMQ1177qDm3tH9SSjKhal2pEZK1VLVcZC8UPpDomEXOAeeBQ=="/>
                 <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.3.4-beta.117/CrateDigger117-109.delta" sparkle:deltaFrom="109" length="2230390" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="tgymain6XOfKjqX5EYzJG/JUEeoFCLrdh1LoldxSGdDzGLwaAxntKH65zN7Zh+HbmOrJyFtRYy1ITHTnJDKTDQ=="/>
-            </sparkle:deltas>
-        </item>
-        <item>
-            <title>2.3.3</title>
-            <pubDate>Fri, 23 Oct 2026 17:24:57 -0300</pubDate>
-            <link>https://cratedigger.mrbarkan.com/</link>
-            <sparkle:fullReleaseNotesLink>https://github.com/mrbarkan/cratedigger/releases</sparkle:fullReleaseNotesLink>
-            <sparkle:version>116</sparkle:version>
-            <sparkle:shortVersionString>2.3.3</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
-            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[
-Release Candidate 1: picking a track is instant again, folding into the
-compact player and back is a smooth blur, double-clicking the top edge
-of the window zooms it again, and the compact player always opens in the
-middle of the screen. Beta
-1 made shuffle let go when you turn it off, kept the display's animation up
-when you switch desktops and turn down, and kept the compact player's artwork
-in place. Release candidates are offered only to people who turned on Receive
-beta updates.
-
-### Added
-
-- **Quick EQ moves between faders.** With a fader lit, the Left and Right
-  arrows, or A and D, light the one beside it, so you can work across the
-  whole equalizer from the keyboard. It stops at the first and last band.
-
-### Changed
-
-- **Folding into the compact player goes out of focus and back.** The
-  console blurs, the window changes size, and the new view comes into focus
-  already at its final size. The window no longer jumps part of the way or
-  stutters when you unfold it.
-- **The compact player opens in the middle of the screen.** Folding into it
-  already did; starting CrateDigger in the compact player now does too,
-  wherever you last left it.
-
-### Fixed
-
-- **Selecting is instant again.** Clicking a track, an album or an artist, or
-  moving with the arrow keys, could take most of a second to respond in a
-  large library.
-- **Double-clicking the top edge of the window works again.** On macOS 27 it
-  did nothing. It now zooms the window, or expands the compact player to the
-  full console, following your Desktop & Dock setting.
-- **Turning shuffle off really turns it off.** Next and Previous kept
-  following the shuffled order until you played something else. Turning
-  shuffle off now puts what is playing back in its album, crate or playlist
-  order, and turning it on shuffles everything still to come. The song
-  playing carries on either way.
-- **The display's animation no longer freezes when you switch desktops.**
-  Coming back to the desktop CrateDigger is on left the LED animation stuck
-  on its last frame until the next song started.
-- **The animation follows the volume properly.** Turning the volume down a
-  little made the bars drop almost to nothing. They now fall by as much as
-  the sound does.
-- **Album art stays in its frame in the compact player.** A cover that is not
-  perfectly square, or a YouTube thumbnail, spilled out of its frame and ran
-  into the display.
-- **Quick EQ keeps hold of the fader you moved to.** Moving the pointer off
-  the fader you first pointed at no longer lets go of the one the keys moved
-  to, as long as it stays over the equalizer.
-
-]]></description>
-            <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.3.3-rc.116/CrateDigger-2.3.3.dmg" length="72752418" type="application/octet-stream" sparkle:edSignature="4HMKxHf6iKKxaXd+8zE54twBwZJNCVcziyaMQEbPCNuhO42KZSNR1u6pkhAt7ayMImnHs29Vw9/kp3fSxOySBQ=="/>
-            <sparkle:deltas>
-                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.3.3-rc.116/CrateDigger116-114.delta" sparkle:deltaFrom="114" length="1386770" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="22xr24qQxn2e4pgso/kMfKvP9Q6WZDgh8AAdVbDHJNIK00ZGYJfVBrEDj99w28ktnEGJt4gVb0dx3udk9wVrCg=="/>
-                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.3.3-rc.116/CrateDigger116-113.delta" sparkle:deltaFrom="113" length="1405326" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="dSKhRF+A90mSAcv8+plGRu/7MoZetLeb3WJvocG1aWnVbH/bVA6e3xNSG93zVYb+KMUvdAF0VWxMouiRDy5qDQ=="/>
-                <enclosure url="https://github.com/mrbarkan/cratedigger/releases/download/v2.3.3-rc.116/CrateDigger116-109.delta" sparkle:deltaFrom="109" length="1975850" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="+QknuhLlgr2S659kG6nhvpAmg3fHHttKG0J99+XRgtk3HihYVXjpTLgdWC74U2aiXUUqwqJGWmUrNQxVpJjiCA=="/>
             </sparkle:deltas>
         </item>
     </channel>
