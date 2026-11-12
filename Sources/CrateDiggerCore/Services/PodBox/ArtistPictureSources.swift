@@ -127,15 +127,20 @@ public struct URLSessionPictureFetcher: ArtistPictureFetching {
     }
 }
 
-/// Keeps one service's requests at least `spacing` apart (Deezer; for
-/// MusicBrainz see `MusicBrainzGate`). The slot is claimed before sleeping:
-/// an actor is re-entrant across the sleep, so a gate that only recorded the
-/// time afterwards would let every waiting caller fire at once.
-actor RequestSpacer {
+/// Keeps one service's requests at least `spacing` apart (Deezer, Wikimedia;
+/// for MusicBrainz see `MusicBrainzGate`). The slot is claimed before
+/// sleeping: an actor is re-entrant across the sleep, so a gate that only
+/// recorded the time afterwards would let every waiting caller fire at once.
+public actor RequestSpacer {
+    /// One request a second to Wikimedia (Wikidata, Wikipedia, Commons and
+    /// its images) across every caller in the app: the artist info client,
+    /// the lookup run and the Commons source share it.
+    public static let wikimedia = RequestSpacer(spacing: .seconds(1))
+
     private let spacing: Duration
     private var next: ContinuousClock.Instant?
 
-    init(spacing: Duration) {
+    public init(spacing: Duration) {
         self.spacing = spacing
     }
 

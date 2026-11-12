@@ -72,9 +72,10 @@ public struct ArtistLookupResult: Sendable {
 /// fetched: from `replaceFromURL`, else, for a Deezer one, by its Deezer
 /// id through `deezer`. When there is no default: the owner's library
 /// folder picture, then (confirmed only) the artist's Wikidata image, then
-/// the finder's own rule; under a confirmed identity the finder's Deezer
-/// pick must also fold equal to the confirmed artist's name, and its
-/// Commons pick must be that MusicBrainz artist's own. Sources the
+/// the finder's pick when `ArtistPhotoTrust` allows it: under a confirmed
+/// identity a Deezer pick must fold equal to the confirmed artist's name;
+/// under any other it needs two shared telling titles, else it is held as
+/// a candidate for the owner. Sources the
 /// owner removed (`rejectedPhotoSources`) are skipped. Only the chosen
 /// photo is downloaded, once (the finder's own download of it is reused);
 /// the rest come back as references.
@@ -113,15 +114,18 @@ public struct ArtistLookupRun: Sendable {
     private let preferredLanguages: [String]
     private let spacer: RequestSpacer
 
+    /// The run's Wikidata, Commons and image requests wait at the app's one
+    /// Wikimedia spacer (`RequestSpacer.wikimedia`), unless a test passes a
+    /// `spacing` of its own.
     public init(info: ArtistInfoFetching, pictures: ArtistPictureFinder, fetcher: ArtistPictureFetching,
                 deezer: ArtistPictureSource? = nil, preferredLanguages: [String] = Locale.preferredLanguages,
-                spacing: Duration = .seconds(1)) {
+                spacing: Duration? = nil) {
         self.info = info
         self.pictures = pictures
         self.fetcher = fetcher
         self.deezer = deezer
         self.preferredLanguages = preferredLanguages
-        spacer = RequestSpacer(spacing: spacing)
+        spacer = spacing.map(RequestSpacer.init) ?? .wikimedia
     }
 
     /// One artist: identity, facts, bio, and a default photo when the
@@ -198,6 +202,9 @@ public struct ArtistLookupRun: Sendable {
         /// The name-equal acts the search looked up, for the photo's Commons
         /// candidates; empty for a refresh by id.
         var acts: [Act] = []
+        /// The confirmed artist's Wikidata item, fetched once for the bio
+        /// and read again for the image (P18).
+        var entity: Data?
     }
 
     /// One act the identity search looked up: its MusicBrainz id and name,
@@ -231,8 +238,11 @@ public struct ArtistLookupRun: Sendable {
             found = try await search(name: name, libraryAlbumTitles: libraryAlbumTitles, rejectedIDs: rejectedIDs,
                                      lane: lane)
         }
-        if let wikidataID = found.wikidataID,
-           let bio = try await info.bio(wikidataID: wikidataID, preferredLanguages: preferredLanguages) {
+        if let wikidataID = found.wikidataID, let entity = try await entityData(wikidataID) {
+            found.entity = entity
+        }
+        if let wikidataID = found.wikidataID, let entity = found.entity,
+           let bio = try await info.bio(entity: entity, wikidataID: wikidataID, preferredLanguages: preferredLanguages) {
             var facts = found.facts ?? ArtistFacts()
             facts.bio = bio.extract
             facts.bioSourceURL = bio.pageURL
@@ -288,7 +298,8 @@ public struct ArtistLookupRun: Sendable {
         }
 
         if let id = found.musicBrainzID, let wikidataID = found.wikidataID,
-           let portrait = try await wikidataPortrait(wikidataID: wikidataID, musicBrainzID: id, name: name),
+           let portrait = try await wikidataPortrait(wikidataID: wikidataID, musicBrainzID: id, name: name,
+                                                     entity: found.entity),
            !excluded.contains(Self.rejectionKey(ArtistPictureRecord.HeldCandidate(portrait))),
            let data = try await download(portrait.imageURL) {
             result.defaultPhoto = (data, .commons, id, portrait.credit)
@@ -321,7 +332,8 @@ public struct ArtistLookupRun: Sendable {
             let reference = ArtistPictureRecord.HeldCandidate(candidate)
             let accepted = Self.photoSource(source) != nil
                 && !excluded.contains(Self.rejectionKey(reference))
-                && Self.fits(candidate, source: source, found)
+                && ArtistPhotoTrust.mayBecomeDefault(candidate, source: source, sharedTitles: finding.sharedTitles,
+                                                     identity: found.identity, confirmedName: found.confirmedName)
             // The finder already downloaded the original to prepare it: taken
             // from the finding, never fetched a second time.
             let original: Data?
@@ -348,19 +360,6 @@ public struct ArtistLookupRun: Sendable {
         result.photoCandidates = held.filter { seen.insert(Self.rejectionKey($0)).inserted }
     }
 
-    /// Whether the finder's pick may be taken under the identity found. Any
-    /// pick when the identity is not confirmed (the finder's rule alone, as
-    /// the iPod has always had it). Under a confirmed identity, a Commons
-    /// pick only when it is that very MusicBrainz artist's picture (a
-    /// namesake's has the same name and another id), and any other only
-    /// when its name folds equal to the confirmed artist's.
-    private static func fits(_ candidate: ArtistPictureCandidate, source: ArtistPictureSourceID,
-                             _ found: Identified) -> Bool {
-        guard let id = found.musicBrainzID, let confirmedName = found.confirmedName else { return true }
-        if source == .commons { return candidate.sourceID == id }
-        return PodBoxArtName.folded(candidate.name) == PodBoxArtName.folded(confirmedName)
-    }
-
     /// The full-size original of a migrated photo, or nil when it cannot be
     /// found again (the photo then stays as it is).
     private func original(of photo: ArtistPhoto, name: String) async throws -> Data? {
@@ -381,22 +380,31 @@ public struct ArtistLookupRun: Sendable {
 
     /// The image (P18) of an artist's Wikidata item, credited as Commons
     /// states it, asked for at the size fetched photos are kept at.
-    func wikidataPortrait(wikidataID: String, musicBrainzID: String,
-                                  name: String) async throws -> ArtistPictureCandidate? {
+    /// `entity` is the item when it was fetched already; else it is fetched.
+    func wikidataPortrait(wikidataID: String, musicBrainzID: String, name: String,
+                          entity known: Data? = nil) async throws -> ArtistPictureCandidate? {
         guard CommonsArtistParser.isEntityID(wikidataID) else { return nil }
-        try await spacer.wait()
-        let entity: Data
-        do {
-            entity = try await fetcher.data(from: CommonsArtistSource.entityURL(id: wikidataID))
-        } catch ArtistPictureSourceError.http(404) {
-            return nil
-        }
+        var entity = known
+        if entity == nil { entity = try await entityData(wikidataID) }
+        guard let entity else { return nil }
         guard let file = try CommonsArtistParser.imageFileName(fromEntity: entity, id: wikidataID) else { return nil }
         let credit = try await commonsCredit(for: file)
         return ArtistPictureCandidate(name: name, source: .commons, sourceID: musicBrainzID,
                                       imageURL: CommonsArtistParser.imageURL(fileName: file,
                                                                              width: ArtistPhotoImage.fetchedLongSide),
                                       credit: credit)
+    }
+
+    /// A Wikidata item, spaced like every Wikimedia request; nil when it is
+    /// gone (404) or the id is not one.
+    private func entityData(_ wikidataID: String) async throws -> Data? {
+        guard CommonsArtistParser.isEntityID(wikidataID) else { return nil }
+        try await spacer.wait()
+        do {
+            return try await fetcher.data(from: CommonsArtistSource.entityURL(id: wikidataID))
+        } catch ArtistPictureSourceError.http(404) {
+            return nil
+        }
     }
 
     /// The Commons file's credit, as the Commons source reads it: the file

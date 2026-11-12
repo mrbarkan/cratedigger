@@ -1261,6 +1261,12 @@ final class LibraryViewModel: ObservableObject {
     var artistLookupsQueued: [String: (name: String, resetFirst: Bool)] = [:]
     /// The background lookup (`ArtistLookupWorker`), started a minute after launch.
     var artistLookupWorker: ArtistLookupWorker?
+    /// The old artist picture records of the crates folder are in its
+    /// profiles, or there were none (`migrateArtistPicturesIfNeeded`). The
+    /// worker starts, and looks anyone up, only while this holds.
+    var artistMigrationSettled = false
+    /// Launch asked for the worker; it starts once the migration settles.
+    var artistLookupWorkerWanted = false
     /// One picture fetcher, so one URLSession, for every artist photo,
     /// thumbnail and picture lookup the app makes.
     let artistPictureFetcher = URLSessionPictureFetcher()

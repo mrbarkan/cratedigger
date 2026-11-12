@@ -140,7 +140,7 @@ final class ArtistPictureSessionTests: XCTestCase {
                                                credit: credit)
         let finding = ArtistPictureFinding(name: "Air", outcome: .found(prepared: prepared, candidate: candidate,
                                                                         source: .commons),
-                                           original: original, originalURL: candidate.imageURL)
+                                           original: original, originalURL: candidate.imageURL, sharedTitles: 2)
         XCTAssertEqual(ArtistPictureSession.store([finding], in: store, now: now), 1)
 
         let profile = try XCTUnwrap(store.profile(forName: "Air"))
@@ -170,10 +170,44 @@ final class ArtistPictureSessionTests: XCTestCase {
         store.update(name: "Low") { $0.rejectedPhotoSources = ["commons:Q123"] }
         for name in ["Can", "Low"] {
             let finding = ArtistPictureFinding(name: name, outcome: .found(prepared: prepared, candidate: candidate,
-                                                                           source: .commons), original: original)
+                                                                           source: .commons), original: original,
+                                               sharedTitles: 2)
             XCTAssertEqual(ArtistPictureSession.store([finding], in: store, now: now), 0)
             XCTAssertEqual(store.profile(forName: name)?.photos, [], name)
         }
+    }
+
+    func testAPickTheTrustRuleRefusesIsHeldForTheOwner() throws {
+        let original = FakePictureFetcher.jpeg(width: 900, height: 900)
+        let prepared = try XCTUnwrap(ArtistPictureImage.prepare(original))
+        func found(_ name: String, _ source: ArtistPictureSourceID, id: String, shared: Int) -> ArtistPictureFinding {
+            let candidate = ArtistPictureCandidate(name: name, source: source, sourceID: id,
+                                                   imageURL: URL(string: "https://upload.wikimedia.org/\(id).jpg")!)
+            return ArtistPictureFinding(name: name, outcome: .found(prepared: prepared, candidate: candidate,
+                                                                    source: source),
+                                        original: original, sharedTitles: shared)
+        }
+        // Under a confirmed artist, a namesake's Commons picture (another
+        // MusicBrainz id) is held, whatever the titles say.
+        store.update(name: "Low") { $0.identity = .confirmed(musicBrainzID: "mb-low", wikidataID: nil) }
+        let namesake = found("Low", .commons, id: "mb-other", shared: 3)
+        let vetted = ArtistPictureSession.vetted([namesake], profiles: store)
+        guard case .uncertain(let held)? = vetted.first?.outcome else { return XCTFail("\(vetted)") }
+        XCTAssertEqual(held.map(\.sourceID), ["mb-other"])
+        XCTAssertEqual(ArtistPictureSession.store([namesake], in: store, now: now), 1)
+        XCTAssertEqual(store.profile(forName: "Low")?.photos, [])
+        XCTAssertEqual(store.profile(forName: "Low")?.photoCandidates.map(\.sourceID), ["mb-other"])
+        // Its own picture is taken.
+        XCTAssertEqual(ArtistPictureSession.store([found("Low", .commons, id: "mb-low", shared: 0)], in: store,
+                                                  now: now), 1)
+        XCTAssertEqual(store.profile(forName: "Low")?.defaultPhotoRef?.sourceID, "mb-low")
+
+        // With no confirmed identity, one shared title is held; two are taken.
+        ArtistPictureSession.store([found("Boston", .deezer, id: "5", shared: 1)], in: store, now: now)
+        XCTAssertEqual(store.profile(forName: "Boston")?.photos, [])
+        XCTAssertEqual(store.profile(forName: "Boston")?.photoCandidates.map(\.sourceID), ["5"])
+        ArtistPictureSession.store([found("Boston", .deezer, id: "6", shared: 2)], in: store, now: now)
+        XCTAssertEqual(store.profile(forName: "Boston")?.defaultPhotoRef?.sourceID, "6")
     }
 
     func testUncertainFindingHoldsCandidatesOnly() throws {

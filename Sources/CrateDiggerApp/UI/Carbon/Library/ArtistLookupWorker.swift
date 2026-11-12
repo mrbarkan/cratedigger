@@ -24,6 +24,8 @@ final class ArtistLookupWorker {
     nonisolated static let idleRecheck: Duration = .seconds(30 * 60)
     /// A breath between two lookups that went well.
     nonisolated static let between: Duration = .seconds(1)
+    /// The background's Deezer requests, at most one a second.
+    nonisolated static let deezerSpacing: Duration = .seconds(1)
     /// How long the photo search of one artist may take in the background.
     /// Longer than the 8 s the owner waits for: nobody is watching, and a
     /// common name's search takes a while at a request a second.
@@ -43,6 +45,17 @@ final class ArtistLookupWorker {
     private var task: Task<Void, Never>?
     private var napContinuation: CheckedContinuation<Void, Never>?
     private var napTimer: Task<Void, Never>?
+    /// What the current nap is waiting out; only idle and paused naps wake.
+    private var napKind: NapKind?
+
+    private enum NapKind {
+        /// The minute after launch, and the breath between two lookups.
+        case start, between
+        /// Nobody due, or paused: a wake looks again now.
+        case idle, paused
+        /// A failure's back-off: never cut short by a wake.
+        case backoff
+    }
     private let pathMonitor = NWPathMonitor()
     private var settingObserver: NSObjectProtocol?
     private(set) var isOffline = false
@@ -55,7 +68,8 @@ final class ArtistLookupWorker {
 
     init(library: LibraryViewModel, fetcher: ArtistPictureFetching) {
         self.library = library
-        let deezer = DeezerArtistSource(fetcher: fetcher)
+        // At most one Deezer request a second from the background.
+        let deezer = DeezerArtistSource(fetcher: fetcher, spacing: Self.deezerSpacing)
         // No Commons source: the run builds its Commons candidates from the
         // identity search itself (`ArtistLookupRun`).
         run = ArtistLookupRun(
@@ -85,47 +99,51 @@ final class ArtistLookupWorker {
     }
 
     /// Something the order or the pauses depend on changed (the inspected
-    /// or playing artist, the network): a waiting worker looks again now.
-    /// A lookup in progress is left to finish.
+    /// or playing artist, the network): a worker that is idle or paused
+    /// looks again now. A lookup in progress is left to finish, and a
+    /// failure's back-off is waited out: waking it would hammer a service
+    /// that has just said no.
     func wake() {
+        guard napKind == .idle || napKind == .paused else { return }
         endNap()
     }
 
     // MARK: - The loop
 
     private func loop(after delay: Duration) async {
-        await nap(delay)
+        await nap(delay, .start)
         while !Task.isCancelled, let library {
-            if library.artistLookupPauses(offline: isOffline).isPaused
+            if library.artistLookupPauses(offline: isOffline).isPaused || !library.artistMigrationSettled
                 || (stoppedAtStore != nil && stoppedAtStore == library.artistProfileStoreKey) {
                 // What landed since the last save is written before the wait.
                 await library.flushArtistLookupSaves()
-                await nap(Self.pausedRecheck)
+                await nap(Self.pausedRecheck, .paused)
                 continue
             }
             guard let target = await library.nextBackgroundArtist(session: session) else {
                 await library.flushArtistLookupSaves()
-                await nap(Self.idleRecheck)
+                await nap(Self.idleRecheck, .idle)
                 continue
             }
             switch await library.lookUpInBackground(target, run: run, limit: Self.lookupLimit) {
             case .done(let photoTimedOut):
                 session.succeeded(target.key, photoTimedOut: photoTimedOut)
-                await nap(Self.between)
+                await nap(Self.between, .between)
             case .discarded:
                 // The library, the switch or the store changed under it:
                 // nothing was kept, and the pauses are looked at again.
-                await nap(Self.between)
+                await nap(Self.between, .between)
             case .failed(let error):
                 // Cancelled: the loop ends at its next check (after a breath,
                 // so a stray cancellation can never spin it).
                 guard let failure = session.failed(target.key, error) else {
-                    await nap(Self.between)
+                    await nap(Self.between, .between)
                     continue
                 }
                 if failure == .stopWorker { stoppedAtStore = library.artistProfileStoreKey }
-                AppLog.library.notice("Background artist lookup failed (\(String(describing: failure), privacy: .public)); next in \(self.session.backoff.components.seconds, privacy: .public) s: \(String(describing: error), privacy: .public)")
-                await nap(session.backoff)
+                // The error's case only: its text can carry a path or a name.
+                AppLog.library.notice("Background artist lookup failed (\(String(describing: failure), privacy: .public)); next in \(self.session.backoff.components.seconds, privacy: .public) s: \(LibraryViewModel.logCase(error), privacy: .public)")
+                await nap(session.backoff, .backoff)
             }
         }
     }
@@ -147,13 +165,15 @@ final class ArtistLookupWorker {
 
     // MARK: - Waiting
 
-    /// Sleeps for `duration`, or until `wake` or cancellation.
-    private func nap(_ duration: Duration) async {
+    /// Sleeps for `duration`, or until cancellation, or a `wake` when the
+    /// nap is idle or paused.
+    private func nap(_ duration: Duration, _ kind: NapKind) async {
         guard duration > .zero, !Task.isCancelled else { return }
         await withTaskCancellationHandler {
             await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
                 endNap()
                 guard !Task.isCancelled else { return continuation.resume() }
+                napKind = kind
                 napContinuation = continuation
                 napTimer = Task { [weak self] in
                     // A timer cancelled by `endNap` must not end the next nap.
@@ -167,6 +187,7 @@ final class ArtistLookupWorker {
     }
 
     private func endNap() {
+        napKind = nil
         napTimer?.cancel()
         napTimer = nil
         let continuation = napContinuation

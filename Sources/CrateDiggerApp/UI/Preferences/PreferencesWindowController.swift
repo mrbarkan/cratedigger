@@ -561,7 +561,7 @@ private struct ArtistLookupSettingsSection: View {
                     PreferencesStore.shared.artistLookupsEnabled = newValue
                     NotificationCenter.default.post(name: ArtistLookupWorker.settingChanged, object: newValue)
                 }
-            Text("Only artist names are sent, to MusicBrainz, Wikipedia, Wikidata and Deezer.")
+            Text("Only artist names are sent, to MusicBrainz, Wikidata, Wikipedia, Wikimedia Commons and Deezer.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }

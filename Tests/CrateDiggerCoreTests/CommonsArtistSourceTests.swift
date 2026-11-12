@@ -33,7 +33,8 @@ final class CommonsArtistSourceTests: XCTestCase {
     }
 
     private func source(spacing: Duration = .zero) -> CommonsArtistSource {
-        CommonsArtistSource(fetcher: fetcher, musicBrainzGate: MusicBrainzGate(interval: spacing))
+        CommonsArtistSource(fetcher: fetcher, musicBrainzGate: MusicBrainzGate(interval: spacing),
+                            wikimedia: RequestSpacer(spacing: .zero))
     }
 
     static let imageInfoJSON = """
@@ -170,8 +171,8 @@ final class CommonsArtistSourceTests: XCTestCase {
     func testTwoSourcesShareOneMusicBrainzGate() async throws {
         answerBjork()
         let gate = MusicBrainzGate(interval: .milliseconds(60))
-        let first = CommonsArtistSource(fetcher: fetcher, musicBrainzGate: gate)
-        let second = CommonsArtistSource(fetcher: fetcher, musicBrainzGate: gate)
+        let first = CommonsArtistSource(fetcher: fetcher, musicBrainzGate: gate, wikimedia: RequestSpacer(spacing: .zero))
+        let second = CommonsArtistSource(fetcher: fetcher, musicBrainzGate: gate, wikimedia: RequestSpacer(spacing: .zero))
         async let a = first.candidates(for: "Björk")
         async let b = second.candidates(for: "Björk")
         _ = try await (a, b)

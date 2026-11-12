@@ -9,8 +9,11 @@ public protocol ArtistInfoFetching: Sendable {
     func detail(musicBrainzID: String, lane: MusicBrainzGate.Lane) async throws
         -> (facts: ArtistFacts, wikidataID: String?, releaseGroupTitles: [String])
     /// The lead paragraph of the artist's Wikipedia article in the first of
-    /// `preferredLanguages` that has one, else English; nil when there is none.
-    func bio(wikidataID: String, preferredLanguages: [String]) async throws -> (extract: String, pageURL: URL)?
+    /// `preferredLanguages` that has one, else English; nil when there is
+    /// none. `entity` is the artist's Wikidata item, already fetched (the
+    /// lookup reads it once, for the bio and the image).
+    func bio(entity: Data, wikidataID: String, preferredLanguages: [String]) async throws
+        -> (extract: String, pageURL: URL)?
 }
 
 /// MusicBrainz, Wikidata and Wikipedia through the artist pictures' fetcher
@@ -20,7 +23,8 @@ public protocol ArtistInfoFetching: Sendable {
 ///
 /// Every MusicBrainz request waits at `gate` in the caller's lane, and a 503
 /// (its rate limiter) is tried once more after its next slot. Wikidata and
-/// Wikipedia requests are kept `wikimediaSpacing` apart.
+/// Wikipedia requests wait at the app's one Wikimedia spacer
+/// (`RequestSpacer.wikimedia`), unless a test passes a spacing of its own.
 ///
 /// Failures are never "nobody found": a transport error, a 5xx or a 429
 /// comes out as the fetcher's `ArtistPictureSourceError`, whose `stopsTheRun`
@@ -35,10 +39,10 @@ public struct ArtistInfoClient: ArtistInfoFetching {
     private let wikimedia: RequestSpacer
 
     public init(fetcher: ArtistPictureFetching, gate: MusicBrainzGate = .shared,
-                wikimediaSpacing: Duration = .seconds(1)) {
+                wikimediaSpacing: Duration? = nil) {
         self.fetcher = fetcher
         self.gate = gate
-        wikimedia = RequestSpacer(spacing: wikimediaSpacing)
+        wikimedia = wikimediaSpacing.map(RequestSpacer.init) ?? .wikimedia
     }
 
     public func candidates(for name: String, lane: MusicBrainzGate.Lane) async throws -> [ArtistIdentityCandidate] {
@@ -58,9 +62,16 @@ public struct ArtistInfoClient: ArtistInfoFetching {
         return (artist.facts, artist.wikidataID, albums)
     }
 
+    /// The bio, fetching the Wikidata item first.
     public func bio(wikidataID: String, preferredLanguages: [String]) async throws -> (extract: String, pageURL: URL)? {
         guard CommonsArtistParser.isEntityID(wikidataID),
-              let entity = try await wikimediaData(Self.entityURL(wikidataID: wikidataID)),
+              let entity = try await wikimediaData(Self.entityURL(wikidataID: wikidataID)) else { return nil }
+        return try await bio(entity: entity, wikidataID: wikidataID, preferredLanguages: preferredLanguages)
+    }
+
+    public func bio(entity: Data, wikidataID: String, preferredLanguages: [String]) async throws
+        -> (extract: String, pageURL: URL)? {
+        guard CommonsArtistParser.isEntityID(wikidataID),
               let choice = ArtistInfoParsers.wikipediaChoice(
                   sitelinks: try ArtistInfoParsers.wikipediaTitles(fromEntity: entity, id: wikidataID),
                   preferredLanguages: preferredLanguages),

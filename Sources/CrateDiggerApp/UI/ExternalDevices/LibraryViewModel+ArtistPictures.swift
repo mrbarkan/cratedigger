@@ -15,22 +15,25 @@ extension LibraryViewModel {
     /// Keeps what the finder concluded in the artist profiles (the same
     /// records the artist page shows), under the owner's rules
     /// (`ArtistPictureSession.store`): a failure is never kept, a found
-    /// picture is a photo and the default only when there is none. Writes
-    /// the library index, so it is refused while the library is
-    /// disconnected. Returns how many artists changed.
+    /// picture is a photo and the default only when there is none, and only
+    /// when `ArtistPhotoTrust` takes it (else it is held for the owner).
+    /// Writes the library index, so it is refused while the library is
+    /// disconnected. Returns the findings as they were kept
+    /// (`ArtistPictureSession.vetted`: a held pick reads as uncertain).
     @MainActor
     @discardableResult
-    func storeArtistPictureFindings(_ findings: [ArtistPictureFinding]) async -> Int {
+    func storeArtistPictureFindings(_ findings: [ArtistPictureFinding]) async -> [ArtistPictureFinding] {
         let storable = findings.filter(\.outcome.isStorable)
-        guard !storable.isEmpty else { return 0 }
-        guard !refuseWhileLibraryDisconnected() else { return 0 }
-        let saved = await withArtistProfileStore { store -> (Int, String?) in
-            let count = ArtistPictureSession.store(storable, in: store, now: Date())
+        guard !storable.isEmpty else { return findings }
+        guard !refuseWhileLibraryDisconnected() else { return findings }
+        let saved = await withArtistProfileStore { store -> ([ArtistPictureFinding], String?) in
+            let vetted = ArtistPictureSession.vetted(findings, profiles: store)
+            ArtistPictureSession.store(vetted, in: store, now: Date())
             do {
                 try store.save()
-                return (count, nil)
+                return (vetted, nil)
             } catch {
-                return (count, error.localizedDescription)
+                return (vetted, error.localizedDescription)
             }
         }
         reloadArtistProfiles()
@@ -272,10 +275,11 @@ extension LibraryViewModel {
         // cancels the task awaiting here, which passes it on.
         let findings = await withTaskCancellationHandler { await work.value } onCancel: { work.cancel() }
         let cancelled = Task.isCancelled
-        await storeArtistPictureFindings(findings)
+        // As kept: a pick held for the owner comes back as one to check.
+        let kept = await storeArtistPictureFindings(findings)
         endBusyJob(job, cancelled ? .cancelled : .completed)
         isFindingArtistPictures = false
-        return findings
+        return kept
     }
 
     /// What Apply does next, for the sheet.

@@ -105,11 +105,16 @@ public enum ArtistPictureSession {
     /// references for the owner to pick from; "not found" is remembered with
     /// its date (`photoSearchedAt`). Does not save. Store I/O and image work:
     /// off the main actor, after `refuseWhileLibraryDisconnected`.
+    ///
+    /// A source's pick goes through `vetted` first: one `ArtistPhotoTrust`
+    /// would not take (a namesake's Commons picture under a confirmed
+    /// artist, one shared title under no confirmed identity) is held as a
+    /// candidate instead.
     @discardableResult
     public static func store(_ findings: [ArtistPictureFinding], in profiles: ArtistProfileStore, now: Date) -> Int {
         let searched = Date(timeIntervalSinceReferenceDate: now.timeIntervalSinceReferenceDate.rounded(.down))
         var changed = 0
-        for finding in findings {
+        for finding in vetted(findings, profiles: profiles) {
             let name = finding.name
             switch finding.outcome {
             case let .found(prepared, candidate, source):
@@ -156,6 +161,25 @@ public enum ArtistPictureSession {
             }
         }
         return changed
+    }
+
+    /// `findings` with every found pick that `ArtistPhotoTrust` would not
+    /// make the default, under the identity its profile has now, turned
+    /// into an uncertain finding of that one candidate, so it is held for
+    /// the owner (a CHECK row) rather than kept as a photo. The owner's own
+    /// library picture is kept as found. Reads the profiles.
+    public static func vetted(_ findings: [ArtistPictureFinding],
+                              profiles store: ArtistProfileStore) -> [ArtistPictureFinding] {
+        let profiles = ArtistPictureProfiles(store: store)
+        return findings.map { finding in
+            guard case let .found(_, candidate?, source) = finding.outcome else { return finding }
+            let profile = profiles.profile(forName: finding.name)
+            guard !ArtistPhotoTrust.mayBecomeDefault(candidate, source: source, sharedTitles: finding.sharedTitles,
+                                                     identity: profile?.identity ?? .unknown,
+                                                     confirmedName: profile?.displayName ?? finding.name)
+            else { return finding }
+            return ArtistPictureFinding(name: finding.name, outcome: .uncertain([candidate]))
+        }
     }
 
     /// One request per name for the finder, with the owner's own picture

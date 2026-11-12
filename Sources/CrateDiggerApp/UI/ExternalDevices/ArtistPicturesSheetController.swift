@@ -86,7 +86,10 @@ final class ArtistPicturesSheetModel: ObservableObject {
                                      artistsByFolder: [:])
     private var uncertain: [String: [ArtistPictureCandidate]] = [:]
     private var deviceRoot: URL?
-    private var store: ArtistProfileStore?
+    /// The DEBUG preview's own made-up profiles. A real sheet holds no
+    /// store: it asks for the current one on each action, so a library
+    /// moved or a drive unplugged while it is open is never read stale.
+    private var previewStore: ArtistProfileStore?
     private var findTask: Task<Void, Never>?
     private let fetcher: URLSessionPictureFetcher
     /// The names the owner gave a picture in this sheet session, in the
@@ -107,7 +110,7 @@ final class ArtistPicturesSheetModel: ObservableObject {
         profileID = nil
         isPreview = true
         fetcher = URLSessionPictureFetcher()
-        self.store = store
+        previewStore = store
         self.artists = artists
         self.tree = tree
         self.uncertain = uncertain
@@ -151,7 +154,6 @@ final class ArtistPicturesSheetModel: ObservableObject {
             artists = context.artists
             tree = context.tree
             crateDiggerPictures = context.crateDiggerPictures
-            store = await library.currentArtistProfileStore()
             await recompute()
             if artists.isEmpty {
                 footer = isMounted ? "No artists on \(deviceName) yet." : "Connect \(deviceName) once so CrateDigger knows its artists."
@@ -162,7 +164,7 @@ final class ArtistPicturesSheetModel: ObservableObject {
     /// Rows from Core, worked out off the main actor (it reads the profiles
     /// and checks photo files).
     private func recompute() async {
-        guard let store else {
+        guard let store = await currentStore() else {
             isLoading = false
             return
         }
@@ -171,6 +173,12 @@ final class ArtistPicturesSheetModel: ObservableObject {
             ArtistPictureRow.rows(artists: artists, tree: tree, profiles: store, uncertain: uncertain, edits: edits)
         }.value
         isLoading = false
+    }
+
+    /// The profile store as it is now: the library's current one, or the preview's.
+    private func currentStore() async -> ArtistProfileStore? {
+        if isPreview { return previewStore }
+        return await library?.currentArtistProfileStore()
     }
 
     // MARK: Images
@@ -185,7 +193,8 @@ final class ArtistPicturesSheetModel: ObservableObject {
         if case let .picked(prepared, _, _, _)? = edits[key] {
             data = prepared
         } else {
-            let store = store, photoHash = row.photoHash, devicePath = row.devicePath, root = deviceRoot
+            let store = await currentStore(), photoHash = row.photoHash, devicePath = row.devicePath
+            let root = deviceRoot
             let state = row.state
             data = await Task.detached(priority: .utility) { () -> Data? in
                 switch state {

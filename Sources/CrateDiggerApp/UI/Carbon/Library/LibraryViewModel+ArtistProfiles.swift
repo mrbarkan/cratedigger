@@ -285,13 +285,17 @@ extension LibraryViewModel {
     /// library is disconnected. A failure is logged and tried again next time.
     /// Once a folder's pictures are in its profiles, the old prepared-picture
     /// cache (`ArtistPicturePreparedCache.legacyDirectory`), which only the
-    /// migration read, is deleted.
+    /// migration read, is deleted. The background worker waits for this to
+    /// settle (`artistMigrationSettled`): it succeeded, or there was nothing
+    /// to carry over.
     func migrateArtistPicturesIfNeeded() {
         guard !isLibraryDisconnected else { return }
         // One `stat`: nearly always there is no old file, and nothing to do.
         let folder = cratesDirectoryURL
         guard FileManager.default.fileExists(atPath: folder.appendingPathComponent(ArtistPictureStore.fileName).path)
         else {
+            artistMigrationSettled = true
+            startArtistLookupWorkerIfWanted()
             Task {
                 let store = await currentArtistProfileStore()
                 await Task.detached(priority: .utility) {
@@ -300,6 +304,7 @@ extension LibraryViewModel {
             }
             return
         }
+        artistMigrationSettled = false
         Task {
             let failure = await withArtistProfileStore { store -> String? in
                 // The store's own folder: the crates folder may have moved on since.
@@ -310,11 +315,14 @@ extension LibraryViewModel {
                     ArtistPicturePreparedCache.removeLegacyCache()
                     return nil
                 } catch {
-                    return error.localizedDescription
+                    return Self.logCase(error)
                 }
             }
             if let failure {
-                AppLog.library.error("Artist pictures not carried into profiles: \(failure, privacy: .public)")
+                AppLog.library.error("Artist pictures not carried into profiles (\(failure, privacy: .public)); the lookup waits for them")
+            } else {
+                artistMigrationSettled = true
+                startArtistLookupWorkerIfWanted()
             }
             reloadArtistProfiles()
         }
@@ -671,7 +679,7 @@ extension LibraryViewModel {
             reloadArtistProfiles()
             finishArtistLookup(key)
             if case .failure(let error) = outcome {
-                AppLog.library.error("Artist lookup for \(name, privacy: .private) failed: \(String(describing: error), privacy: .public)")
+                AppLog.library.error("Artist lookup for \(name, privacy: .private) failed: \(Self.logCase(error), privacy: .public)")
                 appAlert = .error(title: "Could Not Look Up \(name)", message: Self.lookupFailureMessage(error))
             }
         }
@@ -776,9 +784,16 @@ enum BackgroundLookupOutcome {
 
 @MainActor
 extension LibraryViewModel {
-    /// Starts the background worker, which waits a minute before its first lookup.
+    /// Starts the background worker, which waits a minute before its first
+    /// lookup, once the old picture records are carried into the profiles
+    /// (`artistMigrationSettled`); until then it is only wanted.
     func startArtistLookupWorker() {
-        guard artistLookupWorker == nil else { return }
+        artistLookupWorkerWanted = true
+        startArtistLookupWorkerIfWanted()
+    }
+
+    func startArtistLookupWorkerIfWanted() {
+        guard artistLookupWorkerWanted, artistMigrationSettled, artistLookupWorker == nil else { return }
         #if DEBUG
         // The artist page fixture promises nothing goes on the network.
         if ProcessInfo.processInfo.environment["CRATEDIGGER_ARTIST_PAGE"] != nil { return }

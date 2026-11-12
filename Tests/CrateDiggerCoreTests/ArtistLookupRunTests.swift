@@ -92,6 +92,8 @@ final class ArtistLookupRunTests: XCTestCase {
         // Only the name-equal candidate was looked up; the bio in English.
         XCTAssertEqual(info.detailCalls, ["mb-ma"])
         XCTAssertEqual(info.bioCalls, ["Q11895"])
+        // One Wikidata item read, for the bio and the image both.
+        XCTAssertEqual(fetcher.requests.filter { $0 == CommonsArtistSource.entityURL(id: "Q11895") }.count, 1)
 
         // The Wikidata image is trusted for a confirmed identity: no Deezer.
         let photo = try XCTUnwrap(result.defaultPhoto)
@@ -124,24 +126,30 @@ final class ArtistLookupRunTests: XCTestCase {
         XCTAssertEqual(fetcher.requests.filter { $0 == deezerImage(8) }.count, 1)
     }
 
-    func testUncertainGetsNoFactsButMayGetPhoto() async throws {
+    func testUncertainGetsNoFactsAndAPhotoOnlyOnTwoTitles() async throws {
         info.candidates["Boston"] = .success([
             ArtistIdentityCandidate(musicBrainzID: "mb-rock", name: "Boston", origin: "Boston, United States"),
             ArtistIdentityCandidate(musicBrainzID: "mb-uk", name: "Boston", origin: "United Kingdom"),
         ])
         info.details["mb-rock"] = .success((ArtistFacts(kind: "Group"), "Q1", ["More Than a Feeling"]))
         info.details["mb-uk"] = .success((ArtistFacts(kind: "Group"), "Q2", ["Something Else"]))
-        deezer.offered = [deezerCandidate(5, "Boston", albums: ["Third Stage"])]
+        deezer.offered = [deezerCandidate(5, "Boston", albums: ["Third Stage", "Don't Look Back"])]
         fetcher.answer(deezerImage(5), data: FakePictureFetcher.jpeg())
 
-        let result = try await lookUp("Boston", albums: ["Third Stage"])
+        // One telling title in common: the finder's rule takes it, but with
+        // no confirmed identity it is held for the owner, never the default.
+        var result = try await lookUp("Boston", albums: ["Third Stage"])
         guard case .uncertain(let candidates) = result.identity else {
             return XCTFail("expected uncertain, got \(result.identity)")
         }
         XCTAssertEqual(candidates.map(\.musicBrainzID), ["mb-rock", "mb-uk"])
         XCTAssertNil(result.facts)
         XCTAssertTrue(info.bioCalls.isEmpty)
-        // The finder's own rule still picks the photo the iPod would get.
+        XCTAssertNil(result.defaultPhoto)
+        XCTAssertEqual(result.photoCandidates.map(\.sourceID), ["5"])
+
+        // Two: it becomes the default the iPod would get.
+        result = try await lookUp("Boston", albums: ["Third Stage", "Don't Look Back"])
         XCTAssertEqual(result.defaultPhoto?.source, .deezer)
         XCTAssertEqual(result.defaultPhoto?.sourceID, "5")
     }
@@ -236,7 +244,8 @@ final class ArtistLookupRunTests: XCTestCase {
         XCTAssertNotNil(result.facts)
         XCTAssertNil(result.defaultPhoto)
         XCTAssertTrue(result.photoCandidates.isEmpty)
-        XCTAssertFalse(fetcher.requests.contains(CommonsArtistSource.entityURL(id: "Q11895")))
+        // The Wikidata item is read for the bio, but no picture is fetched.
+        XCTAssertFalse(fetcher.requests.contains(commonsImage))
         XCTAssertEqual(deezer.calls, 0)
     }
 
@@ -591,7 +600,8 @@ final class ArtistLookupRunTests: XCTestCase {
         fetcher.answer(CommonsArtistSource.searchURL(name: "Boston"),
                        json: "{\"artists\":[{\"id\":\"mb-boston\",\"name\":\"Boston\",\"score\":100}]}")
         fetcher.answer(CommonsArtistSource.artistURL(id: "mb-boston"), json: "{\"id\":\"mb-boston\",\"relations\":[]}")
-        let finder = ArtistPictureFinder(sources: [CommonsArtistSource(fetcher: fetcher, musicBrainzGate: gate)],
+        let finder = ArtistPictureFinder(sources: [CommonsArtistSource(fetcher: fetcher, musicBrainzGate: gate,
+                                                                       wikimedia: RequestSpacer(spacing: .zero))],
                                          fetcher: fetcher, quotaBackoff: [])
         let run = ArtistLookupRun(info: client, pictures: finder, fetcher: fetcher, spacing: .zero)
 
@@ -698,7 +708,8 @@ final class FakeArtistInfo: ArtistInfoFetching, @unchecked Sendable {
         }.get()
     }
 
-    func bio(wikidataID: String, preferredLanguages: [String]) async throws -> (extract: String, pageURL: URL)? {
+    func bio(entity: Data, wikidataID: String,
+             preferredLanguages: [String]) async throws -> (extract: String, pageURL: URL)? {
         locked {
             calls.bios.append(wikidataID)
             return _bios[wikidataID]

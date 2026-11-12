@@ -111,7 +111,9 @@ click on an artist used to show that artist's first album in the inspector.
   date); `defaultPhoto` (hash) and `defaultPickedByOwner: Bool`; two flags
   (my call): `noPhoto` (the app shows the placeholder, and the iPod gets
   nothing) and `notOnIPod` (the app still shows the photo; the iPod gets
-  nothing). Both are owner choices and survive a change of default photo.
+  nothing). Both are owner choices and survive a change of default photo
+  made by a lookup. An owner's own pick of a photo (in the Artist Pictures
+  sheet) ends them: picking a picture says the owner wants one.
 - **Photos**: bytes live once, keyed by SHA-256, in an `ArtistPhotos` folder
   beside the index (`<Crates Index Folder>/ArtistPhotos/<hash>.jpg|png`), never
   inside the index file. Fetched photos are stored capped at 1,600 px on the
@@ -126,7 +128,7 @@ click on an artist used to show that artist's first album in the inspector.
 - **Migration from the picture store** (my call): on first load, every
   `ArtistPictureRecord` with prepared bytes becomes a photo on that artist's
   profile and its default: `pickedByUser` records as owner-picked defaults,
-  auto-found ones as ordinary defaults. Their 300 px bytes are used at once,
+  auto-found ones as ordinary defaults. Their 400 px bytes are used at once,
   and the worker re-fetches the original from the recorded source in the
   background to replace them at full size. "No Picture" records become "Don't
   send to the iPod" (section 7). Held candidates carry over. Afterwards
@@ -222,7 +224,7 @@ small mark.
 ### 7. The iPod follows the default photo
 
 - The PodBox picture planner takes its bytes from the profile's default photo
-  (prepared to the existing 300 px square baseline JPEG), so the inspector and
+  (prepared to the existing 400 px square baseline JPEG), so the inspector and
   the iPod always agree.
 - The Artist Pictures sheet keeps working on the same profiles: Choose File
   there adds a photo and makes it the default; its "No Picture" becomes a

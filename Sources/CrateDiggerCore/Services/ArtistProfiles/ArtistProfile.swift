@@ -99,7 +99,7 @@ public struct ArtistPhoto: Codable, Hashable, Sendable {
     public var pixelWidth: Int
     public var pixelHeight: Int
     public var added: Date
-    /// A migrated 300 px photo awaiting its original, which the background
+    /// A migrated 400 px photo awaiting its original, which the background
     /// worker fetches from here to replace it at full size.
     public var replaceFromURL: URL?
 

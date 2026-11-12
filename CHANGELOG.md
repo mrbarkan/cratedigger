@@ -93,8 +93,8 @@ too. Betas are offered only to people who turned on Receive beta updates.
   and formats to plays and the tracks you play most. When two acts share a
   name, the page asks which one you mean instead of guessing.
 - **Artist info fills itself in.** A quiet background lookup finds each
-  artist on MusicBrainz, Wikidata, Wikipedia and Deezer, one at a time and
-  the one you are looking at first. It never slows a FIX TAGS or artwork
+  artist on MusicBrainz, Wikidata, Wikipedia, Wikimedia Commons and Deezer,
+  one at a time and the one you are looking at first. It never slows a FIX TAGS or artwork
   search you started, and it pauses while you scan, convert or copy to a
   device, when CrateDigger is hidden, on Low Power and offline. Only artist
   names are sent. Settings > Integrations > Look up artist info and photos
@@ -111,8 +111,10 @@ too. Betas are offered only to people who turned on Receive beta updates.
   for an artist on a PodBox iPod is now the default photo on their artist
   page, so the two always agree. Picking a picture in Artist Pictures makes
   it the artist's photo too, and No Picture is now Don't Send to iPod,
-  which keeps the photo in CrateDigger. Pictures you had already chosen
-  carry over the first time you open your library.
+  which keeps the photo in CrateDigger. A photo found for an artist
+  CrateDigger is not sure of waits for you to pick it before it can reach
+  the iPod. Pictures you had already chosen carry over the first time you
+  open your library.
 - **MusicBrainz lookups share one speed limit.** Artwork search, FIX TAGS, DEEP
   SCAN, CD lookup and artist pictures wait their turn at the same gate
   instead of each keeping its own count, so using two together no longer

@@ -97,6 +97,33 @@ public enum ArtistPictureMatcher {
     }
 }
 
+/// Whether a picture a source offered may become an artist's default photo
+/// (and so reach the iPod) without the owner seeing it first. The finder's
+/// own rule takes one confident candidate, one shared telling album title;
+/// that is not enough once the picture becomes what an iPod shows, because
+/// two acts of one name share a title more often than that suggests.
+///
+/// Under a confirmed identity: a Commons pick only when it is that very
+/// MusicBrainz artist's (`sourceID`), any other only when its name folds
+/// equal to the confirmed artist's. Under any other identity (not looked
+/// up, uncertain, not found, "None of these"): only with at least
+/// `titlesWithoutIdentity` shared telling titles. Anything else is held as
+/// a candidate for the owner to pick. The owner's own library picture
+/// is not a source's pick and is always taken.
+public enum ArtistPhotoTrust {
+    public static let titlesWithoutIdentity = 2
+
+    public static func mayBecomeDefault(_ candidate: ArtistPictureCandidate, source: ArtistPictureSourceID,
+                                        sharedTitles: Int?, identity: ArtistProfile.Identity,
+                                        confirmedName: String?) -> Bool {
+        if case .confirmed(let id, _) = identity {
+            if source == .commons { return candidate.sourceID == id }
+            return PodBoxArtName.folded(candidate.name) == PodBoxArtName.folded(confirmedName ?? candidate.name)
+        }
+        return (sharedTitles ?? 0) >= titlesWithoutIdentity
+    }
+}
+
 /// What the finder concluded for one name.
 public struct ArtistPictureFinding: Equatable, Sendable {
     public enum Outcome: Equatable, Sendable {
@@ -124,12 +151,19 @@ public struct ArtistPictureFinding: Equatable, Sendable {
     /// as an artist photo has the full-size original without fetching it a
     /// second time. nil otherwise.
     public let original: Data?, originalURL: URL?
+    /// For a source's pick: how many telling album titles it shares with
+    /// ours (`ArtistPictureMatcher.sharedTellingTitles`), which decides
+    /// whether it may become the default without the owner seeing it
+    /// (`ArtistPhotoTrust`). nil for the owner's own library picture.
+    public let sharedTitles: Int?
 
-    public init(name: String, outcome: Outcome, original: Data? = nil, originalURL: URL? = nil) {
+    public init(name: String, outcome: Outcome, original: Data? = nil, originalURL: URL? = nil,
+                sharedTitles: Int? = nil) {
         self.name = name
         self.outcome = outcome
         self.original = original
         self.originalURL = originalURL
+        self.sharedTitles = sharedTitles
     }
 }
 
@@ -196,7 +230,8 @@ public struct ArtistPictureFinder: Sendable {
             switch await bounded(min(perArtist, remaining), { try await self.findOne(request, lane: lane) }) {
             case .finished(let found):
                 findings.append(ArtistPictureFinding(name: request.name, outcome: found.outcome,
-                                                     original: found.original?.data, originalURL: found.original?.url))
+                                                     original: found.original?.data, originalURL: found.original?.url,
+                                                     sharedTitles: found.sharedTitles))
                 pauses = quotaBackoff[...]
                 index += 1
                 progress?(index, requests.count)
@@ -233,7 +268,8 @@ public struct ArtistPictureFinder: Sendable {
             switch await bounded(perArtist, { try await self.findOne(request, lane: lane) }) {
             case .finished(let found):
                 return .finding(ArtistPictureFinding(name: request.name, outcome: found.outcome,
-                                                     original: found.original?.data, originalURL: found.original?.url))
+                                                     original: found.original?.data, originalURL: found.original?.url,
+                                                     sharedTitles: found.sharedTitles))
             case .unreachable(let reason):
                 return .finding(ArtistPictureFinding(name: request.name, outcome: .failed(reason)))
             case .quota:
@@ -257,6 +293,7 @@ public struct ArtistPictureFinder: Sendable {
     private struct Found: Sendable {
         var outcome: ArtistPictureFinding.Outcome
         var original: (data: Data, url: URL)?
+        var sharedTitles: Int?
     }
 
     private enum Step: Sendable {
@@ -325,8 +362,10 @@ public struct ArtistPictureFinder: Sendable {
                 do {
                     let data = try await fetcher.data(from: confident[0].imageURL)
                     if let prepared = ArtistPictureImage.prepare(data) {
+                        let shared = ArtistPictureMatcher.sharedTellingTitles(
+                            confident[0].albumTitles, with: request.deviceAlbumTitles, name: request.name)
                         return Found(outcome: .found(prepared: prepared, candidate: confident[0], source: source.id),
-                                     original: (data, confident[0].imageURL))
+                                     original: (data, confident[0].imageURL), sharedTitles: shared)
                     }
                 } catch {
                     try check(error)

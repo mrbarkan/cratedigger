@@ -214,4 +214,17 @@ final class ArtistInfoClientTests: XCTestCase {
             XCTAssertFalse(URLSessionPictureFetcher.isAllowed(URL(string: refused)), refused)
         }
     }
+
+    /// One Wikimedia spacer for the whole app: two clients (and the run and
+    /// the Commons source, which take the same default) never send two
+    /// Wikimedia requests within a second of each other.
+    func testWikimediaRequestsAreSpacedAcrossClients() async throws {
+        let fetcher = FakePictureFetcher()
+        let gate = MusicBrainzGate(interval: .zero)
+        _ = try await ArtistInfoClient(fetcher: fetcher, gate: gate).bio(wikidataID: "Q1", preferredLanguages: ["en"])
+        _ = try await ArtistInfoClient(fetcher: fetcher, gate: gate).bio(wikidataID: "Q2", preferredLanguages: ["en"])
+        let times = fetcher.requestTimes
+        XCTAssertEqual(times.count, 2)
+        XCTAssertGreaterThanOrEqual(times[1] - times[0], .milliseconds(950))
+    }
 }

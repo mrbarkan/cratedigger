@@ -127,10 +127,15 @@ public struct CommonsArtistSource: ArtistPictureSource {
 
     private let fetcher: ArtistPictureFetching
     private let musicBrainz: MusicBrainzGate
+    private let wikimedia: RequestSpacer
 
-    public init(fetcher: ArtistPictureFetching, musicBrainzGate: MusicBrainzGate = .shared) {
+    /// Wikidata and Commons requests wait at `wikimedia`, the app's one
+    /// Wikimedia spacer unless a test passes its own.
+    public init(fetcher: ArtistPictureFetching, musicBrainzGate: MusicBrainzGate = .shared,
+                wikimedia: RequestSpacer = .wikimedia) {
         self.fetcher = fetcher
         musicBrainz = musicBrainzGate
+        self.wikimedia = wikimedia
     }
 
     public func candidates(for name: String) async throws -> [ArtistPictureCandidate] {
@@ -146,6 +151,7 @@ public struct CommonsArtistSource: ArtistPictureSource {
             guard let item = try CommonsArtistParser.wikidataID(fromArtist: details) else { continue }
             let entity: Data
             do {
+                try await wikimedia.wait()
                 entity = try await fetcher.data(from: Self.entityURL(id: item))
             } catch let error as ArtistPictureSourceError {
                 if case .http(404) = error { continue } // an item since deleted
@@ -205,6 +211,7 @@ public struct CommonsArtistSource: ArtistPictureSource {
         let bare = ArtistPictureCredit(fileName: fileName)
         let data: Data
         do {
+            try await wikimedia.wait()
             data = try await fetcher.data(from: Self.imageInfoURL(fileName: fileName))
         } catch {
             if let source = ArtistPictureSourceError.reading(error), !source.stopsTheRun { return bare }
