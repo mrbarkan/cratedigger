@@ -57,6 +57,8 @@ public struct AppleDoubleSweeper {
 
     private static let deniedKeys = Set(DeviceWritePolicy.deniedTrees.map { DeviceWritePolicy.key(forRelativePath: $0) })
     private static let twinPrefix = "._"
+    /// The AppleDouble delete rule does not depend on the music folder.
+    private static let policy = DeviceWritePolicy(musicSubpath: "")
 
     private let fileManager: FileManager
 
@@ -168,6 +170,9 @@ public struct AppleDoubleSweeper {
             guard mediaExtensions.contains((twinOf as NSString).pathExtension.lowercased()) else {
                 return keep(.notMedia)
             }
+            // Never list what the executor's policy would refuse (a path through a
+            // folder FAT stores as nothing, such as "..."); it is not ours to count either.
+            guard (try? AppleDoubleSweeper.policy.checkDelete(relative, reason: .appleDouble)) != nil else { return }
             candidates.append(relative)
             sizeHistogram[AppleDoubleSweeper.roundedUpToPowerOfTwo(size), default: 0] += 1
         }

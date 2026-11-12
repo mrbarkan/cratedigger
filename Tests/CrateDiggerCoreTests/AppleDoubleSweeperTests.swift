@@ -197,6 +197,13 @@ final class AppleDoubleSweeperTests: XCTestCase {
         XCTAssertTrue(allFiles().contains("Music/.rockbox/._x.m4a"))
     }
 
+    func testPathThePolicyRefusesIsNotListed() throws {
+        try addTwin("Music/.../._x.mp3")
+        XCTAssertThrowsError(try DeviceWritePolicy(musicSubpath: "Music")
+            .checkDelete("Music/.../._x.mp3", reason: .appleDouble))
+        XCTAssertEqual(plan().candidates, [])
+    }
+
     func testUnreadableTwinIsLeftAlone() throws {
         let twin = iPod.root.appendingPathComponent("Music/A/._x.mp3")
         try addTwin("Music/A/._x.mp3")
