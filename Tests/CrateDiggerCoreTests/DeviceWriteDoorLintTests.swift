@@ -33,6 +33,12 @@ final class DeviceWriteDoorLintTests: XCTestCase {
          "makes a backup's folder inside the journal folder, on the Mac"),
         ("DeviceFiles/DeviceWriteJournal.swift", "fileManager.copyItem(at: url, to: destination)",
          "backs a device file up to the Mac: reads the device, writes only the Mac"),
+        ("PodBox/ArtistPictureStore.swift", "fileManager.createDirectory(at: imageDirectory",
+         "makes the prepared-picture cache in Application Support, on the Mac"),
+        ("PodBox/ArtistPictureStore.swift", "try prepared.write(to: url, options: .atomic)",
+         "writes a prepared picture into that cache, on the Mac"),
+        ("PodBox/ArtistPictureStore.swift", "try data.write(to: fileURL, options: .atomic)",
+         "saves library.cdartists in the library's index folder, on the Mac"),
     ]
 
     /// The plan's list, then the lower-level and older spellings of the same

@@ -319,6 +319,8 @@ private struct EditableExternalDeviceProfile {
     /// The whole transfer settings value — device-only fields (mode, compatibility)
     /// are edited inline; the format+folder core is edited via the Patch Bay.
     var settings = ExternalDeviceTransferSettings()
+    /// Not edited here yet; carried through so saving the draft keeps it.
+    var podBox: PodBoxPreferences?
 
     init() {}
 
@@ -331,6 +333,7 @@ private struct EditableExternalDeviceProfile {
         musicDirectorySubpath = profile.musicDirectorySubpath
         iconID = profile.iconID
         settings = profile.transferSettings
+        podBox = profile.podBox
     }
 
     func materialize(id: UUID, createdAt: Date) -> ExternalDeviceProfile {
@@ -345,7 +348,8 @@ private struct EditableExternalDeviceProfile {
             iconID: iconID,
             transferSettings: settings,
             createdAt: createdAt,
-            updatedAt: Date()
+            updatedAt: Date(),
+            podBox: podBox
         )
     }
 }

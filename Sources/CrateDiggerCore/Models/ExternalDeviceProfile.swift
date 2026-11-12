@@ -188,10 +188,16 @@ public struct ExternalDeviceProfile: Identifiable, Codable, Hashable, Sendable {
     public var transferSettings: ExternalDeviceTransferSettings
     public var createdAt: Date
     public var updatedAt: Date
+    /// PodBox settings for this device. nil (every profile saved before they
+    /// existed, and every new one until something is changed) means the defaults.
+    public var podBox: PodBoxPreferences?
+
+    /// The PodBox settings in force: the stored ones, else the defaults.
+    public var podBoxPreferences: PodBoxPreferences { podBox ?? PodBoxPreferences() }
 
     enum CodingKeys: String, CodingKey {
         case id, name, kind, rootBookmark, rootDisplayPath, volumeUUID
-        case musicDirectorySubpath, iconID, transferSettings, createdAt, updatedAt
+        case musicDirectorySubpath, iconID, transferSettings, createdAt, updatedAt, podBox
     }
 
     /// Decodes like the synthesised conformance, plus one migration only the
@@ -211,6 +217,7 @@ public struct ExternalDeviceProfile: Identifiable, Codable, Hashable, Sendable {
         transferSettings = try container.decode(ExternalDeviceTransferSettings.self, forKey: .transferSettings)
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        podBox = try container.decodeIfPresent(PodBoxPreferences.self, forKey: .podBox)
 
         if kind == .rockboxIPod {
             let stored = try container.nestedContainer(
@@ -233,7 +240,8 @@ public struct ExternalDeviceProfile: Identifiable, Codable, Hashable, Sendable {
         iconID: String? = nil,
         transferSettings: ExternalDeviceTransferSettings = ExternalDeviceTransferSettings(),
         createdAt: Date = Date(),
-        updatedAt: Date = Date()
+        updatedAt: Date = Date(),
+        podBox: PodBoxPreferences? = nil
     ) {
         self.id = id
         self.name = name
@@ -246,6 +254,7 @@ public struct ExternalDeviceProfile: Identifiable, Codable, Hashable, Sendable {
         self.transferSettings = transferSettings
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+        self.podBox = podBox
     }
 
     public static func genericStorage(
