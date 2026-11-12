@@ -136,6 +136,7 @@ struct ConvertPatchBay: View {
         case .options:
             artworkRow
             artworkSizeRow
+            folderArtRow
         }
     }
 
@@ -158,7 +159,7 @@ struct ConvertPatchBay: View {
         cvRow("Art Size") {
             PatchBayBank(
                 label: "Art Size",
-                options: Self.artworkDimensions,
+                options: artworkDimensions,
                 selection: artworkDimensionBinding,
                 size: .medium,
                 displayText: artworkDimensionLabel
@@ -168,8 +169,36 @@ struct ConvertPatchBay: View {
         }
     }
 
-    /// 0 stands for "original" — the bank needs a non-optional value.
-    private static let artworkDimensions = [0, 500, 800, 1000, 1400]
+    /// A `cover.jpg` beside the tracks in every album folder, independent of
+    /// the Art row: a Rockbox iPod strips the files and reads the cover, a
+    /// player that shows both can have both. On a device route it is the
+    /// device's switch, seeded from it and saved back with the other rows.
+    private var folderArtRow: some View {
+        cvRow("Folder Art", lines: 2) {
+            PatchBayBank(
+                label: "Folder Art",
+                options: [true, false],
+                selection: $model.conversionSelection.writesFolderCoverArt,
+                size: .medium,
+                displayText: { $0 ? "On" : "Off" },
+                subText: { $0 ? "COVER.JPG" : nil }
+            )
+            .carbonTip("Writes a cover.jpg of \(FolderCoverArtWriter.defaultMaxDimension) px into each album folder, beside the tracks, whatever the Art row does inside the files. Players that read folder art (Rockbox among them) show it.")
+        }
+    }
+
+    /// 0 stands for "original" — the bank needs a non-optional value. A size
+    /// the selection already holds that isn't one of these (a device seeded
+    /// at 600 or 1024) joins them, or the bank would read "Original" over a
+    /// run that writes 600.
+    private var artworkDimensions: [Int] {
+        var sizes = [0, 500, 800, 1000, 1400]
+        if let current = model.conversionSelection.artworkMaxDimension, !sizes.contains(current) {
+            sizes.append(current)
+            sizes.sort()
+        }
+        return sizes
+    }
 
     private var artworkDimensionBinding: Binding<Int> {
         Binding(
@@ -681,9 +710,12 @@ struct ConvertPatchBay: View {
             }
 
             HStack(spacing: 10) {
-                ArmCancelButton {
-                    if model.conversionProgress.isRunning {
-                        model.cancelConversion()
+                // A SYNC has no cancel: the key is dimmed and does nothing then.
+                ArmCancelButton(enabled: !model.isConversionRunning || model.canCancelConversion) {
+                    // A device send stays running through its renames and
+                    // deletions, and Cancel must stop those too, not unroute.
+                    if model.isConversionRunning {
+                        if model.canCancelConversion { model.cancelConversion() }
                     } else {
                         // No active job — Cancel exits convert mode back to
                         // the inspector so the user has an obvious way out. Drop
@@ -711,13 +743,14 @@ struct ConvertPatchBay: View {
     private var armEnabled: Bool { model.patchBayGoEnabled }
 
     private var armReadyColor: Color {
-        if model.conversionProgress.isRunning || model.deviceSyncProgress?.isRunning == true { return theme.cyan }
+        if model.isConversionRunning || model.deviceSyncProgress?.isRunning == true { return theme.cyan }
         return armEnabled ? theme.orange : theme.ink4
     }
 
     private var armReadyLabel: String {
-        if model.conversionProgress.isRunning { return "● RUNNING" }
+        // SYNC first: it also holds the device busy (`isConversionRunning`).
         if model.deviceSyncProgress?.isRunning == true { return "● SYNCING" }
+        if model.isConversionRunning { return "● RUNNING" }
         if model.pendingCDRip != nil, model.cdIdentityPending { return "● PICK RELEASE" }
         if !armEnabled { return "● EMPTY" }
         return "● READY"
@@ -749,7 +782,11 @@ struct ConvertPatchBay: View {
         }
         guard let device = model.pendingDeviceConversion else { return nil }
         let name = device.deviceName.uppercased()
-        guard let free = device.destinationRoot.volumeFreeBytes else {
+        // A fresh device has no music folder yet: ask the folder nearest it
+        // on the way down, but only while a mounted device holds it, or
+        // the Mac's own disk would read as the device.
+        guard MountedDevice.containing(device.destinationRoot, in: model.mountedDevices) != nil,
+              let free = device.destinationRoot.volumeFreeBytesNearby else {
             return "→ \(name) · NOT CONNECTED"
         }
         return "→ \(name) · \(formatBytes(free)) FREE"
@@ -763,7 +800,9 @@ struct ConvertPatchBay: View {
     // MARK: - Row scaffolding
 
     @ViewBuilder
-    private func cvRow<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
+    /// `lines`: 2 lets a two-word label ("FOLDER ART") stack rather than
+    /// truncate in the narrow label column.
+    private func cvRow<Content: View>(_ label: String, lines: Int = 1, @ViewBuilder content: () -> Content) -> some View {
         HStack(alignment: .center, spacing: 10) {
             // No divider rule: the label sits close enough to its control to
             // belong to it, which is what the rule was standing in for.
@@ -774,7 +813,8 @@ struct ConvertPatchBay: View {
                 // One line, shrinking a hair if it must: at this width
                 // "FOLDERS" wrapped to "FOLDER" over a lone "S". Widening the
                 // column would take the room from the controls beside it.
-                .lineLimit(1)
+                .lineLimit(lines)
+                .multilineTextAlignment(.trailing)
                 .minimumScaleFactor(0.8)
                 .frame(width: 46, alignment: .trailing)
             content()
@@ -1007,6 +1047,7 @@ private struct DestStrip: View {
 
 private struct ArmCancelButton: View {
     @Environment(\.carbon) private var theme
+    var enabled: Bool = true
     let action: () -> Void
     var body: some View {
         Button(action: action) {
@@ -1021,6 +1062,8 @@ private struct ArmCancelButton: View {
                 .background(KeyChrome())
         }
         .buttonStyle(.carbonHover)
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.55)   // as the Go key dims
         .accessibilityLabel(Text("Cancel"))
     }
 }

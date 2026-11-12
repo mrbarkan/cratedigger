@@ -503,8 +503,9 @@ struct AlbumArtworkNavigator: View {
         }
     }
 
-    /// The longest edge of the album's embedded artwork, in points. Unknown
-    /// dimensions fall back to a conservative 600.
+    /// The longest edge of the album's embedded artwork, in pixels (recorded
+    /// sizes are pixels; drawn here as points). Unknown dimensions fall back
+    /// to a conservative 600.
     private var embeddedArtSide: CGFloat {
         let native = album.tracks
             .compactMap(\.track.artworkDimensions)

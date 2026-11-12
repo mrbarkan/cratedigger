@@ -238,7 +238,9 @@ extension LibraryViewModel {
         }
         trackSafetyNetEdge(.conversion, isRunning: snapshot.isRunning, edge: edge,
                            armable: { [weak self] in self?.conversionChannelRecord },
-                           isIdle: { [weak self] in !(self?.conversionProgress.isRunning ?? false) })
+                           // A device run keeps its job past the batch, through
+                           // its renames and deletions (`isDeviceTransferRunning`).
+                           isIdle: { [weak self] in !(self?.isConversionRunning ?? false) })
     }
 
     private func syncChannelChanged(_ snapshot: DeviceSyncProgressSnapshot?, edge: BusyChannelEdge) {
@@ -248,7 +250,12 @@ extension LibraryViewModel {
         }
         trackSafetyNetEdge(.sync, isRunning: snapshot?.isRunning ?? false, edge: edge,
                            armable: { [weak self] in self?.busy.running(.transfer, on: .devices) },
-                           isIdle: { [weak self] in !(self?.deviceSyncProgress?.isRunning ?? false) })
+                           // A SYNC keeps its job through its deletions,
+                           // covers and catalog patch (`isDeviceTransferRunning`).
+                           isIdle: { [weak self] in
+                               !(self?.deviceSyncProgress?.isRunning ?? false)
+                                   && !(self?.isDeviceTransferRunning ?? false)
+                           })
     }
 
     /// Scan: feeds progress and only ever logs. Album moves, consolidate,
@@ -337,6 +344,13 @@ extension LibraryViewModel {
         }
         guard let next else { return }
         mutateBusy { $0.update(id, progress: next, at: Date()) }
+    }
+
+    /// Progress for a job that has no channel of its own (finding artist
+    /// pictures): its start site reports it here as it goes.
+    func reportBusyProgress(_ id: BusyJobID, completed: Int, total: Int) {
+        guard let record = busy.record(id), record.isRunning else { return }
+        mutateBusy { $0.update(id, progress: record.progress.with(completed: completed, total: total), at: Date()) }
     }
 
     /// Applies a change to a copy and publishes only when it changed

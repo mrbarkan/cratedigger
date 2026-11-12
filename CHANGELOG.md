@@ -31,9 +31,68 @@ too. Betas are offered only to people who turned on Receive beta updates.
   PIXEL SIZE picks how big the pixels are. A track with no art shows an
   unlit screen. The full player, the gallery and the inspector keep the
   plain picture.
+- **Sending to a device looks at what is already there.** Before anything
+  is written, CrateDigger compares the albums you are sending with the
+  device. Tracks it already has are skipped, missing tracks of a partly
+  copied album are filled in beside the rest of it, and new albums go over
+  as usual. This is the same for copy devices, converting devices and the
+  offline queue with SYNC, and an MP3 you replace with a FLAC is recognised
+  as the same track, not copied in beside it.
+- **An "Already on" sheet for albums that differ.** When an album on the
+  device is a different quality, has different cover art or is another
+  release of the same name, one sheet lists them side by side with what
+  would be sent. Choose Replace, Keep both or Leave it for each album, or
+  set them all at once. Nothing is chosen for you, and Cancel sends
+  nothing. Albums you leave alone stop coming back; the sheet can show them
+  again, and Preferences > Devices can forget them all.
+- **Folder Art is a switch.** Preferences > Devices has a Folder Art option
+  for each device, and the Convert panel has a Folder Art row, so a
+  cover.jpg beside the tracks can be combined with keeping, re-embedding or
+  stripping the art inside the files. Rockbox iPods keep their old
+  default (cover.jpg on, art inside the files stripped). Each device also
+  remembers its own art setting. Ordinary conversions have the switch too,
+  off by default.
+- The Devices screen's Artwork cell says when a cover.jpg is written as
+  well as art inside the files.
+- **PodBox iPods are recognised.** When a device runs the PodBox firmware,
+  Preferences > Devices shows which one (model, build and library layout),
+  the Devices screen calls it a PodBox, and CrateDigger tells you what the
+  iPod will make of your music: Mac files it reads as broken tracks, artist
+  pictures switched off, a music folder it does not scan, the play log off,
+  names it cannot match, paths that are too long, and compilations without
+  an album artist. It only reads the iPod when it is plugged in.
+- **A folder layout PodBox reads well.** "PodBox recommended" names folders
+  Artist / 2010 Album, which is how PodBox sorts albums, and leaves the year
+  out for an album that has none. It is picked in Preferences > Devices for
+  a new iPod profile; a layout you already use is never changed.
+- **Clean Up Mac Files.** Right-click a device or one of its folders, or use
+  Preferences > Devices, to remove the hidden `._` files macOS leaves on an
+  iPod's disk. Only files that are provably macOS metadata for a music,
+  picture or playlist file are removed, a copy of each is kept on your Mac,
+  and nothing happens until you confirm the count. A switch can also tidy
+  the folders a transfer just wrote into; it is off until you turn it on.
+- **Next steps and Eject after a transfer.** The summary says what to do on
+  the iPod (for PodBox: Update Database, Update Art Cache) and has an Eject
+  key. The Devices screen reminds you to update the art cache until the
+  iPod has.
+- **Artist pictures for PodBox.** The Artist Pictures sheet shows the
+  artists on your iPod and writes a small square picture for those the iPod
+  has none for, either in its Artwork/People folder or as folder.jpg in
+  each artist's folder. Pictures come from your own files, an artist.jpg in
+  your library, Deezer, or Wikimedia Commons (found through MusicBrainz),
+  and are taken without asking only when an album title confirms the
+  artist; anything unsure waits for your pick. Only the artist's name is
+  sent, and only when you ask: it is off until you turn it on. A picture
+  you already have on the iPod is never replaced, and the ones CrateDigger
+  added can be removed. Pictures after a transfer wait until you mark the
+  check passed for that iPod.
 
 ### Changed
 
+- **MusicBrainz lookups share one speed limit.** Artwork search, FIX TAGS, DEEP
+  SCAN, CD lookup and artist pictures wait their turn at the same gate
+  instead of each keeping its own count, so using two together no longer
+  gets refused by MusicBrainz.
 - **Carbon wears carbon weave** in place of its grain, and its selection
   lamp in the light theme now glows the same orange as the light it
   throws on the row.
@@ -41,6 +100,39 @@ too. Betas are offered only to people who turned on Receive beta updates.
 - Themes you made that inherit from Carbon pick up the weave with it, even
   one that sets its own grain. To keep grain, open the theme in the Theme
   Editor, switch Texture Grain on and save.
+
+### Fixed
+
+- **Device transfers no longer leave half-written files.** Each file is
+  written under a temporary name and moved into place when it is complete,
+  so a failed or cancelled send keeps the old file, and an unplugged drive
+  does not leave a track that stops halfway.
+- **Replacing an album never leaves it empty.** The new files are written
+  first and the old ones removed only when every new file arrived. Cancel
+  keeps the old files.
+- **Nothing is written or removed outside the device's music folder**, so
+  backups and an iPod's own database are left alone.
+- **The device's contents stay up to date after a send.** The browser and
+  the offline queue see what was just copied, replaced or removed without a
+  rescan. Copy-mode devices no longer silently write "(2)" copies, and
+  SYNC no longer converts a file more than once.
+- Cancel and the busy light now follow a device send, SYNC or conversion
+  all the way to the end, including the final renames, deletions and cover
+  files.
+- **Sending to a device no longer leaves hidden Mac files behind.** Files
+  are copied without the extra information macOS adds on a FAT disk, which
+  is what made `._` files that PodBox read as broken tracks. Converting
+  devices convert on your Mac and copy the finished file over, so nothing
+  is written to the device half-done.
+- **Every write to a device is checked first.** CrateDigger now writes to a
+  device only in the places it is meant to (the music folder, covers beside
+  it, artist pictures), never in the player's own folders, and replaces or
+  removes only files it can show it wrote itself or that you chose to
+  replace. A file you added is left alone and reported. A copy of anything
+  replaced or removed is kept on your Mac.
+- **Names a FAT disk cannot hold are fixed on the way.** Folders and files
+  with characters such as ? : or a trailing dot (R.E.M.) are written with
+  the characters removed or replaced, so the album lands instead of failing.
 
 ## 2.3.3 (116), 2026-11-10
 

@@ -2562,9 +2562,17 @@ private struct DevicesPane: View {
         } readout: {
             capacityReadout(for: device).fixedSize()
         } ticker: {
-            DSPTicker(prefix: "MUSIC DIR", path: musicDirPath(profile, device), leadingInset: 62)
+            // What is left to do on the iPod outranks the music folder
+            // (`pendingIPodStep`: "NEXT ON IPOD · UPDATE ART CACHE").
+            if let step = model.pendingIPodStep[profile.id] {
+                let parts = step.components(separatedBy: " · ")
+                DSPTicker(prefix: parts[0], path: AttributedString(parts.dropFirst().joined(separator: " · ")),
+                          leadingInset: 62)
+            } else {
+                DSPTicker(prefix: "MUSIC DIR", path: musicDirPath(profile, device), leadingInset: 62)
+            }
         } cells: {
-            OLEDCells(cells(for: profile))
+            OLEDCells(cells(for: profile, device: device))
         }
     }
 
@@ -2659,16 +2667,23 @@ private struct DevicesPane: View {
 
     // MARK: Cells
 
-    private func cells(for profile: ExternalDeviceProfile) -> [OLEDCellData] {
+    private func cells(for profile: ExternalDeviceProfile, device: MountedDevice) -> [OLEDCellData] {
         let s = profile.transferSettings
         let transfer = s.mode == .copyOriginals ? ("COPY", "Originals") : ("CONVERT", "During Copy")
         let fmt = s.outputFormat.fileExtension.uppercased()
         let fmtSub = s.outputFormat.isLossless ? "Lossless" : "\(s.bitrateKbps ?? 192) kbps"
-        let artwork: (String, String) = profile.usesFolderCoverArt
-            ? ("\(FolderCoverArtWriter.defaultMaxDimension) px", "cover.jpg")
-            : (s.artworkMaxDimension.map { ("\($0) px", "Re-embed") } ?? ("KEEP", "Preserve"))
+        // Copy mode writes the files as they are, so their art is kept
+        // whatever the stored mode says.
+        let artwork = DeviceArtworkReadout.cell(
+            mode: s.mode == .copyOriginals ? .preserve : s.artworkMode,
+            maxDimension: s.artworkMaxDimension,
+            folderArt: profile.usesFolderCoverArt
+        )
+        // A PodBox iPod says so, with its model; anything else reads its profile kind.
+        let kind = model.firmware(for: device).flatMap { $0.flavour == .podBox ? ("PODBOX", $0.modelName) : nil }
+            ?? kindCell(profile.kind)
         return [
-            OLEDCellData(key: "Kind", value: kindCell(profile.kind).0, sub: kindCell(profile.kind).1, valueColor: theme.cyan),
+            OLEDCellData(key: "Kind", value: kind.0, sub: kind.1, valueColor: theme.cyan),
             OLEDCellData(key: "Transfer", value: transfer.0, sub: transfer.1),
             OLEDCellData(key: "Format", value: fmt, sub: fmtSub),
             OLEDCellData(key: "Artwork", value: artwork.0, sub: artwork.1),

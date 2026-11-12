@@ -95,14 +95,22 @@ public struct FolderTemplateConfig: Hashable, Codable, Sendable {
     /// before this field existed) means every gap is a folder break — the original
     /// all-`/` behavior. Read defensively by index so any length is tolerated.
     public let separators: [FolderSeparator]
+    /// A missing year that shares a folder with other tokens is left out
+    /// ("Teen Dream", not "Unknown Year Teen Dream"). Set only by the PodBox
+    /// layout preset: every template saved before it existed decodes false
+    /// and keeps the paths it always produced, so an album already on a
+    /// device is never written a second time under a new name.
+    public let omitsMissingYear: Bool
 
-    public init(preset: TemplatePreset, tokenOrder: [FolderToken], separators: [FolderSeparator] = []) {
+    public init(preset: TemplatePreset, tokenOrder: [FolderToken], separators: [FolderSeparator] = [],
+                omitsMissingYear: Bool = false) {
         self.preset = preset
         self.tokenOrder = tokenOrder
         self.separators = separators
+        self.omitsMissingYear = omitsMissingYear
     }
 
-    private enum CodingKeys: String, CodingKey { case preset, tokenOrder, separators }
+    private enum CodingKeys: String, CodingKey { case preset, tokenOrder, separators, omitsMissingYear }
 
     /// Back-compatible decode: device profiles / selections saved before separators
     /// existed simply have no key, so they decode as `[]` (all-`/`, unchanged).
@@ -111,6 +119,17 @@ public struct FolderTemplateConfig: Hashable, Codable, Sendable {
         preset = try container.decode(TemplatePreset.self, forKey: .preset)
         tokenOrder = try container.decode([FolderToken].self, forKey: .tokenOrder)
         separators = try container.decodeIfPresent([FolderSeparator].self, forKey: .separators) ?? []
+        omitsMissingYear = try container.decodeIfPresent(Bool.self, forKey: .omitsMissingYear) ?? false
+    }
+
+    /// The flag is written only when set, so a template without it encodes
+    /// byte for byte as it did before the flag existed.
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(preset, forKey: .preset)
+        try container.encode(tokenOrder, forKey: .tokenOrder)
+        try container.encode(separators, forKey: .separators)
+        if omitsMissingYear { try container.encode(true, forKey: .omitsMissingYear) }
     }
 }
 
@@ -150,6 +169,9 @@ public struct PlannedOutputPath: Hashable, Sendable {
 }
 
 public struct OutputPathPlanner {
+    /// The album title a file with no album tag is filed under.
+    public static let defaultUnknownAlbum = "Unknown Album"
+
     private let fileManager: FileManager
     private let unknownArtist: String
     private let unknownAlbum: String
@@ -158,7 +180,7 @@ public struct OutputPathPlanner {
     public init(
         fileManager: FileManager = .default,
         unknownArtist: String = "Unknown Artist",
-        unknownAlbum: String = "Unknown Album",
+        unknownAlbum: String = OutputPathPlanner.defaultUnknownAlbum,
         unknownYear: String = "Unknown Year"
     ) {
         self.fileManager = fileManager
@@ -194,18 +216,26 @@ public struct OutputPathPlanner {
 
         // Group token values into folder levels: a `/` after a token ends the
         // current folder; a `space` keeps the next token in the same folder.
-        var levels: [[String]] = [[]]
+        var levels: [[(token: FolderToken, value: String)]] = [[]]
         for (i, token) in tokenOrder.enumerated() {
             if let value = tokenValue(for: token, loadedTrack: loadedTrack, albumKey: albumKey) {
-                levels[levels.count - 1].append(value)
+                levels[levels.count - 1].append((token, value))
             }
             if i < tokenOrder.count - 1 {
                 let separator = i < separators.count ? separators[i] : .slash
                 if separator == .slash { levels.append([]) }
             }
         }
+        // Only a template that asks for it (the PodBox preset) leaves out a
+        // missing year sharing its folder with other tokens; a year folder of
+        // its own keeps the fallback either way.
+        let missingYear = PathComponentSanitizer.sanitize("", fallback: unknownYear)
         let components = levels
-            .map { $0.joined(separator: " ") }
+            .map { level in
+                guard templateConfig.omitsMissingYear, level.count > 1 else { return level }
+                return level.filter { !($0.token == .year && $0.value == missingYear) }
+            }
+            .map { $0.map(\.value).joined(separator: " ") }
             .filter { !$0.isEmpty }
 
         let fallbackPath = [
@@ -422,6 +452,28 @@ public struct OutputPathPlanner {
             folder = folder.deletingLastPathComponent()
         }
         return folder.standardizedFileURL.path
+    }
+
+    /// The folder name for a second copy of an album beside `existingFolder`:
+    /// "1997 OK Computer" → "1997 OK Computer [2]", bumping until no folder of
+    /// that name exists beside the original and `isTaken` (a batch's own
+    /// planned folders) does not claim it either. Shared by a conversion's New
+    /// Version Folder and a device transfer's Keep both.
+    public static func nextAvailableVersionFolderName(
+        for existingFolder: URL,
+        fileManager: FileManager = .default,
+        isTaken: (URL) -> Bool = { _ in false }
+    ) -> String {
+        let base = existingFolder.lastPathComponent
+        let parent = existingFolder.deletingLastPathComponent()
+        var n = 2
+        while true {
+            let candidate = parent.appendingPathComponent("\(base) [\(n)]", isDirectory: true)
+            if !fileManager.fileExists(atPath: candidate.path) && !isTaken(candidate) {
+                return candidate.lastPathComponent
+            }
+            n += 1
+        }
     }
 
     /// A disc folder starts with a disc number: `CD1`, `Disc 2 - Live`, Picard's

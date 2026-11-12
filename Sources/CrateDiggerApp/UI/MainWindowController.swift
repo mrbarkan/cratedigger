@@ -173,7 +173,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     var isConversionRunning: Bool {
-        hostingController.model.conversionProgress.isRunning
+        hostingController.model.isConversionRunning
+    }
+
+    var canCancelConversion: Bool {
+        hostingController.model.canCancelConversion
     }
 
     func presentConversionSheet() {

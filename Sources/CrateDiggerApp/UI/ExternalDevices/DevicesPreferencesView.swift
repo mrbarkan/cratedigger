@@ -3,11 +3,34 @@ import CrateDiggerCore
 import SwiftUI
 
 struct DevicesPreferencesView: View {
+    /// The running app's view of mounted devices. Read, never observed: the
+    /// model publishes far more than this pane needs, so the pane refreshes
+    /// on `deviceFirmwareChangedNotification` instead.
+    let model: LibraryViewModel?
+
     @State private var profiles: [ExternalDeviceProfile] = []
     @State private var selectedID: UUID?
     @State private var draft = EditableExternalDeviceProfile()
     @State private var deleteConfirmationShown = false
     @State private var showSavedConfirmation = false
+    /// How many albums the review sheet was told to leave alone on the
+    /// selected device. Read when a profile is selected; the button clears it.
+    @State private var leftAloneCount = 0
+    /// What the selected profile's mounted device runs, when it has `.rockbox`.
+    @State private var firmware: DeviceFirmware?
+    /// The selected profile's device, while it is mounted.
+    @State private var mountedDevice: MountedDevice?
+    /// It is FAT or exFAT, where macOS leaves `._` files.
+    @State private var canCleanUpMacFiles = false
+    /// The mounted device runs PodBox (`centralPeopleArtwork`); nil when it
+    /// is not mounted, so the On the iPod rows show, disabled where they need it.
+    @State private var hasPeopleArtwork: Bool?
+    /// What the readiness check says about the mounted device.
+    @State private var notes: [PodBoxNote] = []
+    @State private var removePicturesConfirmationShown = false
+    /// A layout chosen for a profile whose device already has albums,
+    /// waiting for the owner to confirm.
+    @State private var pendingLayout: RockboxLayoutPreset?
 
     var body: some View {
         // spacing 0 and no .top alignment: the divider has to run the full
@@ -21,11 +44,34 @@ struct DevicesPreferencesView: View {
         }
         .frame(minWidth: 720, minHeight: 500)
         .onAppear(perform: reload)
+        .onReceive(NotificationCenter.default.publisher(for: LibraryViewModel.deviceFirmwareChangedNotification)) { _ in
+            refreshMountedState()
+        }
         .alert("Remove device profile?", isPresented: $deleteConfirmationShown) {
             Button("Remove", role: .destructive) { deleteSelectedProfile() }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This removes only the CrateDigger profile. Files on the device are not touched.")
+        }
+        .alert("Remove artist pictures CrateDigger added?", isPresented: $removePicturesConfirmationShown) {
+            Button("Remove", role: .destructive) {
+                if let selectedID { model?.removeArtistPicturesCrateDiggerAdded(profileID: selectedID) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Only pictures CrateDigger wrote and nobody has changed since are removed. A copy of each is kept on this Mac. Your own pictures stay.")
+        }
+        .alert("Change the folder layout?", isPresented: Binding(
+            get: { pendingLayout != nil },
+            set: { if !$0 { pendingLayout = nil } }
+        )) {
+            Button("Change") {
+                if let pendingLayout { applyLayout(pendingLayout) }
+                pendingLayout = nil
+            }
+            Button("Cancel", role: .cancel) { pendingLayout = nil }
+        } message: {
+            Text("New albums will use this layout. Albums already on the device stay where they are.")
         }
     }
 
@@ -89,7 +135,7 @@ struct DevicesPreferencesView: View {
             // Connected volumes, pre-identified (kind + mount point + music folder
             // + suggested settings) so one click adds a ready-to-use profile.
             let suggestions = DeviceDetectionService().detectDevices()
-                .map { DeviceProfileSuggester.suggestedProfile(for: $0) }
+                .map { seededForPodBox(DeviceProfileSuggester.suggestedProfile(for: $0), device: $0) }
             if !suggestions.isEmpty {
                 Section("Detected") {
                     ForEach(suggestions) { profile in
@@ -134,7 +180,7 @@ struct DevicesPreferencesView: View {
             Form {
                 Section("Device") {
                     TextField("Name", text: $draft.name)
-                    Picker("Type", selection: $draft.kind) {
+                    Picker("Type", selection: kindBinding) {
                         ForEach(ExternalDeviceKind.allCases, id: \.self) { kind in
                             Text(kind.title).tag(kind)
                         }
@@ -165,6 +211,8 @@ struct DevicesPreferencesView: View {
                     Text("Leave blank for direct-file players that expect tracks at the device root.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+
+                    firmwareRows
                 }
 
                 Section("Transfer") {
@@ -182,6 +230,16 @@ struct DevicesPreferencesView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
+
+                    if draft.kind == .rockboxIPod {
+                        layoutRows
+                    }
+                }
+
+                artworkSection
+
+                if draft.kind == .rockboxIPod, hasPeopleArtwork != false {
+                    onTheIPodSection
                 }
 
             }
@@ -209,6 +267,256 @@ struct DevicesPreferencesView: View {
             .padding(.vertical, 12)
             }
         }
+    }
+
+    /// Read-only, and only while the device is mounted and has `.rockbox`:
+    /// what the mount-time probe found. Then, while it is mounted, the
+    /// cleanup of the Mac's `._` files, which runs only when pressed.
+    @ViewBuilder
+    private var firmwareRows: some View {
+        if let firmware {
+            LabeledContent("Firmware") {
+                Text(firmware.summaryLine)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .textSelection(.enabled)
+            }
+            if let notice = firmware.layoutNotice {
+                Text(notice + ".")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        if let mountedDevice, let model {
+            LabeledContent("Mac files") {
+                Button("Clean Up Mac Files…") { model.cleanUpMacFiles(device: mountedDevice, scope: nil) }
+                    .disabled(!canCleanUpMacFiles)
+            }
+            Text(cleanUpCaption)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        Toggle("Clean up after each transfer", isOn: automaticCleanupBinding)
+        Text("Removes the ._ files macOS left in the folders a transfer wrote to, keeping a copy on this Mac. Off until you have checked a cleanup on this device; new copies never make them either way.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+    }
+
+    // MARK: Folder layout
+
+    /// The profile's folder layout as one of the Rockbox presets, or Custom.
+    /// Choosing a preset seeds the template; Custom changes nothing here.
+    @ViewBuilder
+    private var layoutRows: some View {
+        let current = RockboxLayoutPreset.matching(draft.settings.templateConfig)
+        Picker("Folder layout", selection: Binding(
+            get: { current },
+            set: { chosen in
+                guard chosen != .custom, chosen != current else { return }
+                if let existing = profiles.first(where: { $0.id == selectedID }),
+                   model?.hasDeviceCatalog(forProfile: existing) == true {
+                    pendingLayout = chosen
+                } else {
+                    applyLayout(chosen)
+                }
+            }
+        )) {
+            ForEach(RockboxLayoutPreset.allCases, id: \.self) { preset in
+                Text(preset.title).tag(preset)
+            }
+        }
+        // The caption shows the folders when the title does not already say them.
+        if current.caption != current.title {
+            Text(current.caption)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    /// The preset's template on the draft (saved with Save), in album folders.
+    private func applyLayout(_ preset: RockboxLayoutPreset) {
+        guard let template = preset.template else { return }
+        draft.settings.templateConfig = template
+        draft.settings.folderStructureMode = .metadataTemplate
+    }
+
+    // MARK: On the iPod
+
+    /// PodBox's own extras for this iPod: what the readiness check says,
+    /// then artist pictures. Every switch is saved with Save; nothing here
+    /// writes to the device except Remove (after a confirmation) and Apply
+    /// in the Artist Pictures sheet.
+    private var onTheIPodSection: some View {
+        Section("On the iPod") {
+            ForEach(notes) { note in
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(note.text)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if let menuPath = note.menuPath {
+                        Text("On the iPod: \(menuPath)")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+            }
+
+            Picker("Artist pictures", selection: podBoxBinding(\.artistPictures)) {
+                Text("Off").tag(ArtistPictureDestination.off)
+                Text("In /Artwork/People").tag(ArtistPictureDestination.artworkFolder)
+                Text("In artist folders").tag(ArtistPictureDestination.artistFolders)
+            }
+            if !passedM5 {
+                Text("Run the M5 check before turning this on.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Toggle("Verified on this iPod (M5)", isOn: Binding(
+                get: { passedM5 },
+                set: { passed in
+                    var preferences = draft.podBox ?? PodBoxPreferences()
+                    if passed {
+                        preferences.passedChecks.insert(ArtistPictureSession.m5Check)
+                    } else {
+                        preferences.passedChecks.remove(ArtistPictureSession.m5Check)
+                    }
+                    draft.podBox = preferences
+                }
+            ))
+            Toggle("Find missing artist pictures automatically", isOn: podBoxBinding(\.findsArtistPicturesAutomatically))
+            Text("At the end of each transfer, looks up pictures for artists without one on Deezer, sending only the artist's name. Off until you turn it on.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            HStack {
+                Button("Artist Pictures…") {
+                    if let selectedID { model?.showArtistPictures(profileID: selectedID) }
+                }
+                .disabled(model == nil || selectedID == nil)
+                Button("Remove artist pictures CrateDigger added") { removePicturesConfirmationShown = true }
+                    .disabled(model == nil || mountedDevice == nil)
+            }
+            if mountedDevice == nil {
+                Text("Connect the iPod to remove pictures from it.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var passedM5: Bool {
+        draft.podBox?.passedChecks.contains(ArtistPictureSession.m5Check) ?? false
+    }
+
+    /// One PodBox preference on the draft, created with its defaults on first change.
+    private func podBoxBinding<Value>(_ keyPath: WritableKeyPath<PodBoxPreferences, Value>) -> Binding<Value> {
+        Binding(
+            get: { (draft.podBox ?? PodBoxPreferences())[keyPath: keyPath] },
+            set: { value in
+                var preferences = draft.podBox ?? PodBoxPreferences()
+                preferences[keyPath: keyPath] = value
+                draft.podBox = preferences
+            }
+        )
+    }
+
+    /// The profile's automatic `._` cleanup (off by default; saved with Save).
+    private var automaticCleanupBinding: Binding<Bool> {
+        Binding(
+            get: { draft.podBox?.appleDoubleCleanup ?? false },
+            set: { isOn in
+                var preferences = draft.podBox ?? PodBoxPreferences()
+                preferences.appleDoubleCleanup = isOn
+                draft.podBox = preferences
+            }
+        )
+    }
+
+    private var cleanUpCaption: String {
+        guard canCleanUpMacFiles else {
+            return "Only FAT and exFAT devices collect the hidden ._ files macOS leaves beside each file."
+        }
+        let hint = DeviceCleanupSummary.mountHint(count: firmware?.unreadableAppleDoubleCount ?? 0)
+        return (hint.map { $0 + " " } ?? "")
+            + "Removes the hidden ._ files macOS leaves beside each file. A copy is kept on this Mac."
+    }
+
+    /// What a transfer does with the art: inside the files (convert mode
+    /// only; copy mode writes the files as they are) and as a cover.jpg
+    /// beside them. Both are stored on the device, and the review compares
+    /// what is already there against them.
+    private var artworkSection: some View {
+        Section("Artwork") {
+            if draft.settings.mode == .convertDuringTransfer {
+                Picker("In the files", selection: $draft.settings.artworkMode) {
+                    Text("Keep").tag(ArtworkMode.preserve)
+                    Text("Re-embed").tag(ArtworkMode.compatReembed)
+                    Text("Strip").tag(ArtworkMode.none)
+                }
+                .pickerStyle(.segmented)
+
+                Picker("Size", selection: $draft.settings.artworkMaxDimension) {
+                    ForEach(artworkSizeOptions, id: \.self) { size in
+                        // Verbatim: a localized interpolation groups 1024 as "1.024".
+                        Text(verbatim: size.map { "\($0) px" } ?? "Original").tag(size)
+                    }
+                }
+                .disabled(draft.settings.artworkMode != .compatReembed)
+            }
+
+            Toggle("Folder art (cover.jpg)", isOn: $draft.settings.writesFolderCoverArt)
+            Text(folderArtCaption)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            LabeledContent("Albums left alone") {
+                HStack {
+                    Text(verbatim: leftAloneCount == 0 ? "None" : "\(leftAloneCount)")
+                        .foregroundStyle(.secondary)
+                    Button("Forget albums left alone") { forgetLeftAlone() }
+                        .disabled(leftAloneCount == 0)
+                }
+            }
+            Text("Albums you chose to leave alone when sending stop being asked about. Forget them to be asked again.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var folderArtCaption: String {
+        let size = FolderCoverArtWriter.defaultMaxDimension
+        return draft.settings.mode == .convertDuringTransfer
+            ? "Writes a \(size) px cover.jpg beside the tracks in each album folder, whatever happens to the art in the files. Rockbox shows it; a large embedded cover comes out grey there."
+            : "Writes a \(size) px cover.jpg beside the tracks in each album folder. The copied files keep their own art."
+    }
+
+    /// The sizes Re-embed offers, plus whatever the profile already stores
+    /// (the factory default is 1024), so a stored size is never shown as
+    /// another.
+    private var artworkSizeOptions: [Int?] {
+        var sizes = Set([300, 500, 600, 800, 1000, 1400])
+        if let stored = draft.settings.artworkMaxDimension { sizes.insert(stored) }
+        return [nil] + sizes.sorted().map { Optional($0) }
+    }
+
+    /// Choosing a kind moves the art defaults with it: to a Rockbox iPod,
+    /// Strip and folder art; away from one, no folder art and the mode the
+    /// size implies. Only the user's pick goes through here, never a profile
+    /// being loaded into the draft.
+    private var kindBinding: Binding<ExternalDeviceKind> {
+        Binding(
+            get: { draft.kind },
+            set: { newKind in
+                draft.settings = draft.settings.adjustedForKind(from: draft.kind, to: newKind)
+                draft.kind = newKind
+            }
+        )
+    }
+
+    private func forgetLeftAlone() {
+        guard let selectedID else { return }
+        DeviceLeftAloneStore().clear(profileID: selectedID)
+        leftAloneCount = 0
     }
 
     private var iconLabel: String {
@@ -253,8 +561,10 @@ struct DevicesPreferencesView: View {
     private func deleteSelectedProfile() {
         guard let selectedID else { return }
         PreferencesStore.shared.removeExternalDeviceProfile(id: selectedID)
-        // A deleted profile's sync queue + staged bakes are trash — drop them now.
+        // A deleted profile's sync queue + staged bakes are trash — drop them now,
+        // and the albums it was told to leave alone with them.
         DeviceSyncQueueStore().remove(profileID: selectedID)
+        DeviceLeftAloneStore().clear(profileID: selectedID)
         self.selectedID = nil
         reload()
     }
@@ -262,9 +572,35 @@ struct DevicesPreferencesView: View {
     private func loadDraft(for id: UUID?) {
         guard let id, let profile = profiles.first(where: { $0.id == id }) else {
             draft = EditableExternalDeviceProfile()
+            leftAloneCount = 0
+            firmware = nil
+            mountedDevice = nil
+            canCleanUpMacFiles = false
+            hasPeopleArtwork = nil
+            notes = []
             return
         }
         draft = EditableExternalDeviceProfile(profile: profile)
+        leftAloneCount = DeviceLeftAloneStore().load(profileID: id).count
+        refreshMountedState()
+    }
+
+    /// The selected profile's mounted device, as the app sees it now.
+    private func refreshMountedState() {
+        guard let model, let selectedID, let device = model.mountedDevice(forProfileID: selectedID) else {
+            firmware = nil
+            mountedDevice = nil
+            canCleanUpMacFiles = false
+            hasPeopleArtwork = nil
+            notes = []
+            return
+        }
+        firmware = model.firmware(for: device)
+        mountedDevice = device
+        let capabilities = model.capabilities(for: device)
+        canCleanUpMacFiles = capabilities.contains(.appleDoubleSweep)
+        hasPeopleArtwork = capabilities.contains(.centralPeopleArtwork)
+        notes = model.deviceNotes[device.id] ?? []
     }
 
     private func chooseMountedRoot() {
@@ -285,6 +621,18 @@ struct DevicesPreferencesView: View {
         } catch {
             AppLog.prefs.warning("Could not bookmark device root: \(String(describing: error), privacy: .public)")
         }
+    }
+
+    /// A new Rockbox profile for a device whose probe says PodBox starts on
+    /// the PodBox recommended layout. Every other new profile, and every
+    /// existing one, keeps the layout it is given.
+    private func seededForPodBox(_ profile: ExternalDeviceProfile, device: MountedDevice) -> ExternalDeviceProfile {
+        guard profile.kind == .rockboxIPod, model?.firmware(for: device)?.flavour == .podBox,
+              let template = RockboxLayoutPreset.podBoxRecommended.template else { return profile }
+        var seeded = profile
+        seeded.transferSettings.templateConfig = template
+        seeded.transferSettings.folderStructureMode = .metadataTemplate
+        return seeded
     }
 
     private func makeSDCardProfile() -> ExternalDeviceProfile {
@@ -316,9 +664,13 @@ private struct EditableExternalDeviceProfile {
     var volumeUUID: String?
     var musicDirectorySubpath: String = "Music"
     var iconID: String?
-    /// The whole transfer settings value — device-only fields (mode, compatibility)
-    /// are edited inline; the format+folder core is edited via the Patch Bay.
+    /// The whole transfer settings value — device-only fields (mode,
+    /// compatibility) and the art are edited inline; the format+folder core is
+    /// edited via the Patch Bay (which edits the art too).
     var settings = ExternalDeviceTransferSettings()
+    /// Carried through so saving the draft keeps it; the cleanup switch and
+    /// the On the iPod rows edit it.
+    var podBox: PodBoxPreferences?
 
     init() {}
 
@@ -331,6 +683,7 @@ private struct EditableExternalDeviceProfile {
         musicDirectorySubpath = profile.musicDirectorySubpath
         iconID = profile.iconID
         settings = profile.transferSettings
+        podBox = profile.podBox
     }
 
     func materialize(id: UUID, createdAt: Date) -> ExternalDeviceProfile {
@@ -345,7 +698,8 @@ private struct EditableExternalDeviceProfile {
             iconID: iconID,
             transferSettings: settings,
             createdAt: createdAt,
-            updatedAt: Date()
+            updatedAt: Date(),
+            podBox: podBox
         )
     }
 }

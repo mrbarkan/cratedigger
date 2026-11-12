@@ -86,7 +86,7 @@ final class ReleaseMetadataProviderTests: XCTestCase {
 
     func testMusicBrainzParsesReleaseAndTracks() async throws {
         respond(["/release/?": musicBrainzSearch, "/release/mbid-technique": musicBrainzDetail])
-        let client = MusicBrainzReleaseClient(session: session)
+        let client = MusicBrainzReleaseClient(session: session, gate: MusicBrainzGate(interval: .zero))
 
         let candidates = try await client.searchReleases(query: query, detailLimit: 3)
 
@@ -116,7 +116,7 @@ final class ReleaseMetadataProviderTests: XCTestCase {
         """
         respond(["/release/?": search, "/release/mbid-collab": "{\"media\":[]}"])
 
-        let candidates = try await MusicBrainzReleaseClient(session: session)
+        let candidates = try await MusicBrainzReleaseClient(session: session, gate: MusicBrainzGate(interval: .zero))
             .searchReleases(query: query, detailLimit: 1)
         XCTAssertEqual(candidates.first?.artist, "Artist A feat. Artist B")
     }
@@ -133,7 +133,7 @@ final class ReleaseMetadataProviderTests: XCTestCase {
             return (response, Data(body.utf8))
         }
 
-        let candidates = try await MusicBrainzReleaseClient(session: session)
+        let candidates = try await MusicBrainzReleaseClient(session: session, gate: MusicBrainzGate(interval: .zero))
             .searchReleases(query: query, detailLimit: 1)
 
         XCTAssertEqual(candidates.count, 1)
@@ -164,7 +164,7 @@ final class ReleaseMetadataProviderTests: XCTestCase {
         respond(["/release/mbid-technique": musicBrainzByID])
 
         let release = try await XCTUnwrapAsync(
-            try await MusicBrainzReleaseClient(session: session).release(id: "mbid-technique")
+            try await MusicBrainzReleaseClient(session: session, gate: MusicBrainzGate(interval: .zero)).release(id: "mbid-technique")
         )
 
         XCTAssertEqual(release.title, "Technique")
@@ -179,7 +179,7 @@ final class ReleaseMetadataProviderTests: XCTestCase {
 
     func testMusicBrainzByIDReturnsNilWhenTheReleaseHasNoTitle() async throws {
         respond(["/release/mbid-gone": "{}"])
-        let release = try await MusicBrainzReleaseClient(session: session).release(id: "mbid-gone")
+        let release = try await MusicBrainzReleaseClient(session: session, gate: MusicBrainzGate(interval: .zero)).release(id: "mbid-gone")
         XCTAssertNil(release)
     }
 
@@ -188,7 +188,7 @@ final class ReleaseMetadataProviderTests: XCTestCase {
             (HTTPURLResponse(url: request.url!, statusCode: 503, httpVersion: nil, headerFields: nil)!, Data("{}".utf8))
         }
         do {
-            _ = try await MusicBrainzReleaseClient(session: session).release(id: "mbid-technique")
+            _ = try await MusicBrainzReleaseClient(session: session, gate: MusicBrainzGate(interval: .zero)).release(id: "mbid-technique")
             XCTFail("expected a throw")
         } catch {
             // Expected: DEEP SCAN treats it as "this candidate didn't load".
@@ -202,7 +202,7 @@ final class ReleaseMetadataProviderTests: XCTestCase {
 
     func testMusicBrainzEmptyResultsAreNotAnError() async throws {
         respond(["/release/?": "{\"releases\":[]}"])
-        let candidates = try await MusicBrainzReleaseClient(session: session)
+        let candidates = try await MusicBrainzReleaseClient(session: session, gate: MusicBrainzGate(interval: .zero))
             .searchReleases(query: query, detailLimit: 3)
         XCTAssertTrue(candidates.isEmpty)
     }

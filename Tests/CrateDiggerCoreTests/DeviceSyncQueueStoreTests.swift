@@ -81,6 +81,66 @@ final class DeviceSyncQueueStoreTests: XCTestCase {
             atPath: store.stagingDirectory(for: orphanID).path))
     }
 
+    // MARK: - Review decisions
+
+    func testLegacyQueueEntryDecodesNilDecision() throws {
+        let entries = try JSONDecoder().decode([DeviceSyncQueueEntry].self, from: Data(Self.legacyQueueJSON.utf8))
+
+        XCTAssertEqual(entries.count, 1)
+        XCTAssertNil(entries[0].decision)
+        XCTAssertEqual(entries[0].destinationRelativePath, "Music/Miles Davis/Kind of Blue/01 So What.mp3")
+        XCTAssertEqual(entries[0].track.track.title, "So What")
+    }
+
+    func testDecisionRoundTrips() {
+        var replace = makeEntry(relativePath: "Music/A/01.m4a")
+        replace.decision = .replace
+        var keepBoth = makeEntry(relativePath: "Music/B/01.m4a")
+        keepBoth.decision = .keepBoth
+        var leave = makeEntry(relativePath: "Music/C/01.m4a")
+        leave.decision = .leave
+        let undecided = makeEntry(relativePath: "Music/D/01.m4a")
+
+        store.save([replace, keepBoth, leave, undecided], profileID: profileID)
+
+        XCTAssertEqual(store.load(profileID: profileID).map(\.decision), [.replace, .keepBoth, .leave, nil])
+    }
+
+    /// One entry as the encoder wrote it before `decision` existed.
+    private static let legacyQueueJSON = """
+    [
+      {
+        "destinationRelativePath" : "Music\\/Miles Davis\\/Kind of Blue\\/01 So What.mp3",
+        "id" : "3F2504E0-4F89-41D3-9A0C-0305E82C3304",
+        "isStaged" : false,
+        "queuedAt" : 0,
+        "sourceModifiedAt" : 0,
+        "track" : {
+          "metadata" : {
+            "album" : "Kind of Blue",
+            "artist" : "Miles Davis",
+            "customTagPairs" : [
+
+            ],
+            "title" : "So What",
+            "trackNumber" : 1
+          },
+          "track" : {
+            "album" : "Kind of Blue",
+            "artist" : "Miles Davis",
+            "artworkSource" : "none",
+            "durationSeconds" : 0,
+            "fileURL" : "file:\\/\\/\\/Src\\/Kind%20of%20Blue\\/01%20So%20What.flac",
+            "formatName" : "FLAC",
+            "id" : "3F2504E0-4F89-41D3-9A0C-0305E82C3303",
+            "title" : "So What",
+            "trackNumber" : 1
+          }
+        }
+      }
+    ]
+    """
+
     private func makeEntry(relativePath: String) -> DeviceSyncQueueEntry {
         let url = URL(fileURLWithPath: "/tmp/source/\(relativePath)")
         let track = AudioTrack(

@@ -37,4 +37,25 @@ final class ExternalDeviceProfileMatchTests: XCTestCase {
         let saved = ExternalDeviceProfile(name: "IPOD", rootDisplayPath: "/Volumes/IPOD", volumeUUID: "UUID-A")
         XCTAssertNil(ExternalDeviceProfile.match(device("USB DRIVE", "/Volumes/USB", uuid: "UUID-Z"), in: [saved]))
     }
+
+    /// Whether a file lies on a mounted device that has a profile: what a
+    /// writer outside the device door asks before writing there.
+    func testProfileDeviceHoldingAFile() {
+        let ipod = device("IPOD", "/Volumes/IPOD", uuid: "UUID-A")
+        let stick = device("STICK", "/Volumes/STICK", uuid: "UUID-S")
+        let profiles = [ExternalDeviceProfile(name: "IPOD", rootDisplayPath: "/Volumes/IPOD", volumeUUID: "UUID-A")]
+        let devices = [ipod, stick]
+
+        XCTAssertEqual(MountedDevice.profileDevice(holding: URL(fileURLWithPath: "/Volumes/IPOD/Music/A/01.mp3"),
+                                                   in: devices, profiles: profiles), ipod)
+        XCTAssertEqual(MountedDevice.profileDevice(holding: URL(fileURLWithPath: "/volumes/ipod/Music"),
+                                                   in: devices, profiles: profiles), ipod, "FAT ignores case")
+        XCTAssertNil(MountedDevice.profileDevice(holding: URL(fileURLWithPath: "/Volumes/STICK/x.mp3"),
+                                                 in: devices, profiles: profiles), "a volume no profile names")
+        XCTAssertNil(MountedDevice.profileDevice(holding: URL(fileURLWithPath: "/Volumes/IPOD 1/x.mp3"),
+                                                 in: devices, profiles: profiles))
+        XCTAssertNil(MountedDevice.profileDevice(holding: URL(fileURLWithPath: "/Users/me/Music/x.mp3"),
+                                                 in: devices, profiles: profiles))
+    }
 }
+

@@ -64,6 +64,11 @@ struct ConversionOptionsSelection: Codable {
     /// but cap its size" and "drop the art" impossible to express.
     var artworkMode: ArtworkMode = .preserve
     var artworkMaxDimension: Int?
+    /// Write a `cover.jpg` (`FolderCoverArtWriter`, 400 px) into each album
+    /// folder the run writes into, whatever `artworkMode` does inside the
+    /// files. Off for ordinary conversions until switched on; a device run is
+    /// seeded with the device's own switch.
+    var writesFolderCoverArt: Bool = false
     var folderStructureMode: FolderStructureMode
     var applyMode: TemplateApplyMode
     var templatePreset: TemplatePreset
@@ -71,11 +76,17 @@ struct ConversionOptionsSelection: Codable {
     /// Custom folder-pattern separators, aligned to `tokenOrder` (separator after
     /// token i). Empty = every gap is a folder break. See `FolderPatternEditor`.
     var separators: [FolderSeparator] = []
+    /// An album with no year drops the year from its folder name instead of
+    /// writing "Unknown Year" (`FolderTemplateConfig.omitsMissingYear`). Set
+    /// only by the PodBox folder layout; carried with the template so a
+    /// device's layout reads back as the preset it is.
+    var omitsMissingYear: Bool = false
 }
 
 extension ConversionOptionsSelection {
     /// Back-compatible decode: selections persisted before `separators` existed
-    /// omit the key and decode as `[]` (all-`/`, unchanged). Placing this in an
+    /// omit the key and decode as `[]` (all-`/`, unchanged); before
+    /// `writesFolderCoverArt`, as off. Placing this in an
     /// extension keeps the synthesized memberwise initializer available.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -90,11 +101,20 @@ extension ConversionOptionsSelection {
         // Selections saved before the mode existed encoded it in the dimension.
         artworkMode = try c.decodeIfPresent(ArtworkMode.self, forKey: .artworkMode)
             ?? (artworkMaxDimension == nil ? .preserve : .compatReembed)
+        writesFolderCoverArt = try c.decodeIfPresent(Bool.self, forKey: .writesFolderCoverArt) ?? false
         folderStructureMode = try c.decode(FolderStructureMode.self, forKey: .folderStructureMode)
         applyMode = try c.decode(TemplateApplyMode.self, forKey: .applyMode)
         templatePreset = try c.decode(TemplatePreset.self, forKey: .templatePreset)
         tokenOrder = try c.decode([FolderToken].self, forKey: .tokenOrder)
         separators = try c.decodeIfPresent([FolderSeparator].self, forKey: .separators) ?? []
+        omitsMissingYear = try c.decodeIfPresent(Bool.self, forKey: .omitsMissingYear) ?? false
+    }
+
+    /// The folder template these rows describe, the one every planner
+    /// reads. Built here once so no caller drops a field of it.
+    var templateConfig: FolderTemplateConfig {
+        FolderTemplateConfig(preset: templatePreset, tokenOrder: tokenOrder, separators: separators,
+                             omitsMissingYear: omitsMissingYear)
     }
 
     /// The audio settings as Core sees them. Raw, not normalized: the

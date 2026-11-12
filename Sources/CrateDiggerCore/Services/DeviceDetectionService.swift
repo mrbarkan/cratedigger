@@ -20,6 +20,39 @@ public struct MountedDevice: Sendable, Identifiable, Hashable {
     /// Stable key for the persisted catalog — survives renames/path changes when
     /// the volume reports a UUID, else falls back to the name.
     public var catalogKey: String { volumeUUID ?? name }
+
+    /// The mounted volume `url` lies on: the volume itself, or one whose path
+    /// followed by a separator starts `url`'s path, compared without case as a
+    /// FAT or exFAT volume does (`/Volumes/IPOD 2` is not on `/Volumes/IPOD`).
+    /// The deepest match wins when volumes nest. nil when none holds it.
+    public static func containing(_ url: URL, in devices: [MountedDevice]) -> MountedDevice? {
+        func key(_ url: URL) -> String {
+            let path = url.standardizedFileURL.path.lowercased()
+            return path.count > 1 && path.hasSuffix("/") ? String(path.dropLast()) : path
+        }
+        let target = key(url)
+        return devices
+            .filter { device in
+                let volume = key(device.volumeURL)
+                return target == volume || target.hasPrefix(volume == "/" ? "/" : volume + "/")
+            }
+            .max { key($0.volumeURL).count < key($1.volumeURL).count }
+    }
+}
+
+public extension MountedDevice {
+    /// The mounted device `url` lies on, when that device belongs to a saved
+    /// profile (`ExternalDeviceProfile.match`); nil for a file on the Mac or
+    /// on a volume no profile names. What a writer outside the device door
+    /// (an ordinary conversion pointed at a device, a library action on a
+    /// browsed device) asks before it writes there.
+    static func profileDevice(holding url: URL, in devices: [MountedDevice],
+                              profiles: [ExternalDeviceProfile]) -> MountedDevice? {
+        guard let device = containing(url, in: devices),
+              ExternalDeviceProfile.match(device, in: profiles) != nil
+        else { return nil }
+        return device
+    }
 }
 
 /// Detects mounted removable/ejectable volumes (excluding the internal boot

@@ -118,4 +118,20 @@ private func makeDeviceTrack(
     )
     return LoadedTrack(track: track, metadata: metadata)
 }
+/// A Record Divider's slices are made device-safe before their collisions
+/// are avoided, so two names that become one stay apart.
+final class DeviceSafeUniqueTests: XCTestCase {
+    func testSanitiseFirstThenStepPastClashes() {
+        let root = URL(fileURLWithPath: "/V/Music", isDirectory: true)
+        func u(_ path: String) -> URL { root.appendingPathComponent(path) }
+        let out = ExternalDeviceTransferPlanner.deviceSafeUnique(
+            [u("R.E.M./Side A/What?.mp3"), u("R.E.M./Side A/What.mp3"), u("R.E.M./Side A/Taken.mp3")],
+            under: root, reserved: [u("R.E.M/Side A/taken.mp3").path])
+        XCTAssertEqual(out.map { String($0.path.dropFirst(root.path.count + 1)) }, [
+            "R.E.M/Side A/What.mp3",
+            "R.E.M/Side A/What (2).mp3",
+            "R.E.M/Side A/Taken (2).mp3"
+        ])
+    }
+}
 #endif

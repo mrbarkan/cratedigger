@@ -13,4 +13,14 @@ final class VolumeCapacityTests: XCTestCase {
     func testUnmountedPathReportsNothing() {
         XCTAssertNil(URL(fileURLWithPath: "/Volumes/CrateDiggerNoSuchVolume").volumeFreeBytes)
     }
+
+    /// A destination not made yet still has a volume: the free-space
+    /// preflight must not be skipped for a device's first transfer.
+    func testFolderNotMadeYetAsksTheNearestExistingOne() throws {
+        let missing = FileManager.default.temporaryDirectory
+            .appendingPathComponent("VolumeCapacityTests-\(UUID().uuidString)/Music/Artist", isDirectory: true)
+        XCTAssertNil(missing.volumeFreeBytes)
+        XCTAssertGreaterThan(try XCTUnwrap(missing.volumeFreeBytesNearby), 0)
+    }
 }
+

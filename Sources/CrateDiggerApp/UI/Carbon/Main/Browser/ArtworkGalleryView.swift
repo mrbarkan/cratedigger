@@ -692,7 +692,7 @@ struct ArtworkGalleryView: View {
             let asset = ArtworkAsset(
                 source: .remote,
                 hash: hash,
-                dimensions: ArtworkDimensions(width: Int(nsImage.size.width), height: Int(nsImage.size.height)),
+                dimensions: ArtworkService.pixelDimensions(of: data, image: nsImage),
                 data: data
             )
             

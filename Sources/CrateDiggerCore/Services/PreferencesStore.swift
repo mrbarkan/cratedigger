@@ -267,6 +267,39 @@ public final class PreferencesStore {
         NotificationCenter.default.post(name: Self.deviceProfilesDidChange, object: nil)
     }
 
+    /// What CrateDigger noted when it last changed covers or artist pictures
+    /// on a PodBox iPod (key `podBoxArtCacheMark.<profileID>`), so the
+    /// reminder to rebuild its art cache holds until the player has done it.
+    /// A date saved by an earlier build under `podBoxLastArtWrite.<profileID>`
+    /// reads as a mark with no recorded stamp.
+    public func podBoxArtCacheMark(profileID: UUID) -> PodBoxNextSteps.ArtCacheMark? {
+        if let data = defaults.data(forKey: Self.podBoxArtCacheMarkKey(profileID)),
+           let mark = try? JSONDecoder().decode(PodBoxNextSteps.ArtCacheMark.self, from: data) {
+            return mark
+        }
+        guard let date = defaults.object(forKey: Self.podBoxLastArtWriteKey(profileID)) as? Date else { return nil }
+        return PodBoxNextSteps.ArtCacheMark(wroteAt: date, stampAtWrite: nil, recordedStamp: false)
+    }
+
+    /// nil clears the reminder.
+    public func setPodBoxArtCacheMark(_ mark: PodBoxNextSteps.ArtCacheMark?, profileID: UUID) {
+        defaults.removeObject(forKey: Self.podBoxLastArtWriteKey(profileID))
+        if let mark, let data = try? JSONEncoder().encode(mark) {
+            defaults.set(data, forKey: Self.podBoxArtCacheMarkKey(profileID))
+        } else {
+            defaults.removeObject(forKey: Self.podBoxArtCacheMarkKey(profileID))
+        }
+    }
+
+    static func podBoxArtCacheMarkKey(_ profileID: UUID) -> String {
+        "podBoxArtCacheMark.\(profileID.uuidString)"
+    }
+
+    /// The earlier build's key: a plain date, read once and dropped on the next save.
+    static func podBoxLastArtWriteKey(_ profileID: UUID) -> String {
+        "podBoxLastArtWrite.\(profileID.uuidString)"
+    }
+
     /// Posted whenever a device profile is added, edited, or removed, so the
     /// Sources sidebar (which only lists volumes matching a saved profile) can
     /// re-filter without waiting for a mount event.

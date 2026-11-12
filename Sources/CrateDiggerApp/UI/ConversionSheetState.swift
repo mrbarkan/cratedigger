@@ -20,4 +20,8 @@ struct ConversionReport {
     let details: String
     let tone: StatusTone
     let showsDetailsButton: Bool
+    /// What to do on the device now (`PodBoxNextSteps`), shown last.
+    var nextSteps: [String] = []
+    /// A device run's Eject: the sheet closes, then the device is ejected.
+    var eject: (() -> Void)?
 }

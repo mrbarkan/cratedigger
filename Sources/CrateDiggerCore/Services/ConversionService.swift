@@ -277,6 +277,19 @@ public final class ConversionService {
         return queuedItems
     }
 
+    /// Runs exactly this one job, now, and returns its own result. The queue
+    /// is neither read nor changed: for a caller that converts one file at a
+    /// time on one service, where `enqueue` + `runQueuedJobs` would re-run
+    /// every job queued before it. Honours `cancel()` like a queued job.
+    public func runSingle(
+        _ job: ConversionJob,
+        preset: ConversionPreset,
+        deviceProfile: DeviceProfile? = nil
+    ) -> ConversionExecutionResult {
+        let resolvedPreset = Self.withDeviceProfileOverride(preset, overrideDeviceProfile: deviceProfile)
+        return runSingleConversion(QueuedConversion(job: job, preset: resolvedPreset))
+    }
+
     public func runQueuedJobs(maxConcurrentWorkers: Int? = nil) -> [ConversionExecutionResult] {
         runQueuedJobs(maxConcurrentWorkers: maxConcurrentWorkers, onJobFinished: nil)
     }
