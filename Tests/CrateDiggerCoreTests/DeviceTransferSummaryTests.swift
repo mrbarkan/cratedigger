@@ -79,6 +79,20 @@ final class DeviceTransferSummaryTests: XCTestCase {
         XCTAssertEqual(DeviceTransferSummary.failedCount(for: plan, outcome: outcome), 2)
     }
 
+    func testAReplaceWhoseOldFilesACancelKeptIsNotCountedAsReplaced() {
+        let album = DeviceAlbumIdentity(artist: "Miles Davis", album: "Kind of Blue")
+        let written = copy("a", album: album, kind: .replacement)
+        let plan = DeviceTransferFilePlan(
+            copies: [written], deletionsByAlbum: [album: [URL(fileURLWithPath: "/V/Music/a.mp3")]],
+            coverFolders: [:], skippedPresent: 0, leftAlone: 0, replacedAlbums: 1, keptBothAlbums: 0, gapAlbums: 0
+        )
+        var outcome = DeviceTransferExecutor.Outcome()
+        outcome.written = [written]
+        outcome.deletionsSkipped = [album]
+
+        XCTAssertEqual(DeviceTransferSummary.statusLine(for: plan, outcome: outcome), "1 file copied")
+    }
+
     func testFailedDeletionsCountAsFailed() {
         let plan = DeviceTransferFilePlan(
             copies: [], deletionsByAlbum: [:], coverFolders: [:], skippedPresent: 0,

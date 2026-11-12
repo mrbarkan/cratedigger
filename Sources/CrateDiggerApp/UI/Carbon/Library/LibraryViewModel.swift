@@ -385,6 +385,10 @@ final class LibraryViewModel: ObservableObject {
     /// The OLED view to restore after an add-to-crate import status finishes.
     private var importStatusReturnOLED: OLEDView?
     @Published var conversionProgress: ConversionProgressSnapshot = .idle
+    /// A device send is between its last write and its catalog patch
+    /// (deletions, covers, the patch). `isConversionRunning` reads it, so no
+    /// other job starts while the device is still being written.
+    @Published var isDeviceTransferRunning = false
     /// Live SYNC-to-device run (DEV OLED readout). nil when no sync has run.
     @Published var deviceSyncProgress: DeviceSyncProgressSnapshot?
 
@@ -1320,8 +1324,9 @@ final class LibraryViewModel: ObservableObject {
     /// (`refreshDevices`) and on RESCAN (`refreshLibrary`).
     private var deviceIndexCache: [String: LibraryIndex] = [:]
     /// On-disk per-device catalogs so a device opens instantly across launches
-    /// (rescan only on RESCAN).
-    private let deviceCatalogStore = DeviceCatalogStore()
+    /// (rescan only on RESCAN). Every write goes through it, so a scan that
+    /// ends after a transfer's patch can't put the older catalog back.
+    private let deviceCatalogs = DeviceCatalogWriter()
     /// Per-profile pre-transfer sync queues + their staging trees.
     let syncQueueStore = DeviceSyncQueueStore()
     /// Per-profile queued-track counts for sidebar badges. Refreshed on queue
@@ -2480,7 +2485,7 @@ final class LibraryViewModel: ObservableObject {
     /// that knows what it wrote and removed calls `patchDeviceCatalog`.
     func invalidateDeviceCatalog(for device: MountedDevice) {
         deviceIndexCache[device.volumeURL.path] = nil
-        deviceCatalogStore.remove(key: device.catalogKey)
+        deviceCatalogs.remove(key: device.catalogKey)
     }
 
     /// What is on a mounted device, for a transfer to compare against: the
@@ -2493,19 +2498,23 @@ final class LibraryViewModel: ObservableObject {
     func currentDeviceCatalog(for device: MountedDevice) async -> [LoadedTrack]? {
         let key = device.catalogKey
         let volumePath = device.volumeURL.path
+        let catalogs = deviceCatalogs
         if let saved = await Task.detached(priority: .userInitiated, operation: {
-            DeviceCatalogStore().load(key: key)
+            catalogs.load(key: key)
         }).value {
             return saved
         }
         if let cached = deviceIndexCache[volumePath] {
             // A browse scan whose save hasn't landed: save it now, so the
-            // transfer's patch has a catalog to correct.
+            // transfer's patch has a catalog to correct. The cache is kept
+            // current by every patch, so it is the latest picture.
             let tracks = cached.allTracks
-            await Task.detached(priority: .userInitiated) { DeviceCatalogStore().save(tracks, key: key) }.value
+            let token = catalogs.scanToken(key: key)
+            await Task.detached(priority: .userInitiated) { catalogs.saveScan(tracks, key: key, token: token) }.value
             return tracks
         }
 
+        let token = catalogs.scanToken(key: key)
         scanGeneration += 1
         let generation = scanGeneration
         scanProgress = ScanProgress(folderName: device.name, filesProbed: 0, totalCandidates: nil, isRunning: true)
@@ -2524,10 +2533,19 @@ final class LibraryViewModel: ObservableObject {
             AppLog.library.notice("Device scan before a transfer did not finish for \(device.name, privacy: .public)")
             return nil
         }
-        await Task.detached(priority: .userInitiated) { DeviceCatalogStore().save(scanned, key: key) }.value
+        let saved = await Task.detached(priority: .userInitiated) {
+            catalogs.saveScan(scanned, key: key, token: token)
+        }.value
+        endBusyJob(busyJob, .completed)
+        guard saved else {
+            // Written or dropped while this walk ran: the walk may predate it.
+            // Compare with the newer catalog when there is one; otherwise the
+            // walk is still the best picture, and a later patch finds no
+            // catalog and has the device walked again.
+            return catalogs.load(key: key) ?? scanned
+        }
         let built = buildIndex(scanned)
         deviceIndexCache[volumePath] = built
-        endBusyJob(busyJob, .completed)
         if case .device(let current) = currentSource, current == volumePath {
             adoptDeviceIndex(built)
         }
@@ -2545,22 +2563,18 @@ final class LibraryViewModel: ObservableObject {
     func patchDeviceCatalog(for device: MountedDevice, adding: [LoadedTrack], removingPaths: Set<String>) async {
         let key = device.catalogKey
         let volumePath = device.volumeURL.path
-        let volumePrefix = device.volumeURL.standardizedFileURL.path.lowercased() + "/"
-        let onDevice = adding.filter {
-            $0.track.fileURL.standardizedFileURL.path.lowercased().hasPrefix(volumePrefix)
-        }
+        let onDevice = adding.filter { MountedDevice.containing($0.track.fileURL, in: [device]) != nil }
         if onDevice.count != adding.count {
             AppLog.library.warning(
                 "Left \(adding.count - onDevice.count) file(s) outside \(volumePath, privacy: .public) out of its catalog"
             )
         }
 
-        let patched: [LoadedTrack]? = await Task.detached(priority: .userInitiated) {
-            let store = DeviceCatalogStore()
-            guard let catalog = store.load(key: key) else { return nil }
-            let patched = DeviceCatalogStore.patched(catalog, adding: onDevice, removingPaths: removingPaths)
-            store.save(patched, key: key)
-            return patched
+        // The writer also refuses the save of any browse walk under way,
+        // which may have read the device before these writes.
+        let catalogs = deviceCatalogs
+        let patched = await Task.detached(priority: .userInitiated) {
+            catalogs.patch(key: key, adding: onDevice, removingPaths: removingPaths)
         }.value
 
         let browsing: Bool = {
@@ -2610,7 +2624,7 @@ final class LibraryViewModel: ObservableObject {
             return
         }
         // Persisted catalog from a previous scan/launch → open instantly, no walk.
-        if !forceRescan, let saved = deviceCatalogStore.load(key: key) {
+        if !forceRescan, let saved = deviceCatalogs.load(key: key) {
             let built = buildIndex(saved)
             deviceIndexCache[volumePath] = built
             oledView = .scan
@@ -2618,6 +2632,7 @@ final class LibraryViewModel: ObservableObject {
             return
         }
         index = .empty
+        let token = deviceCatalogs.scanToken(key: key)
         scanGeneration += 1
         let generation = scanGeneration
         let deviceName = device.name
@@ -2637,10 +2652,16 @@ final class LibraryViewModel: ObservableObject {
                 )
             )
             if Task.isCancelled { return }
-            // Persist the catalog off-main so a big iPod doesn't hitch the UI.
-            Task.detached(priority: .utility) { DeviceCatalogStore().save(scanned, key: key) }
+            // Persist the catalog off-main so a big iPod doesn't hitch the UI,
+            // unless a transfer patched it (or RESCAN or SYNC dropped it)
+            // since this walk began: the walk may predate those writes.
+            let catalogs = self.deviceCatalogs
+            let saved = await Task.detached(priority: .utility) {
+                catalogs.saveScan(scanned, key: key, token: token)
+            }.value
+            let current = saved ? scanned : (catalogs.load(key: key) ?? scanned)
             await MainActor.run {
-                let built = self.buildIndex(scanned)
+                let built = self.buildIndex(current)
                 self.deviceIndexCache[volumePath] = built
                 self.scanProgress = .idle
                 self.endBusyJob(busyJob, .completed)
@@ -2658,7 +2679,7 @@ final class LibraryViewModel: ObservableObject {
             index = .empty
             return
         }
-        let cached = deviceCatalogStore.load(key: catalogKey(for: profile)) ?? []
+        let cached = deviceCatalogs.load(key: catalogKey(for: profile)) ?? []
         let entries = syncQueueStore.load(profileID: profileID)
         let cachedPaths = Set(cached.map { $0.track.fileURL.path })
         let queued = entries.map(\.track).filter { !cachedPaths.contains($0.track.fileURL.path) }
@@ -3328,7 +3349,7 @@ final class LibraryViewModel: ObservableObject {
         if case .device(let path) = currentSource {
             deviceIndexCache[path] = nil
             if let device = mountedDevices.first(where: { $0.volumeURL.path == path }) {
-                deviceCatalogStore.remove(key: device.catalogKey)
+                deviceCatalogs.remove(key: device.catalogKey)
             }
             selectDevice(volumePath: path, forceRescan: true)
             return

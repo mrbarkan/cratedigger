@@ -415,13 +415,8 @@ extension LibraryViewModel {
             AppLog.conversion.notice("User cancelled device root selection")
             return
         }
-        guard let device = mountedDevices.first(where: { deviceProfile(for: $0)?.id == profile.id }) else {
-            appAlert = .error(
-                title: "\(profile.name) isn't connected",
-                message: "Nothing was sent. Connect the device and send again."
-            )
-            return
-        }
+        // The catalog reviewed and patched must be the volume written to.
+        guard let device = mountedDevice(for: profile, at: mountedRoot) else { return }
 
         var runProfile = profile
         runProfile.transferSettings = selection.deviceTransferSettings(over: profile.transferSettings)
@@ -444,7 +439,7 @@ extension LibraryViewModel {
             )
             return
         }
-        guard let (reviewed, _) = await reviewedDevicePlan(
+        guard let (reviewed, _, answers) = await reviewedDevicePlan(
             tracks: whole,
             profile: runProfile,
             mountedRoot: mountedRoot,
@@ -484,7 +479,9 @@ extension LibraryViewModel {
 
         guard !plan.copies.isEmpty || !plan.deletions.isEmpty || !plan.unplanned.isEmpty else {
             // Nothing is missing: the send is done, so the cockpit stays on
-            // the device with an empty queue, as after a send.
+            // the device with an empty queue, as after a send, and its
+            // answers stand.
+            rememberDeviceAnswers(answers, profileID: profile.id)
             persistSelectionToDevice(selection, profileID: profile.id)
             emptyPendingDeviceQueue()
             appAlert = .info(
@@ -516,10 +513,17 @@ extension LibraryViewModel {
             )
             return
         }
+        // Busy from here until the catalog is patched: the conversions'
+        // progress ends before the renames, deletions, covers and patch do.
+        isDeviceTransferRunning = true
+        defer { isDeviceTransferRunning = false }
+        rememberDeviceAnswers(answers, profileID: profile.id)
 
-        // The device is checked again right before the run: ffmpeg replaces
-        // whatever is at its destination, so a file that appeared at a name
-        // the review found free fails that item instead of being clobbered.
+        // ffmpeg writes each file to a hidden partial beside its destination
+        // (its -y would replace whatever is at the real name); only a job
+        // that completed is renamed into place, with the device checked
+        // again right before, so a file that appeared since the review fails
+        // that item and an overwrite that fails keeps the old file.
         let checked = await Task.detached(priority: .userInitiated) {
             Self.deviceJobs(for: plan, slices: slices.jobs)
         }.value
@@ -527,35 +531,21 @@ extension LibraryViewModel {
             ? nil
             : await runConversionQueue(service: service, jobs: checked.jobs, preset: preset)
 
-        var outcome = DeviceTransferExecutor.Outcome()
-        outcome.wasCancelled = ran?.wasCancelled ?? false
-        for track in plan.unplanned {
-            outcome.lines.append(
-                "[FAILED] \(track.track.fileURL.lastPathComponent)\n    No place on the device could be planned for it"
+        let sliceDestinations = Set(slices.jobs.keys)
+        let succeeded = ran?.succeededDestinationPaths ?? []
+        let failureReasons = ran?.failureReasons ?? [:]
+        let wasCancelled = ran?.wasCancelled ?? false
+        // Renames, then deletions only for albums whose every file landed
+        // (none after a cancel).
+        let outcome = await Task.detached(priority: .userInitiated) {
+            Self.finishDeviceJobs(
+                plan: plan,
+                checked: checked,
+                sliceDestinations: sliceDestinations,
+                succeededPartials: succeeded,
+                failureReasons: failureReasons,
+                wasCancelled: wasCancelled
             )
-        }
-        for copy in plan.copies {
-            let path = copy.destinationURL.path
-            let name = slices.jobs[path] == nil
-                ? copy.source.track.fileURL.lastPathComponent
-                : copy.destinationURL.lastPathComponent
-            let reason = checked.blocked[path]
-                ?? (ran?.succeededDestinationPaths.contains(path) == true
-                    ? nil
-                    : ran?.failureReasons[path] ?? "Could not be converted")
-            if let reason {
-                outcome.failed.append(.init(copy: copy, reason: reason))
-                outcome.lines.append("[FAILED] \(name)\n    \(reason)")
-            } else {
-                outcome.written.append(copy)
-                outcome.lines.append("[ok] \(name) -> \(path)")
-            }
-        }
-        // Deletions only for albums whose every conversion landed.
-        outcome = await Task.detached(priority: .userInitiated) { [outcome] in
-            var finished = outcome
-            DeviceTransferExecutor().runDeletions(plan, after: &finished)
-            return finished
         }.value
 
         // A cover only where something actually landed.
@@ -631,30 +621,102 @@ extension LibraryViewModel {
         return (copies, byPath, covers, alreadyThere)
     }
 
-    /// The conversion jobs for a device plan, checked against the device right
-    /// before they run: a copy whose destination exists and was not cleared
-    /// for overwriting is held back with the executor's reason.
+    /// The conversion jobs for a device plan, each writing to its
+    /// destination's hidden partial (`DeviceTransferExecutor.partialURL`,
+    /// real extension kept so ffmpeg picks the right muxer; a partial left by
+    /// a crash is removed first). A copy whose destination already exists and
+    /// was not cleared for overwriting is held back with the executor's
+    /// reason before any encode is spent on it. Partials by destination path.
     nonisolated private static func deviceJobs(
         for plan: DeviceTransferFilePlan,
         slices: [String: ConversionJob]
-    ) -> (jobs: [ConversionJob], blocked: [String: String]) {
+    ) -> DeviceJobs {
         let fileManager = FileManager.default
-        var jobs: [ConversionJob] = []
-        var blocked: [String: String] = [:]
+        let executor = DeviceTransferExecutor(fileManager: fileManager)
+        var result = DeviceJobs()
         for copy in plan.copies {
             let path = copy.destinationURL.path
             if !copy.overwrites, fileManager.fileExists(atPath: path) {
-                blocked[path] = DeviceTransferExecutor.appearedReason
+                result.blocked[path] = DeviceTransferExecutor.appearedReason
                 continue
             }
-            // `overwrites`: ffmpeg's -y replaces the old file in place.
-            jobs.append(slices[path] ?? ConversionJob(
-                sourceURL: copy.source.track.fileURL,
-                destinationURL: copy.destinationURL,
-                metadata: copy.source.metadata
+            let partial: URL
+            do {
+                partial = try executor.preparePartial(for: copy.destinationURL, keepingExtension: true)
+            } catch {
+                result.blocked[path] = error.localizedDescription
+                continue
+            }
+            result.partials[path] = partial
+            let slice = slices[path]
+            result.jobs.append(ConversionJob(
+                sourceURL: slice?.sourceURL ?? copy.source.track.fileURL,
+                destinationURL: partial,
+                metadata: slice?.metadata ?? copy.source.metadata,
+                startSeconds: slice?.startSeconds,
+                endSeconds: slice?.endSeconds
             ))
         }
-        return (jobs, blocked)
+        return result
+    }
+
+    /// What `deviceJobs` planned: the jobs to run, each destination's partial,
+    /// and the copies held back with their reason.
+    struct DeviceJobs: Sendable {
+        var jobs: [ConversionJob] = []
+        var partials: [String: URL] = [:]
+        var blocked: [String: String] = [:]
+    }
+
+    /// After the conversions: each completed partial renamed onto its
+    /// destination (`DeviceTransferExecutor.finish`, which fails the item if
+    /// a file appeared there and it was not cleared for overwriting), each
+    /// other partial removed, then the deletions the plan earned. Writes to
+    /// the device, so callers run it off the main actor.
+    nonisolated private static func finishDeviceJobs(
+        plan: DeviceTransferFilePlan,
+        checked: DeviceJobs,
+        sliceDestinations: Set<String>,
+        succeededPartials: Set<String>,
+        failureReasons: [String: String],
+        wasCancelled: Bool
+    ) -> DeviceTransferExecutor.Outcome {
+        let executor = DeviceTransferExecutor()
+        var outcome = DeviceTransferExecutor.Outcome()
+        outcome.wasCancelled = wasCancelled
+        for track in plan.unplanned {
+            outcome.lines.append(
+                "[FAILED] \(track.track.fileURL.lastPathComponent)\n    No place on the device could be planned for it"
+            )
+        }
+        for copy in plan.copies {
+            let path = copy.destinationURL.path
+            let name = sliceDestinations.contains(path)
+                ? copy.destinationURL.lastPathComponent
+                : copy.source.track.fileURL.lastPathComponent
+            var reason = checked.blocked[path]
+            if reason == nil {
+                if let partial = checked.partials[path], succeededPartials.contains(partial.path) {
+                    do {
+                        try executor.finish(partial, onto: copy.destinationURL, overwrites: copy.overwrites)
+                    } catch {
+                        reason = error.localizedDescription
+                    }
+                } else {
+                    if let partial = checked.partials[path] { executor.discardPartial(partial) }
+                    reason = checked.partials[path].flatMap { failureReasons[$0.path] } ?? "Could not be converted"
+                }
+            }
+            if let reason {
+                outcome.failed.append(.init(copy: copy, reason: reason))
+                outcome.lines.append("[FAILED] \(name)\n    \(reason)")
+            } else {
+                outcome.written.append(copy)
+                outcome.lines.append("[ok] \(name) -> \(path)")
+            }
+        }
+        executor.runDeletions(plan, after: &outcome)
+        return outcome
     }
 
     /// The summary of a device send, worded like the copy path's.
@@ -1290,8 +1352,10 @@ extension LibraryViewModel {
 // MARK: - Storage helpers
 
 extension LibraryViewModel {
+    /// A job is writing on the conversion channel, or a device send is
+    /// still finishing (deletions, covers, catalog patch) after its last write.
     var isConversionRunning: Bool {
-        conversionProgress.isRunning
+        conversionProgress.isRunning || isDeviceTransferRunning
     }
 
     /// The relative output path the current settings would write for one track,

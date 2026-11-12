@@ -27,18 +27,20 @@ public struct DeviceTransferSummary {
 
     /// The line for a plan once it ran. An album only counts as finished,
     /// replaced or kept when none of its copies failed; its failures are in
-    /// the failed count instead.
+    /// the failed count instead. A Replace whose old files a cancel kept is
+    /// not counted as replaced.
     public static func statusLine(for plan: DeviceTransferFilePlan, outcome: DeviceTransferExecutor.Outcome) -> String {
         let failedAlbums = Set(outcome.failed.map(\.copy.album))
-        func failedAlbumCount(of kind: DeviceTransferFilePlan.Copy.Kind) -> Int {
-            Set(plan.copies.filter { $0.kind == kind }.map(\.album)).intersection(failedAlbums).count
+        func unfinishedAlbumCount(of kind: DeviceTransferFilePlan.Copy.Kind, also extra: Set<DeviceAlbumIdentity> = []) -> Int {
+            Set(plan.copies.filter { $0.kind == kind }.map(\.album)).intersection(failedAlbums.union(extra)).count
         }
         return statusLine(
             copied: outcome.written.count,
             alreadyThere: plan.skippedPresent,
-            gapAlbums: max(0, plan.gapAlbums - failedAlbumCount(of: .gap)),
-            replaced: max(0, plan.replacedAlbums - failedAlbumCount(of: .replacement)),
-            keptBoth: max(0, plan.keptBothAlbums - failedAlbumCount(of: .keptBoth)),
+            gapAlbums: max(0, plan.gapAlbums - unfinishedAlbumCount(of: .gap)),
+            replaced: max(0, plan.replacedAlbums
+                - unfinishedAlbumCount(of: .replacement, also: Set(outcome.deletionsSkipped))),
+            keptBoth: max(0, plan.keptBothAlbums - unfinishedAlbumCount(of: .keptBoth)),
             leftAlone: plan.leftAlone,
             failed: failedCount(for: plan, outcome: outcome)
         )

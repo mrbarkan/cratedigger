@@ -253,13 +253,8 @@ extension LibraryViewModel {
                 AppLog.conversion.notice("User cancelled device root selection")
                 return
             }
-            guard let device = mountedDevices.first(where: { deviceProfile(for: $0)?.id == resolved.id }) else {
-                appAlert = .error(
-                    title: "\(resolved.name) isn't connected",
-                    message: "Nothing was sent. Connect the device and send again."
-                )
-                return
-            }
+            // The catalog reviewed and patched must be the volume written to.
+            guard let device = mountedDevice(for: resolved, at: mountedRoot) else { return }
             guard let catalog = await currentDeviceCatalog(for: device) else {
                 appAlert = .error(
                     title: "Couldn't read \(resolved.name)",
@@ -267,7 +262,7 @@ extension LibraryViewModel {
                 )
                 return
             }
-            guard let (plan, _) = await reviewedDevicePlan(
+            guard let (plan, _, answers) = await reviewedDevicePlan(
                 tracks: sourceTracks,
                 profile: resolved,
                 mountedRoot: mountedRoot,
@@ -276,6 +271,8 @@ extension LibraryViewModel {
             ) else { return }
 
             guard !plan.copies.isEmpty || !plan.deletions.isEmpty || !plan.unplanned.isEmpty else {
+                // Nothing to write is a finished send: its answers stand.
+                rememberDeviceAnswers(answers, profileID: resolved.id)
                 appAlert = .info(
                     title: "Nothing to transfer",
                     message: "\(resolved.name) needs nothing from this selection: "
@@ -303,6 +300,11 @@ extension LibraryViewModel {
                 )
                 return
             }
+            // Busy from here until the catalog is patched: the copies'
+            // progress ends before the deletions, covers and patch do.
+            isDeviceTransferRunning = true
+            defer { isDeviceTransferRunning = false }
+            rememberDeviceAnswers(answers, profileID: resolved.id)
 
             let (report, outcome) = await runCopyTransferQueue(plan: plan, deviceName: resolved.name)
 
@@ -431,8 +433,8 @@ extension LibraryViewModel {
                 let fileManager = FileManager.default
                 let outcome = DeviceTransferExecutor(fileManager: fileManager).run(
                     plan,
-                    copy: { item in
-                        try fileManager.copyItem(at: item.source.track.fileURL, to: item.destinationURL)
+                    copy: { item, partial in
+                        try fileManager.copyItem(at: item.source.track.fileURL, to: partial)
                     },
                     isCancelled: { Task.isCancelled },
                     onProgress: { completed, total in
