@@ -159,6 +159,7 @@ final class LibraryViewModel: ObservableObject {
             searchHaystacks = nil
             recomputeSortedCollections()
             recomputePendingSyncMarks()
+            scheduleArtistSummaries()
         }
     }
 
@@ -195,6 +196,8 @@ final class LibraryViewModel: ObservableObject {
             // Sorts and the filter live here too, but their setters recompute
             // themselves; this is only for the shape and the selection.
             guard !isSettlingBrowser else { return }
+            // A row the owner chose takes the inspector back from "Show Artist".
+            if oldValue.selection != browser.selection { artistPage.selectionChanged() }
             if oldValue.view != browser.view {
                 settleBrowserColumns(from: 0)
             } else if let changed = Self.firstChangedColumn(oldValue.selection, browser.selection) {
@@ -1043,9 +1046,14 @@ final class LibraryViewModel: ObservableObject {
     /// Which browser column the keyboard arrows act on: ↑/↓ move the selection in
     /// it, ←/→ switch columns. Set when a row is clicked; see `LibraryViewModel+ArrowNav`.
     /// Which column the arrow keys act on, as an index into `browserView`.
+    /// Every write is a row clicked or an arrow between columns, so it also
+    /// ends a "Show Artist" (`ArtistPageSelection`), even onto the same column.
     var focusedColumn: Int {
         get { browser.focusedColumn }
-        set { browser.focusedColumn = newValue }
+        set {
+            artistPage.focusMoved()
+            browser.focusedColumn = newValue
+        }
     }
 
     // MARK: - New Sources & Playlists State
@@ -1174,6 +1182,37 @@ final class LibraryViewModel: ObservableObject {
     /// `currentArtistPictureStore()`.
     var artistPictureStore: ArtistPictureStore?
     var artistPictureStoreFolder: URL?
+
+    // MARK: Artist profiles (`LibraryViewModel+ArtistProfiles`)
+
+    /// Every artist profile, by folded key (`PodBoxArtName.folded`), as the
+    /// store last read off the main actor. The artist page reads this only.
+    @Published var artistProfiles: [String: ArtistProfile] = [:]
+    /// What the browsed local source holds of each artist, by folded key.
+    /// Rebuilt off the main actor when the index changes, never per click.
+    @Published var artistSummaries: [String: ArtistLibrarySummary] = [:]
+    /// The local source `artistSummaries` describes (All Records, a crate,
+    /// the Prep Crate): the page's "In your library" names it.
+    @Published var artistSummaryScope: LibrarySource = .localAll
+    /// The tracks the summaries' top-five lists name, by id, so the page
+    /// never walks the index to title them. Set with `artistSummaries`.
+    var artistTopTracks: [UUID: LoadedTrack] = [:]
+    /// "Show Artist", and when the browser's focus ends it.
+    @Published var artistPage = ArtistPageSelection()
+    /// Folded keys of the artists a lookup the owner asked for is running on.
+    @Published var artistLookupsRunning: Set<String> = []
+    /// The one profile store for the crates folder (its `save` deletes photo
+    /// files its own profiles do not name, so two must never share a folder).
+    /// Made off the main actor, since it reads the file; see
+    /// `currentArtistProfileStore()`.
+    var artistProfileStoreTask: Task<ArtistProfileStore, Never>?
+    /// The folder and library location the store was made for.
+    var artistProfileStoreKey: String?
+    var artistProfilesGeneration = 0
+    var artistSummaryTask: Task<Void, Never>?
+    /// One long-lived run for the owner's lookups, so its request spacing
+    /// holds from one Look Up Again to the next.
+    var artistForegroundLookup: ArtistLookupRun?
     /// Readiness notes per mounted PodBox device (`PodBoxAdvisor`), for
     /// Preferences ▸ Devices. Read-only work, redone after the probe and
     /// after each session.
@@ -4512,6 +4551,9 @@ final class LibraryViewModel: ObservableObject {
         // so this does not wait for the index to be built. No-op after the
         // first time, because the guard is "the plays file is empty".
         if !disconnected { backfillListeningStoreIfNeeded(knownPaths: currentTrackStore().allPaths) }
+        // A new folder or location means a new profile store (made off the
+        // main actor): the copy's while the drive is out, the live one back.
+        reloadArtistProfiles()
         let fm = FileManager.default
         let cratesDir = cratesDirectoryURL
         do {

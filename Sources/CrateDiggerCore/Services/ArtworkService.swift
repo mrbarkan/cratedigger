@@ -184,20 +184,43 @@ public final class ArtworkService: ArtworkPreparing {
         let cacheKey = "\(artworkHash)-t\(maxPixel)" as NSString
         if let cached = thumbnailCache.object(forKey: cacheKey) { return cached }
         guard let data = dataForHash(artworkHash) else { return nil }
-        let image = await Task.detached(priority: .userInitiated) { () -> UncheckedSendableBox<NSImage?> in
-            guard let src = CGImageSourceCreateWithData(data as CFData, nil) else { return UncheckedSendableBox(nil) }
-            let opts: [CFString: Any] = [
-                kCGImageSourceCreateThumbnailFromImageAlways: true,
-                kCGImageSourceThumbnailMaxPixelSize: maxPixel,
-                kCGImageSourceCreateThumbnailWithTransform: true
-            ]
-            guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary) else { return UncheckedSendableBox(nil) }
-            return UncheckedSendableBox(NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height)))
+        let image = await Task.detached(priority: .userInitiated) {
+            UncheckedSendableBox(Self.decodeThumbnail(data, maxPixel: maxPixel))
         }.value.value
         if let image {
             thumbnailCache.setObject(image, forKey: cacheKey, cost: maxPixel * maxPixel * 4)
         }
         return image
+    }
+
+    /// The same off-main decode and the same cache, for bytes this service
+    /// does not hold: an artist photo, read from its own store by `data` on
+    /// the background task. `key` must name the bytes for good (a content
+    /// hash), since a cached thumbnail is never checked against them again.
+    /// nil when `data` gives nothing or the bytes are not an image.
+    public func thumbnailAsync(key: String, maxPixel: Int,
+                               data: @escaping @Sendable () -> Data?) async -> NSImage? {
+        let cacheKey = "\(key)-t\(maxPixel)" as NSString
+        if let cached = thumbnailCache.object(forKey: cacheKey) { return cached }
+        let image = await Task.detached(priority: .userInitiated) {
+            UncheckedSendableBox(data().flatMap { Self.decodeThumbnail($0, maxPixel: maxPixel) })
+        }.value.value
+        if let image {
+            thumbnailCache.setObject(image, forKey: cacheKey, cost: maxPixel * maxPixel * 4)
+        }
+        return image
+    }
+
+    /// ImageIO's downscaled decode, orientation applied.
+    private static func decodeThumbnail(_ data: Data, maxPixel: Int) -> NSImage? {
+        guard let src = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        let opts: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixel,
+            kCGImageSourceCreateThumbnailWithTransform: true
+        ]
+        guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary) else { return nil }
+        return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
     }
 
     public func prepareCompatibleArtwork(asset: ArtworkAsset, profile: DeviceProfile) throws -> ArtworkAsset {

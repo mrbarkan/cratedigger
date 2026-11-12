@@ -17,6 +17,7 @@ struct InspectorPane: View {
     /// The big INFO cover doubles as the ARTWORK button; it lights up behind
     /// itself on hover so that's discoverable without a label.
     @State private var hoveringCover = false
+    @State private var hoveringArtist = false
 
     /// The crossfade between surfaces rides the animation `MainShell` keys on
     /// `InspectorSurface`, which also moves the well's tab row and tools out
@@ -44,6 +45,10 @@ struct InspectorPane: View {
         case .info:
             if model.isRadioMode, let stream = model.selectedStream {
                 RadioInfoView(stream: stream)
+            } else if let artist = model.inspectedArtistName {
+                // The browser is on an artist (its column has focus, or
+                // "Show Artist"): their page, not their first album's.
+                ArtistPageView(name: artist)
             } else if hasInspectorTrackList {
                 // Gallery mode puts the album's tracks in here, so the poster
                 // stays modest and the whole column scrolls.
@@ -182,11 +187,7 @@ struct InspectorPane: View {
                         titleExpanded.toggle()
                     }
                 }
-            Text((album?.artistName ?? "—").uppercased())
-                .font(CarbonFont.mono(10, weight: .semibold))
-                .tracking(1.6)
-                .foregroundStyle(theme.ink2)
-                .lineLimit(1)
+            artistLink(album?.artistName)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 16)
@@ -199,6 +200,29 @@ struct InspectorPane: View {
                 .frame(height: 1),
             alignment: .bottom
         )
+    }
+
+    /// The artist under the album title, a link to their artist page: the
+    /// way there in a view with no artist column.
+    @ViewBuilder
+    private func artistLink(_ name: String?) -> some View {
+        let label = Text((name ?? "—").uppercased())
+            .font(CarbonFont.mono(10, weight: .semibold))
+            .tracking(1.6)
+            .lineLimit(1)
+        if let name, !name.isEmpty {
+            Button { model.showArtist(name) } label: {
+                label
+                    .foregroundStyle(hoveringArtist ? theme.orange : theme.ink2)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .onHover { hoveringArtist = $0 }
+            .animation(CarbonMotion.hover, value: hoveringArtist)
+            .carbonTip("Show this artist")
+        } else {
+            label.foregroundStyle(theme.ink2)
+        }
     }
 
 }
