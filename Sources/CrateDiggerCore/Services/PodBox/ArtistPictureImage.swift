@@ -11,6 +11,12 @@ import UniformTypeIdentifiers
 /// claiming a giant size, unreadable or truncated bytes) gives nil.
 public enum ArtistPictureImage {
     public static let edge = 400, minimumSource = 300, maximumBytes = 100 * 1024, maximumSourcePixels = 12_000
+    /// Width times height the header may claim (50 megapixels): even a
+    /// thumbnail decode of more can take a long time and a lot of memory.
+    public static let maximumSourceArea = 50_000_000
+    /// Bytes a source may have before anything reads it (32 MB). An artist
+    /// photo is far smaller; a bigger file is not one.
+    public static let maximumSourceBytes = 32 * 1024 * 1024
     /// The decode is a thumbnail of at most this many pixels on the long
     /// side, so a big source is never decoded in full.
     static let decodeLimit = 1_200
@@ -38,7 +44,7 @@ public enum ArtistPictureImage {
     /// `reportedSize` stands in for the size the header claims, so a test
     /// can check the giant-image refusal without making a giant image.
     static func prepare(_ data: Data, reportedSize: CGSize?) -> Data? {
-        guard !data.isEmpty,
+        guard !data.isEmpty, data.count <= maximumSourceBytes,
               let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
               CGImageSourceGetCount(source) > 0,
               CGImageSourceGetStatusAtIndex(source, 0) == .statusComplete,
@@ -82,6 +88,7 @@ public enum ArtistPictureImage {
         let short = min(size.width, size.height), long = max(size.width, size.height)
         return short >= CGFloat(minimumSource)
             && long <= CGFloat(maximumSourcePixels)
+            && size.width * size.height <= CGFloat(maximumSourceArea)
             && long <= short * maximumAspect
     }
 
@@ -140,8 +147,8 @@ public enum ArtistPictureImage {
     }
 
     /// ImageIO reports a truncated file as complete and decodes it with a
-    /// grey or garbage tail, so the containers that say where they end are
-    /// checked here. Other formats are left to ImageIO.
+    /// grey or garbage tail, so each accepted format is walked to its end
+    /// here. A format this cannot check (HEIC, TIFF, ...) is refused.
     static func isWhole(_ data: Data, type: String?) -> Bool {
         let bytes = [UInt8](data)
         switch type {
@@ -155,9 +162,47 @@ public enum ArtistPictureImage {
             // BITMAPFILEHEADER: bytes 2..5 are the file size.
             guard bytes.count >= 14 else { return false }
             return Int(littleEndian32(bytes, at: 2)) <= bytes.count
+        case UTType.gif.identifier:
+            return gifReachesItsEnd(bytes)
         default:
-            return true
+            return false
         }
+    }
+
+    /// Walks the header, colour tables and blocks to the trailer (0x3B).
+    private static func gifReachesItsEnd(_ bytes: [UInt8]) -> Bool {
+        guard bytes.count >= 13, bytes.starts(with: Array("GIF".utf8)) else { return false }
+        /// A colour table follows when bit 7 of `flags` is set: 3 × 2^(n+1) bytes.
+        func tableSize(_ flags: UInt8) -> Int { flags & 0x80 == 0 ? 0 : 3 << (Int(flags & 0x07) + 1) }
+        /// Skips data sub-blocks up to and past their zero terminator; nil when cut short.
+        func skipSubBlocks(from start: Int) -> Int? {
+            var index = start
+            while index < bytes.count {
+                let length = Int(bytes[index])
+                index += 1
+                if length == 0 { return index }
+                index += length
+            }
+            return nil
+        }
+        var index = 13 + tableSize(bytes[10])
+        while index < bytes.count {
+            switch bytes[index] {
+            case 0x3B:
+                return true
+            case 0x21: // extension: label, then sub-blocks
+                guard let next = skipSubBlocks(from: index + 2) else { return false }
+                index = next
+            case 0x2C: // image: 9-byte descriptor, local table, LZW code size, sub-blocks
+                guard index + 10 < bytes.count else { return false }
+                let start = index + 10 + tableSize(bytes[index + 9]) + 1
+                guard let next = skipSubBlocks(from: start) else { return false }
+                index = next
+            default:
+                return false
+            }
+        }
+        return false
     }
 
     /// Walks the segments and the entropy-coded scans to the end marker.

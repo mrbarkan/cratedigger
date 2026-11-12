@@ -46,12 +46,17 @@ public enum ArtistPictureStoreError: LocalizedError, Equatable {
     /// The records file is present but would not decode. Reported instead of
     /// saving, so the owner's picks are not replaced by what is in memory.
     case unreadableStore(path: String)
+    /// A record whose name the player cannot key, or whose `foldedKey` is
+    /// not its name's fold.
+    case invalidRecord(name: String)
 
     public var errorDescription: String? {
         switch self {
         case .unreadableStore(let path):
             return "The artist picture list at \(path) could not be read, so CrateDigger has not written over it. "
                 + "Move that file aside to start fresh, or restore it from a backup."
+        case .invalidRecord(let name):
+            return "\"\(name)\" has no letters or digits the iPod can match a picture to."
         }
     }
 }
@@ -68,6 +73,9 @@ public final class ArtistPictureStore {
     private let imageDirectory: URL
     private let fileManager: FileManager
     private var byKey: [String: ArtistPictureRecord] = [:]
+    /// The player's keys (`key` and `altKey` of each record's name) -> folded key,
+    /// so `Herbert, Frank` and `Frank Herbert` find one record.
+    private var byPlayerKey: [UInt32: String] = [:]
     private var isDirty = false
     private var isUnreadable = false
 
@@ -79,12 +87,17 @@ public final class ArtistPictureStore {
         load()
     }
 
-    /// The record for any spelling the player keys alike. nil when there is
-    /// none, or when the name has nothing the player keys.
+    /// The record for any spelling the player takes for the same person
+    /// (`The Beatles` and `Beatles, The`; `Frank Herbert` and `Herbert, Frank`).
+    /// nil when there is none, or when the name has nothing the player keys.
     public func record(forName name: String) -> ArtistPictureRecord? {
-        let key = PodBoxArtName.folded(name)
-        guard !key.isEmpty else { return nil }
-        return byKey[key]
+        let folded = PodBoxArtName.folded(name)
+        guard !folded.isEmpty else { return nil }
+        if let exact = byKey[folded] { return exact }
+        for key in Self.playerKeys(name) {
+            if let folded = byPlayerKey[key], let record = byKey[folded] { return record }
+        }
+        return nil
     }
 
     /// The prepared bytes, read from the image cache. nil when the record has
@@ -96,11 +109,17 @@ public final class ArtistPictureStore {
         return data
     }
 
-    /// Stores a record, replacing the one with the same folded key. With
-    /// `prepared`, its bytes are written to the image cache first and the
-    /// record's `preparedHash` is set to their SHA-256.
+    /// Stores a record, replacing every record the player takes for the same
+    /// person. Its `foldedKey` is worked out from `displayName` when empty,
+    /// and must equal it otherwise. With `prepared`, its bytes are written to
+    /// the image cache first and the record's `preparedHash` is set to their SHA-256.
     public func set(_ record: ArtistPictureRecord, prepared: Data?) throws {
         var record = record
+        let folded = PodBoxArtName.folded(record.displayName)
+        guard !folded.isEmpty, record.foldedKey.isEmpty || record.foldedKey == folded else {
+            throw ArtistPictureStoreError.invalidRecord(name: record.displayName)
+        }
+        record.foldedKey = folded
         if let prepared {
             let hash = Self.sha256(prepared)
             let url = imageURL(hash: hash)
@@ -110,7 +129,9 @@ public final class ArtistPictureStore {
             }
             record.preparedHash = hash
         }
-        byKey[record.foldedKey] = record
+        let sameKeys = Self.playerKeys(record.displayName).compactMap { byPlayerKey[$0] }
+        for old in Set(sameKeys + [folded]) { forget(foldedKey: old) }
+        insert(record)
         isDirty = true
     }
 
@@ -134,15 +155,41 @@ public final class ArtistPictureStore {
 
     // MARK: - Private
 
+    /// No file is an empty store. Any other failure to read or decode it
+    /// marks the store unreadable, which blocks `save`.
     private func load() {
-        guard let data = try? Data(contentsOf: fileURL) else { return }
+        let data: Data
+        do {
+            data = try Data(contentsOf: fileURL)
+        } catch CocoaError.fileReadNoSuchFile {
+            return
+        } catch {
+            isUnreadable = true
+            return
+        }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         guard let records = try? decoder.decode([ArtistPictureRecord].self, from: data) else {
             isUnreadable = true
             return
         }
-        for record in records { byKey[record.foldedKey] = record }
+        for record in records { insert(record) }
+    }
+
+    private func insert(_ record: ArtistPictureRecord) {
+        byKey[record.foldedKey] = record
+        for key in Self.playerKeys(record.displayName) { byPlayerKey[key] = record.foldedKey }
+    }
+
+    private func forget(foldedKey: String) {
+        guard let old = byKey.removeValue(forKey: foldedKey) else { return }
+        for key in Self.playerKeys(old.displayName) where byPlayerKey[key] == foldedKey {
+            byPlayerKey.removeValue(forKey: key)
+        }
+    }
+
+    private static func playerKeys(_ name: String) -> [UInt32] {
+        [PodBoxArtName.key(name), PodBoxArtName.altKey(name)].filter { $0 != 0 }
     }
 
     private func imageURL(hash: String) -> URL {

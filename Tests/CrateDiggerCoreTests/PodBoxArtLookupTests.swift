@@ -1,99 +1,184 @@
 import XCTest
 @testable import CrateDiggerCore
 
+/// The player's people step (PodBox art cache): People file, else the highest
+/// folder named for the person, else the folder above a track's or the one
+/// above that unless it is a library folder or the volume root.
 final class PodBoxArtLookupTests: XCTestCase {
     private func tree(people: [String] = [], covers: [String] = [],
                       images: [String: [String]] = [:], audio: Set<String> = [],
-                      artists: [String: Set<String>] = [:], musicFolder: String? = "Music") -> DeviceArtTree {
+                      artists: [String: Set<String>] = [:], library: Set<String>? = [],
+                      full: Bool = false) -> DeviceArtTree {
         DeviceArtTree(peopleFiles: people, coverFiles: covers, folderImages: images,
-                      foldersWithAudio: audio, artistsByFolder: artists, musicFolder: musicFolder)
+                      foldersWithAudio: audio, artistsByFolder: artists, libraryFolders: library,
+                      libraryTableFull: full)
     }
 
+    private func lookup(_ name: String, _ folders: [String], _ tree: DeviceArtTree) -> PodBoxArtLookup.Outcome {
+        PodBoxArtLookup.artistPicture(for: name, albumFolders: folders, tree: tree)
+    }
+
+    private func assertUncertain(_ outcome: PodBoxArtLookup.Outcome, file: StaticString = #filePath, line: UInt = #line) {
+        guard case .uncertain = outcome else {
+            return XCTFail("expected uncertain, got \(outcome)", file: file, line: line)
+        }
+    }
+
+    // MARK: Step 1: /Artwork/People
+
     func testPeopleFileWins() {
-        let tree = tree(people: ["Björk.jpg"],
-                        images: ["Music/Björk": ["folder.jpg"]],
-                        artists: ["Music/Björk": ["bjork"]])
-        XCTAssertEqual(PodBoxArtLookup.artistPicture(for: "Bjork", albumFolders: ["Music/Björk/Post"], tree: tree),
-                       "Artwork/People/Björk.jpg")
+        let tree = tree(people: ["Björk.jpg"], images: ["Music/Björk": ["folder.jpg"]])
+        XCTAssertEqual(lookup("Bjork", ["Music/Björk/Post"], tree), .found("Artwork/People/Björk.jpg"))
     }
 
     func testPeopleFileMatchesByAltKey() {
-        let tree = tree(people: ["Herbert, Frank.jpg"])
-        XCTAssertEqual(PodBoxArtLookup.artistPicture(for: "Frank Herbert", albumFolders: [], tree: tree),
-                       "Artwork/People/Herbert, Frank.jpg")
+        XCTAssertEqual(lookup("Frank Herbert", [], tree(people: ["Herbert, Frank.jpg"])),
+                       .found("Artwork/People/Herbert, Frank.jpg"))
     }
 
-    func testPeopleFileWithWrongExtensionIgnored() {
-        let tree = tree(people: ["Frank Herbert.txt", "Frank Herbert"])
-        XCTAssertNil(PodBoxArtLookup.artistPicture(for: "Frank Herbert", albumFolders: [], tree: tree))
-        XCTAssertEqual(PodBoxArtLookup.artistPicture(for: "Frank Herbert", albumFolders: [],
-                                                     tree: self.tree(people: ["Frank Herbert.WEBP"])),
-                       "Artwork/People/Frank Herbert.WEBP")
+    /// The player takes any file whose name matches, and only finds out when
+    /// it decodes it; which of two it reads first is the folder's order.
+    func testPeopleFileWithWrongExtensionIsUncertain() {
+        assertUncertain(lookup("Frank Herbert", [], tree(people: ["Frank Herbert.txt"])))
+        assertUncertain(lookup("Frank Herbert", [], tree(people: ["Frank Herbert.jpg", "._Frank Herbert.jpg"])))
+        XCTAssertEqual(lookup("Frank Herbert", [], tree(people: ["Frank Herbert.WEBP"])),
+                       .found("Artwork/People/Frank Herbert.WEBP"))
+        XCTAssertEqual(lookup("Frank Herbert", [], tree(people: ["Frank Zappa.txt"])), .none)
     }
+
+    // MARK: Step 2: the highest named folder
 
     func testArtistFolderImageFoundThroughCategoryLevel() {
-        let tree = tree(images: ["Music/Rock/AC-DC": ["folder.jpg"]],
-                        audio: ["Music/Rock/AC-DC/1980 Back in Black"],
-                        artists: ["Music/Rock/AC-DC": ["acdc"], "Music/Rock": ["acdc", "beatles"],
-                                  "Music": ["acdc", "beatles"]])
-        XCTAssertEqual(PodBoxArtLookup.artistPicture(for: "AC/DC", albumFolders: ["Music/Rock/AC-DC/1980 Back in Black"],
-                                                     tree: tree),
-                       "Music/Rock/AC-DC/folder.jpg")
+        let tree = tree(images: ["Music/Rock/AC-DC": ["folder.jpg"]], library: ["Music/Rock"])
+        XCTAssertEqual(lookup("AC/DC", ["Music/Rock/AC-DC/1980 Back in Black"], tree),
+                       .found("Music/Rock/AC-DC/folder.jpg"))
     }
 
-    func testCoverPreferredOverFolder() {
-        let tree = tree(images: ["Music/AC-DC": ["folder.jpg", "cover.png", "cover.jpg"]],
-                        audio: ["Music/AC-DC/Powerage"], artists: ["Music/AC-DC": ["acdc"]])
-        XCTAssertEqual(PodBoxArtLookup.artistPicture(for: "AC/DC", albumFolders: ["Music/AC-DC/Powerage"], tree: tree),
-                       "Music/AC-DC/cover.jpg")
+    func testImageOrderUnderscoreThenCoverThenFolder() {
+        let tree = tree(images: ["Music/AC-DC": ["folder.jpg", "cover.png", "Cover.JPG", "_.gif"]])
+        XCTAssertEqual(lookup("AC/DC", ["Music/AC-DC/Powerage"], tree), .found("Music/AC-DC/_.gif"))
+        let noUnderscore = self.tree(images: ["Music/AC-DC": ["folder.jpg", "cover.png", "Cover.JPG"]])
+        XCTAssertEqual(lookup("AC/DC", ["Music/AC-DC/Powerage"], noUnderscore), .found("Music/AC-DC/Cover.JPG"))
     }
 
-    func testCategoryFolderWithManyArtistsIgnored() {
-        let tree = tree(images: ["Music/Rock": ["folder.jpg"]],
-                        audio: ["Music/Rock/AC-DC/Powerage", "Music/Rock/Beatles/Help"],
-                        artists: ["Music/Rock": ["acdc", "beatles"], "Music/Rock/AC-DC": ["acdc"]])
-        XCTAssertNil(PodBoxArtLookup.artistPicture(for: "AC/DC", albumFolders: ["Music/Rock/AC-DC/Powerage"], tree: tree))
+    /// Review I1: loose singles directly in the artist folder do not stop the
+    /// player using its folder.jpg.
+    func testPrinceFolderHoldingLooseTracksStillGivesItsPicture() {
+        let tree = tree(images: ["Music/Prince": ["folder.jpg"], "Music/Prince/1984 Purple Rain": ["cover.jpg"]],
+                        audio: ["Music/Prince", "Music/Prince/1984 Purple Rain"], library: ["Music"])
+        XCTAssertEqual(lookup("Prince", ["Music/Prince", "Music/Prince/1984 Purple Rain"], tree),
+                       .found("Music/Prince/folder.jpg"))
+        XCTAssertEqual(lookup("Prince", ["Music/Prince"], tree), .found("Music/Prince/folder.jpg"))
     }
 
-    /// Review Focus 2: the album cover of a self-titled album is not a portrait.
+    /// Review Focus 2: the highest named folder is `Music/Weezer`, so the
+    /// self-titled album's cover is not the portrait.
     func testAlbumCoverInSelfTitledFolderDoesNotBlock() {
         let tree = tree(images: ["Music/Weezer/Weezer": ["cover.jpg"]],
-                        audio: ["Music/Weezer/Weezer"],
-                        artists: ["Music/Weezer/Weezer": ["weezer"], "Music/Weezer": ["weezer"],
-                                  "Music": ["weezer"]])
-        XCTAssertNil(PodBoxArtLookup.artistPicture(for: "Weezer", albumFolders: ["Music/Weezer/Weezer"], tree: tree))
+                        audio: ["Music/Weezer/Weezer"], library: ["Music"])
+        XCTAssertEqual(lookup("Weezer", ["Music/Weezer/Weezer"], tree), .none)
+        let withPortrait = self.tree(images: ["Music/Weezer/Weezer": ["cover.jpg"], "Music/Weezer": ["folder.jpg"]],
+                                     audio: ["Music/Weezer/Weezer"], library: ["Music"])
+        XCTAssertEqual(lookup("Weezer", ["Music/Weezer/Weezer"], withPortrait), .found("Music/Weezer/folder.jpg"))
+    }
+
+    /// Where the album folder is the only folder named for the artist, the
+    /// player does use its cover. Reported as it is.
+    func testFlatSelfTitledFolderGivesItsCover() {
+        let tree = tree(images: ["Music/Weezer": ["cover.jpg"]], audio: ["Music/Weezer"], library: ["Music"])
+        XCTAssertEqual(lookup("Weezer", ["Music/Weezer"], tree), .found("Music/Weezer/cover.jpg"))
+    }
+
+    func testDiscFolderTakesTheImageAboveIt() {
+        // The fallback's second folder is a disc folder: the player takes the
+        // album folder's cover above it, three above the track.
+        let tree = tree(images: ["Music/Box": ["cover.jpg"]], library: ["Music"])
+        XCTAssertEqual(lookup("AC/DC", ["Music/Box/CD1/Side A/Tracks"], tree), .found("Music/Box/cover.jpg"))
+        XCTAssertEqual(lookup("AC/DC", ["Music/Box/Extras/Side A/Tracks"], tree), .none, "not a disc folder")
+        XCTAssertTrue(PodBoxArtLookup.isDiscFolder("CD1"))
+        XCTAssertTrue(PodBoxArtLookup.isDiscFolder("Disc 2"))
+        XCTAssertTrue(PodBoxArtLookup.isDiscFolder("disk_3"))
+        XCTAssertTrue(PodBoxArtLookup.isDiscFolder("disc-04"))
+        XCTAssertFalse(PodBoxArtLookup.isDiscFolder("Disc 1 of 2"))
+        XCTAssertFalse(PodBoxArtLookup.isDiscFolder("Disco"))
+        XCTAssertFalse(PodBoxArtLookup.isDiscFolder("CD"))
+        XCTAssertFalse(PodBoxArtLookup.isDiscFolder("CD-"))
     }
 
     func testNamedFolderMoreThanThreeLevelsUpIgnored() {
-        let album = "Music/AC-DC/a/b/c/Powerage"
-        let tree = tree(images: ["Music/AC-DC": ["folder.jpg"]], audio: [album],
-                        artists: ["Music/AC-DC": ["acdc"], "Music/AC-DC/a/b/c": ["acdc"], "Music/AC-DC/a/b": ["acdc"]])
-        XCTAssertNil(PodBoxArtLookup.artistPicture(for: "AC/DC", albumFolders: [album], tree: tree))
-        // Three levels up is still in reach.
-        let near = "Music/AC-DC/a/b/Powerage"
-        let reachable = self.tree(images: ["Music/AC-DC": ["folder.jpg"]], audio: [near],
-                                  artists: ["Music/AC-DC": ["acdc"]])
-        XCTAssertEqual(PodBoxArtLookup.artistPicture(for: "AC/DC", albumFolders: [near], tree: reachable),
-                       "Music/AC-DC/folder.jpg")
+        let tree = tree(images: ["Music/AC-DC": ["folder.jpg"]], library: ["Music"])
+        XCTAssertEqual(lookup("AC/DC", ["Music/AC-DC/a/b/c/Powerage"], tree), .none)
+        XCTAssertEqual(lookup("AC/DC", ["Music/AC-DC/a/b/Powerage"], tree), .found("Music/AC-DC/folder.jpg"))
     }
 
-    func testNeverLooksAboveTheMusicFolder() {
-        // The volume root is the album's grandparent, and the AC-DC folder above
-        // the music folder is named after the artist: neither is looked at.
-        let tree = tree(images: ["": ["folder.jpg"], "AC-DC": ["cover.jpg"]],
-                        audio: ["AC-DC/Music/Powerage"],
-                        artists: ["": ["acdc"], "AC-DC": ["acdc"]], musicFolder: "AC-DC/Music")
-        XCTAssertNil(PodBoxArtLookup.artistPicture(for: "AC/DC", albumFolders: ["AC-DC/Music/Powerage"], tree: tree))
-        let rootTree = self.tree(images: ["": ["folder.jpg"]], audio: ["Music/Powerage"], artists: ["": ["acdc"]])
-        XCTAssertNil(PodBoxArtLookup.artistPicture(for: "AC/DC", albumFolders: ["Music/Powerage"], tree: rootTree))
+    func testHighestNamedFolderWinsEvenWithoutAnImage() {
+        // Music/Prince is the highest; it has no image, so the named folder
+        // below it does not count and the fallback looks above each track.
+        let tree = tree(images: ["Music/Prince/Prince": ["folder.jpg"]], library: ["Music"])
+        XCTAssertEqual(lookup("Prince", ["Music/Prince/Prince/1999"], tree), .found("Music/Prince/Prince/folder.jpg"),
+                       "the fallback's first step is the track folder's parent")
+        // A track folder named for him under a higher named folder: its own
+        // image is neither the named folder's nor above the track.
+        XCTAssertEqual(lookup("Prince", ["Music/Prince/Prince"], tree), .none)
+    }
+
+    func testNamedFoldersTyingAtOneHeightAreUncertain() {
+        let tree = tree(images: ["Music/Rock/Prince": ["folder.jpg"]], library: ["Music", "Music/Rock", "Music/Funk"])
+        assertUncertain(lookup("Prince", ["Music/Rock/Prince/1999", "Music/Funk/Prince/Lovesexy"], tree))
+        // Neither has an image: no tie to break.
+        XCTAssertEqual(lookup("Prince", ["Music/Rock/Prince/1999", "Music/Funk/Prince/Lovesexy"],
+                              self.tree(library: ["Music", "Music/Rock", "Music/Funk"])), .none)
+    }
+
+    // MARK: Step 3: the folders above
+
+    func testCategoryFolderWithManyArtistsIgnored() {
+        let tree = tree(images: ["Music/Rock": ["folder.jpg"]], library: ["Music", "Music/Rock"])
+        XCTAssertEqual(lookup("AC/DC", ["Music/Rock/AC-DC/Powerage"], tree), .none)
+    }
+
+    /// The real rule: a folder holding many artists' albums but only one
+    /// named folder is not a library folder.
+    func testFolderAboveWithOneNamedFolderIsUsed() {
+        let tree = tree(images: ["Music/Rock": ["folder.jpg"]], library: ["Music"])
+        XCTAssertEqual(lookup("AC/DC", ["Music/Rock/Live Albums/Powerage"], tree), .found("Music/Rock/folder.jpg"))
+    }
+
+    func testLibraryFoldersDerivedWithoutTheCatalog() {
+        let tree = tree(images: ["Music/Rock": ["folder.jpg"]],
+                        artists: ["Music/Rock/AC-DC": ["acdc"], "Music/Rock/Beatles": ["beatles"],
+                                  "Music/Rock": ["acdc", "beatles"]], library: nil)
+        XCTAssertEqual(tree.libraryFolders, ["Music/Rock"])
+        XCTAssertEqual(lookup("AC/DC", ["Music/Rock/AC-DC/Powerage"], tree), .none)
+    }
+
+    func testDifferentImagesAboveDifferentTracksAreUncertain() {
+        let tree = tree(images: ["Music/Rock": ["folder.jpg"], "Music/Pop": ["folder.jpg"]], library: ["Music"])
+        assertUncertain(lookup("Beck", ["Music/Rock/Odelay", "Music/Pop/Guero"], tree))
+    }
+
+    func testFullLibraryTableIsUncertain() {
+        let tree = tree(images: ["Music/Rock": ["folder.jpg"]], library: ["Music"], full: true)
+        assertUncertain(lookup("AC/DC", ["Music/Rock/Live/Powerage"], tree))
+        XCTAssertEqual(lookup("AC/DC", ["Music/Rock/Live/Powerage"], self.tree(library: ["Music"], full: true)), .none)
+    }
+
+    func testNeverLooksAtTheVolumeRoot() {
+        let tree = tree(images: ["": ["folder.jpg", "cover.jpg"]], library: [])
+        XCTAssertEqual(lookup("AC/DC", ["Music/Powerage"], tree), .none, "the grandparent is the root")
+        XCTAssertEqual(lookup("AC/DC", ["AC-DC"], self.tree(images: ["": ["folder.jpg"]])), .none)
     }
 
     func testNoPictureGivesNil() {
-        let tree = tree(people: ["Someone Else.jpg"],
-                        images: ["Music/AC-DC/Powerage": ["cover.jpg"]],
-                        audio: ["Music/AC-DC/Powerage"], artists: ["Music/AC-DC": ["acdc"]])
-        XCTAssertNil(PodBoxArtLookup.artistPicture(for: "AC/DC", albumFolders: ["Music/AC-DC/Powerage"], tree: tree))
+        let tree = tree(people: ["Someone Else.jpg"], images: ["Music/Powerage": ["cover.jpg"]],
+                        audio: ["Music/Powerage"], library: ["Music"])
+        XCTAssertEqual(lookup("AC/DC", ["Music/Powerage"], tree), .none)
+        XCTAssertNil(lookup("AC/DC", ["Music/Powerage"], tree).foundPath)
+        XCTAssertEqual(lookup("!!!", ["Music/!!!"], self.tree(images: ["Music/!!!": ["cover.jpg"]])), .none,
+                       "a name the player cannot key gets nothing")
     }
+
+    // MARK: Scan
 
     func testScanBuildsTreeFromFakeIPod() throws {
         let iPod = try FakeIPod()
@@ -102,9 +187,14 @@ final class PodBoxArtLookupTests: XCTestCase {
                                      tracks: ["01 Hells Bells.m4a"], appleDoubleTwins: true)
         let beatles = try iPod.addAlbum(category: "Rock", artist: "Beatles", folder: "1965 Help",
                                         tracks: ["01 Help.m4a"], cover: false)
+        let prince = try iPod.addAlbum(category: nil, artist: "Prince", folder: "1999",
+                                       tracks: ["01 1999.m4a"], cover: false)
+        try iPod.addFile("Music/Prince/Loose Single.m4a", Data([0, 0, 0, 0x20]))
+        try iPod.addFile("Music/Prince/folder.jpg", Data([0xff, 0xd8]))
         try iPod.addFile("Music/Rock/AC-DC/folder.jpg", Data([0xff, 0xd8]))
         try iPod.addFile("Artwork/People/Björk.jpg", Data([0xff, 0xd8]))
         try iPod.addFile("Artwork/People/.hidden.jpg", Data([0xff, 0xd8]))
+        try iPod.addFile("Artwork/People/Sigur Ro\u{301}s.jpg", Data([0xff, 0xd8])) // decomposed, as macOS may hand it back
         try iPod.addFile("Artwork/Covers/Beatles - Help.jpg", Data([0xff, 0xd8]))
 
         func track(_ folder: URL, _ file: String, albumArtist: String?, artist: String) -> LoadedTrack {
@@ -114,35 +204,46 @@ final class PodBoxArtLookupTests: XCTestCase {
         let catalog = [
             track(acdc, "01 Hells Bells.m4a", albumArtist: nil, artist: "AC/DC"),
             track(beatles, "01 Help.m4a", albumArtist: "The Beatles", artist: "Beatles"),
+            track(prince, "01 1999.m4a", albumArtist: nil, artist: "Prince"),
+            track(prince.deletingLastPathComponent(), "Loose Single.m4a", albumArtist: nil, artist: "Prince"),
         ]
 
         let tree = DeviceArtTree.scan(volumeRoot: iPod.root, musicSubpath: "Music", catalog: catalog)
-        XCTAssertEqual(tree.peopleFiles, ["Björk.jpg"])
+        XCTAssertEqual(tree.peopleFiles, [".hidden.jpg", "Björk.jpg", "Sigur R\u{F3}s.jpg"], "all of readdir, NFC")
+        XCTAssertEqual(tree.peopleFiles.last?.unicodeScalars.count, 13)
         XCTAssertEqual(tree.coverFiles, ["Beatles - Help.jpg"])
         XCTAssertEqual(tree.folderImages["Music/Rock/AC-DC"], ["folder.jpg"])
         XCTAssertEqual(tree.folderImages["Music/Rock/AC-DC/1980 Back in Black"], ["cover.jpg"])
-        XCTAssertEqual(tree.foldersWithAudio, ["Music/Rock/AC-DC/1980 Back in Black", "Music/Rock/Beatles/1965 Help"])
-        XCTAssertEqual(tree.artistsByFolder["Music/Rock/AC-DC/1980 Back in Black"], ["acdc"])
+        XCTAssertEqual(tree.foldersWithAudio, ["Music/Rock/AC-DC/1980 Back in Black", "Music/Rock/Beatles/1965 Help",
+                                               "Music/Prince/1999", "Music/Prince"])
         XCTAssertEqual(tree.artistsByFolder["Music/Rock/AC-DC"], ["acdc"])
         XCTAssertEqual(tree.artistsByFolder["Music/Rock"], ["acdc", "beatles"])
-        XCTAssertEqual(tree.artistsByFolder["Music"], ["acdc", "beatles"])
+        XCTAssertEqual(tree.artistsByFolder["Music"], ["acdc", "beatles", "prince"])
         XCTAssertNil(tree.artistsByFolder[""], "nothing above the music folder")
-        XCTAssertEqual(tree.musicFolder, "Music")
+        // Music/Rock holds AC-DC and Beatles, named for two people; Music holds Prince.
+        XCTAssertEqual(tree.libraryFolders, ["Music/Rock"])
+        XCTAssertFalse(tree.libraryTableFull)
 
-        XCTAssertEqual(PodBoxArtLookup.artistPicture(for: "AC/DC", albumFolders: ["Music/Rock/AC-DC/1980 Back in Black"],
-                                                     tree: tree),
-                       "Music/Rock/AC-DC/folder.jpg")
-        XCTAssertNil(PodBoxArtLookup.artistPicture(for: "The Beatles", albumFolders: ["Music/Rock/Beatles/1965 Help"],
-                                                   tree: tree))
+        XCTAssertEqual(PodBoxArtLookup.artistPicture(for: "AC/DC", albumFolders: [acdc.path.replacingOccurrences(
+            of: iPod.root.path + "/", with: "")], tree: tree), .found("Music/Rock/AC-DC/folder.jpg"))
+        XCTAssertEqual(PodBoxArtLookup.artistPicture(for: "Prince", albumFolders: ["Music/Prince", "Music/Prince/1999"],
+                                                     tree: tree), .found("Music/Prince/folder.jpg"))
+        XCTAssertEqual(PodBoxArtLookup.artistPicture(for: "The Beatles", albumFolders: ["Music/Rock/Beatles/1965 Help"],
+                                                     tree: tree), .none)
+        XCTAssertEqual(PodBoxArtLookup.artistPicture(for: "Sigur Rós", albumFolders: [], tree: tree),
+                       .found("Artwork/People/Sigur R\u{F3}s.jpg"))
         iPod.assertPlayerStateUntouched(since: before)
     }
 
+    // MARK: Person
+
+    private func person(albumArtist: String?, artist: String) -> String? {
+        DeviceArtTree.person(for: LoadedTrack(
+            track: AudioTrack(fileURL: URL(fileURLWithPath: "/x.m4a"), title: "x", artist: artist),
+            metadata: ConversionMetadata(artist: artist, albumArtist: albumArtist)))
+    }
+
     func testPersonSkipsVariousAndUnknown() {
-        func person(albumArtist: String?, artist: String) -> String? {
-            DeviceArtTree.person(for: LoadedTrack(
-                track: AudioTrack(fileURL: URL(fileURLWithPath: "/x.m4a"), title: "x", artist: artist),
-                metadata: ConversionMetadata(artist: artist, albumArtist: albumArtist)))
-        }
         XCTAssertNil(person(albumArtist: "Various Artists", artist: "Beck"))
         XCTAssertNil(person(albumArtist: "  VARIOUS ARTISTS ", artist: "Beck"))
         XCTAssertNil(person(albumArtist: nil, artist: "Unknown Artist"))
@@ -153,11 +254,6 @@ final class PodBoxArtLookupTests: XCTestCase {
     }
 
     func testPersonFallsBackToArtist() {
-        func person(albumArtist: String?, artist: String) -> String? {
-            DeviceArtTree.person(for: LoadedTrack(
-                track: AudioTrack(fileURL: URL(fileURLWithPath: "/x.m4a"), title: "x", artist: artist),
-                metadata: ConversionMetadata(artist: artist, albumArtist: albumArtist)))
-        }
         XCTAssertEqual(person(albumArtist: nil, artist: "Beck"), "Beck")
         XCTAssertEqual(person(albumArtist: "  ", artist: "Beck"), "Beck")
     }

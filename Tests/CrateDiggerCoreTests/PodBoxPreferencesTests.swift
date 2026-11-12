@@ -55,6 +55,19 @@ final class PodBoxPreferencesTests: XCTestCase {
         XCTAssertEqual(profile.podBoxPreferences.artistPictures, .off)
     }
 
+    func testUnknownPodBoxValueDoesNotLoseTheProfile() throws {
+        let newer = savedBeforePodBox.replacingOccurrences(
+            of: #""name":"PodBox iPod","#,
+            with: #""name":"PodBox iPod","podBox":{"artistPictures":"somewhereNew","passedChecks":["M5"]},"#)
+        let profile = try JSONDecoder().decode(ExternalDeviceProfile.self, from: Data(newer.utf8))
+        XCTAssertEqual(profile.name, "PodBox iPod")
+        XCTAssertNil(profile.podBox)
+        XCTAssertEqual(profile.podBoxPreferences.artistPictures, .off)
+
+        let list = "[" + newer + "," + savedBeforePodBox + "]"
+        XCTAssertEqual(try JSONDecoder().decode([ExternalDeviceProfile].self, from: Data(list.utf8)).count, 2)
+    }
+
     func testRoundTrip() throws {
         var preferences = PodBoxPreferences()
         preferences.sweepsAppleDouble = false

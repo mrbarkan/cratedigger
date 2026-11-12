@@ -183,6 +183,24 @@ final class ArtistPictureImageTests: XCTestCase {
         XCTAssertNil(ArtistPictureImage.prepare(small, reportedSize: CGSize(width: 12_001, height: 12_000)))
     }
 
+    func testHugeAreaOrHugeFileIsNilWithoutDecoding() {
+        let small = jpeg(solid(400, 400, 1, 2, 3))
+        XCTAssertNil(ArtistPictureImage.prepare(small, reportedSize: CGSize(width: 8_000, height: 7_000)),
+                     "56 megapixels, each side within 12,000")
+        XCTAssertNotNil(ArtistPictureImage.prepare(small, reportedSize: CGSize(width: 7_000, height: 7_000)))
+        XCTAssertNotNil(ArtistPictureImage.prepare(small + Data(count: 1_000)), "bytes after the end marker are fine")
+        XCTAssertNil(ArtistPictureImage.prepare(small + Data(count: ArtistPictureImage.maximumSourceBytes)))
+    }
+
+    func testFormatsThatCannotBeCheckedAreRefused() throws {
+        let tiff = encode([solid(500, 500, 9, 9, 9)], as: .tiff)
+        XCTAssertNil(ArtistPictureImage.prepare(tiff))
+        let gif = encode([solid(500, 500, 9, 9, 9)], as: .gif)
+        XCTAssertNotNil(ArtistPictureImage.prepare(gif))
+        XCTAssertNil(ArtistPictureImage.prepare(gif.dropLast()), "no trailer")
+        XCTAssertNil(ArtistPictureImage.prepare(gif.prefix(gif.count * 2 / 3)))
+    }
+
     func testAlphaPNGGetsWhiteBackground() throws {
         let clear = image(500, 500, alpha: true) { x, _ in x < 250 ? (0, 0, 0, 0) : (0, 0, 255, 255) }
         let output = try decoded(XCTUnwrap(ArtistPictureImage.prepare(encode([clear], as: .png))))

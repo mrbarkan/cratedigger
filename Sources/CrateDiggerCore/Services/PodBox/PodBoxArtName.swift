@@ -76,16 +76,22 @@ public enum PodBoxArtName {
         return String(result)
     }
 
-    /// A file stem for `<stem>.jpg` that the player keys exactly as it keys
-    /// `name`: the name's FAT-safe form (`AC/DC` gives `AC-DC`) when that
-    /// keeps the key, else the folded name. Room is left for a `.jpg`
-    /// extension. nil when the key is 0, or when neither form fits one FAT
-    /// name with the key intact (the caller reports the artist as unnameable).
+    /// A file stem for `Artwork/People/<stem>.jpg` that the player keys
+    /// exactly as it keys `name`: the name's FAT-safe form (`AC/DC` gives
+    /// `AC-DC`) when that keeps the key and the whole path fits the player's
+    /// 252 bytes, else the folded name on the same terms. nil when the key is
+    /// 0, when the name holds a code point above U+FFFF (a firmware built
+    /// without 32-bit Unicode decodes those differently, and this port cannot
+    /// tell which build the iPod runs), or when neither form fits (the caller
+    /// reports the artist as unnameable).
     public static func fileStem(for name: String) -> String? {
         let target = key(name)
-        guard target != 0 else { return nil }
+        guard target != 0, !name.unicodeScalars.contains(where: { $0.value > 0xFFFF }) else { return nil }
         for candidate in [name, folded(name)] {
-            if let stem = fatStem(candidate), key(stem) == target { return stem }
+            if let stem = fatStem(candidate), key(stem) == target,
+               FATName.fitsPlayerPath(peopleFolder + "/" + stem + jpgSuffix, prefix: nil) {
+                return stem
+            }
         }
         return nil
     }
@@ -120,6 +126,7 @@ public enum PodBoxArtName {
     private static let theBytes = Array("the ".utf8)
     private static let commaTheBytes = Array(", the".utf8)
     private static let jpgSuffix = ".jpg"
+    private static let peopleFolder = "Artwork/People"
 
     private static func foldKey(_ name: String, into hasher: inout Hasher) {
         let bytes = Array(name.utf8)

@@ -146,6 +146,23 @@ final class PodBoxArtNameTests: XCTestCase {
         XCTAssertNil(PodBoxArtName.fileStem(for: String(repeating: "x", count: 300)))
     }
 
+    /// The player opens `/<HDD0>/Artwork/People/<stem>.jpg`, at most 252 bytes.
+    func testFileStemFitsThePlayerPath() throws {
+        let punctuated = String(repeating: "a.", count: 115) // FAT form keeps the key but is too long
+        let stem = try XCTUnwrap(PodBoxArtName.fileStem(for: punctuated))
+        XCTAssertEqual(stem, String(repeating: "a", count: 115))
+        XCTAssertTrue(FATName.fitsPlayerPath("Artwork/People/\(stem).jpg", prefix: nil))
+        XCTAssertNil(PodBoxArtName.fileStem(for: String(repeating: "a", count: 226)), "the fold is just as long")
+        XCTAssertNotNil(PodBoxArtName.fileStem(for: String(repeating: "a", count: 225)), "23 + 225 + 4 = 252")
+    }
+
+    /// Above U+FFFF the firmware's decoder may differ from this port's.
+    func testFileStemRefusesCodePointsAboveTheBMP() {
+        XCTAssertNil(PodBoxArtName.fileStem(for: "Prince \u{1F49C}"))
+        XCTAssertNil(PodBoxArtName.fileStem(for: "\u{20000}"))
+        XCTAssertEqual(PodBoxArtName.fileStem(for: "椎名林檎"), "椎名林檎")
+    }
+
     func testVectorsFromPodBoxSource() throws {
         let url = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

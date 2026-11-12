@@ -217,7 +217,10 @@ public struct ExternalDeviceProfile: Identifiable, Codable, Hashable, Sendable {
         transferSettings = try container.decode(ExternalDeviceTransferSettings.self, forKey: .transferSettings)
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
-        podBox = try container.decodeIfPresent(PodBoxPreferences.self, forKey: .podBox)
+        // Lenient: a value this build cannot read (one written by a newer
+        // build) leaves the defaults rather than failing the whole profile,
+        // which would make every saved profile read as gone.
+        podBox = (try? container.decodeIfPresent(PodBoxPreferences.self, forKey: .podBox)) ?? nil
 
         if kind == .rockboxIPod {
             let stored = try container.nestedContainer(

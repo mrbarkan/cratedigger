@@ -104,6 +104,43 @@ final class ArtistPictureStoreTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: file), Data("not json".utf8))
     }
 
+    func testAnyOtherReadErrorBlocksSaving() throws {
+        // A folder where the file should be: not "missing", so not "empty".
+        let file = indexDirectory.appendingPathComponent(ArtistPictureStore.fileName, isDirectory: true)
+        try FileManager.default.createDirectory(at: file, withIntermediateDirectories: true)
+        let store = ArtistPictureStore(indexDirectory: indexDirectory, imageDirectory: imageDirectory)
+        try store.set(record("Air"), prepared: nil)
+        XCTAssertThrowsError(try store.save()) { error in
+            XCTAssertEqual(error as? ArtistPictureStoreError, .unreadableStore(path: file.path))
+        }
+    }
+
+    func testOneRecordForBothOrdersOfACommaName() throws {
+        let store = try makeStore()
+        try store.set(record("Herbert, Frank"), prepared: nil)
+        XCTAssertEqual(store.record(forName: "Frank Herbert")?.displayName, "Herbert, Frank")
+        try store.set(record("Frank Herbert", .rejected), prepared: nil)
+        XCTAssertEqual(store.allRecords().map(\.displayName), ["Frank Herbert"])
+        XCTAssertEqual(store.record(forName: "Herbert, Frank")?.outcome, .rejected)
+        try store.save()
+        let reloaded = ArtistPictureStore(indexDirectory: indexDirectory, imageDirectory: imageDirectory)
+        XCTAssertEqual(reloaded.record(forName: "Herbert, Frank")?.displayName, "Frank Herbert")
+    }
+
+    func testSetWorksOutOrChecksTheFoldedKey() throws {
+        let store = try makeStore()
+        XCTAssertThrowsError(try store.set(record("!!!"), prepared: nil)) { error in
+            XCTAssertEqual(error as? ArtistPictureStoreError, .invalidRecord(name: "!!!"))
+        }
+        var wrong = record("Air")
+        wrong.foldedKey = "beck"
+        XCTAssertThrowsError(try store.set(wrong, prepared: nil))
+        var blank = record("The Beatles")
+        blank.foldedKey = ""
+        try store.set(blank, prepared: nil)
+        XCTAssertEqual(store.allRecords().map(\.foldedKey), ["beatles"])
+    }
+
     func testNotFoundIsStaleAfterThirtyDays() {
         let checked = Date(timeIntervalSinceReferenceDate: 800_000_000)
         let notFound = record("Air", .notFound, checkedAt: checked)
