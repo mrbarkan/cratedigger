@@ -209,7 +209,7 @@ extension LibraryViewModel {
                     hasCover: { FolderCoverArtWriter.hasCover(in: $0) }
                 )
                 // The folder's name only: the log is not the place for a home path.
-                writeFolderCoverArt(covers, for: destinationRoot.lastPathComponent)
+                writeFolderCoverArt(covers, for: destinationRoot.lastPathComponent, door: nil)
             }
             presentSummary(report: outcome.report, presentingFrom: host)
         }
@@ -471,7 +471,8 @@ extension LibraryViewModel {
             reviewedAlbumFolders: reviewedFolders
         ) else { return }
 
-        // Record Divider slices, at their natural paths beside the plan's.
+        // Record Divider slices, at their natural paths beside the plan's,
+        // named as the device can hold them (as the review names its own).
         let sliceJobs = planConversionJobs(
             tracks: divided,
             preset: preset,
@@ -482,7 +483,11 @@ extension LibraryViewModel {
             reservedDestinationPaths: Set(reviewed.copies.map {
                 $0.destinationURL.standardizedFileURL.resolvingSymlinksInPath().path
             })
-        )
+        ).map { job in
+            ConversionJob(sourceURL: job.sourceURL,
+                          destinationURL: ExternalDeviceTransferPlanner.deviceSafeURL(job.destinationURL, under: musicFolder),
+                          metadata: job.metadata, startSeconds: job.startSeconds, endSeconds: job.endSeconds)
+        }
         let slices = await Task.detached(priority: .userInitiated) {
             DeviceRecordSlices(jobs: sliceJobs, of: divided)
         }.value
@@ -508,16 +513,20 @@ extension LibraryViewModel {
 
         // Only what will be written counts against the free space; what a
         // Replace frees is not credited, so the check stays conservative.
+        // Found out without writing to the device.
         var seenSources: Set<String> = []
         let sizedSources = plan.copies.map(\.source).filter { seenSources.insert($0.track.fileURL.path).inserted }
-        if let problem = validateBatchPreflight(
-            destinationRoot: musicFolder,
-            sourceTracks: sizedSources,
-            outputFormat: selection.outputFormat
-        ) {
+        if let problem = deviceWritabilityProblem(musicFolder, deviceName: profile.name)
+            ?? probeFreeDiskSpace(
+                musicFolder,
+                sourceTracks: sizedSources,
+                estimateFactor: (selection.outputFormat == .wav || selection.outputFormat == .aiff) ? 2.5 : 1.10,
+                insufficientSpaceMessageFormat: "This batch needs ~%.1f GB on the device but only %.1f GB is available."
+            ) {
             appAlert = problem
             return
         }
+        guard let door = makeTransferDoor(for: runProfile, device: device, musicFolder: musicFolder) else { return }
         // The scan and the sheet can take a while; another job may have
         // started on the conversion channel meanwhile.
         guard !isConversionRunning else {
@@ -538,32 +547,66 @@ extension LibraryViewModel {
         defer { activeConversionService = nil }
         rememberDeviceAnswers(answers, of: review, profileID: profile.id)
 
-        // ffmpeg writes each file to a hidden partial beside its destination
-        // (its -y would replace whatever is at the real name); Core decides
-        // what is held back now and what lands afterwards.
-        let partials = await Task.detached(priority: .userInitiated) {
-            DeviceTransferExecutor().partialJobs(for: plan, slices: slices.jobs)
+        // ffmpeg never writes onto the device: it converts into a staging
+        // folder on this Mac, and the finished files go over through the
+        // write door. Core decides what is held back now (a refused path, a
+        // file that appeared, no room to stage it) and what lands afterwards.
+        // The staging folder goes however the run ends.
+        let stagingRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CrateDigger-DeviceSend-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: stagingRoot) }
+        let outputFormat = preset.outputFormat
+        let staged = await Task.detached(priority: .userInitiated) { () -> DeviceTransferExecutor.StagedJobs in
+            let fm = FileManager.default
+            return DeviceTransferExecutor(door: door).stagedJobs(
+                for: plan,
+                stagingRoot: stagingRoot,
+                slices: slices.jobs,
+                stagingBytesAvailable: fm.temporaryDirectory.volumeFreeBytes,
+                estimatedBytes: { copy in
+                    let size = ((try? fm.attributesOfItem(atPath: copy.source.track.fileURL.path))?[.size]
+                        as? NSNumber)?.int64Value ?? 0
+                    return DeviceTransferExecutor.estimatedConvertedBytes(sourceBytes: size, format: outputFormat)
+                }
+            )
         }.value
-        let ran = partials.jobs.isEmpty
+        let ran = staged.jobs.isEmpty
             ? nil
-            : await runConversionQueue(service: service, jobs: partials.jobs, preset: preset, endsBusyJob: false)
+            : await runConversionQueue(service: service, jobs: staged.jobs, preset: preset, endsBusyJob: false)
 
-        // Cancel stays live through the renames and deletions: a press after
-        // the last job was dispatched still stops every deletion. The queue
-        // let go of the service when it finished, so hold it again.
+        // Cancel stays live through the copies and deletions: a press after
+        // the last job was dispatched still stops every deletion and every
+        // copy not started. The queue let go of the service when it
+        // finished, so hold it again.
         activeConversionService = service
         let succeeded = ran?.succeededDestinationPaths ?? []
         let failureReasons = ran?.failureReasons ?? [:]
         let wasCancelled = (ran?.wasCancelled ?? false) || service.isCancelled
         let sliceDestinations = Set(slices.jobs.keys)
+        // The copies to the device show on CNVRT like the encodes before them.
+        let copies = plan.copies
+        conversionProgress = ConversionProgressSnapshot(
+            jobsCompleted: 0, jobsTotal: copies.count,
+            currentFilename: copies.first?.destinationURL.lastPathComponent, isRunning: true
+        )
         let outcome = await Task.detached(priority: .userInitiated) {
-            DeviceTransferExecutor().finishConverted(
+            DeviceTransferExecutor(door: door).finishConverted(
                 plan,
-                jobs: partials,
+                jobs: staged,
                 succeeded: succeeded,
                 reasons: failureReasons,
                 wasCancelled: wasCancelled,
                 isCancelled: { service.isCancelled },
+                onProgress: { completed, total in
+                    Task { @MainActor in
+                        guard self.conversionProgress.isRunning else { return }
+                        self.conversionProgress = ConversionProgressSnapshot(
+                            jobsCompleted: completed, jobsTotal: total,
+                            currentFilename: completed < total ? copies[completed].destinationURL.lastPathComponent : nil,
+                            isRunning: completed < total
+                        )
+                    }
+                },
                 name: { copy in
                     sliceDestinations.contains(copy.destinationURL.path)
                         ? copy.destinationURL.lastPathComponent
@@ -571,6 +614,9 @@ extension LibraryViewModel {
                 }
             )
         }.value
+        conversionProgress = ConversionProgressSnapshot(
+            jobsCompleted: copies.count, jobsTotal: copies.count, currentFilename: nil, isRunning: false
+        )
         let cancelledCount = outcome.failed.filter { $0.reason == ConversionQueueOutcome.cancelledReason }.count
         endBusyJob(ran?.busyJob, .conversion(
             succeeded: outcome.written.count,
@@ -585,7 +631,8 @@ extension LibraryViewModel {
         writeFolderCoverArt(
             landings: plan.coverFolders(after: outcome.written, hasCover: { FolderCoverArtWriter.hasCover(in: $0) })
                 .map { (folder: $0.key, artwork: $0.value.metadata.artwork) },
-            for: profile.name
+            for: profile.name,
+            door: door
         )
         await patchDeviceCatalog(
             for: device,

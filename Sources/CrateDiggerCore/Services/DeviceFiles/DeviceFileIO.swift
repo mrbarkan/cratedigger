@@ -45,7 +45,12 @@ public enum DeviceFileIO {
     /// On a failure before the rename the temp is removed and the error
     /// rethrown. Once the rename has landed the write has succeeded: failing
     /// to restore the date or strip an attribute is logged, never thrown.
-    static func copyDataOnly(from source: URL, to destination: URL,
+    ///
+    /// `exclusive`: the destination must not exist. The rename itself refuses
+    /// one that appears (`RENAME_EXCL`), so nothing slips in between a check
+    /// and the move; FAT has no such rename, and there the check runs right
+    /// before a plain one. A refusal throws `EEXIST`.
+    static func copyDataOnly(from source: URL, to destination: URL, exclusive: Bool = false,
                              fileManager: FileManager = .default) throws {
         let temp = tempURL(for: destination)
         do {
@@ -53,7 +58,11 @@ public enum DeviceFileIO {
                 throw posixError("Copy", temp)
             }
             try sync(temp)
-            try rename(temp, over: destination)
+            if exclusive {
+                try renameExclusively(temp, onto: destination)
+            } else {
+                try rename(temp, over: destination)
+            }
         } catch {
             discardTemp(temp)
             throw error
@@ -71,12 +80,17 @@ public enum DeviceFileIO {
 
     /// Same-folder temp, fsync, rename, strip. Never `Data.write(.atomic)`,
     /// which stages through a folder of its own on some volumes.
-    static func writeAtomically(_ data: Data, to destination: URL,
+    /// `exclusive` as for `copyDataOnly`.
+    static func writeAtomically(_ data: Data, to destination: URL, exclusive: Bool = false,
                                 fileManager: FileManager = .default) throws {
         let temp = tempURL(for: destination)
         do {
             try writeAndSync(data, to: temp) // closed before the rename
-            try rename(temp, over: destination)
+            if exclusive {
+                try renameExclusively(temp, onto: destination)
+            } else {
+                try rename(temp, over: destination)
+            }
         } catch {
             discardTemp(temp)
             throw error
@@ -110,6 +124,18 @@ public enum DeviceFileIO {
 
     static func createDirectory(_ url: URL, fileManager: FileManager = .default) throws {
         try fileManager.createDirectory(at: url, withIntermediateDirectories: true)
+    }
+
+    /// Removes `folder`, then each parent up to and including `top`, while it
+    /// is empty. `rmdir` removes only an empty folder, so a folder holding
+    /// anything (a hidden file included) stops the climb and is left as it is.
+    static func removeEmptyFolders(from folder: URL, upTo top: URL) {
+        let topPath = top.path.hasSuffix("/") ? String(top.path.dropLast()) : top.path
+        var current = folder
+        while current.path == topPath || current.path.hasPrefix(topPath + "/") {
+            guard rmdir(current.path) == 0, current.path != topPath else { return }
+            current = current.deletingLastPathComponent()
+        }
     }
 }
 
@@ -264,6 +290,21 @@ private extension DeviceFileIO {
 
     static func rename(_ temp: URL, over destination: URL) throws {
         guard Darwin.rename(temp.path, destination.path) == 0 else { throw posixError("Rename", destination) }
+    }
+
+    /// `renamex_np(RENAME_EXCL)`; where the volume has no such rename (FAT
+    /// answers `ENOTSUP`), an `lstat` right before a plain rename stands in.
+    static func renameExclusively(_ temp: URL, onto destination: URL) throws {
+        if renamex_np(temp.path, destination.path, UInt32(RENAME_EXCL)) == 0 { return }
+        let code = errno
+        guard code == ENOTSUP || code == EINVAL else {
+            throw DeviceFileIOError(operation: "Rename", path: destination.path, code: code)
+        }
+        var info = stat()
+        if lstat(destination.path, &info) == 0 {
+            throw DeviceFileIOError(operation: "Rename", path: destination.path, code: EEXIST)
+        }
+        try rename(temp, over: destination)
     }
 
     static func discardTemp(_ temp: URL) {

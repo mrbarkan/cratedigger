@@ -99,15 +99,20 @@ public struct ExternalDeviceTransferPlanner {
                 avoidExistingFiles: !naturalNames,
                 albumKey: albumKeys[track.track.id]
             )
+            // Names a device can hold and the write policy passes, before
+            // anything compares or reserves them.
+            let destinationURL = Self.deviceSafeURL(plannedPath.destinationURL, under: destinationRoot)
             if !naturalNames {
-                reserved.insert(plannedPath.destinationURL.standardizedFileURL.resolvingSymlinksInPath().path)
+                reserved.insert(destinationURL.standardizedFileURL.resolvingSymlinksInPath().path)
             }
 
             plannedTransfers.append(
                 PlannedExternalDeviceTransfer(
                     sourceURL: track.track.fileURL,
-                    destinationURL: plannedPath.destinationURL,
-                    relativeSubpath: plannedPath.relativeSubpath,
+                    destinationURL: destinationURL,
+                    relativeSubpath: plannedPath.relativeSubpath.map { _ in
+                        Self.relativeSubpath(of: destinationURL, under: destinationRoot)
+                    },
                     action: action,
                     conversionPreset: preset,
                     metadata: track.metadata
@@ -116,6 +121,55 @@ public struct ExternalDeviceTransferPlanner {
         }
 
         return plannedTransfers
+    }
+
+    // MARK: - Device-safe names
+
+    /// `url` with every component below `root` made a name a FAT device can
+    /// hold and the device write policy passes (`FATName.component`): no
+    /// trailing dot or space (FAT drops them, so `R.E.M.` would name another
+    /// folder than the one planned), no leading dot, no `? * " < > | : \`,
+    /// no reserved stem, and no `~<digit>`, which reads as a FAT short name.
+    /// Applied to every planned device destination, before the review
+    /// compares paths, so a second send plans the same names as the first.
+    /// The album's identity comes from its tags, so a renamed folder is still
+    /// the same album. Nothing already on a device is renamed.
+    public static func deviceSafeURL(_ url: URL, under root: URL) -> URL {
+        let rootComponents = root.standardizedFileURL.pathComponents
+        let components = url.standardizedFileURL.pathComponents
+        guard components.count > rootComponents.count,
+              Array(components.prefix(rootComponents.count)) == rootComponents
+        else { return url }
+        let below = Array(components.dropFirst(rootComponents.count))
+        var result = root
+        for (index, component) in below.enumerated() {
+            let isFile = index == below.count - 1
+            let ext = isFile ? (component as NSString).pathExtension : ""
+            let stem = isFile && !ext.isEmpty ? (component as NSString).deletingPathExtension : component
+            let safe = FATName.component(stem, extension: ext.isEmpty ? nil : ext).map(withoutShortNameMarker)
+                ?? (ext.isEmpty ? "_" : "_." + ext)
+            result.appendPathComponent(safe, isDirectory: !isFile)
+        }
+        return result
+    }
+
+    /// `~` followed by a digit becomes `-`: such a name can be taken for a
+    /// FAT 8.3 short name (`ROCKBO~1`) and the policy refuses it.
+    private static func withoutShortNameMarker(_ name: String) -> String {
+        var scalars = Array(name.unicodeScalars)
+        for index in scalars.indices.dropLast() where scalars[index] == "~" && ("0"..."9").contains(scalars[index + 1]) {
+            scalars[index] = "-"
+        }
+        var out = String.UnicodeScalarView()
+        out.append(contentsOf: scalars)
+        return String(out)
+    }
+
+    private static func relativeSubpath(of url: URL, under root: URL) -> String {
+        let rootPath = root.standardizedFileURL.path
+        let folder = url.deletingLastPathComponent().standardizedFileURL.path
+        guard folder.hasPrefix(rootPath) else { return "" }
+        return String(folder.dropFirst(rootPath.count)).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
     }
 
     private func commonAncestorDirectory(for urls: [URL]) -> URL? {

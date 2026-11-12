@@ -18,10 +18,16 @@ public enum DeviceFileOperation: Sendable {
     case write(relativePath: String, role: DeviceFileRole, contents: DeviceFileContents, replacesForeign: Bool = false,
                subject: String? = nil)
     case delete(relativePath: String, reason: DeviceDeleteReason)
+    /// An audio file the user chose to Replace in the device review, written
+    /// over the file at its path whether or not CrateDigger wrote that one.
+    /// The write side of a `.userReplace` delete: the audio role's policy,
+    /// no proof of ownership, and (as for that delete, by the duplicates
+    /// spec) no backup. Where nothing is there it is an ordinary write.
+    case replaceAudio(relativePath: String, contents: DeviceFileContents)
 
     var relativePath: String {
         switch self {
-        case .write(let path, _, _, _, _), .delete(let path, _): return path
+        case .write(let path, _, _, _, _), .delete(let path, _), .replaceAudio(let path, _): return path
         }
     }
 }
@@ -151,6 +157,10 @@ public struct DeviceFileExecutor {
                 case let .write(path, role, contents, replacesForeign, subject):
                     outcome = write(path, role: role, contents: contents, replacesForeign: replacesForeign,
                                     subject: subject, sessionID: sessionID, earlierIntents: earlierIntents)
+                case let .replaceAudio(path, contents):
+                    outcome = write(path, role: .audio, contents: contents, replacesForeign: false,
+                                    userReplace: true, subject: nil, sessionID: sessionID,
+                                    earlierIntents: earlierIntents)
                 case let .delete(path, reason):
                     outcome = delete(path, reason: reason, sessionID: sessionID, earlierIntents: earlierIntents)
                 }
@@ -164,7 +174,7 @@ public struct DeviceFileExecutor {
     // MARK: - Write
 
     private func write(_ path: String, role: DeviceFileRole, contents: DeviceFileContents, replacesForeign: Bool,
-                       subject: String?,
+                       userReplace: Bool = false, subject: String?,
                        sessionID: UUID, earlierIntents: Set<String>) -> DeviceFileOutcome {
         // (2) The file and the temp it lands through, as given and as resolved.
         let tempPath = path + DeviceFileIO.tempSuffix
@@ -228,27 +238,38 @@ public struct DeviceFileExecutor {
             return .refusedForeign
         case .regular(let size):
             do {
-                let owned = try isOwned(path, at: target, size: size)
-                guard owned || (replacesForeign && role == .cover) else { return .refusedForeign }
-                backupFile = try journal.backUp(fileAt: target, relativePath: path, sessionID: sessionID)
+                if !userReplace {
+                    let owned = try isOwned(path, at: target, size: size)
+                    guard owned || (replacesForeign && role == .cover) else { return .refusedForeign }
+                    backupFile = try journal.backUp(fileAt: target, relativePath: path, sessionID: sessionID)
+                }
                 kind = .replaced
             } catch {
                 return .failed("Could not read \(target.lastPathComponent) or keep a copy of it before replacing it: \(describe(error))")
             }
         }
 
-        // (6) Folders only for a path the policy passed, then the bytes.
+        // (6) Folders only for a path the policy passed, then the bytes. A
+        // file that was not there must still not be there at the rename
+        // (`exclusive`): one that appeared since is not ours. Folders this
+        // write made are removed again when it fails and leaves them empty.
+        let folder = target.deletingLastPathComponent()
+        let createdFolder = firstMissingFolder(for: target)
         do {
             if staleTemp { try DeviceFileIO.remove(temp) }
-            let folder = target.deletingLastPathComponent()
-            if !fileManager.fileExists(atPath: folder.path) {
+            if createdFolder != nil {
                 try DeviceFileIO.createDirectory(folder, fileManager: fileManager)
             }
+            let exclusive = kind == .created
             switch contents {
-            case .data(let data): try DeviceFileIO.writeAtomically(data, to: target, fileManager: fileManager)
-            case .file(let source): try DeviceFileIO.copyDataOnly(from: source, to: target, fileManager: fileManager)
+            case .data(let data):
+                try DeviceFileIO.writeAtomically(data, to: target, exclusive: exclusive, fileManager: fileManager)
+            case .file(let source):
+                try DeviceFileIO.copyDataOnly(from: source, to: target, exclusive: exclusive, fileManager: fileManager)
             }
         } catch {
+            if let createdFolder { DeviceFileIO.removeEmptyFolders(from: folder, upTo: createdFolder) }
+            if let failure = error as? DeviceFileIOError, failure.code == EEXIST { return .refusedForeign }
             return .failed(describe(error))
         }
 
@@ -389,8 +410,14 @@ public struct DeviceFileExecutor {
     /// crash leaves behind, which then reads as foreign: the safe way round.
     private func recordTempIntents(for ops: [DeviceFileOperation], sessionID: UUID) {
         let intents: [DeviceFileRecord] = ops.compactMap { op in
-            guard case let .write(path, role, _, _, _) = op,
-                  (try? policy.checkWrite(path, role: role)) != nil,
+            let planned: (path: String, role: DeviceFileRole)
+            switch op {
+            case let .write(path, role, _, _, _): planned = (path, role)
+            case let .replaceAudio(path, _): planned = (path, .audio)
+            case .delete: return nil
+            }
+            let (path, role) = planned
+            guard (try? policy.checkWrite(path, role: role)) != nil,
                   (try? policy.checkWrite(path + DeviceFileIO.tempSuffix, role: .temp)) != nil
             else { return nil }
             return DeviceFileRecord(relativePath: path + DeviceFileIO.tempSuffix, kind: .tempIntent,
@@ -425,6 +452,22 @@ public struct DeviceFileExecutor {
         guard lstat(url.path, &info) == 0 else { return .missing }
         guard (info.st_mode & S_IFMT) == S_IFREG else { return .other }
         return .regular(size: Int64(info.st_size))
+    }
+
+    /// The outermost folder on the way to `target` that does not exist yet
+    /// (within the volume), or nil when its folder is there.
+    /// The target is the root with components appended, so a plain prefix
+    /// of its path is the root's (no standardising: Foundation rewrites
+    /// `/private/tmp` as `/tmp` for one URL and not another).
+    private func firstMissingFolder(for target: URL) -> URL? {
+        let rootPath = volumeRoot.path.hasSuffix("/") ? String(volumeRoot.path.dropLast()) : volumeRoot.path
+        var missing: URL?
+        var folder = target.deletingLastPathComponent()
+        while folder.path.hasPrefix(rootPath + "/"), !fileManager.fileExists(atPath: folder.path) {
+            missing = folder
+            folder = folder.deletingLastPathComponent()
+        }
+        return missing
     }
 
     private func regularFileSize(_ url: URL) -> Int64? {

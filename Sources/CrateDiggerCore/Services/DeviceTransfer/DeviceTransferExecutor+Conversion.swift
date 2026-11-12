@@ -1,62 +1,88 @@
 import Foundation
 
 /// The converting side of a device run. ffmpeg runs a batch of jobs in
-/// parallel (`ConversionService`), so the executor cannot wrap each write the
-/// way `run` does. It decides around the batch instead: `partialJobs` before
-/// it (what is held back, where each job writes), `finishConverted` after it
-/// (which partials become files, why the rest failed, which deletions were
-/// earned). The caller only runs ffmpeg in between.
+/// parallel (`ConversionService`), and never onto the device: every job
+/// writes into a staging folder on the Mac, and the finished files go to the
+/// device through the door afterwards. The executor decides around the batch:
+/// `stagedJobs` before it (what is held back, where each job writes),
+/// `finishConverted` after it (which staged files land, why the rest failed,
+/// which deletions were earned). The caller runs ffmpeg in between, and owns
+/// the staging folder: it makes it, and removes it however the run ends.
 extension DeviceTransferExecutor {
-    /// The jobs for a converting run, each writing to its destination's
-    /// hidden partial, by destination path.
-    public struct PartialJobs: Sendable {
+    /// The reason a copy is held back when the Mac has no room to stage it.
+    public static let stagingSpaceReason = "Not enough free space on this Mac to convert it"
+    /// Room left on the Mac after the staged files.
+    public static let stagingSpaceMargin: Int64 = 64 * 1024 * 1024
+
+    /// A conversion's output size, guessed from its source: uncompressed PCM
+    /// runs to about twice a lossless source, so 2.5 times; anything else the
+    /// source plus 10%. Only ever used to refuse early.
+    public static func estimatedConvertedBytes(sourceBytes: Int64, format: OutputFormat) -> Int64 {
+        let factor = (format == .wav || format == .aiff) ? 2.5 : 1.10
+        return Int64(Double(sourceBytes) * factor)
+    }
+
+    /// The jobs for a converting run, each writing into `stagingRoot` on the Mac.
+    public struct StagedJobs: Sendable {
         /// What to hand ffmpeg, in plan order.
         public var jobs: [ConversionJob] = []
-        /// Each planned copy's partial (a job's destination), by destination path.
-        public var partials: [String: URL] = [:]
+        /// Each planned copy's staged file (a job's destination), by destination path.
+        public var staged: [String: URL] = [:]
         /// Copies not run, with why, by destination path.
         public var heldBack: [String: String] = [:]
-        /// The outermost folder a job's write creates (ffmpeg's runner makes
-        /// it), by destination path; removed again when the job fails and
-        /// the folder is still empty.
-        public var newFolders: [String: URL] = [:]
 
         public init() {}
     }
 
-    /// The conversion jobs for `plan`, checked against the device right
-    /// before the batch: a copy whose destination exists and was not cleared
-    /// for overwriting is held back with `appearedReason` before an encode is
-    /// spent on it. A partial left over from an interrupted run is removed;
-    /// no folder is created (the job makes its own when it runs). Partials
-    /// keep the real extension, as ffmpeg picks its muxer from it.
+    /// The conversion jobs for `plan`, checked right before the batch: a
+    /// destination the write policy refuses, or one whose file exists and was
+    /// not cleared for overwriting, is held back before an encode is spent on
+    /// it; so is every copy past what the Mac has room to stage
+    /// (`stagingBytesAvailable`, nil when unknown, against
+    /// `estimatedBytes`). Each job writes to `stagingRoot/<n>/<name>`: one
+    /// folder per copy, so two destinations sharing a name never meet, and
+    /// the real extension last, as ffmpeg picks its muxer from it. Nothing is
+    /// created on the device or on the Mac (a job makes its own folder).
     ///
     /// `slices`: Record Divider jobs by destination path; their copy runs
     /// that job's cut of the source instead of the whole file.
-    public func partialJobs(
+    public func stagedJobs(
         for plan: DeviceTransferFilePlan,
-        slices: [String: ConversionJob] = [:]
-    ) -> PartialJobs {
-        var result = PartialJobs()
-        for copy in plan.copies {
+        stagingRoot: URL,
+        slices: [String: ConversionJob] = [:],
+        stagingBytesAvailable: Int64? = nil,
+        estimatedBytes: (DeviceTransferFilePlan.Copy) -> Int64 = { _ in 0 }
+    ) -> StagedJobs {
+        var result = StagedJobs()
+        var budget = stagingBytesAvailable.map { $0 - Self.stagingSpaceMargin }
+        for (index, copy) in plan.copies.enumerated() {
             let path = copy.destinationURL.path
-            if !copy.overwrites, fileManager.fileExists(atPath: path) {
-                result.heldBack[path] = Self.appearedReason
-                continue
-            }
-            let partial: URL
             do {
-                partial = try clearPartial(for: copy.destinationURL, keepingExtension: true)
+                try door.checkAudioDestination(copy.destinationURL)
             } catch {
                 result.heldBack[path] = error.localizedDescription
                 continue
             }
-            result.partials[path] = partial
-            if let created = firstMissingFolder(for: copy.destinationURL) { result.newFolders[path] = created }
+            if !copy.overwrites, exists(copy.destinationURL) {
+                result.heldBack[path] = Self.appearedReason
+                continue
+            }
+            if let left = budget {
+                let need = estimatedBytes(copy)
+                guard need <= left else {
+                    result.heldBack[path] = Self.stagingSpaceReason
+                    continue
+                }
+                budget = left - need
+            }
+            let stagedURL = stagingRoot
+                .appendingPathComponent(String(index), isDirectory: true)
+                .appendingPathComponent(copy.destinationURL.lastPathComponent)
+            result.staged[path] = stagedURL
             let slice = slices[path]
             result.jobs.append(ConversionJob(
                 sourceURL: slice?.sourceURL ?? copy.source.track.fileURL,
-                destinationURL: partial,
+                destinationURL: stagedURL,
                 metadata: slice?.metadata ?? copy.source.metadata,
                 startSeconds: slice?.startSeconds,
                 endSeconds: slice?.endSeconds
@@ -65,50 +91,46 @@ extension DeviceTransferExecutor {
         return result
     }
 
-    /// After the batch: each completed partial renamed onto its destination
-    /// (`finish`), every other partial removed along with any folder its job
-    /// created that is still empty, then the deletions the plan earned. An
-    /// album's old files go only when every one of its copies landed, and
-    /// none go after a cancel (`wasCancelled`, or `isCancelled` turning true
-    /// while this runs). Completed files are kept either way.
+    /// After the batch: each completed staged file put on the device through
+    /// the door, then the deletions the plan earned. An album's old files go
+    /// only when every one of its copies landed, and none go after a cancel
+    /// (`wasCancelled`, or `isCancelled` turning true while this runs). A
+    /// cancel also stops the copies that have not started: what is on the
+    /// device stays, what is only staged is dropped with the staging folder.
     ///
-    /// - `succeeded`: the job destinations (partial paths) that completed.
-    /// - `reasons`: why the others failed, by partial path; a job with none
+    /// - `succeeded`: the job destinations (staged paths) that completed.
+    /// - `reasons`: why the others failed, by staged path; a job with none
     ///   reads "Could not be converted".
     /// - `name`: what a detail line calls the copy.
     public func finishConverted(
         _ plan: DeviceTransferFilePlan,
-        jobs: PartialJobs,
+        jobs: StagedJobs,
         succeeded: Set<String>,
         reasons: [String: String],
         wasCancelled: Bool,
         isCancelled: () -> Bool = { false },
+        onProgress: (Int, Int) -> Void = { _, _ in },
         name: (DeviceTransferFilePlan.Copy) -> String = { $0.source.track.fileURL.lastPathComponent }
     ) -> Outcome {
         var outcome = Outcome()
         outcome.wasCancelled = wasCancelled
-        for track in plan.unplanned {
-            outcome.lines.append(
-                "[FAILED] \(track.track.fileURL.lastPathComponent)\n    No place on the device could be planned for it"
-            )
-        }
-        var emptied: [(folder: URL, top: URL)] = []
-        for copy in plan.copies {
+        Self.listUnplanned(plan, in: &outcome)
+        let total = plan.copies.count
+        for (index, copy) in plan.copies.enumerated() {
             let path = copy.destinationURL.path
             var reason = jobs.heldBack[path]
-            if reason == nil, let partial = jobs.partials[path] {
-                if succeeded.contains(partial.path) {
+            if reason == nil, let stagedURL = jobs.staged[path] {
+                if !succeeded.contains(stagedURL.path) {
+                    reason = reasons[stagedURL.path] ?? "Could not be converted"
+                } else if isCancelled() {
+                    outcome.wasCancelled = true
+                    reason = "Cancelled"
+                } else {
                     do {
-                        try finish(partial, onto: copy.destinationURL, overwrites: copy.overwrites)
+                        try write(copy, from: { _ in stagedURL })
                     } catch {
                         reason = error.localizedDescription
                     }
-                } else {
-                    discardPartial(partial)
-                    reason = reasons[partial.path] ?? "Could not be converted"
-                }
-                if reason != nil, let top = jobs.newFolders[path] {
-                    emptied.append((copy.destinationURL.deletingLastPathComponent(), top))
                 }
             } else if reason == nil {
                 reason = "Could not be converted"
@@ -120,9 +142,8 @@ extension DeviceTransferExecutor {
                 outcome.written.append(copy)
                 outcome.lines.append("[ok] \(name(copy)) -> \(path)")
             }
+            onProgress(index + 1, total)
         }
-        // Once every rename is done: a folder holding a landed file stays.
-        for (folder, top) in emptied { removeEmptyFolders(from: folder, upTo: top) }
         if isCancelled() { outcome.wasCancelled = true }
         runDeletions(plan, after: &outcome, isCancelled: isCancelled)
         return outcome

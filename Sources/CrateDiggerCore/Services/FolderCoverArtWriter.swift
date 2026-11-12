@@ -17,10 +17,18 @@ public struct FolderCoverArtWriter {
 
     private let preparer: ArtworkPreparing
     private let fileManager: FileManager
+    private let writeData: (Data, URL) throws -> Bool
 
-    public init(preparer: ArtworkPreparing = ArtworkService(), fileManager: FileManager = .default) {
+    /// `writeData` puts one prepared cover at its destination and says
+    /// whether the bytes there changed. A device run passes its
+    /// `DeviceTransferDoor.writeCover`, so every cover on a device goes
+    /// through the write door. The default, for an ordinary conversion's
+    /// destination folder, is `writeIfChanged`.
+    public init(preparer: ArtworkPreparing = ArtworkService(), fileManager: FileManager = .default,
+                writeData: ((Data, URL) throws -> Bool)? = nil) {
         self.preparer = preparer
         self.fileManager = fileManager
+        self.writeData = writeData ?? { data, url in try FolderCoverArtWriter.writeIfChanged(data, to: url) }
     }
 
     /// Writes one `cover.jpg` per folder, replacing any file already there.
@@ -29,8 +37,9 @@ public struct FolderCoverArtWriter {
     /// run (a Gaps fill keeps the cover it found), `conversionCovers` for an
     /// ordinary conversion (never over an existing cover). Folders
     /// that don't exist (nothing landed there) are skipped. Returns the number
-    /// of covers written; a cover that can't be encoded is skipped, never fatal
-    /// — the music is already on the device.
+    /// of covers whose bytes changed: one already holding the same bytes is
+    /// left as it is, date included. A cover that can't be encoded or written
+    /// is skipped and logged, never fatal: the music is already there.
     @discardableResult
     public func write(
         _ coversByFolder: [URL: ArtworkAsset],
@@ -44,13 +53,23 @@ public struct FolderCoverArtWriter {
                     asset: artwork, profile: .generic, maxDimension: maxDimension)
             else { continue }
             let destination = folder.appendingPathComponent(Self.filename)
-            // .atomic writes a temp file next to the target and renames — on a
-            // FAT device that's still a single visible cover.jpg.
-            if (try? prepared.data.write(to: destination, options: .atomic)) != nil {
-                written += 1
+            do {
+                if try writeData(prepared.data, destination) { written += 1 }
+            } catch {
+                AppLog.conversion.warning(
+                    "Skipped a cover.jpg: \(error.localizedDescription, privacy: .public)")
             }
         }
         return written
+    }
+
+    /// The ordinary (non-device) cover write: nothing when the file already
+    /// holds `data`, else a write through a temp file renamed into place in
+    /// the same folder, so no reader sees half a JPEG. Returns whether it wrote.
+    public static func writeIfChanged(_ data: Data, to destination: URL) throws -> Bool {
+        if let existing = try? Data(contentsOf: destination), existing == data { return false }
+        try data.write(to: destination, options: .atomic)
+        return true
     }
 
     /// Whether `folder` already holds a `cover.jpg` (any case, as a FAT

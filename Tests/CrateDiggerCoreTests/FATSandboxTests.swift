@@ -329,6 +329,51 @@ final class FATSandboxTests: XCTestCase {
                        "volume UUID reported for the image: \(uuid ?? "none")"])
     }
 
+    /// The transfer door on real FAT (P1 Task 9): an audio copy from a source
+    /// carrying an attribute lands with no `._` twin and no temp; the
+    /// exclusive rename, which FAT does not offer, still refuses a file at the
+    /// name (the check before a plain rename stands in); a user's Replace
+    /// overwrites; a dotted folder name is refused before any write; a cover
+    /// with the same bytes is left alone.
+    func testTransferDoorOnFAT() throws {
+        let album = "Music/R.E.M/1987 Document"
+        let source = try macSource("01.m4a", Data(repeating: 0x41, count: 50_000))
+        let journal = DeviceWriteJournal(profileID: UUID(), directory: mac.appendingPathComponent("journal"))
+        let executor = DeviceFileExecutor(volumeRoot: run, expectedVolumeUUID: DeviceFileExecutor.systemVolumeUUID(run),
+                                          policy: DeviceWritePolicy(musicSubpath: "Music"), journal: journal,
+                                          rootMustBeMountPoint: false)
+        let door = DeviceTransferDoor(executor: executor)
+        let track = run.appendingPathComponent("\(album)/01 - Finest Worksong.m4a")
+
+        try door.copyAudio(from: source, to: track)
+        XCTAssertFalse(hasTwin(track))
+        XCTAssertEqual(leftovers(under: run), [])
+
+        // FAT has no RENAME_EXCL; the copy below meets a file at the name.
+        let other = try macSource("02.m4a", Data(repeating: 0x42, count: 50_000))
+        XCTAssertThrowsError(try DeviceFileIO.copyDataOnly(from: other, to: track, exclusive: true)) { error in
+            XCTAssertEqual((error as? DeviceFileIOError)?.code, EEXIST)
+        }
+        XCTAssertThrowsError(try door.copyAudio(from: other, to: track)) { error in
+            XCTAssertEqual(error as? DeviceTransferDoorError, .appeared)
+        }
+        XCTAssertEqual(try Data(contentsOf: track), Data(repeating: 0x41, count: 50_000))
+        try door.copyAudio(from: other, to: track, overwrites: true)
+        XCTAssertEqual(try Data(contentsOf: track), Data(repeating: 0x42, count: 50_000))
+        XCTAssertFalse(hasTwin(track))
+
+        XCTAssertThrowsError(try door.copyAudio(from: other, to: run.appendingPathComponent("Music/R.E.M./x.m4a")))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: run.appendingPathComponent("Music/R.E.M.").path))
+
+        let cover = run.appendingPathComponent("\(album)/cover.jpg")
+        XCTAssertTrue(try door.writeCover(Data("jpeg".utf8), to: cover))
+        XCTAssertFalse(try door.writeCover(Data("jpeg".utf8), to: cover))
+        XCTAssertTrue(try door.removeReplacedAudio(at: track))
+        XCTAssertEqual(names(run.appendingPathComponent(album)), ["cover.jpg"])
+        XCTAssertEqual(leftovers(under: run), [])
+        finding("Door", ["audio copy, exclusive refusal, Replace, dotted-name refusal, cover and Replace delete on FAT: no twins, no temps"])
+    }
+
     /// I4 on real FAT, where a file written into a freed directory slot can
     /// come back with the old inode number: a twin swapped between its backup
     /// and its removal must survive, and the inode seen is recorded.

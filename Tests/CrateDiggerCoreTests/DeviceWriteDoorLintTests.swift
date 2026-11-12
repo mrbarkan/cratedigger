@@ -21,10 +21,9 @@ import XCTest
 /// in a trailing `//` comment.
 ///
 /// A line that really writes on the Mac goes in `allowedLines` with its
-/// reason. Device writes that predate the door are listed there as
-/// "pending Task 9", which routes them through the executor and removes the
-/// entries. An entry that no longer matches anything fails, so the list
-/// cannot rot.
+/// reason. Each entry must excuse exactly one line: one that matches nothing
+/// fails, so the list cannot rot, and one that matches two fails, so an
+/// entry cannot quietly cover a second write added beside the first.
 final class DeviceWriteDoorLintTests: XCTestCase {
     typealias Exemption = (fileSuffix: String, substring: String, reason: String)
 
@@ -44,8 +43,6 @@ final class DeviceWriteDoorLintTests: XCTestCase {
         "Sources/CrateDiggerCore/Services/DeviceFiles/DeviceFileIO.swift",
         "Sources/CrateDiggerCore/Services/DeviceFiles/DeviceFileExecutor.swift",
     ]
-
-    private static let pendingTask9 = "pending Task 9: a device write that predates the door; Task 9 routes it through DeviceFileExecutor"
 
     /// Exemptions: a line in a file ending `fileSuffix` whose text contains
     /// `substring` may call a mutator, for `reason`.
@@ -81,18 +78,10 @@ final class DeviceWriteDoorLintTests: XCTestCase {
         ("ExternalDevices/LibraryViewModel+DeviceSync.swift",
          "try? FileManager.default.createDirectory(at: stagingRoot",
          "makes the sync staging folder, which is on the Mac"),
-        // Device writes that predate the door.
-        ("Services/FolderCoverArtWriter.swift", "try? prepared.data.write(to: destination, options: .atomic)",
-         pendingTask9),
-        ("ExternalDevices/LibraryViewModel+DeviceSync.swift", "try fm.createDirectory(at: dir,", pendingTask9),
-        ("ExternalDevices/LibraryViewModel+DeviceSync.swift", "try fm.copyItem(at: stagedURL, to: destination)",
-         pendingTask9),
-        ("ExternalDevices/LibraryViewModel+DeviceSync.swift", "try fm.copyItem(at: sourceURL, to: destination)",
-         pendingTask9),
-        ("ExternalDevices/LibraryViewModel+ExternalDeviceTransfer.swift",
-         "try fileManager.createDirectory(at: directory,", pendingTask9),
-        ("ExternalDevices/LibraryViewModel+ExternalDeviceTransfer.swift",
-         "try fileManager.copyItem(at: plan.sourceURL, to: plan.destinationURL)", pendingTask9),
+        // Covers: a device run passes DeviceTransferDoor.writeCover; only an
+        // ordinary conversion's cover takes this default.
+        ("Services/FolderCoverArtWriter.swift", "try data.write(to: destination, options: .atomic)",
+         "an ordinary (non-device) conversion's cover, in the destination folder the user chose"),
     ]
 
     // MARK: Rules
@@ -120,6 +109,9 @@ final class DeviceWriteDoorLintTests: XCTestCase {
     static let mutatingMethods = [
         "copyItem", "moveItem", "removeItem", "trashItem", "createFile", "replaceItem", "replaceItemAt",
         "linkItem", "createSymbolicLink", "setAttributes", "createDirectory", "changeFileAttributes",
+        // NSWorkspace.recycle moves to a Trash (on a device, `.Trashes`);
+        // URL.setResourceValues renames with `.name` and sets other metadata.
+        "recycle", "setResourceValues",
     ]
     /// C and POSIX calls distinctive enough to match as a whole word, called or not.
     static let distinctiveFunctions = [
@@ -127,6 +119,8 @@ final class DeviceWriteDoorLintTests: XCTestCase {
         "fopen", "freopen", "ftruncate", "clonefile", "clonefileat", "fclonefileat", "copyfile", "fcopyfile",
         "removexattr", "fremovexattr", "setxattr", "fsetxattr", "exchangedata", "symlinkat", "linkat",
         "lchmod", "fchmod", "fchown", "lchown", "utimes", "lutimes", "futimes", "setattrlist", "fsetattrlist",
+        // Writers that create their output file themselves.
+        "CGImageDestinationCreateWithURL", "AVAssetWriter", "AudioFileCreateWithURL", "ExtAudioFileCreateWithURL",
     ]
     /// Calls whose names are ordinary words: only when called.
     static let wordFunctions = ["rename", "truncate", "link", "symlink", "chmod", "chown", "OutputStream", "NSOutputStream"]
@@ -162,6 +156,8 @@ final class DeviceWriteDoorLintTests: XCTestCase {
         Rule("DeviceFileIO.remove", notIdent + "DeviceFileIO\\.remove" + endIdent),
         Rule("DeviceFileIO.createDirectory", notIdent + "DeviceFileIO\\.createDirectory" + endIdent),
         Rule("DeviceFileIO.rename", notIdent + "DeviceFileIO\\.rename" + endIdent),
+        Rule("DeviceFileIO.renameExclusively", notIdent + "DeviceFileIO\\.renameExclusively" + endIdent),
+        Rule("DeviceFileIO.removeEmptyFolders", notIdent + "DeviceFileIO\\.removeEmptyFolders" + endIdent),
         // Ways to reach those without naming them here.
         Rule("extension DeviceFileIO", "\(notIdent)extension\\s+DeviceFileIO\(endIdent)"),
         Rule("alias of DeviceFileIO", "=\\s*DeviceFileIO(?:\\.self)?\(endIdent)(?!\\.)"),
@@ -214,12 +210,12 @@ final class DeviceWriteDoorLintTests: XCTestCase {
         return code
     }
 
-    /// Scans one file's source against `rules`. Returns the violations and
-    /// the indexes of the `allowed` entries that excused something.
+    /// Scans one file's source against `rules`. Returns the violations and,
+    /// per `allowed` entry, how many lines it excused.
     static func scan(_ source: String, file: String, rules: [Rule] = forbidden,
-                     allowed: [Exemption] = allowedLines) -> (violations: [Violation], usedExemptions: Set<Int>) {
+                     allowed: [Exemption] = allowedLines) -> (violations: [Violation], usedExemptions: [Int: Int]) {
         var violations: [Violation] = []
-        var used = Set<Int>()
+        var used: [Int: Int] = [:]
         var inBlock = false
         let mayCallDoor = doorFiles.contains { file.hasSuffix($0) }
         for (index, rawLine) in source.components(separatedBy: "\n").enumerated() {
@@ -236,7 +232,7 @@ final class DeviceWriteDoorLintTests: XCTestCase {
             if let exemption = allowed.indices.first(where: {
                 file.hasSuffix(allowed[$0].fileSuffix) && code.contains(allowed[$0].substring)
             }) {
-                used.insert(exemption)
+                used[exemption, default: 0] += 1
                 continue
             }
             violations.append(Violation(file: file, line: index + 1, call: call, text: code))
@@ -276,7 +272,7 @@ final class DeviceWriteDoorLintTests: XCTestCase {
 
     func testNoDirectFileMutationOutsideTheDoor() throws {
         var violations: [Violation] = []
-        var used = Set<Int>()
+        var used: [Int: Int] = [:]
         var scanned = 0
 
         // Rule 1: guarded code calls no mutator.
@@ -288,7 +284,7 @@ final class DeviceWriteDoorLintTests: XCTestCase {
             for file in files {
                 let result = Self.scan(try String(contentsOf: file, encoding: .utf8), file: Self.relative(file))
                 violations += result.violations
-                used.formUnion(result.usedExemptions)
+                used.merge(result.usedExemptions, uniquingKeysWith: +)
                 scanned += 1
             }
         }
@@ -301,15 +297,22 @@ final class DeviceWriteDoorLintTests: XCTestCase {
             let result = Self.scan(try String(contentsOf: file, encoding: .utf8), file: Self.relative(file),
                                    rules: Self.doorRules)
             violations += result.violations
-            used.formUnion(result.usedExemptions)
+            used.merge(result.usedExemptions, uniquingKeysWith: +)
         }
 
         for violation in violations {
             XCTFail("Device file mutation outside the door: \(violation). Go through DeviceFileExecutor, or add an allowedLines entry with a reason if this writes only on the Mac.")
         }
-        for index in Self.allowedLines.indices where !used.contains(index) {
+        for index in Self.allowedLines.indices {
             let entry = Self.allowedLines[index]
-            XCTFail("allowedLines entry matches nothing any more, remove it: \(entry.fileSuffix) / \(entry.substring)")
+            switch used[index, default: 0] {
+            case 1:
+                break
+            case 0:
+                XCTFail("allowedLines entry matches nothing any more, remove it: \(entry.fileSuffix) / \(entry.substring)")
+            case let count:
+                XCTFail("allowedLines entry excuses \(count) lines, not one; give each its own entry: \(entry.fileSuffix) / \(entry.substring)")
+            }
         }
     }
 
@@ -400,6 +403,15 @@ final class DeviceWriteDoorLintTests: XCTestCase {
             "process.executableURL = URL(fileURLWithPath: \"/bin/cp\")",
             "Process.launchedProcess(launchPath: \"/usr/bin/ditto\", arguments: [a, b])",
             "process.executableURL = URL(fileURLWithPath: \"/bin/sh\")",
+            // File writers the first version missed.
+            "NSWorkspace.shared.recycle([url]) { _, _ in }",
+            "try await NSWorkspace.shared.recycle([url])",
+            "try url.setResourceValues(values)",
+            "var values = URLResourceValues(); values.name = n; try target.setResourceValues(values)",
+            "let dest = CGImageDestinationCreateWithURL(url as CFURL, type, 1, nil)",
+            "let writer = try AVAssetWriter(outputURL: url, fileType: .m4a)",
+            "AudioFileCreateWithURL(url as CFURL, kAudioFileM4AType, &format, [], &file)",
+            "ExtAudioFileCreateWithURL(url as CFURL, kAudioFileM4AType, &format, nil, 0, &file)",
         ]
         // The split call: its second line must be caught on its own.
         for spelling in spellings where spelling != "try FileManager.default" {
@@ -477,6 +489,19 @@ final class DeviceWriteDoorLintTests: XCTestCase {
 
     func testStringThatLooksLikeACommentStartDoesNotHideCode() {
         XCTAssertEqual(Self.hits("let glob = \"/*\"; try fm.removeItem(at: x)"), 1)
+    }
+
+    func testAnExemptionCountsEveryLineItExcuses() {
+        let source = """
+        try data.write(to: url)
+        try data.write(to: url)
+        """
+        let file = "Sources/x/DeviceFiles/DeviceWriteJournal.swift"
+        let entry = Self.allowedLines.firstIndex { $0.substring == "try data.write(to: url)" }
+        let result = Self.scan(source, file: file)
+        XCTAssertEqual(result.violations, [])
+        XCTAssertEqual(entry.flatMap { result.usedExemptions[$0] }, 2,
+                       "two lines under one entry: testNoDirectFileMutationOutsideTheDoor fails on that")
     }
 
     func testAllowedLineNeedsBothFileAndSubstring() {

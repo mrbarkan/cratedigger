@@ -4,13 +4,14 @@ import XCTest
 @testable import CrateDiggerCore
 
 /// Running a device file plan against a temp-dir "device": copies first,
-/// then the deletions their albums earned. Every write goes to a hidden
-/// partial file and is renamed into place only once complete, with the file
-/// system checked right before the rename.
+/// then the deletions their albums earned. Every write goes through the
+/// write door: a `.cdtmp` beside the destination renamed into place only
+/// once complete, the rename itself refusing a file that appeared.
 final class DeviceTransferExecutorTests: XCTestCase {
-    private let executor = DeviceTransferExecutor()
+    private var executor: DeviceTransferExecutor!
     private var scratch: URL!
     private var source: URL!
+    private var volume: URL!
     private var device: URL!
     private let kindOfBlue = DeviceAlbumIdentity(artist: "Miles Davis", album: "Kind of Blue")
     private let bitchesBrew = DeviceAlbumIdentity(artist: "Miles Davis", album: "Bitches Brew")
@@ -20,9 +21,12 @@ final class DeviceTransferExecutorTests: XCTestCase {
             .appendingPathComponent("DeviceTransferExecutorTests-\(UUID().uuidString)", isDirectory: true)
         scratch = base.resolvingSymlinksInPath()
         source = scratch.appendingPathComponent("Library", isDirectory: true)
-        device = scratch.appendingPathComponent("IPOD/Music", isDirectory: true)
+        volume = scratch.appendingPathComponent("IPOD", isDirectory: true)
+        device = volume.appendingPathComponent("Music", isDirectory: true)
         try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: device, withIntermediateDirectories: true)
+        executor = DeviceTransferExecutor(door: .onTempFolder(
+            volume, musicSubpath: "Music", journalDirectory: scratch.appendingPathComponent("Journal")))
     }
 
     override func tearDownWithError() throws {
@@ -36,13 +40,11 @@ final class DeviceTransferExecutorTests: XCTestCase {
         let new = try copyItem("01 So What.flac", to: "Miles Davis/Kind of Blue/01 So What.flac", album: kindOfBlue)
         let plan = plan([new], deletions: [kindOfBlue: [old]])
 
-        var oldExistedDuringCopy = false
-        let outcome = executor.run(plan, copy: { copy, url in
-            oldExistedDuringCopy = FileManager.default.fileExists(atPath: old.path)
-            try self.copyFile(copy, url)
-        })
+        var outcome = executor.runCopies(plan, source: copySource)
+        let oldExistedAfterCopy = FileManager.default.fileExists(atPath: old.path)
+        executor.runDeletions(plan, after: &outcome)
 
-        XCTAssertTrue(oldExistedDuringCopy, "the old file must still be there while the new one is written")
+        XCTAssertTrue(oldExistedAfterCopy, "the old file must still be there while the new one is written")
         XCTAssertFalse(FileManager.default.fileExists(atPath: old.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: new.destinationURL.path))
         XCTAssertEqual(outcome.written, [new])
@@ -61,9 +63,9 @@ final class DeviceTransferExecutorTests: XCTestCase {
                                 to: "Miles Davis/Bitches Brew/01 Pharaoh's Dance.flac", album: bitchesBrew)
         let plan = plan([blue, brew], deletions: [kindOfBlue: [oldBlue], bitchesBrew: [oldBrew]])
 
-        let outcome = executor.run(plan, copy: { copy, url in
+        let outcome = executor.run(plan, source: { copy in
             if copy.album == self.bitchesBrew { throw self.failure("Disk full") }
-            try self.copyFile(copy, url)
+            return try self.copySource(copy)
         })
 
         XCTAssertFalse(FileManager.default.fileExists(atPath: oldBlue.path))
@@ -77,7 +79,7 @@ final class DeviceTransferExecutorTests: XCTestCase {
         let new = try copyItem("01 So What.flac", to: "Miles Davis/Kind of Blue/01 So What.flac", album: kindOfBlue)
         let plan = plan([new], deletions: [kindOfBlue: [gone]])
 
-        let outcome = executor.run(plan, copy: copyFile)
+        let outcome = executor.run(plan, source: copySource)
 
         XCTAssertTrue(outcome.failed.isEmpty)
         XCTAssertTrue(outcome.failedDeletions.isEmpty)
@@ -85,30 +87,34 @@ final class DeviceTransferExecutorTests: XCTestCase {
         XCTAssertEqual(outcome.removedPaths, [gone.path], "the catalog still drops a file that is already gone")
     }
 
-    // MARK: - Partial files
+    // MARK: - Temp files
 
-    func testCopiesAreWrittenToAHiddenPartialFirst() throws {
+    func testCopiesAreWrittenToATempFirst() throws {
         let new = try copyItem("01 So What.flac", to: "Miles Davis/Kind of Blue/01 So What.flac", album: kindOfBlue)
-        var writtenTo: URL?
+        var sourceAskedFor: URL?
 
-        _ = executor.run(plan([new]), copy: { copy, url in
-            writtenTo = url
+        _ = executor.run(plan([new]), source: { copy in
+            sourceAskedFor = copy.destinationURL
             XCTAssertFalse(FileManager.default.fileExists(atPath: copy.destinationURL.path),
                            "nothing under the final name while writing")
-            try self.copyFile(copy, url)
+            return try self.copySource(copy)
         })
 
-        XCTAssertEqual(writtenTo?.lastPathComponent, ".01 So What.flac.cdpart")
-        XCTAssertEqual(writtenTo?.deletingLastPathComponent(), new.destinationURL.deletingLastPathComponent())
+        // The door writes "<name>.cdtmp" beside the destination and renames it.
+        XCTAssertEqual(DeviceFileIO.tempURL(for: new.destinationURL).lastPathComponent, "01 So What.flac.cdtmp")
+        XCTAssertEqual(sourceAskedFor, new.destinationURL)
         XCTAssertEqual(try String(contentsOf: new.destinationURL, encoding: .utf8), "new")
+        XCTAssertEqual(leftovers(in: new.destinationURL.deletingLastPathComponent()), ["01 So What.flac"],
+                       "the temp is renamed away")
     }
 
     func testFailedCopyLeavesNothingAtTheDestination() throws {
         let new = try copyItem("01 So What.flac", to: "Miles Davis/Kind of Blue/01 So What.flac", album: kindOfBlue)
         let folder = new.destinationURL.deletingLastPathComponent()
+        let half = source.appendingPathComponent("half.flac")
 
-        let outcome = executor.run(plan([new]), copy: { _, url in
-            try "half a fi".write(to: url, atomically: false, encoding: .utf8)
+        let outcome = executor.run(plan([new]), source: { _ in
+            try "half a fi".write(to: half, atomically: false, encoding: .utf8)
             throw self.failure("Device unplugged")
         })
 
@@ -117,13 +123,24 @@ final class DeviceTransferExecutorTests: XCTestCase {
         XCTAssertEqual(leftovers(in: folder), [], "the partial is removed too")
     }
 
+    func testCopyThatFailsOnTheDeviceLeavesNoTempAndNoFolder() throws {
+        let new = try copyItem("01 So What.flac", to: "New Artist/New Album/01 So What.flac", album: kindOfBlue)
+        // A folder where a file should be: the device write itself fails.
+        let notAFile = source.appendingPathComponent("not a file", isDirectory: true)
+        try FileManager.default.createDirectory(at: notAFile, withIntermediateDirectories: true)
+
+        let outcome = executor.run(plan([new]), source: { _ in notAFile })
+
+        XCTAssertEqual(outcome.failed.map(\.copy), [new])
+        XCTAssertEqual(leftovers(in: device), [], "no temp, and no folder the failed write made")
+    }
+
     func testFailedOverwriteKeepsTheOldFile() throws {
         try file(device, "Miles Davis/Kind of Blue/01 So What.mp3", "old art")
         let swap = try copyItem("01 So What.mp3", to: "Miles Davis/Kind of Blue/01 So What.mp3",
                                 album: kindOfBlue, overwrites: true, contents: "new art")
 
-        let outcome = executor.run(plan([swap]), copy: { _, url in
-            try "new a".write(to: url, atomically: false, encoding: .utf8)
+        let outcome = executor.run(plan([swap]), source: { _ in
             throw self.failure("Device unplugged")
         })
 
@@ -137,7 +154,7 @@ final class DeviceTransferExecutorTests: XCTestCase {
         let swap = try copyItem("01 So What.mp3", to: "Miles Davis/Kind of Blue/01 So What.mp3",
                                 album: kindOfBlue, overwrites: true, contents: "new art")
 
-        let outcome = executor.run(plan([swap]), copy: copyFile)
+        let outcome = executor.run(plan([swap]), source: copySource)
 
         XCTAssertEqual(outcome.written, [swap])
         XCTAssertEqual(try String(contentsOf: swap.destinationURL, encoding: .utf8), "new art")
@@ -150,7 +167,7 @@ final class DeviceTransferExecutorTests: XCTestCase {
         // Someone else's file landed at the planned name after the review.
         try file(device, "Miles Davis/Kind of Blue/01 So What.flac", "theirs")
 
-        let outcome = executor.run(plan([taken, free]), copy: copyFile)
+        let outcome = executor.run(plan([taken, free]), source: copySource)
 
         XCTAssertEqual(outcome.failed.map(\.copy), [taken])
         XCTAssertEqual(outcome.failed.first?.reason, DeviceTransferExecutor.appearedReason)
@@ -161,10 +178,11 @@ final class DeviceTransferExecutorTests: XCTestCase {
     func testAppearedFileIsCheckedBeforeTheRename() throws {
         let new = try copyItem("01 So What.flac", to: "Miles Davis/Kind of Blue/01 So What.flac", album: kindOfBlue)
 
-        // The file lands while the copy is being written, after the first check.
-        let outcome = executor.run(plan([new]), copy: { copy, url in
-            try self.copyFile(copy, url)
-            try "theirs".write(to: copy.destinationURL, atomically: true, encoding: .utf8)
+        // The file lands while the copy is being made, after the first check.
+        let outcome = executor.run(plan([new]), source: { copy in
+            let bytes = try self.copySource(copy)
+            try self.file(self.device, "Miles Davis/Kind of Blue/01 So What.flac", "theirs")
+            return bytes
         })
 
         XCTAssertEqual(outcome.failed.map(\.copy), [new])
@@ -175,10 +193,14 @@ final class DeviceTransferExecutorTests: XCTestCase {
 
     func testLeftoverPartialFromACrashIsReplaced() throws {
         let new = try copyItem("01 So What.flac", to: "Miles Davis/Kind of Blue/01 So What.flac", album: kindOfBlue)
-        let stale = DeviceTransferExecutor.partialURL(for: new.destinationURL, keepingExtension: false)
+        let stale = DeviceFileIO.tempURL(for: new.destinationURL)
         try file(device, "Miles Davis/Kind of Blue/\(stale.lastPathComponent)", "stale half")
+        // The crashed session said it would make that temp: only then is it ours to clear.
+        try executor.door.journal.append([DeviceFileRecord(
+            relativePath: "Music/Miles Davis/Kind of Blue/\(stale.lastPathComponent)", kind: .tempIntent,
+            role: DeviceFileRole.temp.rawValue, volumeUUID: "TEST-VOLUME", sessionID: UUID())])
 
-        let outcome = executor.run(plan([new]), copy: copyFile)
+        let outcome = executor.run(plan([new]), source: copySource)
 
         XCTAssertEqual(outcome.written, [new])
         XCTAssertEqual(try String(contentsOf: new.destinationURL, encoding: .utf8), "new")
@@ -187,31 +209,29 @@ final class DeviceTransferExecutorTests: XCTestCase {
 
     // MARK: - The convert side's finish step
 
-    func testFinishMovesAConvertedPartialIntoPlaceAndRefusesAnAppearedFile() throws {
-        let destination = device.appendingPathComponent("Miles Davis/Kind of Blue/01 So What.mp3")
-        try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let partial = try executor.clearPartial(for: destination, keepingExtension: true)
-        XCTAssertEqual(partial.lastPathComponent, ".cdpart.01 So What.mp3", "ffmpeg still sees .mp3")
-        try "encoded".write(to: partial, atomically: true, encoding: .utf8)
+    func testFinishMovesAConvertedFileIntoPlaceAndRefusesAnAppearedFile() throws {
+        let copy = try copyItem("01 So What.flac", to: "Miles Davis/Kind of Blue/01 So What.mp3", album: kindOfBlue)
+        let staged = try file(scratch, "Staging/0/01 So What.mp3", "encoded")
+        XCTAssertEqual(staged.pathExtension, "mp3", "ffmpeg still sees .mp3")
 
-        try executor.finish(partial, onto: destination, overwrites: false)
-        XCTAssertEqual(try String(contentsOf: destination, encoding: .utf8), "encoded")
-        XCTAssertFalse(FileManager.default.fileExists(atPath: partial.path))
+        try executor.write(copy, from: { _ in staged })
+        XCTAssertEqual(try String(contentsOf: copy.destinationURL, encoding: .utf8), "encoded")
+        XCTAssertEqual(leftovers(in: copy.destinationURL.deletingLastPathComponent()), ["01 So What.mp3"])
 
         // A second run of the same name while a file now sits there.
-        let again = try executor.clearPartial(for: destination, keepingExtension: true)
-        try "encoded again".write(to: again, atomically: true, encoding: .utf8)
-        XCTAssertThrowsError(try executor.finish(again, onto: destination, overwrites: false)) { error in
+        let again = try file(scratch, "Staging/1/01 So What.mp3", "encoded again")
+        XCTAssertThrowsError(try executor.write(copy, from: { _ in again })) { error in
             XCTAssertEqual(error.localizedDescription, DeviceTransferExecutor.appearedReason)
         }
-        XCTAssertEqual(try String(contentsOf: destination, encoding: .utf8), "encoded")
-        XCTAssertFalse(FileManager.default.fileExists(atPath: again.path))
+        XCTAssertEqual(try String(contentsOf: copy.destinationURL, encoding: .utf8), "encoded")
+        XCTAssertEqual(leftovers(in: copy.destinationURL.deletingLastPathComponent()), ["01 So What.mp3"])
 
-        // Cleared for overwriting, the same finish replaces it.
-        let replace = try executor.clearPartial(for: destination, keepingExtension: true)
-        try "re-encoded".write(to: replace, atomically: true, encoding: .utf8)
-        try executor.finish(replace, onto: destination, overwrites: true)
-        XCTAssertEqual(try String(contentsOf: destination, encoding: .utf8), "re-encoded")
+        // Cleared for overwriting, the same write replaces it.
+        let replace = try file(scratch, "Staging/2/01 So What.mp3", "re-encoded")
+        let swap = DeviceTransferFilePlan.Copy(source: copy.source, destinationURL: copy.destinationURL,
+                                               overwrites: true, kind: .replacement, album: kindOfBlue)
+        try executor.write(swap, from: { _ in replace })
+        XCTAssertEqual(try String(contentsOf: copy.destinationURL, encoding: .utf8), "re-encoded")
     }
 
     // MARK: - Progress, cancel, unplanned
@@ -221,7 +241,7 @@ final class DeviceTransferExecutorTests: XCTestCase {
         let two = try copyItem("02 B.flac", to: "New Artist/New Album/02 B.flac", album: kindOfBlue)
         var steps: [Int] = []
 
-        let outcome = executor.run(plan([one, two]), copy: copyFile, onProgress: { done, total in
+        let outcome = executor.run(plan([one, two]), source: copySource, onProgress: { done, total in
             XCTAssertEqual(total, 2)
             steps.append(done)
         })
@@ -234,7 +254,7 @@ final class DeviceTransferExecutorTests: XCTestCase {
         let old = try file(device, "Miles Davis/Kind of Blue/01 So What.mp3", "old")
         let new = try copyItem("01 So What.flac", to: "Miles Davis/Kind of Blue/01 So What.flac", album: kindOfBlue)
 
-        let outcome = executor.run(plan([new], deletions: [kindOfBlue: [old]]), copy: copyFile, isCancelled: { true })
+        let outcome = executor.run(plan([new], deletions: [kindOfBlue: [old]]), source: copySource, isCancelled: { true })
 
         XCTAssertTrue(outcome.wasCancelled)
         XCTAssertEqual(outcome.failed.map(\.copy), [new])
@@ -249,9 +269,9 @@ final class DeviceTransferExecutorTests: XCTestCase {
 
         let outcome = executor.run(
             plan([new], deletions: [kindOfBlue: [old]]),
-            copy: { copy, url in
-                try self.copyFile(copy, url)
+            source: { copy in
                 cancelled = true   // the user presses Cancel while this copy runs
+                return try self.copySource(copy)
             },
             isCancelled: { cancelled }
         )
@@ -272,7 +292,7 @@ final class DeviceTransferExecutorTests: XCTestCase {
                                 to: "Miles Davis/Bitches Brew/01 Pharaoh's Dance.flac", album: bitchesBrew)
         let plan = plan([blue, brew], deletions: [kindOfBlue: [oldBlue], bitchesBrew: [oldBrew]])
 
-        var outcome = executor.runCopies(plan, copy: copyFile)
+        var outcome = executor.runCopies(plan, source: copySource)
         var checks = 0
         executor.runDeletions(plan, after: &outcome, isCancelled: {
             checks += 1
@@ -292,15 +312,16 @@ final class DeviceTransferExecutorTests: XCTestCase {
             leftAlone: 0, replacedAlbums: 0, keptBothAlbums: 0, gapAlbums: 0, unplanned: [lost]
         )
 
-        let outcome = executor.run(plan, copy: copyFile)
+        let outcome = executor.run(plan, source: copySource)
 
         XCTAssertTrue(outcome.lines.contains { $0.hasPrefix("[FAILED] lost.flac") })
     }
 
     // MARK: - Fixtures
 
-    private func copyFile(_ copy: DeviceTransferFilePlan.Copy, _ url: URL) throws {
-        try FileManager.default.copyItem(at: copy.source.track.fileURL, to: url)
+    /// The library file itself, as the copy path sends it.
+    private func copySource(_ copy: DeviceTransferFilePlan.Copy) throws -> URL {
+        copy.source.track.fileURL
     }
 
     private func failure(_ reason: String) -> NSError {

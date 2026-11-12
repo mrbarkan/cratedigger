@@ -1,4 +1,3 @@
-import Darwin
 import Foundation
 
 /// Runs a `DeviceTransferFilePlan` against the device: every copy first, then
@@ -6,30 +5,27 @@ import Foundation
 /// or failing transfer never leaves an album with neither its old files nor
 /// its new ones.
 ///
-/// Nothing is ever half-written under a final name. Each write goes to a
-/// hidden partial file beside its destination and is renamed onto it
-/// (`rename(2)`, which replaces a file being overwritten in one step) only
-/// once it is complete; a write that fails leaves the destination as it was,
-/// old file included. A partial left behind by a crash is removed before the
-/// same name is written again.
+/// It never touches the device itself. Every byte goes through a
+/// `DeviceTransferDoor`, which checks the volume and the write policy, writes
+/// through a flushed `.cdtmp` beside the destination renamed onto it (so
+/// nothing is ever half-written under a final name), copies data only (so
+/// macOS leaves no `._` twin on FAT), records the write in the device's
+/// journal, and removes again a folder a failed write created and left empty.
 ///
 /// The catalog the plan came from can be stale (another program changed the
-/// device), so the file system is checked again right before each rename: a
-/// file found at a destination the plan did not clear for overwriting fails
-/// that one item and is left alone. An old file already gone when its
-/// deletion comes is not a failure. How a file is written is the caller's: a
-/// byte copy here, an ffmpeg run for a converting path (`partialJobs` and
-/// `finishConverted`).
-///
-/// A folder is created only when a write into it starts, and one a failed
-/// write created is removed again while it is empty, so a cancelled or failed
-/// run leaves no empty album folders behind (a stray `Album (2)` would push
-/// the next Keep both to `(3)`).
+/// device), so the destination is checked again before anything is spent on
+/// a copy, and the door's rename refuses a file that appeared at a
+/// destination the plan did not clear for overwriting: that one item fails
+/// and the file is left alone. An old file already gone when its deletion
+/// comes is not a failure. Where a copy's bytes come from is the caller's: a
+/// file in the library, a staged bake, or a conversion run into a staging
+/// folder on the Mac (`stagedJobs` and `finishConverted` for a batch). ffmpeg
+/// never writes onto the device.
 ///
 /// Synchronous on purpose: callers run it off the main actor.
 public struct DeviceTransferExecutor {
     /// The failure reason when a file appeared at a destination after the review.
-    public static let appearedReason = "A file appeared at this name"
+    public static let appearedReason = DeviceTransferDoor.appearedReason
     /// The detail line for an album whose old files a cancel kept.
     public static let cancelledDeletionReason = "Old files kept: cancelled"
 
@@ -75,158 +71,42 @@ public struct DeviceTransferExecutor {
         }
     }
 
+    public let door: DeviceTransferDoor
     let fileManager: FileManager
-    /// `renamex_np(…, RENAME_EXCL)`: 0, or the errno it failed with.
-    /// Replaceable so tests can stand in for a volume without it (FAT).
-    private let renameExclusive: @Sendable (String, String) -> Int32
 
-    public init(fileManager: FileManager = .default) {
-        self.init(fileManager: fileManager, renameExclusive: Self.systemRenameExclusive)
-    }
-
-    init(fileManager: FileManager, renameExclusive: @escaping @Sendable (String, String) -> Int32) {
+    public init(door: DeviceTransferDoor, fileManager: FileManager = .default) {
+        self.door = door
         self.fileManager = fileManager
-        self.renameExclusive = renameExclusive
-    }
-
-    private static let systemRenameExclusive: @Sendable (String, String) -> Int32 = { from, to in
-        renamex_np(from, to, UInt32(RENAME_EXCL)) == 0 ? 0 : errno
-    }
-
-    // MARK: - Partial files
-
-    /// The hidden file a write to `destination` goes to before it is renamed
-    /// into place. The leading dot keeps it out of the library scanner (which
-    /// skips hidden files) and Rockbox's file browser (which hides dot files).
-    /// A copy also gets a non-audio extension (`.01 So What.flac.cdpart`), so
-    /// nothing that lists audio by extension picks it up. A conversion keeps
-    /// the real extension last (`.cdpart.01 So What.mp3`), because ffmpeg
-    /// picks its muxer from it.
-    public static func partialURL(for destination: URL, keepingExtension: Bool) -> URL {
-        let folder = destination.deletingLastPathComponent()
-        let name = destination.lastPathComponent
-        return folder.appendingPathComponent(keepingExtension ? ".cdpart.\(name)" : ".\(name).cdpart")
-    }
-
-    /// Removes a partial of `destination` left over from an interrupted run,
-    /// and returns where to write. Creates nothing: the write that uses it
-    /// creates the folder.
-    public func clearPartial(for destination: URL, keepingExtension: Bool) throws -> URL {
-        let partial = Self.partialURL(for: destination, keepingExtension: keepingExtension)
-        if fileManager.fileExists(atPath: partial.path) {
-            try fileManager.removeItem(at: partial)
-        }
-        return partial
-    }
-
-    /// Moves a complete partial onto its destination. Unless `overwrites`,
-    /// a file found at the destination fails this item (the partial is
-    /// removed, the file left alone): the rename itself refuses an existing
-    /// name (`RENAME_EXCL`), so nothing can slip in between a check and the
-    /// move; on a volume without it (FAT) the check runs right before.
-    /// When overwriting, `rename(2)` replaces the old file in one step. A
-    /// failed rename removes the partial too.
-    public func finish(_ partial: URL, onto destination: URL, overwrites: Bool) throws {
-        if overwrites {
-            guard Darwin.rename(partial.path, destination.path) == 0 else {
-                throw failedMove(partial, errno: errno)
-            }
-            return
-        }
-        switch renameExclusive(partial.path, destination.path) {
-        case 0:
-            return
-        case EEXIST:
-            discardPartial(partial)
-            throw Self.error(Self.appearedReason)
-        case ENOTSUP:
-            if fileManager.fileExists(atPath: destination.path) {
-                discardPartial(partial)
-                throw Self.error(Self.appearedReason)
-            }
-            guard Darwin.rename(partial.path, destination.path) == 0 else {
-                throw failedMove(partial, errno: errno)
-            }
-        case let code:
-            throw failedMove(partial, errno: code)
-        }
-    }
-
-    private func failedMove(_ partial: URL, errno code: Int32) -> NSError {
-        let reason = String(cString: strerror(code))
-        discardPartial(partial)
-        return Self.error("Could not move the finished file into place: \(reason)")
-    }
-
-    // MARK: - Folders
-
-    /// The outermost folder on the way to `destination` that does not exist
-    /// yet, or nil when its folder is there. What a write to it would create.
-    public func firstMissingFolder(for destination: URL) -> URL? {
-        var missing: URL?
-        var folder = destination.deletingLastPathComponent().standardizedFileURL
-        while folder.path != "/", !fileManager.fileExists(atPath: folder.path) {
-            missing = folder
-            folder = folder.deletingLastPathComponent()
-        }
-        return missing
-    }
-
-    /// Removes `folder`, then each parent up to and including `top`, while
-    /// it is empty (hidden files count). Stops at the first that isn't, or
-    /// that lies outside `top`.
-    public func removeEmptyFolders(from folder: URL, upTo top: URL) {
-        let topPath = top.standardizedFileURL.path
-        var current = folder.standardizedFileURL
-        while current.path == topPath || current.path.hasPrefix(topPath + "/") {
-            guard let contents = try? fileManager.contentsOfDirectory(atPath: current.path),
-                  contents.isEmpty,
-                  (try? fileManager.removeItem(at: current)) != nil
-            else { return }
-            if current.path == topPath { return }
-            current = current.deletingLastPathComponent()
-        }
-    }
-
-    /// Removes a partial a write abandoned. Missing is fine.
-    public func discardPartial(_ partial: URL) {
-        if fileManager.fileExists(atPath: partial.path) {
-            try? fileManager.removeItem(at: partial)
-        }
     }
 
     // MARK: - Running a plan
 
-    /// Copies, then deletions. `copy` writes `copy.source` to the URL it is
-    /// given: the destination's partial file, in a folder that exists. The
-    /// executor renames it into place. `onProgress` gets (copies done,
-    /// copies in the plan). A cancel stops the remaining copies and every
-    /// deletion.
+    /// Copies, then deletions. `source` returns the file on the Mac whose
+    /// bytes go to the copy's destination; it may make that file first (a
+    /// conversion into staging), and is only called once the destination is
+    /// known to be free. `onProgress` gets (copies done, copies in the plan).
+    /// A cancel stops the remaining copies and every deletion.
     public func run(
         _ plan: DeviceTransferFilePlan,
-        copy: (DeviceTransferFilePlan.Copy, URL) throws -> Void,
+        source: (DeviceTransferFilePlan.Copy) throws -> URL,
         isCancelled: () -> Bool = { false },
         onProgress: (Int, Int) -> Void = { _, _ in }
     ) -> Outcome {
-        var outcome = runCopies(plan, copy: copy, isCancelled: isCancelled, onProgress: onProgress)
+        var outcome = runCopies(plan, source: source, isCancelled: isCancelled, onProgress: onProgress)
         runDeletions(plan, after: &outcome, isCancelled: isCancelled)
         return outcome
     }
 
-    /// The copy half. A converting caller writes its copies its own way and
-    /// records them in an `Outcome` itself, then calls `runDeletions`.
+    /// The copy half. A caller that writes its copies its own way records
+    /// them in an `Outcome` itself, then calls `runDeletions`.
     public func runCopies(
         _ plan: DeviceTransferFilePlan,
-        copy: (DeviceTransferFilePlan.Copy, URL) throws -> Void,
+        source: (DeviceTransferFilePlan.Copy) throws -> URL,
         isCancelled: () -> Bool = { false },
         onProgress: (Int, Int) -> Void = { _, _ in }
     ) -> Outcome {
         var outcome = Outcome()
-        for track in plan.unplanned {
-            outcome.lines.append(
-                "[FAILED] \(track.track.fileURL.lastPathComponent)\n    No place on the device could be planned for it"
-            )
-        }
+        Self.listUnplanned(plan, in: &outcome)
 
         let total = plan.copies.count
         for (index, item) in plan.copies.enumerated() {
@@ -237,7 +117,7 @@ public struct DeviceTransferExecutor {
                 outcome.lines.append("[FAILED] \(name)\n    Cancelled")
             } else {
                 do {
-                    try write(item, with: copy)
+                    try write(item, from: source)
                     outcome.written.append(item)
                     outcome.lines.append("[ok] \(name) -> \(item.destinationURL.path)")
                 } catch {
@@ -256,7 +136,8 @@ public struct DeviceTransferExecutor {
     /// The deletion half: the plan's deletions minus those of any album with
     /// a failed copy in `outcome`. After a cancel (in `outcome`, or one that
     /// lands between albums here) no more old files are removed; each album
-    /// whose old files stay gets a line saying so.
+    /// whose old files stay gets a line saying so. Each deletion goes through
+    /// the door as a `.userReplace`: the audio policy, then `unlink`.
     public func runDeletions(
         _ plan: DeviceTransferFilePlan,
         after outcome: inout Outcome,
@@ -276,16 +157,15 @@ public struct DeviceTransferExecutor {
                 continue
             }
             for url in urls {
-                guard fileManager.fileExists(atPath: url.path) else {
-                    // Removed behind the app's back: the album is still replaced.
-                    outcome.alreadyGone.append(url)
-                    outcome.lines.append("[gone] \(url.path)\n    Already removed from the device")
-                    continue
-                }
                 do {
-                    try fileManager.removeItem(at: url)
-                    outcome.deleted.append(url)
-                    outcome.lines.append("[removed] \(url.path)")
+                    if try door.removeReplacedAudio(at: url) {
+                        outcome.deleted.append(url)
+                        outcome.lines.append("[removed] \(url.path)")
+                    } else {
+                        // Removed behind the app's back: the album is still replaced.
+                        outcome.alreadyGone.append(url)
+                        outcome.lines.append("[gone] \(url.path)\n    Already removed from the device")
+                    }
                 } catch {
                     let reason = error.localizedDescription
                     outcome.failedDeletions.append(DeletionFailure(url: url, reason: reason))
@@ -295,39 +175,37 @@ public struct DeviceTransferExecutor {
         }
     }
 
-    // MARK: - Helpers
+    // MARK: - One write
 
     /// One copy: refuse a destination that appeared since the review before
-    /// spending a write on it, create its folder, write the partial (`copy`
-    /// gets its URL), rename it into place. A write that fails leaves no
-    /// partial and no folder it created. `keepingExtension`: the partial ends
-    /// in the real extension, for a writer (ffmpeg) that picks its format
-    /// from it.
+    /// spending anything on it, get the bytes from `source`, then hand them
+    /// to the door, which writes them through a temp renamed into place and
+    /// refuses the rename if a file appeared meanwhile. A write that fails
+    /// leaves no temp and no folder it created.
     public func write(
         _ item: DeviceTransferFilePlan.Copy,
-        keepingExtension: Bool = false,
-        with copy: (DeviceTransferFilePlan.Copy, URL) throws -> Void
+        from source: (DeviceTransferFilePlan.Copy) throws -> URL
     ) throws {
-        if !item.overwrites, fileManager.fileExists(atPath: item.destinationURL.path) {
-            throw Self.error(Self.appearedReason)
+        try door.checkAudioDestination(item.destinationURL)
+        if !item.overwrites, exists(item.destinationURL) {
+            throw DeviceTransferDoorError.appeared
         }
-        let folder = item.destinationURL.deletingLastPathComponent()
-        let created = firstMissingFolder(for: item.destinationURL)
-        do {
-            if created != nil {
-                try fileManager.createDirectory(at: folder, withIntermediateDirectories: true)
-            }
-            let partial = try clearPartial(for: item.destinationURL, keepingExtension: keepingExtension)
-            do {
-                try copy(item, partial)
-            } catch {
-                discardPartial(partial)
-                throw error
-            }
-            try finish(partial, onto: item.destinationURL, overwrites: item.overwrites)
-        } catch {
-            if let created { removeEmptyFolders(from: folder, upTo: created) }
-            throw error
+        let file = try source(item)
+        try door.copyAudio(from: file, to: item.destinationURL, overwrites: item.overwrites)
+    }
+
+    // MARK: - Helpers
+
+    /// `lstat`, so a dangling symlink at the name still counts as taken.
+    func exists(_ url: URL) -> Bool {
+        (try? fileManager.attributesOfItem(atPath: url.path)) != nil
+    }
+
+    static func listUnplanned(_ plan: DeviceTransferFilePlan, in outcome: inout Outcome) {
+        for track in plan.unplanned {
+            outcome.lines.append(
+                "[FAILED] \(track.track.fileURL.lastPathComponent)\n    No place on the device could be planned for it"
+            )
         }
     }
 
@@ -341,9 +219,5 @@ public struct DeviceTransferExecutor {
             order.append(album)
         }
         return order
-    }
-
-    static func error(_ reason: String) -> NSError {
-        NSError(domain: "CrateDigger.DeviceTransfer", code: 1, userInfo: [NSLocalizedDescriptionKey: reason])
     }
 }

@@ -179,6 +179,35 @@ final class DeviceFileExecutorTests: XCTestCase {
         XCTAssertEqual(try bytes(track), original)
     }
 
+    /// The write side of a user's Replace: over a file not proven ours,
+    /// within the audio policy, with no backup (as for a `.userReplace` delete).
+    func testReplaceAudioOverwritesAFileTheUserChoseToReplace() throws {
+        let track = "\(album)/01 - Zebra.m4a"
+        let source = try macFile("zebra.m4a", Data("a different master".utf8))
+        let j = journal()
+        let outcome = executor(journal: j).apply([.replaceAudio(relativePath: track, contents: .file(source))],
+                                                 sessionID: session)
+        XCTAssertEqual(outcome, [.written])
+        XCTAssertEqual(try bytes(track), Data("a different master".utf8))
+        let record = try XCTUnwrap(j.records(sessionID: session).last)
+        XCTAssertEqual(record.kind, .replaced)
+        XCTAssertNil(record.backupFile)
+        XCTAssertEqual(executor(journal: j).apply([.replaceAudio(relativePath: ".rockbox/x.m4a", contents: .file(source))],
+                                                  sessionID: session).first.map { if case .refusedPolicy = $0 { return true } else { return false } },
+                       true)
+    }
+
+    func testFailedWriteRemovesTheFoldersItMade() throws {
+        // A file that cannot be read: the copy fails after the folders were made.
+        let unreadable = try macFile("unreadable.m4a", Data("bytes".utf8))
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: unreadable.path)
+        let outcome = executor().apply([.write(relativePath: "Music/New Artist/New Album/01.m4a", role: .audio,
+                                               contents: .file(unreadable))], sessionID: session)
+        guard case .failed = outcome[0] else { return XCTFail("\(outcome)") }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url("Music/New Artist").path))
+        XCTAssertEqual(tempFilesOnDevice(), [])
+    }
+
     func testPolicyRefusalDoesNoIO() throws {
         let j = journal()
         let outcome = executor(journal: j).apply(

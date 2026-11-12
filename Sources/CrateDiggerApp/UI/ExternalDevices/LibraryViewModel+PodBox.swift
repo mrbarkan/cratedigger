@@ -93,4 +93,51 @@ extension LibraryViewModel {
         guard let deviceUUID = device.volumeUUID, let profileUUID = profile.volumeUUID else { return false }
         return deviceUUID == profileUUID
     }
+
+    // MARK: - The write door
+
+    /// The door one user-started transfer to `device` writes through: the
+    /// volume (its UUID checked again before every write), the policy for
+    /// the music folder the run writes into, and this profile's journal.
+    /// nil, with an alert, when the music folder is not on that volume or the
+    /// session gate refuses (it never does for a user action today, but the
+    /// gate is where that decision lives).
+    @MainActor
+    func makeTransferDoor(for profile: ExternalDeviceProfile, device: MountedDevice,
+                          musicFolder: URL) -> DeviceTransferDoor? {
+        guard DeviceSessionGate.allows(.transferAudio, trigger: .userAction,
+                                       matchedByUUID: isMatchedByUUID(device, profile)) else {
+            appAlert = .error(title: "Nothing was sent to \(profile.name)",
+                              message: "CrateDigger only writes to a device when you ask it to.")
+            return nil
+        }
+        guard let subpath = DeviceWritePolicy.relativePath(of: musicFolder, under: device.volumeURL) else {
+            appAlert = .error(title: "Nothing was sent to \(profile.name)",
+                              message: "Its music folder is not on \(device.name). Open Preferences > Devices and choose the device again.")
+            return nil
+        }
+        let policy = DeviceWritePolicy(musicSubpath: subpath,
+                                       playlistDirectory: firmware(for: device)?.config.playlistDirectory ?? "Playlists")
+        return DeviceTransferDoor(volumeRoot: device.volumeURL, expectedVolumeUUID: device.volumeUUID,
+                                  policy: policy, journal: DeviceWriteJournal(profileID: profile.id))
+    }
+
+    /// Whether `folder` on a device can be written, found out without writing
+    /// to it: the volume is not mounted read-only, and the deepest folder on
+    /// the way to `folder` that exists accepts writes. (The old probe wrote a
+    /// file onto the device to find out.)
+    func deviceWritabilityProblem(_ folder: URL, deviceName: String) -> AppAlert? {
+        var existing = folder.standardizedFileURL
+        while existing.path != "/", !FileManager.default.fileExists(atPath: existing.path) {
+            existing = existing.deletingLastPathComponent()
+        }
+        let readOnly = (try? existing.resourceValues(forKeys: [.volumeIsReadOnlyKey]))?.volumeIsReadOnly
+        if readOnly == true || !FileManager.default.isWritableFile(atPath: existing.path) {
+            return .error(
+                title: "\(deviceName) isn't writable",
+                message: "CrateDigger cannot write into \(folder.path). Check the device lock switch, cable mode, or macOS Files & Folders access."
+            )
+        }
+        return nil
+    }
 }

@@ -345,14 +345,8 @@ extension LibraryViewModel {
                                  profileID: profileID, converts: preset != nil)
             }.value
 
-            if let problem = probeDestinationWritability(
-                mountedRoot,
-                createFailureTitle: "Can't write to device",
-                createFailureMessage: "CrateDigger could not write to \(mountedRoot.path). Confirm the device is mounted and writable.",
-                notWritableTitle: "Device isn't writable",
-                notWritableMessage: "CrateDigger cannot write into \(mountedRoot.path). Check the device lock switch or macOS Files & Folders access.",
-                probeFilenamePrefix: ".cratedigger-sync-probe-"
-            ) {
+            // Found out without writing to the device.
+            if let problem = deviceWritabilityProblem(mountedRoot, deviceName: profile.name) {
                 appAlert = problem
                 return
             }
@@ -379,6 +373,8 @@ extension LibraryViewModel {
                 )
                 return
             }
+            let musicFolder = ExternalDeviceTransferPlanner().destinationRoot(for: profile, mountedAt: mountedRoot)
+            guard let door = makeTransferDoor(for: profile, device: device, musicFolder: musicFolder) else { return }
             // Busy from here until the catalog is patched: the copies'
             // progress ends before the deletions, covers and patch do.
             isDeviceTransferRunning = true
@@ -431,7 +427,8 @@ extension LibraryViewModel {
                 mountedRoot: mountedRoot,
                 preset: preset,
                 ffmpegURL: customFFmpegExecutableURL(),
-                metadataByPath: metadataByPath
+                metadataByPath: metadataByPath,
+                door: door
             )
             let outcome = await Task.detached(priority: .userInitiated) {
                 Self.runQueuedSync(job) { completed, failed in
@@ -458,7 +455,8 @@ extension LibraryViewModel {
             await writeFolderCoverArt(
                 profileID: profileID,
                 folderTracks: plan.coverFolders(after: outcome.written, hasCover: { FolderCoverArtWriter.hasCover(in: $0) })
-                    .map { (folder: $0.key, track: $0.value) }
+                    .map { (folder: $0.key, track: $0.value) },
+                door: door
             )
             await patchDeviceCatalog(
                 for: device,
@@ -577,22 +575,26 @@ extension LibraryViewModel {
         let preset: ConversionPreset?
         let ffmpegURL: URL?
         let metadataByPath: [String: ConversionMetadata]
+        /// Every write of this SYNC goes through it.
+        let door: DeviceTransferDoor
     }
 
-    /// The sync loop: each copy written to a hidden partial and renamed into
-    /// place (`DeviceTransferExecutor`), its entry out of the queue and its
-    /// staged bytes deleted once it lands, then the deletions of the albums
-    /// whose copies all landed. The queue is rewritten at checkpoints, read
-    /// fresh each time so entries queued during the sync survive it.
-    /// `onProgress` gets (copies done, failures so far). Writes to the
-    /// device, so callers run it off the main actor.
+    /// The sync loop: each copy put on the device through the write door
+    /// (`DeviceTransferExecutor`: a temp renamed into place, data only, so no
+    /// `._` twin), its entry out of the queue and its staged bytes deleted
+    /// once it lands, then the deletions of the albums whose copies all
+    /// landed. An entry converted on the way is converted into the queue's
+    /// staging tree on the Mac first, never onto the device. The queue is
+    /// rewritten at checkpoints, read fresh each time so entries queued
+    /// during the sync survive it. `onProgress` gets (copies done, failures
+    /// so far). Writes to the device, so callers run it off the main actor.
     nonisolated private static func runQueuedSync(
         _ job: QueuedSyncJob,
         onProgress: (Int, Int) -> Void
     ) -> DeviceTransferExecutor.Outcome {
         let store = DeviceSyncQueueStore()
         let fm = FileManager.default
-        let executor = DeviceTransferExecutor(fileManager: fm)
+        let executor = DeviceTransferExecutor(door: job.door)
         let profileID = job.profileID
         var outcome = DeviceTransferExecutor.Outcome()
         var service: ConversionService?
@@ -622,11 +624,17 @@ extension LibraryViewModel {
             store.removeStagedFile(for: entry, profileID: profileID)
         }
 
-        /// One ffmpeg run into `output`, judged by its own result. `runSingle`,
-        /// never enqueue + runQueuedJobs: the service lives for the whole
-        /// loop, and its queue would re-run every earlier job each time.
+        /// One ffmpeg run into `output` (on the Mac), judged by its own
+        /// result. `runSingle`, never enqueue + runQueuedJobs: the service
+        /// lives for the whole loop, and its queue would re-run every earlier
+        /// job each time. Refused up front when the Mac has no room for it.
         func convert(_ source: URL, to output: URL, metadata: ConversionMetadata) throws {
             guard let preset = job.preset else { throw syncError("This device copies files as they are") }
+            let sourceBytes = ((try? fm.attributesOfItem(atPath: source.path))?[.size] as? NSNumber)?.int64Value ?? 0
+            let need = DeviceTransferExecutor.estimatedConvertedBytes(sourceBytes: sourceBytes, format: preset.outputFormat)
+            if let free = Self.freeBytes(near: output), free - DeviceTransferExecutor.stagingSpaceMargin < need {
+                throw syncError(DeviceTransferExecutor.stagingSpaceReason)
+            }
             if service == nil { service = try? ConversionService(ffmpegExecutableURL: job.ffmpegURL) }
             guard let service else { throw syncError("ffmpeg wasn't found") }
             let result = service.runSingle(
@@ -652,22 +660,31 @@ extension LibraryViewModel {
                       let source = job.sources[sourcePath]
                 else { throw syncError("Not in the queue any more") }
                 if case .unavailable(let reason) = source { throw syncError(reason) }
-                // The executor's own write: the appeared-file check, the
-                // folder made only now, a hidden partial renamed into place,
-                // and nothing left behind when it fails. ffmpeg picks its
-                // muxer from the extension, so a converting write keeps it.
-                try executor.write(copy, keepingExtension: source == .convert) { _, target in
-                    switch source {
-                    case .staged:
-                        try fm.copyItem(at: store.stagedFileURL(for: entry, profileID: profileID), to: target)
-                    case .copy:
-                        try fm.copyItem(at: entry.track.track.fileURL, to: target)
-                    case .convert:
-                        try convert(entry.track.track.fileURL, to: target,
-                                    metadata: job.metadataByPath[sourcePath] ?? entry.track.metadata)
-                    case .unavailable:
-                        break   // thrown above
+                // The executor's own write: the appeared-file check before
+                // anything is spent, then the door (a temp renamed into
+                // place, the folder made only now, nothing left behind when
+                // it fails). A conversion on the way lands in this entry's
+                // staging file on the Mac and is copied from there; a failed
+                // one leaves no staged bytes behind.
+                let staged = store.stagedFileURL(for: entry, profileID: profileID)
+                do {
+                    try executor.write(copy) { _ in
+                        switch source {
+                        case .staged:
+                            return staged
+                        case .copy:
+                            return entry.track.track.fileURL
+                        case .convert:
+                            try convert(entry.track.track.fileURL, to: staged,
+                                        metadata: job.metadataByPath[sourcePath] ?? entry.track.metadata)
+                            return staged
+                        case .unavailable(let reason):
+                            throw syncError(reason)   // thrown above already
+                        }
                     }
+                } catch {
+                    if source == .convert { store.removeStagedFile(for: entry, profileID: profileID) }
+                    throw error
                 }
                 outcome.written.append(copy)
                 outcome.lines.append("[ok] \(name)")
@@ -686,6 +703,16 @@ extension LibraryViewModel {
         executor.runDeletions(job.plan, after: &outcome)
         persistQueue()
         return outcome
+    }
+
+    /// Free bytes on the volume holding `url`, asked of the nearest folder
+    /// on the way to it that exists.
+    nonisolated private static func freeBytes(near url: URL) -> Int64? {
+        var folder = url.deletingLastPathComponent().standardizedFileURL
+        while folder.path != "/", !FileManager.default.fileExists(atPath: folder.path) {
+            folder = folder.deletingLastPathComponent()
+        }
+        return folder.volumeFreeBytes
     }
 
     nonisolated private static func syncError(_ reason: String) -> NSError {

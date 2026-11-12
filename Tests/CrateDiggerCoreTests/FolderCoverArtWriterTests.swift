@@ -79,6 +79,60 @@ final class FolderCoverArtWriterTests: XCTestCase {
         XCTAssertNotEqual(try Data(contentsOf: cover), Data("stale".utf8))
     }
 
+    func testSecondRunWritesNothing() throws {
+        let album = root.appendingPathComponent("Album", isDirectory: true)
+        try FileManager.default.createDirectory(at: album, withIntermediateDirectories: true)
+        let cover = album.appendingPathComponent("cover.jpg")
+        let artwork = try sourceArtwork()
+        XCTAssertEqual(FolderCoverArtWriter().write([album: artwork]), 1)
+        let past = Date(timeIntervalSinceNow: -3600)
+        try FileManager.default.setAttributes([.modificationDate: past], ofItemAtPath: cover.path)
+
+        XCTAssertEqual(FolderCoverArtWriter().write([album: artwork]), 0, "the same bytes are not written again")
+
+        let date = try XCTUnwrap(FileManager.default.attributesOfItem(atPath: cover.path)[.modificationDate] as? Date)
+        XCTAssertEqual(date.timeIntervalSince1970, past.timeIntervalSince1970, accuracy: 1)
+    }
+
+    func testNoTemporaryFileLeftInFolder() throws {
+        let album = root.appendingPathComponent("Album", isDirectory: true)
+        try FileManager.default.createDirectory(at: album, withIntermediateDirectories: true)
+        try Data("stale".utf8).write(to: album.appendingPathComponent("cover.jpg"))
+
+        XCTAssertEqual(FolderCoverArtWriter().write([album: try sourceArtwork()]), 1)
+
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: album.path), ["cover.jpg"])
+    }
+
+    func testDeviceWriterGetsEveryCoverAndCountsOnlyChanges() throws {
+        let albumA = root.appendingPathComponent("Album A", isDirectory: true)
+        let albumB = root.appendingPathComponent("Album B", isDirectory: true)
+        for folder in [albumA, albumB] {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        }
+        var asked: [URL] = []
+        let writer = FolderCoverArtWriter(writeData: { data, url in
+            XCTAssertEqual(data.prefix(2), Data([0xFF, 0xD8]))
+            asked.append(url)
+            return url.deletingLastPathComponent().lastPathComponent == "Album A"   // B was already there
+        })
+
+        XCTAssertEqual(writer.write([albumA: try sourceArtwork(), albumB: try sourceArtwork()]), 1)
+        XCTAssertEqual(Set(asked.map(\.lastPathComponent)), ["cover.jpg"])
+        XCTAssertEqual(asked.count, 2)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: albumA.appendingPathComponent("cover.jpg").path),
+                       "only the given writer writes")
+    }
+
+    func testAFailedCoverIsSkipped() throws {
+        let album = root.appendingPathComponent("Album", isDirectory: true)
+        try FileManager.default.createDirectory(at: album, withIntermediateDirectories: true)
+        let writer = FolderCoverArtWriter(writeData: { _, _ in
+            throw DeviceTransferDoorError.forbidden("a name ending in a dot or a space")
+        })
+        XCTAssertEqual(writer.write([album: try sourceArtwork()]), 0)
+    }
+
     // MARK: - Representative audio file per folder
 
     func testPicksOneAudioFilePerFolderInNameOrder() throws {

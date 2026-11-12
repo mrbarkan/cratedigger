@@ -117,6 +117,43 @@ final class DeviceTransferResolverTests: XCTestCase {
         XCTAssertEqual(plan.skippedPresent, 2)
     }
 
+    // MARK: - Names a device can hold
+
+    /// "R.E.M." and "Vol." end in a dot, which FAT drops and the write
+    /// policy refuses. The plan names them so the door lets them through,
+    /// and a second send of the same album is entirely "already there".
+    func testDottedNamesArePlannedDeviceSafeAndAResendIsAlreadyThere() throws {
+        let profile = copyProfile()
+        let sending = [1, 2].map { (number: Int) -> LoadedTrack in
+            track(album: "Dead Letter Office Vol.", artist: "R.E.M.", number: number, title: "Track \(number)",
+                  path: scratch.appendingPathComponent("Src/REM/0\(number) Track \(number).flac").path, year: 1987)
+        }
+
+        let first = resolver.review(sending: sending, catalog: [], profile: profile, mountedAt: device, leftAlone: [])
+        let plan = try resolver.resolve(first, decisions: [:], profile: profile, mountedAt: device)
+        XCTAssertEqual(relative(plan.copies), [
+            "Music/R.E.M/1987/Dead Letter Office Vol/01 Track 1.flac",
+            "Music/R.E.M/1987/Dead Letter Office Vol/02 Track 2.flac"
+        ])
+        let policy = DeviceWritePolicy(musicSubpath: "Music")
+        for path in relative(plan.copies) {
+            XCTAssertNoThrow(try policy.checkWrite(path, role: .audio), path)
+        }
+
+        // The transfer lands and patches the catalog, as every device path does.
+        for copy in plan.copies { try makeFile(relative([copy.destinationURL])[0]) }
+        let catalog = plan.copies.map {
+            DeviceCatalogStore.writtenTrack(source: $0.source, destination: $0.destinationURL, preset: nil)
+        }
+
+        let again = resolver.review(sending: sending, catalog: catalog, profile: profile, mountedAt: device, leftAlone: [])
+        XCTAssertEqual(again.albums.map(\.status), [.present])
+        let second = try resolver.resolve(again, decisions: [:], profile: profile, mountedAt: device)
+        XCTAssertTrue(second.copies.isEmpty)
+        XCTAssertTrue(second.deletions.isEmpty)
+        XCTAssertEqual(second.skippedPresent, 2)
+    }
+
     // MARK: - Replace
 
     func testReplaceSameReleaseSwapsOnlyMatchedTracks() throws {

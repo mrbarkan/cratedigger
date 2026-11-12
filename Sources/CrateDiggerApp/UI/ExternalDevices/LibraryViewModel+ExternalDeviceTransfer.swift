@@ -128,12 +128,13 @@ extension LibraryViewModel {
     /// `writeFolderCoverArt(profileID:folderTracks:)`.
     @MainActor
     @discardableResult
-    func writeFolderCoverArt(profileID: UUID?, landings: [(folder: URL, artwork: ArtworkAsset?)]) async -> Int {
+    func writeFolderCoverArt(profileID: UUID?, landings: [(folder: URL, artwork: ArtworkAsset?)],
+                             door: DeviceTransferDoor) async -> Int {
         guard let profileID,
               let profile = prefs.savedExternalDeviceProfiles.first(where: { $0.id == profileID }),
               profile.usesFolderCoverArt
         else { return 0 }
-        return writeFolderCoverArt(landings: landings, for: profile.name)
+        return writeFolderCoverArt(landings: landings, for: profile.name, door: door)
     }
 
     /// The writing itself, for a caller that already decided covers are
@@ -142,21 +143,28 @@ extension LibraryViewModel {
     /// the log, so it is a device name, never a path.
     @MainActor
     @discardableResult
-    func writeFolderCoverArt(landings: [(folder: URL, artwork: ArtworkAsset?)], for destinationName: String) -> Int {
+    func writeFolderCoverArt(landings: [(folder: URL, artwork: ArtworkAsset?)], for destinationName: String,
+                             door: DeviceTransferDoor) -> Int {
         var covers: [URL: ArtworkAsset] = [:]
         for landing in landings {
             guard let artwork = landing.artwork, !artwork.data.isEmpty else { continue }
             if covers[landing.folder] == nil { covers[landing.folder] = artwork }   // an album has one cover
         }
-        return writeFolderCoverArt(covers, for: destinationName)
+        return writeFolderCoverArt(covers, for: destinationName, door: door)
     }
 
     /// Writes covers already decided, one per folder, replacing any there.
+    /// `door`: a device run's, so every cover on a device goes through the
+    /// write door; nil for an ordinary conversion's destination folder.
     @MainActor
     @discardableResult
-    func writeFolderCoverArt(_ covers: [URL: ArtworkAsset], for destinationName: String) -> Int {
+    func writeFolderCoverArt(_ covers: [URL: ArtworkAsset], for destinationName: String,
+                             door: DeviceTransferDoor?) -> Int {
         guard !covers.isEmpty else { return 0 }
-        let written = FolderCoverArtWriter(preparer: artworkService).write(covers)
+        let writer = door.map { door in
+            FolderCoverArtWriter(preparer: artworkService, writeData: { try door.writeCover($0, to: $1) })
+        } ?? FolderCoverArtWriter(preparer: artworkService)
+        let written = writer.write(covers)
         AppLog.conversion.notice("Wrote \(written) cover.jpg sidecar(s) for \(destinationName, privacy: .public)")
         return written
     }
@@ -166,7 +174,8 @@ extension LibraryViewModel {
     /// hash, so hydrate before writing.
     @MainActor
     @discardableResult
-    func writeFolderCoverArt(profileID: UUID, folderTracks: [(folder: URL, track: LoadedTrack)]) async -> Int {
+    func writeFolderCoverArt(profileID: UUID, folderTracks: [(folder: URL, track: LoadedTrack)],
+                             door: DeviceTransferDoor) async -> Int {
         guard let profile = prefs.savedExternalDeviceProfiles.first(where: { $0.id == profileID }),
               profile.usesFolderCoverArt, !folderTracks.isEmpty
         else { return 0 }
@@ -180,7 +189,8 @@ extension LibraryViewModel {
         )
         return await writeFolderCoverArt(
             profileID: profileID,
-            landings: folderTracks.map { ($0.folder, artByPath[$0.track.track.fileURL.path]) }
+            landings: folderTracks.map { ($0.folder, artByPath[$0.track.track.fileURL.path]) },
+            door: door
         )
     }
 
@@ -203,10 +213,12 @@ extension LibraryViewModel {
     @MainActor
     func fixDeviceAlbumArt() {
         guard let (profile, device) = browsedMountedDevice, !isFixingDeviceArt else { return }
+        let root = ExternalDeviceTransferPlanner().destinationRoot(for: profile, mountedAt: device.volumeURL)
+        // Every cover goes through the write door, like a transfer's.
+        guard let door = makeTransferDoor(for: profile, device: device, musicFolder: root) else { return }
         isFixingDeviceArt = true
         oledView = .devices
         showOLEDNotice("FIXING ART")
-        let root = ExternalDeviceTransferPlanner().destinationRoot(for: profile, mountedAt: device.volumeURL)
         let deviceName = profile.name
 
         Task { @MainActor in
@@ -223,7 +235,8 @@ extension LibraryViewModel {
                         covers[folder] = asset
                     }
                 }
-                return (files.count, FolderCoverArtWriter(preparer: artwork).write(covers))
+                let writer = FolderCoverArtWriter(preparer: artwork, writeData: { try door.writeCover($0, to: $1) })
+                return (files.count, writer.write(covers))
             }.value
 
             isFixingDeviceArt = false
@@ -302,11 +315,13 @@ extension LibraryViewModel {
             let destinationRoot = ExternalDeviceTransferPlanner().destinationRoot(for: resolved, mountedAt: mountedRoot)
             if let problem = validateDeviceTransferPreflight(
                 destinationRoot: destinationRoot,
+                deviceName: resolved.name,
                 sourceTracks: plan.copies.map(\.source)
             ) {
                 appAlert = problem
                 return
             }
+            guard let door = makeTransferDoor(for: resolved, device: device, musicFolder: destinationRoot) else { return }
             // The scan and the sheet can take a while; another job may have
             // started on the conversion channel meanwhile.
             guard !isConversionRunning else {
@@ -322,14 +337,15 @@ extension LibraryViewModel {
             defer { isDeviceTransferRunning = false }
             rememberDeviceAnswers(answers, of: review, profileID: resolved.id)
 
-            let (report, outcome) = await runCopyTransferQueue(plan: plan, deviceName: resolved.name)
+            let (report, outcome) = await runCopyTransferQueue(plan: plan, deviceName: resolved.name, door: door)
 
             // A cover only where something actually landed, and never over
             // one a Gaps fill found there.
             await writeFolderCoverArt(
                 profileID: resolved.id,
                 folderTracks: plan.coverFolders(after: outcome.written, hasCover: { FolderCoverArtWriter.hasCover(in: $0) })
-                    .map { (folder: $0.key, track: $0.value) }
+                    .map { (folder: $0.key, track: $0.value) },
+                door: door
             )
             await patchDeviceCatalog(
                 for: device,
@@ -403,18 +419,14 @@ extension LibraryViewModel {
         }
     }
 
+    /// Writability and free space, both found out without writing to the
+    /// device: the transfer's first write is its first byte there.
     private func validateDeviceTransferPreflight(
         destinationRoot: URL,
+        deviceName: String,
         sourceTracks: [LoadedTrack]
     ) -> AppAlert? {
-        if let writability = probeDestinationWritability(
-            destinationRoot,
-            createFailureTitle: "Can't write to device",
-            createFailureMessage: "CrateDigger could not create \(destinationRoot.path). Confirm the device is mounted and writable.",
-            notWritableTitle: "Device isn't writable",
-            notWritableMessage: "CrateDigger cannot write into \(destinationRoot.path). Check the device lock switch, cable mode, or macOS Files & Folders access.",
-            probeFilenamePrefix: ".cratedigger-device-probe-"
-        ) {
+        if let writability = deviceWritabilityProblem(destinationRoot, deviceName: deviceName) {
             return writability
         }
         return probeFreeDiskSpace(
@@ -425,11 +437,12 @@ extension LibraryViewModel {
     }
 
     /// Runs a reviewed plan's byte copies, then its deletions, through Core's
-    /// `DeviceTransferExecutor`, with progress on CNVRT.
+    /// `DeviceTransferExecutor` and the write door, with progress on CNVRT.
     @MainActor
     private func runCopyTransferQueue(
         plan: DeviceTransferFilePlan,
-        deviceName: String
+        deviceName: String,
+        door: DeviceTransferDoor
     ) async -> (report: ConversionReport, outcome: DeviceTransferExecutor.Outcome) {
         let copies = plan.copies
         let total = copies.count
@@ -445,12 +458,10 @@ extension LibraryViewModel {
 
         let outcome = await withCheckedContinuation { continuation in
             let task = Task.detached(priority: .userInitiated) {
-                let fileManager = FileManager.default
-                let outcome = DeviceTransferExecutor(fileManager: fileManager).run(
+                // The library file itself: the door copies its data only.
+                let outcome = DeviceTransferExecutor(door: door).run(
                     plan,
-                    copy: { item, partial in
-                        try fileManager.copyItem(at: item.source.track.fileURL, to: partial)
-                    },
+                    source: { $0.source.track.fileURL },
                     isCancelled: { Task.isCancelled },
                     onProgress: { completed, total in
                         Task { @MainActor in
