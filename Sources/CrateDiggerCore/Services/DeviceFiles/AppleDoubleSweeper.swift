@@ -143,19 +143,23 @@ public struct AppleDoubleSweeper {
     /// macOS, which would make every twin invisible, so this reads the
     /// folder with `readdir`. A name that is not valid UTF-8 is skipped: no
     /// path built from it would name the same file. nil when the folder
-    /// cannot be opened.
+    /// cannot be opened or its listing fails part-way.
     static func entryNames(inFolder path: String) -> [String]? {
         guard let folder = opendir(path) else { return nil }
         defer { closedir(folder) }
         var names: [String] = []
-        while let entry = readdir(folder) {
+        while true {
+            // readdir answers NULL both at the end and on an error; only errno tells them apart.
+            errno = 0
+            guard let entry = readdir(folder) else { break }
             let name = withUnsafeBytes(of: entry.pointee.d_name) { raw in
                 String(validatingCString: raw.bindMemory(to: CChar.self).baseAddress!)
             }
             guard let name, name != ".", name != ".." else { continue }
             names.append(name)
         }
-        return names
+        // A listing cut short is not a listing: nil, as for a folder that cannot be opened.
+        return errno == 0 ? names : nil
     }
 
     private static func roundedUpToPowerOfTwo(_ size: Int) -> Int {

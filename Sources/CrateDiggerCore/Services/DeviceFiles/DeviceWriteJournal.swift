@@ -26,10 +26,13 @@ public struct DeviceFileRecord: Codable, Hashable, Sendable {
     public let volumeUUID: String?
     public let sessionID: UUID
     public let date: Date
+    /// Who a written file is for, when the writer said (an artist picture's
+    /// player key). Absent from records written before it existed.
+    public let subject: String?
 
     public init(relativePath: String, kind: Kind, role: String, size: Int64? = nil, sha256: String? = nil,
                 backupFile: String? = nil, libraryPath: String? = nil, volumeUUID: String? = nil,
-                sessionID: UUID, date: Date = Date()) {
+                sessionID: UUID, date: Date = Date(), subject: String? = nil) {
         relativeKey = DeviceWritePolicy.key(forRelativePath: relativePath)
         self.relativePath = relativePath
         self.kind = kind
@@ -41,6 +44,7 @@ public struct DeviceFileRecord: Codable, Hashable, Sendable {
         self.volumeUUID = volumeUUID
         self.sessionID = sessionID
         self.date = date
+        self.subject = subject
     }
 }
 

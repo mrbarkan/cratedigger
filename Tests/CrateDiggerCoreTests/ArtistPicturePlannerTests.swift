@@ -89,13 +89,15 @@ final class ArtistPicturePlannerTests: XCTestCase {
         try album("Air", folder: "1998 Moon Safari")
         let plan = plan(["air": picture])
         XCTAssertEqual(paths(plan), ["Artwork/People/Air.jpg"])
-        guard case let .write(_, role, .data(data), replacesForeign)? = plan.operations.first else {
+        guard case let .write(_, role, .data(data), replacesForeign, subject)? = plan.operations.first else {
             return XCTFail("expected a write")
         }
         XCTAssertEqual(role, .artistPicture)
         XCTAssertEqual(data, picture)
         XCTAssertFalse(replacesForeign)
+        XCTAssertEqual(subject, String(PodBoxArtName.key("Air")), "the journal learns whose picture it is")
         apply(plan)
+        XCTAssertEqual(journal.ownedRecord(forKey: "Artwork/People/Air.jpg")?.subject, String(PodBoxArtName.key("Air")))
         XCTAssertEqual(bytes("Artwork/People/Air.jpg"), picture)
     }
 
@@ -130,7 +132,7 @@ final class ArtistPicturePlannerTests: XCTestCase {
         try album("Hot \u{1F3B8} Band", folder: "Riffs", artistFolder: "Hot Band")
         let found = artists()
         XCTAssertEqual(Set(found.map(\.name)), ["!!!", "Hot \u{1F3B8} Band"])
-        let plan = plan(["": picture, PodBoxArtName.folded("Hot \u{1F3B8} Band"): picture], artists: found)
+        let plan = plan([:], artists: found) // unnameable is reported before "no picture yet"
         XCTAssertEqual(plan.operations.count, 0)
         XCTAssertEqual(Set(plan.unnameable), ["!!!", "Hot \u{1F3B8} Band"])
         XCTAssertEqual(plan.reasons["!!!"], "cannot be named on this player")
@@ -269,7 +271,7 @@ final class ArtistPicturePlannerTests: XCTestCase {
                      ArtistOnDevice(name: "Cee", albumFolders: ["Music/Mixed/C1"], trackCount: 1)]
         let plan = plan(["ay": picture, "bee": picture, "cee": picture], artists: three, tree: crowdedTree())
         XCTAssertEqual(paths(plan), ["Artwork/People/Ay.jpg", "Music/Bee/folder.jpg"])
-        guard case let .write(_, role, _, _)? = plan.operations.last else { return XCTFail("no write") }
+        guard case let .write(_, role, _, _, _)? = plan.operations.last else { return XCTFail("no write") }
         XCTAssertEqual(role, .artistFolderPicture)
         XCTAssertEqual(plan.overBudget, ["Cee"])
     }
@@ -325,7 +327,8 @@ final class ArtistPicturePlannerTests: XCTestCase {
         apply(plan(["weezer": picture], destination: .artistFolders))
         try iPod.addFile("Artwork/People/Beck.jpg", Data("the owner's edit".utf8))
 
-        let removals = ArtistPicturePlanner.removalPlan(journalRecords: journal.records, sha256OnDevice: sha)
+        let removals = ArtistPicturePlanner.removalPlan(journalRecords: journal.records, volumeUUID: "FAKE-UUID",
+                                                        sha256OnDevice: sha)
         XCTAssertEqual(removals.map(\.relativePath), ["Artwork/People/Air.jpg", "Music/Weezer/folder.jpg"])
         let outcomes = executor.apply(removals, sessionID: UUID())
         XCTAssertEqual(outcomes, [.deleted, .deleted])
@@ -333,8 +336,101 @@ final class ArtistPicturePlannerTests: XCTestCase {
         XCTAssertEqual(bytes("Artwork/People/Beck.jpg"), Data("the owner's edit".utf8))
         XCTAssertNotNil(bytes("Music/Air/1998 Moon Safari/cover.jpg"), "covers are never in a picture removal")
 
-        XCTAssertEqual(ArtistPicturePlanner.removalPlan(journalRecords: journal.records, sha256OnDevice: sha).count, 0,
+        XCTAssertEqual(ArtistPicturePlanner.removalPlan(journalRecords: journal.records, volumeUUID: "FAKE-UUID",
+                                                        sha256OnDevice: sha).count, 0,
                        "a removed picture is not removed twice")
+    }
+
+    // MARK: Review fixes
+
+    /// I1: a picture CrateDigger wrote for Prince is never handed to
+    /// "Prince and the Revolution", whose album the player also leads there.
+    func testPrinceAndTheRevolutionNeverTradeAFolderPicture() throws {
+        try album("Prince", folder: "1982 1999", cover: false)
+        let first = plan(["prince": picture], destination: .artistFolders)
+        XCTAssertEqual(paths(first), ["Music/Prince/folder.jpg"])
+        apply(first)
+
+        try album("Prince and the Revolution", folder: "1984 Purple Rain", artistFolder: "Prince", cover: false)
+        let prepared = ["prince": picture, PodBoxArtName.folded("Prince and the Revolution"): otherPicture]
+        for round in 1...2 {
+            let replan = plan(prepared, destination: .artistFolders)
+            XCTAssertEqual(replan.operations.count, 0, "round \(round)")
+            XCTAssertEqual(Set(replan.alreadyHasPicture), ["Prince", "Prince and the Revolution"], "round \(round)")
+            XCTAssertEqual(replan.reasons["Prince and the Revolution"],
+                           "the player already shows Music/Prince/folder.jpg, CrateDigger's picture for another artist")
+            apply(replan)
+        }
+        XCTAssertEqual(bytes("Music/Prince/folder.jpg"), picture)
+    }
+
+    /// I1: two people the player leads to one file in one plan: one write.
+    func testOnePathIsWrittenOnce() {
+        let memory = DeviceArtTree(peopleFiles: [], coverFiles: [], folderImages: [:],
+                                   foldersWithAudio: ["Music/Prince/1982 1999", "Music/Prince/1984 Purple Rain"],
+                                   artistsByFolder: ["Music/Prince": ["prince"]], libraryFolders: [], musicFolder: "Music")
+        let two = [ArtistOnDevice(name: "Prince", albumFolders: ["Music/Prince/1982 1999"], trackCount: 9),
+                   ArtistOnDevice(name: "Prince and the Revolution", albumFolders: ["Music/Prince/1984 Purple Rain"],
+                                  trackCount: 1)]
+        let plan = plan(["prince": picture, PodBoxArtName.folded("Prince and the Revolution"): otherPicture],
+                        destination: .artistFolders, artists: two, tree: memory)
+        XCTAssertEqual(paths(plan), ["Music/Prince/folder.jpg"])
+        XCTAssertEqual(plan.alreadyHasPicture, ["Prince and the Revolution"])
+    }
+
+    /// M2: a transfer's cover.jpg the player takes as the portrait is not a
+    /// picture CrateDigger may replace.
+    func testATransferCoverIsNeverReplaced() throws {
+        try album("Air", folder: "Moon Safari", artistFolder: "Air", cover: false)
+        // Tracks straight in the folder named for the artist: its cover is the portrait.
+        try iPod.addFile("Music/Air/01.m4a", Data([0, 0, 0, 0x20]))
+        catalog.append(LoadedTrack(track: AudioTrack(fileURL: iPod.root.appendingPathComponent("Music/Air/01.m4a"),
+                                                     title: "t", artist: "Air"),
+                                   metadata: ConversionMetadata(artist: "Air")))
+        XCTAssertEqual(executor.apply([.write(relativePath: "Music/Air/cover.jpg", role: .cover,
+                                              contents: .data(Data("cover".utf8)))], sessionID: UUID()), [.written])
+        let plan = plan(["air": picture])
+        XCTAssertEqual(plan.operations.count, 0)
+        XCTAssertEqual(plan.reasons["Air"], "the player already shows Music/Air/cover.jpg")
+    }
+
+    /// I2: a catalog that no longer matches the device plans nothing.
+    func testStaleCatalogRefusesToPlan() throws {
+        try album("Air", folder: "1998 Moon Safari")
+        try iPod.addFile("Music/Air/2004 Talkie Walkie/01.m4a", Data([0, 0, 0, 0x20])) // not in the catalog
+        let plan = plan(["air": picture])
+        XCTAssertEqual(plan.operations.count, 0)
+        XCTAssertEqual(plan.refusal, ArtistPicturePlanner.rescanFirst)
+        XCTAssertEqual(plan.uncertain, ["Air"])
+        XCTAssertEqual(tree().catalogMismatch, ["Music/Air/2004 Talkie Walkie"])
+
+        catalog.append(LoadedTrack(track: AudioTrack(fileURL: iPod.root.appendingPathComponent("Music/Gone/01.m4a"),
+                                                     title: "t", artist: "Gone"),
+                                   metadata: ConversionMetadata(artist: "Gone")))
+        XCTAssertEqual(tree().catalogMismatch, ["Music/Air/2004 Talkie Walkie", "Music/Gone"],
+                       "a catalog track with nothing on the device counts too")
+    }
+
+    /// M9: a second spelling follows the first spelling's reason, not a
+    /// claim that a picture is shared.
+    func testSecondSpellingFollowsAHeldFirst() throws {
+        try album("Air", folder: "1998 Moon Safari")
+        try iPod.addFile("Artwork/People/Air.txt", Data("note".utf8))
+        let two = [ArtistOnDevice(name: "Air", albumFolders: ["Music/Air/1998 Moon Safari"], trackCount: 5),
+                   ArtistOnDevice(name: "AIR", albumFolders: ["Music/Air/1998 Moon Safari"], trackCount: 1)]
+        let plan = plan(["air": picture], artists: two)
+        XCTAssertEqual(plan.uncertain, ["Air", "AIR"])
+        XCTAssertTrue(plan.reasons["AIR"]?.hasPrefix("same person as Air: ") == true)
+    }
+
+    /// M8: records written on another volume are not removed here.
+    func testRemovalPlanMatchesTheVolume() throws {
+        try album("Air", folder: "1998 Moon Safari")
+        apply(plan(["air": picture]))
+        XCTAssertEqual(ArtistPicturePlanner.removalPlan(journalRecords: journal.records, volumeUUID: "OTHER-UUID",
+                                                        sha256OnDevice: sha).count, 0)
+        XCTAssertEqual(ArtistPicturePlanner.removalPlan(journalRecords: journal.records, volumeUUID: "FAKE-UUID",
+                                                        sha256OnDevice: sha).count, 1)
     }
 
     // MARK: Artists on the device

@@ -30,6 +30,18 @@ public struct DeviceArtTree: Sendable {
     /// The music folder `scan` walked (`""` is the whole volume). nil for a
     /// tree built in memory. A writer treats a track outside it as unknown ground.
     public let musicFolder: String?
+    /// `/Artwork/People` and `/Artwork/Covers` were both read in full (a
+    /// missing folder reads as empty). false: the lookup answers `.uncertain`
+    /// for everyone, since an unread People file could be anyone's.
+    public let artworkListed: Bool
+    /// Folders where the walk and the catalog disagree: audio on the device
+    /// in a folder the catalog has no track in, or a catalog track folder
+    /// with no audio on the device. Empty when they agree. A stale catalog
+    /// hides named folders from the lookup, so a writer must not plan with one.
+    public let catalogMismatch: [String]
+    /// Player key (key and alt key of the folder's name) -> folders named
+    /// that way holding a `_`, `cover` or `folder` image. Built once.
+    let namedImageFolders: [UInt32: [String]]
 
     /// The player's folder table size (`AA_LIBDIR_SLOTS`).
     static let libraryTableSlots = 1_024
@@ -43,7 +55,8 @@ public struct DeviceArtTree: Sendable {
     public init(peopleFiles: [String], coverFiles: [String], folderImages: [String: [String]],
                 foldersWithAudio: Set<String>, artistsByFolder: [String: Set<String>],
                 libraryFolders: Set<String>? = nil, libraryTableFull: Bool = false,
-                listedFolders: Set<String>? = nil, bookFolders: Set<String> = [], musicFolder: String? = nil) {
+                listedFolders: Set<String>? = nil, bookFolders: Set<String> = [], musicFolder: String? = nil,
+                artworkListed: Bool = true, catalogMismatch: [String] = []) {
         self.peopleFiles = peopleFiles
         self.coverFiles = coverFiles
         self.folderImages = folderImages
@@ -54,6 +67,17 @@ public struct DeviceArtTree: Sendable {
         self.listedFolders = listedFolders
         self.bookFolders = bookFolders
         self.musicFolder = musicFolder
+        self.artworkListed = artworkListed
+        self.catalogMismatch = catalogMismatch
+        var named: [UInt32: [String]] = [:]
+        for (folder, images) in folderImages where !folder.isEmpty
+            && images.contains(where: { PodBoxArtLookup.folderImageStems.contains(Self.stem($0).lowercased()) }) {
+            let name = Self.lastComponent(folder)
+            for key in Set([PodBoxArtName.key(name), PodBoxArtName.altKey(name)]) where key != 0 {
+                named[key, default: []].append(folder)
+            }
+        }
+        namedImageFolders = named
     }
 
     /// Names PodBox never gives a picture to (compared trimmed and case-folded).
@@ -174,14 +198,22 @@ public struct DeviceArtTree: Sendable {
             }
         }
 
+        // The catalog must describe the music folder as it is now.
+        let catalogFolders = Set(catalog.compactMap { paths.relative($0.track.fileURL).flatMap(parent(of:)) }
+            .filter { isWithin($0, music) })
+        let walkedFolders = foldersWithAudio.filter { isWithin($0, music) }
+        let mismatch = catalogFolders.symmetricDifference(walkedFolders).sorted()
+
         let artwork = volumeRoot.appendingPathComponent("Artwork", isDirectory: true)
-        return DeviceArtTree(peopleFiles: files(in: artwork.appendingPathComponent("People"), fileManager),
-                             coverFiles: files(in: artwork.appendingPathComponent("Covers"), fileManager),
+        let people = files(in: artwork.appendingPathComponent("People"))
+        let covers = files(in: artwork.appendingPathComponent("Covers"))
+        return DeviceArtTree(peopleFiles: people ?? [], coverFiles: covers ?? [],
                              folderImages: folderImages, foldersWithAudio: foldersWithAudio,
                              artistsByFolder: artistsByFolder,
                              libraryFolders: Set(noted.filter { $0.value.count > 1 }.keys),
                              libraryTableFull: noted.count > libraryTableSlots,
-                             listedFolders: listedFolders, bookFolders: bookFolders, musicFolder: music)
+                             listedFolders: listedFolders, bookFolders: bookFolders, musicFolder: music,
+                             artworkListed: people != nil && covers != nil, catalogMismatch: mismatch)
     }
 
     /// The name the player gives this track's pictures: the album artist,
@@ -238,18 +270,25 @@ public struct DeviceArtTree: Sendable {
     }
 
     /// Every file in a folder, dot-names included, NFC, sorted. Folders are
-    /// left out. The player itself skips dot-names and names without a
-    /// picture extension in /Artwork; keeping them here is only cautious: a
-    /// name that might be a picture can only ever leave an artist alone.
-    private static func files(in folder: URL, _ fileManager: FileManager) -> [String] {
-        guard let names = AppleDoubleSweeper.entryNames(inFolder: folder.path) else { return [] }
+    /// left out (the lookup ignores dot-names, as the player does). A folder
+    /// that does not exist is empty; one that exists but cannot be read in
+    /// full is nil, never empty.
+    private static func files(in folder: URL) -> [String]? {
+        var info = stat()
+        if lstat(folder.path, &info) != 0, errno == ENOENT { return [] }
+        guard let names = AppleDoubleSweeper.entryNames(inFolder: folder.path) else { return nil }
         return names.filter { name in
-            var isFolder: ObjCBool = false
-            return fileManager.fileExists(atPath: folder.appendingPathComponent(name).path, isDirectory: &isFolder)
-                && !isFolder.boolValue
+            var entry = stat()
+            return lstat(folder.appendingPathComponent(name).path, &entry) == 0 && (entry.st_mode & S_IFMT) == S_IFREG
         }
         .map(nfc)
         .sorted()
+    }
+
+    /// The file name before its last dot (the whole name when it has none).
+    static func stem(_ file: String) -> String {
+        guard let dot = file.lastIndex(of: ".") else { return file }
+        return String(file[..<dot])
     }
 
     /// Turns absolute URLs into device-relative NFC paths, accepting both the
@@ -327,9 +366,11 @@ public enum PodBoxArtLookup {
     /// device-relative `albumFolders` (each track's own folder).
     public static func artistPicture(for name: String, albumFolders: [String], tree: DeviceArtTree) -> Outcome {
         guard PodBoxArtName.key(name) != 0 else { return .none } // the player cannot key it at all
+        guard tree.artworkListed else { return .uncertain("/Artwork could not be read in full") }
 
-        // 1. /Artwork/People.
-        let people = tree.peopleFiles.filter { PodBoxArtName.matches(stem(of: $0), name) }
+        // 1. /Artwork/People. The player's `aa_central_load` skips dot-names
+        // (a `._Prince.jpg` twin is not a picture to it), so they never count.
+        let people = tree.peopleFiles.filter { !$0.hasPrefix(".") && PodBoxArtName.matches(stem(of: $0), name) }
         if let only = people.first {
             guard people.count == 1 else {
                 return .uncertain("several files in /Artwork/People match: \(people.joined(separator: ", "))")
@@ -347,6 +388,23 @@ public enum PodBoxArtLookup {
         }
 
         let tracks = Array(Set(albumFolders.map { DeviceArtTree.nfc(DeviceArtTree.trimmedSlashes($0)) })).sorted()
+
+        // A folder named for the person, with a picture in it, that none of
+        // the given tracks reaches: the catalog may be missing the tracks
+        // that would lead the player there.
+        var chain = Set<String>()
+        for track in tracks {
+            var folder: String? = track
+            for _ in 0...3 {
+                guard let current = folder, !current.isEmpty else { break }
+                chain.insert(current)
+                folder = DeviceArtTree.parent(of: current)
+            }
+        }
+        let keys = Set([PodBoxArtName.key(name), PodBoxArtName.altKey(name)]).filter { $0 != 0 }
+        if let stray = keys.flatMap({ tree.namedImageFolders[$0] ?? [] }).sorted().first(where: { !chain.contains($0) }) {
+            return .uncertain("\(stray) is named for \(name) and holds a picture, but none of their tracks lies below it")
+        }
 
         // 2. The highest named folder.
         var highest = -1

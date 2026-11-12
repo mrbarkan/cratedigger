@@ -36,12 +36,15 @@ final class PodBoxArtLookupTests: XCTestCase {
                        .found("Artwork/People/Herbert, Frank.jpg"))
     }
 
-    /// The player's `aa_central_load` skips dot-names and names without a
-    /// picture extension, so these are uncertain only out of caution: a
-    /// matching name that might be a picture leaves the artist alone.
+    /// The player's `aa_central_load` skips names without a picture
+    /// extension; a matching one is uncertain only out of caution. It also
+    /// skips dot-names, and so does the lookup (review M4): a `._` twin is
+    /// not a picture and does not count.
     func testPeopleFileWithWrongExtensionIsUncertain() {
         assertUncertain(lookup("Frank Herbert", [], tree(people: ["Frank Herbert.txt"])))
-        assertUncertain(lookup("Frank Herbert", [], tree(people: ["Frank Herbert.jpg", "._Frank Herbert.jpg"])))
+        XCTAssertEqual(lookup("Frank Herbert", [], tree(people: ["Frank Herbert.jpg", "._Frank Herbert.jpg"])),
+                       .found("Artwork/People/Frank Herbert.jpg"))
+        XCTAssertEqual(lookup("Prince", [], tree(people: ["._Prince.jpg", ".Prince.jpg"])), .none)
         XCTAssertEqual(lookup("Frank Herbert", [], tree(people: ["Frank Herbert.WEBP"])),
                        .found("Artwork/People/Frank Herbert.WEBP"))
         XCTAssertEqual(lookup("Frank Herbert", [], tree(people: ["Frank Zappa.txt"])), .none)
@@ -106,9 +109,13 @@ final class PodBoxArtLookupTests: XCTestCase {
         XCTAssertFalse(PodBoxArtLookup.isDiscFolder("CD-"))
     }
 
+    /// The player ignores a named folder four levels up, but a named folder
+    /// with a picture that no track reaches is held as uncertain (review I2):
+    /// the catalog may be missing the tracks that lead there.
     func testNamedFolderMoreThanThreeLevelsUpIgnored() {
         let tree = tree(images: ["Music/AC-DC": ["folder.jpg"]], library: ["Music"])
-        XCTAssertEqual(lookup("AC/DC", ["Music/AC-DC/a/b/c/Powerage"], tree), .none)
+        assertUncertain(lookup("AC/DC", ["Music/AC-DC/a/b/c/Powerage"], tree))
+        XCTAssertEqual(lookup("AC/DC", ["Music/AC-DC/a/b/c/Powerage"], self.tree(library: ["Music"])), .none)
         XCTAssertEqual(lookup("AC/DC", ["Music/AC-DC/a/b/Powerage"], tree), .found("Music/AC-DC/folder.jpg"))
     }
 
@@ -270,6 +277,42 @@ final class PodBoxArtLookupTests: XCTestCase {
                        .found("Music/Prince/Folder.jpg"))
         XCTAssertEqual(PodBoxArtLookup.artistPicture(for: "Weezer", albumFolders: ["Music/Weezer/Blue"], tree: tree),
                        .found("Music/Weezer/folder.jpg"))
+    }
+
+    /// Review I2: a folder named for the person, with a picture, that none
+    /// of the catalog's tracks reaches (a stale catalog) is uncertain.
+    func testNamedFolderWithAPictureOffTheCatalogIsUncertain() {
+        let tree = tree(images: ["Music/Air": ["folder.jpg"], "Music/Electronic/Air Remixed": ["Cover.png"]])
+        assertUncertain(lookup("Air", ["Music/Electronic/Moon Safari"], tree))
+        // On the chain it is simply found.
+        XCTAssertEqual(lookup("Air", ["Music/Air/Moon Safari"], self.tree(images: ["Music/Air": ["folder.jpg"]])),
+                       .found("Music/Air/folder.jpg"))
+        // A named folder with only other images is not a picture.
+        XCTAssertEqual(lookup("Air", ["Music/Electronic/Moon Safari"],
+                              self.tree(images: ["Music/Air": ["back.jpg"]])), .none)
+    }
+
+    /// Review M3: a People folder that cannot be read is not an empty one.
+    func testUnreadablePeopleFolderIsUncertain() throws {
+        let iPod = try FakeIPod()
+        try iPod.addFile("Music/Air/Moon Safari/01.mp3", Data([0, 0, 0, 0x20]))
+        try iPod.addFile("Artwork/People/Someone.jpg", Data([0xff, 0xd8]))
+        let people = iPod.root.appendingPathComponent("Artwork/People").path
+        XCTAssertEqual(chmod(people, 0o000), 0)
+        defer { chmod(people, 0o755) }
+        let tree = DeviceArtTree.scan(volumeRoot: iPod.root, musicSubpath: "Music",
+                                      catalog: [scanTrack(iPod, "Music/Air/Moon Safari/01.mp3", artist: "Air")])
+        XCTAssertFalse(tree.artworkListed)
+        assertUncertain(PodBoxArtLookup.artistPicture(for: "Air", albumFolders: ["Music/Air/Moon Safari"], tree: tree))
+
+        // A missing /Artwork reads as empty.
+        let bare = try FakeIPod()
+        try bare.addFile("Music/Air/Moon Safari/01.mp3", Data([0, 0, 0, 0x20]))
+        let bareTree = DeviceArtTree.scan(volumeRoot: bare.root, musicSubpath: "Music",
+                                          catalog: [scanTrack(bare, "Music/Air/Moon Safari/01.mp3", artist: "Air")])
+        XCTAssertTrue(bareTree.artworkListed)
+        XCTAssertEqual(PodBoxArtLookup.artistPicture(for: "Air", albumFolders: ["Music/Air/Moon Safari"], tree: bareTree),
+                       .none)
     }
 
     /// Re-review item 2: "listed, no image" and "never listed" differ.

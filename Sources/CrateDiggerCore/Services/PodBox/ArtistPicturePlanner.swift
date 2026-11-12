@@ -94,9 +94,11 @@ public struct ArtistOnDevice: Hashable, Sendable {
 
 /// What to write for the device's artists, and why each of the others gets nothing.
 public struct ArtistPicturePlan: Sendable {
-    /// Writes only, sorted by path.
+    /// Writes only, one per path, sorted by path.
     public let operations: [DeviceFileOperation]
-    /// The player already shows a picture for these, the owner's or CrateDigger's own unchanged one.
+    /// The player already shows a picture for these: the owner's, another
+    /// artist's that the player would also use for them, or CrateDigger's
+    /// own unchanged one.
     public let alreadyHasPicture: [String]
     /// No prepared picture yet (or pictures are switched off).
     public let noPictureYet: [String]
@@ -110,16 +112,24 @@ public struct ArtistPicturePlan: Sendable {
     public let uncertain: [String]
     /// Why, per name, for every name in the lists above that is not being written.
     public let reasons: [String: String]
+    /// Set when the planner refused to plan at all (a catalog that does not
+    /// match the device); every artist is then in `uncertain`.
+    public let refusal: String?
 }
 
 /// Plans artist pictures without ever hiding one the owner has.
 ///
 /// A picture is written for a person only when `PodBoxArtLookup` says the
-/// player finds none (`.none`). `.found` is left alone unless the file is
-/// CrateDigger's own, proven by the journal and by its hash on the device
-/// now, and `.uncertain` is always left alone. Every write goes through
+/// player finds none (`.none`). `.found` is left alone unless the journal
+/// proves CrateDigger wrote that very file as a picture for this same
+/// person (its record's subject is the person's key, or it is the People
+/// file named for them) and its hash on the device is unchanged since.
+/// `.uncertain` is always left alone. Nothing is planned at all from a
+/// catalog that no longer matches the device. Every write goes through
 /// `DeviceFileExecutor`, which proves ownership again before replacing.
 public enum ArtistPicturePlanner {
+    public static let rescanFirst = "The device catalog does not match what is on the iPod. Rescan the device first."
+
     public static func plan(artists: [ArtistOnDevice], tree: DeviceArtTree,
                             prepared: [String: Data],
                             destination: ArtistPictureDestination,
@@ -131,28 +141,35 @@ public enum ArtistPicturePlanner {
             for artist in ordered { builder.hold(artist.name, in: \.noPictureYet, "artist pictures are off for this iPod") }
             return builder.plan
         }
+        guard tree.catalogMismatch.isEmpty else {
+            builder.refusal = rescanFirst
+            for artist in ordered { builder.hold(artist.name, in: \.uncertain, rescanFirst) }
+            return builder.plan
+        }
 
         var working = tree
         var budget = PodBoxArtworkBudget(existingNames: tree.peopleFiles + tree.coverFiles)
-        var plannedKeys: [UInt32: String] = [:]
+        var firstByKey: [UInt32: String] = [:]
         var people = 0
 
         for artist in ordered {
             let name = artist.name
-            guard let bytes = prepared[artist.foldedKey] ?? prepared[PodBoxArtName.folded(name)] else {
-                builder.hold(name, in: \.noPictureYet, "no picture has been found for this artist yet")
+            let keys = [PodBoxArtName.key(name), PodBoxArtName.altKey(name)].filter { $0 != 0 }
+            // One person, one picture: a later spelling follows the first.
+            if let first = keys.lazy.compactMap({ firstByKey[$0] }).first {
+                builder.follow(name, first)
                 continue
             }
+            for key in keys { firstByKey[key] = name }
+
             guard let stem = PodBoxArtName.fileStem(for: name) else {
                 builder.hold(name, in: \.unnameable, "cannot be named on this player")
                 continue
             }
-            let keys = [PodBoxArtName.key(name), PodBoxArtName.altKey(name)].filter { $0 != 0 }
-            if let first = keys.lazy.compactMap({ plannedKeys[$0] }).first {
-                builder.hold(name, in: \.alreadyHasPicture, "shares one picture with \(first)")
+            guard let bytes = prepared[artist.foldedKey] ?? prepared[PodBoxArtName.folded(name)] else {
+                builder.hold(name, in: \.noPictureYet, "no picture has been found for this artist yet")
                 continue
             }
-            for key in keys { plannedKeys[key] = name }
             people += 1
             guard people <= PodBoxArtworkBudget.people else {
                 builder.hold(name, in: \.overBudget, "the player keeps pictures for at most \(PodBoxArtworkBudget.people) people")
@@ -163,14 +180,21 @@ public enum ArtistPicturePlanner {
                 builder.hold(name, in: \.uncertain, "has tracks outside the music folder (\(outside)), which the simulation does not cover")
                 continue
             }
+            let subject = String(PodBoxArtName.key(name))
 
             switch PodBoxArtLookup.artistPicture(for: name, albumFolders: artist.albumFolders, tree: working) {
             case .uncertain(let reason):
                 builder.hold(name, in: \.uncertain, reason)
 
             case .found(let path):
-                guard let record = ownedKeys(path), let recorded = record.sha256 else {
+                guard let record = ownedKeys(path), let recorded = record.sha256,
+                      pictureRoles.contains(record.role) else {
                     builder.hold(name, in: \.alreadyHasPicture, "the player already shows \(path)")
+                    continue
+                }
+                guard isFor(record, path: path, name: name) else {
+                    builder.hold(name, in: \.alreadyHasPicture,
+                                 "the player already shows \(path), CrateDigger's picture for another artist")
                     continue
                 }
                 guard sha256OnDevice(path) == recorded else {
@@ -181,14 +205,17 @@ public enum ArtistPicturePlanner {
                     builder.hold(name, in: \.alreadyHasPicture, "CrateDigger's picture is already on the iPod")
                     continue
                 }
-                builder.write(path, role: role(of: path), bytes)
+                guard builder.write(path, role: role(of: path), bytes, subject: subject) else {
+                    builder.hold(name, in: \.alreadyHasPicture, "shares \(path) with an artist planned before it")
+                    continue
+                }
 
             case .none:
                 let peopleTarget = DeviceArtTree.peopleFolder + "/" + stem + ".jpg"
                 let folderTarget = artistFolderTarget(for: artist, tree: working)
                 let preference: [String?] = destination == .artistFolders
                     ? [folderTarget, peopleTarget] : [peopleTarget, folderTarget]
-                let targets = preference.compactMap { $0 }
+                let targets = preference.compactMap { $0 }.filter { !builder.plans($0) }
 
                 var written = false
                 var overflowed = false
@@ -205,9 +232,8 @@ public enum ArtistPicturePlanner {
                             continue
                         }
                     }
-                    builder.write(target, role: role(of: target), bytes)
+                    written = builder.write(target, role: role(of: target), bytes, subject: subject)
                     working = added
-                    written = true
                     break
                 }
                 if !written {
@@ -222,18 +248,18 @@ public enum ArtistPicturePlanner {
         return builder.plan
     }
 
-    /// Journal-owned picture files still matching their hash, as deletes.
-    /// Only the latest record per path counts, and only a write.
-    public static func removalPlan(journalRecords: [DeviceFileRecord],
+    /// Journal-owned picture files on this volume still matching their
+    /// hash, as deletes. Only the latest record per path counts, and only a write.
+    public static func removalPlan(journalRecords: [DeviceFileRecord], volumeUUID: String?,
                                    sha256OnDevice: (String) -> String?) -> [DeviceFileOperation] {
-        let roles: Set<String> = [DeviceFileRole.artistPicture.rawValue, DeviceFileRole.artistFolderPicture.rawValue]
         var latest: [String: DeviceFileRecord] = [:]
-        for record in journalRecords where record.kind != .tempIntent {
+        for record in journalRecords
+        where record.kind != .tempIntent && DeviceWriteJournal.sameVolume(record.volumeUUID, volumeUUID) {
             latest[record.relativeKey] = record
         }
         return latest.values
             .filter { record in
-                (record.kind == .created || record.kind == .replaced) && roles.contains(record.role)
+                (record.kind == .created || record.kind == .replaced) && pictureRoles.contains(record.role)
                     && record.sha256 != nil && sha256OnDevice(record.relativePath) == record.sha256
             }
             .map(\.relativePath)
@@ -242,6 +268,18 @@ public enum ArtistPicturePlanner {
     }
 
     // MARK: - Private
+
+    static let pictureRoles: Set<String> = [DeviceFileRole.artistPicture.rawValue,
+                                            DeviceFileRole.artistFolderPicture.rawValue]
+
+    /// Whether CrateDigger wrote `path` for this person: the record names
+    /// one of their keys, or it is the People file whose stem keys as them.
+    private static func isFor(_ record: DeviceFileRecord, path: String, name: String) -> Bool {
+        let keys = [PodBoxArtName.key(name), PodBoxArtName.altKey(name)].filter { $0 != 0 }.map(String.init)
+        if let subject = record.subject { return keys.contains(subject) }
+        guard DeviceArtTree.parent(of: path) == DeviceArtTree.peopleFolder else { return false }
+        return PodBoxArtName.matches(DeviceArtTree.stem(DeviceArtTree.lastComponent(path)), name)
+    }
 
     private static func role(of path: String) -> DeviceFileRole {
         DeviceArtTree.parent(of: path) == DeviceArtTree.peopleFolder ? .artistPicture : .artistFolderPicture
@@ -274,6 +312,9 @@ public enum ArtistPicturePlanner {
 
     private struct Builder {
         var writes: [DeviceFileOperation] = []
+        var refusal: String?
+        /// Where each held name went, so a later spelling of the same person follows it.
+        var heldIn: [String: WritableKeyPath<Builder, [String]>] = [:]
         var alreadyHasPicture: [String] = []
         var noPictureYet: [String] = []
         var overBudget: [String] = []
@@ -285,17 +326,35 @@ public enum ArtistPicturePlanner {
         mutating func hold(_ name: String, in list: WritableKeyPath<Builder, [String]>, _ reason: String) {
             self[keyPath: list].append(name)
             reasons[name] = reason
+            heldIn[name] = list
         }
 
-        mutating func write(_ path: String, role: DeviceFileRole, _ bytes: Data) {
-            writes.append(.write(relativePath: path, role: role, contents: .data(bytes)))
+        /// `name` is another spelling of `first`: it shares first's picture
+        /// when one is written or already there, else first's reason.
+        mutating func follow(_ name: String, _ first: String) {
+            if let list = heldIn[first], list != \Builder.alreadyHasPicture {
+                hold(name, in: list, "same person as \(first): \(reasons[first] ?? "")")
+            } else {
+                hold(name, in: \.alreadyHasPicture, "shares one picture with \(first)")
+            }
+        }
+
+        func plans(_ path: String) -> Bool {
+            writes.contains { DeviceWritePolicy.key(forRelativePath: $0.relativePath) == DeviceWritePolicy.key(forRelativePath: path) }
+        }
+
+        /// false when the path is already planned: one operation per path.
+        mutating func write(_ path: String, role: DeviceFileRole, _ bytes: Data, subject: String) -> Bool {
+            guard !plans(path) else { return false }
+            writes.append(.write(relativePath: path, role: role, contents: .data(bytes), subject: subject))
+            return true
         }
 
         var plan: ArtistPicturePlan {
             ArtistPicturePlan(operations: writes.sorted { $0.relativePath < $1.relativePath },
                               alreadyHasPicture: alreadyHasPicture, noPictureYet: noPictureYet,
                               overBudget: overBudget, unnameable: unnameable, foreign: foreign,
-                              uncertain: uncertain, reasons: reasons)
+                              uncertain: uncertain, reasons: reasons, refusal: refusal)
         }
     }
 }

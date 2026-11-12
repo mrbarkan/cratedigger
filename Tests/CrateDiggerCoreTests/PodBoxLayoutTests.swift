@@ -27,6 +27,26 @@ final class PodBoxLayoutTests: XCTestCase {
                        "Music/Beach House/Teen Dream")
     }
 
+    /// Controller ruling: an existing custom template (no flag) keeps exactly
+    /// the paths it produced before, even when it groups the same tokens as
+    /// the PodBox preset, so an album already on a device as "Unknown Year X"
+    /// is never written again as "X".
+    func testExistingCustomTemplateKeepsUnknownYear() throws {
+        let existing = FolderTemplateConfig(preset: .custom, tokenOrder: [.albumArtist, .year, .album, .disabled, .disabled],
+                                            separators: [.slash, .space])
+        let noYear = track(albumArtist: "Beach House", album: "Teen Dream", year: nil)
+        XCTAssertEqual(OutputPathPlanner().buildOutputSubpath(for: noYear, templateConfig: existing),
+                       "Beach House/Unknown Year Teen Dream")
+        XCTAssertEqual(RockboxLayoutPreset.matching(existing), .custom, "it is not the preset, which would drop the year")
+
+        // Saved and read back, it stays the same template, byte for byte.
+        let data = try JSONEncoder().encode(existing)
+        XCTAssertFalse(String(decoding: data, as: UTF8.self).contains("omitsMissingYear"))
+        XCTAssertEqual(try JSONDecoder().decode(FolderTemplateConfig.self, from: data), existing)
+        let preset = try XCTUnwrap(RockboxLayoutPreset.podBoxRecommended.template)
+        XCTAssertEqual(try JSONDecoder().decode(FolderTemplateConfig.self, from: JSONEncoder().encode(preset)), preset)
+    }
+
     /// A year that is its folder's only token keeps the old fallback.
     func testMissingYearAloneInItsFolderIsUnchanged() {
         let template = FolderTemplateConfig(preset: .artistYearAlbum, tokenOrder: TemplatePreset.artistYearAlbum.defaultTokenOrder)
@@ -50,7 +70,7 @@ final class PodBoxLayoutTests: XCTestCase {
         XCTAssertNil(RockboxLayoutPreset.custom.template)
         XCTAssertEqual(RockboxLayoutPreset.podBoxRecommended.template,
                        FolderTemplateConfig(preset: .custom, tokenOrder: [.albumArtist, .year, .album, .disabled, .disabled],
-                                            separators: [.slash, .space]))
+                                            separators: [.slash, .space], omitsMissingYear: true))
     }
 
     func testMatchingRoundTrips() throws {
@@ -60,7 +80,7 @@ final class PodBoxLayoutTests: XCTestCase {
         // Separators that change nothing still match.
         XCTAssertEqual(RockboxLayoutPreset.matching(FolderTemplateConfig(
             preset: .custom, tokenOrder: [.albumArtist, .year, .album, .disabled, .disabled],
-            separators: [.slash, .space, .slash, .space])), .podBoxRecommended)
+            separators: [.slash, .space, .slash, .space], omitsMissingYear: true)), .podBoxRecommended)
         XCTAssertEqual(RockboxLayoutPreset.matching(FolderTemplateConfig(
             preset: .custom, tokenOrder: [.albumArtist, .album, .disabled, .disabled, .disabled],
             separators: [.slash, .slash, .slash, .slash])), .artistAlbum)

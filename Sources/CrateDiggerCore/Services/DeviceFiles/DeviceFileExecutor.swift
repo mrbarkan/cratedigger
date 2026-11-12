@@ -13,12 +13,15 @@ public enum DeviceFileOperation: Sendable {
     /// `replacesForeign` is honoured for `.cover` only (spec D19): the
     /// transfer that wrote a folder's tracks owns its cover. The replaced file
     /// is still backed up first.
-    case write(relativePath: String, role: DeviceFileRole, contents: DeviceFileContents, replacesForeign: Bool = false)
+    /// `subject` names who the file is for (an artist picture's player key),
+    /// kept in the journal record so a later plan can tell whose it is.
+    case write(relativePath: String, role: DeviceFileRole, contents: DeviceFileContents, replacesForeign: Bool = false,
+               subject: String? = nil)
     case delete(relativePath: String, reason: DeviceDeleteReason)
 
     var relativePath: String {
         switch self {
-        case .write(let path, _, _, _), .delete(let path, _): return path
+        case .write(let path, _, _, _, _), .delete(let path, _): return path
         }
     }
 }
@@ -145,9 +148,9 @@ public struct DeviceFileExecutor {
                 outcome = .refusedWrongVolume
             } else {
                 switch op {
-                case let .write(path, role, contents, replacesForeign):
+                case let .write(path, role, contents, replacesForeign, subject):
                     outcome = write(path, role: role, contents: contents, replacesForeign: replacesForeign,
-                                    sessionID: sessionID, earlierIntents: earlierIntents)
+                                    subject: subject, sessionID: sessionID, earlierIntents: earlierIntents)
                 case let .delete(path, reason):
                     outcome = delete(path, reason: reason, sessionID: sessionID, earlierIntents: earlierIntents)
                 }
@@ -161,6 +164,7 @@ public struct DeviceFileExecutor {
     // MARK: - Write
 
     private func write(_ path: String, role: DeviceFileRole, contents: DeviceFileContents, replacesForeign: Bool,
+                       subject: String?,
                        sessionID: UUID, earlierIntents: Set<String>) -> DeviceFileOutcome {
         // (2) The file and the temp it lands through, as given and as resolved.
         let tempPath = path + DeviceFileIO.tempSuffix
@@ -254,7 +258,7 @@ public struct DeviceFileExecutor {
         let sha = role == .audio ? nil : try? DeviceFileIO.sha256(of: target)
         let record = DeviceFileRecord(relativePath: path, kind: kind, role: role.rawValue, size: written,
                                       sha256: sha, backupFile: backupFile, volumeUUID: sessionVolumeUUID,
-                                      sessionID: sessionID)
+                                      sessionID: sessionID, subject: subject)
         do {
             try journal.append([record])
         } catch {
@@ -385,7 +389,7 @@ public struct DeviceFileExecutor {
     /// crash leaves behind, which then reads as foreign: the safe way round.
     private func recordTempIntents(for ops: [DeviceFileOperation], sessionID: UUID) {
         let intents: [DeviceFileRecord] = ops.compactMap { op in
-            guard case let .write(path, role, _, _) = op,
+            guard case let .write(path, role, _, _, _) = op,
                   (try? policy.checkWrite(path, role: role)) != nil,
                   (try? policy.checkWrite(path + DeviceFileIO.tempSuffix, role: .temp)) != nil
             else { return nil }

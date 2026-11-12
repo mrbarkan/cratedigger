@@ -32,7 +32,7 @@ public enum RockboxLayoutPreset: String, Codable, CaseIterable, Sendable {
         switch self {
         case .podBoxRecommended:
             return FolderTemplateConfig(preset: .custom, tokenOrder: [.albumArtist, .year, .album, .disabled, .disabled],
-                                        separators: [.slash, .space])
+                                        separators: [.slash, .space], omitsMissingYear: true)
         case .artistAlbum:
             return FolderTemplateConfig(preset: .custom, tokenOrder: [.albumArtist, .album, .disabled, .disabled, .disabled])
         case .custom:
@@ -42,11 +42,12 @@ public enum RockboxLayoutPreset: String, Codable, CaseIterable, Sendable {
 
     /// The preset whose template lays folders out the same way: the same
     /// tokens grouped into the same folders, whatever separators sit beside
-    /// disabled tokens. Anything else is `.custom`.
+    /// disabled tokens, and the same missing-year rule. Anything else is `.custom`.
     public static func matching(_ config: FolderTemplateConfig) -> RockboxLayoutPreset {
         let levels = folderLevels(config)
         return [.podBoxRecommended, .artistAlbum].first { preset in
-            preset.template.map(folderLevels) == levels
+            guard let template = preset.template else { return false }
+            return folderLevels(template) == levels && template.omitsMissingYear == config.omitsMissingYear
         } ?? .custom
     }
 
