@@ -16,21 +16,39 @@ public struct DeviceTransferReview: Sendable {
     public let gapAlbumCount: Int
     /// Differing albums the user chose Leave it for before, not asked again.
     public let leftAloneAlbumCount: Int
+    /// The volume the review checked, and the profile's music folder on it
+    /// (the only folder a transfer writes into or deletes from). nil for a
+    /// review built from albums alone, which `resolve` refuses.
+    public let mountedRoot: URL?
+    public let musicFolder: URL?
     /// The per-album folder names the user reviewed (template mode), applied
     /// to natural paths. Kept here so `resolve` plans exactly what was checked.
     let reviewedAlbumFolders: [AlbumFolderKey: String]
+    /// The settings the paths were planned with.
+    let settings: ExternalDeviceTransferSettings?
 
     /// The albums the sheet asks about.
     public var needingDecision: [DeviceAlbumComparison] {
         albums.filter { $0.status == .differs && !$0.isLeftAlone }
     }
 
+    /// Albums alone, for showing them (a preview of the sheet). Never checked
+    /// against a device, so `resolve` refuses it.
     public init(albums: [DeviceAlbumComparison]) {
-        self.init(albums: albums, reviewedAlbumFolders: [:])
+        self.init(albums: albums, mountedRoot: nil, musicFolder: nil, settings: nil, reviewedAlbumFolders: [:])
     }
 
-    init(albums: [DeviceAlbumComparison], reviewedAlbumFolders: [AlbumFolderKey: String]) {
+    init(
+        albums: [DeviceAlbumComparison],
+        mountedRoot: URL?,
+        musicFolder: URL?,
+        settings: ExternalDeviceTransferSettings?,
+        reviewedAlbumFolders: [AlbumFolderKey: String]
+    ) {
         self.albums = albums
+        self.mountedRoot = mountedRoot
+        self.musicFolder = musicFolder
+        self.settings = settings
         self.reviewedAlbumFolders = reviewedAlbumFolders
         newTrackCount = albums.filter { $0.status == .new }.reduce(0) { $0 + $1.sent.count }
         presentTrackCount = albums.reduce(0) { total, album in
@@ -82,8 +100,8 @@ public struct DeviceTransferFilePlan: Sendable {
 
     public let copies: [Copy]
     /// Device audio files to remove once the copies have run. Only ever audio
-    /// files the matcher attributed to a replaced album, inside the mounted
-    /// volume, and never a copy's destination or source.
+    /// files the matcher attributed to a replaced album, inside the profile's
+    /// music folder, and never a copy's destination or source.
     public let deletions: [URL]
     /// `deletions`, by the album whose Replace removes them.
     public let deletionsByAlbum: [DeviceAlbumIdentity: [URL]]
@@ -98,6 +116,9 @@ public struct DeviceTransferFilePlan: Sendable {
     public let replacedAlbums: Int
     public let keptBothAlbums: Int
     public let gapAlbums: Int
+    /// Tracks that should have been written but could not be given a path.
+    /// Never expected; callers count them as failed so none vanishes quietly.
+    public let unplanned: [LoadedTrack]
 
     public init(
         copies: [Copy],
@@ -107,7 +128,8 @@ public struct DeviceTransferFilePlan: Sendable {
         leftAlone: Int,
         replacedAlbums: Int,
         keptBothAlbums: Int,
-        gapAlbums: Int
+        gapAlbums: Int,
+        unplanned: [LoadedTrack] = []
     ) {
         self.copies = copies
         self.deletionsByAlbum = deletionsByAlbum
@@ -122,6 +144,7 @@ public struct DeviceTransferFilePlan: Sendable {
         self.replacedAlbums = replacedAlbums
         self.keptBothAlbums = keptBothAlbums
         self.gapAlbums = gapAlbums
+        self.unplanned = unplanned
     }
 
     /// The deletions to run once the copies are done, given the ones that
@@ -146,10 +169,32 @@ public struct DeviceTransferFilePlan: Sendable {
 ///   turn the album into `.differs` with `.pathTaken` instead.
 /// - No silent ` (2)`: only an album the user chose Keep both (or Replace onto
 ///   a name the batch itself already uses) is given a suffixed name.
+/// - Nothing outside the profile's music folder is read from the catalog,
+///   written into, versioned beside or deleted; on a volume-root music folder
+///   hidden folders and `iPod_Control` are outside it too.
+/// - A Replace overwrites only a file `review` saw and allowed; one that
+///   appeared since gets `overwrites: false`, so the write fails, not clobbers.
 /// - Deletions are only audio files of the device's copy of a replaced album,
-///   inside the mounted volume, and never a path the plan writes or reads.
+///   inside the music folder, and never a path the plan writes or reads.
 /// - Paths compare folded (case and Unicode form), as FAT and exFAT do.
 public struct DeviceTransferResolver {
+    /// Why `resolve` refused a review.
+    public enum ResolveError: Error, Equatable, LocalizedError {
+        /// The review was built from albums alone and never checked against a device.
+        case notReviewedAgainstDevice
+        /// The review checked another volume, music folder or transfer settings.
+        case reviewedForAnotherDestination
+
+        public var errorDescription: String? {
+            switch self {
+            case .notReviewedAgainstDevice:
+                return "The transfer was never checked against the device. Nothing was written."
+            case .reviewedForAnotherDestination:
+                return "The device or its transfer settings changed after the check. Nothing was written; send again."
+            }
+        }
+    }
+
     private let fileManager: FileManager
 
     public init(fileManager: FileManager = .default) {
@@ -171,9 +216,14 @@ public struct DeviceTransferResolver {
         leftAlone: Set<DeviceAlbumIdentity>,
         reviewedAlbumFolders: [AlbumFolderKey: String] = [:]
     ) -> DeviceTransferReview {
+        let musicFolder = ExternalDeviceTransferPlanner(fileManager: fileManager)
+            .destinationRoot(for: profile, mountedAt: root)
+        // Only the music folder is the device's music: a backup folder or the
+        // stock iPod's own database is never matched, so never replaced.
+        let inScope = catalog.filter { Self.isMusic($0.track.fileURL, in: musicFolder, mountedAt: root) }
         var albums = DeviceTransferMatcher().compare(
             sending: sending,
-            catalog: catalog,
+            catalog: inScope,
             settings: profile.transferSettings,
             leftAlone: leftAlone
         )
@@ -193,12 +243,24 @@ public struct DeviceTransferResolver {
                     taken = true
                 }
             }
+            // Keep both writes a whole new copy; two of its tracks sharing a
+            // name would need a suffix, so the row says so up front.
+            if albums[index].status == .differs,
+               Self.hasClash(layout.keepBothWrites(for: albums[index], isFolderTaken: { _ in false })) {
+                taken = true
+            }
             if taken {
                 albums[index].status = .differs
                 albums[index].differences.insert(.pathTaken)
             }
         }
-        return DeviceTransferReview(albums: albums, reviewedAlbumFolders: reviewedAlbumFolders)
+        return DeviceTransferReview(
+            albums: albums,
+            mountedRoot: root,
+            musicFolder: musicFolder,
+            settings: profile.transferSettings,
+            reviewedAlbumFolders: reviewedAlbumFolders
+        )
     }
 
     // MARK: - Resolve
@@ -206,15 +268,29 @@ public struct DeviceTransferResolver {
     /// The file plan for `review` under the user's answers. A differing album
     /// with no answer is left alone, as is one remembered as left alone that
     /// the user did not answer again; an answer always wins.
+    ///
+    /// Throws, and plans nothing, when `review` was not checked against this
+    /// volume, music folder and transfer settings: its path checks would not
+    /// hold for this plan.
     public func resolve(
         _ review: DeviceTransferReview,
         decisions: [DeviceAlbumIdentity: DeviceAlbumDecision],
         profile: ExternalDeviceProfile,
         mountedAt root: URL
-    ) -> DeviceTransferFilePlan {
+    ) throws -> DeviceTransferFilePlan {
+        guard let reviewedRoot = review.mountedRoot,
+              let reviewedMusic = review.musicFolder,
+              let reviewedSettings = review.settings
+        else { throw ResolveError.notReviewedAgainstDevice }
         let layout = Layout(albums: review.albums, profile: profile, root: root,
                             reviewedAlbumFolders: review.reviewedAlbumFolders, fileManager: fileManager)
+        guard Self.key(reviewedRoot) == Self.key(root),
+              Self.key(reviewedMusic) == Self.key(layout.musicFolder),
+              reviewedSettings == profile.transferSettings
+        else { throw ResolveError.reviewedForAnotherDestination }
+
         var builder = PlanBuilder(fileManager: fileManager)
+        var unplanned: [LoadedTrack] = []
         var later: [Deferred] = []
         var counts = (skippedPresent: 0, leftAlone: 0, replaced: 0, keptBoth: 0, gaps: 0)
 
@@ -233,7 +309,7 @@ public struct DeviceTransferResolver {
                     // Review left this album alone, so no earlier write holds
                     // the path; a clash means review and resolve disagree.
                     guard builder.isFree(write.url) else {
-                        assertionFailure("Unreviewed \(kind) write clashes in the batch: \(write.url.path)")
+                        unplanned.append(write.source)
                         continue
                     }
                     builder.add(write, kind: kind, album: album.identity, overwrites: false)
@@ -254,8 +330,13 @@ public struct DeviceTransferResolver {
                 let writes = layout.writes(for: album)
                 for write in writes {
                     if builder.isFree(write.url) {
-                        builder.add(write, kind: .replacement, album: album.identity,
-                                    overwrites: fileManager.fileExists(atPath: write.url.path))
+                        // Overwrite only what review saw: the file this write
+                        // replaces, or a taken path the sheet named. Anything
+                        // else found there now fails the write instead.
+                        let exists = fileManager.fileExists(atPath: write.url.path)
+                        let cleared = write.mayReplace.contains(Self.key(write.url))
+                            || album.differences.contains(.pathTaken)
+                        builder.add(write, kind: .replacement, album: album.identity, overwrites: exists && cleared)
                     } else {
                         // The batch writes this name already: overwriting it
                         // would lose a track being sent.
@@ -283,17 +364,38 @@ public struct DeviceTransferResolver {
 
         return DeviceTransferFilePlan(
             copies: builder.copies,
-            deletionsByAlbum: builder.finalDeletions(root: root),
+            deletionsByAlbum: builder.finalDeletions(musicFolder: layout.musicFolder),
             coverFolders: profile.transferSettings.writesFolderCoverArt ? builder.coverFolders() : [:],
             skippedPresent: counts.skippedPresent,
             leftAlone: counts.leftAlone,
             replacedAlbums: counts.replaced,
             keptBothAlbums: counts.keptBoth,
-            gapAlbums: counts.gaps
+            gapAlbums: counts.gaps,
+            unplanned: unplanned
         )
     }
 
     // MARK: - Paths
+
+    /// Whether a catalog file is the device's music: inside the music folder,
+    /// in no hidden folder, and, when the music folder is the volume itself,
+    /// not in `iPod_Control` (a stock iPod's own database and music).
+    static func isMusic(_ url: URL, in musicFolder: URL, mountedAt root: URL) -> Bool {
+        guard isStrictlyInside(url, musicFolder) else { return false }
+        let inner = url.standardizedFileURL.pathComponents
+            .dropFirst(musicFolder.standardizedFileURL.pathComponents.count)
+        let atVolumeRoot = key(musicFolder) == key(root)
+        return !inner.contains { component in
+            component.hasPrefix(".")
+                || (atVolumeRoot && component.caseInsensitiveCompare("iPod_Control") == .orderedSame)
+        }
+    }
+
+    /// Two writes of one set share a destination.
+    private static func hasClash(_ writes: [Write]) -> Bool {
+        var seen: Set<String> = []
+        return writes.contains { !seen.insert(key($0.url)).inserted }
+    }
 
     /// A path as a case-insensitive volume sees it.
     static func key(_ url: URL) -> String {
@@ -304,6 +406,10 @@ public struct DeviceTransferResolver {
     static func isStrictlyInside(_ url: URL, _ folder: URL) -> Bool {
         let folderKey = key(folder)
         return key(url).hasPrefix(folderKey == "/" ? "/" : folderKey + "/") && key(url) != folderKey
+    }
+
+    static func isInsideOrEqual(_ url: URL, _ folder: URL) -> Bool {
+        key(url) == key(folder) || isStrictlyInside(url, folder)
     }
 }
 
@@ -331,8 +437,8 @@ private enum Deferred {
 /// Where each kind of write goes, for one batch on one device.
 private struct Layout {
     let settings: ExternalDeviceTransferSettings
-    let root: URL
-    let destinationRoot: URL
+    /// The profile's music folder: every write lands inside it.
+    let musicFolder: URL
     let fileManager: FileManager
     /// Natural destination of every track sent, by source path key.
     let natural: [String: URL]
@@ -345,10 +451,9 @@ private struct Layout {
         fileManager: FileManager
     ) {
         settings = profile.transferSettings
-        self.root = root
         self.fileManager = fileManager
         let planner = ExternalDeviceTransferPlanner(fileManager: fileManager)
-        destinationRoot = planner.destinationRoot(for: profile, mountedAt: root)
+        musicFolder = planner.destinationRoot(for: profile, mountedAt: root)
         let sent = albums.flatMap(\.sent)
         let plans = planner.planTransfers(
             tracks: sent,
@@ -394,7 +499,7 @@ private struct Layout {
             let swaps: [Write] = album.changed.compactMap { pair in
                 let old = pair.device.track.fileURL
                 let oldFolder = old.deletingLastPathComponent()
-                let usable = DeviceTransferResolver.isStrictlyInside(old, root)
+                let usable = DeviceTransferResolver.isStrictlyInside(old, musicFolder)
                 return place(pair.sent, in: usable ? oldFolder : nil).map {
                     Write(source: pair.sent, url: $0,
                           mayReplace: usable ? [DeviceTransferResolver.key(old)] : [],
@@ -410,7 +515,7 @@ private struct Layout {
             // The whole device copy goes, so the new release may land on any of it.
             let replaceable = Set(album.deviceTracks
                 .map(\.track.fileURL)
-                .filter { DeviceTransferResolver.isStrictlyInside($0, root) }
+                .filter { DeviceTransferResolver.isStrictlyInside($0, musicFolder) }
                 .map(DeviceTransferResolver.key))
             return album.sent.compactMap { track in
                 place(track, in: deviceFolder(for: track, in: album))
@@ -442,8 +547,18 @@ private struct Layout {
             isTaken: isFolderTaken
         )
         let version = folder.deletingLastPathComponent().appendingPathComponent(name, isDirectory: true)
+        // The new copy keeps the device copy's disc folders (`CD2/`), so two
+        // discs that share file names stay apart, as they are beside it.
         return album.sent.compactMap { track in
-            place(track, in: version).map { Write(source: track, url: $0, mayReplace: [], supersedes: nil) }
+            var target = version
+            if let discFolder = deviceFolder(for: track, in: album),
+               DeviceTransferResolver.isStrictlyInside(discFolder, folder) {
+                for component in discFolder.standardizedFileURL.pathComponents
+                    .dropFirst(folder.standardizedFileURL.pathComponents.count) {
+                    target.appendPathComponent(component, isDirectory: true)
+                }
+            }
+            return place(track, in: target).map { Write(source: track, url: $0, mayReplace: [], supersedes: nil) }
         }
     }
 
@@ -464,26 +579,23 @@ private struct Layout {
     /// Where a track goes inside the device's copy of its album: beside the
     /// device tracks of the same disc (a `CD2` subfolder when the device uses
     /// them), else the album folder itself, as a template files every disc.
-    /// nil when the device copy is not inside the mounted volume.
+    /// nil when the device copy is not inside the music folder.
     private func deviceFolder(for track: LoadedTrack, in album: DeviceAlbumComparison) -> URL? {
         guard let albumFolder = album.deviceFolder,
-              DeviceTransferResolver.isStrictlyInside(albumFolder, root)
+              DeviceTransferResolver.isInsideOrEqual(albumFolder, musicFolder)
         else { return nil }
         let disc = Self.disc(of: track)
         if let sibling = album.deviceTracks.first(where: { Self.disc(of: $0) == disc }) {
             let folder = sibling.track.fileURL.deletingLastPathComponent()
-            if DeviceTransferResolver.isStrictlyInside(folder, root) { return folder }
+            if DeviceTransferResolver.isInsideOrEqual(folder, musicFolder) { return folder }
         }
         return albumFolder
     }
 
-    /// A version folder goes beside the album's folder, so that folder must be
-    /// a real album folder: inside the volume, and not the music folder or one
-    /// of its parents (whose sibling would sit outside where music lives).
+    /// A version folder goes beside the album's folder, so that folder must
+    /// lie below the music folder: its sibling then stays inside it.
     private func canHoldVersionSibling(_ folder: URL) -> Bool {
-        DeviceTransferResolver.isStrictlyInside(folder, root)
-            && DeviceTransferResolver.key(folder) != DeviceTransferResolver.key(destinationRoot)
-            && !DeviceTransferResolver.isStrictlyInside(destinationRoot, folder)
+        DeviceTransferResolver.isStrictlyInside(folder, musicFolder)
     }
 
     private static func disc(of track: LoadedTrack) -> Int {
@@ -549,8 +661,8 @@ private struct PlanBuilder {
     }
 
     /// The deletions that are safe to run: audio files of the album's device
-    /// copy, inside the mounted volume, that no copy writes or reads.
-    func finalDeletions(root: URL) -> [DeviceAlbumIdentity: [URL]] {
+    /// copy, inside the music folder, that no copy writes or reads.
+    func finalDeletions(musicFolder: URL) -> [DeviceAlbumIdentity: [URL]] {
         let written = Set(copies.map { DeviceTransferResolver.key($0.destinationURL) })
         let read = Set(copies.map { DeviceTransferResolver.key($0.source.track.fileURL) })
         var claimed: Set<String> = []
@@ -561,7 +673,7 @@ private struct PlanBuilder {
                 let key = DeviceTransferResolver.key(url)
                 return deviceFiles.contains(key)
                     && LibraryScanService.defaultSupportedExtensions.contains(url.pathExtension.lowercased())
-                    && DeviceTransferResolver.isStrictlyInside(url, root)
+                    && DeviceTransferResolver.isStrictlyInside(url, musicFolder)
                     && !written.contains(key)
                     && !read.contains(key)
                     && claimed.insert(key).inserted

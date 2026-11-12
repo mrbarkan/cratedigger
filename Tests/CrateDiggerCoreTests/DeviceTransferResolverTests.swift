@@ -27,7 +27,7 @@ final class DeviceTransferResolverTests: XCTestCase {
 
     // MARK: - New, Gaps, Present
 
-    func testNewAlbumPlansNaturalPaths() {
+    func testNewAlbumPlansNaturalPaths() throws {
         let profile = copyProfile()
         let review = resolver.review(sending: sent([1, 2]), catalog: [], profile: profile, mountedAt: device, leftAlone: [])
 
@@ -36,7 +36,7 @@ final class DeviceTransferResolverTests: XCTestCase {
         XCTAssertEqual(review.newTrackCount, 2)
         XCTAssertEqual(review.presentTrackCount, 0)
 
-        let plan = resolver.resolve(review, decisions: [:], profile: profile, mountedAt: device)
+        let plan = try resolver.resolve(review, decisions: [:], profile: profile, mountedAt: device)
         XCTAssertEqual(relative(plan.copies), [
             "Music/Miles Davis/1959/Kind of Blue/01 Track 1.flac",
             "Music/Miles Davis/1959/Kind of Blue/02 Track 2.flac"
@@ -58,7 +58,7 @@ final class DeviceTransferResolverTests: XCTestCase {
         XCTAssertEqual(review.gapAlbumCount, 1)
         XCTAssertEqual(review.presentTrackCount, 2)
 
-        let plan = resolver.resolve(review, decisions: [:], profile: profile, mountedAt: device)
+        let plan = try resolver.resolve(review, decisions: [:], profile: profile, mountedAt: device)
         XCTAssertEqual(relative(plan.copies), [
             "Music/Miles Davis/Kind of Blue/03 Track 3.flac",
             "Music/Miles Davis/Kind of Blue/04 Track 4.flac"
@@ -82,7 +82,7 @@ final class DeviceTransferResolverTests: XCTestCase {
         XCTAssertEqual(review.albums.map(\.status), [.gaps])
         XCTAssertEqual(review.albums.first?.deviceFolder?.lastPathComponent, "Kind of Blue")
 
-        let plan = resolver.resolve(review, decisions: [:], profile: profile, mountedAt: device)
+        let plan = try resolver.resolve(review, decisions: [:], profile: profile, mountedAt: device)
         XCTAssertEqual(relative(plan.copies), [
             "Music/Miles Davis/Kind of Blue/CD1/03 Track 3.flac",
             "Music/Miles Davis/Kind of Blue/CD2/02 Track 2.flac",
@@ -98,7 +98,7 @@ final class DeviceTransferResolverTests: XCTestCase {
         let review = resolver.review(sending: sent([1, 2]), catalog: onDevice, profile: profile, mountedAt: device, leftAlone: [])
         XCTAssertEqual(review.albums.map(\.status), [.gaps])
 
-        let plan = resolver.resolve(review, decisions: [:], profile: profile, mountedAt: device)
+        let plan = try resolver.resolve(review, decisions: [:], profile: profile, mountedAt: device)
         XCTAssertEqual(relative(plan.copies), ["Music/02 Track 2.flac"])
     }
 
@@ -111,7 +111,7 @@ final class DeviceTransferResolverTests: XCTestCase {
         XCTAssertEqual(review.presentTrackCount, 2)
         XCTAssertTrue(review.needingDecision.isEmpty)
 
-        let plan = resolver.resolve(review, decisions: [:], profile: profile, mountedAt: device)
+        let plan = try resolver.resolve(review, decisions: [:], profile: profile, mountedAt: device)
         XCTAssertTrue(plan.copies.isEmpty)
         XCTAssertTrue(plan.deletions.isEmpty)
         XCTAssertEqual(plan.skippedPresent, 2)
@@ -129,7 +129,7 @@ final class DeviceTransferResolverTests: XCTestCase {
         XCTAssertEqual(review.albums.first?.differences, [.audioForm])
         XCTAssertEqual(review.needingDecision.count, 1)
 
-        let plan = resolver.resolve(review, decisions: decide(review, .replace), profile: profile, mountedAt: device)
+        let plan = try resolver.resolve(review, decisions: decide(review, .replace), profile: profile, mountedAt: device)
         XCTAssertEqual(relative(plan.copies), [
             "Music/Miles Davis/Kind of Blue/01 Track 1.flac",
             "Music/Miles Davis/Kind of Blue/02 Track 2.flac",
@@ -154,7 +154,7 @@ final class DeviceTransferResolverTests: XCTestCase {
                                      mountedAt: device, leftAlone: [])
         XCTAssertEqual(review.albums.first?.differences, [.artSize])
 
-        let plan = resolver.resolve(review, decisions: decide(review, .replace), profile: profile, mountedAt: device)
+        let plan = try resolver.resolve(review, decisions: decide(review, .replace), profile: profile, mountedAt: device)
         XCTAssertEqual(relative(plan.copies), [
             "Music/Miles Davis/Kind of Blue/01 Track 1.mp3",
             "Music/Miles Davis/Kind of Blue/02 Track 2.mp3"
@@ -175,7 +175,7 @@ final class DeviceTransferResolverTests: XCTestCase {
         let review = resolver.review(sending: sent([1, 2]), catalog: onDevice, profile: profile, mountedAt: device, leftAlone: [])
         XCTAssertEqual(review.albums.first?.differences, [.differentRelease])
 
-        let plan = resolver.resolve(review, decisions: decide(review, .replace), profile: profile, mountedAt: device)
+        let plan = try resolver.resolve(review, decisions: decide(review, .replace), profile: profile, mountedAt: device)
         XCTAssertEqual(relative(plan.copies), ["\(folder)/01 Track 1.flac", "\(folder)/02 Track 2.flac"])
         XCTAssertEqual(plan.copies.map(\.overwrites), [true, false])
         XCTAssertEqual(relative(plan.deletions), ["\(folder)/02 Old 2.flac", "\(folder)/03 Old 3.flac", "\(folder)/04 Old 4.flac"])
@@ -191,7 +191,7 @@ final class DeviceTransferResolverTests: XCTestCase {
         onDevice.append(try deviceTrack("\(folder)/Booklet.pdf", number: 6, title: "Old 6"))
 
         let review = resolver.review(sending: sent([1, 2]), catalog: onDevice, profile: profile, mountedAt: device, leftAlone: [])
-        let plan = resolver.resolve(review, decisions: decide(review, .replace), profile: profile, mountedAt: device)
+        let plan = try resolver.resolve(review, decisions: decide(review, .replace), profile: profile, mountedAt: device)
 
         let copyPaths = Set(plan.copies.map { $0.destinationURL.path.lowercased() })
         XCTAssertFalse(plan.deletions.isEmpty)
@@ -210,9 +210,9 @@ final class DeviceTransferResolverTests: XCTestCase {
         let stale = try deviceAlbum("Music/Miles Davis/Kind of Blue", numbers: [1, 2], titlePrefix: "Old", root: elsewhere)
 
         let review = resolver.review(sending: sent([1, 2]), catalog: stale, profile: profile, mountedAt: device, leftAlone: [])
-        XCTAssertEqual(review.albums.first?.differences, [.differentRelease])
+        XCTAssertEqual(review.albums.map(\.status), [.new], "files outside the music folder are not the device's music")
 
-        let plan = resolver.resolve(review, decisions: decide(review, .replace), profile: profile, mountedAt: device)
+        let plan = try resolver.resolve(review, decisions: decide(review, .replace), profile: profile, mountedAt: device)
         XCTAssertTrue(plan.deletions.isEmpty)
         for copy in plan.copies {
             XCTAssertTrue(copy.destinationURL.path.hasPrefix(device.path + "/"), copy.destinationURL.path)
@@ -224,7 +224,7 @@ final class DeviceTransferResolverTests: XCTestCase {
         let onDevice = try deviceAlbum("Music/Miles Davis/Kind of Blue", numbers: [1, 2],
                                        format: "MP3", bitrate: 128, ext: "mp3")
         let review = resolver.review(sending: sent([1, 2]), catalog: onDevice, profile: profile, mountedAt: device, leftAlone: [])
-        let plan = resolver.resolve(review, decisions: decide(review, .replace), profile: profile, mountedAt: device)
+        let plan = try resolver.resolve(review, decisions: decide(review, .replace), profile: profile, mountedAt: device)
 
         XCTAssertEqual(plan.deletions(afterFailing: []), plan.deletions)
         XCTAssertTrue(plan.deletions(afterFailing: [plan.copies[1]]).isEmpty)
@@ -242,7 +242,7 @@ final class DeviceTransferResolverTests: XCTestCase {
         )
 
         let review = resolver.review(sending: sent([1, 2]), catalog: onDevice, profile: profile, mountedAt: device, leftAlone: [])
-        let plan = resolver.resolve(review, decisions: decide(review, .keepBoth), profile: profile, mountedAt: device)
+        let plan = try resolver.resolve(review, decisions: decide(review, .keepBoth), profile: profile, mountedAt: device)
 
         XCTAssertEqual(relative(plan.copies), [
             "Music/Miles Davis/Kind of Blue [3]/01 Track 1.flac",
@@ -261,7 +261,7 @@ final class DeviceTransferResolverTests: XCTestCase {
                                      mountedAt: device, leftAlone: [])
         XCTAssertEqual(review.albums.map(\.status), [.differs])
 
-        let plan = resolver.resolve(review, decisions: decide(review, .keepBoth), profile: profile, mountedAt: device)
+        let plan = try resolver.resolve(review, decisions: decide(review, .keepBoth), profile: profile, mountedAt: device)
         XCTAssertEqual(relative(plan.copies), ["Music/01 Track 1 (2).mp3"])
         XCTAssertEqual(plan.copies.map(\.overwrites), [false])
         XCTAssertTrue(plan.deletions.isEmpty)
@@ -273,7 +273,7 @@ final class DeviceTransferResolverTests: XCTestCase {
         let onDevice = try deviceAlbum("Music", numbers: [1], format: "MP3", bitrate: 128, ext: "mp3")
 
         let review = resolver.review(sending: sent([1]), catalog: onDevice, profile: profile, mountedAt: device, leftAlone: [])
-        let plan = resolver.resolve(review, decisions: decide(review, .keepBoth), profile: profile, mountedAt: device)
+        let plan = try resolver.resolve(review, decisions: decide(review, .keepBoth), profile: profile, mountedAt: device)
 
         XCTAssertEqual(relative(plan.copies), ["Music/Miles Davis/1959/Kind of Blue/01 Track 1.flac"])
     }
@@ -296,7 +296,7 @@ final class DeviceTransferResolverTests: XCTestCase {
         XCTAssertEqual(review.leftAloneAlbumCount, 1)
 
         let decisions = [review.albums[0].identity: DeviceAlbumDecision.leave]
-        let plan = resolver.resolve(review, decisions: decisions, profile: profile, mountedAt: device)
+        let plan = try resolver.resolve(review, decisions: decisions, profile: profile, mountedAt: device)
         XCTAssertTrue(plan.copies.isEmpty)
         XCTAssertTrue(plan.deletions.isEmpty)
         XCTAssertEqual(plan.leftAlone, 3)
@@ -311,7 +311,7 @@ final class DeviceTransferResolverTests: XCTestCase {
                                      leftAlone: [identity])
         XCTAssertTrue(review.needingDecision.isEmpty)
 
-        let plan = resolver.resolve(review, decisions: [identity: .replace], profile: profile, mountedAt: device)
+        let plan = try resolver.resolve(review, decisions: [identity: .replace], profile: profile, mountedAt: device)
         XCTAssertEqual(plan.copies.count, 1)
         XCTAssertEqual(plan.leftAlone, 0)
     }
@@ -329,7 +329,7 @@ final class DeviceTransferResolverTests: XCTestCase {
         XCTAssertEqual(review.needingDecision.count, 1)
         XCTAssertEqual(review.newTrackCount, 0)
 
-        let replaced = resolver.resolve(review, decisions: decide(review, .replace), profile: profile, mountedAt: device)
+        let replaced = try resolver.resolve(review, decisions: decide(review, .replace), profile: profile, mountedAt: device)
         XCTAssertEqual(relative(replaced.copies), [
             "Music/Miles Davis/1959/Kind of Blue/01 Track 1.flac",
             "Music/Miles Davis/1959/Kind of Blue/02 Track 2.flac"
@@ -337,14 +337,14 @@ final class DeviceTransferResolverTests: XCTestCase {
         XCTAssertEqual(replaced.copies.map(\.overwrites), [true, false])
         XCTAssertTrue(replaced.deletions.isEmpty)
 
-        let keptBoth = resolver.resolve(review, decisions: decide(review, .keepBoth), profile: profile, mountedAt: device)
+        let keptBoth = try resolver.resolve(review, decisions: decide(review, .keepBoth), profile: profile, mountedAt: device)
         XCTAssertEqual(relative(keptBoth.copies), [
             "Music/Miles Davis/1959/Kind of Blue/01 Track 1 (2).flac",
             "Music/Miles Davis/1959/Kind of Blue/02 Track 2.flac"
         ])
         XCTAssertEqual(keptBoth.copies.map(\.overwrites), [false, false])
 
-        let left = resolver.resolve(review, decisions: decide(review, .leave), profile: profile, mountedAt: device)
+        let left = try resolver.resolve(review, decisions: decide(review, .leave), profile: profile, mountedAt: device)
         XCTAssertTrue(left.copies.isEmpty)
     }
 
@@ -365,7 +365,7 @@ final class DeviceTransferResolverTests: XCTestCase {
                                         format: "MP3", bitrate: 192, art: 600)]
         let review = resolver.review(sending: sent([1], art: 1400), catalog: onDevice, profile: profile,
                                      mountedAt: device, leftAlone: [])
-        let plan = resolver.resolve(review, decisions: decide(review, .replace), profile: profile, mountedAt: device)
+        let plan = try resolver.resolve(review, decisions: decide(review, .replace), profile: profile, mountedAt: device)
         XCTAssertEqual(relative(plan.copies), ["\(folder)/01 Track 1.mp3"])
         XCTAssertTrue(plan.deletions.isEmpty)
 
@@ -386,7 +386,7 @@ final class DeviceTransferResolverTests: XCTestCase {
         XCTAssertEqual(review.albums.map(\.status), [.new, .differs])
         XCTAssertEqual(review.albums.last?.differences, [.pathTaken])
 
-        let plan = resolver.resolve(review, decisions: [review.albums[1].identity: .replace], profile: flat, mountedAt: device)
+        let plan = try resolver.resolve(review, decisions: [review.albums[1].identity: .replace], profile: flat, mountedAt: device)
         XCTAssertEqual(relative(plan.copies), ["Music/01 Track 1.flac", "Music/01 Track 1 (2).flac"])
         XCTAssertEqual(plan.copies.map(\.kind), [.new, .replacement])
 
@@ -395,17 +395,204 @@ final class DeviceTransferResolverTests: XCTestCase {
         let template = copyProfile()
         let discReview = resolver.review(sending: discs, catalog: [], profile: template, mountedAt: device, leftAlone: [])
         XCTAssertEqual(discReview.albums.first?.differences, [.pathTaken])
-        let discPlan = resolver.resolve(discReview, decisions: decide(discReview, .keepBoth), profile: template, mountedAt: device)
+        let discPlan = try resolver.resolve(discReview, decisions: decide(discReview, .keepBoth), profile: template, mountedAt: device)
         XCTAssertEqual(Set(discPlan.copies.map { $0.destinationURL.path.lowercased() }).count, 2)
 
         // The same file listed twice is sent once.
         let twice = sent([1, 2]) + sent([1])
-        let once = resolver.resolve(
+        let once = try resolver.resolve(
             resolver.review(sending: twice, catalog: [], profile: template, mountedAt: device, leftAlone: []),
             decisions: [:], profile: template, mountedAt: device
         )
         XCTAssertEqual(once.copies.count, 2)
         XCTAssertEqual(once.copies.map(\.kind), [.new, .new])
+    }
+
+    // MARK: - Multi-disc
+
+    func testKeepBothKeepsTheDeviceDiscFolders() throws {
+        let profile = copyProfile()
+        let onDevice = try deviceAlbum("Music/Miles Davis/Kind of Blue/CD1", disc: 1, numbers: [1],
+                                       format: "MP3", bitrate: 128, ext: "mp3")
+            + deviceAlbum("Music/Miles Davis/Kind of Blue/CD2", disc: 2, numbers: [1],
+                          format: "MP3", bitrate: 128, ext: "mp3")
+        // Both discs' files are named "01 Track 1".
+        let sending = sent([1], folder: "Src/Kind of Blue/Disc 1", disc: 1)
+            + sent([1], folder: "Src/Kind of Blue/Disc 2", disc: 2)
+
+        let review = resolver.review(sending: sending, catalog: onDevice, profile: profile, mountedAt: device, leftAlone: [])
+        XCTAssertEqual(review.albums.first?.differences, [.audioForm])
+
+        let plan = try resolver.resolve(review, decisions: decide(review, .keepBoth), profile: profile, mountedAt: device)
+        XCTAssertEqual(relative(plan.copies), [
+            "Music/Miles Davis/Kind of Blue [2]/CD1/01 Track 1.flac",
+            "Music/Miles Davis/Kind of Blue [2]/CD2/01 Track 1.flac"
+        ])
+        XCTAssertTrue(plan.deletions.isEmpty)
+    }
+
+    func testReplaceSameReleaseOnMultiDiscDevice() throws {
+        let profile = copyProfile()
+        let onDevice = try deviceAlbum("Music/Miles Davis/Kind of Blue/CD1", disc: 1, numbers: [1, 2],
+                                       format: "MP3", bitrate: 128, ext: "mp3")
+            + deviceAlbum("Music/Miles Davis/Kind of Blue/CD2", disc: 2, numbers: [1, 2],
+                          format: "MP3", bitrate: 128, ext: "mp3")
+        let sending = sent([1], folder: "Src/Kind of Blue/Disc 1", disc: 1)
+            + sent([1, 3], folder: "Src/Kind of Blue/Disc 2", disc: 2)
+
+        let review = resolver.review(sending: sending, catalog: onDevice, profile: profile, mountedAt: device, leftAlone: [])
+        XCTAssertEqual(review.albums.first?.differences, [.audioForm])
+
+        let plan = try resolver.resolve(review, decisions: decide(review, .replace), profile: profile, mountedAt: device)
+        XCTAssertEqual(relative(plan.copies), [
+            "Music/Miles Davis/Kind of Blue/CD1/01 Track 1.flac",
+            "Music/Miles Davis/Kind of Blue/CD2/01 Track 1.flac",
+            "Music/Miles Davis/Kind of Blue/CD2/03 Track 3.flac"
+        ])
+        // Only the matched MP3s go; each disc's track 2 stays.
+        XCTAssertEqual(relative(plan.deletions), [
+            "Music/Miles Davis/Kind of Blue/CD1/01 Track 1.mp3",
+            "Music/Miles Davis/Kind of Blue/CD2/01 Track 1.mp3"
+        ])
+    }
+
+    func testReplaceDifferentReleaseOnMultiDiscDevice() throws {
+        let profile = copyProfile()
+        let onDevice = try deviceAlbum("Music/Miles Davis/Kind of Blue/CD1", disc: 1, numbers: [1, 2], titlePrefix: "Old")
+            + deviceAlbum("Music/Miles Davis/Kind of Blue/CD2", disc: 2, numbers: [1], titlePrefix: "Old")
+        let sending = sent([1], folder: "Src/Kind of Blue/Disc 1", disc: 1)
+            + sent([1], folder: "Src/Kind of Blue/Disc 2", disc: 2)
+
+        let review = resolver.review(sending: sending, catalog: onDevice, profile: profile, mountedAt: device, leftAlone: [])
+        XCTAssertEqual(review.albums.first?.differences, [.differentRelease])
+
+        let plan = try resolver.resolve(review, decisions: decide(review, .replace), profile: profile, mountedAt: device)
+        XCTAssertEqual(relative(plan.copies), [
+            "Music/Miles Davis/Kind of Blue/CD1/01 Track 1.flac",
+            "Music/Miles Davis/Kind of Blue/CD2/01 Track 1.flac"
+        ])
+        XCTAssertEqual(relative(plan.deletions), [
+            "Music/Miles Davis/Kind of Blue/CD1/01 Old 1.flac",
+            "Music/Miles Davis/Kind of Blue/CD1/02 Old 2.flac",
+            "Music/Miles Davis/Kind of Blue/CD2/01 Old 1.flac"
+        ])
+    }
+
+    // MARK: - What review cleared
+
+    func testReplaceOverwritesOnlyWhatReviewCleared() throws {
+        let profile = copyProfile()
+        let folder = "Music/Miles Davis/Kind of Blue"
+        let onDevice = try deviceAlbum(folder, numbers: [1, 2], format: "MP3", bitrate: 128, ext: "mp3")
+        let review = resolver.review(sending: sent([1, 3]), catalog: onDevice, profile: profile, mountedAt: device, leftAlone: [])
+        XCTAssertEqual(review.albums.first?.differences, [.audioForm])
+
+        // Files that appear while the sheet is open.
+        try makeFile("\(folder)/01 Track 1.flac")
+        try makeFile("\(folder)/03 Track 3.flac")
+
+        let plan = try resolver.resolve(review, decisions: decide(review, .replace), profile: profile, mountedAt: device)
+        XCTAssertEqual(relative(plan.copies), ["\(folder)/01 Track 1.flac", "\(folder)/03 Track 3.flac"])
+        XCTAssertEqual(plan.copies.map(\.overwrites), [false, false], "the executor must fail these, not overwrite")
+    }
+
+    func testResolveRefusesAReviewOfAnotherDestination() throws {
+        let profile = copyProfile()
+        let review = resolver.review(sending: sent([1]), catalog: [], profile: profile, mountedAt: device, leftAlone: [])
+
+        let otherVolume = scratch.appendingPathComponent("IPOD 1", isDirectory: true)
+        XCTAssertThrowsError(try resolver.resolve(review, decisions: [:], profile: profile, mountedAt: otherVolume)) {
+            XCTAssertEqual($0 as? DeviceTransferResolver.ResolveError, .reviewedForAnotherDestination)
+        }
+        var otherFolder = profile
+        otherFolder.musicDirectorySubpath = "Audio"
+        XCTAssertThrowsError(try resolver.resolve(review, decisions: [:], profile: otherFolder, mountedAt: device)) {
+            XCTAssertEqual($0 as? DeviceTransferResolver.ResolveError, .reviewedForAnotherDestination)
+        }
+        XCTAssertThrowsError(try resolver.resolve(review, decisions: [:], profile: copyProfile(.flat), mountedAt: device)) {
+            XCTAssertEqual($0 as? DeviceTransferResolver.ResolveError, .reviewedForAnotherDestination)
+        }
+        XCTAssertThrowsError(try resolver.resolve(DeviceTransferReview(albums: review.albums), decisions: [:],
+                                                  profile: profile, mountedAt: device)) {
+            XCTAssertEqual($0 as? DeviceTransferResolver.ResolveError, .notReviewedAgainstDevice)
+        }
+    }
+
+    func testUnplannableCopyIsReported() throws {
+        // A review that skipped the path check: two New albums on one flat name.
+        let flat = copyProfile(.flat)
+        let sending = sent([1]) + sent([1], folder: "Src/Bitches Brew", album: "Bitches Brew")
+        let albums = DeviceTransferMatcher().compare(sending: sending, catalog: [], settings: flat.transferSettings, leftAlone: [])
+        XCTAssertEqual(albums.map(\.status), [.new, .new])
+        let unchecked = DeviceTransferReview(
+            albums: albums, mountedRoot: device, musicFolder: device.appendingPathComponent("Music", isDirectory: true),
+            settings: flat.transferSettings, reviewedAlbumFolders: [:]
+        )
+
+        let plan = try resolver.resolve(unchecked, decisions: [:], profile: flat, mountedAt: device)
+        XCTAssertEqual(relative(plan.copies), ["Music/01 Track 1.flac"])
+        XCTAssertEqual(plan.unplanned.map(\.track.fileURL), [sending[1].track.fileURL])
+    }
+
+    func testBatchClashesAreFlaggedForReplaceAndKeepBoth() throws {
+        let flat = copyProfile(.flat)
+        // Replace: Bitches Brew's FLAC would land on the name Kind of Blue (New) takes.
+        let bitches = try deviceAlbum("Music", album: "Bitches Brew", numbers: [1], format: "MP3", bitrate: 128, ext: "mp3")
+        let sending = sent([1]) + sent([1], folder: "Src/Bitches Brew", album: "Bitches Brew")
+        let review = resolver.review(sending: sending, catalog: bitches, profile: flat, mountedAt: device, leftAlone: [])
+        XCTAssertEqual(review.albums.map(\.status), [.new, .differs])
+        XCTAssertEqual(review.albums.last?.differences, [.audioForm, .pathTaken])
+
+        let plan = try resolver.resolve(review, decisions: [review.albums[1].identity: .replace], profile: flat, mountedAt: device)
+        XCTAssertEqual(relative(plan.copies), ["Music/01 Track 1.flac", "Music/01 Track 1 (2).flac"])
+        XCTAssertEqual(relative(plan.deletions), ["Music/01 Track 1.mp3"])
+
+        // Keep both: the device keeps its discs apart, but a flat Keep both
+        // would write both discs' "01 Track 1.flac" into one folder.
+        let discs = try deviceAlbum("Music/Old/Milestones/CD1", album: "Milestones", disc: 1, numbers: [1],
+                                    format: "MP3", bitrate: 128, ext: "mp3")
+            + deviceAlbum("Music/Old/Milestones/CD2", album: "Milestones", disc: 2, numbers: [1],
+                          format: "MP3", bitrate: 128, ext: "mp3")
+        let discSending = sent([1], folder: "Src/Milestones/Disc 1", album: "Milestones", disc: 1)
+            + sent([1], folder: "Src/Milestones/Disc 2", album: "Milestones", disc: 2)
+        let discReview = resolver.review(sending: discSending, catalog: discs, profile: flat, mountedAt: device, leftAlone: [])
+        XCTAssertEqual(discReview.albums.first?.differences, [.audioForm, .pathTaken])
+    }
+
+    // MARK: - The music folder only
+
+    func testMusicOutsideTheMusicFolderIsIgnored() throws {
+        let profile = copyProfile()
+        let backup = try deviceAlbum("Backup/Miles Davis/Kind of Blue", numbers: [1, 2],
+                                     format: "MP3", bitrate: 128, ext: "mp3")
+
+        let review = resolver.review(sending: sent([1, 2]), catalog: backup, profile: profile, mountedAt: device, leftAlone: [])
+        XCTAssertEqual(review.albums.map(\.status), [.new])
+
+        let plan = try resolver.resolve(review, decisions: [:], profile: profile, mountedAt: device)
+        XCTAssertTrue(plan.deletions.isEmpty)
+        XCTAssertEqual(relative(plan.copies), [
+            "Music/Miles Davis/1959/Kind of Blue/01 Track 1.flac",
+            "Music/Miles Davis/1959/Kind of Blue/02 Track 2.flac"
+        ])
+    }
+
+    func testVolumeRootMusicFolderSkipsIPodControlAndHiddenFolders() throws {
+        var profile = copyProfile()
+        profile.musicDirectorySubpath = ""
+        let stock = try deviceAlbum("iPod_Control/Music/F00", numbers: [1], format: "MP3", bitrate: 128, ext: "mp3")
+        let trashed = try deviceAlbum(".Trashes/501/Kind of Blue", numbers: [2], format: "MP3", bitrate: 128, ext: "mp3")
+        let filed = try deviceAlbum("Miles Davis/Milestones", album: "Milestones", numbers: [1])
+        let sending = sent([1, 2]) + sent([1, 2], folder: "Src/Milestones", album: "Milestones")
+
+        let review = resolver.review(sending: sending, catalog: stock + trashed + filed, profile: profile,
+                                     mountedAt: device, leftAlone: [])
+        XCTAssertEqual(review.albums.map(\.status), [.new, .gaps], "the filed album still matches")
+
+        let plan = try resolver.resolve(review, decisions: [:], profile: profile, mountedAt: device)
+        XCTAssertTrue(plan.deletions.isEmpty)
+        XCTAssertFalse(plan.copies.contains { $0.destinationURL.path.contains("iPod_Control") })
+        XCTAssertEqual(relative(plan.copies).last, "Miles Davis/Milestones/02 Track 2.flac")
     }
 
     // MARK: - Covers
@@ -416,7 +603,7 @@ final class DeviceTransferResolverTests: XCTestCase {
         let tracks = sent([1, 2], art: 1400)
 
         let review = resolver.review(sending: tracks, catalog: [], profile: profile, mountedAt: device, leftAlone: [])
-        let plan = resolver.resolve(review, decisions: [:], profile: profile, mountedAt: device)
+        let plan = try resolver.resolve(review, decisions: [:], profile: profile, mountedAt: device)
 
         let folder = device.appendingPathComponent("Music/Miles Davis/1959/Kind of Blue", isDirectory: true)
         XCTAssertEqual(plan.coverFolders.count, 1)
