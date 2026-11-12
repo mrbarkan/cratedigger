@@ -282,6 +282,7 @@ struct ConversionOptionsSheetView: View {
         selection.bitDepth = initialSelection.bitDepth
         selection.flacCompressionLevel = initialSelection.flacCompressionLevel
         selection.writesFolderCoverArt = initialSelection.writesFolderCoverArt
+        selection.omitsMissingYear = initialSelection.omitsMissingYear
         return selection
     }
 

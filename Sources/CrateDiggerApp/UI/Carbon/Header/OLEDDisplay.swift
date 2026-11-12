@@ -2562,7 +2562,15 @@ private struct DevicesPane: View {
         } readout: {
             capacityReadout(for: device).fixedSize()
         } ticker: {
-            DSPTicker(prefix: "MUSIC DIR", path: musicDirPath(profile, device), leadingInset: 62)
+            // What is left to do on the iPod outranks the music folder
+            // (`pendingIPodStep`: "NEXT ON IPOD · UPDATE ART CACHE").
+            if let step = model.pendingIPodStep[profile.id] {
+                let parts = step.components(separatedBy: " · ")
+                DSPTicker(prefix: parts[0], path: AttributedString(parts.dropFirst().joined(separator: " · ")),
+                          leadingInset: 62)
+            } else {
+                DSPTicker(prefix: "MUSIC DIR", path: musicDirPath(profile, device), leadingInset: 62)
+            }
         } cells: {
             OLEDCells(cells(for: profile, device: device))
         }

@@ -253,6 +253,7 @@ extension LibraryViewModel {
             // one write that still drops it: every transfer, SYNC included,
             // patches instead) and walked again now if the device is on screen.
             if outcome.covers > 0 {
+                noteArtCacheStep(profileID: profile.id, firmware: firmware(for: device), changes: .covers)
                 invalidateDeviceCatalog(for: device)
                 if case .device(let path) = currentSource, path == device.volumeURL.path {
                     refreshLibrary()

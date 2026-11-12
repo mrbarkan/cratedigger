@@ -126,6 +126,36 @@ final class DeviceSelectionSettingsTests: XCTestCase {
         XCTAssertEqual(decoded.outputFormat, .flac)
     }
 
+    /// The PodBox layout drops the year from an undated album's folder. The
+    /// cockpit carries that rule there and back, and every planner reads it
+    /// from the one `templateConfig`, so the layout reads back as the
+    /// preset (not Custom) and never writes "Unknown Year" folders.
+    func testPodBoxLayoutRoundTripsWithItsMissingYearRule() throws {
+        var base = deviceSettings()
+        base.templateConfig = try XCTUnwrap(RockboxLayoutPreset.podBoxRecommended.template)
+        let seeded = userSelection().seeded(from: base)
+        XCTAssertTrue(seeded.omitsMissingYear)
+        XCTAssertEqual(seeded.templateConfig, base.templateConfig)
+        let back = seeded.deviceTransferSettings(over: base)
+        XCTAssertEqual(back, base)
+        XCTAssertEqual(RockboxLayoutPreset.matching(back.templateConfig), .podBoxRecommended)
+
+        let undated = LoadedTrack(
+            track: AudioTrack(fileURL: URL(fileURLWithPath: "/Src/Air/01.flac"), title: "One", artist: "Air",
+                              album: "Demos"),
+            metadata: ConversionMetadata(title: "One", artist: "Air", albumArtist: "Air", album: "Demos"))
+        let folder = OutputPathPlanner().buildOutputSubpath(for: undated, templateConfig: seeded.templateConfig)
+        XCTAssertFalse(folder.contains("Unknown Year"), folder)
+
+        // Saved and read back, as the last selection is.
+        let decoded = try JSONDecoder().decode(ConversionOptionsSelection.self, from: JSONEncoder().encode(seeded))
+        XCTAssertTrue(decoded.omitsMissingYear)
+        var legacy = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(seeded)) as? [String: Any])
+        legacy.removeValue(forKey: "omitsMissingYear")
+        XCTAssertFalse(try JSONDecoder().decode(ConversionOptionsSelection.self,
+                                                from: JSONSerialization.data(withJSONObject: legacy)).omitsMissingYear)
+    }
+
     /// A run from the cockpit always converts, whatever the stored mode says
     /// by the time Go is pressed: the planner then names files by the output
     /// format, as the jobs write them.

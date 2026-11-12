@@ -130,6 +130,16 @@ public struct ArtistPicturePlan: Sendable {
 public enum ArtistPicturePlanner {
     public static let rescanFirst = "The device catalog does not match what is on the iPod. Rescan the device first."
 
+    /// `rescanFirst`, naming the folders that differ (at most three, then a
+    /// count), so the owner knows where to look when a rescan does not settle it.
+    public static func rescanRefusal(folders: [String]) -> String {
+        guard !folders.isEmpty else { return rescanFirst }
+        let shown = folders.prefix(3).map { $0.isEmpty ? "the volume root" : $0 }
+        let more = folders.count - shown.count
+        let list = shown.joined(separator: ", ") + (more > 0 ? " and \(more) more" : "")
+        return "The device catalog does not match what is on the iPod (\(list)). Rescan the device first."
+    }
+
     public static func plan(artists: [ArtistOnDevice], tree: DeviceArtTree,
                             prepared: [String: Data],
                             destination: ArtistPictureDestination,
@@ -142,8 +152,9 @@ public enum ArtistPicturePlanner {
             return builder.plan
         }
         guard tree.catalogMismatch.isEmpty else {
-            builder.refusal = rescanFirst
-            for artist in ordered { builder.hold(artist.name, in: \.uncertain, rescanFirst) }
+            let refusal = rescanRefusal(folders: tree.catalogMismatch)
+            builder.refusal = refusal
+            for artist in ordered { builder.hold(artist.name, in: \.uncertain, refusal) }
             return builder.plan
         }
 

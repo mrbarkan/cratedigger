@@ -78,6 +78,10 @@ public enum DeviceSessionFinish {
         /// The summary's closing lines: a cleanup line when it removed or
         /// refused anything, then the next steps.
         public let lines: [String]
+        /// `lines` without the next steps: what the cleanup itself did. A
+        /// caller that changes more before the summary (artist pictures)
+        /// adds its own line after these and works the next steps out again.
+        public let cleanupLines: [String]
         public let removed: Int
         /// `changes`, plus `.cleanup` when anything was removed.
         public let changes: DeviceWriteChanges
@@ -120,8 +124,9 @@ public enum DeviceSessionFinish {
             }
             if removed > 0 { changes.insert(.cleanup) }
         }
+        let cleanupLines = lines
         lines += PodBoxNextSteps.after(changes, firmware: firmware)
-        return Result(lines: lines, removed: removed, changes: changes)
+        return Result(lines: lines, cleanupLines: cleanupLines, removed: removed, changes: changes)
     }
 
     /// Each distinct parent folder, in first-seen order.

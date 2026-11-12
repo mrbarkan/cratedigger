@@ -53,11 +53,7 @@ extension LibraryViewModel {
             }
 
             let preset = makeAdHocPreset(from: selection)
-            let templateConfig = FolderTemplateConfig(
-                preset: selection.templatePreset,
-                tokenOrder: selection.tokenOrder,
-                separators: selection.separators
-            )
+            let templateConfig = selection.templateConfig
 
             // Preflight per-album review when the user explicitly asked for it.
             var reviewedFolders: [AlbumFolderKey: String] = [:]
@@ -254,6 +250,7 @@ extension ConversionOptionsSelection {
         selection.templatePreset = settings.templateConfig.preset
         selection.tokenOrder = FolderTokenOrder.normalize(settings.templateConfig.tokenOrder)
         selection.separators = settings.templateConfig.separators
+        selection.omitsMissingYear = settings.templateConfig.omitsMissingYear
         return selection
     }
 
@@ -275,7 +272,8 @@ extension ConversionOptionsSelection {
         settings.templateConfig = FolderTemplateConfig(
             preset: templatePreset,
             tokenOrder: FolderTokenOrder.normalize(tokenOrder),
-            separators: separators
+            separators: separators,
+            omitsMissingYear: omitsMissingYear
         )
         return settings
     }
@@ -1342,11 +1340,7 @@ extension LibraryViewModel {
 
     func plannedOutputName(for track: LoadedTrack, albumKey: AlbumFolderKey? = nil) -> String? {
         let selection = conversionSelection
-        let templateConfig = FolderTemplateConfig(
-            preset: selection.templatePreset,
-            tokenOrder: selection.tokenOrder,
-            separators: selection.separators
-        )
+        let templateConfig = selection.templateConfig
         let planner = OutputPathPlanner()
         let ext = selection.outputFormat.fileExtension
         let base = track.track.fileURL.deletingPathExtension().lastPathComponent

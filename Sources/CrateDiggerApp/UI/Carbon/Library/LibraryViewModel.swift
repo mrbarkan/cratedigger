@@ -1164,6 +1164,32 @@ final class LibraryViewModel: ObservableObject {
     @Published var isRepairingMetadata = false
     /// FIX ART sweep over a mounted device (see `fixDeviceAlbumArt`).
     @Published var isFixingDeviceArt = false
+    /// Artist pictures are being written to or removed from a device
+    /// outside a transfer (`LibraryViewModel+ArtistPictures`).
+    @Published var isWritingArtistPictures = false
+    /// The Artist Pictures sheet is finding pictures online; Cancel stops it.
+    @Published var isFindingArtistPictures = false
+    var artistPictureFindTask: Task<Void, Never>?
+    /// The artist picture records for the current crates folder
+    /// (`library.cdartists`), rebuilt when that folder changes. See
+    /// `currentArtistPictureStore()`.
+    var artistPictureStore: ArtistPictureStore?
+    var artistPictureStoreFolder: URL?
+    /// Readiness notes per mounted PodBox device (`PodBoxAdvisor`), for
+    /// Preferences ▸ Devices. Read-only work, redone after the probe and
+    /// after each session.
+    @Published var deviceNotes: [MountedDevice.ID: [PodBoxNote]] = [:] {
+        didSet {
+            NotificationCenter.default.post(name: Self.deviceFirmwareChangedNotification, object: nil)
+        }
+    }
+    /// What the owner still has to do on an iPod, by profile: the DEVICES
+    /// ticker shows it ("NEXT ON IPOD · UPDATE ART CACHE") until the player
+    /// has done it.
+    @Published var pendingIPodStep: [UUID: String] = [:]
+    /// The Artist Pictures sheet to present, for this profile. One-shot:
+    /// `LibraryPresentations` presents it and clears it.
+    @Published var artistPicturesRequest: UUID?
     /// The in-flight FIX TAGS run, so it can be cancelled — a whole-library
     /// selection is thousands of ffprobe reads and there was no way out.
     var metadataRepairTask: Task<Void, Never>?
@@ -2584,6 +2610,21 @@ final class LibraryViewModel: ObservableObject {
         return scanned
     }
 
+    /// What is already known of a mounted device, without walking it: the
+    /// browser's scan in memory, else the saved catalog when it describes
+    /// the device as mounted now. nil when neither is there. For read-only
+    /// advice (readiness notes), which must never make a mount walk a device.
+    @MainActor
+    func knownDeviceCatalog(for device: MountedDevice) async -> [LoadedTrack]? {
+        if let cached = deviceIndexCache[device.volumeURL.path] { return cached.allTracks }
+        let catalogs = deviceCatalogs
+        let key = device.catalogKey
+        let volume = device.volumeURL
+        return await Task.detached(priority: .utility) {
+            catalogs.load(key: key).flatMap { DeviceCatalogStore.describes($0, deviceAt: volume) ? $0 : nil }
+        }.value
+    }
+
     /// After a write to a mounted device: bring its saved catalog and the
     /// browser's index of it up to date with what was written and removed,
     /// rather than dropping them (a last-known catalog is what an offline
@@ -2890,13 +2931,7 @@ final class LibraryViewModel: ObservableObject {
                 let loadedTracks = await MainActor.run { self.cdTracks(for: info) }
                 let planner = OutputPathPlanner()
                 let albumKeys = planner.albumFolderKeys(for: loadedTracks)
-                let templateConfig = await MainActor.run {
-                    FolderTemplateConfig(
-                        preset: self.conversionSelection.templatePreset,
-                        tokenOrder: self.conversionSelection.tokenOrder,
-                        separators: self.conversionSelection.separators
-                    )
-                }
+                let templateConfig = await MainActor.run { self.conversionSelection.templateConfig }
                 let folderMode = await MainActor.run { self.conversionSelection.folderStructureMode }
                 var reserved: Set<String> = []
 

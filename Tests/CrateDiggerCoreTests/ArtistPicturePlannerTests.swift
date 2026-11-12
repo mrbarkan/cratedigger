@@ -400,7 +400,8 @@ final class ArtistPicturePlannerTests: XCTestCase {
         try iPod.addFile("Music/Air/2004 Talkie Walkie/01.m4a", Data([0, 0, 0, 0x20])) // not in the catalog
         let plan = plan(["air": picture])
         XCTAssertEqual(plan.operations.count, 0)
-        XCTAssertEqual(plan.refusal, ArtistPicturePlanner.rescanFirst)
+        XCTAssertEqual(plan.refusal, "The device catalog does not match what is on the iPod "
+                       + "(Music/Air/2004 Talkie Walkie). Rescan the device first.", "names the folder")
         XCTAssertEqual(plan.uncertain, ["Air"])
         XCTAssertEqual(tree().catalogMismatch, ["Music/Air/2004 Talkie Walkie"])
 
@@ -409,6 +410,34 @@ final class ArtistPicturePlannerTests: XCTestCase {
                                    metadata: ConversionMetadata(artist: "Gone")))
         XCTAssertEqual(tree().catalogMismatch, ["Music/Air/2004 Talkie Walkie", "Music/Gone"],
                        "a catalog track with nothing on the device counts too")
+    }
+
+    /// The catalog is compared with what its scanner reads: audio with the
+    /// hidden flag (FAT's hidden attribute) or in a hidden folder is never
+    /// scanned, so it cannot make the catalog read as stale for good; a
+    /// symlinked track the scanner did take is not "missing" either.
+    func testFilesTheScannerNeverReadsDoNotMakeTheCatalogStale() throws {
+        try album("Air", folder: "1998 Moon Safari")
+        let hiddenFile = try iPod.addFile("Music/Air/Hidden Single/01.m4a", Data([0, 0, 0, 0x20]))
+        XCTAssertEqual(chflags(hiddenFile.path, UInt32(UF_HIDDEN)), 0)
+        let hiddenFolder = iPod.root.appendingPathComponent("Music/Air/Secret", isDirectory: true)
+        try iPod.addFile("Music/Air/Secret/Inner/01.m4a", Data([0, 0, 0, 0x20]))
+        XCTAssertEqual(chflags(hiddenFolder.path, UInt32(UF_HIDDEN)), 0)
+        let target = try iPod.addFile("Elsewhere/song.m4a", Data([0, 0, 0, 0x20]))
+        let link = iPod.root.appendingPathComponent("Music/Air/Linked/01.m4a")
+        try FileManager.default.createDirectory(at: link.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+        catalog.append(LoadedTrack(track: AudioTrack(fileURL: link, title: "t", artist: "Air"),
+                                   metadata: ConversionMetadata(artist: "Air")))
+
+        XCTAssertEqual(tree().catalogMismatch, [])
+        XCTAssertNil(plan(["air": picture]).refusal)
+    }
+
+    func testRescanRefusalNamesAtMostThreeFolders() {
+        XCTAssertEqual(ArtistPicturePlanner.rescanRefusal(folders: []), ArtistPicturePlanner.rescanFirst)
+        XCTAssertEqual(ArtistPicturePlanner.rescanRefusal(folders: ["a", "b", "c", "d", "e"]),
+                       "The device catalog does not match what is on the iPod (a, b, c and 2 more). Rescan the device first.")
     }
 
     /// M9: a second spelling follows the first spelling's reason, not a

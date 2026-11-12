@@ -15,12 +15,14 @@ extension LibraryViewModel {
     // MARK: - Busy
 
     /// One truth for "a device is being written": a send or convert run
-    /// (through its catalog patch and session finish), SYNC, Clean Up Mac
-    /// Files and FIX ART. Every device writer checks it before it starts, and
-    /// both Eject paths do. A new device writer (artist pictures, playlists)
+    /// (through its catalog patch and session finish, artist pictures
+    /// included), SYNC, Clean Up Mac Files, FIX ART, and artist pictures
+    /// written or removed on their own. Every device writer checks it before
+    /// it starts, and both Eject paths do. A new device writer (playlists)
     /// sets its own flag and joins it here.
     var isDeviceBusy: Bool {
         isConversionRunning || deviceSyncProgress?.isRunning == true || isCleaningDeviceFiles || isFixingDeviceArt
+            || isWritingArtistPictures
     }
 
     /// The alert a refused start shows.
@@ -48,20 +50,28 @@ extension LibraryViewModel {
                                      matchedByUUID: deviceProfile(for: device).map { isMatchedByUUID(device, $0) } ?? false)
         }
         Task { @MainActor in
-            let found = await Task.detached(priority: .utility) { () -> [MountedDevice.ID: DeviceFirmware] in
+            let found = await Task.detached(priority: .utility) {
+                () -> (firmware: [MountedDevice.ID: DeviceFirmware], stamps: [MountedDevice.ID: Date]) in
                 var result: [MountedDevice.ID: DeviceFirmware] = [:]
+                var stamps: [MountedDevice.ID: Date] = [:]
                 for device in probed {
                     result[device.id] = DeviceFirmwareProbe.probe(volumeRoot: device.volumeURL)
+                    // The art cache's stamp: stat only, never opened.
+                    stamps[device.id] = ArtistPictureSession.artCacheStampModified(volumeRoot: device.volumeURL)
                 }
-                return result
+                return (result, stamps)
             }.value
             // Only devices still mounted now: one may have gone during the probe.
             let stillMounted = Set(mountedDevices.map(\.id))
             var next = deviceFirmware.filter { stillMounted.contains($0.key) }
             for device in probed where stillMounted.contains(device.id) {
-                next[device.id] = found[device.id]
+                next[device.id] = found.firmware[device.id]
             }
             if next != deviceFirmware { deviceFirmware = next }
+            refreshArtCacheReminders(stamps: found.stamps)
+            let notes = deviceNotes.filter { stillMounted.contains($0.key) }
+            if notes.count != deviceNotes.count { deviceNotes = notes }
+            for device in probed where stillMounted.contains(device.id) { refreshDeviceNotes(for: device) }
         }
     }
 
@@ -172,9 +182,10 @@ extension LibraryViewModel {
     /// Called by every device write path right after `patchDeviceCatalog`.
     /// On FAT and exFAT, removes the proven macOS `._` twins in the folders
     /// the session wrote or deleted in (through the executor: re-proven at
-    /// the moment of deletion, a copy kept on the Mac), then returns the
-    /// lines the summary ends with: what was cleaned, and what to do next on
-    /// the device. It never fails the transfer; a problem is one line.
+    /// the moment of deletion, a copy kept on the Mac), then writes artist
+    /// pictures where the owner allows them, and returns the lines the
+    /// summary ends with: what was cleaned, the pictures, and what to do next
+    /// on the device. It never fails the transfer; a problem is one line.
     @MainActor
     func finishDeviceSession(device: MountedDevice, profile: ExternalDeviceProfile,
                              written: [URL], deleted: [URL], changes: DeviceWriteChanges) async -> [String] {
@@ -198,7 +209,28 @@ extension LibraryViewModel {
         if result.removed > 0 {
             AppLog.conversion.notice("Removed \(result.removed) Mac metadata file(s) after the transfer to \(profile.name, privacy: .public)")
         }
-        return result.lines
+
+        // Artist pictures, when the owner has turned them on for this iPod
+        // and it may take them (PodBox, matched by volume UUID, check M5).
+        // Still inside the transfer's busy span; a failure is one line.
+        var changes = result.changes
+        var lines = result.cleanupLines
+        let permission = ArtistPictureSession.mayWrite(
+            artistPictureInputs(device: device, profile: profile, automatic: true), trigger: .userAction)
+        if permission.allowed {
+            let pictures = await writeArtistPictures(
+                device: device, profile: profile,
+                findMissing: profile.podBoxPreferences.findsArtistPicturesAutomatically)
+            if pictures.written > 0 { changes.insert(.pictures) }
+            if let line = pictures.line { lines.append(line) }
+        } else if profile.podBoxPreferences.artistPictures != .off, let reason = permission.reason {
+            // Switched on but held back: say why. Off says nothing.
+            lines.append(reason)
+        }
+        lines += PodBoxNextSteps.after(changes, firmware: firmware)
+        noteArtCacheStep(profileID: profile.id, firmware: firmware, changes: changes)
+        refreshDeviceNotes(for: device)
+        return lines
     }
 
     /// `report` with the session's closing lines and an Eject key for `device`.

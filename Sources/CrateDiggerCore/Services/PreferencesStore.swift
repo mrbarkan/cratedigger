@@ -267,6 +267,25 @@ public final class PreferencesStore {
         NotificationCenter.default.post(name: Self.deviceProfilesDidChange, object: nil)
     }
 
+    /// When CrateDigger last changed covers or artist pictures on a PodBox
+    /// iPod (key `podBoxLastArtWrite.<profileID>`), so the reminder to
+    /// rebuild its art cache holds until the player has done it. nil clears it.
+    public func podBoxLastArtWrite(profileID: UUID) -> Date? {
+        defaults.object(forKey: Self.podBoxLastArtWriteKey(profileID)) as? Date
+    }
+
+    public func setPodBoxLastArtWrite(_ date: Date?, profileID: UUID) {
+        if let date {
+            defaults.set(date, forKey: Self.podBoxLastArtWriteKey(profileID))
+        } else {
+            defaults.removeObject(forKey: Self.podBoxLastArtWriteKey(profileID))
+        }
+    }
+
+    static func podBoxLastArtWriteKey(_ profileID: UUID) -> String {
+        "podBoxLastArtWrite.\(profileID.uuidString)"
+    }
+
     /// Posted whenever a device profile is added, edited, or removed, so the
     /// Sources sidebar (which only lists volumes matching a saved profile) can
     /// re-filter without waiting for a mount event.

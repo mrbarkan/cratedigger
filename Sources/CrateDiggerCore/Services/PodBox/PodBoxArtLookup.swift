@@ -34,9 +34,10 @@ public struct DeviceArtTree: Sendable {
     /// missing folder reads as empty). false: the lookup answers `.uncertain`
     /// for everyone, since an unread People file could be anyone's.
     public let artworkListed: Bool
-    /// Folders where the walk and the catalog disagree: audio on the device
-    /// in a folder the catalog has no track in, or a catalog track folder
-    /// with no audio on the device. Empty when they agree. A stale catalog
+    /// Folders where the walk and the catalog disagree: audio the catalog's
+    /// scanner would read in a folder the catalog has no track in, or a
+    /// catalog track folder with no such audio on the device. Empty when
+    /// they agree. A stale catalog
     /// hides named folders from the lookup, so a writer must not plan with one.
     public let catalogMismatch: [String]
     /// Player key (key and alt key of the folder's name) -> folders named
@@ -102,6 +103,13 @@ public struct DeviceArtTree: Sendable {
 
         var folderImages: [String: [String]] = [:]
         var foldersWithAudio = Set<String>()
+        // What the catalog's scanner (`LibraryScanService.scanFolder`) would
+        // read: audio files, symlinks included, that are not hidden (a dot
+        // name or the hidden flag, which on FAT is the hidden attribute) and
+        // lie in no hidden folder. Compared with the catalog, so a file the
+        // player sees but the scanner never takes cannot make the catalog
+        // read as stale for good.
+        var scannerAudioFolders = Set<String>()
         var listedFolders = Set<String>()
         var bookFolders = Set<String>()
         func note(fileNamed name: String, in folder: String) {
@@ -118,7 +126,8 @@ public struct DeviceArtTree: Sendable {
             folder.isEmpty ? volumeRoot : volumeRoot.appendingPathComponent(folder, isDirectory: true)
         }
         /// Every file below `folder`, never into a dot-named folder or through a symlink.
-        func walk(_ folder: String, underBooks: Bool) {
+        /// `hidden`: the folder or one above it has the hidden flag.
+        func walk(_ folder: String, underBooks: Bool, hidden: Bool = false) {
             guard let names = AppleDoubleSweeper.entryNames(inFolder: url(of: folder).path) else { return }
             listedFolders.insert(folder)
             if underBooks { bookFolders.insert(folder) }
@@ -127,11 +136,17 @@ public struct DeviceArtTree: Sendable {
                 let child = folder.isEmpty ? name : folder + "/" + name
                 var info = stat()
                 guard lstat(url(of: folder).appendingPathComponent(raw).path, &info) == 0 else { continue }
-                switch info.st_mode & S_IFMT {
+                let flaggedHidden = info.st_flags & UInt32(UF_HIDDEN) != 0
+                let type = info.st_mode & S_IFMT
+                if !underBooks, !hidden, !flaggedHidden, type == S_IFREG || type == S_IFLNK,
+                   audioExtensions.contains((name as NSString).pathExtension.lowercased()) {
+                    scannerAudioFolders.insert(folder)
+                }
+                switch type {
                 case S_IFDIR:
                     // The volume's Books folder is walked on its own below.
                     if folder.isEmpty, name.lowercased() == booksFolder, !underBooks { continue }
-                    walk(child, underBooks: underBooks)
+                    walk(child, underBooks: underBooks, hidden: hidden || flaggedHidden)
                 case S_IFREG:
                     note(fileNamed: name, in: folder)
                 default:
@@ -198,10 +213,11 @@ public struct DeviceArtTree: Sendable {
             }
         }
 
-        // The catalog must describe the music folder as it is now.
+        // The catalog must describe the music folder as it is now, compared
+        // like with like: with what its scanner would read there.
         let catalogFolders = Set(catalog.compactMap { paths.relative($0.track.fileURL).flatMap(parent(of:)) }
             .filter { isWithin($0, music) })
-        let walkedFolders = foldersWithAudio.filter { isWithin($0, music) }
+        let walkedFolders = scannerAudioFolders.filter { isWithin($0, music) }
         let mismatch = catalogFolders.symmetricDifference(walkedFolders).sorted()
 
         let artwork = volumeRoot.appendingPathComponent("Artwork", isDirectory: true)

@@ -26,8 +26,7 @@ final class PodBoxPreferencesTests: XCTestCase {
     func testDefaultsAreOffForPictures() {
         let preferences = PodBoxPreferences()
         XCTAssertEqual(preferences.artistPictures, .off)
-        XCTAssertTrue(preferences.sweepsAppleDouble)
-        XCTAssertTrue(preferences.findsArtistPicturesAutomatically)
+        XCTAssertFalse(preferences.findsArtistPicturesAutomatically, "nothing is fetched until the owner asks")
         XCTAssertNil(preferences.lastSeenFirmware)
         XCTAssertEqual(preferences.passedChecks, [])
 
@@ -39,8 +38,7 @@ final class PodBoxPreferencesTests: XCTestCase {
     func testPartialPodBoxObjectDecodesWithDefaults() throws {
         let partial = try JSONDecoder().decode(PodBoxPreferences.self, from: Data(#"{"artistPictures":"artworkFolder"}"#.utf8))
         XCTAssertEqual(partial.artistPictures, .artworkFolder)
-        XCTAssertTrue(partial.sweepsAppleDouble)
-        XCTAssertTrue(partial.findsArtistPicturesAutomatically)
+        XCTAssertFalse(partial.findsArtistPicturesAutomatically)
         XCTAssertNil(partial.lastSeenFirmware)
         XCTAssertEqual(partial.passedChecks, [])
 
@@ -68,11 +66,18 @@ final class PodBoxPreferencesTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode([ExternalDeviceProfile].self, from: Data(list.utf8)).count, 2)
     }
 
+    /// A profile saved with the retired `sweepsAppleDouble` key still reads.
+    func testRetiredSweepKeyIsIgnored() throws {
+        let old = try JSONDecoder().decode(PodBoxPreferences.self,
+                                           from: Data(#"{"sweepsAppleDouble":false,"passedChecks":["M5"]}"#.utf8))
+        XCTAssertEqual(old.passedChecks, ["M5"])
+        XCTAssertFalse(String(decoding: try JSONEncoder().encode(old), as: UTF8.self).contains("sweepsAppleDouble"))
+    }
+
     func testRoundTrip() throws {
         var preferences = PodBoxPreferences()
-        preferences.sweepsAppleDouble = false
         preferences.artistPictures = .artistFolders
-        preferences.findsArtistPicturesAutomatically = false
+        preferences.findsArtistPicturesAutomatically = true
         preferences.lastSeenFirmware = "PodBox layout 5"
         preferences.passedChecks = ["M5", "M12"]
         var profile = ExternalDeviceProfile.rockboxIPod()

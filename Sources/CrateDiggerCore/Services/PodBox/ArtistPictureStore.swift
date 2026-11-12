@@ -84,7 +84,9 @@ public enum ArtistPictureStoreError: LocalizedError, Equatable {
 /// prepared JPEGs (`<preparedHash>.jpg` in Application Support, a cache:
 /// a missing one gives nil and the finder fetches it again). Everything here
 /// writes on the Mac only. Callers check `refuseWhileLibraryDisconnected`.
-public final class ArtistPictureStore {
+/// Safe to use from any thread: every member holds one lock, so a finder
+/// run off the main actor and the Artist Pictures sheet can share it.
+public final class ArtistPictureStore: @unchecked Sendable {
     public static let fileName = "library.cdartists"
 
     private let fileURL: URL
@@ -96,6 +98,7 @@ public final class ArtistPictureStore {
     private var byPlayerKey: [UInt32: String] = [:]
     private var isDirty = false
     private var isUnreadable = false
+    private let lock = NSLock()
 
     /// `imageDirectory` default: `<Application Support>/CrateDigger/ArtistImages`.
     public init(indexDirectory: URL, imageDirectory: URL? = nil, fileManager: FileManager = .default) {
@@ -109,6 +112,8 @@ public final class ArtistPictureStore {
     /// (`The Beatles` and `Beatles, The`; `Frank Herbert` and `Herbert, Frank`).
     /// nil when there is none, or when the name has nothing the player keys.
     public func record(forName name: String) -> ArtistPictureRecord? {
+        lock.lock()
+        defer { lock.unlock() }
         let folded = PodBoxArtName.folded(name)
         guard !folded.isEmpty else { return nil }
         if let exact = byKey[folded] { return exact }
@@ -132,6 +137,8 @@ public final class ArtistPictureStore {
     /// and must equal it otherwise. With `prepared`, its bytes are written to
     /// the image cache first and the record's `preparedHash` is set to their SHA-256.
     public func set(_ record: ArtistPictureRecord, prepared: Data?) throws {
+        lock.lock()
+        defer { lock.unlock() }
         var record = record
         let folded = PodBoxArtName.folded(record.displayName)
         guard !folded.isEmpty, record.foldedKey.isEmpty || record.foldedKey == folded else {
@@ -155,18 +162,26 @@ public final class ArtistPictureStore {
 
     /// Every record, by folded key.
     public func allRecords() -> [ArtistPictureRecord] {
+        lock.lock()
+        defer { lock.unlock() }
+        return sortedRecords()
+    }
+
+    private func sortedRecords() -> [ArtistPictureRecord] {
         byKey.keys.sorted().compactMap { byKey[$0] }
     }
 
     /// Writes `library.cdartists` atomically when anything changed: canonical
     /// bytes (sorted keys, ISO dates) so an unchanged list never reads as changed.
     public func save() throws {
+        lock.lock()
+        defer { lock.unlock() }
         if isUnreadable { throw ArtistPictureStoreError.unreadableStore(path: fileURL.path) }
         guard isDirty else { return }
         let encoder = JSONEncoder()
         encoder.outputFormatting = .sortedKeys
         encoder.dateEncodingStrategy = .iso8601
-        let data = try encoder.encode(allRecords())
+        let data = try encoder.encode(sortedRecords())
         try data.write(to: fileURL, options: .atomic)
         isDirty = false
     }
