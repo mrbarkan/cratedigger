@@ -1,8 +1,9 @@
 import Foundation
 
 /// Reads the three answers the Commons source chains: a MusicBrainz artist
-/// search, a MusicBrainz artist lookup (its `wikidata` relation and its
-/// release groups) and a Wikidata entity (property P18, the image). Any body
+/// search, a MusicBrainz artist lookup (its `wikidata` relation), a
+/// release-group browse (the artist's albums and EPs) and a Wikidata entity
+/// (property P18, the image). Any body
 /// that is not the JSON object it should be throws `.malformed`.
 public enum CommonsArtistParser {
     /// `/ws/2/artist?query=…&fmt=json`.
@@ -18,8 +19,8 @@ public enum CommonsArtistParser {
         }
     }
 
-    /// `/ws/2/artist/<id>?inc=url-rels+release-groups`: the Q number of its
-    /// `wikidata` relation, or nil.
+    /// `/ws/2/artist/<id>?inc=url-rels`: the Q number of its `wikidata`
+    /// relation, or nil.
     public static func wikidataID(fromArtist data: Data) throws -> String? {
         let relations = try object(data)["relations"] as? [Any] ?? []
         for case let relation as [String: Any] in relations where relation["type"] as? String == "wikidata" {
@@ -31,6 +32,9 @@ public enum CommonsArtistParser {
         return nil
     }
 
+    /// The titles under `release-groups`: of a release-group browse
+    /// (`/ws/2/release-group?artist=<id>`), or of an artist lookup with
+    /// `inc=release-groups` (which MusicBrainz caps at 25, singles included).
     public static func releaseGroupTitles(fromArtist data: Data) throws -> [String] {
         let groups = try object(data)["release-groups"] as? [Any] ?? []
         return groups.compactMap { group in
@@ -102,9 +106,10 @@ public enum CommonsArtistParser {
 
 /// Artist pictures from Wikimedia Commons, found through MusicBrainz and
 /// Wikidata (phase 2b): the top three MusicBrainz artists scoring 90 or
-/// more, each looked up for its Wikidata item and its release groups (the
-/// album titles of the D2 cross-check), then the item's image (P18). An
-/// artist with no Wikidata relation or no image gives no candidate.
+/// more, each looked up for its Wikidata item, then the item's image (P18).
+/// An artist with no Wikidata relation or no image gives no candidate. The
+/// album titles of the D2 cross-check are browsed only when the finder asks
+/// (`albumTitles(for:)`), which it does only for a name that matches.
 ///
 /// MusicBrainz asks for at most one request a second per client: its calls
 /// here wait at `MusicBrainzGate.shared`, the gate every MusicBrainz caller
@@ -143,16 +148,18 @@ public struct CommonsArtistSource: ArtistPictureSource {
             candidates.append(ArtistPictureCandidate(
                 name: artist.name, source: .commons, sourceID: artist.id,
                 imageURL: CommonsArtistParser.imageURL(fileName: file),
-                albumTitles: try CommonsArtistParser.releaseGroupTitles(fromArtist: details),
                 credit: try await credit(for: file)))
         }
         return candidates
     }
 
-    /// The lookup already brought the release groups; asking again would
-    /// cost a MusicBrainz request for the same answer.
+    /// The artist's albums and EPs, from one release-group browse. Not the
+    /// lookup's `inc=release-groups`: MusicBrainz caps that at 25 with
+    /// singles counted, so a prolific act's albums can fall outside it.
     public func albumTitles(for candidate: ArtistPictureCandidate) async throws -> [String] {
-        candidate.albumTitles
+        guard candidate.albumTitles.isEmpty else { return candidate.albumTitles }
+        return try CommonsArtistParser.releaseGroupTitles(
+            fromArtist: try await musicBrainzData(Self.releaseGroupsURL(artistID: candidate.sourceID)))
     }
 
     /// `https://musicbrainz.org/ws/2/artist?query=artist:"<name>"&fmt=json&limit=<limit>`,
@@ -163,9 +170,15 @@ public struct CommonsArtistSource: ArtistPictureSource {
         return URL(string: "https://musicbrainz.org/ws/2/artist?query=\(query)&fmt=json&limit=\(limit)")!
     }
 
-    /// The `+` stays as it is: MusicBrainz separates `inc` values with it.
     static func artistURL(id: String) -> URL {
-        URL(string: "https://musicbrainz.org/ws/2/artist/\(ArtistPictureURLText.encoded(id))?inc=url-rels+release-groups&fmt=json")!
+        URL(string: "https://musicbrainz.org/ws/2/artist/\(ArtistPictureURLText.encoded(id))?inc=url-rels&fmt=json")!
+    }
+
+    /// `https://musicbrainz.org/ws/2/release-group?artist=<id>&type=album|ep&limit=100&fmt=json`:
+    /// one page of an artist's albums and EPs (`|` sent as `%7C`).
+    static func releaseGroupsURL(artistID: String) -> URL {
+        URL(string: "https://musicbrainz.org/ws/2/release-group?artist=\(ArtistPictureURLText.encoded(artistID))"
+            + "&type=album%7Cep&limit=100&fmt=json")!
     }
 
     /// `https://commons.wikimedia.org/w/api.php?action=query&format=json&prop=imageinfo&iiprop=extmetadata&titles=File:<name>`.

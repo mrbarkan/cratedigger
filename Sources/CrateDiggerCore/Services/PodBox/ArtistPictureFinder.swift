@@ -30,7 +30,13 @@ public enum ArtistPictureMatcher {
         "collection", "completecollection", "definitivecollection", "ultimatecollection", "anthology",
         "singles", "singlescollection", "remixes", "remixed", "remastered", "gold", "platinum",
         "demos", "rarities", "bsides", "bsidesandrarities", "retrospective", "compilation", "hitsalbum",
+        "demo", "demotape", "ep", "untitled", "selftitled", "st", "christmas", "split", "promo", "vol", "volume",
     ]
+    /// Folded titles that stay generic with a number after them: "Demo 2008",
+    /// "EP2", "Untitled #1", "Volume 3", "Vol. II", "Volume One".
+    static let numberedGenericStems: Set<String> = ["demo", "demos", "demotape", "ep", "promo", "split", "untitled",
+                                                     "vol", "volume", "christmas"]
+    static let numberWords: Set<String> = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"]
     /// Folded beginnings that make a title generic whatever follows ("Best of Boston").
     /// (Not `gold` or `live`: "Golden Hour" and "Live Through This" tell acts apart.)
     static let genericPrefixes = ["greatesthits", "bestof", "verybestof", "essential", "anthology",
@@ -39,15 +45,17 @@ public enum ArtistPictureMatcher {
     public static func verdict(_ candidate: ArtistPictureCandidate, name: String,
                                deviceAlbumTitles: [String]) -> ArtistPictureVerdict {
         guard PodBoxArtName.matches(candidate.name, name) else { return .noMatch }
-        return sharesTellingTitle(candidate.albumTitles, with: deviceAlbumTitles, name: name) ? .confident : .uncertain
+        return sharedTellingTitles(candidate.albumTitles, with: deviceAlbumTitles, name: name) > 0
+            ? .confident : .uncertain
     }
 
-    /// Whether one of `theirs` is one of `ours` once both are reduced to
-    /// titles that can tell this act from another of the same `name`. The
-    /// album half of the rule; `ArtistIdentityMatcher` applies it to MusicBrainz.
-    static func sharesTellingTitle(_ theirs: [String], with ours: [String], name: String) -> Bool {
+    /// How many different titles of `theirs` are also among `ours` once both
+    /// are reduced to titles that can tell this act from another of the same
+    /// `name`. The album half of the rule; `ArtistIdentityMatcher` applies it
+    /// to MusicBrainz.
+    static func sharedTellingTitles(_ theirs: [String], with ours: [String], name: String) -> Int {
         let keys = Set(ours.compactMap { telling($0, name: name) })
-        return theirs.contains { telling($0, name: name).map(keys.contains) ?? false }
+        return Set(theirs.compactMap { telling($0, name: name) }).intersection(keys).count
     }
 
     /// The folded title without its trailing `(…)` and `[…]` groups.
@@ -64,11 +72,28 @@ public enum ArtistPictureMatcher {
     /// name: nil when empty, self-titled or generic.
     static func telling(_ title: String, name: String) -> String? {
         let key = titleKey(title)
-        guard !key.isEmpty, !PodBoxArtName.matches(key, name), key != PodBoxArtName.folded(name),
+        guard key.count >= 3, !key.allSatisfy(\.isNumber), !isRomanNumber(key),
+              !PodBoxArtName.matches(key, name), key != PodBoxArtName.folded(name),
               !genericTitles.contains(key), !genericPrefixes.contains(where: key.hasPrefix),
-              !key.contains("greatesthits")
+              !key.contains("greatesthits"), !isNumberedGeneric(key)
         else { return nil }
         return key
+    }
+
+    /// I to XXXIX, the numbers albums are counted with ("III", "IV"). Only
+    /// that range, so a word that happens to be a larger numeral ("mix")
+    /// still counts.
+    static func isRomanNumber(_ key: String) -> Bool {
+        key.range(of: "^x{0,3}(ix|iv|v?i{0,3})$", options: .regularExpression) != nil
+    }
+
+    /// A generic stem followed by a number in digits, roman numerals or words.
+    static func isNumberedGeneric(_ key: String) -> Bool {
+        numberedGenericStems.contains { stem in
+            guard key.hasPrefix(stem), key.count > stem.count else { return false }
+            let number = String(key.dropFirst(stem.count))
+            return number.allSatisfy(\.isNumber) || isRomanNumber(number) || numberWords.contains(number)
+        }
     }
 }
 

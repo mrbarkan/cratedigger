@@ -48,6 +48,8 @@ final class CommonsArtistSourceTests: XCTestCase {
         fetcher.answer(CommonsArtistSource.artistURL(id: Self.bjorkID),
                        json: Self.artistJSON(id: Self.bjorkID, name: "Björk", wikidata: wikidata,
                                              releaseGroups: ["Debut", "Post", "Homogenic"]))
+        fetcher.answer(CommonsArtistSource.releaseGroupsURL(artistID: Self.bjorkID),
+                       json: ArtistInfoClientTests.browseJSON(["Debut", "Post", "Homogenic", "Vespertine"]))
         if let wikidata {
             fetcher.answer(CommonsArtistSource.entityURL(id: wikidata), json: Self.entityJSON(id: wikidata, image: image))
         }
@@ -118,17 +120,30 @@ final class CommonsArtistSourceTests: XCTestCase {
                        "https://commons.wikimedia.org/wiki/Special:FilePath/AC%2FDC_%26_Co%3F.png?width=400")
     }
 
-    func testCandidateCarriesReleaseGroupTitles() async throws {
+    /// Album titles are browsed only when the finder asks (for a name that
+    /// matches), from the release-group browse, not the lookup's capped list.
+    func testAlbumTitlesComeFromTheReleaseGroupBrowse() async throws {
         answerBjork()
         let candidates = try await source().candidates(for: "Björk")
         XCTAssertEqual(candidates, [ArtistPictureCandidate(
             name: "Björk", source: .commons, sourceID: Self.bjorkID,
             imageURL: CommonsArtistParser.imageURL(fileName: "Björk 2015.jpg"),
-            albumTitles: ["Debut", "Post", "Homogenic"],
             credit: ArtistPictureCredit(fileName: "Björk 2015.jpg", licence: "CC BY-SA 4.0", author: "Someone & Co"))])
+        let browse = CommonsArtistSource.releaseGroupsURL(artistID: Self.bjorkID)
+        XCTAssertFalse(fetcher.requests.contains(browse), "nothing browsed before the finder asks")
         let titles = try await source().albumTitles(for: candidates[0])
-        XCTAssertEqual(titles, ["Debut", "Post", "Homogenic"])
+        XCTAssertEqual(titles, ["Debut", "Post", "Homogenic", "Vespertine"])
         XCTAssertEqual(source().id, .commons)
+
+        // Review I1: the matching album is the 40th, past the lookup's 25.
+        var albums = (1...45).map { "Album \($0)" }
+        albums[39] = "Biophilia"
+        fetcher.answer(browse, json: ArtistInfoClientTests.browseJSON(albums))
+        let many = try await source().albumTitles(for: candidates[0])
+        XCTAssertEqual(many.count, 45)
+        XCTAssertEqual(ArtistPictureMatcher.verdict(ArtistPictureCandidate(
+            name: "Björk", source: .commons, sourceID: Self.bjorkID, imageURL: candidates[0].imageURL, albumTitles: many),
+            name: "Björk", deviceAlbumTitles: ["Biophilia"]), .confident)
     }
 
     func testSpacingBetweenMusicBrainzCalls() async throws {
@@ -217,7 +232,9 @@ final class CommonsArtistSourceTests: XCTestCase {
         XCTAssertEqual(Dictionary(uniqueKeysWithValues: items.map { ($0.name, $0.value ?? "") }),
                        ["query": "artist:\"Guns N' Roses \\\"Live\\\" & Co\"", "fmt": "json", "limit": "5"])
         XCTAssertEqual(CommonsArtistSource.artistURL(id: Self.bjorkID).absoluteString,
-                       "https://musicbrainz.org/ws/2/artist/\(Self.bjorkID)?inc=url-rels+release-groups&fmt=json")
+                       "https://musicbrainz.org/ws/2/artist/\(Self.bjorkID)?inc=url-rels&fmt=json")
+        XCTAssertEqual(CommonsArtistSource.releaseGroupsURL(artistID: Self.bjorkID).absoluteString,
+                       "https://musicbrainz.org/ws/2/release-group?artist=\(Self.bjorkID)&type=album%7Cep&limit=100&fmt=json")
         XCTAssertEqual(CommonsArtistSource.entityURL(id: "Q42").absoluteString,
                        "https://www.wikidata.org/wiki/Special:EntityData/Q42.json")
     }

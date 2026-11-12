@@ -163,6 +163,13 @@ final class ArtistInfoParsersTests: XCTestCase {
         // Not in the preferred list, English is still the fallback.
         XCTAssertEqual(ArtistInfoParsers.wikipediaChoice(sitelinks: ["enwiki": "Air"], preferredLanguages: ["ja"])?.language, "en")
 
+        // Norwegian: Bokmål reads the no Wikipedia; Nynorsk its own, then no.
+        let norsk = ["enwiki": "A-ha", "nowiki": "A-ha (band)", "nnwiki": "A-ha (gruppe)"]
+        XCTAssertEqual(ArtistInfoParsers.wikipediaChoice(sitelinks: norsk, preferredLanguages: ["nb-NO"])?.title, "A-ha (band)")
+        XCTAssertEqual(ArtistInfoParsers.wikipediaChoice(sitelinks: norsk, preferredLanguages: ["nn"])?.title, "A-ha (gruppe)")
+        XCTAssertEqual(ArtistInfoParsers.wikipediaChoice(sitelinks: ["nowiki": "A-ha (band)"],
+                                                         preferredLanguages: ["nn-NO"])?.language, "no")
+
         XCTAssertNil(ArtistInfoParsers.wikipediaChoice(sitelinks: ["commonswiki": "Category:X"], preferredLanguages: ["pt", "en"]))
         XCTAssertNil(ArtistInfoParsers.wikipediaChoice(sitelinks: [:], preferredLanguages: ["pt", "en"]))
     }

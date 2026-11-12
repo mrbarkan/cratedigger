@@ -23,9 +23,17 @@ final class ArtistInfoClientTests: XCTestCase {
         ArtistInfoClient(fetcher: fetcher, gate: gate, wikimediaSpacing: .zero)
     }
 
+    /// A `/ws/2/release-group?artist=…` browse answer.
+    static func browseJSON(_ titles: [String]) -> String {
+        let groups = titles.enumerated().map { "{\"id\":\"rg\($0.offset)\",\"title\":\"\($0.element)\",\"primary-type\":\"Album\",\"secondary-types\":[],\"first-release-date\":\"1991\",\"disambiguation\":\"\"}" }
+        return "{\"release-group-count\":\(titles.count),\"release-group-offset\":0,\"release-groups\":[\(groups.joined(separator: ","))]}"
+    }
+
     private func answerMassiveAttack(sitelinks: [String: String] = ["enwiki": "Massive Attack"]) {
         fetcher.answer(ArtistInfoClient.searchURL(name: "Massive Attack"), json: Self.searchJSON)
         fetcher.answer(ArtistInfoClient.detailURL(musicBrainzID: Self.massiveID), json: ArtistInfoParsersTests.massiveDetail)
+        fetcher.answer(CommonsArtistSource.releaseGroupsURL(artistID: Self.massiveID),
+                       json: Self.browseJSON(["Blue Lines", "Protection", "Mezzanine", "100th Window", "Heligoland"]))
         fetcher.answer(ArtistInfoClient.entityURL(wikidataID: "Q11895"),
                        json: ArtistInfoParsersTests.entityJSON(id: "Q11895", sitelinks: sitelinks))
         fetcher.answer(ArtistInfoClient.summaryURL(language: "en", title: "Massive Attack")!,
@@ -36,7 +44,9 @@ final class ArtistInfoClientTests: XCTestCase {
         XCTAssertEqual(ArtistInfoClient.searchURL(name: "AC/DC & \"Friends\"").absoluteString,
                        "https://musicbrainz.org/ws/2/artist?query=artist%3A%22AC%2FDC%20%26%20%5C%22Friends%5C%22%22&fmt=json&limit=10")
         XCTAssertEqual(ArtistInfoClient.detailURL(musicBrainzID: Self.massiveID).absoluteString,
-                       "https://musicbrainz.org/ws/2/artist/\(Self.massiveID)?inc=url-rels+artist-rels+genres+release-groups&fmt=json")
+                       "https://musicbrainz.org/ws/2/artist/\(Self.massiveID)?inc=url-rels+artist-rels+genres&fmt=json")
+        XCTAssertEqual(CommonsArtistSource.releaseGroupsURL(artistID: Self.massiveID).absoluteString,
+                       "https://musicbrainz.org/ws/2/release-group?artist=\(Self.massiveID)&type=album%7Cep&limit=100&fmt=json")
         XCTAssertEqual(ArtistInfoClient.summaryURL(language: "pt", title: "Massive Attack (banda)")?.absoluteString,
                        "https://pt.wikipedia.org/api/rest_v1/page/summary/Massive_Attack_%28banda%29")
         XCTAssertEqual(ArtistInfoClient.summaryURL(language: "en", title: "AC/DC")?.absoluteString,
@@ -54,6 +64,7 @@ final class ArtistInfoClientTests: XCTestCase {
         let detail = try await client.detail(musicBrainzID: Self.massiveID, lane: .foreground)
         XCTAssertEqual(detail.wikidataID, "Q11895")
         XCTAssertEqual(detail.facts.kind, "Group")
+        XCTAssertEqual(detail.releaseGroupTitles, ["Blue Lines", "Protection", "Mezzanine", "100th Window", "Heligoland"])
         let bio = try await client.bio(wikidataID: "Q11895", preferredLanguages: ["pt-BR", "en-GB"])
         XCTAssertEqual(bio?.pageURL, URL(string: "https://en.wikipedia.org/wiki/Massive_Attack"))
         XCTAssertEqual(bio?.extract.hasPrefix("Massive Attack are an English trip hop group"), true)
@@ -97,17 +108,17 @@ final class ArtistInfoClientTests: XCTestCase {
         _ = try await client.candidates(for: "Massive Attack", lane: .background)
         _ = try await client.detail(musicBrainzID: Self.massiveID, lane: .background)
         var issued = await gate.issued
-        XCTAssertEqual(issued, [.background: 2])
+        XCTAssertEqual(issued, [.background: 3])
         _ = try await client.candidates(for: "Massive Attack", lane: .foreground)
         _ = try await client.detail(musicBrainzID: Self.massiveID, lane: .foreground)
         issued = await gate.issued
-        XCTAssertEqual(issued, [.background: 2, .foreground: 2])
+        XCTAssertEqual(issued, [.background: 3, .foreground: 3])
         // Wikidata and Wikipedia are not MusicBrainz: they never take a slot.
         _ = try await client.bio(wikidataID: "Q11895", preferredLanguages: ["en"])
         issued = await gate.issued
-        XCTAssertEqual(issued, [.background: 2, .foreground: 2])
+        XCTAssertEqual(issued, [.background: 3, .foreground: 3])
         let musicBrainzRequests = fetcher.requests.filter { $0.host == "musicbrainz.org" }.count
-        XCTAssertEqual(musicBrainzRequests, 4)
+        XCTAssertEqual(musicBrainzRequests, 6)
     }
 
     func testOnlyNamesAndIDsLeaveTheMachine() async throws {
@@ -116,7 +127,7 @@ final class ArtistInfoClientTests: XCTestCase {
         _ = try await client.candidates(for: "Massive Attack", lane: .background)
         _ = try await client.detail(musicBrainzID: Self.massiveID, lane: .background)
         _ = try await client.bio(wikidataID: "Q11895", preferredLanguages: ["en"])
-        XCTAssertEqual(fetcher.requests.count, 4)
+        XCTAssertEqual(fetcher.requests.count, 5)
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         for url in fetcher.requests {
             XCTAssertEqual(url.scheme, "https")
@@ -129,6 +140,27 @@ final class ArtistInfoClientTests: XCTestCase {
                 XCTAssertFalse(text.localizedCaseInsensitiveContains(secret), "\(text) carries \(secret)")
             }
         }
+    }
+
+    /// Review I1: an artist lookup lists at most 25 release groups, singles
+    /// included, so a prolific act's albums can fall outside it. The browse
+    /// of albums and EPs finds the 40th, and that is what confirms.
+    func testReleaseGroupsComeFromTheBrowseNotTheLookupsCappedList() async throws {
+        let id = "prolific"
+        let capped = (1...25).map { "{\"id\":\"s\($0)\",\"title\":\"Single \($0)\",\"primary-type\":\"Single\"}" }
+        fetcher.answer(ArtistInfoClient.detailURL(musicBrainzID: id),
+                       json: "{\"id\":\"\(id)\",\"name\":\"Air\",\"type\":\"Group\",\"relations\":[],\"release-groups\":[\(capped.joined(separator: ","))]}")
+        var albums = (1...45).map { "Album \($0)" }
+        albums[39] = "Moon Safari"
+        fetcher.answer(CommonsArtistSource.releaseGroupsURL(artistID: id), json: Self.browseJSON(albums))
+
+        let detail = try await client().detail(musicBrainzID: id, lane: .background)
+        XCTAssertEqual(detail.releaseGroupTitles.count, 45)
+        XCTAssertEqual(detail.releaseGroupTitles[39], "Moon Safari")
+        XCTAssertEqual(ArtistIdentityMatcher.decide(
+            name: "Air", libraryAlbumTitles: ["Moon Safari"],
+            candidates: [(ArtistIdentityCandidate(musicBrainzID: id, name: "Air"), releaseGroupTitles: detail.releaseGroupTitles)],
+            rejected: []), .confirmed(musicBrainzID: id, wikidataID: nil))
     }
 
     func testServerErrorIsNotNotFound() async {

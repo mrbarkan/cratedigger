@@ -45,10 +45,17 @@ public struct ArtistInfoClient: ArtistInfoFetching {
         try ArtistInfoParsers.searchCandidates(try await musicBrainzData(Self.searchURL(name: name), lane: lane))
     }
 
+    /// Two MusicBrainz requests: the artist, then one page of its albums and
+    /// EPs. The lookup's own `inc=release-groups` is not used: MusicBrainz
+    /// caps it at 25 with singles counted, so a prolific act's albums could
+    /// fall outside it and never confirm.
     public func detail(musicBrainzID: String, lane: MusicBrainzGate.Lane) async throws
         -> (facts: ArtistFacts, wikidataID: String?, releaseGroupTitles: [String]) {
-        try ArtistInfoParsers.artistDetail(try await musicBrainzData(Self.detailURL(musicBrainzID: musicBrainzID),
-                                                                     lane: lane))
+        let artist = try ArtistInfoParsers.artistDetail(
+            try await musicBrainzData(Self.detailURL(musicBrainzID: musicBrainzID), lane: lane))
+        let albums = try CommonsArtistParser.releaseGroupTitles(fromArtist: try await musicBrainzData(
+            CommonsArtistSource.releaseGroupsURL(artistID: musicBrainzID), lane: lane))
+        return (artist.facts, artist.wikidataID, albums)
     }
 
     public func bio(wikidataID: String, preferredLanguages: [String]) async throws -> (extract: String, pageURL: URL)? {
@@ -73,7 +80,7 @@ public struct ArtistInfoClient: ArtistInfoFetching {
     /// The `+` stays as it is: MusicBrainz separates `inc` values with it.
     static func detailURL(musicBrainzID: String) -> URL {
         URL(string: "https://musicbrainz.org/ws/2/artist/\(ArtistPictureURLText.encoded(musicBrainzID))"
-            + "?inc=url-rels+artist-rels+genres+release-groups&fmt=json")!
+            + "?inc=url-rels+artist-rels+genres&fmt=json")!
     }
 
     static func entityURL(wikidataID: String) -> URL {

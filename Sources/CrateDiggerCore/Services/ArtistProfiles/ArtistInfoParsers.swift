@@ -26,8 +26,9 @@ public enum ArtistInfoParsers {
         }
     }
 
-    /// `/ws/2/artist/<id>?inc=url-rels+artist-rels+genres+release-groups&fmt=json`.
-    /// The facts carry no bio (that is Wikipedia's) and link only the artist's
+    /// `/ws/2/artist/<id>?inc=url-rels+artist-rels+genres&fmt=json`. The
+    /// release-group titles are those the answer carries (`inc=release-groups`,
+    /// capped at 25); the client browses them instead. The facts carry no bio (that is Wikipedia's) and link only the artist's
     /// MusicBrainz page; the lookup adds the Wikipedia link when it finds a bio.
     public static func artistDetail(_ data: Data) throws
         -> (facts: ArtistFacts, wikidataID: String?, releaseGroupTitles: [String]) {
@@ -76,9 +77,11 @@ public enum ArtistInfoParsers {
     /// The Wikipedia to read: the first of `preferredLanguages` (the
     /// language code only, `pt-BR` reads as `pt`) whose `<code>wiki` sitelink
     /// exists, else English, else nil. Pass `Locale.preferredLanguages`.
+    /// Norwegian Bokmål (`nb`) reads the `no` Wikipedia, which is written in
+    /// it; Nynorsk (`nn`) tries its own, then `no`.
     public static func wikipediaChoice(sitelinks: [String: String],
                                        preferredLanguages: [String]) -> (language: String, title: String)? {
-        let codes = preferredLanguages.compactMap(languageCode) + ["en"]
+        let codes = preferredLanguages.compactMap(languageCode).flatMap { wikipediaCodes[$0] ?? [$0] } + ["en"]
         for code in codes {
             if let title = sitelinks[code + "wiki"] { return (code, title) }
         }
@@ -86,6 +89,9 @@ public enum ArtistInfoParsers {
     }
 
     // MARK: Private
+
+    /// Languages whose Wikipedia goes by another code, in the order tried.
+    static let wikipediaCodes: [String: [String]] = ["nb": ["no"], "nn": ["nn", "no"]]
 
     /// The language part of a BCP 47 tag, lowercased: `pt-BR` gives `pt`.
     static func languageCode(_ tag: String) -> String? {
