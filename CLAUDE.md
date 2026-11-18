@@ -26,15 +26,19 @@ scripts/package-app.sh           # assemble dist/CrateDigger.app (bundles ffmpeg
 
 ## Two release lines (read before committing anything)
 
-**2.2.4 shipped from `main` on 2026-10-03** (build 105). `main` is the stable
-line, now 2.2.x: it is what the public downloads and what every installed copy
-auto-updates from. Fixes for 2.2.x land on `main`.
+**2.3.4 shipped from `main` on 2026-11-18** (build 120), promoted from `v2.3`.
+`main` is the stable line, now 2.3.x: it is what the public downloads and what
+every installed copy auto-updates from. Fixes for 2.3.x land on `main`.
 
-**The 2.3 beta line is open on `v2.3`**, cut from `main` on 2026-10-03; 2.3.0
-beta 1 is build 106 and brings the compact player. 2.3.0 reached RC 1 (build
-109) but never shipped GA: on 2026-10-12 the line moved to **2.3.1** (2.3.1
-beta 1, build 110, tag `v2.3.1-beta.110`), so the marketing version on `v2.3`
-is now 2.3.1 and its CHANGELOG section is `## 2.3.1`. Release candidates on a
+**`v2.3` is still the beta branch** (`BETA_BRANCH`), cut from `main` on
+2026-10-03. After the 2.3.4 GA it sits level with `main`, `channel` `""`
+included; the next beta pressed there is 2.3.5 beta 1 and sets `channel` back
+to `"BETA"`. How the line got here: 2.3.0 reached RC 1 (build 109) but never
+shipped GA and became 2.3.1 (GA build 113, 2026-10-19); 2.3.2 (build 114) was
+a stable patch from `main` the same day; 2.3.3 stopped at RC 1 (build 116)
+when new features arrived and became 2.3.4 (betas 117 to 119, GA with no RC).
+A version that never ships GA keeps its own CHANGELOG section, and the GA that
+follows says that section is new too. Release candidates on a
 beta line set `channel = "RC"` and are tagged `v<version>-rc.<build>`. `v2.2` carried the 2.2 cycle
 and then the 2.2.x betas and RCs (2.2.4 RC 104 was merged into `main` for GA);
 like `v2` and `v2.1` it is kept for history only. **Do not branch new work from
