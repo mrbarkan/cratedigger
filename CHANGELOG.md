@@ -16,9 +16,10 @@ Receive beta updates.
   or folder outside CrateDigger, Preferences, General now has Relocate
   Library. Choose the folder the music is in now, and every track with a copy
   at the same place inside it is pointed there, along with its crates, play
-  counts and ratings. It works with the old drive unplugged, asks once before
-  changing anything, and never moves or deletes a file. Tracks with no copy
-  stay where they are, and the Music Folder follows when it was the old one.
+  counts and ratings. The old drive does not have to be connected, unless
+  your Crates Index is on it. It asks once before changing anything and never
+  moves or deletes a file. Tracks with no copy stay where they are, and the
+  Music Folder follows when it was the old one.
 
 ## 2.3.4 (120), 2026-11-18
 
