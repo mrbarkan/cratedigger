@@ -40,6 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         #if DEBUG
         installSnapshotHookIfRequested()
         installDemoTourIfRequested()
+        installRelocateCheckIfRequested()
         #endif
 
         // Touching the singleton starts Sparkle, including its once-a-day
@@ -1042,6 +1043,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             }
         }
         NSLog("[shot list] capturing 6 screenshots into \(folder.path); leave the app alone for ~45s")
+    }
+
+    // MARK: - Relocate Library check
+
+    /// Dev-only: `CRATEDIGGER_RELOCATE=<folder>` runs Relocate Library onto that
+    /// folder with its question answered yes, logs the question and the summary
+    /// and quits, so the crates it rewrote can be read afterwards. It refuses
+    /// without `CRATEDIGGER_CRATES_DIR`: it rewrites every crate it is given.
+    /// Run it from a renamed copy of the debug binary, as the tour is.
+    private func installRelocateCheckIfRequested() {
+        guard let path = ProcessInfo.processInfo.environment["CRATEDIGGER_RELOCATE"] else { return }
+        guard LibraryViewModel.debugCratesDirectory != nil else {
+            NSLog("[relocate] refusing to run: CRATEDIGGER_CRATES_DIR is not set, so the real library would be rewritten")
+            return
+        }
+        Task { @MainActor [weak self] in
+            // Let the window and the library settle first.
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard let model = self?.mainWindowController?.model else { return }
+            await model.relocateLibrary(to: URL(fileURLWithPath: path, isDirectory: true)) { plan in
+                let text = LibraryRelocationText.confirmation(plan)
+                NSLog("[relocate] asked: %@ | %@", text.title, text.message)
+                return true
+            }
+            NSLog("[relocate] answered: %@ | %@", model.appAlert?.title ?? "no alert", model.appAlert?.message ?? "")
+            NSApp.terminate(nil)
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            exit(0)
+        }
     }
 
     // MARK: - Demo screenshot tour

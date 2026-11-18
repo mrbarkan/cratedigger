@@ -1177,6 +1177,9 @@ final class LibraryViewModel: ObservableObject {
     /// A scan request arrived while one was in flight — run one more pass
     /// when it lands so mode flips mid-scan are never silently dropped.
     private var pendingCleanupRescan = false
+    /// Relocate Library is reading the chosen folder
+    /// (`LibraryViewModel+Relocate`): a second press is ignored until it is done.
+    var isRelocatingLibrary = false
     @Published var duplicateScanMode: DuplicateScanMode =
         DuplicateScanMode(rawValue: PreferencesStore.shared.duplicateScanMode ?? "") ?? .strict {
         didSet {
@@ -1849,6 +1852,12 @@ final class LibraryViewModel: ObservableObject {
         observe("CrateDiggerMoveIndexFiles") { [weak self] _ in
             Task { @MainActor in
                 self?.moveIndexFiles()
+            }
+        }
+
+        observe("CrateDiggerRelocateLibrary") { [weak self] _ in
+            Task { @MainActor in
+                self?.relocateLibrary()
             }
         }
 

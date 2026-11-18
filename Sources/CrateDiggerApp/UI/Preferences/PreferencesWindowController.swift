@@ -190,7 +190,7 @@ private struct GeneralPreferencesView: View {
             } header: {
                 Text("Folders")
             } footer: {
-                Text("Music Folder holds your audio. Crates Index holds the small database files that track what's in each crate. Default Output is where conversions land. \"Choose…\" only re-points a folder — use the Move buttons below to relocate the files themselves.")
+                Text("Music Folder holds your audio. Crates Index holds the small database files that track what's in each crate. Default Output is where conversions land. \"Choose…\" only re-points a folder — use the Move buttons below to relocate the files themselves, or Relocate Library… when you already copied them yourself.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
@@ -230,6 +230,18 @@ private struct GeneralPreferencesView: View {
                             name: NSNotification.Name("CrateDiggerMoveIndexFiles"), object: nil)
                     }
                     .help("Move the crate index (.cdcrate) files to a new folder — your audio stays where it is.")
+                }
+                // Its own row: the three above move files, this one moves none.
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Button("Relocate Library…") {
+                        NotificationCenter.default.post(
+                            name: NSNotification.Name("CrateDiggerRelocateLibrary"), object: nil)
+                    }
+                    .help("Choose the folder your music was copied to. Every track with a copy at the same place inside it is pointed there, with its crates, play counts and ratings. No file is moved or deleted.")
+                    Text("Already copied or moved your music yourself? This points your crates at the new folder.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
 

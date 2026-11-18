@@ -39,7 +39,7 @@ private struct GuideContent: View {
                         bullet("Dig Crate (⌘O) scans a folder of audio. Tracks land in the Prep Crate.")
                         bullet("Review what arrived, then Add to Crate to file an album where it belongs.")
                         bullet("Edit tags and artwork in the Inspector. Right-click a track for the rest.")
-                        note("Scanning only reads. Nothing on disk moves unless you ask: Move Music Files… and Consolidate Music Files… live in Preferences.")
+                        note("Scanning only reads. Nothing on disk moves unless you ask: Move Music Files… and Consolidate Music Files… live in Preferences. Copied your music to another drive yourself? Relocate Library… is there too.")
                     }
 
                     section("FINDING THINGS", accent: theme.sun) {

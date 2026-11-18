@@ -118,14 +118,14 @@ main.swift  →  AppDelegate  →  MainWindowController  →  CarbonHostingContr
 
 `Sources/CrateDiggerApp/UI/Carbon/Library/LibraryViewModel.swift` (~5,850 lines) is a single `@MainActor ObservableObject` that owns **all** app state, **all** services, and **most** behavior. Almost every SwiftUI view binds to it via `@EnvironmentObject`. **When fixing app behavior, start here** — this is where the wiring lives.
 
-Behavior is split across **37 `LibraryViewModel+*.swift` extensions in three
+Behavior is split across **38 `LibraryViewModel+*.swift` extensions in three
 folders** (don't assume they are all beside the main file):
 
 - `UI/Carbon/Library/` — `+ArrowNav`, `+ArtistPageFixture` (DEBUG), `+ArtistProfiles`, `+BatchArtwork`,
   `+BusySignals`, `+CDDetect`, `+CompactPlayer`, `+DeepScan`,
   `+LibraryFiles`, `+LibraryLocation`, `+Listening`, `+MetadataRepair`,
   `+MiniPlayer`, `+MissingFiles`, `+MultiSelect`, `+NowPlaying`, `+Onboarding`,
-  `+Queue`, `+QuickEQ`, `+Radio`, `+RecordDivider`, `+Rename`, `+Resume`, `+SACDImport`,
+  `+Queue`, `+QuickEQ`, `+Radio`, `+RecordDivider`, `+Relocate`, `+Rename`, `+Resume`, `+SACDImport`,
   `+Search`, `+Sleep`, `+Stats`, `+StreamDownload`, `+TrackActions`,
   `+Versions`, `+Widget`
 - `UI/Conversion/` — `+Conversion`
@@ -178,6 +178,7 @@ The browser is not hard-wired to Artist → Album → Track. A **`BrowserView`**
 - **Resume** is a `PlaybackSnapshot` (loaded track plus up to 500 following, position, source key) kept in `PreferencesStore.playbackSnapshotData`, saved by `LibraryViewModel+Resume` on index change, pause, queue edits and at quit, and written only when its bytes changed. At launch `PlaybackSnapshot.resolve` drops paths the `TrackStore` no longer knows and gives up entirely if the loaded track is gone or its file is not on disk. The position lands through the same `pendingSeek*` pair Record Divider uses.
 - **Prep Crate** is the staging area: newly scanned folders land here first (`handleImport`), not directly into a saved crate.
 - Editing a track's tags (or moving/consolidating the library) must **repoint every crate that references it**: `updateTrackURLInIndex` for one track, `updateTrackURLsInIndex` for a batch (loads/saves each crate at most once, and is what `moveLibrary` and `consolidateLibrary` both funnel through). These also drop the dead old path key from the `TrackStore`. Forgetting this leaves crates pointing at stale paths.
+- **Three ways a library follows its files, and they are not interchangeable.** Move Music Files (`moveLibrary`) moves the files itself. The Missing Tracks panel (CLEANUP) re-links files that are *gone while their drive is connected*, by file name (`RelinkMatcher`), which is a fair guess only because the track is already dead. **Relocate Library** (Preferences ▸ General, `LibraryViewModel+Relocate`) is for music copied or moved outside the app: the old files may still be there, or their drive unplugged, so nothing reads as missing and the panel never lists them. The owner picks the folder the copy is in; Core's `LibraryRelocation.plan` works out the old root from the library's own paths (each track votes for the root its longest matching tail implies; one root per run) and moves a track only onto the file at its own relative path, compared with case and Unicode form folded. A copy the library already holds as a track is left alone, or a crate would hold one file twice. It rewrites through `updateTrackURLsInIndex`, touches no file, and the Music Folder follows only when it was the old root or inside it. Do not loosen it to name matching: these tracks still play, and a namesake would silently replace a working file. DEBUG `CRATEDIGGER_RELOCATE=<folder>` runs it with the question answered yes and quits (refuses without `CRATEDIGGER_CRATES_DIR`; run a renamed copy of the binary).
 - Remote = Subsonic/Navidrome (`SubsonicClient`); CD = `CDRipperService`; Playlists = M3U via `PlaylistService`; Radio = YouTube streaming (see below).
 - **External devices** (`.device`) are mounted removable volumes (`DeviceDetectionService`) that match a saved `ExternalDeviceProfile` — random drives never reach Sources. Matching is `ExternalDeviceProfile.match(_:in:)`: a stored `volumeUUID` is **authoritative** when both the profile and the volume report one, so two iPods that both mount at `/Volumes/IPOD` named "IPOD" stay distinct; profiles saved before UUIDs (or volumes reporting none) fall back to mount path, then name. Legacy profiles self-heal via `backfillVolumeUUIDs` on first connect.
 
