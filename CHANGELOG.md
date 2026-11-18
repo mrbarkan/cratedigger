@@ -4,6 +4,22 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 2.3.5 (121), 2026-11-18
+
+Beta 1: Relocate Library points your crates at music you copied or moved to
+another drive yourself. Betas are offered only to people who turned on
+Receive beta updates.
+
+### Added
+
+- **Relocate Library.** If you copied or moved your music to another drive
+  or folder outside CrateDigger, Preferences, General now has Relocate
+  Library. Choose the folder the music is in now, and every track with a copy
+  at the same place inside it is pointed there, along with its crates, play
+  counts and ratings. It works with the old drive unplugged, asks once before
+  changing anything, and never moves or deletes a file. Tracks with no copy
+  stay where they are, and the Music Folder follows when it was the old one.
+
 ## 2.3.4 (120), 2026-11-18
 
 Devices, artists and a new look for the case. Sending to a device now
