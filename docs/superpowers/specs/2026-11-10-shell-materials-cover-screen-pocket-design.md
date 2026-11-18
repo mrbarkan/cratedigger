@@ -268,6 +268,20 @@ same on every launch and in every snapshot; all tiles wrap seamlessly):
 "Noise" for brushed and blasted is roughly unit-variance (the mockup summed
 four uniforms: `(u1 + u2 + u3 + u4 - 2) * 1.73`).
 
+**Amended 2026-11-18**, after the owner asked for quieter textures on the
+built-in themes, judged from window captures of the real app:
+
+- Plastic is one box blur and a slope gain of 8 (not two and 16): the bumps
+  were about 2.5 pt across and read as leather.
+- Weave's rounding across a tow is `* 0.9` (not `* 1.5`): the dark line
+  between tows read as graph paper on a pale chassis.
+- The materials no longer draw on `PaperPanel` (the list surfaces). It reports
+  itself with `shellMaterialFree`, a hole only the four materials skip; grain
+  still covers the lists as it always has.
+- Shipped strengths: Carbon `shellWeave 0.09` (was 0.14), Llama '97
+  `shellBrushed 0.06` (was 0.16), Pocket `shellPlastic 0.05` (was 0.08). The
+  editor's `on` defaults in the table above are unchanged.
+
 Encoding: each material's `fieldMax` is the largest |f| in its generated tile,
 measured as the tile is made (the fields run past ±1: unit noise reaches
 about 3.5, a lifted blasted pixel about 2.4). A tile pixel's alpha is

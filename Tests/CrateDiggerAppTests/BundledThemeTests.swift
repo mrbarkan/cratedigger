@@ -184,7 +184,7 @@ final class BundledThemeTests: XCTestCase {
 
     func testPocketCarriesItsSharedEffects() throws {
         let effects = try XCTUnwrap(try XCTUnwrap(themes["pocket"]).effects)
-        XCTAssertEqual(effects["shellPlastic"], 0.08)
+        XCTAssertEqual(effects["shellPlastic"], 0.05)
         XCTAssertEqual(effects["coverPixel"], 0.55)
         XCTAssertEqual(effects["coverPixelSize"], 1.5)
         XCTAssertEqual(effects["oledMonochrome"], 1)

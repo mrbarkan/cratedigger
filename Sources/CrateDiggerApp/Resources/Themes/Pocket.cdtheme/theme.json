@@ -66,7 +66,7 @@
     "coverPixel" : 0.55,
     "coverPixelSize" : 1.5,
     "oledMonochrome" : 1,
-    "shellPlastic" : 0.08
+    "shellPlastic" : 0.05
   },
   "id" : "pocket",
   "light" : {

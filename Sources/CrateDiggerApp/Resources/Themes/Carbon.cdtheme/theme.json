@@ -62,7 +62,7 @@
     }
   },
   "effects" : {
-    "shellWeave" : 0.14
+    "shellWeave" : 0.09
   },
   "id" : "carbon",
   "light" : {

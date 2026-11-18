@@ -37,11 +37,14 @@ final class ShellMaterialTests: XCTestCase {
     /// The materials each shipped theme was given on 2026-11-10, chosen by the
     /// owner from live captures: Carbon traded its grain for the weave it is
     /// named after, Llama '97 got the brushed chrome of its era, and Cobalt
-    /// stayed bare. None of them has a cover look.
+    /// stayed bare. None of them has a cover look. The strengths were turned
+    /// down on 2026-11-18 (weave 0.14 to 0.09, brushed 0.16 to 0.06, and
+    /// Pocket's plastic 0.08 to 0.05 below): at the first values the texture
+    /// competed with the content.
     func testShippedThemesCarryTheirChosenMaterials() throws {
         let expected: [(id: String, material: ShellMaterial?, strength: Double)] = [
-            ("carbon", .weave, 0.14),
-            ("llama-97", .brushed, 0.16),
+            ("carbon", .weave, 0.09),
+            ("llama-97", .brushed, 0.06),
             ("cobalt", nil, 0),
         ]
         for (id, material, strength) in expected {
@@ -59,7 +62,7 @@ final class ShellMaterialTests: XCTestCase {
         for appearance in [ThemeDefinition.BaseAppearance.light, .dark] {
             let theme = try render("pocket", appearance)
             XCTAssertEqual(theme.shellMaterial, .plastic)
-            XCTAssertEqual(theme.shellMaterialStrength, 0.08, accuracy: 0.0001)
+            XCTAssertEqual(theme.shellMaterialStrength, 0.05, accuracy: 0.0001)
             XCTAssertEqual(theme.coverScreenLook, .pixel)
             XCTAssertEqual(theme.coverScreenStrength, 0.55, accuracy: 0.0001)
             XCTAssertEqual(theme.coverPixelSize, 1.5)

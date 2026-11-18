@@ -56,5 +56,8 @@ struct PaperPanel<Content: View>: View {
                 .clipShape(shape)
         }
         .compositingGroup()
+        // Paper is a sheet set into the case, not the case: the shell's
+        // material stops at its edge, so no texture runs behind a row of text.
+        .shellMaterialFree(shape: shape)
     }
 }

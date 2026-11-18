@@ -124,13 +124,18 @@ enum ShellMaterialTexture {
         }
     }
 
-    /// Orange peel: white noise softened by two wrapping 3 × 3 box blurs into
-    /// low bumps, then lit from the top left by taking the slope along the
-    /// diagonal. 256 pt.
+    /// A fine moulded stipple: white noise softened by one wrapping 3 × 3 box
+    /// blur into low bumps, then lit from the top left by taking the slope
+    /// along the diagonal. 256 pt.
+    ///
+    /// One blur, not two. Two (the first build) made bumps about 2.5 pt
+    /// across, and on the real console that read as leather or crumpled
+    /// paper rather than as a plastic case; one keeps them near a point,
+    /// which is the even tooth a moulded shell has.
     ///
     /// The noise is uniform in -0.5...0.5, not the unit-variance noise the
-    /// metals use: the ×16 slope gain is what brings this field to about ±1,
-    /// and with unit noise under it the same gain lands near ±4.5.
+    /// metals use: the ×8 slope gain is what brings this field to about ±1
+    /// (it was ×16 under two blurs, which flatten the slope twice as much).
     private static func plasticField() -> Field {
         let side = 256 * scale
         var rng = SeededGenerator(seed: 0x504C_4153_5449_4331) // "PLASTIC1"
@@ -138,7 +143,7 @@ enum ShellMaterialTexture {
         for i in height.values.indices {
             height.values[i] = Float(rng.uniform() - 0.5)
         }
-        height = boxBlur(boxBlur(height))
+        height = boxBlur(height)
         var field = Field(width: side, height: side)
         let h = height.values
         for y in 0..<side {
@@ -147,7 +152,7 @@ enum ShellMaterialTexture {
             for x in 0..<side {
                 let left = (x - 1 + side) % side
                 let right = (x + 1) % side
-                field.values[y * side + x] = (h[above + left] - h[below + right]) * 16
+                field.values[y * side + x] = (h[above + left] - h[below + right]) * 8
             }
         }
         return field
@@ -203,6 +208,11 @@ enum ShellMaterialTexture {
     /// horizontal ones catch more light than the vertical ones, and a little
     /// noise keeps the lacquer from looking printed. One twill repeat is 16
     /// pt; the tile is 64 pt so the noise doesn't repeat that often.
+    ///
+    /// The rounding across a tow is ×0.9 (it was ×1.5). At the higher gain
+    /// the dark line between every pair of tows outweighed the twill itself,
+    /// and on a pale chassis the weave read as graph paper; the light and
+    /// shade of the twill's diagonal is what should carry the pattern.
     private static func weaveField() -> Field {
         let side = 64 * scale
         let tow = 4 * scale
@@ -217,7 +227,7 @@ enum ShellMaterialTexture {
                 let v = (Double(y % tow) + 0.5) / Double(tow)
                 let across = horizontal ? v : u
                 let along = horizontal ? u : v
-                let value = (sin(across * .pi) - 0.64) * 1.5
+                let value = (sin(across * .pi) - 0.64) * 0.9
                     + (horizontal ? 0.55 : -0.25)
                     + (sin(along * .pi) - 0.64) * 0.35
                     + 0.18 * (rng.uniform() - 0.5)
@@ -352,6 +362,8 @@ extension View {
     /// Grain goes straight to `carbonGrain`, unchanged, so Carbon renders
     /// exactly as before. The others are masked around everything that called
     /// `grainFree()`, as grain is: the display glass, the rubber caps, art.
+    /// They also skip what called `shellMaterialFree()`, which grain does
+    /// not: the paper panels that hold the lists.
     /// A no-op for nil or a strength at or below 0: the bare view.
     @ViewBuilder
     func carbonShellMaterial(_ material: ShellMaterial?, strength: Double) -> some View {
