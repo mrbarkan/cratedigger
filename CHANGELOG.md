@@ -4,22 +4,18 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
-## 2.3.4 (119), 2026-11-12
+## 2.3.4 (120), 2026-11-18
 
-Beta 3: artist pictures reach the iPod even when there is nothing new to
-send, Preferences explains what PodBox and its People folder are, a band
-whose name has no letters (such as "@") gets an artist page, and adding a
-cover to an album no longer leaves a stray "track" behind. Beta 2 brought
-devices and artists. Sending to a device now looks at what is
-already there, copies only what is missing and asks once about albums that
-differ. PodBox iPods are recognised, get artist pictures and stop filling
-up with hidden Mac files. And every artist gets a page in the inspector: a
-portrait, who they are, a short bio and what your library holds of them,
-filled in quietly in the background and yours to edit. Beta 1 brought
-shell materials, the cover screen and the Pocket theme. 2.3.3 went out
-only as a release candidate, so everything listed under 2.3.3 below is new
-to stable users too. Betas are offered only to people who turned on
-Receive beta updates.
+Devices, artists and a new look for the case. Sending to a device now
+looks at what is already there, copies only what is missing and asks once
+about albums that differ. PodBox iPods are recognised, get artist pictures
+and stop filling up with hidden Mac files. Every artist gets a page in the
+inspector: a portrait, who they are, a short bio and what your library
+holds of them, filled in quietly in the background and yours to edit.
+Themes can give the case a material and turn the album art in the compact
+and mini players into a small LCD, and Pocket joins as a fourth built-in
+theme. 2.3.3 never went out as a stable release, so everything listed
+under 2.3.3 below is new in this release too.
 
 ### Added
 
@@ -140,6 +136,12 @@ Receive beta updates.
   lamp in the light theme now glows the same orange as the light it
   throws on the row.
 - **Llama '97 wears brushed metal.**
+- **Shell materials stay on the case.** They stop at the edge of the
+  Sources, Browser and Inspector lists, so no texture sits behind a row of
+  text. Since the betas, Moulded Plastic is a finer stipple, Carbon Weave
+  is softer, and Carbon, Llama '97 and Pocket wear theirs more lightly.
+  Themes you made with these materials pick up the same changes; Texture
+  Grain is unchanged.
 - Themes you made that inherit from Carbon pick up the weave with it, even
   one that sets its own grain. To keep grain, open the theme in the Theme
   Editor, switch Texture Grain on and save.
