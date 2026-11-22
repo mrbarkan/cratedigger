@@ -217,7 +217,10 @@ public struct ThemeLoaderService {
             // otherwise a one-line child of a light/dark theme would silently
             // collapse to a single appearance.
             light: mergeVariants(base.light, override.light),
-            dark: mergeVariants(base.dark, override.dark)
+            dark: mergeVariants(base.dark, override.dark),
+            // The recipe belongs to the theme authored with it, never to a child
+            // inheriting its colours.
+            simple: override.simple
         )
     }
 

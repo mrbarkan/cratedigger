@@ -80,6 +80,11 @@ public struct ThemeDefinition: Codable, Sendable, Equatable {
     public var light: ThemeVariant?
     public var dark: ThemeVariant?
 
+    /// What the Simple theme editor needs to reopen this theme: palette, pins,
+    /// assignment, contrast. Absent on every theme made by hand or before Simple
+    /// existed. A malformed block decodes as `nil` rather than failing the theme.
+    public var simple: SimpleThemeRecipe?
+
     public init(
         id: String,
         name: String,
@@ -94,8 +99,10 @@ public struct ThemeDefinition: Codable, Sendable, Equatable {
         geometry: [String: Double]? = nil,
         effects: [String: Double]? = nil,
         light: ThemeVariant? = nil,
-        dark: ThemeVariant? = nil
+        dark: ThemeVariant? = nil,
+        simple: SimpleThemeRecipe? = nil
     ) {
+        self.simple = simple
         self.light = light
         self.dark = dark
         self.id = id
@@ -111,6 +118,32 @@ public struct ThemeDefinition: Codable, Sendable, Equatable {
         self.geometry = geometry
         self.effects = effects
     }
+
+    /// Decoding is explicit only so that `simple` can be lenient: a block of the
+    /// wrong shape, or from a newer app, must never stop the theme from loading.
+    /// Encoding stays synthesised (a `nil` block is omitted).
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        author = try c.decodeIfPresent(String.self, forKey: .author)
+        version = try c.decodeIfPresent(String.self, forKey: .version)
+        baseAppearance = try c.decode(BaseAppearance.self, forKey: .baseAppearance)
+        inherits = try c.decodeIfPresent(String.self, forKey: .inherits)
+        colors = try c.decodeIfPresent([String: String].self, forKey: .colors)
+        shadows = try c.decodeIfPresent([String: ShadowDefinition].self, forKey: .shadows)
+        fonts = try c.decodeIfPresent([String: ThemeFont].self, forKey: .fonts)
+        logo = try c.decodeIfPresent(String.self, forKey: .logo)
+        geometry = try c.decodeIfPresent([String: Double].self, forKey: .geometry)
+        effects = try c.decodeIfPresent([String: Double].self, forKey: .effects)
+        light = try c.decodeIfPresent(ThemeVariant.self, forKey: .light)
+        dark = try c.decodeIfPresent(ThemeVariant.self, forKey: .dark)
+        simple = (try? c.decodeIfPresent(SimpleThemeRecipe.self, forKey: .simple))?.sanitized()
+    }
+}
+
+public extension ThemeDefinition {
+    var isSimple: Bool { simple != nil }
 }
 
 /// The weights the interface actually asks for. Anything heavier or lighter a
