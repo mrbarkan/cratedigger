@@ -115,6 +115,7 @@ public enum SimplePaletteAssigner {
     /// A colour for every job. Jobs without a swatch are derived: Text and Screen Text
     /// as a tinted neutral of the Frame's / Glass's hue, lightness opposite their
     /// surface; any other job from the nearest job (in display order) that has one.
+    /// An empty palette has nothing to derive from and gives an empty dictionary.
     public static func jobColors(
         palette: [PaletteColor],
         assignment: JobAssignment,
@@ -150,8 +151,9 @@ public enum SimplePaletteAssigner {
         return out
     }
 
-    /// Drops pins and assignments that point at a swatch that no longer exists. A
-    /// dropped assignment entry reads as "derived".
+    /// Drops pins and assignments whose index is outside `0..<paletteCount`. A dropped
+    /// assignment entry reads as "derived". It does not remap: a caller that removes a
+    /// swatch from the middle must shift the higher indices down itself first.
     public static func sanitize(
         pins: [ThemeJob: Int],
         assignment: JobAssignment,

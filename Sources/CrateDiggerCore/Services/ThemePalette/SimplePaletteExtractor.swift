@@ -3,12 +3,15 @@ import Foundation
 /// Turns an existing theme into a Simple recipe, so Simple can open any theme.
 ///
 /// Reads the six anchor tokens (frame `chassis`, panels `paper`, text `ink`, accent
-/// `orange`, glass `oledSurface`, screen text `oledForeground`) from the theme's own
-/// appearance layer (dark if it has one, else light, else the shared colours), falling
-/// back to `resolvedBase` for a token the theme does not set. Colours closer than
-/// `mergeDistance` in OKLab become one swatch; past six swatches the least-used go
-/// (ties drop the later one) and their jobs pin to the nearest survivor. Every job
-/// ends up pinned, so the theme reads back as it was.
+/// `orange`, glass `oledSurface`, screen text `oledForeground`) from the theme's
+/// primary layer, the one for its own `baseAppearance`, falling back to
+/// `resolvedBase` for a token the theme does not set. Colours closer than
+/// `mergeDistance` in OKLab become one swatch, and every job pins to its colour, so
+/// the theme reads back as it was.
+///
+/// An adaptive theme (one that has the other appearance's layer too) also brings that
+/// layer's colours: each one not within `mergeDistance` of an existing swatch is
+/// appended, unpinned, while the palette has fewer than six swatches.
 public enum SimplePaletteExtractor {
     public static let mergeDistance = 0.03
 
@@ -18,18 +21,23 @@ public enum SimplePaletteExtractor {
     ]
 
     public static func recipe(from definition: ThemeDefinition, resolvedBase: [String: String]) -> SimpleThemeRecipe {
-        let appearance: ThemeDefinition.BaseAppearance =
-            definition.dark != nil ? .dark : (definition.light != nil ? .light : definition.baseAppearance)
-        let tokens = definition.resolved(for: appearance).colors ?? [:]
+        let primary = definition.baseAppearance
+        let other: ThemeDefinition.BaseAppearance = primary == .dark ? .light : .dark
+        let fallbackColor = PaletteColor(hex: primary == .dark ? "#171C22" : "#F5F8FA")!
 
-        var jobColor: [ThemeJob: PaletteColor] = [:]
-        for job in ThemeJob.allCases {
-            let key = anchorTokens[job]!
-            let color = tokens[key].flatMap(PaletteColor.init(hex:))
-                ?? resolvedBase[key].flatMap(PaletteColor.init(hex:))
-                ?? PaletteColor(hex: appearance == .dark ? "#171C22" : "#F5F8FA")!
-            jobColor[job] = PaletteColor(r: color.r, g: color.g, b: color.b)
+        func jobColors(_ appearance: ThemeDefinition.BaseAppearance) -> [ThemeJob: PaletteColor] {
+            let tokens = definition.resolved(for: appearance).colors ?? [:]
+            var out: [ThemeJob: PaletteColor] = [:]
+            for job in ThemeJob.allCases {
+                let key = anchorTokens[job]!
+                let color = tokens[key].flatMap(PaletteColor.init(hex:))
+                    ?? resolvedBase[key].flatMap(PaletteColor.init(hex:))
+                    ?? fallbackColor
+                out[job] = PaletteColor(r: color.r, g: color.g, b: color.b)
+            }
+            return out
         }
+        let jobColor = jobColors(primary)
 
         // Merge near-duplicates in job order; each swatch counts its jobs.
         var swatches: [PaletteColor] = []
@@ -46,15 +54,21 @@ public enum SimplePaletteExtractor {
                 swatchOf[job] = swatches.count - 1
             }
         }
+        let pinnedSwatches = Set(swatchOf.values)
 
-        // Keep the six most used (ties keep the earlier), preserving first-seen order.
-        var keep = Array(swatches.indices)
-        while keep.count > SimpleThemeRecipe.maxPaletteCount {
-            let drop = keep.enumerated().min { a, b in
-                uses[a.element] != uses[b.element] ? uses[a.element] < uses[b.element] : a.element > b.element
-            }!
-            keep.remove(at: drop.offset)
+        // The other layer's colours, as unpinned extras while there is room.
+        if definition.variant(for: other) != nil {
+            let otherColors = jobColors(other)
+            for job in ThemeJob.allCases where swatches.count < SimpleThemeRecipe.maxPaletteCount {
+                let color = otherColors[job]!
+                if !swatches.contains(where: { $0.distance(to: color) < mergeDistance }) {
+                    swatches.append(color)
+                    uses.append(0)
+                }
+            }
         }
+
+        let keep = keptSwatches(uses: uses, pinned: pinnedSwatches, limit: SimpleThemeRecipe.maxPaletteCount)
         let newIndex = Dictionary(uniqueKeysWithValues: keep.enumerated().map { ($1, $0) })
 
         var pins: [ThemeJob: Int] = [:]
@@ -68,13 +82,13 @@ public enum SimplePaletteExtractor {
             }
         }
 
-        // A palette needs two swatches; a theme whose six anchors are one colour gets
+        // A palette needs two swatches; a theme whose anchors are all one colour gets
         // a second so the editor has something to work with.
         var palette = keep.map { swatches[$0].hex }
         if palette.count < SimpleThemeRecipe.minPaletteCount {
             let base = swatches[keep[0]].oklch
-            let other = PaletteColor(oklch: OKLCH(l: base.l < 0.5 ? base.l + 0.4 : base.l - 0.4, c: base.c, h: base.h))
-            palette.append(other.hex)
+            let extra = PaletteColor(oklch: OKLCH(l: base.l < 0.5 ? base.l + 0.4 : base.l - 0.4, c: base.c, h: base.h))
+            palette.append(extra.hex)
         }
 
         var assignment: [ThemeJob: Int?] = [:]
@@ -86,5 +100,22 @@ public enum SimplePaletteExtractor {
             contrast: .standard,
             recipe: SimplePaletteRecipe.currentVersion
         )
+    }
+
+    /// Which swatches survive when there are more than `limit`: unpinned ones go first
+    /// (least used, later first), a pinned one only when nothing unpinned is left.
+    /// First-seen order is kept. The loop is a guard today (at most six jobs pin, and
+    /// extras stop at six), but it is correct for any count.
+    static func keptSwatches(uses: [Int], pinned: Set<Int>, limit: Int) -> [Int] {
+        var keep = Array(uses.indices)
+        while keep.count > limit {
+            let drop = keep.enumerated().min { a, b in
+                let pa = pinned.contains(a.element), pb = pinned.contains(b.element)
+                if pa != pb { return !pa }
+                return uses[a.element] != uses[b.element] ? uses[a.element] < uses[b.element] : a.element > b.element
+            }!
+            keep.remove(at: drop.offset)
+        }
+        return keep
     }
 }
