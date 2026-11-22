@@ -239,15 +239,64 @@ public final class PreferencesStore {
             guard let data = defaults.data(forKey: Key.externalDeviceProfiles) else {
                 return []
             }
-            return (try? decoder.decode([ExternalDeviceProfile].self, from: data)) ?? []
+            return readExternalDeviceProfiles(from: data).profiles
         }
         set {
-            if newValue.isEmpty {
+            // Elements this build cannot decode (a profile a newer build wrote,
+            // with a device kind this one does not know) are kept as raw JSON
+            // and written back after the profiles, so an older build never
+            // destroys a newer build's devices.
+            let preserved: [Data]
+            if let stored = defaults.data(forKey: Key.externalDeviceProfiles) {
+                preserved = readExternalDeviceProfiles(from: stored).undecodable
+            } else {
+                preserved = []
+            }
+            if newValue.isEmpty && preserved.isEmpty {
                 defaults.removeObject(forKey: Key.externalDeviceProfiles)
-            } else if let data = try? encoder.encode(newValue) {
-                defaults.set(data, forKey: Key.externalDeviceProfiles)
+                return
+            }
+            do {
+                // Each profile is encoded alone with the store's own encoder, so
+                // all-valid data is byte-identical to encoding the array.
+                let pieces = try newValue.map { try encoder.encode($0) } + preserved
+                var out = Data("[".utf8)
+                for (index, piece) in pieces.enumerated() {
+                    if index > 0 { out.append(UInt8(ascii: ",")) }
+                    out.append(piece)
+                }
+                out.append(UInt8(ascii: "]"))
+                defaults.set(out, forKey: Key.externalDeviceProfiles)
+            } catch {
+                AppLog.prefs.error("Could not encode device profiles; stored list left as it was")
             }
         }
+    }
+
+    /// Reads the stored array element by element. `undecodable` holds the raw
+    /// JSON of each element that is not an `ExternalDeviceProfile` here. Data
+    /// that is not a JSON array at all reads as empty, with nothing to keep.
+    private func readExternalDeviceProfiles(from data: Data) -> (profiles: [ExternalDeviceProfile], undecodable: [Data]) {
+        guard let elements = (try? JSONSerialization.jsonObject(with: data)) as? [Any] else {
+            AppLog.prefs.error("Stored device profiles are not a JSON array; reading none")
+            return ([], [])
+        }
+        var profiles: [ExternalDeviceProfile] = []
+        var undecodable: [Data] = []
+        for element in elements {
+            guard JSONSerialization.isValidJSONObject([element]),
+                  let raw = try? JSONSerialization.data(withJSONObject: element, options: [.fragmentsAllowed])
+            else { continue }
+            if let profile = try? decoder.decode(ExternalDeviceProfile.self, from: raw) {
+                profiles.append(profile)
+            } else {
+                undecodable.append(raw)
+            }
+        }
+        if !undecodable.isEmpty {
+            AppLog.prefs.debug("Skipped \(undecodable.count, privacy: .public) device profile(s) this build cannot read; kept for newer builds")
+        }
+        return (profiles, undecodable)
     }
 
     public func upsertExternalDeviceProfile(_ profile: ExternalDeviceProfile) {
