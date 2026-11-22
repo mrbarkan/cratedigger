@@ -1154,7 +1154,10 @@ private struct PreviewMiniPlayer: View {
     }
 
     /// The mini display: the title in the display face, the band and the
-    /// album under it, the time at the right in the accent.
+    /// album under it, the time at the right in the accent. The theme's own
+    /// accent even on a monochrome panel: the real mini player draws its
+    /// glass straight from the theme (`MiniPlayerTimeReadout` reads
+    /// `theme.orange`), and only `OLEDDisplay` collapses onto the phosphor.
     private var miniScreen: some View {
         let glass = theme.previewGlass
         return ZStack(alignment: .topLeading) {
@@ -1176,8 +1179,8 @@ private struct PreviewMiniPlayer: View {
                         .truncationMode(.tail)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .previewJob(.screenText)
-                    PreviewType("0:42 / 3:15", fonts.mono(7, weight: .bold), glass.orange)
-                        .previewJob(theme.glassAccentJob)
+                    PreviewType("0:42 / 3:15", fonts.mono(7, weight: .bold), theme.orange)
+                        .previewJob(.accent)
                 }
             }
             .padding(.horizontal, 9)
