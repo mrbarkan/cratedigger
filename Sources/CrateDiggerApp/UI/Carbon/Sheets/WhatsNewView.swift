@@ -210,11 +210,13 @@ struct WhatsNewItem: Identifiable {
             symbol: "paintpalette",
             title: "Everything about theming, in one place",
             body: """
-            Press THEME in the header for the theme browser, then EDITOR to \
-            start changing one. Every colour, corner radius and typeface is a \
-            control, and the app repaints as you work, so the preview is the \
-            application behind the panel rather than a picture of it. One theme \
-            carries both a light and a dark version and follows your system \
+            Press THEME in the header for the theme browser. NEW starts a \
+            Simple theme from the one on screen: two to six colours, a contrast \
+            level, a material and fonts, shown in a preview beside the controls \
+            until you apply it. EDITOR opens the theme on screen; in Advanced \
+            every colour, corner radius and typeface is a control and the app \
+            repaints as you work, so the preview is the application behind the \
+            panel rather than a picture of it. One theme carries both a light and a dark version and follows your system \
             setting. Any font on your Mac can letter the interface, with the \
             family's real weights mapped rather than smeared. A theme can carry \
             its own logo for the header, framed in the editor. Seven one-click \
