@@ -181,7 +181,7 @@ final class ThemeEditorSessionTests: XCTestCase {
         XCTAssertNil(registry.draft)
         let editor = try XCTUnwrap(session.simple)
         XCTAssertEqual(editor.candidate.name, "Base Theme Copy")
-        XCTAssertEqual(editor.candidate.inherits, "base-theme")
+        XCTAssertNil(editor.candidate.inherits, "a Simple theme is self-contained")
     }
 
     func testAdvancedToSimpleCopyWithUnsavedWorkAsksFirst() throws {
@@ -195,7 +195,7 @@ final class ThemeEditorSessionTests: XCTestCase {
         try choose("SAVE")
         XCTAssertNil(registry.draft)
         let editor = try XCTUnwrap(session.simple)
-        XCTAssertEqual(editor.candidate.inherits, "base-theme")
+        XCTAssertNil(editor.candidate.inherits)
         let saved = try manifest("base-theme").definition
         XCTAssertEqual(saved.colors?["orange"], "#123456", "Save put the work in the file the copy is made from")
     }
@@ -232,11 +232,43 @@ final class ThemeEditorSessionTests: XCTestCase {
         let draft = try XCTUnwrap(registry.draft)
         XCTAssertEqual(draft.id, seed.id)
         XCTAssertEqual(draft.name, seed.name)
-        XCTAssertEqual(draft.inherits, "base-theme")
+        XCTAssertNil(draft.inherits, "a converted Simple theme stays self-contained")
+        XCTAssertNil(draft.logo)
+        XCTAssertNil(registry.draftLogo, "a Simple theme shows its name, and so does its conversion")
         XCTAssertNil(draft.simple)
         XCTAssertEqual(registry.undoDepth, 0, "the draft open before is not an undo step of the conversion")
-        // Seeded against the parent: inherited tokens are filled in.
-        XCTAssertEqual(draft.colors?["chassis"]?.uppercased(), "#111111")
+        // Every token is filled in, as the candidate draws it.
+        let drawn = registry.previewTheme(for: seed, appearance: .dark).theme
+        XCTAssertEqual(draft.colors?["chassis"]?.uppercased(), drawn.chassis.themeHexString.uppercased())
         XCTAssertGreaterThan(draft.colors?.count ?? 0, 20)
+    }
+
+    func testAdvancedCopyOfSimpleCarriesNoLogoOrParent() throws {
+        let candidate = registry.newSimpleSeed(from: try manifest("base-theme"))
+        registry.beginAdvancedCopy(of: candidate)
+        let draft = try XCTUnwrap(registry.draft)
+        XCTAssertNil(draft.inherits)
+        XCTAssertNil(draft.logo)
+        XCTAssertNil(draft.light?.logo)
+        XCTAssertNil(draft.dark?.logo)
+        XCTAssertNil(registry.draftLogo)
+        XCTAssertNil(draft.simple)
+    }
+
+    func testNewStartsThePreviewOnTheLookOnScreen() throws {
+        try ThemeAuthoringService(themesDirectory: themesDirectory).save(ThemeDefinition(
+            id: "both-theme", name: "Both Theme", baseAppearance: .dark,
+            colors: ["chassis": "#101820"],
+            light: ThemeVariant(colors: ["chassis": "#EEF2F5"]), dark: ThemeVariant()
+        ))
+        registry.refresh()
+        for screen in [ThemeDefinition.BaseAppearance.light, .dark] {
+            session.onScreen = screen
+            session.startNew(from: try manifest("both-theme"))
+            if session.prompt != nil { try choose("DISCARD") }
+            let editor = try XCTUnwrap(session.simple)
+            XCTAssertEqual(editor.choices.appearance, .both)
+            XCTAssertEqual(editor.previewAppearance, screen, "the preview opens on the look on screen")
+        }
     }
 }

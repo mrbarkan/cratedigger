@@ -96,6 +96,84 @@ final class SimpleThemeBuilderTests: XCTestCase {
                        SimpleThemeBuilder.build(state: state, choices: c, onto: base))
     }
 
+    // MARK: Self-contained
+
+    func testSeedCopiesNonColourSettingsAndNothingElse() throws {
+        var original = try loadBase("Llama 97")
+        original.inherits = "somewhere"
+        let seed = SimpleThemeBuilder.seed(from: original, id: "new", name: "New")
+        XCTAssertEqual(seed.id, "new")
+        XCTAssertEqual(seed.name, "New")
+        XCTAssertNil(seed.inherits)
+        XCTAssertNil(seed.logo)
+        XCTAssertNil(seed.author)
+        XCTAssertNil(seed.colors)
+        XCTAssertNil(seed.simple)
+        XCTAssertEqual(seed.fonts, original.fonts)
+        XCTAssertEqual(seed.geometry, original.geometry)
+        XCTAssertEqual(seed.effects, original.effects)
+        XCTAssertEqual(seed.shadows, original.shadows)
+        XCTAssertTrue(seed.isAdaptive)
+        for appearance in [ThemeDefinition.BaseAppearance.light, .dark] {
+            let layer = try XCTUnwrap(seed.variant(for: appearance))
+            XCTAssertNil(layer.colors, "\(appearance)")
+            XCTAssertNil(layer.logo, "\(appearance)")
+            XCTAssertEqual(layer.shadows, original.variant(for: appearance)?.shadows, "\(appearance)")
+            XCTAssertEqual(layer.effects, original.variant(for: appearance)?.effects, "\(appearance)")
+        }
+    }
+
+    func testSeedFromSingleAppearanceFlattensItsOwnLayer() throws {
+        var original = try loadBase("Llama 97")
+        original.light = nil   // not adaptive: only the dark layer draws
+        let seed = SimpleThemeBuilder.seed(from: original, id: "new", name: "New")
+        XCTAssertFalse(seed.isAdaptive)
+        XCTAssertNil(seed.light)
+        XCTAssertNil(seed.dark)
+        XCTAssertEqual(seed.shadows, original.resolved(for: .dark).shadows)
+    }
+
+    func testBuiltThemeNamesNoParentNoLogoAndNoOverride() throws {
+        var base = SimpleThemeBuilder.seed(from: try loadBase("Llama 97"), id: "n", name: "N")
+        base.inherits = "llama-97"
+        base.logo = "logo-dark.pdf"
+        base.colors = ["keyLamp": "#FF0D19", "chassis": "#000000"]
+        let overrides: Set<String> = ["lampNow", "lampConvert", "lampScan", "lampSync", "lampCD", "lampDevices",
+                                      "lampSearch", "lampStats", "transportLamp", "keyLamp", "meterHot",
+                                      "chassisInk", "columnHeaderInk"]
+        for mode in SimpleAppearanceMode.allCases {
+            let built = SimpleThemeBuilder.build(state: state, choices: choices(mode), onto: base)
+            XCTAssertNil(built.inherits, "\(mode)")
+            XCTAssertNil(built.logo, "\(mode)")
+            XCTAssertNil(built.light?.logo, "\(mode)")
+            XCTAssertNil(built.dark?.logo, "\(mode)")
+            for appearance in [ThemeDefinition.BaseAppearance.light, .dark] {
+                let colors = built.resolved(for: appearance).colors ?? [:]
+                XCTAssertTrue(overrides.isDisjoint(with: colors.keys), "\(mode) \(appearance): \(overrides.intersection(colors.keys))")
+            }
+        }
+    }
+
+    /// LIGHT or DARK over an adaptive base takes that look's own shadows and effects.
+    func testSingleAppearanceTakesThatLooksShadowsAndEffects() throws {
+        var base = SimpleThemeBuilder.seed(from: try loadBase("Llama 97"), id: "n", name: "N")
+        base.light?.effects = ["oledGlare": 0.4]
+        for (mode, appearance) in [(SimpleAppearanceMode.light, ThemeDefinition.BaseAppearance.light),
+                                   (.dark, .dark)] {
+            let built = SimpleThemeBuilder.build(state: state, choices: choices(mode), onto: base)
+            XCTAssertEqual(built.shadows, base.resolved(for: appearance).shadows, "\(mode)")
+            XCTAssertEqual(built.effects?["oledGlare"], base.resolved(for: appearance).effects?["oledGlare"], "\(mode)")
+        }
+    }
+
+    func testBuildStampsTheCurrentRecipeVersion() throws {
+        let old = SimpleThemeState(recipe: SimpleThemeRecipe(palette: ["#1D2433", "#E9E4D8"], recipe: 0))
+        let built = SimpleThemeBuilder.build(state: old, choices: choices(), onto: try loadBase("Carbon"))
+        XCTAssertEqual(built.simple?.recipe, SimplePaletteRecipe.currentVersion)
+        XCTAssertNotEqual(SimpleThemeRecipe(palette: ["#1D2433", "#E9E4D8"]).recipe, 0,
+                          "a new recipe is the current table's, not 0")
+    }
+
     func testContrastFloorsHoldOnBuiltTheme() throws {
         let base = try loadBase("Carbon")
         for contrast in SimpleContrast.allCases {

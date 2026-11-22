@@ -21,7 +21,8 @@ public enum SimpleContrast: String, Codable, CaseIterable, Sendable {
 }
 
 /// What Simple mode remembers about a theme: the palette, which swatch is pinned
-/// to which job, the current assignment, the contrast level and the recipe variant.
+/// to which job, the current assignment, the contrast level and the version of the
+/// recipe table that generated the theme's colours.
 ///
 /// Third parties can author this block, so decoding never throws on a wrong shape
 /// inside it: the owner's theme must always open. `ThemeDefinition` also decodes the
@@ -38,7 +39,9 @@ public struct SimpleThemeRecipe: Codable, Equatable, Sendable {
     /// (it is derived), and encodes as JSON `null`.
     public var assignment: [ThemeJob: Int?]
     public var contrast: SimpleContrast
-    /// Which recipe variant (shuffle position) produced the theme.
+    /// The version of the recipe table (`SimplePaletteRecipe.currentVersion`) that
+    /// generated the saved tokens. `SimpleThemeBuilder` stamps the current one on every
+    /// build. A file that leaves it out decodes as 0, "older than any version".
     public var recipe: Int
 
     public init(
@@ -46,7 +49,7 @@ public struct SimpleThemeRecipe: Codable, Equatable, Sendable {
         pins: [ThemeJob: Int] = [:],
         assignment: [ThemeJob: Int?] = [:],
         contrast: SimpleContrast = .standard,
-        recipe: Int = 0
+        recipe: Int = SimplePaletteRecipe.currentVersion
     ) {
         self.palette = palette
         self.pins = pins

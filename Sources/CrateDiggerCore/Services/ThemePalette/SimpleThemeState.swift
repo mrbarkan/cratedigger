@@ -10,14 +10,11 @@ public struct SimpleThemeState: Equatable, Sendable {
     public private(set) var pins: [ThemeJob: Int]
     public private(set) var assignment: JobAssignment
     public var contrast: SimpleContrast
-    /// How many times Shuffle has moved the assignment; written to the file as `recipe`.
-    public private(set) var variant: Int
 
     public init(recipe: SimpleThemeRecipe) {
         let source = recipe.sanitized() ?? SimpleThemeRecipe(palette: ["#1E2430", "#E8E4DA"])
         palette = source.palette
         contrast = source.contrast
-        variant = source.recipe
         let clean = SimplePaletteAssigner.sanitize(pins: source.pins, assignment: source.assignment,
                                                    paletteCount: source.palette.count)
         pins = clean.pins
@@ -29,9 +26,12 @@ public struct SimpleThemeState: Equatable, Sendable {
         if !complete || !honoursPins { reassign() }
     }
 
+    /// This state as a recipe block, stamped with the recipe table that generates
+    /// colours today (the state itself does not carry a version: whatever it builds is
+    /// built by the current table).
     public var recipe: SimpleThemeRecipe {
         SimpleThemeRecipe(palette: palette, pins: pins, assignment: assignment,
-                          contrast: contrast, recipe: variant)
+                          contrast: contrast, recipe: SimplePaletteRecipe.currentVersion)
     }
 
     public mutating func addColor(_ hex: String) {
@@ -79,7 +79,6 @@ public struct SimpleThemeState: Equatable, Sendable {
     /// The next assignment in Shuffle's order. Contrast, pins and palette stay.
     public mutating func shuffle() {
         assignment = SimplePaletteAssigner.shuffled(after: assignment, palette: parsedPalette, pins: pins)
-        variant += 1
     }
 
     // MARK: -

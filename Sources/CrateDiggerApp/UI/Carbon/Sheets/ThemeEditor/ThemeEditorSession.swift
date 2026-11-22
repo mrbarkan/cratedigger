@@ -88,7 +88,7 @@ final class ThemeEditorSession: ObservableObject {
             guard let manifest = source ?? currentManifest() else { return }
             registry.discardDraft()
             unsavedDraftID = nil
-            simple = SimpleThemeEditor(newFrom: manifest, registry: registry)
+            simple = SimpleThemeEditor(newFrom: manifest, registry: registry, appearance: onScreen)
         }
     }
 
@@ -103,7 +103,7 @@ final class ThemeEditorSession: ObservableObject {
         unsavedDraftID = nil
         if ThemeEditorModeRules.mode(of: manifest.definition) == .simple {
             registry.discardDraft()
-            simple = SimpleThemeEditor(reopening: manifest, registry: registry)
+            simple = SimpleThemeEditor(reopening: manifest, registry: registry, appearance: onScreen)
         } else {
             simple = nil
             registry.beginEditing(manifest, appearance: onScreen)
@@ -114,7 +114,7 @@ final class ThemeEditorSession: ObservableObject {
     /// original keeps what it had.
     func duplicateSimple() {
         guard let simple else { return }
-        self.simple = SimpleThemeEditor(copyOf: simple.candidate, registry: registry)
+        self.simple = SimpleThemeEditor(copyOf: simple.candidate, registry: registry, appearance: onScreen)
     }
 
     // MARK: Crossing modes
@@ -173,7 +173,7 @@ final class ThemeEditorSession: ObservableObject {
                 guard let manifest = registry.manifest(for: id) else { return }
                 registry.discardDraft()
                 unsavedDraftID = nil
-                simple = SimpleThemeEditor(copyOf: manifest.definition, registry: registry)
+                simple = SimpleThemeEditor(copyOf: manifest.definition, registry: registry, appearance: onScreen)
             }
         }
     }

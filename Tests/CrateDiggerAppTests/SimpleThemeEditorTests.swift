@@ -152,7 +152,10 @@ final class SimpleThemeEditorTests: XCTestCase {
         XCTAssertFalse(editor.needsWarning(for: .appearance))
     }
 
-    func testPreviewFontsAreInheritedFromParent() throws {
+    /// A Simple theme saved while Simple themes still inherited opens on a
+    /// self-contained seed: the parent's fonts carried in, no parent named,
+    /// regenerated at once (no question), and APPLY ready to write it whole.
+    func testLegacyInheritingSimpleThemeOpensSelfContained() throws {
         let authoring = ThemeAuthoringService(themesDirectory: themesDirectory)
         var parent = ThemeDefinition(id: "font-parent", name: "Font Parent", baseAppearance: .dark,
                                      colors: ["chassis": "#111111"])
@@ -166,6 +169,32 @@ final class SimpleThemeEditorTests: XCTestCase {
             bundle: Bundle(for: type(of: self)), userThemesDirectoryOverride: themesDirectory))
         let editor = SimpleThemeEditor(reopening: try manifest("font-child"), registry: registry)
         XCTAssertEqual(editor.previewFonts?["mono"], parent.fonts?["mono"])
+        XCTAssertNil(editor.candidate.inherits)
+        XCTAssertEqual(editor.candidate.id, "font-child")
+        XCTAssertFalse(editor.needsRegenerateWarning)
+        XCTAssertTrue(editor.hasUnappliedChanges)
+        try editor.apply()
+        XCTAssertNil(try manifest("font-child").definition.inherits)
+        XCTAssertEqual(try manifest("font-child").definition.fonts?["mono"], parent.fonts?["mono"])
+    }
+
+    func testPreviewStartsOnTheGivenAppearance() throws {
+        let both = registry.newSimpleSeed(from: try manifest("base-theme"))
+        var adaptive = both
+        adaptive.light = ThemeVariant()
+        adaptive.dark = ThemeVariant()
+        let editor = SimpleThemeEditor(copyOf: adaptive, registry: registry, appearance: .light)
+        XCTAssertEqual(editor.previewAppearance, .light)
+        XCTAssertEqual(SimpleThemeEditor(copyOf: adaptive, registry: registry, appearance: .dark).previewAppearance,
+                       .dark)
+    }
+
+    func testRecipeVersionIsTheCurrentTable() throws {
+        let editor = try newEditor()
+        XCTAssertEqual(editor.candidate.simple?.recipe, SimplePaletteRecipe.currentVersion)
+        editor.shuffle()
+        XCTAssertEqual(editor.candidate.simple?.recipe, SimplePaletteRecipe.currentVersion,
+                       "a Shuffle is not a recipe version")
     }
 
     func testDiscardAfterApplyReturnsToApplied() throws {
@@ -180,13 +209,14 @@ final class SimpleThemeEditorTests: XCTestCase {
         XCTAssertFalse(editor.hasUnappliedChanges)
     }
 
-    func testCopyOfSimpleKeepsRecipeAndParent() throws {
+    func testCopyOfSimpleKeepsRecipe() throws {
         let first = try newEditor()
         first.edit { $0.contrast = .high }
         try first.apply()
         let saved = try manifest(first.candidate.id).definition
         let copy = SimpleThemeEditor(copyOf: saved, registry: registry)
-        XCTAssertEqual(copy.base.inherits, saved.inherits)
+        XCTAssertNil(saved.inherits)
+        XCTAssertNil(copy.base.inherits)
         XCTAssertEqual(copy.history.current.recipe, saved.simple)
         XCTAssertEqual(copy.name, "\(saved.name) Copy")
         XCTAssertNotEqual(copy.base.id, saved.id)
@@ -195,7 +225,7 @@ final class SimpleThemeEditorTests: XCTestCase {
     func testCopyOfNonSimpleUsesExtractedSeed() throws {
         let original = try manifest("base-theme").definition
         let copy = SimpleThemeEditor(copyOf: original, registry: registry)
-        XCTAssertEqual(copy.base.inherits, "base-theme")
+        XCTAssertNil(copy.base.inherits)
         XCTAssertEqual(copy.name, "Base Theme Copy")
         XCTAssertNotEqual(copy.history.current.palette, ["#1E2430", "#E8E4DA"])
         XCTAssertEqual(copy.history.current.recipe, registry.newSimpleSeed(copyOf: original).simple)

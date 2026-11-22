@@ -534,56 +534,27 @@ public final class ThemeRegistry: ObservableObject {
     }
 
     // MARK: - Simple themes
-
-    /// The definition with its `inherits` parent laid under it, the way the loader
-    /// resolves an installed theme. `manifest.definition` is already resolved, so
-    /// one overlay is enough. A missing parent leaves the definition as it is
-    /// (the renderer fills the rest from the stock theme), exactly as for an
-    /// installed theme with a dangling `inherits`.
-    ///
-    /// Relies on `manifest.definition` being pre-resolved by the loader, and must
-    /// stay in step with `ThemeLoaderService.merge` (private to Core): identity,
-    /// `inherits` and `simple` are the definition's own. One difference: the loader
-    /// never inherits a logo (`logo: override.logo`), while `merging` keeps the
-    /// parent's when the definition names none; harmless here because previews
-    /// pass no logo URL and a saved file is minimized against the parent anyway.
-    private func resolvedAgainstParent(_ definition: ThemeDefinition) -> ThemeDefinition {
-        guard let parent = manifest(for: definition.inherits)?.definition else { return definition }
-        var merged = parent.merging(definition)
-        merged.id = definition.id
-        merged.name = definition.name
-        merged.author = definition.author
-        merged.version = definition.version
-        merged.inherits = definition.inherits
-        merged.simple = definition.simple
-        return merged
-    }
+    //
+    // A Simple theme is self-contained: it names no parent and no logo, and carries
+    // every colour it draws (`SimpleThemeBuilder`). So it renders exactly as written,
+    // with nothing to resolve against, in the preview and in the app alike.
 
     /// Renders a definition that is not installed (and not the draft), for the
     /// Simple editor's candidate preview. It never touches `draft`, which the
-    /// whole app draws.
+    /// whole app draws. The definition is drawn as it stands: a Simple candidate
+    /// has no parent to lay under it.
     public func previewTheme(
         for definition: ThemeDefinition,
         appearance: ThemeDefinition.BaseAppearance
     ) -> (theme: CarbonTheme, geometry: CarbonGeometry) {
-        let flattened = flatten(resolvedAgainstParent(definition), for: appearance)
+        let flattened = flatten(definition, for: appearance)
         return (theme: rendered(flattened, logoURL: nil), geometry: CarbonGeometry(definition: flattened))
     }
 
-    /// The definition `previewTheme` renders: resolved against its parent and
-    /// flattened to one layer. Its `fonts` are the fonts the app will draw.
-    public func previewDefinition(
-        for definition: ThemeDefinition,
-        appearance: ThemeDefinition.BaseAppearance
-    ) -> ThemeDefinition {
-        flatten(resolvedAgainstParent(definition), for: appearance)
-    }
-
-    /// A fresh, unsaved Simple theme started from `manifest`'s theme. It inherits
-    /// from it, so tokens Simple does not write keep following the original.
-    /// Fonts and effects are copied from the resolved original so the seed owns
-    /// them explicitly (minimized away at save where they still match the parent);
-    /// an adaptive original gives an adaptive seed (both layers present, empty).
+    /// A fresh, unsaved Simple theme started from `manifest`'s theme: a self-contained
+    /// seed (`SimpleThemeBuilder.seed`) carrying the original's fonts, geometry,
+    /// shadows and effects as the app draws them, no parent, no logo, and a recipe
+    /// read from the original's colours. An adaptive original gives an adaptive seed.
     public func newSimpleSeed(from manifest: ThemeManifest) -> ThemeDefinition {
         let original = manifest.definition
         let taken = Set(manifests.map(\.id))
@@ -595,33 +566,37 @@ public final class ThemeRegistry: ObservableObject {
             count += 1
         }
 
-        return simpleSeed(from: original, inheriting: manifest.id, name: name)
+        return simpleSeed(from: original, name: name)
     }
 
     /// The seed for a copy of a theme that has no Simple block: as `newSimpleSeed(from:)`
-    /// (extractor recipe, inherits the original) but named "<name> Copy".
+    /// (self-contained, extractor recipe) but named "<name> Copy". `original` must be
+    /// a theme as the app draws it (an installed manifest's definition).
     public func newSimpleSeed(copyOf original: ThemeDefinition) -> ThemeDefinition {
-        simpleSeed(from: original, inheriting: original.id, name: "\(original.name) Copy")
+        simpleSeed(from: original, name: "\(original.name) Copy")
     }
 
-    private func simpleSeed(from original: ThemeDefinition, inheriting parentID: String,
-                            name: String) -> ThemeDefinition {
-        let taken = Set(manifests.map(\.id))
-        let seeded = Self.seeded(original)
-        let base = seeded.resolved(for: original.baseAppearance).colors ?? [:]
-        var seed = ThemeDefinition(
-            id: ThemeAuthoringService.slug(from: name, taken: taken),
-            name: name,
-            baseAppearance: original.baseAppearance,
-            inherits: parentID,
-            fonts: original.fonts,
-            effects: original.effects
-        )
-        if original.isAdaptive {
-            seed.light = ThemeVariant()
-            seed.dark = ThemeVariant()
-        }
+    private func simpleSeed(from original: ThemeDefinition, name: String) -> ThemeDefinition {
+        let id = ThemeAuthoringService.slug(from: name, taken: Set(manifests.map(\.id)))
+        var seed = SimpleThemeBuilder.seed(from: original, id: id, name: name)
+        let base = Self.seeded(original).resolved(for: original.baseAppearance).colors ?? [:]
         seed.simple = SimplePaletteExtractor.recipe(from: original, resolvedBase: base)
+        return seed
+    }
+
+    /// A saved Simple theme written before Simple themes were self-contained still
+    /// names a parent, and draws that parent's layers and overrides over its own
+    /// colours. The editor opens such a theme on this instead: a self-contained seed
+    /// made from what the app draws for it, keeping its id, name and recipe, so the
+    /// next APPLY regenerates and writes it whole. `nil` for a theme that names no
+    /// parent, which opens as saved.
+    public func selfContainedSeed(reopening manifest: ThemeManifest) -> ThemeDefinition? {
+        let saved = manifest.definition
+        guard saved.inherits != nil, let recipe = saved.simple else { return nil }
+        var seed = SimpleThemeBuilder.seed(from: saved, id: saved.id, name: saved.name)
+        seed.author = saved.author
+        seed.version = saved.version
+        seed.simple = recipe
         return seed
     }
 
@@ -632,7 +607,8 @@ public final class ThemeRegistry: ObservableObject {
         }
     }
 
-    /// Saves a Simple theme: minimized against its parent, written, selected.
+    /// Saves a Simple theme: written (it has no parent, so it keeps every token it
+    /// carries; only layers are pruned against its own shared set), selected.
     /// It replaces any open Advanced draft (the caller asks first). On any
     /// failure the registry is exactly as it was: the previous draft, seed, logo
     /// fallback and undo history are restored and the error rethrown, so the
@@ -667,13 +643,16 @@ public final class ThemeRegistry: ObservableObject {
         self.draft = draft
     }
 
-    /// Opens an Advanced copy of `definition` (a Simple candidate, say) as the
-    /// draft: its inherited tokens filled in, the recipe gone, a new name and id.
+    /// Opens an Advanced copy of `definition` (a Simple candidate) as the draft:
+    /// every token filled in, the recipe gone, a new name and id. A Simple theme
+    /// shows its name in the header, and so does its copy: no logo comes along.
     public func beginAdvancedCopy(of definition: ThemeDefinition) {
         clearUndo()
-        draftLogoFallback = manifest(for: definition.inherits)?.logoURLs ?? [:]
-        var copy = Self.seeded(resolvedAgainstParent(definition))
+        draftLogoFallback = [:]
+        var copy = Self.seeded(definition)
         copy.simple = nil
+        copy.inherits = nil
+        copy.logo = nil
         let name = "\(definition.name) Copy"
         copy.id = ThemeAuthoringService.slug(from: name, taken: Set(manifests.map(\.id)))
         copy.name = name
@@ -685,13 +664,15 @@ public final class ThemeRegistry: ObservableObject {
     }
 
     /// Opens a Simple candidate as an Advanced draft of the *same* theme (the
-    /// editor's Convert): every token filled in against its parent, the recipe
-    /// gone, id and name kept. Nothing is written until Save, so the file keeps
-    /// its `simple` block until then.
+    /// editor's Convert): every token filled in, the recipe gone, id and name
+    /// kept, no logo (as a Simple theme has none). Nothing is written until Save,
+    /// so the file keeps its `simple` block until then.
     public func beginAdvancedConversion(of definition: ThemeDefinition) {
-        draftLogoFallback = manifest(for: definition.inherits)?.logoURLs ?? [:]
-        var converted = Self.seeded(resolvedAgainstParent(definition))
+        draftLogoFallback = [:]
+        var converted = Self.seeded(definition)
         converted.simple = nil
+        converted.inherits = nil
+        converted.logo = nil
         draft = converted
         draftSeed = converted
         // After the assignment, so whatever draft was open before is not an

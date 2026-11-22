@@ -42,34 +42,52 @@ final class SimpleThemeEditor: ObservableObject {
 
     // MARK: Creating
 
-    /// A new theme started from `manifest`'s theme.
-    convenience init(newFrom manifest: ThemeManifest, registry: ThemeRegistry) {
-        self.init(base: registry.newSimpleSeed(from: manifest), registry: registry, reopened: false)
+    /// A new theme started from `manifest`'s theme. `appearance` is the look on
+    /// screen, which an adaptive preview starts on (nil: the theme's own).
+    convenience init(newFrom manifest: ThemeManifest, registry: ThemeRegistry,
+                     appearance: ThemeDefinition.BaseAppearance? = nil) {
+        self.init(base: registry.newSimpleSeed(from: manifest), registry: registry, reopened: false,
+                  appearance: appearance)
     }
 
     /// An existing Simple theme. The candidate shows its saved tokens until the
-    /// palette or Shuffle changes something.
-    convenience init(reopening manifest: ThemeManifest, registry: ThemeRegistry) {
-        self.init(base: manifest.definition, registry: registry, reopened: true)
+    /// palette or Shuffle changes something. One saved before Simple themes were
+    /// self-contained (it names a parent) opens regenerated on a self-contained seed
+    /// instead, with APPLY ready to write it whole.
+    convenience init(reopening manifest: ThemeManifest, registry: ThemeRegistry,
+                     appearance: ThemeDefinition.BaseAppearance? = nil) {
+        if let seed = registry.selfContainedSeed(reopening: manifest) {
+            self.init(base: seed, registry: registry, reopened: false, appearance: appearance)
+            baseline = manifest.definition
+            hasUnappliedChanges = true
+        } else {
+            self.init(base: manifest.definition, registry: registry, reopened: true, appearance: appearance)
+        }
     }
 
     /// An editable copy of `definition` under a new name and id. Colours are generated afresh.
-    convenience init(copyOf definition: ThemeDefinition, registry: ThemeRegistry) {
+    convenience init(copyOf definition: ThemeDefinition, registry: ThemeRegistry,
+                     appearance: ThemeDefinition.BaseAppearance? = nil) {
         if definition.simple != nil {
-            // A sibling: same parent, same recipe and choices, a fresh id and name.
+            // A sibling: same recipe and choices, a fresh id and name. Self-contained
+            // like any Simple theme, so there is no parent to keep.
             var copy = definition
             let copyName = "\(definition.name) Copy"
             copy.name = copyName
             copy.id = ThemeAuthoringService.slug(from: copyName, taken: Set(registry.manifests.map(\.id)))
             copy.author = nil
             copy.version = nil
-            self.init(base: copy, registry: registry, reopened: false)
+            copy.inherits = nil
+            copy.logo = nil
+            self.init(base: copy, registry: registry, reopened: false, appearance: appearance)
         } else {
-            self.init(base: registry.newSimpleSeed(copyOf: definition), registry: registry, reopened: false)
+            self.init(base: registry.newSimpleSeed(copyOf: definition), registry: registry, reopened: false,
+                      appearance: appearance)
         }
     }
 
-    private init(base: ThemeDefinition, registry: ThemeRegistry, reopened: Bool) {
+    private init(base: ThemeDefinition, registry: ThemeRegistry, reopened: Bool,
+                 appearance: ThemeDefinition.BaseAppearance?) {
         self.base = base
         self.registry = registry
         isReopenedSaved = reopened
@@ -81,11 +99,14 @@ final class SimpleThemeEditor: ObservableObject {
         initialState = state
         initialChoices = derived
         initialName = base.name
-        initialPreviewAppearance = base.baseAppearance
+        // The look on screen, so the preview of an adaptive theme opens on the layer
+        // the app is showing (a single-appearance one draws its own whatever this is).
+        let opening = appearance ?? base.baseAppearance
+        initialPreviewAppearance = opening
         history = SimpleThemeHistory(state)
         choices = derived
         name = base.name
-        previewAppearance = base.baseAppearance
+        previewAppearance = opening
         candidate = base
         rebuild()
         baseline = candidate
@@ -100,7 +121,6 @@ final class SimpleThemeEditor: ObservableObject {
     /// (fonts, material, cover look) and the name laid over it.
     private(set) var candidate: ThemeDefinition
     private var previewCache: [ThemeDefinition.BaseAppearance: (theme: CarbonTheme, geometry: CarbonGeometry)] = [:]
-    private var fontsCache: [ThemeDefinition.BaseAppearance: [String: ThemeFont]?] = [:]
 
     /// Builds the candidate once per state, choices, name or warning change.
     private func rebuild() {
@@ -115,7 +135,6 @@ final class SimpleThemeEditor: ObservableObject {
         }
         candidate = built
         previewCache = [:]
-        fontsCache = [:]
         hasUnappliedChanges = baseline.map { built != $0 } ?? false
     }
 
@@ -128,13 +147,9 @@ final class SimpleThemeEditor: ObservableObject {
         return made
     }
 
-    /// The fonts the preview draws with (resolved against the parent, as the app draws them).
-    var previewFonts: [String: ThemeFont]? {
-        if let hit = fontsCache[previewAppearance] { return hit }
-        let fonts = registry.previewDefinition(for: candidate, appearance: previewAppearance).fonts
-        fontsCache[previewAppearance] = .some(fonts)
-        return fonts
-    }
+    /// The fonts the preview draws with: the candidate's own, exactly as the app will
+    /// draw them, since a Simple theme has no parent and fonts have no layers.
+    var previewFonts: [String: ThemeFont]? { candidate.fonts }
 
     /// What the owner is about to change, for `needsWarning(for:)`.
     enum Change { case palette, pin, contrast, shuffle, appearance, fonts, material, coverLook, name }

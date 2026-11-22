@@ -57,26 +57,21 @@ final class SimpleThemeRegistryTests: XCTestCase {
         XCTAssertEqual(PreferencesStore.shared.selectedThemeID, "new-theme")
         XCTAssertNil(registry.draft)
         let saved = try manifest("new-theme")
-        XCTAssertEqual(saved.definition.inherits, "base-theme")
+        XCTAssertNil(saved.definition.inherits, "a Simple theme names no parent")
         XCTAssertEqual(saved.definition.colors?["orange"], "#12AB34")
     }
 
-    func testApplySimpleWritesMinimizedFile() throws {
-        let parent = try manifest("base-theme").definition
+    func testApplySimpleWritesTheThemeWhole() throws {
         var candidate = try simpleCandidate()
         candidate.fonts = ["sans": ThemeFont(regular: "Helvetica")]
         candidate.effects = ["grain": 0.1]
-        // Copies that equal the parent's must not reach the file.
-        let withParentCopies = ThemeAuthoringService.minimized(
-            { var c = candidate; c.fonts = parent.fonts; c.effects = parent.effects; return c }(),
-            against: parent)
-        XCTAssertNil(withParentCopies.fonts)
-        XCTAssertNil(withParentCopies.effects)
 
         try registry.applySimple(candidate)
         let data = try Data(contentsOf: try XCTUnwrap(registry.sourceURL(for: "new-theme")))
         let file = try JSONDecoder().decode(ThemeDefinition.self, from: data)
+        XCTAssertNil(file.inherits)
         XCTAssertEqual(file.fonts?["sans"]?.regular, "Helvetica")
+        XCTAssertEqual(file.effects?["grain"], 0.1)
         XCTAssertEqual(file.colors?.keys.sorted(), ["orange"])
     }
 
@@ -102,9 +97,11 @@ final class SimpleThemeRegistryTests: XCTestCase {
         XCTAssertNotNil(try JSONDecoder().decode(ThemeDefinition.self, from: data).simple)
     }
 
-    func testNewSeedInheritsFromOriginal() throws {
+    func testNewSeedIsSelfContained() throws {
         let seed = registry.newSimpleSeed(from: try manifest("base-theme"))
-        XCTAssertEqual(seed.inherits, "base-theme")
+        XCTAssertNil(seed.inherits)
+        XCTAssertNil(seed.logo)
+        XCTAssertNil(seed.colors, "colours come from the recipe, never from the original")
         XCTAssertEqual(seed.name, "New Theme")
         XCTAssertNil(seed.author)
         XCTAssertNil(seed.version)
@@ -123,7 +120,9 @@ final class SimpleThemeRegistryTests: XCTestCase {
     func testNewSeedFromAdaptiveIsBoth() throws {
         let seed = registry.newSimpleSeed(from: try manifest("both-theme"))
         XCTAssertTrue(seed.isAdaptive)
-        XCTAssertEqual(seed.inherits, "both-theme")
+        XCTAssertNil(seed.inherits)
+        XCTAssertNil(seed.light?.colors)
+        XCTAssertNil(seed.dark?.colors)
     }
 
     func testConvertDropsBlockKeepsTokens() throws {
@@ -156,8 +155,9 @@ final class SimpleThemeRegistryTests: XCTestCase {
         let candidate = try simpleCandidate()
         let preview = registry.previewTheme(for: candidate, appearance: .dark)
         XCTAssertEqual(preview.theme.orange.themeHexString.uppercased(), "#12AB34")
-        // Inherited from the parent, not the stock theme.
-        XCTAssertEqual(preview.theme.ink.themeHexString.uppercased(), "#EEEEEE")
+        // Nothing comes from the theme it was started from: a token the candidate
+        // leaves out is the stock theme's, not the original's.
+        XCTAssertNotEqual(preview.theme.ink.themeHexString.uppercased(), "#EEEEEE")
         XCTAssertNil(registry.draft, "a preview must never become the live draft")
     }
 }

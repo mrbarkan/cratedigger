@@ -22,6 +22,14 @@ public struct SimpleThemeChoices: Equatable, Sendable {
 }
 
 /// Turns a Simple state and its choices into a theme, laid over `base`.
+///
+/// A Simple theme is self-contained in every appearance: it names no parent, shows no
+/// logo (the header shows its name), and every colour it draws is one the recipe wrote.
+/// The optional overrides (`lamp…`, `keyLamp`, `transportLamp`, `meterHot`,
+/// `chassisInk`, `columnHeaderInk`) are never written, so they follow the new accent
+/// and inks, and the contrast floors cover what they follow. Everything else (fonts,
+/// geometry, shadows, display effects) comes from `base`: for a new theme, the seed
+/// `seed(from:id:name:)` made from the theme it was started from.
 public enum SimpleThemeBuilder {
     /// The strengths the built-in themes use; grain and blasted are tuned from captures.
     public static func strength(of material: ShellMaterial) -> Double {
@@ -38,10 +46,47 @@ public enum SimpleThemeBuilder {
     public static let coverPixelSize = 1.5
     static let coverPixelSizeKey = "coverPixelSize"
 
+    /// The effects Simple decides; a layer's own value for one would out-vote the choice.
+    static let ownedEffectKeys: [String] = ShellMaterial.allCases.map(\.effectKey)
+        + CoverScreenLook.allCases.map(\.effectKey) + [coverPixelSizeKey]
+
+    /// A new Simple theme's starting point, made from `original` as the app draws it
+    /// (already resolved against its own parents, as `ThemeManifest.definition` is):
+    /// a new id and name, no parent, no logo, no colours, and the original's fonts,
+    /// geometry, shadows and effects copied in. Layer-specific shadows and effects stay
+    /// in their layers, so BOTH keeps each look's own and LIGHT or DARK takes that
+    /// appearance's. An adaptive original gives an adaptive seed. The recipe is left
+    /// for the caller (`SimplePaletteExtractor`).
+    public static func seed(from original: ThemeDefinition, id: String, name: String) -> ThemeDefinition {
+        // A single-appearance original is drawn from one layer only, whatever stray
+        // layer it carries.
+        let source = original.isAdaptive ? original : original.resolved(for: original.baseAppearance)
+        var seed = ThemeDefinition(
+            id: id,
+            name: name,
+            baseAppearance: original.baseAppearance,
+            shadows: source.shadows,
+            fonts: source.fonts,
+            geometry: source.geometry,
+            effects: source.effects
+        )
+        if original.isAdaptive {
+            for appearance in [ThemeDefinition.BaseAppearance.light, .dark] {
+                let layer = original.variant(for: appearance)
+                seed.setVariant(ThemeVariant(shadows: layer?.shadows, effects: layer?.effects), for: appearance)
+            }
+        }
+        return seed
+    }
+
     public static func build(state: SimpleThemeState, choices: SimpleThemeChoices,
                              onto base: ThemeDefinition) -> ThemeDefinition {
         var theme = base
-        theme.simple = state.recipe
+        var recipe = state.recipe
+        recipe.recipe = SimplePaletteRecipe.currentVersion
+        theme.simple = recipe
+        theme.inherits = nil
+        theme.logo = nil
 
         let palette = state.palette.compactMap(PaletteColor.init(hex:))
         func tokens(for appearance: ThemeDefinition.BaseAppearance) -> [String: String] {
@@ -50,33 +95,34 @@ public enum SimpleThemeBuilder {
             return SimplePaletteRecipe.tokens(jobColors: jobColors, contrast: state.contrast, appearance: appearance)
         }
 
-        let ownedEffectKeys = ShellMaterial.allCases.map(\.effectKey)
-            + CoverScreenLook.allCases.map(\.effectKey) + [coverPixelSizeKey]
-
+        var effects: [String: Double]
         switch choices.appearance {
         case .light, .dark:
             let appearance: ThemeDefinition.BaseAppearance = choices.appearance == .light ? .light : .dark
-            theme.colors = (base.colors ?? [:]).merging(tokens(for: appearance)) { _, new in new }
+            // The chosen look's own shadows and effects, flattened into the shared set.
+            let flat = base.resolved(for: appearance)
+            let written = tokens(for: appearance)
+            theme.colors = written
+            theme.shadows = flat.shadows
+            effects = flat.effects ?? [:]
             theme.light = nil
             theme.dark = nil
             theme.baseAppearance = appearance
         case .both:
-            var shared = base.colors ?? [:]
-            for key in SimplePaletteRecipe.simpleWrittenTokens { shared[key] = nil }
-            theme.colors = shared.isEmpty ? nil : shared
+            theme.colors = nil
+            effects = base.effects ?? [:]
             for appearance in [ThemeDefinition.BaseAppearance.light, .dark] {
                 var layer = base.variant(for: appearance) ?? ThemeVariant()
-                layer.colors = (layer.colors ?? [:]).merging(tokens(for: appearance)) { _, new in new }
-                // A layer's own effects would out-vote the choice made here.
-                if var effects = layer.effects {
-                    for key in ownedEffectKeys { effects[key] = nil }
-                    layer.effects = effects.isEmpty ? nil : effects
-                }
+                let written = tokens(for: appearance)
+                layer.colors = written
+                layer.logo = nil
+                var layerEffects = layer.effects ?? [:]
+                for key in ownedEffectKeys { layerEffects[key] = nil }
+                layer.effects = layerEffects.isEmpty ? nil : layerEffects
                 theme.setVariant(layer, for: appearance)
             }
         }
 
-        var effects = base.effects ?? [:]
         for material in ShellMaterial.allCases {
             effects[material.effectKey] = material == choices.material ? strength(of: material) : 0
         }
