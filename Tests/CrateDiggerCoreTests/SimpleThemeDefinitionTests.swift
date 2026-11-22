@@ -31,7 +31,8 @@ final class SimpleThemeDefinitionTests: XCTestCase {
 
     func testNilBlockIsOmittedFromJSON() throws {
         let data = try JSONEncoder().encode(theme(nil))
-        XCTAssertFalse(String(decoding: data, as: UTF8.self).contains("simple"))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertFalse(object.keys.contains("simple"))
     }
 
     func testOldFileWithoutBlockDecodes() throws {
@@ -58,8 +59,14 @@ final class SimpleThemeDefinitionTests: XCTestCase {
         let pinned = try decode(simpleJSON: "{\"palette\":[\"#112233\",\"#445566\"],\"pins\":{\"accent\":9,\"frame\":1},\"assignment\":{\"text\":7,\"panels\":0}}").simple
         XCTAssertEqual(pinned?.pins, [.frame: 1])
         XCTAssertEqual(pinned?.assignment.count, 1)
-        let bad = try decode(simpleJSON: "{\"palette\":[\"#zz\",\"#112233\",\"#445566\"]}").simple
+        let bad = try decode(simpleJSON: "{\"palette\":[\"#zz\",\"#112233\",\"#445566\"],\"pins\":{\"accent\":1,\"frame\":0},\"assignment\":{\"panels\":2,\"glass\":null,\"text\":0},\"recipe\":-4}").simple
         XCTAssertEqual(bad?.palette, ["#112233", "#445566"])
+        XCTAssertEqual(bad?.pins, [.accent: 0])
+        XCTAssertEqual(bad?.assignment[.panels], .some(1))
+        XCTAssertNotNil(bad?.assignment[.glass])
+        XCTAssertNil(try XCTUnwrap(bad?.assignment[.glass]))
+        XCTAssertNil(bad?.assignment[.text])
+        XCTAssertEqual(bad?.recipe, 0)
     }
 
     func testStructurallyWrongBlockDecodesAsNil() throws {

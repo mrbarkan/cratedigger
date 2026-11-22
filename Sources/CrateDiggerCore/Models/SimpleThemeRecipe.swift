@@ -121,16 +121,29 @@ public struct SimpleThemeRecipe: Codable, Equatable, Sendable {
     /// invalid hex dropped, at most 6 colours kept, pins and assignments that point
     /// outside the surviving palette dropped. `nil` when fewer than 2 colours survive.
     public func sanitized() -> SimpleThemeRecipe? {
-        let valid = palette.filter { PaletteColor(hex: $0) != nil }.prefix(Self.maxPaletteCount)
-        guard valid.count >= Self.minPaletteCount else { return nil }
-        let count = valid.count
-        var result = self
-        result.palette = Array(valid)
-        result.pins = pins.filter { (0..<count).contains($0.value) }
-        result.assignment = assignment.filter { entry in
-            guard let index = entry.value else { return true }
-            return (0..<count).contains(index)
+        // Old index -> new index, built while dropping bad hex and truncating, so a
+        // pin or assignment keeps pointing at the swatch it meant.
+        var kept: [String] = []
+        var remap: [Int: Int] = [:]
+        for (oldIndex, hex) in palette.enumerated() where kept.count < Self.maxPaletteCount {
+            guard PaletteColor(hex: hex) != nil else { continue }
+            remap[oldIndex] = kept.count
+            kept.append(hex)
         }
+        guard kept.count >= Self.minPaletteCount else { return nil }
+        var result = self
+        result.palette = kept
+        result.pins = pins.compactMapValues { remap[$0] }
+        var newAssignment: [ThemeJob: Int?] = [:]
+        for (job, entry) in assignment {
+            if let index = entry {
+                if let mapped = remap[index] { newAssignment[job] = .some(mapped) }
+            } else {
+                newAssignment[job] = .some(nil)
+            }
+        }
+        result.assignment = newAssignment
+        result.recipe = max(0, recipe)
         return result
     }
 }
