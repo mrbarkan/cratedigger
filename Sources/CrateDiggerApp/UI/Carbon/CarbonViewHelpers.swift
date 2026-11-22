@@ -190,8 +190,8 @@ extension CarbonTheme {
     /// Ink for text sitting on a selection slot (`CarbonSelectionSlot`): white on
     /// the dark-mode indigo fill; the primary dark ink on the light-mode orange
     /// fill, which fades to a light background — white would drop out on the far
-    /// side. Distinct from `selectionInk` (kept white for saturated-orange
-    /// contexts like the patch bay and LEDs).
+    /// side. Text on an accent-filled key (the Patch Bay, a selected key)
+    /// prints in `accentInk` instead.
     var slotInk: Color { isDark ? selectionInk : ink }
 
     /// Lead-glyph tint for a browser row: selection ink when selected, orange

@@ -79,9 +79,9 @@ struct KeyButton<Label: View>: View {
     private var textColor: Color {
         switch style {
         case .normal:        return theme.chassisInk
-        case .selected:      return theme.selectionInk
+        case .selected:      return theme.accentInk
         case .glowingOrange: return theme.orange
-        case .glowingFilled: return theme.selectionInk
+        case .glowingFilled: return theme.accentInk
         case .disabled:      return theme.ink3
         }
     }

@@ -320,6 +320,9 @@ enum ThemeTokenCatalog {
             ColorToken(key: "keyLamp", label: "Key Lamp",
                        note: "The small LEDs on the VIEW, THEME and EQ keys, the dot beside a sheet's title and the activity lamp. Unset it follows the Accent, so a theme with black keys can keep lit LEDs.",
                        read: \.keyLamp),
+            ColorToken(key: "accentInk", label: "Accent Key Print",
+                       note: "The label on a key lit in the Accent: selected and glowing keys, and Patch Bay keys that are on. Unset it follows Selected Text.",
+                       read: \.accentInk),
         ]),
         ColorGroup(name: "Desktop Backdrop", tokens: [
             ColorToken(key: "backgroundBase", label: "Backdrop",

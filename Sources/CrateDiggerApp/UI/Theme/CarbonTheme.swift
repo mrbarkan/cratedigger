@@ -144,6 +144,15 @@ public struct CarbonTheme: Equatable {
     public var keyLampOverride: Color?
     public var keyLamp: Color { keyLampOverride ?? orange }
 
+    /// The print on an accent-filled key: a selected or glowing `KeyButton`, a
+    /// Patch Bay key that is on. Its own token because that label sits on the
+    /// accent, while `selectionInk` sits on a selected row, whose wash fades out
+    /// onto the panel: a bright accent wants dark print and a dark panel wants
+    /// light text, and one token cannot be both. Unset, it is `selectionInk`
+    /// exactly, so nothing shipped changes.
+    public var accentInkOverride: Color?
+    public var accentInk: Color { accentInkOverride ?? selectionInk }
+
     /// The type and glyphs printed on the controls themselves: a key's label,
     /// the symbol moulded under a transport cap, the header's DIG CRATE row.
     ///
@@ -577,6 +586,7 @@ public extension CarbonTheme {
         // absent from `monochromeGlass` below.
         transportLampOverride = optionalColor("transportLamp", resolvedBase.transportLampOverride)
         keyLampOverride = optionalColor("keyLamp", resolvedBase.keyLampOverride)
+        accentInkOverride = optionalColor("accentInk", resolvedBase.accentInkOverride)
         columnHeaderInkOverride = optionalColor("columnHeaderInk", resolvedBase.columnHeaderInkOverride)
         chassisInkOverride = optionalColor("chassisInk", resolvedBase.chassisInkOverride)
         meterHotOverride = optionalColor("meterHot", resolvedBase.meterHotOverride)

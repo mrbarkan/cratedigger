@@ -58,14 +58,14 @@ struct PatchBaySwitch: View {
             Text(label)
                 .font(CarbonFont.mono(9, weight: .bold))
                 .tracking(1.4)
-                .foregroundStyle(on ? theme.selectionInk : theme.ink2)
+                .foregroundStyle(on ? theme.accentInk : theme.ink2)
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
             if let sub {
                 Text(sub)
                     .font(CarbonFont.mono(7.5, weight: .semibold))
                     .tracking(1.4)
-                    .foregroundStyle(on ? theme.selectionInk.opacity(0.7) : theme.ink3)
+                    .foregroundStyle(on ? theme.accentInk.opacity(0.7) : theme.ink3)
                     .lineLimit(1)
             }
         }

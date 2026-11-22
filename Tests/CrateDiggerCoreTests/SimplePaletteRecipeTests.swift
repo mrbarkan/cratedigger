@@ -21,7 +21,8 @@ final class SimplePaletteRecipeTests: XCTestCase {
     /// Carbon's resolved colour tokens per appearance: `Carbon.cdtheme` (shared colours
     /// plus the appearance's layer) over `CarbonTheme.carbon` / `.linen`. `rowAlt` is
     /// `.clear`; `oledSurfaceShade` is black at 28%; dark `selectionGlow` comes from
-    /// `CarbonTheme.carbon`, the theme file sets the rest of the selection.
+    /// `CarbonTheme.carbon`, the theme file sets the rest of the selection. Carbon sets
+    /// no `accentInk`, so its keys print in `selectionInk`.
     static let carbonTokens: [Appearance: [String: String]] = [
         .dark: [
             "chassis": "#171C22", "chassisHi": "#2B3540", "chassisLo": "#0C0F13", "chassisDeep": "#05070A",
@@ -36,7 +37,7 @@ final class SimplePaletteRecipeTests: XCTestCase {
             "oledSurface": "#050504", "oledSurfaceShade": "#00000047", "oledStrokeInner": "#0E0E0C",
             "oledForeground": "#F5F1E6", "oledForegroundMuted": "#FFFFFF8C", "onAir": "#FF5B4A",
             "selectionLedCore": "#56FFFD", "selectionGlow": "#45C7BD", "selectionSpread": "#56FFFD8D",
-            "selectionInk": "#FFFFFF",
+            "selectionInk": "#FFFFFF", "accentInk": "#FFFFFF",
         ],
         .light: [
             "chassis": "#F5F8FA", "chassisHi": "#FFFFFF", "chassisLo": "#D7E1E5", "chassisDeep": "#9CAAB0",
@@ -51,7 +52,7 @@ final class SimplePaletteRecipeTests: XCTestCase {
             "oledSurface": "#0A0A0A", "oledSurfaceShade": "#00000047", "oledStrokeInner": "#1A1A1A",
             "oledForeground": "#F5F1E6", "oledForegroundMuted": "#FFFFFF8C", "onAir": "#FF5B4A",
             "selectionLedCore": "#FFA07C", "selectionGlow": "#FF7A4D", "selectionSpread": "#FF6236",
-            "selectionInk": "#FFFFFF",
+            "selectionInk": "#FFFFFF", "accentInk": "#FFFFFF",
         ],
     ]
 
@@ -65,14 +66,15 @@ final class SimplePaletteRecipeTests: XCTestCase {
             "selectionLedCore": "follows the accent's hue, not Carbon's teal",
             "selectionGlow": "follows the accent's hue, not Carbon's teal",
             "selectionSpread": "follows the accent's hue, not Carbon's teal",
-            // White is 2.8:1 on Carbon's orange key fill, which never moves; only the
-            // dark ink reaches 4.5 there.
-            "selectionInk": "white fails 4.5 on the accent key fill",
+            // White is 2.8:1 on Carbon's orange key fill, which never moves.
+            "accentInk": "white fails 4.5 on the accent",
         ],
         .light: [
-            // White is 3.0:1 on Carbon's orange keys and 2.6:1 on its orange row
-            // wash; the dark ink reads on both.
-            "selectionInk": "white fails 4.5 on both selection fills",
+            // White is about 1:1 on the panel a selected row fades out onto, and 2.6:1
+            // on Carbon's orange wash; Simple's light selectionInk is the dark end.
+            "selectionInk": "white fails 4.5 on the light panel",
+            // White is 3.0:1 on Carbon's orange key fill.
+            "accentInk": "white fails 4.5 on the accent",
         ],
     ]
 
@@ -208,8 +210,9 @@ final class SimplePaletteRecipeTests: XCTestCase {
         ]
         XCTAssertTrue(SimplePaletteRecipe.simpleWrittenTokens.isDisjoint(with: overrides))
         // Non-optional tokens are written, or an inherited theme's selection shows through.
+        // `accentInk` is an override written on purpose: accent keys need their own print.
         XCTAssertTrue(SimplePaletteRecipe.simpleWrittenTokens.isSuperset(of: [
-            "selectionLedCore", "selectionGlow", "selectionSpread", "selectionInk",
+            "selectionLedCore", "selectionGlow", "selectionSpread", "selectionInk", "accentInk",
         ]))
         for key in SimplePaletteRecipe.simpleWrittenTokens {
             XCTAssertFalse(key.hasPrefix("lamp"), key)
@@ -310,27 +313,69 @@ final class SimplePaletteRecipeTests: XCTestCase {
         }
     }
 
+    func testSelectionInkFollowsTheAppearance() {
+        // The light end of the text in dark (Carbon's own white stays white), the dark
+        // end in light: a selected row fades out onto the panel, so it must read there.
+        XCTAssertEqual(Self.carbon(.dark)["selectionInk"], "#FFFFFF")
+        let light = PaletteColor(hex: Self.carbon(.light)["selectionInk"]!)!
+        XCTAssertLessThan(light.oklch.l, 0.3)
+        for appearance in [Appearance.dark, .light] {
+            let tokens = Self.carbon(appearance)
+            let ink = PaletteColor(hex: tokens["selectionInk"]!)!
+            XCTAssertGreaterThanOrEqual(PaletteColor.contrast(ink, PaletteColor(hex: tokens["paper"]!)!), 4.5)
+        }
+    }
+
+    func testAccentInkTakesTheSideThatReadsOnTheAccent() {
+        for appearance in [Appearance.dark, .light] {
+            var hexes = Self.carbonJobs[appearance]!
+            // Carbon's bright orange takes dark print; a deep blue takes white.
+            let bright = Self.carbon(appearance)
+            XCTAssertLessThan(PaletteColor(hex: bright["accentInk"]!)!.oklch.l, 0.2, "\(appearance)")
+            hexes[.accent] = appearance == .dark ? "#2F6BEA" : "#1F4FC4"
+            let deep = SimplePaletteRecipe.tokens(jobColors: Self.jobs(hexes), contrast: .standard,
+                                                  appearance: appearance)
+            XCTAssertEqual(deep["accentInk"], "#FFFFFF", "\(appearance)")
+            for tokens in [bright, deep] {
+                let ratio = PaletteColor.contrast(PaletteColor(hex: tokens["accentInk"]!)!,
+                                                  PaletteColor(hex: tokens["orange"]!)!)
+                XCTAssertGreaterThanOrEqual(ratio, 4.5, "\(appearance)")
+            }
+        }
+    }
+
     // MARK: ContrastFloors
 
     func testEnforceNeverMovesTheAccentKeyFill() {
-        // White on Carbon's orange is 2.8:1 and the orange may not give way: the ink crosses over.
-        let tokens = ["selectionInk": "#FFFFFF", "orange": "#FF6D3F"]
+        // White on Carbon's orange is 2.8:1 and the orange may not give way: the print crosses over.
+        let tokens = ["accentInk": "#FFFFFF", "orange": "#FF6D3F"]
         let fixed = ContrastFloors.enforce(tokens, contrast: .standard)
         XCTAssertEqual(fixed["orange"], "#FF6D3F")
-        let ink = PaletteColor(hex: fixed["selectionInk"]!)!
+        let ink = PaletteColor(hex: fixed["accentInk"]!)!
         XCTAssertGreaterThanOrEqual(PaletteColor.contrast(ink, PaletteColor(hex: "#FF6D3F")!), 4.5)
     }
 
+    func testUnsetAccentInkIsEnforcedThroughSelectionInk() {
+        let tokens = ["selectionInk": "#FFFFFF", "orange": "#FF6D3F"]
+        let fixed = ContrastFloors.enforce(tokens, contrast: .standard)
+        XCTAssertNil(fixed["accentInk"])
+        XCTAssertEqual(fixed["orange"], "#FF6D3F")
+        XCTAssertGreaterThanOrEqual(PaletteColor.contrast(PaletteColor(hex: fixed["selectionInk"]!)!,
+                                                          PaletteColor(hex: "#FF6D3F")!), 4.5)
+    }
+
     func testRowFillIsTheSpreadOverThePanel() {
-        // A dark ink on a 50% pale wash over a dark panel: the wash has to get lighter.
-        let tokens = ["selectionInk": "#000000", "selectionSpread": "#808080B3", "paper": "#141414"]
+        // White text on a pale wash over a dark panel: the wash has to get darker.
+        let tokens = ["selectionInk": "#FFFFFF", "selectionSpread": "#E0D0C0B3", "paper": "#141414"]
         let pair = ContrastFloors.pairs(contrast: .standard).first { $0.background == "selectionSpread" }!
         XCTAssertLessThan(ContrastFloors.ratio(of: pair, in: tokens)!, 4.5)
         let fixed = ContrastFloors.enforce(tokens, contrast: .standard)
+        XCTAssertEqual(fixed["selectionInk"], "#FFFFFF")
         XCTAssertGreaterThanOrEqual(ContrastFloors.ratio(of: pair, in: fixed)!, 4.5)
         let spread = PaletteColor(hex: fixed["selectionSpread"]!)!
-        XCTAssertGreaterThan(spread.oklch.l, PaletteColor(hex: "#808080")!.oklch.l, "the fill moved, lighter")
-        XCTAssertEqual(spread.a, 0xB3 / 255.0, accuracy: 0.001, "its alpha did not")
+        let before = PaletteColor(hex: "#E0D0C0")!.oklch
+        XCTAssertLessThan(spread.oklch.l, before.l, "the wash moved, darker")
+        XCTAssertLessThanOrEqual(hueDistance(spread.oklch.h, before.h), 3, "its hue did not")
         XCTAssertEqual(fixed["paper"], "#141414")
     }
 

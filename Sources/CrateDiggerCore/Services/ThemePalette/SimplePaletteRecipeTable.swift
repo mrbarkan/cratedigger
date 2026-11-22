@@ -14,8 +14,9 @@ import Foundation
 /// - Screen Glass / Screen Text: the display.
 /// - Meaning colours keep Carbon's hue and chroma; only their lightness follows the
 ///   panels (or, for ON AIR, the glass).
-/// - `selectionInk` is not in the table: it is chosen against the selection fills
-///   once they exist (`SimplePaletteRecipe.selectionInk`).
+/// - `selectionInk` is the light end of the text in dark and the dark end in light.
+///   `accentInk` (the print on accent keys) is not in the table: it is chosen against
+///   the accent once it exists (`SimplePaletteRecipe.accentInk`).
 /// - `rowAlt` stays clear, as in every built-in.
 ///
 /// Where the numbers are not a measurement:
@@ -73,6 +74,8 @@ struct SimplePaletteRecipeTable: Sendable {
             "ink2": .derived(.text, dL: -0.1108, chroma: 3.477, hierarchy: true),
             "ink3": .derived(.text, dL: -0.3230, chroma: 5.365, hierarchy: true),
             "ink4": .derived(.text, dL: -0.4812, chroma: 5.067, hierarchy: true),
+            // The light end of the text, as Carbon's white.
+            "selectionInk": .derived(.text, dL: 0.0269, chroma: 0),
 
             "orange": .derived(.accent, dL: 0, chroma: 1),
             "orangeHi": .derived(.accent, dL: 0.0861, chroma: 0.658, hue: 3.7),
@@ -137,6 +140,9 @@ struct SimplePaletteRecipeTable: Sendable {
             "ink2": .derived(.text, dL: 0.1542, chroma: 1.833, hierarchy: true),
             "ink3": .derived(.text, dL: 0.3514, chroma: 2.030, hierarchy: true),
             "ink4": .derived(.text, dL: 0.5118, chroma: 1.357, hierarchy: true),
+            // The dark end of the text. Carbon's light selectionInk is white, which
+            // the panel a selected row fades out onto cannot hold (about 1:1).
+            "selectionInk": .derived(.text, dL: -0.0200, chroma: 1),
 
             "orange": .derived(.accent, dL: 0, chroma: 1),
             "orangeHi": .derived(.accent, dL: 0.0804, chroma: 0.691, hue: 4.2),

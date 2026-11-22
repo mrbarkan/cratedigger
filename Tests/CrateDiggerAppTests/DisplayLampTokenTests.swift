@@ -87,6 +87,20 @@ final class DisplayLampTokenTests: XCTestCase {
         XCTAssertTrue(keys.contains("transportLamp"), "transportLamp has no swatch in the theme editor")
         XCTAssertTrue(keys.contains("keyLamp"), "keyLamp has no swatch in the theme editor")
         XCTAssertTrue(keys.contains("meterHot"), "meterHot has no swatch in the theme editor")
+        XCTAssertTrue(keys.contains("accentInk"), "accentInk has no swatch in the theme editor")
+    }
+
+    /// The print on accent-filled keys was `selectionInk` until it got its own
+    /// token. Unset it has to stay exactly that, in both built-ins.
+    func testAccentInkFollowsSelectionInkUntilPinned() {
+        XCTAssertEqual(CarbonTheme.carbon.accentInk, CarbonTheme.carbon.selectionInk)
+        XCTAssertEqual(CarbonTheme.linen.accentInk, CarbonTheme.linen.selectionInk)
+        let retinted = theme(colors: ["selectionInk": "#123456"])
+        XCTAssertEqual(retinted.accentInk, retinted.selectionInk)
+
+        let pinned = theme(colors: ["accentInk": "#101010", "selectionInk": "#FFFFFF"])
+        XCTAssertEqual(pinned.accentInk, Color(hexString: "#101010"))
+        XCTAssertEqual(pinned.selectionInk, Color(hexString: "#FFFFFF"), "rows keep their own ink")
     }
 
     /// The meters' loud end follows the accent pair until named, then is one

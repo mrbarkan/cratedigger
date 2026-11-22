@@ -9,16 +9,19 @@ import Foundation
 /// - `selectionSpread` stands for the selected row's fill as `CarbonSelectionSlot`
 ///   draws it: the spread at 90% (dark) or 85% (light) over `paper`. Both opacities
 ///   are measured and the worse one counts, so the pair needs no appearance. Moving it
-///   moves `selectionSpread`'s own lightness.
-/// - `orange` (the accent keys' fill in `KeyButton`) never moves: it is the theme's
-///   signature. A foreground that cannot reach the floor on it going one way goes the
-///   other way instead; white or black always reaches 4.5 on an opaque fill.
+///   moves `selectionSpread`'s own lightness, and if that is not enough, fades it
+///   toward the panel; its hue never changes.
+/// - `orange` (the fill of an accent key, printed in `accentInk`) never moves: it is
+///   the theme's signature. A foreground that cannot reach the floor on it going one
+///   way goes the other way instead; white or black always reaches 4.5 on an opaque
+///   fill.
 public enum ContrastFloors {
     /// Foregrounds that are optional overrides in `CarbonTheme`. Simple never writes
     /// them, so while one is unset the token it follows is the one that has to read.
     static let fallbacks: [String: String] = [
         "columnHeaderInk": "ink3",
         "chassisInk": "ink2",
+        "accentInk": "selectionInk",
     ]
 
     /// The opacities `CarbonSelectionSlot` lays the spread over the panel with.
@@ -29,8 +32,8 @@ public enum ContrastFloors {
 
     /// Every pair, in the order `enforce` settles them. Primary ink comes first so a
     /// panel that has to give way does so before the quieter inks are measured on it.
-    /// `selectionInk` is measured on both selection fills: the row (`selectionSpread`)
-    /// and the selected or glowing key (`orange`).
+    /// `selectionInk` is measured on the selected row's wash and on the panel the wash
+    /// fades out onto; accent keys print in `accentInk`, measured on the accent.
     public static func pairs(contrast: SimpleContrast) -> [(foreground: String, background: String, minimum: Double)] {
         let ink: Double
         switch contrast {
@@ -48,8 +51,9 @@ public enum ContrastFloors {
             ("chassisInk", "chassis", 4.5),
             ("oledForeground", "oledSurface", 7),
             ("oledForegroundMuted", "oledSurface", 3),
+            ("selectionInk", "paper", 4.5),
             ("selectionInk", "selectionSpread", 4.5),
-            ("selectionInk", "orange", 4.5),
+            ("accentInk", "orange", 4.5),
         ]
     }
 
@@ -100,8 +104,11 @@ public enum ContrastFloors {
                       let current = ratio(fg, on: pair.background, bg, in: out),
                       current < pair.minimum else { continue }
                 let snapshot = out
-                let fixed = settle(foreground: fg, background: bg, minimum: pair.minimum,
+                let fixed = settle(foreground: fg, background: bg,
+                                   seenL: seenLightness(of: pair.background, bg, in: snapshot),
+                                   minimum: pair.minimum,
                                    backgroundFixed: fixedBackgrounds.contains(pair.background),
+                                   backgroundFades: pair.background == "selectionSpread",
                                    ratio: { ratio($0, on: pair.background, $1, in: snapshot) ?? 0 })
                 out[fgKey] = fixed.foreground.hex
                 if !fixedBackgrounds.contains(pair.background) {
@@ -126,11 +133,25 @@ public enum ContrastFloors {
                             b: color.b * a + base.b * (1 - a))
     }
 
+    /// The lightness the foreground actually sits on: the token's own, or for a row
+    /// fill the wash as composited over the panel. A pale wash at half strength over a
+    /// dark panel is a mid tone, and the ink has to move away from that, not from the
+    /// wash token, which can be lighter than a white ink's own lightness.
+    private static func seenLightness(of backgroundKey: String, _ background: PaletteColor,
+                                      in tokens: [String: String]) -> Double {
+        guard backgroundKey == "selectionSpread",
+              let paper = tokens["paper"].flatMap(PaletteColor.init(hex:)) else { return background.oklch.l }
+        return composite(background, opacity: rowFillOpacities[0], over: paper).oklch.l
+    }
+
+    /// `seenL` is the lightness the foreground reads against (see `seenLightness`);
+    /// moves of the background itself start from its own lightness.
     private static func settle(
-        foreground: PaletteColor, background: PaletteColor, minimum: Double, backgroundFixed: Bool,
+        foreground: PaletteColor, background: PaletteColor, seenL: Double, minimum: Double,
+        backgroundFixed: Bool, backgroundFades: Bool,
         ratio: (PaletteColor, PaletteColor) -> Double
     ) -> (foreground: PaletteColor, background: PaletteColor) {
-        let fgL = foreground.oklch.l, bgL = background.oklch.l
+        let fgL = foreground.oklch.l, bgL = seenL
         // Away from the background; a tie goes toward whichever end has more room.
         let direction: Double = fgL > bgL ? 1 : fgL < bgL ? -1 : (bgL < 0.5 ? 1 : -1)
         let target = minimum + margin
@@ -149,10 +170,36 @@ public enum ContrastFloors {
         }
         // The foreground is out of room: pin it at its limit and push the background.
         let pinned = rounded(moved(foreground, toL: direction > 0 ? 1 : 0))
-        let pushed = move(background, from: bgL, direction: -direction,
+        let pushed = move(background, from: background.oklch.l, direction: -direction,
                           until: { ratio(pinned, $0) >= target },
                           floor: { ratio(pinned, $0) >= minimum })
-        return (pinned, pushed ?? rounded(moved(background, toL: direction > 0 ? 0 : 1)))
+        if let pushed { return (pinned, pushed) }
+        let pushedAll = rounded(moved(background, toL: direction > 0 ? 0 : 1))
+        guard backgroundFades else { return (pinned, pushedAll) }
+        // A wash over the panel can still give way by fading toward the panel.
+        let faded = fade(pushedAll, until: { ratio(pinned, $0) >= target },
+                         floor: { ratio(pinned, $0) >= minimum })
+        return (pinned, faded ?? rounded(PaletteColor(r: pushedAll.r, g: pushedAll.g, b: pushedAll.b, a: 0)))
+    }
+
+    /// The least alpha reduction of `color` that satisfies `until`, checked again after
+    /// rounding against `floor`. `nil` when fully clear does not reach it.
+    private static func fade(_ color: PaletteColor, until reaches: (PaletteColor) -> Bool,
+                             floor holds: (PaletteColor) -> Bool) -> PaletteColor? {
+        func withAlpha(_ a: Double) -> PaletteColor { PaletteColor(r: color.r, g: color.g, b: color.b, a: a) }
+        guard reaches(withAlpha(0)) else { return nil }
+        var near = color.a, far = 0.0
+        for _ in 0..<30 {
+            let mid = (near + far) / 2
+            if reaches(withAlpha(mid)) { far = mid } else { near = mid }
+        }
+        var a = far
+        while true {
+            let candidate = rounded(withAlpha(a))
+            if holds(candidate) { return candidate }
+            if a == 0 { return nil }
+            a = max(a - 0.004, 0)
+        }
     }
 
     /// The smallest lightness move of `color` from `start` in `direction` that
