@@ -704,7 +704,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         // cover look to show, without touching the selected theme), and
         // "advanced-preview" Advanced with its PREVIEW area open.
         // "simple-apply" (or "simple-apply:<theme id>" to start from that
-        // theme) opens NEW, leaves the preview up for eight seconds and then
+        // theme, "simple-apply:<theme id>:light" (or dark, both) to set the
+        // Appearance row too) opens NEW, leaves the preview up for eight seconds and then
         // presses APPLY, so a capture can compare the preview with the real
         // app. Applying writes a theme file and selects it, so it is refused
         // without CRATEDIGGER_CRATES_DIR (the debug Themes folder lives there).
@@ -718,8 +719,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                         NSLog("[theme-editor] refusing simple-apply: CRATEDIGGER_CRATES_DIR is not set, so the theme would be saved into the real Themes folder")
                         return
                     }
-                    let source = value.dropFirst("simple-apply".count).drop { $0 == ":" }
-                    model.themeEditorNewSourceID = source.isEmpty ? nil : String(source)
+                    // simple-apply[:<theme id>[:<light|dark|both>]]
+                    let parts = value.split(separator: ":", omittingEmptySubsequences: false).dropFirst()
+                    let source = parts.first.map(String.init) ?? ""
+                    model.themeEditorNewSourceID = source.isEmpty ? nil : source
+                    model.themeEditorNewAppearance = parts.dropFirst().first
+                        .flatMap { SimpleAppearanceMode(rawValue: String($0)) }
                     model.themeEditorAppliesNew = true
                     model.themeEditorStartsNew = true
                 case "simple":

@@ -138,6 +138,10 @@ struct ThemeEditorView: View {
             #endif
             session.startNew(from: source)
             #if DEBUG
+            if let mode = model.themeEditorNewAppearance {
+                model.themeEditorNewAppearance = nil
+                session.simple?.choices.appearance = mode
+            }
             if model.themeEditorAppliesNew {
                 model.themeEditorAppliesNew = false
                 DispatchQueue.main.asyncAfter(deadline: .now() + 8.0) { [session] in

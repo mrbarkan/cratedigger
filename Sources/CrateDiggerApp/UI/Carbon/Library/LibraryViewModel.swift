@@ -566,6 +566,11 @@ final class LibraryViewModel: ObservableObject {
     /// the editor. Dev hook only (`CRATEDIGGER_THEME_EDITOR=simple-apply`), so
     /// the real app can be captured in a Simple theme without clicking.
     var themeEditorAppliesNew = false
+
+    /// LIGHT, DARK or BOTH for the NEW theme the hook opens, instead of the one the
+    /// original's layers imply (`CRATEDIGGER_THEME_EDITOR=simple-apply:<id>:light`), so
+    /// a single-appearance theme can be captured on the other screen appearance.
+    var themeEditorNewAppearance: SimpleAppearanceMode?
     #endif
 
     /// Swaps the inspector for the theme picker, the way `oledView ==
