@@ -8,14 +8,15 @@ import Foundation
 /// makes sure everything reads.
 ///
 /// Never written: the optional overrides (`lamp…`, `transportLamp`, `keyLamp`,
-/// `meterHot`, `chassisInk`, `columnHeaderInk`) and the selection's light
-/// (`selectionGlow`, `selectionSpread`). Left unset they keep following what they
-/// follow in every shipped theme.
+/// `meterHot`, `chassisInk`, `columnHeaderInk`). Left unset they keep following what
+/// they follow in every shipped theme. Everything else is written, the selection's
+/// light included, so nothing is left to the theme a Simple theme inherits from.
 public enum SimplePaletteRecipe {
     public static let currentVersion = 1
 
     /// Exactly the keys `tokens(...)` returns, whatever the input.
-    public static let simpleWrittenTokens: Set<String> = Set(SimplePaletteRecipeTable.dark.tokens.keys)
+    public static let simpleWrittenTokens: Set<String> =
+        Set(SimplePaletteRecipeTable.dark.tokens.keys).union(["selectionInk"])
 
     /// The minimum OKLab distance kept between the frame and the panels, so they read
     /// as two surfaces even from a palette of near-identical colours. (Carbon's own
@@ -61,7 +62,40 @@ public enum SimplePaletteRecipe {
                 out[key] = transform.hex(in: context)
             }
         }
+        out["selectionInk"] = selectionInk(on: out, frame: bases[.frame]!).hex
         return ContrastFloors.enforce(out, contrast: contrast)
+    }
+
+    /// The ink for text on a selection: white, or a near-black tinted with the frame's
+    /// hue, whichever reads better on both selection fills (the selected row, and the
+    /// selected or glowing key, which is the accent). The accent never moves, so an ink
+    /// that could not reach the floor on it even at pure white or pure black is not a
+    /// candidate. `ContrastFloors` then makes both fills hold.
+    static func selectionInk(on tokens: [String: String], frame: JobBase) -> PaletteColor {
+        let white = PaletteColor(r: 1, g: 1, b: 1)
+        let black = PaletteColor(r: 0, g: 0, b: 0)
+        let nearBlack = PaletteColor(oklch: OKLCH(l: 0.16, c: min(frame.lch.c, 0.02), h: frame.lch.h))
+        guard let accent = tokens["orange"].flatMap(PaletteColor.init(hex:)),
+              let spread = tokens["selectionSpread"].flatMap(PaletteColor.init(hex:)) else { return white }
+        func onKey(_ ink: PaletteColor) -> Double { PaletteColor.contrast(ink, accent) }
+        func onRow(_ ink: PaletteColor) -> Double {
+            ContrastFloors.ratio(ink, on: "selectionSpread", spread, in: tokens) ?? 0
+        }
+        let floor = 4.5
+        let all = [(ink: white, extreme: white), (ink: nearBlack, extreme: black)]
+        let usable = all.filter { onKey($0.extreme) >= floor }
+        let candidates = usable.isEmpty ? all : usable
+        // Ties go to the first candidate, white.
+        var best = candidates[0].ink
+        var bestScore = -Double.infinity
+        for candidate in candidates {
+            let score = min(onKey(candidate.ink), onRow(candidate.ink))
+            if score > bestScore {
+                best = candidate.ink
+                bestScore = score
+            }
+        }
+        return best
     }
 
     /// Pushes the frame and the panels apart along lightness until they are

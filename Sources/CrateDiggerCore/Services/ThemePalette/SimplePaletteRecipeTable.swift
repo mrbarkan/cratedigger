@@ -8,11 +8,14 @@ import Foundation
 /// Which job each token follows:
 /// - Frame: the chassis and its bevel, the keys (`metal…`), the desktop backdrop.
 /// - Panels: the lists (`paper…`), the recessed well, the divider lines.
-/// - Text: the four inks and `selectionInk`.
-/// - Accent: the accent trio, and the selection lamp in light.
+/// - Text: the four inks.
+/// - Accent: the accent trio and the selected row's light (`selectionLedCore`,
+///   `selectionGlow`, `selectionSpread`).
 /// - Screen Glass / Screen Text: the display.
 /// - Meaning colours keep Carbon's hue and chroma; only their lightness follows the
-///   panels (or, for ON AIR, the glass). The selection lamp in dark is Carbon's teal LED.
+///   panels (or, for ON AIR, the glass).
+/// - `selectionInk` is not in the table: it is chosen against the selection fills
+///   once they exist (`SimplePaletteRecipe.selectionInk`).
 /// - `rowAlt` stays clear, as in every built-in.
 ///
 /// Where the numbers are not a measurement:
@@ -22,8 +25,7 @@ import Foundation
 ///   and keep half its chroma. Carbon's are white because its frame is nearly white;
 ///   measured literally, a cream or grey frame would get a grey highlight barely
 ///   lighter than itself. On Carbon's own frame they still come out white.
-/// - `selectionInk` in light is the dark ink rather than Carbon's white (see
-///   `ContrastFloors.pairs`).
+/// - The dark selection keeps the accent's hue rather than Carbon's teal (above).
 ///
 /// The bands are wide enough to keep the hand-made themes' own choices (Nord-style
 /// panels lighter than the frame, Pocket's violet frame) and narrow enough that text,
@@ -71,11 +73,16 @@ struct SimplePaletteRecipeTable: Sendable {
             "ink2": .derived(.text, dL: -0.1108, chroma: 3.477, hierarchy: true),
             "ink3": .derived(.text, dL: -0.3230, chroma: 5.365, hierarchy: true),
             "ink4": .derived(.text, dL: -0.4812, chroma: 5.067, hierarchy: true),
-            "selectionInk": .derived(.text, dL: 0.0269, chroma: 0),
 
             "orange": .derived(.accent, dL: 0, chroma: 1),
             "orangeHi": .derived(.accent, dL: 0.0861, chroma: 0.658, hue: 3.7),
             "orangeLo": .derived(.accent, dL: -0.1024, chroma: 0.976, hue: -1.9),
+            // Carbon's dark selection is a cool teal against its warm accent. Its
+            // lightness, chroma and alpha are kept; its 156° hue offset is not, or a
+            // blue accent would get an orange selection.
+            "selectionLedCore": .derived(.accent, dL: 0.2065, chroma: 0.723),
+            "selectionGlow": .derived(.accent, dL: 0.0489, chroma: 0.598),
+            "selectionSpread": .derived(.accent, dL: 0.2065, chroma: 0.723, alpha: 0.553),
 
             "sun": .meaning(l: 0.8542, c: 0.1417, h: 89.3, on: .panels, follow: 0.3),
             "sunHi": .meaning(l: 0.9315, c: 0.1067, h: 94.6, on: .panels, follow: 0.3),
@@ -84,7 +91,6 @@ struct SimplePaletteRecipeTable: Sendable {
             "cyanGlow": .meaning(l: 0.9288, c: 0.0552, h: 189.2, on: .panels, follow: 0.3),
             "red": .meaning(l: 0.6477, c: 0.1860, h: 27.0, on: .panels, follow: 0.3),
             "indigo": .meaning(l: 0.6413, c: 0.1528, h: 274.6, on: .panels, follow: 0.3),
-            "selectionLedCore": .meaning(l: 0.9146, c: 0.1362, h: 193.9, on: .panels, follow: 0),
 
             "oledSurface": .derived(.glass, dL: 0, chroma: 1),
             "oledStrokeInner": .derived(.glass, dL: 0.0487, chroma: 1.148),
@@ -131,12 +137,13 @@ struct SimplePaletteRecipeTable: Sendable {
             "ink2": .derived(.text, dL: 0.1542, chroma: 1.833, hierarchy: true),
             "ink3": .derived(.text, dL: 0.3514, chroma: 2.030, hierarchy: true),
             "ink4": .derived(.text, dL: 0.5118, chroma: 1.357, hierarchy: true),
-            "selectionInk": .derived(.text, dL: -0.0200, chroma: 1),
 
             "orange": .derived(.accent, dL: 0, chroma: 1),
             "orangeHi": .derived(.accent, dL: 0.0804, chroma: 0.691, hue: 4.2),
             "orangeLo": .derived(.accent, dL: -0.1004, chroma: 0.949, hue: -1.3),
             "selectionLedCore": .derived(.accent, dL: 0.1008, chroma: 0.620, hue: 5.3),
+            "selectionGlow": .derived(.accent, dL: 0.0342, chroma: 0.866, hue: 2.8),
+            "selectionSpread": .derived(.accent, dL: 0, chroma: 1),
 
             "sun": .meaning(l: 0.8494, c: 0.1476, h: 89.2, on: .panels, follow: 0.3),
             "sunHi": .meaning(l: 0.9240, c: 0.1147, h: 93.9, on: .panels, follow: 0.3),

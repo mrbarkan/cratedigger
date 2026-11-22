@@ -20,7 +20,8 @@ final class SimplePaletteRecipeTests: XCTestCase {
 
     /// Carbon's resolved colour tokens per appearance: `Carbon.cdtheme` (shared colours
     /// plus the appearance's layer) over `CarbonTheme.carbon` / `.linen`. `rowAlt` is
-    /// `.clear`; `oledSurfaceShade` is black at 28%.
+    /// `.clear`; `oledSurfaceShade` is black at 28%; dark `selectionGlow` comes from
+    /// `CarbonTheme.carbon`, the theme file sets the rest of the selection.
     static let carbonTokens: [Appearance: [String: String]] = [
         .dark: [
             "chassis": "#171C22", "chassisHi": "#2B3540", "chassisLo": "#0C0F13", "chassisDeep": "#05070A",
@@ -34,7 +35,8 @@ final class SimplePaletteRecipeTests: XCTestCase {
             "backgroundBase": "#080A0E", "backgroundGradientStart": "#18232C", "backgroundGradientEnd": "#030406",
             "oledSurface": "#050504", "oledSurfaceShade": "#00000047", "oledStrokeInner": "#0E0E0C",
             "oledForeground": "#F5F1E6", "oledForegroundMuted": "#FFFFFF8C", "onAir": "#FF5B4A",
-            "selectionLedCore": "#56FFFD", "selectionInk": "#FFFFFF",
+            "selectionLedCore": "#56FFFD", "selectionGlow": "#45C7BD", "selectionSpread": "#56FFFD8D",
+            "selectionInk": "#FFFFFF",
         ],
         .light: [
             "chassis": "#F5F8FA", "chassisHi": "#FFFFFF", "chassisLo": "#D7E1E5", "chassisDeep": "#9CAAB0",
@@ -48,18 +50,29 @@ final class SimplePaletteRecipeTests: XCTestCase {
             "backgroundBase": "#DCE9EC", "backgroundGradientStart": "#F2F8F9", "backgroundGradientEnd": "#C7D8DF",
             "oledSurface": "#0A0A0A", "oledSurfaceShade": "#00000047", "oledStrokeInner": "#1A1A1A",
             "oledForeground": "#F5F1E6", "oledForegroundMuted": "#FFFFFF8C", "onAir": "#FF5B4A",
-            "selectionLedCore": "#FFA07C", "selectionInk": "#FFFFFF",
+            "selectionLedCore": "#FFA07C", "selectionGlow": "#FF7A4D", "selectionSpread": "#FF6236",
+            "selectionInk": "#FFFFFF",
         ],
     ]
 
     /// Tokens Carbon itself sets in a way the recipe deliberately does not follow, each
     /// with its reason. Everything else must land within 0.06 OKLab of Carbon.
     static let closenessExceptions: [Appearance: [String: String]] = [
+        .dark: [
+            // Carbon's dark selection is teal against an orange accent. Simple's
+            // follows the accent (keeping Carbon's lightness, chroma and alpha), or a
+            // blue-accent theme would get a teal or orange selection it never chose.
+            "selectionLedCore": "follows the accent's hue, not Carbon's teal",
+            "selectionGlow": "follows the accent's hue, not Carbon's teal",
+            "selectionSpread": "follows the accent's hue, not Carbon's teal",
+            // White is 2.8:1 on Carbon's orange key fill, which never moves; only the
+            // dark ink reaches 4.5 there.
+            "selectionInk": "white fails 4.5 on the accent key fill",
+        ],
         .light: [
-            // Carbon's light selectionInk is white, 2.6:1 on the orange wash and about
-            // 1:1 on the panel the selected row fades into. The floor (4.5 on the panel)
-            // makes it the dark ink, which also reads better on the accent keys.
-            "selectionInk": "white fails the selection floor in light",
+            // White is 3.0:1 on Carbon's orange keys and 2.6:1 on its orange row
+            // wash; the dark ink reads on both.
+            "selectionInk": "white fails 4.5 on both selection fills",
         ],
     ]
 
@@ -121,6 +134,10 @@ final class SimplePaletteRecipeTests: XCTestCase {
                     let tokens = SimplePaletteRecipe.tokens(jobColors: jobs, contrast: contrast,
                                                             appearance: appearance)
                     assertFloorsHold(tokens, contrast: contrast, "\(appearance) \(contrast) \(jobs.mapValues(\.hex))")
+                    let table = appearance == .dark ? SimplePaletteRecipeTable.dark : SimplePaletteRecipeTable.light
+                    if table.ranges[.accent]!.range.contains(jobs[.accent]!.oklch.l) {
+                        XCTAssertEqual(tokens["orange"], jobs[.accent]!.hex, "the accent never moves")
+                    }
                 }
             }
         }
@@ -188,9 +205,12 @@ final class SimplePaletteRecipeTests: XCTestCase {
         let overrides: Set<String> = [
             "lampNow", "lampConvert", "lampScan", "lampSync", "lampCD", "lampDevices", "lampSearch",
             "lampStats", "transportLamp", "keyLamp", "meterHot", "chassisInk", "columnHeaderInk",
-            "selectionGlow", "selectionSpread",
         ]
         XCTAssertTrue(SimplePaletteRecipe.simpleWrittenTokens.isDisjoint(with: overrides))
+        // Non-optional tokens are written, or an inherited theme's selection shows through.
+        XCTAssertTrue(SimplePaletteRecipe.simpleWrittenTokens.isSuperset(of: [
+            "selectionLedCore", "selectionGlow", "selectionSpread", "selectionInk",
+        ]))
         for key in SimplePaletteRecipe.simpleWrittenTokens {
             XCTAssertFalse(key.hasPrefix("lamp"), key)
             XCTAssertFalse(key.hasSuffix("Lamp"), key)
@@ -275,7 +295,45 @@ final class SimplePaletteRecipeTests: XCTestCase {
         }
     }
 
+    func testSelectionFollowsTheAccent() {
+        // A blue accent over Carbon's other jobs: no orange or teal selection left over.
+        for appearance in [Appearance.dark, .light] {
+            var hexes = Self.carbonJobs[appearance]!
+            hexes[.accent] = appearance == .dark ? "#4C8DFF" : "#2F6BEA"
+            let tokens = SimplePaletteRecipe.tokens(jobColors: Self.jobs(hexes), contrast: .standard,
+                                                    appearance: appearance)
+            let accentHue = PaletteColor(hex: hexes[.accent]!)!.oklch.h
+            for key in ["selectionLedCore", "selectionGlow", "selectionSpread"] {
+                let lch = PaletteColor(hex: tokens[key]!)!.oklch
+                XCTAssertLessThanOrEqual(hueDistance(lch.h, accentHue), 15, "\(appearance) \(key) \(tokens[key]!)")
+            }
+        }
+    }
+
     // MARK: ContrastFloors
+
+    func testEnforceNeverMovesTheAccentKeyFill() {
+        // White on Carbon's orange is 2.8:1 and the orange may not give way: the ink crosses over.
+        let tokens = ["selectionInk": "#FFFFFF", "orange": "#FF6D3F"]
+        let fixed = ContrastFloors.enforce(tokens, contrast: .standard)
+        XCTAssertEqual(fixed["orange"], "#FF6D3F")
+        let ink = PaletteColor(hex: fixed["selectionInk"]!)!
+        XCTAssertGreaterThanOrEqual(PaletteColor.contrast(ink, PaletteColor(hex: "#FF6D3F")!), 4.5)
+    }
+
+    func testRowFillIsTheSpreadOverThePanel() {
+        // A dark ink on a 50% pale wash over a dark panel: the wash has to get lighter.
+        let tokens = ["selectionInk": "#000000", "selectionSpread": "#808080B3", "paper": "#141414"]
+        let pair = ContrastFloors.pairs(contrast: .standard).first { $0.background == "selectionSpread" }!
+        XCTAssertLessThan(ContrastFloors.ratio(of: pair, in: tokens)!, 4.5)
+        let fixed = ContrastFloors.enforce(tokens, contrast: .standard)
+        XCTAssertGreaterThanOrEqual(ContrastFloors.ratio(of: pair, in: fixed)!, 4.5)
+        let spread = PaletteColor(hex: fixed["selectionSpread"]!)!
+        XCTAssertGreaterThan(spread.oklch.l, PaletteColor(hex: "#808080")!.oklch.l, "the fill moved, lighter")
+        XCTAssertEqual(spread.a, 0xB3 / 255.0, accuracy: 0.001, "its alpha did not")
+        XCTAssertEqual(fixed["paper"], "#141414")
+    }
+
 
     func testEnforceMovesForegroundFirst() {
         let tokens = ["ink": "#808080", "paper": "#202020"]
@@ -338,15 +396,13 @@ final class SimplePaletteRecipeTests: XCTestCase {
     private func assertFloorsHold(_ tokens: [String: String], contrast: SimpleContrast, _ label: String,
                                   file: StaticString = #filePath, line: UInt = #line) {
         for pair in ContrastFloors.pairs(contrast: contrast) {
-            guard let fgKey = ContrastFloors.foregroundKey(pair.foreground, in: tokens),
-                  let fg = tokens[fgKey].flatMap(PaletteColor.init(hex:)),
-                  let bg = tokens[pair.background].flatMap(PaletteColor.init(hex:)) else {
+            guard let ratio = ContrastFloors.ratio(of: pair, in: tokens) else {
                 XCTFail("missing \(pair.foreground) or \(pair.background) — \(label)", file: file, line: line)
                 continue
             }
-            let ratio = PaletteColor.contrast(fg, bg)
+            let fg = ContrastFloors.foregroundKey(pair.foreground, in: tokens).flatMap { tokens[$0] } ?? "?"
             XCTAssertGreaterThanOrEqual(ratio, pair.minimum,
-                                        "\(pair.foreground) on \(pair.background) \(fg.hex)/\(bg.hex) — \(label)",
+                                        "\(pair.foreground) on \(pair.background) \(fg)/\(tokens[pair.background] ?? "?") — \(label)",
                                         file: file, line: line)
         }
     }
