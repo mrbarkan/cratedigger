@@ -61,6 +61,39 @@ final class SimpleThemeRegistryTests: XCTestCase {
         XCTAssertEqual(saved.definition.colors?["orange"], "#12AB34")
     }
 
+    func testApplySimpleWritesMinimizedFile() throws {
+        let parent = try manifest("base-theme").definition
+        var candidate = try simpleCandidate()
+        candidate.fonts = ["sans": ThemeFont(regular: "Helvetica")]
+        candidate.effects = ["grain": 0.1]
+        // Copies that equal the parent's must not reach the file.
+        let withParentCopies = ThemeAuthoringService.minimized(
+            { var c = candidate; c.fonts = parent.fonts; c.effects = parent.effects; return c }(),
+            against: parent)
+        XCTAssertNil(withParentCopies.fonts)
+        XCTAssertNil(withParentCopies.effects)
+
+        try registry.applySimple(candidate)
+        let data = try Data(contentsOf: try XCTUnwrap(registry.sourceURL(for: "new-theme")))
+        let file = try JSONDecoder().decode(ThemeDefinition.self, from: data)
+        XCTAssertEqual(file.fonts?["sans"]?.regular, "Helvetica")
+        XCTAssertEqual(file.colors?.keys.sorted(), ["orange"])
+    }
+
+    func testApplySimpleFailureLeavesStateUntouched() throws {
+        registry.beginEditing(try manifest("base-theme"))
+        let before = try XCTUnwrap(registry.draft)
+        let depth = registry.undoDepth
+        let candidate = try simpleCandidate()
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: themesDirectory.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: themesDirectory.path) }
+
+        XCTAssertThrowsError(try registry.applySimple(candidate))
+        XCTAssertEqual(registry.draft, before)
+        XCTAssertEqual(registry.undoDepth, depth)
+        XCTAssertEqual(PreferencesStore.shared.selectedThemeID, savedSelection)
+    }
+
     func testApplySimpleKeepsBlockOnDisk() throws {
         try registry.applySimple(try simpleCandidate())
         let saved = try manifest("new-theme")
@@ -78,6 +111,8 @@ final class SimpleThemeRegistryTests: XCTestCase {
         XCTAssertNotNil(seed.simple)
         XCTAssertEqual(seed.baseAppearance, .dark)
         XCTAssertFalse(seed.isAdaptive)
+        XCTAssertEqual(seed.fonts, try manifest("base-theme").definition.fonts)
+        XCTAssertEqual(seed.effects, try manifest("base-theme").definition.effects)
 
         try registry.applySimple(try simpleCandidate())
         let second = registry.newSimpleSeed(from: try manifest("base-theme"))
@@ -95,11 +130,18 @@ final class SimpleThemeRegistryTests: XCTestCase {
         registry.beginAdvancedCopy(of: try simpleCandidate())
         var draft = try XCTUnwrap(registry.draft)
         draft.simple = try XCTUnwrap(registry.newSimpleSeed(from: try manifest("base-theme")).simple)
+        let window = ThemeRegistry.undoCoalesceWindow
+        ThemeRegistry.undoCoalesceWindow = -1
+        defer { ThemeRegistry.undoCoalesceWindow = window }
         registry.draft = draft
+        let depth = registry.undoDepth
         registry.convertDraftToAdvanced()
         let converted = try XCTUnwrap(registry.draft)
         XCTAssertNil(converted.simple)
         XCTAssertEqual(converted.colors?["orange"], "#12AB34")
+        XCTAssertEqual(registry.undoDepth, depth + 1)
+        registry.undoDraftStep()
+        XCTAssertNotNil(registry.draft?.simple)
     }
 
     func testAdvancedCopyIsNewNamedAndRecipeFree() throws {
@@ -107,7 +149,7 @@ final class SimpleThemeRegistryTests: XCTestCase {
         let copy = try XCTUnwrap(registry.draft)
         XCTAssertNil(copy.simple)
         XCTAssertEqual(copy.name, "New Theme Copy")
-        XCTAssertEqual(copy.colors?.count, ThemeTokenCatalog.allColorTokens.count)
+        XCTAssertEqual(copy.colors?.count, ThemeRegistry.seeded(try simpleCandidate()).colors?.count)
     }
 
     func testPreviewThemeUsesDraftColours() throws {

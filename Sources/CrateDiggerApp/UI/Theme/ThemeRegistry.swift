@@ -540,6 +540,13 @@ public final class ThemeRegistry: ObservableObject {
     /// one overlay is enough. A missing parent leaves the definition as it is
     /// (the renderer fills the rest from the stock theme), exactly as for an
     /// installed theme with a dangling `inherits`.
+    ///
+    /// Relies on `manifest.definition` being pre-resolved by the loader, and must
+    /// stay in step with `ThemeLoaderService.merge` (private to Core): identity,
+    /// `inherits` and `simple` are the definition's own. One difference: the loader
+    /// never inherits a logo (`logo: override.logo`), while `merging` keeps the
+    /// parent's when the definition names none; harmless here because previews
+    /// pass no logo URL and a saved file is minimized against the parent anyway.
     private func resolvedAgainstParent(_ definition: ThemeDefinition) -> ThemeDefinition {
         guard let parent = manifest(for: definition.inherits)?.definition else { return definition }
         var merged = parent.merging(definition)
@@ -597,12 +604,39 @@ public final class ThemeRegistry: ObservableObject {
         return seed
     }
 
+    /// Why `applySimple` refused before touching anything.
+    public struct SimpleApplyError: LocalizedError {
+        public var errorDescription: String? {
+            "The Themes folder is not reachable, so the theme could not be saved."
+        }
+    }
+
     /// Saves a Simple theme: minimized against its parent, written, selected.
+    /// It replaces any open Advanced draft (the caller asks first). On any
+    /// failure the registry is exactly as it was: the previous draft, seed, logo
+    /// fallback and undo history are restored and the error rethrown, so the
+    /// saved theme keeps rendering. With no Themes folder it throws
+    /// `SimpleApplyError` before assigning anything.
     @discardableResult
     public func applySimple(_ definition: ThemeDefinition) throws -> String? {
-        draft = definition
-        draftSeed = definition
-        return try saveDraft()
+        guard authoring != nil else { throw SimpleApplyError() }
+        let previous = (draft: draft, seed: draftSeed, fallback: draftLogoFallback,
+                        undo: undoStack, depth: undoDepth, at: lastUndoStepAt)
+        do {
+            draft = definition
+            draftSeed = definition
+            return try saveDraft()
+        } catch {
+            isUndoing = true
+            draft = previous.draft
+            isUndoing = false
+            draftSeed = previous.seed
+            draftLogoFallback = previous.fallback
+            undoStack = previous.undo
+            undoDepth = previous.depth
+            lastUndoStepAt = previous.at
+            throw error
+        }
     }
 
     /// Drops the Simple recipe from the open draft; every token stays as it is.
