@@ -202,7 +202,12 @@ final class SimpleThemeEditorTests: XCTestCase {
     }
 
     func testNoOpEditKeepsWarningAndHistory() throws {
-        let (editor, _) = try reopened()
+        // Shuffle first: an extracted assignment need not be one the assigner would
+        // offer, and an edit moves such a state onto one. A saved Shuffle result is valid.
+        let first = try newEditor()
+        first.shuffle()
+        try first.apply()
+        let editor = SimpleThemeEditor(reopening: try manifest(first.candidate.id), registry: registry)
         editor.edit { _ in }
         XCTAssertTrue(editor.needsRegenerateWarning)
         XCTAssertFalse(editor.history.canGoBack)

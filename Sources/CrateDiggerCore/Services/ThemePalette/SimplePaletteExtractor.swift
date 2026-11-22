@@ -6,12 +6,12 @@ import Foundation
 /// `orange`, glass `oledSurface`, screen text `oledForeground`) from the theme's
 /// primary layer, the one for its own `baseAppearance`, falling back to
 /// `resolvedBase` for a token the theme does not set. Colours closer than
-/// `mergeDistance` in OKLab become one swatch, and every job pins to its colour, so
-/// the theme reads back as it was.
+/// `mergeDistance` in OKLab become one swatch, and every job is assigned its colour (nothing is pinned, so Shuffle is free), so
+/// the first result reads back as the theme was.
 ///
 /// An adaptive theme (one that has the other appearance's layer too) also brings that
 /// layer's colours: each one not within `mergeDistance` of an existing swatch is
-/// appended, unpinned, while the palette has fewer than six swatches.
+/// appended, unassigned, while the palette has fewer than six swatches.
 public enum SimplePaletteExtractor {
     public static let mergeDistance = 0.03
 
@@ -54,7 +54,7 @@ public enum SimplePaletteExtractor {
                 swatchOf[job] = swatches.count - 1
             }
         }
-        let pinnedSwatches = Set(swatchOf.values)
+        let assignedSwatches = Set(swatchOf.values)
 
         // The other layer's colours, as unpinned extras while there is room.
         if definition.variant(for: other) != nil {
@@ -68,17 +68,17 @@ public enum SimplePaletteExtractor {
             }
         }
 
-        let keep = keptSwatches(uses: uses, pinned: pinnedSwatches, limit: SimpleThemeRecipe.maxPaletteCount)
+        let keep = keptSwatches(uses: uses, assigned: assignedSwatches, limit: SimpleThemeRecipe.maxPaletteCount)
         let newIndex = Dictionary(uniqueKeysWithValues: keep.enumerated().map { ($1, $0) })
 
-        var pins: [ThemeJob: Int] = [:]
+        var chosen: [ThemeJob: Int] = [:]
         for job in ThemeJob.allCases {
             if let mapped = newIndex[swatchOf[job]!] {
-                pins[job] = mapped
+                chosen[job] = mapped
             } else {
                 let color = jobColor[job]!
                 let nearest = keep.min { swatches[$0].distance(to: color) < swatches[$1].distance(to: color) }!
-                pins[job] = newIndex[nearest]!
+                chosen[job] = newIndex[nearest]!
             }
         }
 
@@ -92,25 +92,25 @@ public enum SimplePaletteExtractor {
         }
 
         var assignment: [ThemeJob: Int?] = [:]
-        for (job, index) in pins { assignment[job] = .some(index) }
+        for (job, index) in chosen { assignment[job] = .some(index) }
         return SimpleThemeRecipe(
             palette: palette,
-            pins: pins,
+            pins: [:],
             assignment: assignment,
             contrast: .standard,
             recipe: SimplePaletteRecipe.currentVersion
         )
     }
 
-    /// Which swatches survive when there are more than `limit`: unpinned ones go first
-    /// (least used, later first), a pinned one only when nothing unpinned is left.
-    /// First-seen order is kept. The loop is a guard today (at most six jobs pin, and
+    /// Which swatches survive when there are more than `limit`: unassigned ones go first
+    /// (least used, later first), an assigned one only when nothing unassigned is left.
+    /// First-seen order is kept. The loop is a guard today (at most six jobs are assigned, and
     /// extras stop at six), but it is correct for any count.
-    static func keptSwatches(uses: [Int], pinned: Set<Int>, limit: Int) -> [Int] {
+    static func keptSwatches(uses: [Int], assigned: Set<Int>, limit: Int) -> [Int] {
         var keep = Array(uses.indices)
         while keep.count > limit {
             let drop = keep.enumerated().min { a, b in
-                let pa = pinned.contains(a.element), pb = pinned.contains(b.element)
+                let pa = assigned.contains(a.element), pb = assigned.contains(b.element)
                 if pa != pb { return !pa }
                 return uses[a.element] != uses[b.element] ? uses[a.element] < uses[b.element] : a.element > b.element
             }!

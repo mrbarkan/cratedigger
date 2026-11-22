@@ -9,14 +9,15 @@ final class SimplePaletteExtractorTests: XCTestCase {
         return try JSONDecoder().decode(ThemeDefinition.self, from: Data(contentsOf: url))
     }
 
-    func testExtractCarbonPinsSixJobs() throws {
+    func testExtractCarbonAssignsSixJobsNoPins() throws {
         let r = SimplePaletteExtractor.recipe(from: try carbon(), resolvedBase: [:])
-        XCTAssertEqual(Set(r.pins.keys), Set(ThemeJob.allCases))
+        XCTAssertTrue(r.pins.isEmpty)
+        XCTAssertEqual(Set(assignedIndices(r).keys), Set(ThemeJob.allCases))
         XCTAssertLessThanOrEqual(r.palette.count, 6)
         XCTAssertGreaterThanOrEqual(r.palette.count, 2)
         XCTAssertEqual(r.contrast, .standard)
         XCTAssertEqual(r.recipe, SimplePaletteRecipe.currentVersion)
-        for index in r.pins.values { XCTAssertTrue(r.palette.indices.contains(index)) }
+        for index in assignedIndices(r).values { XCTAssertTrue(r.palette.indices.contains(index)) }
         XCTAssertEqual(r.sanitized(), r)
     }
 
@@ -27,9 +28,9 @@ final class SimplePaletteExtractorTests: XCTestCase {
         ])
         let r = SimplePaletteExtractor.recipe(from: def, resolvedBase: [:])
         XCTAssertEqual(r.palette.count, 3)
-        XCTAssertEqual(r.pins[.frame], r.pins[.panels])
-        XCTAssertEqual(r.pins[.frame], r.pins[.glass])
-        XCTAssertEqual(r.pins[.text], r.pins[.screenText])
+        XCTAssertEqual(assignedIndices(r)[.frame], assignedIndices(r)[.panels])
+        XCTAssertEqual(assignedIndices(r)[.frame], assignedIndices(r)[.glass])
+        XCTAssertEqual(assignedIndices(r)[.text], assignedIndices(r)[.screenText])
     }
 
     func testExtractFallsBackToResolvedBase() {
@@ -55,4 +56,9 @@ final class SimplePaletteExtractorTests: XCTestCase {
             XCTAssertLessThanOrEqual(want.distance(to: got), SimplePaletteExtractor.mergeDistance,"\(key): \(dark[key]!) vs \(tokens[key]!)")
         }
     }
+}
+
+/// The swatch each job was given, derived (nil) assignments left out.
+func assignedIndices(_ recipe: SimpleThemeRecipe) -> [ThemeJob: Int] {
+    recipe.assignment.compactMapValues { $0 }
 }
