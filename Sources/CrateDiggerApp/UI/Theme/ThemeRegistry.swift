@@ -570,6 +570,15 @@ public final class ThemeRegistry: ObservableObject {
         return (theme: rendered(flattened, logoURL: nil), geometry: CarbonGeometry(definition: flattened))
     }
 
+    /// The definition `previewTheme` renders: resolved against its parent and
+    /// flattened to one layer. Its `fonts` are the fonts the app will draw.
+    public func previewDefinition(
+        for definition: ThemeDefinition,
+        appearance: ThemeDefinition.BaseAppearance
+    ) -> ThemeDefinition {
+        flatten(resolvedAgainstParent(definition), for: appearance)
+    }
+
     /// A fresh, unsaved Simple theme started from `manifest`'s theme. It inherits
     /// from it, so tokens Simple does not write keep following the original.
     /// Fonts and effects are copied from the resolved original so the seed owns

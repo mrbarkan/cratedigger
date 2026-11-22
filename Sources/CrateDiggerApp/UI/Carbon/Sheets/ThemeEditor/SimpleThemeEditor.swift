@@ -11,7 +11,14 @@ final class SimpleThemeEditor: ObservableObject {
     @Published private(set) var history: SimpleThemeHistory
     /// Appearance, material, cover look and fonts. Changing these never touches
     /// colours that were already generated (see `candidate`).
-    @Published var choices: SimpleThemeChoices { didSet { refresh() } }
+    /// Changing `appearance` regenerates a reopened theme's colours: ask (`needsWarning(for: .appearance)`)
+    /// before setting it. Fonts, material and cover look apply without regenerating colours.
+    @Published var choices: SimpleThemeChoices {
+        didSet {
+            if choices.appearance != oldValue.appearance { needsRegenerateWarning = false }
+            refresh()
+        }
+    }
     @Published var name: String { didSet { refresh() } }
     /// The jobs whose preview shapes glow while the pointer is over a swatch or row.
     @Published var highlightedJobs: Set<ThemeJob> = []
@@ -87,7 +94,7 @@ final class SimpleThemeEditor: ObservableObject {
     var candidate: ThemeDefinition {
         var built = SimpleThemeBuilder.build(state: history.current, choices: choices, onto: base)
         built.name = name
-        guard isReopenedSaved, !regenerated, choices.appearance == initialChoices.appearance else { return built }
+        guard isReopenedSaved, !regenerated else { return built }
         var saved = base
         saved.name = name
         saved.effects = built.effects
@@ -101,7 +108,21 @@ final class SimpleThemeEditor: ObservableObject {
     }
 
     /// The fonts the preview draws with.
-    var previewFonts: [String: ThemeFont]? { candidate.fonts }
+    var previewFonts: [String: ThemeFont]? {
+        registry.previewDefinition(for: candidate, appearance: previewAppearance).fonts
+    }
+
+    /// What the owner is about to change, for `needsWarning(for:)`.
+    enum Change { case palette, pin, contrast, shuffle, appearance, fonts, material, coverLook, name }
+
+    /// Whether `change` would regenerate colours of a reopened saved theme that has not been
+    /// regenerated yet. The view asks first when this is true, then calls `confirmRegenerate()`.
+    func needsWarning(for change: Change) -> Bool {
+        switch change {
+        case .palette, .pin, .contrast, .shuffle, .appearance: return needsRegenerateWarning
+        case .fonts, .material, .coverLook, .name: return false
+        }
+    }
 
     /// Every job the swatch at `index` is currently given, in the jobs' display order.
     func jobs(forSwatch index: Int) -> [ThemeJob] {
@@ -110,7 +131,8 @@ final class SimpleThemeEditor: ObservableObject {
 
     // MARK: Editing
 
-    /// Applies a palette, pin or contrast change as one history step. A recoloured swatch can
+    /// The view must ask first when `needsWarning(for: .palette)` (or `.pin`, `.contrast`) is true;
+    /// this clears the warning without asking. Applies a palette, pin or contrast change as one history step. A recoloured swatch can
     /// make the current assignment one the assigner would no longer offer; it starts over then.
     func edit(_ change: (inout SimpleThemeState) -> Void) {
         var next = history.current
@@ -121,6 +143,7 @@ final class SimpleThemeEditor: ObservableObject {
         refresh()
     }
 
+    /// As `edit`: the view asks first when `needsWarning(for: .shuffle)` is true.
     func shuffle() { edit { $0.shuffle() } }
 
     func back() {

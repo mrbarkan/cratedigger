@@ -119,6 +119,55 @@ final class SimpleThemeEditorTests: XCTestCase {
         XCTAssertFalse(editor.needsRegenerateWarning)
     }
 
+    private func reopened() throws -> (SimpleThemeEditor, ThemeManifest) {
+        let first = try newEditor()
+        try first.apply()
+        let saved = try manifest(first.candidate.id)
+        return (SimpleThemeEditor(reopening: saved, registry: registry), saved)
+    }
+
+    func testFontMaterialLookDoNotRebuildColoursOnReopen() throws {
+        let (editor, saved) = try reopened()
+        editor.choices.fonts["mono"] = SimpleFontPresets.labels[0].font
+        editor.choices.material = .brushed
+        editor.choices.coverLook = .pixel
+        editor.name = "Other"
+        XCTAssertTrue(editor.needsRegenerateWarning)
+        XCTAssertEqual(editor.candidate.colors, saved.definition.colors)
+        XCTAssertEqual(editor.candidate.light?.colors, saved.definition.light?.colors)
+        XCTAssertFalse(editor.needsWarning(for: .fonts))
+        XCTAssertFalse(editor.needsWarning(for: .material))
+        XCTAssertFalse(editor.needsWarning(for: .coverLook))
+        XCTAssertFalse(editor.needsWarning(for: .name))
+        XCTAssertTrue(editor.needsWarning(for: .appearance))
+        XCTAssertTrue(editor.needsWarning(for: .shuffle))
+    }
+
+    func testAppearanceChangeIsGatedAndRebuilds() throws {
+        let (editor, saved) = try reopened()
+        XCTAssertTrue(editor.needsWarning(for: .appearance))
+        editor.confirmRegenerate()
+        editor.choices.appearance = .light
+        XCTAssertNotEqual(editor.candidate.colors, saved.definition.colors)
+        XCTAssertFalse(editor.needsWarning(for: .appearance))
+    }
+
+    func testPreviewFontsAreInheritedFromParent() throws {
+        let authoring = ThemeAuthoringService(themesDirectory: themesDirectory)
+        var parent = ThemeDefinition(id: "font-parent", name: "Font Parent", baseAppearance: .dark,
+                                     colors: ["chassis": "#111111"])
+        parent.fonts = ["mono": SimpleFontPresets.labels[0].font]
+        try authoring.save(parent)
+        var child = ThemeDefinition(id: "font-child", name: "Font Child", baseAppearance: .dark,
+                                    inherits: "font-parent")
+        child.simple = SimpleThemeRecipe(palette: ["#1E2430", "#E8E4DA"])
+        try authoring.save(child)
+        registry = ThemeRegistry(loader: ThemeLoaderService(
+            bundle: Bundle(for: type(of: self)), userThemesDirectoryOverride: themesDirectory))
+        let editor = SimpleThemeEditor(reopening: try manifest("font-child"), registry: registry)
+        XCTAssertEqual(editor.previewFonts?["mono"], parent.fonts?["mono"])
+    }
+
     func testJobsForSwatch() throws {
         let editor = try newEditor()
         let state = editor.history.current
