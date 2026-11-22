@@ -13,7 +13,12 @@ import XCTest
 /// CRATEDIGGER_SIMPLE_SHEETS=/some/dir scripts/test.sh --filter SimpleThemeContactSheetTests
 /// ```
 ///
-/// Files are `<n>-<palette>-<dark|light>[-shuffle<k>].png` at 1x, plus one
+/// Every picture is built the way the editor builds one: NEW from Carbon
+/// (`ThemeRegistry.newSimpleSeed`), `SimpleThemeBuilder.build`, drawn by
+/// `ThemeRegistry.previewTheme`. Files are
+/// `<n>-<palette>-<both|light|dark>-on-<dark|light>[-shuffle<k>].png` at 1x: BOTH on
+/// each screen, then LIGHT shown while the screen is dark and DARK while it is light
+/// (a single-appearance theme must draw itself whatever the screen). Plus one
 /// `<n>-<palette>-sheet.png` per palette with every picture in a grid.
 @MainActor
 final class SimpleThemeContactSheetTests: XCTestCase {
@@ -26,13 +31,26 @@ final class SimpleThemeContactSheetTests: XCTestCase {
             .appendingPathComponent("Sources/CrateDiggerApp/Resources/StarterCrate/cover.png")
     }
 
-    private static let palettes: [(slug: String, colors: [String])] = [
-        ("nord", ["#2E3440", "#3B4252", "#ECEFF4", "#88C0D0", "#BF616A"]),
-        ("two-colours", ["#1B1D22", "#FF6A13"]),
-        ("pastel-light", ["#FBF7F0", "#E8D8C4", "#6B5B4E", "#F2A7A0"]),
-        ("neon", ["#0A0A12", "#FF00AA", "#00FFD1", "#FAFF00"]),
-        ("mono-greys", ["#222222", "#2A2A2A", "#DDDDDD"]),
-        ("forest", ["#1F2D24", "#3E5641", "#A3B18A", "#DAD7CD", "#E9C46A", "#BC4749"]),
+    private struct Palette {
+        let slug: String
+        let colors: [String]
+        var assignment: [ThemeJob: Int?] = [:]
+        var shuffles = 0
+    }
+
+    private static let palettes: [Palette] = [
+        Palette(slug: "nord", colors: ["#2E3440", "#3B4252", "#ECEFF4", "#88C0D0", "#BF616A"], shuffles: 3),
+        Palette(slug: "two-colours", colors: ["#1B1D22", "#FF6A13"]),
+        Palette(slug: "pastel-light", colors: ["#FBF7F0", "#E8D8C4", "#6B5B4E", "#F2A7A0"]),
+        Palette(slug: "neon", colors: ["#0A0A12", "#FF00AA", "#00FFD1", "#FAFF00"]),
+        Palette(slug: "mono-greys", colors: ["#222222", "#2A2A2A", "#DDDDDD"]),
+        Palette(slug: "forest", colors: ["#1F2D24", "#3E5641", "#A3B18A", "#DAD7CD", "#E9C46A", "#BC4749"],
+                shuffles: 3),
+        // A pale LCD with a deep accent (Pocket's light layer), then Shuffles that move
+        // the pale swatches onto and off the glass.
+        Palette(slug: "pale-glass", colors: ["#C9C6BE", "#E4E1DA", "#1B1B22", "#A12A5E", "#B7BBB0", "#1F2326"],
+                assignment: [.frame: 0, .panels: 1, .text: 2, .accent: 3, .glass: 4, .screenText: 5],
+                shuffles: 3),
     ]
 
     func testWriteSimpleContactSheets() throws {
@@ -41,36 +59,43 @@ final class SimpleThemeContactSheetTests: XCTestCase {
         let out = URL(fileURLWithPath: try XCTUnwrap(setting), isDirectory: true)
         try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
 
+        // Read-only: nothing here applies a theme, so the source folder is safe to load from.
         let themesDirectory = BusySignalSnapshotTests.repoRoot
             .appendingPathComponent("Sources/CrateDiggerApp/Resources/Themes", isDirectory: true)
-        let themes = ThemeLoaderService(bundles: [], userThemesDirectoryOverride: themesDirectory).discoverThemes().themes
-        let carbon = try XCTUnwrap(themes.first { $0.id == "carbon" }, "carbon did not load").definition
+        let registry = ThemeRegistry(loader: ThemeLoaderService(bundles: [], userThemesDirectoryOverride: themesDirectory))
+        let carbon = try XCTUnwrap(registry.manifest(for: "carbon"), "carbon did not load")
+        let seed = registry.newSimpleSeed(from: carbon)
+        XCTAssertNil(seed.inherits)
 
-        let choices = SimpleThemeChoices(
-            appearance: .both, material: .plastic, coverLook: .pixel,
-            fonts: ["display": try XCTUnwrap(SimpleFontPresets.screenTitles.first).font,
-                    "mono": try XCTUnwrap(SimpleFontPresets.labels.first).font,
-                    "sans": try XCTUnwrap(SimpleFontPresets.interface.first).font])
+        let fonts = ["display": try XCTUnwrap(SimpleFontPresets.screenTitles.first).font,
+                     "mono": try XCTUnwrap(SimpleFontPresets.labels.first).font,
+                     "sans": try XCTUnwrap(SimpleFontPresets.interface.first).font]
+        func choices(_ mode: SimpleAppearanceMode) -> SimpleThemeChoices {
+            SimpleThemeChoices(appearance: mode, material: .plastic, coverLook: .pixel, fonts: fonts)
+        }
 
         for (offset, entry) in Self.palettes.enumerated() {
             let number = offset + 1
             // An empty assignment is incomplete, so the state starts from `SimplePaletteAssigner.initial`.
-            var state = SimpleThemeState(recipe: SimpleThemeRecipe(palette: entry.colors))
+            var state = SimpleThemeState(recipe: SimpleThemeRecipe(palette: entry.colors, assignment: entry.assignment))
             var pictures: [CGImage] = []
-            func write(_ appearance: ThemeDefinition.BaseAppearance, suffix: String) throws {
-                let built = SimpleThemeBuilder.build(state: state, choices: choices, onto: carbon)
-                let picture = try image(for: built, appearance: appearance)
-                let name = "\(number)-\(entry.slug)-\(appearance == .dark ? "dark" : "light")\(suffix).png"
+            func write(_ mode: SimpleAppearanceMode, on screen: ThemeDefinition.BaseAppearance,
+                       suffix: String = "") throws {
+                let built = SimpleThemeBuilder.build(state: state, choices: choices(mode), onto: seed)
+                XCTAssertNil(built.inherits)
+                let picture = try image(for: built, on: screen, registry: registry)
+                let name = "\(number)-\(entry.slug)-\(mode.rawValue)-on-\(screen == .dark ? "dark" : "light")\(suffix).png"
                 try BusySignalSnapshotTests.writePNG(picture, to: out.appendingPathComponent(name))
                 pictures.append(picture)
             }
-            try write(.dark, suffix: "")
-            try write(.light, suffix: "")
-            if number == 1 || number == 6 {
-                for k in 1...3 {
-                    state.shuffle()
-                    try write(.dark, suffix: "-shuffle\(k)")
-                }
+            try write(.both, on: .dark)
+            try write(.both, on: .light)
+            try write(.light, on: .dark)
+            try write(.dark, on: .light)
+            for k in stride(from: 1, through: entry.shuffles, by: 1) {
+                state.shuffle()
+                try write(.both, on: .dark, suffix: "-shuffle\(k)")
+                try write(.both, on: .light, suffix: "-shuffle\(k)")
             }
             try BusySignalSnapshotTests.writePNG(try Self.combined(pictures),
                                                  to: out.appendingPathComponent("\(number)-\(entry.slug)-sheet.png"))
@@ -80,13 +105,11 @@ final class SimpleThemeContactSheetTests: XCTestCase {
 
     // MARK: - Helpers
 
-    private func image(for definition: ThemeDefinition, appearance: ThemeDefinition.BaseAppearance) throws -> CGImage {
-        let flat = definition.resolved(for: definition.isAdaptive ? appearance : definition.baseAppearance)
-        var theme = CarbonTheme(definition: flat, resolvedBase: flat.baseAppearance == .dark ? .carbon : .linen)
-        theme.name = flat.name
-        theme.id = flat.id
+    private func image(for definition: ThemeDefinition, on screen: ThemeDefinition.BaseAppearance,
+                       registry: ThemeRegistry) throws -> CGImage {
+        let theme = registry.previewTheme(for: definition, appearance: screen).theme
         ThemePreviewIllustration.prepareCovers(for: theme, scale: 1)
-        let view = ThemePreviewIllustration(theme: theme, fonts: flat.fonts ?? [:], highlighted: [])
+        let view = ThemePreviewIllustration(theme: theme, fonts: definition.fonts ?? [:], highlighted: [])
             .padding(16)
             .background(Color(white: 0.5))
             .environment(\.displayScale, 1)
