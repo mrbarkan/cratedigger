@@ -561,6 +561,11 @@ final class LibraryViewModel: ObservableObject {
     /// Opens Advanced with its PREVIEW side area showing. Dev hook only
     /// (`CRATEDIGGER_THEME_EDITOR=advanced-preview`); PREVIEW is a key otherwise.
     var themeEditorShowsPreview = false
+
+    /// Presses APPLY on the NEW theme a few seconds after it opens, then closes
+    /// the editor. Dev hook only (`CRATEDIGGER_THEME_EDITOR=simple-apply`), so
+    /// the real app can be captured in a Simple theme without clicking.
+    var themeEditorAppliesNew = false
     #endif
 
     /// Swaps the inspector for the theme picker, the way `oledView ==

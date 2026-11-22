@@ -703,11 +703,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         // "simple-preview" NEW from Pocket (a palette, a material and an LCD
         // cover look to show, without touching the selected theme), and
         // "advanced-preview" Advanced with its PREVIEW area open.
+        // "simple-apply" (or "simple-apply:<theme id>" to start from that
+        // theme) opens NEW, leaves the preview up for eight seconds and then
+        // presses APPLY, so a capture can compare the preview with the real
+        // app. Applying writes a theme file and selects it, so it is refused
+        // without CRATEDIGGER_CRATES_DIR (the debug Themes folder lives there).
         if let raw = env["CRATEDIGGER_THEME_EDITOR"] {
             DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) { [weak self] in
                 guard let model = self?.mainWindowController?.model else { return }
                 switch raw {
                 case "1": break
+                case let value where value == "simple-apply" || value.hasPrefix("simple-apply:"):
+                    guard LibraryViewModel.debugCratesDirectory != nil else {
+                        NSLog("[theme-editor] refusing simple-apply: CRATEDIGGER_CRATES_DIR is not set, so the theme would be saved into the real Themes folder")
+                        return
+                    }
+                    let source = value.dropFirst("simple-apply".count).drop { $0 == ":" }
+                    model.themeEditorNewSourceID = source.isEmpty ? nil : String(source)
+                    model.themeEditorAppliesNew = true
+                    model.themeEditorStartsNew = true
                 case "simple":
                     model.themeEditorStartsNew = true
                 case "simple-preview":

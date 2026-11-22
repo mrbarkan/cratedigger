@@ -137,6 +137,14 @@ struct ThemeEditorView: View {
             let source: ThemeManifest? = nil
             #endif
             session.startNew(from: source)
+            #if DEBUG
+            if model.themeEditorAppliesNew {
+                model.themeEditorAppliesNew = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 8.0) { [session] in
+                    if session.applySimple() { session.requestClose() }
+                }
+            }
+            #endif
         } else if let id = model.themeEditorOpensThemeID {
             model.themeEditorOpensThemeID = nil
             if let manifest = registry.manifest(for: id) { session.open(manifest) }
