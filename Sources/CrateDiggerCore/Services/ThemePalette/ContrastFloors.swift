@@ -15,6 +15,12 @@ import Foundation
 ///   the theme's signature. A foreground that cannot reach the floor on it going one
 ///   way goes the other way instead; white or black always reaches 4.5 on an opaque
 ///   fill.
+///
+/// And one foreground never moves: `orange` drawn on the glass (the mini player's time
+/// readout, which is in the accent whatever the glass). That pair moves the glass
+/// instead, away from the accent, or across it when its own side has no room. A screen
+/// text that cannot read on the glass on its own side crosses to the other side before
+/// the glass is pushed, so the glass is never pulled back toward the accent.
 public enum ContrastFloors {
     /// Foregrounds that are optional overrides in `CarbonTheme`. Simple never writes
     /// them, so while one is unset the token it follows is the one that has to read.
@@ -29,6 +35,15 @@ public enum ContrastFloors {
 
     /// Backgrounds enforcement never moves.
     static let fixedBackgrounds: Set<String> = ["orange"]
+
+    /// Foregrounds enforcement never moves: their pair moves the background instead.
+    static let fixedForegrounds: Set<String> = ["orange"]
+
+    /// Backgrounds a foreground crosses (to the background's other side) before pushing.
+    static let crossedBackgrounds: Set<String> = ["oledSurface"]
+
+    /// The accent drawn on the glass: the mini player's time readout.
+    public static let accentOnGlass = 3.0
 
     /// Every pair, in the order `enforce` settles them. Primary ink comes first so a
     /// panel that has to give way does so before the quieter inks are measured on it.
@@ -55,6 +70,9 @@ public enum ContrastFloors {
             ("columnHeaderInk", "paper", 3),
             ("chassisInk", "metal", 4.5),
             ("chassisInk", "chassis", 4.5),
+            // Before the screen text: the glass settles where the accent reads first,
+            // and the text is measured on the glass where it ended up.
+            ("orange", "oledSurface", accentOnGlass),
             ("oledForeground", "oledSurface", 7),
             ("oledForegroundMuted", "oledSurface", 3),
             ("selectionInk", "paper", 4.5),
@@ -116,17 +134,24 @@ public enum ContrastFloors {
                       let current = ratio(fg, on: pair.background, bg, in: out),
                       current < pair.minimum else { continue }
                 let snapshot = out
+                changed = true
+                if fixedForegrounds.contains(fgKey) {
+                    out[pair.background] = settleBackground(
+                        of: fg, background: bg, minimum: pair.minimum,
+                        ratio: { ratio($0, on: pair.background, $1, in: snapshot) ?? 0 }).hex
+                    continue
+                }
                 let fixed = settle(foreground: fg, background: bg,
                                    seenL: seenLightness(of: pair.background, bg, in: snapshot),
                                    minimum: pair.minimum,
                                    backgroundFixed: fixedBackgrounds.contains(pair.background),
                                    backgroundFades: pair.background == "selectionSpread",
+                                   foregroundCrosses: crossedBackgrounds.contains(pair.background),
                                    ratio: { ratio($0, on: pair.background, $1, in: snapshot) ?? 0 })
                 out[fgKey] = fixed.foreground.hex
                 if !fixedBackgrounds.contains(pair.background) {
                     out[pair.background] = fixed.background.hex
                 }
-                changed = true
             }
             if !changed { break }
         }
@@ -146,13 +171,20 @@ public enum ContrastFloors {
                   let bg = out[pair.background].flatMap(PaletteColor.init(hex:)),
                   let current = ratio(fg, on: pair.background, bg, in: out),
                   current < pair.minimum else { continue }
+            let snapshot = out
+            if fixedForegrounds.contains(fgKey) {
+                out[pair.background] = settleBackground(
+                    of: fg, background: bg, minimum: pair.minimum,
+                    ratio: { ratio($0, on: pair.background, $1, in: snapshot) ?? 0 }).hex
+                continue
+            }
             let seenL = seenLightness(of: pair.background, bg, in: out)
             let extreme: Double = fg.oklch.l >= seenL ? 1 : 0
             let pinned = PaletteColor(r: extreme, g: extreme, b: extreme, a: fg.a)
-            let snapshot = out
             let fixed = settle(foreground: pinned, background: bg, seenL: seenL, minimum: pair.minimum,
                                backgroundFixed: fixedBackgrounds.contains(pair.background),
                                backgroundFades: pair.background == "selectionSpread",
+                               foregroundCrosses: false,
                                ratio: { ratio($0, on: pair.background, $1, in: snapshot) ?? 0 })
             out[fgKey] = fixed.foreground.hex
             if !fixedBackgrounds.contains(pair.background) {
@@ -195,7 +227,7 @@ public enum ContrastFloors {
     /// moves of the background itself start from its own lightness.
     private static func settle(
         foreground: PaletteColor, background: PaletteColor, seenL: Double, minimum: Double,
-        backgroundFixed: Bool, backgroundFades: Bool,
+        backgroundFixed: Bool, backgroundFades: Bool, foregroundCrosses: Bool,
         ratio: (PaletteColor, PaletteColor) -> Double
     ) -> (foreground: PaletteColor, background: PaletteColor) {
         let fgL = foreground.oklch.l, bgL = seenL
@@ -207,6 +239,13 @@ public enum ContrastFloors {
                             until: { ratio($0, background) >= target },
                             floor: { ratio($0, background) >= minimum }) {
             return (fixed, background)
+        }
+        if foregroundCrosses, let crossed = move(foreground, from: bgL, direction: -direction,
+                                                  until: { ratio($0, background) >= target },
+                                                  floor: { ratio($0, background) >= minimum }) {
+            // Room on the background's other side: cross, rather than push a background
+            // another pair has already settled.
+            return (crossed, background)
         }
         if backgroundFixed {
             // The background may not give way: cross to its other side instead.
@@ -227,6 +266,27 @@ public enum ContrastFloors {
         let faded = fade(pushedAll, until: { ratio(pinned, $0) >= target },
                          floor: { ratio(pinned, $0) >= minimum })
         return (pinned, faded ?? rounded(PaletteColor(r: pushedAll.r, g: pushedAll.g, b: pushedAll.b, a: 0)))
+    }
+
+    /// The background under a foreground that never moves: the least lightness move away
+    /// from the foreground that reaches the floor, else the least move from the
+    /// foreground's own lightness across to its other side, else whichever end reads best.
+    private static func settleBackground(
+        of foreground: PaletteColor, background: PaletteColor, minimum: Double,
+        ratio: (PaletteColor, PaletteColor) -> Double
+    ) -> PaletteColor {
+        let fgL = foreground.oklch.l, bgL = background.oklch.l
+        let away: Double = bgL > fgL ? 1 : bgL < fgL ? -1 : (fgL < 0.5 ? 1 : -1)
+        let reaches: (PaletteColor) -> Bool = { ratio(foreground, $0) >= minimum + margin }
+        let holds: (PaletteColor) -> Bool = { ratio(foreground, $0) >= minimum }
+        if let moved = move(background, from: bgL, direction: away, until: reaches, floor: holds) {
+            return moved
+        }
+        if let crossed = move(background, from: fgL, direction: -away, until: reaches, floor: holds) {
+            return crossed
+        }
+        let ends = [rounded(moved(background, toL: 0)), rounded(moved(background, toL: 1))]
+        return ends.max { ratio(foreground, $0) < ratio(foreground, $1) }!
     }
 
     /// The least alpha reduction of `color` that satisfies `until`, checked again after

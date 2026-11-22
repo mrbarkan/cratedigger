@@ -45,6 +45,7 @@ public enum SimpleThemeBuilder {
     public static let coverLookStrength = 0.55
     public static let coverPixelSize = 1.5
     static let coverPixelSizeKey = "coverPixelSize"
+    static let monochromeKey = "oledMonochrome"
 
     /// The effects Simple decides; a layer's own value for one would out-vote the choice.
     static let ownedEffectKeys: [String] = ShellMaterial.allCases.map(\.effectKey)
@@ -105,6 +106,7 @@ public enum SimpleThemeBuilder {
             theme.colors = written
             theme.shadows = flat.shadows
             effects = flat.effects ?? [:]
+            if glassIsLighterThanText(written) { effects[monochromeKey] = 1 }
             theme.light = nil
             theme.dark = nil
             theme.baseAppearance = appearance
@@ -118,6 +120,8 @@ public enum SimpleThemeBuilder {
                 layer.logo = nil
                 var layerEffects = layer.effects ?? [:]
                 for key in ownedEffectKeys { layerEffects[key] = nil }
+                // A layer's own: the other look's glass may be dark.
+                if glassIsLighterThanText(written) { layerEffects[monochromeKey] = 1 }
                 layer.effects = layerEffects.isEmpty ? nil : layerEffects
                 theme.setVariant(layer, for: appearance)
             }
@@ -136,5 +140,15 @@ public enum SimpleThemeBuilder {
             theme.fonts = (base.fonts ?? [:]).merging(choices.fonts) { _, new in new }
         }
         return theme
+    }
+
+    /// A pale glass (an LCD) under darker screen text: the display's lamps, LED matrix
+    /// and NOW colours, chosen for a dark glass, would not read on it, so the display
+    /// draws everything in the screen text instead (`oledMonochrome`). A dark glass
+    /// leaves the value the theme was started with.
+    static func glassIsLighterThanText(_ tokens: [String: String]) -> Bool {
+        guard let glass = tokens["oledSurface"].flatMap(PaletteColor.init(hex:)),
+              let text = tokens["oledForeground"].flatMap(PaletteColor.init(hex:)) else { return false }
+        return glass.relativeLuminance > text.relativeLuminance
     }
 }

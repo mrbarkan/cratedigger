@@ -343,12 +343,19 @@ final class SimplePaletteRecipeTests: XCTestCase {
     }
 
     func testPaleGlassKeepsDarkScreenText() {
-        // An LCD-style screen (Pocket's light layer): pale glass, dark phosphor.
-        let jobs = Self.jobs([.frame: "#C9C6BE", .panels: "#E4E1DA", .text: "#1B1B22",
-                              .accent: "#A12A5E", .glass: "#B7BBB0", .screenText: "#1F2326"])
-        for appearance in [Appearance.dark, .light] {
+        // An LCD-style screen: pale glass, dark phosphor. Light is Pocket's light layer.
+        // In dark the accent band starts at 0.55, and Pocket's #B7BBB0 cannot hold any
+        // accent that light at 3:1, so dark takes a paler glass and an accent it holds.
+        let cases: [(Appearance, glass: String, accent: String)] = [
+            (.light, "#B7BBB0", "#A12A5E"),
+            (.dark, "#ECEEE6", "#C2346E"),
+        ]
+        for (appearance, glassHex, accentHex) in cases {
+            let jobs = Self.jobs([.frame: "#C9C6BE", .panels: "#E4E1DA", .text: "#1B1B22",
+                                  .accent: accentHex, .glass: glassHex, .screenText: "#1F2326"])
             let tokens = SimplePaletteRecipe.tokens(jobColors: jobs, contrast: .standard, appearance: appearance)
-            XCTAssertEqual(tokens["oledSurface"], "#B7BBB0", "\(appearance)")
+            XCTAssertEqual(tokens["oledSurface"], glassHex, "\(appearance)")
+            XCTAssertEqual(tokens["orange"], accentHex, "\(appearance)")
             XCTAssertEqual(tokens["oledForeground"], "#1F2326", "\(appearance)")
             let glass = PaletteColor(hex: tokens["oledSurface"]!)!
             let bezel = PaletteColor(hex: tokens["oledStrokeInner"]!)!
@@ -356,6 +363,22 @@ final class SimplePaletteRecipeTests: XCTestCase {
             XCTAssertEqual(PaletteColor(hex: tokens["oledSurfaceShade"]!)!.a, 0.06, accuracy: 0.005)
             assertFloorsHold(tokens, contrast: .standard, "\(appearance) pale glass")
         }
+    }
+
+    func testPaleGlassGivesWayToAnAccentItCannotHold() {
+        // Pocket's LCD under the dark band's accent: no glass that pale holds the accent
+        // at 3:1, so the glass goes dark (the accent never moves) and its text goes light.
+        let jobs = Self.jobs([.frame: "#C9C6BE", .panels: "#E4E1DA", .text: "#1B1B22",
+                              .accent: "#A12A5E", .glass: "#B7BBB0", .screenText: "#1F2326"])
+        let tokens = SimplePaletteRecipe.tokens(jobColors: jobs, contrast: .standard, appearance: .dark)
+        let glass = PaletteColor(hex: tokens["oledSurface"]!)!
+        let text = PaletteColor(hex: tokens["oledForeground"]!)!
+        let accent = PaletteColor(hex: tokens["orange"]!)!
+        XCTAssertLessThan(glass.relativeLuminance, text.relativeLuminance)
+        XCTAssertGreaterThanOrEqual(PaletteColor.contrast(accent, glass), ContrastFloors.accentOnGlass)
+        XCTAssertLessThanOrEqual(hueDistance(glass.oklch.h, PaletteColor(hex: "#B7BBB0")!.oklch.h), 10,
+                                 "the glass keeps its hue")
+        assertFloorsHold(tokens, contrast: .standard, "dark, pale glass under a lifted accent")
     }
 
     func testHighContrastTightensTheTextHierarchy() {

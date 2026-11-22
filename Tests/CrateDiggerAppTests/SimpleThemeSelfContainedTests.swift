@@ -135,6 +135,25 @@ final class SimpleThemeSelfContainedTests: XCTestCase {
         }
     }
 
+    /// A pale glass draws its display in one ink, in the preview and in the app, over a
+    /// parent whose glass is not monochrome (Carbon); a dark one keeps the parent's word.
+    func testPaleGlassDrawsMonochrome() throws {
+        let parent = try XCTUnwrap(registry.manifest(for: "carbon"))
+        let recipe = SimpleThemeRecipe(
+            palette: ["#C9C6BE", "#E4E1DA", "#1B1B22", "#A12A5E", "#B7BBB0", "#1F2326"],
+            assignment: [.frame: 0, .panels: 1, .text: 2, .accent: 3, .glass: 4, .screenText: 5])
+        let choices = SimpleThemeChoices(appearance: .both, material: nil, coverLook: nil, fonts: [:])
+        let theme = SimpleThemeBuilder.build(state: SimpleThemeState(recipe: recipe), choices: choices,
+                                             onto: registry.newSimpleSeed(from: parent))
+        XCTAssertTrue(registry.previewTheme(for: theme, appearance: .light).theme.oledMonochrome,
+                      "light: Pocket's LCD holds its deep accent and stays pale")
+        XCTAssertFalse(registry.previewTheme(for: theme, appearance: .dark).theme.oledMonochrome,
+                       "dark: the lifted accent turns the glass dark, which keeps Carbon's colours")
+        let id = try XCTUnwrap(try registry.applySimple(theme))
+        XCTAssertTrue(try XCTUnwrap(registry.resolvedTheme(for: id, appearance: .light)).theme.oledMonochrome)
+        XCTAssertFalse(try XCTUnwrap(registry.resolvedTheme(for: id, appearance: .dark)).theme.oledMonochrome)
+    }
+
     /// Simple writes no optional override, so the parent's (Llama's red key LEDs, its
     /// green column headers) never reach a Simple theme: they follow the new accent and inks.
     func testNoOverrideOfTheParentSurvives() throws {

@@ -9,8 +9,12 @@ import Foundation
 ///
 /// Never written: the optional overrides (`lamp…`, `transportLamp`, `keyLamp`,
 /// `meterHot`, `chassisInk`, `columnHeaderInk`). Left unset they keep following what
-/// they follow in every shipped theme. Everything else is written, the selection's
-/// light included, so nothing is left to the theme a Simple theme inherits from.
+/// they follow in every shipped theme (the accent, `ink2`, `ink3`), which the floors
+/// cover. Everything else is written, the selection's light included: a Simple theme
+/// has no parent, so every colour it draws is one of these.
+///
+/// The glass gives way to the accent (`glassReadingAccent`): the mini player draws its
+/// time in the accent on the glass, so the pair is floored at 3:1 too.
 ///
 /// The one override that is written, on purpose: `accentInk`, the print on
 /// accent-filled keys. Unset it is `selectionInk`, which has to read on a selected
@@ -40,17 +44,35 @@ public enum SimplePaletteRecipe {
 
         // A pale glass (an LCD rather than an OLED) brings its own screen tokens and
         // flips the screen text dark, in either appearance.
-        let paleGlass = (jobColors[.glass]?.oklch.l ?? 0) >= 0.5
-        var ranges = table.ranges
-        if paleGlass {
-            ranges[.glass] = SimplePaletteRecipeTable.paleGlassRange
-            ranges[.screenText] = SimplePaletteRecipeTable.paleScreenTextRange
+        var paleGlass = (jobColors[.glass]?.oklch.l ?? 0) >= 0.5
+        func bands(pale: Bool) -> [ThemeJob: JobRange] {
+            var ranges = table.ranges
+            if pale {
+                ranges[.glass] = SimplePaletteRecipeTable.paleGlassRange
+                ranges[.screenText] = SimplePaletteRecipeTable.paleScreenTextRange
+            }
+            return ranges
         }
+        var ranges = bands(pale: paleGlass)
 
         var bases: [ThemeJob: JobBase] = [:]
         for job in ThemeJob.allCases {
             let range = ranges[job]!
             bases[job] = JobBase.place(jobColors[job].map(\.opaque) ?? range.fallback, in: range)
+        }
+
+        // The accent has to read on the glass (the mini player's time is drawn in it
+        // whatever the glass). The accent never moves, so the glass does; when it has to
+        // cross the accent, a pale glass becomes a dark one (or the other way round) and
+        // its screen text goes with it.
+        let placed = glassReadingAccent(bases[.glass]!, accent: bases[.accent]!.color, pale: paleGlass)
+        bases[.glass] = placed.base
+        if placed.pale != paleGlass {
+            paleGlass = placed.pale
+            ranges = bands(pale: paleGlass)
+            let textRange = ranges[.screenText]!
+            bases[.screenText] = JobBase.place(jobColors[.screenText].map(\.opaque) ?? textRange.fallback,
+                                               in: textRange)
         }
         var frame = bases[.frame]!, panels = bases[.panels]!
         separate(frame: &frame, panels: &panels, panelsSide: table.panelsSide)
@@ -114,6 +136,54 @@ public enum SimplePaletteRecipe {
     }
 
     static let accentInkFloor = 4.5
+
+    /// The glass, moved only as far as it has to for the accent to read on it at
+    /// `ContrastFloors.accentOnGlass`, and whether it ends up pale. It keeps to its own
+    /// side of the accent (lighter for a pale glass, darker for a dark one) when that
+    /// side has room: its screen text sits on the far side, and a floor that pushes the
+    /// glass away from the text then pushes it away from the accent too. Only when its
+    /// own side cannot reach the floor does it cross, as close to the accent as reads.
+    static func glassReadingAccent(_ glass: JobBase, accent: PaletteColor,
+                                   pale: Bool) -> (base: JobBase, pale: Bool) {
+        let accentY = accent.relativeLuminance
+        let floor = ContrastFloors.accentOnGlass + 0.02
+        func written(_ color: PaletteColor) -> PaletteColor { PaletteColor(hex: color.hex) ?? color }
+        func color(at l: Double) -> PaletteColor {
+            var lch = glass.lch
+            lch.l = l
+            return written(PaletteColor(oklch: lch))
+        }
+        func fits(_ color: PaletteColor, lighter: Bool) -> Bool {
+            let onSide = lighter ? color.relativeLuminance > accentY : color.relativeLuminance < accentY
+            return onSide && PaletteColor.contrast(accent, color) >= floor
+        }
+        if fits(written(glass.color), lighter: pale) { return (glass, pale) }
+
+        // Along lightness toward the end on `lighter`'s side, `fits` goes from false to
+        // true once (past the accent, then past the floor), so a bisection finds the
+        // least move.
+        func least(lighter: Bool) -> Double? {
+            let start = glass.lch.l, limit: Double = lighter ? 1 : 0
+            if fits(color(at: start), lighter: lighter) { return start }
+            guard fits(color(at: limit), lighter: lighter) else { return nil }
+            var near = start, far = limit
+            for _ in 0..<40 {
+                let mid = (near + far) / 2
+                if fits(color(at: mid), lighter: lighter) { far = mid } else { near = mid }
+            }
+            return far
+        }
+        for lighter in [pale, !pale] {
+            guard let l = least(lighter: lighter) else { continue }
+            if l == glass.lch.l { return (glass, lighter) }
+            var moved = glass
+            moved.setLightness(l)
+            return (moved, lighter)
+        }
+        // Unreachable for an opaque accent (white or black on one side always reaches
+        // 3:1); the floors measure the pair again in any case.
+        return (glass, pale)
+    }
 
     /// Pushes the frame and the panels apart along lightness until they are
     /// `frameToPanelsSeparation` apart, splitting the move between them. They part in
