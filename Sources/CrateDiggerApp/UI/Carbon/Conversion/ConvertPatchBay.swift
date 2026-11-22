@@ -1171,13 +1171,21 @@ private struct ArmGoButton: View {
         }
     }
 
+    /// The ▸ cut out of the `goInk` disc. Unset `accentInk` keeps the historic orangeHi
+    /// on the dark disc. A theme that sets `accentInk` (every Simple theme) may make the
+    /// disc white, where orangeHi barely shows; the accent itself is then the glyph,
+    /// which reads on `accentInk` by construction (the accent-key floor is 4.5:1).
+    private var playGlyphInk: Color {
+        theme.accentInkOverride == nil ? theme.orangeHi : theme.orange
+    }
+
     @ViewBuilder
     private var playGlyph: some View {
         ZStack {
             Circle().fill(goInk)
             Text("▸")
                 .font(CarbonFont.mono(13, weight: .black))
-                .foregroundStyle(theme.orangeHi)
+                .foregroundStyle(playGlyphInk)
         }
         .frame(width: 22, height: 22)
         .depthShadow(color: Color.black.opacity(0.4), radius: 1, y: 1)
