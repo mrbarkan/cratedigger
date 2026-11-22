@@ -40,6 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         #if DEBUG
         installSnapshotHookIfRequested()
         installDemoTourIfRequested()
+        installRelocateCheckIfRequested()
         #endif
 
         // Touching the singleton starts Sparkle, including its once-a-day
@@ -76,10 +77,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         NSApp.terminate(nil)
     }
 
+    /// A quit while covers are still being embedded waits for them: cutting
+    /// ffmpeg off mid-file leaves that track without its new art (and, before
+    /// the temporary files were hidden, an empty "track" beside it).
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let model = mainWindowController?.model, model.artworkEmbedsRunning > 0 else { return .terminateNow }
+        model.onArtworkEmbedsFinished = { NSApp.reply(toApplicationShouldTerminate: true) }
+        // Say why the app is still open; it quits by itself when they end.
+        model.showOLEDNotice("FINISHING COVERS", seconds: 600)
+        AppLog.library.notice("Quit waits for \(model.artworkEmbedsRunning) cover embed(s) to finish")
+        return .terminateLater
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         // The one snapshot whose position has to be exact.
         mainWindowController?.model.savePlaybackSnapshot()
         mainWindowController?.model.clearWidgetFeed()
+        // Background artist lookups not yet written, before the copy below.
+        mainWindowController?.model.flushArtistLookupSavesNow()
         // A library kept on an external drive leaves a fresh copy of its index
         // on this Mac, so it can still be browsed next launch without the drive.
         mainWindowController?.model.refreshLibraryIndexCopyNow()
@@ -458,7 +473,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
 
     @objc private func showPreferences(_ sender: Any?) {
         if preferencesWindowController == nil {
-            preferencesWindowController = PreferencesWindowController()
+            preferencesWindowController = PreferencesWindowController(model: mainWindowController?.model)
         }
         preferencesWindowController?.showWindow(self)
         preferencesWindowController?.window?.makeKeyAndOrderFront(self)
@@ -503,8 +518,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     /// - CRATEDIGGER_SNAP_EXTRA=1 adds a `late2` snap at +8.5 s: half a 2 Hz
     ///   blink after `late`, so a blinking destination is caught in both
     ///   phases.
+    ///
+    /// The cover screen (works without a snapshot path, since the snapshot
+    /// draws blend modes as plain source-over and is no judge of the screen;
+    /// check it by window capture):
+    /// - CRATEDIGGER_COVER=<image path> puts that picture in the compact and
+    ///   mini players' art in place of the playing track's, shown even with
+    ///   nothing playing, so a cover can be captured silently. Read by
+    ///   `NowPlayingCover`'s loader, not here.
+    /// - CRATEDIGGER_MINI=1 opens the mini player at +3 s, the same path as
+    ///   Window ▸ Mini Player. Its window has no title, so a snapshot run
+    ///   writes it as `sheetN`.
+    ///
+    /// CRATEDIGGER_DEVICE_REVIEW=1 presents the "Already on <device>" review
+    /// sheet at +4 s with fabricated rows (`DeviceReviewSheetController.debugSample`);
+    /// `answered` opens it with every row answered and the albums left alone shown.
+    /// Works without a snapshot path; check it by window capture.
+    /// CRATEDIGGER_ARTIST_PICTURES=1 presents the Artist Pictures sheet at
+    /// +4 s with twelve made-up artists, one or more in every state
+    /// (`ArtistPicturesSheetModel.debugSample`): no device, no network.
     private func installSnapshotHookIfRequested() {
         let env = ProcessInfo.processInfo.environment
+        if env["CRATEDIGGER_MINI"] != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
+                self?.showMiniPlayer(nil)
+            }
+        }
         // The equalizer, so a capture can show it. Before the snapshot guard
         // too, so it needs no snapshot path. "quick" also turns Quick EQ
         // on and holds a mid-band fader, as if the pointer were resting on it.
@@ -517,6 +556,116 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                     model.quickEQEnabled = true
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { model.quickEQBand = 6 }
                 }
+            }
+        }
+        // The "Already on <device>" sheet, with fabricated rows for each kind
+        // of difference, so it can be captured without a device plugged in.
+        // "answered" opens it with the albums left alone shown and every row
+        // answered, so the chosen and enabled states can be captured too.
+        // Before the snapshot guard: check it by window capture. Nothing is
+        // written whatever the answer.
+        // The artist page, on a made-up library of three artists seeded into
+        // the scratch crates folder (refused without CRATEDIGGER_CRATES_DIR):
+        // "Massive Attack" (a band with a photo), "Björk" (a person, no
+        // photo) or "Air" (Is this them?). No network.
+        if let name = env["CRATEDIGGER_ARTIST_PAGE"], !name.isEmpty {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
+                guard let model = self?.mainWindowController?.model else { return }
+                NSApp.activate(ignoringOtherApps: true)
+                Task { @MainActor in await model.debugSeedArtistPage(name) }
+            }
+        }
+        // The Artist Pictures sheet with twelve made-up artists covering every
+        // state: no device, no network, nothing written outside a temp folder.
+        if env["CRATEDIGGER_ARTIST_PICTURES"] == "1" {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) { [weak self] in
+                guard let host = self?.mainWindowController?.window?.contentViewController else { return }
+                NSApp.activate(ignoringOtherApps: true)
+                let sheet = ArtistPicturesSheetModel.debugSample()
+                host.presentAsSheet(ArtistPicturesSheetController(
+                    sheet: sheet, maxGridHeight: DeviceReviewSheetController.maxListHeight(for: host.view.window)))
+                sheet.load()
+            }
+        }
+        if let raw = env["CRATEDIGGER_DEVICE_REVIEW"] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) { [weak self] in
+                guard let model = self?.mainWindowController?.model,
+                      let host = self?.mainWindowController?.window?.contentViewController
+                else { return }
+                let sample = DeviceReviewSheetController.debugSample()
+                var state = DeviceReviewState()
+                if raw == "answered" {
+                    let rows = DeviceReviewRow.rows(for: sample.review, settings: sample.settings, includingLeftAlone: true)
+                    state.presetLeftAlone(rows: rows)
+                    let cycle: [DeviceAlbumDecision] = [.replace, .keepBoth, .leave]
+                    for (offset, row) in rows.enumerated() where state.decisions[row.id] == nil {
+                        state.decisions[row.id] = cycle[offset % cycle.count]
+                    }
+                }
+                // Frontmost, so the controls draw active in a capture.
+                NSApp.activate(ignoringOtherApps: true)
+                Task { @MainActor in
+                    let decisions = await model.presentDeviceReview(
+                        sample.review, deviceName: "IPOD", settings: sample.settings, presentingFrom: host,
+                        initialState: state, showsLeftAlone: raw == "answered"
+                    )
+                    NSLog("[device-review] %@", decisions.map { "\($0.count) answers" } ?? "cancelled")
+                }
+            }
+        }
+        // PodBox UI, for a window capture without the owner's iPod:
+        // CRATEDIGGER_PODBOX_UI=<mount point> names a FAT disk image attached
+        // (browsable, so detection sees it) OUTSIDE /Volumes, holding a
+        // FakeIPod-like .rockbox. It saves a device profile for it, browses it
+        // on DEVICES, then opens Preferences ▸ Devices. It refuses /Volumes,
+        // and refuses to run unless CFFIXED_USER_HOME points the preferences
+        // at a scratch home, so the profile never reaches the real ones.
+        // CRATEDIGGER_DEVICE_SUMMARY=1 presents a fabricated device summary
+        // with next steps and an Eject key that only logs. Nothing is written
+        // to any device by either.
+        if let raw = env["CRATEDIGGER_PODBOX_UI"] {
+            let path = URL(fileURLWithPath: raw, isDirectory: true).resolvingSymlinksInPath().path
+            if path == "/Volumes" || path.hasPrefix("/Volumes/") || env["CFFIXED_USER_HOME"] == nil {
+                NSLog("[podbox-ui] refusing: the path must be outside /Volumes and CFFIXED_USER_HOME must be set")
+            } else {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+                    guard let model = self?.mainWindowController?.model else { return }
+                    let device = DeviceDetectionService().detectDevices()
+                        .first { $0.volumeURL.resolvingSymlinksInPath().path == path }
+                    guard let device else { return NSLog("[podbox-ui] no detected device at %@", path) }
+                    if model.deviceProfile(for: device) == nil {
+                        var profile = DeviceProfileSuggester.suggestedProfile(for: device)
+                        profile.kind = .rockboxIPod
+                        PreferencesStore.shared.upsertExternalDeviceProfile(profile)
+                    }
+                    model.refreshDevices()
+                    model.selectSource(.device(volumePath: device.volumeURL.path))
+                    model.oledView = .devices
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+                        PreferencesWindowController.initialTab = "devices"
+                        self?.showPreferences(nil)
+                    }
+                }
+            }
+        }
+        if env["CRATEDIGGER_DEVICE_SUMMARY"] != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) { [weak self] in
+                guard let model = self?.mainWindowController?.model,
+                      let host = self?.mainWindowController?.window?.contentViewController
+                else { return }
+                var report = ConversionReport(
+                    title: "Sent to IPOD",
+                    statusLine: "2 copied · 1 already there",
+                    details: "[ok] 01 - Zebra.m4a -> /Volumes/IPOD/Music/Beach House/2010 Teen Dream/01 - Zebra.m4a\n[ok] 02 - Silver Soul.m4a -> /Volumes/IPOD/Music/Beach House/2010 Teen Dream/02 - Silver Soul.m4a",
+                    tone: .success,
+                    showsDetailsButton: true
+                )
+                report.nextSteps = ["Removed 2 Mac metadata files."]
+                    + PodBoxNextSteps.after([.audio, .covers, .cleanup],
+                                            firmware: DeviceFirmware(flavour: .podBox, layout: 5, build: nil))
+                report.eject = { NSLog("[device-summary] Eject pressed (fabricated, nothing ejected)") }
+                NSApp.activate(ignoringOtherApps: true)
+                model.presentSummary(report: report, presentingFrom: host)
             }
         }
         // Before the snapshot guard, which returns early without a path.
@@ -689,6 +838,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                     destinationRoot: URL(fileURLWithPath: profile.rootDisplayPath ?? "/Volumes/\(profile.name)"),
                     tracks: Array(Self.previewTracks(from: model).prefix(11))
                 )
+                // Seeded from the device as the real route does, so the
+                // cockpit shows the device's settings (and Cancel saves those
+                // back, not the user's own).
+                if model.conversionSelectionBeforeDevice == nil {
+                    model.conversionSelectionBeforeDevice = model.conversionSelection
+                }
+                model.conversionSelection = model.conversionSelection.seeded(from: profile.transferSettings)
                 model.oledView = .conversion
             }
         }
@@ -893,6 +1049,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             }
         }
         NSLog("[shot list] capturing 6 screenshots into \(folder.path); leave the app alone for ~45s")
+    }
+
+    // MARK: - Relocate Library check
+
+    /// Dev-only: `CRATEDIGGER_RELOCATE=<folder>` runs Relocate Library onto that
+    /// folder with its question answered yes, logs the question and the summary
+    /// and quits, so the crates it rewrote can be read afterwards. It refuses
+    /// without `CRATEDIGGER_CRATES_DIR`: it rewrites every crate it is given.
+    /// Run it from a renamed copy of the debug binary, as the tour is.
+    private func installRelocateCheckIfRequested() {
+        guard let path = ProcessInfo.processInfo.environment["CRATEDIGGER_RELOCATE"] else { return }
+        guard LibraryViewModel.debugCratesDirectory != nil else {
+            NSLog("[relocate] refusing to run: CRATEDIGGER_CRATES_DIR is not set, so the real library would be rewritten")
+            return
+        }
+        Task { @MainActor [weak self] in
+            // Let the window and the library settle first.
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard let model = self?.mainWindowController?.model else { return }
+            await model.relocateLibrary(to: URL(fileURLWithPath: path, isDirectory: true)) { plan in
+                let text = LibraryRelocationText.confirmation(plan)
+                NSLog("[relocate] asked: %@ | %@", text.title, text.message)
+                return true
+            }
+            NSLog("[relocate] answered: %@ | %@", model.appAlert?.title ?? "no alert", model.appAlert?.message ?? "")
+            NSApp.terminate(nil)
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            exit(0)
+        }
     }
 
     // MARK: - Demo screenshot tour
@@ -1434,7 +1619,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             return (mainWindowController?.currentSelectionURL() != nil)
                 && !(mainWindowController?.isConversionRunning ?? false)
         case #selector(cancelConversion(_:)):
-            return mainWindowController?.isConversionRunning ?? false
+            // Not during a SYNC: it has no cancel.
+            return mainWindowController?.canCancelConversion ?? false
         case #selector(checkForUpdates(_:)):
             // Off in a development build, which has no update feed — see
             // `SoftwareUpdater`.

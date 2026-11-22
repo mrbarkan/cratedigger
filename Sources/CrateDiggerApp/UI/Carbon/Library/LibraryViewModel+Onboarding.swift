@@ -177,8 +177,11 @@ extension LibraryViewModel {
     private var starterAlbumSourceURL: URL? {
         let fm = FileManager.default
         for base in [Bundle.main.resourceURL, Bundle.main.bundleURL] {
+            // Resolved first for the same reason as `Bundle.resourceBundles`:
+            // a symlinked base (`.build/debug`) lists as "Not a directory".
             guard let base,
-                  let entries = try? fm.contentsOfDirectory(at: base, includingPropertiesForKeys: nil)
+                  let entries = try? fm.contentsOfDirectory(at: base.resolvingSymlinksInPath(),
+                                                            includingPropertiesForKeys: nil)
             else { continue }
             for entry in entries where entry.pathExtension == "bundle" {
                 let folder = entry.appendingPathComponent("StarterCrate", isDirectory: true)

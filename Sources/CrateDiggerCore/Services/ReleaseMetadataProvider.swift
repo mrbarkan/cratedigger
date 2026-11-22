@@ -64,13 +64,14 @@ public actor MusicBrainzReleaseClient: ReleaseMetadataProvider {
     public nonisolated var source: ReleaseSource { .musicBrainz }
 
     private static let host = "https://musicbrainz.org/ws/2"
-    private static let minimumRequestInterval: TimeInterval = 1.05
 
     private let session: URLSession
-    private var lastRequestAt: Date?
+    /// The app-wide gate: MusicBrainz's limit is per client, not per feature.
+    private let gate: MusicBrainzGate
 
-    public init(session: URLSession? = nil) {
+    public init(session: URLSession? = nil, gate: MusicBrainzGate = .shared) {
         self.session = session ?? ReleaseProviderSupport.makeSession()
+        self.gate = gate
     }
 
     public func searchReleases(query: ReleaseQuery, detailLimit: Int) async throws -> [ReleaseCandidate] {
@@ -187,16 +188,9 @@ public actor MusicBrainzReleaseClient: ReleaseMetadataProvider {
         (detail.media?.count).flatMap { $0 > 0 ? $0 : nil }
     }
 
-    /// Serialized through the actor, so the sleep genuinely spaces requests
-    /// rather than letting a burst race past it.
+    /// Spaced by the app-wide MusicBrainz gate.
     private func get<T: Decodable>(_ url: URL) async throws -> T {
-        if let lastRequestAt {
-            let elapsed = Date().timeIntervalSince(lastRequestAt)
-            if elapsed < Self.minimumRequestInterval {
-                try await Task.sleep(nanoseconds: UInt64((Self.minimumRequestInterval - elapsed) * 1_000_000_000))
-            }
-        }
-        lastRequestAt = Date()
+        try await gate.wait()
 
         let (data, response) = try await session.data(for: ReleaseProviderSupport.request(url))
         if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {

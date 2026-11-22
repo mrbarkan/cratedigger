@@ -50,8 +50,14 @@ extension Bundle {
         var seen: Set<String> = []
         var found: [URL] = []
         for base in bases {
+            // Resolve the base first: `contentsOfDirectory(at:)` refuses a URL
+            // whose last component is a symlink (ENOTDIR, "Not a directory"),
+            // and `.build/debug` is one (to `out/Products/Debug`). Launched as
+            // `.build/debug/CrateDiggerApp`, `Bundle.main.bundleURL` is that
+            // symlink, so the listing came back empty and the app ran with no
+            // bundled themes or fonts.
             guard let entries = try? fileManager.contentsOfDirectory(
-                at: base,
+                at: base.resolvingSymlinksInPath(),
                 includingPropertiesForKeys: nil
             ) else { continue }
             for entry in entries where entry.pathExtension == "bundle" {

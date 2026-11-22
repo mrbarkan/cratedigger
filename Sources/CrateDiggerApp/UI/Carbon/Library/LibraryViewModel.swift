@@ -157,8 +157,10 @@ final class LibraryViewModel: ObservableObject {
             // rebuilt: rebuilding costs a beat at library size and most index
             // changes are not followed by a search.
             searchHaystacks = nil
+            artistLookupLibraryTask = nil
             recomputeSortedCollections()
             recomputePendingSyncMarks()
+            scheduleArtistSummaries()
         }
     }
 
@@ -201,6 +203,12 @@ final class LibraryViewModel: ObservableObject {
                 // A column's own content never depends on its own selection.
                 settleBrowserColumns(from: changed + 1)
             }
+            // After the settle, so the name is read from the columns as drawn,
+            // and also for a focus that moved with nothing else changing. A row
+            // the owner chose takes the inspector back from "Show Artist".
+            var page = artistPage
+            page.browserChanged(from: oldValue, to: browser, columns: browserColumns, gallery: showArtworkGallery)
+            if page != artistPage { artistPage = page }
         }
     }
 
@@ -254,6 +262,7 @@ final class LibraryViewModel: ObservableObject {
             ? BrowserCascade.selectedTracks(view: browser.view, in: browsedIndex,
                                             selection: browser.selection, context: facetContext)
             : []
+        updateArtistPage()
     }
 
     /// Every anchor back on the first row of its column — after an index was
@@ -265,6 +274,9 @@ final class LibraryViewModel: ObservableObject {
     /// The outside-in click — "Go to Current Song", the gallery, a version
     /// row's context menu: every column's anchor comes from the track.
     func revealTrack(_ loaded: LoadedTrack) {
+        // Picking a record from outside the columns ends "Show Artist", even
+        // when it is the record already selected.
+        updateArtistPage(resolving: false) { $0.selectionChanged() }
         browser.reveal(track: loaded, in: browsedIndex, context: facetContext)
         revealTick &+= 1
     }
@@ -385,6 +397,10 @@ final class LibraryViewModel: ObservableObject {
     /// The OLED view to restore after an add-to-crate import status finishes.
     private var importStatusReturnOLED: OLEDView?
     @Published var conversionProgress: ConversionProgressSnapshot = .idle
+    /// A device send is between its last write and its catalog patch
+    /// (deletions, covers, the patch). `isConversionRunning` reads it, so no
+    /// other job starts while the device is still being written.
+    @Published var isDeviceTransferRunning = false
     /// Live SYNC-to-device run (DEV OLED readout). nil when no sync has run.
     @Published var deviceSyncProgress: DeviceSyncProgressSnapshot?
 
@@ -470,16 +486,17 @@ final class LibraryViewModel: ObservableObject {
         }
     }
 
-    /// A finished send leaves the panel pointed at the same device with an empty
-    /// queue — filling a device album by album shouldn't mean re-choosing it
-    /// every time. CANCEL is what unroutes.
-    func emptyPendingDeviceQueue() {
-        guard let pending = pendingDeviceConversion else { return }
+    /// A finished send leaves the panel pointed at the same device, with the
+    /// tracks it took (`paths`) out of the queue — filling a device album by
+    /// album shouldn't mean re-choosing it every time. Tracks sent to the
+    /// device while the run got ready stay queued. CANCEL is what unroutes.
+    func removeFromPendingDeviceQueue(_ paths: Set<String>, profileID: UUID) {
+        guard let pending = pendingDeviceConversion, pending.profileID == profileID else { return }
         pendingDeviceConversion = PendingDeviceConversion(
             profileID: pending.profileID,
             deviceName: pending.deviceName,
             destinationRoot: pending.destinationRoot,
-            tracks: []
+            tracks: pending.tracks.filter { !paths.contains($0.track.fileURL.path) }
         )
     }
 
@@ -507,7 +524,10 @@ final class LibraryViewModel: ObservableObject {
     @Published var sourcesCollapsed: Bool = false
     @Published var browserCollapsed: Bool = false
     @Published var inspectorCollapsed: Bool = false
-    @Published var showArtworkGallery: Bool = false
+    @Published var showArtworkGallery: Bool = false {
+        // The gallery has no artist column: the page shows only for "Show Artist" there.
+        didSet { updateArtistPage() }
+    }
 
     /// Which inspector tab is showing. Model state rather than view `@State` so
     /// it can be driven from outside the view tree (menus, the dev shot list).
@@ -588,7 +608,11 @@ final class LibraryViewModel: ObservableObject {
     }
 
     @Published private(set) var playbackState: PlaybackState = .idle
-    @Published private(set) var playbackCurrentIndex: Int?
+    /// A new track wakes the background artist lookup, which takes the
+    /// playing artist early.
+    @Published private(set) var playbackCurrentIndex: Int? {
+        didSet { if oldValue != playbackCurrentIndex { artistLookupWorker?.wake() } }
+    }
 
     /// The 5Hz time tick lives on its own object so it only re-renders the few
     /// views that display time (POSITION dial, OLED clock, mini player) instead
@@ -734,7 +758,7 @@ final class LibraryViewModel: ObservableObject {
     var isWorking: Bool {
         !activities.isEmpty
             || scanProgress.isRunning
-            || conversionProgress.isRunning
+            || isConversionRunning
             || isRepairingMetadata
             || !albumsFetchingArtwork.isEmpty
     }
@@ -1042,9 +1066,15 @@ final class LibraryViewModel: ObservableObject {
     /// Which browser column the keyboard arrows act on: ↑/↓ move the selection in
     /// it, ←/→ switch columns. Set when a row is clicked; see `LibraryViewModel+ArrowNav`.
     /// Which column the arrow keys act on, as an index into `browserView`.
+    /// Every write is a row clicked or an arrow between columns, so it also
+    /// ends a "Show Artist" (`ArtistPageSelection`), even onto the same column.
     var focusedColumn: Int {
         get { browser.focusedColumn }
-        set { browser.focusedColumn = newValue }
+        set {
+            // Resolved by `browser`'s didSet, once the focus has moved.
+            updateArtistPage(resolving: false) { $0.focusMoved() }
+            browser.focusedColumn = newValue
+        }
     }
 
     // MARK: - New Sources & Playlists State
@@ -1116,6 +1146,16 @@ final class LibraryViewModel: ObservableObject {
         }
     }
     @Published var mountedDevices: [MountedDevice] = []
+    /// What the read-only probe found on each mounted device's `.rockbox`
+    /// folder (`LibraryViewModel+PodBox`). Probed at mount, never saved, and
+    /// dropped when the device goes. A device with no `.rockbox` has no entry.
+    @Published var deviceFirmware: [MountedDevice.ID: DeviceFirmware] = [:] {
+        didSet {
+            NotificationCenter.default.post(name: Self.deviceFirmwareChangedNotification, object: nil)
+        }
+    }
+    /// A Clean Up Mac Files run is planning or removing (`LibraryViewModel+PodBox`).
+    @Published var isCleaningDeviceFiles = false
     @Published var deadTracks: [LoadedTrack] = []
     /// Names of `/Volumes/<name>` drives the library references that aren't
     /// currently mounted. Drives the "offline" row badge. Recomputed only on
@@ -1141,6 +1181,9 @@ final class LibraryViewModel: ObservableObject {
     /// A scan request arrived while one was in flight — run one more pass
     /// when it lands so mode flips mid-scan are never silently dropped.
     private var pendingCleanupRescan = false
+    /// Relocate Library is reading the chosen folder
+    /// (`LibraryViewModel+Relocate`): a second press is ignored until it is done.
+    var isRelocatingLibrary = false
     @Published var duplicateScanMode: DuplicateScanMode =
         DuplicateScanMode(rawValue: PreferencesStore.shared.duplicateScanMode ?? "") ?? .strict {
         didSet {
@@ -1153,6 +1196,113 @@ final class LibraryViewModel: ObservableObject {
     @Published var isRepairingMetadata = false
     /// FIX ART sweep over a mounted device (see `fixDeviceAlbumArt`).
     @Published var isFixingDeviceArt = false
+    /// Artist pictures are being written to or removed from a device
+    /// outside a transfer (`LibraryViewModel+ArtistPictures`).
+    @Published var isWritingArtistPictures = false
+    /// Background cover embeds still rewriting files
+    /// (`embedCoverIntoTracksInBackground`). Quit waits for them: one cut off
+    /// mid-file leaves that track without its art.
+    var artworkEmbedsRunning = 0
+    /// Set by a quit that is waiting for `artworkEmbedsRunning` to reach 0.
+    var onArtworkEmbedsFinished: (() -> Void)?
+    /// The Artist Pictures sheet is finding pictures online; Cancel stops it.
+    @Published var isFindingArtistPictures = false
+
+    // MARK: Artist profiles (`LibraryViewModel+ArtistProfiles`)
+
+    /// The artist profiles and the running lookups, in a model of their own
+    /// that only the artist views observe (`ArtistProfilesModel`).
+    let artistProfilesModel = ArtistProfilesModel()
+    /// Every artist profile, by folded key (`PodBoxArtName.folded`), as the
+    /// store last read off the main actor. Not published here: see
+    /// `artistProfilesModel`.
+    var artistProfiles: [String: ArtistProfile] { artistProfilesModel.profiles }
+    /// What the browsed local source holds of each artist, by folded key.
+    /// Rebuilt off the main actor when the index changes, never per click.
+    @Published var artistSummaries: [String: ArtistLibrarySummary] = [:]
+    /// The local source `artistSummaries` describes (All Records, a crate,
+    /// the Prep Crate): the page's "In your library" names it.
+    @Published var artistSummaryScope: LibrarySource = .localAll
+    /// The tracks the summaries' top-five lists name, by id, so the page
+    /// never walks the index to title them. Set with `artistSummaries`.
+    var artistTopTracks: [UUID: LoadedTrack] = [:]
+    /// "Show Artist", and when the browser's focus ends it. A newly
+    /// inspected artist wakes the background lookup, which takes it first.
+    @Published var artistPage = ArtistPageSelection() {
+        didSet {
+            if oldValue.artistName != artistPage.artistName { artistLookupWorker?.wake() }
+        }
+    }
+    /// The artist whose Edit sheet to present. One-shot: `LibraryPresentations`
+    /// presents it and clears it.
+    @Published var artistEditRequest: String?
+    /// The artist whose photo viewer to present. One-shot, like `artistEditRequest`.
+    @Published var artistPhotoViewerRequest: String?
+    /// Folded keys of the artists a lookup (the owner's or the worker's) is
+    /// running on. Kept in `artistProfilesModel`, which the page observes.
+    var artistLookupsRunning: Set<String> {
+        get { artistProfilesModel.running }
+        set { artistProfilesModel.setRunning(newValue) }
+    }
+    /// The one profile store for the crates folder (its `save` deletes photo
+    /// files its own profiles do not name, so two must never share a folder).
+    /// Made off the main actor, since it reads the file; see
+    /// `currentArtistProfileStore()`.
+    var artistProfileStoreTask: Task<ArtistProfileStore, Never>?
+    /// The folder and library location the store was made for.
+    var artistProfileStoreKey: String?
+    /// Writers holding the profile store now (`withArtistProfileStore`). A
+    /// new store is made only once they are done, so two stores never
+    /// overlap on one folder.
+    var artistProfileStoreUsers = 0
+    var artistProfileStoreDrainWaiters: [CheckedContinuation<Void, Never>] = []
+    /// Set while the index files are being moved (`moveIndexFiles`): no
+    /// writer takes the store until the new folder is in effect.
+    var artistProfileStoreFrozen = false
+    var artistProfileStoreThawWaiters: [CheckedContinuation<Void, Never>] = []
+    /// When the background lookups' results are written to the file.
+    var artistLookupSaves = ArtistLookupSaveSchedule()
+    /// The store holding background results not yet saved, if any
+    /// (`flushArtistLookupSaves`).
+    var artistUnsavedStore: ArtistProfileStore?
+    /// The library as the artist lookups read it (`ArtistLookupLibrary`),
+    /// built once per index change, off the main actor.
+    var artistLookupLibraryTask: Task<ArtistLookupLibrary, Never>?
+    /// A lookup the owner asked for while one was already running for that
+    /// artist, by folded key: the name and whether to reset first, the
+    /// latest ask winning. Run when the running one ends, never dropped.
+    var artistLookupsQueued: [String: (name: String, resetFirst: Bool)] = [:]
+    /// The background lookup (`ArtistLookupWorker`), started a minute after launch.
+    var artistLookupWorker: ArtistLookupWorker?
+    /// The old artist picture records of the crates folder are in its
+    /// profiles, or there were none (`migrateArtistPicturesIfNeeded`). The
+    /// worker starts, and looks anyone up, only while this holds.
+    var artistMigrationSettled = false
+    /// Launch asked for the worker; it starts once the migration settles.
+    var artistLookupWorkerWanted = false
+    /// One picture fetcher, so one URLSession, for every artist photo,
+    /// thumbnail and picture lookup the app makes.
+    let artistPictureFetcher = URLSessionPictureFetcher()
+    var artistProfilesGeneration = 0
+    var artistSummaryTask: Task<Void, Never>?
+    /// One long-lived run for the owner's lookups, so its request spacing
+    /// holds from one Look Up Again to the next.
+    var artistForegroundLookup: ArtistLookupRun?
+    /// Readiness notes per mounted PodBox device (`PodBoxAdvisor`), for
+    /// Preferences ▸ Devices. Read-only work, redone after the probe and
+    /// after each session.
+    @Published var deviceNotes: [MountedDevice.ID: [PodBoxNote]] = [:] {
+        didSet {
+            NotificationCenter.default.post(name: Self.deviceFirmwareChangedNotification, object: nil)
+        }
+    }
+    /// What the owner still has to do on an iPod, by profile: the DEVICES
+    /// ticker shows it ("NEXT ON IPOD · UPDATE ART CACHE") until the player
+    /// has done it.
+    @Published var pendingIPodStep: [UUID: String] = [:]
+    /// The Artist Pictures sheet to present, for this profile. One-shot:
+    /// `LibraryPresentations` presents it and clears it.
+    @Published var artistPicturesRequest: UUID?
     /// The in-flight FIX TAGS run, so it can be cancelled — a whole-library
     /// selection is thousands of ffprobe reads and there was no way out.
     var metadataRepairTask: Task<Void, Never>?
@@ -1324,8 +1474,18 @@ final class LibraryViewModel: ObservableObject {
     /// (`refreshDevices`) and on RESCAN (`refreshLibrary`).
     private var deviceIndexCache: [String: LibraryIndex] = [:]
     /// On-disk per-device catalogs so a device opens instantly across launches
-    /// (rescan only on RESCAN).
-    private let deviceCatalogStore = DeviceCatalogStore()
+    /// (rescan only on RESCAN). Every write goes through it, so a scan that
+    /// ends after a transfer's patch can't put the older catalog back.
+    /// Catalogs from an older format are dropped once, before any is read:
+    /// the transfers that wrote them never patched them in.
+    private let deviceCatalogs: DeviceCatalogWriter = {
+        let writer = DeviceCatalogWriter()
+        let dropped = writer.discardOlderFormats()
+        if dropped > 0 {
+            AppLog.library.notice("Dropped \(dropped) device catalog(s) from an older format; devices are walked again")
+        }
+        return writer
+    }()
     /// Per-profile pre-transfer sync queues + their staging trees.
     let syncQueueStore = DeviceSyncQueueStore()
     /// Per-profile queued-track counts for sidebar badges. Refreshed on queue
@@ -1416,6 +1576,13 @@ final class LibraryViewModel: ObservableObject {
     /// The `LoadedTrack` mirror of `playback.queue`, index-for-index. Every edit
     /// must move both together — see `LibraryViewModel+Queue`.
     @Published var playbackQueue: [LoadedTrack] = []
+
+    /// The order the playing queue's tracks had before shuffle touched them
+    /// (the album, the crate, the playlist), so switching shuffle off can put
+    /// the loaded queue back. Written by every path that loads a queue; empty
+    /// after a relaunch, when `applyShuffleToQueue` falls back to the
+    /// library's own artist ▸ album ▸ track order.
+    var playbackSourceOrder: [UUID] = []
 
     // MARK: - Sleep timer
     /// Armed sleep mode; `.off` when idle. See `LibraryViewModel+Sleep`.
@@ -1574,6 +1741,8 @@ final class LibraryViewModel: ObservableObject {
         self.playlists = playlistService.listPlaylists()
         self.mountedCDs = cdRipper.detectAudioCDs()
         self.mountedDevices = detectSavedDevices()
+        // Devices already plugged in at launch are probed too (read-only).
+        refreshDeviceFirmware()
 
         if let outputUID = prefs.selectedOutputDeviceUID {
             playback.setOutputDeviceUID(outputUID)
@@ -1600,6 +1769,8 @@ final class LibraryViewModel: ObservableObject {
         startWidgetFeed()
         // Hidden until 2.4; does nothing unless its preference is on.
         startAssistantIfEnabled()
+        // Waits a minute before its first lookup, so launch is never slowed.
+        startArtistLookupWorker()
         recomputeOfflineVolumes()
         recomputeMissingFiles()
         fetchMissingMetadata()
@@ -1687,6 +1858,12 @@ final class LibraryViewModel: ObservableObject {
         observe("CrateDiggerMoveIndexFiles") { [weak self] _ in
             Task { @MainActor in
                 self?.moveIndexFiles()
+            }
+        }
+
+        observe("CrateDiggerRelocateLibrary") { [weak self] _ in
+            Task { @MainActor in
+                self?.relocateLibrary()
             }
         }
 
@@ -2340,7 +2517,11 @@ final class LibraryViewModel: ObservableObject {
     func refreshDevices() {
         let detected = detectSavedDevices()
         backfillVolumeUUIDs(for: detected)
-        if detected != mountedDevices { mountedDevices = detected }
+        if detected != mountedDevices {
+            mountedDevices = detected
+            // The one thing a mount does to a device: read it.
+            refreshDeviceFirmware()
+        }
         // Drop cached scans for devices that are no longer mounted.
         let mountedPaths = Set(detected.map { $0.volumeURL.path })
         deviceIndexCache = deviceIndexCache.filter { mountedPaths.contains($0.key) }
@@ -2386,6 +2567,20 @@ final class LibraryViewModel: ObservableObject {
     /// Same key a mounted scan saves the catalog under (see `MountedDevice.catalogKey`).
     func catalogKey(for profile: ExternalDeviceProfile) -> String {
         profile.volumeUUID ?? profile.name
+    }
+
+    /// Whether a catalog of this profile's device is saved: a file check,
+    /// nothing read. For the folder layout picker's confirmation.
+    func hasDeviceCatalog(forProfile profile: ExternalDeviceProfile) -> Bool {
+        deviceCatalogs.exists(key: catalogKey(for: profile))
+    }
+
+    /// The saved catalog of a profile's device, mounted or not, read off
+    /// the main actor. Never walks the device.
+    func storedDeviceCatalog(forProfile profile: ExternalDeviceProfile) async -> [LoadedTrack]? {
+        let catalogs = deviceCatalogs
+        let key = catalogKey(for: profile)
+        return await Task.detached(priority: .utility) { catalogs.load(key: key) }.value
     }
 
     /// Re-read every device queue: sidebar counts, the pending-path set the
@@ -2474,10 +2669,136 @@ final class LibraryViewModel: ObservableObject {
     }
     #endif
 
-    /// Post-sync: force the next browse of this device to re-walk the volume.
+    /// Force the next browse of this device to re-walk the volume. For writes
+    /// a patch can't describe (FIX ART); a transfer
+    /// that knows what it wrote and removed calls `patchDeviceCatalog`.
     func invalidateDeviceCatalog(for device: MountedDevice) {
         deviceIndexCache[device.volumeURL.path] = nil
-        deviceCatalogStore.remove(key: device.catalogKey)
+        deviceCatalogs.remove(key: device.catalogKey)
+    }
+
+    /// What is on a mounted device, for a transfer to compare against: the
+    /// saved catalog, else the browser's scan of it still in memory, else a
+    /// fresh walk of the whole volume. The walk is the one browsing makes
+    /// (same scanner, root and catalog key, progress on SCAN, a busy job), so
+    /// browsing the device afterwards opens on it with no second walk. nil
+    /// when the walk was cancelled or the device went away during it.
+    @MainActor
+    func currentDeviceCatalog(for device: MountedDevice) async -> [LoadedTrack]? {
+        let key = device.catalogKey
+        let volumePath = device.volumeURL.path
+        let catalogs = deviceCatalogs
+        let stored = await Task.detached(priority: .userInitiated, operation: {
+            catalogs.load(key: key)
+        }).value
+        // A catalog saved while the device mounted elsewhere is no picture
+        // of it here: walked again below, as if there were none.
+        if let stored, DeviceCatalogStore.describes(stored, deviceAt: device.volumeURL) {
+            return stored
+        }
+        if stored == nil, let cached = deviceIndexCache[volumePath] {
+            // A browse scan whose save hasn't landed: save it now, so the
+            // transfer's patch has a catalog to correct. The cache is kept
+            // current by every patch, so it is the latest picture.
+            let tracks = cached.allTracks
+            let token = catalogs.scanToken(key: key)
+            await Task.detached(priority: .userInitiated) { catalogs.saveScan(tracks, key: key, token: token) }.value
+            return tracks
+        }
+
+        let token = catalogs.scanToken(key: key)
+        scanGeneration += 1
+        let generation = scanGeneration
+        scanProgress = ScanProgress(folderName: device.name, filesProbed: 0, totalCandidates: nil, isRunning: true)
+        oledView = .scan
+        let busyJob = beginBusyJob(.scan, on: .scan)
+        let scanned = await scanner.scanFolder(
+            device.volumeURL,
+            onProgress: scanProgressReporter(generation: generation, folderName: device.name, baseProbed: 0)
+        )
+        if scanGeneration == generation { scanProgress = .idle }
+
+        let stillMounted = mountedDevices.contains { $0.volumeURL.path == volumePath }
+            && FileManager.default.fileExists(atPath: volumePath)
+        guard !Task.isCancelled, stillMounted else {
+            endBusyJob(busyJob, Task.isCancelled ? .cancelled : .failed)
+            AppLog.library.notice("Device scan before a transfer did not finish for \(device.name, privacy: .public)")
+            return nil
+        }
+        let saved = await Task.detached(priority: .userInitiated) {
+            catalogs.saveScan(scanned, key: key, token: token)
+        }.value
+        endBusyJob(busyJob, .completed)
+        guard saved else {
+            // Written or dropped while this walk ran: the walk may predate it.
+            // Compare with the newer catalog when there is one; otherwise the
+            // walk is still the best picture, and a later patch finds no
+            // catalog and has the device walked again.
+            let newer = catalogs.load(key: key).flatMap {
+                DeviceCatalogStore.describes($0, deviceAt: device.volumeURL) ? $0 : nil
+            }
+            return newer ?? scanned
+        }
+        let built = buildIndex(scanned)
+        deviceIndexCache[volumePath] = built
+        if case .device(let current) = currentSource, current == volumePath {
+            adoptDeviceIndex(built)
+        }
+        return scanned
+    }
+
+    /// What is already known of a mounted device, without walking it: the
+    /// browser's scan in memory, else the saved catalog when it describes
+    /// the device as mounted now. nil when neither is there. For read-only
+    /// advice (readiness notes), which must never make a mount walk a device.
+    @MainActor
+    func knownDeviceCatalog(for device: MountedDevice) async -> [LoadedTrack]? {
+        if let cached = deviceIndexCache[device.volumeURL.path] { return cached.allTracks }
+        let catalogs = deviceCatalogs
+        let key = device.catalogKey
+        let volume = device.volumeURL
+        return await Task.detached(priority: .utility) {
+            catalogs.load(key: key).flatMap { DeviceCatalogStore.describes($0, deviceAt: volume) ? $0 : nil }
+        }.value
+    }
+
+    /// After a write to a mounted device: bring its saved catalog and the
+    /// browser's index of it up to date with what was written and removed,
+    /// rather than dropping them (a last-known catalog is what an offline
+    /// queue compares against). Only files inside the device are recorded.
+    /// Without a saved catalog there is nothing to correct, so the in-memory
+    /// index is dropped and the next browse walks the device. The device on
+    /// screen is redrawn either way.
+    @MainActor
+    func patchDeviceCatalog(for device: MountedDevice, adding: [LoadedTrack], removingPaths: Set<String>) async {
+        let key = device.catalogKey
+        let volumePath = device.volumeURL.path
+        let onDevice = adding.filter { MountedDevice.containing($0.track.fileURL, in: [device]) != nil }
+        if onDevice.count != adding.count {
+            AppLog.library.warning(
+                "Left \(adding.count - onDevice.count) file(s) outside \(volumePath, privacy: .public) out of its catalog"
+            )
+        }
+
+        // The writer also refuses the save of any browse walk under way,
+        // which may have read the device before these writes.
+        let catalogs = deviceCatalogs
+        let patched = await Task.detached(priority: .userInitiated) {
+            catalogs.patch(key: key, adding: onDevice, removingPaths: removingPaths)
+        }.value
+
+        let browsing: Bool = {
+            if case .device(let current) = currentSource { return current == volumePath }
+            return false
+        }()
+        guard let patched else {
+            deviceIndexCache[volumePath] = nil
+            if browsing { selectDevice(volumePath: volumePath) }
+            return
+        }
+        let built = buildIndex(patched)
+        deviceIndexCache[volumePath] = built
+        if browsing { adoptDeviceIndex(built) }
     }
 
     /// Self-heal for profiles saved before volume UUIDs were captured: stamp a
@@ -2512,8 +2833,10 @@ final class LibraryViewModel: ObservableObject {
             adoptDeviceIndex(cached)
             return
         }
-        // Persisted catalog from a previous scan/launch → open instantly, no walk.
-        if !forceRescan, let saved = deviceCatalogStore.load(key: key) {
+        // Persisted catalog from a previous scan/launch → open instantly, no
+        // walk, unless it was saved while the device mounted elsewhere.
+        if !forceRescan, let saved = deviceCatalogs.load(key: key),
+           DeviceCatalogStore.describes(saved, deviceAt: device.volumeURL) {
             let built = buildIndex(saved)
             deviceIndexCache[volumePath] = built
             oledView = .scan
@@ -2521,6 +2844,7 @@ final class LibraryViewModel: ObservableObject {
             return
         }
         index = .empty
+        let token = deviceCatalogs.scanToken(key: key)
         scanGeneration += 1
         let generation = scanGeneration
         let deviceName = device.name
@@ -2540,11 +2864,22 @@ final class LibraryViewModel: ObservableObject {
                 )
             )
             if Task.isCancelled { return }
-            // Persist the catalog off-main so a big iPod doesn't hitch the UI.
-            Task.detached(priority: .utility) { DeviceCatalogStore().save(scanned, key: key) }
+            // Persist the catalog off-main so a big iPod doesn't hitch the UI,
+            // unless a transfer patched it (or RESCAN or FIX ART dropped it)
+            // since this walk began: the walk may predate those writes.
+            let catalogs = self.deviceCatalogs
+            let saved = await Task.detached(priority: .utility) {
+                catalogs.saveScan(scanned, key: key, token: token)
+            }.value
+            let newer = saved ? nil : catalogs.load(key: key)
+            let current = newer ?? scanned
             await MainActor.run {
-                let built = self.buildIndex(scanned)
-                self.deviceIndexCache[volumePath] = built
+                let built = self.buildIndex(current)
+                // A refused walk with no newer catalog is shown but not
+                // cached: `currentDeviceCatalog` would save a cached index as
+                // the catalog, and this walk may predate the write that
+                // refused it. The next browse or transfer walks again.
+                self.deviceIndexCache[volumePath] = (saved || newer != nil) ? built : nil
                 self.scanProgress = .idle
                 self.endBusyJob(busyJob, .completed)
                 // Only adopt the result if the user is still on this device.
@@ -2561,7 +2896,7 @@ final class LibraryViewModel: ObservableObject {
             index = .empty
             return
         }
-        let cached = deviceCatalogStore.load(key: catalogKey(for: profile)) ?? []
+        let cached = deviceCatalogs.load(key: catalogKey(for: profile)) ?? []
         let entries = syncQueueStore.load(profileID: profileID)
         let cachedPaths = Set(cached.map { $0.track.fileURL.path })
         let queued = entries.map(\.track).filter { !cachedPaths.contains($0.track.fileURL.path) }
@@ -2733,13 +3068,7 @@ final class LibraryViewModel: ObservableObject {
                 let loadedTracks = await MainActor.run { self.cdTracks(for: info) }
                 let planner = OutputPathPlanner()
                 let albumKeys = planner.albumFolderKeys(for: loadedTracks)
-                let templateConfig = await MainActor.run {
-                    FolderTemplateConfig(
-                        preset: self.conversionSelection.templatePreset,
-                        tokenOrder: self.conversionSelection.tokenOrder,
-                        separators: self.conversionSelection.separators
-                    )
-                }
+                let templateConfig = await MainActor.run { self.conversionSelection.templateConfig }
                 let folderMode = await MainActor.run { self.conversionSelection.folderStructureMode }
                 var reserved: Set<String> = []
 
@@ -3231,7 +3560,7 @@ final class LibraryViewModel: ObservableObject {
         if case .device(let path) = currentSource {
             deviceIndexCache[path] = nil
             if let device = mountedDevices.first(where: { $0.volumeURL.path == path }) {
-                deviceCatalogStore.remove(key: device.catalogKey)
+                deviceCatalogs.remove(key: device.catalogKey)
             }
             selectDevice(volumePath: path, forceRescan: true)
             return
@@ -3279,7 +3608,8 @@ final class LibraryViewModel: ObservableObject {
         // Remember where the queue came from: the sidebar keeps that crate on
         // screen when Local Library is collapsed.
         playingSource = currentSource
-        let queue = queue(containing: id)
+        let source = sourceQueue(containing: id)
+        let queue = shuffleEnabled ? source.shuffled() : source
         guard let startIndex = queue.firstIndex(where: { $0.track.id == id }) else { return }
         // Fail fast with an actionable prompt if the file is missing/offline,
         // rather than a dead-end playback error.
@@ -3294,6 +3624,7 @@ final class LibraryViewModel: ObservableObject {
         // Starting a track jumps the OLED to Now Playing.
         oledView = .nowPlaying
         playbackQueue = queue
+        playbackSourceOrder = source.map(\.track.id)
         let queueItems = queue.map { loaded -> PlaybackQueueItem in
             PlaybackQueueItem(
                 url: loaded.track.fileURL,
@@ -3397,7 +3728,33 @@ final class LibraryViewModel: ObservableObject {
         return conversionSelection
     }
 
-    func toggleShuffle() { shuffleEnabled.toggle() }
+    /// The key changes the queue that is playing, not only the next one built:
+    /// on deals the rest of it behind the playing track, off puts it back in
+    /// source order, and either way the playing track carries on.
+    func toggleShuffle() {
+        shuffleEnabled.toggle()
+        applyShuffleToQueue()
+    }
+
+    private func applyShuffleToQueue() {
+        guard playbackQueue.count > 1, playbackQueue.count == playback.queue.count else { return }
+        let order: [Int]
+        if shuffleEnabled {
+            order = QueueShuffle.shuffledOrder(count: playbackQueue.count, current: playback.currentIndex)
+        } else {
+            let source = playbackSourceOrder.isEmpty
+                ? index.artists.flatMap { $0.albums.flatMap(\.tracks) }.map(\.track.id)
+                : playbackSourceOrder
+            order = QueueShuffle.unshuffledOrder(ids: playbackQueue.map(\.track.id), sourceOrder: source)
+        }
+        guard order != Array(playbackQueue.indices) else { return }
+        // The service re-points its index without announcing a track change,
+        // so the mirror is moved here: same track, a different position.
+        let landed = playback.reorderQueue(order)
+        playbackQueue = order.map { playbackQueue[$0] }
+        playbackCurrentIndex = landed
+        savePlaybackSnapshot()
+    }
 
     // MARK: - Conversion patch-bay queue stats
 
@@ -3666,13 +4023,24 @@ final class LibraryViewModel: ObservableObject {
         let coverURL = folder.appendingPathComponent(coverName)
         guard FileManager.default.fileExists(atPath: coverURL.path) else { return }
         let tracks = album.tracks
+        let albumTitle = album.title
+        artworkEmbedsRunning += 1
 
-        Task.detached(priority: .utility) {
-            guard let data = try? Data(contentsOf: coverURL), let image = NSImage(data: data) else { return }
+        Task.detached(priority: .utility) { [weak self] in
+            // Every way out ends the job, and says which tracks kept their old art.
+            var failed: [String] = []
+            defer {
+                let names = failed
+                Task { @MainActor [weak self] in self?.finishArtworkEmbed(albumTitle: albumTitle, failed: names) }
+            }
+            guard let data = try? Data(contentsOf: coverURL), let image = NSImage(data: data) else {
+                failed = tracks.map { $0.track.fileURL.lastPathComponent }
+                return
+            }
             let hash = SHA256.hash(data: data).compactMap { String(format: "%02x", $0) }.joined()
             let asset = ArtworkAsset(
                 source: .folderImage, hash: hash,
-                dimensions: ArtworkDimensions(width: Int(image.size.width), height: Int(image.size.height)),
+                dimensions: ArtworkService.pixelDimensions(of: data, image: image),
                 data: data
             )
             // Device-compatible: downscale to a 600px baseline JPEG (no PNG/progressive)
@@ -3687,16 +4055,48 @@ final class LibraryViewModel: ObservableObject {
                 if (try? small.data.write(to: tmp, options: .atomic)) != nil { embedURL = tmp; tempURL = tmp }
             }
             let finalURL = embedURL
-            await withTaskGroup(of: Void.self) { group in
+            failed = await withTaskGroup(of: String?.self) { group in
                 var inFlight = 0
+                var failures: [String] = []
                 for track in tracks {
-                    if inFlight >= 4 { _ = await group.next(); inFlight -= 1 }
+                    if inFlight >= 4, let done = await group.next() {
+                        inFlight -= 1
+                        if let name = done { failures.append(name) }
+                    }
                     let fileURL = track.track.fileURL
-                    group.addTask { try? MetadataEditorService().embedArtwork(to: fileURL, imageURL: finalURL) }
+                    group.addTask {
+                        do {
+                            try MetadataEditorService().embedArtwork(to: fileURL, imageURL: finalURL)
+                            return nil
+                        } catch {
+                            AppLog.library.error("Cover embed failed for \(fileURL.lastPathComponent, privacy: .private): \(error.localizedDescription, privacy: .private)")
+                            return fileURL.lastPathComponent
+                        }
+                    }
                     inFlight += 1
                 }
+                for await done in group { if let name = done { failures.append(name) } }
+                return failures.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
             }
             if let tempURL { try? FileManager.default.removeItem(at: tempURL) }
+        }
+    }
+
+    /// The end of one background cover embed: a quit waiting on it may go
+    /// now, and tracks that kept their old art are named, not hidden.
+    func finishArtworkEmbed(albumTitle: String, failed: [String]) {
+        artworkEmbedsRunning = max(0, artworkEmbedsRunning - 1)
+        if !failed.isEmpty {
+            let shown = failed.prefix(5).joined(separator: ", ")
+            let more = failed.count > 5 ? " and \(failed.count - 5) more" : ""
+            appAlert = .error(
+                title: "Cover not embedded in \(failed.count) track\(failed.count == 1 ? "" : "s")",
+                message: "\(albumTitle): \(shown)\(more) kept the art they had. The cover file is unchanged; save the cover again to retry."
+            )
+        }
+        if artworkEmbedsRunning == 0, let resume = onArtworkEmbedsFinished {
+            onArtworkEmbedsFinished = nil
+            resume()
         }
     }
 
@@ -3863,7 +4263,8 @@ final class LibraryViewModel: ObservableObject {
         }
     }
 
-    /// The queue a row activates into: the list that row actually belongs to.
+    /// The queue a row activates into: the list that row actually belongs to,
+    /// in its own order (`playTrack` shuffles it when shuffle is on).
     ///
     /// This used to be the album-scoped `visibleTracks` unconditionally, which
     /// is right for the three-pane browser and wrong everywhere else. A
@@ -3872,10 +4273,10 @@ final class LibraryViewModel: ObservableObject {
     /// silently did nothing — playlists could not be played at all. Choosing by
     /// where the track *is* means a row can never activate into a queue that
     /// doesn't contain it.
-    private func queue(containing id: UUID) -> [LoadedTrack] {
+    private func sourceQueue(containing id: UUID) -> [LoadedTrack] {
         let shown = browsingTracks
         let base = shown.contains { $0.track.id == id } ? shown : visibleTracks
-        return shuffleEnabled ? base.shuffled() : base
+        return base
     }
 
     // MARK: - Last.fm integration
@@ -4260,6 +4661,7 @@ final class LibraryViewModel: ObservableObject {
         // so stale/renamed/removed crates can't survive. Rare, non-hot path.
         crateTracksCache.removeAll()
         trackStore = nil   // rebuilt lazily for the (possibly new) folder
+        artistLookupLibraryTask = nil
         resetListeningStoreCache()
         // Decide where the index is before anything reads it. A library on an
         // unplugged drive loads read-only from the local copy, and none of the
@@ -4278,6 +4680,11 @@ final class LibraryViewModel: ObservableObject {
         // so this does not wait for the index to be built. No-op after the
         // first time, because the guard is "the plays file is empty".
         if !disconnected { backfillListeningStoreIfNeeded(knownPaths: currentTrackStore().allPaths) }
+        // A new folder or location means a new profile store (made off the
+        // main actor): the copy's while the drive is out, the live one back.
+        // The iPod's old picture records are carried into it first, once.
+        if !disconnected { migrateArtistPicturesIfNeeded() }
+        reloadArtistProfiles()
         let fm = FileManager.default
         let cratesDir = cratesDirectoryURL
         do {
@@ -5353,10 +5760,12 @@ final class LibraryViewModel: ObservableObject {
         }
     }
 
-    /// Relocate the crate index files (`.cdcrate` membership lists +
-    /// `library.cdtracks`) to a user-chosen folder and re-point the crates-index
-    /// bookmark — the audio files stay where they are. The counterpart to
-    /// `moveLibrary()`, which moves the music and leaves the index alone.
+    /// Relocate the crate index files (`LibraryIndexFiles`: membership lists,
+    /// `library.cdtracks`, plays, artist profiles) and the artist profiles'
+    /// `ArtistPhotos` folder to a user-chosen folder and re-point the
+    /// crates-index bookmark — the audio files stay where they are. The
+    /// counterpart to `moveLibrary()`, which moves the music and leaves the
+    /// index (and so the artist photos) alone.
     func moveIndexFiles() {
         guard !refuseWhileLibraryDisconnected() else { return }
         let panel = NSOpenPanel()
@@ -5376,39 +5785,56 @@ final class LibraryViewModel: ObservableObject {
         }
 
         let fm = FileManager.default
-        let indexFiles: [URL]
+        let toMove: [URL]
         do {
             // `LibraryIndexFiles` is the whole function. Anything missing from it
             // is left behind AND cleared from the collision check below, and the
             // folder-changed notification this posts then rebuilds a fresh empty
             // store over the top of the loss. `cdplays` in particular has no
             // backup and nothing that can rebuild it. Add new index files to that
-            // list, which the local copy of the index reads as well.
-            indexFiles = try fm.contentsOfDirectory(at: currentURL, includingPropertiesForKeys: nil)
-                .filter(LibraryIndexFiles.isIndexFile)
+            // list, which the local copy of the index reads as well. The
+            // artist photos folder moves too (`LibraryIndexFiles.movedFolders`),
+            // with the profiles that name its files.
+            toMove = try LibraryIndexFiles.itemsToMove(in: currentURL)
         } catch {
             appAlert = .error(title: "Move Failed", message: "Could not read the current index folder: \(error.localizedDescription)")
             return
         }
 
+        let indexFileCount = toMove.filter(LibraryIndexFiles.isIndexFile).count
+
         // Refuse up front rather than silently overwrite a folder that already
         // holds someone's crates — that would be unrecoverable data loss.
-        if indexFiles.contains(where: { fm.fileExists(atPath: newURL.appendingPathComponent($0.lastPathComponent).path) }) {
+        if toMove.contains(where: { fm.fileExists(atPath: newURL.appendingPathComponent($0.lastPathComponent).path) }) {
             appAlert = .error(title: "Folder Already Has an Index",
                               message: "The chosen folder already contains crate index files. Pick an empty folder, or use \"Choose…\" in Preferences to switch to it without moving anything.")
             return
         }
 
         scanProgress = ScanProgress(folderName: "Moving index files...", filesProbed: 0,
-                                    totalCandidates: indexFiles.count, isRunning: true)
+                                    totalCandidates: toMove.count, isRunning: true)
 
         // Detached: with embedded artwork a .cdcrate can be big, and a
-        // cross-volume move is copy+delete — keep it off the main actor.
-        Task.detached { [weak self] in
+        // cross-volume move is copy+delete — keep it off the main actor. First
+        // the artist profile store is frozen: every write already under way
+        // finishes and none starts (the background lookup's included) until
+        // the new folder is in effect, so none lands in the old folder after
+        // its files have gone.
+        Task { [weak self] in
+            await self?.freezeArtistProfileStore()
+            Self.moveIndexItems(toMove, to: newURL, indexFileCount: indexFileCount, viewModel: self)
+        }
+    }
+
+    /// The move itself, off the main actor; everything moved is put back on
+    /// a failure, so the index never ends up split across two folders.
+    private nonisolated static func moveIndexItems(_ toMove: [URL], to newURL: URL, indexFileCount: Int,
+                                                   viewModel: LibraryViewModel?) {
+        Task.detached { [weak viewModel] in
             let fm = FileManager.default
             var moved: [URL] = []
             var failure: Error?
-            for file in indexFiles {
+            for file in toMove {
                 do {
                     try fm.moveItem(at: file, to: newURL.appendingPathComponent(file.lastPathComponent))
                     moved.append(file)
@@ -5426,22 +5852,27 @@ final class LibraryViewModel: ObservableObject {
             }
 
             let moveFailure = failure
-            let movedCount = moved.count
-            await MainActor.run { [weak self] in
-                guard let self else { return }
-                self.scanProgress = .idle
+            let movedCount = indexFileCount
+            await MainActor.run { [weak viewModel] in
+                guard let model = viewModel else { return }
+                model.scanProgress = .idle
+                // Thawed once the folder the store is made for is the one in
+                // effect: the old one on a failure, the new one on success.
+                defer { model.thawArtistProfileStore() }
                 if let moveFailure {
-                    self.appAlert = .error(title: "Move Failed",
+                    model.appAlert = .error(title: "Move Failed",
                                            message: "Could not move the index: \(moveFailure.localizedDescription)\nEverything was left in the current folder.")
                     return
                 }
                 do {
-                    self.prefs.cratesIndexFolderBookmark = try PreferencesStore.makeBookmark(for: newURL)
+                    model.prefs.cratesIndexFolderBookmark = try PreferencesStore.makeBookmark(for: newURL)
+                    let location = model.resolveLibraryLocation()
+                    if location != model.libraryLocation { model.libraryLocation = location }
                     NotificationCenter.default.post(name: NSNotification.Name("CrateDiggerCratesFolderChanged"), object: newURL)
-                    self.appAlert = .info(title: "Index Moved",
+                    model.appAlert = .info(title: "Index Moved",
                                           message: "Moved \(movedCount) index file\(movedCount == 1 ? "" : "s") to: \(newURL.path)")
                 } catch {
-                    self.appAlert = .error(title: "Save Failed",
+                    model.appAlert = .error(title: "Save Failed",
                                            message: "Index files moved, but the new folder couldn't be saved as the crates index location: \(error.localizedDescription)")
                 }
             }

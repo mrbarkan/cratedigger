@@ -149,7 +149,10 @@ extension View {
             compositingGroup()
                 .overlayPreferenceValue(GrainFreeKey.self) { holes in
                     GeometryReader { proxy in
-                        let mask = GrainMask(holes: holes.map { (proxy[$0.bounds], $0.shape) })
+                        // Grain is film grain over the whole picture, lists
+                        // included: it skips only what asked for `grainFree`,
+                        // not what only keeps the shell materials off.
+                        let mask = GrainMask(holes: holes.filter { !$0.materialsOnly }.map { (proxy[$0.bounds], $0.shape) })
                         ZStack {
                             Image(nsImage: CarbonTexture.grain)
                                 .interpolation(.none)
@@ -184,6 +187,18 @@ extension View {
     func grainFree<S: Shape>(shape: S) -> some View {
         anchorPreference(key: GrainFreeKey.self, value: .bounds) {
             [GrainFreeRegion(bounds: $0, shape: AnyShape(shape))]
+        }
+    }
+
+    /// Keeps the shell materials (plastic, the metals, weave) off this view,
+    /// and leaves grain alone. For the surfaces that hold content rather than
+    /// being the case: a material is what the console is made of, and a list
+    /// is a sheet set into it. Drawn across the lists, the brushed strokes and
+    /// the weave ran through every row of text. Grain keeps covering them, as
+    /// it always has.
+    func shellMaterialFree<S: Shape>(shape: S) -> some View {
+        anchorPreference(key: GrainFreeKey.self, value: .bounds) {
+            [GrainFreeRegion(bounds: $0, shape: AnyShape(shape), materialsOnly: true)]
         }
     }
 
@@ -262,6 +277,9 @@ extension View {
 struct GrainFreeRegion {
     let bounds: Anchor<CGRect>
     let shape: AnyShape
+    /// True for a region only the shell materials skip (`shellMaterialFree`);
+    /// grain still draws there.
+    var materialsOnly = false
 }
 
 struct GrainFreeKey: PreferenceKey {
@@ -272,8 +290,9 @@ struct GrainFreeKey: PreferenceKey {
 }
 
 /// Opaque everywhere except the reported regions, which are punched clear so
-/// the grain layers above them draw nothing at all.
-private struct GrainMask: View {
+/// the grain layers above them draw nothing at all. Shared with the shell
+/// materials (`carbonShellMaterial`), which skip the same regions.
+struct GrainMask: View {
     let holes: [(rect: CGRect, shape: AnyShape)]
 
     var body: some View {

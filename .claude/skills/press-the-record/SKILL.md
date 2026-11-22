@@ -154,11 +154,31 @@ any branch except `main`, which it refuses, and stages it in
 
 ### Where the lines stand
 
-- **2.3.2 shipped GA on 2026-10-19 (build 114)** as a stable patch from `main`
-  (window minimum size, compact deck centred on fold, footer faders centred).
-  2.3.1 (build 113) shipped earlier the same day, promoted from `v2.3`.
-- **`BETA_BRANCH` is still `v2.3`,** fast-forwarded to `main`, so a beta pressed
-  there today is 2.3.3 beta 1.
+- **2.3.4 shipped GA on 2026-11-18 (build 120)**, promoted from `v2.3` straight
+  from beta 3 (build 119) with no RC: devices, PodBox, artist pages, shell
+  materials, the cover screen and the Pocket theme. 2.3.3 stopped at RC 1
+  (build 116) and never shipped GA, so its section rode along as "Also new".
+  Before it, 2.3.2 (build 114) was a stable patch from `main` on 2026-10-19 and
+  2.3.1 (build 113) a promotion the same day.
+- **2.3.5 beta 1 (build 121) shipped from `v2.3` on 2026-11-18** with Relocate
+  Library. `BETA_BRANCH` is still `v2.3`, so the next press there is 2.3.5
+  beta 2. `main` stays at 2.3.4 plus the beta feed file.
+- **The static ffmpeg folder was not there for that press** (the `MUSIC` drive
+  was not mounted). The `ffmpeg` and `ffprobe` inside the last notarized
+  `dist/CrateDigger.app` are the same static 8.1 binaries: copy them out first
+  (packaging replaces the app) and pass those; `require_static_tool` and the
+  notary accepted them.
+- **Two feeds can share a delta name.** At 2.3.4 the stable and beta staging
+  folders both produced `CrateDigger120-114.delta` and `120-113.delta` (both
+  hold the 2.3.1 and 2.3.2 DMGs). They were byte-identical with identical
+  signatures, so the second upload was skipped. Check with `cmp` before
+  uploading the beta feed's deltas to a GA release; if a pair ever differs,
+  the second feed's entry for it must carry the uploaded file's length and
+  signature.
+- **Do the notarized DMG before the push when the notary is in doubt.** At
+  2.3.4 Apple refused notarization for a while (an unsigned developer
+  agreement). Pushing `main` first would have put "Current Release: v2.3.4" on
+  the website with nothing to download.
 - **`v2.4`** holds the Stock iPod spec (parked) and has `next/2.3.2` merged in.
   The profile-decode fix (M0) must land before any 2.4 beta; put it under
   "Also" in the confirmation if it still hasn't.

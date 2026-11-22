@@ -33,6 +33,10 @@ struct CarbonAlertView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             HStack(spacing: 10) {
+                if let secondaryTitle = alert.secondaryTitle {
+                    Button(secondaryTitle) { alert.secondaryAction?() }
+                        .disabled(alert.secondaryAction == nil)
+                }
                 if let linkTitle = alert.linkTitle, let linkURL = alert.linkURL {
                     Link(linkTitle, destination: linkURL)
                         .font(CarbonFont.sans(12))
@@ -40,7 +44,7 @@ struct CarbonAlertView: View {
                 }
                 Spacer()
                 if let actionTitle = alert.actionTitle, let action = alert.action {
-                    Button("Cancel") { dismiss() }
+                    Button(alert.cancelTitle) { dismiss() }
                         .keyboardShortcut(.cancelAction)
                     Button(actionTitle) {
                         action()

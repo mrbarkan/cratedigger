@@ -1,7 +1,7 @@
 import CoreGraphics
 
 /// Every measure of the compact player, derived from the active theme's
-/// geometry. `CompactDeckView` lays out from it and `WindowFramePlanner`
+/// geometry. `ConsoleSlots` and `CompactArtColumn` lay out from it and `WindowFramePlanner`
 /// sizes the window from it, so the two cannot disagree.
 ///
 /// The art column copies the brand column's grid: the traffic lights sit in

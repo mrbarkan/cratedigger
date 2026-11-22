@@ -148,6 +148,65 @@ final class BundledThemeTests: XCTestCase {
         }
     }
 
+    /// The selection bar is a light-spreading glass over a bulb: the bulb, its
+    /// halo and the wash across the row are one hue in each mode, so a later
+    /// edit can't split them into three different colours.
+    func testPocketLampShareOneHueInBothLayers() throws {
+        let pocket = try XCTUnwrap(themes["pocket"])
+        for (name, layer) in [("light", pocket.light), ("dark", pocket.dark)] {
+            let colors = try XCTUnwrap(layer?.colors, "pocket has no \(name) colours")
+            let hues = try ["selectionLedCore", "selectionGlow", "selectionSpread"].map { key -> Double in
+                try Self.hue(of: try XCTUnwrap(colors[key], "pocket \(name) is missing \(key)"))
+            }
+            let spread = Self.hueDistance(hues.max()!, hues.min()!)
+            XCTAssertLessThanOrEqual(spread, 3, "pocket \(name): lamp hues \(hues) are not one hue")
+        }
+    }
+
+    /// The same rule, looser, for every shipped theme: a lamp and the light it
+    /// throws stay in one colour family. Carbon's light layer once had a yellow
+    /// bulb over an orange wash. Twenty degrees allows a deliberate lean (a
+    /// deeper blue wash under a brighter blue bulb) and still catches a split.
+    func testEveryBundledThemeKeepsItsLampAndWashInOneFamily() throws {
+        for (id, definition) in themes {
+            for (name, layer) in [("light", definition.light), ("dark", definition.dark)] {
+                var colors = definition.colors ?? [:]
+                colors.merge(layer?.colors ?? [:]) { _, layered in layered }
+                let hues = try ["selectionLedCore", "selectionGlow", "selectionSpread"]
+                    .compactMap { colors[$0] }
+                    .map { try Self.hue(of: $0) }
+                guard let high = hues.max(), let low = hues.min() else { continue }
+                XCTAssertLessThanOrEqual(Self.hueDistance(high, low), 20,
+                                         "\(id) \(name): lamp hues \(hues) have split")
+            }
+        }
+    }
+
+    func testPocketCarriesItsSharedEffects() throws {
+        let effects = try XCTUnwrap(try XCTUnwrap(themes["pocket"]).effects)
+        XCTAssertEqual(effects["shellPlastic"], 0.05)
+        XCTAssertEqual(effects["coverPixel"], 0.55)
+        XCTAssertEqual(effects["coverPixelSize"], 1.5)
+        XCTAssertEqual(effects["oledMonochrome"], 1)
+    }
+
+    /// Hue in degrees of a `#RRGGBB` or `#RRGGBBAA` string.
+    private static func hue(of hex: String) throws -> Double {
+        let digits = hex.hasPrefix("#") ? String(hex.dropFirst()) : hex
+        let value = try XCTUnwrap(UInt64(digits.prefix(6), radix: 16), "bad hex \(hex)")
+        let r = Double((value >> 16) & 0xFF) / 255, g = Double((value >> 8) & 0xFF) / 255, b = Double(value & 0xFF) / 255
+        let high = max(r, g, b), delta = high - min(r, g, b)
+        guard delta > 0 else { return 0 }
+        let sector: Double = high == r ? ((g - b) / delta).truncatingRemainder(dividingBy: 6)
+            : high == g ? (b - r) / delta + 2 : (r - g) / delta + 4
+        return (sector * 60 + 360).truncatingRemainder(dividingBy: 360)
+    }
+
+    private static func hueDistance(_ a: Double, _ b: Double) -> Double {
+        let d = abs(a - b)
+        return min(d, 360 - d)
+    }
+
     private func postScriptNames(_ url: URL) -> [String] {
         ((CTFontManagerCreateFontDescriptorsFromURL(url as CFURL) as? [CTFontDescriptor]) ?? [])
             .compactMap { CTFontDescriptorCopyAttribute($0, kCTFontNameAttribute) as? String }

@@ -44,7 +44,7 @@ final class RemoteArtworkServiceTests: XCTestCase {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [MockURLProtocol.self]
         service = RemoteArtworkService(session: URLSession(configuration: config),
-                                       musicBrainzInterval: 0, retryDelay: 0)
+                                       musicBrainzGate: MusicBrainzGate(interval: .zero), retryDelay: 0)
         MockURLProtocol.requestCount = 0
     }
 
@@ -537,7 +537,7 @@ final class RemoteArtworkServiceTests: XCTestCase {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [MockURLProtocol.self]
         let throttled = RemoteArtworkService(session: URLSession(configuration: config),
-                                             musicBrainzInterval: 0.25, retryDelay: 0)
+                                             musicBrainzGate: MusicBrainzGate(interval: .milliseconds(250)), retryDelay: 0)
         let lock = NSLock()
         var starts: [Date] = []
         MockURLProtocol.requestHandler = { request in

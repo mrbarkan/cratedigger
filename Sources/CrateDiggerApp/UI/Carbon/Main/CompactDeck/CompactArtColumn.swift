@@ -2,14 +2,17 @@ import AppKit
 import CrateDiggerCore
 import SwiftUI
 
-/// The compact player: one rack unit. Art on the left under a brand row
-/// that carries the expand key; the console's own display (pinned to NOW)
-/// over its own footer on the right. Every measure comes from
+/// The compact player's own column: the art under a brand row that carries
+/// the expand key. The display and the transport beside it are the console's
+/// own, placed by `ConsoleStageView`. Every measure comes from
 /// `CompactDeckMetrics`, which the window controller sizes the window from.
-struct CompactDeckView: View {
+struct CompactArtColumn: View {
     @Environment(\.carbon) private var theme
     @Environment(\.carbonGeometry) private var geometry
     @EnvironmentObject private var model: LibraryViewModel
+    /// The backing scale the cover screen is planned for. From the
+    /// environment, so a move to a display of another scale re-plans it.
+    @Environment(\.displayScale) private var displayScale
 
     /// Whether the art well pushed the pointing hand, so it only ever pops
     /// its own cursor.
@@ -17,23 +20,6 @@ struct CompactDeckView: View {
 
     var body: some View {
         let metrics = CompactDeckMetrics(geometry: geometry)
-        HStack(alignment: .top, spacing: geometry.mainGap) {
-            artColumn(metrics)
-                .frame(width: metrics.artSide)
-            VStack(spacing: geometry.chassisRowGap) {
-                OLEDDisplay()
-                    .frame(maxWidth: .infinity)
-                    .frame(height: geometry.headerHeight)
-                    .environment(\.oledScreenOverride, .nowPlaying)
-                FooterShell()
-                    .frame(height: geometry.footerHeight)
-            }
-        }
-    }
-
-    // MARK: Art column
-
-    private func artColumn(_ metrics: CompactDeckMetrics) -> some View {
         VStack(alignment: .leading, spacing: HeaderKeyMetrics.rowGap) {
             HStack(spacing: 8) {
                 BrandLockup(typeSize: 11)
@@ -45,6 +31,7 @@ struct CompactDeckView: View {
                 .frame(width: metrics.artSide, height: metrics.artSide)
         }
         .padding(.top, HeaderKeyMetrics.topInset)
+        .frame(width: metrics.artSide)
     }
 
     /// rectangle.expand: the same switch as the brand block's compact key,
@@ -70,17 +57,11 @@ struct CompactDeckView: View {
 
     private var artWell: some View {
         let clickable = model.nowPlayingAlbum != nil
-        return RecessedWell(padding: 0) {
-            // An empty well when nothing plays: the display already says so.
-            NowPlayingCover(model: model, maxPixel: 600) { Color.clear }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .clipShape(RoundedRectangle(cornerRadius: geometry.wellCornerRadius, style: .continuous))
-        }
+        return artHousing
         .contentShape(Rectangle())
         .onTapGesture {
             guard clickable else { return }
-            ClickPlayer.shared.play(.key)
-            model.showNowPlayingArtwork()
+            openArtwork()
         }
         .onHover { inside in
             if inside, clickable, !pushedCursor {
@@ -92,7 +73,41 @@ struct CompactDeckView: View {
             }
         }
         .carbonTip(clickable ? "View artwork" : "")
+        // One element whatever is inside. With a cover screen the housing
+        // holds only a decorative image and shapes, which VoiceOver skips,
+        // so a label on their container had nothing to hang on.
+        .accessibilityElement(children: .ignore)
         .accessibilityAddTraits(clickable ? .isButton : [])
         .accessibilityLabel(clickable ? "Album artwork. Opens the artwork viewer." : "Album artwork")
+        // Spelled out, so VoiceOver's activate opens the viewer on the new
+        // element rather than relying on the tap gesture underneath it.
+        .accessibilityAction {
+            guard clickable else { return }
+            openArtwork()
+        }
+    }
+
+    private func openArtwork() {
+        ClickPlayer.shared.play(.key)
+        model.showNowPlayingArtwork()
+    }
+
+    /// With a cover screen look, the art is an LCD set into the shell behind
+    /// its bezel; otherwise the recessed well it has always been.
+    @ViewBuilder
+    private var artHousing: some View {
+        let metrics = CompactDeckMetrics(geometry: geometry)
+        if let screen = CoverScreenSpec(theme: theme, side: metrics.artSide, scale: displayScale) {
+            CoverScreenBezel(spec: screen, cornerRadius: geometry.wellCornerRadius) {
+                NowPlayingCover(model: model, maxPixel: 600, screen: screen) { Color.clear }
+            }
+        } else {
+            RecessedWell(padding: 0) {
+                // An empty well when nothing plays: the display already says so.
+                NowPlayingCover(model: model, maxPixel: 600) { Color.clear }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipShape(RoundedRectangle(cornerRadius: geometry.wellCornerRadius, style: .continuous))
+            }
+        }
     }
 }

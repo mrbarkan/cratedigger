@@ -40,6 +40,58 @@ final class DeviceCatalogStoreTests: XCTestCase {
         }
     }
 
+    // MARK: - Catalogs from an older format
+
+    /// Transfers before format 2 never patched the catalog, so what they
+    /// wrote would read as names taken by unknown files: the first launch of
+    /// this build drops those catalogs, once.
+    func testCatalogsFromAnOlderFormatAreDroppedOnce() throws {
+        try withTemporaryDirectory(prefix: "catalog-store") { dir in
+            let old = DeviceCatalogStore(directory: dir)
+            old.save([track(named: "One")], key: "IPOD-UUID")
+            old.save([track(named: "Two")], key: "SD-UUID")
+
+            XCTAssertEqual(DeviceCatalogStore(directory: dir).discardOlderFormats(), 2)
+            XCTAssertNil(old.load(key: "IPOD-UUID"))
+            XCTAssertNil(old.load(key: "SD-UUID"))
+
+            // Saved by this build: kept on every later launch.
+            old.save([track(named: "One")], key: "IPOD-UUID")
+            XCTAssertEqual(DeviceCatalogStore(directory: dir).discardOlderFormats(), 0)
+            XCTAssertNotNil(old.load(key: "IPOD-UUID"))
+        }
+    }
+
+    func testFirstLaunchWithNoCatalogsRecordsTheFormat() throws {
+        try withTemporaryDirectory(prefix: "catalog-store") { dir in
+            let fresh = dir.appendingPathComponent("DeviceCatalogs", isDirectory: true)
+            XCTAssertEqual(DeviceCatalogStore(directory: fresh).discardOlderFormats(), 0)
+
+            DeviceCatalogStore(directory: fresh).save([track(named: "One")], key: "K")
+            XCTAssertEqual(DeviceCatalogStore(directory: fresh).discardOlderFormats(), 0)
+            XCTAssertNotNil(DeviceCatalogStore(directory: fresh).load(key: "K"))
+        }
+    }
+
+    // MARK: - Where the device is mounted
+
+    /// Saved at /Volumes/IPOD, mounted now at /Volumes/IPOD 1: the catalog
+    /// points at nothing there and is treated as missing (walked again).
+    func testACatalogDescribesOnlyTheMountItWasSavedAt() {
+        let catalog = [track(named: "One"), track(named: "Two")]
+
+        XCTAssertTrue(DeviceCatalogStore.describes(catalog, deviceAt: URL(fileURLWithPath: "/Volumes/IPOD")))
+        XCTAssertFalse(DeviceCatalogStore.describes(catalog, deviceAt: URL(fileURLWithPath: "/Volumes/IPOD 1")))
+        XCTAssertTrue(DeviceCatalogStore.describes(catalog, deviceAt: URL(fileURLWithPath: "/Volumes/ipod")),
+                      "a FAT path compares without case")
+        XCTAssertTrue(DeviceCatalogStore.describes([], deviceAt: URL(fileURLWithPath: "/Volumes/IPOD 1")))
+
+        var moved = track(named: "Three").track
+        moved = moved.withFileURL(URL(fileURLWithPath: "/Volumes/IPOD 1/Music/Three.mp3"))
+        let mixed = catalog + [LoadedTrack(track: moved, metadata: ConversionMetadata(title: "Three"))]
+        XCTAssertFalse(DeviceCatalogStore.describes(mixed, deviceAt: URL(fileURLWithPath: "/Volumes/IPOD 1")))
+    }
+
     // MARK: - The name is not ours
 
     func testAVolumeNamedLikeATraversalStaysInsideTheDirectory() throws {
@@ -101,6 +153,163 @@ final class DeviceCatalogStoreTests: XCTestCase {
         }
     }
 
+    // MARK: - Patching after a write
+
+    func testPatchAddsAndRemoves() throws {
+        try withTemporaryDirectory(prefix: "catalog-store") { dir in
+            let store = DeviceCatalogStore(directory: dir)
+            store.save([track(named: "One"), track(named: "Two")], key: "IPOD")
+
+            store.patch(
+                key: "IPOD",
+                adding: [track(named: "Three")],
+                removingPaths: ["/Volumes/IPOD/Music/Two.mp3"]
+            )
+
+            XCTAssertEqual(store.load(key: "IPOD")?.map(\.track.title), ["One", "Three"])
+        }
+    }
+
+    func testPatchRemovalIsCaseInsensitive() throws {
+        try withTemporaryDirectory(prefix: "catalog-store") { dir in
+            let store = DeviceCatalogStore(directory: dir)
+            store.save([track(named: "Song")], key: "IPOD")
+
+            // A FAT device answers to either spelling.
+            store.patch(key: "IPOD", adding: [], removingPaths: ["/volumes/ipod/music/SONG.MP3"])
+
+            XCTAssertEqual(store.load(key: "IPOD")?.count, 0)
+        }
+    }
+
+    func testPatchReplacesARecordAtAWrittenPath() throws {
+        try withTemporaryDirectory(prefix: "catalog-store") { dir in
+            let store = DeviceCatalogStore(directory: dir)
+            store.save([track(named: "Song")], key: "IPOD")
+            // Same file on a FAT device, spelled differently by the new write.
+            let rewritten = track(named: "SONG")
+
+            // An overwrite in place: one record, the new one.
+            store.patch(key: "IPOD", adding: [rewritten], removingPaths: [])
+
+            XCTAssertEqual(store.load(key: "IPOD")?.map(\.track.title), ["SONG"])
+        }
+    }
+
+    func testPatchedWorksOnACatalogInMemory() {
+        let catalog = [track(named: "One"), track(named: "Two")]
+
+        let patched = DeviceCatalogStore.patched(
+            catalog,
+            adding: [track(named: "Three"), track(named: "ONE")],
+            removingPaths: ["/Volumes/IPOD/Music/Two.mp3"]
+        )
+
+        XCTAssertEqual(patched.map(\.track.title), ["Three", "ONE"])
+    }
+
+    func testPatchWithoutCatalogIsNoOp() throws {
+        try withTemporaryDirectory(prefix: "catalog-store") { dir in
+            let store = DeviceCatalogStore(directory: dir)
+
+            store.patch(key: "IPOD", adding: [track(named: "One")], removingPaths: [])
+
+            // Nothing to patch: the next browse scans the whole device.
+            XCTAssertNil(store.load(key: "IPOD"))
+            XCTAssertTrue(files(under: dir).isEmpty)
+        }
+    }
+
+    func testWrittenTrackCarriesOutputFormat() {
+        let source = sourceTrack(art: 1400, artSource: .embedded)
+        let destination = URL(fileURLWithPath: "/Volumes/IPOD/Music/Miles Davis/Kind of Blue/01 So What.mp3")
+        let preset = ExternalDeviceTransferSettings(
+            outputFormat: .mp3, bitrateKbps: 192, sampleRateHz: 44_100, artworkMaxDimension: 600
+        ).conversionPreset
+
+        let written = DeviceCatalogStore.writtenTrack(source: source, destination: destination, preset: preset)
+
+        XCTAssertEqual(written.track.fileURL, destination)
+        XCTAssertNotEqual(written.track.id, source.track.id, "a device record is not the library track")
+        XCTAssertEqual(written.track.formatName, "MP3")
+        XCTAssertEqual(written.track.bitrateKbps, 192)
+        XCTAssertEqual(written.track.sampleRateHz, 44_100)
+        XCTAssertEqual(written.track.title, "So What")
+        XCTAssertEqual(written.track.trackNumber, 1)
+        XCTAssertEqual(written.track.discNumber, 1)
+        XCTAssertEqual(written.metadata.album, "Kind of Blue")
+        XCTAssertEqual(written.metadata.albumArtist, "Miles Davis")
+        // Re-embedded under the 600 px cap.
+        XCTAssertEqual(written.track.artworkSource, .embedded)
+        XCTAssertEqual(written.track.artworkDimensions, ArtworkDimensions(width: 600, height: 600))
+    }
+
+    func testWrittenTrackOfACopyKeepsTheSourceForm() {
+        let source = sourceTrack(art: 1400, artSource: .embedded)
+        let destination = URL(fileURLWithPath: "/Volumes/IPOD/Music/01 So What.flac")
+
+        let written = DeviceCatalogStore.writtenTrack(source: source, destination: destination, preset: nil)
+
+        XCTAssertEqual(written.track.formatName, "FLAC")
+        XCTAssertEqual(written.track.bitrateKbps, 900)
+        XCTAssertEqual(written.track.sampleRateHz, 96_000)
+        XCTAssertEqual(written.track.artworkDimensions, ArtworkDimensions(width: 1400, height: 1400))
+    }
+
+    func testWrittenTrackNamesLosslessAndOpusOutputsLikeAScan() {
+        let source = sourceTrack(art: nil, artSource: .none)
+        let url = URL(fileURLWithPath: "/Volumes/IPOD/Music/x")
+        func written(_ format: OutputFormat, bitDepth: Int? = nil) -> AudioTrack {
+            let preset = ConversionPreset(
+                id: "t", name: "t", outputFormat: format, bitrateKbps: 160,
+                sampleRateHz: 44_100, channels: nil, bitDepth: bitDepth
+            )
+            return DeviceCatalogStore.writtenTrack(source: source, destination: url, preset: preset).track
+        }
+
+        XCTAssertEqual(written(.flac).formatName, "FLAC")
+        XCTAssertNil(written(.flac).bitrateKbps, "lossless has no target bitrate")
+        XCTAssertEqual(written(.aac).formatName, "AAC")
+        XCTAssertEqual(written(.alac).formatName, "ALAC")
+        XCTAssertEqual(written(.wav).formatName, "PCM_S16LE")
+        XCTAssertEqual(written(.wav, bitDepth: 24).formatName, "PCM_S24LE")
+        XCTAssertEqual(written(.aiff).formatName, "PCM_S16BE")
+        XCTAssertEqual(written(.ogg).formatName, "VORBIS")
+        XCTAssertEqual(written(.opus).formatName, "OPUS")
+        XCTAssertEqual(written(.opus).sampleRateHz, 48_000, "libopus only writes 48 kHz")
+    }
+
+    func testWrittenTrackRecordsTheArtTheWriteLeft() {
+        let url = URL(fileURLWithPath: "/Volumes/IPOD/Music/Kind of Blue/01 So What.mp3")
+        func preset(_ mode: ArtworkMode, cap: Int? = 600) -> ConversionPreset? {
+            var settings = ExternalDeviceTransferSettings(outputFormat: .mp3, artworkMaxDimension: cap)
+            settings.artworkMode = mode
+            return settings.conversionPreset
+        }
+        let embedded = sourceTrack(art: 1400, artSource: .embedded)
+        let folder = sourceTrack(art: 1400, artSource: .folderImage)
+
+        // Strip without a cover: nothing.
+        let stripped = DeviceCatalogStore.writtenTrack(source: embedded, destination: url, preset: preset(.none))
+        XCTAssertEqual(stripped.track.artworkSource, ArtworkSource.none)
+        XCTAssertNil(stripped.track.artworkDimensions)
+        XCTAssertNil(stripped.track.artworkHash)
+
+        // Strip with a cover: what a rescan finds is the 400 px cover.jpg.
+        let rockbox = DeviceCatalogStore.writtenTrack(
+            source: embedded, destination: url, preset: preset(.none), writesFolderCoverArt: true)
+        XCTAssertEqual(rockbox.track.artworkSource, .folderImage)
+        XCTAssertEqual(rockbox.track.artworkDimensions, ArtworkDimensions(width: 400, height: 400))
+
+        // Keep only carries the file's own art.
+        let kept = DeviceCatalogStore.writtenTrack(source: folder, destination: url, preset: preset(.preserve, cap: nil))
+        XCTAssertNil(kept.track.artworkDimensions)
+
+        // A copy of a file whose art came from a folder image carries none.
+        let copied = DeviceCatalogStore.writtenTrack(source: folder, destination: url, preset: nil)
+        XCTAssertNil(copied.track.artworkDimensions)
+    }
+
     // MARK: - Helpers
 
     /// `/var` is a symlink to `/private/var`, and the enumerator hands back the
@@ -125,6 +334,22 @@ final class DeviceCatalogStoreTests: XCTestCase {
             artworkSource: .none, artworkHash: nil
         )
         return LoadedTrack(track: audio, metadata: ConversionMetadata(title: title))
+    }
+
+    private func sourceTrack(art: Int?, artSource: ArtworkSource) -> LoadedTrack {
+        let audio = AudioTrack(
+            fileURL: URL(fileURLWithPath: "/Library/Miles Davis/Kind of Blue/01 So What.flac"),
+            title: "So What", artist: "Miles Davis", album: "Kind of Blue",
+            durationSeconds: 562, formatName: "FLAC", bitrateKbps: 900, sampleRateHz: 96_000,
+            year: 1959, trackNumber: 1, trackTotal: 5, discNumber: 1,
+            artworkSource: artSource, artworkHash: art == nil ? nil : "source-hash",
+            artworkDimensions: art.map { ArtworkDimensions(width: $0, height: $0) }
+        )
+        let metadata = ConversionMetadata(
+            title: "So What", artist: "Miles Davis", albumArtist: "Miles Davis",
+            album: "Kind of Blue", trackNumber: 1, trackTotal: 5, discNumber: 1, year: 1959
+        )
+        return LoadedTrack(track: audio, metadata: metadata)
     }
 }
 #endif

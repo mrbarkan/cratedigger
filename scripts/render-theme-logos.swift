@@ -2,7 +2,8 @@
 //
 // Draws the built-in themes' header logos as vector PDFs, one per appearance:
 //
-//   swift scripts/render-theme-logos.swift        (from the repo root)
+//   swift scripts/render-theme-logos.swift            (from the repo root)
+//   swift scripts/render-theme-logos.swift pocket     (only the named theme ids)
 //
 // Each mark is drawn from the theme's own `theme.json` tokens, so the colours
 // are the palette's, not a copy of it, and re-running after a palette change
@@ -294,6 +295,42 @@ func renderLlama(_ context: CGContext, _ p: Palette, dark: Bool) {
     ])
 }
 
+// MARK: - Pocket
+
+/// A handheld's face in miniature: a plus-shaped pad built from square
+/// pixels, two round keys in the theme's key colour, then the name in the
+/// interface sans, heavy and tracked wide.
+func renderPocket(_ context: CGContext, _ p: Palette, dark: Bool) {
+    let centerY = canvas.height / 2
+    let name = Line("POCKET", font: systemFont(58, .heavy), color: p["ink"], tracking: 9)
+    let nameX = canvas.width - 10 - name.width
+    name.draw(in: context, x: nameX, centerY: centerY)
+
+    // Two round keys, set on a slant like a handheld's A and B.
+    let keyRadius: CGFloat = 13
+    let keysCenter = CGPoint(x: nameX - 26 - 28, y: centerY)
+    for (dx, dy) in [(CGFloat(-15), CGFloat(-13)), (CGFloat(15), CGFloat(13))] {
+        let center = CGPoint(x: keysCenter.x + dx, y: keysCenter.y + dy)
+        let rect = CGRect(x: center.x - keyRadius, y: center.y - keyRadius, width: keyRadius * 2, height: keyRadius * 2)
+        fillGradient(in: context, path: CGPath(ellipseIn: rect, transform: nil), from: p["orangeHi"], to: p["orangeLo"], rect: rect)
+    }
+
+    // The pad: a plus of 3 × 3 pixels with the middle one recessed.
+    let pixel: CGFloat = 17
+    let padOrigin = CGPoint(x: keysCenter.x - 28 - 22 - pixel * 3, y: centerY - pixel * 1.5)
+    for (row, line) in ["010", "111", "010"].enumerated() {
+        for (column, cell) in line.enumerated() where cell == "1" {
+            let rect = CGRect(x: padOrigin.x + CGFloat(column) * pixel, y: padOrigin.y + CGFloat(2 - row) * pixel,
+                              width: pixel - 2, height: pixel - 2)
+            let path = CGPath(roundedRect: rect, cornerWidth: 3, cornerHeight: 3, transform: nil)
+            let centre = row == 1 && column == 1
+            fillGradient(in: context, path: path,
+                         from: centre ? p["metalLo"] : (dark ? p["metalHi"] : p["metalLo"]),
+                         to: centre ? p["metalDeep"] : (dark ? p["metalLo"] : p["metalDeep"]), rect: rect)
+        }
+    }
+}
+
 // MARK: - Main
 
 registerDisplayFont()
@@ -302,7 +339,11 @@ let renderers: [String: (CGContext, Palette, Bool) -> Void] = [
     "carbon": { context, palette, _ in renderCarbon(context, palette) },
     "cobalt": { context, palette, _ in renderCobalt(context, palette) },
     "llama-97": { context, palette, dark in renderLlama(context, palette, dark: dark) },
+    "pocket": { context, palette, dark in renderPocket(context, palette, dark: dark) },
 ]
+
+/// Theme ids named on the command line; none means every theme.
+let onlyIDs = Set(CommandLine.arguments.dropFirst())
 
 let bundles = try FileManager.default.contentsOfDirectory(at: themesDirectory, includingPropertiesForKeys: nil)
     .filter { $0.pathExtension == "cdtheme" }
@@ -310,6 +351,7 @@ let bundles = try FileManager.default.contentsOfDirectory(at: themesDirectory, i
 for bundle in bundles {
     let manifestURL = bundle.appendingPathComponent("theme.json")
     let theme = try JSONSerialization.jsonObject(with: Data(contentsOf: manifestURL)) as! [String: Any]
+    if !onlyIDs.isEmpty, !onlyIDs.contains(theme["id"] as? String ?? "") { continue }
     guard let id = theme["id"] as? String, let render = renderers[id] else {
         print("skip \(bundle.lastPathComponent): no renderer")
         continue

@@ -24,16 +24,143 @@ final class EffectDialTests: XCTestCase {
         }
     }
 
-    /// Both surfaces have to be represented, or the editor renders an empty
-    /// section header.
+    /// Every surface has to be represented, or the editor renders an empty
+    /// section header; and every dial is on one of them, or it never shows.
     func testBothSurfacesHaveDials() {
         XCTAssertFalse(ThemeTokenCatalog.effectDials(on: .interface).isEmpty)
         XCTAssertFalse(ThemeTokenCatalog.effectDials(on: .display).isEmpty)
+        XCTAssertFalse(ThemeTokenCatalog.effectDials(on: .cover).isEmpty)
         XCTAssertEqual(
             ThemeTokenCatalog.effectDials(on: .interface).count
-                + ThemeTokenCatalog.effectDials(on: .display).count,
+                + ThemeTokenCatalog.effectDials(on: .display).count
+                + ThemeTokenCatalog.effectDials(on: .cover).count,
             ThemeTokenCatalog.effectDials.count
         )
+    }
+
+    /// The two exclusive groups are read off the Core resolvers' own enums,
+    /// so a material or look added there without a dial (or a dial whose key
+    /// is misspelt) shows up here as a group shorter than its enum.
+    func testExclusiveGroupsAreExactlyTheCoreEnums() {
+        XCTAssertEqual(ThemeTokenCatalog.shellMaterialDials.map(\.key),
+                       ShellMaterial.allCases.map(\.effectKey))
+        XCTAssertEqual(ThemeTokenCatalog.coverLookDials.map(\.key),
+                       CoverScreenLook.allCases.map(\.effectKey))
+        XCTAssertTrue(ThemeTokenCatalog.shellMaterialDials.contains { $0.key == "grain" },
+                      "grain is a material: switching another on has to switch grain off")
+        XCTAssertTrue(ThemeTokenCatalog.shellMaterialDials.allSatisfy { $0.surface == .interface })
+        XCTAssertTrue(ThemeTokenCatalog.coverLookDials.allSatisfy { $0.surface == .cover })
+    }
+
+    /// The ranges the owner picked: `on` is the midpoint of each, and the
+    /// ceiling leaves room above it.
+    func testMaterialAndLookStrengths() {
+        let dials = Dictionary(uniqueKeysWithValues: ThemeTokenCatalog.effectDials.map { ($0.key, $0) })
+        let expected: [String: (max: Double, on: Double)] = [
+            "grain": (0.6, 0.2),
+            "shellPlastic": (0.30, 0.08),
+            "shellBrushed": (0.50, 0.18),
+            "shellBlasted": (1.00, 0.58),
+            "shellWeave": (0.40, 0.12),
+            "coverGrid": (1.0, 0.55),
+            "coverPixel": (1.0, 0.55),
+            "coverHandheld": (1.0, 0.55),
+        ]
+        for (key, values) in expected {
+            guard let dial = dials[key] else {
+                XCTFail("no dial for \(key)")
+                continue
+            }
+            XCTAssertEqual(dial.max, values.max, "\(key) max")
+            XCTAssertEqual(dial.on, values.on, "\(key) on")
+        }
+    }
+
+    /// A theme that inherits Carbon's grain and sets a material draws the
+    /// material alone: grain is last in the priority, and the chassis asks
+    /// for the winner rather than for `grainAmount`.
+    func testGrainAndAMaterialResolveToTheMaterialOnly() {
+        let theme = CarbonTheme(
+            definition: ThemeDefinition(id: "t", name: "T", baseAppearance: .dark,
+                                        effects: ["grain": 0.1, "shellBrushed": 0.18]),
+            resolvedBase: .carbon
+        )
+        XCTAssertEqual(theme.shellMaterial, .brushed)
+        XCTAssertEqual(theme.shellMaterialStrength, 0.18, accuracy: 0.0001)
+        XCTAssertEqual(theme.grainAmount, 0.1, accuracy: 0.0001, "the grain dial still reads its own value")
+    }
+
+    /// The resolved strength is the clamped one: a theme asking for more than
+    /// the dial allows gets the ceiling, not the raw number.
+    func testResolvedMaterialAndLookAreClamped() {
+        let theme = CarbonTheme(
+            definition: ThemeDefinition(id: "t", name: "T", baseAppearance: .dark,
+                                        effects: ["shellPlastic": 5, "coverGrid": 5]),
+            resolvedBase: .carbon
+        )
+        XCTAssertEqual(theme.shellMaterial, .plastic)
+        XCTAssertEqual(theme.shellMaterialStrength, 0.30, accuracy: 0.0001)
+        XCTAssertEqual(theme.coverScreenLook, .grid)
+        XCTAssertEqual(theme.coverScreenStrength, 1.0, accuracy: 0.0001)
+    }
+
+    func testCoverLookResolvesWithItsStrength() {
+        let theme = CarbonTheme(
+            definition: ThemeDefinition(id: "t", name: "T", baseAppearance: .dark,
+                                        effects: ["coverGrid": 0.3, "coverHandheld": 0.55]),
+            resolvedBase: .carbon
+        )
+        XCTAssertEqual(theme.coverScreenLook, .handheld)
+        XCTAssertEqual(theme.coverScreenStrength, 0.55, accuracy: 0.0001)
+    }
+
+    /// `coverPixelSize` has no dial, so it must not go through the dial clamp,
+    /// which would pass it 0...1 and turn every size into 1 pt.
+    func testCoverPixelSizeIsReadRawAndSnapped() {
+        func size(_ effects: [String: Double]) -> Double {
+            CarbonTheme(
+                definition: ThemeDefinition(id: "t", name: "T", baseAppearance: .dark, effects: effects),
+                resolvedBase: .carbon
+            ).coverPixelSize
+        }
+        XCTAssertEqual(size(["coverPixel": 0.55, "coverPixelSize": 4]), 4)
+        XCTAssertEqual(size(["coverPixel": 0.55, "coverPixelSize": 2.9]), 3)
+        XCTAssertEqual(size(["coverPixel": 0.55]), 1.5, "absent is the default")
+        XCTAssertEqual(size(["coverPixel": 0.55, "coverPixelSize": 0]), 1.5, "0 is the default")
+        XCTAssertEqual(CarbonTheme.carbon.coverPixelSize, 1.5)
+        XCTAssertEqual(CarbonTheme.linen.coverPixelSize, 1.5)
+    }
+
+    /// The winners are stored, so they must follow a write to an amount
+    /// after the theme was built, and survive the monochrome copy.
+    func testStoredWinnersFollowTheAmountsAndTheMonochromeCopy() {
+        var theme = CarbonTheme.carbon
+        theme.grainAmount = 0.1
+        XCTAssertEqual(theme.shellMaterial, .grain)
+        XCTAssertEqual(theme.shellMaterialStrength, 0.1, accuracy: 0.0001)
+        theme.shellWeaveAmount = 0.12
+        XCTAssertEqual(theme.shellMaterial, .weave, "a material outranks grain")
+        theme.shellWeaveAmount = 0
+        XCTAssertEqual(theme.shellMaterial, .grain)
+        theme.coverPixelAmount = 0.55
+        XCTAssertEqual(theme.coverScreenLook, .pixel)
+        XCTAssertEqual(theme.coverScreenStrength, 0.55, accuracy: 0.0001)
+
+        let mono = theme.monochromeGlass
+        XCTAssertEqual(mono.shellMaterial, .grain)
+        XCTAssertEqual(mono.coverScreenLook, .pixel)
+        XCTAssertEqual(mono.coverScreenStrength, 0.55, accuracy: 0.0001)
+    }
+
+    /// The built-ins resolve to exactly what they drew before: no material,
+    /// no look. (Carbon's grain lives in its bundled file, not here.)
+    func testBuiltInsResolveToNothing() {
+        for theme in [CarbonTheme.carbon, .linen] {
+            XCTAssertNil(theme.shellMaterial)
+            XCTAssertEqual(theme.shellMaterialStrength, 0)
+            XCTAssertNil(theme.coverScreenLook)
+            XCTAssertEqual(theme.coverScreenStrength, 0)
+        }
     }
 
     /// The dial's key must be the key `CarbonTheme` reads, and its `read` path
@@ -78,6 +205,70 @@ final class EffectDialTests: XCTestCase {
                 XCTAssertEqual(theme[keyPath: dial.read], 0, "\(dial.key) ships on")
             }
         }
+    }
+
+    // MARK: - Exclusive groups
+
+    func testSwitchingOneMaterialOnZeroesTheRestAndLeavesOtherKeysAlone() {
+        let group = ShellMaterial.allCases.map(\.effectKey)
+        let before: [String: Double] = ["grain": 0.2, "flat": 1, "oledGlare": 0.16, "coverPixel": 0.55, "coverPixelSize": 2]
+        let after = ThemeTokenCatalog.settingExclusive("shellBrushed", to: 0.18, among: group, in: before)
+        XCTAssertEqual(after["shellBrushed"], 0.18)
+        for key in group where key != "shellBrushed" { XCTAssertEqual(after[key] ?? 0, 0, key) }
+        XCTAssertEqual(after["flat"], 1)
+        XCTAssertEqual(after["oledGlare"], 0.16)
+        XCTAssertEqual(after["coverPixel"], 0.55)
+        XCTAssertEqual(after["coverPixelSize"], 2)
+        XCTAssertEqual(ShellMaterial.resolve(effects: after)?.material, .brushed)
+    }
+
+    func testSwitchingTheWinnerOffLeavesTheGroupAllZero() {
+        let group = ShellMaterial.allCases.map(\.effectKey)
+        let on = ThemeTokenCatalog.settingExclusive("shellWeave", to: 0.12, among: group, in: ["grain": 0.1])
+        let off = ThemeTokenCatalog.settingExclusive("shellWeave", to: 0, among: group, in: on)
+        for key in group { XCTAssertEqual(off[key] ?? 0, 0, key) }
+        XCTAssertNil(ShellMaterial.resolve(effects: off))
+    }
+
+    func testADraftWithTwoNonZeroKeysEndsWithOne() {
+        let group = CoverScreenLook.allCases.map(\.effectKey)
+        let dirty: [String: Double] = ["coverGrid": 0.4, "coverHandheld": 0.3]
+        let after = ThemeTokenCatalog.settingExclusive("coverPixel", to: 0.55, among: group, in: dirty)
+        XCTAssertEqual(group.filter { (after[$0] ?? 0) > 0 }, ["coverPixel"])
+        XCTAssertEqual(CoverScreenLook.resolve(effects: after)?.look, .pixel)
+    }
+
+    // MARK: - Sliders in a group
+
+    /// Dragging the winner down to 0 in a draft that also carries a stray
+    /// key of its group (here plastic over an inherited grain) must turn the
+    /// group off, as the switch does, not hand the win to the stray key.
+    func testSlidingTheWinnerToZeroDoesNotPromoteAStrayKey() {
+        let group = ShellMaterial.allCases.map(\.effectKey)
+        let draft: [String: Double] = ["shellPlastic": 0.2, "grain": 0.1, "oledGlare": 0.16]
+        XCTAssertEqual(ShellMaterial.resolve(effects: draft)?.material, .plastic)
+
+        let midDrag = ThemeTokenCatalog.sliding("shellPlastic", to: 0.05, among: group, in: draft)
+        XCTAssertEqual(midDrag["shellPlastic"], 0.05)
+        XCTAssertEqual(midDrag["grain"], 0.1, "above 0 a slider moves only its own key")
+        XCTAssertEqual(ShellMaterial.resolve(effects: midDrag)?.material, .plastic)
+
+        let atZero = ThemeTokenCatalog.sliding("shellPlastic", to: 0, among: group, in: midDrag)
+        for key in group { XCTAssertEqual(atZero[key] ?? 0, 0, key) }
+        XCTAssertNil(ShellMaterial.resolve(effects: atZero), "the stray grain was promoted")
+        XCTAssertEqual(atZero["oledGlare"], 0.16, "keys outside the group are untouched")
+
+        let looks = CoverScreenLook.allCases.map(\.effectKey)
+        let below = ThemeTokenCatalog.sliding("coverHandheld", to: -1, among: looks,
+                                              in: ["coverHandheld": 0.5, "coverGrid": 0.3])
+        XCTAssertNil(CoverScreenLook.resolve(effects: below), "a negative value is 0")
+    }
+
+    /// A row outside any group keeps the plain slider: 0 is just 0.
+    func testSlidingAnUngroupedDialToZeroTouchesOnlyItsKey() {
+        let after = ThemeTokenCatalog.sliding("oledGlare", to: 0, among: nil,
+                                              in: ["oledGlare": 0.16, "grain": 0.1])
+        XCTAssertEqual(after, ["oledGlare": 0, "grain": 0.1])
     }
 }
 #endif

@@ -18,6 +18,15 @@ public struct DeviceSyncQueueEntry: Codable, Hashable, Sendable, Identifiable {
     /// Source file mtime captured at bake time — the staleness guard.
     public var sourceModifiedAt: Date
     public var queuedAt: Date
+    /// What the user chose for this track's album when it was queued against a
+    /// device copy that differs. nil: no decision recorded (a new album, or a
+    /// queue saved before decisions existed), so SYNC asks if the device
+    /// turns out to hold a differing copy.
+    public var decision: DeviceAlbumDecision?
+    /// The kind of difference `decision` answered. nil when none was
+    /// recorded (no decision, or a queue saved before kinds were); a
+    /// decision without one is asked again at SYNC.
+    public var decisionKind: DeviceDifferenceKind?
 
     public init(
         id: UUID = UUID(),
@@ -25,7 +34,9 @@ public struct DeviceSyncQueueEntry: Codable, Hashable, Sendable, Identifiable {
         destinationRelativePath: String,
         isStaged: Bool,
         sourceModifiedAt: Date,
-        queuedAt: Date = Date()
+        queuedAt: Date = Date(),
+        decision: DeviceAlbumDecision? = nil,
+        decisionKind: DeviceDifferenceKind? = nil
     ) {
         self.id = id
         self.track = track
@@ -33,5 +44,12 @@ public struct DeviceSyncQueueEntry: Codable, Hashable, Sendable, Identifiable {
         self.isStaged = isStaged
         self.sourceModifiedAt = sourceModifiedAt
         self.queuedAt = queuedAt
+        self.decision = decision
+        self.decisionKind = decisionKind
+    }
+
+    /// The stored answer with its kind, nil when none was recorded.
+    public var storedDecision: DeviceStoredDecision? {
+        decision.map { DeviceStoredDecision($0, for: decisionKind) }
     }
 }

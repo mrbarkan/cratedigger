@@ -39,7 +39,7 @@ private struct GuideContent: View {
                         bullet("Dig Crate (⌘O) scans a folder of audio. Tracks land in the Prep Crate.")
                         bullet("Review what arrived, then Add to Crate to file an album where it belongs.")
                         bullet("Edit tags and artwork in the Inspector. Right-click a track for the rest.")
-                        note("Scanning only reads. Nothing on disk moves unless you ask: Move Music Files… and Consolidate Music Files… live in Preferences.")
+                        note("Scanning only reads. Nothing on disk moves unless you ask: Move Music Files… and Consolidate Music Files… live in Preferences. Copied your music to another drive yourself? Relocate Library… is there too.")
                     }
 
                     section("FINDING THINGS", accent: theme.sun) {
@@ -87,7 +87,7 @@ private struct GuideContent: View {
                     }
 
                     section("MAKING IT YOURS", accent: theme.orange) {
-                        bullet("Carbon, Cobalt and Llama '97 ship with the app. The THEME key cycles them; Appearance ▸ Theme Editor… builds your own.")
+                        bullet("Carbon, Cobalt, Llama '97 and Pocket ship with the app. The THEME key cycles them; Appearance ▸ Theme Editor… builds your own.")
                         bullet("A theme carries colours, geometry, fonts and its own logo for the header, in light and dark. Drop a .cdtheme folder in the Themes folder to install one.")
                     }
 

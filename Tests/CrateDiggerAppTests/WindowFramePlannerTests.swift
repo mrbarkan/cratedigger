@@ -119,8 +119,8 @@ final class WindowFramePlannerTests: XCTestCase {
         XCTAssertEqual(plan.minimumSize.width, 1178, accuracy: 0.001)
     }
 
-    /// Launch, and a screen or theme change, leave the deck where it was.
-    func testCompactPlanRestoresSavedFrameWhenNotFolding() {
+    /// A screen or theme change leaves the deck where it was.
+    func testCompactPlanKeepsItsPlaceWhenNotOpening() {
         let visible = CGRect(x: 0, y: 0, width: 1800, height: 1100)
         let saved = CGRect(x: 300, y: 40, width: 1250, height: 302)
         let plan = WindowFramePlanner.compactPlan(

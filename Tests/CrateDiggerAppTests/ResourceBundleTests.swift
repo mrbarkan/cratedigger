@@ -37,6 +37,22 @@ final class ResourceBundleTests: XCTestCase {
         XCTAssertEqual(found?.bundleURL.resolvingSymlinksInPath(), bundleURL.resolvingSymlinksInPath())
     }
 
+    /// The `swift build` layout: `.build/debug` is a symlink to
+    /// `out/Products/Debug`, and launched through it `Bundle.main.bundleURL`
+    /// is the symlink. `contentsOfDirectory(at:)` refuses a symlinked leaf,
+    /// which once left the app with no bundled themes or fonts.
+    func testFindsResourceBundleThroughASymlinkedBase() throws {
+        let root = try makeTemporaryDirectory()
+        let real = root.appendingPathComponent("out/Products/Debug", isDirectory: true)
+        let bundleURL = real.appendingPathComponent("CrateDigger_CrateDiggerApp.bundle", isDirectory: true)
+        try FileManager.default.createDirectory(at: bundleURL, withIntermediateDirectories: true)
+        let link = root.appendingPathComponent("debug")
+        try FileManager.default.createSymbolicLink(atPath: link.path, withDestinationPath: "out/Products/Debug")
+
+        let found = Bundle.resourceBundle(searching: [link])
+        XCTAssertEqual(found?.bundleURL.resolvingSymlinksInPath(), bundleURL.resolvingSymlinksInPath())
+    }
+
     func testReturnsNilWhenNoResourceBundleExists() throws {
         let base = try makeTemporaryDirectory()
         XCTAssertNil(Bundle.resourceBundle(searching: [base]))

@@ -62,7 +62,7 @@
     }
   },
   "effects" : {
-    "grain" : 0.099961076512455518
+    "shellWeave" : 0.09
   },
   "id" : "carbon",
   "light" : {
@@ -94,7 +94,8 @@
       "paper" : "#FAFCFD",
       "paper2" : "#EEF4F7",
       "red" : "#E2473F",
-      "selectionGlow" : "#FFC800",
+      "selectionGlow" : "#FF7A4D",
+      "selectionLedCore" : "#FFA07C",
       "selectionSpread" : "#FF6236",
       "sun" : "#F4C84A",
       "sunHi" : "#FFE58A",

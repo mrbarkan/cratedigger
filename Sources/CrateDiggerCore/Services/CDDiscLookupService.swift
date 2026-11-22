@@ -34,14 +34,13 @@ public enum CDDiscLookupError: Error, LocalizedError, Equatable {
 
 public actor MusicBrainzDiscClient: CDDiscLookup {
     private static let host = "https://musicbrainz.org/ws/2"
-    /// MusicBrainz enforces ~1 request/second for anonymous clients.
-    private static let minimumRequestInterval: TimeInterval = 1.05
-
     private let session: URLSession
-    private var lastRequestAt: Date?
+    /// MusicBrainz enforces ~1 request/second per client: the app-wide gate.
+    private let gate: MusicBrainzGate
 
-    public init(session: URLSession? = nil) {
+    public init(session: URLSession? = nil, gate: MusicBrainzGate = .shared) {
         self.session = session ?? ReleaseProviderSupport.makeSession()
+        self.gate = gate
     }
 
     public func lookup(toc: CompactDiscTOC) async throws -> [ReleaseCandidate] {
@@ -130,13 +129,7 @@ public actor MusicBrainzDiscClient: CDDiscLookup {
     }
 
     private func throttle() async {
-        if let last = lastRequestAt {
-            let elapsed = Date().timeIntervalSince(last)
-            if elapsed < Self.minimumRequestInterval {
-                try? await Task.sleep(nanoseconds: UInt64((Self.minimumRequestInterval - elapsed) * 1_000_000_000))
-            }
-        }
-        lastRequestAt = Date()
+        try? await gate.wait()
     }
 
     // MARK: - Wire format

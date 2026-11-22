@@ -321,7 +321,7 @@ struct FolderPatternEditor: View {
 /// A minimal left-to-right flow layout: lays subviews in a row, wrapping to the
 /// next line when the proposed width runs out. Used so pattern chips wrap instead
 /// of being squeezed. (macOS 13+ `Layout`.)
-private struct FlowLayout: Layout {
+struct FlowLayout: Layout {
     var spacing: CGFloat = 5
     var lineSpacing: CGFloat = 5
 

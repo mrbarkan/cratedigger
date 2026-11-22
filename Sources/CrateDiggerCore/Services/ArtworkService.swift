@@ -38,6 +38,11 @@ public final class ArtworkService: ArtworkPreparing {
     /// own LRU store and is internally thread-safe.
     /// A miss simply yields no thumbnail (a handled `nil`), never a crash.
     private let dataCache = NSCache<NSString, NSData>()
+    /// Thumbnail bytes read back from `store`, kept apart from `dataCache`:
+    /// that one is full resolution only, because `hydrated`, `storeData` and
+    /// `pixelSizes` all trust it to be. Warming it with a store thumbnail
+    /// handed 512 px covers to conversions and to the device review.
+    private let storedThumbnailCache = NSCache<NSString, NSData>()
     /// Persistent, content-addressed backing for `dataCache`. When set, source
     /// bytes survive relaunches and offline source drives; a thumbnail miss can
     /// reload from disk by hash instead of yielding a placeholder. `nil` keeps
@@ -66,6 +71,7 @@ public final class ArtworkService: ArtworkPreparing {
         thumbnailCache.countLimit = 512
         thumbnailCache.totalCostLimit = 48 * 1024 * 1024   // ~48 MB of decoded thumbnails
         dataCache.totalCostLimit = 96 * 1024 * 1024        // ~96 MB of source image data
+        storedThumbnailCache.totalCostLimit = 32 * 1024 * 1024  // ~32 MB of stored thumbnails
         preparedArtworkCache.totalCostLimit = 64 * 1024 * 1024  // ~64 MB of prepared covers
     }
 
@@ -78,7 +84,7 @@ public final class ArtworkService: ArtworkPreparing {
             let asset = ArtworkAsset(
                 source: .remote,
                 hash: hash,
-                dimensions: ArtworkDimensions(width: Int(image.size.width), height: Int(image.size.height)),
+                dimensions: Self.pixelDimensions(of: data, image: image),
                 data: data
             )
             self.ingest(asset)
@@ -127,6 +133,7 @@ public final class ArtworkService: ArtworkPreparing {
     /// pressure. Not worth the bookkeeping.
     public func removeCached(hash: String) {
         store?.remove(hash)
+        storedThumbnailCache.removeObject(forKey: hash as NSString)
     }
 
     /// Refill an asset's full-resolution `data`. Assets decoded from a `.cdlib`
@@ -177,20 +184,43 @@ public final class ArtworkService: ArtworkPreparing {
         let cacheKey = "\(artworkHash)-t\(maxPixel)" as NSString
         if let cached = thumbnailCache.object(forKey: cacheKey) { return cached }
         guard let data = dataForHash(artworkHash) else { return nil }
-        let image = await Task.detached(priority: .userInitiated) { () -> UncheckedSendableBox<NSImage?> in
-            guard let src = CGImageSourceCreateWithData(data as CFData, nil) else { return UncheckedSendableBox(nil) }
-            let opts: [CFString: Any] = [
-                kCGImageSourceCreateThumbnailFromImageAlways: true,
-                kCGImageSourceThumbnailMaxPixelSize: maxPixel,
-                kCGImageSourceCreateThumbnailWithTransform: true
-            ]
-            guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary) else { return UncheckedSendableBox(nil) }
-            return UncheckedSendableBox(NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height)))
+        let image = await Task.detached(priority: .userInitiated) {
+            UncheckedSendableBox(Self.decodeThumbnail(data, maxPixel: maxPixel))
         }.value.value
         if let image {
             thumbnailCache.setObject(image, forKey: cacheKey, cost: maxPixel * maxPixel * 4)
         }
         return image
+    }
+
+    /// The same off-main decode and the same cache, for bytes this service
+    /// does not hold: an artist photo, read from its own store by `data` on
+    /// the background task. `key` must name the bytes for good (a content
+    /// hash), since a cached thumbnail is never checked against them again.
+    /// nil when `data` gives nothing or the bytes are not an image.
+    public func thumbnailAsync(key: String, maxPixel: Int,
+                               data: @escaping @Sendable () -> Data?) async -> NSImage? {
+        let cacheKey = "\(key)-t\(maxPixel)" as NSString
+        if let cached = thumbnailCache.object(forKey: cacheKey) { return cached }
+        let image = await Task.detached(priority: .userInitiated) {
+            UncheckedSendableBox(data().flatMap { Self.decodeThumbnail($0, maxPixel: maxPixel) })
+        }.value.value
+        if let image {
+            thumbnailCache.setObject(image, forKey: cacheKey, cost: maxPixel * maxPixel * 4)
+        }
+        return image
+    }
+
+    /// ImageIO's downscaled decode, orientation applied.
+    private static func decodeThumbnail(_ data: Data, maxPixel: Int) -> NSImage? {
+        guard let src = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        let opts: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixel,
+            kCGImageSourceCreateThumbnailWithTransform: true
+        ]
+        guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary) else { return nil }
+        return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
     }
 
     public func prepareCompatibleArtwork(asset: ArtworkAsset, profile: DeviceProfile) throws -> ArtworkAsset {
@@ -352,12 +382,57 @@ public final class ArtworkService: ArtworkPreparing {
         return ArtworkAsset(
             source: source,
             hash: Self.sha256Hex(for: data),
-            dimensions: ArtworkDimensions(
-                width: Int(image.size.width.rounded()),
-                height: Int(image.size.height.rounded())
-            ),
+            dimensions: Self.pixelDimensions(of: data, image: image),
             data: data
         )
+    }
+
+    /// The size every artwork record carries: pixels, read from the image
+    /// header (`ArtworkQuality.pixelSize(ofImageData:)`). `NSImage.size` is in
+    /// points and shrinks a DPI-tagged picture; it is only the fallback for
+    /// bytes ImageIO reads no size from.
+    public static func pixelDimensions(of data: Data, image: NSImage) -> ArtworkDimensions {
+        ArtworkQuality.pixelSize(ofImageData: data)
+            ?? ArtworkDimensions(width: Int(image.size.width.rounded()), height: Int(image.size.height.rounded()))
+    }
+
+    /// The true pixel size of each distinct cover among `tracks`, by hash,
+    /// for the art a device review predicts a transfer will write.
+    ///
+    /// Library records made before sizes were recorded in pixels carry point
+    /// sizes, which a DPI tag shrinks, so the review must not trust them for
+    /// what it sends. Each hash is measured once, from full-resolution bytes
+    /// only: the in-memory cache, bytes the track already carries, else the
+    /// track's own file or folder read again (the resolved art, measured from
+    /// its header, never decoded). The on-disk store is never used: it holds
+    /// thumbnails. A hash with no bytes to read, or whose file now resolves
+    /// other art, is left out, and the caller keeps the recorded size.
+    public func pixelSizes(of tracks: [LoadedTrack]) async -> [String: ArtworkDimensions] {
+        var firstByHash: [String: LoadedTrack] = [:]
+        var order: [String] = []
+        for track in tracks {
+            guard track.track.artworkSource != .none, let hash = track.track.artworkHash else { continue }
+            if firstByHash[hash] == nil {
+                firstByHash[hash] = track
+                order.append(hash)
+            }
+        }
+
+        var sizes: [String: ArtworkDimensions] = [:]
+        for hash in order {
+            guard let track = firstByHash[hash] else { continue }
+            if let data = cachedData(for: hash), let size = ArtworkQuality.pixelSize(ofImageData: data) {
+                sizes[hash] = size
+            } else if let carried = track.metadata.artwork, carried.hash == hash,
+                      let size = ArtworkQuality.pixelSize(ofImageData: carried.data) {
+                sizes[hash] = size
+            } else if track.track.fileURL.isFileURL,
+                      let resolved = await resolveArtwork(trackURL: track.track.fileURL),
+                      resolved.hash == hash {
+                sizes[hash] = resolved.dimensions
+            }
+        }
+        return sizes
     }
 
     private static func firstArtworkData(in metadataItems: [AVMetadataItem]) async -> Data? {
@@ -528,11 +603,15 @@ public final class ArtworkService: ArtworkPreparing {
         if let cached = cachedData(for: hash) {
             return cached
         }
+        if let thumbnail = storedThumbnailCache.object(forKey: hash as NSString) {
+            return Data(referencing: thumbnail)
+        }
         // Fall back to the on-disk store (survives relaunch / offline drives),
-        // then warm the in-memory cache for subsequent thumbnail renders.
+        // then keep it for subsequent thumbnail renders. Never in `dataCache`:
+        // these are thumbnails, and that cache is full resolution only.
         guard let data = store?.data(for: hash) else { return nil }
         let boxed = NSData(data: data)
-        dataCache.setObject(boxed, forKey: hash as NSString, cost: data.count)
+        storedThumbnailCache.setObject(boxed, forKey: hash as NSString, cost: data.count)
         return Data(referencing: boxed)
     }
 

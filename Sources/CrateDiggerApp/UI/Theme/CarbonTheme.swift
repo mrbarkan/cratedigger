@@ -192,9 +192,49 @@ public struct CarbonTheme: Equatable {
     /// `var` with a default rather than plain `let`: it keeps them out of the
     /// two built-in theme literals, which would otherwise gain a line apiece
     /// for a value that is always 0.
-    public var grainAmount: Double = 0
+    public var grainAmount: Double = 0 { didSet { resolveExclusiveGroups() } }
     public var oledGlareAmount: Double = 0
     public var oledHalftoneAmount: Double = 0
+
+    /// The shell materials' strengths, each clamped to its dial. They and
+    /// `grainAmount` are one exclusive group: draw `shellMaterial`, never
+    /// these directly, or a theme that inherits Carbon's grain and sets a
+    /// material would get both.
+    ///
+    /// Every amount in the two groups re-resolves its group when written, so
+    /// the stored winners below can never disagree with them. (An
+    /// initializer's own writes do not run observers; the initializers
+    /// resolve once at their end instead.)
+    public var shellPlasticAmount: Double = 0 { didSet { resolveExclusiveGroups() } }
+    public var shellBrushedAmount: Double = 0 { didSet { resolveExclusiveGroups() } }
+    public var shellBlastedAmount: Double = 0 { didSet { resolveExclusiveGroups() } }
+    public var shellWeaveAmount: Double = 0 { didSet { resolveExclusiveGroups() } }
+
+    /// The cover screen looks' grid strengths, clamped to their dials, and
+    /// the second exclusive group: read `coverScreenLook`.
+    public var coverGridAmount: Double = 0 { didSet { resolveExclusiveGroups() } }
+    public var coverPixelAmount: Double = 0 { didSet { resolveExclusiveGroups() } }
+    public var coverHandheldAmount: Double = 0 { didSet { resolveExclusiveGroups() } }
+
+    /// The one material the chassis is drawn in, or nil for the bare shell.
+    /// Resolved from the clamped amounts above, never from the raw effects,
+    /// so the strength drawn is always one the dial allows.
+    ///
+    /// Stored, not computed: the chassis, the mini player's glass and both
+    /// cover screens read these in their bodies, and resolving builds a
+    /// dictionary per read. Written only by `resolveExclusiveGroups()`.
+    public private(set) var shellMaterial: ShellMaterial?
+    /// `shellMaterial`'s strength; 0 when there is none.
+    public private(set) var shellMaterialStrength: Double = 0
+    /// The look the small players' cover screen takes, or nil for the plain
+    /// cover. Resolved from the clamped amounts, like the material.
+    public private(set) var coverScreenLook: CoverScreenLook?
+    /// `coverScreenLook`'s grid strength; 0 when there is none.
+    public private(set) var coverScreenStrength: Double = 0
+
+    /// Points per LCD pixel on the cover screen, already snapped to one of
+    /// `CoverScreenLook.pixelSizes`. Only means something while a look is on.
+    public var coverPixelSize: Double = CoverScreenLook.defaultPixelSize
 
     /// Whether the chassis casts shadows. `false` (`effects.flat` = `1`) drops
     /// every depth shadow — panels, keys, the glass, artwork — and leaves the
@@ -265,6 +305,49 @@ public struct CarbonTheme: Equatable {
     public var logoStamp: Date?
 
     public var isDark: Bool { mode == .carbon }
+}
+
+public extension CarbonTheme {
+    /// The stored strength behind each material, so the resolver in Core
+    /// stays the only place that decides priority.
+    func amount(of material: ShellMaterial) -> Double {
+        switch material {
+        case .grain: return grainAmount
+        case .plastic: return shellPlasticAmount
+        case .brushed: return shellBrushedAmount
+        case .blasted: return shellBlastedAmount
+        case .weave: return shellWeaveAmount
+        }
+    }
+
+    func amount(of look: CoverScreenLook) -> Double {
+        switch look {
+        case .grid: return coverGridAmount
+        case .pixel: return coverPixelAmount
+        case .handheld: return coverHandheldAmount
+        }
+    }
+
+}
+
+extension CarbonTheme {
+    /// Sets `shellMaterial`, `coverScreenLook` and their strengths from the
+    /// amounts, through Core's resolvers, which stay the only place that
+    /// decides priority. Called at the end of every initializer that sets
+    /// amounts, and by the amounts' observers. The built-in literals set none,
+    /// so their defaults (nothing, 0) are already resolved.
+    mutating func resolveExclusiveGroups() {
+        let material = ShellMaterial.resolve(effects: Dictionary(uniqueKeysWithValues: ShellMaterial.allCases.map {
+            ($0.effectKey, amount(of: $0))
+        }))
+        shellMaterial = material?.material
+        shellMaterialStrength = material?.strength ?? 0
+        let look = CoverScreenLook.resolve(effects: Dictionary(uniqueKeysWithValues: CoverScreenLook.allCases.map {
+            ($0.effectKey, amount(of: $0))
+        }))
+        coverScreenLook = look?.look
+        coverScreenStrength = look?.strength ?? 0
+    }
 }
 
 public extension CarbonTheme {
@@ -506,6 +589,18 @@ public extension CarbonTheme {
         grainAmount = effect("grain", resolvedBase.grainAmount)
         oledGlareAmount = effect("oledGlare", resolvedBase.oledGlareAmount)
         oledHalftoneAmount = effect("oledHalftone", resolvedBase.oledHalftoneAmount)
+        shellPlasticAmount = effect(ShellMaterial.plastic.effectKey, resolvedBase.shellPlasticAmount)
+        shellBrushedAmount = effect(ShellMaterial.brushed.effectKey, resolvedBase.shellBrushedAmount)
+        shellBlastedAmount = effect(ShellMaterial.blasted.effectKey, resolvedBase.shellBlastedAmount)
+        shellWeaveAmount = effect(ShellMaterial.weave.effectKey, resolvedBase.shellWeaveAmount)
+        coverGridAmount = effect(CoverScreenLook.grid.effectKey, resolvedBase.coverGridAmount)
+        coverPixelAmount = effect(CoverScreenLook.pixel.effectKey, resolvedBase.coverPixelAmount)
+        coverHandheldAmount = effect(CoverScreenLook.handheld.effectKey, resolvedBase.coverHandheldAmount)
+        // Raw, not through `effect`: it has no dial, so `effect` would clamp
+        // it to 0...1 and every size above 1 pt would collapse to 1.
+        coverPixelSize = CoverScreenLook.pixelSize(
+            from: definition.effects?["coverPixelSize"] ?? resolvedBase.coverPixelSize
+        )
         oledMonochrome = (definition.effects?["oledMonochrome"]
                             ?? (resolvedBase.oledMonochrome ? 1 : 0)) > 0.5
         castsShadows = (definition.effects?["flat"]
@@ -531,6 +626,9 @@ public extension CarbonTheme {
                 return "\(role)=\(faces.joined(separator: "/"))"
             }
             .joined(separator: ",")
+
+        // Last: the amounts' observers do not run inside an initializer.
+        resolveExclusiveGroups()
     }
 }
 

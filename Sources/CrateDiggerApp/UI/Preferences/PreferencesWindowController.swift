@@ -3,7 +3,13 @@ import CrateDiggerCore
 import SwiftUI
 
 final class PreferencesWindowController: NSWindowController {
-    convenience init() {
+    /// The tab the window opens on. A DEBUG capture hook sets it before the
+    /// window is first made; otherwise General, as before.
+    static var initialTab = "general"
+
+    /// `model` feeds Preferences ▸ Devices what only the running app knows:
+    /// which devices are mounted and what their firmware probe found.
+    convenience init(model: LibraryViewModel?) {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 780, height: 580),
             styleMask: [.titled, .closable, .miniaturizable],
@@ -16,7 +22,7 @@ final class PreferencesWindowController: NSWindowController {
         window.center()
         window.setFrameAutosaveName("CrateDiggerPreferences")
 
-        let host = NSHostingController(rootView: PreferencesView())
+        let host = NSHostingController(rootView: PreferencesView(model: model))
         window.contentViewController = host
 
         self.init(window: window)
@@ -27,20 +33,29 @@ final class PreferencesWindowController: NSWindowController {
 /// (Interface), how it plays (Playback), external accounts (Integrations),
 /// transfer targets (Devices), and the sharp tools (Advanced).
 private struct PreferencesView: View {
+    let model: LibraryViewModel?
+    @State private var tab = PreferencesWindowController.initialTab
+
     var body: some View {
-        TabView {
+        TabView(selection: $tab) {
             GeneralPreferencesView()
                 .tabItem { Label("General", systemImage: "gearshape") }
+                .tag("general")
             InterfacePreferencesView()
                 .tabItem { Label("Interface", systemImage: "paintbrush") }
+                .tag("interface")
             PlaybackPreferencesView()
                 .tabItem { Label("Playback", systemImage: "speaker.wave.2") }
+                .tag("playback")
             IntegrationsPreferencesView()
                 .tabItem { Label("Integrations", systemImage: "point.3.connected.trianglepath.dotted") }
-            DevicesPreferencesView()
+                .tag("integrations")
+            DevicesPreferencesView(model: model)
                 .tabItem { Label("Devices", systemImage: "externaldrive") }
+                .tag("devices")
             AdvancedPreferencesView()
                 .tabItem { Label("Advanced", systemImage: "wrench.and.screwdriver") }
+                .tag("advanced")
         }
         .frame(width: 780, height: 580)
     }
@@ -175,7 +190,7 @@ private struct GeneralPreferencesView: View {
             } header: {
                 Text("Folders")
             } footer: {
-                Text("Music Folder holds your audio. Crates Index holds the small database files that track what's in each crate. Default Output is where conversions land. \"Choose…\" only re-points a folder — use the Move buttons below to relocate the files themselves.")
+                Text("Music Folder holds your audio. Crates Index holds the small database files that track what's in each crate. Default Output is where conversions land. \"Choose…\" only re-points a folder — use the Move buttons below to relocate the files themselves, or Relocate Library… when you already copied them yourself.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
@@ -215,6 +230,18 @@ private struct GeneralPreferencesView: View {
                             name: NSNotification.Name("CrateDiggerMoveIndexFiles"), object: nil)
                     }
                     .help("Move the crate index (.cdcrate) files to a new folder — your audio stays where it is.")
+                }
+                // Its own row: the three above move files, this one moves none.
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Button("Relocate Library…") {
+                        NotificationCenter.default.post(
+                            name: NSNotification.Name("CrateDiggerRelocateLibrary"), object: nil)
+                    }
+                    .help("Choose the folder your music was copied to. Every track with a copy at the same place inside it is pointed there, with its crates, play counts and ratings. No file is moved or deleted.")
+                    Text("Already copied or moved your music yourself? This points your crates at the new folder.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
 
@@ -528,8 +555,28 @@ private struct IntegrationsPreferencesView: View {
             SubsonicSettingsSection()
             LastFMSettingsSection()
             DiscogsSettingsSection()
+            ArtistLookupSettingsSection()
         }
         .formStyle(.grouped)
+    }
+}
+
+/// The background artist lookup (`ArtistLookupWorker`): on by default. Off
+/// stops it at once; Look Up Again on an artist page still works.
+private struct ArtistLookupSettingsSection: View {
+    @State private var enabled = PreferencesStore.shared.artistLookupsEnabled
+
+    var body: some View {
+        Section("Artist Profiles") {
+            Toggle("Look up artist info and photos", isOn: $enabled)
+                .onChange(of: enabled) { newValue in
+                    PreferencesStore.shared.artistLookupsEnabled = newValue
+                    NotificationCenter.default.post(name: ArtistLookupWorker.settingChanged, object: newValue)
+                }
+            Text("Only artist names are sent, to MusicBrainz, Wikidata, Wikipedia, Wikimedia Commons and Deezer.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
     }
 }
 

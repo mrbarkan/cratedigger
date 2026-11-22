@@ -47,7 +47,9 @@ extension LibraryViewModel {
         shuffleEnabled = true
         let deal = Array(index.allTracks.shuffled().prefix(Self.shuffleDealSize))
         guard !deal.isEmpty else { return }
-        startQueue(deal, at: 0)
+        // A deal has no order of its own; switching shuffle off sorts it the
+        // way the source lists it.
+        startQueue(deal, at: 0, sourceOrder: index.artists.flatMap { $0.albums.flatMap(\.tracks) }.map(\.track.id))
     }
 
     /// Tracks in the playing source that the current queue doesn't hold yet.

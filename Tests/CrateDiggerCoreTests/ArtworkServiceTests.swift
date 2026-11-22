@@ -89,6 +89,19 @@ final class ArtworkServiceTests: XCTestCase {
         }
     }
 
+    /// An artist photo's thumbnail: decoded from bytes another store reads,
+    /// then served from the cache without reading them again.
+    func testThumbnailOfOutsideBytesIsCachedByKey() async throws {
+        let png = try makeImageData(size: NSSize(width: 1200, height: 800), fileType: .png)
+        let service = ArtworkService()
+        let first = await service.thumbnailAsync(key: "artist-abc", maxPixel: 300) { png }
+        XCTAssertEqual(first.map { Int(max($0.size.width, $0.size.height)) }, 300)
+        let again = await service.thumbnailAsync(key: "artist-abc", maxPixel: 300) { nil }
+        XCTAssertTrue(again === first, "the second ask is the cache's, not another read")
+        let missing = await service.thumbnailAsync(key: "artist-gone", maxPixel: 300) { nil }
+        XCTAssertNil(missing)
+    }
+
     func testPrepareCompatibleArtworkForLegacyIPod() throws {
         let pngData = try makeImageData(size: NSSize(width: 2200, height: 2200), fileType: .png)
 

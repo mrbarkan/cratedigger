@@ -60,6 +60,11 @@ public protocol PlaybackServiceProtocol: AnyObject {
     @discardableResult func removeFromQueue(at offsets: IndexSet) -> IndexSet
     /// Move a queued item. Refuses to move, or to land on, the playing track.
     func moveInQueue(from source: Int, to destination: Int)
+    /// Rearrange the whole queue by a permutation of its positions
+    /// (`order[i]` is the old position of the item that lands at `i`), keeping
+    /// the playing track playing. Returns where the playing track landed, or
+    /// nil (and changes nothing) when `order` is not a permutation.
+    @discardableResult func reorderQueue(_ order: [Int]) -> Int?
     /// Everything after the playing track, in play order.
     var upNext: ArraySlice<PlaybackQueueItem> { get }
     func play()
@@ -94,6 +99,19 @@ enum PlaybackMeterScale {
         guard linear > 0.000_001 else { return 0 }
         let db = 20 * log10(linear)
         return min(max((db + 48) / 48 * 0.80, 0), 1)
+    }
+
+    /// Fold the player volume into the spectrum's 0…1 bands. They are already
+    /// a dB window (`SpectrumProcessor.floorDB`…`ceilDB`), so the volume comes
+    /// off in dB: −5 dB on the fader lowers every bar by 5 dB of that window.
+    /// Multiplying by the linear volume, as this used to, dropped the bars by
+    /// 42% for the same nudge and left them near dark a little lower down.
+    static func spectrum(_ bands: [Double], volume: Double) -> [Double] {
+        guard volume < 1 else { return bands }
+        guard volume > 0.000_001 else { return bands.map { _ in 0 } }
+        let window = Double(SpectrumProcessor.ceilDB - SpectrumProcessor.floorDB)
+        let drop = -20 * log10(volume) / window
+        return bands.map { max($0 - drop, 0) }
     }
 }
 
@@ -404,10 +422,8 @@ final class AVPlayerEngine: PlaybackEngineProtocol {
     }
 
     var currentSpectrum: [Double] {
-        // Already 0...1 from the FFT's dB mapping; scale by volume so the bars
-        // fall when you turn it down, matching the level meter.
-        let v = Double(player.volume)
-        return levelTap.currentBands().map { $0 * v }
+        // Bars fall when you turn it down, matching the level meter.
+        PlaybackMeterScale.spectrum(levelTap.currentBands(), volume: Double(player.volume))
     }
 
     func setEqualizer(enabled: Bool, gains: [Double]) {
@@ -788,6 +804,17 @@ public final class PlaybackService: PlaybackServiceProtocol {
             reindexCurrent(to: updated)
         }
         prepareNext()
+    }
+
+    @discardableResult
+    public func reorderQueue(_ order: [Int]) -> Int? {
+        guard order.count == queue.count, order.sorted() == Array(queue.indices) else { return nil }
+        queue = order.map { queue[$0] }
+        if let current = currentIndex, let landed = order.firstIndex(of: current) {
+            reindexCurrent(to: landed)
+        }
+        prepareNext()
+        return currentIndex
     }
 
     /// Move `currentIndex` because the queue around it changed, NOT because the

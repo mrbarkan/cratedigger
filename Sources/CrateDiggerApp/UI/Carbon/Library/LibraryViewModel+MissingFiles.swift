@@ -243,7 +243,9 @@ extension LibraryViewModel {
         // the observer itself: a hop to the main actor could run after the drive
         // is gone.
         let copy = libraryIndexCopy
-        center.addObserver(forName: NSWorkspace.willUnmountNotification, object: nil, queue: .main) { note in
+        center.addObserver(forName: NSWorkspace.willUnmountNotification, object: nil, queue: .main) { [weak self] note in
+            // Background artist lookups not yet written, while the drive is there.
+            MainActor.assumeIsolated { self?.flushArtistLookupSavesNow() }
             LibraryViewModel.copyLibraryIndexBeforeUnmount(
                 volumeURL: note.userInfo?[NSWorkspace.volumeURLUserInfoKey] as? URL, copy: copy)
         }

@@ -30,11 +30,14 @@ enum ThemeTokenCatalog {
     /// They split by *what they're on*. An interface effect sits on the
     /// console's own surface — texture grain is a property of the material.
     /// A display effect sits on the glass, where a rake, a reflection and a
-    /// dot screen belong to the screen and nothing else.
+    /// dot screen belong to the screen and nothing else. A cover effect is
+    /// the screen the small players show the cover on, and is drawn nowhere
+    /// else, so the editor gives it a section of its own.
     struct EffectDial: Identifiable {
         enum Surface: String {
             case interface
             case display
+            case cover
         }
 
         let key: String
@@ -59,6 +62,47 @@ enum ThemeTokenCatalog {
             note: "Fine grain over the console — the tooth a real surface has and a rendered one doesn't. Never over the display: that's glass, behind its own sheet.",
             max: 0.6, on: 0.2, surface: .interface, read: \.grainAmount
         ),
+        // The four shell materials. With grain they make one exclusive group
+        // (`shellMaterialDials`): `ShellMaterial.resolve` picks one winner, so
+        // a second non-zero key is ignored, not stacked.
+        EffectDial(
+            key: "shellPlastic", label: "Moulded Plastic",
+            note: "The soft orange-peel tooth of an injection-moulded case, lit from the top left. One shell material at a time; the display glass and the rubber keys stay smooth.",
+            max: 0.30, on: 0.08, surface: .interface, read: \.shellPlasticAmount
+        ),
+        EffectDial(
+            key: "shellBrushed", label: "Brushed Metal",
+            note: "Long horizontal strokes, as if the panel had been drawn across an abrasive belt, with one soft band of light across it.",
+            max: 0.50, on: 0.18, surface: .interface, read: \.shellBrushedAmount
+        ),
+        EffectDial(
+            key: "shellBlasted", label: "Bead-Blasted Metal",
+            note: "The even, matte sparkle of aluminium that has been bead-blasted before anodising, with one soft band of light across it.",
+            max: 1.00, on: 0.58, surface: .interface, read: \.shellBlastedAmount
+        ),
+        EffectDial(
+            key: "shellWeave", label: "Carbon Weave",
+            note: "A twill of carbon-fibre tows under clear lacquer, the pattern a composite panel shows when it is left bare.",
+            max: 0.40, on: 0.12, surface: .interface, read: \.shellWeaveAmount
+        ),
+        // The three cover looks: a second exclusive group (`coverLookDials`).
+        // The value is how dark the gaps between LCD pixels are. Their size is
+        // `effects.coverPixelSize`, which has no off and so is not a dial.
+        EffectDial(
+            key: "coverGrid", label: "LCD Grid",
+            note: "The cover stays sharp and sits behind the grid of a low-resolution LCD. Compact player and mini player only.",
+            max: 1.0, on: 0.55, surface: .cover, read: \.coverGridAmount
+        ),
+        EffectDial(
+            key: "coverPixel", label: "Pixel LCD",
+            note: "The cover redrawn in the LCD's own pixels, in full colour, the way a handheld shows a picture. Compact player and mini player only.",
+            max: 1.0, on: 0.55, surface: .cover, read: \.coverPixelAmount
+        ),
+        EffectDial(
+            key: "coverHandheld", label: "Handheld LCD",
+            note: "Pixel LCD with the washed, lifted colours of a colour handheld that has no backlight. Compact player and mini player only.",
+            max: 1.0, on: 0.55, surface: .cover, read: \.coverHandheldAmount
+        ),
         EffectDial(
             key: "oledScanlineOpacity", label: "Scan Lines",
             note: "The CRT rake: a hairline every 3pt across the display glass.",
@@ -78,6 +122,61 @@ enum ThemeTokenCatalog {
 
     static func effectDials(on surface: EffectDial.Surface) -> [EffectDial] {
         effectDials.filter { $0.surface == surface }
+    }
+
+    /// The shell materials, grain included, in the order the editor lists
+    /// them. Only one shows (see `ShellMaterial.resolve`), so switching one on
+    /// has to switch the rest off. Read off the Core enum so the group can't
+    /// drift from what the resolver actually considers.
+    static var shellMaterialDials: [EffectDial] {
+        dials(forKeys: ShellMaterial.allCases.map(\.effectKey))
+    }
+
+    /// The cover screen looks, in the order the editor lists them. Exclusive
+    /// for the same reason as the materials (see `CoverScreenLook.resolve`).
+    static var coverLookDials: [EffectDial] {
+        dials(forKeys: CoverScreenLook.allCases.map(\.effectKey))
+    }
+
+    /// The edit behind every row of an exclusive group (shell materials, cover
+    /// looks). Switching `key` on to a positive strength writes that strength
+    /// and 0 to every other key of `group`, in one dictionary, so the editor
+    /// can assign it to the draft once and one undo restores the previous
+    /// choice. A hand-written or inherited draft carrying two non-zero keys
+    /// ends with one. A value of 0 (or less) switches `key` off and clears the
+    /// rest of the group too, so a switch-off leaves the group all zero rather
+    /// than promoting a stray inherited key to winner. Keys outside `group`
+    /// are never touched. Sliders go through `sliding`, which uses this only
+    /// at 0.
+    static func settingExclusive(
+        _ key: String, to value: Double, among group: [String], in effects: [String: Double]
+    ) -> [String: Double] {
+        var result = effects
+        for other in group where other != key { result[other] = 0 }
+        result[key] = max(value, 0)
+        return result
+    }
+
+    /// The edit behind an effect row's slider. Above 0 it moves only `key`,
+    /// so dragging the winner never rewrites the rest of its group. At 0 in a
+    /// `group` it is the switch's OFF (`settingExclusive`): writing 0 to
+    /// `key` alone would hand the win, mid-drag, to any other non-zero key
+    /// the draft carries, hand-written or inherited (a material over
+    /// Carbon's grain).
+    static func sliding(
+        _ key: String, to value: Double, among group: [String]?, in effects: [String: Double]
+    ) -> [String: Double] {
+        let value = max(value, 0)
+        if let group, value == 0 {
+            return settingExclusive(key, to: 0, among: group, in: effects)
+        }
+        return effects.merging([key: value]) { _, new in new }
+    }
+
+    /// The dials for `keys`, in that order. A key without a dial is dropped,
+    /// which `EffectDialTests` catches as a group shorter than its enum.
+    private static func dials(forKeys keys: [String]) -> [EffectDial] {
+        keys.compactMap { key in effectDials.first { $0.key == key } }
     }
 
     /// The ceiling for one effect key, for `CarbonTheme`'s clamp. An unknown

@@ -76,6 +76,7 @@ public final class PreferencesStore {
         static let scrubLock = "cratedigger.transport.scrubLock"
         static let gaplessPlayback = "cratedigger.transport.gapless"
         static let secureRip = "cratedigger.cd.secureRip"
+        static let artistLookups = "cratedigger.artists.lookups"
         static let widgetIdleMode = "cratedigger.widget.idleMode"
         static let widgetPlayingMode = "cratedigger.widget.playingMode"
         static let miniPlayerArtMode = "cratedigger.miniplayer.artMode"
@@ -265,6 +266,39 @@ public final class PreferencesStore {
     public func removeExternalDeviceProfile(id: UUID) {
         savedExternalDeviceProfiles = savedExternalDeviceProfiles.filter { $0.id != id }
         NotificationCenter.default.post(name: Self.deviceProfilesDidChange, object: nil)
+    }
+
+    /// What CrateDigger noted when it last changed covers or artist pictures
+    /// on a PodBox iPod (key `podBoxArtCacheMark.<profileID>`), so the
+    /// reminder to rebuild its art cache holds until the player has done it.
+    /// A date saved by an earlier build under `podBoxLastArtWrite.<profileID>`
+    /// reads as a mark with no recorded stamp.
+    public func podBoxArtCacheMark(profileID: UUID) -> PodBoxNextSteps.ArtCacheMark? {
+        if let data = defaults.data(forKey: Self.podBoxArtCacheMarkKey(profileID)),
+           let mark = try? JSONDecoder().decode(PodBoxNextSteps.ArtCacheMark.self, from: data) {
+            return mark
+        }
+        guard let date = defaults.object(forKey: Self.podBoxLastArtWriteKey(profileID)) as? Date else { return nil }
+        return PodBoxNextSteps.ArtCacheMark(wroteAt: date, stampAtWrite: nil, recordedStamp: false)
+    }
+
+    /// nil clears the reminder.
+    public func setPodBoxArtCacheMark(_ mark: PodBoxNextSteps.ArtCacheMark?, profileID: UUID) {
+        defaults.removeObject(forKey: Self.podBoxLastArtWriteKey(profileID))
+        if let mark, let data = try? JSONEncoder().encode(mark) {
+            defaults.set(data, forKey: Self.podBoxArtCacheMarkKey(profileID))
+        } else {
+            defaults.removeObject(forKey: Self.podBoxArtCacheMarkKey(profileID))
+        }
+    }
+
+    static func podBoxArtCacheMarkKey(_ profileID: UUID) -> String {
+        "podBoxArtCacheMark.\(profileID.uuidString)"
+    }
+
+    /// The earlier build's key: a plain date, read once and dropped on the next save.
+    static func podBoxLastArtWriteKey(_ profileID: UUID) -> String {
+        "podBoxLastArtWrite.\(profileID.uuidString)"
     }
 
     /// Posted whenever a device profile is added, edited, or removed, so the
@@ -671,6 +705,18 @@ public final class PreferencesStore {
             return defaults.bool(forKey: Key.gaplessPlayback)
         }
         set { defaults.set(newValue, forKey: Key.gaplessPlayback) }
+    }
+
+    /// Settings ▸ Integrations ▸ "Look up artist info and photos": the
+    /// background worker that fills in artist pages from MusicBrainz,
+    /// Wikidata, Wikipedia and Deezer. On unless turned off; off stops the
+    /// worker, and Look Up Again on an artist page still works.
+    public var artistLookupsEnabled: Bool {
+        get {
+            if defaults.object(forKey: Key.artistLookups) == nil { return true }
+            return defaults.bool(forKey: Key.artistLookups)
+        }
+        set { defaults.set(newValue, forKey: Key.artistLookups) }
     }
 
     /// Rip audio CDs in Secure Mode: every sector read twice, compared, and

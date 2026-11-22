@@ -28,6 +28,27 @@ final class LibraryIndexCopyTests: XCTestCase {
         }
     }
 
+    func testMovingTheIndexCarriesTheArtistPhotosButTheCopyDoesNot() throws {
+        try withTemporaryDirectory(prefix: "index-move") { root in
+            let source = try makeSource(in: root, files: [
+                "Personal Crate.cdcrate", "library.cdtracks", "library.cdartistinfo", "song.flac",
+                "library.cdartistinfo.bak", "library.cdartistinfo.2.bak", "notes.bak",
+            ])
+            let photos = source.appendingPathComponent("ArtistPhotos", isDirectory: true)
+            try FileManager.default.createDirectory(at: photos, withIntermediateDirectories: false)
+            FileManager.default.createFile(atPath: photos.appendingPathComponent("a.jpg").path, contents: Data("x".utf8))
+
+            XCTAssertEqual(try LibraryIndexFiles.itemsToMove(in: source).map(\.lastPathComponent),
+                           ["Personal Crate.cdcrate", "library.cdartistinfo", "library.cdartistinfo.2.bak",
+                            "library.cdartistinfo.bak", "library.cdtracks", "ArtistPhotos"],
+                           "the profiles' backups move too: the photos they name are kept for them")
+
+            let copy = LibraryIndexCopy(directory: root.appendingPathComponent("LibraryCopy"))
+            try copy.write(from: source, now: copiedAt)
+            XCTAssertFalse(try names(in: copy.directory).contains("ArtistPhotos"), "photo bytes are not copied")
+        }
+    }
+
     func testTheCopiedFilesKeepTheirContents() throws {
         try withTemporaryDirectory(prefix: "index-copy") { root in
             let source = try makeSource(in: root, files: ["library.cdtracks"])

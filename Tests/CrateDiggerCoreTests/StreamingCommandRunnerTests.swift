@@ -57,6 +57,13 @@ final class StreamingCommandRunnerTests: XCTestCase {
             let bogus = URL(fileURLWithPath: "/nonexistent/definitely-not-here-\(i)-\(UUID().uuidString)")
             XCTAssertThrowsError(try runner.start(executableURL: bogus, arguments: [], onLine: { _ in }, completion: { _, _ in }))
         }
+        // The pipe's ends are closed as the failed runs unwind, not before
+        // `start` returns, so count again until they are gone. A real leak
+        // never settles and still fails here, two seconds later.
+        let deadline = Date().addingTimeInterval(2)
+        while openFileDescriptorCount() > before, Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.02)
+        }
         XCTAssertEqual(openFileDescriptorCount(), before)
     }
 

@@ -75,13 +75,15 @@ extension LibraryViewModel {
         return next ? "\(noun) UP NEXT" : "\(noun) QUEUED"
     }
 
-    /// Replace the queue outright and start playing at `index`.
-    func startQueue(_ tracks: [LoadedTrack], at index: Int) {
+    /// Replace the queue outright and start playing at `index`. `sourceOrder`
+    /// is the order switching shuffle off restores; nil means the order given.
+    func startQueue(_ tracks: [LoadedTrack], at index: Int, sourceOrder: [UUID]? = nil) {
         guard !tracks.isEmpty else { return }
         if presentIfFileMissing(tracks[min(index, tracks.count - 1)]) { return }
         oledView = .nowPlaying
         playingSource = currentSource
         playbackQueue = tracks
+        playbackSourceOrder = sourceOrder ?? tracks.map(\.track.id)
         playback.load(queue: tracks.map(Self.queueItem), startIndex: index, autoPlay: true)
     }
 
@@ -153,11 +155,13 @@ extension LibraryViewModel {
     /// context menu: the multi-selection when the clicked row is part of it,
     /// otherwise just what was clicked.
     func queueTargets(forClicked tracks: [LoadedTrack]) -> [LoadedTrack] {
+        // Without a real multi-selection the answer is the clicked row, and
+        // resolving the selection is a pass over the whole source.
+        guard (browser.selection.multiSelection?.ids.count ?? 0) > 1 else { return tracks }
         let selected = selectedTracksForCrateAdd()
-        let clickedIDs = Set(tracks.map { $0.track.id })
-        let isPartOfSelection = selected.count > 1 && clickedIDs.contains { id in
-            selected.contains { $0.track.id == id }
-        }
+        guard selected.count > 1 else { return tracks }
+        let selectedIDs = Set(selected.map { $0.track.id })
+        let isPartOfSelection = tracks.contains { selectedIDs.contains($0.track.id) }
         return isPartOfSelection ? selected : tracks
     }
 }

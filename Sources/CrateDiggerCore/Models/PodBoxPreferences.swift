@@ -1,0 +1,56 @@
+import Foundation
+
+/// Where artist pictures go on a PodBox iPod: nowhere, the player's central
+/// `/Artwork/People` folder, or a `folder.jpg` in each artist's own folder.
+public enum ArtistPictureDestination: String, Codable, Sendable {
+    case off, artworkFolder, artistFolders
+}
+
+/// Per-device PodBox settings, stored on the device's profile. Every member
+/// decodes with its default when absent, so a profile saved by an older
+/// build, or holding only some of these, reads without losing anything.
+///
+/// `artistPictures` stays `.off` for every profile until the owner has run
+/// check M5 on the real iPod; nothing turns it on by default.
+///
+/// A key an older build wrote and this one no longer has (`sweepsAppleDouble`,
+/// replaced by `appleDoubleCleanup`; `lastSeenFirmware`, never read) is
+/// ignored on decode.
+public struct PodBoxPreferences: Codable, Hashable, Sendable {
+    /// Remove proven macOS `._` twins automatically at the end of every
+    /// transfer, in the folders it wrote to. Off until the owner has run
+    /// checks M3 and M4 on this device (spec "Manual checks"); the
+    /// user-started Clean Up Mac Files is the M4 tool and works either way.
+    /// Preventing new twins (data-only copies) is always on.
+    public var appleDoubleCleanup: Bool
+    public var artistPictures: ArtistPictureDestination
+    /// Look up missing pictures online (Deezer) at the end of a transfer.
+    /// Off until the owner turns it on: nothing is fetched from the network
+    /// without the owner asking for it.
+    public var findsArtistPicturesAutomatically: Bool
+    /// Manual checks the owner has passed on this iPod ("M5", ...).
+    public var passedChecks: Set<String>
+
+    public init() {
+        appleDoubleCleanup = false
+        artistPictures = .off
+        findsArtistPicturesAutomatically = false
+        passedChecks = []
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case appleDoubleCleanup, artistPictures, findsArtistPicturesAutomatically, passedChecks
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = PodBoxPreferences()
+        appleDoubleCleanup = (try? container.decodeIfPresent(Bool.self, forKey: .appleDoubleCleanup))
+            .flatMap { $0 } ?? defaults.appleDoubleCleanup
+        artistPictures = try container.decodeIfPresent(ArtistPictureDestination.self, forKey: .artistPictures)
+            ?? defaults.artistPictures
+        findsArtistPicturesAutomatically = try container.decodeIfPresent(
+            Bool.self, forKey: .findsArtistPicturesAutomatically) ?? defaults.findsArtistPicturesAutomatically
+        passedChecks = try container.decodeIfPresent(Set<String>.self, forKey: .passedChecks) ?? defaults.passedChecks
+    }
+}
