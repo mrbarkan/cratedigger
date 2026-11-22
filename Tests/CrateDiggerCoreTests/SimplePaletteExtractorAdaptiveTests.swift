@@ -24,7 +24,7 @@ final class SimplePaletteExtractorAdaptiveTests: XCTestCase {
         }
     }
 
-    func testAdaptivePinsStayOnPrimaryLayer() throws {
+    func testAdaptiveAssignmentsStayOnPrimaryLayer() throws {
         let def = try carbon()
         let r = SimplePaletteExtractor.recipe(from: def, resolvedBase: [:])
         let dark = def.resolved(for: .dark).colors ?? [:]
@@ -48,7 +48,7 @@ final class SimplePaletteExtractorAdaptiveTests: XCTestCase {
     func testKeptSwatchesDropsUnassignedExtrasFirst() {
         let kept = SimplePaletteExtractor.keptSwatches(uses: [1, 1, 1, 1, 1, 1, 0, 0], assigned: Set(0...5), limit: 6)
         XCTAssertEqual(kept, [0, 1, 2, 3, 4, 5])
-        // A assigned swatch survives over a better-used unassigned one.
+        // An assigned swatch survives over a better-used unassigned one.
         XCTAssertEqual(SimplePaletteExtractor.keptSwatches(uses: [1, 1, 5], assigned: [0, 1], limit: 2), [0, 1])
         // Only when nothing unassigned is left does the least-used assigned one go.
         XCTAssertEqual(SimplePaletteExtractor.keptSwatches(uses: [3, 1, 2], assigned: [0, 1, 2], limit: 2), [0, 2])

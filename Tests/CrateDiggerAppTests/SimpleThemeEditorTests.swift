@@ -263,11 +263,23 @@ final class SimpleThemeEditorTests: XCTestCase {
         let editor = try newEditor()
         editor.edit { $0.addColor("#33AA55"); $0.addColor("#AA3355") }
         let count = editor.history.current.palette.count
+        let before = editor.history.current.assignment
         editor.edit { $0.removeColor(at: 0) }
+        XCTAssertNotEqual(editor.history.current.assignment, before)
         let state = editor.history.current
         XCTAssertEqual(state.palette.count, count - 1)
         XCTAssertTrue(SimplePaletteAssigner.isStructurallyValid(
             state.assignment, paletteCount: state.palette.count, pins: state.pins))
+    }
+
+    func testPinMovesOnlyThatJob() throws {
+        let editor = try newEditor()
+        let before = editor.history.current.assignment
+        let target = ((before[.frame] ?? nil) ?? 0) == 0 ? 1 : 0
+        editor.edit { $0.pin(.frame, to: target) }
+        let after = editor.history.current.assignment
+        for job in ThemeJob.allCases where job != .frame { XCTAssertEqual(after[job] ?? nil, before[job] ?? nil) }
+        XCTAssertEqual(after[.frame] ?? nil, target)
     }
 
     func testJobsForSwatch() throws {

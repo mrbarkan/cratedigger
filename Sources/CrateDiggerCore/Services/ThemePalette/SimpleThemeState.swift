@@ -67,6 +67,8 @@ public struct SimpleThemeState: Equatable, Sendable {
     public mutating func pin(_ job: ThemeJob, to index: Int) {
         guard palette.indices.contains(index) else { return }
         pins[job] = index
+        // Only this job moves; the others keep their swatches even when they share this one.
+        assignment[job] = .some(index)
         revalidate()
     }
 
