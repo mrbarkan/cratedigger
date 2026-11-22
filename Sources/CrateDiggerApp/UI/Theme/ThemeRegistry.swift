@@ -595,13 +595,25 @@ public final class ThemeRegistry: ObservableObject {
             count += 1
         }
 
+        return simpleSeed(from: original, inheriting: manifest.id, name: name)
+    }
+
+    /// The seed for a copy of a theme that has no Simple block: as `newSimpleSeed(from:)`
+    /// (extractor recipe, inherits the original) but named "<name> Copy".
+    public func newSimpleSeed(copyOf original: ThemeDefinition) -> ThemeDefinition {
+        simpleSeed(from: original, inheriting: original.id, name: "\(original.name) Copy")
+    }
+
+    private func simpleSeed(from original: ThemeDefinition, inheriting parentID: String,
+                            name: String) -> ThemeDefinition {
+        let taken = Set(manifests.map(\.id))
         let seeded = Self.seeded(original)
         let base = seeded.resolved(for: original.baseAppearance).colors ?? [:]
         var seed = ThemeDefinition(
             id: ThemeAuthoringService.slug(from: name, taken: taken),
             name: name,
             baseAppearance: original.baseAppearance,
-            inherits: manifest.id,
+            inherits: parentID,
             fonts: original.fonts,
             effects: original.effects
         )

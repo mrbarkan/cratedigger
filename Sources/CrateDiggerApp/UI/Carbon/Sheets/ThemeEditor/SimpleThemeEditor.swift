@@ -8,7 +8,7 @@ import Foundation
 /// the registry's draft except `apply()`.
 @MainActor
 final class SimpleThemeEditor: ObservableObject {
-    @Published private(set) var history: SimpleThemeHistory
+    @Published private(set) var history: SimpleThemeHistory { didSet { rebuild() } }
     /// Appearance, material, cover look and fonts. Changing these never touches
     /// colours that were already generated (see `candidate`).
     /// Changing `appearance` regenerates a reopened theme's colours: ask (`needsWarning(for: .appearance)`)
@@ -16,10 +16,10 @@ final class SimpleThemeEditor: ObservableObject {
     @Published var choices: SimpleThemeChoices {
         didSet {
             if choices.appearance != oldValue.appearance { needsRegenerateWarning = false }
-            refresh()
+            rebuild()
         }
     }
-    @Published var name: String { didSet { refresh() } }
+    @Published var name: String { didSet { rebuild() } }
     /// The jobs whose preview shapes glow while the pointer is over a swatch or row.
     @Published var highlightedJobs: Set<ThemeJob> = []
     @Published private(set) var hasUnappliedChanges = false
@@ -28,17 +28,17 @@ final class SimpleThemeEditor: ObservableObject {
     /// The seed the candidate is built onto.
     private(set) var base: ThemeDefinition
     private let registry: ThemeRegistry
-    private let initialState: SimpleThemeState
-    private let initialChoices: SimpleThemeChoices
-    private let initialName: String
-    private let initialPreviewAppearance: ThemeDefinition.BaseAppearance
+    private var initialState: SimpleThemeState
+    private var initialChoices: SimpleThemeChoices
+    private var initialName: String
+    private var initialPreviewAppearance: ThemeDefinition.BaseAppearance
     /// What the file holds (or would hold) as of the last apply; `hasUnappliedChanges` compares to it.
     private var baseline: ThemeDefinition?
 
     let isReopenedSaved: Bool
     /// True until the first palette, pin, contrast or Shuffle change after reopening a
     /// saved Simple theme: that change regenerates every colour, so the view asks first.
-    private(set) var needsRegenerateWarning: Bool
+    @Published private(set) var needsRegenerateWarning: Bool { didSet { rebuild() } }
 
     // MARK: Creating
 
@@ -55,13 +55,18 @@ final class SimpleThemeEditor: ObservableObject {
 
     /// An editable copy of `definition` under a new name and id. Colours are generated afresh.
     convenience init(copyOf definition: ThemeDefinition, registry: ThemeRegistry) {
-        var copy = definition
-        let copyName = "\(definition.name) Copy"
-        copy.name = copyName
-        copy.id = ThemeAuthoringService.slug(from: copyName, taken: Set(registry.manifests.map(\.id)))
-        copy.author = nil
-        copy.version = nil
-        self.init(base: copy, registry: registry, reopened: false)
+        if definition.simple != nil {
+            // A sibling: same parent, same recipe and choices, a fresh id and name.
+            var copy = definition
+            let copyName = "\(definition.name) Copy"
+            copy.name = copyName
+            copy.id = ThemeAuthoringService.slug(from: copyName, taken: Set(registry.manifests.map(\.id)))
+            copy.author = nil
+            copy.version = nil
+            self.init(base: copy, registry: registry, reopened: false)
+        } else {
+            self.init(base: registry.newSimpleSeed(copyOf: definition), registry: registry, reopened: false)
+        }
     }
 
     private init(base: ThemeDefinition, registry: ThemeRegistry, reopened: Bool) {
@@ -81,6 +86,8 @@ final class SimpleThemeEditor: ObservableObject {
         choices = derived
         name = base.name
         previewAppearance = base.baseAppearance
+        candidate = base
+        rebuild()
         baseline = candidate
     }
 
@@ -91,25 +98,42 @@ final class SimpleThemeEditor: ObservableObject {
     /// The theme as it would be saved. Before the first regenerating change on a
     /// reopened theme it is the saved definition with only the non-colour choices
     /// (fonts, material, cover look) and the name laid over it.
-    var candidate: ThemeDefinition {
+    private(set) var candidate: ThemeDefinition
+    private var previewCache: [ThemeDefinition.BaseAppearance: (theme: CarbonTheme, geometry: CarbonGeometry)] = [:]
+    private var fontsCache: [ThemeDefinition.BaseAppearance: [String: ThemeFont]?] = [:]
+
+    /// Builds the candidate once per state, choices, name or warning change.
+    private func rebuild() {
         var built = SimpleThemeBuilder.build(state: history.current, choices: choices, onto: base)
         built.name = name
-        guard isReopenedSaved, !regenerated else { return built }
-        var saved = base
-        saved.name = name
-        saved.effects = built.effects
-        saved.fonts = built.fonts ?? base.fonts
-        return saved
+        if isReopenedSaved, !regenerated {
+            var saved = base
+            saved.name = name
+            saved.effects = built.effects
+            saved.fonts = built.fonts ?? base.fonts
+            built = saved
+        }
+        candidate = built
+        previewCache = [:]
+        fontsCache = [:]
+        hasUnappliedChanges = baseline.map { built != $0 } ?? false
     }
 
     /// The candidate drawn for `previewAppearance`, without touching the app's draft.
+    /// Cached per appearance until the candidate changes.
     var previewTheme: (theme: CarbonTheme, geometry: CarbonGeometry) {
-        registry.previewTheme(for: candidate, appearance: previewAppearance)
+        if let hit = previewCache[previewAppearance] { return hit }
+        let made = registry.previewTheme(for: candidate, appearance: previewAppearance)
+        previewCache[previewAppearance] = made
+        return made
     }
 
-    /// The fonts the preview draws with.
+    /// The fonts the preview draws with (resolved against the parent, as the app draws them).
     var previewFonts: [String: ThemeFont]? {
-        registry.previewDefinition(for: candidate, appearance: previewAppearance).fonts
+        if let hit = fontsCache[previewAppearance] { return hit }
+        let fonts = registry.previewDefinition(for: candidate, appearance: previewAppearance).fonts
+        fontsCache[previewAppearance] = .some(fonts)
+        return fonts
     }
 
     /// What the owner is about to change, for `needsWarning(for:)`.
@@ -138,9 +162,9 @@ final class SimpleThemeEditor: ObservableObject {
         var next = history.current
         change(&next)
         next = Self.revalidated(next)
+        guard next != history.current else { return }
         needsRegenerateWarning = false
         history.push(next)
-        refresh()
     }
 
     /// As `edit`: the view asks first when `needsWarning(for: .shuffle)` is true.
@@ -148,18 +172,15 @@ final class SimpleThemeEditor: ObservableObject {
 
     func back() {
         history.back()
-        refresh()
     }
 
     func forward() {
         history.forward()
-        refresh()
     }
 
     /// The view calls this once the owner agreed to regenerate a reopened theme's colours.
     func confirmRegenerate() {
         needsRegenerateWarning = false
-        refresh()
     }
 
     /// Saves and selects the candidate. Throws what the registry throws; nothing changes then.
@@ -167,26 +188,29 @@ final class SimpleThemeEditor: ObservableObject {
         let theme = candidate
         try registry.applySimple(theme)
         baseline = theme
-        refresh()
+        // Discard now returns to what was applied, not to how the editor opened.
+        initialState = history.current
+        initialChoices = choices
+        initialName = name
+        initialPreviewAppearance = previewAppearance
+        isRegeneratedAtApply = regenerated
+        hasUnappliedChanges = false
     }
 
-    /// Puts everything back as it was when the editor opened.
+    /// Puts everything back as it was when the editor opened, or as last applied.
     func discard() {
         history = SimpleThemeHistory(initialState)
         choices = initialChoices
         name = initialName
         previewAppearance = initialPreviewAppearance
-        needsRegenerateWarning = isReopenedSaved
+        needsRegenerateWarning = isReopenedSaved && !isRegeneratedAtApply
         highlightedJobs = []
-        baseline = candidate
-        refresh()
+        rebuild()
     }
 
     // MARK: -
 
-    private func refresh() {
-        hasUnappliedChanges = candidate != baseline
-    }
+    private var isRegeneratedAtApply = false
 
     private static func revalidated(_ state: SimpleThemeState) -> SimpleThemeState {
         let palette = state.palette.compactMap(PaletteColor.init(hex:))

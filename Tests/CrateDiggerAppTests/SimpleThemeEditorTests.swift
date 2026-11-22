@@ -168,6 +168,86 @@ final class SimpleThemeEditorTests: XCTestCase {
         XCTAssertEqual(editor.previewFonts?["mono"], parent.fonts?["mono"])
     }
 
+    func testDiscardAfterApplyReturnsToApplied() throws {
+        let editor = try newEditor()
+        editor.edit { $0.contrast = .high }
+        try editor.apply()
+        let applied = editor.candidate
+        editor.edit { $0.contrast = .soft }
+        editor.choices.material = .weave
+        editor.discard()
+        XCTAssertEqual(editor.candidate, applied)
+        XCTAssertFalse(editor.hasUnappliedChanges)
+    }
+
+    func testCopyOfSimpleKeepsRecipeAndParent() throws {
+        let first = try newEditor()
+        first.edit { $0.contrast = .high }
+        try first.apply()
+        let saved = try manifest(first.candidate.id).definition
+        let copy = SimpleThemeEditor(copyOf: saved, registry: registry)
+        XCTAssertEqual(copy.base.inherits, saved.inherits)
+        XCTAssertEqual(copy.history.current.recipe, saved.simple)
+        XCTAssertEqual(copy.name, "\(saved.name) Copy")
+        XCTAssertNotEqual(copy.base.id, saved.id)
+    }
+
+    func testCopyOfNonSimpleUsesExtractedSeed() throws {
+        let original = try manifest("base-theme").definition
+        let copy = SimpleThemeEditor(copyOf: original, registry: registry)
+        XCTAssertEqual(copy.base.inherits, "base-theme")
+        XCTAssertEqual(copy.name, "Base Theme Copy")
+        XCTAssertNotEqual(copy.history.current.palette, ["#1E2430", "#E8E4DA"])
+        XCTAssertEqual(copy.history.current.recipe, registry.newSimpleSeed(copyOf: original).simple)
+    }
+
+    func testNoOpEditKeepsWarningAndHistory() throws {
+        let (editor, _) = try reopened()
+        editor.edit { _ in }
+        XCTAssertTrue(editor.needsRegenerateWarning)
+        XCTAssertFalse(editor.history.canGoBack)
+    }
+
+    func testApplyThrowingLeavesModelUnchanged() throws {
+        let editor = try newEditor()
+        editor.edit { $0.contrast = .high }
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: themesDirectory.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: themesDirectory.path) }
+        XCTAssertThrowsError(try editor.apply())
+        XCTAssertTrue(editor.hasUnappliedChanges)
+        XCTAssertEqual(editor.history.current.contrast, .high)
+    }
+
+    func testDraftUntouchedBeforeApply() throws {
+        let editor = try newEditor()
+        editor.edit { $0.contrast = .high }
+        editor.shuffle()
+        _ = editor.previewTheme
+        XCTAssertNil(registry.draft)
+    }
+
+    func testWarningForPinAndContrast() throws {
+        let (editor, _) = try reopened()
+        XCTAssertTrue(editor.needsWarning(for: .pin))
+        XCTAssertTrue(editor.needsWarning(for: .contrast))
+    }
+
+    func testBackToOpeningStateClearsUnapplied() throws {
+        let editor = try newEditor()
+        editor.edit { $0.contrast = .high }
+        XCTAssertTrue(editor.hasUnappliedChanges)
+        editor.back()
+        XCTAssertFalse(editor.hasUnappliedChanges)
+    }
+
+    func testHighlightDoesNotRebuildCandidate() throws {
+        let editor = try newEditor()
+        let a = editor.previewTheme.theme
+        editor.highlightedJobs = [.accent]
+        XCTAssertEqual(editor.previewTheme.theme.id, a.id)
+        XCTAssertFalse(editor.hasUnappliedChanges)
+    }
+
     func testJobsForSwatch() throws {
         let editor = try newEditor()
         let state = editor.history.current
