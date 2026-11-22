@@ -533,6 +533,102 @@ public final class ThemeRegistry: ObservableObject {
         draftSeed = draft
     }
 
+    // MARK: - Simple themes
+
+    /// The definition with its `inherits` parent laid under it, the way the loader
+    /// resolves an installed theme. `manifest.definition` is already resolved, so
+    /// one overlay is enough. A missing parent leaves the definition as it is
+    /// (the renderer fills the rest from the stock theme), exactly as for an
+    /// installed theme with a dangling `inherits`.
+    private func resolvedAgainstParent(_ definition: ThemeDefinition) -> ThemeDefinition {
+        guard let parent = manifest(for: definition.inherits)?.definition else { return definition }
+        var merged = parent.merging(definition)
+        merged.id = definition.id
+        merged.name = definition.name
+        merged.author = definition.author
+        merged.version = definition.version
+        merged.inherits = definition.inherits
+        merged.simple = definition.simple
+        return merged
+    }
+
+    /// Renders a definition that is not installed (and not the draft), for the
+    /// Simple editor's candidate preview. It never touches `draft`, which the
+    /// whole app draws.
+    public func previewTheme(
+        for definition: ThemeDefinition,
+        appearance: ThemeDefinition.BaseAppearance
+    ) -> (theme: CarbonTheme, geometry: CarbonGeometry) {
+        let flattened = flatten(resolvedAgainstParent(definition), for: appearance)
+        return (theme: rendered(flattened, logoURL: nil), geometry: CarbonGeometry(definition: flattened))
+    }
+
+    /// A fresh, unsaved Simple theme started from `manifest`'s theme. It inherits
+    /// from it, so tokens Simple does not write keep following the original.
+    /// Fonts and effects are copied from the resolved original so the seed owns
+    /// them explicitly (minimized away at save where they still match the parent);
+    /// an adaptive original gives an adaptive seed (both layers present, empty).
+    public func newSimpleSeed(from manifest: ThemeManifest) -> ThemeDefinition {
+        let original = manifest.definition
+        let taken = Set(manifests.map(\.id))
+        let takenNames = Set(manifests.map { $0.definition.name })
+        var name = "New Theme"
+        var count = 2
+        while takenNames.contains(name) || taken.contains(ThemeAuthoringService.slug(from: name, taken: [])) {
+            name = "New Theme \(count)"
+            count += 1
+        }
+
+        let seeded = Self.seeded(original)
+        let base = seeded.resolved(for: original.baseAppearance).colors ?? [:]
+        var seed = ThemeDefinition(
+            id: ThemeAuthoringService.slug(from: name, taken: taken),
+            name: name,
+            baseAppearance: original.baseAppearance,
+            inherits: manifest.id,
+            fonts: original.fonts,
+            effects: original.effects
+        )
+        if original.isAdaptive {
+            seed.light = ThemeVariant()
+            seed.dark = ThemeVariant()
+        }
+        seed.simple = SimplePaletteExtractor.recipe(from: original, resolvedBase: base)
+        return seed
+    }
+
+    /// Saves a Simple theme: minimized against its parent, written, selected.
+    @discardableResult
+    public func applySimple(_ definition: ThemeDefinition) throws -> String? {
+        draft = definition
+        draftSeed = definition
+        return try saveDraft()
+    }
+
+    /// Drops the Simple recipe from the open draft; every token stays as it is.
+    public func convertDraftToAdvanced() {
+        guard var draft else { return }
+        draft.simple = nil
+        self.draft = draft
+    }
+
+    /// Opens an Advanced copy of `definition` (a Simple candidate, say) as the
+    /// draft: its inherited tokens filled in, the recipe gone, a new name and id.
+    public func beginAdvancedCopy(of definition: ThemeDefinition) {
+        clearUndo()
+        draftLogoFallback = manifest(for: definition.inherits)?.logoURLs ?? [:]
+        var copy = Self.seeded(resolvedAgainstParent(definition))
+        copy.simple = nil
+        let name = "\(definition.name) Copy"
+        copy.id = ThemeAuthoringService.slug(from: name, taken: Set(manifests.map(\.id)))
+        copy.name = name
+        copy.author = nil
+        copy.version = nil
+        draft = copy
+        draftSeed = copy
+        draftEditingAppearance = copy.baseAppearance
+    }
+
     /// Applies a LIGHT/DARK change so it actually shows.
     ///
     /// `baseAppearance` is only a *declaration* in the file format — it decides
