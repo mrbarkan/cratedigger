@@ -224,7 +224,7 @@ struct SourcesSidebar: View {
                                     Button(action: { model.syncQueuedTransfers(profileID: profile.id) }) {
                                         Text("SYNC \(queued)")
                                             .font(CarbonFont.mono(8, weight: .bold))
-                                            .foregroundColor(.white)
+                                            .foregroundColor(theme.accentInk)
                                             .padding(.horizontal, 8)
                                             .padding(.vertical, 3)
                                             .background(theme.orange)

@@ -138,7 +138,8 @@ struct LibraryCleanupView: View {
             Text(row.verdict == .missing ? "NONE" : "LOW")
                 .font(CarbonFont.mono(7.5, weight: .bold))
                 .tracking(0.8)
-                .foregroundColor(.white)
+                // NONE sits on the accent, LOW on Section Labels.
+                .foregroundColor(row.verdict == .missing ? theme.accentInk : .white)
                 .padding(.horizontal, 5)
                 .padding(.vertical, 2)
                 .background(Capsule().fill(row.verdict == .missing ? theme.orange : theme.ink3))

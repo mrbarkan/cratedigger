@@ -539,7 +539,7 @@ struct ArtistDefaultMark: View {
         Text("DEFAULT")
             .font(CarbonFont.mono(7.5, weight: .bold))
             .tracking(1.2)
-            .foregroundStyle(Color.white)
+            .foregroundStyle(theme.accentInk)
             .padding(.horizontal, 5)
             .padding(.vertical, 2)
             .background(Capsule().fill(theme.orange))

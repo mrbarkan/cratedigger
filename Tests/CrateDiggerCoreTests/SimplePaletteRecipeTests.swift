@@ -140,6 +140,9 @@ final class SimplePaletteRecipeTests: XCTestCase {
                     if table.ranges[.accent]!.range.contains(jobs[.accent]!.oklch.l) {
                         XCTAssertEqual(tokens["orange"], jobs[.accent]!.hex, "the accent never moves")
                     }
+                    let label = "\(appearance) \(contrast) \(jobs.mapValues(\.hex))"
+                    assertFrameAndPanelsSeparate(tokens, label)
+                    assertSelectedRowTitlesRead(tokens, appearance: appearance, label)
                 }
             }
         }
@@ -232,6 +235,74 @@ final class SimplePaletteRecipeTests: XCTestCase {
                 let tokens = SimplePaletteRecipe.tokens(jobColors: jobs, contrast: .high, appearance: appearance)
                 XCTAssertEqual(Set(tokens.keys), SimplePaletteRecipe.simpleWrittenTokens)
                 for hex in tokens.values { XCTAssertNotNil(PaletteColor(hex: hex), hex) }
+            }
+        }
+    }
+
+    func testReviewCaseLightRowTitleOnBlueWash() {
+        // A deep blue accent over grey surfaces put light-mode `ink` at 3.8:1 on the wash.
+        let jobs = Self.jobs([.frame: "#9A9A9A", .panels: "#B5B5B5", .text: "#2A2A2A",
+                              .accent: "#2F6BEA", .glass: "#101010", .screenText: "#F0F0F0"])
+        for contrast in SimpleContrast.allCases {
+            let tokens = SimplePaletteRecipe.tokens(jobColors: jobs, contrast: contrast, appearance: .light)
+            assertSelectedRowTitlesRead(tokens, appearance: .light, "\(contrast)")
+            assertFloorsHold(tokens, contrast: contrast, "\(contrast)")
+        }
+    }
+
+    func testReviewCaseSeparationSurvivesTheFloors() {
+        // High contrast pushes this dark panel toward the frame; the frame steps away again.
+        // (#464646 sits just inside the dark panel band; #484848 would be snapped down.)
+        let jobs = Self.jobs([.frame: "#3A3A3A", .panels: "#464646", .text: "#E8E8E8",
+                              .accent: "#FF6D3F", .glass: "#050504", .screenText: "#F5F1E6"])
+        for contrast in SimpleContrast.allCases {
+            let tokens = SimplePaletteRecipe.tokens(jobColors: jobs, contrast: contrast, appearance: .dark)
+            assertFrameAndPanelsSeparate(tokens, "\(contrast)")
+            assertFloorsHold(tokens, contrast: contrast, "\(contrast)")
+        }
+    }
+
+    /// One fixed palette, every token pinned, so a change to the table or the rules
+    /// shows up as a diff here rather than unnoticed. Update deliberately.
+    func testGoldenTokens() {
+        let jobs = Self.jobs([.frame: "#2E3440", .panels: "#3B4252", .text: "#ECEFF4",
+                              .accent: "#88C0D0", .glass: "#1B1F27", .screenText: "#A3BE8C"])
+        let golden: [Appearance: [String: String]] = [
+            .dark: [
+                "accentInk": "#090D16", "backgroundBase": "#1D2028", "backgroundGradientEnd": "#14171E",
+                "backgroundGradientStart": "#313B4D", "chassis": "#2E3440", "chassisDeep": "#191C23",
+                "chassisHi": "#454E62", "chassisLo": "#22262E", "cyan": "#59D8CE", "cyanGlow": "#D6FFFB",
+                "hair": "#565F74", "indigo": "#8192FA", "ink": "#ECEFF4", "ink2": "#C4CBD8", "ink3": "#868D99",
+                "ink4": "#555B66", "metal": "#4A5467", "metalDeep": "#191C23", "metalHi": "#737D92",
+                "metalLo": "#2C323E", "oledForeground": "#E0FCC8", "oledForegroundMuted": "#E0FCC88C",
+                "oledStrokeInner": "#262B34", "oledSurface": "#1B1F27", "oledSurfaceShade": "#00000047",
+                "onAir": "#FF7664", "orange": "#88C0D0", "orangeHi": "#B5D8E4", "orangeLo": "#69A0AE",
+                "paper": "#3B4252", "paper2": "#323741", "red": "#FD665C", "rowAlt": "#00000000",
+                "selectionGlow": "#ABCCD5", "selectionInk": "#FFFFFF", "selectionLedCore": "#EFFBFF",
+                "selectionSpread": "#A2ADB18D", "sun": "#FFDD81", "sunHi": "#FFF5D2", "sunLo": "#D8AD44",
+                "well": "#3D4455", "wellDeep": "#2E323A",
+            ],
+            .light: [
+                "accentInk": "#090D16", "backgroundBase": "#D5E1F9", "backgroundGradientEnd": "#C4CFE7",
+                "backgroundGradientStart": "#EAF1FF", "chassis": "#EBF2FF", "chassisDeep": "#97A2B8",
+                "chassisHi": "#FFFFFF", "chassisLo": "#CEDAF1", "cyan": "#3BA9B9", "cyanGlow": "#BEEFF3",
+                "hair": "#C7D3EF", "indigo": "#4C70CC", "ink": "#14161A", "ink2": "#383C43", "ink3": "#6D737C",
+                "ink4": "#9FA3A9", "metal": "#D4E0F8", "metalDeep": "#5C667A", "metalHi": "#FFFFFF",
+                "metalLo": "#A6B1C8", "oledForeground": "#E0FCC8", "oledForegroundMuted": "#E0FCC88C",
+                "oledStrokeInner": "#2D3139", "oledSurface": "#1B1F27", "oledSurfaceShade": "#00000047",
+                "onAir": "#FF705E", "orange": "#6FA6B6", "orangeHi": "#98BCC9", "orangeLo": "#538795",
+                "paper": "#FFFFFF", "paper2": "#F2F6FF", "red": "#E34840", "rowAlt": "#00000000",
+                "selectionGlow": "#81AFBF", "selectionInk": "#101215", "selectionLedCore": "#A2C2CE",
+                "selectionSpread": "#6FA6B6", "sun": "#F5C94B", "sunHi": "#FFE690", "sunLo": "#CA9F30",
+                "well": "#EDF3FF", "wellDeep": "#C9D6F2",
+            ],
+        ]
+        for appearance in [Appearance.dark, .light] {
+            let tokens = SimplePaletteRecipe.tokens(jobColors: jobs, contrast: .standard, appearance: appearance)
+            let expected = golden[appearance]!
+            XCTAssertEqual(Set(tokens.keys), Set(expected.keys))
+            for key in expected.keys.sorted() {
+                XCTAssertEqual(tokens[key], expected[key], "\(appearance) \(key)")
             }
         }
     }
@@ -436,6 +507,30 @@ final class SimplePaletteRecipeTests: XCTestCase {
                                             file: file, line: line)
             }
         }
+    }
+
+    private func assertFrameAndPanelsSeparate(_ tokens: [String: String], _ label: String,
+                                              file: StaticString = #filePath, line: UInt = #line) {
+        let chassis = PaletteColor(hex: tokens["chassis"]!)!, paper = PaletteColor(hex: tokens["paper"]!)!
+        XCTAssertGreaterThanOrEqual(chassis.distance(to: paper), 0.04,
+                                    "frame/panels \(chassis.hex)/\(paper.hex) — \(label)", file: file, line: line)
+    }
+
+    /// Measured here from scratch, the way the app draws it, not through
+    /// `ContrastFloors`: a selected browser row's title is `slotInk` (`selectionInk`
+    /// in dark, `ink` in light) on the wash at 90% / 85% over the panel.
+    private func assertSelectedRowTitlesRead(_ tokens: [String: String], appearance: Appearance, _ label: String,
+                                             file: StaticString = #filePath, line: UInt = #line) {
+        let ink = PaletteColor(hex: tokens[appearance == .dark ? "selectionInk" : "ink"]!)!
+        let spread = PaletteColor(hex: tokens["selectionSpread"]!)!
+        let paper = PaletteColor(hex: tokens["paper"]!)!
+        let a = spread.a * (appearance == .dark ? 0.90 : 0.85)
+        let fill = PaletteColor(r: spread.r * a + paper.r * (1 - a), g: spread.g * a + paper.g * (1 - a),
+                                b: spread.b * a + paper.b * (1 - a))
+        XCTAssertGreaterThanOrEqual(PaletteColor.contrast(ink, fill), 4.5,
+                                    "row title \(ink.hex) on wash \(fill.hex) — \(label)", file: file, line: line)
+        XCTAssertGreaterThanOrEqual(PaletteColor.contrast(ink, paper), 4.5,
+                                    "row title \(ink.hex) on panel \(paper.hex) — \(label)", file: file, line: line)
     }
 
     private func assertFloorsHold(_ tokens: [String: String], contrast: SimpleContrast, _ label: String,

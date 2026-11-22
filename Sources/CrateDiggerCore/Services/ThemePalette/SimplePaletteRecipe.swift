@@ -57,20 +57,47 @@ public enum SimplePaletteRecipe {
         bases[.frame] = frame
         bases[.panels] = panels
 
-        let context = Context(bases: bases, ranges: ranges, contrast: contrast)
-        var out: [String: String] = [:]
-        for (key, transform) in table.tokens {
-            out[key] = transform.hex(in: context)
-        }
-        if paleGlass {
-            for (key, transform) in SimplePaletteRecipeTable.paleGlassTokens {
+        func build() -> [String: String] {
+            let context = Context(bases: bases, ranges: ranges, contrast: contrast)
+            var out: [String: String] = [:]
+            for (key, transform) in table.tokens {
                 out[key] = transform.hex(in: context)
             }
+            if paleGlass {
+                for (key, transform) in SimplePaletteRecipeTable.paleGlassTokens {
+                    out[key] = transform.hex(in: context)
+                }
+            }
+            if let accent = out["orange"].flatMap(PaletteColor.init(hex:)) {
+                out["accentInk"] = accentInk(on: accent, frame: bases[.frame]!).hex
+            }
+            return out
         }
-        if let accent = out["orange"].flatMap(PaletteColor.init(hex:)) {
-            out["accentInk"] = accentInk(on: accent, frame: bases[.frame]!).hex
+
+        // A floor can move the panel (when its ink is already at black or white),
+        // which can bring it back toward the frame. The panel is where it has to be,
+        // so the frame steps away from where the panel ended up and the theme is
+        // built again; the panel lands in the same place every time, since nothing
+        // about the frame decides it.
+        var result = ContrastFloors.enforce(build(), contrast: contrast)
+        for _ in 0..<8 {
+            guard let chassis = result["chassis"].flatMap(PaletteColor.init(hex:)),
+                  let paper = result["paper"].flatMap(PaletteColor.init(hex:)) else { break }
+            let gap = chassis.distance(to: paper)
+            guard gap < frameToPanelsSeparation else { break }
+            var frame = bases[.frame]!
+            let paperL = paper.oklch.l
+            let away: Double = frame.lch.l >= paperL ? 1 : -1
+            var l = frame.lch.l + away * (frameToPanelsSeparation - gap + 0.004)
+            if l < 0 || l > 1 {
+                // No room on this side of the panel: cross to the other.
+                l = paperL - away * (frameToPanelsSeparation + 0.004)
+            }
+            frame.setLightness(clamp(l))
+            bases[.frame] = frame
+            result = ContrastFloors.enforce(build(), contrast: contrast)
         }
-        return ContrastFloors.enforce(out, contrast: contrast)
+        return result
     }
 
     /// The print on accent-filled keys (`accentInk`): white, or a near-black tinted

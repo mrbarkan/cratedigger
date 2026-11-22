@@ -79,7 +79,7 @@ struct ArtworkReleaseRow: View, Equatable {
     private var titleLine: some View {
         HStack(spacing: 8) {
             if isBest {
-                pill("★ BEST", fill: theme.orange, ink: .white)
+                pill("★ BEST", fill: theme.orange, ink: theme.accentInk)
                     .carbonTip("Closest match to this album's title, format and year")
             }
             Text(release.title)

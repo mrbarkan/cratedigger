@@ -34,6 +34,12 @@ public enum ContrastFloors {
     /// panel that has to give way does so before the quieter inks are measured on it.
     /// `selectionInk` is measured on the selected row's wash and on the panel the wash
     /// fades out onto; accent keys print in `accentInk`, measured on the accent.
+    ///
+    /// `slotInk` is the ink a browser row's title is drawn in once selected:
+    /// `CarbonTheme.slotInk`, which is `selectionInk` in dark and `ink` in light. Its
+    /// floor on the wash covers the light rows, where `ink` sits on the wash and no
+    /// other pair measures it. The theme's appearance is read from the panel
+    /// (dark below L 0.5), since a token dictionary does not carry it.
     public static func pairs(contrast: SimpleContrast) -> [(foreground: String, background: String, minimum: Double)] {
         let ink: Double
         switch contrast {
@@ -53,6 +59,7 @@ public enum ContrastFloors {
             ("oledForegroundMuted", "oledSurface", 3),
             ("selectionInk", "paper", 4.5),
             ("selectionInk", "selectionSpread", 4.5),
+            ("slotInk", "selectionSpread", 4.5),
             ("accentInk", "orange", 4.5),
         ]
     }
@@ -60,6 +67,11 @@ public enum ContrastFloors {
     /// The key that actually draws `foreground` in `tokens`: the token itself when set,
     /// else the token an unset override follows. `nil` when neither is there.
     static func foregroundKey(_ foreground: String, in tokens: [String: String]) -> String? {
+        if foreground == "slotInk" {
+            guard let paper = tokens["paper"].flatMap(PaletteColor.init(hex:)) else { return nil }
+            let key = paper.oklch.l < 0.5 ? "selectionInk" : "ink"
+            return tokens[key] != nil ? key : nil
+        }
         if tokens[foreground] != nil { return foreground }
         if let fallback = fallbacks[foreground], tokens[fallback] != nil { return fallback }
         return nil
@@ -118,7 +130,42 @@ public enum ContrastFloors {
             }
             if !changed { break }
         }
+        settleStragglers(&out, floors: floors)
         return out
+    }
+
+    /// The post-condition. A pair still under its floor after the sweeps (two pairs
+    /// pulling one token opposite ways) gets the deterministic last resort: its
+    /// foreground goes to pure black or white, away from what it sits on, and then the
+    /// background is pushed as usual. Anything still failing is a bug in the recipe.
+    private static func settleStragglers(_ out: inout [String: String],
+                                         floors: [(foreground: String, background: String, minimum: Double)]) {
+        for pair in floors {
+            guard let fgKey = foregroundKey(pair.foreground, in: out),
+                  let fg = out[fgKey].flatMap(PaletteColor.init(hex:)),
+                  let bg = out[pair.background].flatMap(PaletteColor.init(hex:)),
+                  let current = ratio(fg, on: pair.background, bg, in: out),
+                  current < pair.minimum else { continue }
+            let seenL = seenLightness(of: pair.background, bg, in: out)
+            let extreme: Double = fg.oklch.l >= seenL ? 1 : 0
+            let pinned = PaletteColor(r: extreme, g: extreme, b: extreme, a: fg.a)
+            let snapshot = out
+            let fixed = settle(foreground: pinned, background: bg, seenL: seenL, minimum: pair.minimum,
+                               backgroundFixed: fixedBackgrounds.contains(pair.background),
+                               backgroundFades: pair.background == "selectionSpread",
+                               ratio: { ratio($0, on: pair.background, $1, in: snapshot) ?? 0 })
+            out[fgKey] = fixed.foreground.hex
+            if !fixedBackgrounds.contains(pair.background) {
+                out[pair.background] = fixed.background.hex
+            }
+        }
+        #if DEBUG
+        for pair in floors {
+            if let r = ratio(of: pair, in: out), r < pair.minimum {
+                assertionFailure("Contrast floor \(pair.foreground) on \(pair.background) at \(r), under \(pair.minimum)")
+            }
+        }
+        #endif
     }
 
     // MARK: Internals

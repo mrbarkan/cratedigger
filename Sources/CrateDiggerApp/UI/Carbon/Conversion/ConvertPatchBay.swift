@@ -1079,6 +1079,10 @@ private struct ArmGoButton: View {
 
     @State private var holdProgress: Double = 0
 
+    /// The print on the lit key. It has always been a dark brown, not
+    /// `selectionInk`, so it stays that until a theme names `accentInk`.
+    private var goInk: Color { theme.accentInkOverride ?? Color(hex: 0x1A1209) }
+
     /// How long CONVERT must be held. The hazard fill runs on the same clock,
     /// linearly, because it is a progress bar for the hold rather than an
     /// ornament: it reaches the end exactly as the action fires. Kept under
@@ -1144,9 +1148,9 @@ private struct ArmGoButton: View {
                 Text("PRESS & HOLD")
                     .font(CarbonFont.mono(8.5, weight: .bold))
                     .tracking(3.2)
-                    .foregroundStyle(Color(hex: 0x1A1209).opacity(0.7))
+                    .foregroundStyle(goInk.opacity(0.7))
             }
-            .foregroundStyle(Color(hex: 0x1A1209))
+            .foregroundStyle(goInk)
             .frame(maxWidth: .infinity)
 
             armCluster
@@ -1162,7 +1166,7 @@ private struct ArmGoButton: View {
                 .tracking(2.6)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
-                .foregroundStyle(Color(hex: 0x1A1209))
+                .foregroundStyle(goInk)
                 .frame(maxWidth: .infinity)
         }
     }
@@ -1170,7 +1174,7 @@ private struct ArmGoButton: View {
     @ViewBuilder
     private var playGlyph: some View {
         ZStack {
-            Circle().fill(Color(hex: 0x1A1209))
+            Circle().fill(goInk)
             Text("▸")
                 .font(CarbonFont.mono(13, weight: .black))
                 .foregroundStyle(theme.orangeHi)
@@ -1189,7 +1193,7 @@ private struct ArmGoButton: View {
             Text("ARM")
                 .font(CarbonFont.mono(9, weight: .bold))
                 .tracking(1.8)
-                .foregroundStyle(Color(hex: 0x1A1209).opacity(0.7))
+                .foregroundStyle(goInk.opacity(0.7))
         }
     }
 }
