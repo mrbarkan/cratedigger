@@ -202,10 +202,7 @@ final class SimpleThemeEditorTests: XCTestCase {
     }
 
     func testNoOpEditKeepsWarningAndHistory() throws {
-        // Shuffle first: an extracted assignment need not be one the assigner would
-        // offer, and an edit moves such a state onto one. A saved Shuffle result is valid.
         let first = try newEditor()
-        first.shuffle()
         try first.apply()
         let editor = SimpleThemeEditor(reopening: try manifest(first.candidate.id), registry: registry)
         editor.edit { _ in }
@@ -251,6 +248,26 @@ final class SimpleThemeEditorTests: XCTestCase {
         editor.highlightedJobs = [.accent]
         XCTAssertEqual(editor.previewTheme.theme.id, a.id)
         XCTAssertFalse(editor.hasUnappliedChanges)
+    }
+
+    func testExtractedAssignmentSurvivesContrastAndSetColor() throws {
+        let editor = try newEditor()
+        let assignment = editor.history.current.assignment
+        editor.edit { $0.contrast = .high }
+        XCTAssertEqual(editor.history.current.assignment, assignment)
+        editor.edit { $0.setColor("#445566", at: 0) }
+        XCTAssertEqual(editor.history.current.assignment, assignment)
+    }
+
+    func testRemovalThatBreaksAssignmentRepicks() throws {
+        let editor = try newEditor()
+        editor.edit { $0.addColor("#33AA55"); $0.addColor("#AA3355") }
+        let count = editor.history.current.palette.count
+        editor.edit { $0.removeColor(at: 0) }
+        let state = editor.history.current
+        XCTAssertEqual(state.palette.count, count - 1)
+        XCTAssertTrue(SimplePaletteAssigner.isStructurallyValid(
+            state.assignment, paletteCount: state.palette.count, pins: state.pins))
     }
 
     func testJobsForSwatch() throws {

@@ -97,6 +97,27 @@ public enum SimplePaletteAssigner {
         }
     }
 
+    /// Whether `assignment` is well formed for a palette of `paletteCount` colours: every
+    /// job present, every index in range, every pin honoured, and nil only where the
+    /// assigner allows it (Text and Screen Text in a two-colour palette). The preference
+    /// rules (Accent's chroma, the Frame/Panels gap) only rank Shuffle's candidates, so an
+    /// assignment that breaks them but is well formed stays as it is.
+    public static func isStructurallyValid(_ assignment: JobAssignment, paletteCount: Int,
+                                           pins: [ThemeJob: Int]) -> Bool {
+        guard paletteCount > 0 else { return false }
+        let mayBeNil: Set<ThemeJob> = paletteCount == 2 ? [.text, .screenText] : []
+        for job in ThemeJob.allCases {
+            guard let entry = assignment[job] else { return false }
+            if let index = entry {
+                guard index >= 0, index < paletteCount else { return false }
+            } else if !mayBeNil.contains(job) {
+                return false
+            }
+            if let pin = pins[job], entry != pin { return false }
+        }
+        return true
+    }
+
     public static func initial(palette: [PaletteColor], pins: [ThemeJob: Int]) -> JobAssignment {
         validAssignments(palette: palette, pins: pins).first ?? fallback(palette: palette, pins: pins)
     }

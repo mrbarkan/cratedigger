@@ -106,4 +106,17 @@ final class SimplePaletteAssignerTests: XCTestCase {
         let palette = colors(["#101010", "#111111", "#121212"])
         XCTAssertFalse(SimplePaletteAssigner.validAssignments(palette: palette, pins: [:]).isEmpty)
     }
+
+    func testStructuralValidity() {
+        let full: JobAssignment = [.frame: 0, .panels: 1, .text: 0, .accent: 2, .glass: 1, .screenText: 0]
+        XCTAssertTrue(SimplePaletteAssigner.isStructurallyValid(full, paletteCount: 3, pins: [.accent: 2]))
+        XCTAssertFalse(SimplePaletteAssigner.isStructurallyValid(full, paletteCount: 2, pins: [:]))
+        XCTAssertFalse(SimplePaletteAssigner.isStructurallyValid(full, paletteCount: 3, pins: [.accent: 1]))
+        var missing = full; missing[.glass] = nil
+        XCTAssertFalse(SimplePaletteAssigner.isStructurallyValid(missing, paletteCount: 3, pins: [:]))
+        var nilText = full; nilText[.text] = .some(nil)
+        XCTAssertFalse(SimplePaletteAssigner.isStructurallyValid(nilText, paletteCount: 3, pins: [:]))
+        nilText[.accent] = 1
+        XCTAssertTrue(SimplePaletteAssigner.isStructurallyValid(nilText, paletteCount: 2, pins: [:]))
+    }
 }

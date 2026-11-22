@@ -92,11 +92,12 @@ public struct SimpleThemeState: Equatable, Sendable {
         assignment = SimplePaletteAssigner.initial(palette: parsedPalette, pins: pins)
     }
 
-    /// Start over unless the current assignment is one the assigner would offer.
+    /// Start over only when the assignment is structurally broken (a removed swatch, a pin it
+    /// does not honour); a well-formed one stays even if Shuffle would not offer it.
     private mutating func revalidate() {
-        let valid = SimplePaletteAssigner.validAssignments(palette: parsedPalette, pins: pins)
-        let current = key(assignment)
-        if !valid.contains(where: { key($0) == current }) { reassign() }
+        if !SimplePaletteAssigner.isStructurallyValid(assignment, paletteCount: palette.count, pins: pins) {
+            reassign()
+        }
     }
 }
 

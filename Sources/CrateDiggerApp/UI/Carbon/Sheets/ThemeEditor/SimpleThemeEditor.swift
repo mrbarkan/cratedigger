@@ -156,8 +156,8 @@ final class SimpleThemeEditor: ObservableObject {
     // MARK: Editing
 
     /// The view must ask first when `needsWarning(for: .palette)` (or `.pin`, `.contrast`) is true;
-    /// this clears the warning without asking. Applies a palette, pin or contrast change as one history step. A recoloured swatch can
-    /// make the current assignment one the assigner would no longer offer; it starts over then.
+    /// this clears the warning without asking. Applies a palette, pin or contrast change as one history step. The assignment is kept while it is
+    /// structurally valid (see `SimplePaletteAssigner.isStructurallyValid`) and re-picked only when broken.
     func edit(_ change: (inout SimpleThemeState) -> Void) {
         var next = history.current
         change(&next)
@@ -213,10 +213,8 @@ final class SimpleThemeEditor: ObservableObject {
     private var isRegeneratedAtApply = false
 
     private static func revalidated(_ state: SimpleThemeState) -> SimpleThemeState {
-        let palette = state.palette.compactMap(PaletteColor.init(hex:))
-        let valid = SimplePaletteAssigner.validAssignments(palette: palette, pins: state.pins)
-        func key(_ a: JobAssignment) -> [Int] { ThemeJob.allCases.map { (a[$0] ?? nil) ?? -1 } }
-        if valid.contains(where: { key($0) == key(state.assignment) }) { return state }
+        if SimplePaletteAssigner.isStructurallyValid(state.assignment, paletteCount: state.palette.count,
+                                                     pins: state.pins) { return state }
         var recipe = state.recipe
         recipe.assignment = [:]
         return SimpleThemeState(recipe: recipe)
