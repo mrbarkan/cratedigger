@@ -19,13 +19,10 @@ import UniformTypeIdentifiers
 /// Which mode is open, the question being asked and every way out of a theme
 /// (NEW, LOAD, crossing modes, closing) live in `ThemeEditorSession`.
 ///
-/// The panel form: it floats and can be moved out of the
-/// way, so you can watch the header, browser and transport all change at once.
-/// Docking it into the inspector column would hide a third of the thing being
-/// themed. the panel form: it floats and can be moved out of the
-/// way, so you can watch the header, browser and transport all change at once.
-/// Docking it into the inspector column would hide a third of the thing being
-/// themed.
+/// Live editing also explains the panel form: it floats and can be moved out
+/// of the way, so you can watch the header, browser and transport all change
+/// at once. Docking it into the inspector column would hide a third of the
+/// thing being themed.
 struct ThemeEditorView: View {
     @Environment(\.carbon) private var theme
     @Environment(\.carbonGeometry) private var geometry
@@ -96,10 +93,12 @@ struct ThemeEditorView: View {
                 filter = preset
                 model.themeEditorInitialFilter = nil
             }
+            #if DEBUG
             if model.themeEditorShowsPreview {
                 showingPreview = true
                 model.themeEditorShowsPreview = false
             }
+            #endif
             // Opening with nothing loaded starts you on whatever you're
             // looking at, rather than a blank theme you'd have to build up.
             handleRequests()
@@ -131,8 +130,12 @@ struct ThemeEditorView: View {
         session.onScreen = theme.isDark ? .dark : .light
         if model.themeEditorStartsNew {
             model.themeEditorStartsNew = false
+            #if DEBUG
             let source = model.themeEditorNewSourceID.flatMap { registry.manifest(for: $0) }
             model.themeEditorNewSourceID = nil
+            #else
+            let source: ThemeManifest? = nil
+            #endif
             session.startNew(from: source)
         } else if let id = model.themeEditorOpensThemeID {
             model.themeEditorOpensThemeID = nil

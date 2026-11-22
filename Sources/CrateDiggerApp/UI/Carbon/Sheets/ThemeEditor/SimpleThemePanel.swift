@@ -13,7 +13,6 @@ import SwiftUI
 struct SimpleThemePanel: View {
     @Environment(\.carbon) private var theme
     @Environment(\.carbonGeometry) private var geometry
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject var editor: SimpleThemeEditor
     @ObservedObject var session: ThemeEditorSession
 
@@ -26,8 +25,11 @@ struct SimpleThemePanel: View {
     /// This panel's claim on the arrows, so a panel going away never drops the
     /// claim of the one that replaced it.
     @State private var claimToken = UUID()
+    @State private var closeObserver: NSObjectProtocol?
 
-    static let controlsWidth: CGFloat = 360
+    /// Wide enough for six 60 pt swatches and for every font preset's full
+    /// name in its own face.
+    static let controlsWidth: CGFloat = 420
     /// The widest preview (the full window, 600 pt) plus its margins.
     static let previewWidth: CGFloat = 640
 
@@ -55,7 +57,10 @@ struct SimpleThemePanel: View {
             #endif
         }
         .onDisappear(perform: removeArrowKeys)
-        .onChange(of: window) { _ in ThemeEditorArrowKeys.claim(window, token: claimToken) }
+        .onChange(of: window) { _ in
+            ThemeEditorArrowKeys.claim(window, token: claimToken)
+            observeWindowClose()
+        }
     }
 
     // MARK: - Controls
@@ -120,6 +125,7 @@ struct SimpleThemePanel: View {
             }
             .frame(width: 40, height: geometry.keyHeight)
             .carbonTip("Step back (←). Every colour change, pin and Shuffle is a step; twenty are kept.")
+            .accessibilityLabel("Step back")
 
             KeyButton(style: .glowingOrange, action: { session.gated(.shuffle) { editor.shuffle() } }) {
                 Text("SHUFFLE")
@@ -133,6 +139,7 @@ struct SimpleThemePanel: View {
             }
             .frame(width: 40, height: geometry.keyHeight)
             .carbonTip("Step forward again (→).")
+            .accessibilityLabel("Step forward")
         }
     }
 
@@ -157,15 +164,19 @@ struct SimpleThemePanel: View {
                         .minimumScaleFactor(0.8)
                 }
             }
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 3), spacing: 6) {
+            // Chips as wide as their names, wrapping: a grid of equal cells
+            // truncated the wide faces ("Major Mono…", "Pixel Op…").
+            ChipFlow(spacing: 6) {
                 ForEach(presets) { preset in
                     KeyButton(style: matching?.id == preset.id ? .selected : .normal,
                               action: { setFont(preset.font, role: role) }) {
                         Text(preset.label)
                             .font(Self.chipFont(preset.font.regular))
                     }
+                    .frame(minWidth: 64)
+                    .fixedSize(horizontal: true, vertical: false)
                     .frame(height: 24)
-                    .help(preset.label)
+                    .accessibilityLabel("\(label): \(preset.label)")
                 }
                 if let custom {
                     let installed = NSFont(name: custom.regular, size: 11) != nil
@@ -174,7 +185,10 @@ struct SimpleThemePanel: View {
                         Text("Custom")
                             .font(installed ? Self.chipFont(custom.regular) : CarbonFont.mono(9, weight: .bold))
                     }
+                    .frame(minWidth: 64)
+                    .fixedSize(horizontal: true, vertical: false)
                     .frame(height: 24)
+                    .accessibilityLabel("\(label): custom, \(custom.regular)")
                     .carbonTip(installed
                                ? "The theme's own face: \(ThemeTokenCatalog.familyName(ofPostScriptName: custom.regular) ?? custom.regular)."
                                : "The theme names \(custom.regular), which isn't installed on this Mac; the system face stands in.")
@@ -373,10 +387,25 @@ struct SimpleThemePanel: View {
         }
     }
 
+    /// The panel window closing ends the monitor even if SwiftUI never sends
+    /// `onDisappear` for a window torn down from AppKit.
+    private func observeWindowClose() {
+        if let closeObserver { NotificationCenter.default.removeObserver(closeObserver) }
+        closeObserver = nil
+        guard let window else { return }
+        closeObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification, object: window, queue: .main
+        ) { _ in
+            MainActor.assumeIsolated { removeArrowKeys() }
+        }
+    }
+
     private func removeArrowKeys() {
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
         keyMonitor = nil
         ThemeEditorArrowKeys.release(token: claimToken)
+        if let closeObserver { NotificationCenter.default.removeObserver(closeObserver) }
+        closeObserver = nil
     }
 
     // MARK: - Labels
@@ -421,6 +450,58 @@ struct SimpleThemePanel: View {
     /// A chip's name drawn in its own face, so the row is the specimen.
     private static func chipFont(_ postScriptName: String) -> Font {
         postScriptName.hasPrefix(".") ? .system(size: 10.5, weight: .medium) : .custom(postScriptName, fixedSize: 10.5)
+    }
+}
+
+// MARK: - Chip flow
+
+/// Lays chips out left to right at their own widths, wrapping to a new line
+/// when the next one would not fit.
+struct ChipFlow: Layout {
+    var spacing: CGFloat = 6
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let rows = arrange(width: proposal.width ?? .infinity, subviews: subviews)
+        let width = rows.map { $0.width }.max() ?? 0
+        let height = rows.map(\.height).reduce(0, +) + spacing * CGFloat(max(rows.count - 1, 0))
+        return CGSize(width: proposal.width ?? width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        for row in arrange(width: bounds.width, subviews: subviews) {
+            var x = bounds.minX
+            for index in row.indices {
+                let size = subviews[index].sizeThatFits(.unspecified)
+                subviews[index].place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+                x += size.width + spacing
+            }
+            y += row.height + spacing
+        }
+    }
+
+    private struct Row {
+        var indices: [Int] = []
+        var width: CGFloat = 0
+        var height: CGFloat = 0
+    }
+
+    private func arrange(width: CGFloat, subviews: Subviews) -> [Row] {
+        var rows: [Row] = []
+        var row = Row()
+        for index in subviews.indices {
+            let size = subviews[index].sizeThatFits(.unspecified)
+            let needed = row.indices.isEmpty ? size.width : row.width + spacing + size.width
+            if !row.indices.isEmpty, needed > width {
+                rows.append(row)
+                row = Row()
+            }
+            row.width = row.indices.isEmpty ? size.width : row.width + spacing + size.width
+            row.height = max(row.height, size.height)
+            row.indices.append(index)
+        }
+        if !row.indices.isEmpty { rows.append(row) }
+        return rows
     }
 }
 

@@ -22,7 +22,8 @@ struct PaletteSwatchRow: View {
     @State private var hoveredSwatch: Int?
     @State private var hoveredJob: ThemeJob?
 
-    static let cellWidth: CGFloat = 52
+    /// Six cells fill the controls column (`SimpleThemePanel.controlsWidth`).
+    static let cellWidth: CGFloat = 60
     private static let chipHeight: CGFloat = 34
     /// Quiet time after the last colour-panel change before it is committed.
     private static let commitDelay: TimeInterval = 0.3
@@ -60,27 +61,35 @@ struct PaletteSwatchRow: View {
         let active = colorPanel.activeIndex == index
 
         return VStack(alignment: .leading, spacing: 4) {
-            chip(hex: hex, active: active)
-                .onTapGesture { openColorPanel(index: index, hex: hex) }
-                .carbonTip("Click to pick this colour. Hover to see what it paints.")
+            Button { openColorPanel(index: index, hex: hex) } label: {
+                chip(hex: hex, active: active)
+            }
+            .buttonStyle(.plain)
+            .carbonTip("Click to pick this colour. Hover to see what it paints.")
+            .accessibilityLabel("Swatch \(index + 1), \(hex), "
+                                + (jobs.isEmpty ? "unused" : jobs.map(\.label).joined(separator: ", ")))
+            .accessibilityHint("Opens the colour picker.")
 
             HexField(
                 value: Binding(get: { hex }, set: { commit(Self.rgb($0), at: index) }),
-                fontSize: 9,
-                horizontalPadding: 4
+                fontSize: 10,
+                horizontalPadding: 5
             )
+            .accessibilityLabel("Swatch \(index + 1) hex")
             .frame(width: Self.cellWidth)
 
             HStack(spacing: 0) {
                 pinMenu(index: index, pinned: pinned)
+                    .accessibilityLabel("Pin swatch \(index + 1) to a job")
                 Spacer(minLength: 0)
                 removeKey(index: index)
+                    .accessibilityLabel("Remove swatch \(index + 1)")
             }
 
             VStack(alignment: .leading, spacing: 2) {
                 if jobs.isEmpty {
                     Text("UNUSED")
-                        .font(CarbonFont.mono(7, weight: .bold))
+                        .font(CarbonFont.mono(8, weight: .bold))
                         .tracking(0.6)
                         .foregroundStyle(theme.ink4)
                 }
@@ -117,10 +126,10 @@ struct PaletteSwatchRow: View {
                     .font(.system(size: 6, weight: .bold))
             }
             Text(job.label.uppercased())
-                .font(CarbonFont.mono(7, weight: .bold))
-                .tracking(0.5)
+                .font(CarbonFont.mono(8, weight: .bold))
+                .tracking(0.4)
                 .lineLimit(1)
-                .minimumScaleFactor(0.7)
+                .minimumScaleFactor(0.85)
         }
         .foregroundStyle(lit ? theme.orange : theme.ink3)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -129,7 +138,7 @@ struct PaletteSwatchRow: View {
             if inside { hoveredJob = job } else if hoveredJob == job { hoveredJob = nil }
             updateHighlight()
         }
-        .help(pinned ? "\(job.label), pinned to this colour: Shuffle leaves it here." : job.label)
+        .carbonTip(pinned ? "\(job.label), pinned to this colour: Shuffle leaves it here." : job.label)
     }
 
     /// The pin icon, then the job: a pinned job stays on this swatch through
@@ -206,18 +215,23 @@ struct PaletteSwatchRow: View {
         }
         .buttonStyle(.carbonHover)
         .carbonTip("Add a colour (up to six). With more colours, more jobs get one of their own.")
+        .accessibilityLabel("Add a colour")
     }
 
     // MARK: - Committing
 
     private func updateHighlight() {
+        let next: Set<ThemeJob>
         if let hoveredJob {
-            editor.highlightedJobs = [hoveredJob]
+            next = [hoveredJob]
         } else if let hoveredSwatch {
-            editor.highlightedJobs = Set(editor.jobs(forSwatch: hoveredSwatch))
+            next = Set(editor.jobs(forSwatch: hoveredSwatch))
         } else {
-            editor.highlightedJobs = []
+            next = []
         }
+        // Every hover event lands here; republishing an equal set would redraw
+        // the whole preview for nothing.
+        if editor.highlightedJobs != next { editor.highlightedJobs = next }
     }
 
     /// A finished edit (hex committed, or a colour-panel drag at rest): one
@@ -237,12 +251,21 @@ struct PaletteSwatchRow: View {
 
     private func openColorPanel(index: Int, hex: String) {
         colorPanel.open(index: index, hex: hex) { picked in
+            // While a question is up the palette is not being edited: a drag
+            // then is ignored, so the swatch never shows a colour that no
+            // answer (Apply, Discard, Cancel) will ever commit.
+            guard session.prompt == nil else { return }
             live[index] = picked
             pendingCommit?.cancel()
-            // While a question is up, the drag just keeps the swatch current;
-            // the answer commits whatever it reached.
-            guard session.prompt == nil else { return }
-            let work = DispatchWorkItem { commit(picked, at: index) }
+            let work = DispatchWorkItem {
+                // A question that came up during the quiet time (a close,
+                // NEW) wins: the swatch goes back to what the palette holds.
+                guard session.prompt == nil else {
+                    live[index] = nil
+                    return
+                }
+                commit(picked, at: index)
+            }
             pendingCommit = work
             DispatchQueue.main.asyncAfter(deadline: .now() + Self.commitDelay, execute: work)
         }

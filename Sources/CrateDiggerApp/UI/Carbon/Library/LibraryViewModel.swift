@@ -552,6 +552,7 @@ final class LibraryViewModel: ObservableObject {
     /// mode (Simple when the file has a `simple` block). Cleared once acted on.
     @Published var themeEditorOpensThemeID: String?
 
+    #if DEBUG
     /// Where NEW starts from instead of the theme on screen. Only the dev hook
     /// (`CRATEDIGGER_THEME_EDITOR=simple-preview`) sets it, so a capture can show
     /// a Pocket palette without switching the owner's selected theme.
@@ -560,6 +561,7 @@ final class LibraryViewModel: ObservableObject {
     /// Opens Advanced with its PREVIEW side area showing. Dev hook only
     /// (`CRATEDIGGER_THEME_EDITOR=advanced-preview`); PREVIEW is a key otherwise.
     var themeEditorShowsPreview = false
+    #endif
 
     /// Swaps the inspector for the theme picker, the way `oledView ==
     /// .conversion` swaps it for the Patch Bay. Driven by the header THEME key.

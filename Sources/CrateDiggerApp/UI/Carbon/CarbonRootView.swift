@@ -82,7 +82,7 @@ struct CarbonRootView: View {
             // Advanced is deliberately narrow: it previews by letting you watch
             // the app behind it, so a panel wide enough to cover the browser
             // defeats its own purpose on a laptop screen. Simple and Advanced's
-            // PREVIEW widen it for their 1:1 illustration (about 1000 pt for
+            // PREVIEW widen it for their 1:1 illustration (about 1060 pt for
             // Simple's full-window picture beside its controls) and Advanced
             // narrows again on the way back (`ThemeEditorWindowSizing`).
             minSize: NSSize(width: 296, height: 420),
