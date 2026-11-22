@@ -4,6 +4,64 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
+## 2.4.0 (122), 2026-11-22
+
+Beta 1 of 2.4: the Theme Editor gets a Simple mode. Pick two to six colours
+and CrateDigger builds a whole theme from them, light and dark, with every
+label kept readable. Betas are offered only to people who turned on Receive
+beta updates.
+
+### Added
+
+- **Simple theme editor.** Press NEW in the theme browser or in the editor
+  to start a theme from the colours of the one you are using. Enter two to
+  six colours and CrateDigger decides which one paints the frame, the
+  panels, the text, the accent, the screen glass and the screen text, and
+  works out every other colour from them. Hover a colour to see what it
+  paints.
+- **Shuffle.** SHUFFLE tries another arrangement of the same colours. The
+  arrow keys step back and forward through your last 20 steps, colour
+  changes included. Pin a colour to a job to keep it there while you
+  shuffle.
+- **Readable whatever you pick.** Text, key labels, selected rows and the
+  display always keep enough contrast against what they sit on. CONTRAST
+  sets how much: Soft, Standard or High. A pale screen glass becomes a one
+  colour LCD, the way Llama '97's does.
+- **One palette, light and dark.** APPEARANCE builds a Light theme, a Dark
+  theme or Both from the same colours.
+- **Presets for the rest.** MATERIAL picks the shell's finish, ALBUM ART
+  picks the LCD look of the compact and mini players' art, and three rows of
+  font presets set the screen titles, the labels and readouts, and the
+  interface type.
+- **A preview that shows what goes where.** Simple draws the full window,
+  the mini player and the compact player in your colours, with the album art
+  run through the same LCD screen the players use. The app keeps your
+  current theme until you press APPLY.
+- **Preview in Advanced.** The full token editor is now called ADVANCED, and
+  its new PREVIEW key shows the mini player and the compact player while you
+  edit.
+- **Accent Key Print.** A new colour in the Advanced editor, under Buttons &
+  Knobs, for the labels printed on accent coloured keys, so they can differ
+  from the text of selected rows. The built-in themes look exactly as
+  before.
+
+### Changed
+
+- **Moving between Simple and Advanced asks first.** A Simple theme can be
+  copied to Advanced or converted; a converted theme can't go back to
+  Simple. An Advanced theme, a built-in included, can be copied into Simple.
+- **The status lamp is a key.** The lamp at the top right that steps
+  through the display animations now sits in a small key that lights when
+  you point at it and goes down when pressed, so it reads as something you
+  can click.
+
+### Fixed
+
+- **Devices saved by a newer version are kept.** If a later version of
+  CrateDigger saved a kind of device this one doesn't know, this version
+  now keeps it, instead of losing every saved device the next time it saves
+  one.
+
 ## 2.3.5 (121), 2026-11-18
 
 Beta 1: Relocate Library points your crates at music you copied or moved to

@@ -161,13 +161,20 @@ any branch except `main`, which it refuses, and stages it in
   Before it, 2.3.2 (build 114) was a stable patch from `main` on 2026-10-19 and
   2.3.1 (build 113) a promotion the same day.
 - **2.3.5 beta 1 (build 121) shipped from `v2.3` on 2026-11-18** with Relocate
-  Library. `BETA_BRANCH` is still `v2.3`, so the next press there is 2.3.5
-  beta 2. `main` stays at 2.3.4 plus the beta feed file.
-- **The static ffmpeg folder was not there for that press** (the `MUSIC` drive
-  was not mounted). The `ffmpeg` and `ffprobe` inside the last notarized
-  `dist/CrateDigger.app` are the same static 8.1 binaries: copy them out first
-  (packaging replaces the app) and pass those; `require_static_tool` and the
-  notary accepted them.
+  Library, the last beta of the 2.3 line.
+- **2.4.0 beta 1 (build 122) shipped from `v2.4` on 2026-11-22**: the Simple
+  theme editor. It opened the beta line there, so `BETA_BRANCH` is `v2.4` and
+  the next press on `v2.4` is 2.4.0 beta 2. `v2.3` carries nothing new; a 2.3.x
+  fix is a stable patch on `main`. It was pressed from the worktree
+  `.claude/worktrees/v2-4`, whose `dist/updates-beta/` held only its own DMG,
+  so it shipped without deltas; the main checkout's `dist/updates-beta/` still
+  holds the 2.3 DMGs and they belong in `old_updates/`.
+- **The static ffmpeg folder now lives on EX_3** (copied from the `MUSIC`
+  drive on 2026-11-19, SHA-256 checked), so a press no longer needs `MUSIC`
+  mounted. If it is ever missing, the `ffmpeg` and `ffprobe` inside the last
+  notarized `dist/CrateDigger.app` are the same static 8.1 binaries: copy them
+  out first (packaging replaces the app) and pass those; `require_static_tool`
+  and the notary accepted them for 2.3.5 beta 1.
 - **Two feeds can share a delta name.** At 2.3.4 the stable and beta staging
   folders both produced `CrateDigger120-114.delta` and `120-113.delta` (both
   hold the 2.3.1 and 2.3.2 DMGs). They were byte-identical with identical
@@ -180,8 +187,7 @@ any branch except `main`, which it refuses, and stages it in
   agreement). Pushing `main` first would have put "Current Release: v2.3.4" on
   the website with nothing to download.
 - **`v2.4`** holds the Stock iPod spec (parked) and has `next/2.3.2` merged in.
-  The profile-decode fix (M0) must land before any 2.4 beta; put it under
-  "Also" in the confirmation if it still hasn't.
+  The profile-decode fix (M0) shipped in 2.4.0 beta 1.
 - **`next/2.3.2`** (the hidden assistant) can no longer be 2.3.2; by the rules
   above its next alpha is 2.3.3.
 
@@ -278,14 +284,14 @@ Resolve the inputs rather than assuming them:
 - **Notary profile:** `cratedigger-notary` (confirm with
   `xcrun notarytool history --keychain-profile cratedigger-notary`).
 - **ffmpeg/ffprobe:** the *static* binaries in
-  `/Volumes/MUSIC/Development/tools/ffmpeg-static-8.1-arm64`. Never Homebrew's:
+  `/Volumes/EX_3/Code/tools/ffmpeg-static-8.1-arm64`. Never Homebrew's:
   a Homebrew ffmpeg in a signed bundle dies at launch on other Macs with a dyld
   Team ID mismatch (`package-app.sh` guards this; don't defeat it).
 
 ```bash
 CRATEDIGGER_NOTARY_PROFILE=cratedigger-notary scripts/package-app.sh \
-  --ffmpeg  /Volumes/MUSIC/Development/tools/ffmpeg-static-8.1-arm64/ffmpeg \
-  --ffprobe /Volumes/MUSIC/Development/tools/ffmpeg-static-8.1-arm64/ffprobe \
+  --ffmpeg  /Volumes/EX_3/Code/tools/ffmpeg-static-8.1-arm64/ffmpeg \
+  --ffprobe /Volumes/EX_3/Code/tools/ffmpeg-static-8.1-arm64/ffprobe \
   --sign "<Developer ID Application identity>" \
   --notarize --dmg > "$S/package.log" 2>&1; echo "package exit=$?"
 ```

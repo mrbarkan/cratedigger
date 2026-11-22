@@ -30,10 +30,11 @@ scripts/package-app.sh           # assemble dist/CrateDigger.app (bundles ffmpeg
 `main` is the stable line, now 2.3.x: it is what the public downloads and what
 every installed copy auto-updates from. Fixes for 2.3.x land on `main`.
 
-**`v2.3` is still the beta branch** (`BETA_BRANCH`), cut from `main` on
-2026-10-03. After the 2.3.4 GA it sits level with `main`, `channel` `""`
-included; the next beta pressed there is 2.3.5 beta 1 and sets `channel` back
-to `"BETA"`. How the line got here: 2.3.0 reached RC 1 (build 109) but never
+**`v2.4` is the beta branch** (`BETA_BRANCH`) since 2.4.0 beta 1 (build 122,
+2026-11-22), the Simple theme editor's release. It opened the line from
+`v2.3`, where 2.3.5 beta 1 (build 121) was the last beta: `v2.3` now carries
+nothing new, and a 2.3.x fix lands on `main` as a stable patch. Merge `main`
+into `v2.4` before each beta. How the 2.3 line got here: 2.3.0 reached RC 1 (build 109) but never
 shipped GA and became 2.3.1 (GA build 113, 2026-10-19); 2.3.2 (build 114) was
 a stable patch from `main` the same day; 2.3.3 stopped at RC 1 (build 116)
 when new features arrived and became 2.3.4 (betas 117 to 119, GA with no RC).
@@ -49,13 +50,13 @@ updates, `main` is merged in before each beta so the beta never lacks a stable
 fix, and at GA the branch is merged into `main` with `channel` set back to
 `""`.
 
-**`v2.4` is open for development, not for releases yet.** It was cut from
-`v2.3` (not `main`) on 2026-10-12, while 2.3.0 was at RC 1 (build 109), so 2.4
-work (native Stock iPod support, `docs/superpowers/specs/2026-10-12-stock-ipod-design.md`)
-builds on 2.3 instead of on 2.2.4. Merge `v2.3` into it whenever 2.3 takes a fix.
-`BETA_BRANCH`, the skill's beta column and `dist/updates-beta/` still belong to
-`v2.3`: flip them to `v2.4` only after 2.3.0 ships GA, or the next 2.3 RC can't
-publish its feed. The marketing version moves to 2.4.0 at the first 2.4 beta.
+**`v2.4` history.** It was cut from `v2.3` (not `main`) on 2026-10-12, while
+2.3.0 was at RC 1 (build 109). Native Stock iPod support
+(`docs/superpowers/specs/2026-10-12-stock-ipod-design.md`) is parked there; the
+profile-decode fix it needed first (device profiles decode per element and keep
+what they can't read, `PreferencesStore.savedExternalDeviceProfiles`) shipped
+in 2.4.0 beta 1. The 2.3 DMGs staged in the main checkout's
+`dist/updates-beta/` belong in `dist/updates-beta/old_updates/` now.
 
 The mechanism that keeps the two lines apart:
 
@@ -84,11 +85,11 @@ The mechanism that keeps the two lines apart:
   `UpdateFeed.stable`. **Do not "simplify" `UpdateFeed.override` into the
   plist.**
 - `scripts/update-appcast.sh` generates each feed only on the branch that
-  owns it (`appcast.xml` on `main`, `appcast-beta.xml` on `BETA_BRANCH`, `v2.3` for
-  the 2.3 cycle) and refuses a DMG whose major version differs from what is
+  owns it (`appcast.xml` on `main`, `appcast-beta.xml` on `BETA_BRANCH`, `v2.4` for
+  the 2.4 cycle) and refuses a DMG whose major version differs from what is
   already staged in `dist/updates*/`. When 2.1 started, the 2.0.0 beta DMG was
   moved to `dist/updates-beta/old_updates`; when 2.2 started, the 2.1.0 DMG
-  followed it. When 2.3 started, the 2.2.x DMGs did. Existing feed entries keep the download URL they were published
+  followed it. When 2.3 started, the 2.2.x DMGs did. 2.4.0 beta 1 was pressed from a worktree whose `dist/updates-beta/` was empty, so it has no deltas. Existing feed entries keep the download URL they were published
   with, looked up by build in the committed feed: deriving it from the new tag
   would have pointed the 2.1.0 GA entry at a `v2.1.0-beta.89` that never existed.
 - A stable build with Receive beta updates on reads **only** the beta feed, so
