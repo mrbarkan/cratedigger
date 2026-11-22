@@ -52,6 +52,30 @@ final class PaletteColorTests: XCTestCase {
         XCTAssertLessThan(c.oklch.c, 0.4)
     }
 
+    func testNearlyOpaqueAlphaWritesSixDigits() {
+        // 0.999 rounds to the byte 255, which is opaque: no `FF` suffix.
+        XCTAssertEqual(PaletteColor(r: 1, g: 0, b: 0, a: 0.999).hex, "#FF0000")
+        XCTAssertEqual(PaletteColor(r: 1, g: 0, b: 0, a: 0.99).hex, "#FF0000FC")
+    }
+
+    func testNonFiniteComponentDoesNotTrap() {
+        // NaN has no order, so it reads as 0; an infinity still clamps.
+        XCTAssertEqual(PaletteColor(r: .nan, g: 0.5, b: .infinity, a: 1).hex, "#0080FF")
+        XCTAssertEqual(PaletteColor(r: 0, g: 0, b: 0, a: .nan).hex, "#00000000")
+    }
+
+    func testHueIsWrappedBelow360() {
+        XCTAssertEqual(PaletteColor.normalizedHue(-1e-15), 0)
+        XCTAssertEqual(PaletteColor.normalizedHue(360), 0)
+        XCTAssertEqual(PaletteColor.normalizedHue(-90), 270, accuracy: 1e-9)
+        XCTAssertEqual(PaletteColor.normalizedHue(725), 5, accuracy: 1e-9)
+    }
+
+    func testHexTrimsNewlines() {
+        XCTAssertEqual(PaletteColor(hex: "  #336699\n")?.hex, "#336699")
+        XCTAssertEqual(PaletteColor(hex: "\t336699\r\n")?.hex, "#336699")
+    }
+
     func testDistance() {
         let a = PaletteColor(hex: "#336699")!
         XCTAssertEqual(a.distance(to: a), 0, accuracy: 1e-12)

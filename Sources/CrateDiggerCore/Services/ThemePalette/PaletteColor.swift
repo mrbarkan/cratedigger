@@ -32,7 +32,7 @@ public struct PaletteColor: Equatable, Hashable, Sendable {
 
     /// Accepts `RRGGBB` or `RRGGBBAA`, with or without a leading `#`.
     public init?(hex: String) {
-        var s = hex.trimmingCharacters(in: .whitespaces)
+        var s = hex.trimmingCharacters(in: .whitespacesAndNewlines)
         if s.hasPrefix("#") { s.removeFirst() }
         guard s.count == 6 || s.count == 8,
               s.allSatisfy({ $0.isASCII && $0.isHexDigit }),
@@ -49,11 +49,16 @@ public struct PaletteColor: Equatable, Hashable, Sendable {
         }
     }
 
-    /// `#RRGGBB`, or `#RRGGBBAA` when the colour is not fully opaque.
+    /// `#RRGGBB`, or `#RRGGBBAA` when the alpha byte is below 255. A NaN component
+    /// reads as 0 rather than trapping; infinities clamp like any other overshoot.
     public var hex: String {
-        func byte(_ v: Double) -> Int { Int((min(max(v, 0), 1) * 255).rounded()) }
+        func byte(_ v: Double) -> Int {
+            guard !v.isNaN else { return 0 }
+            return Int((min(max(v, 0), 1) * 255).rounded())
+        }
         var out = String(format: "#%02X%02X%02X", byte(r), byte(g), byte(b))
-        if a < 1 { out += String(format: "%02X", byte(a)) }
+        let alpha = byte(a)
+        if alpha < 255 { out += String(format: "%02X", alpha) }
         return out
     }
 
@@ -62,9 +67,17 @@ public struct PaletteColor: Equatable, Hashable, Sendable {
     public var oklch: OKLCH {
         let lab = oklab
         let c = (lab.a * lab.a + lab.b * lab.b).squareRoot()
-        var h = atan2(lab.b, lab.a) * 180 / .pi
-        if h < 0 { h += 360 }
+        let h = Self.normalizedHue(atan2(lab.b, lab.a) * 180 / .pi)
         return OKLCH(l: lab.l, c: c, h: c < 1e-6 ? 0 : h)
+    }
+
+    /// A hue in degrees wrapped into 0..<360. A hair below zero plus 360 rounds to
+    /// exactly 360.0 in floating point, which is why the result is checked again.
+    static func normalizedHue(_ degrees: Double) -> Double {
+        guard degrees.isFinite else { return 0 }
+        var h = degrees.truncatingRemainder(dividingBy: 360)
+        if h < 0 { h += 360 }
+        return h >= 360 ? 0 : h
     }
 
     /// Builds a colour from OKLCH. An out-of-gamut request keeps lightness and hue and
