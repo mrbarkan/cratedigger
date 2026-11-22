@@ -181,7 +181,7 @@ struct NowPlayingCover<Placeholder: View>: View {
         }
         if let source = await screenSource(maxPixel: max(600, spec.layout.lcdSide)) {
             guard !Task.isCancelled else { return }
-            let rendered = await Self.renderOffMain { CoverScreenImage.render(source, spec: spec) }
+            let rendered = await CoverScreenImage.renderOffMain { CoverScreenImage.render(source, spec: spec) }
             guard !Task.isCancelled else { return }
             if let rendered {
                 CoverScreenCache.store(rendered, forKey: key)
@@ -203,7 +203,7 @@ struct NowPlayingCover<Placeholder: View>: View {
             showScreen(cached, key: unlitKey, spec: spec)
             return
         }
-        let unlit = await Self.renderOffMain { CoverScreenImage.renderUnlit(spec: spec) }
+        let unlit = await CoverScreenImage.renderOffMain { CoverScreenImage.renderUnlit(spec: spec) }
         guard !Task.isCancelled, let unlit else { return }
         CoverScreenCache.store(unlit, forKey: unlitKey)
         showScreen(unlit, key: unlitKey, spec: spec)
@@ -215,21 +215,6 @@ struct NowPlayingCover<Placeholder: View>: View {
         if Self.debugCoverURL != nil { return false }
         #endif
         return model.isStreamActive
-    }
-
-    /// Runs a render off the main thread, cancelled with the task awaiting
-    /// it: a slider drag in the theme editor cancels each step's task as the
-    /// next begins, and without this every intermediate picture was still
-    /// drawn to the end. A cancelled render returns nil, and the callers
-    /// check `Task.isCancelled` before storing or showing anything, so a
-    /// stale picture is never used.
-    private static func renderOffMain(_ work: @escaping @Sendable () -> CGImage?) async -> CGImage? {
-        let task = Task.detached(priority: .userInitiated, operation: work)
-        return await withTaskCancellationHandler {
-            await task.value
-        } onCancel: {
-            task.cancel()
-        }
     }
 
     /// The booklet front cover's identity on disk, for the screen's cache

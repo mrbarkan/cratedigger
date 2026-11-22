@@ -89,6 +89,22 @@ enum CoverScreenImage {
         return picture(from: source, spec: spec)
     }
 
+    /// Runs a render off the main thread, cancelled with the task awaiting
+    /// it: a slider drag in the theme editor cancels each step's task as the
+    /// next begins, and without this every intermediate picture was still
+    /// drawn to the end. A cancelled render returns nil, and the callers
+    /// check `Task.isCancelled` before storing or showing anything, so a
+    /// stale picture is never used. Shared by the players' cover
+    /// (`NowPlayingCover`) and the theme preview's (`ThemePreviewCover`).
+    static func renderOffMain(_ work: @escaping @Sendable () -> CGImage?) async -> CGImage? {
+        let task = Task.detached(priority: .userInitiated, operation: work)
+        return await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
+    }
+
     /// The unlit panel: a flat source through the same renderer, so its grid
     /// is the real grid.
     static func renderUnlit(spec: CoverScreenSpec) -> CGImage? {
