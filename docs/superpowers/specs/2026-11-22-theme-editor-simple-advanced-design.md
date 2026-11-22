@@ -256,7 +256,8 @@ not have it shuffled away.)
   recipe rather than taken from the palette (for example, Text from a
   2-colour palette).
 - **`contrast`:** `soft`, `standard` or `high`, as the user set it.
-- **`recipe`:** the version of the recipe table that produced the tokens.
+- **`recipe`:** the version of the recipe table that produced the tokens
+  (`SimplePaletteRecipe.currentVersion`, stamped on every build; not a Shuffle count).
 
 The six jobs are **Frame, Panels, Text, Accent, Screen Glass and Screen Text**.
 
@@ -264,11 +265,29 @@ Appearance, material, cover look and fonts are not in the block. They are
 already ordinary theme fields, and Simple writes them there.
 
 A Simple theme also stores every token the recipe derived, in its `colors`
-(or in its `light` and `dark` layers when it is adaptive). For everything the
+(or in its `light` and `dark` layers when it is adaptive). ~~For everything the
 recipe does not set (shadows, geometry, display effects, logo) it inherits
-from the theme it was started from: the theme on screen when NEW was pressed,
-or the original of a Copy. (My call: a Pocket copy keeps its monochrome glass,
-Llama's keeps its glare settings.) Simple only ever rewrites colours, fonts,
+from the theme it was started from.~~
+
+> **Later ruling (2026-11-22, after the whole-branch review): Simple themes are
+> self-contained in every mode.** Inheriting did not work: all four built-ins are
+> adaptive, so the parent's light and dark layers came back over a LIGHT or DARK
+> Simple theme and the parent's colours won, and the parent's optional overrides
+> (Llama '97's column headers and key LEDs) came through past the contrast floors.
+> So a Simple theme has no `inherits` parent, built, previewed or saved. When it
+> is started (NEW, or a copy), the original's *resolved* non-colour settings are
+> copied in: fonts, shadows, geometry and effects, layer-specific ones into the
+> matching layer for Both, the chosen appearance's own for Light or Dark. (A Pocket
+> copy still keeps its monochrome glass and Llama's its glare settings, as copies
+> rather than by inheritance.) No logo: a Simple theme shows its name in the header,
+> and so do its Advanced Copy and Convert. Colours are only the recipe's tokens;
+> the optional `…Override` tokens (lamps, key and transport lamps, meter hot,
+> chassis ink, column-header ink) are never copied from the original, so they
+> follow the new accent and inks and the floors cover them. The saved file is
+> written whole. The cost: a later edit to the original no longer flows into its
+> Simple copies.
+
+Simple only ever rewrites colours, fonts,
 contrast, material and album-art look. The saved tokens are the truth. The block is only how to regenerate
 them.
 
@@ -304,6 +323,15 @@ them.
   | oledForeground on oledSurface | 7.0 |
   | oledForegroundMuted on oledSurface | 3.0 |
   | selectionInk on the selection fill | 4.5 |
+  | orange (the accent) on oledSurface, *later ruling* | 3.0 |
+
+  *Later ruling (2026-11-22): a pale Screen Glass.* The mini player draws its
+  time in the accent on the glass whatever the glass, so the accent on the
+  glass is floored at 3:1 by moving the glass (the accent never moves), across
+  the accent when its own side has no room; then the screen-text floors run
+  again. A glass still lighter than its screen text gets `oledMonochrome` in
+  that appearance (its layer's own in Both), so the display's lamps and matrix
+  draw in the screen text; a dark glass keeps the original's value.
 
 - **Valid assignments:** an assignment is valid when Frame and Panels differ
   enough in lightness to read as separate surfaces, and Accent has the
@@ -330,8 +358,10 @@ For NEW, and for Advanced to Simple, Core reads the original's job colours:
 Core merges colours closer than a small OKLCH distance, keeps at most six, and
 pins each job to its colour so the first result resembles the original. An
 adaptive original makes a copy set to Both; a single-appearance one keeps its
-appearance. Fonts, material and cover look are copied as they are, and the
-copy inherits from the original (see Data model).
+appearance. Fonts, material and cover look are copied as they are. ~~The copy
+inherits from the original.~~ *Later ruling (2026-11-22):* the copy is
+self-contained; the original's shadows, geometry and effects are copied into it
+once, never inherited (see Data model).
 
 ### Reopening a saved Simple theme
 
