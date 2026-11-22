@@ -3,13 +3,11 @@ import XCTest
 
 final class ThemeEditorModeRulesTests: XCTestCase {
     func testSimpleToAdvancedOffersConvert() {
-        XCTAssertEqual(ThemeEditorModeRules.crossings(from: .simple, isBuiltIn: false), [.copy, .convert, .cancel])
-        XCTAssertEqual(ThemeEditorModeRules.crossings(from: .simple, isBuiltIn: true), [.copy, .convert, .cancel])
+        XCTAssertEqual(ThemeEditorModeRules.crossings(from: .simple), [.copy, .convert, .cancel])
     }
 
     func testAdvancedToSimpleNeverConverts() {
-        XCTAssertEqual(ThemeEditorModeRules.crossings(from: .advanced, isBuiltIn: false), [.copy, .cancel])
-        XCTAssertEqual(ThemeEditorModeRules.crossings(from: .advanced, isBuiltIn: true), [.copy, .cancel])
+        XCTAssertEqual(ThemeEditorModeRules.crossings(from: .advanced), [.copy, .cancel])
     }
 
     func testModeOfTheme() {

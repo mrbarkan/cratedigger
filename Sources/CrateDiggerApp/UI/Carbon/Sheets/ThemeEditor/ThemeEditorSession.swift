@@ -128,8 +128,7 @@ final class ThemeEditorSession: ObservableObject {
             startNew()
             return
         }
-        let isBuiltIn = registry.draft.flatMap { registry.manifest(for: $0.id) }?.origin == .builtIn
-        let crossings = ThemeEditorModeRules.crossings(from: mode, isBuiltIn: isBuiltIn)
+        let crossings = ThemeEditorModeRules.crossings(from: mode)
         let choices = crossings.map { crossing -> ThemeEditorPrompt.Choice in
             switch crossing {
             case .cancel: return .init(label: "CANCEL", role: .cancel) {}

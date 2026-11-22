@@ -8,7 +8,7 @@ public enum ThemeEditorModeRules {
     /// Simple to Advanced may convert the theme in place (it keeps every token it
     /// wrote). Advanced to Simple never converts: Simple would overwrite hand-made
     /// colours, so only a copy or nothing is offered.
-    public static func crossings(from mode: Mode, isBuiltIn: Bool) -> [Crossing] {
+    public static func crossings(from mode: Mode) -> [Crossing] {
         switch mode {
         case .simple: return [.copy, .convert, .cancel]
         case .advanced: return [.copy, .cancel]
