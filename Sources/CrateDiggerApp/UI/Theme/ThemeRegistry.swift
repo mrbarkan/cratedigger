@@ -684,6 +684,22 @@ public final class ThemeRegistry: ObservableObject {
         draftEditingAppearance = copy.baseAppearance
     }
 
+    /// Opens a Simple candidate as an Advanced draft of the *same* theme (the
+    /// editor's Convert): every token filled in against its parent, the recipe
+    /// gone, id and name kept. Nothing is written until Save, so the file keeps
+    /// its `simple` block until then.
+    public func beginAdvancedConversion(of definition: ThemeDefinition) {
+        draftLogoFallback = manifest(for: definition.inherits)?.logoURLs ?? [:]
+        var converted = Self.seeded(resolvedAgainstParent(definition))
+        converted.simple = nil
+        draft = converted
+        draftSeed = converted
+        // After the assignment, so whatever draft was open before is not an
+        // undo step of this one.
+        clearUndo()
+        draftEditingAppearance = converted.baseAppearance
+    }
+
     /// Applies a LIGHT/DARK change so it actually shows.
     ///
     /// `baseAppearance` is only a *declaration* in the file format — it decides

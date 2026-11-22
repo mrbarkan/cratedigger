@@ -33,6 +33,26 @@ extension EnvironmentValues {
     }
 }
 
+/// Lets panel content veto a close from the window's own close button, to
+/// ask its question first (the theme editor's Apply / Discard). The content
+/// sets `shouldClose`; returning false keeps the window open, and the content
+/// closes it later through `carbonPanelDismiss`.
+@MainActor
+final class CarbonPanelCloseGuard {
+    var shouldClose: (() -> Bool)?
+}
+
+struct CarbonPanelCloseGuardKey: EnvironmentKey {
+    static let defaultValue: CarbonPanelCloseGuard? = nil
+}
+
+extension EnvironmentValues {
+    var carbonPanelCloseGuard: CarbonPanelCloseGuard? {
+        get { self[CarbonPanelCloseGuardKey.self] }
+        set { self[CarbonPanelCloseGuardKey.self] = newValue }
+    }
+}
+
 extension View {
     func carbonPanel<PanelContent: View>(
         isPresented: Binding<Bool>,
@@ -76,16 +96,19 @@ private struct CarbonPanelModifier<PanelContent: View>: ViewModifier {
 
     private func present() {
         guard controller == nil else { return }
+        let closeGuard = CarbonPanelCloseGuard()
         let panel = CarbonPanelController(
             title: title,
             minSize: minSize,
             initialSize: initialSize,
             maxSize: maxSize,
             autosaveName: autosaveName,
+            closeGuard: closeGuard,
             rootView: AnyView(
                 panelContent()
                     // Content closes the panel through this, not \.dismiss.
                     .environment(\.carbonPanelDismiss, { isPresented = false })
+                    .environment(\.carbonPanelCloseGuard, closeGuard)
                     .carbonThemed(mode: AppearanceMode.current)
             ),
             onClose: {
@@ -109,6 +132,7 @@ private struct CarbonPanelModifier<PanelContent: View>: ViewModifier {
 /// remembered per `autosaveName` so a panel reopens where you left it.
 private final class CarbonPanelController: NSWindowController, NSWindowDelegate {
     private var onClose: (() -> Void)?
+    private let closeGuard: CarbonPanelCloseGuard
 
     init(
         title: String,
@@ -116,10 +140,12 @@ private final class CarbonPanelController: NSWindowController, NSWindowDelegate 
         initialSize: NSSize,
         maxSize: NSSize?,
         autosaveName: String,
+        closeGuard: CarbonPanelCloseGuard,
         rootView: AnyView,
         onClose: @escaping () -> Void
     ) {
         self.onClose = onClose
+        self.closeGuard = closeGuard
         let hosting = NSHostingController(rootView: rootView)
         let window = NSWindow(contentViewController: hosting)
         window.styleMask = [.titled, .closable, .resizable, .fullSizeContentView]
@@ -182,6 +208,11 @@ private final class CarbonPanelController: NSWindowController, NSWindowDelegate 
         onClose = nil
         window?.delegate = nil
         window?.close()
+    }
+
+    /// The close button (and ⌘W): the content may want to ask first.
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        closeGuard.shouldClose?() ?? true
     }
 
     func windowWillClose(_ notification: Notification) {

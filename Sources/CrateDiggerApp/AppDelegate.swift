@@ -694,6 +694,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                 }
             }
         }
+        // Before the snapshot guard: a window capture (`screencapture -l`) of
+        // the editor needs no snapshot path, and the shell materials and the
+        // cover screen only read true in one.
+        // Value is an optional token filter ("fonts", "corner"), so a capture
+        // can bring one section of the editor into view. Three values open the
+        // modes instead: "simple" is NEW from the theme on screen,
+        // "simple-preview" NEW from Pocket (a palette, a material and an LCD
+        // cover look to show, without touching the selected theme), and
+        // "advanced-preview" Advanced with its PREVIEW area open.
+        if let raw = env["CRATEDIGGER_THEME_EDITOR"] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) { [weak self] in
+                guard let model = self?.mainWindowController?.model else { return }
+                switch raw {
+                case "1": break
+                case "simple":
+                    model.themeEditorStartsNew = true
+                case "simple-preview":
+                    model.themeEditorNewSourceID = "pocket"
+                    model.themeEditorStartsNew = true
+                case "advanced-preview":
+                    model.themeEditorShowsPreview = true
+                default:
+                    model.themeEditorInitialFilter = raw
+                }
+                model.showingThemeEditor = true
+            }
+        }
         guard let path = env["CRATEDIGGER_SNAPSHOT_PATH"] else { return }
         // Just before the final snap — starting playback flips the OLED to NOW
         // asynchronously, so an early set gets overridden.
@@ -721,15 +748,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         if env["CRATEDIGGER_GALLERY"] != nil {
             DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) { [weak self] in
                 self?.mainWindowController?.model.showArtworkGallery = true
-            }
-        }
-        // Value is an optional token filter ("fonts", "corner"), so a capture
-        // can bring one section of the editor into view.
-        if let raw = env["CRATEDIGGER_THEME_EDITOR"] {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) { [weak self] in
-                guard let model = self?.mainWindowController?.model else { return }
-                if raw != "1" { model.themeEditorInitialFilter = raw }
-                model.showingThemeEditor = true
             }
         }
         // A live search, so a capture can show the browser filtered and the

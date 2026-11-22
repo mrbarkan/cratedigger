@@ -67,6 +67,10 @@ struct CarbonRootView: View {
                 set: { isPresented in
                     model.showingThemeEditor = isPresented
                     guard !isPresented else { return }
+                    // A Simple editor never holds a draft, and it asks about
+                    // unapplied changes before it lets the panel close
+                    // (`ThemeEditorSession.shouldClose`, via the panel's close
+                    // guard), so by now there is nothing left to ask about.
                     ThemeRegistry.shared.discardDraft()
                     // The system color panel is app-global and outlives the
                     // swatch that opened it, so closing the editor leaves an
@@ -75,12 +79,15 @@ struct CarbonRootView: View {
                 }
             ),
             title: word("Theme Editor"),
-            // Deliberately narrow: the editor previews by letting you watch the
-            // app behind it, so a panel wide enough to cover the browser
-            // defeats its own purpose on a laptop screen.
+            // Advanced is deliberately narrow: it previews by letting you watch
+            // the app behind it, so a panel wide enough to cover the browser
+            // defeats its own purpose on a laptop screen. Simple and Advanced's
+            // PREVIEW widen it for their 1:1 illustration (about 1000 pt for
+            // Simple's full-window picture beside its controls) and Advanced
+            // narrows again on the way back (`ThemeEditorWindowSizing`).
             minSize: NSSize(width: 296, height: 420),
-            initialSize: NSSize(width: 320, height: 600),
-            maxSize: NSSize(width: 520, height: 1400),
+            initialSize: NSSize(width: 340, height: 600),
+            maxSize: NSSize(width: 1100, height: 1400),
             autosaveName: "cratedigger.panel.themeEditor"
         ) {
             ThemeEditorView().environmentObject(model)

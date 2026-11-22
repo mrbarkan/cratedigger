@@ -3,13 +3,26 @@ import CrateDiggerCore
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// The theme editor. Every control writes straight into
-/// `ThemeRegistry.shared.draft`, which the whole app renders from while it's
-/// open — so there is no preview pane here, deliberately. The preview is the
-/// application behind this panel, which is the only preview that can't lie
-/// about how a theme actually looks.
+/// The theme editor, in two modes behind the SIMPLE / ADVANCED switch at the top.
 ///
-/// That also explains the panel form: it floats and can be moved out of the
+/// **Advanced** is the full token editor. Every control writes straight into
+/// `ThemeRegistry.shared.draft`, which the whole app renders from while it's
+/// open, so the main preview is the application behind this panel: the only
+/// preview that can't lie about how a theme actually looks. PREVIEW adds a
+/// side area with the illustrated mini and compact players, the two screens
+/// the window behind can't show while you edit it.
+///
+/// **Simple** (`SimpleThemePanel`) builds a theme from a palette. It never
+/// touches the registry's draft: the app keeps the saved theme until APPLY,
+/// and the draft shows only in the illustrated preview beside the controls.
+///
+/// Which mode is open, the question being asked and every way out of a theme
+/// (NEW, LOAD, crossing modes, closing) live in `ThemeEditorSession`.
+///
+/// The panel form: it floats and can be moved out of the
+/// way, so you can watch the header, browser and transport all change at once.
+/// Docking it into the inspector column would hide a third of the thing being
+/// themed. the panel form: it floats and can be moved out of the
 /// way, so you can watch the header, browser and transport all change at once.
 /// Docking it into the inspector column would hide a third of the thing being
 /// themed.
@@ -17,8 +30,14 @@ struct ThemeEditorView: View {
     @Environment(\.carbon) private var theme
     @Environment(\.carbonGeometry) private var geometry
     @Environment(\.carbonPanelDismiss) private var dismiss
+    @Environment(\.carbonPanelCloseGuard) private var closeGuard
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var registry = ThemeRegistry.shared
     @EnvironmentObject private var model: LibraryViewModel
+    @StateObject private var session = ThemeEditorSession()
+    /// Advanced's PREVIEW side area.
+    @State private var showingPreview = false
+    @State private var window: NSWindow?
 
     @State private var filter = ""
     @State private var saveError: String?
@@ -42,6 +61,147 @@ struct ThemeEditorView: View {
     private var draft: ThemeDefinition? { registry.draft }
 
     var body: some View {
+        ZStack {
+            VStack(spacing: 0) {
+                topBar
+                if let simple = session.simple {
+                    Divider().overlay(theme.hair)
+                    SimpleThemePanel(editor: simple, session: session)
+                        // A new editor (NEW, DUPLICATE, LOAD) is a new panel:
+                        // its key monitor, colour panel and opening fonts
+                        // belong to the editor they were made for.
+                        .id(ObjectIdentifier(simple))
+                } else {
+                    HStack(spacing: 0) {
+                        advancedColumn
+                        if showingPreview {
+                            Rectangle().fill(theme.hair).frame(width: 1)
+                            advancedPreview
+                        }
+                    }
+                }
+            }
+            if let prompt = session.prompt {
+                ThemeEditorPromptView(prompt: prompt, answer: session.answer)
+                    .transition(.opacity)
+            }
+        }
+        .animation(CarbonMotion.state, value: session.prompt?.id)
+        .background(theme.chassis)
+        .background(HostingWindowReader { window = $0 })
+        .onAppear {
+            session.dismiss = { dismiss?() }
+            closeGuard?.shouldClose = { [session] in session.shouldClose() }
+            if let preset = model.themeEditorInitialFilter {
+                filter = preset
+                model.themeEditorInitialFilter = nil
+            }
+            if model.themeEditorShowsPreview {
+                showingPreview = true
+                model.themeEditorShowsPreview = false
+            }
+            // Opening with nothing loaded starts you on whatever you're
+            // looking at, rather than a blank theme you'd have to build up.
+            handleRequests()
+            #if DEBUG
+            // A capture can't press the mode switch: "cross" asks the crossing
+            // question as if the other mode's key had been pressed.
+            if ProcessInfo.processInfo.environment["CRATEDIGGER_THEME_PROMPT"] == "cross" {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                    session.cross(to: session.mode == .simple ? .advanced : .simple)
+                }
+            }
+            #endif
+        }
+        .onChange(of: model.themeEditorStartsNew) { starts in
+            if starts { handleRequests() }
+        }
+        .onChange(of: model.themeEditorOpensThemeID) { id in
+            if id != nil { handleRequests() }
+        }
+        .onChange(of: session.mode) { _ in fitWindow() }
+        .onChange(of: showingPreview) { _ in fitWindow() }
+        .onChange(of: window) { _ in fitWindow() }
+    }
+
+    /// NEW from the picker, a theme's edit key, or plain opening: whichever
+    /// the model asked for. Each request is cleared once acted on, so asking
+    /// again with the panel open is a new request.
+    private func handleRequests() {
+        session.onScreen = theme.isDark ? .dark : .light
+        if model.themeEditorStartsNew {
+            model.themeEditorStartsNew = false
+            let source = model.themeEditorNewSourceID.flatMap { registry.manifest(for: $0) }
+            model.themeEditorNewSourceID = nil
+            session.startNew(from: source)
+        } else if let id = model.themeEditorOpensThemeID {
+            model.themeEditorOpensThemeID = nil
+            if let manifest = registry.manifest(for: id) { session.open(manifest) }
+        } else {
+            session.openCurrent()
+        }
+    }
+
+    /// Simple wants room for its preview at 1:1; Advanced is narrow, so the
+    /// app behind stays in view, and widens only for PREVIEW.
+    private func fitWindow() {
+        guard let window else { return }
+        let size = ThemeEditorWindowSizing.size(
+            simple: session.simple != nil,
+            preview: showingPreview,
+            currentWidth: window.contentRect(forFrameRect: window.frame).width
+        )
+        ThemeEditorWindowSizing.apply(size, to: window, animate: !reduceMotion)
+    }
+
+    // MARK: - Modes
+
+    /// SIMPLE / ADVANCED, then the theme keys both modes share.
+    private var topBar: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 6) {
+                modeKey("SIMPLE", .simple,
+                        tip: "Build a theme from a palette of two to six colours.")
+                modeKey("ADVANCED", .advanced,
+                        tip: "Every colour token, dial, font and logo, edited live on the app.")
+            }
+
+            HStack(spacing: 8) {
+                sectionLabel("Theme")
+                Spacer(minLength: 0)
+                KeyButton(action: { session.onScreen = theme.isDark ? .dark : .light; session.startNew() }) {
+                    Text("NEW")
+                }
+                .frame(width: 48, height: 20)
+                .carbonTip("Start a new theme in Simple from the colours of the theme on screen.")
+                if session.simple != nil {
+                    KeyButton(action: { session.duplicateSimple() }) { Text("DUPLICATE") }
+                        .frame(width: 74, height: 20)
+                        .carbonTip("Copy this theme into a new one, unapplied changes included. The original is left alone.")
+                } else if draft != nil {
+                    KeyButton(action: { registry.duplicateDraft() }) { Text("DUPLICATE") }
+                        .frame(width: 74, height: 20)
+                        .carbonTip("Fork this theme into a new one, keeping everything you've changed. The original is left alone.")
+                }
+                loadMenu
+                pinButton
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 12)
+        .padding(.bottom, session.simple == nil ? 0 : 12)
+    }
+
+    private func modeKey(_ title: String, _ mode: ThemeEditorModeRules.Mode, tip: String) -> some View {
+        KeyButton(style: session.mode == mode ? .selected : .normal, action: { session.cross(to: mode) }) {
+            Text(title)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 22)
+        .carbonTip(tip)
+    }
+
+    private var advancedColumn: some View {
         VStack(spacing: 0) {
             identityBar
             Divider().overlay(theme.hair)
@@ -61,34 +221,36 @@ struct ThemeEditorView: View {
                 actionBar
             }
         }
-        .background(theme.chassis)
-        .onAppear {
-            // Opening with nothing loaded starts you on whatever you're
-            // looking at, rather than a blank theme you'd have to build up.
-            if registry.draft == nil { beginEditingActiveTheme() }
-            if let preset = model.themeEditorInitialFilter {
-                filter = preset
-                model.themeEditorInitialFilter = nil
+        .frame(minWidth: ThemeEditorWindowSizing.advancedMinimum.width,
+               maxWidth: showingPreview ? ThemeEditorWindowSizing.advancedWidth : .infinity)
+    }
+
+    /// The illustrated mini and compact players, live on the draft: the two
+    /// screens the window behind can't show while you are editing it. 1:1,
+    /// scrolled rather than scaled (see `ThemePreviewIllustration`).
+    private var advancedPreview: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 2) {
+                sectionLabel("Preview")
+                Text("Mini player and compact player.")
+                    .font(CarbonFont.mono(8))
+                    .foregroundStyle(theme.ink4)
             }
+            .padding(12)
+            Divider().overlay(theme.hair)
+            ScrollView([.horizontal, .vertical]) {
+                ThemePreviewIllustration(theme: theme, screens: [.mini, .compact])
+                    .padding(20)
+            }
+            .background(theme.well)
         }
+        .frame(minWidth: 300, maxWidth: .infinity)
     }
 
     // MARK: - Identity
 
     private var identityBar: some View {
         VStack(spacing: 8) {
-            HStack(spacing: 8) {
-                sectionLabel("Theme")
-                Spacer(minLength: 0)
-                if draft != nil {
-                    KeyButton(action: { registry.duplicateDraft() }) { Text("DUPLICATE") }
-                        .frame(width: 74, height: 20)
-                        .carbonTip("Fork this theme into a new one, keeping everything you've changed. The original is left alone.")
-                }
-                loadMenu
-                pinButton
-            }
-
             if let draft {
                 TextField("Theme name", text: Binding(
                     get: { draft.name },
@@ -255,7 +417,10 @@ struct ThemeEditorView: View {
     private var loadMenu: some View {
         Menu {
             ForEach(registry.manifests) { manifest in
-                Button(manifest.definition.name) { registry.beginEditing(manifest) }
+                Button(manifest.definition.name) {
+                    session.onScreen = theme.isDark ? .dark : .light
+                    session.open(manifest)
+                }
             }
             if registry.manifests.isEmpty {
                 Text(theme.word("No themes installed"))
@@ -269,7 +434,7 @@ struct ThemeEditorView: View {
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
-        .carbonTip(theme.word("Open an installed theme. Built-ins open as an editable copy — the originals ship with the app and stay put."))
+        .carbonTip(theme.word("Open an installed theme. Each opens in its own mode; built-ins open as an editable copy — the originals ship with the app and stay put."))
     }
 
     private var emptyState: some View {
@@ -278,7 +443,7 @@ struct ThemeEditorView: View {
             Text(theme.word("No theme loaded"))
                 .font(CarbonFont.sans(13, weight: .semibold))
                 .foregroundStyle(theme.ink3)
-            KeyButton(action: beginEditingActiveTheme) { Text(theme.word("EDIT CURRENT THEME")) }
+            KeyButton(action: { session.openCurrent() }) { Text(theme.word("EDIT CURRENT THEME")) }
                 .frame(width: 180, height: geometry.keyHeight)
             Spacer()
         }
@@ -1075,15 +1240,18 @@ struct ThemeEditorView: View {
 
     private var actionBar: some View {
         VStack(spacing: 6) {
-            if let saveError {
-                Text(saveError)
+            if let error = saveError ?? session.error {
+                Text(error)
                     .font(CarbonFont.mono(9))
                     .foregroundStyle(theme.red)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            HStack(spacing: 8) {
+            // Equal keys across the bar: five fixed widths no longer fit the
+            // panel's narrowest size once PREVIEW joined them.
+            HStack(spacing: 6) {
                 KeyButton(action: revealInFinder) { Text("REVEAL") }
-                    .frame(width: 64, height: geometry.keyHeight)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: geometry.keyHeight)
                     .carbonTip("Show the Themes folder in Finder — themes are plain files you can zip and share.")
 
                 KeyButton(
@@ -1092,12 +1260,20 @@ struct ThemeEditorView: View {
                 ) {
                     Text("UNDO")
                 }
-                .frame(width: 58, height: geometry.keyHeight)
+                .frame(maxWidth: .infinity)
+                .frame(height: geometry.keyHeight)
                 .carbonTip(registry.undoDepth == 0
                            ? "Nothing to undo yet."
                            : "Step back through the last \(registry.undoDepth) change\(registry.undoDepth == 1 ? "" : "s"). Keeps ten.")
 
-                Spacer(minLength: 0)
+                KeyButton(style: showingPreview ? .selected : .normal, action: { showingPreview.toggle() }) {
+                    Text("PREVIEW")
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: geometry.keyHeight)
+                .carbonTip(showingPreview
+                           ? "Hide the mini and compact player preview."
+                           : "Show the mini player and compact player beside the editor: the screens the window behind can't show.")
 
                 KeyButton(action: {
                     registry.discardDraft()
@@ -1105,10 +1281,12 @@ struct ThemeEditorView: View {
                 }) {
                     Text("DISCARD")
                 }
-                .frame(width: 74, height: geometry.keyHeight)
+                .frame(maxWidth: .infinity)
+                .frame(height: geometry.keyHeight)
 
                 KeyButton(style: .glowingFilled, action: save) { Text("SAVE") }
-                    .frame(width: 74, height: geometry.keyHeight)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: geometry.keyHeight)
                     .carbonTip("Write the theme to your Themes folder and switch to it.")
             }
         }
@@ -1128,21 +1306,6 @@ struct ThemeEditorView: View {
     private func revealInFinder() {
         guard let url = registry.userThemesDirectory else { return }
         NSWorkspace.shared.activateFileViewerSelecting([url])
-    }
-
-    private func beginEditingActiveTheme() {
-        let selected = PreferencesStore.shared.selectedThemeID
-        let onScreen: ThemeDefinition.BaseAppearance = theme.isDark ? .dark : .light
-        if let manifest = registry.manifest(for: selected) {
-            registry.beginEditing(manifest, appearance: onScreen)
-        } else if let fallback = registry.manifests.first(where: {
-            // No theme selected — fork whichever built-in matches the
-            // appearance currently on screen, so editing starts from what the
-            // user is actually looking at.
-            $0.definition.baseAppearance == onScreen
-        }) {
-            registry.beginEditing(fallback, appearance: onScreen)
-        }
     }
 
     // MARK: - Filtering
@@ -1390,9 +1553,11 @@ private struct ThemeSwatchRow: View {
 /// edits stay local until they parse and are committed on Return or focus loss.
 /// Text that never parses snaps back rather than silently writing a token the
 /// loader will drop later.
-private struct HexField: View {
+struct HexField: View {
     @Environment(\.carbon) private var theme
     @Binding var value: String
+    var fontSize: CGFloat = 10
+    var horizontalPadding: CGFloat = 6
 
     @State private var text: String = ""
     @FocusState private var focused: Bool
@@ -1402,10 +1567,10 @@ private struct HexField: View {
     var body: some View {
         TextField("#RRGGBB", text: $text)
             .textFieldStyle(.plain)
-            .font(CarbonFont.mono(10))
+            .font(CarbonFont.mono(fontSize))
             .foregroundStyle(parses ? theme.ink2 : theme.red)
             .focused($focused)
-            .padding(.horizontal, 6)
+            .padding(.horizontal, horizontalPadding)
             .padding(.vertical, 4)
             .background(RoundedRectangle(cornerRadius: 4).fill(theme.paper))
             .overlay(

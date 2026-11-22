@@ -252,6 +252,16 @@ struct ThemePickerPane: View {
                 .frame(height: geometry.keyHeight)
                 .carbonTip("Show the Themes folder in Finder")
 
+            KeyButton(action: {
+                model.themeEditorStartsNew = true
+                model.showingThemeEditor = true
+            }) {
+                Text("NEW")
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: geometry.keyHeight)
+            .carbonTip(theme.word("Start a new theme in Simple from the colours of the current one"))
+
             KeyButton(style: .glowingFilled, action: { model.showingThemeEditor = true }) {
                 Text("EDITOR")
             }
@@ -271,8 +281,11 @@ struct ThemePickerPane: View {
         return CarbonTheme(definition: manifest.definition, resolvedBase: base).orange
     }
 
+    /// Opens `manifest` in the editor in its own mode (Simple when the file
+    /// has a `simple` block). The editor does the opening, so an unapplied
+    /// Simple draft already open there is asked about first.
     private func edit(_ manifest: ThemeManifest) {
-        registry.beginEditing(manifest, appearance: theme.isDark ? .dark : .light)
+        model.themeEditorOpensThemeID = manifest.id
         model.showingThemeEditor = true
     }
 

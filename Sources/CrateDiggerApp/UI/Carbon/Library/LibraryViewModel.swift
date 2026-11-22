@@ -542,6 +542,25 @@ final class LibraryViewModel: ObservableObject {
     /// panel, and this is the only way to bring one into view for a capture.
     var themeEditorInitialFilter: String?
 
+    /// NEW (the theme picker's key): the editor starts a Simple theme from
+    /// the theme on screen. The editor clears it once it has acted, so pressing
+    /// NEW with the panel already open is a fresh request (and asks about
+    /// unapplied changes first).
+    @Published var themeEditorStartsNew = false
+
+    /// A theme's edit key in the picker: the editor opens this theme in its own
+    /// mode (Simple when the file has a `simple` block). Cleared once acted on.
+    @Published var themeEditorOpensThemeID: String?
+
+    /// Where NEW starts from instead of the theme on screen. Only the dev hook
+    /// (`CRATEDIGGER_THEME_EDITOR=simple-preview`) sets it, so a capture can show
+    /// a Pocket palette without switching the owner's selected theme.
+    var themeEditorNewSourceID: String?
+
+    /// Opens Advanced with its PREVIEW side area showing. Dev hook only
+    /// (`CRATEDIGGER_THEME_EDITOR=advanced-preview`); PREVIEW is a key otherwise.
+    var themeEditorShowsPreview = false
+
     /// Swaps the inspector for the theme picker, the way `oledView ==
     /// .conversion` swaps it for the Patch Bay. Driven by the header THEME key.
     @Published var showingThemePicker: Bool = false
@@ -1883,6 +1902,10 @@ final class LibraryViewModel: ObservableObject {
             // to it and not to volume or the browser, and W/A/S/D to it and
             // not to anything else.
             if self.handleQuickEQKey(event) { return nil }
+
+            // The Simple theme editor steps its history with bare ←/→; they
+            // must not also skip tracks while its panel is the key window.
+            if ThemeEditorArrowKeys.claims(event) { return event }
 
             // Bare arrows navigate the browser (↑/↓ select, ←/→ switch columns)
             // when the main window is focused and no text field is editing. Takes
