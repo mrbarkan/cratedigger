@@ -48,14 +48,17 @@ enum InterfaceStyleDelivery {
     /// style pays for the colour conversion. Each fill is separated from what
     /// is drawn under it, in order: the well from the case, then the paper from
     /// that *separated* well. Separating the paper from the theme's own well
-    /// let both move the same way, and the lists sank into their panel.
+    /// let both move the same way, and the lists sank into their panel. The
+    /// keys come last and clear all three as drawn, since a key sits on the
+    /// case, on a well (pane-header plates) and on paper (the inspector's tabs).
     static func softSurfaces(for style: InterfaceStyle, theme: CarbonTheme) -> SoftSurfaces? {
         guard style == .softBlocks else { return nil }
         let chassis = theme.chassis.paletteColor
         let well = SoftSeparation.separated(theme.well.paletteColor, on: chassis)
         let paper = SoftSeparation.separated(theme.paper.paletteColor, on: well)
+        let metal = SoftSeparation.separated(theme.metal.paletteColor, onAll: [chassis, well, paper])
         return SoftSurfaces(
-            metal: Color(palette: SoftSeparation.separated(theme.metal.paletteColor, on: chassis)),
+            metal: Color(palette: metal),
             well: Color(palette: well),
             paper: Color(palette: paper)
         )

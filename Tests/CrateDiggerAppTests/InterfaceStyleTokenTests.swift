@@ -146,6 +146,26 @@ final class InterfaceStyleTokenTests: XCTestCase {
                                     "keys against the case")
     }
 
+    /// Keys sit on the case, on a well (pane-header plates) and on paper (the
+    /// inspector's tab row), so Soft Blocks' metal clears all three as drawn.
+    /// Carbon's own colours, both layers (Carbon.cdtheme).
+    func testSoftMetalClearsEverySurfaceAKeySitsOn() throws {
+        let layers: [(ThemeDefinition.BaseAppearance, [String: String])] = [
+            (.light, ["chassis": "#F5F8FA", "well": "#E9F1F4", "paper": "#FAFCFD", "metal": "#DDE8EC"]),
+            (.dark, ["chassis": "#171C22", "well": "#121A22", "paper": "#111820", "metal": "#303A43"]),
+        ]
+        for (appearance, colors) in layers {
+            let drawn = theme(colors: colors, appearance: appearance)
+            let surfaces = try XCTUnwrap(InterfaceStyleDelivery.softSurfaces(for: .softBlocks, theme: drawn))
+            let metal = surfaces.metal.paletteColor
+            let floor = SoftSeparation.minimumContrast - 0.0001
+            for (name, under) in [("chassis", drawn.chassis), ("well", surfaces.well), ("paper", surfaces.paper)] {
+                XCTAssertGreaterThanOrEqual(PaletteColor.contrast(metal, under.paletteColor), floor,
+                                            "\(appearance): keys against the \(name)")
+            }
+        }
+    }
+
     private func assertSameColor(_ a: PaletteColor, _ b: PaletteColor,
                                  file: StaticString = #filePath, line: UInt = #line) {
         XCTAssertEqual(a.r, b.r, accuracy: 0.002, file: file, line: line)

@@ -26,6 +26,53 @@ public enum SoftSeparation {
         return PaletteColor.contrast(second, surface) > firstContrast ? second : first
     }
 
+    /// How far `separated(_:onAll:)` may mix toward white or black: further than the
+    /// one-surface limit, since a key may need to travel past one surface to clear another.
+    private static let multiSurfaceLimit = 0.50
+
+    /// `fill` moved just far enough to stand apart from every surface in `surfaces`,
+    /// for a fill (a key) that can sit on several (the case, a well, the paper).
+    ///
+    /// `fill` itself when it already clears them all, or when there are none. Otherwise
+    /// both directions are tried in steps of 0.02 up to 0.50, and the smallest mix that
+    /// clears every surface wins; at equal mix, the direction away from the surface
+    /// nearest the fill in luminance. If no mix clears them all, the candidate whose
+    /// lowest contrast against any surface is highest.
+    public static func separated(_ fill: PaletteColor, onAll surfaces: [PaletteColor]) -> PaletteColor {
+        func worst(_ color: PaletteColor) -> Double {
+            surfaces.map { PaletteColor.contrast(color, $0) }.min() ?? .infinity
+        }
+        guard !surfaces.isEmpty, worst(fill) < minimumContrast else { return fill }
+
+        let fillLuminance = fill.relativeLuminance
+        let nearest = surfaces.min {
+            abs($0.relativeLuminance - fillLuminance) < abs($1.relativeLuminance - fillLuminance)
+        }!
+        // Away from the nearest surface first, so it wins a tie at the same mix.
+        let preferWhite = fillLuminance >= nearest.relativeLuminance
+        let ends: [Double] = preferWhite ? [1, 0] : [0, 1]
+
+        var best = fill
+        var bestWorst = worst(fill)
+        let steps = Int((multiSurfaceLimit / step).rounded())
+        for k in 1...steps {
+            let amount = Double(k) * step
+            for end in ends {
+                let candidate = PaletteColor(r: fill.r + (end - fill.r) * amount,
+                                             g: fill.g + (end - fill.g) * amount,
+                                             b: fill.b + (end - fill.b) * amount,
+                                             a: fill.a)
+                let candidateWorst = worst(candidate)
+                if candidateWorst >= minimumContrast { return candidate }
+                if candidateWorst > bestWorst {
+                    best = candidate
+                    bestWorst = candidateWorst
+                }
+            }
+        }
+        return best
+    }
+
     private static func push(_ fill: PaletteColor, on surface: PaletteColor, towardWhite: Bool) -> PaletteColor {
         let end: Double = towardWhite ? 1 : 0
         var result = fill

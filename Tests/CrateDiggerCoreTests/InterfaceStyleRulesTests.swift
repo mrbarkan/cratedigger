@@ -52,4 +52,60 @@ final class InterfaceStyleRulesTests: XCTestCase {
             XCTAssertGreaterThanOrEqual(PaletteColor.contrast(out, c), SoftSeparation.minimumContrast, hex)
         }
     }
+
+    // MARK: separated(_:onAll:) — a key clears every surface it can sit on
+
+    private func minContrast(_ fill: PaletteColor, _ surfaces: [PaletteColor]) -> Double {
+        surfaces.map { PaletteColor.contrast(fill, $0) }.min() ?? .infinity
+    }
+
+    func testFillTooCloseToTwoOfThreeSurfacesClearsAllThree() {
+        let fill = PaletteColor(hex: "#808080")!
+        let surfaces = [PaletteColor(hex: "#808080")!, PaletteColor(hex: "#848484")!, PaletteColor(hex: "#202020")!]
+        XCTAssertLessThan(minContrast(fill, surfaces), SoftSeparation.minimumContrast)
+        let out = SoftSeparation.separated(fill, onAll: surfaces)
+        XCTAssertGreaterThanOrEqual(minContrast(out, surfaces), SoftSeparation.minimumContrast)
+    }
+
+    func testFillThatAlreadyClearsEverySurfaceIsUntouched() {
+        let fill = PaletteColor(hex: "#808080")!
+        XCTAssertEqual(SoftSeparation.separated(fill, onAll: [PaletteColor(hex: "#000000")!,
+                                                               PaletteColor(hex: "#FFFFFF")!]), fill)
+    }
+
+    func testNoSurfacesLeavesTheFill() {
+        let fill = PaletteColor(hex: "#808080")!
+        XCTAssertEqual(SoftSeparation.separated(fill, onAll: []), fill)
+    }
+
+    /// One surface just above and one just below: the fill has to travel past one
+    /// of them, and still ends clear of both.
+    func testFillSqueezedBetweenALighterAndADarkerSurfaceClearsBoth() {
+        let fill = PaletteColor(hex: "#808080")!
+        let surfaces = [PaletteColor(hex: "#888888")!, PaletteColor(hex: "#787878")!]
+        let out = SoftSeparation.separated(fill, onAll: surfaces)
+        XCTAssertNotEqual(out, fill)
+        XCTAssertGreaterThanOrEqual(minContrast(out, surfaces), SoftSeparation.minimumContrast)
+    }
+
+    /// Greys every 12 levels across the whole reach of a 0.50 mix: no candidate clears
+    /// them all, so the answer is the candidate whose worst contrast is the best.
+    func testWhenNothingClearsEverySurfaceTheBestWorstCaseWins() {
+        let fill = PaletteColor(hex: "#808080")!
+        let surfaces = stride(from: 40, through: 220, by: 12).map {
+            PaletteColor(r: Double($0) / 255, g: Double($0) / 255, b: Double($0) / 255)
+        }
+        var best = -Double.infinity
+        for end in [0.0, 1.0] {
+            for k in 1...25 {
+                let t = Double(k) * 0.02
+                let c = PaletteColor(r: fill.r + (end - fill.r) * t, g: fill.g + (end - fill.g) * t,
+                                     b: fill.b + (end - fill.b) * t, a: fill.a)
+                XCTAssertLessThan(minContrast(c, surfaces), SoftSeparation.minimumContrast, "the case must be impossible")
+                best = max(best, minContrast(c, surfaces))
+            }
+        }
+        let out = SoftSeparation.separated(fill, onAll: surfaces)
+        XCTAssertEqual(minContrast(out, surfaces), best, accuracy: 1e-12)
+    }
 }
