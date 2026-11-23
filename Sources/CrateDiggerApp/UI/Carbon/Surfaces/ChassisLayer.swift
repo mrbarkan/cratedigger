@@ -1,8 +1,10 @@
+import CrateDiggerCore
 import SwiftUI
 
 struct ChassisLayer<Content: View>: View {
     @Environment(\.carbon) private var theme
     @Environment(\.carbonGeometry) private var geometry
+    @Environment(\.interfaceStyle) private var style
     @ViewBuilder var content: () -> Content
 
     var body: some View {
@@ -24,6 +26,7 @@ struct ChassisLayer<Content: View>: View {
     private var chassisPlate: some View {
         let shape = RoundedRectangle(cornerRadius: geometry.chassisCornerRadius, style: .continuous)
         return ZStack {
+            if style == .hardware {
             // Opaque base coat, NOT a Material. SwiftUI Materials become
             // CABackdropLayer live blurs that WindowServer re-samples every
             // frame — the app idled at ~60% GPU with 12 of them. The gradient
@@ -69,12 +72,39 @@ struct ChassisLayer<Content: View>: View {
                     )
                 )
                 .depthShadow(color: theme.shadow2.color, radius: theme.shadow2.radius, x: theme.shadow2.x, y: theme.shadow2.y)
+            } else {
+                styledPlate(shape)
+            }
 
             content()
                 .padding(.horizontal, geometry.chassisInsetH)
                 .padding(.vertical, geometry.chassisInsetV)
         }
         .compositingGroup()
+    }
+
+    /// The case in a style other than Real Hardware. Its corner is the
+    /// theme's own: the styles scale keys, wells and paper, not the case.
+    /// Opaque fills only, as above.
+    @ViewBuilder
+    private func styledPlate(_ shape: RoundedRectangle) -> some View {
+        switch style {
+        case .sticker:
+            shape.fill(theme.chassis)
+                .overlay(shape.strokeBorder(theme.stickerInk, lineWidth: 3))
+        case .flatHardware:
+            // Lit from above: a light lip along the top edge, a shade along
+            // the bottom one, over a top-to-bottom ramp of the case colours.
+            shape.fill(LinearGradient(colors: [theme.chassisHi, theme.chassis, theme.chassisLo],
+                                      startPoint: .top, endPoint: .bottom))
+                .overlay(shape.strokeBorder(LinearGradient(colors: [Color.white.opacity(theme.isDark ? 0.25 : 0.9), .clear],
+                                                           startPoint: .top, endPoint: .center), lineWidth: 3))
+                .overlay(shape.strokeBorder(LinearGradient(colors: [.clear, Color.black.opacity(theme.isDark ? 0.5 : 0.22)],
+                                                           startPoint: .center, endPoint: .bottom), lineWidth: 5))
+        case .softBlocks, .hardware:
+            // `.hardware` never reaches here (the body keeps its Real plate).
+            shape.fill(theme.chassis)
+        }
     }
 }
 

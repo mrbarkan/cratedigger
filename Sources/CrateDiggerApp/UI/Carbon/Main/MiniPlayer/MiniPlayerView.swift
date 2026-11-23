@@ -481,14 +481,19 @@ private struct MiniPlayerPanel: View {
     @Binding var tab: MiniPlayerPanelTab
     @Environment(\.carbon) private var theme
     @Environment(\.carbonGeometry) private var geometry
+    @Environment(\.interfaceStyle) private var style
 
     /// Tall enough for a dozen rows, short enough that a library with forty
     /// crates does not become a two-foot window.
     private static let listHeight: CGFloat = 300
 
     var body: some View {
-        let well = RoundedRectangle(cornerRadius: geometry.scaled(12, following: \.wellCornerRadius),
-                                    style: .continuous)
+        // The drawer is a well: its outline, and the clip that keeps the
+        // lists inside it, follow the style like `RecessedWell`'s.
+        let well = RoundedRectangle(
+            cornerRadius: CarbonGeometry.styledRadius(geometry.scaled(12, following: \.wellCornerRadius), for: style),
+            style: .continuous
+        )
         VStack(spacing: 0) {
             tabs
             Group {

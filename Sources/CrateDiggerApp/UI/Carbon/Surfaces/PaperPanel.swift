@@ -1,16 +1,23 @@
+import CrateDiggerCore
 import SwiftUI
 
 struct PaperPanel<Content: View>: View {
     @Environment(\.carbon) private var theme
     @Environment(\.carbonGeometry) private var geometry
+    @Environment(\.interfaceStyle) private var style
+    @Environment(\.softSurfaces) private var softSurfaces
     /// `nil` uses the active theme's `paperCornerRadius`; pass a value to
     /// override it for this instance regardless of theme.
     var cornerRadius: CGFloat? = nil
     @ViewBuilder var content: () -> Content
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: cornerRadius ?? geometry.paperCornerRadius, style: .continuous)
+        let shape = RoundedRectangle(
+            cornerRadius: CarbonGeometry.styledRadius(cornerRadius ?? geometry.paperCornerRadius, for: style),
+            style: .continuous
+        )
         ZStack {
+            if style == .hardware {
             shape
                 .fill(theme.paper) // opaque, not Material — see ChassisLayer
                 .overlay(
@@ -51,6 +58,12 @@ struct PaperPanel<Content: View>: View {
                 // past the rounded corner into the square-clipped bounding box,
                 // leaving a light notch. The masked inset highlight above already
                 // supplies the top sheen, fully inside the shape.)
+            } else {
+                // Cut into the case, in this style. Soft Blocks' paper is
+                // nudged apart from what it sits on; the others use the theme's.
+                StyledSlab(shape: shape, fill: softSurfaces?.paper ?? theme.paper,
+                           hi: theme.paper, lo: theme.paper2, depth: 3, sunken: true)
+            }
 
             content()
                 .clipShape(shape)

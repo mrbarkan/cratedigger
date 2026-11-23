@@ -1,3 +1,4 @@
+import CrateDiggerCore
 import SwiftUI
 
 /// The footer's fixed measures, named once so the compact player's minimum
@@ -23,9 +24,13 @@ struct FooterShell: View {
     @EnvironmentObject private var model: LibraryViewModel
     @Environment(\.carbon) private var theme
     @Environment(\.carbonGeometry) private var geometry
+    @Environment(\.interfaceStyle) private var style
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: geometry.wellCornerRadius, style: .continuous)
+        // The shelf is a part of the console: its corner follows the style
+        // like a well's does.
+        let shape = RoundedRectangle(cornerRadius: CarbonGeometry.styledRadius(geometry.wellCornerRadius, for: style),
+                                     style: .continuous)
         ZStack {
             shape
                 .fill(theme.chassis) // opaque, not Material — see ChassisLayer

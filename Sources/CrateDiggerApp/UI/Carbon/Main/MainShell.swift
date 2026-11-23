@@ -4,6 +4,7 @@ import SwiftUI
 struct MainShell: View {
     @Environment(\.carbon) private var theme
     @Environment(\.carbonGeometry) private var geometry
+    @Environment(\.interfaceStyle) private var style
     @EnvironmentObject private var model: LibraryViewModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -29,6 +30,13 @@ struct MainShell: View {
         // of a search flips the display to SEARCH, so every new query pruned
         // the list under a 0.22 s ease. The panes move only when the user
         // moves one (`movePanes`); the inspector animates only its own swap.
+    }
+
+    /// Each pane is clipped to its well's own outline, so the corner follows
+    /// the style exactly as `RecessedWell` draws it.
+    private var wellClip: RoundedRectangle {
+        RoundedRectangle(cornerRadius: CarbonGeometry.styledRadius(geometry.wellCornerRadius, for: style),
+                         style: .continuous)
     }
 
     /// Collapses or expands a pane on the surface spring. Only the chevrons
@@ -60,7 +68,7 @@ struct MainShell: View {
             }
         }
         .frame(maxWidth: sourcesMaxWidth, maxHeight: .infinity)
-        .clipShape(RoundedRectangle(cornerRadius: geometry.wellCornerRadius, style: .continuous))
+        .clipShape(wellClip)
     }
 
     private var sourcesMaxWidth: CGFloat {
@@ -128,7 +136,7 @@ struct MainShell: View {
             }
         }
         .frame(maxWidth: browserMaxWidth, maxHeight: .infinity)
-        .clipShape(RoundedRectangle(cornerRadius: geometry.wellCornerRadius, style: .continuous))
+        .clipShape(wellClip)
     }
 
     /// The browser always flexes: the inspector is a fixed-width column, so
@@ -163,7 +171,7 @@ struct MainShell: View {
             }
         }
         .frame(maxWidth: inspectorMaxWidth, maxHeight: .infinity)
-        .clipShape(RoundedRectangle(cornerRadius: geometry.wellCornerRadius, style: .continuous))
+        .clipShape(wellClip)
         // CONVERT and THEME swap what the well holds: the tab row and tools
         // step aside and the paper grows into their room while the content
         // crossfades (`InspectorPane`). Keyed on the surface, not `oledView`,
