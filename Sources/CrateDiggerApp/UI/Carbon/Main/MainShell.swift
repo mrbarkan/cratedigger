@@ -334,7 +334,7 @@ struct MainShell: View {
                     .frame(width: 18, height: 14)
                 Image(systemName: columnCountIcon)
                     .font(.system(size: 8, weight: .bold))
-                    .foregroundStyle(theme.ink3)
+                    .foregroundStyle(theme.keyPrint(theme.ink3))
             }
         }
         .menuStyle(.borderlessButton)
@@ -370,7 +370,7 @@ struct MainShell: View {
 
     private var searchKeyColor: Color {
         if model.isSearchActive { return theme.orange }
-        return model.showSearchField ? theme.cyan : theme.ink3
+        return model.showSearchField ? theme.cyan : theme.keyPrint(theme.ink3)
     }
 
     /// The Prep Crate is staging, not storage, so the key that empties it
@@ -413,7 +413,7 @@ struct MainShell: View {
                     .frame(width: 18, height: 14)
                 Image(systemName: "arrow.up.arrow.down")
                     .font(.system(size: 8, weight: .bold))
-                    .foregroundStyle(model.showSortControls ? theme.cyan : theme.ink3)
+                    .foregroundStyle(model.showSortControls ? theme.cyan : theme.keyPrint(theme.ink3))
             }
         }
         .buttonStyle(.carbonHover)
@@ -427,7 +427,7 @@ struct MainShell: View {
                 .frame(width: 18, height: 14)
             Text("›|")
                 .font(CarbonFont.mono(9, weight: .heavy))
-                .foregroundStyle(theme.ink2)
+                .foregroundStyle(theme.keyPrint(theme.ink2))
                 .padding(.horizontal, inset)
         }
     }

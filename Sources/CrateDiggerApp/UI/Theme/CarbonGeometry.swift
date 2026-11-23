@@ -141,6 +141,16 @@ extension CarbonGeometry {
         guard shipped > 0 else { return designed }
         return designed * self[keyPath: dial] / shipped
     }
+
+    /// A key, well or paper corner as `style` draws it: the theme's own radius
+    /// times the style's scale, clamped to `Bounds.cornerRadius`. The
+    /// primitives call this at draw time; the environment's geometry keeps the
+    /// theme's own values, so the editor's dials never show a styled number.
+    /// Real Hardware returns `radius` unchanged.
+    static func styledRadius(_ radius: CGFloat, for style: InterfaceStyle) -> CGFloat {
+        guard style != .hardware else { return radius }
+        return Bounds.cornerRadius.clamp(radius * CGFloat(style.radiusScale))
+    }
 }
 
 private extension ClosedRange where Bound == CGFloat {

@@ -25,6 +25,9 @@ enum CarbonMotion {
     static let press: Animation = .easeOut(duration: 0.07)
     /// Hover brightening, cursor-driven highlights.
     static let hover: Animation = .easeOut(duration: 0.12)
+    /// A Soft Blocks key going down or coming back: it squashes (a scale, so a
+    /// movement) with a little bounce. Pass it through `movement(_:reduceMotion:)`.
+    static let softPress: Animation = .spring(response: 0.18, dampingFraction: 0.55)
 
     // MARK: State
 

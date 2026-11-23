@@ -165,6 +165,24 @@ public struct CarbonTheme: Equatable {
     public var chassisInkOverride: Color?
     public var chassisInk: Color { chassisInkOverride ?? ink2 }
 
+    /// The print on a key that has always drawn in `fallback` (`ink3` on the
+    /// VIEW/THEME/EQ labels, `ink2` or `ink3` on the pane headers' small
+    /// keys): the theme's Key Print when it names one, else exactly that
+    /// fallback. Only a theme that sets `chassisInk` sees a change. Lit
+    /// states keep their accent and never go through here.
+    public func keyPrint(_ fallback: Color) -> Color {
+        chassisInkOverride ?? fallback
+    }
+
+    /// Sticker's one ink: every outline and the hard shadow under it. Unset,
+    /// it picks per appearance: the theme's `ink` at 0.9 on a light case, and
+    /// on a dark one the light Key Print at 0.85, because a near-black outline
+    /// all but vanishes there. Only Sticker reads it.
+    public var stickerInkOverride: Color?
+    public var stickerInk: Color {
+        stickerInkOverride ?? (isDark ? chassisInk.opacity(0.85) : ink.opacity(0.9))
+    }
+
     /// The type printed across a browser column's header: the facet the column
     /// shows (its type selector), the count on the right, and the sort keys
     /// between them.
@@ -589,6 +607,7 @@ public extension CarbonTheme {
         accentInkOverride = optionalColor("accentInk", resolvedBase.accentInkOverride)
         columnHeaderInkOverride = optionalColor("columnHeaderInk", resolvedBase.columnHeaderInkOverride)
         chassisInkOverride = optionalColor("chassisInk", resolvedBase.chassisInkOverride)
+        stickerInkOverride = optionalColor("stickerInk", resolvedBase.stickerInkOverride)
         meterHotOverride = optionalColor("meterHot", resolvedBase.meterHotOverride)
         // Every overlay effect clamps to its dial's ceiling, so a theme can't
         // ask for a value the renderer would quietly trim away.
