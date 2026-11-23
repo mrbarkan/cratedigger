@@ -5,7 +5,10 @@
 # COVER (image shown in compact/mini), CRATEDIGGER_STYLE (passed through).
 # Builds nothing: run `swift build` first.
 set -u
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# STYLE_CAPTURE_ROOT picks the checkout whose build is captured; helpers stay with this script.
+HERE="$(cd "$(dirname "$0")" && pwd)"
+ROOT="${STYLE_CAPTURE_ROOT:-$HERE/..}"
+ROOT="$(cd "$ROOT" && pwd)"
 THEME="${1:?theme id}"; MODE="${2:?light|dark}"; LAYOUT="${3:?full|compact|mini}"; OUT="${4:?out.png}"
 
 case "${SCRATCH:-}" in
@@ -23,8 +26,8 @@ sum() { [ -f "$PLIST" ] && shasum "$PLIST" | cut -d' ' -f1 || echo none; }
 
 # winid helper, compiled once
 WINID="$SCRATCH/winid"
-if [ ! -x "$WINID" ] || [ "$ROOT/scripts/winid.swift" -nt "$WINID" ]; then
-  swiftc -O "$ROOT/scripts/winid.swift" -o "$WINID" || exit 2
+if [ ! -x "$WINID" ] || [ "$HERE/winid.swift" -nt "$WINID" ]; then
+  swiftc -O "$HERE/winid.swift" -o "$WINID" || exit 2
 fi
 
 mkdir -p "$SCRATCH" "$(dirname "$OUT")"
