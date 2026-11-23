@@ -4,7 +4,7 @@
 # Prints the number of differing pixels outside the masks; exits 0 only when it is 0.
 # Layout is read from the image size (captures are 2x): mini < 1000 px wide,
 # compact is wide and short, full is wide and tall.
-set -u
+set -u -o pipefail
 A="${1:?a.png}"; B="${2:?b.png}"
 dims() { ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0:s=x "$1"; }
 DA="$(dims "$A" 2>/dev/null)"; DB="$(dims "$B" 2>/dev/null)"
@@ -30,7 +30,13 @@ for m in "${MASKS[@]}"; do
 done
 N="$(ffmpeg -loglevel error -i "$A" -i "$B" -filter_complex \
   "[0:v]$VF[a];[1:v]$VF[b];[a][b]blend=all_mode=difference,lutrgb=r='if(gt(val,0),255,0)':g='if(gt(val,0),255,0)':b='if(gt(val,0),255,0)',format=gray" \
-  -frames:v 1 -f rawvideo -pix_fmt gray - | python3 -c "import sys;d=sys.stdin.buffer.read();print(len(d)-d.count(0))")"
+  -frames:v 1 -f rawvideo -pix_fmt gray - \
+  | python3 -c "
+import sys
+d = sys.stdin.buffer.read()
+if len(d) != $W * $H:
+    sys.exit(1)
+print(len(d) - d.count(0))")" || N=""
 case "$N" in
   ""|*[!0-9]*) echo "compare failed (no pixel count)"; exit 2 ;;
 esac

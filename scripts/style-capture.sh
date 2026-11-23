@@ -55,13 +55,19 @@ if [ "$LAYOUT" != full ] && [ -n "${COVER:-}" ]; then ENVV+=(CRATEDIGGER_COVER="
 
 env "${ENVV[@]}" "$BIN" >"$SCRATCH/capture.log" 2>&1 &
 APP_PID=$!
+stop_app() {
+  kill "$APP_PID" 2>/dev/null || pkill -f "$BIN" 2>/dev/null
+  wait "$APP_PID" 2>/dev/null
+}
+trap stop_app EXIT
+trap 'exit 130' INT TERM
 sleep 9
 
 # columns: id layer width height name
-# The mini player floats (layer 3), so it is picked by size alone.
+# The mini player floats (layer 3), so it is the largest window under 500 pt wide.
 WID=""
 if [ "$LAYOUT" = mini ]; then
-  WID="$("$WINID" CDStyleCapture | awk '$3<500 {print $3*$4, $1}' | sort -n | head -1 | cut -d' ' -f2)"
+  WID="$("$WINID" CDStyleCapture | awk '$3<500 {print $3*$4, $1}' | sort -n | tail -1 | cut -d' ' -f2)"
 else
   WID="$("$WINID" CDStyleCapture | awk '$2==0 {print $3*$4, $1}' | sort -n | tail -1 | cut -d' ' -f2)"
 fi
@@ -71,7 +77,6 @@ if [ -z "$WID" ]; then
 else
   screencapture -l "$WID" -o "$OUT" || status=1
 fi
-pkill -f "$BIN" 2>/dev/null
-wait "$APP_PID" 2>/dev/null
+stop_app
 if [ "$(sum)" != "$before" ]; then echo "PREFS CHANGED" >&2; exit 3; fi
 exit $status
