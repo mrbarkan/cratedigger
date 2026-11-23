@@ -220,7 +220,8 @@ public struct ThemeLoaderService {
             dark: mergeVariants(base.dark, override.dark),
             // The recipe belongs to the theme authored with it, never to a child
             // inheriting its colours.
-            simple: override.simple
+            simple: override.simple,
+            style: override.style ?? base.style
         )
     }
 

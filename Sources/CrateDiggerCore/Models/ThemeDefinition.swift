@@ -85,6 +85,10 @@ public struct ThemeDefinition: Codable, Sendable, Equatable {
     /// existed. A malformed block decodes as `nil` rather than failing the theme.
     public var simple: SimpleThemeRecipe?
 
+    /// The interface style this theme wears. Absent means Real Hardware; an unknown or
+    /// malformed value decodes as absent, so a theme from a newer app still loads.
+    public var style: InterfaceStyle?
+
     public init(
         id: String,
         name: String,
@@ -100,9 +104,11 @@ public struct ThemeDefinition: Codable, Sendable, Equatable {
         effects: [String: Double]? = nil,
         light: ThemeVariant? = nil,
         dark: ThemeVariant? = nil,
-        simple: SimpleThemeRecipe? = nil
+        simple: SimpleThemeRecipe? = nil,
+        style: InterfaceStyle? = nil
     ) {
         self.simple = simple
+        self.style = style
         self.light = light
         self.dark = dark
         self.id = id
@@ -119,7 +125,7 @@ public struct ThemeDefinition: Codable, Sendable, Equatable {
         self.effects = effects
     }
 
-    /// Decoding is explicit only so that `simple` can be lenient: a block of the
+    /// Decoding is explicit only so that `simple` and `style` can be lenient: a block of the
     /// wrong shape, or from a newer app, must never stop the theme from loading.
     /// Encoding stays synthesised (a `nil` block is omitted).
     public init(from decoder: Decoder) throws {
@@ -139,11 +145,23 @@ public struct ThemeDefinition: Codable, Sendable, Equatable {
         light = try c.decodeIfPresent(ThemeVariant.self, forKey: .light)
         dark = try c.decodeIfPresent(ThemeVariant.self, forKey: .dark)
         simple = (try? c.decodeIfPresent(SimpleThemeRecipe.self, forKey: .simple))?.sanitized()
+        style = (try? c.decodeIfPresent(InterfaceStyle.self, forKey: .style)) ?? nil
     }
 }
 
 public extension ThemeDefinition {
     var isSimple: Bool { simple != nil }
+
+    /// The style the theme draws with: its own, else Real Hardware.
+    var resolvedStyle: InterfaceStyle { style ?? .hardware }
+
+    /// Sets the style. Real Hardware is written as absent on a theme with no parent; on
+    /// one that inherits it is written out, or the child would keep its parent's style.
+    func settingStyle(_ style: InterfaceStyle) -> ThemeDefinition {
+        var copy = self
+        copy.style = (style == .hardware && inherits == nil) ? nil : style
+        return copy
+    }
 }
 
 /// The weights the interface actually asks for. Anything heavier or lighter a
