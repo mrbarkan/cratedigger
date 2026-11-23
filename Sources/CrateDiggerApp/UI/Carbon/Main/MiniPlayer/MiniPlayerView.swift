@@ -340,7 +340,7 @@ private struct MiniPlayerBody: View {
         .clipShape(shape)
         .overlay(shape.strokeBorder(Color.black.opacity(0.6), lineWidth: 1))
         // A sleeve laid on the card, not a tile floating over it.
-        .depthShadow(color: .black.opacity(0.18), radius: 5, y: 2)
+        .contentShadow(color: .black.opacity(0.18), radius: 5, y: 2)
     }
 
     // MARK: - OLED display (title / band / album · time)

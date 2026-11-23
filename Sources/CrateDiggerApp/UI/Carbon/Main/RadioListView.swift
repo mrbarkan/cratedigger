@@ -262,7 +262,7 @@ private struct RadioRow: View {
             Image(systemName: selected ? "pause.fill" : "play.fill")
                 .font(.system(size: 11, weight: .bold))
                 .foregroundStyle(.white.opacity(0.92))
-                .depthShadow(color: .black.opacity(0.4), radius: 2)
+                .contentShadow(color: .black.opacity(0.4), radius: 2)
             VStack {
                 Spacer()
                 HStack {

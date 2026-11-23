@@ -210,7 +210,7 @@ struct ArtworkSearchSheetView: View {
                 .frame(maxWidth: 560, maxHeight: 480)
                 .cornerRadius(6)
                 .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(0.14), lineWidth: 1))
-                .depthShadow(color: .black.opacity(0.6), radius: 22, y: 10)
+                .contentShadow(color: .black.opacity(0.6), radius: 22, y: 10)
 
                 // Source, true pixel size and whatever the archive called it —
                 // everything you need to judge a scan, on one line.
@@ -775,7 +775,7 @@ struct ArtworkSearchSheetView: View {
                     RoundedRectangle(cornerRadius: 4)
                         .stroke(isSelected ? theme.orange : (theme.isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.1)), lineWidth: isSelected ? 2 : 1)
                 )
-                .depthShadow(color: Color.black.opacity(0.1), radius: 3, y: 1)
+                .contentShadow(color: Color.black.opacity(0.1), radius: 3, y: 1)
                 .overlay(alignment: .bottomLeading) {
                     if img.source == .discogs {
                         Text(img.source.badge)

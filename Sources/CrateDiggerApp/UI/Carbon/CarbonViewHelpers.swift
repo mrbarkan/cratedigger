@@ -1,4 +1,5 @@
 import AppKit
+import CrateDiggerCore
 import ImageIO
 import SwiftUI
 
@@ -153,35 +154,90 @@ func loadThumbnail(url: URL, maxPixelSize: Int) async -> NSImage? {
     return NSImage(cgImage: cgImage, size: .zero)
 }
 
-/// A *depth* shadow: the cast shadow that says one surface sits above another.
+/// A cast shadow's geometry, in `.shadow(color:radius:x:y:)`'s terms. The
+/// colour is the caller's and never changes, so it is not part of the rule.
+struct CastShadow: Equatable {
+    var radius: CGFloat
+    var x: CGFloat
+    var y: CGFloat
+}
+
+/// Which cast shadow a part and a piece of content get in each interface
+/// style, kept apart from the modifiers so the decisions are testable.
 ///
-/// Every panel, key, dome and album cover in the interface draws its through
-/// here rather than calling `.shadow` directly, so a theme can switch the whole
-/// lot off (`effects.flat`) and get a printed-looking console instead of a
-/// moulded one. Emission — a lit annunciator, a phosphor halo, an LED glow —
-/// is not depth and keeps its own `.shadow`: a flat theme still lights up.
-///
-/// Same argument labels as `.shadow(color:radius:x:y:)`, so a call site only
-/// changes name.
-extension View {
-    func depthShadow(color: Color, radius: CGFloat, x: CGFloat = 0, y: CGFloat = 0) -> some View {
-        modifier(DepthShadow(color: color, radius: radius, x: x, y: y))
+/// A *part* is the console itself: the case, a panel, a well, a key, a cap, a
+/// fader, a floating window's own chrome. *Content* is what the console holds
+/// or shows: album art, an artist photo, a booklet page, an artwork or radio
+/// thumbnail, the display glass, or a picture of any of those.
+enum CastShadowRule {
+    /// A part's shadow follows the style. Real Hardware casts what was asked
+    /// unless the FLAT switch is on (`castsShadows` false); Flat Hardware a
+    /// short contact shadow; Soft Blocks and Sticker none (Sticker's hard
+    /// shadow is the slab's own, not a cast one).
+    static func part(_ asked: CastShadow, style: InterfaceStyle, castsShadows: Bool) -> CastShadow? {
+        switch style {
+        case .hardware:
+            return castsShadows ? asked : nil
+        case .flatHardware:
+            return CastShadow(radius: min(asked.radius, 6) * 0.45, x: asked.x * 0.5, y: min(asked.y, 4) * 0.6)
+        case .softBlocks, .sticker:
+            return nil
+        }
+    }
+
+    /// Content keeps its shadow in every style, exactly as asked. Only Real
+    /// Hardware's FLAT switch takes it away.
+    static func content(_ asked: CastShadow, style: InterfaceStyle, castsShadows: Bool) -> CastShadow? {
+        style.castsContentShadows(flatSwitchOn: !castsShadows) ? asked : nil
     }
 }
 
-private struct DepthShadow: ViewModifier {
+/// Cast shadows: the shadow that says one surface sits above another.
+///
+/// Every panel, key, dome and album cover in the interface draws its through
+/// one of these rather than calling `.shadow` directly, so a theme can switch
+/// the whole lot off (`effects.flat`, Real Hardware only) and get a
+/// printed-looking console instead of a moulded one, and an interface style can
+/// decide its parts' shadows. Emission — a lit annunciator, a phosphor halo, an
+/// LED glow — is not depth and keeps its own `.shadow`: a flat theme still
+/// lights up.
+///
+/// Same argument labels as `.shadow(color:radius:x:y:)`, so a call site only
+/// changes name. Pick by what casts it (see `CastShadowRule`):
+/// - `depthShadow` for a part of the console: follows the interface style.
+/// - `contentShadow` for content and the display: the same in every style.
+extension View {
+    func depthShadow(color: Color, radius: CGFloat, x: CGFloat = 0, y: CGFloat = 0) -> some View {
+        modifier(CastShadowModifier(kind: .part, color: color, asked: CastShadow(radius: radius, x: x, y: y)))
+    }
+
+    func contentShadow(color: Color, radius: CGFloat, x: CGFloat = 0, y: CGFloat = 0) -> some View {
+        modifier(CastShadowModifier(kind: .content, color: color, asked: CastShadow(radius: radius, x: x, y: y)))
+    }
+}
+
+private struct CastShadowModifier: ViewModifier {
+    enum Kind { case part, content }
+
     @Environment(\.carbon) private var theme
+    @Environment(\.interfaceStyle) private var style
+    let kind: Kind
     let color: Color
-    let radius: CGFloat
-    let x: CGFloat
-    let y: CGFloat
+    let asked: CastShadow
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        if theme.castsShadows {
-            content.shadow(color: color, radius: radius, x: x, y: y)
+        if let shadow {
+            content.shadow(color: color, radius: shadow.radius, x: shadow.x, y: shadow.y)
         } else {
             content
+        }
+    }
+
+    private var shadow: CastShadow? {
+        switch kind {
+        case .part: return CastShadowRule.part(asked, style: style, castsShadows: theme.castsShadows)
+        case .content: return CastShadowRule.content(asked, style: style, castsShadows: theme.castsShadows)
         }
     }
 }

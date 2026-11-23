@@ -36,7 +36,10 @@ public enum InterfaceStyle: String, Codable, CaseIterable, Sendable {
     /// The other styles decide their own shadows, so the switch does not reach them.
     public var honoursFlatSwitch: Bool { self == .hardware }
 
-    /// Whether the style casts the shadows under content (keys, wells, paper).
+    /// Whether the style casts the shadows under content and the display (album art,
+    /// artist photos, booklet pages, the display glass): every style does, and Real
+    /// Hardware stops only when its flat switch is on. Parts (keys, wells, panels)
+    /// follow their style instead; see the app's `View.depthShadow`.
     public func castsContentShadows(flatSwitchOn: Bool) -> Bool {
         self == .hardware ? !flatSwitchOn : true
     }

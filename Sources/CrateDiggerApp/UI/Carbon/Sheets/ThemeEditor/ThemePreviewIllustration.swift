@@ -516,7 +516,7 @@ private struct PreviewGlass: View {
                                              theme.oledSurfaceShade],
                                     startPoint: .topLeading, endPoint: .bottomTrailing).clipShape(shape))
             .overlay(shape.strokeBorder(Color.white.opacity(theme.isDark ? 0.08 : 0.22), lineWidth: 0.5))
-            .depthShadow(color: .black.opacity(0.45), radius: 3, y: 2)
+            .contentShadow(color: .black.opacity(0.45), radius: 3, y: 2)
             .previewJob(.glass)
     }
 }

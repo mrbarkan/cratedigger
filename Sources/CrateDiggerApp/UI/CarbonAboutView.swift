@@ -53,7 +53,7 @@ private struct AboutFaceplate: View {
                 // through every development session.
                 AppIconView()
                     .frame(width: 150, height: 150)
-                    .depthShadow(color: .black.opacity(0.5), radius: 14, y: 7)
+                    .contentShadow(color: .black.opacity(0.5), radius: 14, y: 7)
                     .padding(.bottom, 6)
                 BrandLockup(typeSize: 16)
                 Spacer(minLength: 0)

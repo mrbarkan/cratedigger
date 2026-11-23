@@ -264,9 +264,11 @@ public struct CarbonTheme: Equatable {
     public var coverPixelSize: Double = CoverScreenLook.defaultPixelSize
 
     /// Whether the chassis casts shadows. `false` (`effects.flat` = `1`) drops
-    /// every depth shadow — panels, keys, the glass, artwork — and leaves the
+    /// every cast shadow — panels, keys, the glass, artwork — and leaves the
     /// bevels, gradients and emission glows alone, so the interface reads as
-    /// printed rather than moulded. See `View.depthShadow`.
+    /// printed rather than moulded. Real Hardware only: the other interface
+    /// styles decide their own shadows. See `View.depthShadow` and
+    /// `View.contentShadow`.
     public let castsShadows: Bool
 
     /// Whether the display is a single-phosphor panel: everything on the glass
