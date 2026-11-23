@@ -128,6 +128,24 @@ final class InterfaceStyleTokenTests: XCTestCase {
         assertSameColor(surfaces.paper.paletteColor, try XCTUnwrap(PaletteColor(hex: "#C0C0C0")))
     }
 
+    /// Each fill is separated from what Soft Blocks actually draws under it: the
+    /// paper from the *separated* well, not the theme's own. Carbon dark's case,
+    /// well and paper sit within the minimum contrast of one another, so
+    /// separating the paper from the original well nudged both lighter together
+    /// and the lists vanished into their panel.
+    func testSoftSurfacesSeparatePaperFromTheWellAsDrawn() throws {
+        let carbon = CarbonTheme.carbon
+        let surfaces = try XCTUnwrap(InterfaceStyleDelivery.softSurfaces(for: .softBlocks, theme: carbon))
+        let chassis = carbon.chassis.paletteColor
+        let floor = SoftSeparation.minimumContrast - 0.0001
+        XCTAssertGreaterThanOrEqual(PaletteColor.contrast(surfaces.well.paletteColor, chassis), floor,
+                                    "well against the case")
+        XCTAssertGreaterThanOrEqual(PaletteColor.contrast(surfaces.paper.paletteColor, surfaces.well.paletteColor),
+                                    floor, "lists against the well as drawn")
+        XCTAssertGreaterThanOrEqual(PaletteColor.contrast(surfaces.metal.paletteColor, chassis), floor,
+                                    "keys against the case")
+    }
+
     private func assertSameColor(_ a: PaletteColor, _ b: PaletteColor,
                                  file: StaticString = #filePath, line: UInt = #line) {
         XCTAssertEqual(a.r, b.r, accuracy: 0.002, file: file, line: line)
