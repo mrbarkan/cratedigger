@@ -32,7 +32,8 @@ public enum InterfaceStyle: String, Codable, CaseIterable, Sendable {
         }
     }
 
-    /// Only Real Hardware has a "flat" switch (Settings turns its content shadows off).
+    /// Only Real Hardware has a "flat" switch (Settings): on, it turns off every cast
+    /// shadow, the parts' (keys, wells, panels) and the content's (art, the display) alike.
     /// The other styles decide their own shadows, so the switch does not reach them.
     public var honoursFlatSwitch: Bool { self == .hardware }
 

@@ -175,9 +175,10 @@ enum CastShadowRule {
     /// short contact shadow; Soft Blocks and Sticker none (Sticker's hard
     /// shadow is the slab's own, not a cast one).
     static func part(_ asked: CastShadow, style: InterfaceStyle, castsShadows: Bool) -> CastShadow? {
+        if style.honoursFlatSwitch && !castsShadows { return nil }
         switch style {
         case .hardware:
-            return castsShadows ? asked : nil
+            return asked
         case .flatHardware:
             return CastShadow(radius: min(asked.radius, 6) * 0.45, x: asked.x * 0.5, y: min(asked.y, 4) * 0.6)
         case .softBlocks, .sticker:
@@ -194,8 +195,8 @@ enum CastShadowRule {
 
 /// Cast shadows: the shadow that says one surface sits above another.
 ///
-/// Every panel, key, dome and album cover in the interface draws its through
-/// one of these rather than calling `.shadow` directly, so a theme can switch
+/// Every panel, key, dome and album cover in the interface casts its shadow
+/// through one of these rather than calling `.shadow` directly, so a theme can switch
 /// the whole lot off (`effects.flat`, Real Hardware only) and get a
 /// printed-looking console instead of a moulded one, and an interface style can
 /// decide its parts' shadows. Emission — a lit annunciator, a phosphor halo, an

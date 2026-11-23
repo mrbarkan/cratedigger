@@ -138,70 +138,129 @@ struct StyledSlab<S: Shape>: View {
     }
 }
 
-/// How a key answers a press in each style other than Real Hardware, which
-/// passes the content through untouched (its keys keep their own travel).
+/// What a press does to a key drawn with `StyledSlab`, per style: where it
+/// moves, how much it squashes, and on which curve. Real Hardware has no
+/// press here at all: its keys keep their own travel.
+enum StyledPressRule {
+    /// The press as a scale (about the key's centre) and an offset.
+    struct Transform: Equatable {
+        var scale: CGFloat = 1
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+
+        static let rest = Transform()
+    }
+
+    /// Which `CarbonMotion` curve carries the press.
+    enum Curve: Equatable {
+        /// `CarbonMotion.press`: a key going down, quick and without bounce.
+        case press
+        /// `CarbonMotion.softPress`: Soft Blocks' squash, a short spring.
+        case softPress
+        /// `CarbonMotion.reducedMovement`: the spring under Reduce Motion.
+        case reducedMovement
+
+        var animation: Animation {
+            switch self {
+            case .press: return CarbonMotion.press
+            case .softPress: return CarbonMotion.softPress
+            case .reducedMovement: return CarbonMotion.reducedMovement
+            }
+        }
+    }
+
+    /// Flat Hardware: the cap moves down by `depth` and covers its base.
+    /// Sticker: the key moves by `depth` down and right, onto its shadow.
+    /// Soft Blocks: the key squashes to 0.95 where it is.
+    static func transform(style: InterfaceStyle, pressed: Bool, depth: CGFloat) -> Transform {
+        guard pressed else { return .rest }
+        switch style {
+        case .hardware: return .rest
+        case .flatHardware: return Transform(y: depth)
+        case .sticker: return Transform(x: depth, y: depth)
+        case .softBlocks: return Transform(scale: 0.95)
+        }
+    }
+
+    /// Soft Blocks' spring is a movement, so Reduce Motion turns it into a
+    /// quick ease (`CarbonMotion.movement`). The small offsets of Flat Hardware
+    /// and Sticker are feedback, not movement, and keep the key press.
+    static func curve(style: InterfaceStyle, reduceMotion: Bool) -> Curve? {
+        switch style {
+        case .hardware: return nil
+        case .softBlocks: return reduceMotion ? .reducedMovement : .softPress
+        case .flatHardware, .sticker: return .press
+        }
+    }
+}
+
+/// A key's press in a style other than Real Hardware (see `StyledPressRule`),
+/// which passes the content through untouched.
 ///
-/// - Flat Hardware: the cap moves down by `depth` and covers its base.
-/// - Soft Blocks: the key scales to 0.95 on `CarbonMotion.softPress`, a quick
-///   ease under Reduce Motion.
-/// - Sticker: the key moves by `depth` down and right, onto its shadow.
+/// Only the press animates. The transform follows a drawn copy of `pressed`
+/// that changes inside its own `withAnimation`, so whatever else the click
+/// changes in the label (a lamp lighting, a legend swapping) keeps its own
+/// animation instead of riding the press curve, and the slab under the key
+/// (which reads `\.styledPressed`) moves its shadow or base in step.
 ///
-/// The offsets stay under Reduce Motion: they are feedback, not movement.
+/// The transform moves the key's hit area with it. `StyledKeyButtonStyle` pins
+/// its content shape outside the press; a caller using this modifier outside
+/// that button style must pin its own `contentShape` after it, or a click near
+/// a small key's edge ends outside the key and never fires.
 struct StyledPress: ViewModifier {
     @Environment(\.interfaceStyle) private var style
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let pressed: Bool
     var depth: CGFloat = 2.5
+    /// `pressed` as currently drawn; follows `pressed` under the press curve.
+    @State private var shownPressed: Bool
 
     init(pressed: Bool, depth: CGFloat = 2.5) {
         self.pressed = pressed
         self.depth = depth
+        _shownPressed = State(initialValue: pressed)
     }
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        if style == .hardware {
+        if let curve = StyledPressRule.curve(style: style, reduceMotion: reduceMotion) {
+            let transform = StyledPressRule.transform(style: style, pressed: shownPressed, depth: depth)
             content
+                .environment(\.styledPressed, shownPressed)
+                .scaleEffect(transform.scale)
+                .offset(x: transform.x, y: transform.y)
+                .onChange(of: pressed) { newValue in
+                    withAnimation(curve.animation) { shownPressed = newValue }
+                }
         } else {
             content
-                .environment(\.styledPressed, pressed)
-                .scaleEffect(style == .softBlocks && pressed ? 0.95 : 1)
-                .offset(x: style == .sticker && pressed ? depth : 0, y: offsetY)
-                .animation(animation, value: pressed)
         }
-    }
-
-    private var offsetY: CGFloat {
-        switch style {
-        case .sticker, .flatHardware: return pressed ? depth : 0
-        case .softBlocks, .hardware: return 0
-        }
-    }
-
-    private var animation: Animation {
-        style == .softBlocks
-            ? CarbonMotion.movement(CarbonMotion.softPress, reduceMotion: reduceMotion)
-            : CarbonMotion.press
     }
 }
 
 /// The hover lift plus the style's press, for keys drawn with `StyledSlab`.
 /// Only for a style other than Real Hardware; Real keys keep their own style.
+///
+/// The hit area is pinned to `hitShape` outside the press, so it is the same
+/// in every style however the key moves.
 struct StyledKeyButtonStyle: ButtonStyle {
     var depth: CGFloat = 2.5
+    var hitShape = AnyShape(Rectangle())
 
-    init(depth: CGFloat = 2.5) {
+    init(depth: CGFloat = 2.5, hitShape: AnyShape = AnyShape(Rectangle())) {
         self.depth = depth
+        self.hitShape = hitShape
     }
 
     func makeBody(configuration: Configuration) -> some View {
-        KeyBody(configuration: configuration, depth: depth)
+        KeyBody(configuration: configuration, depth: depth, hitShape: hitShape)
     }
 
     private struct KeyBody: View {
         let configuration: Configuration
         let depth: CGFloat
+        let hitShape: AnyShape
         @Environment(\.carbon) private var theme
         @Environment(\.isEnabled) private var isEnabled
         @State private var hovering = false
@@ -210,6 +269,8 @@ struct StyledKeyButtonStyle: ButtonStyle {
             configuration.label
                 .brightness(brightness)
                 .modifier(StyledPress(pressed: configuration.isPressed, depth: depth))
+                // After the press: the key moves, its hit area does not.
+                .contentShape(hitShape)
                 .animation(CarbonMotion.hover, value: hovering)
                 .onHover { hovering = $0 && isEnabled }
         }
