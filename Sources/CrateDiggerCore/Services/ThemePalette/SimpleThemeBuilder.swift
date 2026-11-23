@@ -11,13 +11,16 @@ public struct SimpleThemeChoices: Equatable, Sendable {
     public var coverLook: CoverScreenLook?
     /// Keyed `display` / `mono` / `sans`.
     public var fonts: [String: ThemeFont]
+    public var style: InterfaceStyle
 
     public init(appearance: SimpleAppearanceMode, material: ShellMaterial?,
-                coverLook: CoverScreenLook?, fonts: [String: ThemeFont]) {
+                coverLook: CoverScreenLook?, fonts: [String: ThemeFont],
+                style: InterfaceStyle = .hardware) {
         self.appearance = appearance
         self.material = material
         self.coverLook = coverLook
         self.fonts = fonts
+        self.style = style
     }
 }
 
@@ -69,7 +72,8 @@ public enum SimpleThemeBuilder {
             shadows: source.shadows,
             fonts: source.fonts,
             geometry: source.geometry,
-            effects: source.effects
+            effects: source.effects,
+            style: original.style
         )
         if original.isAdaptive {
             for appearance in [ThemeDefinition.BaseAppearance.light, .dark] {
@@ -88,6 +92,7 @@ public enum SimpleThemeBuilder {
         theme.simple = recipe
         theme.inherits = nil
         theme.logo = nil
+        theme = theme.settingStyle(choices.style)
 
         let palette = state.palette.compactMap(PaletteColor.init(hex:))
         func tokens(for appearance: ThemeDefinition.BaseAppearance) -> [String: String] {
