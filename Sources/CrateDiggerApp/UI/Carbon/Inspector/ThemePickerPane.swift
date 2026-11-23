@@ -136,6 +136,14 @@ struct ThemePickerPane: View {
                             .font(CarbonFont.mono(8, weight: isBuiltIn ? .bold : .regular))
                             .tracking(isBuiltIn ? 1.0 : 0)
                             .foregroundStyle(isBuiltIn ? theme.ink3 : theme.ink4)
+                        let style = manifest.definition.resolvedStyle
+                        if style != .hardware {
+                            // Real Hardware is what every theme wore before
+                            // styles; only another one is worth a word.
+                            Text("· " + style.displayName.uppercased())
+                                .font(CarbonFont.mono(8))
+                                .foregroundStyle(theme.ink4)
+                        }
                         if manifest.definition.isAdaptive {
                             // Worth calling out: it's the difference between a
                             // theme that follows Appearance and one that doesn't.

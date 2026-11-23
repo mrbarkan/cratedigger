@@ -87,6 +87,13 @@ struct SimpleThemePanel: View {
                     }
                     .carbonTip("Both makes a light and a dark version from the one palette, following the system setting.")
 
+                    sectionLabel("Style")
+                    keyGrid(columns: 2, InterfaceStyle.allCases, selected: editor.choices.style,
+                            label: { $0.displayName.uppercased() }) { style in
+                        editor.choices.style = style
+                    }
+                    .carbonTip("How the console's keys, panels and case are drawn. Colours, fonts and layout stay.")
+
                     sectionLabel("Material")
                     keyGrid(columns: 3, [nil] + ShellMaterial.allCases.map { Optional($0) },
                             selected: editor.choices.material, label: Self.materialLabel) { material in
@@ -132,7 +139,7 @@ struct SimpleThemePanel: View {
             }
             .frame(maxWidth: .infinity)
             .frame(height: geometry.keyHeight)
-            .carbonTip("Give the same colours different jobs. Pinned jobs, contrast, fonts, material and album art stay.")
+            .carbonTip("Give the same colours different jobs. Pinned jobs, contrast, fonts, style, material and album art stay.")
 
             KeyButton(style: editor.history.canGoForward ? .normal : .disabled, action: editor.forward) {
                 Image(systemName: "chevron.right")
@@ -290,6 +297,9 @@ struct SimpleThemePanel: View {
                     highlighted: editor.highlightedJobs,
                     screens: previewTab == .window ? [.fullWindow] : [.mini, .compact]
                 )
+                // The candidate's style, not the app's: the app keeps the
+                // saved theme until APPLY.
+                .environment(\.interfaceStyle, editor.candidate.resolvedStyle)
                 .padding(20)
             }
             .background(theme.well)

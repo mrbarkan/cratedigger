@@ -418,6 +418,13 @@ public final class ThemeRegistry: ObservableObject {
         setDraftColors([key: hex], appearance: draft?.isAdaptive == true ? draftEditingAppearance : nil)
     }
 
+    /// The draft's interface style, in one assignment and so one undo step.
+    /// The whole console follows at once (`CarbonThemed` reads the draft), and
+    /// the stored FLAT switch is left as it is for a return to Real Hardware.
+    public func setDraftStyle(_ style: InterfaceStyle) {
+        draft = draft?.settingStyle(style)
+    }
+
     /// Writes a whole set of colors in one publish, into `appearance`'s layer —
     /// or into the shared tokens when `appearance` is `nil` or the draft isn't
     /// adaptive.

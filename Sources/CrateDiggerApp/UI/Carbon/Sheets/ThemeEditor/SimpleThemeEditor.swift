@@ -9,10 +9,10 @@ import Foundation
 @MainActor
 final class SimpleThemeEditor: ObservableObject {
     @Published private(set) var history: SimpleThemeHistory { didSet { rebuild() } }
-    /// Appearance, material, cover look and fonts. Changing these never touches
+    /// Appearance, style, material, cover look and fonts. Changing these never touches
     /// colours that were already generated (see `candidate`).
     /// Changing `appearance` regenerates a reopened theme's colours: ask (`needsWarning(for: .appearance)`)
-    /// before setting it. Fonts, material and cover look apply without regenerating colours.
+    /// before setting it. Fonts, style, material and cover look apply without regenerating colours.
     @Published var choices: SimpleThemeChoices {
         didSet {
             if choices.appearance != oldValue.appearance { needsRegenerateWarning = false }
@@ -118,7 +118,7 @@ final class SimpleThemeEditor: ObservableObject {
 
     /// The theme as it would be saved. Before the first regenerating change on a
     /// reopened theme it is the saved definition with only the non-colour choices
-    /// (fonts, material, cover look) and the name laid over it.
+    /// (fonts, style, material, cover look) and the name laid over it.
     private(set) var candidate: ThemeDefinition
     private var previewCache: [ThemeDefinition.BaseAppearance: (theme: CarbonTheme, geometry: CarbonGeometry)] = [:]
 
@@ -131,6 +131,7 @@ final class SimpleThemeEditor: ObservableObject {
             saved.name = name
             saved.effects = built.effects
             saved.fonts = built.fonts ?? base.fonts
+            saved.style = built.style
             built = saved
         }
         candidate = built
@@ -152,14 +153,14 @@ final class SimpleThemeEditor: ObservableObject {
     var previewFonts: [String: ThemeFont]? { candidate.fonts }
 
     /// What the owner is about to change, for `needsWarning(for:)`.
-    enum Change { case palette, pin, contrast, shuffle, appearance, fonts, material, coverLook, name }
+    enum Change { case palette, pin, contrast, shuffle, appearance, fonts, style, material, coverLook, name }
 
     /// Whether `change` would regenerate colours of a reopened saved theme that has not been
     /// regenerated yet. The view asks first when this is true, then calls `confirmRegenerate()`.
     func needsWarning(for change: Change) -> Bool {
         switch change {
         case .palette, .pin, .contrast, .shuffle, .appearance: return needsRegenerateWarning
-        case .fonts, .material, .coverLook, .name: return false
+        case .fonts, .style, .material, .coverLook, .name: return false
         }
     }
 
@@ -243,7 +244,8 @@ final class SimpleThemeEditor: ObservableObject {
             appearance: appearance,
             material: ShellMaterial.resolve(effects: effects)?.material,
             coverLook: CoverScreenLook.resolve(effects: effects)?.look,
-            fonts: definition.fonts ?? [:]
+            fonts: definition.fonts ?? [:],
+            style: definition.resolvedStyle
         )
     }
 }
