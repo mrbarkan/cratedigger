@@ -46,8 +46,11 @@ final class BundledThemeTests: XCTestCase {
     /// Every shipped theme has a mark for each look, drawn by
     /// `scripts/render-theme-logos.swift`, and each file is a real image the
     /// header can draw at the slot's proportion.
+    ///
+    /// Funhouse is the one theme without a mark: its header shows its name, as for
+    /// any theme that declares no logo, so it is skipped here.
     func testEveryBundledThemeShipsALogoPerLayer() throws {
-        for (id, manifest) in manifests {
+        for (id, manifest) in manifests where id != "funhouse" {
             for appearance in [ThemeDefinition.BaseAppearance.light, .dark] {
                 let url = try XCTUnwrap(manifest.logoURL(for: appearance), "\(id) has no \(appearance) logo")
                 let image = try XCTUnwrap(NSImage(contentsOf: url), "\(url.lastPathComponent) did not load")
@@ -210,6 +213,44 @@ final class BundledThemeTests: XCTestCase {
     private func postScriptNames(_ url: URL) -> [String] {
         ((CTFontManagerCreateFontDescriptorsFromURL(url as CFURL) as? [CTFontDescriptor]) ?? [])
             .compactMap { CTFontDescriptorCopyAttribute($0, kCTFontNameAttribute) as? String }
+    }
+
+    // MARK: - Interface styles
+
+    /// Carbon and Cobalt say nothing about style, so they stay Real Hardware; the
+    /// other three each wear the one they were made for.
+    func testBuiltInStyles() throws {
+        for id in ["carbon", "cobalt"] {
+            let theme = try XCTUnwrap(themes[id])
+            XCTAssertNil(theme.style, "\(id) must not carry a style key")
+            XCTAssertEqual(theme.resolvedStyle, .hardware, id)
+        }
+        XCTAssertEqual(try XCTUnwrap(themes["llama-97"]).resolvedStyle, .flatHardware)
+        XCTAssertEqual(try XCTUnwrap(themes["pocket"]).resolvedStyle, .flatHardware)
+        XCTAssertEqual(try XCTUnwrap(themes["funhouse"]).resolvedStyle, .sticker)
+    }
+
+    /// The light layer is the classic skin: a lavender-grey case, pale grey keys,
+    /// black lists and yellow column headers. The dark layer is not touched.
+    func testLlamaLightIsTheClassicSkin() throws {
+        let llama = try XCTUnwrap(themes["llama-97"])
+        let light = render(llama, .light)
+        XCTAssertEqual(light.chassis.themeHexString, "#8E90AA")
+        XCTAssertEqual(light.metal.themeHexString, "#C6C7D0")
+        XCTAssertEqual(light.paper.themeHexString, "#000000")
+        XCTAssertEqual(light.columnHeaderInk.themeHexString, "#E8CF45")
+        let dark = render(llama, .dark)
+        XCTAssertEqual(dark.chassis.themeHexString, "#2A2D3C", "the dark layer is v2.4's")
+        XCTAssertEqual(dark.metal.themeHexString, "#5C6274", "the dark layer is v2.4's")
+    }
+
+    func testFunhouseInks() throws {
+        let funhouse = try XCTUnwrap(themes["funhouse"])
+        let light = render(funhouse, .light)
+        let dark = render(funhouse, .dark)
+        XCTAssertEqual(light.stickerInk.themeHexString, "#1E2463E6")
+        XCTAssertEqual(dark.stickerInk.themeHexString, "#6E8EF5")
+        XCTAssertEqual(dark.metal.themeHexString, "#F7B32B")
     }
 
     private func render(

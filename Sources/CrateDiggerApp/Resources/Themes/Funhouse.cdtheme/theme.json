@@ -1,0 +1,101 @@
+{
+  "//" : "A sheet of retro stickers: a sky-blue case, mustard keys printed in navy, hot pink for what is on. By night the same stickers sit on a deep royal-blue sheet: the keys stay mustard, the lists go navy with cream type, labels turn sky blue, and the outlines go a lighter periwinkle blue.",
+  "author" : "CrateDigger",
+  "baseAppearance" : "light",
+  "colors" : {
+    "accentInk" : "#FFFFFF",
+    "cyan" : "#2FC99A",
+    "cyanGlow" : "#A8F2DA",
+    "indigo" : "#2D55E0",
+    "keyLamp" : "#FF4FA3",
+    "meterHot" : "#EE3D96",
+    "oledForeground" : "#FFF4D6",
+    "oledForegroundMuted" : "#FFF4D699",
+    "oledStrokeInner" : "#070A26",
+    "oledSurface" : "#10153F",
+    "onAir" : "#FF4FA3",
+    "orange" : "#EE3D96",
+    "orangeHi" : "#FF6FB5",
+    "orangeLo" : "#C21F74",
+    "red" : "#F0433A",
+    "selectionGlow" : "#EE3D96",
+    "selectionInk" : "#FFFFFF",
+    "selectionLedCore" : "#FF5AAA",
+    "selectionSpread" : "#EE3D96",
+    "sun" : "#F7B32B",
+    "sunHi" : "#FFD36B",
+    "sunLo" : "#D8921A",
+    "transportLamp" : "#FF4FA3"
+  },
+  "dark" : {
+    "colors" : {
+      "backgroundBase" : "#0B0F33",
+      "backgroundGradientEnd" : "#070A24",
+      "backgroundGradientStart" : "#1F2A80",
+      "chassis" : "#1E2A86",
+      "chassisDeep" : "#060920",
+      "chassisHi" : "#3040A8",
+      "chassisInk" : "#1E2463",
+      "chassisLo" : "#151E66",
+      "columnHeaderInk" : "#8FD9F5",
+      "hair" : "#2B3380",
+      "ink" : "#FFF6E6",
+      "ink2" : "#FFD36B",
+      "ink3" : "#8FD9F5",
+      "ink4" : "#7A84C8",
+      "metal" : "#F7B32B",
+      "metalDeep" : "#060920",
+      "metalHi" : "#FFD36B",
+      "metalLo" : "#D8921A",
+      "paper" : "#18205C",
+      "paper2" : "#131A50",
+      "stickerInk" : "#6E8EF5",
+      "well" : "#10154A",
+      "wellDeep" : "#080B2C"
+    }
+  },
+  "fonts" : {
+    "sans" : {
+      "bold" : "AvenirNext-Heavy",
+      "medium" : "AvenirNext-DemiBold",
+      "regular" : "AvenirNext-Medium",
+      "semibold" : "AvenirNext-Bold"
+    }
+  },
+  "geometry" : {
+    "chassisCornerRadius" : 14,
+    "keyCornerRadius" : 8,
+    "paperCornerRadius" : 8,
+    "wellCornerRadius" : 10
+  },
+  "id" : "funhouse",
+  "light" : {
+    "colors" : {
+      "backgroundBase" : "#3FA9E0",
+      "backgroundGradientEnd" : "#2E93CC",
+      "backgroundGradientStart" : "#7DD3F7",
+      "chassis" : "#5BC2F2",
+      "chassisDeep" : "#1E2463",
+      "chassisHi" : "#8AD6F7",
+      "chassisInk" : "#1E2463",
+      "chassisLo" : "#3EA8DE",
+      "hair" : "#1E246355",
+      "ink" : "#1E2463",
+      "ink2" : "#2E3680",
+      "ink3" : "#4B56A8",
+      "ink4" : "#8C93C8",
+      "metal" : "#F7B32B",
+      "metalDeep" : "#1E2463",
+      "metalHi" : "#FFD36B",
+      "metalLo" : "#D8921A",
+      "paper" : "#FFF7E8",
+      "paper2" : "#FFEFD2",
+      "stickerInk" : "#1E2463E6",
+      "well" : "#FFFFFF",
+      "wellDeep" : "#CFEFFF"
+    }
+  },
+  "name" : "Funhouse",
+  "style" : "sticker",
+  "version" : "1.0"
+}

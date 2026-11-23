@@ -127,5 +127,6 @@
     }
   },
   "name" : "Pocket",
+  "style" : "flatHardware",
   "version" : "1.0"
 }
