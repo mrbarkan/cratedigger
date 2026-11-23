@@ -1,4 +1,18 @@
+import CrateDiggerCore
 import SwiftUI
+
+/// A fader's measures in a style other than Real Hardware, shared by the
+/// footer faders and the EQ editor's.
+enum FaderMetrics {
+    /// The rail's lit bottom lip (Flat Hardware) or hard shadow (Sticker).
+    static let styledRailDepth: CGFloat = 1.5
+    /// Sticker's inner outline on a rail.
+    static let styledRailOutline: CGFloat = 1
+    /// The cap's base band (Flat Hardware) or hard shadow (Sticker).
+    static let styledCapDepth: CGFloat = 2
+    /// Sticker's inner outline on a cap.
+    static let styledCapOutline: CGFloat = 1.5
+}
 
 /// An embossed detent pressed into a fader's chassis (POSITION center, VOLUME
 /// unity). `label` renders a tiny embossed caption below the tick (VOLUME "0").
@@ -12,8 +26,15 @@ struct FaderDetent {
 /// into the chassis, and an 11×26 vertical metal cap with a center grip line.
 /// Horizontal travel; dragging anywhere positions the cap absolutely
 /// (grab-and-move, like a real deck slider), matching the v10 mock.
+///
+/// In a style other than Real Hardware the rail is a well cut into the shelf
+/// and the cap a key, both the style's `StyledSlab`. A fader is dragged, not
+/// pressed, so the cap never answers a press. The lit fill is a readout and
+/// is the same in every style, as are the frame and the drag area.
 struct FaderTrack: View {
     @Environment(\.carbon) private var theme
+    @Environment(\.interfaceStyle) private var style
+    @Environment(\.softSurfaces) private var softSurfaces
     let progress: Double
     /// Solid rail colour (POSITION). Left nil, the rail wears the cyan→meter
     /// ramp (VOLUME; the high end is `meterHot`), *revealed* through a mask
@@ -37,27 +58,7 @@ struct FaderTrack: View {
                     detentMark(detents[i], width: w)
                 }
 
-                // Recessed pill rail: a dark slot cut into the shelf, with the
-                // inner bevel a milled groove has — shadow along its top wall,
-                // light catching its bottom lip.
-                Capsule()
-                    .fill(Color.black.opacity(theme.isDark ? 0.62 : 0.30))
-                    .overlay(
-                        Capsule()
-                            .stroke(Color.black.opacity(theme.isDark ? 0.9 : 0.55), lineWidth: 2.5)
-                            .blur(radius: 1.6)
-                            .offset(y: 1.4)
-                            .mask(Capsule())
-                    )
-                    .overlay(
-                        Capsule()
-                            .stroke(Color.white.opacity(theme.isDark ? 0.14 : 0.5), lineWidth: 1)
-                            .blur(radius: 0.6)
-                            .offset(y: -0.8)
-                            .mask(Capsule())
-                    )
-                    .overlay(Capsule().stroke(Color.white.opacity(theme.isDark ? 0.10 : 0.55), lineWidth: 0.6).offset(y: 0.5))
-                    .frame(height: 7)
+                rail
 
                 // Fill up to the cap.
                 // The fill is a light, not paint: a tight bloom hugging the
@@ -97,7 +98,60 @@ struct FaderTrack: View {
         }
     }
 
+    @ViewBuilder
+    private var rail: some View {
+        if style == .hardware {
+            realRail
+        } else {
+            // A slot cut into the shelf, in this style, in the same dark.
+            StyledSlab(shape: Capsule(), fill: Color.black.opacity(theme.isDark ? 0.62 : 0.30),
+                       depth: FaderMetrics.styledRailDepth, sunken: true,
+                       outline: FaderMetrics.styledRailOutline)
+                .frame(height: 7)
+        }
+    }
+
+    /// Recessed pill rail: a dark slot cut into the shelf, with the inner
+    /// bevel a milled groove has — shadow along its top wall, light catching
+    /// its bottom lip.
+    private var realRail: some View {
+        Capsule()
+            .fill(Color.black.opacity(theme.isDark ? 0.62 : 0.30))
+            .overlay(
+                Capsule()
+                    .stroke(Color.black.opacity(theme.isDark ? 0.9 : 0.55), lineWidth: 2.5)
+                    .blur(radius: 1.6)
+                    .offset(y: 1.4)
+                    .mask(Capsule())
+            )
+            .overlay(
+                Capsule()
+                    .stroke(Color.white.opacity(theme.isDark ? 0.14 : 0.5), lineWidth: 1)
+                    .blur(radius: 0.6)
+                    .offset(y: -0.8)
+                    .mask(Capsule())
+            )
+            .overlay(Capsule().stroke(Color.white.opacity(theme.isDark ? 0.10 : 0.55), lineWidth: 0.6).offset(y: 0.5))
+            .frame(height: 7)
+    }
+
+    @ViewBuilder
     private var cap: some View {
+        if style == .hardware {
+            realCap
+        } else {
+            // A key in this style, the cap's own size. The grip is its print:
+            // one dark line, without the bevel's light edge.
+            StyledSlab(shape: RoundedRectangle(cornerRadius: CarbonGeometry.styledRadius(3, for: style),
+                                               style: .continuous),
+                       fill: softSurfaces?.metal ?? theme.metal, hi: theme.metalHi, lo: theme.metalLo,
+                       depth: FaderMetrics.styledCapDepth, outline: FaderMetrics.styledCapOutline)
+                .frame(width: 11, height: 26)
+                .overlay(Rectangle().fill(Color.black.opacity(0.45)).frame(width: 1.5, height: 20))
+        }
+    }
+
+    private var realCap: some View {
         RoundedRectangle(cornerRadius: 3, style: .continuous)
             .fill(
                 LinearGradient(

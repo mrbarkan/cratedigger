@@ -315,8 +315,14 @@ struct EqualizerEditorView: View {
 
 /// A single vertical fader. Drag the handle to set the gain; the center line is
 /// 0 dB. Mirrors a hardware graphic-EQ slider.
+///
+/// In a style other than Real Hardware the track is the style's well and the
+/// handle its key, like the footer's faders: dragged, never pressed. The lit
+/// fill and the handle's line are readouts and stay as they are.
 private struct EQFader: View {
     @Environment(\.carbon) private var theme
+    @Environment(\.interfaceStyle) private var style
+    @Environment(\.softSurfaces) private var softSurfaces
     @Binding var gain: Double
     let range: ClosedRange<Double>
     var enabled: Bool
@@ -332,10 +338,7 @@ private struct EQFader: View {
 
             ZStack {
                 // Recessed track.
-                Capsule()
-                    .fill(theme.wellDeep.opacity(theme.isDark ? 0.8 : 0.35))
-                    .frame(width: 5)
-                    .overlay(Capsule().stroke(Color.black.opacity(0.35), lineWidth: 1).frame(width: 5))
+                track
 
                 // Quick EQ's selection: a lit outline around the whole travel.
                 if isQuickBand {
@@ -357,16 +360,7 @@ private struct EQFader: View {
                     .position(x: geo.size.width / 2, y: (handleY + h / 2) / 2)
 
                 // Handle.
-                RoundedRectangle(cornerRadius: 3, style: .continuous)
-                    .fill(
-                        LinearGradient(colors: [theme.metalHi, theme.metal, theme.metalLo],
-                                       startPoint: .top, endPoint: .bottom)
-                    )
-                    .overlay(RoundedRectangle(cornerRadius: 3)
-                        .stroke(isQuickBand ? theme.orange : Color.black.opacity(0.4), lineWidth: 1))
-                    .overlay(Rectangle().fill((enabled ? theme.orange : theme.ink4).opacity(0.9)).frame(height: 1.5))
-                    .frame(width: 24, height: 12)
-                    .depthShadow(color: Color.black.opacity(0.4), radius: 2, y: 1)
+                handle
                     .position(x: geo.size.width / 2, y: handleY)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -381,5 +375,45 @@ private struct EQFader: View {
             )
         }
         .frame(width: 28)
+    }
+
+    @ViewBuilder
+    private var track: some View {
+        if style == .hardware {
+            Capsule()
+                .fill(theme.wellDeep.opacity(theme.isDark ? 0.8 : 0.35))
+                .frame(width: 5)
+                .overlay(Capsule().stroke(Color.black.opacity(0.35), lineWidth: 1).frame(width: 5))
+        } else {
+            StyledSlab(shape: Capsule(), fill: theme.wellDeep.opacity(theme.isDark ? 0.8 : 0.35),
+                       depth: FaderMetrics.styledRailDepth, sunken: true,
+                       outline: FaderMetrics.styledRailOutline)
+                .frame(width: 5)
+        }
+    }
+
+    @ViewBuilder
+    private var handle: some View {
+        if style == .hardware {
+            RoundedRectangle(cornerRadius: 3, style: .continuous)
+                .fill(
+                    LinearGradient(colors: [theme.metalHi, theme.metal, theme.metalLo],
+                                   startPoint: .top, endPoint: .bottom)
+                )
+                .overlay(RoundedRectangle(cornerRadius: 3)
+                    .stroke(isQuickBand ? theme.orange : Color.black.opacity(0.4), lineWidth: 1))
+                .overlay(Rectangle().fill((enabled ? theme.orange : theme.ink4).opacity(0.9)).frame(height: 1.5))
+                .frame(width: 24, height: 12)
+                .depthShadow(color: Color.black.opacity(0.4), radius: 2, y: 1)
+        } else {
+            let shape = RoundedRectangle(cornerRadius: CarbonGeometry.styledRadius(3, for: style), style: .continuous)
+            StyledSlab(shape: shape, fill: softSurfaces?.metal ?? theme.metal, hi: theme.metalHi, lo: theme.metalLo,
+                       depth: FaderMetrics.styledCapDepth, outline: FaderMetrics.styledCapOutline)
+                // Quick EQ's hold on this band is lit, not finish: it rings
+                // the handle in every style.
+                .overlay { if isQuickBand { shape.strokeBorder(theme.orange, lineWidth: 1) } }
+                .overlay(Rectangle().fill((enabled ? theme.orange : theme.ink4).opacity(0.9)).frame(height: 1.5))
+                .frame(width: 24, height: 12)
+        }
     }
 }

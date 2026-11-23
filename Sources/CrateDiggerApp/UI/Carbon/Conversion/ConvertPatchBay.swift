@@ -1072,12 +1072,20 @@ private struct ArmCancelButton: View {
 
 private struct ArmGoButton: View {
     @Environment(\.carbon) private var theme
+    @Environment(\.interfaceStyle) private var style
+    @Environment(\.softSurfaces) private var softSurfaces
     let enabled: Bool
     /// CONVERT, or SEND TO <DEVICE> when the run is routed at one.
     var label: String = "CONVERT"
     let action: () -> Void
 
     @State private var holdProgress: Double = 0
+    /// Held down, for the style's press. Real Hardware's key has no travel:
+    /// the hazard fill is its answer.
+    @State private var pressing = false
+
+    /// The key's own radius.
+    private static let cornerRadius: CGFloat = 6
 
     /// The print on the lit key. It has always been a dark brown, not
     /// `selectionInk`, so it stays that until a theme names `accentInk`.
@@ -1092,10 +1100,47 @@ private struct ArmGoButton: View {
     /// hold reads as aborted rather than as a glitch.
     private static let holdRelease: Double = 0.15
 
+    /// The key as drawn: the theme's own corner in Real Hardware, the
+    /// style's rounder one otherwise.
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: CarbonGeometry.styledRadius(Self.cornerRadius, for: style), style: .continuous)
+    }
+
     var body: some View {
+        pressedFace
+            .contentShape(Rectangle())
+            // A plain onLongPressGesture survives the enclosing ScrollView, unlike a
+            // minimumDistance-0 DragGesture (which the scroll view swallowed, leaving
+            // Convert unresponsive). Pressing fills the hazard bar over the hold;
+            // releasing early resets it.
+            .onLongPressGesture(minimumDuration: Self.holdDuration, maximumDistance: 80) {
+                guard enabled else { return }
+                holdProgress = 0
+                action()
+            } onPressingChanged: { pressing in
+                self.pressing = pressing
+                withAnimation(.linear(duration: pressing ? Self.holdDuration : Self.holdRelease)) {
+                    holdProgress = (pressing && enabled) ? 1 : 0
+                }
+            }
+            .accessibilityLabel(Text(label))
+            .accessibilityHint(Text("Press and hold to start"))
+    }
+
+    /// The face under the style's press. The hit area is pinned outside it
+    /// (in `body`), so the key moves and the place it takes clicks does not.
+    @ViewBuilder
+    private var pressedFace: some View {
+        if style == .hardware {
+            face
+        } else {
+            face.modifier(StyledPress(pressed: pressing && enabled, depth: StyledKeyMetrics.depth))
+        }
+    }
+
+    private var face: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(enabled ? theme.orange : theme.metal)
+            plate
 
             // Hazard fill that grows with hold progress so the user gets
             // feedback that they're arming the convert.
@@ -1104,7 +1149,7 @@ private struct ArmGoButton: View {
                     .fill(Color.black.opacity(0.18))
                     .frame(width: geo.size.width * holdProgress)
             }
-            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .clipShape(shape)
             .blendMode(.multiply)
 
             // At narrow widths, drop the PRESS & HOLD subtitle and the right
@@ -1117,22 +1162,22 @@ private struct ArmGoButton: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .opacity(enabled ? 1 : 0.55)
-        .contentShape(Rectangle())
-        // A plain onLongPressGesture survives the enclosing ScrollView, unlike a
-        // minimumDistance-0 DragGesture (which the scroll view swallowed, leaving
-        // Convert unresponsive). Pressing fills the hazard bar over the hold;
-        // releasing early resets it.
-        .onLongPressGesture(minimumDuration: Self.holdDuration, maximumDistance: 80) {
-            guard enabled else { return }
-            holdProgress = 0
-            action()
-        } onPressingChanged: { pressing in
-            withAnimation(.linear(duration: pressing ? Self.holdDuration : Self.holdRelease)) {
-                holdProgress = (pressing && enabled) ? 1 : 0
-            }
+    }
+
+    /// The key's body: the accent while it can run, the metal while it
+    /// cannot. In a style other than Real Hardware, the style's slab.
+    @ViewBuilder
+    private var plate: some View {
+        if style == .hardware {
+            RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
+                .fill(enabled ? theme.orange : theme.metal)
+        } else {
+            StyledSlab(shape: shape,
+                       fill: enabled ? theme.orange : (softSurfaces?.metal ?? theme.metal),
+                       hi: enabled ? theme.orangeHi : theme.metalHi,
+                       lo: enabled ? theme.orangeLo : theme.metalLo,
+                       depth: StyledKeyMetrics.depth, outline: StyledKeyMetrics.outline)
         }
-        .accessibilityLabel(Text(label))
-        .accessibilityHint(Text("Press and hold to start"))
     }
 
     @ViewBuilder

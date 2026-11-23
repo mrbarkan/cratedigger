@@ -2,8 +2,8 @@
 # Isolated window capture for interface-style work.
 # Usage: scripts/style-capture.sh <theme-id> <light|dark> <full|compact|mini> <out.png>
 # Needs: SCRATCH (outside /Volumes). Optional: DEMO_LIBRARY (crates folder to copy),
-# COVER (image shown in compact/mini), CRATEDIGGER_STYLE and CRATEDIGGER_STYLE_PRESSED
-# (passed through).
+# COVER (image shown in compact/mini), CRATEDIGGER_STYLE, CRATEDIGGER_STYLE_PRESSED and
+# CRATEDIGGER_OLED (the display screen, e.g. `conversion` for the Patch Bay; passed through).
 # Builds nothing: run `swift build` first.
 set -u
 # STYLE_CAPTURE_ROOT picks the checkout whose build is captured; helpers stay with this script.
@@ -60,6 +60,7 @@ ENVV=(CRATEDIGGER_CRATES_DIR="$SCRATCH/crates" CFFIXED_USER_HOME="$SCRATCH/home"
       CRATEDIGGER_SNAPSHOT_PATH="$SCRATCH/snap.png")
 [ -n "${CRATEDIGGER_STYLE:-}" ] && ENVV+=(CRATEDIGGER_STYLE="$CRATEDIGGER_STYLE")
 [ -n "${CRATEDIGGER_STYLE_PRESSED:-}" ] && ENVV+=(CRATEDIGGER_STYLE_PRESSED="$CRATEDIGGER_STYLE_PRESSED")
+[ -n "${CRATEDIGGER_OLED:-}" ] && ENVV+=(CRATEDIGGER_OLED="$CRATEDIGGER_OLED")
 [ "$LAYOUT" = compact ] && ENVV+=(CRATEDIGGER_COMPACT=1)
 [ "$LAYOUT" = mini ] && ENVV+=(CRATEDIGGER_MINI=1)
 if [ "$LAYOUT" != full ] && [ -n "${COVER:-}" ]; then ENVV+=(CRATEDIGGER_COVER="$COVER"); fi

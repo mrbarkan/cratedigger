@@ -73,7 +73,8 @@ struct ChassisLayer<Content: View>: View {
                 )
                 .depthShadow(color: theme.shadow2.color, radius: theme.shadow2.radius, x: theme.shadow2.x, y: theme.shadow2.y)
             } else {
-                styledPlate(shape)
+                // The case in this style; its corner is the theme's own.
+                StyledCasePlate(shape: shape)
             }
 
             content()
@@ -82,12 +83,18 @@ struct ChassisLayer<Content: View>: View {
         }
         .compositingGroup()
     }
+}
 
-    /// The case in a style other than Real Hardware. Its corner is the
-    /// theme's own: the styles scale keys, wells and paper, not the case.
-    /// Opaque fills only, as above.
-    @ViewBuilder
-    private func styledPlate(_ shape: RoundedRectangle) -> some View {
+/// A case in a style other than Real Hardware: the main window's
+/// (`ChassisLayer`) and the mini player's glass, which is that window's case.
+/// The shape is the caller's, corner included: the styles scale keys, wells
+/// and paper, not the case. Opaque fills only (see `ChassisLayer`).
+struct StyledCasePlate: View {
+    @Environment(\.carbon) private var theme
+    @Environment(\.interfaceStyle) private var style
+    let shape: RoundedRectangle
+
+    var body: some View {
         switch style {
         case .sticker:
             shape.fill(theme.chassis)
@@ -104,10 +111,10 @@ struct ChassisLayer<Content: View>: View {
         case .softBlocks:
             shape.fill(theme.chassis)
         case .hardware:
-            // The body keeps its Real plate; a missed branch is loud in DEBUG.
+            // Each case keeps its Real plate; a missed branch is loud in DEBUG.
             shape.fill(theme.chassis)
                 .onAppear {
-                    assertionFailure("ChassisLayer.styledPlate built for Real Hardware: the body must keep its Real plate")
+                    assertionFailure("StyledCasePlate built for Real Hardware: the case must keep its Real plate")
                 }
         }
     }
