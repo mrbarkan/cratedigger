@@ -489,7 +489,7 @@ struct CollapsedRail: View {
                 .frame(width: 22, height: 18)
             Text("⟨⟩")
                 .font(CarbonFont.mono(10, weight: .heavy))
-                .foregroundStyle(theme.ink2)
+                .foregroundStyle(theme.keyPrint(theme.ink2))
         }
     }
 }

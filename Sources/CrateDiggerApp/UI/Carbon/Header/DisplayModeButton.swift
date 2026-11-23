@@ -1,3 +1,4 @@
+import CrateDiggerCore
 import SwiftUI
 
 /// Every OLED screen owns one lamp color, shared by the annunciator on the
@@ -105,13 +106,31 @@ struct DisplayModeButton: View {
 /// pressed cap is down in its socket, so the skirt hides, the shadow
 /// collapses and the top light dims. Both default to the flat chip the
 /// other callers draw.
+///
+/// In a style other than Real Hardware the plate is the style's slab, its
+/// corner rounded by the style here (callers pass the theme's radius), and
+/// `skirt` and `pressed` are not read: a styled chassis key draws its own
+/// slab, and a plate under a small key has no press of its own.
 struct ChromeChassis: View {
     let theme: CarbonTheme
     var cornerRadius: CGFloat = 7
     var skirt: CGFloat = 0
     var pressed = false
 
+    @Environment(\.interfaceStyle) private var style
+    @Environment(\.softSurfaces) private var softSurfaces
+
     var body: some View {
+        if style == .hardware {
+            realPlate
+        } else {
+            StyledSlab(shape: CarbonGeometry.styledShape(cornerRadius, for: style),
+                       fill: softSurfaces?.metal ?? theme.metal, hi: theme.metalHi, lo: theme.metalLo,
+                       depth: StyledKeyMetrics.depth, outline: StyledKeyMetrics.outline)
+        }
+    }
+
+    private var realPlate: some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         return shape
             .fill(theme.metal) // opaque, not Material — see ChassisLayer

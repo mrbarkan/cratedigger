@@ -1,3 +1,4 @@
+import CrateDiggerCore
 import SwiftUI
 
 /// The header's hardware keys: a chrome cap seated in a socket cut into the
@@ -8,6 +9,11 @@ import SwiftUI
 ///
 /// The label sizes the key (the header grid hands its labels the whole cell);
 /// the style only draws around it, so a fixed-size key stays fixed.
+///
+/// In a style other than Real Hardware there is no socket: the cap is a
+/// `StyledSlab` and answers a press as that style does (`StyledPress`). It
+/// keeps the socket's lip as padding, so the key occupies the same frame and
+/// hit area in every style.
 struct ChassisKeyButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         KeyBody(configuration: configuration)
@@ -18,11 +24,21 @@ struct ChassisKeyButtonStyle: ButtonStyle {
         @Environment(\.carbon) private var theme
         @Environment(\.carbonGeometry) private var geometry
         @Environment(\.isEnabled) private var isEnabled
+        @Environment(\.interfaceStyle) private var style
+        @Environment(\.softSurfaces) private var softSurfaces
         @State private var hovering = false
 
         var body: some View {
+            if style == .hardware {
+                realKey
+            } else {
+                styledKey
+            }
+        }
+
+        private var realKey: some View {
             let pressed = configuration.isPressed
-            configuration.label
+            return configuration.label
                 // A disabled key is still a key: its legend dims, its cap and
                 // socket stay solid. Fading the whole thing let the socket show
                 // through the cap and turned it into a ghost.
@@ -42,6 +58,25 @@ struct ChassisKeyButtonStyle: ButtonStyle {
                 .onHover { hovering = $0 && isEnabled }
         }
 
+        /// The cap as the style draws it, on the frame the socket gave the
+        /// Real key: the socket's lip stays as padding, and the hit area is
+        /// pinned outside the press so it never moves with the cap.
+        private var styledKey: some View {
+            let pressed = configuration.isPressed
+            let shape = CarbonGeometry.styledShape(geometry.keyCornerRadius, for: style)
+            return configuration.label
+                .opacity(isEnabled ? 1 : 0.38)
+                .background(StyledSlab(shape: shape, fill: softSurfaces?.metal ?? theme.metal,
+                                       hi: theme.metalHi, lo: theme.metalLo,
+                                       depth: ChassisKeyMetrics.styledDepth))
+                .brightness(brightness(pressed: pressed))
+                .modifier(StyledPress(pressed: pressed, depth: ChassisKeyMetrics.styledDepth))
+                .padding(ChassisKeyMetrics.seat)
+                .contentShape(Rectangle())
+                .animation(CarbonMotion.hover, value: hovering)
+                .onHover { hovering = $0 && isEnabled }
+        }
+
         private func brightness(pressed: Bool) -> Double {
             if pressed { return theme.isDark ? -0.04 : -0.03 }
             if hovering { return theme.isDark ? 0.07 : 0.03 }
@@ -57,6 +92,10 @@ enum ChassisKeyMetrics {
     static let skirt: CGFloat = 2
     /// How far a pressed cap sinks.
     static let travel: CGFloat = 1
+    /// A styled cap's base band (Flat Hardware) or hard shadow (Sticker), and
+    /// so how far a press moves it. Drawn past the socket's lip, outside the
+    /// frame, without moving anything beside the key.
+    static let styledDepth: CGFloat = 3
 }
 
 extension ButtonStyle where Self == ChassisKeyButtonStyle {

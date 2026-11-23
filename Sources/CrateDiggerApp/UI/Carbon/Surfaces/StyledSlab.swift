@@ -222,12 +222,27 @@ struct StyledPress: ViewModifier {
         _shownPressed = State(initialValue: pressed)
     }
 
+    #if DEBUG
+    /// `CRATEDIGGER_STYLE_PRESSED=1` draws every styled key held down, so a
+    /// press can be captured. Read once.
+    private static let debugAllPressed =
+        ProcessInfo.processInfo.environment["CRATEDIGGER_STYLE_PRESSED"] == "1"
+    #endif
+
+    /// `shownPressed`, or every key held down under the DEBUG capture hook.
+    private var drawnPressed: Bool {
+        #if DEBUG
+        if Self.debugAllPressed { return true }
+        #endif
+        return shownPressed
+    }
+
     @ViewBuilder
     func body(content: Content) -> some View {
         if let curve = StyledPressRule.curve(style: style, reduceMotion: reduceMotion) {
-            let transform = StyledPressRule.transform(style: style, pressed: shownPressed, depth: depth)
+            let transform = StyledPressRule.transform(style: style, pressed: drawnPressed, depth: depth)
             content
-                .environment(\.styledPressed, shownPressed)
+                .environment(\.styledPressed, drawnPressed)
                 .scaleEffect(transform.scale)
                 .offset(x: transform.x, y: transform.y)
                 .onChange(of: pressed) { newValue in
