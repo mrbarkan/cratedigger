@@ -482,6 +482,7 @@ private struct MiniPlayerPanel: View {
     @Environment(\.carbon) private var theme
     @Environment(\.carbonGeometry) private var geometry
     @Environment(\.interfaceStyle) private var style
+    @Environment(\.softSurfaces) private var softSurfaces
 
     /// Tall enough for a dozen rows, short enough that a library with forty
     /// crates does not become a two-foot window.
@@ -490,10 +491,7 @@ private struct MiniPlayerPanel: View {
     var body: some View {
         // The drawer is a well: its outline, and the clip that keeps the
         // lists inside it, follow the style like `RecessedWell`'s.
-        let well = RoundedRectangle(
-            cornerRadius: CarbonGeometry.styledRadius(geometry.scaled(12, following: \.wellCornerRadius), for: style),
-            style: .continuous
-        )
+        let well = CarbonGeometry.styledShape(geometry.scaled(12, following: \.wellCornerRadius), for: style)
         VStack(spacing: 0) {
             tabs
             Group {
@@ -504,14 +502,24 @@ private struct MiniPlayerPanel: View {
             }
             .frame(height: Self.listHeight)
         }
-        .background(
-            well
-                .fill(theme.well.opacity(theme.isDark ? 0.75 : 0.9))
-                .overlay(well.strokeBorder(theme.hair.opacity(theme.isDark ? 0.6 : 0.8), lineWidth: 1))
-        )
+        .background(drawerWell(well))
         .clipShape(well)
         // Dragging inside the lists must scroll and reorder, not move the window.
         .background(WindowDragGuard())
+    }
+
+    @ViewBuilder
+    private func drawerWell(_ well: RoundedRectangle) -> some View {
+        if style == .hardware {
+            well
+                .fill(theme.well.opacity(theme.isDark ? 0.75 : 0.9))
+                .overlay(well.strokeBorder(theme.hair.opacity(theme.isDark ? 0.6 : 0.8), lineWidth: 1))
+        } else {
+            // Opaque here: Sticker draws its ink shadow under the fill, and a
+            // see-through well would show it across the whole drawer.
+            StyledSlab(shape: well, fill: softSurfaces?.well ?? theme.well, hi: theme.well, lo: theme.wellDeep,
+                       depth: 3, sunken: true)
+        }
     }
 
     private var tabs: some View {

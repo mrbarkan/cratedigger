@@ -13,10 +13,7 @@ struct RecessedWell<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
     var body: some View {
-        let shape = RoundedRectangle(
-            cornerRadius: CarbonGeometry.styledRadius(cornerRadius ?? geometry.wellCornerRadius, for: style),
-            style: .continuous
-        )
+        let shape = CarbonGeometry.styledShape(cornerRadius ?? geometry.wellCornerRadius, for: style)
         ZStack {
             if style == .hardware {
             shape

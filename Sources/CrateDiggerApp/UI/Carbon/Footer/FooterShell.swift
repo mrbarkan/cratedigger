@@ -27,11 +27,10 @@ struct FooterShell: View {
     @Environment(\.interfaceStyle) private var style
 
     var body: some View {
-        // The shelf is a part of the console: its corner follows the style
-        // like a well's does.
-        let shape = RoundedRectangle(cornerRadius: CarbonGeometry.styledRadius(geometry.wellCornerRadius, for: style),
-                                     style: .continuous)
+        // The shelf is a part of the console, cut into the case like a well.
+        let shape = CarbonGeometry.styledShape(geometry.wellCornerRadius, for: style)
         ZStack {
+            if style == .hardware {
             shape
                 .fill(theme.chassis) // opaque, not Material — see ChassisLayer
                 .overlay(
@@ -50,6 +49,12 @@ struct FooterShell: View {
                 .overlay(
                     shape.strokeBorder(Color.white.opacity(theme.isDark ? 0.12 : 0.62), lineWidth: 1)
                 )
+            } else {
+                // The shelf is the case's own colour, so Soft Blocks takes it
+                // as it is: there is no separated chassis to read.
+                StyledSlab(shape: shape, fill: theme.chassis, hi: theme.chassis, lo: theme.chassisLo,
+                           depth: 3, sunken: true)
+            }
 
             // Each pod sits in the middle of its half of the shelf, so the
             // gap from the shelf's edge to a rail always equals the gap from

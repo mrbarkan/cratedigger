@@ -1,5 +1,6 @@
 import CoreGraphics
 import CrateDiggerCore
+import SwiftUI
 
 /// The themable counterpart of `CarbonLayout`: per-theme geometry (corner
 /// radii, control sizes, pane widths) injected via `\.carbonGeometry`
@@ -150,6 +151,13 @@ extension CarbonGeometry {
     static func styledRadius(_ radius: CGFloat, for style: InterfaceStyle) -> CGFloat {
         guard style != .hardware else { return radius }
         return Bounds.cornerRadius.clamp(radius * CGFloat(style.radiusScale))
+    }
+
+    /// The outline of a key, well or paper with the theme's `radius`, as
+    /// `style` draws it. The one place that shape is made, so a pane clipped
+    /// to its well can never drift from the well itself.
+    static func styledShape(_ radius: CGFloat, for style: InterfaceStyle) -> RoundedRectangle {
+        RoundedRectangle(cornerRadius: styledRadius(radius, for: style), style: .continuous)
     }
 }
 

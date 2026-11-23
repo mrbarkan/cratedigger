@@ -101,9 +101,14 @@ struct ChassisLayer<Content: View>: View {
                                                            startPoint: .top, endPoint: .center), lineWidth: 3))
                 .overlay(shape.strokeBorder(LinearGradient(colors: [.clear, Color.black.opacity(theme.isDark ? 0.5 : 0.22)],
                                                            startPoint: .center, endPoint: .bottom), lineWidth: 5))
-        case .softBlocks, .hardware:
-            // `.hardware` never reaches here (the body keeps its Real plate).
+        case .softBlocks:
             shape.fill(theme.chassis)
+        case .hardware:
+            // The body keeps its Real plate; a missed branch is loud in DEBUG.
+            shape.fill(theme.chassis)
+                .onAppear {
+                    assertionFailure("ChassisLayer.styledPlate built for Real Hardware: the body must keep its Real plate")
+                }
         }
     }
 }

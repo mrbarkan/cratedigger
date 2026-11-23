@@ -35,8 +35,7 @@ struct MainShell: View {
     /// Each pane is clipped to its well's own outline, so the corner follows
     /// the style exactly as `RecessedWell` draws it.
     private var wellClip: RoundedRectangle {
-        RoundedRectangle(cornerRadius: CarbonGeometry.styledRadius(geometry.wellCornerRadius, for: style),
-                         style: .continuous)
+        CarbonGeometry.styledShape(geometry.wellCornerRadius, for: style)
     }
 
     /// Collapses or expands a pane on the surface spring. Only the chevrons
