@@ -37,6 +37,12 @@ cp "$SRC" "$BIN"
 # The copy finds Sparkle through @loader_path, so link the built framework beside it.
 rm -rf "$SCRATCH/Sparkle.framework"
 ln -s "$ROOT/.build/out/Products/Debug/Sparkle.framework" "$SCRATCH/Sparkle.framework"
+# SPM resource bundles (themes, fonts, starter crate) are found beside the binary.
+# STYLE_CAPTURE_ROOT alternates between checkouts, so drop stale links first.
+for old in "$SCRATCH"/*.bundle; do [ -L "$old" ] && rm -f "$old"; done
+for b in "$ROOT"/.build/out/Products/Debug/*.bundle; do
+  [ -e "$b" ] && ln -s "$b" "$SCRATCH/$(basename "$b")"
+done
 rm -rf "$SCRATCH/crates" "$SCRATCH/home"
 mkdir -p "$SCRATCH/crates" "$SCRATCH/home"
 [ -n "${DEMO_LIBRARY:-}" ] && [ -d "$DEMO_LIBRARY" ] && cp -R "$DEMO_LIBRARY/." "$SCRATCH/crates/"
