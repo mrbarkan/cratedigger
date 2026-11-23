@@ -12,19 +12,28 @@ public enum SoftSeparation {
 
     /// `fill` itself when it already stands apart from `surface`. Otherwise `fill` moved
     /// away from the surface, toward white if it is the lighter of the two and toward
-    /// black if not, in steps of 0.02 up to 0.30, until the contrast reaches the minimum
-    /// (the last step if it never does).
+    /// black if not, in steps of 0.02 up to 0.30, until the contrast reaches the minimum.
+    /// When that direction has no room (a near-white fill on a near-white surface), the
+    /// other direction is tried the same way; if neither reaches the minimum, the one
+    /// with the higher contrast is returned.
     public static func separated(_ fill: PaletteColor, on surface: PaletteColor) -> PaletteColor {
         guard PaletteColor.contrast(fill, surface) < minimumContrast else { return fill }
-        let target = fill.relativeLuminance >= surface.relativeLuminance
-            ? PaletteColor(r: 1, g: 1, b: 1, a: fill.a)
-            : PaletteColor(r: 0, g: 0, b: 0, a: fill.a)
+        let towardWhite = fill.relativeLuminance >= surface.relativeLuminance
+        let first = push(fill, on: surface, towardWhite: towardWhite)
+        let firstContrast = PaletteColor.contrast(first, surface)
+        if firstContrast >= minimumContrast { return first }
+        let second = push(fill, on: surface, towardWhite: !towardWhite)
+        return PaletteColor.contrast(second, surface) > firstContrast ? second : first
+    }
+
+    private static func push(_ fill: PaletteColor, on surface: PaletteColor, towardWhite: Bool) -> PaletteColor {
+        let end: Double = towardWhite ? 1 : 0
         var result = fill
         var amount = step
         while amount <= limit + 1e-9 {
-            result = PaletteColor(r: fill.r + (target.r - fill.r) * amount,
-                                  g: fill.g + (target.g - fill.g) * amount,
-                                  b: fill.b + (target.b - fill.b) * amount,
+            result = PaletteColor(r: fill.r + (end - fill.r) * amount,
+                                  g: fill.g + (end - fill.g) * amount,
+                                  b: fill.b + (end - fill.b) * amount,
                                   a: fill.a)
             if PaletteColor.contrast(result, surface) >= minimumContrast { break }
             amount += step

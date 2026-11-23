@@ -7,8 +7,8 @@ final class InterfaceStyleTests: XCTestCase {
         let def = try JSONDecoder().decode(ThemeDefinition.self, from: Data(json.utf8))
         XCTAssertNil(def.style)
         XCTAssertEqual(def.resolvedStyle, .hardware)
-        let out = String(decoding: try JSONEncoder().encode(def), as: UTF8.self)
-        XCTAssertFalse(out.contains("style"))
+        let object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(def)) as? [String: Any]
+        XCTAssertFalse(try XCTUnwrap(object).keys.contains("style"))
     }
 
     func testUnknownStyleReadsAsRealHardwareAndKeepsTheTheme() throws {

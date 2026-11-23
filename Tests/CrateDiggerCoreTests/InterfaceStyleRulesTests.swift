@@ -37,4 +37,19 @@ final class InterfaceStyleRulesTests: XCTestCase {
         XCTAssertLessThan(darker.relativeLuminance, PaletteColor(hex: "#BFBCB4")!.relativeLuminance)
         XCTAssertGreaterThanOrEqual(PaletteColor.contrast(darker, surface), SoftSeparation.minimumContrast)
     }
+
+    func testLighterFillWithNoRoomAboveGoesDarker() {
+        let surface = PaletteColor(hex: "#F5F8FA")!
+        let out = SoftSeparation.separated(PaletteColor(hex: "#FAFCFD")!, on: surface)
+        XCTAssertGreaterThanOrEqual(PaletteColor.contrast(out, surface), SoftSeparation.minimumContrast)
+        XCTAssertLessThan(out.relativeLuminance, surface.relativeLuminance)
+    }
+
+    func testIdenticalWhiteAndBlackAreSeparated() {
+        for hex in ["#FFFFFF", "#000000"] {
+            let c = PaletteColor(hex: hex)!
+            let out = SoftSeparation.separated(c, on: c)
+            XCTAssertGreaterThanOrEqual(PaletteColor.contrast(out, c), SoftSeparation.minimumContrast, hex)
+        }
+    }
 }

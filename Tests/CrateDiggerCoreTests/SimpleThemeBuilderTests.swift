@@ -202,9 +202,12 @@ extension SimpleThemeBuilderTests {
         original.style = .sticker
         let seed = SimpleThemeBuilder.seed(from: original, id: "s", name: "S")
         XCTAssertEqual(seed.style, .sticker)
-        // The choices a seed is edited with start from it.
-        XCTAssertEqual(SimpleThemeChoices(appearance: .dark, material: nil, coverLook: nil, fonts: [:],
-                                          style: seed.resolvedStyle).style, .sticker)
+        let built = SimpleThemeBuilder.build(
+            state: styleState(),
+            choices: SimpleThemeChoices(appearance: .dark, material: nil, coverLook: nil, fonts: [:],
+                                        style: seed.resolvedStyle),
+            onto: seed)
+        XCTAssertEqual(built.style, .sticker)
     }
 
     func testBuildWritesTheChosenStyle() throws {
@@ -242,5 +245,18 @@ extension SimpleThemeBuilderTests {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         XCTAssertEqual(try encoder.encode(again), try encoder.encode(first))
+    }
+
+    func testDecodedSimpleThemeWithoutStyleRebuildsWithNoStyleKey() throws {
+        let json = ##"""
+        {"id":"s","name":"S","baseAppearance":"dark","colors":{"ink":"#FFFFFF"}}
+        """##
+        let decoded = try JSONDecoder().decode(ThemeDefinition.self, from: Data(json.utf8))
+        let rebuilt = SimpleThemeBuilder.build(
+            state: styleState(),
+            choices: SimpleThemeChoices(appearance: .dark, material: nil, coverLook: nil, fonts: [:], style: .hardware),
+            onto: decoded)
+        let object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(rebuilt)) as? [String: Any]
+        XCTAssertFalse(try XCTUnwrap(object).keys.contains("style"))
     }
 }
