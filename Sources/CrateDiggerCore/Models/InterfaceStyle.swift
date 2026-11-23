@@ -31,4 +31,13 @@ public enum InterfaceStyle: String, Codable, CaseIterable, Sendable {
         case .sticker: return 1.35
         }
     }
+
+    /// Only Real Hardware has a "flat" switch (Settings turns its content shadows off).
+    /// The other styles decide their own shadows, so the switch does not reach them.
+    public var honoursFlatSwitch: Bool { self == .hardware }
+
+    /// Whether the style casts the shadows under content (keys, wells, paper).
+    public func castsContentShadows(flatSwitchOn: Bool) -> Bool {
+        self == .hardware ? !flatSwitchOn : true
+    }
 }
