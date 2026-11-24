@@ -1,6 +1,7 @@
 import Combine
 import CrateDiggerCore
 import Foundation
+import SwiftUI
 
 /// Owns theme discovery + resolution for the whole app: a thin, observable
 /// wrapper around `ThemeLoaderService` that `CarbonThemed` reads to resolve
@@ -436,17 +437,51 @@ public final class ThemeRegistry: ObservableObject {
     /// what lets one action set both looks at once: a screen preset that's a
     /// different piece of hardware in Light than in Dark has to write the pair,
     /// not whichever half you happen to have open.
+    ///
+    /// Key Print's default pin moves with Secondary ink here, in the same
+    /// assignment (`keyPrintPinFollowing`), so an `ink2` edit and the pin
+    /// following it are one undo step. This is the only writer that needs to:
+    /// the appearance flips repaint the two together (an untouched pin and
+    /// an untouched `ink2` both go to the same built-in or seed value), a
+    /// layer copy carries the pair as it stands, and the Simple-to-Advanced
+    /// paths seed afresh.
     public func setDraftColors(_ colors: [String: String], appearance: ThemeDefinition.BaseAppearance?) {
         guard var draft, !colors.isEmpty else { return }
 
         if let appearance, draft.isAdaptive {
             var variant = draft.variant(for: appearance) ?? ThemeVariant()
-            variant.colors = (variant.colors ?? [:]).merging(colors) { _, new in new }
+            let layer = draft.resolved(for: appearance).colors
+            let written = Self.keyPrintPinFollowing(colors, oldInk2: layer?["ink2"], oldKeyPrint: layer?["chassisInk"])
+            variant.colors = (variant.colors ?? [:]).merging(written) { _, new in new }
             if appearance == .light { draft.light = variant } else { draft.dark = variant }
         } else {
-            draft.colors = (draft.colors ?? [:]).merging(colors) { _, new in new }
+            let written = Self.keyPrintPinFollowing(colors, oldInk2: draft.colors?["ink2"],
+                                                     oldKeyPrint: draft.colors?["chassisInk"])
+            draft.colors = (draft.colors ?? [:]).merging(written) { _, new in new }
         }
         self.draft = draft
+    }
+
+    /// `colors` with Key Print (`chassisInk`) added at the new Secondary ink
+    /// when the write changes `ink2`, leaves Key Print to itself, and Key Print
+    /// still equals the old `ink2` in that scope. That equal pin is the one
+    /// seeding put there, which `CarbonTheme.keyPrint` reads as no choice; left
+    /// behind at the old value it would read as a deliberate Key Print and move
+    /// every small key's print. A Key Print that differs is the author's and is
+    /// never touched. Compared as `resolveKeyPrint` compares.
+    nonisolated static func keyPrintPinFollowing(
+        _ colors: [String: String],
+        oldInk2: String?,
+        oldKeyPrint: String?
+    ) -> [String: String] {
+        guard let newInk2 = colors["ink2"], colors["chassisInk"] == nil,
+              let oldInk2 = oldInk2.flatMap({ Color(hexString: $0)?.themeHexString }),
+              let oldKeyPrint = oldKeyPrint.flatMap({ Color(hexString: $0)?.themeHexString }),
+              oldKeyPrint == oldInk2
+        else { return colors }
+        var following = colors
+        following["chassisInk"] = newInk2
+        return following
     }
 
     /// Turns a single-appearance draft into one carrying both looks, or
