@@ -53,7 +53,7 @@ private struct AboutFaceplate: View {
                 // through every development session.
                 AppIconView()
                     .frame(width: 150, height: 150)
-                    .depthShadow(color: .black.opacity(0.5), radius: 14, y: 7)
+                    .contentShadow(color: .black.opacity(0.5), radius: 14, y: 7)
                     .padding(.bottom, 6)
                 BrandLockup(typeSize: 16)
                 Spacer(minLength: 0)
@@ -93,7 +93,7 @@ private struct AboutFaceplate: View {
                     .minimumScaleFactor(0.7)
                 Spacer(minLength: 0)
             }
-            .foregroundStyle(enabled ? theme.ink2 : theme.ink4)
+            .foregroundStyle(enabled ? theme.keyPrint(theme.ink2) : theme.ink4)
             .padding(.horizontal, 9)
             .frame(maxWidth: .infinity, alignment: .leading)
             .frame(height: 30)

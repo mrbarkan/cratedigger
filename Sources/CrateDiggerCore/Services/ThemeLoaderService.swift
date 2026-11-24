@@ -220,7 +220,13 @@ public struct ThemeLoaderService {
             dark: mergeVariants(base.dark, override.dark),
             // The recipe belongs to the theme authored with it, never to a child
             // inheriting its colours.
-            simple: override.simple
+            simple: override.simple,
+            // Not inherited either: a theme with no `style` is Real Hardware
+            // whatever its parent wears. A fork of Llama '97 or Pocket made
+            // before styles existed carries no key, and must not turn Flat
+            // Hardware on update. A fork made in the editor writes its style
+            // out (`ThemeAuthoringService.minimized` never prunes it).
+            style: override.style
         )
     }
 

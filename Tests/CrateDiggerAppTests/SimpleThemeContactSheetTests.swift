@@ -110,6 +110,7 @@ final class SimpleThemeContactSheetTests: XCTestCase {
         let theme = registry.previewTheme(for: definition, appearance: screen).theme
         ThemePreviewIllustration.prepareCovers(for: theme, scale: 1)
         let view = ThemePreviewIllustration(theme: theme, fonts: definition.fonts ?? [:], highlighted: [])
+            .environment(\.interfaceStyle, definition.resolvedStyle)
             .padding(16)
             .background(Color(white: 0.5))
             .environment(\.displayScale, 1)

@@ -40,10 +40,17 @@ public struct CarbonThemed: ViewModifier {
         let requestedAppearance: ThemeDefinition.BaseAppearance =
             (resolvedSystemScheme == .dark) ? .dark : .light
         let activeOverride = registry.resolvedTheme(for: selectedThemeID, appearance: requestedAppearance)
-        let isAdaptive = registry.activeDefinition(for: selectedThemeID)?.isAdaptive ?? false
+        // The open draft when there is one, so a draft's style shows live.
+        let activeDefinition = registry.activeDefinition(for: selectedThemeID)
+        let isAdaptive = activeDefinition?.isAdaptive ?? false
 
         let theme = activeOverride?.theme ?? fallbackTheme
         let geometry = activeOverride?.geometry ?? .standard
+        let style = InterfaceStyleDelivery.style(for: activeDefinition,
+                                                 override: InterfaceStyleDelivery.activeOverride)
+        // Colour maths once per theme, draft or appearance change (this body),
+        // and only for Soft Blocks; every other style gets nil.
+        let softSurfaces = InterfaceStyleDelivery.softSurfaces(for: style, theme: theme)
 
         // A single-appearance theme *is* the appearance decision (picking a
         // skin is the whole decision, same as Winamp), so its declared
@@ -66,7 +73,7 @@ public struct CarbonThemed: ViewModifier {
         // idempotent write of a plain global (see `ActiveThemeFonts`) derived
         // purely from `selectedThemeID`, consulted by `CarbonFont` — there's
         // no per-call-site path to reach a theme's font overrides otherwise.
-        ActiveThemeFonts.overrides = registry.activeDefinition(for: selectedThemeID)?.fonts ?? [:]
+        ActiveThemeFonts.overrides = activeDefinition?.fonts ?? [:]
         // Same pattern for the OLED glass foreground family — consulted by the
         // `oledFG`/`oledFGo`/`oledMuted` globals in OLEDDisplay.swift.
         ActiveOLEDPalette.foreground = theme.oledForeground
@@ -76,6 +83,8 @@ public struct CarbonThemed: ViewModifier {
         return content
             .environment(\.carbon, theme)
             .environment(\.carbonGeometry, geometry)
+            .environment(\.interfaceStyle, style)
+            .environment(\.softSurfaces, softSurfaces)
             .preferredColorScheme(preferredScheme)
     }
 }

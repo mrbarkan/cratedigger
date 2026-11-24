@@ -101,6 +101,19 @@ final class ThemeAuthoringServiceTests: XCTestCase {
         XCTAssertEqual(ThemeAuthoringService.minimized(root, against: nil), root)
     }
 
+    /// A style is not inherited, so a fork's own `style` is the only thing that
+    /// keeps it in its source's style: pruning it because the parent wears the
+    /// same one would turn the fork Real Hardware.
+    func testMinimizedNeverPrunesTheStyle() {
+        let parent = ThemeDefinition(id: "funhouse", name: "Funhouse", baseAppearance: .light, style: .sticker)
+        let fork = ThemeDefinition(id: "funhouse-copy", name: "Funhouse Copy", baseAppearance: .light,
+                                   inherits: "funhouse", style: .sticker)
+        XCTAssertEqual(ThemeAuthoringService.minimized(fork, against: parent).style, .sticker)
+        XCTAssertEqual(ThemeAuthoringService.minimized(fork, against: nil).style, .sticker)
+        let unstyled = ThemeDefinition(id: "c", name: "C", baseAppearance: .light, inherits: "funhouse")
+        XCTAssertNil(ThemeAuthoringService.minimized(unstyled, against: parent).style)
+    }
+
     // MARK: - Round trip
 
     /// The whole contract in one test: what the editor saves is what the

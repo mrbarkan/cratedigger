@@ -119,7 +119,7 @@ struct ArtworkInspectorView: View {
                 } label: {
                     HStack(spacing: 6) {
                         Text("FORMAT")
-                            .foregroundColor(theme.ink3)
+                            .foregroundColor(theme.keyPrint(theme.ink3))
                         // Fixed-width value slot: "AUTO" and every format glyph
                         // occupy the same space, so picking one never resizes
                         // the key and shoves ADD / SEARCH / SAVE sideways.
@@ -131,7 +131,7 @@ struct ArtworkInspectorView: View {
                                 Text("AUTO")
                             }
                         }
-                        .foregroundColor(theme.ink2)
+                        .foregroundColor(theme.keyPrint(theme.ink2))
                         .frame(width: 34)
                     }
                     .font(CarbonFont.mono(9, weight: .bold))
@@ -182,7 +182,7 @@ struct ArtworkInspectorView: View {
                         Text(hasPending ? "SAVE \(pendingCount)" : "SAVE")
                             .font(CarbonFont.mono(9, weight: .bold))
                             .tracking(1.2)
-                            .foregroundColor(canSave ? (hasPending ? theme.orange : theme.ink2) : theme.ink3)
+                            .foregroundColor(canSave ? (hasPending ? theme.orange : theme.keyPrint(theme.ink2)) : theme.keyPrint(theme.ink3))
                     } primaryAction: {
                         saveChanges()
                     }

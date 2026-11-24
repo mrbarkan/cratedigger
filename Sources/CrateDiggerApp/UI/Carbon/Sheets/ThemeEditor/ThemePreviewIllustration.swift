@@ -9,9 +9,14 @@ import SwiftUI
 //
 // Every shape is tagged with the job (`ThemeJob`) whose colour paints it, so
 // hovering a palette swatch or a job name can light those parts and dim the
-// rest (`previewJob`). The drawing reads the theme and the highlight and
-// nothing else, so a later drawing style is a new view beside this one, not a
-// rewrite of it.
+// rest (`previewJob`). The drawing reads the theme, the highlight and the
+// interface style the illustration is shown in (`\.interfaceStyle`): the case,
+// the panels, the keys and the caps take that style's finish in miniature, as
+// the real primitives do, and the display glass and the album art, which are
+// content, never change. Real Hardware draws exactly as it always has.
+//
+// Where the illustration shows a theme that is not the open draft (Simple's
+// candidate, a snapshot of a sample), the caller sets that theme's style on it.
 //
 // Sizes are fixed, in points: full window 600 × 400, mini 200 × 350, compact
 // 470 × 150. Show it at 1:1. The album art is planned for the size it is drawn
@@ -24,6 +29,7 @@ enum PreviewScreen: CaseIterable, Hashable {
 }
 
 struct ThemePreviewIllustration: View {
+    @Environment(\.interfaceStyle) private var style
     let theme: CarbonTheme
     /// The theme's font roles (`"display"`, `"mono"`, `"sans"`). nil draws the
     /// active theme's, which is right for Advanced, whose draft *is* the
@@ -61,6 +67,9 @@ struct ThemePreviewIllustration: View {
             }
         }
         .environment(\.carbon, theme)
+        // Soft Blocks' fills separated for this theme, not the app's: nil
+        // (no colour maths) under every other style.
+        .environment(\.softSurfaces, InterfaceStyleDelivery.softSurfaces(for: style, theme: theme))
         .environment(\.themePreviewHighlight, highlighted)
         .environment(\.themePreviewFonts, ThemePreviewFonts(overrides: fonts))
         .accessibilityElement(children: .ignore)
@@ -281,6 +290,23 @@ private extension CarbonTheme {
     var glassAccentJob: ThemeJob { oledMonochrome ? .screenText : .accent }
 }
 
+/// The styles' finish at the illustration's size, about half the console's
+/// (`StyledKeyMetrics`, `RecessedWell`, `SiliconeCap`, the case's outline): a
+/// key's base band or hard shadow, a well's, a cap's, and Sticker's outlines.
+/// Real Hardware reads none of these.
+private enum PreviewStyleMetrics {
+    static let keyDepth: CGFloat = 1.25
+    static let keyOutline: CGFloat = 1
+    static let wellDepth: CGFloat = 1.5
+    static let wellOutline: CGFloat = 1
+    static let capDepth: CGFloat = 1.5
+    static let capOutline: CGFloat = 1
+    /// The mini player's seek knob, smaller than any key.
+    static let knobDepth: CGFloat = 1
+    static let knobOutline: CGFloat = 0.75
+    static let caseOutline: CGFloat = 1.5
+}
+
 // MARK: - Parts
 
 /// One line of type, never wrapped.
@@ -321,11 +347,21 @@ private struct PreviewBar: View {
 /// flat tint.
 private struct PreviewChassis: View {
     @Environment(\.carbon) private var theme
+    @Environment(\.interfaceStyle) private var style
     let cornerRadius: CGFloat
 
+    @ViewBuilder
     var body: some View {
+        if style == .hardware {
+            realCase
+        } else {
+            styledCase
+        }
+    }
+
+    private var realCase: some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-        shape
+        return shape
             .fill(theme.chassis)
             .overlay(shape.fill(LinearGradient(
                 colors: [theme.chassisHi.opacity(theme.isDark ? 0.28 : 0.54),
@@ -341,6 +377,34 @@ private struct PreviewChassis: View {
                 startPoint: .top, endPoint: .bottom), lineWidth: 1.2))
             .depthShadow(color: .black.opacity(theme.isDark ? 0.45 : 0.18), radius: 8, y: 4)
             .previewJob(.frame)
+    }
+
+    /// `StyledCasePlate` in miniature: Sticker's inked edge, Flat Hardware's
+    /// top-lit ramp with a light lip and a shaded foot, Soft Blocks' plain
+    /// fill. The material's wash sits under the edges; the corner is the
+    /// case's own, as in the console.
+    private var styledCase: some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        let lip = PreviewStyleMetrics.caseOutline
+        return ZStack {
+            if style == .flatHardware {
+                shape.fill(LinearGradient(colors: [theme.chassisHi, theme.chassis, theme.chassisLo],
+                                          startPoint: .top, endPoint: .bottom))
+            } else {
+                shape.fill(theme.chassis)
+            }
+            shape.fill(materialTint)
+            if style == .sticker {
+                shape.strokeBorder(theme.stickerInk, lineWidth: lip)
+            } else if style == .flatHardware {
+                shape.strokeBorder(LinearGradient(colors: [Color.white.opacity(theme.isDark ? 0.25 : 0.9), .clear],
+                                                  startPoint: .top, endPoint: .center), lineWidth: lip)
+                shape.strokeBorder(LinearGradient(colors: [.clear, Color.black.opacity(theme.isDark ? 0.5 : 0.22)],
+                                                  startPoint: .center, endPoint: .bottom), lineWidth: lip * 1.7)
+            }
+        }
+        .depthShadow(color: .black.opacity(theme.isDark ? 0.45 : 0.18), radius: 8, y: 4)
+        .previewJob(.frame)
     }
 
     /// The shell material as a flat wash only: the real textures are drawn
@@ -364,11 +428,26 @@ private struct PreviewChassis: View {
 /// edge in `wellDeep`'s shadow.
 private struct PreviewWell: View {
     @Environment(\.carbon) private var theme
+    @Environment(\.interfaceStyle) private var style
+    @Environment(\.softSurfaces) private var softSurfaces
     let cornerRadius: CGFloat
 
+    @ViewBuilder
     var body: some View {
+        if style == .hardware {
+            realWell
+        } else {
+            // `RecessedWell`'s slab, cut into the case.
+            StyledSlab(shape: CarbonGeometry.styledShape(cornerRadius, for: style),
+                       fill: softSurfaces?.well ?? theme.well, hi: theme.well, lo: theme.wellDeep,
+                       depth: PreviewStyleMetrics.wellDepth, sunken: true, outline: PreviewStyleMetrics.wellOutline)
+                .previewJob(.panels)
+        }
+    }
+
+    private var realWell: some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-        shape
+        return shape
             .fill(theme.well)
             .overlay(shape.fill(LinearGradient(
                 colors: [theme.well.opacity(theme.isDark ? 0.42 : 0.58), theme.wellDeep.opacity(0.42)],
@@ -386,11 +465,26 @@ private struct PreviewWell: View {
 /// A paper panel: a sheet set into the case.
 private struct PreviewPaper: View {
     @Environment(\.carbon) private var theme
+    @Environment(\.interfaceStyle) private var style
+    @Environment(\.softSurfaces) private var softSurfaces
     let cornerRadius: CGFloat
 
+    @ViewBuilder
     var body: some View {
+        if style == .hardware {
+            realPaper
+        } else {
+            // `PaperPanel`'s slab: cut into the case, no cast shadow.
+            StyledSlab(shape: CarbonGeometry.styledShape(cornerRadius, for: style),
+                       fill: softSurfaces?.paper ?? theme.paper, hi: theme.paper, lo: theme.paper2,
+                       depth: PreviewStyleMetrics.wellDepth, sunken: true, outline: PreviewStyleMetrics.wellOutline)
+                .previewJob(.panels)
+        }
+    }
+
+    private var realPaper: some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-        shape
+        return shape
             .fill(theme.paper)
             .overlay(shape.fill(LinearGradient(
                 colors: [theme.paper.opacity(theme.isDark ? 0.62 : 0.78),
@@ -410,6 +504,8 @@ private struct PreviewPaper: View {
 /// its legend as a bar of `chassisInk`, and an optional lamp.
 private struct PreviewKey: View {
     @Environment(\.carbon) private var theme
+    @Environment(\.interfaceStyle) private var style
+    @Environment(\.softSurfaces) private var softSurfaces
     var cornerRadius: CGFloat = 3.5
     /// The legend's length as a share of the key's width; 0 for none.
     var legend: CGFloat = 0.5
@@ -424,6 +520,7 @@ private struct PreviewKey: View {
             let legendHeight = max(2, min(3, size.height * 0.2))
             let legendWidth = size.width * legend
             ZStack(alignment: .topLeading) {
+                if style == .hardware {
                 shape
                     .fill(theme.metalLo)
                     .offset(y: 1)
@@ -442,6 +539,13 @@ private struct PreviewKey: View {
                                 .init(color: theme.metalLo, location: 1)],
                         startPoint: .top, endPoint: .bottom), lineWidth: 0.75))
                     .previewJob(.frame)
+                } else {
+                    // `KeyChrome`'s slab, rounded as the style rounds keys.
+                    StyledSlab(shape: CarbonGeometry.styledShape(cornerRadius, for: style),
+                               fill: softSurfaces?.metal ?? theme.metal, hi: theme.metalHi, lo: theme.metalLo,
+                               depth: PreviewStyleMetrics.keyDepth, outline: PreviewStyleMetrics.keyOutline)
+                        .previewJob(.frame)
+                }
                 if let lamp {
                     Circle()
                         .fill(lamp)
@@ -464,6 +568,8 @@ private struct PreviewKey: View {
 /// surface, and the transport lamp behind it when lit.
 private struct PreviewCap<S: InsettableShape>: View {
     @Environment(\.carbon) private var theme
+    @Environment(\.interfaceStyle) private var style
+    @Environment(\.softSurfaces) private var softSurfaces
     let shape: S
     let side: CGFloat
     let symbol: String
@@ -473,6 +579,7 @@ private struct PreviewCap<S: InsettableShape>: View {
     var body: some View {
         let radius = side * 0.62
         ZStack {
+            if style == .hardware {
             shape
                 .fill(RadialGradient(colors: [theme.metalHi, theme.metal, theme.metalLo],
                                      center: UnitPoint(x: 0.5, y: 0.34), startRadius: 0.5, endRadius: radius))
@@ -488,17 +595,35 @@ private struct PreviewCap<S: InsettableShape>: View {
                     .shadow(color: theme.transportLamp.opacity(0.3), radius: 5)
                     .previewJob(.accent)
             }
+            } else {
+                styledCap
+            }
             Image(systemName: symbol)
                 .font(.system(size: glyph, weight: .semibold))
                 .foregroundStyle(lit ? Color.black.opacity(0.34) : theme.chassisInk.opacity(0.82))
                 .previewJob(lit ? .accent : .text)
+            if style == .hardware {
             shape
                 .inset(by: 0.5)
                 .fill(LinearGradient(colors: [.white.opacity(theme.isDark ? 0.10 : 0.22), .clear],
                                      startPoint: .top, endPoint: .center))
                 .previewJob(.frame)
+            }
         }
         .frame(width: side, height: side)
+    }
+
+    /// `SiliconeCap`'s styled cap: unlit the theme's metal, lit the transport
+    /// lamp is the whole cap. Only Flat Hardware keeps the lamp's halo.
+    /// The cap keeps its own shape in every style, as the console's does.
+    private var styledCap: some View {
+        StyledSlab(shape: shape,
+                   fill: lit ? theme.transportLamp : (softSurfaces?.metal ?? theme.metal),
+                   hi: lit ? theme.transportLampHi : theme.metalHi,
+                   lo: lit ? theme.transportLampLo : theme.metalLo,
+                   depth: PreviewStyleMetrics.capDepth, outline: PreviewStyleMetrics.capOutline)
+            .shadow(color: theme.transportLamp.opacity(lit && style == .flatHardware ? 0.3 : 0), radius: 5)
+            .previewJob(lit ? .accent : .frame)
     }
 }
 
@@ -516,7 +641,7 @@ private struct PreviewGlass: View {
                                              theme.oledSurfaceShade],
                                     startPoint: .topLeading, endPoint: .bottomTrailing).clipShape(shape))
             .overlay(shape.strokeBorder(Color.white.opacity(theme.isDark ? 0.08 : 0.22), lineWidth: 0.5))
-            .depthShadow(color: .black.opacity(0.45), radius: 3, y: 2)
+            .contentShadow(color: .black.opacity(0.45), radius: 3, y: 2)
             .previewJob(.glass)
     }
 }
@@ -717,6 +842,7 @@ private struct PreviewMatrix: View {
 /// either side of the PLAY dome), VOLUME.
 private struct PreviewFooter: View {
     @Environment(\.carbon) private var theme
+    @Environment(\.interfaceStyle) private var style
     @Environment(\.themePreviewFonts) private var fonts
     let width: CGFloat
     let height: CGFloat
@@ -738,7 +864,20 @@ private struct PreviewFooter: View {
         }
     }
 
+    @ViewBuilder
     private var shelf: some View {
+        if style == .hardware {
+            realShelf
+        } else {
+            // `FooterShell`'s shelf: the case's own colour, cut in like a well.
+            StyledSlab(shape: CarbonGeometry.styledShape(6, for: style),
+                       fill: theme.chassis, hi: theme.chassis, lo: theme.chassisLo,
+                       depth: PreviewStyleMetrics.wellDepth, sunken: true, outline: PreviewStyleMetrics.wellOutline)
+                .previewJob(.frame)
+        }
+    }
+
+    private var realShelf: some View {
         let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
         return shape
             .fill(theme.chassis)
@@ -1037,6 +1176,7 @@ private struct PreviewBrowser: View {
 
 private struct PreviewInspector: View {
     @Environment(\.carbon) private var theme
+    @Environment(\.interfaceStyle) private var style
     @Environment(\.themePreviewFonts) private var fonts
     let width: CGFloat
     let height: CGFloat
@@ -1055,10 +1195,18 @@ private struct PreviewInspector: View {
                 let tabX = 8 + CGFloat(index) * (tabWidth + 3)
                 if index == 0 {
                     ZStack {
+                        if style == .hardware {
                         RoundedRectangle(cornerRadius: 3, style: .continuous)
                             .fill(LinearGradient(colors: [theme.orangeHi, theme.orange],
                                                  startPoint: .top, endPoint: .bottom))
                             .previewJob(.accent)
+                        } else {
+                            // A selected `KeyButton`: the accent, in the style's finish.
+                            StyledSlab(shape: CarbonGeometry.styledShape(3, for: style), fill: theme.orange,
+                                       hi: theme.orangeHi, lo: theme.orangeLo,
+                                       depth: PreviewStyleMetrics.keyDepth, outline: PreviewStyleMetrics.keyOutline)
+                                .previewJob(.accent)
+                        }
                         PreviewBar(color: Color.white.opacity(0.9)).frame(width: tabWidth * 0.42, height: 2.5)
                             .previewJob(.accent)
                     }
@@ -1102,6 +1250,8 @@ private struct PreviewInspector: View {
 
 private struct PreviewMiniPlayer: View {
     @Environment(\.carbon) private var theme
+    @Environment(\.interfaceStyle) private var style
+    @Environment(\.softSurfaces) private var softSurfaces
     @Environment(\.themePreviewFonts) private var fonts
 
     static let size = CGSize(width: 200, height: 350)
@@ -1201,12 +1351,20 @@ private struct PreviewMiniPlayer: View {
                     .previewJob(.panels)
                     .at(0, 2.75, w, 2.5)
                 Capsule().fill(theme.orange).previewJob(.accent).at(0, 2.75, x, 2.5)
+                if style == .hardware {
                 Circle()
                     .fill(RadialGradient(colors: [theme.metalHi, theme.metal], center: .init(x: 0.5, y: 0.3),
                                          startRadius: 0.5, endRadius: 5))
                     .depthShadow(color: .black.opacity(0.4), radius: 1.5, y: 1)
                     .previewJob(.frame)
                     .at(x - 4, 0, 8, 8)
+                } else {
+                    StyledSlab(shape: Circle(), fill: softSurfaces?.metal ?? theme.metal,
+                               hi: theme.metalHi, lo: theme.metalLo,
+                               depth: PreviewStyleMetrics.knobDepth, outline: PreviewStyleMetrics.knobOutline)
+                        .previewJob(.frame)
+                        .at(x - 4, 0, 8, 8)
+                }
             }
         }
     }
@@ -1259,9 +1417,9 @@ private struct PreviewCompactPlayer: View {
 private enum ThemePreviewSamples {
     @MainActor
     static func theme(_ id: String, appearance: ThemeDefinition.BaseAppearance = .dark)
-        -> (theme: CarbonTheme, fonts: [String: ThemeFont]) {
+        -> (theme: CarbonTheme, fonts: [String: ThemeFont], style: InterfaceStyle) {
         guard let manifest = ThemeRegistry.shared.manifest(for: id) else {
-            return (appearance == .dark ? .carbon : .linen, [:])
+            return (appearance == .dark ? .carbon : .linen, [:], .hardware)
         }
         let target = manifest.definition.isAdaptive ? appearance : manifest.definition.baseAppearance
         let definition = manifest.definition.resolved(for: target)
@@ -1269,23 +1427,28 @@ private enum ThemePreviewSamples {
         var theme = CarbonTheme(definition: definition, resolvedBase: base)
         theme.name = definition.name
         theme.id = definition.id
-        return (theme, definition.fonts ?? [:])
+        return (theme, definition.fonts ?? [:], manifest.definition.resolvedStyle)
     }
 }
 
 #Preview("Carbon") {
     let sample = ThemePreviewSamples.theme("carbon")
-    return ThemePreviewIllustration(theme: sample.theme, fonts: sample.fonts).padding()
+    return ThemePreviewIllustration(theme: sample.theme, fonts: sample.fonts)
+        .environment(\.interfaceStyle, sample.style)
+        .padding()
 }
 
 #Preview("Llama '97, Frame") {
     let sample = ThemePreviewSamples.theme("llama-97")
-    return ThemePreviewIllustration(theme: sample.theme, fonts: sample.fonts, highlighted: [.frame]).padding()
+    return ThemePreviewIllustration(theme: sample.theme, fonts: sample.fonts, highlighted: [.frame])
+        .environment(\.interfaceStyle, sample.style)
+        .padding()
 }
 
 #Preview("Pocket, players") {
     let sample = ThemePreviewSamples.theme("pocket")
     return ThemePreviewIllustration(theme: sample.theme, fonts: sample.fonts, screens: [.mini, .compact])
+        .environment(\.interfaceStyle, sample.style)
         .padding()
 }
 #endif

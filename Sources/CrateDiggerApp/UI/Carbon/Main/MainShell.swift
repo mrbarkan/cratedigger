@@ -4,6 +4,7 @@ import SwiftUI
 struct MainShell: View {
     @Environment(\.carbon) private var theme
     @Environment(\.carbonGeometry) private var geometry
+    @Environment(\.interfaceStyle) private var style
     @EnvironmentObject private var model: LibraryViewModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -29,6 +30,12 @@ struct MainShell: View {
         // of a search flips the display to SEARCH, so every new query pruned
         // the list under a 0.22 s ease. The panes move only when the user
         // moves one (`movePanes`); the inspector animates only its own swap.
+    }
+
+    /// Each pane is clipped to its well's own outline, so the corner follows
+    /// the style exactly as `RecessedWell` draws it.
+    private var wellClip: RoundedRectangle {
+        CarbonGeometry.styledShape(geometry.wellCornerRadius, for: style)
     }
 
     /// Collapses or expands a pane on the surface spring. Only the chevrons
@@ -60,7 +67,7 @@ struct MainShell: View {
             }
         }
         .frame(maxWidth: sourcesMaxWidth, maxHeight: .infinity)
-        .clipShape(RoundedRectangle(cornerRadius: geometry.wellCornerRadius, style: .continuous))
+        .clipShape(wellClip)
     }
 
     private var sourcesMaxWidth: CGFloat {
@@ -128,7 +135,7 @@ struct MainShell: View {
             }
         }
         .frame(maxWidth: browserMaxWidth, maxHeight: .infinity)
-        .clipShape(RoundedRectangle(cornerRadius: geometry.wellCornerRadius, style: .continuous))
+        .clipShape(wellClip)
     }
 
     /// The browser always flexes: the inspector is a fixed-width column, so
@@ -163,7 +170,7 @@ struct MainShell: View {
             }
         }
         .frame(maxWidth: inspectorMaxWidth, maxHeight: .infinity)
-        .clipShape(RoundedRectangle(cornerRadius: geometry.wellCornerRadius, style: .continuous))
+        .clipShape(wellClip)
         // CONVERT and THEME swap what the well holds: the tab row and tools
         // step aside and the paper grows into their room while the content
         // crossfades (`InspectorPane`). Keyed on the surface, not `oledView`,
@@ -334,7 +341,7 @@ struct MainShell: View {
                     .frame(width: 18, height: 14)
                 Image(systemName: columnCountIcon)
                     .font(.system(size: 8, weight: .bold))
-                    .foregroundStyle(theme.ink3)
+                    .foregroundStyle(theme.keyPrint(theme.ink3))
             }
         }
         .menuStyle(.borderlessButton)
@@ -370,7 +377,7 @@ struct MainShell: View {
 
     private var searchKeyColor: Color {
         if model.isSearchActive { return theme.orange }
-        return model.showSearchField ? theme.cyan : theme.ink3
+        return model.showSearchField ? theme.cyan : theme.keyPrint(theme.ink3)
     }
 
     /// The Prep Crate is staging, not storage, so the key that empties it
@@ -413,7 +420,7 @@ struct MainShell: View {
                     .frame(width: 18, height: 14)
                 Image(systemName: "arrow.up.arrow.down")
                     .font(.system(size: 8, weight: .bold))
-                    .foregroundStyle(model.showSortControls ? theme.cyan : theme.ink3)
+                    .foregroundStyle(model.showSortControls ? theme.cyan : theme.keyPrint(theme.ink3))
             }
         }
         .buttonStyle(.carbonHover)
@@ -427,7 +434,7 @@ struct MainShell: View {
                 .frame(width: 18, height: 14)
             Text("›|")
                 .font(CarbonFont.mono(9, weight: .heavy))
-                .foregroundStyle(theme.ink2)
+                .foregroundStyle(theme.keyPrint(theme.ink2))
                 .padding(.horizontal, inset)
         }
     }
@@ -482,7 +489,7 @@ struct CollapsedRail: View {
                 .frame(width: 22, height: 18)
             Text("⟨⟩")
                 .font(CarbonFont.mono(10, weight: .heavy))
-                .foregroundStyle(theme.ink2)
+                .foregroundStyle(theme.keyPrint(theme.ink2))
         }
     }
 }

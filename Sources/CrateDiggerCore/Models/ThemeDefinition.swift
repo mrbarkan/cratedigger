@@ -85,6 +85,11 @@ public struct ThemeDefinition: Codable, Sendable, Equatable {
     /// existed. A malformed block decodes as `nil` rather than failing the theme.
     public var simple: SimpleThemeRecipe?
 
+    /// The interface style this theme wears. Absent means Real Hardware; an unknown or
+    /// malformed value decodes as absent, so a theme from a newer app still loads. Not
+    /// inherited: a child with no style is Real Hardware whatever its parent wears.
+    public var style: InterfaceStyle?
+
     public init(
         id: String,
         name: String,
@@ -100,9 +105,11 @@ public struct ThemeDefinition: Codable, Sendable, Equatable {
         effects: [String: Double]? = nil,
         light: ThemeVariant? = nil,
         dark: ThemeVariant? = nil,
-        simple: SimpleThemeRecipe? = nil
+        simple: SimpleThemeRecipe? = nil,
+        style: InterfaceStyle? = nil
     ) {
         self.simple = simple
+        self.style = style
         self.light = light
         self.dark = dark
         self.id = id
@@ -119,7 +126,17 @@ public struct ThemeDefinition: Codable, Sendable, Equatable {
         self.effects = effects
     }
 
-    /// Decoding is explicit only so that `simple` can be lenient: a block of the
+    private enum CodingKeys: String, CodingKey, CaseIterable {
+        case id, name, author, version, baseAppearance, inherits, colors, shadows, fonts
+        case logo, geometry, effects, light, dark, simple, style
+    }
+
+    /// Every top-level key the model reads and writes. A key outside this set (Llama
+    /// '97's `"//"` note) is the file's own, which an in-place rewrite keeps; a key
+    /// inside it that the new encoding leaves out was left out on purpose.
+    public static let modelledKeys: Set<String> = Set(CodingKeys.allCases.map(\.stringValue))
+
+    /// Decoding is explicit only so that `simple` and `style` can be lenient: a block of the
     /// wrong shape, or from a newer app, must never stop the theme from loading.
     /// Encoding stays synthesised (a `nil` block is omitted).
     public init(from decoder: Decoder) throws {
@@ -139,11 +156,23 @@ public struct ThemeDefinition: Codable, Sendable, Equatable {
         light = try c.decodeIfPresent(ThemeVariant.self, forKey: .light)
         dark = try c.decodeIfPresent(ThemeVariant.self, forKey: .dark)
         simple = (try? c.decodeIfPresent(SimpleThemeRecipe.self, forKey: .simple))?.sanitized()
+        style = (try? c.decodeIfPresent(InterfaceStyle.self, forKey: .style)) ?? nil
     }
 }
 
 public extension ThemeDefinition {
     var isSimple: Bool { simple != nil }
+
+    /// The style the theme draws with: its own, else Real Hardware.
+    var resolvedStyle: InterfaceStyle { style ?? .hardware }
+
+    /// Sets the style. Real Hardware is always written as absent, since a style is
+    /// not inherited and absent already means it; any other style is written out.
+    func settingStyle(_ style: InterfaceStyle) -> ThemeDefinition {
+        var copy = self
+        copy.style = style == .hardware ? nil : style
+        return copy
+    }
 }
 
 /// The weights the interface actually asks for. Anything heavier or lighter a

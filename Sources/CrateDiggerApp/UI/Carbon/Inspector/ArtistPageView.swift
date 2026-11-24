@@ -544,7 +544,7 @@ private struct ArtistPortrait<MenuItems: View>: View {
                     RoundedRectangle(cornerRadius: 3, style: .continuous)
                         .stroke(Color.black.opacity(theme.isDark ? 0.6 : 0.18), lineWidth: 1)
                 )
-                .depthShadow(color: Color.black.opacity(theme.isDark ? 0.5 : 0.35), radius: 8, y: 6)
+                .contentShadow(color: Color.black.opacity(theme.isDark ? 0.5 : 0.35), radius: 8, y: 6)
                 .background(
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
                         .fill(theme.orange)

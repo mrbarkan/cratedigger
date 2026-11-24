@@ -162,8 +162,32 @@ public struct CarbonTheme: Equatable {
     /// dark list inside a light console. Llama '97's light layer is exactly
     /// that: green-on-black rows in a silver machine, where one token cannot be
     /// legible on both. Unset, it is `ink2` exactly.
-    public var chassisInkOverride: Color?
+    public var chassisInkOverride: Color? { didSet { resolveKeyPrint() } }
     public var chassisInk: Color { chassisInkOverride ?? ink2 }
+
+    /// The print on a key that has always drawn in `fallback` (`ink3` on the
+    /// VIEW/THEME/EQ labels, `ink2` or `ink3` on the pane headers' small
+    /// keys): the theme's Key Print when it is a real choice, else exactly
+    /// that fallback. Lit states keep their accent and never go through here.
+    public func keyPrint(_ fallback: Color) -> Color {
+        keyPrintOverride ?? fallback
+    }
+
+    /// `chassisInkOverride` when it differs from `ink2`, else nil. A Key Print
+    /// equal to `ink2` is what the editor's seeding writes into every draft
+    /// (and what a theme saved whole from Advanced keeps), so it is no choice:
+    /// were it honoured, opening the editor would move every small key's print
+    /// from `ink3` to `ink2`. Decided once, by `resolveKeyPrint()`.
+    public private(set) var keyPrintOverride: Color?
+
+    /// Sticker's one ink: every outline and the hard shadow under it. Unset,
+    /// it picks per appearance: the theme's `ink` at 0.9 on a light case, and
+    /// on a dark one the light Key Print at 0.85, because a near-black outline
+    /// all but vanishes there. Only Sticker reads it.
+    public var stickerInkOverride: Color?
+    public var stickerInk: Color {
+        stickerInkOverride ?? (isDark ? chassisInk.opacity(0.85) : ink.opacity(0.9))
+    }
 
     /// The type printed across a browser column's header: the facet the column
     /// shows (its type selector), the count on the right, and the sort keys
@@ -246,9 +270,11 @@ public struct CarbonTheme: Equatable {
     public var coverPixelSize: Double = CoverScreenLook.defaultPixelSize
 
     /// Whether the chassis casts shadows. `false` (`effects.flat` = `1`) drops
-    /// every depth shadow — panels, keys, the glass, artwork — and leaves the
+    /// every cast shadow — panels, keys, the glass, artwork — and leaves the
     /// bevels, gradients and emission glows alone, so the interface reads as
-    /// printed rather than moulded. See `View.depthShadow`.
+    /// printed rather than moulded. Real Hardware only: the other interface
+    /// styles decide their own shadows. See `View.depthShadow` and
+    /// `View.contentShadow`.
     public let castsShadows: Bool
 
     /// Whether the display is a single-phosphor panel: everything on the glass
@@ -356,6 +382,18 @@ extension CarbonTheme {
         }))
         coverScreenLook = look?.look
         coverScreenStrength = look?.strength ?? 0
+    }
+
+    /// Sets `keyPrintOverride`: the Key Print only when it is not `ink2`
+    /// itself, compared as the hex a theme file holds. Called at the end of
+    /// `init(definition:resolvedBase:)` and by `chassisInkOverride`'s observer;
+    /// the built-in literals name no Key Print, so their nil is already right.
+    mutating func resolveKeyPrint() {
+        guard let pinned = chassisInkOverride, pinned.themeHexString != ink2.themeHexString else {
+            keyPrintOverride = nil
+            return
+        }
+        keyPrintOverride = pinned
     }
 }
 
@@ -589,6 +627,7 @@ public extension CarbonTheme {
         accentInkOverride = optionalColor("accentInk", resolvedBase.accentInkOverride)
         columnHeaderInkOverride = optionalColor("columnHeaderInk", resolvedBase.columnHeaderInkOverride)
         chassisInkOverride = optionalColor("chassisInk", resolvedBase.chassisInkOverride)
+        stickerInkOverride = optionalColor("stickerInk", resolvedBase.stickerInkOverride)
         meterHotOverride = optionalColor("meterHot", resolvedBase.meterHotOverride)
         // Every overlay effect clamps to its dial's ceiling, so a theme can't
         // ask for a value the renderer would quietly trim away.
@@ -639,6 +678,7 @@ public extension CarbonTheme {
 
         // Last: the amounts' observers do not run inside an initializer.
         resolveExclusiveGroups()
+        resolveKeyPrint()
     }
 }
 

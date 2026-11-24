@@ -217,7 +217,7 @@ private struct TourArtWelcome: View {
 
             AppIconView()
                 .frame(width: 84, height: 84)
-                .depthShadow(color: Color.black.opacity(theme.isDark ? 0.5 : 0.2), radius: 10, y: 5)
+                .contentShadow(color: Color.black.opacity(theme.isDark ? 0.5 : 0.2), radius: 10, y: 5)
         }
     }
 

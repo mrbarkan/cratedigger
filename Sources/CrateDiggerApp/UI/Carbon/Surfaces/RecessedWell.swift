@@ -1,8 +1,11 @@
+import CrateDiggerCore
 import SwiftUI
 
 struct RecessedWell<Content: View>: View {
     @Environment(\.carbon) private var theme
     @Environment(\.carbonGeometry) private var geometry
+    @Environment(\.interfaceStyle) private var style
+    @Environment(\.softSurfaces) private var softSurfaces
     /// `nil` uses the active theme's `wellCornerRadius`/`wellPadding`; pass a
     /// value to override either for this instance regardless of theme.
     var cornerRadius: CGFloat? = nil
@@ -10,8 +13,9 @@ struct RecessedWell<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: cornerRadius ?? geometry.wellCornerRadius, style: .continuous)
+        let shape = CarbonGeometry.styledShape(cornerRadius ?? geometry.wellCornerRadius, for: style)
         ZStack {
+            if style == .hardware {
             shape
                 .fill(theme.well) // opaque, not Material — see ChassisLayer
                 .overlay(
@@ -51,6 +55,12 @@ struct RecessedWell<Content: View>: View {
                 // (No white top-glow drop shadow — it bled past the rounded corner
                 // into the square-clipped bounds as a light notch. The masked inset
                 // highlight above supplies the sheen, fully inside the shape.)
+            } else {
+                // Cut into the case, in this style. Soft Blocks' well is
+                // nudged apart from what it sits on; the others use the theme's.
+                StyledSlab(shape: shape, fill: softSurfaces?.well ?? theme.well,
+                           hi: theme.well, lo: theme.wellDeep, depth: 3, sunken: true)
+            }
 
             content()
                 .padding(padding ?? geometry.wellPadding)

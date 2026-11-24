@@ -487,6 +487,7 @@ struct ThemeEditorView: View {
                         .padding(.top, 16)
                         .padding(.bottom, 6)
                     VStack(spacing: 6) {
+                        styleKeys
                         flatSwitch
                         // Shell materials are one choice, so they get a group of
                         // their own; any other interface dial keeps a plain row.
@@ -774,21 +775,55 @@ struct ThemeEditorView: View {
         }
     }
 
+    /// The draft's interface style: how the console's keys, panels and case
+    /// are drawn. The whole console behind the panel follows it at once, since
+    /// it draws the draft.
+    private var styleKeys: some View {
+        let selected = draft?.resolvedStyle ?? .hardware
+        return LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 2), spacing: 6) {
+            ForEach(InterfaceStyle.allCases, id: \.self) { style in
+                KeyButton(style: style == selected ? .selected : .normal, action: { setStyle(style) }) {
+                    Text(style.displayName.uppercased())
+                }
+                .frame(height: 20)
+            }
+        }
+        .carbonTip("How the console's keys, panels and case are drawn. Colours, fonts and layout stay.")
+    }
+
+    /// One assignment, so one undo step; the style already chosen is no
+    /// step at all (`setDraftStyle`). The FLAT switch keeps its stored
+    /// value whatever the style, for a return to Real Hardware.
+    private func setStyle(_ style: InterfaceStyle) {
+        registry.setDraftStyle(style)
+    }
+
     /// Whether the chassis casts shadows at all. Off, every panel, key and
     /// cover loses its cast shadow while its bevels and gradients stay — the
     /// same hardware, printed rather than moulded. Glows are emission, not
     /// depth, so the display keeps lighting up.
+    ///
+    /// Real Hardware only: the other styles draw their own shadows, so the
+    /// switch is shown as it stands (ON or OFF as stored) but cannot be pressed.
+    /// It is dimmed with SwiftUI's `.disabled` rather than KeyButton's disabled
+    /// style: that style also stops hit-testing, and a key that takes no hover
+    /// never shows the tip saying why it is off (as the inspector's tabs do).
     private var flatSwitch: some View {
         let flat = !theme.castsShadows
+        let honoured = (draft?.resolvedStyle ?? .hardware).honoursFlatSwitch
         return KeyButton(
             style: flat ? .selected : .normal,
             action: { setFlat(!flat) }
         ) {
             Text(flat ? "FLAT · ON" : "FLAT · OFF")
         }
+        .disabled(!honoured)
+        .opacity(honoured ? 1 : 0.42)
         .frame(maxWidth: .infinity)
         .frame(height: 20)
-        .carbonTip(flat
+        .carbonTip(!honoured
+                   ? "Flat Hardware, Soft Blocks and Sticker draw their own shadows. FLAT applies to Real Hardware only."
+                   : flat
                    ? "No cast shadows anywhere. Click to give the panels their depth back."
                    : "Panels, keys and covers cast shadows. Click to drop every one of them and keep only the bevels.")
     }
@@ -1353,7 +1388,8 @@ struct ThemeEditorView: View {
     /// The console's own effects, shadows included — everything that happens
     /// to the hardware rather than to the screen in it.
     private var showInterface: Bool {
-        matches("flat", "shadow", "depth", "shadows", "surfaces", "interface", "shell", "material")
+        matches("flat", "shadow", "depth", "shadows", "surfaces", "interface", "shell", "material",
+                "style", "hardware", "soft", "blocks", "sticker")
             || ThemeTokenCatalog.effectDials(on: .interface).contains {
                 matches($0.key, $0.label, $0.note, "interface")
             }
@@ -1625,6 +1661,8 @@ struct HexField: View {
 /// center, which is why hardware editors settled on drag-up/drag-down too.
 private struct CarbonDial: View {
     @Environment(\.carbon) private var theme
+    @Environment(\.interfaceStyle) private var style
+    @Environment(\.softSurfaces) private var softSurfaces
     let token: ThemeTokenCatalog.GeometryToken
     @Binding var value: CGFloat
 
@@ -1652,9 +1690,16 @@ private struct CarbonDial: View {
     var body: some View {
         VStack(spacing: 4) {
             ZStack {
-                Circle()
-                    .fill(theme.metal)
-                    .overlay(Circle().strokeBorder(theme.hair, lineWidth: 1))
+                if style == .hardware {
+                    Circle()
+                        .fill(theme.metal)
+                        .overlay(Circle().strokeBorder(theme.hair, lineWidth: 1))
+                } else {
+                    // The knob is a key in this style, like the console's own.
+                    StyledSlab(shape: Circle(), fill: softSurfaces?.metal ?? theme.metal,
+                               hi: theme.metalHi, lo: theme.metalLo,
+                               depth: StyledKeyMetrics.depth, outline: StyledKeyMetrics.outline)
+                }
 
                 // Travel arc — shows where in the range you are without
                 // needing to read the number.

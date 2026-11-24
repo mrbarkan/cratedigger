@@ -117,7 +117,7 @@ private struct SwitchButton: View {
                 Text(name)
                     .font(CarbonFont.mono(8, weight: .bold))
                     .tracking(1.4)
-                    .foregroundStyle(theme.ink3)
+                    .foregroundStyle(theme.keyPrint(theme.ink3))
                     .lineLimit(1)
                     // Scales down a hair rather than truncating to "T…" if a
                     // label ever outgrows its share.

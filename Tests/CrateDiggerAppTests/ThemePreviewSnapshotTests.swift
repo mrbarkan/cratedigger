@@ -69,6 +69,9 @@ final class ThemePreviewSnapshotTests: XCTestCase {
         let name: String
         let theme: CarbonTheme
         let fonts: [String: ThemeFont]
+        /// The style the illustration is shown in: the theme's own, as the
+        /// editor sets it for a theme that is not the open draft.
+        let style: InterfaceStyle
     }
 
     private static let scale: CGFloat = 2
@@ -76,6 +79,7 @@ final class ThemePreviewSnapshotTests: XCTestCase {
     private func image(for sample: Sample, highlighted: Set<ThemeJob>) throws -> CGImage {
         ThemePreviewIllustration.prepareCovers(for: sample.theme, scale: Self.scale)
         let view = ThemePreviewIllustration(theme: sample.theme, fonts: sample.fonts, highlighted: highlighted)
+            .environment(\.interfaceStyle, sample.style)
             .padding(16)
             .background(Color(white: 0.5))
             .environment(\.displayScale, Self.scale)
@@ -87,7 +91,8 @@ final class ThemePreviewSnapshotTests: XCTestCase {
         let directory = BusySignalSnapshotTests.repoRoot
             .appendingPathComponent("Sources/CrateDiggerApp/Resources/Themes", isDirectory: true)
         let themes = ThemeLoaderService(bundles: [], userThemesDirectoryOverride: directory).discoverThemes().themes
-        func sample(_ name: String, id: String, appearance: ThemeDefinition.BaseAppearance) throws -> Sample {
+        func sample(_ name: String, id: String, appearance: ThemeDefinition.BaseAppearance,
+                    style: InterfaceStyle? = nil) throws -> Sample {
             let manifest = try XCTUnwrap(themes.first { $0.id == id }, "\(id) did not load")
             let target = manifest.definition.isAdaptive ? appearance : manifest.definition.baseAppearance
             let definition = manifest.definition.resolved(for: target)
@@ -95,13 +100,17 @@ final class ThemePreviewSnapshotTests: XCTestCase {
                                     resolvedBase: definition.baseAppearance == .dark ? .carbon : .linen)
             theme.name = definition.name
             theme.id = definition.id
-            return Sample(name: name, theme: theme, fonts: definition.fonts ?? [:])
+            return Sample(name: name, theme: theme, fonts: definition.fonts ?? [:],
+                          style: style ?? manifest.definition.resolvedStyle)
         }
         return [
             try sample("Carbon", id: "carbon", appearance: .dark),
             try sample("Carbon Light", id: "carbon", appearance: .light),
             try sample("Llama 97", id: "llama-97", appearance: .dark),
             try sample("Pocket", id: "pocket", appearance: .dark),
+            try sample("Funhouse", id: "funhouse", appearance: .light),
+            // No built-in wears Soft Blocks; Carbon in it shows the miniature's.
+            try sample("Carbon Soft Blocks", id: "carbon", appearance: .dark, style: .softBlocks),
         ]
     }
 

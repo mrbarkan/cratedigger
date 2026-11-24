@@ -155,26 +155,38 @@ private struct MiniPlayerDrawer: View {
     }
 }
 
-/// The glass both halves are made of.
+/// The glass both halves are made of: the mini player's case. In a style
+/// other than Real Hardware it is that style's case, as `ChassisLayer` draws
+/// the main window's, with this glass's own corner (not the style's).
 private struct MiniPlayerGlass: View {
     @Environment(\.carbon) private var theme
+    @Environment(\.interfaceStyle) private var style
     let cornerRadius: CGFloat
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-        shape
-            .fill(theme.chassis) // opaque, not Material — see ChassisLayer
-            .overlay(
-                shape.fill(LinearGradient(
-                    colors: [theme.chassisHi.opacity(0.5), theme.chassis.opacity(0.55), theme.chassisLo.opacity(0.62)],
-                    startPoint: .topLeading, endPoint: .bottomTrailing))
-            )
-            .overlay(shape.strokeBorder(Color.white.opacity(0.14), lineWidth: 1))
+        plate(shape)
             // The mini player is outside every `ChassisLayer`, so it would
             // otherwise be the one shell in the app without its material.
             // Only on this background: the art, the display and the keys are
             // drawn over it and need no holes. Never grain (see the modifier).
             .carbonShellMaterial(theme.shellMaterial, strength: theme.shellMaterialStrength, clippedTo: shape)
+    }
+
+    @ViewBuilder
+    private func plate(_ shape: RoundedRectangle) -> some View {
+        if style == .hardware {
+            shape
+                .fill(theme.chassis) // opaque, not Material — see ChassisLayer
+                .overlay(
+                    shape.fill(LinearGradient(
+                        colors: [theme.chassisHi.opacity(0.5), theme.chassis.opacity(0.55), theme.chassisLo.opacity(0.62)],
+                        startPoint: .topLeading, endPoint: .bottomTrailing))
+                )
+                .overlay(shape.strokeBorder(Color.white.opacity(0.14), lineWidth: 1))
+        } else {
+            StyledCasePlate(shape: shape)
+        }
     }
 }
 
@@ -259,7 +271,7 @@ private struct MiniPlayerBody: View {
         }) {
             Image(systemName: model.miniPlayerArtMode.iconName)
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(artModeDisabled ? theme.ink4.opacity(0.5) : theme.ink3)
+                .foregroundStyle(artModeDisabled ? theme.ink4.opacity(0.5) : theme.keyPrint(theme.ink3))
                 .frame(width: 24, height: 24)
                 .background(ChromeChassis(theme: theme, cornerRadius: geometry.scaled(7, following: \.keyCornerRadius)))
         }
@@ -277,7 +289,7 @@ private struct MiniPlayerBody: View {
         Button(action: { ClickPlayer.shared.play(.key); action() }) {
             Image(systemName: system)
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(lit ? theme.orange : theme.ink3)
+                .foregroundStyle(lit ? theme.orange : theme.keyPrint(theme.ink3))
                 // Lit while the drawer is out, at the console's lamp speeds.
                 .animation(lit ? CarbonMotion.state : CarbonMotion.lampOff, value: lit)
                 .frame(width: 24, height: 24)
@@ -340,7 +352,7 @@ private struct MiniPlayerBody: View {
         .clipShape(shape)
         .overlay(shape.strokeBorder(Color.black.opacity(0.6), lineWidth: 1))
         // A sleeve laid on the card, not a tile floating over it.
-        .depthShadow(color: .black.opacity(0.18), radius: 5, y: 2)
+        .contentShadow(color: .black.opacity(0.18), radius: 5, y: 2)
     }
 
     // MARK: - OLED display (title / band / album · time)
@@ -481,14 +493,17 @@ private struct MiniPlayerPanel: View {
     @Binding var tab: MiniPlayerPanelTab
     @Environment(\.carbon) private var theme
     @Environment(\.carbonGeometry) private var geometry
+    @Environment(\.interfaceStyle) private var style
+    @Environment(\.softSurfaces) private var softSurfaces
 
     /// Tall enough for a dozen rows, short enough that a library with forty
     /// crates does not become a two-foot window.
     private static let listHeight: CGFloat = 300
 
     var body: some View {
-        let well = RoundedRectangle(cornerRadius: geometry.scaled(12, following: \.wellCornerRadius),
-                                    style: .continuous)
+        // The drawer is a well: its outline, and the clip that keeps the
+        // lists inside it, follow the style like `RecessedWell`'s.
+        let well = CarbonGeometry.styledShape(geometry.scaled(12, following: \.wellCornerRadius), for: style)
         VStack(spacing: 0) {
             tabs
             Group {
@@ -499,14 +514,24 @@ private struct MiniPlayerPanel: View {
             }
             .frame(height: Self.listHeight)
         }
-        .background(
-            well
-                .fill(theme.well.opacity(theme.isDark ? 0.75 : 0.9))
-                .overlay(well.strokeBorder(theme.hair.opacity(theme.isDark ? 0.6 : 0.8), lineWidth: 1))
-        )
+        .background(drawerWell(well))
         .clipShape(well)
         // Dragging inside the lists must scroll and reorder, not move the window.
         .background(WindowDragGuard())
+    }
+
+    @ViewBuilder
+    private func drawerWell(_ well: RoundedRectangle) -> some View {
+        if style == .hardware {
+            well
+                .fill(theme.well.opacity(theme.isDark ? 0.75 : 0.9))
+                .overlay(well.strokeBorder(theme.hair.opacity(theme.isDark ? 0.6 : 0.8), lineWidth: 1))
+        } else {
+            // Opaque here: Sticker draws its ink shadow under the fill, and a
+            // see-through well would show it across the whole drawer.
+            StyledSlab(shape: well, fill: softSurfaces?.well ?? theme.well, hi: theme.well, lo: theme.wellDeep,
+                       depth: 3, sunken: true)
+        }
     }
 
     private var tabs: some View {
@@ -834,10 +859,15 @@ private struct MiniPlayerTimeReadout: View {
 
 /// The progress/scrub rail. Also split out: its lit mask and thumb offset are
 /// the only other things that need to move on every clock tick.
+///
+/// A fader like the footer's: in a style other than Real Hardware the rail is
+/// the style's well and the thumb its key, dragged, never pressed. The lit
+/// ramp is a readout and the same in every style.
 private struct MiniPlayerSeekRail: View {
     @ObservedObject var model: LibraryViewModel
     @ObservedObject var clock: PlaybackClock
     let theme: CarbonTheme
+    @Environment(\.interfaceStyle) private var style
 
     var body: some View {
         GeometryReader { proxy in
@@ -845,8 +875,7 @@ private struct MiniPlayerSeekRail: View {
             let p = model.playbackDuration > 0
                 ? min(max(model.displayedCurrentTime / model.playbackDuration, 0), 1) : 0
             ZStack(alignment: .leading) {
-                Capsule().fill(Color.black.opacity(0.42)).frame(height: 5)
-                    .overlay(Capsule().stroke(Color.white.opacity(0.07), lineWidth: 0.6))
+                rail
                 // Full-width cyan→orange ramp revealed by the lit mask — the
                 // gradient's endpoints stay fixed (like the OLED/footer bars)
                 // instead of stretching with playback progress.
@@ -859,11 +888,7 @@ private struct MiniPlayerSeekRail: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                     )
                     .shadow(color: theme.cyan.opacity(0.4), radius: 4)
-                Circle()
-                    .fill(RadialGradient(colors: [.white, Color(white: 0.82)],
-                                         center: .init(x: 0.4, y: 0.3), startRadius: 0, endRadius: 6))
-                    .frame(width: 11, height: 11)
-                    .depthShadow(color: .black.opacity(0.6), radius: 2)
+                thumb
                     .offset(x: min(max(w * p - 5.5, 0), w - 11))
             }
             .frame(maxHeight: .infinity, alignment: .center)
@@ -879,5 +904,35 @@ private struct MiniPlayerSeekRail: View {
             )
         }
         .frame(height: 11)
+    }
+
+    @ViewBuilder
+    private var rail: some View {
+        if style == .hardware {
+            Capsule().fill(Color.black.opacity(0.42)).frame(height: 5)
+                .overlay(Capsule().stroke(Color.white.opacity(0.07), lineWidth: 0.6))
+        } else {
+            StyledSlab(shape: Capsule(), fill: Color.black.opacity(0.42),
+                       depth: FaderMetrics.styledRailDepth, sunken: true,
+                       outline: FaderMetrics.styledRailOutline)
+                .frame(height: 5)
+        }
+    }
+
+    @ViewBuilder
+    private var thumb: some View {
+        if style == .hardware {
+            Circle()
+                .fill(RadialGradient(colors: [.white, Color(white: 0.82)],
+                                     center: .init(x: 0.4, y: 0.3), startRadius: 0, endRadius: 6))
+                .frame(width: 11, height: 11)
+                .depthShadow(color: .black.opacity(0.6), radius: 2)
+        } else {
+            // The same white, as a flat key: the gradient's ends become
+            // Flat Hardware's highlight and base.
+            StyledSlab(shape: Circle(), fill: Color(white: 0.92), hi: .white, lo: Color(white: 0.82),
+                       depth: FaderMetrics.styledRailDepth, outline: FaderMetrics.styledRailOutline)
+                .frame(width: 11, height: 11)
+        }
     }
 }

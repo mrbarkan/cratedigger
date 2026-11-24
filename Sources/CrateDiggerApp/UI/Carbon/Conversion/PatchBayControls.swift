@@ -22,9 +22,15 @@ enum PatchBaySwitchSize {
 /// Standardized fixed-width switch used inside `PatchBayBank`. Width is
 /// intrinsic (not flexible) — required for the `ViewThatFits` cycle-button
 /// fallback to detect overflow.
+///
+/// In a style other than Real Hardware it is the style's key (lit with the
+/// accent when on) and answers a press as that style does; the frame and the
+/// hit area are the same in every style.
 struct PatchBaySwitch: View {
     @Environment(\.carbon) private var theme
     @Environment(\.carbonGeometry) private var geometry
+    @Environment(\.interfaceStyle) private var style
+    @Environment(\.softSurfaces) private var softSurfaces
     let label: String
     var sub: String? = nil
     var on: Bool
@@ -34,22 +40,52 @@ struct PatchBaySwitch: View {
 
     @State private var hovering = false
 
+    /// The key's own radius.
+    private static let cornerRadius: CGFloat = 4
+
     var body: some View {
-        Button(action: action) {
-            // No corner lamp and no glow: the lit fill already says which one
-            // is selected, and saying it three times was most of the funk.
-            content
-                .background(background)
-                .overlay(border)
+        let button = Button(action: action) {
+            face
                 .frame(minWidth: size.minWidth(in: geometry), maxWidth: size.minWidth(in: geometry))
                 .frame(height: geometry.patchBayKeyHeight)
                 .opacity(disabled ? 0.45 : 1)
         }
-        .buttonStyle(.carbonHover)
         .disabled(disabled)
         .onHover { hovering = $0 }
         .accessibilityLabel(Text(sub.map { "\(label) (\($0))" } ?? label))
         .accessibilityAddTraits(on ? [.isSelected, .isButton] : [.isButton])
+
+        if style == .hardware {
+            button.buttonStyle(.carbonHover)
+        } else {
+            // The label's rectangle, as `.carbonHover` takes clicks in Real
+            // Hardware: a hit target is the same in every style.
+            button.buttonStyle(StyledKeyButtonStyle(depth: StyledKeyMetrics.depth))
+        }
+    }
+
+    /// No corner lamp and no glow: the lit fill already says which one is
+    /// selected, and saying it three times was most of the funk.
+    @ViewBuilder
+    private var face: some View {
+        if style == .hardware {
+            content
+                .background(background)
+                .overlay(border)
+        } else {
+            content
+                .background(styledBackground)
+        }
+    }
+
+    /// The key in this style: the metal, or the accent while it is on.
+    private var styledBackground: some View {
+        StyledSlab(shape: RoundedRectangle(cornerRadius: CarbonGeometry.styledRadius(Self.cornerRadius, for: style),
+                                           style: .continuous),
+                   fill: on ? theme.orange : (softSurfaces?.metal ?? theme.metal),
+                   hi: on ? theme.orangeHi : theme.metalHi,
+                   lo: on ? theme.orangeLo : theme.metalLo,
+                   depth: StyledKeyMetrics.depth, outline: StyledKeyMetrics.outline)
     }
 
     @ViewBuilder
@@ -95,13 +131,26 @@ struct PatchBaySwitch: View {
 
 // MARK: - Recess for switch banks
 
-/// Glass tray behind fixed-width switch banks.
+/// Glass tray behind fixed-width switch banks. In a style other than Real
+/// Hardware it is the style's well, cut into the panel.
 struct PatchBayRecess: View {
     @Environment(\.carbon) private var theme
+    @Environment(\.interfaceStyle) private var style
 
     var body: some View {
+        if style == .hardware {
+            realTray
+        } else {
+            StyledSlab(shape: RoundedRectangle(cornerRadius: CarbonGeometry.styledRadius(6, for: style),
+                                               style: .continuous),
+                       fill: theme.wellDeep, lo: theme.metalDeep,
+                       depth: StyledKeyMetrics.depth, sunken: true, outline: StyledKeyMetrics.outline)
+        }
+    }
+
+    private var realTray: some View {
         let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
-        ZStack {
+        return ZStack {
             shape
                 .fill(theme.wellDeep) // opaque, not Material — see ChassisLayer
                 .overlay(
@@ -132,6 +181,7 @@ struct PatchBayRecess: View {
 struct PatchBayCycleButton<Item: Hashable>: View {
     @Environment(\.carbon) private var theme
     @Environment(\.carbonGeometry) private var geometry
+    @Environment(\.interfaceStyle) private var style
 
     let label: String
     let options: [Item]
@@ -140,7 +190,20 @@ struct PatchBayCycleButton<Item: Hashable>: View {
     /// stale persisted state). The button still renders a current label.
     let displayText: (Item) -> String
 
+    /// The plate's own radius.
+    private static var cornerRadius: CGFloat { 5 }
+
     var body: some View {
+        if style == .hardware {
+            button.buttonStyle(.carbonHover)
+        } else {
+            // The label's rectangle, as `.carbonHover` takes clicks in Real
+            // Hardware: a hit target is the same in every style.
+            button.buttonStyle(StyledKeyButtonStyle(depth: StyledKeyMetrics.depth))
+        }
+    }
+
+    private var button: some View {
         Button(action: advance) {
             VStack(spacing: 0) {
                 HStack(spacing: 6) {
@@ -165,7 +228,6 @@ struct PatchBayCycleButton<Item: Hashable>: View {
             .frame(height: geometry.patchBayCycleButtonHeight)
             .background(displayFace)
         }
-        .buttonStyle(.carbonHover)
         .accessibilityLabel(Text("\(label): \(currentText)"))
         .accessibilityHint(Text("Tap to advance"))
         .accessibilityValue(Text(currentText))
@@ -173,14 +235,29 @@ struct PatchBayCycleButton<Item: Hashable>: View {
 
     /// A hardware display reads black whatever the room light, so the screen
     /// stays dark in both themes and the orange readout stays legible.
+    ///
+    /// The plate is a key, so in a style other than Real Hardware it is the
+    /// style's slab in the same dark; the readout and its scale on it are not
+    /// the style's and stay as they are.
+    @ViewBuilder
     private var displayFace: some View {
-        let shape = RoundedRectangle(cornerRadius: 5, style: .continuous)
-        return shape
-            .fill(LinearGradient(colors: [Color(hex: 0x1A1F25), Color(hex: 0x0B0E12)],
-                                 startPoint: .top, endPoint: .bottom))
-            .overlay(shape.strokeBorder(Color.white.opacity(0.07), lineWidth: 0.5))
-            .depthShadow(color: Color.black.opacity(0.45), radius: 2, y: 1)
+        if style == .hardware {
+            let shape = RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
+            shape
+                .fill(LinearGradient(colors: [Self.faceTop, Self.faceBottom],
+                                     startPoint: .top, endPoint: .bottom))
+                .overlay(shape.strokeBorder(Color.white.opacity(0.07), lineWidth: 0.5))
+                .depthShadow(color: Color.black.opacity(0.45), radius: 2, y: 1)
+        } else {
+            StyledSlab(shape: RoundedRectangle(cornerRadius: CarbonGeometry.styledRadius(Self.cornerRadius, for: style),
+                                               style: .continuous),
+                       fill: Self.faceTop, lo: Self.faceBottom,
+                       depth: StyledKeyMetrics.depth, outline: StyledKeyMetrics.outline)
+        }
     }
+
+    private static var faceTop: Color { Color(hex: 0x1A1F25) }
+    private static var faceBottom: Color { Color(hex: 0x0B0E12) }
 
     /// Where you are in the cycle, as a hairline scale along the bottom edge
     /// rather than a row of lamps — same information, none of the fairground.

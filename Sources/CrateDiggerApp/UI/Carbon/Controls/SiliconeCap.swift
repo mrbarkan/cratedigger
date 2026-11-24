@@ -1,3 +1,4 @@
+import CrateDiggerCore
 import SwiftUI
 
 /// The moulded **silicone elastomer** finish shared by every transport control:
@@ -15,8 +16,15 @@ import SwiftUI
 /// dies away a little slower (`CarbonMotion.state` / `.lampOff`), so pausing
 /// reads as the light going out rather than a cut. Only light changes, so
 /// Reduce Motion leaves it alone.
+///
+/// In a style other than Real Hardware the cap is that style's `StyledSlab`
+/// in the theme's metal, and lit it is the lamp's own colour, so a lit key
+/// still reads lit with no rubber to glow through. The print and the frame
+/// are the same in every style.
 struct SiliconeCap<S: Shape, Imprint: View>: View {
     @Environment(\.carbon) private var theme
+    @Environment(\.interfaceStyle) private var style
+    @Environment(\.softSurfaces) private var softSurfaces
     /// Held down by `SiliconeKeyButtonStyle`: the contact shadow pulls in
     /// under the cap as it sinks into the chassis.
     @Environment(\.siliconeKeyPressed) private var pressed
@@ -28,6 +36,14 @@ struct SiliconeCap<S: Shape, Imprint: View>: View {
     @ViewBuilder var imprint: () -> Imprint
 
     var body: some View {
+        if style == .hardware {
+            realCap
+        } else {
+            styledCap
+        }
+    }
+
+    private var realCap: some View {
         GeometryReader { geo in
             let r = max(geo.size.width, geo.size.height) * 0.62
 
@@ -73,6 +89,28 @@ struct SiliconeCap<S: Shape, Imprint: View>: View {
                 .grainFree(shape: shape)
         }
     }
+
+    /// The cap in this style. Unlit it is the theme's metal (Soft Blocks'
+    /// separated one); lit, the transport lamp is the whole cap, its Hi and Lo
+    /// as Flat Hardware's highlight and base. Only Flat Hardware keeps the
+    /// lamp's halo: Soft Blocks and Sticker have no soft light around a part.
+    private var styledCap: some View {
+        StyledSlab(shape: shape,
+                   fill: lit ? theme.transportLamp : (softSurfaces?.metal ?? theme.metal),
+                   hi: lit ? theme.transportLampHi : theme.metalHi,
+                   lo: lit ? theme.transportLampLo : theme.metalLo,
+                   depth: SiliconeKeyButtonStyle.styledDepth,
+                   outline: SiliconeKeyButtonStyle.styledOutline)
+            // The same print as the rubber cap, the same inks.
+            .overlay {
+                imprint()
+                    .foregroundStyle(lit ? Color.black.opacity(0.34) : theme.chassisInk.opacity(0.82))
+                    .blur(radius: 0.4)
+            }
+            .shadow(color: theme.transportLamp.opacity(lit && style == .flatHardware ? 0.22 : 0), radius: 11)
+            .animation(lit ? CarbonMotion.state : CarbonMotion.lampOff, value: lit)
+            .grainFree(shape: shape)
+    }
 }
 
 // MARK: - The key around the cap
@@ -101,6 +139,13 @@ struct SiliconeKeyButtonStyle: ButtonStyle {
     /// How far a pressed cap sinks: the chassis keys' travel.
     static var travel: CGFloat { ChassisKeyMetrics.travel }
 
+    /// A cap's base band (Flat Hardware) or hard shadow (Sticker) in a style
+    /// other than Real Hardware, and so how far its press moves it: the
+    /// chassis keys' depth, the footer's and the mini player's caps alike.
+    static var styledDepth: CGFloat { ChassisKeyMetrics.styledDepth }
+    /// Sticker's inner outline on a cap.
+    static let styledOutline: CGFloat = 2
+
     /// The key's outline, which is also where it takes clicks: the round PLAY
     /// dome must not answer in its frame's square corners.
     var hitShape = AnyShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -110,6 +155,23 @@ struct SiliconeKeyButtonStyle: ButtonStyle {
     }
 
     private struct KeyBody: View {
+        let configuration: Configuration
+        let hitShape: AnyShape
+        @Environment(\.interfaceStyle) private var style
+
+        var body: some View {
+            if style == .hardware {
+                RealKeyBody(configuration: configuration, hitShape: hitShape)
+            } else {
+                // The style's press, with the hit area pinned to the same
+                // outline at rest.
+                StyledKeyButtonStyle(depth: SiliconeKeyButtonStyle.styledDepth, hitShape: hitShape)
+                    .makeBody(configuration: configuration)
+            }
+        }
+    }
+
+    private struct RealKeyBody: View {
         let configuration: Configuration
         let hitShape: AnyShape
         @Environment(\.carbon) private var theme

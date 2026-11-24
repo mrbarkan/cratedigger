@@ -1,8 +1,10 @@
+import CrateDiggerCore
 import SwiftUI
 
 struct ChassisLayer<Content: View>: View {
     @Environment(\.carbon) private var theme
     @Environment(\.carbonGeometry) private var geometry
+    @Environment(\.interfaceStyle) private var style
     @ViewBuilder var content: () -> Content
 
     var body: some View {
@@ -24,6 +26,7 @@ struct ChassisLayer<Content: View>: View {
     private var chassisPlate: some View {
         let shape = RoundedRectangle(cornerRadius: geometry.chassisCornerRadius, style: .continuous)
         return ZStack {
+            if style == .hardware {
             // Opaque base coat, NOT a Material. SwiftUI Materials become
             // CABackdropLayer live blurs that WindowServer re-samples every
             // frame — the app idled at ~60% GPU with 12 of them. The gradient
@@ -69,12 +72,53 @@ struct ChassisLayer<Content: View>: View {
                     )
                 )
                 .depthShadow(color: theme.shadow2.color, radius: theme.shadow2.radius, x: theme.shadow2.x, y: theme.shadow2.y)
+            } else {
+                // The case in this style; its corner is the theme's own.
+                StyledCasePlate(shape: shape)
+            }
 
             content()
                 .padding(.horizontal, geometry.chassisInsetH)
                 .padding(.vertical, geometry.chassisInsetV)
         }
         .compositingGroup()
+    }
+}
+
+/// A case in a style other than Real Hardware: the main window's
+/// (`ChassisLayer`) and the mini player's glass, which is that window's case.
+/// The shape is the caller's, corner included: the styles scale keys, wells
+/// and paper, not the case. Opaque fills only (see `ChassisLayer`).
+struct StyledCasePlate: View {
+    @Environment(\.carbon) private var theme
+    @Environment(\.interfaceStyle) private var style
+    let shape: RoundedRectangle
+
+    var body: some View {
+        switch style {
+        case .sticker:
+            shape.fill(theme.chassis)
+                .overlay(shape.strokeBorder(theme.stickerInk, lineWidth: 3))
+        case .flatHardware:
+            // Lit from above: a light lip along the top edge, a shade along
+            // the bottom one, over a top-to-bottom ramp of the case colours.
+            shape.fill(LinearGradient(colors: [theme.chassisHi, theme.chassis, theme.chassisLo],
+                                      startPoint: .top, endPoint: .bottom))
+                .overlay(shape.strokeBorder(LinearGradient(colors: [Color.white.opacity(theme.isDark ? 0.25 : 0.9), .clear],
+                                                           startPoint: .top, endPoint: .center), lineWidth: 3))
+                .overlay(shape.strokeBorder(LinearGradient(colors: [.clear, Color.black.opacity(theme.isDark ? 0.5 : 0.22)],
+                                                           startPoint: .center, endPoint: .bottom), lineWidth: 5))
+        case .softBlocks:
+            shape.fill(theme.chassis)
+        case .hardware:
+            // The case keeps its Real plate for Real Hardware, so this is a
+            // missed branch, or a plate kept alive by a removal transition
+            // while the style flipped back. Logged, never a trap: a plain fill.
+            shape.fill(theme.chassis)
+                .onAppear {
+                    AppLog.ui.fault("StyledCasePlate built for Real Hardware: the case must keep its Real plate")
+                }
+        }
     }
 }
 

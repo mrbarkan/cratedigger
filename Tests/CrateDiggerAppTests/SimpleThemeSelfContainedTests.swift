@@ -18,7 +18,7 @@ final class SimpleThemeSelfContainedTests: XCTestCase {
     private var registry: ThemeRegistry!
     private var savedSelection: String?
 
-    private static let builtIns = ["carbon", "cobalt", "llama-97", "pocket"]
+    private static let builtIns = ["carbon", "cobalt", "llama-97", "pocket", "funhouse"]
     private static let anchors = ["chassis", "paper", "ink", "orange", "oledSurface", "oledForeground"]
     private static let nord = ["#2E3440", "#3B4252", "#ECEFF4", "#88C0D0", "#BF616A"]
 
@@ -36,7 +36,7 @@ final class SimpleThemeSelfContainedTests: XCTestCase {
                                              to: themesDirectory.appendingPathComponent(name))
         }
         registry = ThemeRegistry(loader: ThemeLoaderService(bundles: [], userThemesDirectoryOverride: themesDirectory))
-        XCTAssertEqual(Set(registry.manifests.map(\.id)).intersection(Self.builtIns).count, 4)
+        XCTAssertEqual(Set(registry.manifests.map(\.id)).intersection(Self.builtIns).count, 5)
     }
 
     override func tearDownWithError() throws {

@@ -191,3 +191,72 @@ final class SimpleThemeBuilderTests: XCTestCase {
         }
     }
 }
+
+extension SimpleThemeBuilderTests {
+    private func styleState() -> SimpleThemeState {
+        SimpleThemeState(recipe: SimpleThemeRecipe(palette: ["#1D2433", "#E9E4D8", "#D9482B", "#3C9D8A"]))
+    }
+
+    func testSeedKeepsTheOriginalsStyle() throws {
+        var original = try loadBase("Pocket")
+        original.style = .sticker
+        let seed = SimpleThemeBuilder.seed(from: original, id: "s", name: "S")
+        XCTAssertEqual(seed.style, .sticker)
+        let built = SimpleThemeBuilder.build(
+            state: styleState(),
+            choices: SimpleThemeChoices(appearance: .dark, material: nil, coverLook: nil, fonts: [:],
+                                        style: seed.resolvedStyle),
+            onto: seed)
+        XCTAssertEqual(built.style, .sticker)
+    }
+
+    func testBuildWritesTheChosenStyle() throws {
+        let base = try loadBase("Pocket")
+        func built(_ style: InterfaceStyle) -> ThemeDefinition {
+            SimpleThemeBuilder.build(
+                state: styleState(),
+                choices: SimpleThemeChoices(appearance: .dark, material: nil, coverLook: nil, fonts: [:], style: style),
+                onto: base)
+        }
+        XCTAssertEqual(built(.flatHardware).style, .flatHardware)
+        XCTAssertNil(built(.hardware).style)
+        var inheriting = base
+        inheriting.inherits = "carbon"
+        inheriting.style = .sticker
+        let out = SimpleThemeBuilder.build(
+            state: styleState(),
+            choices: SimpleThemeChoices(appearance: .dark, material: nil, coverLook: nil, fonts: [:], style: .hardware),
+            onto: inheriting)
+        XCTAssertNil(out.inherits)
+        XCTAssertNil(out.style, "a Simple theme has no parent, so Real Hardware is absence")
+    }
+
+    func testUntouchedSimpleThemeRebuildsByteIdentical() throws {
+        let base = try loadBase("Pocket")
+        let first = SimpleThemeBuilder.build(
+            state: styleState(),
+            choices: SimpleThemeChoices(appearance: .both, material: .plastic, coverLook: nil, fonts: [:]),
+            onto: base)
+        XCTAssertNil(first.style)
+        let again = SimpleThemeBuilder.build(
+            state: styleState(),
+            choices: SimpleThemeChoices(appearance: .both, material: .plastic, coverLook: nil, fonts: [:], style: .hardware),
+            onto: first)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        XCTAssertEqual(try encoder.encode(again), try encoder.encode(first))
+    }
+
+    func testDecodedSimpleThemeWithoutStyleRebuildsWithNoStyleKey() throws {
+        let json = ##"""
+        {"id":"s","name":"S","baseAppearance":"dark","colors":{"ink":"#FFFFFF"}}
+        """##
+        let decoded = try JSONDecoder().decode(ThemeDefinition.self, from: Data(json.utf8))
+        let rebuilt = SimpleThemeBuilder.build(
+            state: styleState(),
+            choices: SimpleThemeChoices(appearance: .dark, material: nil, coverLook: nil, fonts: [:], style: .hardware),
+            onto: decoded)
+        let object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(rebuilt)) as? [String: Any]
+        XCTAssertFalse(try XCTUnwrap(object).keys.contains("style"))
+    }
+}

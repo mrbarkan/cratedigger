@@ -42,9 +42,12 @@ public extension ThemeDefinition {
     /// of the original file that the author did not touch survives the write
     /// untouched — including the ones it deliberately omits. Identity stays
     /// this definition's own: a patch never renames the theme it patches.
+    /// The appearance and the style are single values the edit always
+    /// carries, so they are taken whole; an absent style is Real Hardware.
     func merging(_ changes: ThemeDefinition) -> ThemeDefinition {
         var result = self
         result.baseAppearance = changes.baseAppearance
+        result.style = changes.style
         result.colors = Self.merge(colors, changes.colors)
         result.shadows = Self.merge(shadows, changes.shadows)
         result.fonts = Self.merge(fonts, changes.fonts)

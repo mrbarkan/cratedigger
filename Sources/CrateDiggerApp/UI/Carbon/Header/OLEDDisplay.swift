@@ -123,7 +123,7 @@ struct OLEDDisplay: View {
                     endPoint: .bottomTrailing
                 )
             )
-            .depthShadow(color: Color.black.opacity(0.5), radius: 6, y: 4)
+            .contentShadow(color: Color.black.opacity(0.5), radius: 6, y: 4)
     }
 }
 

@@ -58,7 +58,7 @@ struct BrowserCondensed: View {
                     .frame(width: 18, height: 14)
                 Text("|‹")
                     .font(CarbonFont.mono(9, weight: .heavy))
-                    .foregroundStyle(theme.ink2)
+                    .foregroundStyle(theme.keyPrint(theme.ink2))
             }
         }
         .buttonStyle(.carbonHover)

@@ -259,7 +259,7 @@ struct ArtworkGalleryView: View {
                         RoundedRectangle(cornerRadius: 4)
                             .stroke(Color.black.opacity(0.12), lineWidth: 1)
                     )
-                    .depthShadow(color: Color.black.opacity(0.15), radius: 4, y: 2)
+                    .contentShadow(color: Color.black.opacity(0.15), radius: 4, y: 2)
                     .heroMatch(id: album.id, in: artNamespace, enabled: !reduceMotion)
                     .contentShape(Rectangle())
                     // Single click selects (highlights + drives the inspector track
@@ -432,7 +432,7 @@ struct ArtworkGalleryView: View {
         let cover = GalleryAlbumCoverView(album: album, size: size, contentMode: .fit)
             .cornerRadius(6)
             .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.black.opacity(0.15), lineWidth: 1))
-            .depthShadow(color: .black.opacity(0.25), radius: 8, y: 4)
+            .contentShadow(color: .black.opacity(0.25), radius: 8, y: 4)
             .heroMatch(id: album.id, in: artNamespace, enabled: !reduceMotion)
 
         if album.booklet != nil {

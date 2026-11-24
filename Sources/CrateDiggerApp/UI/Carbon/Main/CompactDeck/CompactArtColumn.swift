@@ -108,6 +108,12 @@ struct CompactArtColumn: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .clipShape(RoundedRectangle(cornerRadius: geometry.wellCornerRadius, style: .continuous))
             }
+            // Album art draws the same in every style, shadow and corners
+            // included, and this well is its frame: the art fills it, so a
+            // rounder styled well would show past the art's corners. Like
+            // `CoverScreenBezel`, it stays Real Hardware. Nothing inside reads
+            // the style (the cover and a stream thumbnail use `contentShadow`).
+            .environment(\.interfaceStyle, .hardware)
         }
     }
 }
