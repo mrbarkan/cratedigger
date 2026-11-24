@@ -48,8 +48,13 @@ final class BundledThemeTests: XCTestCase {
     /// header can draw at the slot's proportion.
     ///
     /// Funhouse is the one theme without a mark: its header shows its name, as for
-    /// any theme that declares no logo, so it is skipped here.
+    /// any theme that declares no logo, so it is skipped here, and pinned to declare
+    /// none in either layer so the skip cannot hide a logo that went missing.
     func testEveryBundledThemeShipsALogoPerLayer() throws {
+        let funhouse = try XCTUnwrap(themes["funhouse"])
+        XCTAssertNil(funhouse.logo, "Funhouse declares a shared logo; drop its skip below")
+        XCTAssertNil(funhouse.light?.logo, "Funhouse declares a light logo; drop its skip below")
+        XCTAssertNil(funhouse.dark?.logo, "Funhouse declares a dark logo; drop its skip below")
         for (id, manifest) in manifests where id != "funhouse" {
             for appearance in [ThemeDefinition.BaseAppearance.light, .dark] {
                 let url = try XCTUnwrap(manifest.logoURL(for: appearance), "\(id) has no \(appearance) logo")

@@ -40,7 +40,7 @@ struct PatchBaySwitch: View {
 
     @State private var hovering = false
 
-    /// The key's own radius, which is also where it takes clicks.
+    /// The key's own radius.
     private static let cornerRadius: CGFloat = 4
 
     var body: some View {
@@ -58,9 +58,9 @@ struct PatchBaySwitch: View {
         if style == .hardware {
             button.buttonStyle(.carbonHover)
         } else {
-            button.buttonStyle(StyledKeyButtonStyle(
-                depth: StyledKeyMetrics.depth,
-                hitShape: AnyShape(RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))))
+            // The label's rectangle, as `.carbonHover` takes clicks in Real
+            // Hardware: a hit target is the same in every style.
+            button.buttonStyle(StyledKeyButtonStyle(depth: StyledKeyMetrics.depth))
         }
     }
 
@@ -190,16 +190,16 @@ struct PatchBayCycleButton<Item: Hashable>: View {
     /// stale persisted state). The button still renders a current label.
     let displayText: (Item) -> String
 
-    /// The plate's own radius, which is also where it takes clicks.
+    /// The plate's own radius.
     private static var cornerRadius: CGFloat { 5 }
 
     var body: some View {
         if style == .hardware {
             button.buttonStyle(.carbonHover)
         } else {
-            button.buttonStyle(StyledKeyButtonStyle(
-                depth: StyledKeyMetrics.depth,
-                hitShape: AnyShape(RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))))
+            // The label's rectangle, as `.carbonHover` takes clicks in Real
+            // Hardware: a hit target is the same in every style.
+            button.buttonStyle(StyledKeyButtonStyle(depth: StyledKeyMetrics.depth))
         }
     }
 

@@ -66,9 +66,12 @@ struct StyledSlab<S: Shape>: View {
     var body: some View {
         switch style {
         case .hardware:
+            // A caller keeps its Real body for Real Hardware, so this is a
+            // missed branch, or a slab kept alive by a removal transition while
+            // the style flipped back. Logged, never a trap: a plain fill.
             shape.fill(fill)
                 .onAppear {
-                    assertionFailure("StyledSlab built for Real Hardware: the caller must keep its Real body")
+                    AppLog.ui.fault("StyledSlab built for Real Hardware: the caller must keep its Real body")
                 }
         case .softBlocks:
             shape.fill(fill)

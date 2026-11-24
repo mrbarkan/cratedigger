@@ -1118,7 +1118,9 @@ private struct ArmGoButton: View {
                 holdProgress = 0
                 action()
             } onPressingChanged: { pressing in
-                self.pressing = pressing
+                // Only a style other than Real Hardware draws the press; Real
+                // keeps the hold fill alone and writes no extra state.
+                if style != .hardware { self.pressing = pressing }
                 withAnimation(.linear(duration: pressing ? Self.holdDuration : Self.holdRelease)) {
                     holdProgress = (pressing && enabled) ? 1 : 0
                 }

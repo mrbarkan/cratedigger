@@ -16,9 +16,13 @@ ROOT="${STYLE_CAPTURE_ROOT:-$HERE/..}"
 ROOT="$(cd "$ROOT" && pwd)"
 THEME="${1:?theme id}"; MODE="${2:?light|dark}"; LAYOUT="${3:?full|compact|mini}"; OUT="${4:?out.png}"
 
+# SCRATCH's crates and home folders are deleted below, so it must be absolute.
 case "${SCRATCH:-}" in
   "") echo "SCRATCH is not set" >&2; exit 2 ;;
   /Volumes/*) echo "SCRATCH must be outside /Volumes" >&2; exit 2 ;;
+  /) echo "SCRATCH must not be /" >&2; exit 2 ;;
+  /*) ;;
+  *) echo "SCRATCH must be an absolute path" >&2; exit 2 ;;
 esac
 case "$MODE" in light|dark) ;; *) echo "mode must be light or dark" >&2; exit 2 ;; esac
 case "$LAYOUT" in full|compact|mini) ;; *) echo "layout must be full, compact or mini" >&2; exit 2 ;; esac

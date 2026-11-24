@@ -111,10 +111,12 @@ struct StyledCasePlate: View {
         case .softBlocks:
             shape.fill(theme.chassis)
         case .hardware:
-            // Each case keeps its Real plate; a missed branch is loud in DEBUG.
+            // The case keeps its Real plate for Real Hardware, so this is a
+            // missed branch, or a plate kept alive by a removal transition
+            // while the style flipped back. Logged, never a trap: a plain fill.
             shape.fill(theme.chassis)
                 .onAppear {
-                    assertionFailure("StyledCasePlate built for Real Hardware: the case must keep its Real plate")
+                    AppLog.ui.fault("StyledCasePlate built for Real Hardware: the case must keep its Real plate")
                 }
         }
     }
