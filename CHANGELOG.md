@@ -4,15 +4,35 @@ All notable changes to CrateDigger are documented here. Versions follow
 [semantic versioning](https://semver.org); the number in parentheses is the
 build, which is monotonic across every release.
 
-## 2.4.0 (122), 2026-11-22
+## 2.4.0 (123), 2026-11-23
 
-Beta 1 of 2.4: the Theme Editor gets a Simple mode. Pick two to six colours
-and CrateDigger builds a whole theme from them, light and dark, with every
-label kept readable. Betas are offered only to people who turned on Receive
+Beta 2 of 2.4: interface styles. A theme can now change how the console is
+built, not only its colours: keep the hardware you know, flatten it, strip it
+down to plain blocks, or turn every part into a sticker. Beta 1 brought the
+Simple theme editor. Betas are offered only to people who turned on Receive
 beta updates.
 
 ### Added
 
+- **Interface styles.** Every theme now has a style, which decides how the
+  keys, panels, faders and the case itself are drawn and how a key answers a
+  press. There are four. Real Hardware is the console as it has always been.
+  Flat Hardware sits each key on its own darker base, with no sockets and
+  short shadows. Soft Blocks is flat colour with rounder corners, no outlines
+  and no shadows, and a key squashes slightly when pressed. Sticker gives
+  every part a thick outline and a hard shadow, like a die cut sticker, and a
+  pressed key drops onto its shadow. The display, the album art and the
+  layout stay the same in every style.
+- **Choose a style in either editor.** Simple has a STYLE row above
+  MATERIAL. Advanced has the same four keys at the top of Interface. The
+  whole console changes as you choose, and the theme browser names a theme's
+  style beside it when it is not Real Hardware.
+- **Funhouse.** A new built-in theme made for Sticker, after a sheet of
+  retro stickers: a sky blue case with mustard keys and hot pink for what is
+  on. In dark it becomes a deep blue sheet with the same mustard keys.
+- **Sticker Ink.** A new colour in the Advanced editor, beside Key Print,
+  for the outline and hard shadow of the Sticker style. Left alone, it
+  follows Primary Text on a light theme and Key Print on a dark one.
 - **Simple theme editor.** Press NEW in the theme browser or in the editor
   to start a theme from the colours of the one you are using. Enter two to
   six colours and CrateDigger decides which one paints the frame, the
@@ -47,6 +67,22 @@ beta updates.
 
 ### Changed
 
+- **Llama '97 and Pocket wear Flat Hardware.** Both built-in themes change
+  shape with this update. Llama '97's light look is also recoloured after
+  the classic skin: a lavender grey case, pale grey keys, black lists in mint
+  green and yellow column headers. Its dark look keeps its colours. To get
+  the old shape back, make a copy of the theme in the editor and choose Real
+  Hardware. Carbon and Cobalt look exactly as before, and so does any theme
+  you made or installed.
+- **Key Print reaches every small key.** A theme that sets its own Key Print
+  now gets it on the VIEW, THEME and EQ labels, the small keys in the panel
+  headers and the mini player's keys, which used to borrow a text colour
+  meant for panels. A theme saved from Advanced after its secondary text
+  colour was changed may show those small labels in its earlier secondary
+  colour; set Key Print to choose.
+- **FLAT is for Real Hardware.** The other three styles draw their own
+  shadows, so the FLAT switch is dimmed while one of them is chosen and
+  comes back, as you left it, with Real Hardware.
 - **Moving between Simple and Advanced asks first.** A Simple theme can be
   copied to Advanced or converted; a converted theme can't go back to
   Simple. An Advanced theme, a built-in included, can be copied into Simple.
