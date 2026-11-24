@@ -86,7 +86,8 @@ public struct ThemeDefinition: Codable, Sendable, Equatable {
     public var simple: SimpleThemeRecipe?
 
     /// The interface style this theme wears. Absent means Real Hardware; an unknown or
-    /// malformed value decodes as absent, so a theme from a newer app still loads.
+    /// malformed value decodes as absent, so a theme from a newer app still loads. Not
+    /// inherited: a child with no style is Real Hardware whatever its parent wears.
     public var style: InterfaceStyle?
 
     public init(
@@ -155,11 +156,11 @@ public extension ThemeDefinition {
     /// The style the theme draws with: its own, else Real Hardware.
     var resolvedStyle: InterfaceStyle { style ?? .hardware }
 
-    /// Sets the style. Real Hardware is written as absent on a theme with no parent; on
-    /// one that inherits it is written out, or the child would keep its parent's style.
+    /// Sets the style. Real Hardware is always written as absent, since a style is
+    /// not inherited and absent already means it; any other style is written out.
     func settingStyle(_ style: InterfaceStyle) -> ThemeDefinition {
         var copy = self
-        copy.style = (style == .hardware && inherits == nil) ? nil : style
+        copy.style = style == .hardware ? nil : style
         return copy
     }
 }

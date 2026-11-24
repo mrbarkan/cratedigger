@@ -94,7 +94,7 @@ final class ThemeEditorStyleTests: XCTestCase {
         XCTAssertEqual(registry.draft?.effects?["flat"], 1)
         registry.setDraftStyle(.hardware)
         XCTAssertEqual(registry.draft?.effects?["flat"], 1, "FLAT works again back on Real Hardware")
-        XCTAssertNil(registry.draft?.style, "Real Hardware is written as absent on a theme with no parent")
+        XCTAssertNil(registry.draft?.style, "Real Hardware is written as absent")
     }
 
     func testDiscardingTheDraftDropsTheChosenStyle() throws {
@@ -104,6 +104,41 @@ final class ThemeEditorStyleTests: XCTestCase {
         registry.discardDraft()
         XCTAssertEqual(registry.activeDefinition(for: "sticker-theme")?.resolvedStyle, .sticker,
                        "the console goes back to the saved theme's style")
+    }
+
+    // MARK: Forks
+
+    /// A style is not inherited, so a fork of a styled built-in must write its
+    /// style out itself. Funhouse's own file, under an id the checkout does not
+    /// hold, so the editor forks it rather than editing it in place.
+    func testAForkOfFunhouseSavedFromTheEditorStoresStickerAndReloadsAsSticker() throws {
+        let checkout = try XCTUnwrap(BuiltInThemeEditing.repositoryThemesDirectory)
+        var funhouse = try XCTUnwrap(
+            ThemeLoaderService(bundles: [], userThemesDirectoryOverride: checkout)
+                .discoverThemes().themes.first { $0.id == "funhouse" }
+        ).definition
+        XCTAssertEqual(funhouse.style, .sticker)
+        funhouse.id = "funhouse-fixture"
+        try ThemeAuthoringService(themesDirectory: themesDirectory).save(funhouse)
+        registry.refresh()
+        let shipped = ThemeManifest(definition: try manifest("funhouse-fixture").definition, origin: .builtIn)
+        XCTAssertFalse(BuiltInThemeEditing.isEditable(shipped), "the fixture must fork, not edit in place")
+
+        registry.beginEditing(shipped, appearance: .light)
+        XCTAssertEqual(registry.draft?.inherits, "funhouse-fixture")
+        let savedID = try XCTUnwrap(try registry.saveDraft())
+
+        let file = ThemeAuthoringService(themesDirectory: themesDirectory).bundleURL(for: savedID)
+            .appendingPathComponent("theme.json")
+        let object = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any]
+        )
+        XCTAssertEqual(object["inherits"] as? String, "funhouse-fixture")
+        XCTAssertEqual(object["style"] as? String, "sticker", "the fork carries its style itself")
+
+        let reloaded = ThemeLoaderService(bundles: [], userThemesDirectoryOverride: themesDirectory)
+            .discoverThemes().themes.first { $0.id == savedID }
+        XCTAssertEqual(reloaded?.definition.resolvedStyle, .sticker)
     }
 
     // MARK: Simple

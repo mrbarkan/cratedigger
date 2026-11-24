@@ -38,7 +38,10 @@ final class InterfaceStyleTests: XCTestCase {
         }
     }
 
-    func testChildInheritsParentStyleUnlessItSetsOne() throws {
+    /// A style is not inherited: a theme forked from Llama '97 or Pocket before
+    /// styles existed carries no `style` key, and must not turn Flat Hardware
+    /// on update. A child keeps its own style when it names one.
+    func testAChildWithNoStyleIsRealHardwareWhateverItsParentWears() throws {
         try withTemporaryDirectory(prefix: "CrateDiggerInterfaceStyleTests") { directory in
             func write(_ name: String, _ json: String) throws {
                 try Data(json.utf8).write(to: directory.appendingPathComponent("\(name).json"))
@@ -49,14 +52,16 @@ final class InterfaceStyleTests: XCTestCase {
             let loader = ThemeLoaderService(bundles: [], userThemesDirectoryOverride: directory)
             let byID = Dictionary(uniqueKeysWithValues: loader.discoverThemes().themes.map { ($0.id, $0.definition) })
             XCTAssertEqual(byID["parent"]?.style, .flatHardware)
-            XCTAssertEqual(byID["plain"]?.style, .flatHardware)
+            XCTAssertNil(byID["plain"]?.style)
+            XCTAssertEqual(byID["plain"]?.resolvedStyle, .hardware)
             XCTAssertEqual(byID["own"]?.style, .sticker)
         }
     }
 
-    func testSettingRealOnAnInheritingThemeIsExplicit() {
-        let child = ThemeDefinition(id: "c", name: "C", baseAppearance: .dark, inherits: "llama-97")
-        XCTAssertEqual(child.settingStyle(.hardware).style, .hardware)
+    func testRealHardwareIsAlwaysStoredAsAbsence() {
+        let child = ThemeDefinition(id: "c", name: "C", baseAppearance: .dark, inherits: "llama-97", style: .flatHardware)
+        XCTAssertNil(child.settingStyle(.hardware).style)
+        XCTAssertEqual(child.settingStyle(.sticker).style, .sticker)
         let root = ThemeDefinition(id: "r", name: "R", baseAppearance: .dark, style: .sticker)
         XCTAssertNil(root.settingStyle(.hardware).style)
         XCTAssertEqual(root.settingStyle(.softBlocks).style, .softBlocks)
