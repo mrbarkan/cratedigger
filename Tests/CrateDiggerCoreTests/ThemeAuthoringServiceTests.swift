@@ -101,10 +101,6 @@ final class ThemeAuthoringServiceTests: XCTestCase {
         XCTAssertEqual(ThemeAuthoringService.minimized(root, against: nil), root)
     }
 
-    // MARK: - Round trip
-
-    /// The whole contract in one test: what the editor saves is what the
-    /// loader finds and parses back, in the bundle layout it expects.
     /// A style is not inherited, so a fork's own `style` is the only thing that
     /// keeps it in its source's style: pruning it because the parent wears the
     /// same one would turn the fork Real Hardware.
@@ -118,6 +114,10 @@ final class ThemeAuthoringServiceTests: XCTestCase {
         XCTAssertNil(ThemeAuthoringService.minimized(unstyled, against: parent).style)
     }
 
+    // MARK: - Round trip
+
+    /// The whole contract in one test: what the editor saves is what the
+    /// loader finds and parses back, in the bundle layout it expects.
     func testSavedThemeIsDiscoverableByTheLoader() throws {
         let saved = definition(
             id: "midnight",
